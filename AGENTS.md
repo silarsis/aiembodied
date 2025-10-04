@@ -28,10 +28,10 @@ Document any deviations or additional checks in your PR description, especially 
 ## Implementation Progress
 Track progress against `plan.md` here. Update the status markers (`[ ]` incomplete, `[x]` complete, `[~]` in progress) immediately after meaningful work lands.
 
-- [~] 0. Repo Scaffolding & Tooling — base monorepo in place; ongoing validation of lint/type/test harness.
-- [ ] 1. Configuration & Secrets Foundation
-- [ ] 2. Logging & Crash Guard Infrastructure
-- [ ] 3. Wake Word Service (Porcupine Worker)
+- [x] 0. Repo Scaffolding & Tooling — base monorepo in place; ongoing validation of lint/type/test harness.
+- [x] 1. Configuration & Secrets Foundation
+- [x] 2. Logging & Crash Guard Infrastructure
+- [x] 3. Wake Word Service (Porcupine Worker) — Worker entrypoint adjusted for ts-node dev usage
 - [ ] 4. Audio Graph & Device Management
 - [ ] 5. Realtime Client (WebRTC Loop)
 - [ ] 6. Viseme Driver MVP

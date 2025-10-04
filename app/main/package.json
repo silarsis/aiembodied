@@ -12,6 +12,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@picovoice/porcupine-node": "^3.0.6",
+    "@picovoice/pvrecorder-node": "^1.2.8",
     "debug": "^4.3.4",
     "dotenv": "^16.4.5",
     "electron": "^35.7.5",
