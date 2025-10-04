@@ -12,12 +12,16 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "debug": "^4.3.4",
     "dotenv": "^16.4.5",
-    "keytar": "^7.9.0",
     "electron": "^35.7.5",
+    "keytar": "^7.9.0",
+    "winston": "^3.13.0",
+    "winston-daily-rotate-file": "^5.0.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@types/debug": "^4.1.12",
     "ts-node": "^10.9.2"
   }
 }
