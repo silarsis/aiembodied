@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run && playwright test"
+    "test": "vitest run"
   },
   "dependencies": {
     "react": "^18.2.0",

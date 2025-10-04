@@ -8,14 +8,13 @@ This repository uses [pnpm](https://pnpm.io) workspaces with dedicated packages 
 
 ```bash
 pnpm install
-pnpm exec playwright install
 ```
 
 ## Available Scripts
 
 - `pnpm lint` - Run ESLint across all packages.
 - `pnpm typecheck` - Execute TypeScript type checking in each workspace.
-- `pnpm test` - Run Vitest suites and Playwright smoke tests.
+- `pnpm test` - Run Vitest suites across packages.
 
 Renderer-specific commands can be executed from the package directory:
 
