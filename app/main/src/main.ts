@@ -7,6 +7,7 @@ import { KeytarSecretStore } from './config/keytar-secret-store.js';
 import { InMemorySecretStore } from './config/secret-store.js';
 import { initializeLogger } from './logging/logger.js';
 import { CrashGuard } from './crash-guard.js';
+import { WakeWordService } from './wake-word/wake-word-service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,6 +23,7 @@ const configManager = new ConfigManager({ secretStore });
 const { logger } = initializeLogger();
 
 let mainWindow: BrowserWindow | null = null;
+let wakeWordService: WakeWordService | null = null;
 
 const createWindow = () => {
   const window = new BrowserWindow({
@@ -106,6 +108,52 @@ app.whenReady().then(async () => {
     return;
   }
 
+  const appConfig = configManager.getConfig();
+
+  wakeWordService = new WakeWordService({
+    logger,
+    cooldownMs: appConfig.wakeWord.cooldownMs,
+    minConfidence: appConfig.wakeWord.minConfidence,
+  });
+
+  wakeWordService.on('wake', (event) => {
+    logger.info('Wake word detected in main process', {
+      keyword: event.keywordLabel,
+      confidence: event.confidence,
+    });
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('wake-word:event', event);
+    }
+  });
+
+  wakeWordService.on('error', (serviceError) => {
+    logger.error('Wake word service error', {
+      message: serviceError.message,
+      stack: serviceError.stack,
+    });
+  });
+
+  wakeWordService.on('ready', (info) => {
+    logger.info('Wake word service ready', info);
+  });
+
+  try {
+    wakeWordService.start({
+      accessKey: appConfig.wakeWord.accessKey,
+      keywordPath: appConfig.wakeWord.keywordPath,
+      keywordLabel: appConfig.wakeWord.keywordLabel,
+      sensitivity: appConfig.wakeWord.sensitivity,
+      modelPath: appConfig.wakeWord.modelPath,
+      deviceIndex: appConfig.wakeWord.deviceIndex,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('Failed to start wake word service', {
+      message,
+    });
+  }
+
   registerIpcHandlers();
   const window = createWindow();
   crashGuard.watch(window);
@@ -127,4 +175,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   crashGuard.notifyAppQuitting();
   logger.info('Application is quitting.');
+  if (wakeWordService) {
+    void wakeWordService.dispose();
+  }
 });
