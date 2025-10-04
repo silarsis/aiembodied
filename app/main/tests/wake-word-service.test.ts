@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
+import type { WorkerOptions } from 'node:worker_threads';
 import type { Logger } from 'winston';
 import { WakeWordService, type WorkerFactory } from '../src/wake-word/wake-word-service.js';
 import type { WakeWordDetectionEvent, WakeWordWorkerMessage } from '../src/wake-word/types.js';
@@ -28,12 +29,17 @@ function createService({
   cooldownMs = 1000,
   minConfidence = 0.5,
   worker = new FakeWorker(),
+  onSpawn,
 }: {
   cooldownMs?: number;
   minConfidence?: number;
   worker?: FakeWorker;
+  onSpawn?: (filename: URL, options: WorkerOptions) => void;
 } = {}) {
-  const factory: WorkerFactory = () => worker as unknown as ReturnType<WorkerFactory>;
+  const factory: WorkerFactory = (filename, options) => {
+    onSpawn?.(filename, options);
+    return worker as unknown as ReturnType<WorkerFactory>;
+  };
   const service = new WakeWordService({ logger, cooldownMs, minConfidence, workerFactory: factory });
   return { service, worker };
 }
@@ -131,5 +137,30 @@ describe('WakeWordService', () => {
     await service.dispose();
 
     expect(worker.terminated).toBe(true);
+  });
+
+  it('falls back to TypeScript worker entrypoint with ts-node loader in development', () => {
+    const worker = new FakeWorker();
+    let capturedPath: URL | undefined;
+    let capturedOptions: WorkerOptions | undefined;
+
+    const { service } = createService({
+      worker,
+      onSpawn: (filename, options) => {
+        capturedPath = filename;
+        capturedOptions = options;
+      },
+    });
+
+    service.start({
+      accessKey: 'key',
+      keywordPath: 'porcupine',
+      keywordLabel: 'Porcupine',
+      sensitivity: 0.5,
+    });
+
+    expect(capturedPath?.pathname.endsWith('porcupine-worker.ts')).toBe(true);
+    expect(capturedOptions?.execArgv).toBeDefined();
+    expect(capturedOptions?.execArgv).toEqual(expect.arrayContaining(['--loader', 'ts-node/esm']));
   });
 });

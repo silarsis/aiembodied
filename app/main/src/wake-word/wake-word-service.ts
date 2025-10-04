@@ -1,5 +1,7 @@
+import { existsSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import { Worker, type WorkerOptions } from 'node:worker_threads';
+import { fileURLToPath } from 'node:url';
 import type { Logger } from 'winston';
 import type {
   WakeWordDetectionEvent,
@@ -15,6 +17,7 @@ export interface WakeWordServiceOptions {
   minConfidence: number;
   workerFactory?: WorkerFactory;
   workerPath?: URL;
+  workerOptions?: WorkerOptions;
 }
 
 export type WorkerFactory = (filename: URL, options: WorkerOptions) => WorkerLike;
@@ -68,6 +71,7 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
   private readonly logger: Logger;
   private readonly workerFactory: WorkerFactory;
   private readonly workerPath: URL;
+  private readonly baseWorkerOptions: WorkerOptions;
   private readonly filter: WakeWordEventFilter;
   private worker: WorkerLike | null = null;
   private started = false;
@@ -76,7 +80,17 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
     super();
     this.logger = options.logger;
     this.workerFactory = options.workerFactory ?? defaultWorkerFactory;
-    this.workerPath = options.workerPath ?? defaultWorkerPath();
+    if (options.workerPath) {
+      this.workerPath = options.workerPath;
+      this.baseWorkerOptions = { ...(options.workerOptions ?? {}) } as WorkerOptions;
+    } else {
+      const entrypoint = defaultWorkerEntrypoint();
+      this.workerPath = entrypoint.url;
+      this.baseWorkerOptions = {
+        ...(entrypoint.options ?? {}),
+        ...(options.workerOptions ?? {}),
+      } as WorkerOptions;
+    }
     this.filter = new WakeWordEventFilter({
       cooldownMs: options.cooldownMs,
       minConfidence: options.minConfidence,
@@ -90,6 +104,7 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
     }
 
     const worker = this.workerFactory(this.workerPath, {
+      ...this.baseWorkerOptions,
       workerData: config,
       env: process.env,
     });
@@ -183,8 +198,48 @@ function defaultWorkerFactory(filename: URL, options: WorkerOptions): WorkerLike
   return new Worker(filename, options);
 }
 
-function defaultWorkerPath(): URL {
-  return new URL('./porcupine-worker.js', import.meta.url);
+interface WorkerEntrypoint {
+  url: URL;
+  options?: WorkerOptions;
+}
+
+function defaultWorkerEntrypoint(): WorkerEntrypoint {
+  const jsEntrypoint = new URL('./porcupine-worker.js', import.meta.url);
+  if (fileExists(jsEntrypoint)) {
+    return { url: jsEntrypoint };
+  }
+
+  const tsEntrypoint = new URL('./porcupine-worker.ts', import.meta.url);
+  return {
+    url: tsEntrypoint,
+    options: resolveTsNodeWorkerOptions(),
+  };
+}
+
+function fileExists(url: URL): boolean {
+  try {
+    return existsSync(fileURLToPath(url));
+  } catch {
+    return false;
+  }
+}
+
+function resolveTsNodeWorkerOptions(): WorkerOptions | undefined {
+  const execArgv = resolveTsNodeExecArgv();
+  if (execArgv.length === 0) {
+    return undefined;
+  }
+
+  return { execArgv } satisfies WorkerOptions;
+}
+
+function resolveTsNodeExecArgv(): string[] {
+  const execArgv = process.execArgv ?? [];
+  if (execArgv.some((arg) => arg.includes('ts-node'))) {
+    return execArgv;
+  }
+
+  return ['--loader', 'ts-node/esm'];
 }
 
 function deserializeError(serialized: { message: string; name?: string; stack?: string }): Error {
