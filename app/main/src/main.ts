@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { ConfigManager, ConfigValidationError, type ConfigSecretKey } from './config/config-manager.js';
 import { KeytarSecretStore } from './config/keytar-secret-store.js';
 import { InMemorySecretStore } from './config/secret-store.js';
+import { initializeLogger } from './logging/logger.js';
+import { CrashGuard } from './crash-guard.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,13 +19,11 @@ if (!isProduction) {
 
 const secretStore = isProduction ? new KeytarSecretStore('aiembodied') : new InMemorySecretStore();
 const configManager = new ConfigManager({ secretStore });
+const { logger } = initializeLogger();
 
-function registerIpcHandlers() {
-  ipcMain.handle('config:get', () => configManager.getRendererConfig());
-  ipcMain.handle('config:get-secret', (_event, key: ConfigSecretKey) => configManager.getSecret(key));
-}
+let mainWindow: BrowserWindow | null = null;
 
-function createMainWindow() {
+const createWindow = () => {
   const window = new BrowserWindow({
     width: 1024,
     height: 768,
@@ -34,11 +34,62 @@ function createMainWindow() {
   });
 
   const rendererDist = path.join(__dirname, '../../renderer/dist/index.html');
-  window.loadFile(rendererDist).catch((error) => {
-    console.error('Failed to load renderer bundle', error);
+  window
+    .loadFile(rendererDist)
+    .then(() => {
+      logger.info('Renderer bundle loaded successfully.');
+    })
+    .catch((error) => {
+      logger.error('Failed to load renderer bundle', { message: error?.message, stack: error?.stack });
+    });
+
+  window.on('ready-to-show', () => {
+    logger.info('Main window ready to show.');
   });
 
+  window.on('closed', () => {
+    mainWindow = null;
+  });
+
+  mainWindow = window;
   return window;
+};
+
+const crashGuard = new CrashGuard({
+  createWindow,
+  logger,
+});
+
+function registerIpcHandlers() {
+  ipcMain.handle('config:get', () => configManager.getRendererConfig());
+  ipcMain.handle('config:get-secret', (_event, key: ConfigSecretKey) => configManager.getSecret(key));
+}
+
+function focusExistingWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    logger.warn('Main window missing on second-instance event. Relaunching.');
+    const window = createWindow();
+    crashGuard.watch(window);
+    return;
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+
+  mainWindow.focus();
+}
+
+const gotLock = app.requestSingleInstanceLock();
+
+if (!gotLock) {
+  logger.warn('Another instance of aiembodied is already running. Quitting.');
+  app.quit();
+} else {
+  logger.info('Primary instance lock acquired.');
+  app.on('second-instance', () => {
+    focusExistingWindow();
+  });
 }
 
 app.whenReady().then(async () => {
@@ -49,17 +100,20 @@ app.whenReady().then(async () => {
       error instanceof ConfigValidationError || error instanceof Error
         ? error.message
         : 'Unknown configuration error occurred.';
+    logger.error('Configuration validation failed', { message });
     dialog.showErrorBox('Configuration Error', message);
     app.quit();
     return;
   }
 
   registerIpcHandlers();
-  createMainWindow();
+  const window = createWindow();
+  crashGuard.watch(window);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow();
+      const newWindow = createWindow();
+      crashGuard.watch(newWindow);
     }
   });
 });
@@ -68,4 +122,9 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  crashGuard.notifyAppQuitting();
+  logger.info('Application is quitting.');
 });
