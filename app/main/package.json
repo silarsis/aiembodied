@@ -12,6 +12,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "dotenv": "^16.4.5",
+    "keytar": "^7.9.0",
     "electron": "^35.7.5",
     "zod": "^3.22.4"
   },
