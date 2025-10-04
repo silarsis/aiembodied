@@ -8,6 +8,7 @@ This repository uses [pnpm](https://pnpm.io) workspaces with dedicated packages 
 
 ```bash
 pnpm install
+pnpm exec playwright install
 ```
 
 ## Available Scripts
