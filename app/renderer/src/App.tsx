@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from 'react';
 import type { RendererConfig } from '../../main/src/config/config-manager.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
 import { AvatarRenderer } from './avatar/avatar-renderer.js';
@@ -8,13 +15,25 @@ import { useAudioDevices } from './hooks/use-audio-devices.js';
 import { getPreloadApi, type PreloadApi } from './preload-api.js';
 import { RealtimeClient, type RealtimeClientState } from './realtime/realtime-client.js';
 
+const CURSOR_IDLE_TIMEOUT_MS = 3000;
+const WAKE_ACTIVE_DURATION_MS = 4000;
+
 type AudioGraphStatus = 'idle' | 'starting' | 'ready' | 'error';
+
+type TranscriptSpeaker = 'user' | 'assistant' | 'system';
 
 interface AudioGraphState {
   level: number;
   isActive: boolean;
   status: AudioGraphStatus;
   error: string | null;
+}
+
+interface TranscriptEntry {
+  id: string;
+  speaker: TranscriptSpeaker;
+  text: string;
+  timestamp: number;
 }
 
 function useAudioGraphState(inputDeviceId?: string, enabled = true) {
@@ -100,6 +119,133 @@ function usePreloadBridge() {
   return { api, ping };
 }
 
+function useOnlineStatus() {
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+
+  useEffect(() => {
+    const update = () => {
+      setIsOnline(navigator.onLine);
+    };
+
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+
+  return isOnline;
+}
+
+function useIdleCursor(enabled: boolean) {
+  const [isIdle, setIsIdle] = useState(false);
+
+  useEffect(() => {
+    if (!enabled) {
+      document.body.classList.remove('cursor-hidden');
+      setIsIdle(false);
+      return;
+    }
+
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+
+    const markIdle = () => {
+      timeout = null;
+      setIsIdle(true);
+    };
+
+    const scheduleIdle = () => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      timeout = setTimeout(markIdle, CURSOR_IDLE_TIMEOUT_MS);
+    };
+
+    const handleActivity = () => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      setIsIdle(false);
+      timeout = setTimeout(markIdle, CURSOR_IDLE_TIMEOUT_MS);
+    };
+
+    const events: Array<keyof WindowEventMap> = [
+      'mousemove',
+      'mousedown',
+      'keydown',
+      'touchstart',
+    ];
+
+    events.forEach((event) => window.addEventListener(event, handleActivity, { passive: true }));
+    scheduleIdle();
+
+    return () => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      events.forEach((event) => window.removeEventListener(event, handleActivity));
+      document.body.classList.remove('cursor-hidden');
+      setIsIdle(false);
+    };
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!enabled) {
+      document.body.classList.remove('cursor-hidden');
+      return;
+    }
+
+    if (isIdle) {
+      document.body.classList.add('cursor-hidden');
+    } else {
+      document.body.classList.remove('cursor-hidden');
+    }
+
+    return () => {
+      document.body.classList.remove('cursor-hidden');
+    };
+  }, [enabled, isIdle]);
+
+  return isIdle;
+}
+
+function TranscriptOverlay({
+  entries,
+}: {
+  entries: TranscriptEntry[];
+}) {
+  if (entries.length === 0) {
+    return (
+      <div className="transcript transcript--empty" data-testid="transcript-empty">
+        <p>No transcript yet. Conversation history will appear here.</p>
+      </div>
+    );
+  }
+
+  return (
+    <ol className="transcript" data-testid="transcript-list">
+      {entries.map((entry) => {
+        const time = new Date(entry.timestamp);
+        const hours = time.getHours().toString().padStart(2, '0');
+        const minutes = time.getMinutes().toString().padStart(2, '0');
+        const seconds = time.getSeconds().toString().padStart(2, '0');
+        const label = `${hours}:${minutes}:${seconds}`;
+        return (
+          <li key={entry.id} className={`transcript__item transcript__item--${entry.speaker}`}>
+            <div className="transcript__meta">
+              <span className="transcript__speaker">{entry.speaker}</span>
+              <span className="transcript__time">{label}</span>
+            </div>
+            <p className="transcript__text">{entry.text}</p>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 export default function App() {
   const { api, ping } = usePreloadBridge();
   const [config, setConfig] = useState<RendererConfig | null>(null);
@@ -112,6 +258,18 @@ export default function App() {
   const [realtimeState, setRealtimeState] = useState<RealtimeClientState>({ status: 'idle' });
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [visemeFrame, setVisemeFrame] = useState<VisemeFrame | null>(null);
+  const [wakeState, setWakeState] = useState<'idle' | 'awake'>('idle');
+  const wakeResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isTranscriptVisible, setTranscriptVisible] = useState(false);
+  const [transcriptEntries, setTranscriptEntries] = useState<TranscriptEntry[]>([]);
+
+  const appendTranscriptEntry = useCallback((entry: Omit<TranscriptEntry, 'id'> & { id?: string }) => {
+    setTranscriptEntries((previous) => {
+      const id = entry.id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const next = [...previous, { ...entry, id }];
+      return next.slice(-200);
+    });
+  }, []);
 
   const { inputs, outputs, error: deviceError, refresh: refreshDevices } = useAudioDevices();
 
@@ -237,6 +395,8 @@ export default function App() {
         }
         setConfig(value);
         setConfigError(null);
+        const overlayEnabled = value.featureFlags?.transcriptOverlay ?? false;
+        setTranscriptVisible(overlayEnabled);
       })
       .catch((error) => {
         const message = error instanceof Error ? error.message : 'Failed to load renderer configuration.';
@@ -315,14 +475,6 @@ export default function App() {
   }, [realtimeClient, realtimeKey, audioGraph.upstreamStream]);
 
   useEffect(() => {
-    if (!realtimeClient) {
-      return;
-    }
-
-    void realtimeClient.setOutputDeviceId(selectedOutput || undefined);
-  }, [realtimeClient, selectedOutput]);
-
-  useEffect(() => {
     if (!realtimeClient || !hasRealtimeApiKey) {
       return;
     }
@@ -330,34 +482,57 @@ export default function App() {
     realtimeClient.notifySpeechActivity(audioGraph.isActive);
   }, [realtimeClient, hasRealtimeApiKey, audioGraph.isActive]);
 
-  const realtimeStatusLabel = useMemo(() => {
-    if (!hasRealtimeApiKey) {
-      return 'disabled (API key unavailable)';
+  const previousRealtimeStatusRef = useRef<RealtimeClientState['status'] | null>(null);
+  useEffect(() => {
+    const previous = previousRealtimeStatusRef.current;
+    if (realtimeState.status === 'connected' && previous !== 'connected') {
+      appendTranscriptEntry({
+        speaker: 'system',
+        text: 'Realtime session connected.',
+        timestamp: Date.now(),
+      });
     }
 
-    if (!hasRealtimeSupport) {
-      return 'unavailable (WebRTC not supported)';
+    if (realtimeState.status === 'error' && previousRealtimeStatusRef.current !== 'error') {
+      const errorMessage = realtimeState.error ? `Realtime error — ${realtimeState.error}` : 'Realtime session error';
+      appendTranscriptEntry({
+        speaker: 'system',
+        text: errorMessage,
+        timestamp: Date.now(),
+      });
     }
 
-    if (realtimeKeyError) {
-      return `error — ${realtimeKeyError}`;
+    previousRealtimeStatusRef.current = realtimeState.status;
+  }, [realtimeState, appendTranscriptEntry]);
+
+  useEffect(() => {
+    if (!api) {
+      return;
     }
 
-    switch (realtimeState.status) {
-      case 'idle':
-        return audioGraph.upstreamStream ? 'standby' : 'waiting for microphone';
-      case 'connecting':
-        return 'connecting';
-      case 'connected':
-        return 'connected';
-      case 'reconnecting':
-        return `reconnecting (attempt ${realtimeState.attempt ?? 0})`;
-      case 'error':
-        return `error — ${realtimeState.error ?? 'unknown'}`;
-      default:
-        return realtimeState.status;
-    }
-  }, [hasRealtimeApiKey, hasRealtimeSupport, realtimeKeyError, realtimeState, audioGraph.upstreamStream]);
+    const unsubscribe = api.wakeWord.onWake((event) => {
+      appendTranscriptEntry({
+        speaker: 'system',
+        text: `Wake word detected (${event.keywordLabel}) — confidence ${(event.confidence * 100).toFixed(0)}%`,
+        timestamp: Date.now(),
+      });
+      setWakeState('awake');
+      if (wakeResetTimeoutRef.current) {
+        clearTimeout(wakeResetTimeoutRef.current);
+      }
+      wakeResetTimeoutRef.current = setTimeout(() => {
+        setWakeState('idle');
+      }, WAKE_ACTIVE_DURATION_MS);
+    });
+
+    return () => {
+      if (wakeResetTimeoutRef.current) {
+        clearTimeout(wakeResetTimeoutRef.current);
+        wakeResetTimeoutRef.current = null;
+      }
+      unsubscribe?.();
+    };
+  }, [api, appendTranscriptEntry]);
 
   useEffect(() => {
     if (audioGraph.status === 'ready') {
@@ -430,7 +605,7 @@ export default function App() {
       case 'starting':
         return 'Starting microphone capture…';
       case 'ready':
-        return audioGraph.isActive ? 'Listening (speech gate open)' : 'Idle (speech gate closed)';
+        return audioGraph.isActive ? 'Listening' : 'Idle';
       case 'error':
         return audioGraph.error ?? 'Audio capture error';
       default:
@@ -440,64 +615,128 @@ export default function App() {
 
   const visemeSummary = useMemo(() => {
     const index = visemeFrame?.index ?? 0;
-    const intensity = Math.round((visemeFrame?.intensity ?? 0) * 100);
-    const blink = visemeFrame?.blink ?? false;
-    const labels = ['neutral', 'narrow', 'mid-open', 'open', 'wide open'];
-    const label = labels[index] ?? 'neutral';
-
-    return {
-      label,
-      index,
-      intensity,
-      blink,
-      status: blink ? 'Blinking' : intensity > 0 ? 'Animating' : 'Idle',
-    };
+    const intensity = visemeFrame ? Math.round(visemeFrame.intensity * 100) : 0;
+    const status = visemeFrame ? 'Active' : 'Idle';
+    const labels = ['Rest', 'Small vowels', 'Wide vowels', 'Open', 'Consonant'];
+    const label = labels[index] ?? 'Unknown';
+    return { index, intensity, status, label, blink: visemeFrame?.blink ?? false };
   }, [visemeFrame]);
 
+  const isOnline = useOnlineStatus();
+  const isCursorHidden = useIdleCursor(true);
+
+  const realtimeStatusLabel = useMemo(() => {
+    if (!hasRealtimeApiKey) {
+      return 'Disabled (API key unavailable)';
+    }
+
+    if (!hasRealtimeSupport) {
+      return 'Unavailable (WebRTC unsupported)';
+    }
+
+    if (realtimeKeyError) {
+      return `Error — ${realtimeKeyError}`;
+    }
+
+    switch (realtimeState.status) {
+      case 'idle':
+        return audioGraph.upstreamStream ? 'Standby' : 'Waiting for microphone';
+      case 'connecting':
+        return 'Connecting';
+      case 'connected':
+        return 'Connected';
+      case 'reconnecting':
+        return `Reconnecting (attempt ${realtimeState.attempt ?? 0})`;
+      case 'error':
+        return `Error — ${realtimeState.error ?? 'unknown'}`;
+      default:
+        return realtimeState.status;
+    }
+  }, [hasRealtimeApiKey, hasRealtimeSupport, realtimeKeyError, realtimeState, audioGraph.upstreamStream]);
+
+  const toggleTranscriptVisibility = useCallback(() => {
+    setTranscriptVisible((previous) => !previous);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isToggleShortcut = (event.ctrlKey || event.metaKey) && event.shiftKey && event.code === 'KeyT';
+      if (isToggleShortcut) {
+        event.preventDefault();
+        toggleTranscriptVisibility();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [toggleTranscriptVisibility]);
+
+  const transcriptToggleLabel = useMemo(() => {
+    return isTranscriptVisible ? 'Hide transcript overlay' : 'Show transcript overlay';
+  }, [isTranscriptVisible]);
+
+  const wakeStatusVariant = wakeState === 'awake' ? 'active' : 'idle';
+  const realtimeVariant = realtimeState.status === 'error' ? 'error' : realtimeState.status === 'connected' ? 'active' : 'idle';
+  const networkVariant = isOnline ? 'active' : 'error';
+  const audioVariant = audioGraph.status === 'error' ? 'error' : audioGraph.isActive ? 'active' : 'idle';
+  const deviceVariant = deviceError ? 'error' : inputs.length > 0 ? 'active' : 'idle';
+  const deviceStatusLabel = deviceError ? `Error — ${deviceError}` : inputs.length > 0 ? 'Devices ready' : 'Scanning…';
+
   return (
-    <main className="app">
-      <header className="app__header">
-        <h1>Embodied Assistant MVP</h1>
-        <p className="app__tagline">Audio device control &amp; capture pipeline</p>
+    <main
+      className="kiosk"
+      data-wake-state={wakeState}
+      data-cursor-hidden={isCursorHidden ? 'true' : 'false'}
+      aria-live="polite"
+    >
+      <header className="kiosk__statusBar" role="banner">
+        <div className={`statusChip statusChip--${wakeStatusVariant}`} data-testid="wake-indicator">
+          <span className="statusChip__label">Wake</span>
+          <span className="statusChip__value" data-testid="wake-value">
+            {wakeState === 'awake' ? 'Awake' : 'Idle'}
+          </span>
+        </div>
+        <div className={`statusChip statusChip--${realtimeVariant}`} data-testid="realtime-indicator">
+          <span className="statusChip__label">Realtime</span>
+          <span className="statusChip__value">{realtimeStatusLabel}</span>
+        </div>
+        <div className={`statusChip statusChip--${audioVariant}`} data-testid="audio-indicator">
+          <span className="statusChip__label">Audio</span>
+          <span className="statusChip__value">{audioGraphStatusLabel}</span>
+        </div>
+        <div className={`statusChip statusChip--${deviceVariant}`} data-testid="device-indicator">
+          <span className="statusChip__label">Devices</span>
+          <span className="statusChip__value">{deviceStatusLabel}</span>
+        </div>
+        <div className={`statusChip statusChip--${networkVariant}`} data-testid="network-indicator">
+          <span className="statusChip__label">Network</span>
+          <span className="statusChip__value">{isOnline ? 'Online' : 'Offline'}</span>
+        </div>
+        <div className={`statusChip statusChip--${ping === 'available' ? 'active' : 'error'}`}>
+          <span className="statusChip__label">Preload</span>
+          <span className="statusChip__value">{ping === 'available' ? 'Connected' : 'Unavailable'}</span>
+        </div>
+        <button
+          type="button"
+          className="kiosk__transcriptToggle"
+          onClick={toggleTranscriptVisibility}
+          data-testid="transcript-toggle"
+        >
+          {transcriptToggleLabel}
+          <span className="kiosk__shortcutHint">Ctrl/Cmd + Shift + T</span>
+        </button>
       </header>
 
-      <section className="app__status">
-        <div>
-          <span className="label">Preload bridge:</span> {ping === 'available' ? 'connected' : 'unavailable'}
-        </div>
-        <div>
-          <span className="label">Configuration:</span>{' '}
-          {loadingConfig ? 'loading…' : configError ? `error — ${configError}` : 'loaded'}
-        </div>
-        <div>
-          <span className="label">Audio graph:</span> {audioGraphStatusLabel}
-        </div>
-        <div>
-          <span className="label">Device scan:</span> {deviceError ? `error — ${deviceError}` : 'ok'}
-        </div>
-        <div>
-          <span className="label">Realtime:</span> {realtimeStatusLabel}
-        </div>
-        <div>
-          <span className="label">Viseme:</span>{' '}
-          {visemeFrame
-            ? `v${visemeFrame.index} · ${(visemeFrame.intensity * 100).toFixed(0)}%${
-                visemeFrame.blink ? ' (blink)' : ''
-              }`
-            : 'idle'}
-        </div>
-      </section>
-
-      <section className="app__avatar" aria-labelledby="avatar-preview-title">
-        <div className="app__avatarCanvas" data-state={visemeSummary.status.toLowerCase()}>
+      <section className="kiosk__stage" aria-labelledby="avatar-preview-title">
+        <div className="kiosk__avatar" data-state={visemeSummary.status.toLowerCase()}>
           <AvatarRenderer frame={visemeFrame} />
         </div>
-        <div className="app__avatarReadout">
-          <h2 id="avatar-preview-title">Avatar preview</h2>
-          <p className="app__avatarSubtitle">
-            Real-time viseme mapping derived from the decoded audio stream.
-          </p>
-          <dl className="app__avatarMetrics">
+        <div className="kiosk__avatarDetails">
+          <h1 id="avatar-preview-title">Embodied Assistant</h1>
+          <p className="kiosk__subtitle">Real-time viseme mapping derived from the decoded audio stream.</p>
+          <dl className="kiosk__metrics">
             <div>
               <dt>Viseme</dt>
               <dd>
@@ -518,9 +757,16 @@ export default function App() {
             </div>
           </dl>
         </div>
+        <div className="kiosk__meter" aria-live="polite">
+          <div className="meter">
+            <div className="meter__fill" style={{ width: `${levelPercentage}%` }} />
+          </div>
+          <p className="meter__label">Input level: {levelPercentage}%</p>
+          <p className="meter__status">Speech gate: {audioGraph.isActive ? 'open' : 'closed'}</p>
+        </div>
       </section>
 
-      <section className="app__controls">
+      <section className="kiosk__controls">
         <div className="control">
           <label htmlFor="input-device">Microphone</label>
           <select
@@ -555,25 +801,34 @@ export default function App() {
         </div>
       </section>
 
-      <section className="app__meter" aria-live="polite">
-        <div className="meter">
-          <div className="meter__fill" style={{ width: `${levelPercentage}%` }} />
-        </div>
-        <p className="meter__label">Input level: {levelPercentage}%</p>
-        <p className="meter__status">Speech gate: {audioGraph.isActive ? 'open' : 'closed'}</p>
-      </section>
-
-      {isSaving ? <p className="app__info">Saving audio preferences…</p> : null}
+      {isSaving ? <p className="kiosk__info">Saving audio preferences…</p> : null}
       {saveError ? (
-        <p role="alert" className="app__error">
+        <p role="alert" className="kiosk__error">
           {saveError}
         </p>
       ) : null}
       {audioGraph.status === 'error' && audioGraph.error ? (
-        <p role="alert" className="app__error">
+        <p role="alert" className="kiosk__error">
           {audioGraph.error}
         </p>
       ) : null}
+      {configError ? (
+        <p role="alert" className="kiosk__error">
+          {configError}
+        </p>
+      ) : null}
+
+      {isTranscriptVisible ? (
+        <aside
+          className="kiosk__transcript"
+          role="region"
+          aria-label="Transcript overlay"
+          data-testid="transcript-overlay"
+        >
+          <TranscriptOverlay entries={transcriptEntries} />
+        </aside>
+      ) : null}
+
       {/* Hidden audio sink for realtime playback (no user-facing controls). */}
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <audio ref={remoteAudioRef} autoPlay aria-hidden="true" style={{ display: 'none' }} />
