@@ -37,7 +37,7 @@ Track progress against `plan.md` here. Update the status markers (`[ ]` incomple
 - [x] 6. Viseme Driver MVP
 - [x] 7. Avatar Renderer (2D Canvas)
 - [x] 8. Transcript Overlay & UI Shell — kiosk shell with transcript overlay toggle and wake/network indicators
-- [ ] 9. Memory Store (SQLite)
+- [x] 9. Memory Store (SQLite)
 - [ ] 10. Persistence in Conversation Loop
 - [ ] 11. Observability & Metrics
 - [ ] 12. Packaging & Auto-Launch
