@@ -40,7 +40,7 @@ Track progress against `plan.md` here. Update the status markers (`[ ]` incomple
 - [x] 9. Memory Store (SQLite)
 - [x] 10. Persistence in Conversation Loop
 - [x] 11. Observability & Metrics
-- [ ] 12. Packaging & Auto-Launch
+- [x] 12. Packaging & Auto-Launch
 - [ ] 13. Appliance Readiness Validation
 - [ ] 14. Home Assistant Integration
 - [ ] 15. Avatar Configuration Tool
@@ -54,3 +54,4 @@ Keep this checklist accurate; it is the authoritative tracker for execution stat
 - 2025-10-04 — Added Vitest coverage instrumentation and validated preload bridge ping wiring via renderer tests.
 - 2025-10-06 — Introduced a pull request template checklist to enforce lint, typecheck, and test runs before merges.
 - 2025-10-07 — Refreshed the README with a full project overview and setup instructions sourced from PRD/architecture docs.
+- 2025-10-08 — Removed the kiosk packaging icon asset pending refreshed branding deliverables.

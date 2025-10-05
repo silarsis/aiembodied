@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, Tray, dialog, ipcMain } from 'electron';
 import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,10 +18,13 @@ import type {
 import { MemoryStore } from './memory/index.js';
 import { PrometheusCollector } from './metrics/prometheus-collector.js';
 import type { LatencyObservation } from './metrics/types.js';
+import { AutoLaunchManager } from './lifecycle/auto-launch.js';
+import { createDevTray } from './lifecycle/dev-tray.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const isProduction = process.env.NODE_ENV === 'production';
+const isProduction = app.isPackaged || process.env.NODE_ENV === 'production';
+const APP_NAME = 'AI Embodied Assistant';
 
 if (!isProduction) {
   const repoRoot = path.resolve(__dirname, '../../..');
@@ -36,6 +39,8 @@ let memoryStore: MemoryStore | null = null;
 let conversationManager: ConversationManager | null = null;
 let removeConversationListeners: (() => void) | null = null;
 let metricsCollector: PrometheusCollector | null = null;
+let autoLaunchManager: AutoLaunchManager | null = null;
+let developmentTray: Tray | null = null;
 
 const createWindow = () => {
   const window = new BrowserWindow({
@@ -186,6 +191,40 @@ app.whenReady().then(async () => {
 
   const appConfig = manager.getConfig();
 
+  autoLaunchManager = new AutoLaunchManager({
+    logger,
+    appName: APP_NAME,
+    appPath: app.getPath('exe'),
+  });
+
+  const shouldEnableAutoLaunch = isProduction || process.env.ENABLE_AUTO_LAUNCH === '1';
+  const launchEnabled = await autoLaunchManager.sync(shouldEnableAutoLaunch);
+  logger.info('Auto-launch synchronization complete.', { enabled: launchEnabled });
+
+  if (!isProduction) {
+    try {
+      developmentTray = await createDevTray({
+        autoLaunchManager,
+        logger,
+        onQuit: () => {
+          app.quit();
+        },
+        onShowWindow: () => {
+          if (!mainWindow || mainWindow.isDestroyed()) {
+            const newWindow = createWindow();
+            crashGuard.watch(newWindow);
+            return;
+          }
+
+          focusExistingWindow();
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('Failed to create development tray', { message });
+    }
+  }
+
   if (appConfig.metrics.enabled) {
     metricsCollector = new PrometheusCollector({
       host: appConfig.metrics.host,
@@ -321,5 +360,9 @@ app.on('before-quit', () => {
       logger.warn('Failed to stop metrics exporter cleanly', { message });
     });
     metricsCollector = null;
+  }
+  if (developmentTray) {
+    developmentTray.destroy();
+    developmentTray = null;
   }
 });

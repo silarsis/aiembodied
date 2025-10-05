@@ -88,6 +88,35 @@ pnpm --filter @aiembodied/renderer dev
 
 This serves the UI on http://localhost:5173 with hot reloading; rebuild before returning to the Electron flow.
 
+While running in development, a lightweight system tray menu appears. Use it to bring the kiosk window to the foreground or to
+toggle the "Launch on Login" checkbox, which exercises the auto-launch flow without touching your OS login items permanently.
+
+### Package for Distribution
+
+Electron bundles for Windows, macOS, and Linux are generated with `electron-builder`.
+
+```bash
+pnpm build            # compile main + renderer bundles
+pnpm dist             # emit installers into release/
+```
+
+Artifacts land in `release/` with platform-specific installers (`.dmg`, `.zip`, `.exe`, `.AppImage`, `.deb`). Production builds
+boot directly into kiosk mode and automatically register themselves to launch at login. To opt into the auto-launch flow from a
+development build, run with `ENABLE_AUTO_LAUNCH=1 pnpm --filter @aiembodied/main dev`.
+
+### Intel N100 Deployment Tips
+
+For the reference Intel N100 mini-PC (Ubuntu/Debian-based):
+
+1. Copy the generated `.deb` or `.AppImage` from `release/` onto the device.
+2. Install the `.deb` via `sudo dpkg -i <package>.deb` (or mark the AppImage as executable and launch once to verify).
+3. Provide the production `.env` or environment variables under `/etc/aiembodied.env` and load them via your preferred shell
+   profile or systemd service wrapper.
+4. On first run the assistant enables auto-launch; confirm it appears under **Startup Applications**. Remove it there if you need
+   to temporarily disable kiosk startup.
+5. For kiosk-style boot, create a systemd user service that runs the installed binary at login (the `.deb` places the executable
+   under `/opt/AI Embodied Assistant/ai-embodied-assistant`). Combine with display manager auto-login targeting the kiosk user.
+
 ## Quality Gates
 
 Run the shared project checks from the repo root:
@@ -96,9 +125,10 @@ Run the shared project checks from the repo root:
 pnpm lint        # ESLint across all workspaces
 pnpm typecheck   # TypeScript project references
 pnpm test        # Vitest unit/integration suites
+pnpm build       # Compile production-ready main and renderer output
 ```
 
-> For production packaging targets, add `pnpm build` once the renderer and main bundles are ready.
+When preparing installers, run `pnpm dist` after the checks to exercise the electron-builder configuration locally.
 
 ## Further Reading
 

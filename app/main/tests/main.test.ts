@@ -190,13 +190,48 @@ const appEmitter = Object.assign(new EventEmitter(), {
   requestSingleInstanceLock: vi.fn(() => true),
   quit: vi.fn(),
   getPath: vi.fn(() => '/tmp/aiembodied-test'),
+  isPackaged: false,
 });
+
+const trayDestroyMock = vi.fn();
+const TrayMock = vi.fn(() => ({ destroy: trayDestroyMock }));
+
+const nativeImageMock = {
+  createFromDataURL: vi.fn(() => ({ isEmpty: () => false })),
+  createEmpty: vi.fn(() => ({ isEmpty: () => true })),
+};
+
+const menuBuildFromTemplateMock = vi.fn(() => ({}));
 
 vi.mock('electron', () => ({
   app: appEmitter,
   BrowserWindow: BrowserWindowMock,
   dialog: dialogMock,
   ipcMain: ipcMainMock,
+  Tray: TrayMock,
+  Menu: { buildFromTemplate: menuBuildFromTemplateMock },
+  nativeImage: nativeImageMock,
+}));
+
+const autoLaunchSyncMock = vi.fn<[], Promise<boolean>>();
+const autoLaunchIsEnabledMock = vi.fn<[], Promise<boolean>>();
+
+const AutoLaunchManagerMock = vi.fn(() => ({
+  sync: autoLaunchSyncMock,
+  isEnabled: autoLaunchIsEnabledMock,
+}));
+
+const createDevTrayDestroyMock = vi.fn();
+const createDevTrayMock = vi.fn(() =>
+  Promise.resolve({ destroy: createDevTrayDestroyMock } as unknown as ReturnType<typeof TrayMock>),
+);
+
+vi.mock('../src/lifecycle/auto-launch.js', () => ({
+  AutoLaunchManager: AutoLaunchManagerMock,
+}));
+
+vi.mock('../src/lifecycle/dev-tray.js', () => ({
+  createDevTray: createDevTrayMock,
 }));
 
 const flushPromises = async () => {
@@ -260,7 +295,11 @@ describe('main process bootstrap', () => {
     appEmitter.whenReady.mockReset();
     appEmitter.requestSingleInstanceLock.mockReset();
     appEmitter.quit.mockReset();
-    appEmitter.getPath.mockClear();
+    appEmitter.getPath.mockReset();
+    appEmitter.getPath.mockImplementation((name: string) =>
+      name === 'exe' ? '/tmp/aiembodied-test/app.exe' : '/tmp/aiembodied-test',
+    );
+    appEmitter.isPackaged = false;
 
     whenReadyDeferred = createDeferred<void>();
     appEmitter.whenReady.mockImplementation(() => whenReadyDeferred.promise);
@@ -289,6 +328,24 @@ describe('main process bootstrap', () => {
     listMessagesMock.mockReturnValue([]);
     getSessionWithMessagesMock.mockReturnValue(null);
     getValueMock.mockReturnValue(null);
+
+    AutoLaunchManagerMock.mockClear();
+    autoLaunchSyncMock.mockReset();
+    autoLaunchIsEnabledMock.mockReset();
+    autoLaunchSyncMock.mockResolvedValue(false);
+    autoLaunchIsEnabledMock.mockResolvedValue(false);
+
+    createDevTrayMock.mockClear();
+    createDevTrayDestroyMock.mockReset();
+    createDevTrayMock.mockImplementation(() =>
+      Promise.resolve({ destroy: createDevTrayDestroyMock } as unknown as ReturnType<typeof TrayMock>),
+    );
+
+    TrayMock.mockClear();
+    trayDestroyMock.mockReset();
+    nativeImageMock.createFromDataURL.mockClear();
+    nativeImageMock.createEmpty.mockClear();
+    menuBuildFromTemplateMock.mockClear();
   });
 
   it('quits when another instance already holds the lock', async () => {
@@ -373,6 +430,13 @@ describe('main process bootstrap', () => {
     await serviceReady.promise;
 
     expect(loadMock).toHaveBeenCalledTimes(1);
+    expect(AutoLaunchManagerMock).toHaveBeenCalledWith({
+      logger: mockLogger,
+      appName: 'AI Embodied Assistant',
+      appPath: '/tmp/aiembodied-test/app.exe',
+    });
+    expect(autoLaunchSyncMock).toHaveBeenCalledWith(false);
+    expect(createDevTrayMock).toHaveBeenCalledTimes(1);
     expect(WakeWordServiceMock).toHaveBeenCalledTimes(1);
     expect(WakeWordServiceMock.mock.calls[0][0]).toMatchObject({
       logger: mockLogger,
@@ -493,6 +557,7 @@ describe('main process bootstrap', () => {
     expect(wakeWordService.dispose).toHaveBeenCalledTimes(1);
     await expect(wakeWordService.dispose.mock.results[0].value).resolves.toBeUndefined();
     expect(memoryStoreDisposeMock).toHaveBeenCalledTimes(1);
+    expect(createDevTrayDestroyMock).toHaveBeenCalledTimes(1);
 
     appEmitter.emit('window-all-closed');
     expect(appEmitter.quit).toHaveBeenCalledTimes(1);

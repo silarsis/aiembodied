@@ -6,7 +6,9 @@
   "scripts": {
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "build": "pnpm -r build",
+    "dist": "pnpm build && electron-builder --config electron-builder.yml"
   },
   "devDependencies": {
     "@eslint/js": "^8.57.1",
@@ -29,7 +31,8 @@
     "typescript-eslint": "^7.5.0",
     "vite": "^5.2.8",
     "vitest": "^1.4.0",
-    "@vitest/coverage-v8": "^1.6.1"
+    "@vitest/coverage-v8": "^1.6.1",
+    "electron-builder": "^26.0.12"
   },
   "packageManager": "pnpm@9.12.0"
 }
