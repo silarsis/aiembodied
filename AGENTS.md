@@ -32,7 +32,7 @@ Track progress against `plan.md` here. Update the status markers (`[ ]` incomple
 - [x] 1. Configuration & Secrets Foundation
 - [x] 2. Logging & Crash Guard Infrastructure
 - [x] 3. Wake Word Service (Porcupine Worker) — Worker entrypoint adjusted for ts-node dev usage
-- [ ] 4. Audio Graph & Device Management
+- [x] 4. Audio Graph & Device Management
 - [ ] 5. Realtime Client (WebRTC Loop)
 - [ ] 6. Viseme Driver MVP
 - [ ] 7. Avatar Renderer (2D Canvas)

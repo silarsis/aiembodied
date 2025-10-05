@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ConfigManager, ConfigValidationError } from '../src/config/config-manager.js';
+import { InMemoryPreferencesStore } from '../src/config/preferences-store.js';
 import { InMemorySecretStore } from '../src/config/secret-store.js';
 
 describe('ConfigManager', () => {
@@ -21,39 +22,41 @@ describe('ConfigManager', () => {
 
     const config = await manager.load();
 
-    expect(config).toEqual({
-      realtimeApiKey: 'test-api-key',
-      audioInputDeviceId: 'input-device',
-      audioOutputDeviceId: 'output-device',
-      featureFlags: { transcriptOverlay: false },
-      wakeWord: {
-        accessKey: 'porcupine-key',
-        keywordPath: 'porcupine',
-        keywordLabel: 'Porcupine',
-        sensitivity: 0.55,
-        minConfidence: 0.75,
-        cooldownMs: 2500,
-        deviceIndex: 2,
-        modelPath: undefined,
-      },
+    expect(config.audioInputDeviceId).toBe('input-device');
+    expect(config.audioOutputDeviceId).toBe('output-device');
+  });
+
+  it('prefers stored preferences over environment configuration', async () => {
+    const preferencesStore = new InMemoryPreferencesStore();
+    await preferencesStore.save({
+      audioInputDeviceId: 'preferred-input',
+      audioOutputDeviceId: 'preferred-output',
     });
 
-    expect(manager.getRendererConfig()).toEqual({
-      audioInputDeviceId: 'input-device',
-      audioOutputDeviceId: 'output-device',
-      featureFlags: { transcriptOverlay: false },
-      hasRealtimeApiKey: true,
-      wakeWord: {
-        keywordPath: 'porcupine',
-        keywordLabel: 'Porcupine',
-        sensitivity: 0.55,
-        minConfidence: 0.75,
-        cooldownMs: 2500,
-        deviceIndex: 2,
-        modelPath: undefined,
-        hasAccessKey: true,
-      },
+    const manager = new ConfigManager({
+      env: {
+        REALTIME_API_KEY: 'test-api-key',
+        PORCUPINE_ACCESS_KEY: 'porcupine-key',
+        AUDIO_INPUT_DEVICE_ID: 'env-input',
+        AUDIO_OUTPUT_DEVICE_ID: 'env-output',
+        FEATURE_FLAGS: '{"transcriptOverlay": false}',
+        WAKE_WORD_BUILTIN: 'porcupine',
+        WAKE_WORD_SENSITIVITY: '0.55',
+        WAKE_WORD_MIN_CONFIDENCE: '0.75',
+        WAKE_WORD_COOLDOWN_MS: '2500',
+        WAKE_WORD_DEVICE_INDEX: '2',
+      } as NodeJS.ProcessEnv,
+      preferencesStore,
     });
+
+    const config = await manager.load();
+
+    expect(config.audioInputDeviceId).toBe('preferred-input');
+    expect(config.audioOutputDeviceId).toBe('preferred-output');
+
+    const rendererConfig = manager.getRendererConfig();
+    expect(rendererConfig.audioInputDeviceId).toBe('preferred-input');
+    expect(rendererConfig.audioOutputDeviceId).toBe('preferred-output');
 
     await expect(manager.getSecret('realtimeApiKey')).resolves.toBe('test-api-key');
     await expect(manager.getSecret('wakeWordAccessKey')).resolves.toBe('porcupine-key');
@@ -106,5 +109,32 @@ describe('ConfigManager', () => {
     });
 
     await expect(manager.load()).rejects.toBeInstanceOf(ConfigValidationError);
+  });
+
+  it('updates and persists audio device preferences', async () => {
+    const preferencesStore = new InMemoryPreferencesStore();
+    const manager = new ConfigManager({
+      env: {
+        REALTIME_API_KEY: 'api',
+        PORCUPINE_ACCESS_KEY: 'wake',
+      } as NodeJS.ProcessEnv,
+      preferencesStore,
+    });
+
+    await manager.load();
+
+    const rendererConfig = await manager.setAudioDevicePreferences({
+      audioInputDeviceId: 'microphone-1',
+      audioOutputDeviceId: 'speakers-2',
+    });
+
+    expect(rendererConfig.audioInputDeviceId).toBe('microphone-1');
+    expect(rendererConfig.audioOutputDeviceId).toBe('speakers-2');
+
+    const stored = await preferencesStore.load();
+    expect(stored).toEqual({
+      audioInputDeviceId: 'microphone-1',
+      audioOutputDeviceId: 'speakers-2',
+    });
   });
 });

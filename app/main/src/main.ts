@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { ConfigManager, ConfigValidationError, type ConfigSecretKey } from './config/config-manager.js';
 import { KeytarSecretStore } from './config/keytar-secret-store.js';
 import { InMemorySecretStore } from './config/secret-store.js';
+import { FilePreferencesStore } from './config/preferences-store.js';
 import { initializeLogger } from './logging/logger.js';
 import { CrashGuard } from './crash-guard.js';
 import { WakeWordService } from './wake-word/wake-word-service.js';
@@ -19,9 +20,7 @@ if (!isProduction) {
 }
 
 const secretStore = isProduction ? new KeytarSecretStore('aiembodied') : new InMemorySecretStore();
-const configManager = new ConfigManager({ secretStore });
 const { logger } = initializeLogger();
-
 let mainWindow: BrowserWindow | null = null;
 let wakeWordService: WakeWordService | null = null;
 
@@ -62,9 +61,12 @@ const crashGuard = new CrashGuard({
   logger,
 });
 
-function registerIpcHandlers() {
-  ipcMain.handle('config:get', () => configManager.getRendererConfig());
-  ipcMain.handle('config:get-secret', (_event, key: ConfigSecretKey) => configManager.getSecret(key));
+function registerIpcHandlers(manager: ConfigManager) {
+  ipcMain.handle('config:get', () => manager.getRendererConfig());
+  ipcMain.handle('config:get-secret', (_event, key: ConfigSecretKey) => manager.getSecret(key));
+  ipcMain.handle('config:set-audio-devices', (_event, preferences) =>
+    manager.setAudioDevicePreferences(preferences),
+  );
 }
 
 function focusExistingWindow() {
@@ -95,8 +97,13 @@ if (!gotLock) {
 }
 
 app.whenReady().then(async () => {
+  const manager = new ConfigManager({
+    secretStore,
+    preferencesStore: new FilePreferencesStore(path.join(app.getPath('userData'), 'preferences.json')),
+  });
+
   try {
-    await configManager.load();
+    await manager.load();
   } catch (error) {
     const message =
       error instanceof ConfigValidationError || error instanceof Error
@@ -108,7 +115,7 @@ app.whenReady().then(async () => {
     return;
   }
 
-  const appConfig = configManager.getConfig();
+  const appConfig = manager.getConfig();
 
   wakeWordService = new WakeWordService({
     logger,
@@ -154,7 +161,7 @@ app.whenReady().then(async () => {
     });
   }
 
-  registerIpcHandlers();
+  registerIpcHandlers(manager);
   const window = createWindow();
   crashGuard.watch(window);
 

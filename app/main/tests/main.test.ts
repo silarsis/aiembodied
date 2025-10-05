@@ -37,12 +37,16 @@ const loadMock = vi.fn();
 const getConfigMock = vi.fn();
 const getRendererConfigMock = vi.fn();
 const getSecretMock = vi.fn();
+const setAudioDevicePreferencesMock = vi.fn();
+const loadPreferencesMock = vi.fn();
+const savePreferencesMock = vi.fn();
 
 const ConfigManagerMock = vi.fn(() => ({
   load: loadMock,
   getConfig: getConfigMock,
   getRendererConfig: getRendererConfigMock,
   getSecret: getSecretMock,
+  setAudioDevicePreferences: setAudioDevicePreferencesMock,
 }));
 
 class ConfigValidationErrorMock extends Error {
@@ -63,6 +67,15 @@ vi.mock('../src/config/keytar-secret-store.js', () => ({
 
 vi.mock('../src/config/secret-store.js', () => ({
   InMemorySecretStore: vi.fn(),
+}));
+
+const FilePreferencesStoreMock = vi.fn(() => ({
+  load: loadPreferencesMock,
+  save: savePreferencesMock,
+}));
+
+vi.mock('../src/config/preferences-store.js', () => ({
+  FilePreferencesStore: FilePreferencesStoreMock,
 }));
 
 class WakeWordServiceDouble extends EventEmitter {
@@ -142,6 +155,7 @@ const appEmitter = Object.assign(new EventEmitter(), {
   whenReady: vi.fn<[], Promise<void>>(),
   requestSingleInstanceLock: vi.fn(() => true),
   quit: vi.fn(),
+  getPath: vi.fn(() => '/tmp/aiembodied-test'),
 });
 
 vi.mock('electron', () => ({
@@ -186,6 +200,10 @@ describe('main process bootstrap', () => {
     getConfigMock.mockReset();
     getRendererConfigMock.mockReset();
     getSecretMock.mockReset();
+    setAudioDevicePreferencesMock.mockReset();
+    loadPreferencesMock.mockReset();
+    savePreferencesMock.mockReset();
+    FilePreferencesStoreMock.mockReset();
     ConfigManagerMock.mockClear();
 
     WakeWordServiceMock.mockReset();
@@ -208,6 +226,7 @@ describe('main process bootstrap', () => {
     appEmitter.whenReady.mockReset();
     appEmitter.requestSingleInstanceLock.mockReset();
     appEmitter.quit.mockReset();
+    appEmitter.getPath.mockClear();
 
     whenReadyDeferred = createDeferred<void>();
     appEmitter.whenReady.mockImplementation(() => whenReadyDeferred.promise);
@@ -272,6 +291,7 @@ describe('main process bootstrap', () => {
     loadMock.mockResolvedValue(config);
     getConfigMock.mockReturnValue(config);
     getRendererConfigMock.mockReturnValue({ hasRealtimeApiKey: true });
+    setAudioDevicePreferencesMock.mockResolvedValue({ hasRealtimeApiKey: true });
 
     const serviceReady = createDeferred<void>();
     WakeWordServiceMock.mockImplementation((options: unknown) => {
@@ -314,7 +334,7 @@ describe('main process bootstrap', () => {
     expect(crashGuardInstances).toHaveLength(1);
     expect(crashGuardInstances[0].watch).toHaveBeenCalledWith(mainWindow);
 
-    expect(ipcMainMock.handle).toHaveBeenCalledTimes(2);
+    expect(ipcMainMock.handle).toHaveBeenCalledTimes(3);
     const [configChannel, configHandler] = ipcMainMock.handle.mock.calls[0];
     expect(configChannel).toBe('config:get');
     expect(configHandler()).toEqual({ hasRealtimeApiKey: true });
@@ -324,6 +344,14 @@ describe('main process bootstrap', () => {
     getSecretMock.mockResolvedValueOnce('secret');
     await expect(secretHandler({}, 'realtimeApiKey')).resolves.toBe('secret');
     expect(getSecretMock).toHaveBeenCalledWith('realtimeApiKey');
+
+    const [deviceChannel, deviceHandler] = ipcMainMock.handle.mock.calls[2];
+    expect(deviceChannel).toBe('config:set-audio-devices');
+    await deviceHandler({}, { audioInputDeviceId: 'mic', audioOutputDeviceId: 'spk' });
+    expect(setAudioDevicePreferencesMock).toHaveBeenCalledWith({
+      audioInputDeviceId: 'mic',
+      audioOutputDeviceId: 'spk',
+    });
 
     const wakePayload = { keywordLabel: 'Porcupine', confidence: 0.92, timestamp: Date.now() };
     wakeWordService.emit('wake', wakePayload);
