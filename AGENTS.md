@@ -51,3 +51,4 @@ Keep this checklist accurate; it is the authoritative tracker for execution stat
 - 2025-10-05 — Added integration tests for the main process bootstrap and Porcupine worker to raise coverage across wake word orchestration.
 - 2025-10-04 — Added Vitest coverage instrumentation and validated preload bridge ping wiring via renderer tests.
 - 2025-10-06 — Introduced a pull request template checklist to enforce lint, typecheck, and test runs before merges.
+- 2025-10-07 — Refreshed the README with a full project overview and setup instructions sourced from PRD/architecture docs.
