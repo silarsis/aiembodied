@@ -16,6 +16,8 @@ import type {
   ConversationSession,
 } from './conversation/types.js';
 import { MemoryStore } from './memory/index.js';
+import { PrometheusCollector } from './metrics/prometheus-collector.js';
+import type { LatencyObservation } from './metrics/types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,6 +35,7 @@ let wakeWordService: WakeWordService | null = null;
 let memoryStore: MemoryStore | null = null;
 let conversationManager: ConversationManager | null = null;
 let removeConversationListeners: (() => void) | null = null;
+let metricsCollector: PrometheusCollector | null = null;
 
 const createWindow = () => {
   const window = new BrowserWindow({
@@ -85,7 +88,11 @@ const crashGuard = new CrashGuard({
   logger,
 });
 
-function registerIpcHandlers(manager: ConfigManager, conversation: ConversationManager | null) {
+function registerIpcHandlers(
+  manager: ConfigManager,
+  conversation: ConversationManager | null,
+  metrics: PrometheusCollector | null,
+) {
   ipcMain.handle('config:get', () => manager.getRendererConfig());
   ipcMain.handle('config:get-secret', (_event, key: ConfigSecretKey) => manager.getSecret(key));
   ipcMain.handle('config:set-audio-devices', (_event, preferences) =>
@@ -102,6 +109,18 @@ function registerIpcHandlers(manager: ConfigManager, conversation: ConversationM
       throw new Error('Conversation manager is not initialized.');
     }
     return conversation.appendMessage(payload);
+  });
+  ipcMain.handle('metrics:observe-latency', (_event, payload: LatencyObservation) => {
+    if (!metrics) {
+      return false;
+    }
+
+    if (!payload || typeof payload.valueMs !== 'number') {
+      throw new Error('Invalid latency observation payload received.');
+    }
+
+    metrics.observeLatency(payload.metric, payload.valueMs);
+    return true;
   });
 }
 
@@ -167,6 +186,23 @@ app.whenReady().then(async () => {
 
   const appConfig = manager.getConfig();
 
+  if (appConfig.metrics.enabled) {
+    metricsCollector = new PrometheusCollector({
+      host: appConfig.metrics.host,
+      port: appConfig.metrics.port,
+      path: appConfig.metrics.path,
+      logger,
+    });
+
+    try {
+      await metricsCollector.start();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Failed to start metrics exporter', { message });
+      metricsCollector = null;
+    }
+  }
+
   wakeWordService = new WakeWordService({
     logger,
     cooldownMs: appConfig.wakeWord.cooldownMs,
@@ -225,7 +261,7 @@ app.whenReady().then(async () => {
     });
   }
 
-  registerIpcHandlers(manager, conversationManager);
+  registerIpcHandlers(manager, conversationManager, metricsCollector);
 
   if (conversationManager) {
     const sessionListener = (session: ConversationSession) => {
@@ -279,4 +315,11 @@ app.on('before-quit', () => {
     removeConversationListeners();
   }
   conversationManager = null;
+  if (metricsCollector) {
+    void metricsCollector.stop().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('Failed to stop metrics exporter cleanly', { message });
+    });
+    metricsCollector = null;
+  }
 });

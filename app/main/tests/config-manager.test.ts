@@ -96,6 +96,27 @@ describe('ConfigManager', () => {
     });
   });
 
+  it('parses metrics configuration from environment variables', async () => {
+    const manager = new ConfigManager({
+      env: {
+        REALTIME_API_KEY: 'key',
+        PORCUPINE_ACCESS_KEY: 'wake-key',
+        METRICS_ENABLED: 'true',
+        METRICS_HOST: '0.0.0.0',
+        METRICS_PORT: '9100',
+        METRICS_PATH: 'metrics-endpoint',
+      } as NodeJS.ProcessEnv,
+    });
+
+    const config = await manager.load();
+    expect(config.metrics).toEqual({
+      enabled: true,
+      host: '0.0.0.0',
+      port: 9100,
+      path: '/metrics-endpoint',
+    });
+  });
+
   it('throws a validation error when the realtime api key is missing', async () => {
     const manager = new ConfigManager({
       env: { PORCUPINE_ACCESS_KEY: 'wake-key' } as NodeJS.ProcessEnv,

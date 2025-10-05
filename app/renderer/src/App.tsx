@@ -15,6 +15,8 @@ import type { ConversationSessionWithMessages } from '../../main/src/conversatio
 import { useAudioDevices } from './hooks/use-audio-devices.js';
 import { getPreloadApi, type PreloadApi } from './preload-api.js';
 import { RealtimeClient, type RealtimeClientState } from './realtime/realtime-client.js';
+import { LatencyTracker, type LatencySnapshot } from './metrics/latency-tracker.js';
+import type { LatencyMetricName } from '../../main/src/metrics/types.js';
 
 const CURSOR_IDLE_TIMEOUT_MS = 3000;
 const WAKE_ACTIVE_DURATION_MS = 4000;
@@ -44,6 +46,14 @@ function toTranscriptSpeaker(role: string): TranscriptSpeaker | null {
   }
 
   return null;
+}
+
+function formatLatency(value?: number): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '—';
+  }
+
+  return `${(value / 1000).toFixed(2)}s`;
 }
 
 function useAudioGraphState(inputDeviceId?: string, enabled = true) {
@@ -275,6 +285,34 @@ export default function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
   const messageIdsRef = useRef<Set<string>>(new Set());
+  const latencyTrackerRef = useRef<LatencyTracker>(new LatencyTracker());
+  const [latencySnapshot, setLatencySnapshot] = useState<LatencySnapshot | null>(null);
+
+  const pushLatency = useCallback(
+    (snapshot: LatencySnapshot) => {
+      if (!api?.metrics) {
+        return;
+      }
+
+      const entries: Array<[LatencyMetricName, number]> = [];
+      if (typeof snapshot.wakeToCaptureMs === 'number') {
+        entries.push(['wake_to_capture_ms', snapshot.wakeToCaptureMs]);
+      }
+      if (typeof snapshot.captureToFirstAudioMs === 'number') {
+        entries.push(['capture_to_first_audio_ms', snapshot.captureToFirstAudioMs]);
+      }
+      if (typeof snapshot.wakeToFirstAudioMs === 'number') {
+        entries.push(['wake_to_first_audio_ms', snapshot.wakeToFirstAudioMs]);
+      }
+
+      for (const [metric, value] of entries) {
+        api.metrics
+          .observeLatency(metric, value)
+          .catch((error) => console.error('Failed to report latency metric', metric, error));
+      }
+    },
+    [api?.metrics],
+  );
 
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
@@ -387,6 +425,13 @@ export default function App() {
             });
           }
         },
+        onFirstAudioFrame: () => {
+          const snapshot = latencyTrackerRef.current.recordFirstAudio(Date.now(), activeSessionIdRef.current);
+          if (snapshot) {
+            setLatencySnapshot((previous) => ({ ...(previous ?? {}), ...snapshot }));
+            pushLatency(snapshot);
+          }
+        },
         onLog: (entry) => {
           const prefix = '[RealtimeClient]';
           if (entry.level === 'error') {
@@ -399,7 +444,7 @@ export default function App() {
         },
       },
     });
-  }, [hasRealtimeSupport]);
+  }, [hasRealtimeSupport, pushLatency]);
 
   useEffect(() => {
     const driver = new VisemeDriver({
@@ -566,6 +611,7 @@ export default function App() {
   }, [configInputDeviceId, configOutputDeviceId]);
 
   const audioGraph = useAudioGraphState(selectedInput || undefined, !loadingConfig);
+  const previousSpeechActiveRef = useRef(audioGraph.isActive);
 
   useEffect(() => {
     if (!api || !hasRealtimeApiKey || !hasRealtimeSupport) {
@@ -597,6 +643,18 @@ export default function App() {
       cancelled = true;
     };
   }, [api, hasRealtimeApiKey, hasRealtimeSupport]);
+
+  useEffect(() => {
+    const wasActive = previousSpeechActiveRef.current;
+    if (!wasActive && audioGraph.isActive) {
+      const snapshot = latencyTrackerRef.current.recordCapture(Date.now(), activeSessionIdRef.current);
+      if (snapshot) {
+        setLatencySnapshot((previous) => ({ ...(previous ?? {}), ...snapshot }));
+        pushLatency(snapshot);
+      }
+    }
+    previousSpeechActiveRef.current = audioGraph.isActive;
+  }, [audioGraph.isActive, pushLatency]);
 
   useEffect(() => {
     if (!realtimeClient) {
@@ -669,6 +727,8 @@ export default function App() {
         text: `Wake word detected (${event.keywordLabel}) — confidence ${(event.confidence * 100).toFixed(0)}%`,
         timestamp: event.timestamp,
       });
+      latencyTrackerRef.current.beginCycle(event.timestamp, event.sessionId ?? null);
+      setLatencySnapshot(null);
       setWakeState('awake');
       if (wakeResetTimeoutRef.current) {
         clearTimeout(wakeResetTimeoutRef.current);
@@ -836,6 +896,8 @@ export default function App() {
   const audioVariant = audioGraph.status === 'error' ? 'error' : audioGraph.isActive ? 'active' : 'idle';
   const deviceVariant = deviceError ? 'error' : inputs.length > 0 ? 'active' : 'idle';
   const deviceStatusLabel = deviceError ? `Error — ${deviceError}` : inputs.length > 0 ? 'Devices ready' : 'Scanning…';
+  const showDeveloperHud = Boolean(config?.featureFlags?.metricsHud);
+  const hudSnapshot = latencySnapshot ?? latencyTrackerRef.current.getLastSnapshot();
 
   return (
     <main
@@ -979,6 +1041,26 @@ export default function App() {
           data-testid="transcript-overlay"
         >
           <TranscriptOverlay entries={transcriptEntries} />
+        </aside>
+      ) : null}
+
+      {showDeveloperHud ? (
+        <aside className="kiosk__hud" aria-label="Latency metrics HUD">
+          <h2 className="kiosk__hudTitle">Latency</h2>
+          <dl className="kiosk__hudMetrics">
+            <div>
+              <dt>Wake → Capture</dt>
+              <dd>{formatLatency(hudSnapshot?.wakeToCaptureMs)}</dd>
+            </div>
+            <div>
+              <dt>Capture → First audio</dt>
+              <dd>{formatLatency(hudSnapshot?.captureToFirstAudioMs)}</dd>
+            </div>
+            <div>
+              <dt>Wake → First audio</dt>
+              <dd>{formatLatency(hudSnapshot?.wakeToFirstAudioMs)}</dd>
+            </div>
+          </dl>
         </aside>
       ) : null}
 

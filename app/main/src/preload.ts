@@ -8,6 +8,7 @@ import type {
   ConversationSession,
 } from './conversation/types.js';
 import type { WakeWordDetectionEvent } from './wake-word/types.js';
+import type { LatencyMetricName } from './metrics/types.js';
 
 export interface ConfigBridge {
   get(): Promise<RendererConfig>;
@@ -19,6 +20,7 @@ export interface PreloadApi {
   config: ConfigBridge;
   wakeWord: WakeWordBridge;
   conversation?: ConversationBridge;
+  metrics?: MetricsBridge;
   ping(): string;
 }
 
@@ -31,6 +33,10 @@ export interface ConversationBridge {
   appendMessage(message: ConversationAppendMessagePayload): Promise<ConversationMessage>;
   onSessionStarted(listener: (session: ConversationSession) => void): () => void;
   onMessageAppended(listener: (message: ConversationMessage) => void): () => void;
+}
+
+export interface MetricsBridge {
+  observeLatency(metric: LatencyMetricName, valueMs: number): Promise<void>;
 }
 
 const api: PreloadApi = {
@@ -69,6 +75,11 @@ const api: PreloadApi = {
       return () => {
         ipcRenderer.removeListener(channel, handler);
       };
+    },
+  },
+  metrics: {
+    observeLatency: async (metric, valueMs) => {
+      await ipcRenderer.invoke('metrics:observe-latency', { metric, valueMs });
     },
   },
   ping: () => 'pong',
