@@ -35,7 +35,7 @@ Track progress against `plan.md` here. Update the status markers (`[ ]` incomple
 - [x] 4. Audio Graph & Device Management
 - [x] 5. Realtime Client (WebRTC Loop)
 - [x] 6. Viseme Driver MVP
-- [ ] 7. Avatar Renderer (2D Canvas)
+- [x] 7. Avatar Renderer (2D Canvas)
 - [ ] 8. Transcript Overlay & UI Shell
 - [ ] 9. Memory Store (SQLite)
 - [ ] 10. Persistence in Conversation Loop
