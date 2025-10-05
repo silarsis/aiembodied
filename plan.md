@@ -122,7 +122,16 @@ The following phased plan covers the MVP described in the PRD and architecture s
   - Integration test using mocked Home Assistant server verifying bidirectional communication.
   - Manual QA: validate AI receives sample event notifications and can toggle a permitted device.
 
-## 15. Future Unity Integration Prep (Stretch)
+## 15. Avatar Configuration Tool
+- Build a configuration tool allowing upload of a single cartoon face image and auto-generate required avatar sprite components (eyes, mouth shapes, idle frames).
+- Integrate asset slicing and viseme mapping so generated components align with Viseme Driver expectations.
+- Update renderer pipeline to consume generated assets dynamically via configuration output.
+- Tests to pass:
+  - Unit tests covering asset slicing logic and configuration schema validation.
+  - Integration test ensuring uploaded face produces functional animation in avatar renderer with sample viseme stream.
+  - Manual QA: import sample cartoon face and verify end-to-end animation with wake word conversation.
+
+## 16. Future Unity Integration Prep (Stretch)
 - Define IPC contract (WebSocket or gRPC) for viseme stream transmission to Unity process.
 - Provide reference Unity stub consuming `VisemeFrame` to render simple 3D mouth movement.
 - Tests to pass:
