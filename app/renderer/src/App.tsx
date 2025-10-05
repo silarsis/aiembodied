@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import type { RendererConfig } from '../../main/src/config/config-manager.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
 import { AudioGraph } from './audio/audio-graph.js';
+import { VisemeDriver, type VisemeFrame } from './audio/viseme-driver.js';
 import { useAudioDevices } from './hooks/use-audio-devices.js';
 import { getPreloadApi, type PreloadApi } from './preload-api.js';
 import { RealtimeClient, type RealtimeClientState } from './realtime/realtime-client.js';
@@ -108,6 +109,8 @@ export default function App() {
   const [realtimeKey, setRealtimeKey] = useState<string | null>(null);
   const [realtimeKeyError, setRealtimeKeyError] = useState<string | null>(null);
   const [realtimeState, setRealtimeState] = useState<RealtimeClientState>({ status: 'idle' });
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [visemeFrame, setVisemeFrame] = useState<VisemeFrame | null>(null);
 
   const { inputs, outputs, error: deviceError, refresh: refreshDevices } = useAudioDevices();
 
@@ -120,6 +123,7 @@ export default function App() {
   const hasRealtimeApiKey = config?.hasRealtimeApiKey ?? false;
 
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
+  const visemeDriverRef = useRef<VisemeDriver | null>(null);
   const realtimeClient = useMemo(() => {
     if (!hasRealtimeSupport) {
       return null;
@@ -129,6 +133,7 @@ export default function App() {
       callbacks: {
         onStateChange: setRealtimeState,
         onRemoteStream: (stream) => {
+          setRemoteStream(stream);
           const element = remoteAudioRef.current;
           if (!element) {
             return;
@@ -157,6 +162,24 @@ export default function App() {
   }, [hasRealtimeSupport]);
 
   useEffect(() => {
+    const driver = new VisemeDriver({
+      onFrame: (frame) => {
+        setVisemeFrame(frame);
+      },
+      onError: (error) => {
+        console.error('Viseme driver error', error);
+      },
+    });
+
+    visemeDriverRef.current = driver;
+
+    return () => {
+      visemeDriverRef.current = null;
+      void driver.destroy();
+    };
+  }, []);
+
+  useEffect(() => {
     if (!realtimeClient) {
       return;
     }
@@ -165,6 +188,37 @@ export default function App() {
       void realtimeClient.destroy();
     };
   }, [realtimeClient]);
+
+  useEffect(() => {
+    const driver = visemeDriverRef.current;
+    if (!driver) {
+      return;
+    }
+
+    let disposed = false;
+
+    const attach = async () => {
+      try {
+        await driver.attachToStream(remoteStream);
+      } catch (error) {
+        if (!disposed) {
+          console.error('Failed to attach viseme driver', error);
+        }
+      }
+    };
+
+    void attach();
+
+    return () => {
+      disposed = true;
+    };
+  }, [remoteStream]);
+
+  useEffect(() => {
+    if (realtimeState.status === 'idle' || realtimeState.status === 'error') {
+      setRemoteStream(null);
+    }
+  }, [realtimeState.status]);
 
   useEffect(() => {
     if (!api) {
@@ -406,6 +460,14 @@ export default function App() {
         </div>
         <div>
           <span className="label">Realtime:</span> {realtimeStatusLabel}
+        </div>
+        <div>
+          <span className="label">Viseme:</span>{' '}
+          {visemeFrame
+            ? `v${visemeFrame.index} · ${(visemeFrame.intensity * 100).toFixed(0)}%${
+                visemeFrame.blink ? ' (blink)' : ''
+              }`
+            : 'idle'}
         </div>
       </section>
 
