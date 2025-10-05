@@ -2,6 +2,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { BuiltinKeyword } from '@picovoice/porcupine-node';
 import type { SecretStore } from './secret-store.js';
+import type { AudioDevicePreferences, PreferencesStore } from './preferences-store.js';
 
 export type FeatureFlags = Record<string, boolean>;
 
@@ -37,6 +38,7 @@ export type ConfigSecretKey = 'realtimeApiKey' | 'wakeWordAccessKey';
 
 export interface ConfigManagerOptions {
   secretStore?: SecretStore;
+  preferencesStore?: PreferencesStore;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -73,10 +75,12 @@ const DEFAULT_SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey', 'wakeWordAcces
 export class ConfigManager {
   private config: AppConfig | null = null;
   private readonly secretStore?: SecretStore;
+  private readonly preferencesStore?: PreferencesStore;
   private readonly env: NodeJS.ProcessEnv;
 
   constructor(options: ConfigManagerOptions = {}) {
     this.secretStore = options.secretStore;
+    this.preferencesStore = options.preferencesStore;
     this.env = options.env ?? process.env;
   }
 
@@ -87,6 +91,7 @@ export class ConfigManager {
 
     const realtimeApiKey = await this.resolveRealtimeApiKey();
     const wakeWordAccessKey = await this.resolveWakeWordAccessKey();
+    const storedPreferences = (await this.preferencesStore?.load()) ?? {};
 
     if (!realtimeApiKey) {
       throw new ConfigValidationError(
@@ -102,14 +107,37 @@ export class ConfigManager {
 
     const parsed = ConfigSchema.parse({
       realtimeApiKey,
-      audioInputDeviceId: this.env.AUDIO_INPUT_DEVICE_ID?.trim() || undefined,
-      audioOutputDeviceId: this.env.AUDIO_OUTPUT_DEVICE_ID?.trim() || undefined,
+      audioInputDeviceId:
+        this.normalizeDeviceId(storedPreferences.audioInputDeviceId) ??
+        (this.env.AUDIO_INPUT_DEVICE_ID?.trim() || undefined),
+      audioOutputDeviceId:
+        this.normalizeDeviceId(storedPreferences.audioOutputDeviceId) ??
+        (this.env.AUDIO_OUTPUT_DEVICE_ID?.trim() || undefined),
       featureFlags: this.parseFeatureFlags(this.env.FEATURE_FLAGS),
       wakeWord: this.parseWakeWordConfig({ accessKey: wakeWordAccessKey }),
     });
 
     this.config = parsed;
     return parsed;
+  }
+
+  async setAudioDevicePreferences(preferences: AudioDevicePreferences): Promise<RendererConfig> {
+    if (!this.config) {
+      throw new Error('ConfigManager.load() must be called before updating preferences.');
+    }
+
+    const audioInputDeviceId = this.normalizeDeviceId(preferences.audioInputDeviceId);
+    const audioOutputDeviceId = this.normalizeDeviceId(preferences.audioOutputDeviceId);
+
+    this.config = {
+      ...this.config,
+      audioInputDeviceId,
+      audioOutputDeviceId,
+    };
+
+    await this.preferencesStore?.save({ audioInputDeviceId, audioOutputDeviceId });
+
+    return this.getRendererConfig();
   }
 
   getConfig(): AppConfig {
@@ -216,6 +244,15 @@ export class ConfigManager {
     }
 
     return FeatureFlagsSchema.parse(flags);
+  }
+
+  private normalizeDeviceId(value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
   }
 
   private parseWakeWordConfig({ accessKey }: { accessKey: string }): WakeWordConfig {

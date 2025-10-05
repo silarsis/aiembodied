@@ -1,32 +1,321 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react';
+import type { RendererConfig } from '../../main/src/config/config-manager.js';
+import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
+import { AudioGraph } from './audio/audio-graph.js';
+import { useAudioDevices } from './hooks/use-audio-devices.js';
+import { getPreloadApi, type PreloadApi } from './preload-api.js';
 
-function usePing(): string {
-  const [value, setValue] = useState('...');
+type AudioGraphStatus = 'idle' | 'starting' | 'ready' | 'error';
+
+interface AudioGraphState {
+  level: number;
+  isActive: boolean;
+  status: AudioGraphStatus;
+  error: string | null;
+}
+
+function useAudioGraphState(inputDeviceId?: string, enabled = true) {
+  const [state, setState] = useState<AudioGraphState>({
+    level: 0,
+    isActive: false,
+    status: 'idle',
+    error: null,
+  });
+  const [upstreamStream, setUpstreamStream] = useState<MediaStream | null>(null);
 
   useEffect(() => {
-    const api = (window as unknown as { aiembodied?: { ping?: () => string } }).aiembodied;
-    if (typeof api?.ping === 'function') {
-      try {
-        setValue(api.ping());
-        return;
-      } catch (error) {
-        console.error('Failed to call preload ping bridge', error);
-      }
+    if (!enabled) {
+      setState((previous) => ({ ...previous, status: 'idle', error: null }));
+      setUpstreamStream(null);
+      return;
     }
 
-    setValue('unavailable');
+    const graph = new AudioGraph({
+      onLevel: (level) => {
+        setState((previous) => ({ ...previous, level }));
+      },
+      onSpeechActivityChange: (isActive) => {
+        setState((previous) => ({ ...previous, isActive }));
+      },
+    });
+
+    let disposed = false;
+
+    const startGraph = async () => {
+      setState((previous) => ({ ...previous, status: 'starting', error: null }));
+
+      try {
+        await graph.start({ inputDeviceId });
+        if (disposed) {
+          await graph.stop();
+          return;
+        }
+
+        setState((previous) => ({ ...previous, status: 'ready' }));
+        setUpstreamStream(graph.getUpstreamStream());
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!disposed) {
+          setState((previous) => ({ ...previous, status: 'error', error: message }));
+          setUpstreamStream(null);
+        }
+      }
+    };
+
+    void startGraph();
+
+    return () => {
+      disposed = true;
+      setUpstreamStream(null);
+      void graph.stop();
+    };
+  }, [inputDeviceId, enabled]);
+
+  return { ...state, upstreamStream };
+}
+
+function usePreloadBridge() {
+  const [api, setApi] = useState<PreloadApi | undefined>(undefined);
+  const [ping, setPing] = useState<'available' | 'unavailable'>('unavailable');
+
+  useEffect(() => {
+    const bridge = getPreloadApi();
+    setApi(bridge);
+    if (bridge) {
+      try {
+        const result = bridge.ping();
+        setPing(result === 'pong' ? 'available' : 'unavailable');
+      } catch (error) {
+        console.error('Failed to call preload ping bridge', error);
+        setPing('unavailable');
+      }
+    } else {
+      setPing('unavailable');
+    }
   }, []);
 
-  return value;
+  return { api, ping };
 }
 
 export default function App() {
-  const preloadStatus = usePing();
+  const { api, ping } = usePreloadBridge();
+  const [config, setConfig] = useState<RendererConfig | null>(null);
+  const [configError, setConfigError] = useState<string | null>(null);
+  const [loadingConfig, setLoadingConfig] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const { inputs, outputs, error: deviceError, refresh: refreshDevices } = useAudioDevices();
+
+  const [selectedInput, setSelectedInput] = useState('');
+  const [selectedOutput, setSelectedOutput] = useState('');
+
+  useEffect(() => {
+    if (!api) {
+      setConfigError('Renderer preload API is unavailable.');
+      setLoadingConfig(false);
+      return;
+    }
+
+    let cancelled = false;
+    api.config
+      .get()
+      .then((value) => {
+        if (cancelled) {
+          return;
+        }
+        setConfig(value);
+        setConfigError(null);
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : 'Failed to load renderer configuration.';
+        setConfigError(message);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingConfig(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  useEffect(() => {
+    if (!config) {
+      return;
+    }
+
+    setSelectedInput((previous) => {
+      const desired = config.audioInputDeviceId ?? '';
+      return previous === desired ? previous : desired;
+    });
+
+    setSelectedOutput((previous) => {
+      const desired = config.audioOutputDeviceId ?? '';
+      return previous === desired ? previous : desired;
+    });
+  }, [config?.audioInputDeviceId, config?.audioOutputDeviceId]);
+
+  const audioGraph = useAudioGraphState(selectedInput || undefined, !loadingConfig);
+
+  useEffect(() => {
+    if (audioGraph.status === 'ready') {
+      void refreshDevices();
+    }
+  }, [audioGraph.status, refreshDevices]);
+
+  const persistPreferences = useCallback(
+    async (preferences: AudioDevicePreferences) => {
+      if (!api) {
+        setSaveError('Cannot update audio preferences without preload bridge access.');
+        return;
+      }
+
+      setIsSaving(true);
+      setSaveError(null);
+
+      try {
+        const nextConfig = await api.config.setAudioDevicePreferences(preferences);
+        setConfig(nextConfig);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to persist audio device preferences.';
+        setSaveError(message);
+        throw error;
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [api],
+  );
+
+  const handleInputChange = useCallback(
+    async (event: ChangeEvent<HTMLSelectElement>) => {
+      const value = event.target.value;
+      setSelectedInput(value);
+
+      try {
+        await persistPreferences({
+          audioInputDeviceId: value || undefined,
+          audioOutputDeviceId: selectedOutput || undefined,
+        });
+      } catch (error) {
+        console.error('Failed to persist input device preference', error);
+      }
+    },
+    [persistPreferences, selectedOutput],
+  );
+
+  const handleOutputChange = useCallback(
+    async (event: ChangeEvent<HTMLSelectElement>) => {
+      const value = event.target.value;
+      setSelectedOutput(value);
+
+      try {
+        await persistPreferences({
+          audioInputDeviceId: selectedInput || undefined,
+          audioOutputDeviceId: value || undefined,
+        });
+      } catch (error) {
+        console.error('Failed to persist output device preference', error);
+      }
+    },
+    [persistPreferences, selectedInput],
+  );
+
+  const levelPercentage = useMemo(() => Math.min(100, Math.round(audioGraph.level * 100)), [audioGraph.level]);
+
+  const audioGraphStatusLabel = useMemo(() => {
+    switch (audioGraph.status) {
+      case 'starting':
+        return 'Starting microphone capture…';
+      case 'ready':
+        return audioGraph.isActive ? 'Listening (speech gate open)' : 'Idle (speech gate closed)';
+      case 'error':
+        return audioGraph.error ?? 'Audio capture error';
+      default:
+        return loadingConfig ? 'Waiting for configuration…' : 'Idle';
+    }
+  }, [audioGraph.status, audioGraph.isActive, audioGraph.error, loadingConfig]);
 
   return (
     <main className="app">
-      <h1>Embodied Assistant MVP</h1>
-      <p>Preload bridge status: {preloadStatus}</p>
+      <header className="app__header">
+        <h1>Embodied Assistant MVP</h1>
+        <p className="app__tagline">Audio device control &amp; capture pipeline</p>
+      </header>
+
+      <section className="app__status">
+        <div>
+          <span className="label">Preload bridge:</span> {ping === 'available' ? 'connected' : 'unavailable'}
+        </div>
+        <div>
+          <span className="label">Configuration:</span>{' '}
+          {loadingConfig ? 'loading…' : configError ? `error — ${configError}` : 'loaded'}
+        </div>
+        <div>
+          <span className="label">Audio graph:</span> {audioGraphStatusLabel}
+        </div>
+        <div>
+          <span className="label">Device scan:</span> {deviceError ? `error — ${deviceError}` : 'ok'}
+        </div>
+      </section>
+
+      <section className="app__controls">
+        <div className="control">
+          <label htmlFor="input-device">Microphone</label>
+          <select
+            id="input-device"
+            value={selectedInput}
+            onChange={handleInputChange}
+            disabled={isSaving || loadingConfig}
+          >
+            <option value="">System default</option>
+            {inputs.map((device) => (
+              <option key={device.deviceId} value={device.deviceId}>
+                {device.label || 'Microphone'}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="control">
+          <label htmlFor="output-device">Speakers</label>
+          <select
+            id="output-device"
+            value={selectedOutput}
+            onChange={handleOutputChange}
+            disabled={isSaving || loadingConfig}
+          >
+            <option value="">System default</option>
+            {outputs.map((device) => (
+              <option key={device.deviceId} value={device.deviceId}>
+                {device.label || 'Speaker'}
+              </option>
+            ))}
+          </select>
+        </div>
+      </section>
+
+      <section className="app__meter" aria-live="polite">
+        <div className="meter">
+          <div className="meter__fill" style={{ width: `${levelPercentage}%` }} />
+        </div>
+        <p className="meter__label">Input level: {levelPercentage}%</p>
+        <p className="meter__status">Speech gate: {audioGraph.isActive ? 'open' : 'closed'}</p>
+      </section>
+
+      {isSaving ? <p className="app__info">Saving audio preferences…</p> : null}
+      {saveError ? (
+        <p role="alert" className="app__error">
+          {saveError}
+        </p>
+      ) : null}
+      {audioGraph.status === 'error' && audioGraph.error ? (
+        <p role="alert" className="app__error">
+          {audioGraph.error}
+        </p>
+      ) : null}
     </main>
   );
 }
