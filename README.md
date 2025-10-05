@@ -41,6 +41,25 @@ Check `AGENTS.md` for the authoritative status checklist that mirrors these mile
 - Picovoice Porcupine access key (free tier available) for wake-word detection.
 - OpenAI Realtime API access with a corresponding key.
 
+#### Automated environment bootstrap
+
+To streamline installing the runtime prerequisites, run the helper script for your
+platform from the repository root:
+
+```powershell
+# Windows PowerShell
+.\scripts\setup-windows.ps1
+```
+
+```bash
+# macOS Terminal
+./scripts/setup-macos.sh
+```
+
+The scripts verify existing installations of Node.js and pnpm, upgrading them when
+necessary via the native package manager (`winget`/Chocolatey on Windows, Homebrew on
+macOS). When the checks pass you can continue with `pnpm install`.
+
 ### Clone & Install
 
 ```bash
