@@ -26,13 +26,27 @@ let wakeWordService: WakeWordService | null = null;
 
 const createWindow = () => {
   const window = new BrowserWindow({
-    width: 1024,
-    height: 768,
+    width: 1920,
+    height: 1080,
+    kiosk: isProduction,
+    fullscreen: !isProduction,
+    fullscreenable: true,
+    autoHideMenuBar: true,
+    backgroundColor: '#020617',
     webPreferences: {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+
+  if (!isProduction) {
+    window.webContents.on('before-input-event', (event, input) => {
+      if (input.type === 'keyDown' && input.key === 'Escape') {
+        event.preventDefault();
+        window.setFullScreen(false);
+      }
+    });
+  }
 
   const rendererDist = path.join(__dirname, '../../renderer/dist/index.html');
   window

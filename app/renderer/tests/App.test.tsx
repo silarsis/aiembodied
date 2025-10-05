@@ -64,6 +64,7 @@ describe('App component', () => {
   const enumerateDevicesMock = vi.fn();
   const getUserMediaMock = vi.fn();
   const setAudioDevicePreferencesMock = vi.fn();
+  let wakeListener: ((event: { keywordLabel: string; confidence: number }) => void) | undefined;
 
   beforeEach(() => {
     (window as unknown as { AudioContext: typeof AudioContext }).AudioContext = MockAudioContext as unknown as typeof AudioContext;
@@ -84,7 +85,7 @@ describe('App component', () => {
     setAudioDevicePreferencesMock.mockResolvedValue({
       audioInputDeviceId: 'mic-1',
       audioOutputDeviceId: '',
-      featureFlags: {},
+      featureFlags: { transcriptOverlay: true },
       hasRealtimeApiKey: true,
       wakeWord: {
         keywordPath: '',
@@ -98,6 +99,7 @@ describe('App component', () => {
       },
     });
 
+    wakeListener = undefined;
     console.error = vi.fn();
     console.warn = vi.fn();
     console.debug = vi.fn();
@@ -121,14 +123,14 @@ describe('App component', () => {
     }
   });
 
-  it('renders audio controls and persists preference changes', async () => {
+  it('renders kiosk UI, toggles transcript overlay, and persists device preferences', async () => {
     (window as PreloadWindow).aiembodied = {
       ping: () => 'pong',
       config: {
         get: vi.fn().mockResolvedValue({
           audioInputDeviceId: '',
           audioOutputDeviceId: '',
-          featureFlags: {},
+          featureFlags: { transcriptOverlay: true },
           hasRealtimeApiKey: true,
           wakeWord: {
             keywordPath: '',
@@ -145,7 +147,12 @@ describe('App component', () => {
         setAudioDevicePreferences: setAudioDevicePreferencesMock,
       },
       wakeWord: {
-        onWake: vi.fn(),
+        onWake: (listener: (event: { keywordLabel: string; confidence: number }) => void) => {
+          wakeListener = listener;
+          return () => {
+            wakeListener = undefined;
+          };
+        },
       },
     } as unknown as PreloadWindow['aiembodied'];
 
@@ -154,6 +161,19 @@ describe('App component', () => {
     await waitFor(() => {
       expect(enumerateDevicesMock).toHaveBeenCalled();
     });
+
+    expect(screen.getByTestId('wake-value')).toHaveTextContent(/Idle/i);
+    wakeListener?.({ keywordLabel: 'Picovoice', confidence: 0.88 });
+    await waitFor(() => {
+      expect(screen.getByTestId('wake-value')).toHaveTextContent(/Awake/i);
+    });
+
+    expect(screen.getByTestId('transcript-overlay')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('transcript-toggle'));
+    expect(screen.queryByTestId('transcript-overlay')).not.toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'T', code: 'KeyT', ctrlKey: true, shiftKey: true });
+    expect(screen.getByTestId('transcript-overlay')).toBeInTheDocument();
 
     const inputSelect = await screen.findByLabelText('Microphone');
     fireEvent.change(inputSelect, { target: { value: 'mic-1' } });
@@ -176,8 +196,7 @@ describe('App component', () => {
     });
 
     expect(screen.getByText(/Speech gate:/i)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /Avatar preview/i })).toBeInTheDocument();
-    expect(screen.getByText(/Real-time viseme mapping/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Embodied Assistant/i })).toBeInTheDocument();
   });
 
   it('surfaces configuration errors when preload bridge is unavailable', async () => {
