@@ -75,6 +75,8 @@ export class RealtimeClient {
 
   private currentApiKey: string | null = null;
 
+  private currentIceServers: RTCIceServer[] | null = null;
+
   private peer: RTCPeerConnection | null = null;
 
   private controlChannel: RTCDataChannel | null = null;
@@ -146,6 +148,7 @@ export class RealtimeClient {
 
     this.currentApiKey = options.apiKey;
     this.currentStream = options.inputStream;
+    this.currentIceServers = options.iceServers ?? null;
     this.reconnectAttempts = 0;
     this.shouldReconnect = true;
 
@@ -166,6 +169,7 @@ export class RealtimeClient {
     this.reconnectInFlight = false;
     this.currentStream = null;
     this.currentApiKey = null;
+    this.currentIceServers = null;
     this.cleanupPeer();
     this.updateState({ status: 'idle' });
   }
@@ -269,6 +273,7 @@ export class RealtimeClient {
 
     if (iceServers?.length) {
       this.log('info', 'Realtime API suggested ICE servers after negotiation', iceServers);
+      this.currentIceServers = iceServers;
     }
   }
 
@@ -339,7 +344,11 @@ export class RealtimeClient {
     this.reconnectAttempts = nextAttempt;
 
     try {
-      await this.establishConnection({ apiKey: this.currentApiKey, inputStream: this.currentStream });
+      await this.establishConnection({
+        apiKey: this.currentApiKey,
+        inputStream: this.currentStream,
+        iceServers: this.currentIceServers ?? undefined,
+      });
     } catch (error) {
       const message = describeError(error);
       if (this.reconnectAttempts >= this.maxReconnectAttempts) {
