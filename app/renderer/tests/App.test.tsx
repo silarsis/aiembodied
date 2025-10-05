@@ -57,6 +57,9 @@ describe('App component', () => {
   const originalAudioContext = window.AudioContext;
   const originalMediaDevices = navigator.mediaDevices;
   const originalConsoleError = console.error;
+  const originalConsoleWarn = console.warn;
+  const originalConsoleDebug = console.debug;
+  const originalPeerConnection = window.RTCPeerConnection;
 
   const enumerateDevicesMock = vi.fn();
   const getUserMediaMock = vi.fn();
@@ -96,6 +99,9 @@ describe('App component', () => {
     });
 
     console.error = vi.fn();
+    console.warn = vi.fn();
+    console.debug = vi.fn();
+    Reflect.deleteProperty(window as { RTCPeerConnection?: typeof RTCPeerConnection }, 'RTCPeerConnection');
   });
 
   afterEach(() => {
@@ -106,6 +112,13 @@ describe('App component', () => {
     getUserMediaMock.mockReset();
     setAudioDevicePreferencesMock.mockReset();
     console.error = originalConsoleError;
+    console.warn = originalConsoleWarn;
+    console.debug = originalConsoleDebug;
+    if (originalPeerConnection) {
+      (window as { RTCPeerConnection?: typeof RTCPeerConnection }).RTCPeerConnection = originalPeerConnection;
+    } else {
+      Reflect.deleteProperty(window as { RTCPeerConnection?: typeof RTCPeerConnection }, 'RTCPeerConnection');
+    }
   });
 
   it('renders audio controls and persists preference changes', async () => {
