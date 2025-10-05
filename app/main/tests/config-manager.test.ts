@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ConfigManager, ConfigValidationError } from '../src/config/config-manager.js';
 import { InMemoryPreferencesStore } from '../src/config/preferences-store.js';
 import { InMemorySecretStore } from '../src/config/secret-store.js';
@@ -138,6 +138,7 @@ describe('ConfigManager', () => {
       env: {
         REALTIME_API_KEY: 'api',
         PORCUPINE_ACCESS_KEY: 'wake',
+        WAKE_WORD_BUILTIN: 'porcupine',
       } as NodeJS.ProcessEnv,
       preferencesStore,
     });
@@ -157,5 +158,92 @@ describe('ConfigManager', () => {
       audioInputDeviceId: 'microphone-1',
       audioOutputDeviceId: 'speakers-2',
     });
+  });
+
+  it('updates secrets securely and refreshes renderer config state', async () => {
+    const secretStore = new InMemorySecretStore();
+    const manager = new ConfigManager({
+      env: {
+        REALTIME_API_KEY: 'initial-key',
+        PORCUPINE_ACCESS_KEY: 'initial-wake',
+        WAKE_WORD_BUILTIN: 'porcupine',
+      } as NodeJS.ProcessEnv,
+      secretStore,
+    });
+
+    await manager.load();
+
+    const rendererConfig = await manager.setSecret('realtimeApiKey', ' updated-key ');
+    expect(rendererConfig.hasRealtimeApiKey).toBe(true);
+    await expect(secretStore.getSecret('REALTIME_API_KEY')).resolves.toBe('updated-key');
+    await expect(manager.getSecret('realtimeApiKey')).resolves.toBe('updated-key');
+
+    const updatedConfig = await manager.setSecret('wakeWordAccessKey', '\tnew-porcupine-key\n');
+    expect(updatedConfig.wakeWord.hasAccessKey).toBe(true);
+    await expect(secretStore.getSecret('PORCUPINE_ACCESS_KEY')).resolves.toBe('new-porcupine-key');
+    await expect(manager.getSecret('wakeWordAccessKey')).resolves.toBe('new-porcupine-key');
+  });
+
+  it('throws when attempting to persist secrets without a configured store', async () => {
+    const manager = new ConfigManager({
+      env: {
+        REALTIME_API_KEY: 'initial',
+        PORCUPINE_ACCESS_KEY: 'wake',
+        WAKE_WORD_BUILTIN: 'porcupine',
+      } as NodeJS.ProcessEnv,
+    });
+
+    await manager.load();
+
+    await expect(manager.setSecret('realtimeApiKey', 'next')).rejects.toThrow('Secret store is not configured');
+  });
+
+  it('tests realtime api keys using the configured HTTP client', async () => {
+    const secretStore = new InMemorySecretStore();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    const manager = new ConfigManager({
+      env: {
+        REALTIME_API_KEY: 'live-key',
+        PORCUPINE_ACCESS_KEY: 'wake',
+        WAKE_WORD_BUILTIN: 'porcupine',
+      } as NodeJS.ProcessEnv,
+      secretStore,
+      fetchFn: fetchMock,
+    });
+
+    await manager.load();
+
+    const result = await manager.testSecret('realtimeApiKey');
+    expect(fetchMock).toHaveBeenCalledWith('https://api.openai.com/v1/models', expect.objectContaining({
+      method: 'GET',
+      headers: expect.objectContaining({ Authorization: 'Bearer live-key' }),
+    }));
+    expect(result).toEqual({ ok: true, message: 'Realtime API key verified successfully.' });
+  });
+
+  it('reports HTTP failures when validating wake word access keys', async () => {
+    const secretStore = new InMemorySecretStore();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 401 });
+    const manager = new ConfigManager({
+      env: {
+        REALTIME_API_KEY: 'api',
+        PORCUPINE_ACCESS_KEY: 'wake',
+        WAKE_WORD_BUILTIN: 'porcupine',
+      } as NodeJS.ProcessEnv,
+      secretStore,
+      fetchFn: fetchMock,
+    });
+
+    await manager.load();
+
+    const result = await manager.testSecret('wakeWordAccessKey');
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.picovoice.ai/api/v1/porcupine/validate',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer wake' }),
+      }),
+    );
+    expect(result).toEqual({ ok: false, message: 'Wake word service responded with HTTP 401' });
   });
 });

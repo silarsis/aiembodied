@@ -48,6 +48,9 @@ export interface ConfigManagerOptions {
   secretStore?: SecretStore;
   preferencesStore?: PreferencesStore;
   env?: NodeJS.ProcessEnv;
+  fetchFn?: typeof fetch;
+  realtimeTestEndpoint?: string;
+  wakeWordTestEndpoint?: string;
 }
 
 export class ConfigValidationError extends Error {
@@ -80,8 +83,11 @@ const MetricsSchema = z.object({
     .transform((value) => (value.startsWith('/') ? value : `/${value}`)),
 });
 
+const RealtimeApiKeySchema = z.string().min(1, 'Realtime API key is required');
+const WakeWordAccessKeySchema = z.string().min(1, 'Porcupine access key is required');
+
 const ConfigSchema = z.object({
-  realtimeApiKey: z.string().min(1, 'Realtime API key is required'),
+  realtimeApiKey: RealtimeApiKeySchema,
   audioInputDeviceId: z.string().optional(),
   audioOutputDeviceId: z.string().optional(),
   featureFlags: FeatureFlagsSchema.default({}),
@@ -96,11 +102,19 @@ export class ConfigManager {
   private readonly secretStore?: SecretStore;
   private readonly preferencesStore?: PreferencesStore;
   private readonly env: NodeJS.ProcessEnv;
+  private readonly fetchFn?: typeof fetch;
+  private readonly realtimeTestEndpoint: string;
+  private readonly wakeWordTestEndpoint: string;
+  private readonly secretTestTimeoutMs = 5000;
 
   constructor(options: ConfigManagerOptions = {}) {
     this.secretStore = options.secretStore;
     this.preferencesStore = options.preferencesStore;
     this.env = options.env ?? process.env;
+    this.fetchFn = options.fetchFn ?? (typeof fetch === 'function' ? fetch : undefined);
+    this.realtimeTestEndpoint = options.realtimeTestEndpoint ?? 'https://api.openai.com/v1/models';
+    this.wakeWordTestEndpoint = options.wakeWordTestEndpoint ??
+      'https://api.picovoice.ai/api/v1/porcupine/validate';
   }
 
   async load(): Promise<AppConfig> {
@@ -201,6 +215,60 @@ export class ConfigManager {
     throw new Error(`Unhandled secret key requested: ${key}`);
   }
 
+  async setSecret(key: ConfigSecretKey, value: string): Promise<RendererConfig> {
+    if (!this.config) {
+      throw new Error('ConfigManager.load() must be called before updating secrets.');
+    }
+
+    const trimmed = typeof value === 'string' ? value.trim() : '';
+
+    if (key === 'realtimeApiKey') {
+      const parsed = RealtimeApiKeySchema.parse(trimmed);
+      await this.persistSecret('REALTIME_API_KEY', parsed);
+      this.config = {
+        ...this.config,
+        realtimeApiKey: parsed,
+      };
+      return this.getRendererConfig();
+    }
+
+    if (key === 'wakeWordAccessKey') {
+      const parsed = WakeWordAccessKeySchema.parse(trimmed);
+      await this.persistSecret('PORCUPINE_ACCESS_KEY', parsed);
+      this.config = {
+        ...this.config,
+        wakeWord: {
+          ...this.config.wakeWord,
+          accessKey: parsed,
+        },
+      };
+      return this.getRendererConfig();
+    }
+
+    throw new Error(`Unhandled secret key update requested: ${key}`);
+  }
+
+  async testSecret(key: ConfigSecretKey): Promise<{ ok: boolean; message?: string }> {
+    if (!this.config) {
+      throw new Error('ConfigManager.load() must be called before testing secrets.');
+    }
+
+    const fetchFn = this.fetchFn;
+    if (!fetchFn) {
+      return { ok: false, message: 'Secret testing is unavailable: no HTTP client configured.' };
+    }
+
+    if (key === 'realtimeApiKey') {
+      return this.testRealtimeKey(fetchFn, this.config.realtimeApiKey);
+    }
+
+    if (key === 'wakeWordAccessKey') {
+      return this.testWakeWordKey(fetchFn, this.config.wakeWord.accessKey);
+    }
+
+    throw new Error(`Unhandled secret test requested: ${key}`);
+  }
+
   private async resolveRealtimeApiKey(): Promise<string | undefined> {
     const envValue = this.env.REALTIME_API_KEY?.trim();
     if (envValue) {
@@ -227,6 +295,81 @@ export class ConfigManager {
 
     const stored = await this.secretStore.getSecret('PORCUPINE_ACCESS_KEY');
     return stored ?? undefined;
+  }
+
+  private async persistSecret(key: string, value: string): Promise<void> {
+    if (!this.secretStore) {
+      throw new Error('Secret store is not configured. Unable to persist secrets securely.');
+    }
+
+    await this.secretStore.setSecret(key, value);
+  }
+
+  private createTimeoutSignal(): AbortSignal | undefined {
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+      return AbortSignal.timeout(this.secretTestTimeoutMs);
+    }
+
+    if (typeof AbortController !== 'undefined') {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), this.secretTestTimeoutMs);
+      if (typeof timeout === 'object' && typeof (timeout as NodeJS.Timeout).unref === 'function') {
+        (timeout as NodeJS.Timeout).unref();
+      }
+      return controller.signal;
+    }
+
+    return undefined;
+  }
+
+  private async testRealtimeKey(fetchFn: typeof fetch, key: string): Promise<{ ok: boolean; message?: string }> {
+    try {
+      const response = await fetchFn(this.realtimeTestEndpoint, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${key}`,
+        },
+        signal: this.createTimeoutSignal(),
+      });
+
+      if (!response.ok) {
+        return {
+          ok: false,
+          message: `Realtime API responded with HTTP ${response.status}`,
+        };
+      }
+
+      return { ok: true, message: 'Realtime API key verified successfully.' };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error while testing realtime API key.';
+      return { ok: false, message };
+    }
+  }
+
+  private async testWakeWordKey(fetchFn: typeof fetch, key: string): Promise<{ ok: boolean; message?: string }> {
+    try {
+      const response = await fetchFn(this.wakeWordTestEndpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ operation: 'validate' }),
+        signal: this.createTimeoutSignal(),
+      });
+
+      if (!response.ok) {
+        return {
+          ok: false,
+          message: `Wake word service responded with HTTP ${response.status}`,
+        };
+      }
+
+      return { ok: true, message: 'Porcupine access key verified successfully.' };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error while testing Porcupine access key.';
+      return { ok: false, message };
+    }
   }
 
   private parseMetricsConfig(): MetricsConfig {

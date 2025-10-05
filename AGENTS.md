@@ -55,3 +55,4 @@ Keep this checklist accurate; it is the authoritative tracker for execution stat
 - 2025-10-06 — Introduced a pull request template checklist to enforce lint, typecheck, and test runs before merges.
 - 2025-10-07 — Refreshed the README with a full project overview and setup instructions sourced from PRD/architecture docs.
 - 2025-10-08 — Removed the kiosk packaging icon asset pending refreshed branding deliverables.
+- 2025-10-09 — Added renderer configuration secret management with associated unit tests for update and validation flows.

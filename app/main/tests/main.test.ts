@@ -37,6 +37,8 @@ const loadMock = vi.fn();
 const getConfigMock = vi.fn();
 const getRendererConfigMock = vi.fn();
 const getSecretMock = vi.fn();
+const setSecretMock = vi.fn();
+const testSecretMock = vi.fn();
 const setAudioDevicePreferencesMock = vi.fn();
 const loadPreferencesMock = vi.fn();
 const savePreferencesMock = vi.fn();
@@ -46,6 +48,8 @@ const ConfigManagerMock = vi.fn(() => ({
   getConfig: getConfigMock,
   getRendererConfig: getRendererConfigMock,
   getSecret: getSecretMock,
+  setSecret: setSecretMock,
+  testSecret: testSecretMock,
   setAudioDevicePreferences: setAudioDevicePreferencesMock,
 }));
 
@@ -269,6 +273,8 @@ describe('main process bootstrap', () => {
     getConfigMock.mockReset();
     getRendererConfigMock.mockReset();
     getSecretMock.mockReset();
+    setSecretMock.mockReset();
+    testSecretMock.mockReset();
     setAudioDevicePreferencesMock.mockReset();
     loadPreferencesMock.mockReset();
     savePreferencesMock.mockReset();
@@ -414,6 +420,8 @@ describe('main process bootstrap', () => {
     getConfigMock.mockReturnValue(config);
     getRendererConfigMock.mockReturnValue({ hasRealtimeApiKey: true });
     setAudioDevicePreferencesMock.mockResolvedValue({ hasRealtimeApiKey: true });
+    setSecretMock.mockResolvedValue({ hasRealtimeApiKey: true });
+    testSecretMock.mockResolvedValue({ ok: true });
 
     const serviceReady = createDeferred<void>();
     WakeWordServiceMock.mockImplementation((options: unknown) => {
@@ -463,7 +471,7 @@ describe('main process bootstrap', () => {
     expect(crashGuardInstances).toHaveLength(1);
     expect(crashGuardInstances[0].watch).toHaveBeenCalledWith(mainWindow);
 
-    expect(ipcMainMock.handle).toHaveBeenCalledTimes(6);
+    expect(ipcMainMock.handle).toHaveBeenCalledTimes(8);
     const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
 
     const configHandler = handleEntries.get('config:get');
@@ -475,6 +483,18 @@ describe('main process bootstrap', () => {
     getSecretMock.mockResolvedValueOnce('secret');
     await expect(secretHandler?.({}, 'realtimeApiKey')).resolves.toBe('secret');
     expect(getSecretMock).toHaveBeenCalledWith('realtimeApiKey');
+
+    const setSecretHandler = handleEntries.get('config:set-secret');
+    expect(typeof setSecretHandler).toBe('function');
+    await expect(setSecretHandler?.({}, { key: 'realtimeApiKey', value: 'next-key' })).resolves.toEqual({
+      hasRealtimeApiKey: true,
+    });
+    expect(setSecretMock).toHaveBeenCalledWith('realtimeApiKey', 'next-key');
+
+    const testSecretHandler = handleEntries.get('config:test-secret');
+    expect(typeof testSecretHandler).toBe('function');
+    await expect(testSecretHandler?.({}, 'wakeWordAccessKey')).resolves.toEqual({ ok: true });
+    expect(testSecretMock).toHaveBeenCalledWith('wakeWordAccessKey');
 
     const deviceHandler = handleEntries.get('config:set-audio-devices');
     expect(typeof deviceHandler).toBe('function');

@@ -5,8 +5,9 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type FormEvent,
 } from 'react';
-import type { RendererConfig } from '../../main/src/config/config-manager.js';
+import type { ConfigSecretKey, RendererConfig } from '../../main/src/config/config-manager.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
 import { AvatarRenderer } from './avatar/avatar-renderer.js';
 import { AudioGraph } from './audio/audio-graph.js';
@@ -39,6 +40,28 @@ interface TranscriptEntry {
   text: string;
   timestamp: number;
 }
+
+type SecretKeyState<T> = Record<ConfigSecretKey, T>;
+
+const SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey', 'wakeWordAccessKey'];
+
+interface SecretStatusState {
+  status: 'idle' | 'success' | 'error';
+  message: string | null;
+}
+
+const SECRET_METADATA: Record<ConfigSecretKey, { label: string; description: string; isConfigured: (config: RendererConfig | null) => boolean }> = {
+  realtimeApiKey: {
+    label: 'OpenAI Realtime API key',
+    description: 'Required to negotiate realtime model sessions.',
+    isConfigured: (config) => Boolean(config?.hasRealtimeApiKey),
+  },
+  wakeWordAccessKey: {
+    label: 'Porcupine access key',
+    description: 'Authorizes on-device wake word detection.',
+    isConfigured: (config) => Boolean(config?.wakeWord?.hasAccessKey),
+  },
+};
 
 function toTranscriptSpeaker(role: string): TranscriptSpeaker | null {
   if (role === 'system' || role === 'user' || role === 'assistant') {
@@ -273,6 +296,22 @@ export default function App() {
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [secretInputs, setSecretInputs] = useState<SecretKeyState<string>>(() => ({
+    realtimeApiKey: '',
+    wakeWordAccessKey: '',
+  }));
+  const [secretStatus, setSecretStatus] = useState<SecretKeyState<SecretStatusState>>(() => ({
+    realtimeApiKey: { status: 'idle', message: null },
+    wakeWordAccessKey: { status: 'idle', message: null },
+  }));
+  const [secretSaving, setSecretSaving] = useState<SecretKeyState<boolean>>(() => ({
+    realtimeApiKey: false,
+    wakeWordAccessKey: false,
+  }));
+  const [secretTesting, setSecretTesting] = useState<SecretKeyState<boolean>>(() => ({
+    realtimeApiKey: false,
+    wakeWordAccessKey: false,
+  }));
   const [realtimeKey, setRealtimeKey] = useState<string | null>(null);
   const [realtimeKeyError, setRealtimeKeyError] = useState<string | null>(null);
   const [realtimeState, setRealtimeState] = useState<RealtimeClientState>({ status: 'idle' });
@@ -811,6 +850,108 @@ export default function App() {
     [persistPreferences, selectedInput],
   );
 
+  const handleSecretInputChange = useCallback(
+    (key: ConfigSecretKey) => (event: ChangeEvent<HTMLInputElement>) => {
+      const value = event.target.value;
+      setSecretInputs((previous) => ({ ...previous, [key]: value }));
+      setSecretStatus((previous) => ({
+        ...previous,
+        [key]: previous[key].status === 'idle' && previous[key].message === null
+          ? previous[key]
+          : { status: 'idle', message: null },
+      }));
+    },
+    [],
+  );
+
+  const handleSecretSubmit = useCallback(
+    (key: ConfigSecretKey) =>
+      async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        const nextValue = secretInputs[key]?.trim() ?? '';
+
+        if (!nextValue) {
+          setSecretStatus((previous) => ({
+            ...previous,
+            [key]: { status: 'error', message: 'Enter a value to update this key.' },
+          }));
+          return;
+        }
+
+        if (!api) {
+          setSecretStatus((previous) => ({
+            ...previous,
+            [key]: { status: 'error', message: 'Configuration bridge is unavailable.' },
+          }));
+          return;
+        }
+
+        setSecretSaving((previous) => ({ ...previous, [key]: true }));
+        setSecretStatus((previous) => ({ ...previous, [key]: { status: 'idle', message: null } }));
+
+        try {
+          const nextConfig = await api.config.setSecret(key, nextValue);
+          setConfig(nextConfig);
+          setSecretInputs((previous) => ({ ...previous, [key]: '' }));
+
+          if (key === 'realtimeApiKey') {
+            setRealtimeKey(nextValue);
+            setRealtimeKeyError(null);
+          }
+
+          setSecretStatus((previous) => ({
+            ...previous,
+            [key]: { status: 'success', message: 'API key updated successfully.' },
+          }));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Failed to update API key.';
+          setSecretStatus((previous) => ({
+            ...previous,
+            [key]: { status: 'error', message },
+          }));
+        } finally {
+          setSecretSaving((previous) => ({ ...previous, [key]: false }));
+        }
+      },
+    [api, secretInputs],
+  );
+
+  const handleSecretTest = useCallback(
+    (key: ConfigSecretKey) =>
+      async () => {
+        if (!api) {
+          setSecretStatus((previous) => ({
+            ...previous,
+            [key]: { status: 'error', message: 'Configuration bridge is unavailable.' },
+          }));
+          return;
+        }
+
+        setSecretTesting((previous) => ({ ...previous, [key]: true }));
+        setSecretStatus((previous) => ({ ...previous, [key]: { status: 'idle', message: null } }));
+
+        try {
+          const result = await api.config.testSecret(key);
+          setSecretStatus((previous) => ({
+            ...previous,
+            [key]: {
+              status: result.ok ? 'success' : 'error',
+              message: result.message ?? (result.ok ? 'API key is valid.' : 'API key validation failed.'),
+            },
+          }));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Failed to test API key.';
+          setSecretStatus((previous) => ({
+            ...previous,
+            [key]: { status: 'error', message },
+          }));
+        } finally {
+          setSecretTesting((previous) => ({ ...previous, [key]: false }));
+        }
+      },
+    [api],
+  );
+
   const levelPercentage = useMemo(() => Math.min(100, Math.round(audioGraph.level * 100)), [audioGraph.level]);
 
   const audioGraphStatusLabel = useMemo(() => {
@@ -1013,6 +1154,75 @@ export default function App() {
               </option>
             ))}
           </select>
+        </div>
+      </section>
+
+      <section className="kiosk__secrets" aria-labelledby="kiosk-secret-title">
+        <h2 id="kiosk-secret-title">API keys</h2>
+        <p className="kiosk__helper">Keys are stored securely via the system secret store. Provide a new value to update or test an existing key.</p>
+        <div className="kiosk__secretList">
+          {SECRET_KEYS.map((key) => {
+            const metadata = SECRET_METADATA[key];
+            const configured = metadata.isConfigured(config);
+            const status = secretStatus[key];
+            const busy = secretSaving[key] || secretTesting[key];
+            const message = status.message;
+            const messageRole = status.status === 'error' ? 'alert' : 'status';
+            const messageClass = status.status === 'error' ? 'kiosk__error' : 'kiosk__info';
+
+            return (
+              <article key={key} className="secretCard" data-configured={configured ? 'true' : 'false'}>
+                <header className="secretCard__header">
+                  <h3>{metadata.label}</h3>
+                  <p className="secretCard__description">{metadata.description}</p>
+                  <p className="secretCard__status">Status: {configured ? 'Configured' : 'Not configured'}</p>
+                </header>
+                <form className="secretCard__form" onSubmit={handleSecretSubmit(key)}>
+                  <input
+                    id={`${key}-input`}
+                    type="password"
+                    aria-label={`New ${metadata.label}`}
+                    placeholder="Enter new key"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={secretInputs[key]}
+                    onChange={handleSecretInputChange(key)}
+                    disabled={loadingConfig || isSaving || secretSaving[key] || secretTesting[key]}
+                  />
+                  <div className="secretCard__actions">
+                    <button
+                      type="submit"
+                      disabled={
+                        loadingConfig ||
+                        secretSaving[key] ||
+                        secretTesting[key] ||
+                        secretInputs[key].trim().length === 0
+                      }
+                    >
+                      Update key
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSecretTest(key)}
+                      disabled={loadingConfig || secretSaving[key] || secretTesting[key]}
+                    >
+                      Test key
+                    </button>
+                  </div>
+                </form>
+                {busy ? (
+                  <p className="kiosk__info" aria-live="polite">
+                    {secretSaving[key] ? 'Updating secret…' : 'Testing secret…'}
+                  </p>
+                ) : null}
+                {message ? (
+                  <p role={messageRole} className={messageClass} aria-live="polite">
+                    {message}
+                  </p>
+                ) : null}
+              </article>
+            );
+          })}
         </div>
       </section>
 
