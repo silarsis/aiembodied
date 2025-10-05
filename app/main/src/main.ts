@@ -9,6 +9,12 @@ import { FilePreferencesStore } from './config/preferences-store.js';
 import { initializeLogger } from './logging/logger.js';
 import { CrashGuard } from './crash-guard.js';
 import { WakeWordService } from './wake-word/wake-word-service.js';
+import { ConversationManager } from './conversation/conversation-manager.js';
+import type {
+  ConversationAppendMessagePayload,
+  ConversationMessage,
+  ConversationSession,
+} from './conversation/types.js';
 import { MemoryStore } from './memory/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -25,6 +31,8 @@ const { logger } = initializeLogger();
 let mainWindow: BrowserWindow | null = null;
 let wakeWordService: WakeWordService | null = null;
 let memoryStore: MemoryStore | null = null;
+let conversationManager: ConversationManager | null = null;
+let removeConversationListeners: (() => void) | null = null;
 
 const createWindow = () => {
   const window = new BrowserWindow({
@@ -77,12 +85,24 @@ const crashGuard = new CrashGuard({
   logger,
 });
 
-function registerIpcHandlers(manager: ConfigManager) {
+function registerIpcHandlers(manager: ConfigManager, conversation: ConversationManager | null) {
   ipcMain.handle('config:get', () => manager.getRendererConfig());
   ipcMain.handle('config:get-secret', (_event, key: ConfigSecretKey) => manager.getSecret(key));
   ipcMain.handle('config:set-audio-devices', (_event, preferences) =>
     manager.setAudioDevicePreferences(preferences),
   );
+  ipcMain.handle('conversation:get-history', () => {
+    if (!conversation) {
+      throw new Error('Conversation manager is not initialized.');
+    }
+    return conversation.getHistory();
+  });
+  ipcMain.handle('conversation:append-message', (_event, payload: ConversationAppendMessagePayload) => {
+    if (!conversation) {
+      throw new Error('Conversation manager is not initialized.');
+    }
+    return conversation.appendMessage(payload);
+  });
 }
 
 function focusExistingWindow() {
@@ -120,6 +140,10 @@ app.whenReady().then(async () => {
 
   try {
     memoryStore = new MemoryStore({ filePath: path.join(app.getPath('userData'), 'memory.db') });
+    conversationManager = new ConversationManager({
+      store: memoryStore,
+      logger,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown database initialization error occurred.';
     logger.error('Failed to initialize memory store', { message });
@@ -155,8 +179,22 @@ app.whenReady().then(async () => {
       confidence: event.confidence,
     });
 
+    let sessionId: string | null = null;
+    if (conversationManager) {
+      try {
+        const session = conversationManager.startSession({ startedAt: event.timestamp });
+        sessionId = session.id;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error('Failed to start new conversation session', { message });
+      }
+    }
+
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('wake-word:event', event);
+      mainWindow.webContents.send('wake-word:event', {
+        ...event,
+        sessionId: sessionId ?? event.sessionId,
+      });
     }
   });
 
@@ -187,7 +225,29 @@ app.whenReady().then(async () => {
     });
   }
 
-  registerIpcHandlers(manager);
+  registerIpcHandlers(manager, conversationManager);
+
+  if (conversationManager) {
+    const sessionListener = (session: ConversationSession) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('conversation:session-started', session);
+      }
+    };
+
+    const messageListener = (message: ConversationMessage) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('conversation:message-appended', message);
+      }
+    };
+
+    conversationManager.on('session-started', sessionListener);
+    conversationManager.on('message-appended', messageListener);
+    removeConversationListeners = () => {
+      conversationManager?.off('session-started', sessionListener);
+      conversationManager?.off('message-appended', messageListener);
+      removeConversationListeners = null;
+    };
+  }
   const window = createWindow();
   crashGuard.watch(window);
 
@@ -215,4 +275,8 @@ app.on('before-quit', () => {
     memoryStore.dispose();
     memoryStore = null;
   }
+  if (removeConversationListeners) {
+    removeConversationListeners();
+  }
+  conversationManager = null;
 });

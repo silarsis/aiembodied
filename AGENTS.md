@@ -38,7 +38,7 @@ Track progress against `plan.md` here. Update the status markers (`[ ]` incomple
 - [x] 7. Avatar Renderer (2D Canvas)
 - [x] 8. Transcript Overlay & UI Shell — kiosk shell with transcript overlay toggle and wake/network indicators
 - [x] 9. Memory Store (SQLite)
-- [ ] 10. Persistence in Conversation Loop
+- [x] 10. Persistence in Conversation Loop
 - [ ] 11. Observability & Metrics
 - [ ] 12. Packaging & Auto-Launch
 - [ ] 13. Appliance Readiness Validation

@@ -78,6 +78,40 @@ vi.mock('../src/config/preferences-store.js', () => ({
   FilePreferencesStore: FilePreferencesStoreMock,
 }));
 
+const createSessionMock = vi.fn();
+const appendMessageMock = vi.fn();
+const listSessionsMock = vi.fn();
+const listMessagesMock = vi.fn();
+const getSessionWithMessagesMock = vi.fn();
+const deleteSessionMock = vi.fn();
+const deleteMessagesMock = vi.fn();
+const setValueMock = vi.fn();
+const getValueMock = vi.fn();
+const deleteValueMock = vi.fn();
+const exportDataMock = vi.fn();
+const importDataMock = vi.fn();
+const memoryStoreDisposeMock = vi.fn();
+
+const MemoryStoreMock = vi.fn(() => ({
+  createSession: createSessionMock,
+  appendMessage: appendMessageMock,
+  listSessions: listSessionsMock,
+  listMessages: listMessagesMock,
+  getSessionWithMessages: getSessionWithMessagesMock,
+  deleteSession: deleteSessionMock,
+  deleteMessages: deleteMessagesMock,
+  setValue: setValueMock,
+  getValue: getValueMock,
+  deleteValue: deleteValueMock,
+  exportData: exportDataMock,
+  importData: importDataMock,
+  dispose: memoryStoreDisposeMock,
+}));
+
+vi.mock('../src/memory/index.js', () => ({
+  MemoryStore: MemoryStoreMock,
+}));
+
 class WakeWordServiceDouble extends EventEmitter {
   start = vi.fn();
   dispose = vi.fn().mockResolvedValue(undefined);
@@ -236,6 +270,25 @@ describe('main process bootstrap', () => {
     mockLogger.warn.mockReset();
     mockLogger.error.mockReset();
     mockLogger.debug.mockReset();
+
+    MemoryStoreMock.mockClear();
+    createSessionMock.mockReset();
+    appendMessageMock.mockReset();
+    listSessionsMock.mockReset();
+    listMessagesMock.mockReset();
+    getSessionWithMessagesMock.mockReset();
+    deleteSessionMock.mockReset();
+    deleteMessagesMock.mockReset();
+    setValueMock.mockReset();
+    getValueMock.mockReset();
+    deleteValueMock.mockReset();
+    exportDataMock.mockReset();
+    importDataMock.mockReset();
+    memoryStoreDisposeMock.mockReset();
+    listSessionsMock.mockReturnValue([]);
+    listMessagesMock.mockReturnValue([]);
+    getSessionWithMessagesMock.mockReturnValue(null);
+    getValueMock.mockReturnValue(null);
   });
 
   it('quits when another instance already holds the lock', async () => {
@@ -334,28 +387,48 @@ describe('main process bootstrap', () => {
     expect(crashGuardInstances).toHaveLength(1);
     expect(crashGuardInstances[0].watch).toHaveBeenCalledWith(mainWindow);
 
-    expect(ipcMainMock.handle).toHaveBeenCalledTimes(3);
-    const [configChannel, configHandler] = ipcMainMock.handle.mock.calls[0];
-    expect(configChannel).toBe('config:get');
-    expect(configHandler()).toEqual({ hasRealtimeApiKey: true });
+    expect(ipcMainMock.handle).toHaveBeenCalledTimes(5);
+    const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
 
-    const [secretChannel, secretHandler] = ipcMainMock.handle.mock.calls[1];
-    expect(secretChannel).toBe('config:get-secret');
+    const configHandler = handleEntries.get('config:get');
+    expect(typeof configHandler).toBe('function');
+    expect(configHandler?.()).toEqual({ hasRealtimeApiKey: true });
+
+    const secretHandler = handleEntries.get('config:get-secret');
+    expect(typeof secretHandler).toBe('function');
     getSecretMock.mockResolvedValueOnce('secret');
-    await expect(secretHandler({}, 'realtimeApiKey')).resolves.toBe('secret');
+    await expect(secretHandler?.({}, 'realtimeApiKey')).resolves.toBe('secret');
     expect(getSecretMock).toHaveBeenCalledWith('realtimeApiKey');
 
-    const [deviceChannel, deviceHandler] = ipcMainMock.handle.mock.calls[2];
-    expect(deviceChannel).toBe('config:set-audio-devices');
-    await deviceHandler({}, { audioInputDeviceId: 'mic', audioOutputDeviceId: 'spk' });
+    const deviceHandler = handleEntries.get('config:set-audio-devices');
+    expect(typeof deviceHandler).toBe('function');
+    await deviceHandler?.({}, { audioInputDeviceId: 'mic', audioOutputDeviceId: 'spk' });
     expect(setAudioDevicePreferencesMock).toHaveBeenCalledWith({
       audioInputDeviceId: 'mic',
       audioOutputDeviceId: 'spk',
     });
 
+    expect(typeof handleEntries.get('conversation:get-history')).toBe('function');
+    expect(typeof handleEntries.get('conversation:append-message')).toBe('function');
+
     const wakePayload = { keywordLabel: 'Porcupine', confidence: 0.92, timestamp: Date.now() };
     wakeWordService.emit('wake', wakePayload);
-    expect(mainWindow.webContents.send).toHaveBeenCalledWith('wake-word:event', wakePayload);
+    const createdSessionId = createSessionMock.mock.calls[0]?.[0]?.id;
+    expect(createdSessionId).toBeDefined();
+    expect(setValueMock).toHaveBeenCalledWith('conversation:currentSessionId', createdSessionId);
+    expect(setValueMock).toHaveBeenCalledWith('conversation:lastSessionId', createdSessionId);
+    expect(mainWindow.webContents.send).toHaveBeenCalledWith(
+      'conversation:session-started',
+      expect.objectContaining({ id: createdSessionId }),
+    );
+    expect(mainWindow.webContents.send).toHaveBeenCalledWith(
+      'wake-word:event',
+      expect.objectContaining({
+        keywordLabel: wakePayload.keywordLabel,
+        confidence: wakePayload.confidence,
+        sessionId: createdSessionId,
+      }),
+    );
 
     const wakeError = new Error('worker failed');
     wakeWordService.emit('error', wakeError);
@@ -403,6 +476,7 @@ describe('main process bootstrap', () => {
     expect(crashGuardInstances[0].notifyAppQuitting).toHaveBeenCalledTimes(1);
     expect(wakeWordService.dispose).toHaveBeenCalledTimes(1);
     await expect(wakeWordService.dispose.mock.results[0].value).resolves.toBeUndefined();
+    expect(memoryStoreDisposeMock).toHaveBeenCalledTimes(1);
 
     appEmitter.emit('window-all-closed');
     expect(appEmitter.quit).toHaveBeenCalledTimes(1);
