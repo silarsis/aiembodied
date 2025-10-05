@@ -305,6 +305,12 @@ describe('main process bootstrap', () => {
         minConfidence: 0.4,
         cooldownMs: 750,
       },
+      metrics: {
+        enabled: false,
+        host: '127.0.0.1',
+        port: 9477,
+        path: '/metrics',
+      },
     } as const;
 
     loadMock.mockResolvedValue(config);
@@ -338,6 +344,12 @@ describe('main process bootstrap', () => {
         cooldownMs: 900,
         deviceIndex: 1,
         modelPath: '/path/to/model',
+      },
+      metrics: {
+        enabled: false,
+        host: '127.0.0.1',
+        port: 9477,
+        path: '/metrics',
       },
     } as const;
 
@@ -387,7 +399,7 @@ describe('main process bootstrap', () => {
     expect(crashGuardInstances).toHaveLength(1);
     expect(crashGuardInstances[0].watch).toHaveBeenCalledWith(mainWindow);
 
-    expect(ipcMainMock.handle).toHaveBeenCalledTimes(5);
+    expect(ipcMainMock.handle).toHaveBeenCalledTimes(6);
     const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
 
     const configHandler = handleEntries.get('config:get');
@@ -410,6 +422,10 @@ describe('main process bootstrap', () => {
 
     expect(typeof handleEntries.get('conversation:get-history')).toBe('function');
     expect(typeof handleEntries.get('conversation:append-message')).toBe('function');
+    const metricsHandler = handleEntries.get('metrics:observe-latency');
+    expect(typeof metricsHandler).toBe('function');
+    const metricsResult = metricsHandler?.({}, { metric: 'wake_to_capture_ms', valueMs: 100 });
+    expect(metricsResult).toBe(false);
 
     const wakePayload = { keywordLabel: 'Porcupine', confidence: 0.92, timestamp: Date.now() };
     wakeWordService.emit('wake', wakePayload);

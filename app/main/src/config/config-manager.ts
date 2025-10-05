@@ -12,6 +12,7 @@ export interface AppConfig {
   audioOutputDeviceId?: string;
   featureFlags: FeatureFlags;
   wakeWord: WakeWordConfig;
+  metrics: MetricsConfig;
 }
 
 export interface WakeWordConfig {
@@ -23,6 +24,13 @@ export interface WakeWordConfig {
   cooldownMs: number;
   deviceIndex?: number;
   modelPath?: string;
+}
+
+export interface MetricsConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
+  path: string;
 }
 
 export type RendererWakeWordConfig = Omit<WakeWordConfig, 'accessKey'> & {
@@ -62,12 +70,23 @@ const WakeWordSchema = z.object({
   modelPath: z.string().min(1).optional(),
 });
 
+const MetricsSchema = z.object({
+  enabled: z.boolean(),
+  host: z.string().min(1),
+  port: z.number().int().min(1).max(65535),
+  path: z
+    .string()
+    .min(1)
+    .transform((value) => (value.startsWith('/') ? value : `/${value}`)),
+});
+
 const ConfigSchema = z.object({
   realtimeApiKey: z.string().min(1, 'Realtime API key is required'),
   audioInputDeviceId: z.string().optional(),
   audioOutputDeviceId: z.string().optional(),
   featureFlags: FeatureFlagsSchema.default({}),
   wakeWord: WakeWordSchema,
+  metrics: MetricsSchema,
 });
 
 const DEFAULT_SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey', 'wakeWordAccessKey'];
@@ -115,6 +134,7 @@ export class ConfigManager {
         (this.env.AUDIO_OUTPUT_DEVICE_ID?.trim() || undefined),
       featureFlags: this.parseFeatureFlags(this.env.FEATURE_FLAGS),
       wakeWord: this.parseWakeWordConfig({ accessKey: wakeWordAccessKey }),
+      metrics: this.parseMetricsConfig(),
     });
 
     this.config = parsed;
@@ -207,6 +227,21 @@ export class ConfigManager {
 
     const stored = await this.secretStore.getSecret('PORCUPINE_ACCESS_KEY');
     return stored ?? undefined;
+  }
+
+  private parseMetricsConfig(): MetricsConfig {
+    const enabledValue = this.env.METRICS_ENABLED?.trim();
+    const enabled = enabledValue ? ['1', 'true', 'yes', 'on'].includes(enabledValue.toLowerCase()) : false;
+    const host = this.env.METRICS_HOST?.trim() || '127.0.0.1';
+    const path = this.env.METRICS_PATH?.trim() || '/metrics';
+    const portValue = this.env.METRICS_PORT?.trim();
+    const port = portValue ? Number.parseInt(portValue, 10) : 9477;
+
+    if (Number.isNaN(port)) {
+      throw new ConfigValidationError('METRICS_PORT must be a valid integer if specified.');
+    }
+
+    return MetricsSchema.parse({ enabled, host, port, path });
   }
 
   private parseFeatureFlags(raw: string | undefined): FeatureFlags {

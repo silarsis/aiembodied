@@ -10,6 +10,7 @@ export interface RealtimeClientCallbacks {
   onStateChange?: (state: RealtimeClientState) => void;
   onRemoteStream?: (stream: MediaStream) => void;
   onLog?: (entry: { level: 'info' | 'warn' | 'error'; message: string; data?: unknown }) => void;
+  onFirstAudioFrame?: () => void;
 }
 
 export interface RealtimeClientOptions {
@@ -293,6 +294,19 @@ export class RealtimeClient {
     }
 
     this.callbacks.onRemoteStream?.(stream);
+
+    const track = event.track;
+    if (track) {
+      if (!track.muted) {
+        this.callbacks.onFirstAudioFrame?.();
+      } else {
+        const handleUnmute = () => {
+          track.removeEventListener('unmute', handleUnmute);
+          this.callbacks.onFirstAudioFrame?.();
+        };
+        track.addEventListener('unmute', handleUnmute, { once: true });
+      }
+    }
   }
 
   private handleConnectionStateChange(): void {
