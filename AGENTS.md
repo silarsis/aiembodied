@@ -42,7 +42,8 @@ Track progress against `plan.md` here. Update the status markers (`[ ]` incomple
 - [ ] 11. Observability & Metrics
 - [ ] 12. Packaging & Auto-Launch
 - [ ] 13. Appliance Readiness Validation
-- [ ] 14. Future Unity Integration Prep (Stretch)
+- [ ] 14. Home Assistant Integration
+- [ ] 15. Future Unity Integration Prep (Stretch)
 
 Keep this checklist accurate; it is the authoritative tracker for execution state.
 
