@@ -112,7 +112,17 @@ The following phased plan covers the MVP described in the PRD and architecture s
   - Soak test logs showing no crashes and latency within targets.
   - Checklist review covering PRD acceptance criteria and architecture DoD items.
 
-## 14. Future Unity Integration Prep (Stretch)
+## 14. Home Assistant Integration
+- Implement Home Assistant client module using WebSocket API for event subscriptions and REST API for control commands.
+- Define configuration schema for Home Assistant endpoint, authentication tokens, and allowed device/entity whitelist.
+- Wire event notifications into conversation context so AI agents can react to state changes (e.g., door sensors, lights).
+- Expose intent routing from AI responses to control approved devices with safeguards and audit logging.
+- Tests to pass:
+  - Unit tests covering event subscription handling, reconnection, and command dispatch restrictions.
+  - Integration test using mocked Home Assistant server verifying bidirectional communication.
+  - Manual QA: validate AI receives sample event notifications and can toggle a permitted device.
+
+## 15. Future Unity Integration Prep (Stretch)
 - Define IPC contract (WebSocket or gRPC) for viseme stream transmission to Unity process.
 - Provide reference Unity stub consuming `VisemeFrame` to render simple 3D mouth movement.
 - Tests to pass:
