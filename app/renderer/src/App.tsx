@@ -11,12 +11,14 @@ import type { AudioDevicePreferences } from '../../main/src/config/preferences-s
 import { AvatarRenderer } from './avatar/avatar-renderer.js';
 import { AudioGraph } from './audio/audio-graph.js';
 import { VisemeDriver, type VisemeFrame } from './audio/viseme-driver.js';
+import type { ConversationSessionWithMessages } from '../../main/src/conversation/types.js';
 import { useAudioDevices } from './hooks/use-audio-devices.js';
 import { getPreloadApi, type PreloadApi } from './preload-api.js';
 import { RealtimeClient, type RealtimeClientState } from './realtime/realtime-client.js';
 
 const CURSOR_IDLE_TIMEOUT_MS = 3000;
 const WAKE_ACTIVE_DURATION_MS = 4000;
+const MAX_TRANSCRIPT_ENTRIES = 200;
 
 type AudioGraphStatus = 'idle' | 'starting' | 'ready' | 'error';
 
@@ -34,6 +36,14 @@ interface TranscriptEntry {
   speaker: TranscriptSpeaker;
   text: string;
   timestamp: number;
+}
+
+function toTranscriptSpeaker(role: string): TranscriptSpeaker | null {
+  if (role === 'system' || role === 'user' || role === 'assistant') {
+    return role;
+  }
+
+  return null;
 }
 
 function useAudioGraphState(inputDeviceId?: string, enabled = true) {
@@ -262,14 +272,85 @@ export default function App() {
   const wakeResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isTranscriptVisible, setTranscriptVisible] = useState(false);
   const [transcriptEntries, setTranscriptEntries] = useState<TranscriptEntry[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const activeSessionIdRef = useRef<string | null>(null);
+  const messageIdsRef = useRef<Set<string>>(new Set());
 
-  const appendTranscriptEntry = useCallback((entry: Omit<TranscriptEntry, 'id'> & { id?: string }) => {
-    setTranscriptEntries((previous) => {
-      const id = entry.id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const next = [...previous, { ...entry, id }];
-      return next.slice(-200);
-    });
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
+
+  const applySessionHistory = useCallback((session: ConversationSessionWithMessages | null) => {
+    if (!session) {
+      messageIdsRef.current.clear();
+      setTranscriptEntries([]);
+      return;
+    }
+
+    const entries: TranscriptEntry[] = [];
+    const seen = new Set<string>();
+    for (const message of session.messages) {
+      const speaker = toTranscriptSpeaker(message.role);
+      if (!speaker) {
+        continue;
+      }
+
+      entries.push({
+        id: message.id,
+        speaker,
+        text: message.content,
+        timestamp: message.ts,
+      });
+      seen.add(message.id);
+    }
+
+    entries.sort((a, b) => a.timestamp - b.timestamp);
+    messageIdsRef.current.clear();
+    for (const id of seen) {
+      messageIdsRef.current.add(id);
+    }
+    setTranscriptEntries(entries.slice(-MAX_TRANSCRIPT_ENTRIES));
   }, []);
+
+  const recordTranscriptEntry = useCallback(
+    async ({
+      speaker,
+      text,
+      timestamp = Date.now(),
+      persist = true,
+    }: {
+      speaker: TranscriptSpeaker;
+      text: string;
+      timestamp?: number;
+      persist?: boolean;
+    }) => {
+      const canPersist = Boolean(persist && api?.conversation && activeSessionIdRef.current);
+      let entryId = `${timestamp}-${Math.random().toString(36).slice(2, 10)}`;
+
+      if (canPersist) {
+        try {
+          const message = await api!.conversation!.appendMessage({
+            sessionId: activeSessionIdRef.current ?? undefined,
+            role: speaker,
+            content: text,
+            ts: timestamp,
+          });
+          entryId = message.id;
+          messageIdsRef.current.add(message.id);
+        } catch (error) {
+          console.error('Failed to persist conversation message', error);
+        }
+      }
+
+      setTranscriptEntries((previous) => {
+        const filtered = previous.filter((entry) => entry.id !== entryId);
+        const next = [...filtered, { id: entryId, speaker, text, timestamp }];
+        next.sort((a, b) => a.timestamp - b.timestamp);
+        return next.slice(-MAX_TRANSCRIPT_ENTRIES);
+      });
+    },
+    [api],
+  );
 
   const { inputs, outputs, error: deviceError, refresh: refreshDevices } = useAudioDevices();
 
@@ -414,6 +495,72 @@ export default function App() {
   }, [api]);
 
   useEffect(() => {
+    if (!api?.conversation) {
+      setActiveSessionId(null);
+      applySessionHistory(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    api.conversation
+      .getHistory()
+      .then((history) => {
+        if (cancelled) {
+          return;
+        }
+
+        const sessionId = history.currentSessionId ?? history.sessions[0]?.id ?? null;
+        setActiveSessionId(sessionId);
+
+        if (sessionId) {
+          const session = history.sessions.find((item) => item.id === sessionId) ?? null;
+          applySessionHistory(session);
+        } else {
+          applySessionHistory(null);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to load conversation history', error);
+      });
+
+    const unsubscribeSession = api.conversation.onSessionStarted((session) => {
+      setActiveSessionId(session.id);
+      messageIdsRef.current.clear();
+      setTranscriptEntries([]);
+    });
+
+    const unsubscribeMessage = api.conversation.onMessageAppended((message) => {
+      if (!activeSessionIdRef.current || message.sessionId !== activeSessionIdRef.current) {
+        return;
+      }
+
+      if (messageIdsRef.current.has(message.id)) {
+        return;
+      }
+
+      const speaker = toTranscriptSpeaker(message.role);
+      if (!speaker) {
+        return;
+      }
+
+      messageIdsRef.current.add(message.id);
+      setTranscriptEntries((previous) => {
+        const filtered = previous.filter((entry) => entry.id !== message.id);
+        const next = [...filtered, { id: message.id, speaker, text: message.content, timestamp: message.ts }];
+        next.sort((a, b) => a.timestamp - b.timestamp);
+        return next.slice(-MAX_TRANSCRIPT_ENTRIES);
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribeSession();
+      unsubscribeMessage();
+    };
+  }, [api?.conversation, applySessionHistory]);
+
+  useEffect(() => {
     setSelectedInput((previous) => (previous === configInputDeviceId ? previous : configInputDeviceId));
     setSelectedOutput((previous) => (previous === configOutputDeviceId ? previous : configOutputDeviceId));
   }, [configInputDeviceId, configOutputDeviceId]);
@@ -486,7 +633,7 @@ export default function App() {
   useEffect(() => {
     const previous = previousRealtimeStatusRef.current;
     if (realtimeState.status === 'connected' && previous !== 'connected') {
-      appendTranscriptEntry({
+      void recordTranscriptEntry({
         speaker: 'system',
         text: 'Realtime session connected.',
         timestamp: Date.now(),
@@ -495,7 +642,7 @@ export default function App() {
 
     if (realtimeState.status === 'error' && previousRealtimeStatusRef.current !== 'error') {
       const errorMessage = realtimeState.error ? `Realtime error — ${realtimeState.error}` : 'Realtime session error';
-      appendTranscriptEntry({
+      void recordTranscriptEntry({
         speaker: 'system',
         text: errorMessage,
         timestamp: Date.now(),
@@ -503,7 +650,7 @@ export default function App() {
     }
 
     previousRealtimeStatusRef.current = realtimeState.status;
-  }, [realtimeState, appendTranscriptEntry]);
+  }, [realtimeState, recordTranscriptEntry]);
 
   useEffect(() => {
     if (!api) {
@@ -511,10 +658,16 @@ export default function App() {
     }
 
     const unsubscribe = api.wakeWord.onWake((event) => {
-      appendTranscriptEntry({
+      if (event.sessionId && activeSessionIdRef.current !== event.sessionId) {
+        setActiveSessionId(event.sessionId);
+        messageIdsRef.current.clear();
+        setTranscriptEntries([]);
+      }
+
+      void recordTranscriptEntry({
         speaker: 'system',
         text: `Wake word detected (${event.keywordLabel}) — confidence ${(event.confidence * 100).toFixed(0)}%`,
-        timestamp: Date.now(),
+        timestamp: event.timestamp,
       });
       setWakeState('awake');
       if (wakeResetTimeoutRef.current) {
@@ -532,7 +685,7 @@ export default function App() {
       }
       unsubscribe?.();
     };
-  }, [api, appendTranscriptEntry]);
+  }, [api, recordTranscriptEntry]);
 
   useEffect(() => {
     if (audioGraph.status === 'ready') {

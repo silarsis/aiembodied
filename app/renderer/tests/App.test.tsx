@@ -1,5 +1,11 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type {
+  ConversationAppendMessagePayload,
+  ConversationMessage,
+  ConversationSession,
+} from '../../main/src/conversation/types.js';
+import type { WakeWordDetectionEvent } from '../../main/src/wake-word/types.js';
 import App from '../src/App.js';
 
 class MockMediaStream {
@@ -64,7 +70,7 @@ describe('App component', () => {
   const enumerateDevicesMock = vi.fn();
   const getUserMediaMock = vi.fn();
   const setAudioDevicePreferencesMock = vi.fn();
-  let wakeListener: ((event: { keywordLabel: string; confidence: number }) => void) | undefined;
+  let wakeListener: ((event: WakeWordDetectionEvent) => void) | undefined;
 
   beforeEach(() => {
     (window as unknown as { AudioContext: typeof AudioContext }).AudioContext = MockAudioContext as unknown as typeof AudioContext;
@@ -163,7 +169,7 @@ describe('App component', () => {
     });
 
     expect(screen.getByTestId('wake-value')).toHaveTextContent(/Idle/i);
-    wakeListener?.({ keywordLabel: 'Picovoice', confidence: 0.88 });
+    wakeListener?.({ keywordLabel: 'Picovoice', confidence: 0.88, timestamp: Date.now() });
     await waitFor(() => {
       expect(screen.getByTestId('wake-value')).toHaveTextContent(/Awake/i);
     });
@@ -197,6 +203,146 @@ describe('App component', () => {
 
     expect(screen.getByText(/Speech gate:/i)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Embodied Assistant/i })).toBeInTheDocument();
+  });
+
+  it('loads persisted conversation history and records new session messages', async () => {
+    const appendMessageMock = vi.fn(
+      async (payload: ConversationAppendMessagePayload): Promise<ConversationMessage> => ({
+        id: `message-${appendMessageMock.mock.calls.length + 1}`,
+        sessionId: payload.sessionId ?? 'missing-session',
+        role: payload.role,
+        content: payload.content,
+        ts: payload.ts ?? Date.now(),
+        audioPath: payload.audioPath ?? null,
+      }),
+    );
+
+    let sessionListener: ((session: ConversationSession) => void) | undefined;
+    let messageListener: ((message: ConversationMessage) => void) | undefined;
+
+    (window as PreloadWindow).aiembodied = {
+      ping: () => 'pong',
+      config: {
+        get: vi.fn().mockResolvedValue({
+          audioInputDeviceId: '',
+          audioOutputDeviceId: '',
+          featureFlags: { transcriptOverlay: true },
+          hasRealtimeApiKey: true,
+          wakeWord: {
+            keywordPath: '',
+            keywordLabel: '',
+            sensitivity: 0.5,
+            minConfidence: 0.5,
+            cooldownMs: 1500,
+            deviceIndex: undefined,
+            modelPath: undefined,
+            hasAccessKey: true,
+          },
+        }),
+        getSecret: vi.fn(),
+        setAudioDevicePreferences: setAudioDevicePreferencesMock,
+      },
+      wakeWord: {
+        onWake: (listener: (event: WakeWordDetectionEvent) => void) => {
+          wakeListener = listener;
+          return () => {
+            wakeListener = undefined;
+          };
+        },
+      },
+      conversation: {
+        getHistory: vi.fn().mockResolvedValue({
+          currentSessionId: 'session-1',
+          sessions: [
+            {
+              id: 'session-1',
+              startedAt: 1_700_000_000_000,
+              title: null,
+              messages: [
+                {
+                  id: 'message-1',
+                  sessionId: 'session-1',
+                  role: 'assistant',
+                  ts: 1_700_000_005_000,
+                  content: 'Welcome back! 👋',
+                  audioPath: null,
+                },
+              ],
+            },
+          ],
+        }),
+        appendMessage: appendMessageMock,
+        onSessionStarted: (listener: (session: ConversationSession) => void) => {
+          sessionListener = listener;
+          return () => {
+            if (sessionListener === listener) {
+              sessionListener = undefined;
+            }
+          };
+        },
+        onMessageAppended: (listener: (message: ConversationMessage) => void) => {
+          messageListener = listener;
+          return () => {
+            if (messageListener === listener) {
+              messageListener = undefined;
+            }
+          };
+        },
+      },
+    } as unknown as PreloadWindow['aiembodied'];
+
+    render(<App />);
+
+    expect(await screen.findByText('Welcome back! 👋')).toBeInTheDocument();
+
+    sessionListener?.({ id: 'session-2', startedAt: 1_700_000_010_000, title: null });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Welcome back! 👋')).not.toBeInTheDocument();
+    });
+
+    expect(wakeListener).toBeDefined();
+    wakeListener?.({
+      keywordLabel: 'Picovoice',
+      confidence: 0.94,
+      timestamp: 1_700_000_010_500,
+      sessionId: 'session-2',
+    });
+
+    await waitFor(() => {
+      expect(appendMessageMock).toHaveBeenCalledTimes(1);
+    });
+
+    const recordedPayload = appendMessageMock.mock.calls[0]?.[0];
+    expect(recordedPayload?.sessionId).toBe('session-2');
+    expect(recordedPayload?.role).toBe('system');
+    expect(recordedPayload?.content).toMatch(/Wake word detected/i);
+
+    expect(await screen.findByText(/Wake word detected/i)).toBeInTheDocument();
+
+    messageListener?.({
+      id: 'message-remote',
+      sessionId: 'session-2',
+      role: 'assistant',
+      ts: 1_700_000_011_000,
+      content: 'Hello again! 😄',
+      audioPath: null,
+    });
+
+    expect(await screen.findByText('Hello again! 😄')).toBeInTheDocument();
+
+    messageListener?.({
+      id: 'message-old',
+      sessionId: 'session-1',
+      role: 'assistant',
+      ts: 1_700_000_012_000,
+      content: 'Should stay hidden',
+      audioPath: null,
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Should stay hidden')).not.toBeInTheDocument();
+    });
   });
 
   it('surfaces configuration errors when preload bridge is unavailable', async () => {

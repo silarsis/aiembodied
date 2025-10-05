@@ -3,6 +3,7 @@ export interface WakeWordDetectionEvent {
   confidence: number;
   timestamp: number;
   keywordIndex?: number;
+  sessionId?: string;
 }
 
 export interface WakeWordReadyEvent {

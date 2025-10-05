@@ -174,6 +174,23 @@ export class MemoryStore {
     stmt.run(sessionId);
   }
 
+  deleteMessages(messageIds: readonly string[]): void {
+    this.ensureOpen();
+
+    if (messageIds.length === 0) {
+      return;
+    }
+
+    const stmt = this.db.prepare(`DELETE FROM messages WHERE id = ?;`);
+    const run = this.db.transaction((ids: readonly string[]) => {
+      for (const id of ids) {
+        stmt.run(id);
+      }
+    });
+
+    run(messageIds);
+  }
+
   listSessions(options?: { limit?: number; offset?: number }): SessionRecord[] {
     this.ensureOpen();
 
