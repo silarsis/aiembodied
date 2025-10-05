@@ -1,0 +1,42 @@
+appId: com.aiembodied.assistant
+productName: AI Embodied Assistant
+asar: true
+files:
+  - from: .
+    filter:
+      - package.json
+      - pnpm-lock.yaml
+      - node_modules/**
+      - app/main/dist/**
+      - app/main/node_modules/**
+      - app/main/package.json
+      - app/renderer/dist/**
+      - app/renderer/package.json
+extraMetadata:
+  main: app/main/dist/main.js
+directories:
+  output: release
+  buildResources: build
+mac:
+  category: public.app-category.productivity
+  artifactName: AIEmbodied-${version}-${os}.${ext}
+  target:
+    - dmg
+    - zip
+win:
+  artifactName: AIEmbodied-${version}-${os}-${arch}.${ext}
+  target:
+    - target: nsis
+      arch:
+        - x64
+  requestedExecutionLevel: asInvoker
+linux:
+  category: Utility
+  synopsis: Embodied ChatGPT kiosk assistant
+  description: |
+    AI Embodied Assistant provides a full-screen kiosk experience with wake word activation,
+    low-latency conversation, and persistent local memory for transcripts.
+  artifactName: AIEmbodied-${version}-${os}-${arch}.${ext}
+  target:
+    - AppImage
+    - deb
