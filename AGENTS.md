@@ -45,3 +45,8 @@ Track progress against `plan.md` here. Update the status markers (`[ ]` incomple
 - [ ] 14. Future Unity Integration Prep (Stretch)
 
 Keep this checklist accurate; it is the authoritative tracker for execution state.
+
+## Recent QA Activities
+
+- 2025-10-05 — Added integration tests for the main process bootstrap and Porcupine worker to raise coverage across wake word orchestration.
+- 2025-10-04 — Added Vitest coverage instrumentation and validated preload bridge ping wiring via renderer tests.

@@ -28,11 +28,12 @@ describe('preload bridge', () => {
     await import('../src/preload.js');
   });
 
-  it('registers the aiembodied api with config bridge', async () => {
+  it('registers the aiembodied api with config bridge and ping helper', async () => {
     expect(exposeInMainWorld).toHaveBeenCalledTimes(1);
     const [key, api] = exposeInMainWorld.mock.calls[0];
     expect(key).toBe('aiembodied');
     expect(api.config).toBeDefined();
+    expect(api.ping()).toBe('pong');
 
     invoke.mockResolvedValueOnce({ hasRealtimeApiKey: true });
     await expect(api.config.get()).resolves.toEqual({ hasRealtimeApiKey: true });
