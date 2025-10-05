@@ -124,6 +124,8 @@ export default function App() {
 
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const visemeDriverRef = useRef<VisemeDriver | null>(null);
+  const latestRemoteStreamRef = useRef<MediaStream | null>(null);
+  const attachRequestIdRef = useRef(0);
   const realtimeClient = useMemo(() => {
     if (!hasRealtimeSupport) {
       return null;
@@ -190,11 +192,17 @@ export default function App() {
   }, [realtimeClient]);
 
   useEffect(() => {
+    latestRemoteStreamRef.current = remoteStream;
+  }, [remoteStream]);
+
+  useEffect(() => {
     const driver = visemeDriverRef.current;
     if (!driver) {
       return;
     }
 
+    const requestId = attachRequestIdRef.current + 1;
+    attachRequestIdRef.current = requestId;
     let disposed = false;
 
     const attach = async () => {
@@ -203,6 +211,18 @@ export default function App() {
       } catch (error) {
         if (!disposed) {
           console.error('Failed to attach viseme driver', error);
+        }
+        return;
+      }
+
+      if (attachRequestIdRef.current !== requestId) {
+        const latestStream = latestRemoteStreamRef.current ?? null;
+        if (latestStream !== remoteStream) {
+          try {
+            await driver.attachToStream(latestStream);
+          } catch (reattachError) {
+            console.error('Failed to update viseme driver attachment', reattachError);
+          }
         }
       }
     };
