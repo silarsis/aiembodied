@@ -9,6 +9,7 @@ import { FilePreferencesStore } from './config/preferences-store.js';
 import { initializeLogger } from './logging/logger.js';
 import { CrashGuard } from './crash-guard.js';
 import { WakeWordService } from './wake-word/wake-word-service.js';
+import { MemoryStore } from './memory/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,6 +24,7 @@ const secretStore = isProduction ? new KeytarSecretStore('aiembodied') : new InM
 const { logger } = initializeLogger();
 let mainWindow: BrowserWindow | null = null;
 let wakeWordService: WakeWordService | null = null;
+let memoryStore: MemoryStore | null = null;
 
 const createWindow = () => {
   const window = new BrowserWindow({
@@ -117,6 +119,16 @@ app.whenReady().then(async () => {
   });
 
   try {
+    memoryStore = new MemoryStore({ filePath: path.join(app.getPath('userData'), 'memory.db') });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown database initialization error occurred.';
+    logger.error('Failed to initialize memory store', { message });
+    dialog.showErrorBox('Database Error', message);
+    app.quit();
+    return;
+  }
+
+  try {
     await manager.load();
   } catch (error) {
     const message =
@@ -198,5 +210,9 @@ app.on('before-quit', () => {
   logger.info('Application is quitting.');
   if (wakeWordService) {
     void wakeWordService.dispose();
+  }
+  if (memoryStore) {
+    memoryStore.dispose();
+    memoryStore = null;
   }
 });
