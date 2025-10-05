@@ -104,14 +104,6 @@ The following phased plan covers the MVP described in the PRD and architecture s
   - `pnpm build` and `pnpm dist` succeed on CI for target platforms.
   - Manual installation test on reference device verifying auto-start and kiosk behavior.
 
-## 13. Appliance Readiness Validation
-- Conduct end-to-end appliance rehearsal: boot mini-PC, confirm auto-launch, wake word reliability, and <1s latency.
-- Execute 2-hour soak test ensuring stability, memory footprint, and reconnection handling.
-- Gather stakeholder sign-off on MVP acceptance criteria.
-- Tests to pass:
-  - Soak test logs showing no crashes and latency within targets.
-  - Checklist review covering PRD acceptance criteria and architecture DoD items.
-
 ## 14. Home Assistant Integration
 - Implement Home Assistant client module using WebSocket API for event subscriptions and REST API for control commands.
 - Define configuration schema for Home Assistant endpoint, authentication tokens, and allowed device/entity whitelist.
