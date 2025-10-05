@@ -46,6 +46,93 @@ body {
   margin-right: 0.25rem;
 }
 
+.app__avatar {
+  display: grid;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  border-radius: 16px;
+  background: white;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.14);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  align-items: center;
+}
+
+.app__avatarCanvas {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0.5rem;
+  border-radius: 20px;
+  background: radial-gradient(circle at 30% 20%, rgba(254, 243, 199, 0.65), transparent 65%),
+    linear-gradient(160deg, rgba(191, 219, 254, 0.35), rgba(129, 140, 248, 0.25));
+}
+
+.app__avatarCanvas::after {
+  content: attr(data-state);
+  position: absolute;
+  bottom: 0.75rem;
+  right: 0.9rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.5);
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+}
+
+.avatar__canvas {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  max-width: 360px;
+  border-radius: 18px;
+}
+
+.app__avatarReadout {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.app__avatarReadout h2 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.app__avatarSubtitle {
+  margin: 0;
+  color: #475569;
+}
+
+.app__avatarMetrics {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.app__avatarMetrics > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.14);
+}
+
+.app__avatarMetrics dt {
+  margin: 0;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.app__avatarMetrics dd {
+  margin: 0;
+  font-weight: 500;
+  color: #0f172a;
+}
+
 .app__controls {
   display: flex;
   flex-wrap: wrap;

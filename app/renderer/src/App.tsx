@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import type { RendererConfig } from '../../main/src/config/config-manager.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
+import { AvatarRenderer } from './avatar/avatar-renderer.js';
 import { AudioGraph } from './audio/audio-graph.js';
 import { VisemeDriver, type VisemeFrame } from './audio/viseme-driver.js';
 import { useAudioDevices } from './hooks/use-audio-devices.js';
@@ -437,6 +438,22 @@ export default function App() {
     }
   }, [audioGraph.status, audioGraph.isActive, audioGraph.error, loadingConfig]);
 
+  const visemeSummary = useMemo(() => {
+    const index = visemeFrame?.index ?? 0;
+    const intensity = Math.round((visemeFrame?.intensity ?? 0) * 100);
+    const blink = visemeFrame?.blink ?? false;
+    const labels = ['neutral', 'narrow', 'mid-open', 'open', 'wide open'];
+    const label = labels[index] ?? 'neutral';
+
+    return {
+      label,
+      index,
+      intensity,
+      blink,
+      status: blink ? 'Blinking' : intensity > 0 ? 'Animating' : 'Idle',
+    };
+  }, [visemeFrame]);
+
   return (
     <main className="app">
       <header className="app__header">
@@ -468,6 +485,38 @@ export default function App() {
                 visemeFrame.blink ? ' (blink)' : ''
               }`
             : 'idle'}
+        </div>
+      </section>
+
+      <section className="app__avatar" aria-labelledby="avatar-preview-title">
+        <div className="app__avatarCanvas" data-state={visemeSummary.status.toLowerCase()}>
+          <AvatarRenderer frame={visemeFrame} />
+        </div>
+        <div className="app__avatarReadout">
+          <h2 id="avatar-preview-title">Avatar preview</h2>
+          <p className="app__avatarSubtitle">
+            Real-time viseme mapping derived from the decoded audio stream.
+          </p>
+          <dl className="app__avatarMetrics">
+            <div>
+              <dt>Viseme</dt>
+              <dd>
+                v{visemeSummary.index} · {visemeSummary.label}
+              </dd>
+            </div>
+            <div>
+              <dt>Intensity</dt>
+              <dd>{visemeSummary.intensity}%</dd>
+            </div>
+            <div>
+              <dt>Blink state</dt>
+              <dd>{visemeSummary.blink ? 'Blink triggered' : 'Eyes open'}</dd>
+            </div>
+            <div>
+              <dt>Driver status</dt>
+              <dd>{visemeSummary.status}</dd>
+            </div>
+          </dl>
         </div>
       </section>
 

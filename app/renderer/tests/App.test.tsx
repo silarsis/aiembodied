@@ -176,6 +176,8 @@ describe('App component', () => {
     });
 
     expect(screen.getByText(/Speech gate:/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Avatar preview/i })).toBeInTheDocument();
+    expect(screen.getByText(/Real-time viseme mapping/i)).toBeInTheDocument();
   });
 
   it('surfaces configuration errors when preload bridge is unavailable', async () => {
