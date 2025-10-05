@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import type { RendererConfig } from '../../main/src/config/config-manager.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
 import { AudioGraph } from './audio/audio-graph.js';
 import { useAudioDevices } from './hooks/use-audio-devices.js';
 import { getPreloadApi, type PreloadApi } from './preload-api.js';
+import { RealtimeClient, type RealtimeClientState } from './realtime/realtime-client.js';
 
 type AudioGraphStatus = 'idle' | 'starting' | 'ready' | 'error';
 
@@ -104,11 +105,66 @@ export default function App() {
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [realtimeKey, setRealtimeKey] = useState<string | null>(null);
+  const [realtimeKeyError, setRealtimeKeyError] = useState<string | null>(null);
+  const [realtimeState, setRealtimeState] = useState<RealtimeClientState>({ status: 'idle' });
 
   const { inputs, outputs, error: deviceError, refresh: refreshDevices } = useAudioDevices();
 
   const [selectedInput, setSelectedInput] = useState('');
   const [selectedOutput, setSelectedOutput] = useState('');
+
+  const configInputDeviceId = config?.audioInputDeviceId ?? '';
+  const configOutputDeviceId = config?.audioOutputDeviceId ?? '';
+  const hasRealtimeSupport = typeof RTCPeerConnection === 'function';
+  const hasRealtimeApiKey = config?.hasRealtimeApiKey ?? false;
+
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
+  const realtimeClient = useMemo(() => {
+    if (!hasRealtimeSupport) {
+      return null;
+    }
+
+    return new RealtimeClient({
+      callbacks: {
+        onStateChange: setRealtimeState,
+        onRemoteStream: (stream) => {
+          const element = remoteAudioRef.current;
+          if (!element) {
+            return;
+          }
+
+          element.srcObject = stream;
+          const playPromise = element.play();
+          if (playPromise) {
+            playPromise.catch((error) => {
+              console.error('Failed to play realtime audio', error);
+            });
+          }
+        },
+        onLog: (entry) => {
+          const prefix = '[RealtimeClient]';
+          if (entry.level === 'error') {
+            console.error(prefix, entry.message, entry.data);
+          } else if (entry.level === 'warn') {
+            console.warn(prefix, entry.message, entry.data);
+          } else {
+            console.debug(prefix, entry.message, entry.data);
+          }
+        },
+      },
+    });
+  }, [hasRealtimeSupport]);
+
+  useEffect(() => {
+    if (!realtimeClient) {
+      return;
+    }
+
+    return () => {
+      void realtimeClient.destroy();
+    };
+  }, [realtimeClient]);
 
   useEffect(() => {
     if (!api) {
@@ -143,22 +199,110 @@ export default function App() {
   }, [api]);
 
   useEffect(() => {
-    if (!config) {
+    setSelectedInput((previous) => (previous === configInputDeviceId ? previous : configInputDeviceId));
+    setSelectedOutput((previous) => (previous === configOutputDeviceId ? previous : configOutputDeviceId));
+  }, [configInputDeviceId, configOutputDeviceId]);
+
+  const audioGraph = useAudioGraphState(selectedInput || undefined, !loadingConfig);
+
+  useEffect(() => {
+    if (!api || !hasRealtimeApiKey || !hasRealtimeSupport) {
+      setRealtimeKey(null);
+      setRealtimeKeyError(null);
       return;
     }
 
-    setSelectedInput((previous) => {
-      const desired = config.audioInputDeviceId ?? '';
-      return previous === desired ? previous : desired;
-    });
+    let cancelled = false;
+    api.config
+      .getSecret('realtimeApiKey')
+      .then((key) => {
+        if (cancelled) {
+          return;
+        }
+        setRealtimeKey(key);
+        setRealtimeKeyError(null);
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        const message = error instanceof Error ? error.message : 'Failed to load realtime API key.';
+        setRealtimeKey(null);
+        setRealtimeKeyError(message);
+      });
 
-    setSelectedOutput((previous) => {
-      const desired = config.audioOutputDeviceId ?? '';
-      return previous === desired ? previous : desired;
-    });
-  }, [config?.audioInputDeviceId, config?.audioOutputDeviceId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [api, hasRealtimeApiKey, hasRealtimeSupport]);
 
-  const audioGraph = useAudioGraphState(selectedInput || undefined, !loadingConfig);
+  useEffect(() => {
+    if (!realtimeClient) {
+      return;
+    }
+
+    if (!realtimeKey || !audioGraph.upstreamStream) {
+      void realtimeClient.disconnect();
+      return;
+    }
+
+    realtimeClient.bindRemoteAudioElement(remoteAudioRef.current);
+    realtimeClient.setJitterBufferMs(100);
+    void realtimeClient
+      .connect({ apiKey: realtimeKey, inputStream: audioGraph.upstreamStream })
+      .catch((error) => {
+        console.error('Failed to connect to realtime API', error);
+      });
+
+    return () => {
+      void realtimeClient.disconnect();
+    };
+  }, [realtimeClient, realtimeKey, audioGraph.upstreamStream]);
+
+  useEffect(() => {
+    if (!realtimeClient) {
+      return;
+    }
+
+    void realtimeClient.setOutputDeviceId(selectedOutput || undefined);
+  }, [realtimeClient, selectedOutput]);
+
+  useEffect(() => {
+    if (!realtimeClient || !hasRealtimeApiKey) {
+      return;
+    }
+
+    realtimeClient.notifySpeechActivity(audioGraph.isActive);
+  }, [realtimeClient, hasRealtimeApiKey, audioGraph.isActive]);
+
+  const realtimeStatusLabel = useMemo(() => {
+    if (!hasRealtimeApiKey) {
+      return 'disabled (API key unavailable)';
+    }
+
+    if (!hasRealtimeSupport) {
+      return 'unavailable (WebRTC not supported)';
+    }
+
+    if (realtimeKeyError) {
+      return `error — ${realtimeKeyError}`;
+    }
+
+    switch (realtimeState.status) {
+      case 'idle':
+        return audioGraph.upstreamStream ? 'standby' : 'waiting for microphone';
+      case 'connecting':
+        return 'connecting';
+      case 'connected':
+        return 'connected';
+      case 'reconnecting':
+        return `reconnecting (attempt ${realtimeState.attempt ?? 0})`;
+      case 'error':
+        return `error — ${realtimeState.error ?? 'unknown'}`;
+      default:
+        return realtimeState.status;
+    }
+  }, [hasRealtimeApiKey, hasRealtimeSupport, realtimeKeyError, realtimeState, audioGraph.upstreamStream]);
 
   useEffect(() => {
     if (audioGraph.status === 'ready') {
@@ -260,6 +404,9 @@ export default function App() {
         <div>
           <span className="label">Device scan:</span> {deviceError ? `error — ${deviceError}` : 'ok'}
         </div>
+        <div>
+          <span className="label">Realtime:</span> {realtimeStatusLabel}
+        </div>
       </section>
 
       <section className="app__controls">
@@ -316,6 +463,9 @@ export default function App() {
           {audioGraph.error}
         </p>
       ) : null}
+      {/* Hidden audio sink for realtime playback (no user-facing controls). */}
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+      <audio ref={remoteAudioRef} autoPlay aria-hidden="true" style={{ display: 'none' }} />
     </main>
   );
 }
