@@ -10,6 +10,7 @@ export interface ConfigBridge {
 export interface PreloadApi {
   config: ConfigBridge;
   wakeWord: WakeWordBridge;
+  ping(): string;
 }
 
 export interface WakeWordBridge {
@@ -31,6 +32,7 @@ const api: PreloadApi = {
       };
     },
   },
+  ping: () => 'pong',
 };
 
 contextBridge.exposeInMainWorld('aiembodied', api);

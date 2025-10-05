@@ -4,12 +4,17 @@ function usePing(): string {
   const [value, setValue] = useState('...');
 
   useEffect(() => {
-    const api = (window as unknown as { aiembodied?: { ping: () => string } }).aiembodied;
-    if (api) {
-      setValue(api.ping());
-    } else {
-      setValue('unavailable');
+    const api = (window as unknown as { aiembodied?: { ping?: () => string } }).aiembodied;
+    if (typeof api?.ping === 'function') {
+      try {
+        setValue(api.ping());
+        return;
+      } catch (error) {
+        console.error('Failed to call preload ping bridge', error);
+      }
     }
+
+    setValue('unavailable');
   }, []);
 
   return value;
