@@ -57,3 +57,4 @@ Keep this checklist accurate; it is the authoritative tracker for execution stat
 - 2025-10-08 — Removed the kiosk packaging icon asset pending refreshed branding deliverables.
 - 2025-10-09 — Verified lint/typecheck for the Home Assistant integration; `pnpm test` currently stalls under Vitest's TTY renderer,
   so rerun with `CI=1` and output redirection or per-package invocations until the runner issue is resolved.
+- 2025-10-09 — Added cross-platform setup scripts to validate/install Node.js and pnpm prerequisites.
