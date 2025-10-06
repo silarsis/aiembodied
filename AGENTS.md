@@ -42,7 +42,7 @@ Track progress against `plan.md` here. Update the status markers (`[ ]` incomple
 - [x] 11. Observability & Metrics
 - [x] 12. Packaging & Auto-Launch
 - [ ] 13. Appliance Readiness Validation
-- [ ] 14. Home Assistant Integration
+- [x] 14. Home Assistant Integration
 - [ ] 15. Avatar Configuration Tool
 - [ ] 16. Future Unity Integration Prep (Stretch)
 
@@ -55,3 +55,11 @@ Keep this checklist accurate; it is the authoritative tracker for execution stat
 - 2025-10-06 — Introduced a pull request template checklist to enforce lint, typecheck, and test runs before merges.
 - 2025-10-07 — Refreshed the README with a full project overview and setup instructions sourced from PRD/architecture docs.
 - 2025-10-08 — Removed the kiosk packaging icon asset pending refreshed branding deliverables.
+- 2025-10-09 — Verified lint/typecheck for the Home Assistant integration; `pnpm test` currently stalls under Vitest's TTY renderer,
+  so rerun with `CI=1` and output redirection or per-package invocations until the runner issue is resolved.
+- 2025-10-10 — Refactored the Home Assistant client to use the native WebSocket implementation, updated mocks/tests, and confirmed
+  `pnpm build` succeeds alongside `CI=1 pnpm test` and workspace lint/typecheck runs.
+- 2025-10-11 — Rewrote the @electron/node-gyp git resolution in pnpm-lock.yaml to use HTTPS so installs/builds succeed in
+  environments without SSH access; re-ran lint/typecheck/test/build to validate the lockfile update.
+- 2025-10-12 — Set an explicit electronVersion and required metadata for electron-builder so packaging succeeds under pnpm
+  workspaces, including maintainer info for Linux, and verified pnpm dist now completes after lint/typecheck/test/build runs.

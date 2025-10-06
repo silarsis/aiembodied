@@ -2,7 +2,13 @@
   "name": "aiembodied",
   "private": true,
   "version": "0.0.1",
+  "description": "Embodied ChatGPT assistant with wake-word activation and kiosk-ready UI.",
   "type": "module",
+  "homepage": "https://aiembodied.example.com",
+  "author": {
+    "name": "AI Embodied Team",
+    "email": "support@aiembodied.example.com"
+  },
   "scripts": {
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",

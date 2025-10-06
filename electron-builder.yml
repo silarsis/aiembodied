@@ -1,6 +1,7 @@
 appId: com.aiembodied.assistant
 productName: AI Embodied Assistant
 asar: true
+electronVersion: 35.7.5
 files:
   - from: .
     filter:
@@ -36,6 +37,7 @@ linux:
   description: |
     AI Embodied Assistant provides a full-screen kiosk experience with wake word activation,
     low-latency conversation, and persistent local memory for transcripts.
+  maintainer: AI Embodied Team <support@aiembodied.example.com>
   artifactName: AIEmbodied-${version}-${os}-${arch}.${ext}
   target:
     - AppImage

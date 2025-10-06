@@ -112,6 +112,27 @@ vi.mock('../src/memory/index.js', () => ({
   MemoryStore: MemoryStoreMock,
 }));
 
+class HomeAssistantIntegrationDouble extends EventEmitter {
+  start = vi.fn().mockResolvedValue(undefined);
+  stop = vi.fn().mockResolvedValue(undefined);
+  dispatchIntent = vi.fn().mockResolvedValue({ success: true, status: 200 });
+  getStatus = vi.fn(() => ({ connected: true }));
+  constructor(public readonly options: unknown) {
+    super();
+  }
+}
+
+const homeAssistantIntegrationInstances: HomeAssistantIntegrationDouble[] = [];
+const HomeAssistantIntegrationMock = vi.fn((options: unknown) => {
+  const instance = new HomeAssistantIntegrationDouble(options);
+  homeAssistantIntegrationInstances.push(instance);
+  return instance;
+});
+
+vi.mock('../src/home-assistant/home-assistant-integration.js', () => ({
+  HomeAssistantIntegration: HomeAssistantIntegrationMock,
+}));
+
 class WakeWordServiceDouble extends EventEmitter {
   start = vi.fn();
   dispose = vi.fn().mockResolvedValue(undefined);
@@ -283,6 +304,9 @@ describe('main process bootstrap', () => {
     CrashGuardMock.mockImplementation(createCrashGuardInstance);
     crashGuardInstances.length = 0;
 
+    HomeAssistantIntegrationMock.mockClear();
+    homeAssistantIntegrationInstances.length = 0;
+
     createdWindows.length = 0;
     getAllWindowsResult = createdWindows;
     BrowserWindowMock.mockClear();
@@ -368,6 +392,15 @@ describe('main process bootstrap', () => {
         port: 9477,
         path: '/metrics',
       },
+      homeAssistant: {
+        enabled: false,
+        baseUrl: 'http://localhost:8123',
+        accessToken: '',
+        allowedEntities: [],
+        eventTypes: ['state_changed'],
+        reconnectDelaysMs: [1000],
+        heartbeatIntervalMs: 30000,
+      },
     } as const;
 
     loadMock.mockResolvedValue(config);
@@ -408,12 +441,33 @@ describe('main process bootstrap', () => {
         port: 9477,
         path: '/metrics',
       },
+      homeAssistant: {
+        enabled: false,
+        baseUrl: 'http://localhost:8123',
+        accessToken: '',
+        allowedEntities: [],
+        eventTypes: ['state_changed'],
+        reconnectDelaysMs: [1000],
+        heartbeatIntervalMs: 30000,
+      },
     } as const;
 
     loadMock.mockResolvedValue(config);
     getConfigMock.mockReturnValue(config);
-    getRendererConfigMock.mockReturnValue({ hasRealtimeApiKey: true });
-    setAudioDevicePreferencesMock.mockResolvedValue({ hasRealtimeApiKey: true });
+    const rendererConfig = {
+      hasRealtimeApiKey: true,
+      homeAssistant: {
+        enabled: false,
+        baseUrl: 'http://localhost:8123',
+        allowedEntities: [],
+        eventTypes: ['state_changed'],
+        reconnectDelaysMs: [1000],
+        heartbeatIntervalMs: 30000,
+        hasAccessToken: false,
+      },
+    };
+    getRendererConfigMock.mockReturnValue(rendererConfig);
+    setAudioDevicePreferencesMock.mockResolvedValue(rendererConfig);
 
     const serviceReady = createDeferred<void>();
     WakeWordServiceMock.mockImplementation((options: unknown) => {
@@ -463,12 +517,12 @@ describe('main process bootstrap', () => {
     expect(crashGuardInstances).toHaveLength(1);
     expect(crashGuardInstances[0].watch).toHaveBeenCalledWith(mainWindow);
 
-    expect(ipcMainMock.handle).toHaveBeenCalledTimes(6);
+    expect(ipcMainMock.handle).toHaveBeenCalledTimes(8);
     const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
 
     const configHandler = handleEntries.get('config:get');
     expect(typeof configHandler).toBe('function');
-    expect(configHandler?.()).toEqual({ hasRealtimeApiKey: true });
+    expect(configHandler?.()).toEqual(rendererConfig);
 
     const secretHandler = handleEntries.get('config:get-secret');
     expect(typeof secretHandler).toBe('function');
@@ -490,6 +544,10 @@ describe('main process bootstrap', () => {
     expect(typeof metricsHandler).toBe('function');
     const metricsResult = metricsHandler?.({}, { metric: 'wake_to_capture_ms', valueMs: 100 });
     expect(metricsResult).toBe(false);
+
+    expect(typeof handleEntries.get('home-assistant:dispatch-intent')).toBe('function');
+    expect(typeof handleEntries.get('home-assistant:get-status')).toBe('function');
+    expect(HomeAssistantIntegrationMock).not.toHaveBeenCalled();
 
     const wakePayload = { keywordLabel: 'Porcupine', confidence: 0.92, timestamp: Date.now() };
     wakeWordService.emit('wake', wakePayload);
@@ -561,6 +619,81 @@ describe('main process bootstrap', () => {
 
     appEmitter.emit('window-all-closed');
     expect(appEmitter.quit).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts the home assistant integration when enabled', async () => {
+    const config = {
+      realtimeApiKey: 'rt-key',
+      audioInputDeviceId: undefined,
+      audioOutputDeviceId: undefined,
+      featureFlags: {},
+      wakeWord: {
+        accessKey: 'access',
+        keywordPath: 'keyword.ppn',
+        keywordLabel: 'Porcupine',
+        sensitivity: 0.5,
+        minConfidence: 0.6,
+        cooldownMs: 900,
+        deviceIndex: 1,
+        modelPath: '/path/to/model',
+      },
+      metrics: {
+        enabled: false,
+        host: '127.0.0.1',
+        port: 9477,
+        path: '/metrics',
+      },
+      homeAssistant: {
+        enabled: true,
+        baseUrl: 'https://ha.local:8123',
+        accessToken: 'ha-secret',
+        allowedEntities: ['light.kitchen'],
+        eventTypes: ['state_changed'],
+        reconnectDelaysMs: [250, 500],
+        heartbeatIntervalMs: 45000,
+      },
+    } as const;
+
+    const rendererConfig = {
+      hasRealtimeApiKey: true,
+      homeAssistant: {
+        enabled: true,
+        baseUrl: 'https://ha.local:8123',
+        allowedEntities: ['light.kitchen'],
+        eventTypes: ['state_changed'],
+        reconnectDelaysMs: [250, 500],
+        heartbeatIntervalMs: 45000,
+        hasAccessToken: true,
+      },
+    };
+
+    loadMock.mockResolvedValue(config);
+    getConfigMock.mockReturnValue(config);
+    getRendererConfigMock.mockReturnValue(rendererConfig);
+    setAudioDevicePreferencesMock.mockResolvedValue(rendererConfig);
+
+    const serviceReady = createDeferred<void>();
+    WakeWordServiceMock.mockImplementation((options: unknown) => {
+      const instance = createWakeWordServiceInstance(options);
+      serviceReady.resolve();
+      return instance;
+    });
+
+    await import('../src/main.js');
+
+    whenReadyDeferred.resolve();
+    await whenReadyDeferred.promise;
+    await flushPromises();
+    await serviceReady.promise;
+
+    expect(HomeAssistantIntegrationMock).toHaveBeenCalledTimes(1);
+    const instance = homeAssistantIntegrationInstances[0];
+    expect(instance).toBeDefined();
+    expect(instance.start).toHaveBeenCalledTimes(1);
+    expect(instance.listenerCount('event')).toBeGreaterThan(0);
+    expect(instance.listenerCount('status')).toBeGreaterThan(0);
+    expect(instance.listenerCount('command')).toBeGreaterThan(0);
+    expect(instance.listenerCount('error')).toBeGreaterThan(0);
   });
 
   it('surfaces configuration validation failures to the user', async () => {
