@@ -1,5 +1,5 @@
 #requires -version 5.1
-<#!
+<#
 .SYNOPSIS
     Prepares a Windows developer workstation for the Embodied ChatGPT Assistant project.
 .DESCRIPTION
@@ -7,12 +7,45 @@
     are reused when they meet the minimum requirements. Node.js is installed via winget
     (or Chocolatey as a fallback) and pnpm is provisioned through Corepack so the version
     aligns with the repository's packageManager field.
-!>
+#>
 
 $ErrorActionPreference = 'Stop'
 
 $RequiredNodeVersion = [Version]'20.0.0'
-$TargetPnpmVersion = '9.12.0'
+$scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
+$repoRoot = Resolve-Path (Join-Path $scriptDirectory '..')
+
+function Get-TargetPnpmVersionFromPackageJson {
+    $packageJsonPath = Join-Path $repoRoot 'package.json'
+    if (-not (Test-Path -Path $packageJsonPath -PathType Leaf)) {
+        return $null
+    }
+
+    try {
+        $packageJson = Get-Content -Path $packageJsonPath -Raw | ConvertFrom-Json
+    }
+    catch {
+        Write-Warning "Unable to parse package.json to determine target pnpm version."
+        return $null
+    }
+
+    if (-not $packageJson.packageManager) {
+        return $null
+    }
+
+    $parts = $packageJson.packageManager -split '@', 2
+    if ($parts.Length -ne 2 -or [string]::IsNullOrWhiteSpace($parts[1])) {
+        Write-Warning "packageManager field in package.json is not in the expected 'pnpm@<version>' format."
+        return $null
+    }
+
+    return $parts[1]
+}
+
+$TargetPnpmVersion = Get-TargetPnpmVersionFromPackageJson
+if (-not $TargetPnpmVersion) {
+    $TargetPnpmVersion = '9.12.0'
+}
 
 function Test-CommandExists {
     param (
