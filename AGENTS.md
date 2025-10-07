@@ -56,3 +56,5 @@ Keep this checklist accurate; it is the authoritative tracker for execution stat
 - 2025-10-07 — Refreshed the README with a full project overview and setup instructions sourced from PRD/architecture docs.
 - 2025-10-08 — Removed the kiosk packaging icon asset pending refreshed branding deliverables.
 - 2025-10-09 — Added cross-platform setup scripts to validate/install Node.js and pnpm prerequisites.
+- 2025-10-10 — Patched the Windows setup script comment-based help and automated pnpm version detection from package.json.
+- 2025-10-11 — Added a Corepack permission fallback to download pnpm to a user directory and persist PATH updates.
