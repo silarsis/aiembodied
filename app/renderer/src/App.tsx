@@ -144,9 +144,20 @@ function usePreloadBridge() {
   const [ping, setPing] = useState<'available' | 'unavailable'>('unavailable');
 
   useEffect(() => {
-    const bridge = getPreloadApi();
-    setApi(bridge);
-    if (bridge) {
+    let disposed = false;
+
+    const applyBridge = (bridge: PreloadApi | undefined) => {
+      if (disposed) {
+        return;
+      }
+
+      setApi(bridge);
+
+      if (!bridge) {
+        setPing('unavailable');
+        return;
+      }
+
       try {
         const result = bridge.ping();
         setPing(result === 'pong' ? 'available' : 'unavailable');
@@ -154,9 +165,39 @@ function usePreloadBridge() {
         console.error('Failed to call preload ping bridge', error);
         setPing('unavailable');
       }
-    } else {
-      setPing('unavailable');
+    };
+
+    const attemptAttach = () => {
+      const bridge = getPreloadApi();
+      if (!bridge) {
+        applyBridge(undefined);
+        return false;
+      }
+
+      applyBridge(bridge);
+      return true;
+    };
+
+    if (attemptAttach()) {
+      return () => {
+        disposed = true;
+      };
     }
+
+    const interval = window.setInterval(() => {
+      if (disposed) {
+        return;
+      }
+
+      if (attemptAttach()) {
+        window.clearInterval(interval);
+      }
+    }, 500);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+    };
   }, []);
 
   return { api, ping };

@@ -117,19 +117,38 @@ describe('ConfigManager', () => {
     });
   });
 
-  it('throws a validation error when the realtime api key is missing', async () => {
-    const manager = new ConfigManager({
-      env: { PORCUPINE_ACCESS_KEY: 'wake-key' } as NodeJS.ProcessEnv,
-    });
-    await expect(manager.load()).rejects.toBeInstanceOf(ConfigValidationError);
-  });
-
   it('throws a validation error when the wake word access key is missing', async () => {
     const manager = new ConfigManager({
       env: { REALTIME_API_KEY: 'key' } as NodeJS.ProcessEnv,
     });
 
     await expect(manager.load()).rejects.toBeInstanceOf(ConfigValidationError);
+  });
+
+  it('loads with an empty realtime api key and marks the renderer config as unconfigured', async () => {
+    const manager = new ConfigManager({
+      env: { PORCUPINE_ACCESS_KEY: 'wake-key' } as NodeJS.ProcessEnv,
+    });
+
+    const config = await manager.load();
+    expect(config.realtimeApiKey).toBe('');
+    const rendererConfig = manager.getRendererConfig();
+    expect(rendererConfig.hasRealtimeApiKey).toBe(false);
+  });
+
+  it('reads realtime api keys from case-insensitive environment variables', async () => {
+    const manager = new ConfigManager({
+      env: {
+        realtime_api_key: 'lower-key',
+        PORCUPINE_ACCESS_KEY: 'wake-key',
+        WAKE_WORD_BUILTIN: 'porcupine',
+      } as NodeJS.ProcessEnv,
+    });
+
+    const config = await manager.load();
+    expect(config.realtimeApiKey).toBe('lower-key');
+    const rendererConfig = manager.getRendererConfig();
+    expect(rendererConfig.hasRealtimeApiKey).toBe(true);
   });
 
   it('updates and persists audio device preferences', async () => {
@@ -219,6 +238,20 @@ describe('ConfigManager', () => {
       headers: expect.objectContaining({ Authorization: 'Bearer live-key' }),
     }));
     expect(result).toEqual({ ok: true, message: 'Realtime API key verified successfully.' });
+  });
+
+  it('returns a helpful error when testing an unconfigured realtime api key', async () => {
+    const fetchMock = vi.fn();
+    const manager = new ConfigManager({
+      env: { PORCUPINE_ACCESS_KEY: 'wake-key' } as NodeJS.ProcessEnv,
+      fetchFn: fetchMock,
+    });
+
+    await manager.load();
+
+    const result = await manager.testSecret('realtimeApiKey');
+    expect(result).toEqual({ ok: false, message: 'Realtime API key is not configured.' });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('reports HTTP failures when validating wake word access keys', async () => {

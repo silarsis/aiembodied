@@ -86,15 +86,6 @@ const MetricsSchema = z.object({
 const RealtimeApiKeySchema = z.string().min(1, 'Realtime API key is required');
 const WakeWordAccessKeySchema = z.string().min(1, 'Porcupine access key is required');
 
-const ConfigSchema = z.object({
-  realtimeApiKey: RealtimeApiKeySchema,
-  audioInputDeviceId: z.string().optional(),
-  audioOutputDeviceId: z.string().optional(),
-  featureFlags: FeatureFlagsSchema.default({}),
-  wakeWord: WakeWordSchema,
-  metrics: MetricsSchema,
-});
-
 const DEFAULT_SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey', 'wakeWordAccessKey'];
 
 export class ConfigManager {
@@ -126,33 +117,30 @@ export class ConfigManager {
     const wakeWordAccessKey = await this.resolveWakeWordAccessKey();
     const storedPreferences = (await this.preferencesStore?.load()) ?? {};
 
-    if (!realtimeApiKey) {
-      throw new ConfigValidationError(
-        'Realtime API key is required. Provide REALTIME_API_KEY in the environment or store it securely.',
-      );
-    }
-
     if (!wakeWordAccessKey) {
       throw new ConfigValidationError(
         'Porcupine access key is required. Provide PORCUPINE_ACCESS_KEY in the environment or store it securely.',
       );
     }
 
-    const parsed = ConfigSchema.parse({
-      realtimeApiKey,
-      audioInputDeviceId:
-        this.normalizeDeviceId(storedPreferences.audioInputDeviceId) ??
-        (this.env.AUDIO_INPUT_DEVICE_ID?.trim() || undefined),
-      audioOutputDeviceId:
-        this.normalizeDeviceId(storedPreferences.audioOutputDeviceId) ??
-        (this.env.AUDIO_OUTPUT_DEVICE_ID?.trim() || undefined),
+    const audioInputDeviceId =
+      this.normalizeDeviceId(storedPreferences.audioInputDeviceId) ??
+      this.normalizeDeviceId(this.env.AUDIO_INPUT_DEVICE_ID);
+    const audioOutputDeviceId =
+      this.normalizeDeviceId(storedPreferences.audioOutputDeviceId) ??
+      this.normalizeDeviceId(this.env.AUDIO_OUTPUT_DEVICE_ID);
+
+    const config: AppConfig = {
+      realtimeApiKey: realtimeApiKey ?? '',
+      audioInputDeviceId,
+      audioOutputDeviceId,
       featureFlags: this.parseFeatureFlags(this.env.FEATURE_FLAGS),
       wakeWord: this.parseWakeWordConfig({ accessKey: wakeWordAccessKey }),
       metrics: this.parseMetricsConfig(),
-    });
+    };
 
-    this.config = parsed;
-    return parsed;
+    this.config = config;
+    return config;
   }
 
   async setAudioDevicePreferences(preferences: AudioDevicePreferences): Promise<RendererConfig> {
@@ -259,10 +247,16 @@ export class ConfigManager {
     }
 
     if (key === 'realtimeApiKey') {
+      if (!this.config.realtimeApiKey) {
+        return { ok: false, message: 'Realtime API key is not configured.' };
+      }
       return this.testRealtimeKey(fetchFn, this.config.realtimeApiKey);
     }
 
     if (key === 'wakeWordAccessKey') {
+      if (!this.config.wakeWord.accessKey) {
+        return { ok: false, message: 'Porcupine access key is not configured.' };
+      }
       return this.testWakeWordKey(fetchFn, this.config.wakeWord.accessKey);
     }
 
@@ -270,7 +264,7 @@ export class ConfigManager {
   }
 
   private async resolveRealtimeApiKey(): Promise<string | undefined> {
-    const envValue = this.env.REALTIME_API_KEY?.trim();
+    const envValue = this.readSecretFromEnv(['REALTIME_API_KEY', 'realtime_api_key']);
     if (envValue) {
       return envValue;
     }
@@ -284,7 +278,7 @@ export class ConfigManager {
   }
 
   private async resolveWakeWordAccessKey(): Promise<string | undefined> {
-    const envValue = this.env.PORCUPINE_ACCESS_KEY?.trim();
+    const envValue = this.readSecretFromEnv(['PORCUPINE_ACCESS_KEY', 'porcupine_access_key']);
     if (envValue) {
       return envValue;
     }
@@ -295,6 +289,20 @@ export class ConfigManager {
 
     const stored = await this.secretStore.getSecret('PORCUPINE_ACCESS_KEY');
     return stored ?? undefined;
+  }
+
+  private readSecretFromEnv(keys: string[]): string | undefined {
+    for (const key of keys) {
+      const value = this.env[key];
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed) {
+          return trimmed;
+        }
+      }
+    }
+
+    return undefined;
   }
 
   private async persistSecret(key: string, value: string): Promise<void> {
