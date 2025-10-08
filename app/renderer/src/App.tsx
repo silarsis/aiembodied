@@ -46,6 +46,7 @@ interface TranscriptEntry {
 type SecretKeyState<T> = Record<ConfigSecretKey, T>;
 
 const SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey', 'wakeWordAccessKey'];
+const REQUIRED_BRIDGE_KEYS: (keyof PreloadApi)[] = ['config', 'wakeWord', 'ping'];
 
 interface SecretStatusState {
   status: 'idle' | 'success' | 'error';
@@ -141,9 +142,39 @@ function useAudioGraphState(inputDeviceId?: string, enabled = true) {
   return { ...state, upstreamStream };
 }
 
+function logRendererBridge(
+  level: 'info' | 'warn' | 'error' | 'debug',
+  message: string,
+  meta?: Record<string, unknown>,
+) {
+  const prefix = `[renderer bridge] ${message}`;
+  if (level === 'debug') {
+    meta ? console.debug(prefix, meta) : console.debug(prefix);
+    return;
+  }
+
+  if (level === 'info') {
+    meta ? console.info(prefix, meta) : console.info(prefix);
+    return;
+  }
+
+  if (level === 'warn') {
+    meta ? console.warn(prefix, meta) : console.warn(prefix);
+    return;
+  }
+
+  meta ? console.error(prefix, meta) : console.error(prefix);
+}
+
 function usePreloadBridge() {
   const [api, setApi] = useState<PreloadApi | undefined>(undefined);
   const [ping, setPing] = useState<'available' | 'unavailable'>('unavailable');
+  const logStateRef = useRef({
+    missingBridgeLogged: false,
+    attachedLogged: false,
+    missingAvatarLogged: false,
+    missingCoreLogged: false,
+  });
 
   useEffect(() => {
     let disposed = false;
@@ -156,13 +187,51 @@ function usePreloadBridge() {
       setApi(bridge);
 
       if (!bridge) {
+        if (!logStateRef.current.missingBridgeLogged) {
+          logRendererBridge('warn', 'Preload API is not yet attached to window.aiembodied.');
+          logStateRef.current.missingBridgeLogged = true;
+          logStateRef.current.attachedLogged = false;
+        }
         setPing('unavailable');
         return;
+      }
+
+      if (!logStateRef.current.attachedLogged) {
+        logRendererBridge('info', 'Preload API detected.', {
+          keys: Object.keys(bridge),
+        });
+        logStateRef.current.attachedLogged = true;
+        logStateRef.current.missingBridgeLogged = false;
+      }
+
+      const missingCore = REQUIRED_BRIDGE_KEYS.filter((key) => !(key in bridge));
+      if (missingCore.length > 0) {
+        if (!logStateRef.current.missingCoreLogged) {
+          logRendererBridge('error', 'Preload API is missing required bridges.', { missing: missingCore });
+          logStateRef.current.missingCoreLogged = true;
+        }
+      } else if (logStateRef.current.missingCoreLogged) {
+        logRendererBridge('info', 'All required preload bridges detected.');
+        logStateRef.current.missingCoreLogged = false;
+      }
+
+      if (!bridge.avatar) {
+        if (!logStateRef.current.missingAvatarLogged) {
+          logRendererBridge(
+            'warn',
+            'Avatar configuration bridge missing from preload API. Avatar uploads require a valid realtime API key.',
+          );
+          logStateRef.current.missingAvatarLogged = true;
+        }
+      } else if (logStateRef.current.missingAvatarLogged) {
+        logRendererBridge('info', 'Avatar configuration bridge is now available.');
+        logStateRef.current.missingAvatarLogged = false;
       }
 
       try {
         const result = bridge.ping();
         setPing(result === 'pong' ? 'available' : 'unavailable');
+        logRendererBridge('debug', 'Preload ping completed.', { result });
       } catch (error) {
         console.error('Failed to call preload ping bridge', error);
         setPing('unavailable');
@@ -596,6 +665,7 @@ export default function App() {
     if (!api) {
       setConfigError('Renderer preload API is unavailable.');
       setLoadingConfig(false);
+      logRendererBridge('error', 'Configuration bridge unavailable while loading renderer config.');
       return;
     }
 
@@ -844,6 +914,9 @@ export default function App() {
     async (preferences: AudioDevicePreferences) => {
       if (!api) {
         setSaveError('Cannot update audio preferences without preload bridge access.');
+        logRendererBridge('error', 'Configuration bridge unavailable during audio preference persistence.', {
+          preferences,
+        });
         return;
       }
 
@@ -927,6 +1000,9 @@ export default function App() {
         }
 
         if (!api) {
+          logRendererBridge('error', 'Configuration bridge unavailable while submitting a secret update.', {
+            key,
+          });
           setSecretStatus((previous) => ({
             ...previous,
             [key]: { status: 'error', message: 'Configuration bridge is unavailable.' },
@@ -968,6 +1044,9 @@ export default function App() {
     (key: ConfigSecretKey) =>
       async () => {
         if (!api) {
+          logRendererBridge('error', 'Configuration bridge unavailable while testing a secret.', {
+            key,
+          });
           setSecretStatus((previous) => ({
             ...previous,
             [key]: { status: 'error', message: 'Configuration bridge is unavailable.' },

@@ -5,6 +5,7 @@ import type {
   ConversationMessage,
   ConversationSession,
 } from '../../main/src/conversation/types.js';
+import type { RendererConfig } from '../../main/src/config/config-manager.js';
 import type { WakeWordDetectionEvent } from '../../main/src/wake-word/types.js';
 import type { AvatarBridge } from '../src/avatar/types.js';
 import App from '../src/App.js';
@@ -85,6 +86,7 @@ describe('App component', () => {
   const setSecretMock = vi.fn();
   const testSecretMock = vi.fn();
   let wakeListener: ((event: WakeWordDetectionEvent) => void) | undefined;
+  let rendererConfig: RendererConfig;
 
   beforeEach(() => {
     (window as unknown as { AudioContext: typeof AudioContext }).AudioContext = MockAudioContext as unknown as typeof AudioContext;
@@ -102,11 +104,17 @@ describe('App component', () => {
     ] as MediaDeviceInfo[]);
     getUserMediaMock.mockResolvedValue(new MockMediaStream() as unknown as MediaStream);
 
-    const rendererConfig = {
+    rendererConfig = {
       audioInputDeviceId: 'mic-1',
       audioOutputDeviceId: '',
       featureFlags: { transcriptOverlay: true },
       hasRealtimeApiKey: true,
+      metrics: {
+        enabled: false,
+        host: '127.0.0.1',
+        port: 9090,
+        path: '/metrics',
+      },
       wakeWord: {
         keywordPath: '',
         keywordLabel: '',
@@ -233,6 +241,38 @@ describe('App component', () => {
 
     expect(screen.getByText(/Speech gate:/i)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Embodied Assistant/i })).toBeInTheDocument();
+  });
+
+  it('logs a warning when the preload API omits the avatar bridge', async () => {
+    (window as PreloadWindow).aiembodied = {
+      ping: () => 'pong',
+      config: {
+        get: vi.fn().mockResolvedValue(rendererConfig),
+        getSecret: vi.fn().mockResolvedValue('rt-secret'),
+        setAudioDevicePreferences: setAudioDevicePreferencesMock,
+        setSecret: setSecretMock,
+        testSecret: testSecretMock,
+      },
+      wakeWord: {
+        onWake: (listener: (event: WakeWordDetectionEvent) => void) => {
+          wakeListener = listener;
+          return () => {
+            wakeListener = undefined;
+          };
+        },
+      },
+      conversation: undefined,
+      metrics: undefined,
+      avatar: undefined,
+    } as unknown as PreloadWindow['aiembodied'];
+
+    render(<App />);
+
+    await waitFor(() =>
+      expect((console.warn as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
+        expect.stringContaining('Avatar configuration bridge missing from preload API.'),
+      ),
+    );
   });
 
   it('loads persisted conversation history and records new session messages', async () => {

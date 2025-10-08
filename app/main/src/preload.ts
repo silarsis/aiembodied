@@ -16,6 +16,38 @@ import type {
 import type { WakeWordDetectionEvent } from './wake-word/types.js';
 import type { LatencyMetricName } from './metrics/types.js';
 
+function logPreloadMessage(
+  level: 'info' | 'warn' | 'error',
+  message: string,
+  meta?: Record<string, unknown>,
+) {
+  const prefix = `[preload bridge] ${message}`;
+  try {
+    if (meta) {
+      if (level === 'info') {
+        console.info(prefix, meta);
+      } else if (level === 'warn') {
+        console.warn(prefix, meta);
+      } else {
+        console.error(prefix, meta);
+      }
+    } else if (level === 'info') {
+      console.info(prefix);
+    } else if (level === 'warn') {
+      console.warn(prefix);
+    } else {
+      console.error(prefix);
+    }
+  } catch {
+    // Ignore logging errors — console may be unavailable in some contexts.
+  }
+}
+
+const logPreloadInfo = (message: string, meta?: Record<string, unknown>) =>
+  logPreloadMessage('info', message, meta);
+const logPreloadError = (message: string, meta?: Record<string, unknown>) =>
+  logPreloadMessage('error', message, meta);
+
 export interface ConfigBridge {
   get(): Promise<RendererConfig>;
   getSecret(key: ConfigSecretKey): Promise<string>;
@@ -117,7 +149,22 @@ const api: PreloadApi = {
   ping: () => 'pong',
 };
 
-contextBridge.exposeInMainWorld('aiembodied', api);
+logPreloadInfo('Preparing to expose renderer bridge.', {
+  keys: Object.keys(api),
+  hasAvatarBridge: typeof api.avatar !== 'undefined',
+});
+
+try {
+  contextBridge.exposeInMainWorld('aiembodied', api);
+  logPreloadInfo('Renderer bridge exposed successfully.', {
+    keys: Object.keys(api),
+    hasAvatarBridge: typeof api.avatar !== 'undefined',
+  });
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  logPreloadError('Failed to expose renderer bridge.', { message });
+  throw error;
+}
 
 declare global {
   interface Window {

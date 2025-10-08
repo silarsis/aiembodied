@@ -53,6 +53,21 @@ export function AvatarConfigurator({ avatarApi, onActiveFaceChange }: AvatarConf
   const [nameInput, setNameInput] = useState('');
   const isBridgeAvailable = Boolean(avatarApi);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const availabilityLogRef = useRef<'available' | 'missing' | null>(null);
+
+  useEffect(() => {
+    const nextState: 'available' | 'missing' = avatarApi ? 'available' : 'missing';
+    if (availabilityLogRef.current === nextState) {
+      return;
+    }
+
+    availabilityLogRef.current = nextState;
+    if (nextState === 'available') {
+      console.info('[avatar configurator] Avatar bridge connected.');
+    } else {
+      console.warn('[avatar configurator] Avatar bridge unavailable. Falling back to static UI.');
+    }
+  }, [avatarApi]);
 
   const formattedFaces = useMemo(() => {
     return faces.map((face) => ({

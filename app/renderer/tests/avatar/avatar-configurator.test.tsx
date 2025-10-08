@@ -136,4 +136,44 @@ describe('AvatarConfigurator', () => {
       globalThis.FileReader = originalFileReader;
     }
   });
+
+  it('logs a warning when the avatar bridge is unavailable', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    try {
+      render(<AvatarConfigurator />);
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[avatar configurator] Avatar bridge unavailable. Falling back to static UI.',
+      );
+      expect(infoSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+      infoSpy.mockRestore();
+    }
+  });
+
+  it('logs connection info when the avatar bridge is provided', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    try {
+      const avatarApi: AvatarBridge = {
+        listFaces: vi.fn().mockResolvedValue([]),
+        getActiveFace: vi.fn().mockResolvedValue(null),
+        setActiveFace: vi.fn().mockResolvedValue(null),
+        uploadFace: vi.fn().mockResolvedValue({ faceId: 'id' }),
+        deleteFace: vi.fn().mockResolvedValue(undefined),
+      };
+
+      render(<AvatarConfigurator avatarApi={avatarApi} />);
+      await waitFor(() => expect(infoSpy).toHaveBeenCalled());
+      expect(warnSpy).not.toHaveBeenCalledWith(
+        '[avatar configurator] Avatar bridge unavailable. Falling back to static UI.',
+      );
+    } finally {
+      warnSpy.mockRestore();
+      infoSpy.mockRestore();
+    }
+  });
 });
