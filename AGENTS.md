@@ -43,7 +43,7 @@ Track progress against `plan.md` here. Update the status markers (`[ ]` incomple
 - [x] 12. Packaging & Auto-Launch
 - [ ] 13. Appliance Readiness Validation
 - [ ] 14. Home Assistant Integration
-- [ ] 15. Avatar Configuration Tool
+- [x] 15. Avatar Configuration Tool
 - [ ] 16. Future Unity Integration Prep (Stretch)
 
 Keep this checklist accurate; it is the authoritative tracker for execution state.

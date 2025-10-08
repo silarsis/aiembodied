@@ -127,6 +127,27 @@ vi.mock('../src/memory/index.js', () => ({
   MemoryStore: MemoryStoreMock,
 }));
 
+class AvatarFaceServiceDouble {
+  listFaces = vi.fn().mockResolvedValue([]);
+  getActiveFace = vi.fn().mockResolvedValue(null);
+  setActiveFace = vi.fn().mockResolvedValue(null);
+  uploadFace = vi.fn().mockResolvedValue({ faceId: 'face-123' });
+  deleteFace = vi.fn().mockResolvedValue(undefined);
+  constructor(public readonly options: unknown) {}
+}
+
+const avatarFaceServiceInstances: AvatarFaceServiceDouble[] = [];
+const createAvatarFaceServiceInstance = (options: unknown) => {
+  const instance = new AvatarFaceServiceDouble(options);
+  avatarFaceServiceInstances.push(instance);
+  return instance;
+};
+const AvatarFaceServiceMock = vi.fn(createAvatarFaceServiceInstance);
+
+vi.mock('../src/avatar/avatar-face-service.js', () => ({
+  AvatarFaceService: AvatarFaceServiceMock,
+}));
+
 class WakeWordServiceDouble extends EventEmitter {
   start = vi.fn();
   dispose = vi.fn().mockResolvedValue(undefined);
@@ -302,6 +323,10 @@ describe('main process bootstrap', () => {
     WakeWordServiceMock.mockReset();
     WakeWordServiceMock.mockImplementation(createWakeWordServiceInstance);
     wakeWordServiceInstances.length = 0;
+
+    AvatarFaceServiceMock.mockReset();
+    AvatarFaceServiceMock.mockImplementation(createAvatarFaceServiceInstance);
+    avatarFaceServiceInstances.length = 0;
 
     CrashGuardMock.mockReset();
     CrashGuardMock.mockImplementation(createCrashGuardInstance);
@@ -498,7 +523,7 @@ describe('main process bootstrap', () => {
     expect(crashGuardInstances).toHaveLength(1);
     expect(crashGuardInstances[0].watch).toHaveBeenCalledWith(mainWindow);
 
-    expect(ipcMainMock.handle).toHaveBeenCalledTimes(8);
+    expect(ipcMainMock.handle).toHaveBeenCalledTimes(13);
     const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
 
     const configHandler = handleEntries.get('config:get');
@@ -537,6 +562,36 @@ describe('main process bootstrap', () => {
     expect(typeof metricsHandler).toBe('function');
     const metricsResult = metricsHandler?.({}, { metric: 'wake_to_capture_ms', valueMs: 100 });
     expect(metricsResult).toBe(false);
+
+    const avatarService = avatarFaceServiceInstances[0];
+    expect(avatarService).toBeDefined();
+
+    const listFacesHandler = handleEntries.get('avatar:list-faces');
+    expect(typeof listFacesHandler).toBe('function');
+    await expect(listFacesHandler?.({})).resolves.toEqual([]);
+    expect(avatarService?.listFaces).toHaveBeenCalledTimes(1);
+
+    const getActiveHandler = handleEntries.get('avatar:get-active-face');
+    expect(typeof getActiveHandler).toBe('function');
+    await expect(getActiveHandler?.({})).resolves.toBeNull();
+    expect(avatarService?.getActiveFace).toHaveBeenCalledTimes(1);
+
+    const setActiveHandler = handleEntries.get('avatar:set-active-face');
+    expect(typeof setActiveHandler).toBe('function');
+    await expect(setActiveHandler?.({}, 'face-1')).resolves.toBeNull();
+    expect(avatarService?.setActiveFace).toHaveBeenCalledWith('face-1');
+
+    const uploadHandler = handleEntries.get('avatar:upload-face');
+    expect(typeof uploadHandler).toBe('function');
+    await expect(uploadHandler?.({}, { name: 'Friendly', imageDataUrl: 'data:' })).resolves.toEqual({
+      faceId: 'face-123',
+    });
+    expect(avatarService?.uploadFace).toHaveBeenCalledWith({ name: 'Friendly', imageDataUrl: 'data:' });
+
+    const deleteHandler = handleEntries.get('avatar:delete-face');
+    expect(typeof deleteHandler).toBe('function');
+    await expect(deleteHandler?.({}, 'face-1')).resolves.toBe(true);
+    expect(avatarService?.deleteFace).toHaveBeenCalledWith('face-1');
 
     const wakePayload = { keywordLabel: 'Porcupine', confidence: 0.92, timestamp: Date.now() };
     wakeWordService.emit('wake', wakePayload);
