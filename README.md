@@ -94,10 +94,20 @@ Additional knobs include `WAKE_WORD_KEYWORD_PATH`/`WAKE_WORD_KEYWORD_LABEL` for 
    ```bash
    pnpm --filter @aiembodied/renderer build
    ```
-2. **Launch the Electron main process** (loads the bundled renderer and starts the wake-word worker):
-   ```bash
-   pnpm --filter @aiembodied/main dev
-   ```
+2. **Build and launch the Electron main process** (loads the bundled renderer and starts the wake-word worker):
+   - One-shot cross-platform command:
+     ```bash
+     pnpm dev:run
+     ```
+   - Or using platform scripts:
+     ```powershell
+     .\scripts\run-dev.ps1
+     ```
+     ```bash
+     ./scripts/run-dev.sh
+     ```
+
+   The run scripts rebuild native deps for Electron automatically. Note: this can temporarily break Node-based unit tests that touch SQLite. Reinstall or rebuild for Node when you return to test runs.
 
 During renderer UI work you can also run the Vite dev server in parallel:
 

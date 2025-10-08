@@ -26,15 +26,32 @@ export class CrashGuard {
   }
 
   dispose(): void {
-    if (!this.window) {
+    const win = this.window;
+    if (!win) {
       return;
     }
 
-    const { webContents } = this.window;
-    webContents.removeListener('render-process-gone', this.handleRenderProcessGone);
-    this.window.removeListener('unresponsive', this.handleUnresponsive);
-    this.window.removeListener('closed', this.handleClosed);
-    this.window = null;
+    try {
+      if (!win.isDestroyed()) {
+        try {
+          win.webContents.removeListener('render-process-gone', this.handleRenderProcessGone);
+        } catch {
+          // ignore errors removing webContents listener on teardown
+        }
+        try {
+          win.removeListener('unresponsive', this.handleUnresponsive);
+        } catch {
+          // ignore errors removing window listeners on teardown
+        }
+        try {
+          win.removeListener('closed', this.handleClosed);
+        } catch {
+          // ignore errors removing window listeners on teardown
+        }
+      }
+    } finally {
+      this.window = null;
+    }
   }
 
   private registerEventHandlers(): void {
