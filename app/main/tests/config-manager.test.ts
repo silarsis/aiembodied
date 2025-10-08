@@ -151,6 +151,23 @@ describe('ConfigManager', () => {
     expect(rendererConfig.hasRealtimeApiKey).toBe(true);
   });
 
+  it('reads api secrets from lowercase .env keys and trims whitespace', async () => {
+    const manager = new ConfigManager({
+      env: {
+        realtime_api_key: ' \trealtime-key \n',
+        porcupine_access_key: '  porcupine-key  ',
+        WAKE_WORD_BUILTIN: 'porcupine',
+      } as NodeJS.ProcessEnv,
+    });
+
+    const config = await manager.load();
+
+    expect(config.realtimeApiKey).toBe('realtime-key');
+    expect(config.wakeWord.accessKey).toBe('porcupine-key');
+    expect(config.wakeWord.keywordPath).toBe('porcupine');
+    expect(config.wakeWord.keywordLabel).toBe('Porcupine');
+  });
+
   it('updates and persists audio device preferences', async () => {
     const preferencesStore = new InMemoryPreferencesStore();
     const manager = new ConfigManager({

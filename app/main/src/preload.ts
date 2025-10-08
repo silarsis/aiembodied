@@ -2,6 +2,12 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { ConfigSecretKey, RendererConfig } from './config/config-manager.js';
 import type { AudioDevicePreferences } from './config/preferences-store.js';
 import type {
+  AvatarFaceDetail,
+  AvatarFaceSummary,
+  AvatarUploadRequest,
+  AvatarUploadResult,
+} from './avatar/types.js';
+import type {
   ConversationAppendMessagePayload,
   ConversationHistory,
   ConversationMessage,
@@ -23,6 +29,7 @@ export interface PreloadApi {
   wakeWord: WakeWordBridge;
   conversation?: ConversationBridge;
   metrics?: MetricsBridge;
+  avatar?: AvatarBridge;
   ping(): string;
 }
 
@@ -39,6 +46,14 @@ export interface ConversationBridge {
 
 export interface MetricsBridge {
   observeLatency(metric: LatencyMetricName, valueMs: number): Promise<void>;
+}
+
+export interface AvatarBridge {
+  listFaces(): Promise<AvatarFaceSummary[]>;
+  getActiveFace(): Promise<AvatarFaceDetail | null>;
+  setActiveFace(faceId: string | null): Promise<AvatarFaceDetail | null>;
+  uploadFace(request: AvatarUploadRequest): Promise<AvatarUploadResult>;
+  deleteFace(faceId: string): Promise<void>;
 }
 
 const api: PreloadApi = {
@@ -86,6 +101,17 @@ const api: PreloadApi = {
   metrics: {
     observeLatency: async (metric, valueMs) => {
       await ipcRenderer.invoke('metrics:observe-latency', { metric, valueMs });
+    },
+  },
+  avatar: {
+    listFaces: () => ipcRenderer.invoke('avatar:list-faces') as Promise<AvatarFaceSummary[]>,
+    getActiveFace: () => ipcRenderer.invoke('avatar:get-active-face') as Promise<AvatarFaceDetail | null>,
+    setActiveFace: (faceId) =>
+      ipcRenderer.invoke('avatar:set-active-face', faceId) as Promise<AvatarFaceDetail | null>,
+    uploadFace: (payload) =>
+      ipcRenderer.invoke('avatar:upload-face', payload) as Promise<AvatarUploadResult>,
+    deleteFace: async (faceId) => {
+      await ipcRenderer.invoke('avatar:delete-face', faceId);
     },
   },
   ping: () => 'pong',

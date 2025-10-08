@@ -44,6 +44,27 @@ describe('preload bridge', () => {
     expect(invoke).toHaveBeenCalledWith('config:get-secret', 'realtimeApiKey');
   });
 
+  it('routes config mutations and tests through ipc channels', async () => {
+    const [, api] = exposeInMainWorld.mock.calls[0];
+
+    const preferences = { audioInputDeviceId: 'mic', audioOutputDeviceId: 'spk' };
+    invoke.mockResolvedValueOnce({ hasRealtimeApiKey: false });
+    await api.config.setAudioDevicePreferences(preferences);
+    expect(invoke).toHaveBeenCalledWith('config:set-audio-devices', preferences);
+
+    invoke.mockResolvedValueOnce({ hasRealtimeApiKey: true });
+    await api.config.setSecret('realtimeApiKey', 'next-key');
+    expect(invoke).toHaveBeenCalledWith('config:set-secret', {
+      key: 'realtimeApiKey',
+      value: 'next-key',
+    });
+
+    const response = { ok: true, message: 'verified' };
+    invoke.mockResolvedValueOnce(response);
+    await expect(api.config.testSecret('wakeWordAccessKey')).resolves.toEqual(response);
+    expect(invoke).toHaveBeenCalledWith('config:test-secret', 'wakeWordAccessKey');
+  });
+
   it('provides a wake word subscription bridge', async () => {
     const [, api] = exposeInMainWorld.mock.calls[0];
     const listener = vi.fn();
