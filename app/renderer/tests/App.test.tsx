@@ -6,6 +6,7 @@ import type {
   ConversationSession,
 } from '../../main/src/conversation/types.js';
 import type { WakeWordDetectionEvent } from '../../main/src/wake-word/types.js';
+import type { AvatarBridge } from '../src/avatar/types.js';
 import App from '../src/App.js';
 
 class MockMediaStream {
@@ -57,7 +58,18 @@ class MockAudioContext {
   close = vi.fn(async () => {});
 }
 
-type PreloadWindow = Window & { aiembodied?: import('../../main/src/preload.js').PreloadApi };
+type PreloadWindow = Window & { aiembodied?: import('../src/preload-api.js').PreloadApi };
+
+function createAvatarBridgeMock(overrides: Partial<AvatarBridge> = {}): AvatarBridge {
+  return {
+    listFaces: vi.fn().mockResolvedValue([]),
+    getActiveFace: vi.fn().mockResolvedValue(null),
+    setActiveFace: vi.fn().mockResolvedValue(null),
+    uploadFace: vi.fn().mockResolvedValue({ faceId: 'avatar-face-id' }),
+    deleteFace: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
 
 describe('App component', () => {
   const originalAudioContext = window.AudioContext;
@@ -170,6 +182,7 @@ describe('App component', () => {
           };
         },
       },
+      avatar: createAvatarBridgeMock(),
     } as unknown as PreloadWindow['aiembodied'];
 
     render(<App />);
@@ -269,6 +282,7 @@ describe('App component', () => {
           };
         },
       },
+      avatar: createAvatarBridgeMock(),
       conversation: {
         getHistory: vi.fn().mockResolvedValue({
           currentSessionId: 'session-1',
@@ -392,6 +406,7 @@ describe('App component', () => {
       wakeWord: {
         onWake: () => () => {},
       },
+      avatar: createAvatarBridgeMock(),
     } as unknown as PreloadWindow['aiembodied'];
 
     setSecretMock.mockResolvedValueOnce({
@@ -462,6 +477,7 @@ describe('App component', () => {
       wakeWord: {
         onWake: () => () => {},
       },
+      avatar: createAvatarBridgeMock(),
     } as unknown as PreloadWindow['aiembodied'];
 
     testSecretMock.mockResolvedValueOnce({ ok: false, message: 'Invalid Porcupine access key' });

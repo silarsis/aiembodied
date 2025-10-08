@@ -1,8 +1,10 @@
 import { memo, useEffect, useMemo, useRef } from 'react';
 import type { VisemeFrame } from '../audio/viseme-driver.js';
+import type { AvatarComponentAsset, AvatarComponentSlot } from './types.js';
 
 export interface AvatarRendererProps {
   frame: VisemeFrame | null;
+  assets?: AvatarComponentAsset[] | null;
 }
 
 function now(): number {
@@ -17,7 +19,9 @@ const BLINK_DURATION_MS = 180;
 const MIN_AUTO_BLINK_MS = 2800;
 const MAX_AUTO_BLINK_MS = 4400;
 
-export const AvatarRenderer = memo(function AvatarRenderer({ frame }: AvatarRendererProps) {
+type LoadedAsset = { slot: AvatarComponentSlot; sequence: number; image: HTMLImageElement };
+
+export const AvatarRenderer = memo(function AvatarRenderer({ frame, assets }: AvatarRendererProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameRef = useRef<VisemeFrame | null>(null);
   const idleStartRef = useRef<number>(now());
@@ -28,6 +32,39 @@ export const AvatarRenderer = memo(function AvatarRenderer({ frame }: AvatarRend
     nextAuto: now() + MIN_AUTO_BLINK_MS,
   });
   const randomRef = useRef<() => number>(() => Math.random());
+  const assetMapRef = useRef<Map<AvatarComponentSlot, LoadedAsset[]> | null>(null);
+
+  const loadedAssets = useMemo(() => {
+    if (!assets || assets.length === 0) {
+      return null;
+    }
+
+    const entries: LoadedAsset[] = assets.map((component) => {
+      const image = new Image();
+      image.decoding = 'async';
+      image.src = component.dataUrl;
+      return {
+        slot: component.slot,
+        sequence: Number.isFinite(component.sequence) ? component.sequence : 0,
+        image,
+      };
+    });
+
+    entries.sort((a, b) => a.sequence - b.sequence);
+
+    const map = new Map<AvatarComponentSlot, LoadedAsset[]>();
+    for (const entry of entries) {
+      const bucket = map.get(entry.slot) ?? [];
+      bucket.push(entry);
+      map.set(entry.slot, bucket);
+    }
+
+    return map;
+  }, [assets]);
+
+  useEffect(() => {
+    assetMapRef.current = loadedAssets;
+  }, [loadedAssets]);
 
   useEffect(() => {
     frameRef.current = frame;
@@ -160,124 +197,188 @@ export const AvatarRenderer = memo(function AvatarRenderer({ frame }: AvatarRend
       context.fillStyle = gradient;
       context.fillRect(0, 0, width, height);
 
-      context.save();
-      context.translate(centerX + idleSway, centerY + idleBob);
+      let drewAssets = false;
+      const assetMap = assetMapRef.current;
 
-      // Neck
-      context.beginPath();
-      context.moveTo(-headRadius * 0.32, headRadius * 0.9);
-      context.quadraticCurveTo(0, headRadius * 1.1, headRadius * 0.32, headRadius * 0.9);
-      context.lineTo(headRadius * 0.22, headRadius * 1.5);
-      context.quadraticCurveTo(0, headRadius * 1.6, -headRadius * 0.22, headRadius * 1.5);
-      context.closePath();
-      context.fillStyle = '#facc15';
-      context.fill();
+      if (assetMap && assetMap.size > 0) {
+        const pickAsset = (slot: AvatarComponentSlot): HTMLImageElement | null => {
+          const items = assetMap.get(slot);
+          if (!items) {
+            return null;
+          }
 
-      // Head base
-      context.beginPath();
-      context.ellipse(0, 0, headRadius * 1.02, headRadius * 1.12, 0, 0, Math.PI * 2);
-      context.fillStyle = '#fde68a';
-      context.fill();
+          for (const entry of items) {
+            const image = entry.image;
+            if (image.complete && image.naturalWidth > 0 && image.naturalHeight > 0) {
+              return image;
+            }
+          }
 
-      // Face shadow
-      context.beginPath();
-      context.ellipse(0, headRadius * 0.2, headRadius * 0.96, headRadius * 0.9, 0, 0, Math.PI * 2);
-      context.fillStyle = 'rgba(249, 115, 22, 0.06)';
-      context.fill();
+          return null;
+        };
 
-      // Eyes
-      const eyeOffsetX = headRadius * 0.42;
-      const eyeOffsetY = -headRadius * 0.15;
-      const eyeWidth = headRadius * 0.22;
-      const eyeHeightBase = headRadius * 0.18;
-      const eyeHeight = Math.max(eyeHeightBase * (1 - blinkProgress * 0.92), headRadius * 0.02);
-      for (const direction of [-1, 1]) {
+        const baseImage = pickAsset('base');
+        if (baseImage) {
+          drewAssets = true;
+          context.save();
+          context.translate(centerX + idleSway, centerY + idleBob);
+          context.drawImage(baseImage, -width / 2, -height / 2, width, height);
+
+          const eyeSlot: AvatarComponentSlot = blinkProgress > 0.6 ? 'eyes-closed' : 'eyes-open';
+          const eyesImage = pickAsset(eyeSlot) ?? pickAsset('eyes-open');
+          if (eyesImage) {
+            context.drawImage(eyesImage, -width / 2, -height / 2, width, height);
+          }
+
+          const normalizedIndex = Math.max(0, Math.min(4, visemeIndex));
+          const mouthSlot: AvatarComponentSlot =
+            intensity > 0.12 ? (`mouth-${normalizedIndex}` as AvatarComponentSlot) : 'mouth-neutral';
+          const mouthImage = pickAsset(mouthSlot) ?? pickAsset('mouth-neutral');
+          if (mouthImage) {
+            const alpha = Math.max(0.6, Math.min(1, 0.6 + intensity * 0.4));
+            context.globalAlpha = alpha;
+            context.drawImage(mouthImage, -width / 2, -height / 2, width, height);
+            context.globalAlpha = 1;
+          }
+
+          context.restore();
+        }
+      }
+
+      if (!drewAssets) {
+        context.save();
+        context.translate(centerX + idleSway, centerY + idleBob);
+
+        // Neck
         context.beginPath();
-        context.ellipse(direction * eyeOffsetX, eyeOffsetY, eyeWidth, eyeHeight, 0, 0, Math.PI * 2);
-        context.fillStyle = '#0f172a';
+        context.moveTo(-headRadius * 0.32, headRadius * 0.9);
+        context.quadraticCurveTo(0, headRadius * 1.1, headRadius * 0.32, headRadius * 0.9);
+        context.lineTo(headRadius * 0.22, headRadius * 1.5);
+        context.quadraticCurveTo(0, headRadius * 1.6, -headRadius * 0.22, headRadius * 1.5);
+        context.closePath();
+        context.fillStyle = '#facc15';
         context.fill();
 
-        context.globalAlpha = 0.75;
+        // Head base
         context.beginPath();
-        context.ellipse(direction * eyeOffsetX + headRadius * 0.05, eyeOffsetY - eyeHeight * 0.25, eyeWidth * 0.4, eyeHeight * 0.4, 0, 0, Math.PI * 2);
+        context.ellipse(0, 0, headRadius * 1.02, headRadius * 1.12, 0, 0, Math.PI * 2);
+        context.fillStyle = '#fde68a';
+        context.fill();
+
+        // Face shadow
+        context.beginPath();
+        context.ellipse(0, headRadius * 0.2, headRadius * 0.96, headRadius * 0.9, 0, 0, Math.PI * 2);
+        context.fillStyle = 'rgba(249, 115, 22, 0.06)';
+        context.fill();
+
+        // Eyes
+        const eyeOffsetX = headRadius * 0.42;
+        const eyeOffsetY = -headRadius * 0.15;
+        const eyeWidth = headRadius * 0.22;
+        const eyeHeightBase = headRadius * 0.18;
+        const eyeHeight = Math.max(eyeHeightBase * (1 - blinkProgress * 0.92), headRadius * 0.02);
+        for (const direction of [-1, 1]) {
+          context.beginPath();
+          context.ellipse(direction * eyeOffsetX, eyeOffsetY, eyeWidth, eyeHeight, 0, 0, Math.PI * 2);
+          context.fillStyle = '#0f172a';
+          context.fill();
+
+          context.globalAlpha = 0.75;
+          context.beginPath();
+          context.ellipse(
+            direction * eyeOffsetX + headRadius * 0.05,
+            eyeOffsetY - eyeHeight * 0.25,
+            eyeWidth * 0.4,
+            eyeHeight * 0.4,
+            0,
+            0,
+            Math.PI * 2,
+          );
+          context.fillStyle = 'white';
+          context.fill();
+          context.globalAlpha = 1;
+        }
+
+        // Brows
+        context.lineWidth = headRadius * 0.06;
+        context.lineCap = 'round';
+        context.strokeStyle = 'rgba(15, 23, 42, 0.65)';
+        context.beginPath();
+        context.moveTo(-eyeOffsetX - headRadius * 0.05, eyeOffsetY - eyeHeightBase * 0.9);
+        context.quadraticCurveTo(
+          -headRadius * 0.15,
+          eyeOffsetY - eyeHeightBase * (1.2 + intensity * 0.2),
+          eyeOffsetX + headRadius * 0.05,
+          eyeOffsetY - eyeHeightBase * 0.9,
+        );
+        context.stroke();
+
+        // Cheek blush
+        context.globalAlpha = 0.18 + intensity * 0.25;
+        for (const direction of [-1, 1]) {
+          context.beginPath();
+          context.ellipse(direction * headRadius * 0.5, headRadius * 0.35, headRadius * 0.3, headRadius * 0.18, 0, 0, Math.PI * 2);
+          context.fillStyle = '#f97316';
+          context.fill();
+        }
+        context.globalAlpha = 1;
+
+        // Mouth
+        const mouthWidth = headRadius * (0.68 + intensity * 0.25);
+        const mouthHeight = headRadius * (0.08 + intensity * 0.32);
+        const mouthY = headRadius * 0.55;
+
+        context.beginPath();
+        context.moveTo(-mouthWidth / 2, mouthY);
+        const upperLift = mouthHeight * (0.35 + visemeIndex * 0.08);
+        context.quadraticCurveTo(0, mouthY - upperLift, mouthWidth / 2, mouthY);
+        const lowerDepth = mouthHeight * (0.75 + intensity * 0.4 + visemeIndex * 0.05);
+        context.quadraticCurveTo(0, mouthY + lowerDepth, -mouthWidth / 2, mouthY);
+        context.closePath();
+        context.fillStyle = '#fb7185';
+        context.fill();
+        context.lineWidth = headRadius * 0.02;
+        context.strokeStyle = 'rgba(190, 18, 60, 0.8)';
+        context.stroke();
+
+        // Inner mouth shading
+        context.save();
+        context.beginPath();
+        const innerWidth = mouthWidth * (0.55 + intensity * 0.3);
+        const innerDepth = mouthHeight * (0.9 + intensity * 0.5);
+        context.moveTo(-innerWidth / 2, mouthY);
+        context.quadraticCurveTo(0, mouthY + innerDepth, innerWidth / 2, mouthY);
+        context.quadraticCurveTo(0, mouthY + innerDepth * 1.1, -innerWidth / 2, mouthY);
+        context.closePath();
+        context.fillStyle = 'rgba(136, 19, 55, 0.85)';
+        context.fill();
+        context.restore();
+
+        // Teeth for softer visemes
+        if (visemeIndex <= 1 && intensity < 0.55) {
+          context.save();
+          context.globalAlpha = 0.8;
+          context.beginPath();
+          context.moveTo(-mouthWidth * 0.3, mouthY);
+          context.quadraticCurveTo(0, mouthY - mouthHeight * 0.25, mouthWidth * 0.3, mouthY);
+          context.quadraticCurveTo(0, mouthY - mouthHeight * 0.1, -mouthWidth * 0.3, mouthY);
+          context.closePath();
+          context.fillStyle = '#fefefe';
+          context.fill();
+          context.restore();
+        }
+
+        // Idle shimmer
+        context.globalAlpha = 0.08;
+        context.beginPath();
+        context.ellipse(-headRadius * 0.35, -headRadius * 0.35, headRadius * 0.25, headRadius * 0.4, Math.PI / 6, 0, Math.PI * 2);
         context.fillStyle = 'white';
         context.fill();
         context.globalAlpha = 1;
-      }
 
-      // Brows
-      context.lineWidth = headRadius * 0.06;
-      context.lineCap = 'round';
-      context.strokeStyle = 'rgba(15, 23, 42, 0.65)';
-      context.beginPath();
-      context.moveTo(-eyeOffsetX - headRadius * 0.05, eyeOffsetY - eyeHeightBase * 0.9);
-      context.quadraticCurveTo(-headRadius * 0.15, eyeOffsetY - eyeHeightBase * (1.2 + intensity * 0.2), eyeOffsetX + headRadius * 0.05, eyeOffsetY - eyeHeightBase * 0.9);
-      context.stroke();
-
-      // Cheek blush
-      context.globalAlpha = 0.18 + intensity * 0.25;
-      for (const direction of [-1, 1]) {
-        context.beginPath();
-        context.ellipse(direction * headRadius * 0.5, headRadius * 0.35, headRadius * 0.3, headRadius * 0.18, 0, 0, Math.PI * 2);
-        context.fillStyle = '#f97316';
-        context.fill();
-      }
-      context.globalAlpha = 1;
-
-      // Mouth
-      const mouthWidth = headRadius * (0.68 + intensity * 0.25);
-      const mouthHeight = headRadius * (0.08 + intensity * 0.32);
-      const mouthY = headRadius * 0.55;
-
-      context.beginPath();
-      context.moveTo(-mouthWidth / 2, mouthY);
-      const upperLift = mouthHeight * (0.35 + visemeIndex * 0.08);
-      context.quadraticCurveTo(0, mouthY - upperLift, mouthWidth / 2, mouthY);
-      const lowerDepth = mouthHeight * (0.75 + intensity * 0.4 + visemeIndex * 0.05);
-      context.quadraticCurveTo(0, mouthY + lowerDepth, -mouthWidth / 2, mouthY);
-      context.closePath();
-      context.fillStyle = '#fb7185';
-      context.fill();
-      context.lineWidth = headRadius * 0.02;
-      context.strokeStyle = 'rgba(190, 18, 60, 0.8)';
-      context.stroke();
-
-      // Inner mouth shading
-      context.save();
-      context.beginPath();
-      const innerWidth = mouthWidth * (0.55 + intensity * 0.3);
-      const innerDepth = mouthHeight * (0.9 + intensity * 0.5);
-      context.moveTo(-innerWidth / 2, mouthY);
-      context.quadraticCurveTo(0, mouthY + innerDepth, innerWidth / 2, mouthY);
-      context.quadraticCurveTo(0, mouthY + innerDepth * 1.1, -innerWidth / 2, mouthY);
-      context.closePath();
-      context.fillStyle = 'rgba(136, 19, 55, 0.85)';
-      context.fill();
-      context.restore();
-
-      // Teeth for softer visemes
-      if (visemeIndex <= 1 && intensity < 0.55) {
-        context.save();
-        context.globalAlpha = 0.8;
-        context.beginPath();
-        context.moveTo(-mouthWidth * 0.3, mouthY);
-        context.quadraticCurveTo(0, mouthY - mouthHeight * 0.25, mouthWidth * 0.3, mouthY);
-        context.quadraticCurveTo(0, mouthY - mouthHeight * 0.1, -mouthWidth * 0.3, mouthY);
-        context.closePath();
-        context.fillStyle = '#fefefe';
-        context.fill();
         context.restore();
       }
 
-      // Idle shimmer
-      context.globalAlpha = 0.08;
-      context.beginPath();
-      context.ellipse(-headRadius * 0.35, -headRadius * 0.35, headRadius * 0.25, headRadius * 0.4, Math.PI / 6, 0, Math.PI * 2);
-      context.fillStyle = 'white';
-      context.fill();
-      context.globalAlpha = 1;
-
-      context.restore();
       context.restore();
 
       animationHandle = requestFrame(render);
