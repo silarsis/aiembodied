@@ -13,6 +13,7 @@ export interface AppConfig {
   featureFlags: FeatureFlags;
   wakeWord: WakeWordConfig;
   metrics: MetricsConfig;
+  homeAssistant: HomeAssistantConfig;
 }
 
 export interface WakeWordConfig {
@@ -33,16 +34,31 @@ export interface MetricsConfig {
   path: string;
 }
 
+export interface HomeAssistantConfig {
+  enabled: boolean;
+  baseUrl: string;
+  accessToken: string;
+  allowedEntities: string[];
+  eventTypes: string[];
+  reconnectDelaysMs: number[];
+  heartbeatIntervalMs: number;
+}
+
 export type RendererWakeWordConfig = Omit<WakeWordConfig, 'accessKey'> & {
   hasAccessKey: boolean;
 };
 
-export type RendererConfig = Omit<AppConfig, 'realtimeApiKey' | 'wakeWord'> & {
+export type RendererConfig = Omit<AppConfig, 'realtimeApiKey' | 'wakeWord' | 'homeAssistant'> & {
   hasRealtimeApiKey: boolean;
   wakeWord: RendererWakeWordConfig;
+  homeAssistant: RendererHomeAssistantConfig;
 };
 
-export type ConfigSecretKey = 'realtimeApiKey' | 'wakeWordAccessKey';
+export type RendererHomeAssistantConfig = Omit<HomeAssistantConfig, 'accessToken'> & {
+  hasAccessToken: boolean;
+};
+
+export type ConfigSecretKey = 'realtimeApiKey' | 'wakeWordAccessKey' | 'homeAssistantAccessToken';
 
 export interface ConfigManagerOptions {
   secretStore?: SecretStore;
@@ -80,6 +96,16 @@ const MetricsSchema = z.object({
     .transform((value) => (value.startsWith('/') ? value : `/${value}`)),
 });
 
+const HomeAssistantSchema = z.object({
+  enabled: z.boolean(),
+  baseUrl: z.string().url(),
+  accessToken: z.string(),
+  allowedEntities: z.array(z.string().min(1)),
+  eventTypes: z.array(z.string().min(1)),
+  reconnectDelaysMs: z.array(z.number().int().min(0)).min(1),
+  heartbeatIntervalMs: z.number().int().min(1000),
+});
+
 const ConfigSchema = z.object({
   realtimeApiKey: z.string().min(1, 'Realtime API key is required'),
   audioInputDeviceId: z.string().optional(),
@@ -87,9 +113,10 @@ const ConfigSchema = z.object({
   featureFlags: FeatureFlagsSchema.default({}),
   wakeWord: WakeWordSchema,
   metrics: MetricsSchema,
+  homeAssistant: HomeAssistantSchema,
 });
 
-const DEFAULT_SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey', 'wakeWordAccessKey'];
+const DEFAULT_SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey', 'wakeWordAccessKey', 'homeAssistantAccessToken'];
 
 export class ConfigManager {
   private config: AppConfig | null = null;
@@ -124,6 +151,8 @@ export class ConfigManager {
       );
     }
 
+    const homeAssistantAccessToken = await this.resolveHomeAssistantAccessToken();
+
     const parsed = ConfigSchema.parse({
       realtimeApiKey,
       audioInputDeviceId:
@@ -135,6 +164,7 @@ export class ConfigManager {
       featureFlags: this.parseFeatureFlags(this.env.FEATURE_FLAGS),
       wakeWord: this.parseWakeWordConfig({ accessKey: wakeWordAccessKey }),
       metrics: this.parseMetricsConfig(),
+      homeAssistant: this.parseHomeAssistantConfig({ accessToken: homeAssistantAccessToken }),
     });
 
     this.config = parsed;
@@ -170,9 +200,10 @@ export class ConfigManager {
 
   getRendererConfig(): RendererConfig {
     const config = this.getConfig();
-    const { realtimeApiKey, wakeWord, ...rest } = config;
+    const { realtimeApiKey, wakeWord, homeAssistant, ...rest } = config;
 
     const { accessKey, ...rendererWakeWord } = wakeWord;
+    const { accessToken, ...rendererHomeAssistant } = homeAssistant;
 
     return {
       ...rest,
@@ -180,6 +211,10 @@ export class ConfigManager {
       wakeWord: {
         ...rendererWakeWord,
         hasAccessKey: Boolean(accessKey),
+      },
+      homeAssistant: {
+        ...rendererHomeAssistant,
+        hasAccessToken: Boolean(accessToken),
       },
     };
   }
@@ -196,6 +231,10 @@ export class ConfigManager {
 
     if (key === 'wakeWordAccessKey') {
       return config.wakeWord.accessKey;
+    }
+
+    if (key === 'homeAssistantAccessToken') {
+      return config.homeAssistant.accessToken;
     }
 
     throw new Error(`Unhandled secret key requested: ${key}`);
@@ -229,6 +268,20 @@ export class ConfigManager {
     return stored ?? undefined;
   }
 
+  private async resolveHomeAssistantAccessToken(): Promise<string | undefined> {
+    const envValue = this.env.HOME_ASSISTANT_ACCESS_TOKEN?.trim();
+    if (envValue) {
+      return envValue;
+    }
+
+    if (!this.secretStore) {
+      return undefined;
+    }
+
+    const stored = await this.secretStore.getSecret('HOME_ASSISTANT_ACCESS_TOKEN');
+    return stored ?? undefined;
+  }
+
   private parseMetricsConfig(): MetricsConfig {
     const enabledValue = this.env.METRICS_ENABLED?.trim();
     const enabled = enabledValue ? ['1', 'true', 'yes', 'on'].includes(enabledValue.toLowerCase()) : false;
@@ -242,6 +295,62 @@ export class ConfigManager {
     }
 
     return MetricsSchema.parse({ enabled, host, port, path });
+  }
+
+  private parseHomeAssistantConfig({ accessToken }: { accessToken?: string }): HomeAssistantConfig {
+    const enabled = this.parseBoolean(this.env.HOME_ASSISTANT_ENABLED, false);
+    const baseUrl = this.env.HOME_ASSISTANT_BASE_URL?.trim() || 'http://localhost:8123';
+    const allowedEntities = this.parseStringList(this.env.HOME_ASSISTANT_ALLOWED_ENTITIES, []);
+    const eventTypes = this.parseStringList(this.env.HOME_ASSISTANT_EVENT_TYPES, ['state_changed']);
+    const reconnectDelays = this.parseNumberList(
+      this.env.HOME_ASSISTANT_RECONNECT_DELAYS_MS,
+      [1000, 5000, 15000],
+      'HOME_ASSISTANT_RECONNECT_DELAYS_MS',
+    );
+    const heartbeatIntervalMs = this.parseInteger({
+      name: 'HOME_ASSISTANT_HEARTBEAT_MS',
+      raw: this.env.HOME_ASSISTANT_HEARTBEAT_MS,
+      defaultValue: 30000,
+      min: 1000,
+    });
+
+    const token = accessToken?.trim() ?? '';
+
+    if (enabled) {
+      if (!baseUrl) {
+        throw new ConfigValidationError(
+          'HOME_ASSISTANT_BASE_URL is required when Home Assistant integration is enabled.',
+        );
+      }
+
+      if (!token) {
+        throw new ConfigValidationError(
+          'Home Assistant access token is required when the integration is enabled.',
+        );
+      }
+
+      if (allowedEntities.length === 0) {
+        throw new ConfigValidationError(
+          'HOME_ASSISTANT_ALLOWED_ENTITIES must include at least one entity when the integration is enabled.',
+        );
+      }
+
+      if (eventTypes.length === 0) {
+        throw new ConfigValidationError(
+          'HOME_ASSISTANT_EVENT_TYPES must include at least one event when the integration is enabled.',
+        );
+      }
+    }
+
+    return HomeAssistantSchema.parse({
+      enabled,
+      baseUrl,
+      accessToken: token,
+      allowedEntities,
+      eventTypes,
+      reconnectDelaysMs: reconnectDelays,
+      heartbeatIntervalMs,
+    });
   }
 
   private parseFeatureFlags(raw: string | undefined): FeatureFlags {
@@ -279,6 +388,78 @@ export class ConfigManager {
     }
 
     return FeatureFlagsSchema.parse(flags);
+  }
+
+  private parseBoolean(raw: string | undefined, defaultValue: boolean): boolean {
+    if (raw === undefined || raw === null) {
+      return defaultValue;
+    }
+
+    const normalized = raw.trim().toLowerCase();
+    if (!normalized) {
+      return defaultValue;
+    }
+
+    if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) {
+      return true;
+    }
+
+    if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) {
+      return false;
+    }
+
+    return defaultValue;
+  }
+
+  private parseStringList(raw: string | undefined, defaultValue: string[]): string[] {
+    if (!raw) {
+      return defaultValue;
+    }
+
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed.map((value) => String(value).trim()).filter((value) => value.length > 0);
+        }
+      } catch {
+        // fall through to comma parsing
+      }
+    }
+
+    return trimmed
+      .split(',')
+      .map((segment) => segment.trim())
+      .filter((segment) => segment.length > 0);
+  }
+
+  private parseNumberList(raw: string | undefined, defaultValue: number[], name?: string): number[] {
+    if (!raw || !raw.trim()) {
+      return defaultValue;
+    }
+
+    const tokens = this.parseStringList(raw, []);
+    if (tokens.length === 0) {
+      return defaultValue;
+    }
+
+    const numbers: number[] = [];
+    for (const token of tokens) {
+      const value = Number.parseInt(token, 10);
+      if (!Number.isFinite(value) || value < 0) {
+        throw new ConfigValidationError(
+          `${name ?? 'Value list'} must contain only non-negative integers.`,
+        );
+      }
+      numbers.push(value);
+    }
+
+    return numbers;
   }
 
   private normalizeDeviceId(value: unknown): string | undefined {

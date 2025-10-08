@@ -20,6 +20,13 @@ import { PrometheusCollector } from './metrics/prometheus-collector.js';
 import type { LatencyObservation } from './metrics/types.js';
 import { AutoLaunchManager } from './lifecycle/auto-launch.js';
 import { createDevTray } from './lifecycle/dev-tray.js';
+import { HomeAssistantIntegration } from './home-assistant/home-assistant-integration.js';
+import type {
+  HomeAssistantCommandIntent,
+  HomeAssistantCommandResult,
+  HomeAssistantEventPayload,
+  HomeAssistantStatusSnapshot,
+} from './home-assistant/types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,6 +36,29 @@ const APP_NAME = 'AI Embodied Assistant';
 if (!isProduction) {
   const repoRoot = path.resolve(__dirname, '../../..');
   dotenv.config({ path: path.join(repoRoot, '.env') });
+}
+
+function assertHomeAssistantIntent(payload: unknown): asserts payload is HomeAssistantCommandIntent {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Invalid Home Assistant intent payload received.');
+  }
+
+  const candidate = payload as Partial<HomeAssistantCommandIntent>;
+  if (typeof candidate.domain !== 'string' || candidate.domain.trim().length === 0) {
+    throw new Error('Home Assistant intent is missing a domain.');
+  }
+
+  if (typeof candidate.service !== 'string' || candidate.service.trim().length === 0) {
+    throw new Error('Home Assistant intent is missing a service.');
+  }
+
+  if (typeof candidate.entityId !== 'string' || candidate.entityId.trim().length === 0) {
+    throw new Error('Home Assistant intent is missing an entity identifier.');
+  }
+
+  if (candidate.data !== undefined && (typeof candidate.data !== 'object' || candidate.data === null)) {
+    throw new Error('Home Assistant intent data must be an object if provided.');
+  }
 }
 
 const secretStore = isProduction ? new KeytarSecretStore('aiembodied') : new InMemorySecretStore();
@@ -41,6 +71,8 @@ let removeConversationListeners: (() => void) | null = null;
 let metricsCollector: PrometheusCollector | null = null;
 let autoLaunchManager: AutoLaunchManager | null = null;
 let developmentTray: Tray | null = null;
+let homeAssistantIntegration: HomeAssistantIntegration | null = null;
+let removeHomeAssistantListeners: (() => void) | null = null;
 
 const createWindow = () => {
   const window = new BrowserWindow({
@@ -126,6 +158,23 @@ function registerIpcHandlers(
 
     metrics.observeLatency(payload.metric, payload.valueMs);
     return true;
+  });
+
+  ipcMain.handle('home-assistant:dispatch-intent', async (_event, intent: HomeAssistantCommandIntent) => {
+    assertHomeAssistantIntent(intent);
+    if (!homeAssistantIntegration) {
+      throw new Error('Home Assistant integration is not enabled.');
+    }
+
+    return homeAssistantIntegration.dispatchIntent(intent);
+  });
+
+  ipcMain.handle('home-assistant:get-status', () => {
+    if (!homeAssistantIntegration) {
+      return { connected: false } satisfies HomeAssistantStatusSnapshot;
+    }
+
+    return homeAssistantIntegration.getStatus();
   });
 }
 
@@ -242,6 +291,86 @@ app.whenReady().then(async () => {
     }
   }
 
+  if (appConfig.homeAssistant.enabled) {
+    const integration = new HomeAssistantIntegration({
+      config: appConfig.homeAssistant,
+      logger,
+      conversation: conversationManager
+        ? {
+            appendSystemMessage: (content, timestamp, sessionId) => {
+              conversationManager!.appendMessage({
+                sessionId,
+                role: 'system',
+                content,
+                ts: timestamp,
+              });
+            },
+            getActiveSessionId: () => conversationManager!.getCurrentSessionId(),
+          }
+        : undefined,
+      memoryStore: memoryStore
+        ? {
+            getValue: (key: string) => memoryStore!.getValue(key),
+            setValue: (key: string, value: string) => memoryStore!.setValue(key, value),
+            createSession: (record: { id: string; startedAt: number; title: string | null }) =>
+              memoryStore!.createSession(record),
+          }
+        : undefined,
+    });
+
+    const eventListener = (event: HomeAssistantEventPayload) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('home-assistant:event', event);
+      }
+    };
+    const statusListener = (snapshot: HomeAssistantStatusSnapshot) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('home-assistant:status', snapshot);
+      }
+    };
+    const commandListener = ({ intent, result }: { intent: HomeAssistantCommandIntent; result: HomeAssistantCommandResult }) => {
+      logger.info('Home Assistant command processed', {
+        entityId: intent.entityId,
+        domain: intent.domain,
+        service: intent.service,
+        status: result.status,
+        success: result.success,
+      });
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('home-assistant:command', { intent, result });
+      }
+    };
+    const errorListener = (error: Error) => {
+      logger.error('Home Assistant integration error', { message: error.message });
+    };
+
+    integration.on('event', eventListener);
+    integration.on('status', statusListener);
+    integration.on('command', commandListener);
+    integration.on('error', errorListener);
+
+    try {
+      await integration.start();
+      homeAssistantIntegration = integration;
+      removeHomeAssistantListeners = () => {
+        integration.off('event', eventListener);
+        integration.off('status', statusListener);
+        integration.off('command', commandListener);
+        integration.off('error', errorListener);
+        removeHomeAssistantListeners = null;
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Failed to start Home Assistant integration', { message });
+      integration.off('event', eventListener);
+      integration.off('status', statusListener);
+      integration.off('command', commandListener);
+      integration.off('error', errorListener);
+    }
+  } else {
+    logger.info('Home Assistant integration disabled in configuration.');
+  }
+
   wakeWordService = new WakeWordService({
     logger,
     cooldownMs: appConfig.wakeWord.cooldownMs,
@@ -354,6 +483,16 @@ app.on('before-quit', () => {
     removeConversationListeners();
   }
   conversationManager = null;
+  if (removeHomeAssistantListeners) {
+    removeHomeAssistantListeners();
+  }
+  if (homeAssistantIntegration) {
+    void homeAssistantIntegration.stop().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('Failed to stop Home Assistant integration cleanly', { message });
+    });
+    homeAssistantIntegration = null;
+  }
   if (metricsCollector) {
     void metricsCollector.stop().catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);

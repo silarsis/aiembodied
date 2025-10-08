@@ -17,6 +17,7 @@ describe('ConfigManager', () => {
         WAKE_WORD_MIN_CONFIDENCE: '0.75',
         WAKE_WORD_COOLDOWN_MS: '2500',
         WAKE_WORD_DEVICE_INDEX: '2',
+        HOME_ASSISTANT_ACCESS_TOKEN: 'ha-token',
       } as NodeJS.ProcessEnv,
     });
 
@@ -24,6 +25,12 @@ describe('ConfigManager', () => {
 
     expect(config.audioInputDeviceId).toBe('input-device');
     expect(config.audioOutputDeviceId).toBe('output-device');
+    expect(config.homeAssistant.enabled).toBe(false);
+    expect(config.homeAssistant.allowedEntities).toEqual([]);
+
+    await expect(manager.getSecret('realtimeApiKey')).resolves.toBe('test-api-key');
+    await expect(manager.getSecret('wakeWordAccessKey')).resolves.toBe('porcupine-key');
+    await expect(manager.getSecret('homeAssistantAccessToken')).resolves.toBe('ha-token');
   });
 
   it('prefers stored preferences over environment configuration', async () => {
@@ -45,6 +52,7 @@ describe('ConfigManager', () => {
         WAKE_WORD_MIN_CONFIDENCE: '0.75',
         WAKE_WORD_COOLDOWN_MS: '2500',
         WAKE_WORD_DEVICE_INDEX: '2',
+        HOME_ASSISTANT_ACCESS_TOKEN: 'ha-token',
       } as NodeJS.ProcessEnv,
       preferencesStore,
     });
@@ -60,12 +68,14 @@ describe('ConfigManager', () => {
 
     await expect(manager.getSecret('realtimeApiKey')).resolves.toBe('test-api-key');
     await expect(manager.getSecret('wakeWordAccessKey')).resolves.toBe('porcupine-key');
+    await expect(manager.getSecret('homeAssistantAccessToken')).resolves.toBe('ha-token');
   });
 
   it('falls back to secret store when environment variable is missing', async () => {
     const secretStore = new InMemorySecretStore();
     await secretStore.setSecret('REALTIME_API_KEY', 'stored-key');
     await secretStore.setSecret('PORCUPINE_ACCESS_KEY', 'porcupine-secret');
+    await secretStore.setSecret('HOME_ASSISTANT_ACCESS_TOKEN', 'ha-secret');
 
     const manager = new ConfigManager({
       env: { WAKE_WORD_BUILTIN: 'bumblebee' } as NodeJS.ProcessEnv,
@@ -77,6 +87,7 @@ describe('ConfigManager', () => {
     expect(config.wakeWord.accessKey).toBe('porcupine-secret');
     expect(config.wakeWord.keywordPath).toBe('bumblebee');
     expect(config.wakeWord.keywordLabel).toBe('Bumblebee');
+    expect(config.homeAssistant.accessToken).toBe('ha-secret');
   });
 
   it('parses comma separated feature flags', async () => {
@@ -105,6 +116,7 @@ describe('ConfigManager', () => {
         METRICS_HOST: '0.0.0.0',
         METRICS_PORT: '9100',
         METRICS_PATH: 'metrics-endpoint',
+        HOME_ASSISTANT_ACCESS_TOKEN: 'ha-token',
       } as NodeJS.ProcessEnv,
     });
 
@@ -117,6 +129,38 @@ describe('ConfigManager', () => {
     });
   });
 
+  it('parses home assistant configuration when enabled', async () => {
+    const manager = new ConfigManager({
+      env: {
+        REALTIME_API_KEY: 'key',
+        PORCUPINE_ACCESS_KEY: 'wake',
+        HOME_ASSISTANT_ENABLED: 'true',
+        HOME_ASSISTANT_BASE_URL: 'https://ha.local:8123',
+        HOME_ASSISTANT_ACCESS_TOKEN: 'ha-token',
+        HOME_ASSISTANT_ALLOWED_ENTITIES: 'light.kitchen,switch.garage',
+        HOME_ASSISTANT_EVENT_TYPES: 'state_changed,call_service',
+        HOME_ASSISTANT_RECONNECT_DELAYS_MS: '500,1000',
+        HOME_ASSISTANT_HEARTBEAT_MS: '45000',
+      } as NodeJS.ProcessEnv,
+    });
+
+    const config = await manager.load();
+    expect(config.homeAssistant).toEqual({
+      enabled: true,
+      baseUrl: 'https://ha.local:8123',
+      accessToken: 'ha-token',
+      allowedEntities: ['light.kitchen', 'switch.garage'],
+      eventTypes: ['state_changed', 'call_service'],
+      reconnectDelaysMs: [500, 1000],
+      heartbeatIntervalMs: 45000,
+    });
+
+    const renderer = manager.getRendererConfig();
+    expect(renderer.homeAssistant.hasAccessToken).toBe(true);
+    expect(renderer.homeAssistant.allowedEntities).toEqual(['light.kitchen', 'switch.garage']);
+    expect(renderer.homeAssistant.eventTypes).toEqual(['state_changed', 'call_service']);
+  });
+
   it('throws a validation error when the realtime api key is missing', async () => {
     const manager = new ConfigManager({
       env: { PORCUPINE_ACCESS_KEY: 'wake-key' } as NodeJS.ProcessEnv,
@@ -127,6 +171,20 @@ describe('ConfigManager', () => {
   it('throws a validation error when the wake word access key is missing', async () => {
     const manager = new ConfigManager({
       env: { REALTIME_API_KEY: 'key' } as NodeJS.ProcessEnv,
+    });
+
+    await expect(manager.load()).rejects.toBeInstanceOf(ConfigValidationError);
+  });
+
+  it('throws when home assistant is enabled without required settings', async () => {
+    const manager = new ConfigManager({
+      env: {
+        REALTIME_API_KEY: 'key',
+        PORCUPINE_ACCESS_KEY: 'wake',
+        HOME_ASSISTANT_ENABLED: 'true',
+        HOME_ASSISTANT_BASE_URL: 'https://ha.local',
+        HOME_ASSISTANT_ACCESS_TOKEN: 'ha-token',
+      } as NodeJS.ProcessEnv,
     });
 
     await expect(manager.load()).rejects.toBeInstanceOf(ConfigValidationError);

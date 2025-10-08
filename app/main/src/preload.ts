@@ -9,6 +9,12 @@ import type {
 } from './conversation/types.js';
 import type { WakeWordDetectionEvent } from './wake-word/types.js';
 import type { LatencyMetricName } from './metrics/types.js';
+import type {
+  HomeAssistantCommandIntent,
+  HomeAssistantCommandResult,
+  HomeAssistantEventPayload,
+  HomeAssistantStatusSnapshot,
+} from './home-assistant/types.js';
 
 export interface ConfigBridge {
   get(): Promise<RendererConfig>;
@@ -21,6 +27,7 @@ export interface PreloadApi {
   wakeWord: WakeWordBridge;
   conversation?: ConversationBridge;
   metrics?: MetricsBridge;
+  homeAssistant?: HomeAssistantBridge;
   ping(): string;
 }
 
@@ -37,6 +44,16 @@ export interface ConversationBridge {
 
 export interface MetricsBridge {
   observeLatency(metric: LatencyMetricName, valueMs: number): Promise<void>;
+}
+
+export interface HomeAssistantBridge {
+  getStatus(): Promise<HomeAssistantStatusSnapshot>;
+  dispatchIntent(intent: HomeAssistantCommandIntent): Promise<HomeAssistantCommandResult>;
+  onEvent(listener: (event: HomeAssistantEventPayload) => void): () => void;
+  onStatus(listener: (status: HomeAssistantStatusSnapshot) => void): () => void;
+  onCommand(
+    listener: (payload: { intent: HomeAssistantCommandIntent; result: HomeAssistantCommandResult }) => void,
+  ): () => void;
 }
 
 const api: PreloadApi = {
@@ -80,6 +97,38 @@ const api: PreloadApi = {
   metrics: {
     observeLatency: async (metric, valueMs) => {
       await ipcRenderer.invoke('metrics:observe-latency', { metric, valueMs });
+    },
+  },
+  homeAssistant: {
+    getStatus: () => ipcRenderer.invoke('home-assistant:get-status') as Promise<HomeAssistantStatusSnapshot>,
+    dispatchIntent: (intent) =>
+      ipcRenderer.invoke('home-assistant:dispatch-intent', intent) as Promise<HomeAssistantCommandResult>,
+    onEvent: (listener) => {
+      const channel = 'home-assistant:event';
+      const handler = (_event: unknown, payload: HomeAssistantEventPayload) => listener(payload);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
+    onStatus: (listener) => {
+      const channel = 'home-assistant:status';
+      const handler = (_event: unknown, payload: HomeAssistantStatusSnapshot) => listener(payload);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
+    onCommand: (listener) => {
+      const channel = 'home-assistant:command';
+      const handler = (
+        _event: unknown,
+        payload: { intent: HomeAssistantCommandIntent; result: HomeAssistantCommandResult },
+      ) => listener(payload);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
     },
   },
   ping: () => 'pong',
