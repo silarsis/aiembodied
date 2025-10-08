@@ -7,6 +7,7 @@ import { KeytarSecretStore } from './config/keytar-secret-store.js';
 import { InMemorySecretStore } from './config/secret-store.js';
 import { FilePreferencesStore } from './config/preferences-store.js';
 import { initializeLogger } from './logging/logger.js';
+import { createAppDiagnostics } from './logging/app-diagnostics.js';
 import { CrashGuard } from './crash-guard.js';
 import { WakeWordService } from './wake-word/wake-word-service.js';
 import { ConversationManager } from './conversation/conversation-manager.js';
@@ -33,6 +34,7 @@ if (!isProduction) {
 
 const secretStore = isProduction ? new KeytarSecretStore('aiembodied') : new InMemorySecretStore();
 const { logger } = initializeLogger();
+const diagnostics = createAppDiagnostics({ logger });
 let mainWindow: BrowserWindow | null = null;
 let wakeWordService: WakeWordService | null = null;
 let memoryStore: MemoryStore | null = null;
@@ -56,6 +58,8 @@ const createWindow = () => {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+
+  diagnostics.trackWindow(window);
 
   if (!isProduction) {
     window.webContents.on('before-input-event', (event, input) => {
@@ -341,6 +345,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  diagnostics.dispose();
   crashGuard.notifyAppQuitting();
   logger.info('Application is quitting.');
   if (wakeWordService) {

@@ -33,6 +33,17 @@ const mockLogger = {
 const initializeLoggerMock = vi.fn(() => ({ logger: mockLogger }));
 vi.mock('../src/logging/logger.js', () => ({ initializeLogger: initializeLoggerMock }));
 
+const diagnosticsTrackWindowMock = vi.fn();
+const diagnosticsDisposeMock = vi.fn();
+const createAppDiagnosticsMock = vi.fn(() => ({
+  trackWindow: diagnosticsTrackWindowMock,
+  dispose: diagnosticsDisposeMock,
+}));
+
+vi.mock('../src/logging/app-diagnostics.js', () => ({
+  createAppDiagnostics: createAppDiagnosticsMock,
+}));
+
 const loadMock = vi.fn();
 const getConfigMock = vi.fn();
 const getRendererConfigMock = vi.fn();
@@ -264,6 +275,13 @@ describe('main process bootstrap', () => {
 
     dotenvConfigMock.mockClear();
     initializeLoggerMock.mockClear();
+    createAppDiagnosticsMock.mockClear();
+    diagnosticsTrackWindowMock.mockReset();
+    diagnosticsDisposeMock.mockReset();
+    createAppDiagnosticsMock.mockImplementation(() => ({
+      trackWindow: diagnosticsTrackWindowMock,
+      dispose: diagnosticsDisposeMock,
+    }));
 
     loadMock.mockReset();
     getConfigMock.mockReset();
@@ -456,6 +474,7 @@ describe('main process bootstrap', () => {
 
     expect(BrowserWindowMock).toHaveBeenCalledTimes(1);
     const mainWindow = createdWindows[0];
+    expect(diagnosticsTrackWindowMock).toHaveBeenCalledWith(mainWindow);
     // Cross-platform path check (Windows vs POSIX separators)
     expect(mainWindow.loadFile).toHaveBeenCalledWith(
       expect.stringMatching(/renderer[\\\/]dist[\\\/]index\.html$/),
@@ -538,6 +557,7 @@ describe('main process bootstrap', () => {
     expect(BrowserWindowMock).toHaveBeenCalledTimes(2);
 
     const replacementWindow = createdWindows[1];
+    expect(diagnosticsTrackWindowMock).toHaveBeenCalledWith(replacementWindow);
     replacementWindow.isDestroyed.mockReturnValue(false);
     replacementWindow.isMinimized.mockReturnValue(true);
     appEmitter.emit('second-instance');
@@ -553,8 +573,12 @@ describe('main process bootstrap', () => {
     appEmitter.emit('activate');
     expect(BrowserWindowMock).toHaveBeenCalledTimes(3);
 
+    const activationWindow = createdWindows[2];
+    expect(diagnosticsTrackWindowMock).toHaveBeenCalledWith(activationWindow);
+
     appEmitter.emit('before-quit');
     expect(crashGuardInstances[0].notifyAppQuitting).toHaveBeenCalledTimes(1);
+    expect(diagnosticsDisposeMock).toHaveBeenCalledTimes(1);
     expect(wakeWordService.dispose).toHaveBeenCalledTimes(1);
     await expect(wakeWordService.dispose.mock.results[0].value).resolves.toBeUndefined();
     expect(memoryStoreDisposeMock).toHaveBeenCalledTimes(1);

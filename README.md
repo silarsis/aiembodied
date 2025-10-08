@@ -120,6 +120,21 @@ This serves the UI on http://localhost:5173 with hot reloading; rebuild before r
 While running in development, a lightweight system tray menu appears. Use it to bring the kiosk window to the foreground or to
 toggle the "Launch on Login" checkbox, which exercises the auto-launch flow without touching your OS login items permanently.
 
+### Diagnostics & Debug Logging
+
+When troubleshooting a blank window or startup failures (common on fresh Windows installs), enable the global diagnostics
+instrumentation to capture detailed lifecycle logs:
+
+```bash
+AIEMBODIED_ENABLE_DIAGNOSTICS=1 pnpm dev:run
+```
+
+Setting the environment variable (or alternatively `AIEMBODIED_DEBUG=1`) causes the Electron main process to log every app,
+window, and renderer milestone — including renderer console output — to both the terminal and the rotating log files under the
+standard platform log directory (e.g., `%APPDATA%/AI Embodied Assistant/logs/aiembodied` on Windows, `~/Library/Logs/AI
+Embodied Assistant/aiembodied` on macOS). Use these logs to confirm that the renderer bundle loads, the wake-word service
+boots, or to spot navigation/IPC errors that would otherwise leave the window blank.
+
 ### Package for Distribution
 
 Electron bundles for Windows, macOS, and Linux are generated with `electron-builder`.
