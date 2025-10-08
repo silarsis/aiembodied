@@ -10,6 +10,7 @@ import {
 import type { ConfigSecretKey, RendererConfig } from '../../main/src/config/config-manager.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
 import { AvatarRenderer } from './avatar/avatar-renderer.js';
+import { AvatarConfigurator } from './avatar/avatar-configurator.js';
 import { AudioGraph } from './audio/audio-graph.js';
 import { VisemeDriver, type VisemeFrame } from './audio/viseme-driver.js';
 import type { ConversationSessionWithMessages } from '../../main/src/conversation/types.js';
@@ -18,6 +19,7 @@ import { getPreloadApi, type PreloadApi } from './preload-api.js';
 import { RealtimeClient, type RealtimeClientState } from './realtime/realtime-client.js';
 import { LatencyTracker, type LatencySnapshot } from './metrics/latency-tracker.js';
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
+import type { AvatarFaceDetail } from './avatar/types.js';
 
 const CURSOR_IDLE_TIMEOUT_MS = 3000;
 const WAKE_ACTIVE_DURATION_MS = 4000;
@@ -367,6 +369,7 @@ export default function App() {
   const messageIdsRef = useRef<Set<string>>(new Set());
   const latencyTrackerRef = useRef<LatencyTracker>(new LatencyTracker());
   const [latencySnapshot, setLatencySnapshot] = useState<LatencySnapshot | null>(null);
+  const [activeAvatar, setActiveAvatar] = useState<AvatarFaceDetail | null>(null);
 
   const pushLatency = useCallback(
     (snapshot: LatencySnapshot) => {
@@ -397,6 +400,10 @@ export default function App() {
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
   }, [activeSessionId]);
+
+  const handleActiveFaceChange = useCallback((detail: AvatarFaceDetail | null) => {
+    setActiveAvatar(detail);
+  }, []);
 
   const applySessionHistory = useCallback((session: ConversationSessionWithMessages | null) => {
     if (!session) {
@@ -1080,6 +1087,7 @@ export default function App() {
   const deviceStatusLabel = deviceError ? `Error — ${deviceError}` : inputs.length > 0 ? 'Devices ready' : 'Scanning…';
   const showDeveloperHud = Boolean(config?.featureFlags?.metricsHud);
   const hudSnapshot = latencySnapshot ?? latencyTrackerRef.current.getLastSnapshot();
+  const activeAvatarName = activeAvatar?.name ?? 'Embodied Assistant';
 
   return (
     <main
@@ -1128,10 +1136,10 @@ export default function App() {
 
       <section className="kiosk__stage" aria-labelledby="avatar-preview-title">
         <div className="kiosk__avatar" data-state={visemeSummary.status.toLowerCase()}>
-          <AvatarRenderer frame={visemeFrame} />
+          <AvatarRenderer frame={visemeFrame} assets={activeAvatar?.components ?? null} />
         </div>
         <div className="kiosk__avatarDetails">
-          <h1 id="avatar-preview-title">Embodied Assistant</h1>
+          <h1 id="avatar-preview-title">{activeAvatarName}</h1>
           <p className="kiosk__subtitle">Real-time viseme mapping derived from the decoded audio stream.</p>
           <dl className="kiosk__metrics">
             <div>
@@ -1162,6 +1170,8 @@ export default function App() {
           <p className="meter__status">Speech gate: {audioGraph.isActive ? 'open' : 'closed'}</p>
         </div>
       </section>
+
+      <AvatarConfigurator avatarApi={api?.avatar} onActiveFaceChange={handleActiveFaceChange} />
 
       <section className="kiosk__controls">
         <div className="control">
