@@ -100,6 +100,10 @@ function registerIpcHandlers(
 ) {
   ipcMain.handle('config:get', () => manager.getRendererConfig());
   ipcMain.handle('config:get-secret', (_event, key: ConfigSecretKey) => manager.getSecret(key));
+  ipcMain.handle('config:set-secret', (_event, payload: { key: ConfigSecretKey; value: string }) =>
+    manager.setSecret(payload.key, payload.value),
+  );
+  ipcMain.handle('config:test-secret', (_event, key: ConfigSecretKey) => manager.testSecret(key));
   ipcMain.handle('config:set-audio-devices', (_event, preferences) =>
     manager.setAudioDevicePreferences(preferences),
   );

@@ -14,6 +14,8 @@ export interface ConfigBridge {
   get(): Promise<RendererConfig>;
   getSecret(key: ConfigSecretKey): Promise<string>;
   setAudioDevicePreferences(preferences: AudioDevicePreferences): Promise<RendererConfig>;
+  setSecret(key: ConfigSecretKey, value: string): Promise<RendererConfig>;
+  testSecret(key: ConfigSecretKey): Promise<{ ok: boolean; message?: string }>;
 }
 
 export interface PreloadApi {
@@ -43,6 +45,10 @@ const api: PreloadApi = {
   config: {
     get: () => ipcRenderer.invoke('config:get') as Promise<RendererConfig>,
     getSecret: (key) => ipcRenderer.invoke('config:get-secret', key) as Promise<string>,
+    setSecret: (key, value) =>
+      ipcRenderer.invoke('config:set-secret', { key, value }) as Promise<RendererConfig>,
+    testSecret: (key) =>
+      ipcRenderer.invoke('config:test-secret', key) as Promise<{ ok: boolean; message?: string }>,
     setAudioDevicePreferences: (preferences) =>
       ipcRenderer.invoke('config:set-audio-devices', preferences) as Promise<RendererConfig>,
   },

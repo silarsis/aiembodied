@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   ConversationAppendMessagePayload,
@@ -70,6 +70,8 @@ describe('App component', () => {
   const enumerateDevicesMock = vi.fn();
   const getUserMediaMock = vi.fn();
   const setAudioDevicePreferencesMock = vi.fn();
+  const setSecretMock = vi.fn();
+  const testSecretMock = vi.fn();
   let wakeListener: ((event: WakeWordDetectionEvent) => void) | undefined;
 
   beforeEach(() => {
@@ -88,7 +90,7 @@ describe('App component', () => {
     ] as MediaDeviceInfo[]);
     getUserMediaMock.mockResolvedValue(new MockMediaStream() as unknown as MediaStream);
 
-    setAudioDevicePreferencesMock.mockResolvedValue({
+    const rendererConfig = {
       audioInputDeviceId: 'mic-1',
       audioOutputDeviceId: '',
       featureFlags: { transcriptOverlay: true },
@@ -103,7 +105,11 @@ describe('App component', () => {
         modelPath: undefined,
         hasAccessKey: true,
       },
-    });
+    };
+
+    setAudioDevicePreferencesMock.mockResolvedValue(rendererConfig);
+    setSecretMock.mockResolvedValue(rendererConfig);
+    testSecretMock.mockResolvedValue({ ok: true, message: 'API key verified successfully.' });
 
     wakeListener = undefined;
     console.error = vi.fn();
@@ -119,6 +125,8 @@ describe('App component', () => {
     enumerateDevicesMock.mockReset();
     getUserMediaMock.mockReset();
     setAudioDevicePreferencesMock.mockReset();
+    setSecretMock.mockReset();
+    testSecretMock.mockReset();
     console.error = originalConsoleError;
     console.warn = originalConsoleWarn;
     console.debug = originalConsoleDebug;
@@ -149,8 +157,10 @@ describe('App component', () => {
             hasAccessKey: true,
           },
         }),
-        getSecret: vi.fn(),
+        getSecret: vi.fn().mockResolvedValue('secret'),
         setAudioDevicePreferences: setAudioDevicePreferencesMock,
+        setSecret: setSecretMock,
+        testSecret: testSecretMock,
       },
       wakeWord: {
         onWake: (listener: (event: { keywordLabel: string; confidence: number }) => void) => {
@@ -201,6 +211,13 @@ describe('App component', () => {
       });
     });
 
+    expect(screen.getByRole('heading', { level: 2, name: /API keys/i })).toBeInTheDocument();
+    const realtimeCard = screen.getByRole('heading', { name: /OpenAI Realtime API key/i }).closest('article');
+    expect(realtimeCard).not.toBeNull();
+    if (realtimeCard) {
+      expect(within(realtimeCard).getByText(/Status: Configured/i)).toBeInTheDocument();
+    }
+
     expect(screen.getByText(/Speech gate:/i)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Embodied Assistant/i })).toBeInTheDocument();
   });
@@ -239,8 +256,10 @@ describe('App component', () => {
             hasAccessKey: true,
           },
         }),
-        getSecret: vi.fn(),
+        getSecret: vi.fn().mockResolvedValue('secret'),
         setAudioDevicePreferences: setAudioDevicePreferencesMock,
+        setSecret: setSecretMock,
+        testSecret: testSecretMock,
       },
       wakeWord: {
         onWake: (listener: (event: WakeWordDetectionEvent) => void) => {
@@ -343,6 +362,127 @@ describe('App component', () => {
     await waitFor(() => {
       expect(screen.queryByText('Should stay hidden')).not.toBeInTheDocument();
     });
+  });
+
+  it('updates realtime api key via configuration form', async () => {
+    (window as PreloadWindow).aiembodied = {
+      ping: () => 'pong',
+      config: {
+        get: vi.fn().mockResolvedValue({
+          audioInputDeviceId: '',
+          audioOutputDeviceId: '',
+          featureFlags: {},
+          hasRealtimeApiKey: true,
+          wakeWord: {
+            keywordPath: '',
+            keywordLabel: '',
+            sensitivity: 0.5,
+            minConfidence: 0.5,
+            cooldownMs: 1500,
+            deviceIndex: undefined,
+            modelPath: undefined,
+            hasAccessKey: true,
+          },
+        }),
+        getSecret: vi.fn().mockResolvedValue('secret'),
+        setAudioDevicePreferences: setAudioDevicePreferencesMock,
+        setSecret: setSecretMock,
+        testSecret: testSecretMock,
+      },
+      wakeWord: {
+        onWake: () => () => {},
+      },
+    } as unknown as PreloadWindow['aiembodied'];
+
+    setSecretMock.mockResolvedValueOnce({
+      audioInputDeviceId: '',
+      audioOutputDeviceId: '',
+      featureFlags: {},
+      hasRealtimeApiKey: true,
+      wakeWord: {
+        keywordPath: '',
+        keywordLabel: '',
+        sensitivity: 0.5,
+        minConfidence: 0.5,
+        cooldownMs: 1500,
+        deviceIndex: undefined,
+        modelPath: undefined,
+        hasAccessKey: true,
+      },
+    });
+
+    render(<App />);
+
+    const realtimeHeading = await screen.findByRole('heading', { name: /OpenAI Realtime API key/i });
+    const realtimePanel = realtimeHeading.closest('article');
+    expect(realtimePanel).not.toBeNull();
+    if (!realtimePanel) {
+      throw new Error('Realtime secret panel missing');
+    }
+
+    const input = within(realtimePanel).getByLabelText(/New OpenAI Realtime API key/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: ' new-secret ' } });
+
+    const updateButton = within(realtimePanel).getByRole('button', { name: /update key/i });
+    fireEvent.click(updateButton);
+
+    await waitFor(() => {
+      expect(setSecretMock).toHaveBeenCalledWith('realtimeApiKey', 'new-secret');
+    });
+
+    expect(input.value).toBe('');
+    expect(within(realtimePanel).getByText(/API key updated successfully/i)).toBeInTheDocument();
+  });
+
+  it('reports wake word access key test failures', async () => {
+    (window as PreloadWindow).aiembodied = {
+      ping: () => 'pong',
+      config: {
+        get: vi.fn().mockResolvedValue({
+          audioInputDeviceId: '',
+          audioOutputDeviceId: '',
+          featureFlags: {},
+          hasRealtimeApiKey: true,
+          wakeWord: {
+            keywordPath: '',
+            keywordLabel: '',
+            sensitivity: 0.5,
+            minConfidence: 0.5,
+            cooldownMs: 1500,
+            deviceIndex: undefined,
+            modelPath: undefined,
+            hasAccessKey: true,
+          },
+        }),
+        getSecret: vi.fn().mockResolvedValue('secret'),
+        setAudioDevicePreferences: setAudioDevicePreferencesMock,
+        setSecret: setSecretMock,
+        testSecret: testSecretMock,
+      },
+      wakeWord: {
+        onWake: () => () => {},
+      },
+    } as unknown as PreloadWindow['aiembodied'];
+
+    testSecretMock.mockResolvedValueOnce({ ok: false, message: 'Invalid Porcupine access key' });
+
+    render(<App />);
+
+    const wakeHeading = await screen.findByRole('heading', { name: /Porcupine access key/i });
+    const wakePanel = wakeHeading.closest('article');
+    expect(wakePanel).not.toBeNull();
+    if (!wakePanel) {
+      throw new Error('Wake word secret panel missing');
+    }
+
+    const testButton = within(wakePanel).getByRole('button', { name: /test key/i });
+    fireEvent.click(testButton);
+
+    await waitFor(() => {
+      expect(testSecretMock).toHaveBeenCalledWith('wakeWordAccessKey');
+    });
+
+    expect(within(wakePanel).getByText(/Invalid Porcupine access key/i)).toBeInTheDocument();
   });
 
   it('surfaces configuration errors when preload bridge is unavailable', async () => {

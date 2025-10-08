@@ -295,6 +295,120 @@ main {
   gap: 1.5rem;
 }
 
+.kiosk__secrets {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 1rem;
+}
+
+.kiosk__secrets h2 {
+  margin: 0;
+  font-size: 1.4rem;
+  color: #f8fafc;
+}
+
+.kiosk__helper {
+  margin: 0;
+  color: rgba(148, 163, 184, 0.85);
+  max-width: 720px;
+}
+
+.kiosk__secretList {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.secretCard {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.35);
+}
+
+.secretCard[data-configured='false'] {
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+.secretCard__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.secretCard__header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #f8fafc;
+}
+
+.secretCard__description {
+  margin: 0;
+  color: rgba(203, 213, 225, 0.85);
+}
+
+.secretCard__status {
+  margin: 0;
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.9);
+}
+
+.secretCard__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.secretCard__form input {
+  padding: 0.6rem 0.8rem;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(2, 6, 23, 0.75);
+  color: #f8fafc;
+  font-size: 1rem;
+  transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.secretCard__form input:focus {
+  border-color: rgba(59, 130, 246, 0.75);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+  outline: none;
+}
+
+.secretCard__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.secretCard__actions button {
+  background: rgba(59, 130, 246, 0.2);
+  color: #e0f2fe;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  border-radius: 999px;
+  padding: 0.55rem 1.35rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.2s ease-in-out, transform 0.2s ease-in-out, opacity 0.2s ease-in-out;
+}
+
+.secretCard__actions button:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.3);
+  transform: translateY(-1px);
+}
+
+.secretCard__actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .control {
   display: flex;
   flex-direction: column;
