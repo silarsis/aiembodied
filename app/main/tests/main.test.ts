@@ -450,6 +450,13 @@ describe('main process bootstrap', () => {
 
     await import('../src/main.js');
 
+    expect(dotenvConfigMock).toHaveBeenCalledTimes(1);
+    const envConfigCall = dotenvConfigMock.mock.calls[0]?.[0];
+    expect(typeof envConfigCall?.path).toBe('string');
+    const normalizedEnvPath = (envConfigCall?.path as string).replace(/\\/g, '/');
+    expect(/^(?:\/[\s\S]*|[A-Za-z]:\/)/.test(normalizedEnvPath)).toBe(true);
+    expect(normalizedEnvPath).toMatch(/\/\.env$/);
+
     whenReadyDeferred.resolve();
     await whenReadyDeferred.promise;
     await flushPromises();
