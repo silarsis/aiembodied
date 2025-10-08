@@ -64,3 +64,4 @@ Keep this checklist accurate; it is the authoritative tracker for execution stat
 - 2025-10-12 — Adjusted main dev script to use Node ESM loader; validated end-to-end app launch via Electron with rebuilt native deps.
 - 2025-10-13 — Corrected Windows Join-Path usage in run-dev script to reliably detect missing .env configuration.
 - 2025-10-13 — Added opt-in diagnostics instrumentation to capture Electron lifecycle and renderer console logs for black screen debugging.
+- 2025-10-14 — Updated renderer build base path configuration to fix blank Electron window on Windows and added regression coverage.
