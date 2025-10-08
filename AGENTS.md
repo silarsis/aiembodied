@@ -62,3 +62,4 @@ Keep this checklist accurate; it is the authoritative tracker for execution stat
 - 2025-10-12 — Fixed Windows path assertion in main process test to be path-separator agnostic.
 - 2025-10-12 — Hardened CrashGuard disposal to avoid 'Object has been destroyed' on window close.
 - 2025-10-12 — Adjusted main dev script to use Node ESM loader; validated end-to-end app launch via Electron with rebuilt native deps.
+- 2025-10-13 — Corrected Windows Join-Path usage in run-dev script to reliably detect missing .env configuration.

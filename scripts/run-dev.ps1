@@ -11,7 +11,9 @@ pnpm --filter @aiembodied/main build
 Write-Host "[info] Rebuilding native modules for Electron..." -ForegroundColor Cyan
 pnpm --filter @aiembodied/main exec electron-builder install-app-deps
 
-if (-not (Test-Path -Path (Join-Path $PSScriptRoot '..' '.env'))) {
+$repoRoot = Split-Path -Path $PSScriptRoot -Parent
+$envFilePath = Join-Path -Path $repoRoot -ChildPath '.env'
+if (-not (Test-Path -Path $envFilePath)) {
   Write-Warning ".env not found at repo root. Ensure REALTIME_API_KEY and PORCUPINE_ACCESS_KEY are set."
 }
 
