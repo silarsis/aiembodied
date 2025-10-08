@@ -456,8 +456,9 @@ describe('main process bootstrap', () => {
 
     expect(BrowserWindowMock).toHaveBeenCalledTimes(1);
     const mainWindow = createdWindows[0];
+    // Cross-platform path check (Windows vs POSIX separators)
     expect(mainWindow.loadFile).toHaveBeenCalledWith(
-      expect.stringContaining('renderer/dist/index.html'),
+      expect.stringMatching(/renderer[\\\/]dist[\\\/]index\.html$/),
     );
 
     expect(crashGuardInstances).toHaveLength(1);

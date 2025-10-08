@@ -58,3 +58,6 @@ Keep this checklist accurate; it is the authoritative tracker for execution stat
 - 2025-10-09 — Added cross-platform setup scripts to validate/install Node.js and pnpm prerequisites.
 - 2025-10-10 — Patched the Windows setup script comment-based help and automated pnpm version detection from package.json.
 - 2025-10-11 — Added a Corepack permission fallback to download pnpm to a user directory and persist PATH updates.
+- 2025-10-12 — Fixed Windows path assertion in main process test to be path-separator agnostic.
+- 2025-10-12 — Hardened CrashGuard disposal to avoid 'Object has been destroyed' on window close.
+- 2025-10-12 — Adjusted main dev script to use Node ESM loader; validated end-to-end app launch via Electron with rebuilt native deps.
