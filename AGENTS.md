@@ -70,4 +70,5 @@ Keep this checklist accurate; it is the authoritative tracker for execution stat
 - 2025-10-17 — Instrumented preload/config bridges with diagnostics to trace avatar API availability issues in the renderer.
 - 2025-10-18 — Reviewed configuration bridge IPC flow, documented renderer wiring, and confirmed existing Vitest coverage for preload exposure.
 - 2025-10-19 — Instrumented configuration bridge IPC registration logging and added regression tests for handler failure surfacing.
+- 2025-10-20 — Enabled avatar face service reinitialization after realtime key updates and expanded main-process tests to cover the runtime bridge state.
 - 2025-10-20 — Added release automation workflow to build AppImage binaries whenever RELEASE.txt increments.
