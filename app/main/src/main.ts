@@ -23,6 +23,11 @@ import { AutoLaunchManager } from './lifecycle/auto-launch.js';
 import { createDevTray } from './lifecycle/dev-tray.js';
 import { AvatarFaceService } from './avatar/avatar-face-service.js';
 import type { AvatarUploadRequest } from './avatar/types.js';
+import {
+  resolvePreloadScriptPath,
+  resolveRendererEntryPoint,
+  RuntimeResourceNotFoundError,
+} from './runtime-paths.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -49,6 +54,35 @@ let avatarFaceService: AvatarFaceService | null = null;
 let currentRealtimeApiKey: string | null = null;
 
 const createWindow = () => {
+  let preloadPath: string;
+  let rendererEntryPath: string;
+
+  try {
+    const preloadResolution = resolvePreloadScriptPath(__dirname);
+    preloadPath = preloadResolution.path;
+    logger.info('Resolved renderer preload script path.', {
+      path: preloadPath,
+      attempted: preloadResolution.attempted,
+      usedFallback: preloadResolution.usedIndex > 0,
+    });
+
+    const rendererResolution = resolveRendererEntryPoint(__dirname);
+    rendererEntryPath = rendererResolution.path;
+    logger.info('Resolved renderer bundle entry point.', {
+      path: rendererEntryPath,
+      attempted: rendererResolution.attempted,
+      usedFallback: rendererResolution.usedIndex > 0,
+    });
+  } catch (error) {
+    const attempted = error instanceof RuntimeResourceNotFoundError ? error.attempted : undefined;
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('Failed to resolve renderer resources.', {
+      message,
+      ...(attempted ? { attempted } : {}),
+    });
+    throw error;
+  }
+
   const window = new BrowserWindow({
     width: 1920,
     height: 1080,
@@ -59,7 +93,7 @@ const createWindow = () => {
     backgroundColor: '#020617',
     webPreferences: {
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js'),
+      preload: preloadPath,
     },
   });
 
@@ -74,9 +108,8 @@ const createWindow = () => {
     });
   }
 
-  const rendererDist = path.join(__dirname, '../../renderer/dist/index.html');
   window
-    .loadFile(rendererDist)
+    .loadFile(rendererEntryPath)
     .then(() => {
       logger.info('Renderer bundle loaded successfully.');
     })
@@ -454,6 +487,17 @@ app.whenReady().then(async () => {
     return;
   }
 
+  const configSnapshot = manager.getConfig();
+  logger.info('Renderer bridge readiness state.', {
+    config: {
+      hasRealtimeApiKey: Boolean(configSnapshot.realtimeApiKey),
+      hasWakeWordAccessKey: Boolean(configSnapshot.wakeWord.accessKey),
+    },
+    avatar: { enabled: Boolean(avatarFaceService) },
+    conversation: { enabled: Boolean(conversationManager) },
+    metrics: { enabled: Boolean(metricsCollector) },
+  });
+
   if (conversationManager) {
     const sessionListener = (session: ConversationSession) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -475,7 +519,17 @@ app.whenReady().then(async () => {
       removeConversationListeners = null;
     };
   }
-  const window = createWindow();
+  let window: BrowserWindow;
+  try {
+    window = createWindow();
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'Unknown renderer bootstrap error occurred while creating the window.';
+    logger.error('Failed to create main window.', { message });
+    dialog.showErrorBox('Window Creation Error', message);
+    app.quit();
+    return;
+  }
   crashGuard.watch(window);
 
   app.on('activate', () => {

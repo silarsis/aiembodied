@@ -72,3 +72,4 @@ Keep this checklist accurate; it is the authoritative tracker for execution stat
 - 2025-10-19 — Instrumented configuration bridge IPC registration logging and added regression tests for handler failure surfacing.
 - 2025-10-20 — Enabled avatar face service reinitialization after realtime key updates and expanded main-process tests to cover the runtime bridge state.
 - 2025-10-20 — Added release automation workflow to build AppImage binaries whenever RELEASE.txt increments.
+- 2025-10-21 — Instrumented renderer runtime path resolution with diagnostics, added preload failure guards, and expanded tests for bridge availability.
