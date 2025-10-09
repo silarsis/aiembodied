@@ -436,7 +436,7 @@ describe('main process bootstrap', () => {
   });
 
   it('initializes wake word service, ipc handlers, and window lifecycle on ready', async () => {
-    const config = {
+    const baseConfig = {
       realtimeApiKey: 'rt-key',
       audioInputDeviceId: undefined,
       audioOutputDeviceId: undefined,
@@ -459,11 +459,16 @@ describe('main process bootstrap', () => {
       },
     } as const;
 
-    loadMock.mockResolvedValue(config);
-    getConfigMock.mockReturnValue(config);
+    let currentConfig = { ...baseConfig };
+
+    loadMock.mockResolvedValue(baseConfig);
+    getConfigMock.mockImplementation(() => currentConfig);
     getRendererConfigMock.mockReturnValue({ hasRealtimeApiKey: true });
-    setAudioDevicePreferencesMock.mockResolvedValue({ hasRealtimeApiKey: true });
-    setSecretMock.mockResolvedValue({ hasRealtimeApiKey: true });
+    setAudioDevicePreferencesMock.mockImplementation(async () => ({ hasRealtimeApiKey: true }));
+    setSecretMock.mockImplementation(async (_key: string, value: string) => {
+      currentConfig = { ...currentConfig, realtimeApiKey: value };
+      return { hasRealtimeApiKey: true };
+    });
     testSecretMock.mockResolvedValue({ ok: true });
 
     const serviceReady = createDeferred<void>();
@@ -498,18 +503,18 @@ describe('main process bootstrap', () => {
     expect(WakeWordServiceMock).toHaveBeenCalledTimes(1);
     expect(WakeWordServiceMock.mock.calls[0][0]).toMatchObject({
       logger: mockLogger,
-      cooldownMs: config.wakeWord.cooldownMs,
-      minConfidence: config.wakeWord.minConfidence,
+      cooldownMs: baseConfig.wakeWord.cooldownMs,
+      minConfidence: baseConfig.wakeWord.minConfidence,
     });
 
     const wakeWordService = wakeWordServiceInstances[0];
     expect(wakeWordService.start).toHaveBeenCalledWith({
-      accessKey: config.wakeWord.accessKey,
-      keywordPath: config.wakeWord.keywordPath,
-      keywordLabel: config.wakeWord.keywordLabel,
-      sensitivity: config.wakeWord.sensitivity,
-      modelPath: config.wakeWord.modelPath,
-      deviceIndex: config.wakeWord.deviceIndex,
+      accessKey: baseConfig.wakeWord.accessKey,
+      keywordPath: baseConfig.wakeWord.keywordPath,
+      keywordLabel: baseConfig.wakeWord.keywordLabel,
+      sensitivity: baseConfig.wakeWord.sensitivity,
+      modelPath: baseConfig.wakeWord.modelPath,
+      deviceIndex: baseConfig.wakeWord.deviceIndex,
     });
 
     expect(BrowserWindowMock).toHaveBeenCalledTimes(1);
@@ -525,6 +530,10 @@ describe('main process bootstrap', () => {
 
     expect(ipcMainMock.handle).toHaveBeenCalledTimes(13);
     const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
+
+    expect(mockLogger.info).toHaveBeenCalledWith('Avatar face service initialized.', {
+      reason: 'startup',
+    });
 
     const expectedConfigChannels = [
       'config:get',
@@ -559,6 +568,12 @@ describe('main process bootstrap', () => {
     });
     expect(setSecretMock).toHaveBeenCalledWith('realtimeApiKey', 'next-key');
 
+    expect(mockLogger.info).toHaveBeenCalledWith('Avatar face service initialized.', {
+      reason: 'secret-update',
+    });
+
+    expect(avatarFaceServiceInstances).toHaveLength(2);
+
     const testSecretHandler = handleEntries.get('config:test-secret');
     expect(typeof testSecretHandler).toBe('function');
     await expect(testSecretHandler?.({}, 'wakeWordAccessKey')).resolves.toEqual({ ok: true });
@@ -579,7 +594,7 @@ describe('main process bootstrap', () => {
     const metricsResult = metricsHandler?.({}, { metric: 'wake_to_capture_ms', valueMs: 100 });
     expect(metricsResult).toBe(false);
 
-    const avatarService = avatarFaceServiceInstances[0];
+    const avatarService = avatarFaceServiceInstances[avatarFaceServiceInstances.length - 1];
     expect(avatarService).toBeDefined();
 
     const listFacesHandler = handleEntries.get('avatar:list-faces');
@@ -684,6 +699,77 @@ describe('main process bootstrap', () => {
 
     appEmitter.emit('window-all-closed');
     expect(appEmitter.quit).toHaveBeenCalledTimes(1);
+  });
+
+  it('initializes the avatar face service when the realtime key is added after startup', async () => {
+    const baseConfig = {
+      realtimeApiKey: '',
+      audioInputDeviceId: undefined,
+      audioOutputDeviceId: undefined,
+      featureFlags: {},
+      wakeWord: {
+        accessKey: 'access',
+        keywordPath: 'keyword.ppn',
+        keywordLabel: 'Porcupine',
+        sensitivity: 0.5,
+        minConfidence: 0.6,
+        cooldownMs: 900,
+        deviceIndex: 1,
+        modelPath: '/path/to/model',
+      },
+      metrics: {
+        enabled: false,
+        host: '127.0.0.1',
+        port: 9477,
+        path: '/metrics',
+      },
+    } as const;
+
+    let currentConfig = { ...baseConfig };
+
+    loadMock.mockResolvedValue(baseConfig);
+    getConfigMock.mockImplementation(() => currentConfig);
+    getRendererConfigMock.mockImplementation(() => ({
+      hasRealtimeApiKey: Boolean(currentConfig.realtimeApiKey),
+    }));
+    setSecretMock.mockImplementation(async (_key: string, value: string) => {
+      currentConfig = { ...currentConfig, realtimeApiKey: value };
+      return { hasRealtimeApiKey: Boolean(currentConfig.realtimeApiKey) };
+    });
+    setAudioDevicePreferencesMock.mockImplementation(async () => ({
+      hasRealtimeApiKey: Boolean(currentConfig.realtimeApiKey),
+    }));
+    testSecretMock.mockResolvedValue({ ok: true });
+
+    await import('../src/main.js');
+
+    whenReadyDeferred.resolve();
+    await whenReadyDeferred.promise;
+    await flushPromises();
+
+    expect(avatarFaceServiceInstances).toHaveLength(0);
+    await waitForExpect(() => {
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Realtime API key unavailable; avatar face uploads disabled.',
+      );
+    });
+
+    const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
+
+    const setSecretHandler = handleEntries.get('config:set-secret');
+    expect(typeof setSecretHandler).toBe('function');
+    await expect(setSecretHandler?.({}, { key: 'realtimeApiKey', value: 'fresh-key' })).resolves.toEqual({
+      hasRealtimeApiKey: true,
+    });
+
+    expect(avatarFaceServiceInstances).toHaveLength(1);
+    expect(mockLogger.info).toHaveBeenCalledWith('Avatar face service initialized.', {
+      reason: 'secret-update',
+    });
+
+    const listFacesHandler = handleEntries.get('avatar:list-faces');
+    expect(typeof listFacesHandler).toBe('function');
+    await expect(listFacesHandler?.({})).resolves.toEqual([]);
   });
 
   it('surfaces configuration validation failures to the user', async () => {
