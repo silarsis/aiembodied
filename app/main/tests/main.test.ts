@@ -148,6 +148,22 @@ vi.mock('../src/avatar/avatar-face-service.js', () => ({
   AvatarFaceService: AvatarFaceServiceMock,
 }));
 
+const resolvePreloadScriptPathMock = vi.fn();
+const resolveRendererEntryPointMock = vi.fn();
+
+class RuntimeResourceNotFoundErrorDouble extends Error {
+  constructor(message: string, public readonly attempted: string[]) {
+    super(message);
+    this.name = 'RuntimeResourceNotFoundError';
+  }
+}
+
+vi.mock('../src/runtime-paths.js', () => ({
+  resolvePreloadScriptPath: resolvePreloadScriptPathMock,
+  resolveRendererEntryPoint: resolveRendererEntryPointMock,
+  RuntimeResourceNotFoundError: RuntimeResourceNotFoundErrorDouble,
+}));
+
 class WakeWordServiceDouble extends EventEmitter {
   start = vi.fn();
   dispose = vi.fn().mockResolvedValue(undefined);
@@ -331,6 +347,19 @@ describe('main process bootstrap', () => {
     CrashGuardMock.mockReset();
     CrashGuardMock.mockImplementation(createCrashGuardInstance);
     crashGuardInstances.length = 0;
+
+    resolvePreloadScriptPathMock.mockReset();
+    resolveRendererEntryPointMock.mockReset();
+    resolvePreloadScriptPathMock.mockReturnValue({
+      path: '/tmp/aiembodied-test/preload.js',
+      attempted: ['/tmp/aiembodied-test/preload.js'],
+      usedIndex: 0,
+    });
+    resolveRendererEntryPointMock.mockReturnValue({
+      path: '/tmp/aiembodied-test/renderer/index.html',
+      attempted: ['/tmp/aiembodied-test/renderer/index.html'],
+      usedIndex: 0,
+    });
 
     createdWindows.length = 0;
     getAllWindowsResult = createdWindows;
@@ -518,12 +547,14 @@ describe('main process bootstrap', () => {
     });
 
     expect(BrowserWindowMock).toHaveBeenCalledTimes(1);
+    expect(BrowserWindowMock.mock.calls[0]?.[0]).toMatchObject({
+      webPreferences: expect.objectContaining({
+        preload: '/tmp/aiembodied-test/preload.js',
+      }),
+    });
     const mainWindow = createdWindows[0];
     expect(diagnosticsTrackWindowMock).toHaveBeenCalledWith(mainWindow);
-    // Cross-platform path check (Windows vs POSIX separators)
-    expect(mainWindow.loadFile).toHaveBeenCalledWith(
-      expect.stringMatching(/renderer[\\\/]dist[\\\/]index\.html$/),
-    );
+    expect(mainWindow.loadFile).toHaveBeenCalledWith('/tmp/aiembodied-test/renderer/index.html');
 
     expect(crashGuardInstances).toHaveLength(1);
     expect(crashGuardInstances[0].watch).toHaveBeenCalledWith(mainWindow);
@@ -793,6 +824,68 @@ describe('main process bootstrap', () => {
     await waitForExpect(() => {
       expect(appEmitter.quit).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('surfaces preload resolution failures and aborts window creation', async () => {
+    const attempted = ['/missing/preload.js'];
+    resolvePreloadScriptPathMock.mockImplementationOnce(() => {
+      throw new RuntimeResourceNotFoundErrorDouble('Unable to locate preload bundle.', attempted);
+    });
+
+    const baseConfig = {
+      realtimeApiKey: 'rt-key',
+      audioInputDeviceId: undefined,
+      audioOutputDeviceId: undefined,
+      featureFlags: {},
+      wakeWord: {
+        accessKey: 'access',
+        keywordPath: 'keyword.ppn',
+        keywordLabel: 'Porcupine',
+        sensitivity: 0.5,
+        minConfidence: 0.6,
+        cooldownMs: 900,
+      },
+      metrics: {
+        enabled: false,
+        host: '127.0.0.1',
+        port: 9477,
+        path: '/metrics',
+      },
+    } as const;
+
+    loadMock.mockResolvedValue(baseConfig);
+    getConfigMock.mockReturnValue(baseConfig);
+    getRendererConfigMock.mockReturnValue({ hasRealtimeApiKey: true });
+    setAudioDevicePreferencesMock.mockResolvedValue({ hasRealtimeApiKey: true });
+    setSecretMock.mockResolvedValue({ hasRealtimeApiKey: true });
+    testSecretMock.mockResolvedValue({ ok: true });
+
+    await import('../src/main.js');
+
+    whenReadyDeferred.resolve();
+    await whenReadyDeferred.promise;
+    await flushPromises();
+
+    await waitForExpect(() => {
+      expect(mockLogger.error).toHaveBeenCalledWith('Failed to resolve renderer resources.', {
+        message: 'Unable to locate preload bundle.',
+        attempted,
+      });
+    });
+
+    await waitForExpect(() => {
+      expect(mockLogger.error).toHaveBeenCalledWith('Failed to create main window.', {
+        message: 'Unable to locate preload bundle.',
+      });
+    });
+    await waitForExpect(() => {
+      expect(dialogMock.showErrorBox).toHaveBeenCalledWith(
+        'Window Creation Error',
+        'Unable to locate preload bundle.',
+      );
+    });
+    expect(BrowserWindowMock).not.toHaveBeenCalled();
+    expect(appEmitter.quit).toHaveBeenCalledTimes(1);
   });
 
   it('logs and surfaces configuration bridge registration failures', async () => {
