@@ -46,6 +46,7 @@ let metricsCollector: PrometheusCollector | null = null;
 let autoLaunchManager: AutoLaunchManager | null = null;
 let developmentTray: Tray | null = null;
 let avatarFaceService: AvatarFaceService | null = null;
+let currentRealtimeApiKey: string | null = null;
 
 const createWindow = () => {
   const window = new BrowserWindow({
@@ -100,11 +101,57 @@ const crashGuard = new CrashGuard({
   logger,
 });
 
+async function refreshAvatarFaceService(
+  manager: ConfigManager,
+  reason: 'startup' | 'secret-update' = 'startup',
+): Promise<void> {
+  const config = manager.getConfig();
+  const nextKey = typeof config.realtimeApiKey === 'string' ? config.realtimeApiKey.trim() : '';
+
+  if (!nextKey) {
+    if (reason === 'startup') {
+      logger.warn('Realtime API key unavailable; avatar face uploads disabled.');
+    } else if (avatarFaceService || currentRealtimeApiKey) {
+      logger.warn('Realtime API key removed; avatar face service disabled.');
+    }
+    avatarFaceService = null;
+    currentRealtimeApiKey = null;
+    return;
+  }
+
+  const store = memoryStore;
+  if (!store) {
+    logger.warn('Memory store unavailable; avatar face service cannot be initialized.');
+    avatarFaceService = null;
+    currentRealtimeApiKey = null;
+    return;
+  }
+
+  if (avatarFaceService && currentRealtimeApiKey === nextKey) {
+    return;
+  }
+
+  try {
+    avatarFaceService = new AvatarFaceService({
+      apiKey: nextKey,
+      store,
+      logger,
+      fetchFn: typeof fetch === 'function' ? fetch : undefined,
+    });
+    currentRealtimeApiKey = nextKey;
+    logger.info('Avatar face service initialized.', { reason });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('Failed to initialize avatar face service', { message });
+    avatarFaceService = null;
+    currentRealtimeApiKey = null;
+  }
+}
+
 function registerIpcHandlers(
   manager: ConfigManager,
   conversation: ConversationManager | null,
   metrics: PrometheusCollector | null,
-  avatars: AvatarFaceService | null,
 ) {
   const configChannels = [
     'config:get',
@@ -140,10 +187,15 @@ function registerIpcHandlers(
 
   registerConfigHandler('config:get', () => manager.getRendererConfig());
   registerConfigHandler('config:get-secret', (_event, key: ConfigSecretKey) => manager.getSecret(key));
-  registerConfigHandler(
-    'config:set-secret',
-    (_event, payload: { key: ConfigSecretKey; value: string }) => manager.setSecret(payload.key, payload.value),
-  );
+  registerConfigHandler('config:set-secret', async (_event, payload: { key: ConfigSecretKey; value: string }) => {
+    const nextConfig = await manager.setSecret(payload.key, payload.value);
+
+    if (payload.key === 'realtimeApiKey') {
+      await refreshAvatarFaceService(manager, 'secret-update');
+    }
+
+    return nextConfig;
+  });
   registerConfigHandler('config:test-secret', (_event, key: ConfigSecretKey) => manager.testSecret(key));
   registerConfigHandler('config:set-audio-devices', (_event, preferences) =>
     manager.setAudioDevicePreferences(preferences),
@@ -177,39 +229,39 @@ function registerIpcHandlers(
     return true;
   });
   ipcMain.handle('avatar:list-faces', async () => {
-    if (!avatars) {
+    if (!avatarFaceService) {
       return [];
     }
 
-    return avatars.listFaces();
+    return avatarFaceService.listFaces();
   });
   ipcMain.handle('avatar:get-active-face', async () => {
-    if (!avatars) {
+    if (!avatarFaceService) {
       return null;
     }
 
-    return avatars.getActiveFace();
+    return avatarFaceService.getActiveFace();
   });
   ipcMain.handle('avatar:set-active-face', async (_event, faceId: string | null) => {
-    if (!avatars) {
+    if (!avatarFaceService) {
       throw new Error('Avatar configuration service is unavailable.');
     }
 
-    return avatars.setActiveFace(faceId);
+    return avatarFaceService.setActiveFace(faceId);
   });
   ipcMain.handle('avatar:upload-face', async (_event, payload: AvatarUploadRequest) => {
-    if (!avatars) {
+    if (!avatarFaceService) {
       throw new Error('Avatar configuration service is unavailable.');
     }
 
-    return avatars.uploadFace(payload);
+    return avatarFaceService.uploadFace(payload);
   });
   ipcMain.handle('avatar:delete-face', async (_event, faceId: string) => {
-    if (!avatars) {
+    if (!avatarFaceService) {
       throw new Error('Avatar configuration service is unavailable.');
     }
 
-    await avatars.deleteFace(faceId);
+    await avatarFaceService.deleteFace(faceId);
     return true;
   });
 }
@@ -276,22 +328,7 @@ app.whenReady().then(async () => {
 
   const appConfig = manager.getConfig();
 
-  if (appConfig.realtimeApiKey) {
-    try {
-      avatarFaceService = new AvatarFaceService({
-        apiKey: appConfig.realtimeApiKey,
-        store: memoryStore!,
-        logger,
-        fetchFn: typeof fetch === 'function' ? fetch : undefined,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.warn('Failed to initialize avatar face service', { message });
-      avatarFaceService = null;
-    }
-  } else {
-    logger.warn('Realtime API key unavailable; avatar face uploads disabled.');
-  }
+  await refreshAvatarFaceService(manager);
 
   autoLaunchManager = new AutoLaunchManager({
     logger,
@@ -403,7 +440,7 @@ app.whenReady().then(async () => {
   }
 
   try {
-    registerIpcHandlers(manager, conversationManager, metricsCollector, avatarFaceService);
+    registerIpcHandlers(manager, conversationManager, metricsCollector);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Unknown IPC handler registration error occurred.';
