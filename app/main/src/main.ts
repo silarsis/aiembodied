@@ -106,15 +106,52 @@ function registerIpcHandlers(
   metrics: PrometheusCollector | null,
   avatars: AvatarFaceService | null,
 ) {
-  ipcMain.handle('config:get', () => manager.getRendererConfig());
-  ipcMain.handle('config:get-secret', (_event, key: ConfigSecretKey) => manager.getSecret(key));
-  ipcMain.handle('config:set-secret', (_event, payload: { key: ConfigSecretKey; value: string }) =>
-    manager.setSecret(payload.key, payload.value),
+  const configChannels = [
+    'config:get',
+    'config:get-secret',
+    'config:set-secret',
+    'config:test-secret',
+    'config:set-audio-devices',
+  ] as const;
+
+  logger.info('Initializing configuration bridge IPC handlers.', {
+    channels: [...configChannels],
+  });
+
+  const registerConfigHandler = (
+    channel: (typeof configChannels)[number],
+    handler: Parameters<(typeof ipcMain)['handle']>[1],
+  ) => {
+    logger.debug('Registering configuration IPC handler.', { channel });
+
+    try {
+      ipcMain.handle(channel, handler);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : undefined;
+      logger.error('Failed to register configuration IPC handler.', {
+        channel,
+        message,
+        ...(stack ? { stack } : {}),
+      });
+      throw error;
+    }
+  };
+
+  registerConfigHandler('config:get', () => manager.getRendererConfig());
+  registerConfigHandler('config:get-secret', (_event, key: ConfigSecretKey) => manager.getSecret(key));
+  registerConfigHandler(
+    'config:set-secret',
+    (_event, payload: { key: ConfigSecretKey; value: string }) => manager.setSecret(payload.key, payload.value),
   );
-  ipcMain.handle('config:test-secret', (_event, key: ConfigSecretKey) => manager.testSecret(key));
-  ipcMain.handle('config:set-audio-devices', (_event, preferences) =>
+  registerConfigHandler('config:test-secret', (_event, key: ConfigSecretKey) => manager.testSecret(key));
+  registerConfigHandler('config:set-audio-devices', (_event, preferences) =>
     manager.setAudioDevicePreferences(preferences),
   );
+
+  logger.info('Configuration bridge IPC handlers registered.', {
+    channels: [...configChannels],
+  });
   ipcMain.handle('conversation:get-history', () => {
     if (!conversation) {
       throw new Error('Conversation manager is not initialized.');
@@ -365,7 +402,20 @@ app.whenReady().then(async () => {
     });
   }
 
-  registerIpcHandlers(manager, conversationManager, metricsCollector, avatarFaceService);
+  try {
+    registerIpcHandlers(manager, conversationManager, metricsCollector, avatarFaceService);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'Unknown IPC handler registration error occurred.';
+    const stack = error instanceof Error ? error.stack : undefined;
+    logger.error('Failed to register IPC handlers', {
+      message,
+      ...(stack ? { stack } : {}),
+    });
+    dialog.showErrorBox('IPC Error', message);
+    app.quit();
+    return;
+  }
 
   if (conversationManager) {
     const sessionListener = (session: ConversationSession) => {
