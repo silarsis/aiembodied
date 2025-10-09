@@ -1,0 +1,84 @@
+name: Build Release Binary
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - RELEASE.txt
+  workflow_dispatch:
+
+jobs:
+  build-single-binary:
+    name: Build Single Binary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine release version
+        id: release
+        run: |
+          set -euo pipefail
+          new_version="$(tr -d '[:space:]' < RELEASE.txt)"
+          if [[ -z "$new_version" ]]; then
+            echo "RELEASE.txt must contain a release number" >&2
+            exit 1
+          fi
+          if ! [[ "$new_version" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+            echo "Release number '$new_version' is not in numeric format" >&2
+            exit 1
+          fi
+          prev_version=""
+          before_ref="${{ github.event.before || '' }}"
+          if [[ -n "$before_ref" ]] && git rev-parse "$before_ref" >/dev/null 2>&1; then
+            prev_version="$(git show "$before_ref:RELEASE.txt" 2>/dev/null | tr -d '[:space:]')"
+          fi
+          if [[ "$prev_version" == "$new_version" ]]; then
+            echo "No release number change detected; skipping binary build." >&2
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Building release binary for version $new_version"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "release_version=$new_version" >> "$GITHUB_OUTPUT"
+          echo "RELEASE_VERSION=$new_version" >> "$GITHUB_ENV"
+
+      - name: Setup pnpm
+        if: steps.release.outputs.changed == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Setup Node.js
+        if: steps.release.outputs.changed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Sync package versions
+        if: steps.release.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.release.outputs.release_version }}"
+          jq --arg version "$VERSION" '.version = $version' package.json > package.json.tmp && mv package.json.tmp package.json
+          jq --arg version "$VERSION" '.version = $version' app/main/package.json > app/main/package.json.tmp && mv app/main/package.json.tmp app/main/package.json
+          jq --arg version "$VERSION" '.version = $version' app/renderer/package.json > app/renderer/package.json.tmp && mv app/renderer/package.json.tmp app/renderer/package.json
+
+      - name: Install dependencies
+        if: steps.release.outputs.changed == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Build distributables
+        if: steps.release.outputs.changed == 'true'
+        run: pnpm dist -- --linux AppImage
+
+      - name: Upload AppImage artifact
+        if: steps.release.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: aiembodied-${{ steps.release.outputs.release_version }}-appimage
+          path: release/*.AppImage
+          if-no-files-found: error
