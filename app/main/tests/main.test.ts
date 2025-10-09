@@ -526,6 +526,22 @@ describe('main process bootstrap', () => {
     expect(ipcMainMock.handle).toHaveBeenCalledTimes(13);
     const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
 
+    const expectedConfigChannels = [
+      'config:get',
+      'config:get-secret',
+      'config:set-secret',
+      'config:test-secret',
+      'config:set-audio-devices',
+    ];
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      'Initializing configuration bridge IPC handlers.',
+      expect.objectContaining({ channels: expectedConfigChannels }),
+    );
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      'Configuration bridge IPC handlers registered.',
+      expect.objectContaining({ channels: expectedConfigChannels }),
+    );
+
     const configHandler = handleEntries.get('config:get');
     expect(typeof configHandler).toBe('function');
     expect(configHandler?.()).toEqual({ hasRealtimeApiKey: true });
@@ -691,5 +707,90 @@ describe('main process bootstrap', () => {
     await waitForExpect(() => {
       expect(appEmitter.quit).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('logs and surfaces configuration bridge registration failures', async () => {
+    const registrationError = new Error('Duplicate handler registration');
+    ipcMainMock.handle.mockImplementationOnce(() => {
+      throw registrationError;
+    });
+
+    const config = {
+      realtimeApiKey: 'rt-key',
+      audioInputDeviceId: undefined,
+      audioOutputDeviceId: undefined,
+      featureFlags: {},
+      wakeWord: {
+        accessKey: 'access',
+        keywordPath: 'keyword.ppn',
+        keywordLabel: 'Porcupine',
+        sensitivity: 0.5,
+        minConfidence: 0.6,
+        cooldownMs: 900,
+        deviceIndex: 1,
+        modelPath: '/path/to/model',
+      },
+      metrics: {
+        enabled: false,
+        host: '127.0.0.1',
+        port: 9477,
+        path: '/metrics',
+      },
+    } as const;
+
+    loadMock.mockResolvedValue(config);
+    getConfigMock.mockReturnValue(config);
+    getRendererConfigMock.mockReturnValue({ hasRealtimeApiKey: true });
+
+    await import('../src/main.js');
+
+    whenReadyDeferred.resolve();
+    await whenReadyDeferred.promise;
+    await flushPromises();
+
+    const expectedConfigChannels = [
+      'config:get',
+      'config:get-secret',
+      'config:set-secret',
+      'config:test-secret',
+      'config:set-audio-devices',
+    ];
+
+    await waitForExpect(() => {
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Initializing configuration bridge IPC handlers.',
+        expect.objectContaining({ channels: expectedConfigChannels }),
+      );
+    });
+
+    await waitForExpect(() => {
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to register configuration IPC handler.',
+        expect.objectContaining({
+          channel: 'config:get',
+          message: registrationError.message,
+        }),
+      );
+    });
+
+    await waitForExpect(() => {
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to register IPC handlers',
+        expect.objectContaining({ message: registrationError.message }),
+      );
+    });
+
+    await waitForExpect(() => {
+      expect(dialogMock.showErrorBox).toHaveBeenCalledWith('IPC Error', registrationError.message);
+    });
+
+    await waitForExpect(() => {
+      expect(appEmitter.quit).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mockLogger.info).not.toHaveBeenCalledWith(
+      'Configuration bridge IPC handlers registered.',
+      expect.objectContaining({ channels: expectedConfigChannels }),
+    );
   });
 });

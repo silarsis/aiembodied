@@ -68,3 +68,5 @@ Keep this checklist accurate; it is the authoritative tracker for execution stat
 - 2025-10-15 — Relaxed realtime key boot requirements, added preload bridge resilience, and expanded config manager tests.
 - 2025-10-16 — Added regression tests for config bridge secret flows and .env ingestion to guard Windows behavior.
 - 2025-10-17 — Instrumented preload/config bridges with diagnostics to trace avatar API availability issues in the renderer.
+- 2025-10-18 — Reviewed configuration bridge IPC flow, documented renderer wiring, and confirmed existing Vitest coverage for preload exposure.
+- 2025-10-19 — Instrumented configuration bridge IPC registration logging and added regression tests for handler failure surfacing.
