@@ -75,3 +75,4 @@ Keep this checklist accurate; it is the authoritative tracker for execution stat
 - 2025-10-21 — Instrumented renderer runtime path resolution with diagnostics, added preload failure guards, and expanded tests for bridge availability.
 - 2025-10-22 — Hardened renderer configuration secret interactions to reuse the latest preload bridge state and added regression coverage for early submissions.
 - 2025-10-23 — Instrumented configuration and renderer bridges with diagnostics to trace secret resolution and IPC availability.
+- 2025-10-24 — Expanded renderer preload diagnostics to capture polling attempts, window bridge descriptors, and configuration access failures.
