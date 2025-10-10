@@ -4,6 +4,8 @@ import { BuiltinKeyword } from '@picovoice/porcupine-node';
 import type { SecretStore } from './secret-store.js';
 import type { AudioDevicePreferences, PreferencesStore } from './preferences-store.js';
 
+type ConfigLogger = Pick<Console, 'debug' | 'info' | 'warn' | 'error'>;
+
 export type FeatureFlags = Record<string, boolean>;
 
 export interface AppConfig {
@@ -51,6 +53,7 @@ export interface ConfigManagerOptions {
   fetchFn?: typeof fetch;
   realtimeTestEndpoint?: string;
   wakeWordTestEndpoint?: string;
+  logger?: ConfigLogger;
 }
 
 export class ConfigValidationError extends Error {
@@ -97,6 +100,7 @@ export class ConfigManager {
   private readonly realtimeTestEndpoint: string;
   private readonly wakeWordTestEndpoint: string;
   private readonly secretTestTimeoutMs = 5000;
+  private readonly logger: ConfigLogger;
 
   constructor(options: ConfigManagerOptions = {}) {
     this.secretStore = options.secretStore;
@@ -106,12 +110,16 @@ export class ConfigManager {
     this.realtimeTestEndpoint = options.realtimeTestEndpoint ?? 'https://api.openai.com/v1/models';
     this.wakeWordTestEndpoint = options.wakeWordTestEndpoint ??
       'https://api.picovoice.ai/api/v1/porcupine/validate';
+    this.logger = options.logger ?? console;
   }
 
   async load(): Promise<AppConfig> {
     if (this.config) {
+      this.logger.debug('Configuration already loaded. Returning cached state.');
       return this.config;
     }
+
+    this.logger.info('Loading configuration from environment and secret stores.');
 
     const realtimeApiKey = await this.resolveRealtimeApiKey();
     const wakeWordAccessKey = await this.resolveWakeWordAccessKey();
@@ -140,6 +148,13 @@ export class ConfigManager {
     };
 
     this.config = config;
+    this.logger.info('Configuration loaded.', {
+      hasRealtimeApiKey: Boolean(config.realtimeApiKey),
+      wakeWordHasAccessKey: Boolean(config.wakeWord.accessKey),
+      audioInputConfigured: Boolean(config.audioInputDeviceId),
+      audioOutputConfigured: Boolean(config.audioOutputDeviceId),
+      featureFlagCount: Object.keys(config.featureFlags ?? {}).length,
+    });
     return config;
   }
 
@@ -217,6 +232,7 @@ export class ConfigManager {
         ...this.config,
         realtimeApiKey: parsed,
       };
+      this.logger.info('Realtime API key updated.', { length: parsed.length });
       return this.getRendererConfig();
     }
 
@@ -230,6 +246,7 @@ export class ConfigManager {
           accessKey: parsed,
         },
       };
+      this.logger.info('Wake word access key updated.', { length: parsed.length });
       return this.getRendererConfig();
     }
 
@@ -250,6 +267,7 @@ export class ConfigManager {
       if (!this.config.realtimeApiKey) {
         return { ok: false, message: 'Realtime API key is not configured.' };
       }
+      this.logger.debug('Testing realtime API key.');
       return this.testRealtimeKey(fetchFn, this.config.realtimeApiKey);
     }
 
@@ -257,6 +275,7 @@ export class ConfigManager {
       if (!this.config.wakeWord.accessKey) {
         return { ok: false, message: 'Porcupine access key is not configured.' };
       }
+      this.logger.debug('Testing wake word access key.');
       return this.testWakeWordKey(fetchFn, this.config.wakeWord.accessKey);
     }
 
@@ -264,30 +283,60 @@ export class ConfigManager {
   }
 
   private async resolveRealtimeApiKey(): Promise<string | undefined> {
+    this.logger.debug('Resolving realtime API key from environment variables.', {
+      keys: ['REALTIME_API_KEY', 'realtime_api_key'],
+    });
     const envValue = this.readSecretFromEnv(['REALTIME_API_KEY', 'realtime_api_key']);
     if (envValue) {
+      this.logger.debug('Realtime API key resolved from environment variables.', {
+        length: envValue.length,
+      });
       return envValue;
     }
 
+    this.logger.debug('Realtime API key not found in environment.', {
+      hasSecretStore: Boolean(this.secretStore),
+    });
     if (!this.secretStore) {
+      this.logger.warn('Realtime API key unavailable: secret store is not configured.');
       return undefined;
     }
 
     const stored = await this.secretStore.getSecret('REALTIME_API_KEY');
+    if (stored) {
+      this.logger.debug('Realtime API key resolved from secret store.', { length: stored.length });
+    } else {
+      this.logger.warn('Realtime API key not found in secret store.');
+    }
     return stored ?? undefined;
   }
 
   private async resolveWakeWordAccessKey(): Promise<string | undefined> {
+    this.logger.debug('Resolving wake word access key from environment variables.', {
+      keys: ['PORCUPINE_ACCESS_KEY', 'porcupine_access_key'],
+    });
     const envValue = this.readSecretFromEnv(['PORCUPINE_ACCESS_KEY', 'porcupine_access_key']);
     if (envValue) {
+      this.logger.debug('Wake word access key resolved from environment variables.', {
+        length: envValue.length,
+      });
       return envValue;
     }
 
+    this.logger.debug('Wake word access key not found in environment.', {
+      hasSecretStore: Boolean(this.secretStore),
+    });
     if (!this.secretStore) {
+      this.logger.error('Wake word access key unavailable: secret store is not configured.');
       return undefined;
     }
 
     const stored = await this.secretStore.getSecret('PORCUPINE_ACCESS_KEY');
+    if (stored) {
+      this.logger.debug('Wake word access key resolved from secret store.', { length: stored.length });
+    } else {
+      this.logger.error('Wake word access key not found in secret store.');
+    }
     return stored ?? undefined;
   }
 

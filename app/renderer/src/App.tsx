@@ -169,6 +169,7 @@ function logRendererBridge(
 function usePreloadBridge() {
   const [api, setApi] = useState<PreloadApi | undefined>(undefined);
   const [ping, setPing] = useState<'available' | 'unavailable'>('unavailable');
+  const resolveApi = useCallback(() => api ?? getPreloadApi(), [api]);
   const logStateRef = useRef({
     missingBridgeLogged: false,
     attachedLogged: false,
@@ -188,7 +189,10 @@ function usePreloadBridge() {
 
       if (!bridge) {
         if (!logStateRef.current.missingBridgeLogged) {
-          logRendererBridge('warn', 'Preload API is not yet attached to window.aiembodied.');
+          logRendererBridge('warn', 'Preload API is not yet attached to window.aiembodied.', {
+            hasWindowProperty: Object.prototype.hasOwnProperty.call(window, 'aiembodied'),
+            documentReadyState: document.readyState,
+          });
           logStateRef.current.missingBridgeLogged = true;
           logStateRef.current.attachedLogged = false;
         }
@@ -199,6 +203,7 @@ function usePreloadBridge() {
       if (!logStateRef.current.attachedLogged) {
         logRendererBridge('info', 'Preload API detected.', {
           keys: Object.keys(bridge),
+          documentReadyState: document.readyState,
         });
         logStateRef.current.attachedLogged = true;
         logStateRef.current.missingBridgeLogged = false;
@@ -271,7 +276,7 @@ function usePreloadBridge() {
     };
   }, []);
 
-  return { api, ping };
+  return { api, ping, resolveApi };
 }
 
 function useOnlineStatus() {
@@ -402,7 +407,7 @@ function TranscriptOverlay({
 }
 
 export default function App() {
-  const { api, ping } = usePreloadBridge();
+  const { api, ping, resolveApi } = usePreloadBridge();
   const [config, setConfig] = useState<RendererConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
   const [loadingConfig, setLoadingConfig] = useState(true);
@@ -439,10 +444,12 @@ export default function App() {
   const latencyTrackerRef = useRef<LatencyTracker>(new LatencyTracker());
   const [latencySnapshot, setLatencySnapshot] = useState<LatencySnapshot | null>(null);
   const [activeAvatar, setActiveAvatar] = useState<AvatarFaceDetail | null>(null);
+  const activeBridge = resolveApi();
 
   const pushLatency = useCallback(
     (snapshot: LatencySnapshot) => {
-      if (!api?.metrics) {
+      const bridge = resolveApi();
+      if (!bridge?.metrics) {
         return;
       }
 
@@ -458,12 +465,12 @@ export default function App() {
       }
 
       for (const [metric, value] of entries) {
-        api.metrics
+        bridge.metrics
           .observeLatency(metric, value)
           .catch((error) => console.error('Failed to report latency metric', metric, error));
       }
     },
-    [api?.metrics],
+    [resolveApi],
   );
 
   useEffect(() => {
@@ -662,15 +669,23 @@ export default function App() {
   }, [realtimeState.status]);
 
   useEffect(() => {
-    if (!api) {
+    const bridge = resolveApi();
+    if (!bridge) {
       setConfigError('Renderer preload API is unavailable.');
       setLoadingConfig(false);
-      logRendererBridge('error', 'Configuration bridge unavailable while loading renderer config.');
+      logRendererBridge('error', 'Configuration bridge unavailable while loading renderer config.', {
+        hasWindowBridge: Object.prototype.hasOwnProperty.call(window, 'aiembodied'),
+        documentReadyState: document.readyState,
+      });
       return;
     }
 
     let cancelled = false;
-    api.config
+    logRendererBridge('info', 'Requesting renderer configuration from main process.', {
+      hasConfigBridge: typeof bridge.config !== 'undefined',
+      availableBridgeKeys: Object.keys(bridge),
+    });
+    bridge.config
       .get()
       .then((value) => {
         if (cancelled) {
@@ -680,10 +695,21 @@ export default function App() {
         setConfigError(null);
         const overlayEnabled = value.featureFlags?.transcriptOverlay ?? false;
         setTranscriptVisible(overlayEnabled);
+        logRendererBridge('info', 'Renderer configuration received from main process.', {
+          hasRealtimeApiKey: value.hasRealtimeApiKey,
+          wakeWordHasAccessKey: value.wakeWord?.hasAccessKey ?? false,
+          audioInputConfigured: Boolean(value.audioInputDeviceId),
+          audioOutputConfigured: Boolean(value.audioOutputDeviceId),
+          featureFlagKeys: Object.keys(value.featureFlags ?? {}),
+        });
       })
       .catch((error) => {
         const message = error instanceof Error ? error.message : 'Failed to load renderer configuration.';
         setConfigError(message);
+        logRendererBridge('error', 'Failed to load renderer configuration from main process.', {
+          message,
+          name: error instanceof Error ? error.name : 'unknown',
+        });
       })
       .finally(() => {
         if (!cancelled) {
@@ -694,10 +720,12 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [api]);
+  }, [api, resolveApi]);
 
   useEffect(() => {
-    if (!api?.conversation) {
+    const bridge = resolveApi();
+    const conversationBridge = bridge?.conversation;
+    if (!conversationBridge) {
       setActiveSessionId(null);
       applySessionHistory(null);
       return;
@@ -705,7 +733,7 @@ export default function App() {
 
     let cancelled = false;
 
-    api.conversation
+    conversationBridge
       .getHistory()
       .then((history) => {
         if (cancelled) {
@@ -726,13 +754,13 @@ export default function App() {
         console.error('Failed to load conversation history', error);
       });
 
-    const unsubscribeSession = api.conversation.onSessionStarted((session) => {
+    const unsubscribeSession = conversationBridge.onSessionStarted((session) => {
       setActiveSessionId(session.id);
       messageIdsRef.current.clear();
       setTranscriptEntries([]);
     });
 
-    const unsubscribeMessage = api.conversation.onMessageAppended((message) => {
+    const unsubscribeMessage = conversationBridge.onMessageAppended((message) => {
       if (!activeSessionIdRef.current || message.sessionId !== activeSessionIdRef.current) {
         return;
       }
@@ -760,7 +788,7 @@ export default function App() {
       unsubscribeSession();
       unsubscribeMessage();
     };
-  }, [api?.conversation, applySessionHistory]);
+  }, [api, resolveApi, applySessionHistory]);
 
   useEffect(() => {
     setSelectedInput((previous) => (previous === configInputDeviceId ? previous : configInputDeviceId));
@@ -771,14 +799,15 @@ export default function App() {
   const previousSpeechActiveRef = useRef(audioGraph.isActive);
 
   useEffect(() => {
-    if (!api || !hasRealtimeApiKey || !hasRealtimeSupport) {
+    const bridge = resolveApi();
+    if (!bridge || !hasRealtimeApiKey || !hasRealtimeSupport) {
       setRealtimeKey(null);
       setRealtimeKeyError(null);
       return;
     }
 
     let cancelled = false;
-    api.config
+    bridge.config
       .getSecret('realtimeApiKey')
       .then((key) => {
         if (cancelled) {
@@ -799,7 +828,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [api, hasRealtimeApiKey, hasRealtimeSupport]);
+  }, [api, hasRealtimeApiKey, hasRealtimeSupport, resolveApi]);
 
   useEffect(() => {
     const wasActive = previousSpeechActiveRef.current;
@@ -868,11 +897,12 @@ export default function App() {
   }, [realtimeState, recordTranscriptEntry]);
 
   useEffect(() => {
-    if (!api) {
+    const bridge = resolveApi();
+    if (!bridge) {
       return;
     }
 
-    const unsubscribe = api.wakeWord.onWake((event) => {
+    const unsubscribe = bridge.wakeWord.onWake((event) => {
       if (event.sessionId && activeSessionIdRef.current !== event.sessionId) {
         setActiveSessionId(event.sessionId);
         messageIdsRef.current.clear();
@@ -902,7 +932,7 @@ export default function App() {
       }
       unsubscribe?.();
     };
-  }, [api, recordTranscriptEntry]);
+  }, [api, resolveApi, recordTranscriptEntry]);
 
   useEffect(() => {
     if (audioGraph.status === 'ready') {
@@ -912,7 +942,8 @@ export default function App() {
 
   const persistPreferences = useCallback(
     async (preferences: AudioDevicePreferences) => {
-      if (!api) {
+      const bridge = resolveApi();
+      if (!bridge) {
         setSaveError('Cannot update audio preferences without preload bridge access.');
         logRendererBridge('error', 'Configuration bridge unavailable during audio preference persistence.', {
           preferences,
@@ -924,7 +955,7 @@ export default function App() {
       setSaveError(null);
 
       try {
-        const nextConfig = await api.config.setAudioDevicePreferences(preferences);
+        const nextConfig = await bridge.config.setAudioDevicePreferences(preferences);
         setConfig(nextConfig);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to persist audio device preferences.';
@@ -934,7 +965,7 @@ export default function App() {
         setIsSaving(false);
       }
     },
-    [api],
+    [resolveApi],
   );
 
   const handleInputChange = useCallback(
@@ -999,7 +1030,8 @@ export default function App() {
           return;
         }
 
-        if (!api) {
+        const bridge = resolveApi();
+        if (!bridge) {
           logRendererBridge('error', 'Configuration bridge unavailable while submitting a secret update.', {
             key,
           });
@@ -1014,7 +1046,7 @@ export default function App() {
         setSecretStatus((previous) => ({ ...previous, [key]: { status: 'idle', message: null } }));
 
         try {
-          const nextConfig = await api.config.setSecret(key, nextValue);
+          const nextConfig = await bridge.config.setSecret(key, nextValue);
           setConfig(nextConfig);
           setSecretInputs((previous) => ({ ...previous, [key]: '' }));
 
@@ -1037,13 +1069,14 @@ export default function App() {
           setSecretSaving((previous) => ({ ...previous, [key]: false }));
         }
       },
-    [api, secretInputs],
+    [resolveApi, secretInputs],
   );
 
   const handleSecretTest = useCallback(
     (key: ConfigSecretKey) =>
       async () => {
-        if (!api) {
+        const bridge = resolveApi();
+        if (!bridge) {
           logRendererBridge('error', 'Configuration bridge unavailable while testing a secret.', {
             key,
           });
@@ -1058,7 +1091,7 @@ export default function App() {
         setSecretStatus((previous) => ({ ...previous, [key]: { status: 'idle', message: null } }));
 
         try {
-          const result = await api.config.testSecret(key);
+          const result = await bridge.config.testSecret(key);
           setSecretStatus((previous) => ({
             ...previous,
             [key]: {
@@ -1076,7 +1109,7 @@ export default function App() {
           setSecretTesting((previous) => ({ ...previous, [key]: false }));
         }
       },
-    [api],
+    [resolveApi],
   );
 
   const levelPercentage = useMemo(() => Math.min(100, Math.round(audioGraph.level * 100)), [audioGraph.level]);
@@ -1250,7 +1283,7 @@ export default function App() {
         </div>
       </section>
 
-      <AvatarConfigurator avatarApi={api?.avatar} onActiveFaceChange={handleActiveFaceChange} />
+      <AvatarConfigurator avatarApi={activeBridge?.avatar} onActiveFaceChange={handleActiveFaceChange} />
 
       <section className="kiosk__controls">
         <div className="control">
