@@ -63,6 +63,8 @@ export interface PreloadApi {
   metrics?: MetricsBridge;
   avatar?: AvatarBridge;
   ping(): string;
+  __bridgeReady?: boolean;
+  __bridgeVersion?: string;
 }
 
 export interface WakeWordBridge {
@@ -88,7 +90,7 @@ export interface AvatarBridge {
   deleteFace(faceId: string): Promise<void>;
 }
 
-const api: PreloadApi = {
+const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
   config: {
     get: () => ipcRenderer.invoke('config:get') as Promise<RendererConfig>,
     getSecret: (key) => ipcRenderer.invoke('config:get-secret', key) as Promise<string>,
@@ -147,6 +149,8 @@ const api: PreloadApi = {
     },
   },
   ping: () => 'pong',
+  __bridgeReady: true,
+  __bridgeVersion: '1.0.0',
 };
 
 logPreloadInfo('Preparing to expose renderer bridge.', {
@@ -154,16 +158,39 @@ logPreloadInfo('Preparing to expose renderer bridge.', {
   hasAvatarBridge: typeof api.avatar !== 'undefined',
 });
 
-try {
-  contextBridge.exposeInMainWorld('aiembodied', api);
-  logPreloadInfo('Renderer bridge exposed successfully.', {
-    keys: Object.keys(api),
-    hasAvatarBridge: typeof api.avatar !== 'undefined',
-  });
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  logPreloadError('Failed to expose renderer bridge.', { message });
-  throw error;
+function exposeBridge() {
+  try {
+    contextBridge.exposeInMainWorld('aiembodied', api);
+    logPreloadInfo('Renderer bridge exposed successfully.', {
+      keys: Object.keys(api),
+      hasAvatarBridge: typeof api.avatar !== 'undefined',
+      bridgeReady: api.__bridgeReady,
+      bridgeVersion: api.__bridgeVersion,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logPreloadError('Failed to expose renderer bridge.', { message });
+    throw error;
+  }
+}
+
+// Ensure DOM is ready before exposing the bridge for better timing
+// Check if we're in a browser context (not a test environment)
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      logPreloadInfo('DOM content loaded, exposing bridge.');
+      exposeBridge();
+    });
+  } else {
+    // DOM is already loaded
+    logPreloadInfo('DOM already loaded, exposing bridge immediately.');
+    exposeBridge();
+  }
+} else {
+  // In test environment, expose immediately
+  logPreloadInfo('No DOM context detected (test environment), exposing bridge immediately.');
+  exposeBridge();
 }
 
 declare global {

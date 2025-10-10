@@ -28,13 +28,32 @@ async function main() {
   });
 
   // Build renderer and main
+  console.log('[info] Building renderer...');
   await run('pnpm', ['--filter', '@aiembodied/renderer', 'build']);
+  
+  console.log('[info] Building main process...');
   await run('pnpm', ['--filter', '@aiembodied/main', 'build']);
 
+  // Verify preload script exists
+  const preloadPath = resolve(repoRoot, 'app/main/dist/preload.js');
+  if (!existsSync(preloadPath)) {
+    throw new Error(`Preload script not found at ${preloadPath}. Ensure main process build completed successfully.`);
+  }
+  console.log('[info] Preload script verified at:', preloadPath);
+
+  // Verify renderer dist exists
+  const rendererIndexPath = resolve(repoRoot, 'app/renderer/dist/index.html');
+  if (!existsSync(rendererIndexPath)) {
+    throw new Error(`Renderer build not found at ${rendererIndexPath}. Ensure renderer build completed successfully.`);
+  }
+  console.log('[info] Renderer build verified at:', rendererIndexPath);
+
   // Rebuild native deps for Electron runtime (ensures better-sqlite3/keytar ABI matches Electron)
+  console.log('[info] Rebuilding native dependencies for Electron...');
   await run('pnpm', ['--filter', '@aiembodied/main', 'exec', 'electron-builder', 'install-app-deps']);
 
   // Launch Electron with compiled main
+  console.log('[info] Launching Electron...');
   await run('pnpm', ['--filter', '@aiembodied/main', 'exec', 'electron', 'dist/main.js']);
 }
 

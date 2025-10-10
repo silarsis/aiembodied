@@ -318,11 +318,12 @@ function usePreloadBridge() {
       }
 
       const bridge = getPreloadApi();
-      if (!bridge) {
+      if (!bridge || !bridge.__bridgeReady) {
         if (shouldLogAttempt(attempt)) {
           const duration = pollStartRef.current ? Date.now() - pollStartRef.current : 0;
-          logRendererBridge('warn', 'Preload API unavailable; renderer still polling for bridge exposure.', {
-            ...collectBridgeDiagnostics(undefined, { attempt, pollingDurationMs: duration }),
+          const reason = !bridge ? 'API not exposed' : 'bridge not ready';
+          logRendererBridge('warn', `Preload API unavailable (${reason}); renderer still polling for bridge exposure.`, {
+            ...collectBridgeDiagnostics(bridge, { attempt, pollingDurationMs: duration, bridgeReady: bridge?.__bridgeReady }),
           });
         }
         applyBridge(undefined, { attempt });
@@ -331,6 +332,11 @@ function usePreloadBridge() {
 
       const duration = pollStartRef.current ? Date.now() - pollStartRef.current : 0;
       pollStartRef.current = null;
+      logRendererBridge('info', 'Bridge ready and attached successfully.', {
+        bridgeVersion: bridge.__bridgeVersion,
+        timeToDetectMs: duration,
+        attempt,
+      });
       applyBridge(bridge, { attempt, timeToDetectMs: duration });
       return true;
     };
@@ -341,21 +347,43 @@ function usePreloadBridge() {
       };
     }
 
-    const interval = window.setInterval(() => {
-      if (disposed) {
+    const INITIAL_RETRY_DELAY = 50;
+    const MAX_RETRY_DELAY = 2000;
+    const MAX_ATTEMPTS = 100;
+
+    let currentDelay = INITIAL_RETRY_DELAY;
+    let timeout: number | null = null;
+
+    const scheduleNextAttempt = () => {
+      if (disposed || attachAttemptRef.current >= MAX_ATTEMPTS) {
         return;
       }
 
-      if (attemptAttach()) {
-        window.clearInterval(interval);
-      }
-    }, 500);
+      timeout = window.setTimeout(() => {
+        if (disposed) {
+          return;
+        }
+
+        if (attemptAttach()) {
+          // Success, no more attempts needed
+          return;
+        }
+
+        // Exponential backoff with jitter
+        currentDelay = Math.min(currentDelay * 1.2, MAX_RETRY_DELAY);
+        scheduleNextAttempt();
+      }, currentDelay);
+    };
+
+    scheduleNextAttempt();
 
     return () => {
       disposed = true;
-      window.clearInterval(interval);
+      if (timeout !== null) {
+        window.clearTimeout(timeout);
+      }
     };
-  }, []);
+  }, [shouldLogAttempt]);
 
   return { api, ping, resolveApi };
 }
