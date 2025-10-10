@@ -53,7 +53,10 @@ interface SecretStatusState {
   message: string | null;
 }
 
-const SECRET_METADATA: Record<ConfigSecretKey, { label: string; description: string; isConfigured: (config: RendererConfig | null) => boolean }> = {
+const SECRET_METADATA: Record<
+  ConfigSecretKey,
+  { label: string; description: string; isConfigured: (config: RendererConfig | null) => boolean }
+> = {
   realtimeApiKey: {
     label: 'OpenAI Realtime API key',
     description: 'Required to negotiate realtime model sessions.',
@@ -166,6 +169,38 @@ function logRendererBridge(
   meta ? console.error(prefix, meta) : console.error(prefix);
 }
 
+function collectBridgeDiagnostics(
+  bridge: PreloadApi | undefined,
+  extras: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const windowBridge = (window as { aiembodied?: PreloadApi }).aiembodied;
+  const descriptor = Object.getOwnPropertyDescriptor(window, 'aiembodied');
+  const descriptorType: 'missing' | 'data' | 'accessor' = descriptor
+    ? typeof descriptor.get === 'function' || typeof descriptor.set === 'function'
+      ? 'accessor'
+      : 'data'
+    : 'missing';
+
+  return {
+    documentReadyState: document.readyState,
+    hasWindowProperty: Object.prototype.hasOwnProperty.call(window, 'aiembodied'),
+    typeofWindowBridge: typeof windowBridge,
+    descriptorType,
+    descriptorConfigurable: descriptor?.configurable ?? null,
+    descriptorEnumerable: descriptor?.enumerable ?? null,
+    descriptorWritable: descriptorType === 'data' ? descriptor?.writable ?? null : null,
+    availableWindowBridgeKeys: windowBridge ? Object.keys(windowBridge) : [],
+    availableBridgeKeys: bridge ? Object.keys(bridge) : undefined,
+    hasConfigBridge: typeof bridge?.config !== 'undefined',
+    hasWakeWordBridge: typeof bridge?.wakeWord !== 'undefined',
+    hasConversationBridge: typeof bridge?.conversation !== 'undefined',
+    hasMetricsBridge: typeof bridge?.metrics !== 'undefined',
+    hasAvatarBridge: typeof bridge?.avatar !== 'undefined',
+    hasPingFunction: typeof bridge?.ping === 'function',
+    ...extras,
+  };
+}
+
 function usePreloadBridge() {
   const [api, setApi] = useState<PreloadApi | undefined>(undefined);
   const [ping, setPing] = useState<'available' | 'unavailable'>('unavailable');
@@ -176,11 +211,25 @@ function usePreloadBridge() {
     missingAvatarLogged: false,
     missingCoreLogged: false,
   });
+  const attachAttemptRef = useRef(0);
+  const pollStartRef = useRef<number | null>(null);
+
+  const shouldLogAttempt = useCallback((attempt: number) => {
+    if (attempt <= 0) {
+      return false;
+    }
+
+    if (attempt === 1 || attempt === 5) {
+      return true;
+    }
+
+    return attempt % 25 === 0;
+  }, []);
 
   useEffect(() => {
     let disposed = false;
 
-    const applyBridge = (bridge: PreloadApi | undefined) => {
+    const applyBridge = (bridge: PreloadApi | undefined, contextMeta: Record<string, unknown> = {}) => {
       if (disposed) {
         return;
       }
@@ -190,8 +239,7 @@ function usePreloadBridge() {
       if (!bridge) {
         if (!logStateRef.current.missingBridgeLogged) {
           logRendererBridge('warn', 'Preload API is not yet attached to window.aiembodied.', {
-            hasWindowProperty: Object.prototype.hasOwnProperty.call(window, 'aiembodied'),
-            documentReadyState: document.readyState,
+            ...collectBridgeDiagnostics(undefined, contextMeta),
           });
           logStateRef.current.missingBridgeLogged = true;
           logStateRef.current.attachedLogged = false;
@@ -202,8 +250,7 @@ function usePreloadBridge() {
 
       if (!logStateRef.current.attachedLogged) {
         logRendererBridge('info', 'Preload API detected.', {
-          keys: Object.keys(bridge),
-          documentReadyState: document.readyState,
+          ...collectBridgeDiagnostics(bridge, contextMeta),
         });
         logStateRef.current.attachedLogged = true;
         logStateRef.current.missingBridgeLogged = false;
@@ -212,7 +259,10 @@ function usePreloadBridge() {
       const missingCore = REQUIRED_BRIDGE_KEYS.filter((key) => !(key in bridge));
       if (missingCore.length > 0) {
         if (!logStateRef.current.missingCoreLogged) {
-          logRendererBridge('error', 'Preload API is missing required bridges.', { missing: missingCore });
+          logRendererBridge('error', 'Preload API is missing required bridges.', {
+            missing: missingCore,
+            ...collectBridgeDiagnostics(bridge, contextMeta),
+          });
           logStateRef.current.missingCoreLogged = true;
         }
       } else if (logStateRef.current.missingCoreLogged) {
@@ -225,6 +275,7 @@ function usePreloadBridge() {
           logRendererBridge(
             'warn',
             'Avatar configuration bridge missing from preload API. Avatar uploads require a valid realtime API key.',
+            collectBridgeDiagnostics(bridge, contextMeta),
           );
           logStateRef.current.missingAvatarLogged = true;
         }
@@ -236,21 +287,51 @@ function usePreloadBridge() {
       try {
         const result = bridge.ping();
         setPing(result === 'pong' ? 'available' : 'unavailable');
-        logRendererBridge('debug', 'Preload ping completed.', { result });
+        if (result !== 'pong') {
+          logRendererBridge('warn', 'Preload ping responded with unexpected payload.', {
+            result,
+            ...collectBridgeDiagnostics(bridge, contextMeta),
+          });
+        } else {
+          logRendererBridge('debug', 'Preload ping completed.', {
+            result,
+            ...collectBridgeDiagnostics(bridge, contextMeta),
+          });
+        }
       } catch (error) {
-        console.error('Failed to call preload ping bridge', error);
+        const message = error instanceof Error ? error.message : String(error);
+        const name = error instanceof Error ? error.name : 'unknown';
+        logRendererBridge('error', 'Failed to call preload ping bridge.', {
+          errorMessage: message,
+          errorName: name,
+          ...collectBridgeDiagnostics(bridge, contextMeta),
+        });
         setPing('unavailable');
       }
     };
 
     const attemptAttach = () => {
+      attachAttemptRef.current += 1;
+      const attempt = attachAttemptRef.current;
+      if (pollStartRef.current === null) {
+        pollStartRef.current = Date.now();
+      }
+
       const bridge = getPreloadApi();
       if (!bridge) {
-        applyBridge(undefined);
+        if (shouldLogAttempt(attempt)) {
+          const duration = pollStartRef.current ? Date.now() - pollStartRef.current : 0;
+          logRendererBridge('warn', 'Preload API unavailable; renderer still polling for bridge exposure.', {
+            ...collectBridgeDiagnostics(undefined, { attempt, pollingDurationMs: duration }),
+          });
+        }
+        applyBridge(undefined, { attempt });
         return false;
       }
 
-      applyBridge(bridge);
+      const duration = pollStartRef.current ? Date.now() - pollStartRef.current : 0;
+      pollStartRef.current = null;
+      applyBridge(bridge, { attempt, timeToDetectMs: duration });
       return true;
     };
 
@@ -674,16 +755,14 @@ export default function App() {
       setConfigError('Renderer preload API is unavailable.');
       setLoadingConfig(false);
       logRendererBridge('error', 'Configuration bridge unavailable while loading renderer config.', {
-        hasWindowBridge: Object.prototype.hasOwnProperty.call(window, 'aiembodied'),
-        documentReadyState: document.readyState,
+        ...collectBridgeDiagnostics(undefined, { effect: 'load-config' }),
       });
       return;
     }
 
     let cancelled = false;
     logRendererBridge('info', 'Requesting renderer configuration from main process.', {
-      hasConfigBridge: typeof bridge.config !== 'undefined',
-      availableBridgeKeys: Object.keys(bridge),
+      ...collectBridgeDiagnostics(bridge, { effect: 'load-config' }),
     });
     bridge.config
       .get()
@@ -709,6 +788,7 @@ export default function App() {
         logRendererBridge('error', 'Failed to load renderer configuration from main process.', {
           message,
           name: error instanceof Error ? error.name : 'unknown',
+          ...collectBridgeDiagnostics(bridge, { effect: 'load-config' }),
         });
       })
       .finally(() => {
@@ -946,7 +1026,11 @@ export default function App() {
       if (!bridge) {
         setSaveError('Cannot update audio preferences without preload bridge access.');
         logRendererBridge('error', 'Configuration bridge unavailable during audio preference persistence.', {
-          preferences,
+          ...collectBridgeDiagnostics(undefined, {
+            action: 'set-audio-preferences',
+            audioInputDeviceId: preferences.audioInputDeviceId ?? null,
+            audioOutputDeviceId: preferences.audioOutputDeviceId ?? null,
+          }),
         });
         return;
       }
@@ -1033,7 +1117,7 @@ export default function App() {
         const bridge = resolveApi();
         if (!bridge) {
           logRendererBridge('error', 'Configuration bridge unavailable while submitting a secret update.', {
-            key,
+            ...collectBridgeDiagnostics(undefined, { action: 'set-secret', key }),
           });
           setSecretStatus((previous) => ({
             ...previous,
@@ -1078,7 +1162,7 @@ export default function App() {
         const bridge = resolveApi();
         if (!bridge) {
           logRendererBridge('error', 'Configuration bridge unavailable while testing a secret.', {
-            key,
+            ...collectBridgeDiagnostics(undefined, { action: 'test-secret', key }),
           });
           setSecretStatus((previous) => ({
             ...previous,
