@@ -489,6 +489,50 @@ describe('App component', () => {
     expect(within(realtimePanel).getByText(/API key updated successfully/i)).toBeInTheDocument();
   });
 
+  it('uses the latest preload bridge when submitting a secret before the hook state updates', async () => {
+    Reflect.deleteProperty(window as PreloadWindow, 'aiembodied');
+
+    setSecretMock.mockResolvedValueOnce({
+      ...rendererConfig,
+      hasRealtimeApiKey: true,
+    });
+
+    render(<App />);
+
+    const getSecretSpy = vi.fn().mockResolvedValue('late-secret');
+    (window as PreloadWindow).aiembodied = {
+      ping: () => 'pong',
+      config: {
+        get: vi.fn().mockResolvedValue(rendererConfig),
+        getSecret: getSecretSpy,
+        setAudioDevicePreferences: setAudioDevicePreferencesMock,
+        setSecret: setSecretMock,
+        testSecret: testSecretMock,
+      },
+      wakeWord: { onWake: () => () => {} },
+      avatar: createAvatarBridgeMock(),
+    } as unknown as PreloadWindow['aiembodied'];
+
+    const realtimeHeading = await screen.findByRole('heading', { name: /OpenAI Realtime API key/i });
+    const realtimePanel = realtimeHeading.closest('article');
+    expect(realtimePanel).not.toBeNull();
+    if (!realtimePanel) {
+      throw new Error('Realtime secret panel missing');
+    }
+
+    const input = within(realtimePanel).getByLabelText(/New OpenAI Realtime API key/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: ' late-secret ' } });
+
+    const updateButton = within(realtimePanel).getByRole('button', { name: /update key/i });
+    fireEvent.click(updateButton);
+
+    await waitFor(() => {
+      expect(setSecretMock).toHaveBeenCalledWith('realtimeApiKey', 'late-secret');
+    });
+
+    expect(within(realtimePanel).getByText(/API key updated successfully/i)).toBeInTheDocument();
+  });
+
   it('reports wake word access key test failures', async () => {
     (window as PreloadWindow).aiembodied = {
       ping: () => 'pong',
