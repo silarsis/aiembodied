@@ -40,6 +40,8 @@ export interface PreloadApi {
   metrics?: MetricsBridge;
   avatar?: AvatarBridge;
   ping(): string;
+  __bridgeReady?: boolean;
+  __bridgeVersion?: string;
 }
 
 export function getPreloadApi(): PreloadApi | undefined {
