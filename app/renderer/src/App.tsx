@@ -189,7 +189,10 @@ function usePreloadBridge() {
 
       if (!bridge) {
         if (!logStateRef.current.missingBridgeLogged) {
-          logRendererBridge('warn', 'Preload API is not yet attached to window.aiembodied.');
+          logRendererBridge('warn', 'Preload API is not yet attached to window.aiembodied.', {
+            hasWindowProperty: Object.prototype.hasOwnProperty.call(window, 'aiembodied'),
+            documentReadyState: document.readyState,
+          });
           logStateRef.current.missingBridgeLogged = true;
           logStateRef.current.attachedLogged = false;
         }
@@ -200,6 +203,7 @@ function usePreloadBridge() {
       if (!logStateRef.current.attachedLogged) {
         logRendererBridge('info', 'Preload API detected.', {
           keys: Object.keys(bridge),
+          documentReadyState: document.readyState,
         });
         logStateRef.current.attachedLogged = true;
         logStateRef.current.missingBridgeLogged = false;
@@ -669,11 +673,18 @@ export default function App() {
     if (!bridge) {
       setConfigError('Renderer preload API is unavailable.');
       setLoadingConfig(false);
-      logRendererBridge('error', 'Configuration bridge unavailable while loading renderer config.');
+      logRendererBridge('error', 'Configuration bridge unavailable while loading renderer config.', {
+        hasWindowBridge: Object.prototype.hasOwnProperty.call(window, 'aiembodied'),
+        documentReadyState: document.readyState,
+      });
       return;
     }
 
     let cancelled = false;
+    logRendererBridge('info', 'Requesting renderer configuration from main process.', {
+      hasConfigBridge: typeof bridge.config !== 'undefined',
+      availableBridgeKeys: Object.keys(bridge),
+    });
     bridge.config
       .get()
       .then((value) => {
@@ -684,10 +695,21 @@ export default function App() {
         setConfigError(null);
         const overlayEnabled = value.featureFlags?.transcriptOverlay ?? false;
         setTranscriptVisible(overlayEnabled);
+        logRendererBridge('info', 'Renderer configuration received from main process.', {
+          hasRealtimeApiKey: value.hasRealtimeApiKey,
+          wakeWordHasAccessKey: value.wakeWord?.hasAccessKey ?? false,
+          audioInputConfigured: Boolean(value.audioInputDeviceId),
+          audioOutputConfigured: Boolean(value.audioOutputDeviceId),
+          featureFlagKeys: Object.keys(value.featureFlags ?? {}),
+        });
       })
       .catch((error) => {
         const message = error instanceof Error ? error.message : 'Failed to load renderer configuration.';
         setConfigError(message);
+        logRendererBridge('error', 'Failed to load renderer configuration from main process.', {
+          message,
+          name: error instanceof Error ? error.name : 'unknown',
+        });
       })
       .finally(() => {
         if (!cancelled) {

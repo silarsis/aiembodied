@@ -168,6 +168,47 @@ describe('ConfigManager', () => {
     expect(config.wakeWord.keywordLabel).toBe('Porcupine');
   });
 
+  it('logs secret resolution steps without leaking secret values', async () => {
+    const logger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+
+    const env = {
+      REALTIME_API_KEY: 'rt-secret-value',
+      PORCUPINE_ACCESS_KEY: 'wake-secret-value',
+      WAKE_WORD_BUILTIN: 'porcupine',
+    } as NodeJS.ProcessEnv;
+
+    const manager = new ConfigManager({ env, logger });
+
+    await manager.load();
+
+    expect(logger.debug).toHaveBeenCalledWith(
+      'Realtime API key resolved from environment variables.',
+      expect.objectContaining({ length: env.REALTIME_API_KEY.length }),
+    );
+    expect(logger.debug).toHaveBeenCalledWith(
+      'Wake word access key resolved from environment variables.',
+      expect.objectContaining({ length: env.PORCUPINE_ACCESS_KEY.length }),
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      'Configuration loaded.',
+      expect.objectContaining({
+        hasRealtimeApiKey: true,
+        wakeWordHasAccessKey: true,
+      }),
+    );
+
+    for (const call of [...logger.debug.mock.calls, ...logger.info.mock.calls]) {
+      const serialized = JSON.stringify(call);
+      expect(serialized).not.toContain(env.REALTIME_API_KEY);
+      expect(serialized).not.toContain(env.PORCUPINE_ACCESS_KEY);
+    }
+  });
+
   it('updates and persists audio device preferences', async () => {
     const preferencesStore = new InMemoryPreferencesStore();
     const manager = new ConfigManager({

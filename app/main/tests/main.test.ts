@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import type { IpcMainInvokeEvent } from 'electron';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Deferred<T> = {
@@ -584,7 +585,9 @@ describe('main process bootstrap', () => {
 
     const configHandler = handleEntries.get('config:get');
     expect(typeof configHandler).toBe('function');
-    expect(configHandler?.()).toEqual({ hasRealtimeApiKey: true });
+    await expect(configHandler?.({} as unknown as IpcMainInvokeEvent)).resolves.toEqual({
+      hasRealtimeApiKey: true,
+    });
 
     const secretHandler = handleEntries.get('config:get-secret');
     expect(typeof secretHandler).toBe('function');

@@ -2,7 +2,12 @@ import { app, BrowserWindow, Tray, dialog, ipcMain } from 'electron';
 import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ConfigManager, ConfigValidationError, type ConfigSecretKey } from './config/config-manager.js';
+import {
+  ConfigManager,
+  ConfigValidationError,
+  type ConfigSecretKey,
+  type RendererConfig,
+} from './config/config-manager.js';
 import { KeytarSecretStore } from './config/keytar-secret-store.js';
 import { InMemorySecretStore } from './config/secret-store.js';
 import { FilePreferencesStore } from './config/preferences-store.js';
@@ -198,14 +203,110 @@ function registerIpcHandlers(
     channels: [...configChannels],
   });
 
+  const summarizeRendererConfig = (config: RendererConfig) => ({
+    hasRealtimeApiKey: config.hasRealtimeApiKey,
+    wakeWordHasAccessKey: config.wakeWord?.hasAccessKey ?? false,
+    audioInputConfigured: Boolean(config.audioInputDeviceId),
+    audioOutputConfigured: Boolean(config.audioOutputDeviceId),
+    featureFlagKeys: Object.keys(config.featureFlags ?? {}),
+  });
+
+  const sanitizePayload = (
+    channel: (typeof configChannels)[number],
+    args: unknown[],
+  ): Record<string, unknown> | undefined => {
+    if (channel === 'config:set-secret') {
+      const [payload] = args as [{ key?: ConfigSecretKey; value?: string } | undefined];
+      return {
+        key: payload?.key,
+        valueLength: typeof payload?.value === 'string' ? payload.value.trim().length : undefined,
+      };
+    }
+
+    if (channel === 'config:get-secret' || channel === 'config:test-secret') {
+      const [key] = args as [ConfigSecretKey | undefined];
+      return { key };
+    }
+
+    if (channel === 'config:set-audio-devices') {
+      const [preferences] = args as [
+        { audioInputDeviceId?: string | null; audioOutputDeviceId?: string | null } | undefined,
+      ];
+      return {
+        hasInput: Boolean(preferences?.audioInputDeviceId),
+        hasOutput: Boolean(preferences?.audioOutputDeviceId),
+      };
+    }
+
+    return undefined;
+  };
+
+  const sanitizeResult = (
+    channel: (typeof configChannels)[number],
+    result: unknown,
+    args: unknown[],
+  ): Record<string, unknown> | undefined => {
+    if (channel === 'config:get' || channel === 'config:set-secret' || channel === 'config:set-audio-devices') {
+      if (result && typeof result === 'object') {
+        return summarizeRendererConfig(result as RendererConfig);
+      }
+      return undefined;
+    }
+
+    if (channel === 'config:get-secret') {
+      const [key] = args as [ConfigSecretKey | undefined];
+      return {
+        key,
+        length: typeof result === 'string' ? result.length : undefined,
+        present: typeof result === 'string' ? result.length > 0 : false,
+      };
+    }
+
+    if (channel === 'config:test-secret') {
+      if (result && typeof result === 'object' && 'ok' in result) {
+        return {
+          ok: Boolean((result as { ok: boolean }).ok),
+          hasMessage: Boolean((result as { message?: string }).message),
+        };
+      }
+    }
+
+    return undefined;
+  };
+
   const registerConfigHandler = (
     channel: (typeof configChannels)[number],
     handler: Parameters<(typeof ipcMain)['handle']>[1],
   ) => {
     logger.debug('Registering configuration IPC handler.', { channel });
 
+    const instrumentedHandler: Parameters<(typeof ipcMain)['handle']>[1] = async (event, ...args) => {
+      logger.debug('Configuration IPC handler invoked.', {
+        channel,
+        payload: sanitizePayload(channel, args),
+      });
+
+      try {
+        const result = await handler(event, ...args);
+        logger.debug('Configuration IPC handler completed.', {
+          channel,
+          result: sanitizeResult(channel, result, args),
+        });
+        return result;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const stack = error instanceof Error ? error.stack : undefined;
+        logger.error('Configuration IPC handler failed.', {
+          channel,
+          message,
+          ...(stack ? { stack } : {}),
+        });
+        throw error;
+      }
+    };
+
     try {
-      ipcMain.handle(channel, handler);
+      ipcMain.handle(channel, instrumentedHandler);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const stack = error instanceof Error ? error.stack : undefined;
@@ -330,6 +431,7 @@ app.whenReady().then(async () => {
   const manager = new ConfigManager({
     secretStore,
     preferencesStore: new FilePreferencesStore(path.join(app.getPath('userData'), 'preferences.json')),
+    logger,
   });
 
   try {
