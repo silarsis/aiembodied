@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import path from 'node:path';
 
 const existsSyncMock = vi.fn();
 
@@ -6,7 +7,7 @@ vi.mock('node:fs', () => ({
   existsSync: existsSyncMock,
 }));
 
-const baseDir = '/app/main/src';
+const baseDir = path.join('/', 'app', 'main', 'src');
 
 const {
   resolvePreloadScriptPath,
@@ -25,7 +26,7 @@ beforeEach(() => {
 
 describe('resolvePreloadScriptPath', () => {
   it('returns the first matching preload candidate when available', () => {
-    const expectedPrimary = '/app/main/src/preload.js';
+    const expectedPrimary = path.resolve(baseDir, 'preload.js');
     existsSyncMock.mockImplementation((candidate: string) => candidate === expectedPrimary);
 
     const result = resolvePreloadScriptPath(baseDir);
@@ -36,7 +37,7 @@ describe('resolvePreloadScriptPath', () => {
   });
 
   it('falls back to the dist preload bundle when the source path is missing', () => {
-    const fallbackPath = '/app/main/dist/preload.js';
+    const fallbackPath = path.resolve(baseDir, '../dist/preload.js');
     existsSyncMock.mockImplementation((candidate: string) => candidate === fallbackPath);
 
     const result = resolvePreloadScriptPath(baseDir);
@@ -53,7 +54,7 @@ describe('resolvePreloadScriptPath', () => {
 
 describe('resolveRendererEntryPoint', () => {
   it('locates the renderer bundle entry point when available', () => {
-    const primary = '/app/renderer/dist/index.html';
+    const primary = path.resolve(baseDir, '../../renderer/dist/index.html');
     existsSyncMock.mockImplementation((candidate: string) => candidate === primary);
 
     const result = resolveRendererEntryPoint(baseDir);

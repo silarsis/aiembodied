@@ -191,6 +191,8 @@ describe('App component', () => {
         },
       },
       avatar: createAvatarBridgeMock(),
+      __bridgeReady: true,
+      __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
 
     render(<App />);
@@ -248,7 +250,7 @@ describe('App component', () => {
 
     await waitFor(() =>
       expect((console.warn as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
-        expect.stringContaining('Preload API unavailable; renderer still polling for bridge exposure.'),
+        expect.stringContaining('Preload API unavailable (API not exposed); renderer still polling for bridge exposure.'),
         expect.objectContaining({
           attempt: 1,
           descriptorType: 'missing',
@@ -266,7 +268,7 @@ describe('App component', () => {
     );
 
     const warnCall = (console.warn as unknown as ReturnType<typeof vi.fn>).mock.calls.find((call) =>
-      typeof call[0] === 'string' && call[0].includes('Preload API unavailable; renderer still polling for bridge exposure.'),
+      typeof call[0] === 'string' && call[0].includes('Preload API unavailable (API not exposed); renderer still polling for bridge exposure.'),
     );
     expect(warnCall?.[1]).toMatchObject({
       attempt: 1,
@@ -306,6 +308,8 @@ describe('App component', () => {
       conversation: undefined,
       metrics: undefined,
       avatar: undefined,
+      __bridgeReady: true,
+      __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
 
     render(<App />);
@@ -405,6 +409,8 @@ describe('App component', () => {
           };
         },
       },
+      __bridgeReady: true,
+      __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
 
     render(<App />);
@@ -490,6 +496,8 @@ describe('App component', () => {
         onWake: () => () => {},
       },
       avatar: createAvatarBridgeMock(),
+      __bridgeReady: true,
+      __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
 
     setSecretMock.mockResolvedValueOnce({
@@ -554,6 +562,8 @@ describe('App component', () => {
       },
       wakeWord: { onWake: () => () => {} },
       avatar: createAvatarBridgeMock(),
+      __bridgeReady: true,
+      __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
 
     const realtimeHeading = await screen.findByRole('heading', { name: /OpenAI Realtime API key/i });
@@ -605,6 +615,8 @@ describe('App component', () => {
         onWake: () => () => {},
       },
       avatar: createAvatarBridgeMock(),
+      __bridgeReady: true,
+      __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
 
     testSecretMock.mockResolvedValueOnce({ ok: false, message: 'Invalid Porcupine access key' });
