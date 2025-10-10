@@ -243,6 +243,48 @@ describe('App component', () => {
     expect(screen.getByRole('heading', { name: /Embodied Assistant/i })).toBeInTheDocument();
   });
 
+  it('logs diagnostics while polling for the preload bridge when unavailable', async () => {
+    render(<App />);
+
+    await waitFor(() =>
+      expect((console.warn as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
+        expect.stringContaining('Preload API unavailable; renderer still polling for bridge exposure.'),
+        expect.objectContaining({
+          attempt: 1,
+          descriptorType: 'missing',
+          hasWindowProperty: false,
+          hasConfigBridge: false,
+        }),
+      ),
+    );
+
+    await waitFor(() =>
+      expect((console.error as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
+        expect.stringContaining('Configuration bridge unavailable while loading renderer config.'),
+        expect.objectContaining({ effect: 'load-config', descriptorType: 'missing' }),
+      ),
+    );
+
+    const warnCall = (console.warn as unknown as ReturnType<typeof vi.fn>).mock.calls.find((call) =>
+      typeof call[0] === 'string' && call[0].includes('Preload API unavailable; renderer still polling for bridge exposure.'),
+    );
+    expect(warnCall?.[1]).toMatchObject({
+      attempt: 1,
+      availableWindowBridgeKeys: [],
+      hasPingFunction: false,
+    });
+
+    const errorCall = (console.error as unknown as ReturnType<typeof vi.fn>).mock.calls.find((call) =>
+      typeof call[0] === 'string' && call[0].includes('Configuration bridge unavailable while loading renderer config.'),
+    );
+    expect(errorCall?.[1]).toMatchObject({
+      effect: 'load-config',
+      availableWindowBridgeKeys: [],
+      hasConfigBridge: false,
+      hasPingFunction: false,
+    });
+  });
+
   it('logs a warning when the preload API omits the avatar bridge', async () => {
     (window as PreloadWindow).aiembodied = {
       ping: () => 'pong',
@@ -271,6 +313,7 @@ describe('App component', () => {
     await waitFor(() =>
       expect((console.warn as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
         expect.stringContaining('Avatar configuration bridge missing from preload API.'),
+        expect.objectContaining({ hasAvatarBridge: false, hasConfigBridge: true }),
       ),
     );
   });
@@ -486,6 +529,50 @@ describe('App component', () => {
     });
 
     expect(input.value).toBe('');
+    expect(within(realtimePanel).getByText(/API key updated successfully/i)).toBeInTheDocument();
+  });
+
+  it('uses the latest preload bridge when submitting a secret before the hook state updates', async () => {
+    Reflect.deleteProperty(window as PreloadWindow, 'aiembodied');
+
+    setSecretMock.mockResolvedValueOnce({
+      ...rendererConfig,
+      hasRealtimeApiKey: true,
+    });
+
+    render(<App />);
+
+    const getSecretSpy = vi.fn().mockResolvedValue('late-secret');
+    (window as PreloadWindow).aiembodied = {
+      ping: () => 'pong',
+      config: {
+        get: vi.fn().mockResolvedValue(rendererConfig),
+        getSecret: getSecretSpy,
+        setAudioDevicePreferences: setAudioDevicePreferencesMock,
+        setSecret: setSecretMock,
+        testSecret: testSecretMock,
+      },
+      wakeWord: { onWake: () => () => {} },
+      avatar: createAvatarBridgeMock(),
+    } as unknown as PreloadWindow['aiembodied'];
+
+    const realtimeHeading = await screen.findByRole('heading', { name: /OpenAI Realtime API key/i });
+    const realtimePanel = realtimeHeading.closest('article');
+    expect(realtimePanel).not.toBeNull();
+    if (!realtimePanel) {
+      throw new Error('Realtime secret panel missing');
+    }
+
+    const input = within(realtimePanel).getByLabelText(/New OpenAI Realtime API key/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: ' late-secret ' } });
+
+    const updateButton = within(realtimePanel).getByRole('button', { name: /update key/i });
+    fireEvent.click(updateButton);
+
+    await waitFor(() => {
+      expect(setSecretMock).toHaveBeenCalledWith('realtimeApiKey', 'late-secret');
+    });
+
     expect(within(realtimePanel).getByText(/API key updated successfully/i)).toBeInTheDocument();
   });
 
