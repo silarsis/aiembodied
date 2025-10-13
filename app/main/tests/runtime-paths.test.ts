@@ -26,7 +26,7 @@ beforeEach(() => {
 
 describe('resolvePreloadScriptPath', () => {
   it('returns the first matching preload candidate when available', () => {
-    const expectedPrimary = path.resolve(baseDir, 'preload.js');
+    const expectedPrimary = path.resolve(baseDir, 'preload.cjs');
     existsSyncMock.mockImplementation((candidate: string) => candidate === expectedPrimary);
 
     const result = resolvePreloadScriptPath(baseDir);
@@ -37,7 +37,7 @@ describe('resolvePreloadScriptPath', () => {
   });
 
   it('falls back to the dist preload bundle when the source path is missing', () => {
-    const fallbackPath = path.resolve(baseDir, '../dist/preload.js');
+    const fallbackPath = path.resolve(baseDir, '../dist/preload.cjs');
     existsSyncMock.mockImplementation((candidate: string) => candidate === fallbackPath);
 
     const result = resolvePreloadScriptPath(baseDir);

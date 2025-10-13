@@ -76,38 +76,47 @@ try {
   Write-Warning "Optional electron native rebuild step failed: $($_.Exception.Message)"
 }
 
-# Ensure a CommonJS preload shim exists so Electron can load the preload in dev
+# Build a true CommonJS preload to avoid dynamic import issues
 try {
-  $mainDist = Join-Path -Path $repoRoot -ChildPath 'app/main/dist'
-  $esmPreload = Join-Path -Path $mainDist -ChildPath 'preload.js'
-  $cjsShim = Join-Path -Path $mainDist -ChildPath 'preload.cjs'
-  if (Test-Path -Path $esmPreload -PathType Leaf) {
-    $shim = @'
+  Write-Host "[info] Building CommonJS preload..." -ForegroundColor Cyan
+  Push-Location (Join-Path $repoRoot 'app/main')
+  pnpm --filter @aiembodied/main exec tsc -p tsconfig.preload.cjs.json
+  $code = $LASTEXITCODE
+  Pop-Location
+  if ($code -ne 0) { throw "cjs-preload-build-failed:$code" }
+
+  $mainDir = Join-Path -Path $repoRoot -ChildPath 'app/main'
+  $builtCjs = Join-Path -Path $mainDir -ChildPath 'dist-cjs/preload.js'
+  if (-not (Test-Path -Path $builtCjs -PathType Leaf)) { throw "missing-cjs:$builtCjs" }
+
+  $distDir = Join-Path -Path $mainDir -ChildPath 'dist'
+  if (-not (Test-Path -Path $distDir -PathType Container)) { New-Item -ItemType Directory -Force -Path $distDir | Out-Null }
+  $target = Join-Path -Path $distDir -ChildPath 'preload.cjs'
+  Copy-Item -Path $builtCjs -Destination $target -Force
+  Write-Host "[info] Wrote CommonJS preload at: $target" -ForegroundColor Cyan
+} catch {
+  Write-Warning "Failed to build CommonJS preload: $($_.Exception.Message). Falling back to dynamic-import shim."
+  try {
+    $mainDist = Join-Path -Path $repoRoot -ChildPath 'app/main/dist'
+    $esmPreload = Join-Path -Path $mainDist -ChildPath 'preload.js'
+    $cjsShim = Join-Path -Path $mainDist -ChildPath 'preload.cjs'
+    if (Test-Path -Path $esmPreload -PathType Leaf) {
+      $shim = @'
 // Auto-generated CommonJS shim to load the ESM preload build
 const { pathToFileURL } = require('url');
 const path = require('path');
-// eslint-disable-next-line no-console
+let ipcRenderer;
+try { ({ ipcRenderer } = require('electron')); } catch {}
+const forward = (level, message, meta) => { try { if (ipcRenderer) ipcRenderer.send('diagnostics:preload-log', { level, message, meta, ts: Date.now() }); } catch {} };
 console.info('[preload shim] Starting preload shim');
-(async () => {
-  try {
-    const esmPath = path.join(__dirname, 'preload.js');
-    const href = pathToFileURL(esmPath).href;
-    // eslint-disable-next-line no-console
-    console.info('[preload shim] Importing ESM preload at', href);
-    await import(href);
-    // eslint-disable-next-line no-console
-    console.info('[preload shim] ESM preload imported successfully');
-  } catch (e) {
-    // eslint-disable-next-line no-console
-    console.error('[preload shim] Failed to import ESM preload:', e && (e.stack || e.message || e));
-    throw e;
-  }
-})();
+forward('info', 'preload-shim:starting');
+(async () => { try { const href = pathToFileURL(path.join(__dirname, 'preload.js')).href; forward('info', 'preload-shim:importing', { href }); await import(href); forward('info', 'preload-shim:imported'); } catch (e) { forward('error', 'preload-shim:import-failed', { message: e && (e.message || e) }); throw e; } })();
 '@
-    Set-Content -Path $cjsShim -Value $shim -NoNewline
+      Set-Content -Path $cjsShim -Value $shim -NoNewline
+    }
+  } catch {
+    Write-Warning "Failed to create preload shim: $($_.Exception.Message)"
   }
-} catch {
-  Write-Warning "Failed to create preload shim: $($_.Exception.Message)"
 }
 
 function Get-DotEnvValues {
