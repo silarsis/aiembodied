@@ -43,10 +43,27 @@ function logPreloadMessage(
   }
 }
 
-const logPreloadInfo = (message: string, meta?: Record<string, unknown>) =>
+function forwardPreloadDiagnostics(level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) {
+  try {
+    ipcRenderer.send('diagnostics:preload-log', {
+      level,
+      message,
+      meta,
+      ts: Date.now(),
+    });
+  } catch {
+    // ignore IPC forwarding errors
+  }
+}
+
+const logPreloadInfo = (message: string, meta?: Record<string, unknown>) => {
   logPreloadMessage('info', message, meta);
-const logPreloadError = (message: string, meta?: Record<string, unknown>) =>
+  forwardPreloadDiagnostics('info', message, meta);
+};
+const logPreloadError = (message: string, meta?: Record<string, unknown>) => {
   logPreloadMessage('error', message, meta);
+  forwardPreloadDiagnostics('error', message, meta);
+};
 
 export interface ConfigBridge {
   get(): Promise<RendererConfig>;
@@ -162,6 +179,12 @@ function exposeBridge() {
   try {
     contextBridge.exposeInMainWorld('aiembodied', api);
     logPreloadInfo('Renderer bridge exposed successfully.', {
+      keys: Object.keys(api),
+      hasAvatarBridge: typeof api.avatar !== 'undefined',
+      bridgeReady: api.__bridgeReady,
+      bridgeVersion: api.__bridgeVersion,
+    });
+    forwardPreloadDiagnostics('info', 'preload:bridge-exposed', {
       keys: Object.keys(api),
       hasAvatarBridge: typeof api.avatar !== 'undefined',
       bridgeReady: api.__bridgeReady,

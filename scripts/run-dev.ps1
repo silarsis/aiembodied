@@ -80,6 +80,7 @@ if (-not $hasPorcupine) {
 Write-Host "[info] Launching Electron..." -ForegroundColor Cyan
 $mainDir = Join-Path -Path $repoRoot -ChildPath 'app/main'
 $electronCmd = Join-Path -Path $mainDir -ChildPath 'node_modules/.bin/electron.cmd'
+$env:AIEMBODIED_ENABLE_DIAGNOSTICS = '1'
 if (Test-Path -Path $electronCmd -PathType Leaf) {
   Push-Location $mainDir
   & $electronCmd 'dist/main.js'

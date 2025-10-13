@@ -191,6 +191,27 @@ function registerIpcHandlers(
   conversation: ConversationManager | null,
   metrics: PrometheusCollector | null,
 ) {
+  // Preload diagnostics bridge: allow preload/renderer to forward logs to main logger
+  try {
+    ipcMain.on('diagnostics:preload-log', (_event, payload: { level?: string; message?: string; meta?: Record<string, unknown>; ts?: number }) => {
+      const level = (typeof payload?.level === 'string' ? payload.level : 'info').toLowerCase();
+      const message = typeof payload?.message === 'string' ? payload.message : 'preload-diagnostics';
+      const meta = { from: 'preload', ...(payload?.meta ?? {}), ...(typeof payload?.ts === 'number' ? { ts: payload.ts } : {}) } as Record<string, unknown>;
+
+      if (level === 'debug') {
+        logger.debug(message, meta);
+      } else if (level === 'warn') {
+        logger.warn(message, meta);
+      } else if (level === 'error') {
+        logger.error(message, meta);
+      } else {
+        logger.info(message, meta);
+      }
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('Failed to register preload diagnostics channel', { message });
+  }
   const configChannels = [
     'config:get',
     'config:get-secret',
