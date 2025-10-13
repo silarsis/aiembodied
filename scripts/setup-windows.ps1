@@ -134,6 +134,42 @@ function Ensure-Directory {
     }
 }
 
+$script:CorepackPermissionPatterns = @(
+    'EPERM',
+    'EACCES',
+    'Access is denied',
+    'operation not permitted'
+)
+
+function Invoke-CorepackCommand {
+    param (
+        [Parameter(Mandatory = $true)][string[]]$Arguments
+    )
+
+    $output = & corepack @Arguments 2>&1
+    $exitCode = $LASTEXITCODE
+    $message = ($output | Out-String).Trim()
+
+    return [PSCustomObject]@{
+        ExitCode = $exitCode
+        Message  = $message
+    }
+}
+
+function Test-CorepackPermissionError {
+    param (
+        [Parameter(Mandatory = $true)][string]$Message
+    )
+
+    foreach ($pattern in $script:CorepackPermissionPatterns) {
+        if ($Message -match [Regex]::Escape($pattern)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 $script:UserPathUpdated = $false
 
 function Add-ToUserPath {
@@ -208,19 +244,30 @@ function Ensure-Pnpm {
 
     if (Test-CommandExists -Name 'corepack') {
         Write-Host "Activating pnpm $TargetPnpmVersion via Corepack..." -ForegroundColor Cyan
-        try {
-            corepack enable
-            corepack prepare "pnpm@$TargetPnpmVersion" --activate
-            $activated = $true
-        }
-        catch {
-            $message = $_.Exception.Message
-            if ($message -match 'EPERM' -or $message -match 'EACCES' -or $message -match 'Access is denied') {
-                Write-Warning "Corepack could not activate pnpm due to insufficient permissions. Falling back to a standalone download."
+
+        $enableResult = Invoke-CorepackCommand -Arguments @('enable')
+        if ($enableResult.ExitCode -ne 0) {
+            if (Test-CorepackPermissionError -Message $enableResult.Message) {
+                Write-Warning "Corepack could not enable pnpm due to insufficient permissions. Falling back to a standalone download."
                 Install-PnpmStandalone -Version $TargetPnpmVersion
             }
             else {
-                throw
+                throw "corepack enable failed: $($enableResult.Message)"
+            }
+        }
+        else {
+            $prepareResult = Invoke-CorepackCommand -Arguments @('prepare', "pnpm@$TargetPnpmVersion", '--activate')
+            if ($prepareResult.ExitCode -ne 0) {
+                if (Test-CorepackPermissionError -Message $prepareResult.Message) {
+                    Write-Warning "Corepack could not activate pnpm due to insufficient permissions. Falling back to a standalone download."
+                    Install-PnpmStandalone -Version $TargetPnpmVersion
+                }
+                else {
+                    throw "corepack prepare failed: $($prepareResult.Message)"
+                }
+            }
+            else {
+                $activated = $true
             }
         }
     }
