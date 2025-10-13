@@ -46,6 +46,40 @@ if (!isProduction) {
 
 const secretStore = isProduction ? new KeytarSecretStore('aiembodied') : new InMemorySecretStore();
 const { logger } = initializeLogger();
+// Register a preload diagnostics channel as early as possible to catch messages during renderer bootstrap
+try {
+  ipcMain.on(
+    'diagnostics:preload-log',
+    (
+      _event,
+      payload: { level?: string; message?: string; meta?: Record<string, unknown>; ts?: number },
+    ) => {
+      const level = (typeof payload?.level === 'string' ? payload.level : 'info').toLowerCase();
+      const message = typeof payload?.message === 'string' ? payload.message : 'preload-diagnostics';
+      const meta = {
+        from: 'preload',
+        ...(payload?.meta ?? {}),
+        ...(typeof payload?.ts === 'number' ? { ts: payload.ts } : {}),
+      } as Record<string, unknown>;
+
+      if (level === 'debug') {
+        logger.debug(message, meta);
+      } else if (level === 'warn') {
+        logger.warn(message, meta);
+      } else if (level === 'error') {
+        logger.error(message, meta);
+      } else {
+        logger.info(message, meta);
+      }
+    },
+  );
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  // Logging not yet configured would be unusual here, but fall back to console
+  // eslint-disable-next-line no-console
+  console.warn('Failed to register early preload diagnostics channel', message);
+}
+
 const diagnostics = createAppDiagnostics({ logger });
 let mainWindow: BrowserWindow | null = null;
 let wakeWordService: WakeWordService | null = null;
