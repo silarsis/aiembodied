@@ -44,6 +44,40 @@ try {
   Write-Warning "Optional electron native rebuild step failed: $($_.Exception.Message)"
 }
 
+# Ensure a CommonJS preload shim exists so Electron can load the preload in dev
+try {
+  $mainDist = Join-Path -Path $repoRoot -ChildPath 'app/main/dist'
+  $esmPreload = Join-Path -Path $mainDist -ChildPath 'preload.js'
+  $cjsShim = Join-Path -Path $mainDist -ChildPath 'preload.cjs'
+  if (Test-Path -Path $esmPreload -PathType Leaf) {
+    $shim = @'
+// Auto-generated CommonJS shim to load the ESM preload build
+const { pathToFileURL } = require('url');
+const path = require('path');
+// eslint-disable-next-line no-console
+console.info('[preload shim] Starting preload shim');
+(async () => {
+  try {
+    const esmPath = path.join(__dirname, 'preload.js');
+    const href = pathToFileURL(esmPath).href;
+    // eslint-disable-next-line no-console
+    console.info('[preload shim] Importing ESM preload at', href);
+    await import(href);
+    // eslint-disable-next-line no-console
+    console.info('[preload shim] ESM preload imported successfully');
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('[preload shim] Failed to import ESM preload:', e && (e.stack || e.message || e));
+    throw e;
+  }
+})();
+'@
+    Set-Content -Path $cjsShim -Value $shim -NoNewline
+  }
+} catch {
+  Write-Warning "Failed to create preload shim: $($_.Exception.Message)"
+}
+
 function Get-DotEnvValues {
   param([string]$Path)
   $map = @{}
