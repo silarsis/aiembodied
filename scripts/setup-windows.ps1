@@ -292,6 +292,52 @@ try {
     Ensure-Node
     Ensure-Pnpm
 
+    # Optionally align system Node to Electron's embedded Node for native module ABI parity.
+    # This requires that workspace dependencies are installed. If Electron is not yet installed,
+    # we will skip with a helpful message.
+    try {
+        $mainPkgDir = Join-Path $repoRoot 'app/main'
+        $electronPkgJson = Join-Path $mainPkgDir 'node_modules/electron/package.json'
+        if (Test-Path -Path $electronPkgJson -PathType Leaf) {
+            Write-Host "Checking Node alignment with Electron..." -ForegroundColor Cyan
+            $systemNode = (node -p "process.versions.node" 2>$null).Trim()
+            $electronNode = (pnpm --filter @aiembodied/main exec electron -p "process.versions.node" 2>$null).Trim()
+            if (-not [string]::IsNullOrWhiteSpace($systemNode) -and -not [string]::IsNullOrWhiteSpace($electronNode)) {
+                if ($systemNode -ne $electronNode) {
+                    Write-Warning "System Node v$systemNode differs from Electron's Node v$electronNode."
+                    $switched = $false
+                    if (Test-CommandExists -Name 'nvs') {
+                        try {
+                            nvs add "node/$electronNode" | Out-Null
+                            nvs use "node/$electronNode" | Out-Null
+                            $newNode = (node -p "process.versions.node" 2>$null).Trim()
+                            if ($newNode -eq $electronNode) { $switched = $true }
+                        } catch {}
+                    }
+                    if (-not $switched -and (Test-CommandExists -Name 'nvm')) {
+                        try {
+                            nvm install $electronNode | Out-Null
+                            nvm use $electronNode | Out-Null
+                            $newNode = (node -p "process.versions.node" 2>$null).Trim()
+                            if ($newNode -eq $electronNode) { $switched = $true }
+                        } catch {}
+                    }
+                    if ($switched) {
+                        Write-Host "Activated Node v$electronNode to match Electron." -ForegroundColor Green
+                    }
+                    else {
+                        Write-Warning "Could not auto-switch Node. Install NVS (https://github.com/jasongin/nvs) or nvm-windows and switch to v$electronNode."
+                    }
+                }
+            }
+        }
+        else {
+            Write-Host "Electron not yet installed (run 'pnpm install'). Skipping Node/Electron alignment check." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Warning "Node/Electron alignment check skipped: $($_.Exception.Message)"
+    }
+
     Write-Host "All dependencies are installed. You can now run 'pnpm install'." -ForegroundColor Green
     if ($script:UserPathUpdated) {
         Write-Host 'A user-level PATH update was applied. Restart existing shells to pick up the new pnpm location.' -ForegroundColor Yellow
