@@ -668,7 +668,13 @@ export default function App() {
   const [selectedOutput, setSelectedOutput] = useState('');
   const DEFAULT_PROMPT =
     'You are an English-speaking assistant. Always respond in concise English. Do not switch languages unless explicitly instructed.';
-  const availableVoices = useMemo(() => ['verse', 'alloy', 'aria', 'ballad', 'luna'], []);
+  const [availableVoices, setAvailableVoices] = useState<string[]>([
+    'verse',
+    'alloy',
+    'aria',
+    'ballad',
+    'luna',
+  ]);
   const [selectedVoice, setSelectedVoice] = useState<string>('verse');
   const [basePrompt, setBasePrompt] = useState<string>(DEFAULT_PROMPT);
   const [serverVoice, setServerVoice] = useState<string | null>(null);
@@ -1279,8 +1285,7 @@ export default function App() {
           .filter((id) => id)
           .sort();
         if (!cancelled && ids.length > 0) {
-          // Replace available voices list by reusing state setter
-          // Keep selectedVoice if still valid, else select first
+          setAvailableVoices(ids);
           const nextVoice = ids.includes(selectedVoice) ? selectedVoice : ids[0];
           setSelectedVoice(nextVoice);
           console.info('[RealtimeClient] Loaded voices for model', { model, count: ids.length });
@@ -1673,6 +1678,9 @@ export default function App() {
               </option>
             ))}
           </select>
+          <div className="kiosk__helper" aria-live="polite">
+            Current voice (server): {serverVoice ?? 'unknown'}
+          </div>
         </div>
         <div className="control">
           <label htmlFor="base-prompt">Base prompt</label>
