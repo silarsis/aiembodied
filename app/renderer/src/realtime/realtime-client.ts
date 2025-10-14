@@ -252,50 +252,34 @@ export class RealtimeClient {
     const offer = await peer.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
     await peer.setLocalDescription(offer);
 
-    const response = await this.fetchFn(this.endpoint, {
+    // Use OpenAI Realtime HTTP negotiation via application/sdp
+    // Build endpoint: switch any '/sessions' suffix to base '/realtime' and append model query
+    const base = this.endpoint.replace(/\/sessions$/, '');
+    const url = `${base}?model=${encodeURIComponent(this.model)}`;
+
+    const response = await this.fetchFn(url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        // Required by OpenAI Realtime HTTP negotiation
+        'Content-Type': 'application/sdp',
         'OpenAI-Beta': 'realtime=v1',
       },
-      body: JSON.stringify({
-        model: this.model,
-        voice: 'verse',
-        offer: { type: offer.type, sdp: offer.sdp },
-      }),
+      body: offer.sdp,
     });
 
     if (!response.ok) {
       let detail: string | undefined;
       try {
         const text = await response.text();
-        try {
-          const json = JSON.parse(text) as { error?: { message?: string; type?: string; code?: string } };
-          const err = json.error;
-          if (err) {
-            detail = [err.type, err.code, err.message].filter(Boolean).join(' | ');
-          } else {
-            detail = text;
-          }
-        } catch {
-          detail = text;
-        }
+        detail = text;
       } catch {
         // ignore body read errors
       }
       throw new Error(`Realtime handshake failed: HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
     }
 
-    const { answer, iceServers } = this.parseNegotiationResponse(await response.json());
-
-    await peer.setRemoteDescription({ type: answer.type ?? 'answer', sdp: answer.sdp });
-
-    if (iceServers?.length) {
-      this.log('info', 'Realtime API suggested ICE servers after negotiation', iceServers);
-      this.currentIceServers = iceServers;
-    }
+    const answerSdp = await response.text();
+    await peer.setRemoteDescription({ type: 'answer', sdp: answerSdp });
   }
 
   private handleRemoteTrack(event: RTCTrackEvent): void {
@@ -413,39 +397,7 @@ export class RealtimeClient {
     }
   }
 
-  private parseNegotiationResponse(value: unknown): { answer: NegotiationAnswer; iceServers?: RTCIceServer[] } {
-    if (!value || typeof value !== 'object') {
-      throw new Error('Realtime handshake response missing SDP answer.');
-    }
-
-    const payload = value as {
-      answer?: unknown;
-      sdp?: unknown;
-      type?: unknown;
-      iceServers?: unknown;
-    };
-
-    const answer = this.resolveNegotiationAnswer(payload);
-    const iceServers = Array.isArray(payload.iceServers) ? (payload.iceServers as RTCIceServer[]) : undefined;
-
-    return { answer, iceServers };
-  }
-
-  private resolveNegotiationAnswer(payload: { answer?: unknown; sdp?: unknown; type?: unknown }): NegotiationAnswer {
-    const candidate = payload.answer ?? payload;
-    if (!candidate || typeof candidate !== 'object') {
-      throw new Error('Realtime handshake response missing SDP answer.');
-    }
-
-    const answer = candidate as { sdp?: unknown; type?: unknown };
-    if (typeof answer.sdp !== 'string') {
-      throw new Error('Realtime handshake response missing SDP answer.');
-    }
-
-    const type = typeof answer.type === 'string' ? (answer.type as RTCSdpType) : undefined;
-
-    return { sdp: answer.sdp, type };
-  }
+  // Removed JSON-based negotiation parsing in favor of application/sdp exchange
 
   private async applyOutputDevice(): Promise<void> {
     const element = this.remoteAudioElement;
