@@ -262,6 +262,7 @@ export class RealtimeClient {
       },
       body: JSON.stringify({
         model: this.model,
+        voice: 'verse',
         offer: { type: offer.type, sdp: offer.sdp },
       }),
     });
