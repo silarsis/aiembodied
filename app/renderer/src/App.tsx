@@ -1146,11 +1146,15 @@ export default function App() {
           realtimeVoice: value || undefined,
         });
         realtimeClient?.updateSessionConfig({ voice: value || undefined });
+        if (realtimeClient && realtimeKey && audioGraph.upstreamStream) {
+          await realtimeClient.disconnect();
+          void realtimeClient.connect({ apiKey: realtimeKey, inputStream: audioGraph.upstreamStream });
+        }
       } catch (error) {
         console.error('Failed to persist realtime voice preference', error);
       }
     },
-    [persistPreferences, selectedInput, selectedOutput, realtimeClient],
+    [persistPreferences, selectedInput, selectedOutput, realtimeClient, realtimeKey, audioGraph.upstreamStream],
   );
 
   const handlePromptBlur = useCallback(
@@ -1527,27 +1531,7 @@ export default function App() {
             ))}
           </select>
         </div>
-        <div className="control">
-          <label htmlFor="realtime-voice">Voice</label>
-          <select id="realtime-voice" value={selectedVoice} onChange={handleVoiceChange} disabled={isSaving || loadingConfig}>
-            {availableVoices.map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="control">
-          <label htmlFor="base-prompt">Base prompt</label>
-          <textarea
-            id="base-prompt"
-            placeholder="Describe personality/character…"
-            value={basePrompt}
-            onChange={(e) => setBasePrompt(e.target.value)}
-            onBlur={handlePromptBlur}
-            disabled={loadingConfig}
-          />
-        </div>
+        {/* Voice and prompt controls moved to a dedicated Realtime section below */}
         <div className="control">
           <label>
             <input
@@ -1596,6 +1580,33 @@ export default function App() {
               </label>
             </div>
           ) : null}
+        </div>
+      </section>
+
+      <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
+        <h2 id="kiosk-realtime-title">Realtime</h2>
+        <div className="control">
+          <label htmlFor="realtime-voice">Voice</label>
+          <select id="realtime-voice" value={selectedVoice} onChange={handleVoiceChange} disabled={isSaving || loadingConfig}>
+            {availableVoices.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="control">
+          <label htmlFor="base-prompt">Base prompt</label>
+          <textarea
+            id="base-prompt"
+            placeholder="Stay in English and be concise. Add personality here…"
+            rows={6}
+            value={basePrompt}
+            onChange={(e) => setBasePrompt(e.target.value)}
+            onBlur={handlePromptBlur}
+            disabled={loadingConfig}
+            style={{ width: '100%' }}
+          />
         </div>
       </section>
 
