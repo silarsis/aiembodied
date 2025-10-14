@@ -79,7 +79,7 @@ function toTranscriptSpeaker(role: string): TranscriptSpeaker | null {
 
 function formatLatency(value?: number): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return 'GÇö';
+    return 'Gï¿½ï¿½';
   }
 
   return `${(value / 1000).toFixed(2)}s`;
@@ -669,11 +669,14 @@ export default function App() {
   const DEFAULT_PROMPT =
     'You are an English-speaking assistant. Always respond in concise English. Do not switch languages unless explicitly instructed.';
   const [availableVoices, setAvailableVoices] = useState<string[]>([
-    'verse',
     'alloy',
-    'aria',
+    'ash',
     'ballad',
-    'luna',
+    'coral',
+    'echo',
+    'sage',
+    'shimmer',
+    'verse',
   ]);
   const [selectedVoice, setSelectedVoice] = useState<string>('verse');
   const [basePrompt, setBasePrompt] = useState<string>(DEFAULT_PROMPT);
@@ -1028,7 +1031,7 @@ export default function App() {
     }
 
     if (realtimeState.status === 'error' && previousRealtimeStatusRef.current !== 'error') {
-      const errorMessage = realtimeState.error ? `Realtime error GÇö ${realtimeState.error}` : 'Realtime session error';
+      const errorMessage = realtimeState.error ? `Realtime error Gï¿½ï¿½ ${realtimeState.error}` : 'Realtime session error';
       void recordTranscriptEntry({
         speaker: 'system',
         text: errorMessage,
@@ -1054,7 +1057,7 @@ export default function App() {
 
       void recordTranscriptEntry({
         speaker: 'system',
-        text: `Wake word detected (${event.keywordLabel}) GÇö confidence ${(event.confidence * 100).toFixed(0)}%`,
+        text: `Wake word detected (${event.keywordLabel}) Gï¿½ï¿½ confidence ${(event.confidence * 100).toFixed(0)}%`,
         timestamp: event.timestamp,
       });
       latencyTrackerRef.current.beginCycle(event.timestamp, event.sessionId ?? null);
@@ -1446,7 +1449,7 @@ export default function App() {
     }
 
     if (realtimeKeyError) {
-      return `Error GÇö ${realtimeKeyError}`;
+      return `Error Gï¿½ï¿½ ${realtimeKeyError}`;
     }
 
     switch (realtimeState.status) {
@@ -1459,7 +1462,7 @@ export default function App() {
       case 'reconnecting':
         return `Reconnecting (attempt ${realtimeState.attempt ?? 0})`;
       case 'error':
-        return `Error GÇö ${realtimeState.error ?? 'unknown'}`;
+        return `Error Gï¿½ï¿½ ${realtimeState.error ?? 'unknown'}`;
       default:
         return realtimeState.status;
     }
@@ -1493,7 +1496,7 @@ export default function App() {
   const networkVariant = isOnline ? 'active' : 'error';
   const audioVariant = audioGraph.status === 'error' ? 'error' : audioGraph.isActive ? 'active' : 'idle';
   const deviceVariant = deviceError ? 'error' : inputs.length > 0 ? 'active' : 'idle';
-  const deviceStatusLabel = deviceError ? `Error GÇö ${deviceError}` : inputs.length > 0 ? 'Devices ready' : 'ScanningGÇª';
+  const deviceStatusLabel = deviceError ? `Error Gï¿½ï¿½ ${deviceError}` : inputs.length > 0 ? 'Devices ready' : 'ScanningGÇª';
   const showDeveloperHud = Boolean(config?.featureFlags?.metricsHud);
   const hudSnapshot = latencySnapshot ?? latencyTrackerRef.current.getLastSnapshot();
   const activeAvatarName = activeAvatar?.name ?? 'Embodied Assistant';
@@ -1686,7 +1689,7 @@ export default function App() {
           <label htmlFor="base-prompt">Base prompt</label>
           <textarea
             id="base-prompt"
-            placeholder="Stay in English and be concise. Add personality here…"
+            placeholder="Stay in English and be concise. Add personality hereï¿½"
             rows={6}
             value={basePrompt}
             onChange={(e) => setBasePrompt(e.target.value)}
@@ -1799,15 +1802,15 @@ export default function App() {
           <h2 className="kiosk__hudTitle">Latency</h2>
           <dl className="kiosk__hudMetrics">
             <div>
-              <dt>Wake GåÆ Capture</dt>
+              <dt>Wake Gï¿½ï¿½ Capture</dt>
               <dd>{formatLatency(hudSnapshot?.wakeToCaptureMs)}</dd>
             </div>
             <div>
-              <dt>Capture GåÆ First audio</dt>
+              <dt>Capture Gï¿½ï¿½ First audio</dt>
               <dd>{formatLatency(hudSnapshot?.captureToFirstAudioMs)}</dd>
             </div>
             <div>
-              <dt>Wake GåÆ First audio</dt>
+              <dt>Wake Gï¿½ï¿½ First audio</dt>
               <dd>{formatLatency(hudSnapshot?.wakeToFirstAudioMs)}</dd>
             </div>
           </dl>
