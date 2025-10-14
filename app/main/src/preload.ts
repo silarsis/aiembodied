@@ -43,10 +43,27 @@ function logPreloadMessage(
   }
 }
 
-const logPreloadInfo = (message: string, meta?: Record<string, unknown>) =>
+function forwardPreloadDiagnostics(level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>) {
+  try {
+    ipcRenderer.send('diagnostics:preload-log', {
+      level,
+      message,
+      meta,
+      ts: Date.now(),
+    });
+  } catch {
+    // ignore IPC forwarding errors
+  }
+}
+
+const logPreloadInfo = (message: string, meta?: Record<string, unknown>) => {
   logPreloadMessage('info', message, meta);
-const logPreloadError = (message: string, meta?: Record<string, unknown>) =>
+  forwardPreloadDiagnostics('info', message, meta);
+};
+const logPreloadError = (message: string, meta?: Record<string, unknown>) => {
   logPreloadMessage('error', message, meta);
+  forwardPreloadDiagnostics('error', message, meta);
+};
 
 export interface ConfigBridge {
   get(): Promise<RendererConfig>;
@@ -167,6 +184,12 @@ function exposeBridge() {
       bridgeReady: api.__bridgeReady,
       bridgeVersion: api.__bridgeVersion,
     });
+    forwardPreloadDiagnostics('info', 'preload:bridge-exposed', {
+      keys: Object.keys(api),
+      hasAvatarBridge: typeof api.avatar !== 'undefined',
+      bridgeReady: api.__bridgeReady,
+      bridgeVersion: api.__bridgeVersion,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logPreloadError('Failed to expose renderer bridge.', { message });
@@ -174,23 +197,13 @@ function exposeBridge() {
   }
 }
 
-// Ensure DOM is ready before exposing the bridge for better timing
-// Check if we're in a browser context (not a test environment)
-if (typeof document !== 'undefined') {
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      logPreloadInfo('DOM content loaded, exposing bridge.');
-      exposeBridge();
-    });
-  } else {
-    // DOM is already loaded
-    logPreloadInfo('DOM already loaded, exposing bridge immediately.');
-    exposeBridge();
-  }
-} else {
-  // In test environment, expose immediately
-  logPreloadInfo('No DOM context detected (test environment), exposing bridge immediately.');
+// Expose the bridge immediately; preload runs before DOM is ready but
+// contextBridge is available and safe to use at this time.
+try {
   exposeBridge();
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  logPreloadError('Bridge exposure failed at preload init.', { message });
 }
 
 declare global {

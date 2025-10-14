@@ -20,33 +20,54 @@ export async function createDevTray(options: DevTrayOptions): Promise<Tray> {
   tray.setToolTip('AI Embodied Assistant (dev)');
 
   const updateMenu = async () => {
-    const launchEnabled = await autoLaunchManager.isEnabled();
-    tray.setContextMenu(
-      Menu.buildFromTemplate([
-        { label: 'Show App', click: onShowWindow },
-        { type: 'separator' },
-        {
-          label: 'Launch on Login',
-          type: 'checkbox',
-          checked: launchEnabled,
-          click: async () => {
-            const desired = !(await autoLaunchManager.isEnabled());
-            const result = await autoLaunchManager.sync(desired);
-            logger.info('Updated auto-launch from dev tray.', { enabled: result });
-            await updateMenu();
+    try {
+      const launchEnabled = await autoLaunchManager.isEnabled();
+      const trayMaybe = tray as unknown as { isDestroyed?: () => boolean };
+      if (typeof trayMaybe.isDestroyed === 'function' && trayMaybe.isDestroyed()) {
+        return;
+      }
+
+      tray.setContextMenu(
+        Menu.buildFromTemplate([
+          { label: 'Show App', click: onShowWindow },
+          { type: 'separator' },
+          {
+            label: 'Launch on Login',
+            type: 'checkbox',
+            checked: launchEnabled,
+            click: async () => {
+              const desired = !(await autoLaunchManager.isEnabled());
+              const result = await autoLaunchManager.sync(desired);
+              logger.info('Updated auto-launch from dev tray.', { enabled: result });
+              await updateMenu();
+            },
           },
-        },
-        { type: 'separator' },
-        { label: 'Quit', role: 'quit', click: onQuit },
-      ]),
-    );
+          { type: 'separator' },
+          { label: 'Quit', role: 'quit', click: onQuit },
+        ]),
+      );
+    } catch (error) {
+      logger.warn('Failed to update dev tray menu (likely during shutdown).', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   };
 
   await updateMenu();
   tray.on('click', onShowWindow);
   tray.on('right-click', async () => {
-    await updateMenu();
-    tray.popUpContextMenu();
+    try {
+      await updateMenu();
+      const trayMaybe = tray as unknown as { isDestroyed?: () => boolean };
+      if (typeof trayMaybe.isDestroyed === 'function' && trayMaybe.isDestroyed()) {
+        return;
+      }
+      tray.popUpContextMenu();
+    } catch (error) {
+      logger.warn('Failed to show dev tray context menu (likely during shutdown).', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   });
 
   return tray;

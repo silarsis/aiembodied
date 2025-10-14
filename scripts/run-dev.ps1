@@ -21,16 +21,125 @@ if (-not (Test-Path -Path $rootNodeModules -PathType Container)) {
 }
 
 Write-Host "[info] Building renderer..." -ForegroundColor Cyan
-pnpm --filter @aiembodied/renderer build
-Assert-LastExit '@aiembodied/renderer build'
+try {
+  # Prefer running from the package directory to minimize odd workspace/env scans on Windows
+  Push-Location (Join-Path $repoRoot 'app/renderer')
+  pnpm run -s build
+  $code = $LASTEXITCODE
+  Pop-Location
+  if ($code -ne 0) { throw "renderer-build-failed:$code" }
+} catch {
+  $msg = $_.Exception.Message
+  Write-Warning "Renderer build failed ($msg). Retrying with isolated env..."
+  # Retry with env overrides that discourage home-directory config scans and update notifiers
+  $prev = @{
+    BROWSERSLIST = $env:BROWSERSLIST
+    BROWSERSLIST_DISABLE_CACHE = $env:BROWSERSLIST_DISABLE_CACHE
+    NO_UPDATE_NOTIFIER = $env:NO_UPDATE_NOTIFIER
+    npm_config_update_notifier = $env:npm_config_update_notifier
+  }
+  $env:BROWSERSLIST = 'defaults'
+  $env:BROWSERSLIST_DISABLE_CACHE = '1'
+  $env:NO_UPDATE_NOTIFIER = '1'
+  $env:npm_config_update_notifier = 'false'
+  try {
+    Push-Location (Join-Path $repoRoot 'app/renderer')
+    pnpm run -s build -- --debug
+    $code = $LASTEXITCODE
+    Pop-Location
+    if ($code -ne 0) { throw "renderer-build-failed:$code" }
+  } finally {
+    $env:BROWSERSLIST = $prev.BROWSERSLIST
+    $env:BROWSERSLIST_DISABLE_CACHE = $prev.BROWSERSLIST_DISABLE_CACHE
+    $env:NO_UPDATE_NOTIFIER = $prev.NO_UPDATE_NOTIFIER
+    $env:npm_config_update_notifier = $prev.npm_config_update_notifier
+  }
+}
 
 Write-Host "[info] Building main..." -ForegroundColor Cyan
-pnpm --filter @aiembodied/main build
-Assert-LastExit '@aiembodied/main build'
+try {
+  # Prefer running from the package directory to minimize odd workspace/env scans on Windows
+  Push-Location (Join-Path $repoRoot 'app/main')
+  pnpm run -s build
+  $code = $LASTEXITCODE
+  Pop-Location
+  if ($code -ne 0) { throw "main-build-failed:$code" }
+} catch {
+  $msg = $_.Exception.Message
+  Write-Warning "Main build failed ($msg). Retrying with isolated env..."
+  # Retry with env overrides that discourage home-directory config scans and update notifiers
+  $prev = @{
+    BROWSERSLIST = $env:BROWSERSLIST
+    BROWSERSLIST_DISABLE_CACHE = $env:BROWSERSLIST_DISABLE_CACHE
+    NO_UPDATE_NOTIFIER = $env:NO_UPDATE_NOTIFIER
+    npm_config_update_notifier = $env:npm_config_update_notifier
+  }
+  $env:BROWSERSLIST = 'defaults'
+  $env:BROWSERSLIST_DISABLE_CACHE = '1'
+  $env:NO_UPDATE_NOTIFIER = '1'
+  $env:npm_config_update_notifier = 'false'
+  try {
+    Push-Location (Join-Path $repoRoot 'app/main')
+    pnpm run -s build
+    $code = $LASTEXITCODE
+    Pop-Location
+    if ($code -ne 0) { throw "main-build-failed:$code" }
+  } finally {
+    $env:BROWSERSLIST = $prev.BROWSERSLIST
+    $env:BROWSERSLIST_DISABLE_CACHE = $prev.BROWSERSLIST_DISABLE_CACHE
+    $env:NO_UPDATE_NOTIFIER = $prev.NO_UPDATE_NOTIFIER
+    $env:npm_config_update_notifier = $prev.npm_config_update_notifier
+  }
+}
 
 Write-Host "[info] Rebuilding native modules for Electron..." -ForegroundColor Cyan
-pnpm --filter @aiembodied/main exec electron-builder install-app-deps
-Assert-LastExit 'electron-builder install-app-deps'
+try {
+  # Run from the package directory and isolate HOME to avoid EPERM on Windows junctions
+  $devHome = Join-Path $repoRoot '.dev-home'
+  $devAppData = Join-Path $devHome 'AppData'
+  $devRoaming = Join-Path $devAppData 'Roaming'
+  $devLocal = Join-Path $devAppData 'Local'
+  $devNpmCache = Join-Path $devHome '.npm-cache'
+  $devEbCache = Join-Path $devHome 'electron-builder-cache'
+  New-Item -ItemType Directory -Force -Path $devRoaming | Out-Null
+  New-Item -ItemType Directory -Force -Path $devLocal | Out-Null
+  New-Item -ItemType Directory -Force -Path $devNpmCache | Out-Null
+  New-Item -ItemType Directory -Force -Path $devEbCache | Out-Null
+
+  $prev = @{
+    HOME = $env:HOME
+    USERPROFILE = $env:USERPROFILE
+    APPDATA = $env:APPDATA
+    LOCALAPPDATA = $env:LOCALAPPDATA
+    npm_config_cache = $env:npm_config_cache
+    ELECTRON_BUILDER_CACHE = $env:ELECTRON_BUILDER_CACHE
+    NO_UPDATE_NOTIFIER = $env:NO_UPDATE_NOTIFIER
+    npm_config_update_notifier = $env:npm_config_update_notifier
+  }
+  $env:HOME = $devHome
+  $env:USERPROFILE = $devHome
+  $env:APPDATA = $devRoaming
+  $env:LOCALAPPDATA = $devLocal
+  $env:npm_config_cache = $devNpmCache
+  $env:ELECTRON_BUILDER_CACHE = $devEbCache
+  $env:NO_UPDATE_NOTIFIER = '1'
+  $env:npm_config_update_notifier = 'false'
+
+  Push-Location (Join-Path $repoRoot 'app/main')
+  pnpm exec electron-builder install-app-deps
+  $code = $LASTEXITCODE
+  Pop-Location
+  if ($code -ne 0) { throw "electron-builder-install-app-deps-failed:$code" }
+} finally {
+  $env:HOME = $prev.HOME
+  $env:USERPROFILE = $prev.USERPROFILE
+  $env:APPDATA = $prev.APPDATA
+  $env:LOCALAPPDATA = $prev.LOCALAPPDATA
+  $env:npm_config_cache = $prev.npm_config_cache
+  $env:ELECTRON_BUILDER_CACHE = $prev.ELECTRON_BUILDER_CACHE
+  $env:NO_UPDATE_NOTIFIER = $prev.NO_UPDATE_NOTIFIER
+  $env:npm_config_update_notifier = $prev.npm_config_update_notifier
+}
 
 # With pnpm, ensure native deps are rebuilt against Electron headers explicitly
 try {
@@ -42,6 +151,49 @@ try {
   }
 } catch {
   Write-Warning "Optional electron native rebuild step failed: $($_.Exception.Message)"
+}
+
+# Build a true CommonJS preload to avoid dynamic import issues
+try {
+  Write-Host "[info] Building CommonJS preload..." -ForegroundColor Cyan
+  Push-Location (Join-Path $repoRoot 'app/main')
+  pnpm --filter @aiembodied/main exec tsc -p tsconfig.preload.cjs.json
+  $code = $LASTEXITCODE
+  Pop-Location
+  if ($code -ne 0) { throw "cjs-preload-build-failed:$code" }
+
+  $mainDir = Join-Path -Path $repoRoot -ChildPath 'app/main'
+  $builtCjs = Join-Path -Path $mainDir -ChildPath 'dist-cjs/preload.js'
+  if (-not (Test-Path -Path $builtCjs -PathType Leaf)) { throw "missing-cjs:$builtCjs" }
+
+  $distDir = Join-Path -Path $mainDir -ChildPath 'dist'
+  if (-not (Test-Path -Path $distDir -PathType Container)) { New-Item -ItemType Directory -Force -Path $distDir | Out-Null }
+  $target = Join-Path -Path $distDir -ChildPath 'preload.cjs'
+  Copy-Item -Path $builtCjs -Destination $target -Force
+  Write-Host "[info] Wrote CommonJS preload at: $target" -ForegroundColor Cyan
+} catch {
+  Write-Warning "Failed to build CommonJS preload: $($_.Exception.Message). Falling back to dynamic-import shim."
+  try {
+    $mainDist = Join-Path -Path $repoRoot -ChildPath 'app/main/dist'
+    $esmPreload = Join-Path -Path $mainDist -ChildPath 'preload.js'
+    $cjsShim = Join-Path -Path $mainDist -ChildPath 'preload.cjs'
+    if (Test-Path -Path $esmPreload -PathType Leaf) {
+      $shim = @'
+// Auto-generated CommonJS shim to load the ESM preload build
+const { pathToFileURL } = require('url');
+const path = require('path');
+let ipcRenderer;
+try { ({ ipcRenderer } = require('electron')); } catch {}
+const forward = (level, message, meta) => { try { if (ipcRenderer) ipcRenderer.send('diagnostics:preload-log', { level, message, meta, ts: Date.now() }); } catch {} };
+console.info('[preload shim] Starting preload shim');
+forward('info', 'preload-shim:starting');
+(async () => { try { const href = pathToFileURL(path.join(__dirname, 'preload.js')).href; forward('info', 'preload-shim:importing', { href }); await import(href); forward('info', 'preload-shim:imported'); } catch (e) { forward('error', 'preload-shim:import-failed', { message: e && (e.message || e) }); throw e; } })();
+'@
+      Set-Content -Path $cjsShim -Value $shim -NoNewline
+    }
+  } catch {
+    Write-Warning "Failed to create preload shim: $($_.Exception.Message)"
+  }
 }
 
 function Get-DotEnvValues {
@@ -80,6 +232,7 @@ if (-not $hasPorcupine) {
 Write-Host "[info] Launching Electron..." -ForegroundColor Cyan
 $mainDir = Join-Path -Path $repoRoot -ChildPath 'app/main'
 $electronCmd = Join-Path -Path $mainDir -ChildPath 'node_modules/.bin/electron.cmd'
+$env:AIEMBODIED_ENABLE_DIAGNOSTICS = '1'
 if (Test-Path -Path $electronCmd -PathType Leaf) {
   Push-Location $mainDir
   & $electronCmd 'dist/main.js'

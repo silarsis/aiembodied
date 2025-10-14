@@ -12,6 +12,13 @@ export interface AppConfig {
   realtimeApiKey: string;
   audioInputDeviceId?: string;
   audioOutputDeviceId?: string;
+  realtimeModel?: string;
+  realtimeVoice?: string;
+  sessionInstructions?: string;
+  vadTurnDetection?: 'none' | 'server_vad';
+  vadThreshold?: number;
+  vadSilenceDurationMs?: number;
+  vadMinSpeechDurationMs?: number;
   featureFlags: FeatureFlags;
   wakeWord: WakeWordConfig;
   metrics: MetricsConfig;
@@ -142,6 +149,15 @@ export class ConfigManager {
       realtimeApiKey: realtimeApiKey ?? '',
       audioInputDeviceId,
       audioOutputDeviceId,
+      realtimeModel: this.normalizeDeviceId(storedPreferences.realtimeModel),
+      realtimeVoice: this.normalizeDeviceId(storedPreferences.realtimeVoice),
+      sessionInstructions: typeof storedPreferences.sessionInstructions === 'string'
+        ? storedPreferences.sessionInstructions
+        : undefined,
+      vadTurnDetection: storedPreferences.vadTurnDetection,
+      vadThreshold: typeof storedPreferences.vadThreshold === 'number' ? storedPreferences.vadThreshold : undefined,
+      vadSilenceDurationMs: typeof storedPreferences.vadSilenceDurationMs === 'number' ? storedPreferences.vadSilenceDurationMs : undefined,
+      vadMinSpeechDurationMs: typeof storedPreferences.vadMinSpeechDurationMs === 'number' ? storedPreferences.vadMinSpeechDurationMs : undefined,
       featureFlags: this.parseFeatureFlags(this.env.FEATURE_FLAGS),
       wakeWord: this.parseWakeWordConfig({ accessKey: wakeWordAccessKey }),
       metrics: this.parseMetricsConfig(),
@@ -165,14 +181,40 @@ export class ConfigManager {
 
     const audioInputDeviceId = this.normalizeDeviceId(preferences.audioInputDeviceId);
     const audioOutputDeviceId = this.normalizeDeviceId(preferences.audioOutputDeviceId);
+    const realtimeModel = this.normalizeDeviceId(preferences.realtimeModel);
+    const realtimeVoice = this.normalizeDeviceId(preferences.realtimeVoice);
+    const sessionInstructions = typeof preferences.sessionInstructions === 'string' ? preferences.sessionInstructions.trim() : undefined;
+    const vadTurnDetection = preferences.vadTurnDetection === 'server_vad' ? 'server_vad' : preferences.vadTurnDetection === 'none' ? 'none' : undefined;
+    const vadThreshold = typeof preferences.vadThreshold === 'number' ? preferences.vadThreshold : undefined;
+    const vadSilenceDurationMs = typeof preferences.vadSilenceDurationMs === 'number' ? preferences.vadSilenceDurationMs : undefined;
+    const vadMinSpeechDurationMs = typeof preferences.vadMinSpeechDurationMs === 'number' ? preferences.vadMinSpeechDurationMs : undefined;
 
     this.config = {
       ...this.config,
       audioInputDeviceId,
       audioOutputDeviceId,
+      ...(typeof realtimeModel === 'string' ? { realtimeModel } : {}),
+      ...(typeof realtimeVoice === 'string' ? { realtimeVoice } : {}),
+      ...(typeof sessionInstructions === 'string' && sessionInstructions.length > 0
+        ? { sessionInstructions }
+        : {}),
+      ...(vadTurnDetection ? { vadTurnDetection } : {}),
+      ...(typeof vadThreshold === 'number' ? { vadThreshold } : {}),
+      ...(typeof vadSilenceDurationMs === 'number' ? { vadSilenceDurationMs } : {}),
+      ...(typeof vadMinSpeechDurationMs === 'number' ? { vadMinSpeechDurationMs } : {}),
     };
 
-    await this.preferencesStore?.save({ audioInputDeviceId, audioOutputDeviceId });
+    await this.preferencesStore?.save({
+      audioInputDeviceId,
+      audioOutputDeviceId,
+      realtimeModel,
+      realtimeVoice,
+      sessionInstructions,
+      vadTurnDetection,
+      vadThreshold,
+      vadSilenceDurationMs,
+      vadMinSpeechDurationMs,
+    });
 
     return this.getRendererConfig();
   }

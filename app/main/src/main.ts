@@ -46,6 +46,40 @@ if (!isProduction) {
 
 const secretStore = isProduction ? new KeytarSecretStore('aiembodied') : new InMemorySecretStore();
 const { logger } = initializeLogger();
+// Register a preload diagnostics channel as early as possible to catch messages during renderer bootstrap
+try {
+  ipcMain.on(
+    'diagnostics:preload-log',
+    (
+      _event,
+      payload: { level?: string; message?: string; meta?: Record<string, unknown>; ts?: number },
+    ) => {
+      const level = (typeof payload?.level === 'string' ? payload.level : 'info').toLowerCase();
+      const message = typeof payload?.message === 'string' ? payload.message : 'preload-diagnostics';
+      const meta = {
+        from: 'preload',
+        ...(payload?.meta ?? {}),
+        ...(typeof payload?.ts === 'number' ? { ts: payload.ts } : {}),
+      } as Record<string, unknown>;
+
+      if (level === 'debug') {
+        logger.debug(message, meta);
+      } else if (level === 'warn') {
+        logger.warn(message, meta);
+      } else if (level === 'error') {
+        logger.error(message, meta);
+      } else {
+        logger.info(message, meta);
+      }
+    },
+  );
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  // Logging not yet configured would be unusual here, but fall back to console
+  // eslint-disable-next-line no-console
+  console.warn('Failed to register early preload diagnostics channel', message);
+}
+
 const diagnostics = createAppDiagnostics({ logger });
 let mainWindow: BrowserWindow | null = null;
 let wakeWordService: WakeWordService | null = null;
@@ -103,6 +137,36 @@ const createWindow = () => {
   });
 
   diagnostics.trackWindow(window);
+
+  // Harden renderer: disallow new windows and external navigation.
+  try {
+    const wc: unknown = window.webContents as unknown;
+    const anyWc = wc as { setWindowOpenHandler?: (handler: () => { action: 'deny' | 'allow' }) => void; on?: (event: string, listener: (...args: unknown[]) => void) => void };
+    if (typeof anyWc.setWindowOpenHandler === 'function') {
+      anyWc.setWindowOpenHandler(() => {
+        logger.warn('Blocked attempt to open a new window from renderer.');
+        return { action: 'deny' } as const;
+      });
+    } else {
+      logger.debug('webContents.setWindowOpenHandler unavailable; skipping handler attach.');
+    }
+    if (typeof anyWc.on === 'function') {
+      anyWc.on('will-navigate', (event: unknown, url: unknown) => {
+        try {
+          (event as { preventDefault?: () => void })?.preventDefault?.();
+        } catch (err) {
+          // Swallow errors from stubbed event objects in tests
+          void err;
+        }
+        logger.warn('Blocked renderer navigation attempt.', { url });
+      });
+    } else {
+      logger.debug('webContents.on unavailable; skipping will-navigate attach.');
+    }
+  } catch (err) {
+    // Avoid noisy warnings in test environments where webContents may be a stub
+    void err;
+  }
 
   if (!isProduction) {
     window.webContents.on('before-input-event', (event, input) => {
@@ -191,6 +255,27 @@ function registerIpcHandlers(
   conversation: ConversationManager | null,
   metrics: PrometheusCollector | null,
 ) {
+  // Preload diagnostics bridge: allow preload/renderer to forward logs to main logger
+  try {
+    ipcMain.on('diagnostics:preload-log', (_event, payload: { level?: string; message?: string; meta?: Record<string, unknown>; ts?: number }) => {
+      const level = (typeof payload?.level === 'string' ? payload.level : 'info').toLowerCase();
+      const message = typeof payload?.message === 'string' ? payload.message : 'preload-diagnostics';
+      const meta = { from: 'preload', ...(payload?.meta ?? {}), ...(typeof payload?.ts === 'number' ? { ts: payload.ts } : {}) } as Record<string, unknown>;
+
+      if (level === 'debug') {
+        logger.debug(message, meta);
+      } else if (level === 'warn') {
+        logger.warn(message, meta);
+      } else if (level === 'error') {
+        logger.error(message, meta);
+      } else {
+        logger.info(message, meta);
+      }
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('Failed to register preload diagnostics channel', { message });
+  }
   const configChannels = [
     'config:get',
     'config:get-secret',
@@ -208,6 +293,15 @@ function registerIpcHandlers(
     wakeWordHasAccessKey: config.wakeWord?.hasAccessKey ?? false,
     audioInputConfigured: Boolean(config.audioInputDeviceId),
     audioOutputConfigured: Boolean(config.audioOutputDeviceId),
+    realtimeModel: config.realtimeModel ?? null,
+    realtimeVoice: config.realtimeVoice ?? null,
+    hasInstructions: Boolean(config.sessionInstructions && config.sessionInstructions.length > 0),
+    vad: {
+      turnDetection: config.vadTurnDetection ?? 'none',
+      threshold: typeof config.vadThreshold === 'number' ? config.vadThreshold : null,
+      silenceMs: typeof config.vadSilenceDurationMs === 'number' ? config.vadSilenceDurationMs : null,
+      minSpeechMs: typeof config.vadMinSpeechDurationMs === 'number' ? config.vadMinSpeechDurationMs : null,
+    },
     featureFlagKeys: Object.keys(config.featureFlags ?? {}),
   });
 
@@ -230,11 +324,20 @@ function registerIpcHandlers(
 
     if (channel === 'config:set-audio-devices') {
       const [preferences] = args as [
-        { audioInputDeviceId?: string | null; audioOutputDeviceId?: string | null } | undefined,
+        { audioInputDeviceId?: string | null; audioOutputDeviceId?: string | null; realtimeModel?: string | null; realtimeVoice?: string | null; sessionInstructions?: string | null; vadTurnDetection?: 'none' | 'server_vad' | null; vadThreshold?: number | null; vadSilenceDurationMs?: number | null; vadMinSpeechDurationMs?: number | null } | undefined,
       ];
       return {
         hasInput: Boolean(preferences?.audioInputDeviceId),
         hasOutput: Boolean(preferences?.audioOutputDeviceId),
+        hasModel: Boolean(preferences?.realtimeModel),
+        hasVoice: Boolean(preferences?.realtimeVoice),
+        hasInstructions: Boolean(preferences?.sessionInstructions),
+        vad: {
+          turnDetection: preferences?.vadTurnDetection ?? null,
+          threshold: typeof preferences?.vadThreshold === 'number',
+          silenceMs: typeof preferences?.vadSilenceDurationMs === 'number',
+          minSpeechMs: typeof preferences?.vadMinSpeechDurationMs === 'number',
+        },
       };
     }
 

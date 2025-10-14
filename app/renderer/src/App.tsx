@@ -79,7 +79,7 @@ function toTranscriptSpeaker(role: string): TranscriptSpeaker | null {
 
 function formatLatency(value?: number): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return '—';
+    return 'G��';
   }
 
   return `${(value / 1000).toFixed(2)}s`;
@@ -666,6 +666,25 @@ export default function App() {
 
   const [selectedInput, setSelectedInput] = useState('');
   const [selectedOutput, setSelectedOutput] = useState('');
+  const DEFAULT_PROMPT =
+    'You are an English-speaking assistant. Always respond in concise English. Do not switch languages unless explicitly instructed.';
+  const [availableVoices, setAvailableVoices] = useState<string[]>([
+    'alloy',
+    'ash',
+    'ballad',
+    'coral',
+    'echo',
+    'sage',
+    'shimmer',
+    'verse',
+  ]);
+  const [selectedVoice, setSelectedVoice] = useState<string>('verse');
+  const [basePrompt, setBasePrompt] = useState<string>(DEFAULT_PROMPT);
+  const [serverVoice, setServerVoice] = useState<string | null>(null);
+  const [useServerVad, setUseServerVad] = useState<boolean>(true);
+  const [vadThreshold, setVadThreshold] = useState<number>(0.85);
+  const [vadSilenceMs, setVadSilenceMs] = useState<number>(600);
+  const [vadMinSpeechMs, setVadMinSpeechMs] = useState<number>(400);
 
   const configInputDeviceId = config?.audioInputDeviceId ?? '';
   const configOutputDeviceId = config?.audioOutputDeviceId ?? '';
@@ -674,6 +693,7 @@ export default function App() {
 
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const visemeDriverRef = useRef<VisemeDriver | null>(null);
+  const [playbackIssue, setPlaybackIssue] = useState<string | null>(null);
   const realtimeClient = useMemo(() => {
     if (!hasRealtimeSupport) {
       return null;
@@ -682,6 +702,11 @@ export default function App() {
     return new RealtimeClient({
       callbacks: {
         onStateChange: setRealtimeState,
+        onSessionUpdated: (session) => {
+          if (typeof session.voice === 'string') {
+            setServerVoice(session.voice);
+          }
+        },
         onRemoteStream: (stream) => {
           setRemoteStream(stream);
           const element = remoteAudioRef.current;
@@ -692,9 +717,15 @@ export default function App() {
           element.srcObject = stream;
           const playPromise = element.play();
           if (playPromise) {
-            playPromise.catch((error) => {
-              console.error('Failed to play realtime audio', error);
-            });
+            playPromise
+              .then(() => {
+                setPlaybackIssue(null);
+              })
+              .catch((error) => {
+                const message = error instanceof Error ? error.message : String(error);
+                setPlaybackIssue(message || 'Audio autoplay blocked');
+                console.error('Failed to play realtime audio', error);
+              });
           }
         },
         onFirstAudioFrame: () => {
@@ -977,8 +1008,8 @@ export default function App() {
     if (!realtimeClient || !hasRealtimeApiKey) {
       return;
     }
-
-    realtimeClient.notifySpeechActivity(audioGraph.isActive);
+    // With server-side VAD enabled, do not drive turns from the client
+    // If we add a toggle later, gate this based on config.
   }, [realtimeClient, hasRealtimeApiKey, audioGraph.isActive]);
 
   const previousRealtimeStatusRef = useRef<RealtimeClientState['status'] | null>(null);
@@ -993,7 +1024,7 @@ export default function App() {
     }
 
     if (realtimeState.status === 'error' && previousRealtimeStatusRef.current !== 'error') {
-      const errorMessage = realtimeState.error ? `Realtime error — ${realtimeState.error}` : 'Realtime session error';
+      const errorMessage = realtimeState.error ? `Realtime error G�� ${realtimeState.error}` : 'Realtime session error';
       void recordTranscriptEntry({
         speaker: 'system',
         text: errorMessage,
@@ -1019,7 +1050,7 @@ export default function App() {
 
       void recordTranscriptEntry({
         speaker: 'system',
-        text: `Wake word detected (${event.keywordLabel}) — confidence ${(event.confidence * 100).toFixed(0)}%`,
+        text: `Wake word detected (${event.keywordLabel}) G�� confidence ${(event.confidence * 100).toFixed(0)}%`,
         timestamp: event.timestamp,
       });
       latencyTrackerRef.current.beginCycle(event.timestamp, event.sessionId ?? null);
@@ -1113,6 +1144,197 @@ export default function App() {
     },
     [persistPreferences, selectedInput],
   );
+
+  const handleVoiceChange = useCallback(
+    async (event: ChangeEvent<HTMLSelectElement>) => {
+      const value = event.target.value;
+      setSelectedVoice(value || 'verse');
+      // Optimistically reflect server voice in UI; server may not emit session.updated immediately
+      setServerVoice(value || 'verse');
+      try {
+        await persistPreferences({
+          audioInputDeviceId: selectedInput || undefined,
+          audioOutputDeviceId: selectedOutput || undefined,
+          realtimeVoice: value || undefined,
+        });
+        realtimeClient?.updateSessionConfig({ voice: value || undefined });
+        if (realtimeClient && realtimeKey && audioGraph.upstreamStream) {
+          await realtimeClient.disconnect();
+          void realtimeClient.connect({ apiKey: realtimeKey, inputStream: audioGraph.upstreamStream });
+        }
+      } catch (error) {
+        console.error('Failed to persist realtime voice preference', error);
+      }
+    },
+    [persistPreferences, selectedInput, selectedOutput, realtimeClient, realtimeKey, audioGraph.upstreamStream],
+  );
+
+  const handlePromptBlur = useCallback(
+    async () => {
+      try {
+        await persistPreferences({
+          audioInputDeviceId: selectedInput || undefined,
+          audioOutputDeviceId: selectedOutput || undefined,
+          sessionInstructions: basePrompt || undefined,
+        });
+        realtimeClient?.updateSessionConfig({ instructions: basePrompt || undefined });
+      } catch (error) {
+        console.error('Failed to persist base prompt', error);
+      }
+    },
+    [persistPreferences, selectedInput, selectedOutput, basePrompt, realtimeClient],
+  );
+
+  const applyVadPrefs = useCallback(
+    async (next: Partial<{ useServer: boolean; threshold: number; silenceMs: number; minSpeechMs: number }>) => {
+      const useServer = next.useServer ?? useServerVad;
+      const threshold = next.threshold ?? vadThreshold;
+      const silenceMs = next.silenceMs ?? vadSilenceMs;
+      const minSpeechMs = next.minSpeechMs ?? vadMinSpeechMs;
+      setUseServerVad(useServer);
+      setVadThreshold(threshold);
+      setVadSilenceMs(silenceMs);
+      setVadMinSpeechMs(minSpeechMs);
+      try {
+        await persistPreferences({
+          audioInputDeviceId: selectedInput || undefined,
+          audioOutputDeviceId: selectedOutput || undefined,
+          vadTurnDetection: useServer ? 'server_vad' : 'none',
+          vadThreshold: useServer ? threshold : undefined,
+          vadSilenceDurationMs: useServer ? silenceMs : undefined,
+          vadMinSpeechDurationMs: useServer ? minSpeechMs : undefined,
+        });
+        realtimeClient?.updateSessionConfig({
+          turnDetection: useServer ? 'server_vad' : 'none',
+          vad: useServer
+            ? { threshold, silenceDurationMs: silenceMs, minSpeechDurationMs: minSpeechMs }
+            : undefined,
+        });
+      } catch (error) {
+        console.error('Failed to persist VAD preferences', error);
+      }
+    },
+    [persistPreferences, selectedInput, selectedOutput, useServerVad, vadThreshold, vadSilenceMs, vadMinSpeechMs, realtimeClient],
+  );
+
+  // Initialize voice/prompt/VAD from config
+  useEffect(() => {
+    setSelectedVoice(config?.realtimeVoice || 'verse');
+    setBasePrompt(
+      config?.sessionInstructions && config.sessionInstructions.length > 0
+        ? config.sessionInstructions
+        : DEFAULT_PROMPT,
+    );
+    if (typeof config?.vadTurnDetection === 'string') {
+      setUseServerVad(config.vadTurnDetection === 'server_vad');
+    } else {
+      // No saved preference; keep default (server VAD on)
+      setUseServerVad(true);
+    }
+    if (typeof config?.vadThreshold === 'number') setVadThreshold(config.vadThreshold as number);
+    if (typeof config?.vadSilenceDurationMs === 'number') setVadSilenceMs(config.vadSilenceDurationMs as number);
+    if (typeof config?.vadMinSpeechDurationMs === 'number') setVadMinSpeechMs(config.vadMinSpeechDurationMs as number);
+  }, [config?.realtimeVoice, config?.sessionInstructions, config?.vadTurnDetection, config?.vadThreshold, config?.vadSilenceDurationMs, config?.vadMinSpeechDurationMs]);
+
+  // When the realtime client connects, push the current session config to ensure it applies
+  useEffect(() => {
+    if (!realtimeClient || realtimeState.status !== 'connected') return;
+    try {
+      const payload = {
+        voice: selectedVoice || undefined,
+        instructions: basePrompt || undefined,
+        turnDetection: useServerVad ? 'server_vad' : 'none',
+        vad: useServerVad
+          ? { threshold: vadThreshold, silenceDurationMs: vadSilenceMs, minSpeechDurationMs: vadMinSpeechMs }
+          : undefined,
+      } as const;
+      realtimeClient.updateSessionConfig(payload);
+      // Keep the displayed server voice in sync even if the server doesn't immediately ack
+      if (payload.voice) {
+        setServerVoice(payload.voice);
+      }
+      console.info(
+        `[RealtimeClient] Applied session config on connect ${JSON.stringify({
+          voice: payload.voice,
+          hasInstructions: Boolean(payload.instructions && (payload.instructions as string).length),
+          turnDetection: payload.turnDetection,
+          vad: payload.vad ?? null,
+        })}`,
+      );
+    } catch (error) {
+      console.warn('[RealtimeClient] Failed to apply session config on connect', error);
+    }
+  }, [realtimeClient, realtimeState.status, selectedVoice, basePrompt, useServerVad, vadThreshold, vadSilenceMs, vadMinSpeechMs]);
+
+  const reconnectAndResume = useCallback(async () => {
+    try {
+      const audioEl = remoteAudioRef.current;
+      if (audioEl) {
+        try {
+          await audioEl.play();
+          setPlaybackIssue(null);
+          return;
+        } catch (err) {
+          // Swallow autoplay promise errors; we will attempt reconnect below.
+          void err;
+        }
+      }
+
+      if (realtimeClient && realtimeKey && audioGraph.upstreamStream) {
+        await realtimeClient.disconnect();
+        await realtimeClient.connect({ apiKey: realtimeKey, inputStream: audioGraph.upstreamStream });
+        // After reconnect, try to play again once a stream is attached (onRemoteStream will also try)
+        setTimeout(async () => {
+          try {
+            const el = remoteAudioRef.current;
+            if (el) {
+              await el.play();
+              setPlaybackIssue(null);
+            }
+          } catch (err) {
+            console.warn('Resume after reconnect still blocked', err);
+          }
+        }, 250);
+      }
+    } catch (error) {
+      console.error('Failed to reconnect and resume audio', error);
+    }
+  }, [realtimeClient, realtimeKey, audioGraph.upstreamStream]);
+
+  // Fetch allowed voices for the active model, fallback to defaults
+  useEffect(() => {
+    let cancelled = false;
+    const model = config?.realtimeModel || 'gpt-4o-realtime-preview-2024-12-17';
+    if (!realtimeKey) return;
+    (async () => {
+      try {
+        const url = `https://api.openai.com/v1/realtime/voices?model=${encodeURIComponent(model)}`;
+        const resp = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${realtimeKey}`,
+            'OpenAI-Beta': 'realtime=v1',
+          },
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const json = (await resp.json()) as { data?: Array<{ id?: string }> };
+        const ids = (json.data ?? [])
+          .map((v) => (typeof v.id === 'string' ? v.id : ''))
+          .filter((id) => id)
+          .sort();
+        if (!cancelled && ids.length > 0) {
+          setAvailableVoices(ids);
+          const nextVoice = ids.includes(selectedVoice) ? selectedVoice : ids[0];
+          setSelectedVoice(nextVoice);
+          console.info('[RealtimeClient] Loaded voices for model', { model, count: ids.length });
+        }
+      } catch (error) {
+        console.warn('[RealtimeClient] Failed to fetch voices for model; using defaults', error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [realtimeKey, config?.realtimeModel, selectedVoice]);
 
   const handleSecretInputChange = useCallback(
     (key: ConfigSecretKey) => (event: ChangeEvent<HTMLInputElement>) => {
@@ -1229,13 +1451,13 @@ export default function App() {
   const audioGraphStatusLabel = useMemo(() => {
     switch (audioGraph.status) {
       case 'starting':
-        return 'Starting microphone capture…';
+        return 'Starting microphone captureGǪ';
       case 'ready':
         return audioGraph.isActive ? 'Listening' : 'Idle';
       case 'error':
         return audioGraph.error ?? 'Audio capture error';
       default:
-        return loadingConfig ? 'Waiting for configuration…' : 'Idle';
+        return loadingConfig ? 'Waiting for configurationGǪ' : 'Idle';
     }
   }, [audioGraph.status, audioGraph.isActive, audioGraph.error, loadingConfig]);
 
@@ -1261,7 +1483,7 @@ export default function App() {
     }
 
     if (realtimeKeyError) {
-      return `Error — ${realtimeKeyError}`;
+      return `Error G�� ${realtimeKeyError}`;
     }
 
     switch (realtimeState.status) {
@@ -1274,7 +1496,7 @@ export default function App() {
       case 'reconnecting':
         return `Reconnecting (attempt ${realtimeState.attempt ?? 0})`;
       case 'error':
-        return `Error — ${realtimeState.error ?? 'unknown'}`;
+        return `Error G�� ${realtimeState.error ?? 'unknown'}`;
       default:
         return realtimeState.status;
     }
@@ -1308,7 +1530,7 @@ export default function App() {
   const networkVariant = isOnline ? 'active' : 'error';
   const audioVariant = audioGraph.status === 'error' ? 'error' : audioGraph.isActive ? 'active' : 'idle';
   const deviceVariant = deviceError ? 'error' : inputs.length > 0 ? 'active' : 'idle';
-  const deviceStatusLabel = deviceError ? `Error — ${deviceError}` : inputs.length > 0 ? 'Devices ready' : 'Scanning…';
+  const deviceStatusLabel = deviceError ? `Error G�� ${deviceError}` : inputs.length > 0 ? 'Devices ready' : 'ScanningGǪ';
   const showDeveloperHud = Boolean(config?.featureFlags?.metricsHud);
   const hudSnapshot = latencySnapshot ?? latencyTrackerRef.current.getLastSnapshot();
   const activeAvatarName = activeAvatar?.name ?? 'Embodied Assistant';
@@ -1369,7 +1591,7 @@ export default function App() {
             <div>
               <dt>Viseme</dt>
               <dd>
-                v{visemeSummary.index} · {visemeSummary.label}
+                v{visemeSummary.index} -+ {visemeSummary.label}
               </dd>
             </div>
             <div>
@@ -1430,6 +1652,96 @@ export default function App() {
             ))}
           </select>
         </div>
+        {/* Voice and prompt controls moved to a dedicated Realtime section below */}
+        <div className="control">
+          <label>
+            <input
+              type="checkbox"
+              checked={useServerVad}
+              onChange={(e) => applyVadPrefs({ useServer: e.target.checked })}
+              disabled={loadingConfig}
+            />
+            Use server VAD
+          </label>
+          {useServerVad ? (
+            <div className="vadControls">
+              <label>
+                Threshold
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={vadThreshold}
+                  onChange={(e) => applyVadPrefs({ threshold: Number(e.target.value) })}
+                />
+                <span>{vadThreshold.toFixed(2)}</span>
+              </label>
+              <label>
+                Min speech (ms)
+                <input
+                  type="number"
+                  min={0}
+                  max={10000}
+                  step={50}
+                  value={vadMinSpeechMs}
+                  onChange={(e) => applyVadPrefs({ minSpeechMs: Number(e.target.value) })}
+                />
+              </label>
+              <label>
+                Silence (ms)
+                <input
+                  type="number"
+                  min={0}
+                  max={10000}
+                  step={50}
+                  value={vadSilenceMs}
+                  onChange={(e) => applyVadPrefs({ silenceMs: Number(e.target.value) })}
+                />
+              </label>
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+        <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
+          <h2 id="kiosk-realtime-title">Realtime</h2>
+          <div className="control">
+            <label htmlFor="realtime-voice">Voice</label>
+            <select id="realtime-voice" value={selectedVoice} onChange={handleVoiceChange} disabled={isSaving || loadingConfig}>
+              {availableVoices.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+            <div className="kiosk__helper" aria-live="polite">
+              Current voice (server): {serverVoice ?? 'unknown'}
+            </div>
+            {playbackIssue ? (
+              <div className="kiosk__helper" role="alert" style={{ marginTop: 8 }}>
+                <span style={{ display: 'block', marginBottom: 4 }}>
+                  Audio playback is blocked ({playbackIssue}).
+                </span>
+                <button type="button" onClick={reconnectAndResume}>
+                  Reconnect & Resume Audio
+                </button>
+              </div>
+            ) : null}
+          </div>
+        <div className="control">
+          <label htmlFor="base-prompt">Base prompt</label>
+          <textarea
+            id="base-prompt"
+            placeholder="Stay in English and be concise. Add personality here�"
+            rows={6}
+            value={basePrompt}
+            onChange={(e) => setBasePrompt(e.target.value)}
+            onBlur={handlePromptBlur}
+            disabled={loadingConfig}
+            style={{ width: '100%' }}
+          />
+        </div>
       </section>
 
       <section className="kiosk__secrets" aria-labelledby="kiosk-secret-title">
@@ -1487,7 +1799,7 @@ export default function App() {
                 </form>
                 {busy ? (
                   <p className="kiosk__info" aria-live="polite">
-                    {secretSaving[key] ? 'Updating secret…' : 'Testing secret…'}
+                    {secretSaving[key] ? 'Updating secretGǪ' : 'Testing secretGǪ'}
                   </p>
                 ) : null}
                 {message ? (
@@ -1501,7 +1813,7 @@ export default function App() {
         </div>
       </section>
 
-      {isSaving ? <p className="kiosk__info">Saving audio preferences…</p> : null}
+      {isSaving ? <p className="kiosk__info">Saving audio preferencesGǪ</p> : null}
       {saveError ? (
         <p role="alert" className="kiosk__error">
           {saveError}
@@ -1534,15 +1846,15 @@ export default function App() {
           <h2 className="kiosk__hudTitle">Latency</h2>
           <dl className="kiosk__hudMetrics">
             <div>
-              <dt>Wake → Capture</dt>
+              <dt>Wake G�� Capture</dt>
               <dd>{formatLatency(hudSnapshot?.wakeToCaptureMs)}</dd>
             </div>
             <div>
-              <dt>Capture → First audio</dt>
+              <dt>Capture G�� First audio</dt>
               <dd>{formatLatency(hudSnapshot?.captureToFirstAudioMs)}</dd>
             </div>
             <div>
-              <dt>Wake → First audio</dt>
+              <dt>Wake G�� First audio</dt>
               <dd>{formatLatency(hudSnapshot?.wakeToFirstAudioMs)}</dd>
             </div>
           </dl>

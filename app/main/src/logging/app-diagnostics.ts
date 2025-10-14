@@ -78,8 +78,15 @@ export function createAppDiagnostics(options: AppDiagnosticsOptions): AppDiagnos
   const cleanupWindow = (window: BrowserWindow) => {
     const cleanup = windowCleanup.get(window);
     if (cleanup) {
-      cleanup();
-      windowCleanup.delete(window);
+      try {
+        cleanup();
+      } catch (error) {
+        logger.warn('Diagnostics: error during window cleanup.', {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        windowCleanup.delete(window);
+      }
     }
     trackedWindows.delete(window);
   };
@@ -87,8 +94,15 @@ export function createAppDiagnostics(options: AppDiagnosticsOptions): AppDiagnos
   const cleanupWebContents = (contents: WebContents) => {
     const cleanup = webContentsCleanup.get(contents);
     if (cleanup) {
-      cleanup();
-      webContentsCleanup.delete(contents);
+      try {
+        cleanup();
+      } catch (error) {
+        logger.warn('Diagnostics: error during webContents cleanup.', {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        webContentsCleanup.delete(contents);
+      }
     }
     trackedWebContents.delete(contents);
   };
@@ -205,7 +219,13 @@ export function createAppDiagnostics(options: AppDiagnosticsOptions): AppDiagnos
 
     register('destroyed', () => {
       logger.debug('Diagnostics: webContents destroyed.', baseMeta());
-      cleanupWebContents(contents);
+      try {
+        cleanupWebContents(contents);
+      } catch (error) {
+        logger.warn('Diagnostics: exception during webContents destroyed cleanup.', {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
     });
 
     webContentsCleanup.set(contents, () => {
@@ -294,10 +314,23 @@ export function createAppDiagnostics(options: AppDiagnosticsOptions): AppDiagnos
     monitorWebContents(window.webContents, 'browser-window', windowId);
 
     windowCleanup.set(window, () => {
+      // Best-effort: listeners might already be removed/destroyed.
       for (const dispose of disposers.splice(0)) {
-        dispose();
+        try {
+          dispose();
+        } catch (error) {
+          logger.warn('Diagnostics: exception removing window listener during cleanup.', {
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
-      cleanupWebContents(window.webContents);
+      try {
+        cleanupWebContents(window.webContents);
+      } catch (error) {
+        logger.warn('Diagnostics: exception cleaning up webContents from window.', {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
     });
   };
 
