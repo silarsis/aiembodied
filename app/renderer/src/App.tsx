@@ -680,6 +680,7 @@ export default function App() {
     }
 
     return new RealtimeClient({
+      model: config?.realtimeModel || undefined,
       callbacks: {
         onStateChange: setRealtimeState,
         onRemoteStream: (stream) => {
@@ -716,7 +717,7 @@ export default function App() {
         },
       },
     });
-  }, [hasRealtimeSupport, pushLatency]);
+  }, [hasRealtimeSupport, pushLatency, config?.realtimeModel]);
 
   useEffect(() => {
     const driver = new VisemeDriver({
@@ -904,6 +905,8 @@ export default function App() {
   }, [configInputDeviceId, configOutputDeviceId]);
 
   const audioGraph = useAudioGraphState(selectedInput || undefined, !loadingConfig);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const previousSpeechActiveRef = useRef(audioGraph.isActive);
 
   useEffect(() => {
@@ -923,6 +926,28 @@ export default function App() {
         }
         setRealtimeKey(key);
         setRealtimeKeyError(null);
+        // Fetch available models using the realtime key
+        void (async () => {
+          try {
+            const response = await fetch('https://api.openai.com/v1/models', {
+              headers: {
+                Authorization: `Bearer ${key}`,
+              },
+            });
+            if (!response.ok) {
+              throw new Error(`Failed to list models: HTTP ${response.status}`);
+            }
+            const json = (await response.json()) as { data?: Array<{ id?: string }> };
+            const ids = (json.data ?? [])
+              .map((m) => (typeof m.id === 'string' ? m.id : ''))
+              .filter((id) => id.includes('realtime'))
+              .sort();
+            setAvailableModels(ids);
+            setSelectedModel((prev) => prev ?? (config?.realtimeModel || ids[0] || null));
+          } catch (error) {
+            console.error('Failed to fetch models', error);
+          }
+        })();
       })
       .catch((error) => {
         if (cancelled) {
@@ -1113,6 +1138,28 @@ export default function App() {
     },
     [persistPreferences, selectedInput],
   );
+
+  const handleModelChange = useCallback(
+    async (event: ChangeEvent<HTMLSelectElement>) => {
+      const value = event.target.value;
+      setSelectedModel(value || null);
+
+      try {
+        await persistPreferences({
+          audioInputDeviceId: selectedInput || undefined,
+          audioOutputDeviceId: selectedOutput || undefined,
+          realtimeModel: value || undefined,
+        });
+      } catch (error) {
+        console.error('Failed to persist realtime model preference', error);
+      }
+    },
+    [persistPreferences, selectedInput, selectedOutput],
+  );
+
+  useEffect(() => {
+    setSelectedModel((prev) => (prev ?? config?.realtimeModel ?? null));
+  }, [config?.realtimeModel]);
 
   const handleSecretInputChange = useCallback(
     (key: ConfigSecretKey) => (event: ChangeEvent<HTMLInputElement>) => {
@@ -1428,6 +1475,28 @@ export default function App() {
                 {device.label || 'Speaker'}
               </option>
             ))}
+          </select>
+        </div>
+        <div className="control">
+          <label htmlFor="realtime-model">Realtime model</label>
+          <select
+            id="realtime-model"
+            value={selectedModel ?? ''}
+            onChange={handleModelChange}
+            disabled={isSaving || loadingConfig || availableModels.length === 0}
+          >
+            {availableModels.length === 0 ? (
+              <option value="">Loading models…</option>
+            ) : (
+              <>
+                <option value="">System default</option>
+                {availableModels.map((id) => (
+                  <option key={id} value={id}>
+                    {id}
+                  </option>
+                ))}
+              </>
+            )}
           </select>
         </div>
       </section>

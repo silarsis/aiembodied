@@ -4,6 +4,7 @@ import path from 'node:path';
 export interface AudioDevicePreferences {
   audioInputDeviceId?: string;
   audioOutputDeviceId?: string;
+  realtimeModel?: string;
 }
 
 export interface PreferencesStore {
@@ -38,6 +39,7 @@ export class FilePreferencesStore implements PreferencesStore {
   private sanitize(input: Record<string, unknown>): AudioDevicePreferences {
     const audioInputDeviceId = this.normalizeId(input.audioInputDeviceId);
     const audioOutputDeviceId = this.normalizeId(input.audioOutputDeviceId);
+    const realtimeModel = this.normalizeId(input.realtimeModel);
 
     const preferences: AudioDevicePreferences = {};
 
@@ -47,6 +49,10 @@ export class FilePreferencesStore implements PreferencesStore {
 
     if (audioOutputDeviceId) {
       preferences.audioOutputDeviceId = audioOutputDeviceId;
+    }
+
+    if (realtimeModel) {
+      preferences.realtimeModel = realtimeModel;
     }
 
     return preferences;

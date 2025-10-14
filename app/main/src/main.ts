@@ -263,6 +263,7 @@ function registerIpcHandlers(
     wakeWordHasAccessKey: config.wakeWord?.hasAccessKey ?? false,
     audioInputConfigured: Boolean(config.audioInputDeviceId),
     audioOutputConfigured: Boolean(config.audioOutputDeviceId),
+    realtimeModel: config.realtimeModel ?? null,
     featureFlagKeys: Object.keys(config.featureFlags ?? {}),
   });
 
@@ -285,11 +286,12 @@ function registerIpcHandlers(
 
     if (channel === 'config:set-audio-devices') {
       const [preferences] = args as [
-        { audioInputDeviceId?: string | null; audioOutputDeviceId?: string | null } | undefined,
+        { audioInputDeviceId?: string | null; audioOutputDeviceId?: string | null; realtimeModel?: string | null } | undefined,
       ];
       return {
         hasInput: Boolean(preferences?.audioInputDeviceId),
         hasOutput: Boolean(preferences?.audioOutputDeviceId),
+        hasModel: Boolean(preferences?.realtimeModel),
       };
     }
 

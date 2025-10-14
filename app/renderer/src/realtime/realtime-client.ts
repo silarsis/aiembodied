@@ -270,7 +270,18 @@ export class RealtimeClient {
     if (!response.ok) {
       let detail: string | undefined;
       try {
-        detail = await response.text();
+        const text = await response.text();
+        try {
+          const json = JSON.parse(text) as { error?: { message?: string; type?: string; code?: string } };
+          const err = json.error;
+          if (err) {
+            detail = [err.type, err.code, err.message].filter(Boolean).join(' | ');
+          } else {
+            detail = text;
+          }
+        } catch {
+          detail = text;
+        }
       } catch {
         // ignore body read errors
       }
