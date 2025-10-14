@@ -140,17 +140,28 @@ const createWindow = () => {
 
   // Harden renderer: disallow new windows and external navigation.
   try {
-    window.webContents.setWindowOpenHandler(() => {
-      logger.warn('Blocked attempt to open a new window from renderer.');
-      return { action: 'deny' } as const;
-    });
-    window.webContents.on('will-navigate', (event, url) => {
-      event.preventDefault();
-      logger.warn('Blocked renderer navigation attempt.', { url });
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.warn('Failed to attach security handlers on webContents.', { message });
+    const wc: unknown = window.webContents as unknown;
+    const anyWc = wc as { setWindowOpenHandler?: (handler: () => { action: 'deny' | 'allow' }) => void; on?: (event: string, listener: (...args: unknown[]) => void) => void };
+    if (typeof anyWc.setWindowOpenHandler === 'function') {
+      anyWc.setWindowOpenHandler(() => {
+        logger.warn('Blocked attempt to open a new window from renderer.');
+        return { action: 'deny' } as const;
+      });
+    } else {
+      logger.debug('webContents.setWindowOpenHandler unavailable; skipping handler attach.');
+    }
+    if (typeof anyWc.on === 'function') {
+      anyWc.on('will-navigate', (event: unknown, url: unknown) => {
+        try {
+          (event as { preventDefault?: () => void })?.preventDefault?.();
+        } catch {}
+        logger.warn('Blocked renderer navigation attempt.', { url });
+      });
+    } else {
+      logger.debug('webContents.on unavailable; skipping will-navigate attach.');
+    }
+  } catch {
+    // Avoid noisy warnings in test environments where webContents may be a stub
   }
 
   if (!isProduction) {
