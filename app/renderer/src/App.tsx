@@ -686,22 +686,12 @@ export default function App() {
           config?.sessionInstructions && config.sessionInstructions.length > 0
             ? config.sessionInstructions
             : 'You are an English-speaking assistant. Always respond in concise English. Do not switch languages unless explicitly instructed.',
-        turnDetection: (config?.vadTurnDetection ?? 'none') === 'server_vad' ? 'server_vad' : 'none',
-        vad:
-          (config?.vadTurnDetection ?? 'none') === 'server_vad'
-            ? {
-                threshold:
-                  typeof config?.vadThreshold === 'number' ? (config.vadThreshold as number) : 0.6,
-                silenceDurationMs:
-                  typeof config?.vadSilenceDurationMs === 'number'
-                    ? (config.vadSilenceDurationMs as number)
-                    : 600,
-                minSpeechDurationMs:
-                  typeof config?.vadMinSpeechDurationMs === 'number'
-                    ? (config.vadMinSpeechDurationMs as number)
-                    : 300,
-              }
-            : undefined,
+        turnDetection: 'server_vad',
+        vad: {
+          threshold: 0.85,
+          silenceDurationMs: 600,
+          minSpeechDurationMs: 400,
+        },
         voice: config?.realtimeVoice || 'verse',
       },
       callbacks: {
@@ -1001,8 +991,8 @@ export default function App() {
     if (!realtimeClient || !hasRealtimeApiKey) {
       return;
     }
-
-    realtimeClient.notifySpeechActivity(audioGraph.isActive);
+    // With server-side VAD enabled, do not drive turns from the client
+    // If we add a toggle later, gate this based on config.
   }, [realtimeClient, hasRealtimeApiKey, audioGraph.isActive]);
 
   const previousRealtimeStatusRef = useRef<RealtimeClientState['status'] | null>(null);
