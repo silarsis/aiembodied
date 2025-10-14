@@ -138,6 +138,21 @@ const createWindow = () => {
 
   diagnostics.trackWindow(window);
 
+  // Harden renderer: disallow new windows and external navigation.
+  try {
+    window.webContents.setWindowOpenHandler(() => {
+      logger.warn('Blocked attempt to open a new window from renderer.');
+      return { action: 'deny' } as const;
+    });
+    window.webContents.on('will-navigate', (event, url) => {
+      event.preventDefault();
+      logger.warn('Blocked renderer navigation attempt.', { url });
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('Failed to attach security handlers on webContents.', { message });
+  }
+
   if (!isProduction) {
     window.webContents.on('before-input-event', (event, input) => {
       if (input.type === 'keyDown' && input.key === 'Escape') {
