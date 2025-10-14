@@ -32,12 +32,16 @@ class FilePreferencesStore {
     sanitize(input) {
         const audioInputDeviceId = this.normalizeId(input.audioInputDeviceId);
         const audioOutputDeviceId = this.normalizeId(input.audioOutputDeviceId);
+        const realtimeModel = this.normalizeId(input.realtimeModel);
         const preferences = {};
         if (audioInputDeviceId) {
             preferences.audioInputDeviceId = audioInputDeviceId;
         }
         if (audioOutputDeviceId) {
             preferences.audioOutputDeviceId = audioOutputDeviceId;
+        }
+        if (realtimeModel) {
+            preferences.realtimeModel = realtimeModel;
         }
         return preferences;
     }

@@ -70,6 +70,7 @@ class ConfigManager {
             realtimeApiKey: realtimeApiKey ?? '',
             audioInputDeviceId,
             audioOutputDeviceId,
+            realtimeModel: this.normalizeDeviceId(storedPreferences.realtimeModel),
             featureFlags: this.parseFeatureFlags(this.env.FEATURE_FLAGS),
             wakeWord: this.parseWakeWordConfig({ accessKey: wakeWordAccessKey }),
             metrics: this.parseMetricsConfig(),
@@ -90,12 +91,14 @@ class ConfigManager {
         }
         const audioInputDeviceId = this.normalizeDeviceId(preferences.audioInputDeviceId);
         const audioOutputDeviceId = this.normalizeDeviceId(preferences.audioOutputDeviceId);
+        const realtimeModel = this.normalizeDeviceId(preferences.realtimeModel);
         this.config = {
             ...this.config,
             audioInputDeviceId,
             audioOutputDeviceId,
+            ...(typeof realtimeModel === 'string' ? { realtimeModel } : {}),
         };
-        await this.preferencesStore?.save({ audioInputDeviceId, audioOutputDeviceId });
+        await this.preferencesStore?.save({ audioInputDeviceId, audioOutputDeviceId, realtimeModel });
         return this.getRendererConfig();
     }
     getConfig() {
