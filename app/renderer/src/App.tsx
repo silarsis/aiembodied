@@ -693,6 +693,7 @@ export default function App() {
 
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const visemeDriverRef = useRef<VisemeDriver | null>(null);
+  const [playbackIssue, setPlaybackIssue] = useState<string | null>(null);
   const realtimeClient = useMemo(() => {
     if (!hasRealtimeSupport) {
       return null;
@@ -730,9 +731,15 @@ export default function App() {
           element.srcObject = stream;
           const playPromise = element.play();
           if (playPromise) {
-            playPromise.catch((error) => {
-              console.error('Failed to play realtime audio', error);
-            });
+            playPromise
+              .then(() => {
+                setPlaybackIssue(null);
+              })
+              .catch((error) => {
+                const message = error instanceof Error ? error.message : String(error);
+                setPlaybackIssue(message || 'Audio autoplay blocked');
+                console.error('Failed to play realtime audio', error);
+              });
           }
         },
         onFirstAudioFrame: () => {
@@ -1273,6 +1280,38 @@ export default function App() {
     }
   }, [realtimeClient, realtimeState.status, selectedVoice, basePrompt, useServerVad, vadThreshold, vadSilenceMs, vadMinSpeechMs]);
 
+  const reconnectAndResume = useCallback(async () => {
+    try {
+      const audioEl = remoteAudioRef.current;
+      if (audioEl) {
+        try {
+          await audioEl.play();
+          setPlaybackIssue(null);
+          return;
+        } catch {}
+      }
+
+      if (realtimeClient && realtimeKey && audioGraph.upstreamStream) {
+        await realtimeClient.disconnect();
+        await realtimeClient.connect({ apiKey: realtimeKey, inputStream: audioGraph.upstreamStream });
+        // After reconnect, try to play again once a stream is attached (onRemoteStream will also try)
+        setTimeout(async () => {
+          try {
+            const el = remoteAudioRef.current;
+            if (el) {
+              await el.play();
+              setPlaybackIssue(null);
+            }
+          } catch (err) {
+            console.warn('Resume after reconnect still blocked', err);
+          }
+        }, 250);
+      }
+    } catch (error) {
+      console.error('Failed to reconnect and resume audio', error);
+    }
+  }, [realtimeClient, realtimeKey, audioGraph.upstreamStream]);
+
   // Fetch allowed voices for the active model, fallback to defaults
   useEffect(() => {
     let cancelled = false;
@@ -1676,21 +1715,31 @@ export default function App() {
         </div>
       </section>
 
-      <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
-        <h2 id="kiosk-realtime-title">Realtime</h2>
-        <div className="control">
-          <label htmlFor="realtime-voice">Voice</label>
-          <select id="realtime-voice" value={selectedVoice} onChange={handleVoiceChange} disabled={isSaving || loadingConfig}>
-            {availableVoices.map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
-          <div className="kiosk__helper" aria-live="polite">
-            Current voice (server): {serverVoice ?? 'unknown'}
+        <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
+          <h2 id="kiosk-realtime-title">Realtime</h2>
+          <div className="control">
+            <label htmlFor="realtime-voice">Voice</label>
+            <select id="realtime-voice" value={selectedVoice} onChange={handleVoiceChange} disabled={isSaving || loadingConfig}>
+              {availableVoices.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+            <div className="kiosk__helper" aria-live="polite">
+              Current voice (server): {serverVoice ?? 'unknown'}
+            </div>
+            {playbackIssue ? (
+              <div className="kiosk__helper" role="alert" style={{ marginTop: 8 }}>
+                <span style={{ display: 'block', marginBottom: 4 }}>
+                  Audio playback is blocked ({playbackIssue}).
+                </span>
+                <button type="button" onClick={reconnectAndResume}>
+                  Reconnect & Resume Audio
+                </button>
+              </div>
+            ) : null}
           </div>
-        </div>
         <div className="control">
           <label htmlFor="base-prompt">Base prompt</label>
           <textarea
