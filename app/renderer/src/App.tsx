@@ -666,9 +666,11 @@ export default function App() {
 
   const [selectedInput, setSelectedInput] = useState('');
   const [selectedOutput, setSelectedOutput] = useState('');
+  const DEFAULT_PROMPT =
+    'You are an English-speaking assistant. Always respond in concise English. Do not switch languages unless explicitly instructed.';
   const availableVoices = useMemo(() => ['verse', 'alloy', 'aria', 'ballad', 'luna'], []);
   const [selectedVoice, setSelectedVoice] = useState<string>('verse');
-  const [basePrompt, setBasePrompt] = useState<string>('');
+  const [basePrompt, setBasePrompt] = useState<string>(DEFAULT_PROMPT);
   const [useServerVad, setUseServerVad] = useState<boolean>(false);
   const [vadThreshold, setVadThreshold] = useState<number>(0.85);
   const [vadSilenceMs, setVadSilenceMs] = useState<number>(600);
@@ -1208,12 +1210,39 @@ export default function App() {
   // Initialize voice/prompt/VAD from config
   useEffect(() => {
     setSelectedVoice(config?.realtimeVoice || 'verse');
-    setBasePrompt(config?.sessionInstructions || '');
+    setBasePrompt(
+      config?.sessionInstructions && config.sessionInstructions.length > 0
+        ? config.sessionInstructions
+        : DEFAULT_PROMPT,
+    );
     setUseServerVad((config?.vadTurnDetection ?? 'none') === 'server_vad');
     if (typeof config?.vadThreshold === 'number') setVadThreshold(config.vadThreshold as number);
     if (typeof config?.vadSilenceDurationMs === 'number') setVadSilenceMs(config.vadSilenceDurationMs as number);
     if (typeof config?.vadMinSpeechDurationMs === 'number') setVadMinSpeechMs(config.vadMinSpeechDurationMs as number);
   }, [config?.realtimeVoice, config?.sessionInstructions, config?.vadTurnDetection, config?.vadThreshold, config?.vadSilenceDurationMs, config?.vadMinSpeechDurationMs]);
+
+  // When the realtime client connects, push the current session config to ensure it applies
+  useEffect(() => {
+    if (!realtimeClient || realtimeState.status !== 'connected') return;
+    try {
+      realtimeClient.updateSessionConfig({
+        voice: selectedVoice || undefined,
+        instructions: basePrompt || undefined,
+        turnDetection: useServerVad ? 'server_vad' : 'none',
+        vad: useServerVad
+          ? { threshold: vadThreshold, silenceDurationMs: vadSilenceMs, minSpeechDurationMs: vadMinSpeechMs }
+          : undefined,
+      });
+      console.info('[RealtimeClient] Applied session config on connect', {
+        voice: selectedVoice,
+        hasInstructions: Boolean(basePrompt && basePrompt.length),
+        turnDetection: useServerVad ? 'server_vad' : 'none',
+        vad: useServerVad ? { threshold: vadThreshold, silenceMs: vadSilenceMs, minSpeechMs: vadMinSpeechMs } : null,
+      });
+    } catch (error) {
+      console.warn('[RealtimeClient] Failed to apply session config on connect', error);
+    }
+  }, [realtimeClient, realtimeState.status, selectedVoice, basePrompt, useServerVad, vadThreshold, vadSilenceMs, vadMinSpeechMs]);
 
   const handleSecretInputChange = useCallback(
     (key: ConfigSecretKey) => (event: ChangeEvent<HTMLInputElement>) => {
