@@ -154,14 +154,18 @@ const createWindow = () => {
       anyWc.on('will-navigate', (event: unknown, url: unknown) => {
         try {
           (event as { preventDefault?: () => void })?.preventDefault?.();
-        } catch {}
+        } catch (err) {
+          // Swallow errors from stubbed event objects in tests
+          void err;
+        }
         logger.warn('Blocked renderer navigation attempt.', { url });
       });
     } else {
       logger.debug('webContents.on unavailable; skipping will-navigate attach.');
     }
-  } catch {
+  } catch (err) {
     // Avoid noisy warnings in test environments where webContents may be a stub
+    void err;
   }
 
   if (!isProduction) {
