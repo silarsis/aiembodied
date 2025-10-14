@@ -666,6 +666,13 @@ export default function App() {
 
   const [selectedInput, setSelectedInput] = useState('');
   const [selectedOutput, setSelectedOutput] = useState('');
+  const availableVoices = useMemo(() => ['verse', 'alloy', 'aria', 'ballad', 'luna'], []);
+  const [selectedVoice, setSelectedVoice] = useState<string>('verse');
+  const [basePrompt, setBasePrompt] = useState<string>('');
+  const [useServerVad, setUseServerVad] = useState<boolean>(false);
+  const [vadThreshold, setVadThreshold] = useState<number>(0.85);
+  const [vadSilenceMs, setVadSilenceMs] = useState<number>(600);
+  const [vadMinSpeechMs, setVadMinSpeechMs] = useState<number>(400);
 
   const configInputDeviceId = config?.audioInputDeviceId ?? '';
   const configOutputDeviceId = config?.audioOutputDeviceId ?? '';
@@ -1128,6 +1135,82 @@ export default function App() {
     [persistPreferences, selectedInput],
   );
 
+  const handleVoiceChange = useCallback(
+    async (event: ChangeEvent<HTMLSelectElement>) => {
+      const value = event.target.value;
+      setSelectedVoice(value || 'verse');
+      try {
+        await persistPreferences({
+          audioInputDeviceId: selectedInput || undefined,
+          audioOutputDeviceId: selectedOutput || undefined,
+          realtimeVoice: value || undefined,
+        });
+        realtimeClient?.updateSessionConfig({ voice: value || undefined });
+      } catch (error) {
+        console.error('Failed to persist realtime voice preference', error);
+      }
+    },
+    [persistPreferences, selectedInput, selectedOutput, realtimeClient],
+  );
+
+  const handlePromptBlur = useCallback(
+    async () => {
+      try {
+        await persistPreferences({
+          audioInputDeviceId: selectedInput || undefined,
+          audioOutputDeviceId: selectedOutput || undefined,
+          sessionInstructions: basePrompt || undefined,
+        });
+        realtimeClient?.updateSessionConfig({ instructions: basePrompt || undefined });
+      } catch (error) {
+        console.error('Failed to persist base prompt', error);
+      }
+    },
+    [persistPreferences, selectedInput, selectedOutput, basePrompt, realtimeClient],
+  );
+
+  const applyVadPrefs = useCallback(
+    async (next: Partial<{ useServer: boolean; threshold: number; silenceMs: number; minSpeechMs: number }>) => {
+      const useServer = next.useServer ?? useServerVad;
+      const threshold = next.threshold ?? vadThreshold;
+      const silenceMs = next.silenceMs ?? vadSilenceMs;
+      const minSpeechMs = next.minSpeechMs ?? vadMinSpeechMs;
+      setUseServerVad(useServer);
+      setVadThreshold(threshold);
+      setVadSilenceMs(silenceMs);
+      setVadMinSpeechMs(minSpeechMs);
+      try {
+        await persistPreferences({
+          audioInputDeviceId: selectedInput || undefined,
+          audioOutputDeviceId: selectedOutput || undefined,
+          vadTurnDetection: useServer ? 'server_vad' : 'none',
+          vadThreshold: useServer ? threshold : undefined,
+          vadSilenceDurationMs: useServer ? silenceMs : undefined,
+          vadMinSpeechDurationMs: useServer ? minSpeechMs : undefined,
+        });
+        realtimeClient?.updateSessionConfig({
+          turnDetection: useServer ? 'server_vad' : 'none',
+          vad: useServer
+            ? { threshold, silenceDurationMs: silenceMs, minSpeechDurationMs: minSpeechMs }
+            : undefined,
+        });
+      } catch (error) {
+        console.error('Failed to persist VAD preferences', error);
+      }
+    },
+    [persistPreferences, selectedInput, selectedOutput, useServerVad, vadThreshold, vadSilenceMs, vadMinSpeechMs, realtimeClient],
+  );
+
+  // Initialize voice/prompt/VAD from config
+  useEffect(() => {
+    setSelectedVoice(config?.realtimeVoice || 'verse');
+    setBasePrompt(config?.sessionInstructions || '');
+    setUseServerVad((config?.vadTurnDetection ?? 'none') === 'server_vad');
+    if (typeof config?.vadThreshold === 'number') setVadThreshold(config.vadThreshold as number);
+    if (typeof config?.vadSilenceDurationMs === 'number') setVadSilenceMs(config.vadSilenceDurationMs as number);
+    if (typeof config?.vadMinSpeechDurationMs === 'number') setVadMinSpeechMs(config.vadMinSpeechDurationMs as number);
+  }, [config?.realtimeVoice, config?.sessionInstructions, config?.vadTurnDetection, config?.vadThreshold, config?.vadSilenceDurationMs, config?.vadMinSpeechDurationMs]);
+
   const handleSecretInputChange = useCallback(
     (key: ConfigSecretKey) => (event: ChangeEvent<HTMLInputElement>) => {
       const value = event.target.value;
@@ -1443,6 +1526,76 @@ export default function App() {
               </option>
             ))}
           </select>
+        </div>
+        <div className="control">
+          <label htmlFor="realtime-voice">Voice</label>
+          <select id="realtime-voice" value={selectedVoice} onChange={handleVoiceChange} disabled={isSaving || loadingConfig}>
+            {availableVoices.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="control">
+          <label htmlFor="base-prompt">Base prompt</label>
+          <textarea
+            id="base-prompt"
+            placeholder="Describe personality/character…"
+            value={basePrompt}
+            onChange={(e) => setBasePrompt(e.target.value)}
+            onBlur={handlePromptBlur}
+            disabled={loadingConfig}
+          />
+        </div>
+        <div className="control">
+          <label>
+            <input
+              type="checkbox"
+              checked={useServerVad}
+              onChange={(e) => applyVadPrefs({ useServer: e.target.checked })}
+              disabled={loadingConfig}
+            />
+            Use server VAD
+          </label>
+          {useServerVad ? (
+            <div className="vadControls">
+              <label>
+                Threshold
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={vadThreshold}
+                  onChange={(e) => applyVadPrefs({ threshold: Number(e.target.value) })}
+                />
+                <span>{vadThreshold.toFixed(2)}</span>
+              </label>
+              <label>
+                Min speech (ms)
+                <input
+                  type="number"
+                  min={0}
+                  max={10000}
+                  step={50}
+                  value={vadMinSpeechMs}
+                  onChange={(e) => applyVadPrefs({ minSpeechMs: Number(e.target.value) })}
+                />
+              </label>
+              <label>
+                Silence (ms)
+                <input
+                  type="number"
+                  min={0}
+                  max={10000}
+                  step={50}
+                  value={vadSilenceMs}
+                  onChange={(e) => applyVadPrefs({ silenceMs: Number(e.target.value) })}
+                />
+              </label>
+            </div>
+          ) : null}
         </div>
       </section>
 
