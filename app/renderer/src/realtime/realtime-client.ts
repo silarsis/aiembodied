@@ -100,7 +100,7 @@ export class RealtimeClient {
 
   constructor(options: RealtimeClientOptions = {}) {
     this.endpoint = options.endpoint ?? 'https://api.openai.com/v1/realtime/sessions';
-    this.model = options.model ?? 'gpt-4o-realtime-preview';
+    this.model = options.model ?? 'gpt-4o-realtime-preview-2024-12-17';
     this.fetchFn = options.fetchFn ?? window.fetch.bind(window);
     this.createPeerConnectionFn = options.createPeerConnection ?? ((config?: RTCConfiguration) => new RTCPeerConnection(config));
     this.reconnectDelays = options.reconnectDelaysMs ?? [750, 1500, 3000];
