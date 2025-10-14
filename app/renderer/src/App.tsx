@@ -671,7 +671,7 @@ export default function App() {
   const availableVoices = useMemo(() => ['verse', 'alloy', 'aria', 'ballad', 'luna'], []);
   const [selectedVoice, setSelectedVoice] = useState<string>('verse');
   const [basePrompt, setBasePrompt] = useState<string>(DEFAULT_PROMPT);
-  const [useServerVad, setUseServerVad] = useState<boolean>(false);
+  const [useServerVad, setUseServerVad] = useState<boolean>(true);
   const [vadThreshold, setVadThreshold] = useState<number>(0.85);
   const [vadSilenceMs, setVadSilenceMs] = useState<number>(600);
   const [vadMinSpeechMs, setVadMinSpeechMs] = useState<number>(400);
@@ -1215,7 +1215,12 @@ export default function App() {
         ? config.sessionInstructions
         : DEFAULT_PROMPT,
     );
-    setUseServerVad((config?.vadTurnDetection ?? 'none') === 'server_vad');
+    if (typeof config?.vadTurnDetection === 'string') {
+      setUseServerVad(config.vadTurnDetection === 'server_vad');
+    } else {
+      // No saved preference; keep default (server VAD on)
+      setUseServerVad(true);
+    }
     if (typeof config?.vadThreshold === 'number') setVadThreshold(config.vadThreshold as number);
     if (typeof config?.vadSilenceDurationMs === 'number') setVadSilenceMs(config.vadSilenceDurationMs as number);
     if (typeof config?.vadMinSpeechDurationMs === 'number') setVadMinSpeechMs(config.vadMinSpeechDurationMs as number);
@@ -1225,20 +1230,23 @@ export default function App() {
   useEffect(() => {
     if (!realtimeClient || realtimeState.status !== 'connected') return;
     try {
-      realtimeClient.updateSessionConfig({
+      const payload = {
         voice: selectedVoice || undefined,
         instructions: basePrompt || undefined,
         turnDetection: useServerVad ? 'server_vad' : 'none',
         vad: useServerVad
           ? { threshold: vadThreshold, silenceDurationMs: vadSilenceMs, minSpeechDurationMs: vadMinSpeechMs }
           : undefined,
-      });
-      console.info('[RealtimeClient] Applied session config on connect', {
-        voice: selectedVoice,
-        hasInstructions: Boolean(basePrompt && basePrompt.length),
-        turnDetection: useServerVad ? 'server_vad' : 'none',
-        vad: useServerVad ? { threshold: vadThreshold, silenceMs: vadSilenceMs, minSpeechMs: vadMinSpeechMs } : null,
-      });
+      } as const;
+      realtimeClient.updateSessionConfig(payload);
+      console.info(
+        `[RealtimeClient] Applied session config on connect ${JSON.stringify({
+          voice: payload.voice,
+          hasInstructions: Boolean(payload.instructions && (payload.instructions as string).length),
+          turnDetection: payload.turnDetection,
+          vad: payload.vad ?? null,
+        })}`,
+      );
     } catch (error) {
       console.warn('[RealtimeClient] Failed to apply session config on connect', error);
     }
