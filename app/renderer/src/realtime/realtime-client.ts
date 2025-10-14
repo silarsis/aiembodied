@@ -22,6 +22,11 @@ export interface RealtimeClientOptions {
   reconnectDelaysMs?: number[];
   jitterBufferMs?: number;
   maxReconnectAttempts?: number;
+  sessionConfig?: {
+    instructions?: string;
+    turnDetection?: 'none' | 'server_vad';
+    vad?: { threshold?: number; silenceDurationMs?: number; minSpeechDurationMs?: number };
+  };
 }
 
 export interface RealtimeClientConnectOptions {
@@ -97,6 +102,7 @@ export class RealtimeClient {
   private disposed = false;
 
   private jitterBufferMs: number;
+  private readonly sessionConfig?: RealtimeClientOptions['sessionConfig'];
 
   constructor(options: RealtimeClientOptions = {}) {
     this.endpoint = options.endpoint ?? 'https://api.openai.com/v1/realtime/sessions';
@@ -107,6 +113,7 @@ export class RealtimeClient {
     this.callbacks = options.callbacks ?? {};
     this.maxReconnectAttempts = options.maxReconnectAttempts ?? Math.max(this.reconnectDelays.length, 3);
     this.jitterBufferMs = options.jitterBufferMs ?? 100;
+    this.sessionConfig = options.sessionConfig;
   }
 
   getState(): RealtimeClientState {
@@ -240,6 +247,9 @@ export class RealtimeClient {
 
     try {
       this.controlChannel = peer.createDataChannel('oai-events', { ordered: true });
+      this.controlChannel.onopen = () => {
+        this.sendSessionUpdate();
+      };
     } catch (error) {
       this.log('warn', 'Failed to create realtime control data channel', error);
       this.controlChannel = null;
@@ -280,6 +290,46 @@ export class RealtimeClient {
 
     const answerSdp = await response.text();
     await peer.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+    if (this.controlChannel && this.controlChannel.readyState === 'open') {
+      this.sendSessionUpdate();
+    }
+  }
+
+  private sendSessionUpdate(): void {
+    if (!this.controlChannel || this.controlChannel.readyState !== 'open') {
+      return;
+    }
+
+    const payload: Record<string, unknown> = { type: 'session.update', session: {} };
+    const session = payload.session as Record<string, unknown>;
+
+    if (this.sessionConfig?.instructions) {
+      session.instructions = this.sessionConfig.instructions;
+    }
+
+    if (this.sessionConfig?.turnDetection === 'none') {
+      session.turn_detection = { type: 'none' };
+    } else if (this.sessionConfig?.turnDetection === 'server_vad') {
+      session.turn_detection = {
+        type: 'server_vad',
+        ...(typeof this.sessionConfig.vad?.threshold === 'number'
+          ? { threshold: this.sessionConfig.vad.threshold }
+          : {}),
+        ...(typeof this.sessionConfig.vad?.silenceDurationMs === 'number'
+          ? { silence_duration_ms: this.sessionConfig.vad.silenceDurationMs }
+          : {}),
+        ...(typeof this.sessionConfig.vad?.minSpeechDurationMs === 'number'
+          ? { min_speech_duration_ms: this.sessionConfig.vad.minSpeechDurationMs }
+          : {}),
+      } as Record<string, unknown>;
+    }
+
+    try {
+      this.controlChannel.send(JSON.stringify(payload));
+      this.log('info', 'Sent session.update to realtime API', payload);
+    } catch (error) {
+      this.log('warn', 'Failed to send session.update', error);
+    }
   }
 
   private handleRemoteTrack(event: RTCTrackEvent): void {

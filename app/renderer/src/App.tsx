@@ -681,6 +681,11 @@ export default function App() {
 
     return new RealtimeClient({
       model: config?.realtimeModel || undefined,
+      sessionConfig: {
+        instructions:
+          'You are an English-speaking assistant. Always respond in concise English. Do not switch languages unless explicitly instructed.',
+        turnDetection: 'none',
+      },
       callbacks: {
         onStateChange: setRealtimeState,
         onRemoteStream: (stream) => {
