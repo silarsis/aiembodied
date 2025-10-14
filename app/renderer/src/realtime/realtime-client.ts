@@ -11,6 +11,7 @@ export interface RealtimeClientCallbacks {
   onRemoteStream?: (stream: MediaStream) => void;
   onLog?: (entry: { level: 'info' | 'warn' | 'error'; message: string; data?: unknown }) => void;
   onFirstAudioFrame?: () => void;
+  onSessionUpdated?: (session: { voice?: string; instructions?: string; turnDetection?: string }) => void;
 }
 
 export interface RealtimeClientOptions {
@@ -250,6 +251,25 @@ export class RealtimeClient {
       this.controlChannel = peer.createDataChannel('oai-events', { ordered: true });
       this.controlChannel.onopen = () => {
         this.sendSessionUpdate();
+      };
+      this.controlChannel.onmessage = (event) => {
+        try {
+          const payload = typeof event.data === 'string' ? JSON.parse(event.data) : null;
+          if (payload && typeof payload === 'object') {
+            const type = (payload as { type?: string }).type;
+            if (type === 'session.updated' || type === 'session.update') {
+              const session = (payload as { session?: Record<string, unknown> }).session ?? {};
+              const voice = typeof session['voice'] === 'string' ? (session['voice'] as string) : undefined;
+              const instructions = typeof session['instructions'] === 'string' ? (session['instructions'] as string) : undefined;
+              const td = session['turn_detection'] as { type?: string } | undefined;
+              const turnDetection = td && typeof td.type === 'string' ? td.type : undefined;
+              this.callbacks.onSessionUpdated?.({ voice, instructions, turnDetection });
+              this.log('info', 'Received session.updated from realtime API', { voice, turnDetection, hasInstructions: Boolean(instructions) });
+            }
+          }
+        } catch (error) {
+          this.log('warn', 'Failed to parse control channel message', error);
+        }
       };
     } catch (error) {
       this.log('warn', 'Failed to create realtime control data channel', error);

@@ -671,6 +671,7 @@ export default function App() {
   const availableVoices = useMemo(() => ['verse', 'alloy', 'aria', 'ballad', 'luna'], []);
   const [selectedVoice, setSelectedVoice] = useState<string>('verse');
   const [basePrompt, setBasePrompt] = useState<string>(DEFAULT_PROMPT);
+  const [serverVoice, setServerVoice] = useState<string | null>(null);
   const [useServerVad, setUseServerVad] = useState<boolean>(true);
   const [vadThreshold, setVadThreshold] = useState<number>(0.85);
   const [vadSilenceMs, setVadSilenceMs] = useState<number>(600);
@@ -705,6 +706,11 @@ export default function App() {
       },
       callbacks: {
         onStateChange: setRealtimeState,
+        onSessionUpdated: (session) => {
+          if (typeof session.voice === 'string') {
+            setServerVoice(session.voice);
+          }
+        },
         onRemoteStream: (stream) => {
           setRemoteStream(stream);
           const element = remoteAudioRef.current;
@@ -1251,6 +1257,42 @@ export default function App() {
       console.warn('[RealtimeClient] Failed to apply session config on connect', error);
     }
   }, [realtimeClient, realtimeState.status, selectedVoice, basePrompt, useServerVad, vadThreshold, vadSilenceMs, vadMinSpeechMs]);
+
+  // Fetch allowed voices for the active model, fallback to defaults
+  useEffect(() => {
+    let cancelled = false;
+    const model = config?.realtimeModel || 'gpt-4o-realtime-preview-2024-12-17';
+    if (!realtimeKey) return;
+    (async () => {
+      try {
+        const url = `https://api.openai.com/v1/realtime/voices?model=${encodeURIComponent(model)}`;
+        const resp = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${realtimeKey}`,
+            'OpenAI-Beta': 'realtime=v1',
+          },
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const json = (await resp.json()) as { data?: Array<{ id?: string }> };
+        const ids = (json.data ?? [])
+          .map((v) => (typeof v.id === 'string' ? v.id : ''))
+          .filter((id) => id)
+          .sort();
+        if (!cancelled && ids.length > 0) {
+          // Replace available voices list by reusing state setter
+          // Keep selectedVoice if still valid, else select first
+          const nextVoice = ids.includes(selectedVoice) ? selectedVoice : ids[0];
+          setSelectedVoice(nextVoice);
+          console.info('[RealtimeClient] Loaded voices for model', { model, count: ids.length });
+        }
+      } catch (error) {
+        console.warn('[RealtimeClient] Failed to fetch voices for model; using defaults', error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [realtimeKey, config?.realtimeModel]);
 
   const handleSecretInputChange = useCallback(
     (key: ConfigSecretKey) => (event: ChangeEvent<HTMLInputElement>) => {
