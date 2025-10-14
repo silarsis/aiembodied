@@ -92,6 +92,49 @@ try {
   }
 }
 
+function Test-CommandExists {
+  param([Parameter(Mandatory = $true)][string]$Name)
+  try { return [bool](Get-Command -Name $Name -ErrorAction Stop) } catch { return $false }
+}
+
+# Ensure system Node version matches Electron's embedded Node to avoid ABI mismatches in dev/test
+try {
+  Write-Host "[info] Checking Node version alignment with Electron..." -ForegroundColor Cyan
+  $systemNode = (node -p "process.versions.node" 2>$null).Trim()
+  $electronNode = (pnpm --filter @aiembodied/main exec electron -p "process.versions.node" 2>$null).Trim()
+  if (-not [string]::IsNullOrWhiteSpace($systemNode) -and -not [string]::IsNullOrWhiteSpace($electronNode)) {
+    if ($systemNode -ne $electronNode) {
+      Write-Warning "System Node v$systemNode differs from Electron's Node v$electronNode. Attempting to switch..."
+      $switched = $false
+      if (Test-CommandExists -Name 'nvs') {
+        try {
+          nvs add "node/$electronNode" | Out-Null
+          nvs use "node/$electronNode" | Out-Null
+          $newNode = (node -p "process.versions.node" 2>$null).Trim()
+          if ($newNode -eq $electronNode) { $switched = $true }
+        } catch {}
+      }
+      if (-not $switched -and (Test-CommandExists -Name 'nvm')) {
+        try {
+          nvm install $electronNode | Out-Null
+          nvm use $electronNode | Out-Null
+          $newNode = (node -p "process.versions.node" 2>$null).Trim()
+          if ($newNode -eq $electronNode) { $switched = $true }
+        } catch {}
+      }
+      if ($switched) {
+        Write-Host "[info] Activated Node v$electronNode to match Electron." -ForegroundColor Green
+      } else {
+        Write-Warning "Could not auto-switch Node version. Consider installing NVS (https://github.com/jasongin/nvs) or nvm-windows and switching to v$electronNode."
+      }
+    } else {
+      Write-Host "[info] System Node matches Electron's Node (v$systemNode)." -ForegroundColor Green
+    }
+  }
+} catch {
+  Write-Warning "Node/Electron version alignment check failed: $($_.Exception.Message)"
+}
+
 Write-Host "[info] Rebuilding native modules for Electron..." -ForegroundColor Cyan
 try {
   # Run from the package directory and isolate HOME to avoid EPERM on Windows junctions
