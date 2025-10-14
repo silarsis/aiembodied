@@ -680,6 +680,30 @@ export default function App() {
     }
 
     return new RealtimeClient({
+      model: config?.realtimeModel || undefined,
+      sessionConfig: {
+        instructions:
+          config?.sessionInstructions && config.sessionInstructions.length > 0
+            ? config.sessionInstructions
+            : 'You are an English-speaking assistant. Always respond in concise English. Do not switch languages unless explicitly instructed.',
+        turnDetection: (config?.vadTurnDetection ?? 'none') === 'server_vad' ? 'server_vad' : 'none',
+        vad:
+          (config?.vadTurnDetection ?? 'none') === 'server_vad'
+            ? {
+                threshold:
+                  typeof config?.vadThreshold === 'number' ? (config.vadThreshold as number) : 0.6,
+                silenceDurationMs:
+                  typeof config?.vadSilenceDurationMs === 'number'
+                    ? (config.vadSilenceDurationMs as number)
+                    : 600,
+                minSpeechDurationMs:
+                  typeof config?.vadMinSpeechDurationMs === 'number'
+                    ? (config.vadMinSpeechDurationMs as number)
+                    : 300,
+              }
+            : undefined,
+        voice: config?.realtimeVoice || 'verse',
+      },
       callbacks: {
         onStateChange: setRealtimeState,
         onRemoteStream: (stream) => {
