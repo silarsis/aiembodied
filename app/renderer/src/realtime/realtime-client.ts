@@ -257,6 +257,8 @@ export class RealtimeClient {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
+        // Required by OpenAI Realtime HTTP negotiation
+        'OpenAI-Beta': 'realtime=v1',
       },
       body: JSON.stringify({
         model: this.model,
@@ -265,7 +267,13 @@ export class RealtimeClient {
     });
 
     if (!response.ok) {
-      throw new Error(`Realtime handshake failed: HTTP ${response.status}`);
+      let detail: string | undefined;
+      try {
+        detail = await response.text();
+      } catch {
+        // ignore body read errors
+      }
+      throw new Error(`Realtime handshake failed: HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
     }
 
     const { answer, iceServers } = this.parseNegotiationResponse(await response.json());
