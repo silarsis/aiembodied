@@ -93,8 +93,53 @@ try {
 }
 
 Write-Host "[info] Rebuilding native modules for Electron..." -ForegroundColor Cyan
-pnpm --filter @aiembodied/main exec electron-builder install-app-deps
-Assert-LastExit 'electron-builder install-app-deps'
+try {
+  # Run from the package directory and isolate HOME to avoid EPERM on Windows junctions
+  $devHome = Join-Path $repoRoot '.dev-home'
+  $devAppData = Join-Path $devHome 'AppData'
+  $devRoaming = Join-Path $devAppData 'Roaming'
+  $devLocal = Join-Path $devAppData 'Local'
+  $devNpmCache = Join-Path $devHome '.npm-cache'
+  $devEbCache = Join-Path $devHome 'electron-builder-cache'
+  New-Item -ItemType Directory -Force -Path $devRoaming | Out-Null
+  New-Item -ItemType Directory -Force -Path $devLocal | Out-Null
+  New-Item -ItemType Directory -Force -Path $devNpmCache | Out-Null
+  New-Item -ItemType Directory -Force -Path $devEbCache | Out-Null
+
+  $prev = @{
+    HOME = $env:HOME
+    USERPROFILE = $env:USERPROFILE
+    APPDATA = $env:APPDATA
+    LOCALAPPDATA = $env:LOCALAPPDATA
+    npm_config_cache = $env:npm_config_cache
+    ELECTRON_BUILDER_CACHE = $env:ELECTRON_BUILDER_CACHE
+    NO_UPDATE_NOTIFIER = $env:NO_UPDATE_NOTIFIER
+    npm_config_update_notifier = $env:npm_config_update_notifier
+  }
+  $env:HOME = $devHome
+  $env:USERPROFILE = $devHome
+  $env:APPDATA = $devRoaming
+  $env:LOCALAPPDATA = $devLocal
+  $env:npm_config_cache = $devNpmCache
+  $env:ELECTRON_BUILDER_CACHE = $devEbCache
+  $env:NO_UPDATE_NOTIFIER = '1'
+  $env:npm_config_update_notifier = 'false'
+
+  Push-Location (Join-Path $repoRoot 'app/main')
+  pnpm exec electron-builder install-app-deps
+  $code = $LASTEXITCODE
+  Pop-Location
+  if ($code -ne 0) { throw "electron-builder-install-app-deps-failed:$code" }
+} finally {
+  $env:HOME = $prev.HOME
+  $env:USERPROFILE = $prev.USERPROFILE
+  $env:APPDATA = $prev.APPDATA
+  $env:LOCALAPPDATA = $prev.LOCALAPPDATA
+  $env:npm_config_cache = $prev.npm_config_cache
+  $env:ELECTRON_BUILDER_CACHE = $prev.ELECTRON_BUILDER_CACHE
+  $env:NO_UPDATE_NOTIFIER = $prev.NO_UPDATE_NOTIFIER
+  $env:npm_config_update_notifier = $prev.npm_config_update_notifier
+}
 
 # With pnpm, ensure native deps are rebuilt against Electron headers explicitly
 try {

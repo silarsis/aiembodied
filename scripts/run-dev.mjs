@@ -71,7 +71,20 @@ forward('info', 'preload-shim:starting');
 
   // Rebuild native deps for Electron runtime (ensures better-sqlite3/keytar ABI matches Electron)
   console.log('[info] Rebuilding native dependencies for Electron...');
-  await run('pnpm', ['--filter', '@aiembodied/main', 'exec', 'electron-builder', 'install-app-deps']);
+  // Isolate HOME/APPDATA to avoid EPERM scandir on Windows junctions like "Application Data"
+  const devHome = resolve(repoRoot, '.dev-home');
+  const envIsolated = {
+    ...process.env,
+    HOME: devHome,
+    USERPROFILE: devHome,
+    APPDATA: join(devHome, 'AppData', 'Roaming'),
+    LOCALAPPDATA: join(devHome, 'AppData', 'Local'),
+    npm_config_cache: join(devHome, '.npm-cache'),
+    ELECTRON_BUILDER_CACHE: join(devHome, 'electron-builder-cache'),
+    NO_UPDATE_NOTIFIER: '1',
+    npm_config_update_notifier: 'false',
+  };
+  await run('pnpm', ['--filter', '@aiembodied/main', 'exec', 'electron-builder', 'install-app-deps'], { env: envIsolated });
 
   // Launch Electron with compiled main
   console.log('[info] Launching Electron...');
