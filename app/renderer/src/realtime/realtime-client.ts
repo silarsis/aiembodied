@@ -26,6 +26,7 @@ export interface RealtimeClientOptions {
     instructions?: string;
     turnDetection?: 'none' | 'server_vad';
     vad?: { threshold?: number; silenceDurationMs?: number; minSpeechDurationMs?: number };
+    voice?: string;
   };
 }
 
@@ -102,7 +103,7 @@ export class RealtimeClient {
   private disposed = false;
 
   private jitterBufferMs: number;
-  private readonly sessionConfig?: RealtimeClientOptions['sessionConfig'];
+  private sessionConfig?: RealtimeClientOptions['sessionConfig'];
 
   constructor(options: RealtimeClientOptions = {}) {
     this.endpoint = options.endpoint ?? 'https://api.openai.com/v1/realtime/sessions';
@@ -293,6 +294,14 @@ export class RealtimeClient {
     if (this.controlChannel && this.controlChannel.readyState === 'open') {
       this.sendSessionUpdate();
     }
+    if (this.controlChannel && this.controlChannel.readyState === 'open') {
+      this.sendSessionUpdate();
+    }
+  }
+
+  updateSessionConfig(next: RealtimeClientOptions['sessionConfig']): void {
+    this.sessionConfig = { ...(this.sessionConfig ?? {}), ...(next ?? {}) };
+    this.sendSessionUpdate();
   }
 
   private sendSessionUpdate(): void {
@@ -305,6 +314,10 @@ export class RealtimeClient {
 
     if (this.sessionConfig?.instructions) {
       session.instructions = this.sessionConfig.instructions;
+    }
+
+    if (this.sessionConfig?.voice) {
+      session.voice = this.sessionConfig.voice;
     }
 
     if (this.sessionConfig?.turnDetection === 'none') {

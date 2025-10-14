@@ -5,6 +5,12 @@ export interface AudioDevicePreferences {
   audioInputDeviceId?: string;
   audioOutputDeviceId?: string;
   realtimeModel?: string;
+  realtimeVoice?: string;
+  sessionInstructions?: string;
+  vadTurnDetection?: 'none' | 'server_vad';
+  vadThreshold?: number;
+  vadSilenceDurationMs?: number;
+  vadMinSpeechDurationMs?: number;
 }
 
 export interface PreferencesStore {
@@ -40,6 +46,12 @@ export class FilePreferencesStore implements PreferencesStore {
     const audioInputDeviceId = this.normalizeId(input.audioInputDeviceId);
     const audioOutputDeviceId = this.normalizeId(input.audioOutputDeviceId);
     const realtimeModel = this.normalizeId(input.realtimeModel);
+    const realtimeVoice = this.normalizeId(input.realtimeVoice);
+    const sessionInstructions = this.normalizeId(input.sessionInstructions);
+    const vadTurnDetection = this.normalizeTurnDetection(input.vadTurnDetection);
+    const vadThreshold = this.normalizeNumber(input.vadThreshold, 0, 1);
+    const vadSilenceDurationMs = this.normalizeInt(input.vadSilenceDurationMs, 0, 10000);
+    const vadMinSpeechDurationMs = this.normalizeInt(input.vadMinSpeechDurationMs, 0, 10000);
 
     const preferences: AudioDevicePreferences = {};
 
@@ -55,6 +67,30 @@ export class FilePreferencesStore implements PreferencesStore {
       preferences.realtimeModel = realtimeModel;
     }
 
+    if (realtimeVoice) {
+      preferences.realtimeVoice = realtimeVoice;
+    }
+
+    if (sessionInstructions) {
+      preferences.sessionInstructions = sessionInstructions;
+    }
+
+    if (vadTurnDetection) {
+      preferences.vadTurnDetection = vadTurnDetection;
+    }
+
+    if (typeof vadThreshold === 'number') {
+      preferences.vadThreshold = vadThreshold;
+    }
+
+    if (typeof vadSilenceDurationMs === 'number') {
+      preferences.vadSilenceDurationMs = vadSilenceDurationMs;
+    }
+
+    if (typeof vadMinSpeechDurationMs === 'number') {
+      preferences.vadMinSpeechDurationMs = vadMinSpeechDurationMs;
+    }
+
     return preferences;
   }
 
@@ -65,6 +101,30 @@ export class FilePreferencesStore implements PreferencesStore {
 
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  private normalizeTurnDetection(value: unknown): 'none' | 'server_vad' | undefined {
+    if (value === 'none' || value === 'server_vad') return value;
+    if (typeof value === 'string') {
+      const v = value.trim().toLowerCase();
+      if (v === 'none' || v === 'server_vad') return v;
+    }
+    return undefined;
+  }
+
+  private normalizeNumber(value: unknown, min: number, max: number): number | undefined {
+    const n = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(n)) return undefined;
+    if (n < min || n > max) return undefined;
+    return n;
+  }
+
+  private normalizeInt(value: unknown, min: number, max: number): number | undefined {
+    const n = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(n)) return undefined;
+    const i = Math.round(n);
+    if (i < min || i > max) return undefined;
+    return i;
   }
 }
 

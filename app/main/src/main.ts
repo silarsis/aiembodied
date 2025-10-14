@@ -264,6 +264,14 @@ function registerIpcHandlers(
     audioInputConfigured: Boolean(config.audioInputDeviceId),
     audioOutputConfigured: Boolean(config.audioOutputDeviceId),
     realtimeModel: config.realtimeModel ?? null,
+    realtimeVoice: config.realtimeVoice ?? null,
+    hasInstructions: Boolean(config.sessionInstructions && config.sessionInstructions.length > 0),
+    vad: {
+      turnDetection: config.vadTurnDetection ?? 'none',
+      threshold: typeof config.vadThreshold === 'number' ? config.vadThreshold : null,
+      silenceMs: typeof config.vadSilenceDurationMs === 'number' ? config.vadSilenceDurationMs : null,
+      minSpeechMs: typeof config.vadMinSpeechDurationMs === 'number' ? config.vadMinSpeechDurationMs : null,
+    },
     featureFlagKeys: Object.keys(config.featureFlags ?? {}),
   });
 
@@ -286,12 +294,20 @@ function registerIpcHandlers(
 
     if (channel === 'config:set-audio-devices') {
       const [preferences] = args as [
-        { audioInputDeviceId?: string | null; audioOutputDeviceId?: string | null; realtimeModel?: string | null } | undefined,
+        { audioInputDeviceId?: string | null; audioOutputDeviceId?: string | null; realtimeModel?: string | null; realtimeVoice?: string | null; sessionInstructions?: string | null; vadTurnDetection?: 'none' | 'server_vad' | null; vadThreshold?: number | null; vadSilenceDurationMs?: number | null; vadMinSpeechDurationMs?: number | null } | undefined,
       ];
       return {
         hasInput: Boolean(preferences?.audioInputDeviceId),
         hasOutput: Boolean(preferences?.audioOutputDeviceId),
         hasModel: Boolean(preferences?.realtimeModel),
+        hasVoice: Boolean(preferences?.realtimeVoice),
+        hasInstructions: Boolean(preferences?.sessionInstructions),
+        vad: {
+          turnDetection: preferences?.vadTurnDetection ?? null,
+          threshold: typeof preferences?.vadThreshold === 'number',
+          silenceMs: typeof preferences?.vadSilenceDurationMs === 'number',
+          minSpeechMs: typeof preferences?.vadMinSpeechDurationMs === 'number',
+        },
       };
     }
 
