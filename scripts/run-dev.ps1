@@ -57,8 +57,40 @@ try {
 }
 
 Write-Host "[info] Building main..." -ForegroundColor Cyan
-pnpm --filter @aiembodied/main build
-Assert-LastExit '@aiembodied/main build'
+try {
+  # Prefer running from the package directory to minimize odd workspace/env scans on Windows
+  Push-Location (Join-Path $repoRoot 'app/main')
+  pnpm run -s build
+  $code = $LASTEXITCODE
+  Pop-Location
+  if ($code -ne 0) { throw "main-build-failed:$code" }
+} catch {
+  $msg = $_.Exception.Message
+  Write-Warning "Main build failed ($msg). Retrying with isolated env..."
+  # Retry with env overrides that discourage home-directory config scans and update notifiers
+  $prev = @{
+    BROWSERSLIST = $env:BROWSERSLIST
+    BROWSERSLIST_DISABLE_CACHE = $env:BROWSERSLIST_DISABLE_CACHE
+    NO_UPDATE_NOTIFIER = $env:NO_UPDATE_NOTIFIER
+    npm_config_update_notifier = $env:npm_config_update_notifier
+  }
+  $env:BROWSERSLIST = 'defaults'
+  $env:BROWSERSLIST_DISABLE_CACHE = '1'
+  $env:NO_UPDATE_NOTIFIER = '1'
+  $env:npm_config_update_notifier = 'false'
+  try {
+    Push-Location (Join-Path $repoRoot 'app/main')
+    pnpm run -s build
+    $code = $LASTEXITCODE
+    Pop-Location
+    if ($code -ne 0) { throw "main-build-failed:$code" }
+  } finally {
+    $env:BROWSERSLIST = $prev.BROWSERSLIST
+    $env:BROWSERSLIST_DISABLE_CACHE = $prev.BROWSERSLIST_DISABLE_CACHE
+    $env:NO_UPDATE_NOTIFIER = $prev.NO_UPDATE_NOTIFIER
+    $env:npm_config_update_notifier = $prev.npm_config_update_notifier
+  }
+}
 
 Write-Host "[info] Rebuilding native modules for Electron..." -ForegroundColor Cyan
 pnpm --filter @aiembodied/main exec electron-builder install-app-deps
