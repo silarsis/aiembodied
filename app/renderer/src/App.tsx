@@ -700,20 +700,6 @@ export default function App() {
     }
 
     return new RealtimeClient({
-      model: config?.realtimeModel || undefined,
-      sessionConfig: {
-        instructions:
-          config?.sessionInstructions && config.sessionInstructions.length > 0
-            ? config.sessionInstructions
-            : 'You are an English-speaking assistant. Always respond in concise English. Do not switch languages unless explicitly instructed.',
-        turnDetection: 'server_vad',
-        vad: {
-          threshold: 0.85,
-          silenceDurationMs: 600,
-          minSpeechDurationMs: 400,
-        },
-        voice: config?.realtimeVoice || 'verse',
-      },
       callbacks: {
         onStateChange: setRealtimeState,
         onSessionUpdated: (session) => {
@@ -1288,7 +1274,10 @@ export default function App() {
           await audioEl.play();
           setPlaybackIssue(null);
           return;
-        } catch {}
+        } catch (err) {
+          // Swallow autoplay promise errors; we will attempt reconnect below.
+          void err;
+        }
       }
 
       if (realtimeClient && realtimeKey && audioGraph.upstreamStream) {
@@ -1345,7 +1334,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [realtimeKey, config?.realtimeModel]);
+  }, [realtimeKey, config?.realtimeModel, selectedVoice]);
 
   const handleSecretInputChange = useCallback(
     (key: ConfigSecretKey) => (event: ChangeEvent<HTMLInputElement>) => {

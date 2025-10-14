@@ -37,10 +37,7 @@ export interface RealtimeClientConnectOptions {
   iceServers?: RTCIceServer[];
 }
 
-type NegotiationAnswer = {
-  sdp: string;
-  type?: RTCSdpType;
-};
+// Note: older code used a typed negotiation answer; currently unused.
 
 function wait(durationMs: number): Promise<void> {
   return new Promise((resolve) => {
