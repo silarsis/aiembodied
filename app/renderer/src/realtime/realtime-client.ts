@@ -286,7 +286,8 @@ export class RealtimeClient {
     // Use OpenAI Realtime HTTP negotiation via application/sdp
     // Build endpoint: switch any '/sessions' suffix to base '/realtime' and append model query
     const base = this.endpoint.replace(/\/sessions$/, '');
-    const url = `${base}?model=${encodeURIComponent(this.model)}`;
+    const voice = this.sessionConfig?.voice;
+    const url = `${base}?model=${encodeURIComponent(this.model)}${voice ? `&voice=${encodeURIComponent(voice)}` : ''}`;
 
     const response = await this.fetchFn(url, {
       method: 'POST',
