@@ -1156,6 +1156,8 @@ export default function App() {
     async (event: ChangeEvent<HTMLSelectElement>) => {
       const value = event.target.value;
       setSelectedVoice(value || 'verse');
+      // Optimistically reflect server voice in UI; server may not emit session.updated immediately
+      setServerVoice(value || 'verse');
       try {
         await persistPreferences({
           audioInputDeviceId: selectedInput || undefined,
@@ -1254,6 +1256,10 @@ export default function App() {
           : undefined,
       } as const;
       realtimeClient.updateSessionConfig(payload);
+      // Keep the displayed server voice in sync even if the server doesn't immediately ack
+      if (payload.voice) {
+        setServerVoice(payload.voice);
+      }
       console.info(
         `[RealtimeClient] Applied session config on connect ${JSON.stringify({
           voice: payload.voice,
