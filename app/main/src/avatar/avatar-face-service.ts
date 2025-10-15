@@ -140,6 +140,8 @@ export class AvatarFaceService {
       throw new Error('An image data URL is required to upload an avatar face.');
     }
 
+    const imageBase64 = this.extractBase64Payload(imageDataUrl);
+
     const body = {
       model: 'gpt-4.1-mini',
       input: [
@@ -163,7 +165,7 @@ export class AvatarFaceService {
                 'Produce layered assets sized consistently with the source image. Ensure components are centered and share a '
                 + 'transparent background so they can be composited for animation.',
             },
-            { type: 'input_image', image_url: imageDataUrl },
+            { type: 'input_image', image_base64: imageBase64 },
           ],
         },
       ],
@@ -348,5 +350,26 @@ export class AvatarFaceService {
     }
 
     throw new Error('OpenAI response does not contain text output.');
+  }
+
+  private extractBase64Payload(imageDataUrl: string): string {
+    const DATA_URL_PATTERN = /^data:(?<mime>[^;,]+)?;base64,(?<payload>.*)$/s;
+    const match = DATA_URL_PATTERN.exec(imageDataUrl.trim());
+
+    if (!match) {
+      throw new Error('Avatar image data URL is malformed; expected base64-encoded data.');
+    }
+
+    const payloadGroup = match.groups?.payload;
+    if (payloadGroup === undefined) {
+      throw new Error('Avatar image data URL is malformed; expected base64-encoded data.');
+    }
+
+    const payload = payloadGroup.replace(/\s+/g, '').trim();
+    if (!payload) {
+      throw new Error('Avatar image data URL is missing image data.');
+    }
+
+    return payload;
   }
 }
