@@ -141,7 +141,8 @@ export class AvatarFaceService {
     }
 
     const body = {
-      model: 'gpt-4.1-mini',
+      // Use a vision-capable, low-latency model for image inputs
+      model: 'gpt-4o-mini',
       input: [
         {
           role: 'system',
@@ -169,7 +170,7 @@ export class AvatarFaceService {
       ],
       response_format: {
         type: 'json_schema',
-        json_schema: RESPONSE_SCHEMA_DEFINITION,
+        json_schema: { ...RESPONSE_SCHEMA_DEFINITION, schema: { ...RESPONSE_SCHEMA_DEFINITION.schema }, strict: true },
       },
     };
 
