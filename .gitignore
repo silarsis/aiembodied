@@ -6,3 +6,6 @@ coverage
 playwright-report
 test-results
 .env
+
+# Logs
+*.log
