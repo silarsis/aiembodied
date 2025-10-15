@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
-import { existsSync, writeFileSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { resolve, join, parse } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 function run(cmd, args, options = {}) {
   return new Promise((resolvePromise, reject) => {
@@ -12,6 +13,43 @@ function run(cmd, args, options = {}) {
     });
     child.on('error', reject);
   });
+}
+
+export function prepareDevHomeEnv(repoRoot, baseEnv = process.env, platform = process.platform) {
+  const devHome = resolve(repoRoot, '.dev-home');
+  const roamingAppData = join(devHome, 'AppData', 'Roaming');
+  const localAppData = join(devHome, 'AppData', 'Local');
+  const npmCache = join(devHome, '.npm-cache');
+  const electronBuilderCache = join(devHome, 'electron-builder-cache');
+
+  for (const dir of [devHome, roamingAppData, localAppData, npmCache, electronBuilderCache]) {
+    mkdirSync(dir, { recursive: true });
+  }
+
+  const envIsolated = {
+    ...baseEnv,
+    HOME: devHome,
+    USERPROFILE: devHome,
+    APPDATA: roamingAppData,
+    LOCALAPPDATA: localAppData,
+    npm_config_cache: npmCache,
+    ELECTRON_BUILDER_CACHE: electronBuilderCache,
+    NO_UPDATE_NOTIFIER: '1',
+    npm_config_update_notifier: 'false',
+  };
+
+  if (platform === 'win32') {
+    const { root } = parse(devHome);
+    if (root && root !== '/') {
+      envIsolated.HOMEDRIVE = root.replace(/\\$/, '');
+      envIsolated.HOMEPATH = devHome.slice(root.length) || '\\';
+    } else {
+      envIsolated.HOMEDRIVE = devHome;
+      envIsolated.HOMEPATH = devHome;
+    }
+  }
+
+  return envIsolated;
 }
 
 async function main() {
@@ -72,18 +110,7 @@ forward('info', 'preload-shim:starting');
   // Rebuild native deps for Electron runtime (ensures better-sqlite3/keytar ABI matches Electron)
   console.log('[info] Rebuilding native dependencies for Electron...');
   // Isolate HOME/APPDATA to avoid EPERM scandir on Windows junctions like "Application Data"
-  const devHome = resolve(repoRoot, '.dev-home');
-  const envIsolated = {
-    ...process.env,
-    HOME: devHome,
-    USERPROFILE: devHome,
-    APPDATA: join(devHome, 'AppData', 'Roaming'),
-    LOCALAPPDATA: join(devHome, 'AppData', 'Local'),
-    npm_config_cache: join(devHome, '.npm-cache'),
-    ELECTRON_BUILDER_CACHE: join(devHome, 'electron-builder-cache'),
-    NO_UPDATE_NOTIFIER: '1',
-    npm_config_update_notifier: 'false',
-  };
+  const envIsolated = prepareDevHomeEnv(repoRoot);
   await run('pnpm', ['--filter', '@aiembodied/main', 'exec', 'electron-builder', 'install-app-deps'], { env: envIsolated });
 
   // Launch Electron with compiled main
@@ -92,8 +119,14 @@ forward('info', 'preload-shim:starting');
   await run('pnpm', ['--filter', '@aiembodied/main', 'exec', 'electron', 'dist/main.js'], { env });
 }
 
-main().catch((err) => {
-  console.error(err?.stack || String(err));
-  process.exit(1);
-});
+const invokedDirectly = Boolean(
+  process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url,
+);
+
+if (invokedDirectly) {
+  main().catch((err) => {
+    console.error(err?.stack || String(err));
+    process.exit(1);
+  });
+}
 
