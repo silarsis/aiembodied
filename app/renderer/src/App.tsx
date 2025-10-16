@@ -1198,19 +1198,30 @@ export default function App() {
   const handleVoiceChange = useCallback(
     async (event: ChangeEvent<HTMLSelectElement>) => {
       const value = event.target.value;
-      setSelectedVoice(value || DEFAULT_VOICE);
+      const nextVoice = value || DEFAULT_VOICE;
+      setSelectedVoice(nextVoice);
       // Optimistically reflect server voice in UI; server may not emit session.updated immediately
-      setServerVoice(value || DEFAULT_VOICE);
+      setServerVoice(nextVoice);
       try {
         await persistPreferences({
           audioInputDeviceId: selectedInput || undefined,
           audioOutputDeviceId: selectedOutput || undefined,
-          realtimeVoice: value || undefined,
+          realtimeVoice: nextVoice || undefined,
         });
-        realtimeClient?.updateSessionConfig({ voice: value || undefined });
+        realtimeClient?.updateSessionConfig({ voice: nextVoice || undefined });
         if (realtimeClient && realtimeKey && audioGraph.upstreamStream) {
+          console.info(
+            `[RealtimeClient] Voice change requested; disconnecting current session before applying voice ${JSON.stringify({ voice: nextVoice })}`,
+          );
           await realtimeClient.disconnect();
-          void realtimeClient.connect({ apiKey: realtimeKey, inputStream: audioGraph.upstreamStream });
+          console.info(
+            `[RealtimeClient] Voice change reconnect initiated with ${JSON.stringify({ voice: nextVoice })}`,
+          );
+          void realtimeClient
+            .connect({ apiKey: realtimeKey, inputStream: audioGraph.upstreamStream })
+            .catch((error) => {
+              console.error('[RealtimeClient] Voice change reconnect failed', error);
+            });
         }
       } catch (error) {
         console.error('Failed to persist realtime voice preference', error);
