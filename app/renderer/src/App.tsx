@@ -69,6 +69,19 @@ const SECRET_METADATA: Record<
   },
 };
 
+const STATIC_VOICE_OPTIONS: readonly string[] = [
+  'alloy',
+  'ash',
+  'ballad',
+  'coral',
+  'echo',
+  'sage',
+  'shimmer',
+  'verse',
+] as const;
+
+const DEFAULT_VOICE = 'verse';
+
 function toTranscriptSpeaker(role: string): TranscriptSpeaker | null {
   if (role === 'system' || role === 'user' || role === 'assistant') {
     return role;
@@ -668,23 +681,43 @@ export default function App() {
   const [selectedOutput, setSelectedOutput] = useState('');
   const DEFAULT_PROMPT =
     'You are an English-speaking assistant. Always respond in concise English. Do not switch languages unless explicitly instructed.';
-  const [availableVoices, setAvailableVoices] = useState<string[]>([
-    'alloy',
-    'ash',
-    'ballad',
-    'coral',
-    'echo',
-    'sage',
-    'shimmer',
-    'verse',
-  ]);
-  const [selectedVoice, setSelectedVoice] = useState<string>('verse');
+  const [selectedVoice, setSelectedVoice] = useState<string>(DEFAULT_VOICE);
   const [basePrompt, setBasePrompt] = useState<string>(DEFAULT_PROMPT);
   const [serverVoice, setServerVoice] = useState<string | null>(null);
   const [useServerVad, setUseServerVad] = useState<boolean>(true);
   const [vadThreshold, setVadThreshold] = useState<number>(0.85);
   const [vadSilenceMs, setVadSilenceMs] = useState<number>(600);
   const [vadMinSpeechMs, setVadMinSpeechMs] = useState<number>(400);
+
+  const availableVoices = useMemo(() => {
+    const base = [...STATIC_VOICE_OPTIONS];
+    const extras = new Set<string>();
+
+    const appendVoice = (voice: string | null | undefined) => {
+      if (typeof voice !== 'string') {
+        return;
+      }
+
+      const normalized = voice.trim();
+      if (!normalized) {
+        return;
+      }
+
+      if (!STATIC_VOICE_OPTIONS.includes(normalized)) {
+        extras.add(normalized);
+      }
+    };
+
+    appendVoice(config?.realtimeVoice ?? null);
+    appendVoice(serverVoice);
+
+    if (extras.size === 0) {
+      return base;
+    }
+
+    const extraVoices = Array.from(extras).sort((a, b) => a.localeCompare(b));
+    return [...base, ...extraVoices];
+  }, [config?.realtimeVoice, serverVoice]);
 
   const configInputDeviceId = config?.audioInputDeviceId ?? '';
   const configOutputDeviceId = config?.audioOutputDeviceId ?? '';
@@ -1165,9 +1198,9 @@ export default function App() {
   const handleVoiceChange = useCallback(
     async (event: ChangeEvent<HTMLSelectElement>) => {
       const value = event.target.value;
-      setSelectedVoice(value || 'verse');
+      setSelectedVoice(value || DEFAULT_VOICE);
       // Optimistically reflect server voice in UI; server may not emit session.updated immediately
-      setServerVoice(value || 'verse');
+      setServerVoice(value || DEFAULT_VOICE);
       try {
         await persistPreferences({
           audioInputDeviceId: selectedInput || undefined,
@@ -1236,7 +1269,11 @@ export default function App() {
 
   // Initialize voice/prompt/VAD from config
   useEffect(() => {
-    setSelectedVoice(config?.realtimeVoice || 'verse');
+    const persistedVoice =
+      typeof config?.realtimeVoice === 'string' && config.realtimeVoice.trim().length > 0
+        ? config.realtimeVoice
+        : DEFAULT_VOICE;
+    setSelectedVoice(persistedVoice);
     setBasePrompt(
       config?.sessionInstructions && config.sessionInstructions.length > 0
         ? config.sessionInstructions
@@ -1318,40 +1355,11 @@ export default function App() {
     }
   }, [realtimeClient, realtimeKey, audioGraph.upstreamStream]);
 
-  // Fetch allowed voices for the active model, fallback to defaults
   useEffect(() => {
-    let cancelled = false;
-    const model = config?.realtimeModel || 'gpt-4o-realtime-preview-2024-12-17';
-    if (!realtimeKey) return;
-    (async () => {
-      try {
-        const url = `https://api.openai.com/v1/realtime/voices?model=${encodeURIComponent(model)}`;
-        const resp = await fetch(url, {
-          headers: {
-            Authorization: `Bearer ${realtimeKey}`,
-            'OpenAI-Beta': 'realtime=v1',
-          },
-        });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const json = (await resp.json()) as { data?: Array<{ id?: string }> };
-        const ids = (json.data ?? [])
-          .map((v) => (typeof v.id === 'string' ? v.id : ''))
-          .filter((id) => id)
-          .sort();
-        if (!cancelled && ids.length > 0) {
-          setAvailableVoices(ids);
-          const nextVoice = ids.includes(selectedVoice) ? selectedVoice : ids[0];
-          setSelectedVoice(nextVoice);
-          console.info('[RealtimeClient] Loaded voices for model', { model, count: ids.length });
-        }
-      } catch (error) {
-        console.warn('[RealtimeClient] Failed to fetch voices for model; using defaults', error);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [realtimeKey, config?.realtimeModel, selectedVoice]);
+    if (selectedVoice && !availableVoices.includes(selectedVoice)) {
+      setSelectedVoice(availableVoices[0] ?? DEFAULT_VOICE);
+    }
+  }, [availableVoices, selectedVoice]);
 
   const handleSecretInputChange = useCallback(
     (key: ConfigSecretKey) => (event: ChangeEvent<HTMLInputElement>) => {

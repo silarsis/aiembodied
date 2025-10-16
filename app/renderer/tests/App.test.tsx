@@ -194,6 +194,112 @@ describe('App component', () => {
     }
   });
 
+  it('renders the static realtime voice list without querying the API', async () => {
+    const fetchMock = vi.fn();
+    const originalFetch = global.fetch;
+    (globalThis as { fetch?: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      rendererConfig = {
+        ...rendererConfig,
+        realtimeVoice: 'verse',
+        hasRealtimeApiKey: true,
+      };
+      setAudioDevicePreferencesMock.mockResolvedValue(rendererConfig);
+
+      (window as PreloadWindow).aiembodied = {
+        ping: () => 'pong',
+        config: {
+          get: vi.fn().mockResolvedValue(rendererConfig),
+          getSecret: vi.fn().mockResolvedValue('secret'),
+          setAudioDevicePreferences: setAudioDevicePreferencesMock,
+          setSecret: setSecretMock,
+          testSecret: testSecretMock,
+        },
+        wakeWord: { onWake: () => () => {} },
+        avatar: createAvatarBridgeMock(),
+        __bridgeReady: true,
+        __bridgeVersion: '1.0.0',
+      } as unknown as PreloadWindow['aiembodied'];
+
+      render(<App />);
+
+      const select = (await screen.findByLabelText('Voice')) as HTMLSelectElement;
+      const optionValues = Array.from(select.options).map((option) => option.value);
+
+      expect(optionValues).toEqual(['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse']);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      (globalThis as { fetch?: typeof fetch }).fetch = originalFetch;
+    }
+  });
+
+  it('extends voice options with config and server supplied voices', async () => {
+    const fetchMock = vi.fn();
+    const originalFetch = global.fetch;
+    (globalThis as { fetch?: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      rendererConfig = {
+        ...rendererConfig,
+        realtimeVoice: 'config-custom',
+        hasRealtimeApiKey: true,
+      };
+      setAudioDevicePreferencesMock.mockResolvedValue(rendererConfig);
+
+      (window as { RTCPeerConnection?: typeof RTCPeerConnection }).RTCPeerConnection = vi
+        .fn()
+        .mockReturnValue({ addEventListener: vi.fn(), removeEventListener: vi.fn(), close: vi.fn() }) as unknown as typeof RTCPeerConnection;
+
+      (window as PreloadWindow).aiembodied = {
+        ping: () => 'pong',
+        config: {
+          get: vi.fn().mockResolvedValue(rendererConfig),
+          getSecret: vi.fn().mockResolvedValue('secret'),
+          setAudioDevicePreferences: setAudioDevicePreferencesMock,
+          setSecret: setSecretMock,
+          testSecret: testSecretMock,
+        },
+        wakeWord: { onWake: () => () => {} },
+        avatar: createAvatarBridgeMock(),
+        __bridgeReady: true,
+        __bridgeVersion: '1.0.0',
+      } as unknown as PreloadWindow['aiembodied'];
+
+      render(<App />);
+
+      const select = (await screen.findByLabelText('Voice')) as HTMLSelectElement;
+
+      await waitFor(() => {
+        expect(select.value).toBe('config-custom');
+      });
+
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      expect(realtimeClientInstances.length).toBeGreaterThan(0);
+      const client = realtimeClientInstances[realtimeClientInstances.length - 1];
+      client.callbacks.onSessionUpdated?.({ voice: 'server-special' });
+
+      await waitFor(() => {
+        const optionValues = Array.from(select.options).map((option) => option.value);
+        expect(optionValues).toEqual([
+          'alloy',
+          'ash',
+          'ballad',
+          'coral',
+          'echo',
+          'sage',
+          'shimmer',
+          'verse',
+          'config-custom',
+          'server-special',
+        ]);
+      });
+    } finally {
+      (globalThis as { fetch?: typeof fetch }).fetch = originalFetch;
+    }
+  });
+
   it('renders kiosk UI, toggles transcript overlay, and persists device preferences', async () => {
     (window as PreloadWindow).aiembodied = {
       ping: () => 'pong',
