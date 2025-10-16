@@ -43,6 +43,7 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 - Wake detection gates microphone streaming. Once active, the renderer’s Web Audio graph splits capture into (a) the WebRTC peer connection to OpenAI’s Realtime API and (b) the viseme driver for lip-sync.
 - The realtime client handles SDP negotiation, ICE management, jitter buffering, and barge-in semantics. Downstream TTS audio is decoded for playback while simultaneously feeding viseme computation at ~60 Hz.
 - Conversation turns and audio metadata are appended to the SQLite memory store so transcript overlays and future sessions can restore context on launch.
+- Renderer voice selection must use the baked-in voice list. Tests in `app/renderer/tests/App.test.tsx` assert the dropdown renders the static options and that no network fetch is attempted on mount; update the list and expectations together when adding or removing voices.
 
 ### Rendering & avatar
 - The initial avatar implementation is a Canvas/WebGL sprite renderer mapping viseme intensity to discrete mouth shapes and idle animations. Future Unity integration will consume the same `VisemeFrame` stream via IPC without altering upstream audio or persistence layers.
