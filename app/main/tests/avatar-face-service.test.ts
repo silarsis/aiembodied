@@ -204,11 +204,12 @@ describe('AvatarFaceService', () => {
 
     await expect(
       service.uploadFace({ name: 'Broken', imageDataUrl: 'data:image/png;base64,ZmFpbA==' }),
-    ).rejects.toThrow('OpenAI response request failed with status 500');
+    ).rejects.toThrow('OpenAI response request failed with status 500: server error');
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(logger.error).toHaveBeenCalledWith('OpenAI response request failed with status 500', {
       status: 500,
+      body: 'server error',
     });
   });
 
