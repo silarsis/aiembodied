@@ -131,6 +131,10 @@ describe('AvatarFaceService', () => {
     const imagePayload = requestBody?.input?.[1]?.content?.[1];
     expect(systemPayload).toMatchObject({ type: 'input_text' });
     expect(imagePayload).toEqual({ type: 'input_image', image_base64: 'aGVsbG8=' });
+    expect(requestBody?.modalities).toEqual(['text']);
+    const textResponse = requestBody?.text;
+    expect(textResponse).toMatchObject({ format: 'json_schema' });
+    expect(textResponse?.schema).toMatchObject({ name: 'AvatarComponents' });
   });
 
   it('lists faces and manages active selection lifecycle', async () => {
