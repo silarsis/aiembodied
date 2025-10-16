@@ -127,8 +127,14 @@ describe('AvatarFaceService', () => {
 
     expect(requests).toHaveLength(1);
     const requestBody = requests[0] as Record<string, any>;
+    const systemPayload = requestBody?.input?.[0]?.content?.[0];
     const imagePayload = requestBody?.input?.[1]?.content?.[1];
+    const responseFormat = requestBody?.response?.text;
+    expect(systemPayload).toMatchObject({ type: 'input_text' });
     expect(imagePayload).toEqual({ type: 'input_image', image_base64: 'aGVsbG8=' });
+    expect(requestBody?.response?.modalities).toEqual(['text']);
+    expect(responseFormat).toMatchObject({ format: 'json_schema' });
+    expect(responseFormat?.schema).toMatchObject({ name: 'AvatarComponents' });
   });
 
   it('lists faces and manages active selection lifecycle', async () => {
@@ -202,11 +208,12 @@ describe('AvatarFaceService', () => {
 
     await expect(
       service.uploadFace({ name: 'Broken', imageDataUrl: 'data:image/png;base64,ZmFpbA==' }),
-    ).rejects.toThrow('OpenAI response request failed with status 500');
+    ).rejects.toThrow('OpenAI response request failed with status 500: server error');
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(logger.error).toHaveBeenCalledWith('OpenAI response request failed with status 500', {
       status: 500,
+      body: 'server error',
     });
   });
 
