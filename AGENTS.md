@@ -23,6 +23,9 @@ Run these commands from the repository root unless a task specifies otherwise:
 - `pnpm test` — execute automated unit/integration tests.
 - `pnpm build` — (as needed) validate production builds for Electron targets.
 
+### OpenAI Responses API usage
+- When crafting requests, ensure every content chunk conforms to the Responses API schema (e.g., text prompts must use `{ type: 'input_text', text: '...' }`).
+
 Document any deviations or additional checks in your PR description, especially if a module introduces new tooling.
 
 ## Architectural Decisions
