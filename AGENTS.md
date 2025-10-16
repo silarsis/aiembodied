@@ -80,3 +80,4 @@ Keep this checklist accurate; it is the authoritative tracker for execution stat
 - 2025-10-26 — Isolated run-dev Electron rebuild environment to avoid Windows Application Data permission errors and added regression test.
 - 2025-10-27 — Validated avatar face upload requests send base64 payloads to OpenAI and added regression tests for malformed data URLs.
 - 2025-10-28 — Ensured realtime voice preference priming happens before session connect and added regression coverage for voice handshakes.
+- 2025-10-29 — Added renderer regression coverage for realtime session prompt synchronization and updated kiosk UI to mirror server instructions.
