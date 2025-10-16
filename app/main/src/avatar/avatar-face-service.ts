@@ -170,9 +170,12 @@ export class AvatarFaceService {
           ],
         },
       ],
-      text: {
-        format: 'json_schema',
-        schema: RESPONSE_SCHEMA_DEFINITION,
+      response: {
+        modalities: ['text'],
+        text: {
+          format: 'json_schema',
+          schema: RESPONSE_SCHEMA_DEFINITION,
+        },
       },
     } as const;
 

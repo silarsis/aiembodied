@@ -39,10 +39,11 @@ class FakePeerConnection {
   });
   readonly close = vi.fn();
   private readonly receiver = new FakeReceiver();
-  private readonly dataChannel = {
+  readonly dataChannel = {
     readyState: 'open' as RTCDataChannelState,
     send: vi.fn(),
     close: vi.fn(),
+    onopen: null as ((this: RTCDataChannel, ev: Event) => void) | null,
   };
 
   createDataChannel() {
@@ -121,7 +122,14 @@ describe('RealtimeClient', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const requestInit = fetchMock.mock.calls[0]?.[1];
     expect(requestInit).toBeDefined();
-    expect(requestInit?.body).toBe('fake-offer');
+    expect(requestInit?.body).toBeInstanceOf(FormData);
+    const formData = requestInit?.body as FormData;
+    expect(formData.get('sdp')).toBe('fake-offer');
+    const sessionPayloadRaw = formData.get('session');
+    expect(sessionPayloadRaw).toBeTypeOf('string');
+    const sessionPayload = JSON.parse(sessionPayloadRaw as string) as Record<string, unknown>;
+    expect(sessionPayload).toMatchObject({ type: 'realtime', model: 'gpt-4o-realtime-preview-2024-12-17' });
+    expect(sessionPayload).not.toHaveProperty('audio');
 
     const peer = peers[0];
     expect(peer.addTrack).toHaveBeenCalled();
@@ -141,9 +149,32 @@ describe('RealtimeClient', () => {
     await client.connect({ apiKey: 'test-key', inputStream: stream });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const requestUrl = fetchMock.mock.calls[0]?.[0];
-    expect(requestUrl).toBeDefined();
-    expect(String(requestUrl)).toContain('voice=alloy');
+    const requestInit = fetchMock.mock.calls[0]?.[1];
+    expect(requestInit?.body).toBeInstanceOf(FormData);
+    const formData = requestInit?.body as FormData;
+    const sessionPayloadRaw = formData.get('session');
+    expect(sessionPayloadRaw).toBeTypeOf('string');
+    const sessionPayload = JSON.parse(sessionPayloadRaw as string) as { audio?: { output?: { voice?: string } } };
+    expect(sessionPayload.audio?.output?.voice).toBe('alloy');
+    expect(formData.get('sdp')).toBe('fake-offer');
+  });
+
+  it('omits voice from session.update payloads', async () => {
+    const stream = new FakeMediaStream() as unknown as MediaStream;
+
+    client.updateSessionConfig({ voice: 'alloy', instructions: 'Be helpful' });
+
+    await client.connect({ apiKey: 'test-key', inputStream: stream });
+
+    const peer = peers[0];
+    const sendCalls = peer.dataChannel.send.mock.calls;
+    expect(sendCalls.length).toBeGreaterThan(0);
+    const payloads = sendCalls.map((call) => JSON.parse(call[0] as string) as { session: Record<string, unknown> });
+    expect(payloads.some((payload) => payload.session.instructions === 'Be helpful')).toBe(true);
+    payloads.forEach((payload) => {
+      expect(payload.session).not.toHaveProperty('voice');
+      expect(((payload.session as { audio?: unknown }).audio as Record<string, unknown> | undefined)?.output).toBeUndefined();
+    });
   });
 
   it('retries connection when the peer disconnects', async () => {

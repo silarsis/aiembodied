@@ -104,7 +104,7 @@ export class RealtimeClient {
   private sessionConfig?: RealtimeClientOptions['sessionConfig'];
 
   constructor(options: RealtimeClientOptions = {}) {
-    this.endpoint = options.endpoint ?? 'https://api.openai.com/v1/realtime/sessions';
+    this.endpoint = options.endpoint ?? 'https://api.openai.com/v1/realtime/calls';
     this.model = options.model ?? 'gpt-4o-realtime-preview-2024-12-17';
     this.fetchFn = options.fetchFn ?? window.fetch.bind(window);
     this.createPeerConnectionFn = options.createPeerConnection ?? ((config?: RTCConfiguration) => new RTCPeerConnection(config));
@@ -159,6 +159,11 @@ export class RealtimeClient {
     this.reconnectAttempts = 0;
     this.shouldReconnect = true;
 
+    this.log('info', 'Realtime connect requested', {
+      hasStream: Boolean(options.inputStream),
+      hasIceServers: Boolean(options.iceServers?.length),
+    });
+
     this.updateState({ status: 'connecting' });
 
     try {
@@ -177,6 +182,7 @@ export class RealtimeClient {
     this.currentStream = null;
     this.currentApiKey = null;
     this.currentIceServers = null;
+    this.log('info', 'Realtime disconnect requested');
     this.cleanupPeer();
     this.updateState({ status: 'idle' });
   }
@@ -256,7 +262,17 @@ export class RealtimeClient {
             const type = (payload as { type?: string }).type;
             if (type === 'session.updated' || type === 'session.update') {
               const session = (payload as { session?: Record<string, unknown> }).session ?? {};
-              const voice = typeof session['voice'] === 'string' ? (session['voice'] as string) : undefined;
+              const audio = session && typeof session === 'object' ? ((session as { audio?: unknown }).audio as unknown) : undefined;
+              const audioOutput =
+                audio && typeof audio === 'object'
+                  ? ((audio as { output?: unknown }).output as { voice?: unknown } | undefined)
+                  : undefined;
+              const voice =
+                typeof session['voice'] === 'string'
+                  ? (session['voice'] as string)
+                  : typeof audioOutput?.voice === 'string'
+                  ? (audioOutput.voice as string)
+                  : undefined;
               const instructions = typeof session['instructions'] === 'string' ? (session['instructions'] as string) : undefined;
               const td = session['turn_detection'] as { type?: string } | undefined;
               const turnDetection = td && typeof td.type === 'string' ? td.type : undefined;
@@ -280,20 +296,18 @@ export class RealtimeClient {
     const offer = await peer.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
     await peer.setLocalDescription(offer);
 
-    // Use OpenAI Realtime HTTP negotiation via application/sdp
-    // Build endpoint: switch any '/sessions' suffix to base '/realtime' and append model query
-    const base = this.endpoint.replace(/\/sessions$/, '');
-    const voice = this.sessionConfig?.voice;
-    const url = `${base}?model=${encodeURIComponent(this.model)}${voice ? `&voice=${encodeURIComponent(voice)}` : ''}`;
+    const sessionDescriptor = this.buildSessionDescriptor();
+    const formData = new FormData();
+    formData.set('sdp', offer.sdp ?? '');
+    formData.set('session', JSON.stringify(sessionDescriptor));
 
-    const response = await this.fetchFn(url, {
+    const response = await this.fetchFn(this.endpoint, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/sdp',
         'OpenAI-Beta': 'realtime=v1',
       },
-      body: offer.sdp,
+      body: formData,
     });
 
     if (!response.ok) {
@@ -309,9 +323,6 @@ export class RealtimeClient {
 
     const answerSdp = await response.text();
     await peer.setRemoteDescription({ type: 'answer', sdp: answerSdp });
-    if (this.controlChannel && this.controlChannel.readyState === 'open') {
-      this.sendSessionUpdate();
-    }
     if (this.controlChannel && this.controlChannel.readyState === 'open') {
       this.sendSessionUpdate();
     }
@@ -334,10 +345,6 @@ export class RealtimeClient {
       session.instructions = this.sessionConfig.instructions;
     }
 
-    if (this.sessionConfig?.voice) {
-      session.voice = this.sessionConfig.voice;
-    }
-
     if (this.sessionConfig?.turnDetection === 'none') {
       session.turn_detection = { type: 'none' };
     } else if (this.sessionConfig?.turnDetection === 'server_vad') {
@@ -356,11 +363,53 @@ export class RealtimeClient {
     }
 
     try {
+      if (Object.keys(session).length === 0) {
+        return;
+      }
+
       this.controlChannel.send(JSON.stringify(payload));
       this.log('info', 'Sent session.update to realtime API', payload);
     } catch (error) {
       this.log('warn', 'Failed to send session.update', error);
     }
+  }
+
+  private buildSessionDescriptor(): Record<string, unknown> {
+    const descriptor: Record<string, unknown> = {
+      type: 'realtime',
+      model: this.model,
+    };
+
+    if (this.sessionConfig?.instructions) {
+      descriptor.instructions = this.sessionConfig.instructions;
+    }
+
+    if (this.sessionConfig?.turnDetection === 'none') {
+      descriptor.turn_detection = { type: 'none' };
+    } else if (this.sessionConfig?.turnDetection === 'server_vad') {
+      descriptor.turn_detection = {
+        type: 'server_vad',
+        ...(typeof this.sessionConfig.vad?.threshold === 'number'
+          ? { threshold: this.sessionConfig.vad.threshold }
+          : {}),
+        ...(typeof this.sessionConfig.vad?.silenceDurationMs === 'number'
+          ? { silence_duration_ms: this.sessionConfig.vad.silenceDurationMs }
+          : {}),
+        ...(typeof this.sessionConfig.vad?.minSpeechDurationMs === 'number'
+          ? { min_speech_duration_ms: this.sessionConfig.vad.minSpeechDurationMs }
+          : {}),
+      };
+    }
+
+    if (this.sessionConfig?.voice) {
+      descriptor.audio = {
+        output: {
+          voice: this.sessionConfig.voice,
+        },
+      };
+    }
+
+    return descriptor;
   }
 
   private handleRemoteTrack(event: RTCTrackEvent): void {

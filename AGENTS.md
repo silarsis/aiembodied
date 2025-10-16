@@ -26,6 +26,7 @@ Run these commands from the repository root unless a task specifies otherwise:
 ### OpenAI Responses API usage
 - When crafting requests, ensure every content chunk conforms to the Responses API schema (e.g., text prompts must use `{ type: 'input_text', text: '...' }`).
 - Structured outputs must set the top-level `modalities` array (e.g., `['text']`) and configure `text: { format: 'json_schema', schema: <definition> }`. Do not send the deprecated `response_format` field or the unsupported `response` wrapper.
+- Structured outputs must use the modern `response` object. For JSON-schema responses, set `response: { modalities: ['text'], text: { format: 'json_schema', schema: <definition> } }` instead of the legacy `response_format` field.
 
 Document any deviations or additional checks in your PR description, especially if a module introduces new tooling.
 
@@ -57,3 +58,8 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 - Avatar face generation requests must log non-2xx OpenAI responses with status metadata and the trimmed, truncated response body (max 500 characters) to aid debugging while preventing log bloat.
 - Electron Builder packages the kiosk app with auto-launch hooks. Device setup scripts and systemd instructions live in the repo to support deployment on Intel N100-class mini PCs.
 - Development relies on pnpm workspaces, ESLint/Prettier, Vitest, and Playwright smoke tests; CI must keep `pnpm lint`, `pnpm typecheck`, and `pnpm test` green to honor the plan’s gating criteria.
+
+## Recent Updates
+
+- 2025-02-14 — Realtime voice preference changes now emit explicit console instrumentation (`[RealtimeClient] Voice change …`) before disconnecting and after reconnecting. Watch for these logs when validating that a new session was negotiated for a voice swap.
+- 2025-02-15 — Realtime sessions are negotiated via `POST /v1/realtime/calls` with a `FormData` payload containing the SDP offer and a `session` JSON blob (`{ type: 'realtime', model, audio: { output: { voice }}}`). Voice preferences are only applied during this handshake; `session.update` messages now exclude the `voice` field per OpenAI guidance.

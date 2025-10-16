@@ -113,6 +113,7 @@ describe('App component', () => {
   const originalMediaDevices = navigator.mediaDevices;
   const originalConsoleError = console.error;
   const originalConsoleWarn = console.warn;
+  const originalConsoleInfo = console.info;
   const originalConsoleDebug = console.debug;
   const originalPeerConnection = window.RTCPeerConnection;
 
@@ -146,6 +147,7 @@ describe('App component', () => {
       audioOutputDeviceId: '',
       featureFlags: { transcriptOverlay: true },
       hasRealtimeApiKey: true,
+      realtimeVoice: 'verse',
       metrics: {
         enabled: false,
         host: '127.0.0.1',
@@ -171,6 +173,7 @@ describe('App component', () => {
     wakeListener = undefined;
     console.error = vi.fn();
     console.warn = vi.fn();
+    console.info = vi.fn();
     console.debug = vi.fn();
     Reflect.deleteProperty(window as { RTCPeerConnection?: typeof RTCPeerConnection }, 'RTCPeerConnection');
   });
@@ -186,6 +189,7 @@ describe('App component', () => {
     testSecretMock.mockReset();
     console.error = originalConsoleError;
     console.warn = originalConsoleWarn;
+    console.info = originalConsoleInfo;
     console.debug = originalConsoleDebug;
     if (originalPeerConnection) {
       (window as { RTCPeerConnection?: typeof RTCPeerConnection }).RTCPeerConnection = originalPeerConnection;
@@ -852,5 +856,87 @@ describe('App component', () => {
     await waitFor(() => {
       expect(screen.getByText(/Renderer preload API is unavailable/i)).toBeInTheDocument();
     });
+  });
+
+  it('logs realtime disconnect and reconnect when voice preference changes', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [] }) } as Response);
+    const originalFetch = (globalThis as { fetch?: typeof fetch }).fetch;
+    (globalThis as { fetch?: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
+
+    (window as PreloadWindow).aiembodied = {
+      ping: () => 'pong',
+      config: {
+        get: vi.fn().mockResolvedValue({
+          audioInputDeviceId: '',
+          audioOutputDeviceId: '',
+          featureFlags: {},
+          hasRealtimeApiKey: true,
+          realtimeVoice: 'verse',
+          wakeWord: {
+            keywordPath: '',
+            keywordLabel: '',
+            sensitivity: 0.5,
+            minConfidence: 0.5,
+            cooldownMs: 1500,
+            deviceIndex: undefined,
+            modelPath: undefined,
+            hasAccessKey: true,
+          },
+        }),
+        getSecret: vi.fn().mockResolvedValue('secret'),
+        setAudioDevicePreferences: setAudioDevicePreferencesMock,
+        setSecret: setSecretMock,
+        testSecret: testSecretMock,
+      },
+      wakeWord: { onWake: () => () => {} },
+      avatar: createAvatarBridgeMock(),
+      __bridgeReady: true,
+      __bridgeVersion: '1.0.0',
+    } as unknown as PreloadWindow['aiembodied'];
+
+    (window as { RTCPeerConnection?: typeof RTCPeerConnection }).RTCPeerConnection = vi
+      .fn()
+      .mockReturnValue({ addEventListener: vi.fn(), removeEventListener: vi.fn(), close: vi.fn() }) as unknown as typeof RTCPeerConnection;
+
+    try {
+      render(<App />);
+
+      await waitFor(() => {
+        expect(realtimeClientInstances.length).toBeGreaterThan(0);
+      });
+
+      const instance = realtimeClientInstances[realtimeClientInstances.length - 1];
+      const initialConnectCalls = instance.connect.mock.calls.length;
+      const initialDisconnectCalls = instance.disconnect.mock.calls.length;
+
+      const voiceSelect = (await screen.findByLabelText('Voice')) as HTMLSelectElement;
+      fireEvent.change(voiceSelect, { target: { value: 'ash' } });
+
+      await waitFor(() => {
+        expect(instance.disconnect.mock.calls.length).toBeGreaterThan(initialDisconnectCalls);
+      });
+
+      await waitFor(() => {
+        expect(instance.connect.mock.calls.length).toBeGreaterThan(initialConnectCalls);
+      });
+
+      const infoCalls = (console.info as unknown as ReturnType<typeof vi.fn>).mock.calls;
+      expect(
+        infoCalls.some(
+          (call) => typeof call[0] === 'string' && call[0].includes('Voice change requested; disconnecting current session'),
+        ),
+      ).toBe(true);
+      expect(
+        infoCalls.some(
+          (call) => typeof call[0] === 'string' && call[0].includes('Voice change reconnect initiated with'),
+        ),
+      ).toBe(true);
+    } finally {
+      if (originalFetch) {
+        (globalThis as { fetch?: typeof fetch }).fetch = originalFetch;
+      } else {
+        Reflect.deleteProperty(globalThis as { fetch?: typeof fetch }, 'fetch');
+      }
+    }
   });
 });
