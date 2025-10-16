@@ -938,6 +938,18 @@ export default function App() {
   const previousSpeechActiveRef = useRef(audioGraph.isActive);
 
   useEffect(() => {
+    if (!realtimeClient || loadingConfig) {
+      return;
+    }
+
+    try {
+      realtimeClient.updateSessionConfig({ voice: selectedVoice || undefined });
+    } catch (error) {
+      console.warn('[RealtimeClient] Failed to stage voice preference before connect', error);
+    }
+  }, [realtimeClient, selectedVoice, loadingConfig]);
+
+  useEffect(() => {
     const bridge = resolveApi();
     if (!bridge || !hasRealtimeApiKey || !hasRealtimeSupport) {
       setRealtimeKey(null);

@@ -79,3 +79,4 @@ Keep this checklist accurate; it is the authoritative tracker for execution stat
 - 2025-10-25 — Hardened Windows setup script to fall back to user-level pnpm provisioning when Corepack lacks permissions.
 - 2025-10-26 — Isolated run-dev Electron rebuild environment to avoid Windows Application Data permission errors and added regression test.
 - 2025-10-27 — Validated avatar face upload requests send base64 payloads to OpenAI and added regression tests for malformed data URLs.
+- 2025-10-28 — Ensured realtime voice preference priming happens before session connect and added regression coverage for voice handshakes.
