@@ -185,8 +185,30 @@ export class AvatarFaceService {
     });
 
     if (!response.ok) {
-      const message = `OpenAI response request failed with status ${response.status}`;
-      this.logger?.error?.(message, { status: response.status });
+      let bodyText = '';
+      try {
+        const cloned = response.clone?.();
+        bodyText = ((await cloned?.text()) ?? '').trim();
+      } catch (error) {
+        this.logger?.error?.('Failed to read OpenAI error response body.', {
+          status: response.status,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      const MAX_LOG_LENGTH = 500;
+      const truncatedBody =
+        bodyText.length > MAX_LOG_LENGTH
+          ? `${bodyText.slice(0, MAX_LOG_LENGTH - 3)}...`
+          : bodyText;
+
+      const baseMessage = `OpenAI response request failed with status ${response.status}`;
+      const message = truncatedBody ? `${baseMessage}: ${truncatedBody}` : baseMessage;
+
+      this.logger?.error?.(baseMessage, {
+        status: response.status,
+        body: truncatedBody || undefined,
+      });
       throw new Error(message);
     }
 

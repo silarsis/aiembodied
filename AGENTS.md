@@ -50,5 +50,6 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 
 ### Observability, packaging, and environment
 - Winston logging (with rolling files) captures lifecycle diagnostics across processes, supplemented by optional Prometheus metrics exporters for latency tracking.
+- Avatar face generation requests must log non-2xx OpenAI responses with status metadata and the trimmed, truncated response body (max 500 characters) to aid debugging while preventing log bloat.
 - Electron Builder packages the kiosk app with auto-launch hooks. Device setup scripts and systemd instructions live in the repo to support deployment on Intel N100-class mini PCs.
 - Development relies on pnpm workspaces, ESLint/Prettier, Vitest, and Playwright smoke tests; CI must keep `pnpm lint`, `pnpm typecheck`, and `pnpm test` green to honor the plan’s gating criteria.
