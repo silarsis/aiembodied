@@ -8,6 +8,42 @@ import type {
 import type { RendererConfig } from '../../main/src/config/config-manager.js';
 import type { WakeWordDetectionEvent } from '../../main/src/wake-word/types.js';
 import type { AvatarBridge } from '../src/avatar/types.js';
+
+type MockRealtimeInstance = {
+  callbacks: {
+    onSessionUpdated?: (session: { voice?: string; instructions?: string; turnDetection?: string }) => void;
+  };
+  connect: ReturnType<typeof vi.fn>;
+  disconnect: ReturnType<typeof vi.fn>;
+  destroy: ReturnType<typeof vi.fn>;
+  bindRemoteAudioElement: ReturnType<typeof vi.fn>;
+  setJitterBufferMs: ReturnType<typeof vi.fn>;
+  updateSessionConfig: ReturnType<typeof vi.fn>;
+};
+
+const realtimeClientInstances: MockRealtimeInstance[] = [];
+
+vi.mock('../src/realtime/realtime-client.js', () => {
+  class MockRealtimeClient {
+    callbacks: MockRealtimeInstance['callbacks'];
+    connect = vi.fn().mockResolvedValue(undefined);
+    disconnect = vi.fn().mockResolvedValue(undefined);
+    destroy = vi.fn().mockResolvedValue(undefined);
+    bindRemoteAudioElement = vi.fn();
+    setJitterBufferMs = vi.fn();
+    updateSessionConfig = vi.fn();
+
+    constructor({ callbacks }: { callbacks?: MockRealtimeInstance['callbacks'] }) {
+      this.callbacks = callbacks ?? {};
+      realtimeClientInstances.push(this as unknown as MockRealtimeInstance);
+    }
+  }
+
+  return {
+    RealtimeClient: MockRealtimeClient,
+  };
+});
+
 import App from '../src/App.js';
 
 class MockMediaStream {
@@ -89,6 +125,7 @@ describe('App component', () => {
   let rendererConfig: RendererConfig;
 
   beforeEach(() => {
+    realtimeClientInstances.length = 0;
     (window as unknown as { AudioContext: typeof AudioContext }).AudioContext = MockAudioContext as unknown as typeof AudioContext;
     (navigator as Navigator & { mediaDevices: MediaDevices }).mediaDevices = {
       enumerateDevices: enumerateDevicesMock,
@@ -638,6 +675,69 @@ describe('App component', () => {
     });
 
     expect(within(wakePanel).getByText(/Invalid Porcupine access key/i)).toBeInTheDocument();
+  });
+
+  it('syncs the base prompt textarea with realtime session updates', async () => {
+    const DEFAULT_PROMPT =
+      'You are an English-speaking assistant. Always respond in concise English. Do not switch languages unless explicitly instructed.';
+
+    (window as PreloadWindow).aiembodied = {
+      ping: () => 'pong',
+      config: {
+        get: vi.fn().mockResolvedValue({
+          audioInputDeviceId: '',
+          audioOutputDeviceId: '',
+          featureFlags: {},
+          hasRealtimeApiKey: true,
+          realtimeVoice: 'verse',
+          sessionInstructions: 'Persisted instructions from config',
+          wakeWord: {
+            keywordPath: '',
+            keywordLabel: '',
+            sensitivity: 0.5,
+            minConfidence: 0.5,
+            cooldownMs: 1500,
+            deviceIndex: undefined,
+            modelPath: undefined,
+            hasAccessKey: true,
+          },
+        }),
+        getSecret: vi.fn().mockResolvedValue('secret'),
+        setAudioDevicePreferences: setAudioDevicePreferencesMock,
+        setSecret: setSecretMock,
+        testSecret: testSecretMock,
+      },
+      wakeWord: { onWake: () => () => {} },
+      avatar: createAvatarBridgeMock(),
+      __bridgeReady: true,
+      __bridgeVersion: '1.0.0',
+    } as unknown as PreloadWindow['aiembodied'];
+
+    (window as { RTCPeerConnection?: typeof RTCPeerConnection }).RTCPeerConnection = vi
+      .fn()
+      .mockReturnValue({ addEventListener: vi.fn(), removeEventListener: vi.fn(), close: vi.fn() }) as unknown as typeof RTCPeerConnection;
+
+    render(<App />);
+
+    const textarea = (await screen.findByLabelText(/Base prompt/i)) as HTMLTextAreaElement;
+
+    await waitFor(() => {
+      expect(textarea.value).toBe('Persisted instructions from config');
+    });
+
+    expect(realtimeClientInstances.length).toBeGreaterThan(0);
+    const instance = realtimeClientInstances[realtimeClientInstances.length - 1];
+    instance.callbacks.onSessionUpdated?.({ instructions: 'Server-sourced base prompt', voice: 'alloy' });
+
+    await waitFor(() => {
+      expect(textarea.value).toBe('Server-sourced base prompt');
+    });
+
+    instance.callbacks.onSessionUpdated?.({ instructions: '   ' });
+
+    await waitFor(() => {
+      expect(textarea.value).toBe(DEFAULT_PROMPT);
+    });
   });
 
   it('surfaces configuration errors when preload bridge is unavailable', async () => {

@@ -706,6 +706,11 @@ export default function App() {
           if (typeof session.voice === 'string') {
             setServerVoice(session.voice);
           }
+
+          if (typeof session.instructions === 'string') {
+            const nextPrompt = session.instructions;
+            setBasePrompt(nextPrompt.trim().length > 0 ? nextPrompt : DEFAULT_PROMPT);
+          }
         },
         onRemoteStream: (stream) => {
           setRemoteStream(stream);
