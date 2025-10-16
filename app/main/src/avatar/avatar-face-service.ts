@@ -149,7 +149,7 @@ export class AvatarFaceService {
           role: 'system',
           content: [
             {
-              type: 'text',
+              type: 'input_text',
               text:
                 'You are an assistant that extracts animation-ready avatar layers from a single cartoon face image. '
                 + 'Return transparent PNG components for the base, eyes (open/closed), and viseme mouth shapes (0-4, plus neutral).',

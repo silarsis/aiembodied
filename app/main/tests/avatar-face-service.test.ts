@@ -127,7 +127,9 @@ describe('AvatarFaceService', () => {
 
     expect(requests).toHaveLength(1);
     const requestBody = requests[0] as Record<string, any>;
+    const systemPayload = requestBody?.input?.[0]?.content?.[0];
     const imagePayload = requestBody?.input?.[1]?.content?.[1];
+    expect(systemPayload).toMatchObject({ type: 'input_text' });
     expect(imagePayload).toEqual({ type: 'input_image', image_base64: 'aGVsbG8=' });
   });
 
