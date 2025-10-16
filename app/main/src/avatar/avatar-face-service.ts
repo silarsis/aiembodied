@@ -169,11 +169,14 @@ export class AvatarFaceService {
           ],
         },
       ],
-      response_format: {
-        type: 'json_schema',
-        json_schema: RESPONSE_SCHEMA_DEFINITION,
+      response: {
+        modalities: ['text'],
+        text: {
+          format: 'json_schema',
+          schema: RESPONSE_SCHEMA_DEFINITION,
+        },
       },
-    };
+    } as const;
 
     const response = await this.fetchFn(OPENAI_RESPONSES_ENDPOINT, {
       method: 'POST',
