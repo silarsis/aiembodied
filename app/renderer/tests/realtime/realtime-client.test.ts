@@ -88,7 +88,7 @@ describe('RealtimeClient', () => {
       .mockResolvedValue({
         ok: true,
         status: 200,
-        json: async () => ({ answer: { type: 'answer', sdp: 'fake-answer' } }),
+        text: async () => 'fake-answer',
       } as Response);
 
     client = new RealtimeClient({
@@ -119,10 +119,9 @@ describe('RealtimeClient', () => {
 
     await client.connect({ apiKey: 'test-key', inputStream: stream });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const request = fetchMock.mock.calls[0]?.[1];
-    expect(request).toBeDefined();
-    const body = JSON.parse((request?.body as string) ?? '{}');
-    expect(body.offer.sdp).toBe('fake-offer');
+    const requestInit = fetchMock.mock.calls[0]?.[1];
+    expect(requestInit).toBeDefined();
+    expect(requestInit?.body).toBe('fake-offer');
 
     const peer = peers[0];
     expect(peer.addTrack).toHaveBeenCalled();
@@ -132,6 +131,19 @@ describe('RealtimeClient', () => {
 
     peer.emitConnectionState('connected');
     expect(states.at(-1)?.status).toBe('connected');
+  });
+
+  it('includes voice preference in handshake when staged before connect', async () => {
+    const stream = new FakeMediaStream() as unknown as MediaStream;
+
+    client.updateSessionConfig({ voice: 'alloy' });
+
+    await client.connect({ apiKey: 'test-key', inputStream: stream });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const requestUrl = fetchMock.mock.calls[0]?.[0];
+    expect(requestUrl).toBeDefined();
+    expect(String(requestUrl)).toContain('voice=alloy');
   });
 
   it('retries connection when the peer disconnects', async () => {
