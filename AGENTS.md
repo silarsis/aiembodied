@@ -23,6 +23,9 @@ Run these commands from the repository root unless a task specifies otherwise:
 - `pnpm test` — execute automated unit/integration tests.
 - `pnpm build` — (as needed) validate production builds for Electron targets.
 
+### OpenAI Responses API usage
+- When crafting requests, ensure every content chunk conforms to the Responses API schema (e.g., text prompts must use `{ type: 'input_text', text: '...' }`).
+
 Document any deviations or additional checks in your PR description, especially if a module introduces new tooling.
 
 ## Architectural Decisions
@@ -43,12 +46,14 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 - Wake detection gates microphone streaming. Once active, the renderer’s Web Audio graph splits capture into (a) the WebRTC peer connection to OpenAI’s Realtime API and (b) the viseme driver for lip-sync.
 - The realtime client handles SDP negotiation, ICE management, jitter buffering, and barge-in semantics. Downstream TTS audio is decoded for playback while simultaneously feeding viseme computation at ~60 Hz.
 - Conversation turns and audio metadata are appended to the SQLite memory store so transcript overlays and future sessions can restore context on launch.
+- Renderer voice selection must use the baked-in voice list. Tests in `app/renderer/tests/App.test.tsx` assert the dropdown renders the static options and that no network fetch is attempted on mount; update the list and expectations together when adding or removing voices.
 
 ### Rendering & avatar
 - The initial avatar implementation is a Canvas/WebGL sprite renderer mapping viseme intensity to discrete mouth shapes and idle animations. Future Unity integration will consume the same `VisemeFrame` stream via IPC without altering upstream audio or persistence layers.
 
 ### Observability, packaging, and environment
 - Winston logging (with rolling files) captures lifecycle diagnostics across processes, supplemented by optional Prometheus metrics exporters for latency tracking.
+- Avatar face generation requests must log non-2xx OpenAI responses with status metadata and the trimmed, truncated response body (max 500 characters) to aid debugging while preventing log bloat.
 - Electron Builder packages the kiosk app with auto-launch hooks. Device setup scripts and systemd instructions live in the repo to support deployment on Intel N100-class mini PCs.
 - Development relies on pnpm workspaces, ESLint/Prettier, Vitest, and Playwright smoke tests; CI must keep `pnpm lint`, `pnpm typecheck`, and `pnpm test` green to honor the plan’s gating criteria.
 
