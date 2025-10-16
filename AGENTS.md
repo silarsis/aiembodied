@@ -61,3 +61,4 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 ## Recent Updates
 
 - 2025-02-14 — Realtime voice preference changes now emit explicit console instrumentation (`[RealtimeClient] Voice change …`) before disconnecting and after reconnecting. Watch for these logs when validating that a new session was negotiated for a voice swap.
+- 2025-02-15 — Realtime sessions are negotiated via `POST /v1/realtime/calls` with a `FormData` payload containing the SDP offer and a `session` JSON blob (`{ type: 'realtime', model, audio: { output: { voice }}}`). Voice preferences are only applied during this handshake; `session.update` messages now exclude the `voice` field per OpenAI guidance.
