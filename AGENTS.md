@@ -13,7 +13,7 @@ Always cross-check planned work against these references before making changes. 
 2. Confirm functional expectations against `prd.md` and architectural constraints in `archspec.md`.
 3. Implement and update tests in the scoped package (prefer colocated unit/integration tests).
 4. Run the full verification commands listed below before committing.
-5. Update the "Implementation Progress" checklist in this file to reflect completed milestones.
+5. Update this guide whenever architectural decisions or workflow expectations change.
 
 ## Testing & Verification
 Run these commands from the repository root unless a task specifies otherwise:
@@ -25,59 +25,29 @@ Run these commands from the repository root unless a task specifies otherwise:
 
 Document any deviations or additional checks in your PR description, especially if a module introduces new tooling.
 
-## Implementation Progress
-Track progress against `plan.md` here. Update the status markers (`[ ]` incomplete, `[x]` complete, `[~]` in progress) immediately after meaningful work lands.
+## Architectural Decisions
 
-- [x] 0. Repo Scaffolding & Tooling — base monorepo in place; ongoing validation of lint/type/test harness.
-- [x] 1. Configuration & Secrets Foundation
-- [x] 2. Logging & Crash Guard Infrastructure
-- [x] 3. Wake Word Service (Porcupine Worker) — Worker entrypoint adjusted for ts-node dev usage
-- [x] 4. Audio Graph & Device Management
-- [x] 5. Realtime Client (WebRTC Loop)
-- [x] 6. Viseme Driver MVP
-- [x] 7. Avatar Renderer (2D Canvas)
-- [x] 8. Transcript Overlay & UI Shell — kiosk shell with transcript overlay toggle and wake/network indicators
-- [x] 9. Memory Store (SQLite)
-- [x] 10. Persistence in Conversation Loop
-- [x] 11. Observability & Metrics
-- [x] 12. Packaging & Auto-Launch
-- [ ] 13. Appliance Readiness Validation
-- [ ] 14. Home Assistant Integration
-- [x] 15. Avatar Configuration Tool
-- [ ] 16. Future Unity Integration Prep (Stretch)
+Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product and implementation roadmap. The highlights below capture the architectural choices that guide current and future development:
 
-Keep this checklist accurate; it is the authoritative tracker for execution state.
+### System composition
+- **Electron main process** owns kiosk window lifecycle, crash recovery, configuration, and persistence. It validates environment secrets with Zod, hydrates runtime config via the preload bridge, and manages the synchronous `better-sqlite3` memory store.
+- **Renderer process (Vite + React)** delivers the user interface, WebRTC client, Web Audio capture/processing graph, and 2D avatar canvas. Renderer code consumes main-process services through contextBridge APIs exposed in `app/preload` and exchanges realtime state via typed IPC channels.
+- **Worker processes** are dedicated to latency-sensitive tasks. A Porcupine wake-word worker streams microphone data, applies cooldown/confidence logic, and notifies the main process. Optional viseme workers can offload PCM analysis if the renderer frame budget is constrained.
 
-## Recent QA Activities
+### Frontend ↔ backend linkage
+- The preload script acts as the contract boundary: configuration, logging, and memory APIs are marshalled from the main process into the renderer with strict channel whitelists to preserve Electron security best practices.
+- Wake events, realtime session status, and persistence updates flow through structured IPC events so renderer state machines stay synchronized with main-process orchestration.
+- SQLite updates initiated in the renderer (e.g., transcript overlay interactions) are funneled back to the main process, which persists data and mirrors relevant state to the UI.
 
-- 2025-10-05 — Added integration tests for the main process bootstrap and Porcupine worker to raise coverage across wake word orchestration.
-- 2025-10-04 — Added Vitest coverage instrumentation and validated preload bridge ping wiring via renderer tests.
-- 2025-10-06 — Introduced a pull request template checklist to enforce lint, typecheck, and test runs before merges.
-- 2025-10-07 — Refreshed the README with a full project overview and setup instructions sourced from PRD/architecture docs.
-- 2025-10-08 — Removed the kiosk packaging icon asset pending refreshed branding deliverables.
-- 2025-10-09 — Added renderer configuration secret management with associated unit tests for update and validation flows.
-- 2025-10-09 — Added cross-platform setup scripts to validate/install Node.js and pnpm prerequisites.
-- 2025-10-10 — Patched the Windows setup script comment-based help and automated pnpm version detection from package.json.
-- 2025-10-11 — Added a Corepack permission fallback to download pnpm to a user directory and persist PATH updates.
-- 2025-10-12 — Fixed Windows path assertion in main process test to be path-separator agnostic.
-- 2025-10-12 — Hardened CrashGuard disposal to avoid 'Object has been destroyed' on window close.
-- 2025-10-12 — Adjusted main dev script to use Node ESM loader; validated end-to-end app launch via Electron with rebuilt native deps.
-- 2025-10-13 — Corrected Windows Join-Path usage in run-dev script to reliably detect missing .env configuration.
-- 2025-10-13 — Added opt-in diagnostics instrumentation to capture Electron lifecycle and renderer console logs for black screen debugging.
-- 2025-10-14 — Updated renderer build base path configuration to fix blank Electron window on Windows and added regression coverage.
-- 2025-10-15 — Relaxed realtime key boot requirements, added preload bridge resilience, and expanded config manager tests.
-- 2025-10-16 — Added regression tests for config bridge secret flows and .env ingestion to guard Windows behavior.
-- 2025-10-17 — Instrumented preload/config bridges with diagnostics to trace avatar API availability issues in the renderer.
-- 2025-10-18 — Reviewed configuration bridge IPC flow, documented renderer wiring, and confirmed existing Vitest coverage for preload exposure.
-- 2025-10-19 — Instrumented configuration bridge IPC registration logging and added regression tests for handler failure surfacing.
-- 2025-10-20 — Enabled avatar face service reinitialization after realtime key updates and expanded main-process tests to cover the runtime bridge state.
-- 2025-10-20 — Added release automation workflow to build AppImage binaries whenever RELEASE.txt increments.
-- 2025-10-21 — Instrumented renderer runtime path resolution with diagnostics, added preload failure guards, and expanded tests for bridge availability.
-- 2025-10-22 — Hardened renderer configuration secret interactions to reuse the latest preload bridge state and added regression coverage for early submissions.
-- 2025-10-23 — Instrumented configuration and renderer bridges with diagnostics to trace secret resolution and IPC availability.
-- 2025-10-24 — Expanded renderer preload diagnostics to capture polling attempts, window bridge descriptors, and configuration access failures.
-- 2025-10-25 — Hardened Windows setup script to fall back to user-level pnpm provisioning when Corepack lacks permissions.
-- 2025-10-26 — Isolated run-dev Electron rebuild environment to avoid Windows Application Data permission errors and added regression test.
-- 2025-10-27 — Validated avatar face upload requests send base64 payloads to OpenAI and added regression tests for malformed data URLs.
-- 2025-10-28 — Ensured realtime voice preference priming happens before session connect and added regression coverage for voice handshakes.
-- 2025-10-29 — Added renderer regression coverage for realtime session prompt synchronization and updated kiosk UI to mirror server instructions.
+### Voice and interaction pipeline
+- Wake detection gates microphone streaming. Once active, the renderer’s Web Audio graph splits capture into (a) the WebRTC peer connection to OpenAI’s Realtime API and (b) the viseme driver for lip-sync.
+- The realtime client handles SDP negotiation, ICE management, jitter buffering, and barge-in semantics. Downstream TTS audio is decoded for playback while simultaneously feeding viseme computation at ~60 Hz.
+- Conversation turns and audio metadata are appended to the SQLite memory store so transcript overlays and future sessions can restore context on launch.
+
+### Rendering & avatar
+- The initial avatar implementation is a Canvas/WebGL sprite renderer mapping viseme intensity to discrete mouth shapes and idle animations. Future Unity integration will consume the same `VisemeFrame` stream via IPC without altering upstream audio or persistence layers.
+
+### Observability, packaging, and environment
+- Winston logging (with rolling files) captures lifecycle diagnostics across processes, supplemented by optional Prometheus metrics exporters for latency tracking.
+- Electron Builder packages the kiosk app with auto-launch hooks. Device setup scripts and systemd instructions live in the repo to support deployment on Intel N100-class mini PCs.
+- Development relies on pnpm workspaces, ESLint/Prettier, Vitest, and Playwright smoke tests; CI must keep `pnpm lint`, `pnpm typecheck`, and `pnpm test` green to honor the plan’s gating criteria.
