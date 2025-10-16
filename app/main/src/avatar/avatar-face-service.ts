@@ -144,6 +144,7 @@ export class AvatarFaceService {
 
     const body = {
       model: 'gpt-4.1-mini',
+      modalities: ['text'],
       input: [
         {
           role: 'system',

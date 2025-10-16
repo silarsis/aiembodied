@@ -25,6 +25,7 @@ Run these commands from the repository root unless a task specifies otherwise:
 
 ### OpenAI Responses API usage
 - When crafting requests, ensure every content chunk conforms to the Responses API schema (e.g., text prompts must use `{ type: 'input_text', text: '...' }`).
+- Structured outputs must set the top-level `modalities` array (e.g., `['text']`) and configure `text: { format: 'json_schema', schema: <definition> }`. Do not send the deprecated `response_format` field or the unsupported `response` wrapper.
 - Structured outputs must use the modern `response` object. For JSON-schema responses, set `response: { modalities: ['text'], text: { format: 'json_schema', schema: <definition> } }` instead of the legacy `response_format` field.
 
 Document any deviations or additional checks in your PR description, especially if a module introduces new tooling.
