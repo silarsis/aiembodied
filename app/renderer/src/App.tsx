@@ -1198,9 +1198,10 @@ export default function App() {
   const handleVoiceChange = useCallback(
     async (event: ChangeEvent<HTMLSelectElement>) => {
       const value = event.target.value;
-      setSelectedVoice(value || DEFAULT_VOICE);
+      const nextVoice = value || DEFAULT_VOICE;
+      setSelectedVoice(nextVoice);
       // Optimistically reflect server voice in UI; server may not emit session.updated immediately
-      setServerVoice(value || DEFAULT_VOICE);
+      setServerVoice(nextVoice);
       try {
         await persistPreferences({
           audioInputDeviceId: selectedInput || undefined,
