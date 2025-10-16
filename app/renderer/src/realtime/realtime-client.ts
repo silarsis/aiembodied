@@ -159,6 +159,11 @@ export class RealtimeClient {
     this.reconnectAttempts = 0;
     this.shouldReconnect = true;
 
+    this.log('info', 'Realtime connect requested', {
+      hasStream: Boolean(options.inputStream),
+      hasIceServers: Boolean(options.iceServers?.length),
+    });
+
     this.updateState({ status: 'connecting' });
 
     try {
@@ -177,6 +182,7 @@ export class RealtimeClient {
     this.currentStream = null;
     this.currentApiKey = null;
     this.currentIceServers = null;
+    this.log('info', 'Realtime disconnect requested');
     this.cleanupPeer();
     this.updateState({ status: 'idle' });
   }
