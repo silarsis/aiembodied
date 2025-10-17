@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { Buffer } from 'node:buffer';
+import type OpenAI from 'openai';
+import type {
+  ResponseCreateParamsNonStreaming,
+  ResponseInput,
+  ResponseInputMessageContentList,
+} from 'openai/resources/responses/responses';
 import { z } from 'zod';
 import type { MemoryStore, FaceRecord, FaceComponentRecord } from '../memory/memory-store.js';
 import {
@@ -12,10 +18,9 @@ import {
 } from './types.js';
 
 interface AvatarFaceServiceOptions {
-  apiKey: string;
+  client: Pick<OpenAI, 'responses'>;
   store: MemoryStore;
   now?: () => number;
-  fetchFn?: typeof fetch;
   logger?: { error?: (message: string, meta?: Record<string, unknown>) => void };
 }
 
@@ -94,8 +99,6 @@ const RESPONSE_SCHEMA_DEFINITION = {
   },
 } as const;
 
-const OPENAI_RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses';
-
 function sanitizeName(name: string | undefined, fallback: string): string {
   if (typeof name !== 'string') {
     return fallback;
@@ -116,22 +119,20 @@ function toDataUrl(mimeType: string, data: Buffer): string {
 }
 
 export class AvatarFaceService {
-  private readonly apiKey: string;
+  private readonly client: Pick<OpenAI, 'responses'>;
   private readonly store: MemoryStore;
   private readonly now: () => number;
-  private readonly fetchFn: typeof fetch;
   private readonly logger?: { error?: (message: string, meta?: Record<string, unknown>) => void };
 
   constructor(options: AvatarFaceServiceOptions) {
-    this.apiKey = options.apiKey;
+    if (!options.client?.responses || typeof options.client.responses.create !== 'function') {
+      throw new Error('AvatarFaceService requires an OpenAI responses client.');
+    }
+
+    this.client = options.client;
     this.store = options.store;
     this.now = options.now ?? Date.now;
     this.logger = options.logger;
-    const fetchFn = options.fetchFn ?? (typeof fetch === 'function' ? fetch : undefined);
-    if (!fetchFn) {
-      throw new Error('AvatarFaceService requires a fetch implementation.');
-    }
-    this.fetchFn = fetchFn;
   }
 
   async uploadFace(request: AvatarUploadRequest): Promise<AvatarUploadResult> {
@@ -142,34 +143,40 @@ export class AvatarFaceService {
 
     const imageBase64 = this.extractBase64Payload(imageDataUrl);
 
-    const body = {
+    const systemContent: ResponseInputMessageContentList = [
+      {
+        type: 'input_text',
+        text:
+          'You are an assistant that extracts animation-ready avatar layers from a single cartoon face image. '
+          + 'Return transparent PNG components for the base, eyes (open/closed), and viseme mouth shapes (0-4, plus neutral).',
+      },
+    ];
+
+    const userContent: ResponseInputMessageContentList = [
+      {
+        type: 'input_text',
+        text:
+          'Produce layered assets sized consistently with the source image. Ensure components are centered and share a '
+          + 'transparent background so they can be composited for animation.',
+      },
+      { type: 'input_image', image_url: `data:image/png;base64,${imageBase64}`, detail: 'auto' },
+    ];
+
+    const input: ResponseInput = [
+      { type: 'message', role: 'system', content: systemContent },
+      { type: 'message', role: 'user', content: userContent },
+    ];
+
+    const body: ResponseCreateParamsNonStreaming & {
+      modalities: ['text'];
+      response: {
+        modalities: ['text'];
+        text: { format: 'json_schema'; schema: typeof RESPONSE_SCHEMA_DEFINITION };
+      };
+    } = {
       model: 'gpt-4.1-mini',
       modalities: ['text'],
-      input: [
-        {
-          role: 'system',
-          content: [
-            {
-              type: 'input_text',
-              text:
-                'You are an assistant that extracts animation-ready avatar layers from a single cartoon face image. '
-                + 'Return transparent PNG components for the base, eyes (open/closed), and viseme mouth shapes (0-4, plus neutral).',
-            },
-          ],
-        },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'input_text',
-              text:
-                'Produce layered assets sized consistently with the source image. Ensure components are centered and share a '
-                + 'transparent background so they can be composited for animation.',
-            },
-            { type: 'input_image', image_base64: imageBase64 },
-          ],
-        },
-      ],
+      input,
       response: {
         modalities: ['text'],
         text: {
@@ -177,47 +184,16 @@ export class AvatarFaceService {
           schema: RESPONSE_SCHEMA_DEFINITION,
         },
       },
-    } as const;
+    };
 
-    const response = await this.fetchFn(OPENAI_RESPONSES_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      let bodyText = '';
-      try {
-        const cloned = response.clone?.();
-        bodyText = ((await cloned?.text()) ?? '').trim();
-      } catch (error) {
-        this.logger?.error?.('Failed to read OpenAI error response body.', {
-          status: response.status,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-
-      const MAX_LOG_LENGTH = 500;
-      const truncatedBody =
-        bodyText.length > MAX_LOG_LENGTH
-          ? `${bodyText.slice(0, MAX_LOG_LENGTH - 3)}...`
-          : bodyText;
-
-      const baseMessage = `OpenAI response request failed with status ${response.status}`;
-      const message = truncatedBody ? `${baseMessage}: ${truncatedBody}` : baseMessage;
-
-      this.logger?.error?.(baseMessage, {
-        status: response.status,
-        body: truncatedBody || undefined,
-      });
-      throw new Error(message);
+    let responsePayload: unknown;
+    try {
+      responsePayload = await this.client.responses.create(body);
+    } catch (error) {
+      throw this.handleOpenAiError(error);
     }
 
-    const payload = (await response.json()) as unknown;
-    const parsed = this.parseResponse(payload);
+    const parsed = this.parseResponse(responsePayload);
 
     const components: ParsedComponent[] = parsed.components;
     const timestamp = this.now();
@@ -250,6 +226,66 @@ export class AvatarFaceService {
     this.store.setActiveFace(faceId);
 
     return { faceId };
+  }
+
+  private handleOpenAiError(error: unknown): Error {
+    if (!error || typeof error !== 'object') {
+      return error instanceof Error ? error : new Error(String(error));
+    }
+
+    const apiError = error as {
+      status?: number;
+      response?: { data?: unknown };
+      message?: string;
+    };
+
+    const status = typeof apiError.status === 'number' ? apiError.status : null;
+    const baseMessage = status
+      ? `OpenAI response request failed with status ${status}`
+      : 'OpenAI response request failed.';
+
+    const errorBody = this.stringifyErrorBody(apiError.response?.data ?? apiError.message ?? '');
+    const truncatedBody = this.truncateErrorBody(errorBody);
+
+    this.logger?.error?.(baseMessage, {
+      ...(status === null ? {} : { status }),
+      body: truncatedBody || undefined,
+    });
+
+    const message = truncatedBody ? `${baseMessage}: ${truncatedBody}` : baseMessage;
+    return new Error(message);
+  }
+
+  private stringifyErrorBody(data: unknown): string {
+    if (!data) {
+      return '';
+    }
+
+    if (typeof data === 'string') {
+      return data.trim();
+    }
+
+    if (typeof data === 'object') {
+      try {
+        return JSON.stringify(data);
+      } catch (error) {
+        this.logger?.error?.('Failed to stringify OpenAI error payload.', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return '[object Object]';
+      }
+    }
+
+    return String(data);
+  }
+
+  private truncateErrorBody(body: string): string {
+    if (!body) {
+      return '';
+    }
+
+    const MAX_LOG_LENGTH = 500;
+    return body.length > MAX_LOG_LENGTH ? `${body.slice(0, MAX_LOG_LENGTH - 3)}...` : body;
   }
 
   async listFaces(): Promise<AvatarFaceSummary[]> {

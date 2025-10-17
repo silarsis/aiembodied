@@ -33,6 +33,7 @@ import {
   resolveRendererEntryPoint,
   RuntimeResourceNotFoundError,
 } from './runtime-paths.js';
+import { getOpenAIClient } from './openai/client.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -235,10 +236,9 @@ async function refreshAvatarFaceService(
 
   try {
     avatarFaceService = new AvatarFaceService({
-      apiKey: nextKey,
+      client: getOpenAIClient(nextKey),
       store,
       logger,
-      fetchFn: typeof fetch === 'function' ? fetch : undefined,
     });
     currentRealtimeApiKey = nextKey;
     logger.info('Avatar face service initialized.', { reason });

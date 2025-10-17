@@ -2,12 +2,21 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import type OpenAI from 'openai';
 import { AvatarFaceService } from '../src/avatar/avatar-face-service.js';
 import type { AvatarUploadRequest } from '../src/avatar/types.js';
 import { MemoryStore } from '../src/memory/memory-store.js';
 
 const tempDirs: string[] = [];
 const stores: MemoryStore[] = [];
+
+type ResponsesClient = Pick<OpenAI, 'responses'>;
+
+function createResponsesClientMock() {
+  const create = vi.fn<[unknown, unknown?], Promise<unknown>>();
+  const client = { responses: { create } } as unknown as ResponsesClient;
+  return { client, create };
+}
 
 async function createStore(): Promise<MemoryStore> {
   const directory = await mkdtemp(path.join(tmpdir(), 'avatar-face-service-'));
@@ -63,25 +72,18 @@ describe('AvatarFaceService', () => {
       }),
     };
 
-    const fetchMock = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>(async () =>
-      Promise.resolve(
-        new Response(JSON.stringify(openAiResponse), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      ),
-    );
+    const { client, create } = createResponsesClientMock();
+    create.mockResolvedValue(openAiResponse);
 
     const service = new AvatarFaceService({
-      apiKey: 'test-key',
-      fetchFn: fetchMock,
+      client,
       store,
       now: () => 42_000,
     });
 
     const result = await service.uploadFace(payload);
     expect(result.faceId).toMatch(/^[-0-9a-f]+$/i);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledTimes(1);
 
     const faces = store.listFaces();
     expect(faces).toHaveLength(1);
@@ -109,29 +111,31 @@ describe('AvatarFaceService', () => {
     };
 
     const requests: unknown[] = [];
-    const fetchMock = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>(async (_url, init) => {
-      requests.push(JSON.parse(String(init?.body ?? '{}')));
-      return new Response(JSON.stringify(openAiResponse), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
+
+    const { client, create } = createResponsesClientMock();
+    create.mockImplementation(async (body: unknown) => {
+      requests.push(body);
+      return openAiResponse;
     });
 
     const service = new AvatarFaceService({
-      apiKey: 'test-key',
-      fetchFn: fetchMock,
+      client,
       store,
     });
 
     await service.uploadFace(payload);
 
-    expect(requests).toHaveLength(1);
+    expect(create).toHaveBeenCalledTimes(1);
     const requestBody = requests[0] as Record<string, any>;
     const systemPayload = requestBody?.input?.[0]?.content?.[0];
     const imagePayload = requestBody?.input?.[1]?.content?.[1];
     const responseFormat = requestBody?.response?.text;
     expect(systemPayload).toMatchObject({ type: 'input_text' });
-    expect(imagePayload).toEqual({ type: 'input_image', image_base64: 'aGVsbG8=' });
+    expect(imagePayload).toEqual({
+      type: 'input_image',
+      image_url: 'data:image/png;base64,aGVsbG8=',
+      detail: 'auto',
+    });
     expect(requestBody?.response?.modalities).toEqual(['text']);
     expect(responseFormat).toMatchObject({ format: 'json_schema' });
     expect(responseFormat?.schema).toMatchObject({ name: 'AvatarComponents' });
@@ -139,13 +143,13 @@ describe('AvatarFaceService', () => {
 
   it('lists faces and manages active selection lifecycle', async () => {
     const store = await createStore();
-    const unusedFetch: typeof fetch = async () => {
-      throw new Error('unexpected fetch invocation');
-    };
+    const { client, create } = createResponsesClientMock();
+    create.mockImplementation(async () => {
+      throw new Error('unexpected OpenAI invocation');
+    });
 
     const service = new AvatarFaceService({
-      apiKey: 'test-key',
-      fetchFn: unusedFetch,
+      client,
       store,
     });
 
@@ -179,13 +183,13 @@ describe('AvatarFaceService', () => {
 
   it('rejects attempts to activate unknown faces', async () => {
     const store = await createStore();
-    const unusedFetch: typeof fetch = async () => {
-      throw new Error('unexpected fetch invocation');
-    };
+    const { client, create } = createResponsesClientMock();
+    create.mockImplementation(async () => {
+      throw new Error('unexpected OpenAI invocation');
+    });
 
     const service = new AvatarFaceService({
-      apiKey: 'test-key',
-      fetchFn: unusedFetch,
+      client,
       store,
     });
 
@@ -195,13 +199,15 @@ describe('AvatarFaceService', () => {
   it('throws when OpenAI returns an error status', async () => {
     const store = await createStore();
     const logger = { error: vi.fn() };
-    const fetchMock = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>(async () =>
-      Promise.resolve(new Response('server error', { status: 500 })),
-    );
+    const { client, create } = createResponsesClientMock();
+    const apiError = Object.assign(new Error('server error'), {
+      status: 500,
+      response: { data: 'server error' },
+    });
+    create.mockRejectedValue(apiError);
 
     const service = new AvatarFaceService({
-      apiKey: 'test-key',
-      fetchFn: fetchMock,
+      client,
       store,
       logger,
     });
@@ -210,7 +216,7 @@ describe('AvatarFaceService', () => {
       service.uploadFace({ name: 'Broken', imageDataUrl: 'data:image/png;base64,ZmFpbA==' }),
     ).rejects.toThrow('OpenAI response request failed with status 500: server error');
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledTimes(1);
     expect(logger.error).toHaveBeenCalledWith('OpenAI response request failed with status 500', {
       status: 500,
       body: 'server error',
@@ -220,18 +226,11 @@ describe('AvatarFaceService', () => {
   it('throws when OpenAI returns invalid JSON payload', async () => {
     const store = await createStore();
     const logger = { error: vi.fn() };
-    const fetchMock = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>(async () =>
-      Promise.resolve(
-        new Response(JSON.stringify({ output_text: 'not-json' }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      ),
-    );
+    const { client, create } = createResponsesClientMock();
+    create.mockResolvedValue({ output_text: 'not-json' });
 
     const service = new AvatarFaceService({
-      apiKey: 'test-key',
-      fetchFn: fetchMock,
+      client,
       store,
       logger,
     });
@@ -240,7 +239,7 @@ describe('AvatarFaceService', () => {
       service.uploadFace({ name: 'Invalid', imageDataUrl: 'data:image/png;base64,ZmFpbA==' }),
     ).rejects.toThrow('OpenAI returned an invalid avatar component payload.');
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledTimes(1);
     expect(logger.error).toHaveBeenCalledWith('Failed to parse avatar component response JSON.', {
       message: expect.stringContaining('Unexpected token'),
     });
@@ -248,11 +247,10 @@ describe('AvatarFaceService', () => {
 
   it('validates avatar image data URLs before uploading', async () => {
     const store = await createStore();
-    const fetchMock = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>();
+    const { client, create } = createResponsesClientMock();
 
     const service = new AvatarFaceService({
-      apiKey: 'test-key',
-      fetchFn: fetchMock,
+      client,
       store,
     });
 
@@ -264,6 +262,6 @@ describe('AvatarFaceService', () => {
       service.uploadFace({ name: 'Broken', imageDataUrl: 'not-a-data-url' }),
     ).rejects.toThrow('Avatar image data URL is malformed; expected base64-encoded data.');
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
   });
 });
