@@ -608,6 +608,25 @@ describe('main process bootstrap', () => {
 
     expect(avatarFaceServiceInstances).toHaveLength(2);
 
+    const avatarServiceOptionsList = avatarFaceServiceInstances.map(
+      (instance) => instance.options as Record<string, unknown>,
+    );
+
+    for (const options of avatarServiceOptionsList) {
+      expect(options).toMatchObject({
+        client: expect.objectContaining({
+          responses: expect.objectContaining({
+            create: expect.any(Function),
+          }),
+        }),
+        logger: mockLogger,
+      });
+
+      expect(options).not.toHaveProperty('apiKey');
+      expect(options).not.toHaveProperty('endpoint');
+      expect(options).not.toHaveProperty('fetch');
+    }
+
     const testSecretHandler = handleEntries.get('config:test-secret');
     expect(typeof testSecretHandler).toBe('function');
     await expect(testSecretHandler?.({}, 'wakeWordAccessKey')).resolves.toEqual({ ok: true });

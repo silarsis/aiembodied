@@ -1,5 +1,23 @@
 import { vi } from 'vitest';
 
+vi.mock(
+  'openai',
+  () => {
+    class MockOpenAI {
+      public readonly apiKey: string;
+      public readonly responses: { create: ReturnType<typeof vi.fn> };
+
+      constructor(options: { apiKey: string }) {
+        this.apiKey = options.apiKey;
+        this.responses = { create: vi.fn() };
+      }
+    }
+
+    return { default: MockOpenAI };
+  },
+  { virtual: true },
+);
+
 vi.mock('prom-client', () => {
   class MockHistogram {
     public name: string;
