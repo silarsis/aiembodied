@@ -28,6 +28,9 @@ export interface RealtimeClientOptions {
     turnDetection?: 'none' | 'server_vad';
     vad?: { threshold?: number; silenceDurationMs?: number; minSpeechDurationMs?: number };
     voice?: string;
+    modalities?: string[];
+    inputAudioFormat?: { type: string; sampleRateHz?: number; channels?: number };
+    sessionParameters?: Record<string, unknown>;
   };
 }
 
@@ -267,14 +270,26 @@ export class RealtimeClient {
                 audio && typeof audio === 'object'
                   ? ((audio as { output?: unknown }).output as { voice?: unknown } | undefined)
                   : undefined;
-              const voice =
-                typeof session['voice'] === 'string'
-                  ? (session['voice'] as string)
-                  : typeof audioOutput?.voice === 'string'
-                  ? (audioOutput.voice as string)
+              const sessionParameters =
+                session && typeof session === 'object'
+                  ? ((session as { session_parameters?: unknown }).session_parameters as Record<string, unknown> | undefined)
                   : undefined;
-              const instructions = typeof session['instructions'] === 'string' ? (session['instructions'] as string) : undefined;
-              const td = session['turn_detection'] as { type?: string } | undefined;
+              const voiceFromSessionParameters =
+                typeof sessionParameters?.['voice'] === 'string'
+                  ? (sessionParameters['voice'] as string)
+                  : undefined;
+              const voiceFromSession =
+                typeof session['voice'] === 'string' ? (session['voice'] as string) : undefined;
+              const voiceFromAudioOutput =
+                typeof audioOutput?.voice === 'string' ? (audioOutput.voice as string) : undefined;
+              const voice = voiceFromSessionParameters ?? voiceFromSession ?? voiceFromAudioOutput;
+              const instructions =
+                typeof sessionParameters?.['instructions'] === 'string'
+                  ? (sessionParameters['instructions'] as string)
+                  : typeof session['instructions'] === 'string'
+                  ? (session['instructions'] as string)
+                  : undefined;
+              const td = (sessionParameters?.['turn_detection'] ?? session['turn_detection']) as { type?: string } | undefined;
               const turnDetection = td && typeof td.type === 'string' ? td.type : undefined;
               this.callbacks.onSessionUpdated?.({ voice, instructions, turnDetection });
               this.log('info', 'Received session.updated from realtime API', { voice, turnDetection, hasInstructions: Boolean(instructions) });
@@ -297,31 +312,59 @@ export class RealtimeClient {
     await peer.setLocalDescription(offer);
 
     const sessionDescriptor = this.buildSessionDescriptor();
-    const formData = new FormData();
-    formData.set('sdp', offer.sdp ?? '');
-    formData.set('session', JSON.stringify(sessionDescriptor));
+    const handshakeBody = {
+      session: sessionDescriptor,
+      rtc_connection: {
+        sdp: offer.sdp ?? '',
+      },
+    };
 
     const response = await this.fetchFn(this.endpoint, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'OpenAI-Beta': 'realtime=v1',
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
       },
-      body: formData,
+      body: JSON.stringify(handshakeBody),
     });
+
+    const contentTypeHeader = response.headers?.get?.('content-type') ?? '';
+    const normalizedContentType = contentTypeHeader.toLowerCase();
 
     if (!response.ok) {
       let detail: string | undefined;
       try {
-        const text = await response.text();
-        detail = text;
+        if (normalizedContentType.includes('application/json')) {
+          const errorPayload = await response.json();
+          detail = JSON.stringify(errorPayload);
+        } else {
+          detail = await response.text();
+        }
       } catch {
         // ignore body read errors
       }
       throw new Error(`Realtime handshake failed: HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
     }
 
-    const answerSdp = await response.text();
+    let answerSdp: string | undefined;
+    if (normalizedContentType.includes('application/json')) {
+      const payload = (await response.json()) as
+        | { rtc_connection?: { sdp?: unknown } | null }
+        | undefined
+        | null;
+      const rtcConnection = payload?.rtc_connection;
+      if (rtcConnection && typeof rtcConnection === 'object' && typeof rtcConnection.sdp === 'string') {
+        answerSdp = rtcConnection.sdp;
+      }
+    } else {
+      answerSdp = await response.text();
+    }
+
+    if (!answerSdp) {
+      throw new Error('Realtime handshake failed: missing answer SDP in response.');
+    }
     await peer.setRemoteDescription({ type: 'answer', sdp: answerSdp });
     if (this.controlChannel && this.controlChannel.readyState === 'open') {
       this.sendSessionUpdate();
@@ -340,15 +383,16 @@ export class RealtimeClient {
 
     const payload: Record<string, unknown> = { type: 'session.update', session: {} };
     const session = payload.session as Record<string, unknown>;
+    const sessionParameters: Record<string, unknown> = {};
 
     if (this.sessionConfig?.instructions) {
-      session.instructions = this.sessionConfig.instructions;
+      sessionParameters.instructions = this.sessionConfig.instructions;
     }
 
     if (this.sessionConfig?.turnDetection === 'none') {
-      session.turn_detection = { type: 'none' };
+      sessionParameters.turn_detection = { type: 'none' };
     } else if (this.sessionConfig?.turnDetection === 'server_vad') {
-      session.turn_detection = {
+      sessionParameters.turn_detection = {
         type: 'server_vad',
         ...(typeof this.sessionConfig.vad?.threshold === 'number'
           ? { threshold: this.sessionConfig.vad.threshold }
@@ -360,6 +404,15 @@ export class RealtimeClient {
           ? { min_speech_duration_ms: this.sessionConfig.vad.minSpeechDurationMs }
           : {}),
       } as Record<string, unknown>;
+    }
+
+    const mergedSessionParameters = {
+      ...(this.sessionConfig?.sessionParameters ?? {}),
+      ...sessionParameters,
+    };
+
+    if (Object.keys(mergedSessionParameters).length > 0) {
+      session.session_parameters = mergedSessionParameters;
     }
 
     try {
@@ -375,19 +428,35 @@ export class RealtimeClient {
   }
 
   private buildSessionDescriptor(): Record<string, unknown> {
+    const inputAudioFormat = this.sessionConfig?.inputAudioFormat
+      ? {
+          type: this.sessionConfig.inputAudioFormat.type,
+          ...(typeof this.sessionConfig.inputAudioFormat.sampleRateHz === 'number'
+            ? { sample_rate_hz: this.sessionConfig.inputAudioFormat.sampleRateHz }
+            : {}),
+          ...(typeof this.sessionConfig.inputAudioFormat.channels === 'number'
+            ? { channels: this.sessionConfig.inputAudioFormat.channels }
+            : {}),
+        }
+      : { type: 'pcm16', sample_rate_hz: 16000, channels: 1 };
     const descriptor: Record<string, unknown> = {
-      type: 'realtime',
       model: this.model,
+      modalities: this.sessionConfig?.modalities ?? ['text', 'audio'],
+      input_audio_format: inputAudioFormat,
+    };
+
+    const sessionParameters: Record<string, unknown> = {
+      ...(this.sessionConfig?.sessionParameters ?? {}),
     };
 
     if (this.sessionConfig?.instructions) {
-      descriptor.instructions = this.sessionConfig.instructions;
+      sessionParameters.instructions = this.sessionConfig.instructions;
     }
 
     if (this.sessionConfig?.turnDetection === 'none') {
-      descriptor.turn_detection = { type: 'none' };
+      sessionParameters.turn_detection = { type: 'none' };
     } else if (this.sessionConfig?.turnDetection === 'server_vad') {
-      descriptor.turn_detection = {
+      sessionParameters.turn_detection = {
         type: 'server_vad',
         ...(typeof this.sessionConfig.vad?.threshold === 'number'
           ? { threshold: this.sessionConfig.vad.threshold }
@@ -399,6 +468,10 @@ export class RealtimeClient {
           ? { min_speech_duration_ms: this.sessionConfig.vad.minSpeechDurationMs }
           : {}),
       };
+    }
+
+    if (Object.keys(sessionParameters).length > 0) {
+      descriptor.session_parameters = sessionParameters;
     }
 
     if (this.sessionConfig?.voice) {
