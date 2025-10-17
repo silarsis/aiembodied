@@ -1,0 +1,29 @@
+version: 2
+updates:
+  # Root package.json - shared dependencies
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    
+  # Main process (Electron backend)
+  - package-ecosystem: "npm"
+    directory: "/app/main"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    
+  # Renderer process (Frontend - React/Vite)
+  - package-ecosystem: "npm"
+    directory: "/app/renderer"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
