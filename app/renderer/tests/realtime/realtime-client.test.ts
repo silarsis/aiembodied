@@ -44,6 +44,7 @@ class FakePeerConnection {
     send: vi.fn(),
     close: vi.fn(),
     onopen: null as ((this: RTCDataChannel, ev: Event) => void) | null,
+    onmessage: null as ((this: RTCDataChannel, ev: MessageEvent) => void) | null,
   };
 
   createDataChannel() {
@@ -78,6 +79,7 @@ describe('RealtimeClient', () => {
   let client: RealtimeClient;
   const states: RealtimeClientState[] = [];
   const remoteStreamHandler = vi.fn();
+  const sessionUpdateHandler = vi.fn();
 
   beforeEach(() => {
     peers.length = 0;
@@ -89,8 +91,16 @@ describe('RealtimeClient', () => {
       .mockResolvedValue({
         ok: true,
         status: 200,
-        text: async () => 'fake-answer',
-      } as Response);
+        headers: {
+          get: (name: string) => (name.toLowerCase() === 'content-type' ? 'application/json' : null),
+        } as Pick<Headers, 'get'>,
+        json: async () => ({
+          rtc_connection: {
+            sdp: 'fake-answer',
+          },
+        }),
+        text: vi.fn(async () => 'unused'),
+      } as unknown as Response);
 
     client = new RealtimeClient({
       fetchFn: (input, init) => fetchMock(input, init),
@@ -105,6 +115,7 @@ describe('RealtimeClient', () => {
           states.push(state);
         },
         onRemoteStream: remoteStreamHandler,
+        onSessionUpdated: sessionUpdateHandler,
       },
       jitterBufferMs: 80,
     });
@@ -113,6 +124,7 @@ describe('RealtimeClient', () => {
   afterEach(async () => {
     await client.destroy();
     vi.useRealTimers();
+    sessionUpdateHandler.mockReset();
   });
 
   it('performs SDP negotiation and reports connected state', async () => {
@@ -122,14 +134,28 @@ describe('RealtimeClient', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const requestInit = fetchMock.mock.calls[0]?.[1];
     expect(requestInit).toBeDefined();
-    expect(requestInit?.body).toBeInstanceOf(FormData);
-    const formData = requestInit?.body as FormData;
-    expect(formData.get('sdp')).toBe('fake-offer');
-    const sessionPayloadRaw = formData.get('session');
-    expect(sessionPayloadRaw).toBeTypeOf('string');
-    const sessionPayload = JSON.parse(sessionPayloadRaw as string) as Record<string, unknown>;
-    expect(sessionPayload).toMatchObject({ type: 'realtime', model: 'gpt-4o-realtime-preview-2024-12-17' });
-    expect(sessionPayload).not.toHaveProperty('audio');
+    expect(requestInit?.headers).toMatchObject({
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      Authorization: 'Bearer test-key',
+      'OpenAI-Beta': 'realtime=v1',
+    });
+    expect(typeof requestInit?.body).toBe('string');
+    const handshakePayload = JSON.parse(requestInit?.body as string) as {
+      rtc_connection?: { sdp?: string };
+      session?: Record<string, unknown>;
+    };
+    expect(handshakePayload.rtc_connection?.sdp).toBe('fake-offer');
+    expect(handshakePayload.session).toBeDefined();
+    expect(handshakePayload.session?.model).toBe('gpt-4o-realtime-preview-2024-12-17');
+    expect(handshakePayload.session?.modalities).toEqual(['text', 'audio']);
+    expect(handshakePayload.session?.input_audio_format).toMatchObject({
+      type: 'pcm16',
+      sample_rate_hz: 16000,
+      channels: 1,
+    });
+    expect(handshakePayload.session).not.toHaveProperty('audio');
+    expect(handshakePayload.session).not.toHaveProperty('session_parameters');
 
     const peer = peers[0];
     expect(peer.addTrack).toHaveBeenCalled();
@@ -150,13 +176,13 @@ describe('RealtimeClient', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const requestInit = fetchMock.mock.calls[0]?.[1];
-    expect(requestInit?.body).toBeInstanceOf(FormData);
-    const formData = requestInit?.body as FormData;
-    const sessionPayloadRaw = formData.get('session');
-    expect(sessionPayloadRaw).toBeTypeOf('string');
-    const sessionPayload = JSON.parse(sessionPayloadRaw as string) as { audio?: { output?: { voice?: string } } };
-    expect(sessionPayload.audio?.output?.voice).toBe('alloy');
-    expect(formData.get('sdp')).toBe('fake-offer');
+    expect(typeof requestInit?.body).toBe('string');
+    const handshakePayload = JSON.parse(requestInit?.body as string) as {
+      rtc_connection?: { sdp?: string };
+      session?: { audio?: { output?: { voice?: string } } };
+    };
+    expect(handshakePayload.session?.audio?.output?.voice).toBe('alloy');
+    expect(handshakePayload.rtc_connection?.sdp).toBe('fake-offer');
   });
 
   it('omits voice from session.update payloads', async () => {
@@ -169,11 +195,55 @@ describe('RealtimeClient', () => {
     const peer = peers[0];
     const sendCalls = peer.dataChannel.send.mock.calls;
     expect(sendCalls.length).toBeGreaterThan(0);
-    const payloads = sendCalls.map((call) => JSON.parse(call[0] as string) as { session: Record<string, unknown> });
-    expect(payloads.some((payload) => payload.session.instructions === 'Be helpful')).toBe(true);
+    const payloads = sendCalls.map((call) =>
+      JSON.parse(call[0] as string) as { session: { session_parameters?: Record<string, unknown> } },
+    );
+    expect(
+      payloads.some((payload) => payload.session.session_parameters?.instructions === 'Be helpful'),
+    ).toBe(true);
     payloads.forEach((payload) => {
-      expect(payload.session).not.toHaveProperty('voice');
-      expect(((payload.session as { audio?: unknown }).audio as Record<string, unknown> | undefined)?.output).toBeUndefined();
+      expect(payload.session.session_parameters).toBeDefined();
+      expect(payload.session.session_parameters).not.toHaveProperty('voice');
+      expect(
+        ((payload.session as { audio?: unknown }).audio as Record<string, unknown> | undefined)?.output,
+      ).toBeUndefined();
+    });
+  });
+
+  it('parses session.updated payloads using the new schema', async () => {
+    const stream = new FakeMediaStream() as unknown as MediaStream;
+
+    await client.connect({ apiKey: 'test-key', inputStream: stream });
+
+    const peer = peers[0];
+    const dataChannel = peer.dataChannel;
+    const messageHandler = dataChannel.onmessage;
+    expect(messageHandler).toBeTypeOf('function');
+
+    const payload = {
+      type: 'session.updated',
+      session: {
+        audio: {
+          output: {
+            voice: 'verse',
+          },
+        },
+        session_parameters: {
+          instructions: 'Stay concise',
+          voice: 'alloy',
+          turn_detection: { type: 'server_vad' },
+        },
+      },
+    } satisfies Record<string, unknown>;
+
+    messageHandler?.call(dataChannel as unknown as RTCDataChannel, {
+      data: JSON.stringify(payload),
+    } as MessageEvent);
+
+    expect(sessionUpdateHandler).toHaveBeenCalledWith({
+      voice: 'alloy',
+      instructions: 'Stay concise',
+      turnDetection: 'server_vad',
     });
   });
 
@@ -196,8 +266,12 @@ describe('RealtimeClient', () => {
     fetchMock.mockResolvedValueOnce({
       ok: false,
       status: 500,
+      headers: {
+        get: (name: string) => (name.toLowerCase() === 'content-type' ? 'application/json' : null),
+      } as Pick<Headers, 'get'>,
       json: async () => ({}),
-    } as Response);
+      text: vi.fn(async () => ''),
+    } as unknown as Response);
 
     const stream = new FakeMediaStream() as unknown as MediaStream;
 
