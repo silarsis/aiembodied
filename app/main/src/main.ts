@@ -535,6 +535,7 @@ app.whenReady().then(async () => {
     secretStore,
     preferencesStore: new FilePreferencesStore(path.join(app.getPath('userData'), 'preferences.json')),
     logger,
+    openAIClientFactory: getOpenAIClient,
   });
 
   try {

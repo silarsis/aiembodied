@@ -53,14 +53,22 @@ export type RendererConfig = Omit<AppConfig, 'realtimeApiKey' | 'wakeWord'> & {
 
 export type ConfigSecretKey = 'realtimeApiKey' | 'wakeWordAccessKey';
 
+type OpenAIModelsClient = {
+  models?: {
+    list?: (params: { limit?: number }) => Promise<unknown>;
+  };
+};
+
+type OpenAIClientFactory = (apiKey: string) => unknown;
+
 export interface ConfigManagerOptions {
   secretStore?: SecretStore;
   preferencesStore?: PreferencesStore;
   env?: NodeJS.ProcessEnv;
   fetchFn?: typeof fetch;
-  realtimeTestEndpoint?: string;
   wakeWordTestEndpoint?: string;
   logger?: ConfigLogger;
+  openAIClientFactory?: OpenAIClientFactory;
 }
 
 export class ConfigValidationError extends Error {
@@ -104,20 +112,20 @@ export class ConfigManager {
   private readonly preferencesStore?: PreferencesStore;
   private readonly env: NodeJS.ProcessEnv;
   private readonly fetchFn?: typeof fetch;
-  private readonly realtimeTestEndpoint: string;
   private readonly wakeWordTestEndpoint: string;
   private readonly secretTestTimeoutMs = 5000;
   private readonly logger: ConfigLogger;
+  private readonly openAIClientFactory?: OpenAIClientFactory;
 
   constructor(options: ConfigManagerOptions = {}) {
     this.secretStore = options.secretStore;
     this.preferencesStore = options.preferencesStore;
     this.env = options.env ?? process.env;
     this.fetchFn = options.fetchFn ?? (typeof fetch === 'function' ? fetch : undefined);
-    this.realtimeTestEndpoint = options.realtimeTestEndpoint ?? 'https://api.openai.com/v1/models';
     this.wakeWordTestEndpoint = options.wakeWordTestEndpoint ??
       'https://api.picovoice.ai/api/v1/porcupine/validate';
     this.logger = options.logger ?? console;
+    this.openAIClientFactory = options.openAIClientFactory;
   }
 
   async load(): Promise<AppConfig> {
@@ -300,20 +308,19 @@ export class ConfigManager {
       throw new Error('ConfigManager.load() must be called before testing secrets.');
     }
 
-    const fetchFn = this.fetchFn;
-    if (!fetchFn) {
-      return { ok: false, message: 'Secret testing is unavailable: no HTTP client configured.' };
-    }
-
     if (key === 'realtimeApiKey') {
       if (!this.config.realtimeApiKey) {
         return { ok: false, message: 'Realtime API key is not configured.' };
       }
       this.logger.debug('Testing realtime API key.');
-      return this.testRealtimeKey(fetchFn, this.config.realtimeApiKey);
+      return this.testRealtimeKey(this.config.realtimeApiKey);
     }
 
     if (key === 'wakeWordAccessKey') {
+      const fetchFn = this.fetchFn;
+      if (!fetchFn) {
+        return { ok: false, message: 'Secret testing is unavailable: no HTTP client configured.' };
+      }
       if (!this.config.wakeWord.accessKey) {
         return { ok: false, message: 'Porcupine access key is not configured.' };
       }
@@ -421,23 +428,21 @@ export class ConfigManager {
     return undefined;
   }
 
-  private async testRealtimeKey(fetchFn: typeof fetch, key: string): Promise<{ ok: boolean; message?: string }> {
+  private async testRealtimeKey(key: string): Promise<{ ok: boolean; message?: string }> {
+    const clientFactory = this.openAIClientFactory;
+    if (!clientFactory) {
+      return { ok: false, message: 'Secret testing is unavailable: no OpenAI client configured.' };
+    }
     try {
-      const response = await fetchFn(this.realtimeTestEndpoint, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${key}`,
-        },
-        signal: this.createTimeoutSignal(),
-      });
-
-      if (!response.ok) {
+      const client = clientFactory(key) as OpenAIModelsClient;
+      const listModels = client?.models?.list;
+      if (typeof listModels !== 'function') {
         return {
           ok: false,
-          message: `Realtime API responded with HTTP ${response.status}`,
+          message: 'Secret testing is unavailable: OpenAI client does not support model listing.',
         };
       }
-
+      await listModels({ limit: 1 });
       return { ok: true, message: 'Realtime API key verified successfully.' };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error while testing realtime API key.';
