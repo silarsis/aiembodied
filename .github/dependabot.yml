@@ -1,22 +1,8 @@
 version: 2
 updates:
-  # Root package.json - shared dependencies
-  - package-ecosystem: "npm"
+  # Workspace-wide dependencies (pnpm manages all package.json files via the root lockfile)
+  - package-ecosystem: "pnpm"
     directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 10
-    
-  # Main process (Electron backend)
-  - package-ecosystem: "npm"
-    directory: "/app/main"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 10
-    
-  # Renderer process (Frontend - React/Vite)
-  - package-ecosystem: "npm"
-    directory: "/app/renderer"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
