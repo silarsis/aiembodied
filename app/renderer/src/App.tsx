@@ -99,35 +99,40 @@ function formatLatency(value?: number): string {
 }
 
 function useAudioGraphState(inputDeviceId?: string, enabled = true) {
-  const [state, setState] = useState<AudioGraphState>({
+  const [internalState, setInternalState] = useState<AudioGraphState>({
     level: 0,
     isActive: false,
     status: 'idle',
     error: null,
   });
-  const [upstreamStream, setUpstreamStream] = useState<MediaStream | null>(null);
+  const [internalUpstreamStream, setInternalUpstreamStream] = useState<MediaStream | null>(null);
+
+  // Derive state based on enabled prop
+  const state = enabled 
+    ? internalState 
+    : { level: 0, isActive: false, status: 'idle' as const, error: null };
+  
+  // Derive stream based on enabled prop
+  const upstreamStream = enabled ? internalUpstreamStream : null;
 
   useEffect(() => {
     if (!enabled) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setState((previous) => ({ ...previous, status: 'idle', error: null }));
-      setUpstreamStream(null);
-      return;
+      return; // Stream cleanup handled by derivation
     }
 
     const graph = new AudioGraph({
       onLevel: (level) => {
-        setState((previous) => ({ ...previous, level }));
+        setInternalState((previous) => ({ ...previous, level }));
       },
       onSpeechActivityChange: (isActive) => {
-        setState((previous) => ({ ...previous, isActive }));
+        setInternalState((previous) => ({ ...previous, isActive }));
       },
     });
 
     let disposed = false;
 
     const startGraph = async () => {
-      setState((previous) => ({ ...previous, status: 'starting', error: null }));
+      setInternalState((previous) => ({ ...previous, status: 'starting', error: null }));
 
       try {
         await graph.start({ inputDeviceId });
@@ -136,13 +141,13 @@ function useAudioGraphState(inputDeviceId?: string, enabled = true) {
           return;
         }
 
-        setState((previous) => ({ ...previous, status: 'ready' }));
-        setUpstreamStream(graph.getUpstreamStream());
+        setInternalState((previous) => ({ ...previous, status: 'ready' }));
+        setInternalUpstreamStream(graph.getUpstreamStream());
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (!disposed) {
-          setState((previous) => ({ ...previous, status: 'error', error: message }));
-          setUpstreamStream(null);
+          setInternalState((previous) => ({ ...previous, status: 'error', error: message }));
+          setInternalUpstreamStream(null);
         }
       }
     };
@@ -151,7 +156,7 @@ function useAudioGraphState(inputDeviceId?: string, enabled = true) {
 
     return () => {
       disposed = true;
-      setUpstreamStream(null);
+      setInternalUpstreamStream(null);
       void graph.stop();
     };
   }, [inputDeviceId, enabled]);
@@ -439,13 +444,14 @@ function useOnlineStatus() {
 }
 
 function useIdleCursor(enabled: boolean) {
-  const [isIdle, setIsIdle] = useState(false);
+  const [internalIsIdle, setInternalIsIdle] = useState(false);
+  
+  // Derive idle state - never idle when disabled
+  const isIdle = enabled && internalIsIdle;
 
   useEffect(() => {
     if (!enabled) {
       document.body.classList.remove('cursor-hidden');
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setIsIdle(false);
       return;
     }
 
@@ -453,7 +459,7 @@ function useIdleCursor(enabled: boolean) {
 
     const markIdle = () => {
       timeout = null;
-      setIsIdle(true);
+      setInternalIsIdle(true);
     };
 
     const scheduleIdle = () => {
@@ -467,7 +473,7 @@ function useIdleCursor(enabled: boolean) {
       if (timeout) {
         clearTimeout(timeout);
       }
-      setIsIdle(false);
+      setInternalIsIdle(false);
       timeout = setTimeout(markIdle, CURSOR_IDLE_TIMEOUT_MS);
     };
 
@@ -487,7 +493,7 @@ function useIdleCursor(enabled: boolean) {
       }
       events.forEach((event) => window.removeEventListener(event, handleActivity));
       document.body.classList.remove('cursor-hidden');
-      setIsIdle(false);
+      setInternalIsIdle(false);
     };
   }, [enabled]);
 

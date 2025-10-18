@@ -44,10 +44,14 @@ export function useAudioDevices() {
     }
   }, []);
 
+  // Load initial data on mount
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    void refresh();
+    void refresh(); // Initial data loading is a legitimate pattern
+  }, [refresh]);
 
+  // Subscribe to device changes
+  useEffect(() => {
     const handleDeviceChange = () => {
       void refresh();
     };
