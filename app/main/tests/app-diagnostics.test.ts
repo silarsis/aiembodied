@@ -89,7 +89,15 @@ describe('createAppDiagnostics', () => {
 
     window.emit('ready-to-show');
     window.webContents.emit('did-finish-load');
-    window.webContents.emit('console-message', {}, 2, 'renderer boom', 42, 'app://index');
+    window.webContents.emit('console-message', {
+      preventDefault: () => {},
+      defaultPrevented: false,
+      level: 'error',
+      message: 'renderer boom',
+      lineNumber: 42,
+      sourceId: 'app://index',
+      frame: {} as unknown,
+    });
 
     expect(logger.info).toHaveBeenCalledWith('App diagnostics enabled.');
     expect(logger.debug).toHaveBeenCalledWith('Diagnostics: window ready-to-show.', { windowId: 7 });
@@ -106,6 +114,63 @@ describe('createAppDiagnostics', () => {
       message: 'renderer boom',
       line: 42,
       sourceId: 'app://index',
+    });
+
+    diagnostics.dispose();
+    activeDiagnostics = null;
+  });
+
+  it('logs renderer console warnings and debug messages at appropriate levels', async () => {
+    const logger = createLogger();
+    const { createAppDiagnostics } = await import('../src/logging/app-diagnostics.js');
+
+    const diagnostics = createAppDiagnostics({ logger, enabled: true });
+    activeDiagnostics = diagnostics;
+
+    const window = new FakeBrowserWindow(11);
+    diagnostics.trackWindow(window as unknown as import('electron').BrowserWindow);
+
+    logger.warn.mockClear();
+    logger.debug.mockClear();
+
+    window.webContents.emit('console-message', {
+      preventDefault: () => {},
+      defaultPrevented: false,
+      level: 'warning',
+      message: 'renderer warn',
+      lineNumber: 7,
+      sourceId: 'app://warn',
+      frame: {} as unknown,
+    });
+
+    window.webContents.emit('console-message', {
+      preventDefault: () => {},
+      defaultPrevented: false,
+      level: 'debug',
+      message: 'renderer debug',
+      lineNumber: 9,
+      sourceId: 'app://debug',
+      frame: {} as unknown,
+    });
+
+    expect(logger.warn).toHaveBeenCalledWith('Diagnostics: renderer console message.', {
+      webContentsId: window.webContents.id,
+      windowId: 11,
+      source: 'browser-window',
+      level: 'warn',
+      message: 'renderer warn',
+      line: 7,
+      sourceId: 'app://warn',
+    });
+
+    expect(logger.debug).toHaveBeenCalledWith('Diagnostics: renderer console message.', {
+      webContentsId: window.webContents.id,
+      windowId: 11,
+      source: 'browser-window',
+      level: 'debug',
+      message: 'renderer debug',
+      line: 9,
+      sourceId: 'app://debug',
     });
 
     diagnostics.dispose();
