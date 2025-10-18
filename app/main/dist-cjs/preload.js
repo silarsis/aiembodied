@@ -1,6 +1,5 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const electron_1 = require("electron");
+import { contextBridge, ipcRenderer } from 'electron';
 function logPreloadMessage(level, message, meta) {
     const prefix = `[preload bridge] ${message}`;
     try {
@@ -31,7 +30,7 @@ function logPreloadMessage(level, message, meta) {
 }
 function forwardPreloadDiagnostics(level, message, meta) {
     try {
-        electron_1.ipcRenderer.send('diagnostics:preload-log', {
+        ipcRenderer.send('diagnostics:preload-log', {
             level,
             message,
             meta,
@@ -52,54 +51,54 @@ const logPreloadError = (message, meta) => {
 };
 const api = {
     config: {
-        get: () => electron_1.ipcRenderer.invoke('config:get'),
-        getSecret: (key) => electron_1.ipcRenderer.invoke('config:get-secret', key),
-        setSecret: (key, value) => electron_1.ipcRenderer.invoke('config:set-secret', { key, value }),
-        testSecret: (key) => electron_1.ipcRenderer.invoke('config:test-secret', key),
-        setAudioDevicePreferences: (preferences) => electron_1.ipcRenderer.invoke('config:set-audio-devices', preferences),
+        get: () => ipcRenderer.invoke('config:get'),
+        getSecret: (key) => ipcRenderer.invoke('config:get-secret', key),
+        setSecret: (key, value) => ipcRenderer.invoke('config:set-secret', { key, value }),
+        testSecret: (key) => ipcRenderer.invoke('config:test-secret', key),
+        setAudioDevicePreferences: (preferences) => ipcRenderer.invoke('config:set-audio-devices', preferences),
     },
     wakeWord: {
         onWake: (listener) => {
             const channel = 'wake-word:event';
             const handler = (_event, payload) => listener(payload);
-            electron_1.ipcRenderer.on(channel, handler);
+            ipcRenderer.on(channel, handler);
             return () => {
-                electron_1.ipcRenderer.removeListener(channel, handler);
+                ipcRenderer.removeListener(channel, handler);
             };
         },
     },
     conversation: {
-        getHistory: () => electron_1.ipcRenderer.invoke('conversation:get-history'),
-        appendMessage: (message) => electron_1.ipcRenderer.invoke('conversation:append-message', message),
+        getHistory: () => ipcRenderer.invoke('conversation:get-history'),
+        appendMessage: (message) => ipcRenderer.invoke('conversation:append-message', message),
         onSessionStarted: (listener) => {
             const channel = 'conversation:session-started';
             const handler = (_event, payload) => listener(payload);
-            electron_1.ipcRenderer.on(channel, handler);
+            ipcRenderer.on(channel, handler);
             return () => {
-                electron_1.ipcRenderer.removeListener(channel, handler);
+                ipcRenderer.removeListener(channel, handler);
             };
         },
         onMessageAppended: (listener) => {
             const channel = 'conversation:message-appended';
             const handler = (_event, payload) => listener(payload);
-            electron_1.ipcRenderer.on(channel, handler);
+            ipcRenderer.on(channel, handler);
             return () => {
-                electron_1.ipcRenderer.removeListener(channel, handler);
+                ipcRenderer.removeListener(channel, handler);
             };
         },
     },
     metrics: {
         observeLatency: async (metric, valueMs) => {
-            await electron_1.ipcRenderer.invoke('metrics:observe-latency', { metric, valueMs });
+            await ipcRenderer.invoke('metrics:observe-latency', { metric, valueMs });
         },
     },
     avatar: {
-        listFaces: () => electron_1.ipcRenderer.invoke('avatar:list-faces'),
-        getActiveFace: () => electron_1.ipcRenderer.invoke('avatar:get-active-face'),
-        setActiveFace: (faceId) => electron_1.ipcRenderer.invoke('avatar:set-active-face', faceId),
-        uploadFace: (payload) => electron_1.ipcRenderer.invoke('avatar:upload-face', payload),
+        listFaces: () => ipcRenderer.invoke('avatar:list-faces'),
+        getActiveFace: () => ipcRenderer.invoke('avatar:get-active-face'),
+        setActiveFace: (faceId) => ipcRenderer.invoke('avatar:set-active-face', faceId),
+        uploadFace: (payload) => ipcRenderer.invoke('avatar:upload-face', payload),
         deleteFace: async (faceId) => {
-            await electron_1.ipcRenderer.invoke('avatar:delete-face', faceId);
+            await ipcRenderer.invoke('avatar:delete-face', faceId);
         },
     },
     ping: () => 'pong',
@@ -112,7 +111,7 @@ logPreloadInfo('Preparing to expose renderer bridge.', {
 });
 function exposeBridge() {
     try {
-        electron_1.contextBridge.exposeInMainWorld('aiembodied', api);
+        contextBridge.exposeInMainWorld('aiembodied', api);
         logPreloadInfo('Renderer bridge exposed successfully.', {
             keys: Object.keys(api),
             hasAvatarBridge: typeof api.avatar !== 'undefined',

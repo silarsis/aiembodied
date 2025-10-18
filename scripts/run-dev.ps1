@@ -16,44 +16,6 @@ function Test-CommandExists {
   try { return [bool](Get-Command -Name $Name -ErrorAction Stop) } catch { return $false }
 }
 
-# Ensure system Node version matches Electron's embedded Node to avoid ABI mismatches in dev/test
-try {
-  Write-Host "[info] Checking Node version alignment with Electron..." -ForegroundColor Cyan
-  $systemNode = (node -p "process.versions.node" 2>$null).Trim()
-  $electronNode = (pnpm --filter @aiembodied/main exec electron -p "process.versions.node" 2>$null).Trim()
-  if (-not [string]::IsNullOrWhiteSpace($systemNode) -and -not [string]::IsNullOrWhiteSpace($electronNode)) {
-    if ($systemNode -ne $electronNode) {
-      Write-Warning "System Node v$systemNode differs from Electron's Node v$electronNode. Attempting to switch..."
-      $switched = $false
-      if (Test-CommandExists -Name 'nvs') {
-        try {
-          nvs add "node/$electronNode" | Out-Null
-          nvs use "node/$electronNode" | Out-Null
-          $newNode = (node -p "process.versions.node" 2>$null).Trim()
-          if ($newNode -eq $electronNode) { $switched = $true }
-        } catch {}
-      }
-      if (-not $switched -and (Test-CommandExists -Name 'nvm')) {
-        try {
-          nvm install $electronNode | Out-Null
-          nvm use $electronNode | Out-Null
-          $newNode = (node -p "process.versions.node" 2>$null).Trim()
-          if ($newNode -eq $electronNode) { $switched = $true }
-        } catch {}
-      }
-      if ($switched) {
-        Write-Host "[info] Activated Node v$electronNode to match Electron." -ForegroundColor Green
-      } else {
-        Write-Warning "Could not auto-switch Node version. Consider installing NVS (https://github.com/jasongin/nvs) or nvm-windows and switching to v$electronNode."
-      }
-    } else {
-      Write-Host "[info] System Node matches Electron's Node (v$systemNode)." -ForegroundColor Green
-    }
-  }
-} catch {
-  Write-Warning "Node/Electron version alignment check failed: $($_.Exception.Message)"
-}
-
 Write-Host "[info] Checking workspace install..." -ForegroundColor Cyan
 $repoRoot = Split-Path -Path $PSScriptRoot -Parent
 $rootNodeModules = Join-Path -Path $repoRoot -ChildPath 'node_modules'
@@ -133,6 +95,8 @@ try {
     $env:NO_UPDATE_NOTIFIER = $prev.NO_UPDATE_NOTIFIER
     $env:npm_config_update_notifier = $prev.npm_config_update_notifier
   }
+}
+
 Write-Host "[info] Rebuilding native modules for Electron..." -ForegroundColor Cyan
 try {
   # Run from the package directory and isolate HOME to avoid EPERM on Windows junctions
@@ -188,53 +152,12 @@ try {
   if (-not [string]::IsNullOrWhiteSpace($electronVersion)) {
     $env:npm_config_runtime = 'electron'
     $env:npm_config_target = $electronVersion.Trim()
+    # Force source compilation for better-sqlite3 to avoid Node version mismatch issues
+    $env:PREBUILD_INSTALL_FORBID = '1'
     pnpm --filter @aiembodied/main rebuild better-sqlite3 keytar | Out-Null
   }
 } catch {
   Write-Warning "Optional electron native rebuild step failed: $($_.Exception.Message)"
-}
-
-# Build a true CommonJS preload to avoid dynamic import issues
-try {
-  Write-Host "[info] Building CommonJS preload..." -ForegroundColor Cyan
-  Push-Location (Join-Path $repoRoot 'app/main')
-  pnpm --filter @aiembodied/main exec tsc -p tsconfig.preload.cjs.json
-  $code = $LASTEXITCODE
-  Pop-Location
-  if ($code -ne 0) { throw "cjs-preload-build-failed:$code" }
-
-  $mainDir = Join-Path -Path $repoRoot -ChildPath 'app/main'
-  $builtCjs = Join-Path -Path $mainDir -ChildPath 'dist-cjs/preload.js'
-  if (-not (Test-Path -Path $builtCjs -PathType Leaf)) { throw "missing-cjs:$builtCjs" }
-
-  $distDir = Join-Path -Path $mainDir -ChildPath 'dist'
-  if (-not (Test-Path -Path $distDir -PathType Container)) { New-Item -ItemType Directory -Force -Path $distDir | Out-Null }
-  $target = Join-Path -Path $distDir -ChildPath 'preload.cjs'
-  Copy-Item -Path $builtCjs -Destination $target -Force
-  Write-Host "[info] Wrote CommonJS preload at: $target" -ForegroundColor Cyan
-} catch {
-  Write-Warning "Failed to build CommonJS preload: $($_.Exception.Message). Falling back to dynamic-import shim."
-  try {
-    $mainDist = Join-Path -Path $repoRoot -ChildPath 'app/main/dist'
-    $esmPreload = Join-Path -Path $mainDist -ChildPath 'preload.js'
-    $cjsShim = Join-Path -Path $mainDist -ChildPath 'preload.cjs'
-    if (Test-Path -Path $esmPreload -PathType Leaf) {
-      $shim = @'
-// Auto-generated CommonJS shim to load the ESM preload build
-const { pathToFileURL } = require('url');
-const path = require('path');
-let ipcRenderer;
-try { ({ ipcRenderer } = require('electron')); } catch {}
-const forward = (level, message, meta) => { try { if (ipcRenderer) ipcRenderer.send('diagnostics:preload-log', { level, message, meta, ts: Date.now() }); } catch {} };
-console.info('[preload shim] Starting preload shim');
-forward('info', 'preload-shim:starting');
-(async () => { try { const href = pathToFileURL(path.join(__dirname, 'preload.js')).href; forward('info', 'preload-shim:importing', { href }); await import(href); forward('info', 'preload-shim:imported'); } catch (e) { forward('error', 'preload-shim:import-failed', { message: e && (e.message || e) }); throw e; } })();
-'@
-      Set-Content -Path $cjsShim -Value $shim -NoNewline
-    }
-  } catch {
-    Write-Warning "Failed to create preload shim: $($_.Exception.Message)"
-  }
 }
 
 function Get-DotEnvValues {
