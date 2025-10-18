@@ -41,6 +41,7 @@ Run these commands from the repository root unless a task specifies otherwise:
 - When crafting requests, ensure every content chunk conforms to the Responses API schema (e.g., text prompts must use `{ type: 'input_text', text: '...' }`).
 - Structured outputs must configure `text.format` with `{ type: 'json_schema', name: <identifier>, schema: <definition> }`. Do not send the deprecated `response_format` field or the unsupported `response` wrapper.
 - Responses should omit the deprecated `modalities` array; rely on the presence of `text.format` to request structured JSON payloads.
+- Avatar component schemas must mark `slot`, `mimeType`, and `data` as required in each item definition to satisfy the Responses API validator.
 
 Document any deviations or additional checks in your PR description, especially if a module introduces new tooling.
 

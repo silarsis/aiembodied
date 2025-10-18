@@ -78,7 +78,7 @@ const RESPONSE_SCHEMA_DEFINITION = {
         items: {
           type: 'object',
           additionalProperties: false,
-          required: ['slot', 'data'],
+          required: ['slot', 'mimeType', 'data'],
           properties: {
             slot: { type: 'string', enum: AVATAR_COMPONENT_SLOTS },
             data: {
