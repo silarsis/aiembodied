@@ -9,7 +9,9 @@
     "dev": "node --loader ts-node/esm src/main.ts",
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "npm run test:rebuild && vitest run",
+    "test:coverage": "npm run test:rebuild && vitest run --coverage",
+    "test:rebuild": "node -e \"const v=process.version.slice(1); process.env.npm_config_runtime='node'; process.env.npm_config_target=v; process.env.PREBUILD_INSTALL_FORBID='1'; require('child_process').execSync('pnpm rebuild better-sqlite3', {stdio:'inherit'});\""
   },
   "dependencies": {
     "@picovoice/porcupine-node": "^3.0.6",
@@ -30,6 +32,7 @@
     "@types/auto-launch": "^5.0.5",
     "@types/better-sqlite3": "^7.6.13",
     "@types/debug": "^4.1.12",
+    "cross-env": "^7.0.3",
     "ts-node": "^10.9.2"
   }
 }

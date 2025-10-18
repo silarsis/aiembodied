@@ -1,13 +1,14 @@
-name: CI
+name: Test Coverage
+
+permissions:
+  contents: read
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 
 jobs:
-  build:
+  coverage:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -23,14 +24,17 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Rebuild native dependencies for Node.js
+      - name: Rebuild native dependencies for Node.js  
         run: |
           NODE_VERSION=$(node --version | sed 's/v//')
           echo "Rebuilding better-sqlite3 for Node.js version: $NODE_VERSION"
           PREBUILD_INSTALL_FORBID=1 npm_config_runtime=node npm_config_target=$NODE_VERSION pnpm --filter @aiembodied/main rebuild better-sqlite3
-      - name: Lint
-        run: pnpm lint
-      - name: Typecheck
-        run: pnpm typecheck
-      - name: Test
-        run: pnpm test
+      - name: Run tests with coverage
+        run: pnpm test:coverage
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          directory: ./coverage
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
