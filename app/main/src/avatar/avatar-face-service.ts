@@ -3,9 +3,10 @@ import { Buffer } from 'node:buffer';
 import type OpenAI from 'openai';
 import type {
   ResponseCreateParamsNonStreaming,
+  ResponseFormatTextJSONSchemaConfig,
   ResponseInput,
   ResponseInputMessageContentList,
-} from 'openai/resources/responses/responses';
+} from 'openai/resources/responses/responses.mjs';
 import { z } from 'zod';
 import type { MemoryStore, FaceRecord, FaceComponentRecord } from '../memory/memory-store.js';
 import {
@@ -60,6 +61,8 @@ const JsonResponseSchema = z.object({
 
 const RESPONSE_SCHEMA_DEFINITION = {
   name: 'AvatarComponents',
+  type: 'json_schema',
+  strict: true,
   schema: {
     type: 'object',
     additionalProperties: false,
@@ -97,7 +100,7 @@ const RESPONSE_SCHEMA_DEFINITION = {
       },
     },
   },
-} as const;
+} satisfies ResponseFormatTextJSONSchemaConfig;
 
 function sanitizeName(name: string | undefined, fallback: string): string {
   if (typeof name !== 'string') {
@@ -167,22 +170,11 @@ export class AvatarFaceService {
       { type: 'message', role: 'user', content: userContent },
     ];
 
-    const body: ResponseCreateParamsNonStreaming & {
-      modalities: ['text'];
-      response: {
-        modalities: ['text'];
-        text: { format: 'json_schema'; schema: typeof RESPONSE_SCHEMA_DEFINITION };
-      };
-    } = {
+    const body: ResponseCreateParamsNonStreaming = {
       model: 'gpt-4.1-mini',
-      modalities: ['text'],
       input,
-      response: {
-        modalities: ['text'],
-        text: {
-          format: 'json_schema',
-          schema: RESPONSE_SCHEMA_DEFINITION,
-        },
+      text: {
+        format: RESPONSE_SCHEMA_DEFINITION,
       },
     };
 
