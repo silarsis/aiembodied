@@ -1,7 +1,5 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.InMemorySecretStore = void 0;
-class InMemorySecretStore {
+export class InMemorySecretStore {
     constructor() {
         this.store = new Map();
     }
@@ -15,4 +13,3 @@ class InMemorySecretStore {
         this.store.delete(key);
     }
 }
-exports.InMemorySecretStore = InMemorySecretStore;

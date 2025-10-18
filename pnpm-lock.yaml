@@ -96,8 +96,8 @@ importers:
         specifier: ^16.4.5
         version: 16.6.1
       electron:
-        specifier: ^35.7.5
-        version: 35.7.5
+        specifier: ^38.3.0
+        version: 38.3.0
       keytar:
         specifier: ^7.9.0
         version: 7.9.0
@@ -128,16 +128,16 @@ importers:
         version: 4.1.12
       ts-node:
         specifier: ^10.9.2
-        version: 10.9.2(@types/node@22.18.8)(typescript@5.9.3)
+        version: 10.9.2(@types/node@22.18.11)(typescript@5.9.3)
 
   app/renderer:
     dependencies:
       react:
-        specifier: ^18.2.0
+        specifier: ^18.3.1
         version: 18.3.1
       react-dom:
-        specifier: ^19.2.0
-        version: 19.2.0(react@18.3.1)
+        specifier: ^18.3.1
+        version: 18.3.1(react@18.3.1)
 
 packages:
 
@@ -794,8 +794,8 @@ packages:
   '@types/node@20.19.19':
     resolution: {integrity: sha512-pb1Uqj5WJP7wrcbLU7Ru4QtA0+3kAXrkutGiD26wUKzSMgNNaPARTUDQmElUXp64kh3cWdou3Q0C7qwwxqSFmg==}
 
-  '@types/node@22.18.8':
-    resolution: {integrity: sha512-pAZSHMiagDR7cARo/cch1f3rXy0AEXwsVsVH09FcyeJVAzCnGgmYis7P3JidtTUjyadhTeSo8TgRPswstghDaw==}
+  '@types/node@22.18.11':
+    resolution: {integrity: sha512-Gd33J2XIrXurb+eT2ktze3rJAfAp9ZNjlBdh4SVgyrKEOADwCbdUDaK7QgJno8Ue4kcajscsKqu6n8OBG3hhCQ==}
 
   '@types/plist@3.0.5':
     resolution: {integrity: sha512-E6OCaRmAe4WDmWNsL/9RMqdkkzDCY1etutkflWk4c+AcjDU07Pcz1fQwTX0TQz+Pxqn9i4L1TU3UFpjnrcDgxA==}
@@ -1460,8 +1460,8 @@ packages:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
     engines: {node: '>=8.0.0'}
 
-  electron@35.7.5:
-    resolution: {integrity: sha512-dnL+JvLraKZl7iusXTVTGYs10TKfzUi30uEDTqsmTm0guN9V2tbOjTzyIZbh9n3ygUjgEYyo+igAwMRXIi3IPw==}
+  electron@38.3.0:
+    resolution: {integrity: sha512-Wij4AzX4SAV0X/ktq+NrWrp5piTCSS8F6YWh1KAcG+QRtNzyns9XLKERP68nFHIwfprhxF2YCN2uj7nx9DaeJw==}
     engines: {node: '>= 12.20.55'}
     hasBin: true
 
@@ -2840,6 +2840,11 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
+  semver@7.7.3:
+    resolution: {integrity: sha512-SdsKMrI9TdgjdweUSR9MweHA4EJ8YxHn8DFaDisvhVlUOe4BF1tLD7GAj0lIqWVl+dPb/rExr0Btby5loQm20Q==}
+    engines: {node: '>=10'}
+    hasBin: true
+
   serialize-error@7.0.1:
     resolution: {integrity: sha512-8I8TjW5KMOKsZQTvoxjuSIa7foAwPWGOts+6o7sgjz41/qMD9VQHEDxi6PBvK2l0MXUmqZyNpUK+T2tQaaElvw==}
     engines: {node: '>=10'}
@@ -3645,7 +3650,7 @@ snapshots:
       make-fetch-happen: 10.2.1
       nopt: 6.0.0
       proc-log: 2.0.1
-      semver: 7.7.2
+      semver: 7.7.3
       tar: 6.2.1
       which: 2.0.2
     transitivePeerDependencies:
@@ -3684,7 +3689,7 @@ snapshots:
       node-api-version: 0.2.1
       ora: 5.4.1
       read-binary-file-arch: 1.0.6
-      semver: 7.7.2
+      semver: 7.7.3
       tar: 6.2.1
       yargs: 17.7.2
     transitivePeerDependencies:
@@ -3893,7 +3898,7 @@ snapshots:
   '@npmcli/fs@2.1.2':
     dependencies:
       '@gar/promisify': 1.1.3
-      semver: 7.7.2
+      semver: 7.7.3
 
   '@npmcli/move-file@2.0.1':
     dependencies:
@@ -4088,7 +4093,7 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
-  '@types/node@22.18.8':
+  '@types/node@22.18.11':
     dependencies:
       undici-types: 6.21.0
 
@@ -4954,10 +4959,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@35.7.5:
+  electron@38.3.0:
     dependencies:
       '@electron/get': 2.0.3
-      '@types/node': 22.18.8
+      '@types/node': 22.18.11
       extract-zip: 2.0.1
     transitivePeerDependencies:
       - supports-color
@@ -5488,7 +5493,7 @@ snapshots:
       es6-error: 4.1.1
       matcher: 3.0.0
       roarr: 2.15.4
-      semver: 7.7.2
+      semver: 7.7.3
       serialize-error: 7.0.1
     optional: true
 
@@ -5982,7 +5987,7 @@ snapshots:
 
   make-dir@4.0.0:
     dependencies:
-      semver: 7.7.2
+      semver: 7.7.3
 
   make-error@1.3.6: {}
 
@@ -6135,7 +6140,7 @@ snapshots:
 
   node-api-version@0.2.1:
     dependencies:
-      semver: 7.7.2
+      semver: 7.7.3
 
   node-releases@2.0.23: {}
 
@@ -6588,6 +6593,8 @@ snapshots:
 
   semver@7.7.2: {}
 
+  semver@7.7.3: {}
+
   serialize-error@7.0.1:
     dependencies:
       type-fest: 0.13.1
@@ -6911,14 +6918,14 @@ snapshots:
     dependencies:
       typescript: 5.9.3
 
-  ts-node@10.9.2(@types/node@22.18.8)(typescript@5.9.3):
+  ts-node@10.9.2(@types/node@22.18.11)(typescript@5.9.3):
     dependencies:
       '@cspotcode/source-map-support': 0.8.1
       '@tsconfig/node10': 1.0.11
       '@tsconfig/node12': 1.0.11
       '@tsconfig/node14': 1.0.3
       '@tsconfig/node16': 1.0.4
-      '@types/node': 22.18.8
+      '@types/node': 22.18.11
       acorn: 8.15.0
       acorn-walk: 8.3.4
       arg: 4.1.3

@@ -275,9 +275,14 @@ describe('ConfigManager', () => {
     await expect(manager.setSecret('realtimeApiKey', 'next')).rejects.toThrow('Secret store is not configured');
   });
 
-  it('tests realtime api keys using the configured HTTP client', async () => {
+  it('tests realtime api keys using the configured OpenAI client', async () => {
     const secretStore = new InMemorySecretStore();
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    const modelsList = vi.fn().mockResolvedValue({ data: [] });
+    const openAIClientFactory = vi.fn().mockReturnValue({
+      models: {
+        list: modelsList,
+      },
+    });
     const manager = new ConfigManager({
       env: {
         REALTIME_API_KEY: 'live-key',
@@ -285,16 +290,14 @@ describe('ConfigManager', () => {
         WAKE_WORD_BUILTIN: 'porcupine',
       } as NodeJS.ProcessEnv,
       secretStore,
-      fetchFn: fetchMock,
+      openAIClientFactory,
     });
 
     await manager.load();
 
     const result = await manager.testSecret('realtimeApiKey');
-    expect(fetchMock).toHaveBeenCalledWith('https://api.openai.com/v1/models', expect.objectContaining({
-      method: 'GET',
-      headers: expect.objectContaining({ Authorization: 'Bearer live-key' }),
-    }));
+    expect(openAIClientFactory).toHaveBeenCalledWith('live-key');
+    expect(modelsList).toHaveBeenCalledWith({ limit: 1 });
     expect(result).toEqual({ ok: true, message: 'Realtime API key verified successfully.' });
   });
 
@@ -310,6 +313,21 @@ describe('ConfigManager', () => {
     const result = await manager.testSecret('realtimeApiKey');
     expect(result).toEqual({ ok: false, message: 'Realtime API key is not configured.' });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('reports when no OpenAI client is available for realtime key testing', async () => {
+    const manager = new ConfigManager({
+      env: {
+        REALTIME_API_KEY: 'configured-key',
+        PORCUPINE_ACCESS_KEY: 'wake-key',
+        WAKE_WORD_BUILTIN: 'porcupine',
+      } as NodeJS.ProcessEnv,
+    });
+
+    await manager.load();
+
+    const result = await manager.testSecret('realtimeApiKey');
+    expect(result).toEqual({ ok: false, message: 'Secret testing is unavailable: no OpenAI client configured.' });
   });
 
   it('reports HTTP failures when validating wake word access keys', async () => {

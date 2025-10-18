@@ -23,10 +23,7 @@ function dedupeCandidates(candidates: string[]): string[] {
 
 export function resolvePreloadScriptPath(baseDir: string): RuntimePathResolution {
   const candidates = dedupeCandidates([
-    // Prefer CommonJS shim when present (Electron preload is loaded via require)
-    path.resolve(baseDir, 'preload.cjs'),
-    path.resolve(baseDir, '../dist/preload.cjs'),
-    // Fallback to ESM build (may require a shim depending on Electron)
+    // Prefer ESM build (Electron supports ESM preloads directly)
     path.resolve(baseDir, 'preload.js'),
     path.resolve(baseDir, '../dist/preload.js'),
   ]);

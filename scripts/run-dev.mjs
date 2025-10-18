@@ -79,27 +79,6 @@ async function main() {
   }
   console.log('[info] Preload script verified at:', preloadPath);
 
-  // Build a true CommonJS preload to avoid dynamic import issues
-  try {
-    await run('node', [join('scripts', 'build-preload-cjs.mjs')]);
-  } catch (err) {
-    console.warn('[warn] Failed to build CJS preload via tsc; falling back to shim:', err?.message || String(err));
-    // Fallback: write a dynamic-import shim if CJS build fails
-    const distDir = resolve(repoRoot, 'app/main/dist');
-    const cjsShimPath = join(distDir, 'preload.cjs');
-    const shim = `// Auto-generated CommonJS shim to load the ESM preload build
-const { pathToFileURL } = require('url');
-const path = require('path');
-let ipcRenderer; try { ({ ipcRenderer } = require('electron')); } catch {}
-const forward = (level, message, meta) => { try { if (ipcRenderer) ipcRenderer.send('diagnostics:preload-log', { level, message, meta, ts: Date.now() }); } catch {} };
-console.info('[preload shim] Starting preload shim');
-forward('info', 'preload-shim:starting');
-(async () => { try { const href = pathToFileURL(path.join(__dirname, 'preload.js')).href; forward('info', 'preload-shim:importing', { href }); await import(href); forward('info', 'preload-shim:imported'); } catch (e) { forward('error', 'preload-shim:import-failed', { message: e && (e.message || e) }); throw e; } })();
-`;
-    writeFileSync(cjsShimPath, shim, { encoding: 'utf8' });
-    console.log('[info] Wrote CommonJS preload shim at:', cjsShimPath);
-  }
-
   // Verify renderer dist exists
   const rendererIndexPath = resolve(repoRoot, 'app/renderer/dist/index.html');
   if (!existsSync(rendererIndexPath)) {
