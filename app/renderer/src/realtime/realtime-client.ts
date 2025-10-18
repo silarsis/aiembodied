@@ -311,13 +311,7 @@ export class RealtimeClient {
     const offer = await peer.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
     await peer.setLocalDescription(offer);
 
-    const sessionDescriptor = this.buildSessionDescriptor();
-    const handshakeBody = {
-      session: sessionDescriptor,
-      rtc_connection: {
-        sdp: offer.sdp ?? '',
-      },
-    };
+    // Session configuration is now handled via WebRTC data channel after connection
 
     // Use the correct WebRTC SDP negotiation format per OpenAI documentation
     const url = `${this.endpoint}?model=${encodeURIComponent(this.model)}`;
