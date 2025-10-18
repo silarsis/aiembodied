@@ -352,8 +352,8 @@ describe('main process bootstrap', () => {
     resolvePreloadScriptPathMock.mockReset();
     resolveRendererEntryPointMock.mockReset();
     resolvePreloadScriptPathMock.mockReturnValue({
-      path: '/tmp/aiembodied-test/preload.cjs',
-      attempted: ['/tmp/aiembodied-test/preload.cjs'],
+      path: '/tmp/aiembodied-test/preload.js',
+      attempted: ['/tmp/aiembodied-test/preload.js'],
       usedIndex: 0,
     });
     resolveRendererEntryPointMock.mockReturnValue({
@@ -550,7 +550,7 @@ describe('main process bootstrap', () => {
     expect(BrowserWindowMock).toHaveBeenCalledTimes(1);
     expect(BrowserWindowMock.mock.calls[0]?.[0]).toMatchObject({
       webPreferences: expect.objectContaining({
-        preload: '/tmp/aiembodied-test/preload.cjs',
+        preload: '/tmp/aiembodied-test/preload.js',
       }),
     });
     const mainWindow = createdWindows[0];
@@ -849,7 +849,7 @@ describe('main process bootstrap', () => {
   });
 
   it('surfaces preload resolution failures and aborts window creation', async () => {
-    const attempted = ['/missing/preload.cjs'];
+    const attempted = ['/missing/preload.js'];
     resolvePreloadScriptPathMock.mockImplementationOnce(() => {
       throw new RuntimeResourceNotFoundErrorDouble('Unable to locate preload bundle.', attempted);
     });

@@ -134,6 +134,7 @@ const createWindow = () => {
     webPreferences: {
       contextIsolation: true,
       preload: preloadPath,
+      sandbox: false,
     },
   });
 

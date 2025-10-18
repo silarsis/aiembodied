@@ -1,43 +1,37 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.ConfigManager = exports.ConfigValidationError = void 0;
-const node_path_1 = __importDefault(require("node:path"));
-const zod_1 = require("zod");
-const porcupine_node_1 = require("@picovoice/porcupine-node");
-class ConfigValidationError extends Error {
+import path from 'node:path';
+import { z } from 'zod';
+import { BuiltinKeyword } from '@picovoice/porcupine-node';
+export class ConfigValidationError extends Error {
     constructor(message) {
         super(message);
         this.name = 'ConfigValidationError';
     }
 }
-exports.ConfigValidationError = ConfigValidationError;
-const FeatureFlagsSchema = zod_1.z.record(zod_1.z.string().min(1), zod_1.z.boolean());
-const WakeWordSchema = zod_1.z.object({
-    accessKey: zod_1.z.string().min(1, 'Porcupine access key is required'),
-    keywordPath: zod_1.z.string().min(1, 'Wake word keyword path is required'),
-    keywordLabel: zod_1.z.string().min(1, 'Wake word keyword label is required'),
-    sensitivity: zod_1.z.number().min(0).max(1),
-    minConfidence: zod_1.z.number().min(0).max(1),
-    cooldownMs: zod_1.z.number().int().min(0),
-    deviceIndex: zod_1.z.number().int().optional(),
-    modelPath: zod_1.z.string().min(1).optional(),
+const FeatureFlagsSchema = z.record(z.string().min(1), z.boolean());
+const WakeWordSchema = z.object({
+    accessKey: z.string().min(1, 'Porcupine access key is required'),
+    keywordPath: z.string().min(1, 'Wake word keyword path is required'),
+    keywordLabel: z.string().min(1, 'Wake word keyword label is required'),
+    sensitivity: z.number().min(0).max(1),
+    minConfidence: z.number().min(0).max(1),
+    cooldownMs: z.number().int().min(0),
+    deviceIndex: z.number().int().optional(),
+    modelPath: z.string().min(1).optional(),
 });
-const MetricsSchema = zod_1.z.object({
-    enabled: zod_1.z.boolean(),
-    host: zod_1.z.string().min(1),
-    port: zod_1.z.number().int().min(1).max(65535),
-    path: zod_1.z
+const MetricsSchema = z.object({
+    enabled: z.boolean(),
+    host: z.string().min(1),
+    port: z.number().int().min(1).max(65535),
+    path: z
         .string()
         .min(1)
         .transform((value) => (value.startsWith('/') ? value : `/${value}`)),
 });
-const RealtimeApiKeySchema = zod_1.z.string().min(1, 'Realtime API key is required');
-const WakeWordAccessKeySchema = zod_1.z.string().min(1, 'Porcupine access key is required');
+const RealtimeApiKeySchema = z.string().min(1, 'Realtime API key is required');
+const WakeWordAccessKeySchema = z.string().min(1, 'Porcupine access key is required');
 const DEFAULT_SECRET_KEYS = ['realtimeApiKey', 'wakeWordAccessKey'];
-class ConfigManager {
+export class ConfigManager {
     constructor(options = {}) {
         this.config = null;
         this.secretTestTimeoutMs = 5000;
@@ -45,10 +39,10 @@ class ConfigManager {
         this.preferencesStore = options.preferencesStore;
         this.env = options.env ?? process.env;
         this.fetchFn = options.fetchFn ?? (typeof fetch === 'function' ? fetch : undefined);
-        this.realtimeTestEndpoint = options.realtimeTestEndpoint ?? 'https://api.openai.com/v1/models';
         this.wakeWordTestEndpoint = options.wakeWordTestEndpoint ??
             'https://api.picovoice.ai/api/v1/porcupine/validate';
         this.logger = options.logger ?? console;
+        this.openAIClientFactory = options.openAIClientFactory;
     }
     async load() {
         if (this.config) {
@@ -199,18 +193,18 @@ class ConfigManager {
         if (!this.config) {
             throw new Error('ConfigManager.load() must be called before testing secrets.');
         }
-        const fetchFn = this.fetchFn;
-        if (!fetchFn) {
-            return { ok: false, message: 'Secret testing is unavailable: no HTTP client configured.' };
-        }
         if (key === 'realtimeApiKey') {
             if (!this.config.realtimeApiKey) {
                 return { ok: false, message: 'Realtime API key is not configured.' };
             }
             this.logger.debug('Testing realtime API key.');
-            return this.testRealtimeKey(fetchFn, this.config.realtimeApiKey);
+            return this.testRealtimeKey(this.config.realtimeApiKey);
         }
         if (key === 'wakeWordAccessKey') {
+            const fetchFn = this.fetchFn;
+            if (!fetchFn) {
+                return { ok: false, message: 'Secret testing is unavailable: no HTTP client configured.' };
+            }
             if (!this.config.wakeWord.accessKey) {
                 return { ok: false, message: 'Porcupine access key is not configured.' };
             }
@@ -305,21 +299,21 @@ class ConfigManager {
         }
         return undefined;
     }
-    async testRealtimeKey(fetchFn, key) {
+    async testRealtimeKey(key) {
+        const clientFactory = this.openAIClientFactory;
+        if (!clientFactory) {
+            return { ok: false, message: 'Secret testing is unavailable: no OpenAI client configured.' };
+        }
         try {
-            const response = await fetchFn(this.realtimeTestEndpoint, {
-                method: 'GET',
-                headers: {
-                    Authorization: `Bearer ${key}`,
-                },
-                signal: this.createTimeoutSignal(),
-            });
-            if (!response.ok) {
+            const client = clientFactory(key);
+            const listModels = client?.models?.list;
+            if (typeof listModels !== 'function') {
                 return {
                     ok: false,
-                    message: `Realtime API responded with HTTP ${response.status}`,
+                    message: 'Secret testing is unavailable: OpenAI client does not support model listing.',
                 };
             }
+            await listModels({ limit: 1 });
             return { ok: true, message: 'Realtime API key verified successfully.' };
         }
         catch (error) {
@@ -443,7 +437,7 @@ class ConfigManager {
     resolveKeywordPath() {
         const explicitPath = this.env.WAKE_WORD_KEYWORD_PATH?.trim();
         if (explicitPath) {
-            return node_path_1.default.resolve(explicitPath);
+            return path.resolve(explicitPath);
         }
         const builtin = this.env.WAKE_WORD_BUILTIN?.trim();
         const keyword = this.resolveBuiltinKeyword(builtin);
@@ -458,23 +452,23 @@ class ConfigManager {
         if (builtinKeyword) {
             return this.formatKeywordLabel(builtinKeyword);
         }
-        const base = node_path_1.default.basename(keywordPath);
-        const withoutExtension = base.replace(node_path_1.default.extname(base), '');
+        const base = path.basename(keywordPath);
+        const withoutExtension = base.replace(path.extname(base), '');
         return withoutExtension;
     }
     resolveBuiltinKeyword(input) {
         if (!input) {
-            return porcupine_node_1.BuiltinKeyword.PORCUPINE;
+            return BuiltinKeyword.PORCUPINE;
         }
         const normalized = input.trim().toLowerCase();
-        const match = Object.values(porcupine_node_1.BuiltinKeyword).find((keyword) => keyword.toLowerCase() === normalized);
+        const match = Object.values(BuiltinKeyword).find((keyword) => keyword.toLowerCase() === normalized);
         if (!match) {
             throw new ConfigValidationError(`Unknown wake word builtin keyword: ${input}`);
         }
         return match;
     }
     getBuiltinKeywordIfValid(keywordPath) {
-        if (Object.values(porcupine_node_1.BuiltinKeyword).includes(keywordPath)) {
+        if (Object.values(BuiltinKeyword).includes(keywordPath)) {
             return keywordPath;
         }
         return null;
@@ -522,4 +516,3 @@ class ConfigManager {
         return value;
     }
 }
-exports.ConfigManager = ConfigManager;

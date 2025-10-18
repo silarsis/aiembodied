@@ -1,7 +1,5 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.AVATAR_COMPONENT_SLOTS = void 0;
-exports.AVATAR_COMPONENT_SLOTS = [
+export const AVATAR_COMPONENT_SLOTS = [
     'base',
     'eyes-open',
     'eyes-closed',
