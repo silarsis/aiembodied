@@ -11,7 +11,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run test:rebuild && vitest run",
     "test:coverage": "npm run test:rebuild && vitest run --coverage",
-    "test:rebuild": "cross-env PREBUILD_INSTALL_FORBID=1 npm_config_runtime=node npm_config_target=22.17.1 pnpm rebuild better-sqlite3"
+    "test:rebuild": "node -e \"const v=process.version.slice(1); process.env.npm_config_runtime='node'; process.env.npm_config_target=v; process.env.PREBUILD_INSTALL_FORBID='1'; require('child_process').execSync('pnpm rebuild better-sqlite3', {stdio:'inherit'});\""
   },
   "dependencies": {
     "@picovoice/porcupine-node": "^3.0.6",

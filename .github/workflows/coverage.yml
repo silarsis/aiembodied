@@ -25,7 +25,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Rebuild native dependencies for Node.js  
-        run: PREBUILD_INSTALL_FORBID=1 npm_config_runtime=node npm_config_target=20.0.0 pnpm --filter @aiembodied/main rebuild better-sqlite3
+        run: |
+          NODE_VERSION=$(node --version | sed 's/v//')
+          echo "Rebuilding better-sqlite3 for Node.js version: $NODE_VERSION"
+          PREBUILD_INSTALL_FORBID=1 npm_config_runtime=node npm_config_target=$NODE_VERSION pnpm --filter @aiembodied/main rebuild better-sqlite3
       - name: Run tests with coverage
         run: pnpm test:coverage
       - name: Upload coverage to Codecov
