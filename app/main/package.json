@@ -18,7 +18,7 @@
     "better-sqlite3": "^12.4.1",
     "debug": "^4.3.4",
     "dotenv": "^16.4.5",
-    "electron": "^35.7.5",
+    "electron": "^38.3.0",
     "keytar": "^7.9.0",
     "openai": "^6.4.0",
     "prom-client": "^15.1.3",
