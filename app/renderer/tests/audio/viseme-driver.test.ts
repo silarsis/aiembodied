@@ -134,9 +134,10 @@ describe('VisemeDriver', () => {
     await driver.setAnalyser(analyser);
     driver.start();
 
-    for (let index = 0; index < 5; index += 1) {
+    const timestamps = [0, 50, 100, 150, 200, 250];
+    for (const timestamp of timestamps) {
+      current = timestamp;
       scheduler.flush(current);
-      current += 50;
     }
 
     const blinked = onFrame.mock.calls.some((call) => call[0]?.blink === true);
