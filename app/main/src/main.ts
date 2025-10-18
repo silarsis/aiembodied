@@ -77,7 +77,6 @@ try {
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   // Logging not yet configured would be unusual here, but fall back to console
-  // eslint-disable-next-line no-console
   console.warn('Failed to register early preload diagnostics channel', message);
 }
 

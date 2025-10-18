@@ -109,6 +109,7 @@ function useAudioGraphState(inputDeviceId?: string, enabled = true) {
 
   useEffect(() => {
     if (!enabled) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setState((previous) => ({ ...previous, status: 'idle', error: null }));
       setUpstreamStream(null);
       return;
@@ -165,21 +166,37 @@ function logRendererBridge(
 ) {
   const prefix = `[renderer bridge] ${message}`;
   if (level === 'debug') {
-    meta ? console.debug(prefix, meta) : console.debug(prefix);
+    if (meta) {
+      console.debug(prefix, meta);
+    } else {
+      console.debug(prefix);
+    }
     return;
   }
 
   if (level === 'info') {
-    meta ? console.info(prefix, meta) : console.info(prefix);
+    if (meta) {
+      console.info(prefix, meta);
+    } else {
+      console.info(prefix);
+    }
     return;
   }
 
   if (level === 'warn') {
-    meta ? console.warn(prefix, meta) : console.warn(prefix);
+    if (meta) {
+      console.warn(prefix, meta);
+    } else {
+      console.warn(prefix);
+    }
     return;
   }
 
-  meta ? console.error(prefix, meta) : console.error(prefix);
+  if (meta) {
+    console.error(prefix, meta);
+  } else {
+    console.error(prefix);
+  }
 }
 
 function collectBridgeDiagnostics(
@@ -427,6 +444,7 @@ function useIdleCursor(enabled: boolean) {
   useEffect(() => {
     if (!enabled) {
       document.body.classList.remove('cursor-hidden');
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsIdle(false);
       return;
     }
