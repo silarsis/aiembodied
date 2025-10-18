@@ -107,7 +107,7 @@ export class RealtimeClient {
   private sessionConfig?: RealtimeClientOptions['sessionConfig'];
 
   constructor(options: RealtimeClientOptions = {}) {
-    this.endpoint = options.endpoint ?? 'https://api.openai.com/v1/realtime/calls';
+    this.endpoint = options.endpoint ?? 'https://api.openai.com/v1/realtime';
     this.model = options.model ?? 'gpt-4o-realtime-preview-2024-12-17';
     this.fetchFn = options.fetchFn ?? window.fetch.bind(window);
     this.createPeerConnectionFn = options.createPeerConnection ?? ((config?: RTCConfiguration) => new RTCPeerConnection(config));
@@ -319,15 +319,15 @@ export class RealtimeClient {
       },
     };
 
-    const response = await this.fetchFn(this.endpoint, {
+    // Use the correct WebRTC SDP negotiation format per OpenAI documentation
+    const url = `${this.endpoint}?model=${encodeURIComponent(this.model)}`;
+    const response = await this.fetchFn(url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        'OpenAI-Beta': 'realtime=v1',
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
+        'Content-Type': 'application/sdp',
       },
-      body: JSON.stringify(handshakeBody),
+      body: offer.sdp ?? '',
     });
 
     const contentTypeHeader = response.headers?.get?.('content-type') ?? '';
@@ -474,13 +474,7 @@ export class RealtimeClient {
       descriptor.session_parameters = sessionParameters;
     }
 
-    if (this.sessionConfig?.voice) {
-      descriptor.audio = {
-        output: {
-          voice: this.sessionConfig.voice,
-        },
-      };
-    }
+    // Note: voice configuration is handled elsewhere per API changes
 
     return descriptor;
   }
