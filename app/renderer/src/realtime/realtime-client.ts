@@ -409,6 +409,11 @@ export class RealtimeClient {
       session.session_parameters = mergedSessionParameters;
     }
 
+    // Add voice configuration to session update
+    if (this.sessionConfig?.voice) {
+      session.voice = this.sessionConfig.voice;
+    }
+
     try {
       if (Object.keys(session).length === 0) {
         return;

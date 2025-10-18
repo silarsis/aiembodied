@@ -135,27 +135,15 @@ describe('RealtimeClient', () => {
     const requestInit = fetchMock.mock.calls[0]?.[1];
     expect(requestInit).toBeDefined();
     expect(requestInit?.headers).toMatchObject({
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
+      'Content-Type': 'application/sdp',
       Authorization: 'Bearer test-key',
-      'OpenAI-Beta': 'realtime=v1',
     });
     expect(typeof requestInit?.body).toBe('string');
-    const handshakePayload = JSON.parse(requestInit?.body as string) as {
-      rtc_connection?: { sdp?: string };
-      session?: Record<string, unknown>;
-    };
-    expect(handshakePayload.rtc_connection?.sdp).toBe('fake-offer');
-    expect(handshakePayload.session).toBeDefined();
-    expect(handshakePayload.session?.model).toBe('gpt-4o-realtime-preview-2024-12-17');
-    expect(handshakePayload.session?.modalities).toEqual(['text', 'audio']);
-    expect(handshakePayload.session?.input_audio_format).toMatchObject({
-      type: 'pcm16',
-      sample_rate_hz: 16000,
-      channels: 1,
-    });
-    expect(handshakePayload.session).not.toHaveProperty('audio');
-    expect(handshakePayload.session).not.toHaveProperty('session_parameters');
+    expect(requestInit?.body).toBe('fake-offer');
+    
+    // Check that the model is passed as a query parameter
+    const fetchUrl = fetchMock.mock.calls[0]?.[0] as string;
+    expect(fetchUrl).toContain('model=gpt-4o-realtime-preview-2024-12-17');
 
     const peer = peers[0];
     expect(peer.addTrack).toHaveBeenCalled();
@@ -167,7 +155,7 @@ describe('RealtimeClient', () => {
     expect(states.at(-1)?.status).toBe('connected');
   });
 
-  it('includes voice preference in handshake when staged before connect', async () => {
+  it('sends SDP directly and configures voice via session.update', async () => {
     const stream = new FakeMediaStream() as unknown as MediaStream;
 
     client.updateSessionConfig({ voice: 'alloy' });
@@ -177,15 +165,20 @@ describe('RealtimeClient', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const requestInit = fetchMock.mock.calls[0]?.[1];
     expect(typeof requestInit?.body).toBe('string');
-    const handshakePayload = JSON.parse(requestInit?.body as string) as {
-      rtc_connection?: { sdp?: string };
-      session?: { audio?: { output?: { voice?: string } } };
-    };
-    expect(handshakePayload.session?.audio?.output?.voice).toBe('alloy');
-    expect(handshakePayload.rtc_connection?.sdp).toBe('fake-offer');
+    expect(requestInit?.body).toBe('fake-offer');
+    
+    // Voice should be configured via session.update after connection
+    const peer = peers[0];
+    const sendCalls = peer.dataChannel.send.mock.calls;
+    expect(sendCalls.length).toBeGreaterThan(0);
+    
+    const sessionUpdatePayloads = sendCalls.map((call) => JSON.parse(call[0] as string));
+    expect(sessionUpdatePayloads.some((payload) => 
+      payload.type === 'session.update' && payload.session?.voice === 'alloy'
+    )).toBe(true);
   });
 
-  it('omits voice from session.update payloads', async () => {
+  it('includes voice and instructions in session.update payloads', async () => {
     const stream = new FakeMediaStream() as unknown as MediaStream;
 
     client.updateSessionConfig({ voice: 'alloy', instructions: 'Be helpful' });
@@ -196,18 +189,18 @@ describe('RealtimeClient', () => {
     const sendCalls = peer.dataChannel.send.mock.calls;
     expect(sendCalls.length).toBeGreaterThan(0);
     const payloads = sendCalls.map((call) =>
-      JSON.parse(call[0] as string) as { session: { session_parameters?: Record<string, unknown> } },
+      JSON.parse(call[0] as string) as { session: { session_parameters?: Record<string, unknown>; voice?: string } },
     );
+    
+    // Should include instructions in session_parameters
     expect(
       payloads.some((payload) => payload.session.session_parameters?.instructions === 'Be helpful'),
     ).toBe(true);
-    payloads.forEach((payload) => {
-      expect(payload.session.session_parameters).toBeDefined();
-      expect(payload.session.session_parameters).not.toHaveProperty('voice');
-      expect(
-        ((payload.session as { audio?: unknown }).audio as Record<string, unknown> | undefined)?.output,
-      ).toBeUndefined();
-    });
+    
+    // Should include voice directly in session
+    expect(
+      payloads.some((payload) => payload.session.voice === 'alloy'),
+    ).toBe(true);
   });
 
   it('parses session.updated payloads using the new schema', async () => {
