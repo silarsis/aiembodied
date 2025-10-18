@@ -152,6 +152,8 @@ try {
   if (-not [string]::IsNullOrWhiteSpace($electronVersion)) {
     $env:npm_config_runtime = 'electron'
     $env:npm_config_target = $electronVersion.Trim()
+    # Force source compilation for better-sqlite3 to avoid Node version mismatch issues
+    $env:PREBUILD_INSTALL_FORBID = '1'
     pnpm --filter @aiembodied/main rebuild better-sqlite3 keytar | Out-Null
   }
 } catch {
