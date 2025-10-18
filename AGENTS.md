@@ -60,9 +60,10 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 - Development relies on pnpm workspaces, ESLint/Prettier, Vitest, and Playwright smoke tests; CI must keep `pnpm lint`, `pnpm typecheck`, and `pnpm test` green to honor the plan’s gating criteria.
 
 ### Module system
-- **Pure ESM**: This codebase uses ES Modules exclusively. No CommonJS allowed except for configuration files (`.eslintrc.cjs`, `prettier.config.cjs`).
+- **Pure ESM**: This codebase uses ES Modules exclusively. No CommonJS allowed except for legacy configuration files (`.eslintrc.cjs`, `prettier.config.cjs`).
 - All packages have `"type": "module"` in package.json, TypeScript uses `"module": "ESNext"`, and source files use `.js` extensions in import paths.
 - Electron preload scripts are compiled as ESM and loaded directly by Electron's ESM support.
+- Even pnpm configuration uses ESM format (`.pnpmfile.mjs`) to maintain consistency.
 
 ## Recent Updates
 
