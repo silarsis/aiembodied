@@ -9,8 +9,9 @@
     "dev": "node --loader ts-node/esm src/main.ts",
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test": "npm run test:rebuild && vitest run",
+    "test:coverage": "npm run test:rebuild && vitest run --coverage",
+    "test:rebuild": "cross-env PREBUILD_INSTALL_FORBID=1 npm_config_runtime=node npm_config_target=22.17.1 pnpm rebuild better-sqlite3"
   },
   "dependencies": {
     "@picovoice/porcupine-node": "^3.0.6",

@@ -23,6 +23,8 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Rebuild native dependencies for Node.js
+        run: PREBUILD_INSTALL_FORBID=1 npm_config_runtime=node npm_config_target=20.0.0 pnpm --filter @aiembodied/main rebuild better-sqlite3
       - name: Lint
         run: pnpm lint
       - name: Typecheck

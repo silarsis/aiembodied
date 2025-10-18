@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
-    exclude: ['tests/memory-store.test.ts', 'tests/avatar-face-service.test.ts', 'tests/run-dev-env.test.ts'],
+    exclude: ['tests/run-dev-env.test.ts'], // Only exclude the problematic import test
     setupFiles: ['tests/setup.ts'],
     coverage: {
       provider: 'v8',

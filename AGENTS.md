@@ -15,12 +15,26 @@ Always cross-check planned work against these references before making changes. 
 4. Run the full verification commands listed below before committing.
 5. Update this guide whenever architectural decisions or workflow expectations change.
 
+## Development Startup
+To run the application in development mode:
+- `pnpm dev:run` — build packages, rebuild native dependencies, and launch Electron app (uses `scripts/run-dev.mjs`)
+
+The development script (`scripts/run-dev.mjs`) is cross-platform and handles:
+- Building renderer and main packages
+- Rebuilding native dependencies (better-sqlite3, keytar) for Electron
+- Environment isolation using `.dev-home` to avoid Windows permission issues
+- API key validation (requires `PORCUPINE_ACCESS_KEY`, warns if `REALTIME_API_KEY` missing)
+- Launching Electron with diagnostics enabled
+
+Alternative platform-specific scripts exist (`run-dev.ps1`, `run-dev.sh`) but the `.mjs` version is preferred for consistency.
+
 ## Testing & Verification
 Run these commands from the repository root unless a task specifies otherwise:
 - `pnpm install` — ensure dependencies resolve from a clean checkout.
 - `pnpm lint` — enforce linting rules across packages.
 - `pnpm typecheck` — run TypeScript project-wide type analysis.
 - `pnpm test` — execute automated unit/integration tests.
+- `pnpm test:coverage` — run tests with coverage measurement and reporting.
 - `pnpm build` — (as needed) validate production builds for Electron targets.
 
 ### OpenAI Responses API usage
@@ -78,3 +92,5 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 - 2025-02-22 — Realtime client tests now assert control-channel `session.updated` payload parsing for `session_parameters`-driven instructions, voice, and turn detection. Keep these unit tests in sync with future schema adjustments to maintain coverage for all negotiated fields.
 - 2025-02-23 — Renderer Vitest config now runs `tests/vite-config.test.ts` with the Node environment to satisfy esbuild's encoding invariants while keeping UI specs on jsdom. Preserve this match glob when adding new config-focused tests.
 - 2025-10-18 — Native dependency rebuild: Dev scripts now set `PREBUILD_INSTALL_FORBID=1` to force better-sqlite3 source compilation instead of using prebuilt binaries that may have Node.js version mismatches. If tests fail with MODULE_VERSION errors, manually run: `PREBUILD_INSTALL_FORBID=1 pnpm --filter @aiembodied/main reinstall better-sqlite3`
+- 2025-10-18 — Development script enhancement: `scripts/run-dev.mjs` is now the primary cross-platform development script (replacing platform-specific alternatives). Fixed Windows compatibility by enabling shell execution, added comprehensive environment validation, and enhanced error handling. Use `pnpm dev:run` as the standard command for launching the development environment.
+- 2025-10-18 — Test coverage implementation: Added comprehensive test coverage measurement using vitest with v8 provider. Run `pnpm test:coverage` to generate coverage reports. GitHub Actions workflow automatically reports coverage on pull requests. Some sqlite-dependent tests are temporarily excluded due to Node.js version compatibility issues.
