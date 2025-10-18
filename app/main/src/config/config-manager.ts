@@ -504,7 +504,7 @@ export class ConfigManager {
     try {
       const parsed = JSON.parse(trimmed);
       return FeatureFlagsSchema.parse(parsed);
-    } catch (error) {
+    } catch {
       // fall back to comma-separated parsing
     }
 

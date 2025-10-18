@@ -33,7 +33,7 @@ export interface WorkerLike {
   off(event: 'exit', listener: (code: number) => void): this;
 }
 
-export interface WakeWordStartOptions extends WakeWordWorkerConfig {}
+export type WakeWordStartOptions = WakeWordWorkerConfig;
 
 export interface WakeWordServiceEvents {
   wake: [WakeWordDetectionEvent];
