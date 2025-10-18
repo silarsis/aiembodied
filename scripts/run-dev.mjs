@@ -90,6 +90,8 @@ async function main() {
   console.log('[info] Rebuilding native dependencies for Electron...');
   // Isolate HOME/APPDATA to avoid EPERM scandir on Windows junctions like "Application Data"
   const envIsolated = prepareDevHomeEnv(repoRoot);
+  // Force source compilation for better-sqlite3 to avoid Node version mismatch issues
+  envIsolated.PREBUILD_INSTALL_FORBID = '1';
   await run('pnpm', ['--filter', '@aiembodied/main', 'exec', 'electron-builder', 'install-app-deps'], { env: envIsolated });
 
   // Launch Electron with compiled main
