@@ -35,5 +35,10 @@
     "@vitest/coverage-v8": "^1.6.1",
     "electron-builder": "^26.0.12"
   },
+  "pnpm": {
+    "overrides": {
+      "@electron/node-gyp": "https://codeload.github.com/electron/node-gyp/tar.gz/06b29aafb7708acef8b3669835c8a7857ebc92d2"
+    }
+  },
   "packageManager": "pnpm@9.12.0"
 }

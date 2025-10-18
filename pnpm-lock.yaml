@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@electron/node-gyp': https://codeload.github.com/electron/node-gyp/tar.gz/06b29aafb7708acef8b3669835c8a7857ebc92d2
+
 importers:
 
   .:
@@ -581,6 +584,7 @@ packages:
   '@picovoice/porcupine-node@3.0.6':
     resolution: {integrity: sha512-vYlY0Hf9ovRB+Z9yyLReiVYZkLsm/kVPgDWTu2dgtqAooednohljfxSRzJUojapp8BFd7aW8P3H/4sm1zy49lw==}
     engines: {node: '>=18.0.0'}
+    cpu: ['!ia32', '!mips', '!ppc', '!ppc64']
 
   '@picovoice/pvrecorder-node@1.2.8':
     resolution: {integrity: sha512-dbLJlplQQNRkM2ja/hP4sRADGDILuJ54dEf8cU5eULeNrddxXvOtE8IiJ5F2VhhbXmIv3Qmn79DqhttCOxjH8Q==}
