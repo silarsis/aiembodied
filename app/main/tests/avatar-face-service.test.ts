@@ -129,16 +129,16 @@ describe('AvatarFaceService', () => {
     const requestBody = requests[0] as Record<string, any>;
     const systemPayload = requestBody?.input?.[0]?.content?.[0];
     const imagePayload = requestBody?.input?.[1]?.content?.[1];
-    const responseFormat = requestBody?.response?.text;
+    const responseFormat = requestBody?.text?.format;
     expect(systemPayload).toMatchObject({ type: 'input_text' });
     expect(imagePayload).toEqual({
       type: 'input_image',
       image_url: 'data:image/png;base64,aGVsbG8=',
       detail: 'auto',
     });
-    expect(requestBody?.response?.modalities).toEqual(['text']);
-    expect(responseFormat).toMatchObject({ format: 'json_schema' });
-    expect(responseFormat?.schema).toMatchObject({ name: 'AvatarComponents' });
+    expect(responseFormat?.type).toBe('json_schema');
+    expect(responseFormat?.name).toBe('AvatarComponents');
+    expect(responseFormat?.schema).toMatchObject({ required: ['components'] });
   });
 
   it('lists faces and manages active selection lifecycle', async () => {
