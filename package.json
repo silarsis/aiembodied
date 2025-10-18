@@ -7,6 +7,7 @@
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
+    "test:coverage": "pnpm -r test:coverage",
     "build": "pnpm -r build",
     "dev:run": "node scripts/run-dev.mjs",
     "dist": "pnpm build && electron-builder --config electron-builder.yml"

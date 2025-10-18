@@ -9,7 +9,8 @@
     "dev": "node --loader ts-node/esm src/main.ts",
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@picovoice/porcupine-node": "^3.0.6",
@@ -30,6 +31,7 @@
     "@types/auto-launch": "^5.0.5",
     "@types/better-sqlite3": "^7.6.13",
     "@types/debug": "^4.1.12",
+    "cross-env": "^7.0.3",
     "ts-node": "^10.9.2"
   }
 }
