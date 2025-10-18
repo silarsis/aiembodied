@@ -2,9 +2,11 @@ import { app } from 'electron';
 import type {
   BrowserWindow,
   Details,
+  Event,
   RenderProcessGoneDetails,
   Session,
   WebContents,
+  WebContentsConsoleMessageEventParams,
 } from 'electron';
 import type { Logger } from 'winston';
 
@@ -199,19 +201,22 @@ export function createAppDiagnostics(options: AppDiagnosticsOptions): AppDiagnos
       });
     });
 
-    register('console-message', (_event, level: number, message: string, line: number, sourceId: string) => {
+    register('console-message', (event: Event<WebContentsConsoleMessageEventParams>) => {
+      const displayLevel = event.level === 'warning' ? 'warn' : event.level;
       const meta = {
         ...baseMeta(),
-        level: level === 2 ? 'error' : level === 1 ? 'warn' : 'info',
-        message,
-        line,
-        sourceId,
+        level: displayLevel,
+        message: event.message,
+        line: event.lineNumber,
+        sourceId: event.sourceId,
       };
 
-      if (level >= 2) {
+      if (event.level === 'error') {
         logger.error('Diagnostics: renderer console message.', meta);
-      } else if (level === 1) {
+      } else if (event.level === 'warning') {
         logger.warn('Diagnostics: renderer console message.', meta);
+      } else if (event.level === 'debug') {
+        logger.debug('Diagnostics: renderer console message.', meta);
       } else {
         logger.info('Diagnostics: renderer console message.', meta);
       }
