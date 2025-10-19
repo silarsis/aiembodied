@@ -32,6 +32,59 @@ function hasAlphaChannel(buffer) {
   return colorType === 4 || colorType === 6;
 }
 
+function analyzePixelContent(buffer) {
+  try {
+    // Simple pixel analysis - check if image has any non-transparent content
+    // This is a basic analysis without full PNG decoding
+    
+    // Look for IDAT chunks (image data) - they start after IHDR
+    const idatPattern = Buffer.from([0x49, 0x44, 0x41, 0x54]); // "IDAT"
+    let idatIndex = -1;
+    
+    for (let i = 0; i < buffer.length - 4; i++) {
+      if (buffer.subarray(i, i + 4).equals(idatPattern)) {
+        idatIndex = i;
+        break;
+      }
+    }
+    
+    if (idatIndex === -1) {
+      return { hasContent: false, analysis: 'No IDAT chunk found' };
+    }
+    
+    // Check IDAT chunk size
+    const idatSize = buffer.readUInt32BE(idatIndex - 4);
+    
+    // Very small IDAT suggests minimal content
+    if (idatSize < 50) {
+      return { hasContent: false, analysis: `Very small IDAT chunk (${idatSize} bytes) - likely empty/transparent` };
+    }
+    
+    // Sample some bytes from IDAT to see if there's variation
+    const idatStart = idatIndex + 4;
+    const idatEnd = Math.min(idatStart + idatSize, buffer.length);
+    const idatData = buffer.subarray(idatStart, idatEnd);
+    
+    // Check for byte variation (actual content vs. repeated patterns)
+    const uniqueBytes = new Set(idatData.subarray(0, Math.min(100, idatData.length)));
+    
+    if (uniqueBytes.size < 3) {
+      return { 
+        hasContent: false, 
+        analysis: `Low byte variation in IDAT (${uniqueBytes.size} unique bytes in first 100) - likely solid color/transparent`
+      };
+    }
+    
+    return {
+      hasContent: true,
+      analysis: `IDAT size: ${idatSize} bytes, byte variation: ${uniqueBytes.size} unique values - likely has content`
+    };
+    
+  } catch (error) {
+    return { hasContent: false, analysis: `Pixel analysis error: ${error.message}` };
+  }
+}
+
 function validateImageComponent(comp, index) {
   const issues = [];
   
@@ -61,12 +114,19 @@ function validateImageComponent(comp, index) {
       issues.push(`Very small file (${buffer.length} bytes) - likely empty`);
     }
     
+    // 5. Analyze actual pixel content
+    const pixelAnalysis = analyzePixelContent(buffer);
+    if (!pixelAnalysis.hasContent) {
+      issues.push(`Image appears empty: ${pixelAnalysis.analysis}`);
+    }
+    
     return {
       valid: issues.length === 0,
       issues,
       dimensions,
       fileSize: buffer.length,
-      hasAlpha: hasAlphaChannel(buffer)
+      hasAlpha: hasAlphaChannel(buffer),
+      pixelAnalysis
     };
   } catch (error) {
     return {
@@ -74,7 +134,8 @@ function validateImageComponent(comp, index) {
       issues: [`Validation error: ${error.message}`],
       dimensions: null,
       fileSize: 0,
-      hasAlpha: false
+      hasAlpha: false,
+      pixelAnalysis: { hasContent: false, analysis: 'Validation failed' }
     };
   }
 }
@@ -163,6 +224,57 @@ async function imageFileToDataUrl(filePath) {
   return `data:image/png;base64,${base64}`;
 }
 
+async function analyzeExistingPNG(pngPath) {
+  console.log('🔍 Analyzing Existing PNG File');
+  console.log('==============================');
+  console.log(`📷 Loading: ${pngPath}`);
+  
+  try {
+    const buffer = await readFile(pngPath);
+    console.log(`📊 File size: ${buffer.length} bytes`);
+    
+    // Use our validation function
+    const fakeComp = { data: buffer.toString('base64'), slot: 'unknown' };
+    const validation = validateImageComponent(fakeComp, 0);
+    
+    console.log(`📐 Dimensions: ${validation.dimensions ? `${validation.dimensions.width}x${validation.dimensions.height}` : 'Unknown'}`);
+    console.log(`🔍 Has Alpha Channel: ${validation.hasAlpha ? 'Yes' : 'No'}`);
+    console.log(`🎨 Pixel Analysis: ${validation.pixelAnalysis.analysis}`);
+    console.log(`📊 Has Content: ${validation.pixelAnalysis.hasContent ? 'YES' : 'NO'}`);
+    console.log(`✅ Overall Validation: ${validation.valid ? 'PASSED' : 'FAILED'}`);
+    
+    if (!validation.valid) {
+      console.log(`⚠️  Issues:`);
+      validation.issues.forEach(issue => {
+        console.log(`    - ${issue}`);
+      });
+    }
+    
+    // Additional analysis - look at raw base64 patterns
+    const base64 = buffer.toString('base64');
+    const uniqueBase64Chars = new Set(base64).size;
+    console.log(`🔤 Base64 unique chars: ${uniqueBase64Chars}/64 (low = repetitive pattern)`);
+    
+    // Check for common patterns that indicate empty images
+    const commonEmptyPatterns = [
+      'iVBORw0KGgoAAAANSUhEUgAA', // common PNG header start
+      'AAAAAAAAAAAAAAAA',         // lots of zeros
+      '////////////////',         // lots of slashes (common in minimal PNGs)
+    ];
+    
+    const foundPatterns = commonEmptyPatterns.filter(pattern => base64.includes(pattern));
+    if (foundPatterns.length > 0) {
+      console.log(`🔍 Empty image patterns detected: ${foundPatterns.length}`);
+    }
+    
+    return validation;
+    
+  } catch (error) {
+    console.error('❌ Analysis failed:', error.message);
+    return null;
+  }
+}
+
 async function analyzeAvatarGeneration(imagePath, apiKey) {
   console.log('🔍 Avatar Generation Analysis Tool');
   console.log('================================');
@@ -176,18 +288,18 @@ async function analyzeAvatarGeneration(imagePath, apiKey) {
   const imageBase64 = extractBase64Payload(imageDataUrl);
   console.log(`📊 Image size: ${Buffer.from(imageBase64, 'base64').length} bytes`);
   
-  // Prepare the request with IMPROVED PROMPTS
+  // Prepare the request with ENHANCED PROMPTS FOR VISIBLE CONTENT
   const systemContent = [
     {
       type: 'input_text',
       text:
-        'You are an avatar generation specialist that converts portrait photos into animation-ready layered components. '
-        + 'Given a portrait photo, extract these transparent PNG layers at 150x150 pixels: '
-        + '- base: Face outline, hair, and static facial features (no eyes or mouth) '
-        + '- eyes-open: Open eyes only on transparent background '
-        + '- eyes-closed: Closed eyes only on transparent background '
-        + '- mouth-neutral through mouth-4: Different mouth shapes for speech animation (neutral, small-o, medium-o, wide-o, smile, open) '
-        + 'Each component must be precisely aligned and sized for perfect overlay compositing.',
+        'You are an avatar generation specialist. Create VISIBLE, OPAQUE cartoon layers from this portrait photo. '
+        + 'Generate 150x150px PNG components with transparent backgrounds but SOLID, VISIBLE features: '
+        + '- base: Face outline, hair, skin (SOLID colors, NO eyes/mouth) '
+        + '- eyes-open: Bold, visible open eyes with pupils and whites '
+        + '- eyes-closed: Clear closed eyes with lashes and lids '
+        + '- mouth shapes: Distinct, colorful mouth shapes (pink/red lips, white teeth if open) '
+        + 'Make features BOLD and HIGH-CONTRAST so they are clearly visible when displayed.',
     },
   ];
 
@@ -195,13 +307,11 @@ async function analyzeAvatarGeneration(imagePath, apiKey) {
     {
       type: 'input_text',
       text:
-        'Convert this portrait into avatar animation layers. Make each component: '
-        + '- Exactly 150x150 pixels with transparent background '
-        + '- Perfectly aligned so they composite seamlessly '
-        + '- High contrast and clearly visible '
-        + '- Cartoon-style but recognizable as the source person '
-        + '- Ready for real-time animation overlay '
-        + 'Focus on clear, bold features that will be visible in a small avatar display.',
+        'Create SOLID, VISIBLE cartoon layers. NO transparent/invisible content! '
+        + 'Requirements: 150x150px, transparent background, OPAQUE colorful features. '
+        + 'Use bright colors: brown/blonde hair, skin tone, dark eyes, pink/red lips. '
+        + 'Make everything BOLD and clearly visible - this will be displayed small. '
+        + 'Each layer must have distinct, solid-colored features that stand out.',
     },
     { type: 'input_image', image_url: `data:image/png;base64,${imageBase64}`, detail: 'auto' },
   ];
@@ -350,6 +460,8 @@ async function analyzeAvatarGeneration(imagePath, apiKey) {
         console.log(`    💾 Binary Size: ${validation.fileSize} bytes`);
         console.log(`    📐 Dimensions: ${validation.dimensions ? `${validation.dimensions.width}x${validation.dimensions.height}` : 'Unknown'}`);
         console.log(`    🔍 Has Alpha Channel: ${validation.hasAlpha ? 'Yes' : 'No'}`);
+        console.log(`    🎨 Pixel Content: ${validation.pixelAnalysis.analysis}`);
+        console.log(`    📊 Has Actual Content: ${validation.pixelAnalysis.hasContent ? 'YES' : 'NO'}`);
         console.log(`    ✅ Validation: ${validation.valid ? 'PASSED' : 'FAILED'}`);
         
         if (!validation.valid) {
@@ -406,8 +518,10 @@ async function main() {
   
   if (args.length === 0 || args[0] === '--help') {
     console.error('Usage: node debug-avatar.mjs <image-file-path> [options]');
+    console.error('       node debug-avatar.mjs --analyze-png <png-file-path>');
     console.error('');
     console.error('Options:');
+    console.error('  --analyze-png         Analyze an existing PNG file for content');
     console.error('  --show-raw-response   Show the full OpenAI API response JSON');
     console.error('  --skip-files         Skip saving individual component PNG files');
     console.error('  --help               Show this help message');
@@ -416,7 +530,24 @@ async function main() {
     process.exit(1);
   }
 
-  // Extract image path from args (skip flags)
+  // Check for --analyze-png mode
+  if (args.includes('--analyze-png')) {
+    const pngPath = args.find(arg => !arg.startsWith('--'));
+    if (!pngPath) {
+      console.error('Error: PNG file path is required for --analyze-png');
+      process.exit(1);
+    }
+    
+    try {
+      await analyzeExistingPNG(pngPath);
+    } catch (error) {
+      console.error('❌ PNG analysis failed:', error.message);
+      process.exit(1);
+    }
+    return;
+  }
+
+  // Normal avatar generation mode
   const imagePath = args.find(arg => !arg.startsWith('--'));
   if (!imagePath) {
     console.error('Error: Image file path is required');
