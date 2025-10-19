@@ -392,6 +392,91 @@ describe('App component', () => {
     expect(screen.getByRole('heading', { name: /Embodied Assistant/i })).toBeInTheDocument();
   });
 
+  it('allows pausing and resuming listening while disconnecting realtime sessions', async () => {
+    (window as { RTCPeerConnection?: typeof RTCPeerConnection }).RTCPeerConnection = vi
+      .fn()
+      .mockReturnValue({ addEventListener: vi.fn(), removeEventListener: vi.fn(), close: vi.fn() }) as unknown as typeof RTCPeerConnection;
+
+    (window as PreloadWindow).aiembodied = {
+      ping: () => 'pong',
+      config: {
+        get: vi.fn().mockResolvedValue({
+          audioInputDeviceId: 'mic-1',
+          audioOutputDeviceId: '',
+          featureFlags: { transcriptOverlay: true },
+          hasRealtimeApiKey: true,
+          wakeWord: {
+            keywordPath: '',
+            keywordLabel: '',
+            sensitivity: 0.5,
+            minConfidence: 0.5,
+            cooldownMs: 1500,
+            deviceIndex: undefined,
+            modelPath: undefined,
+            hasAccessKey: true,
+          },
+        }),
+        getSecret: vi.fn().mockResolvedValue('secret'),
+        setAudioDevicePreferences: setAudioDevicePreferencesMock,
+        setSecret: setSecretMock,
+        testSecret: testSecretMock,
+      },
+      wakeWord: {
+        onWake: (listener: (event: WakeWordDetectionEvent) => void) => {
+          wakeListener = listener;
+          return () => {
+            wakeListener = undefined;
+          };
+        },
+      },
+      avatar: createAvatarBridgeMock(),
+      __bridgeReady: true,
+      __bridgeVersion: '1.0.0',
+    } as unknown as PreloadWindow['aiembodied'];
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(realtimeClientInstances.length).toBeGreaterThan(0);
+    });
+
+    const listeningToggle = await screen.findByTestId('listening-toggle');
+    expect(listeningToggle).toHaveTextContent(/Disable listening/i);
+    expect(listeningToggle).toHaveAttribute('aria-pressed', 'true');
+
+    for (const instance of realtimeClientInstances) {
+      instance.disconnect.mockClear();
+    }
+
+    fireEvent.click(listeningToggle);
+
+    await waitFor(() => {
+      expect(listeningToggle).toHaveAttribute('aria-pressed', 'false');
+      expect(listeningToggle).toHaveTextContent(/Enable listening/i);
+    });
+
+    await waitFor(() => {
+      const audioIndicator = screen.getByTestId('audio-indicator');
+      expect(within(audioIndicator).getByText(/Listening disabled/i)).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(
+        realtimeClientInstances.some((instance) => instance.disconnect.mock.calls.length > 0),
+      ).toBe(true);
+    });
+
+    const realtimeIndicator = screen.getByTestId('realtime-indicator');
+    expect(within(realtimeIndicator).getByText(/Disabled \(listening paused\)/i)).toBeInTheDocument();
+
+    fireEvent.click(listeningToggle);
+
+    await waitFor(() => {
+      expect(listeningToggle).toHaveAttribute('aria-pressed', 'true');
+      expect(listeningToggle).toHaveTextContent(/Disable listening/i);
+    });
+  });
+
   it('logs diagnostics while polling for the preload bridge when unavailable', async () => {
     render(<App />);
 

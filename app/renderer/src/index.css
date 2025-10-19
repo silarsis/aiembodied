@@ -87,8 +87,8 @@ main {
   opacity: 0.85;
 }
 
+.kiosk__listeningToggle,
 .kiosk__transcriptToggle {
-  margin-left: auto;
   background: rgba(59, 130, 246, 0.15);
   color: #e0f2fe;
   border: 1px solid rgba(59, 130, 246, 0.35);
@@ -103,8 +103,27 @@ main {
   transition: background 0.2s ease-in-out, transform 0.2s ease-in-out;
 }
 
+.kiosk__listeningToggle {
+  margin-left: auto;
+}
+
+.kiosk__transcriptToggle {
+  margin-left: 0.75rem;
+}
+
+.kiosk__listeningToggle:hover,
 .kiosk__transcriptToggle:hover {
   background: rgba(59, 130, 246, 0.25);
+}
+
+.kiosk__listeningToggle[aria-pressed='false'] {
+  background: rgba(59, 130, 246, 0.08);
+  color: #bfdbfe;
+  border-color: rgba(59, 130, 246, 0.25);
+}
+
+.kiosk__listeningToggle[aria-pressed='false']:hover {
+  background: rgba(59, 130, 246, 0.18);
 }
 
 .kiosk__shortcutHint {

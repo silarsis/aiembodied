@@ -590,6 +590,7 @@ export default function App() {
   const latencyTrackerRef = useRef<LatencyTracker>(new LatencyTracker());
   const [latencySnapshot, setLatencySnapshot] = useState<LatencySnapshot | null>(null);
   const [activeAvatar, setActiveAvatar] = useState<AvatarFaceDetail | null>(null);
+  const [isListeningEnabled, setListeningEnabled] = useState(true);
   const activeBridge = resolveApi();
 
   const pushLatency = useCallback(
@@ -996,7 +997,7 @@ export default function App() {
     setSelectedOutput((previous) => (previous === configOutputDeviceId ? previous : configOutputDeviceId));
   }, [configInputDeviceId, configOutputDeviceId]);
 
-  const audioGraph = useAudioGraphState(selectedInput || undefined, !loadingConfig);
+  const audioGraph = useAudioGraphState(selectedInput || undefined, isListeningEnabled && !loadingConfig);
   const previousSpeechActiveRef = useRef(audioGraph.isActive);
 
   useEffect(() => {
@@ -1060,7 +1061,7 @@ export default function App() {
       return;
     }
 
-    if (!realtimeKey || !audioGraph.upstreamStream) {
+    if (!isListeningEnabled || !realtimeKey || !audioGraph.upstreamStream) {
       void realtimeClient.disconnect();
       return;
     }
@@ -1076,7 +1077,7 @@ export default function App() {
     return () => {
       void realtimeClient.disconnect();
     };
-  }, [realtimeClient, realtimeKey, audioGraph.upstreamStream]);
+  }, [realtimeClient, realtimeKey, audioGraph.upstreamStream, isListeningEnabled]);
 
   useEffect(() => {
     if (!realtimeClient || !hasRealtimeApiKey) {
@@ -1509,17 +1510,21 @@ export default function App() {
   const levelPercentage = useMemo(() => Math.min(100, Math.round(audioGraph.level * 100)), [audioGraph.level]);
 
   const audioGraphStatusLabel = useMemo(() => {
+    if (!isListeningEnabled && !loadingConfig) {
+      return 'Listening disabled';
+    }
+
     switch (audioGraph.status) {
       case 'starting':
-        return 'Starting microphone captureGǪ';
+        return 'Starting microphone capture…';
       case 'ready':
-        return audioGraph.isActive ? 'Listening' : 'Idle';
+        return audioGraph.isActive ? 'Listening' : loadingConfig ? 'Waiting for configuration…' : 'Idle';
       case 'error':
         return audioGraph.error ?? 'Audio capture error';
       default:
-        return loadingConfig ? 'Waiting for configurationGǪ' : 'Idle';
+        return loadingConfig ? 'Waiting for configuration…' : 'Idle';
     }
-  }, [audioGraph.status, audioGraph.isActive, audioGraph.error, loadingConfig]);
+  }, [audioGraph.status, audioGraph.isActive, audioGraph.error, loadingConfig, isListeningEnabled]);
 
   const visemeSummary = useMemo(() => {
     const index = visemeFrame?.index ?? 0;
@@ -1546,6 +1551,10 @@ export default function App() {
       return `Error G�� ${realtimeKeyError}`;
     }
 
+    if (!isListeningEnabled) {
+      return 'Disabled (listening paused)';
+    }
+
     switch (realtimeState.status) {
       case 'idle':
         return audioGraph.upstreamStream ? 'Standby' : 'Waiting for microphone';
@@ -1560,7 +1569,23 @@ export default function App() {
       default:
         return realtimeState.status;
     }
-  }, [hasRealtimeApiKey, hasRealtimeSupport, realtimeKeyError, realtimeState, audioGraph.upstreamStream]);
+  }, [
+    hasRealtimeApiKey,
+    hasRealtimeSupport,
+    realtimeKeyError,
+    realtimeState,
+    audioGraph.upstreamStream,
+    isListeningEnabled,
+  ]);
+
+  const toggleListening = useCallback(() => {
+    setListeningEnabled((previous) => !previous);
+  }, []);
+
+  const listeningToggleLabel = useMemo(
+    () => (isListeningEnabled ? 'Disable listening' : 'Enable listening'),
+    [isListeningEnabled],
+  );
 
   const toggleTranscriptVisibility = useCallback(() => {
     setTranscriptVisible((previous) => !previous);
@@ -1588,7 +1613,14 @@ export default function App() {
   const wakeStatusVariant = wakeState === 'awake' ? 'active' : 'idle';
   const realtimeVariant = realtimeState.status === 'error' ? 'error' : realtimeState.status === 'connected' ? 'active' : 'idle';
   const networkVariant = isOnline ? 'active' : 'error';
-  const audioVariant = audioGraph.status === 'error' ? 'error' : audioGraph.isActive ? 'active' : 'idle';
+  const audioVariant =
+    audioGraph.status === 'error'
+      ? 'error'
+      : !isListeningEnabled
+        ? 'idle'
+        : audioGraph.isActive
+          ? 'active'
+          : 'idle';
   const deviceVariant = deviceError ? 'error' : inputs.length > 0 ? 'active' : 'idle';
   const deviceStatusLabel = deviceError ? `Error G�� ${deviceError}` : inputs.length > 0 ? 'Devices ready' : 'ScanningGǪ';
   const showDeveloperHud = Boolean(config?.featureFlags?.metricsHud);
@@ -1629,6 +1661,15 @@ export default function App() {
           <span className="statusChip__label">Preload</span>
           <span className="statusChip__value">{ping === 'available' ? 'Connected' : 'Unavailable'}</span>
         </div>
+        <button
+          type="button"
+          className="kiosk__listeningToggle"
+          onClick={toggleListening}
+          aria-pressed={isListeningEnabled}
+          data-testid="listening-toggle"
+        >
+          {listeningToggleLabel}
+        </button>
         <button
           type="button"
           className="kiosk__transcriptToggle"
