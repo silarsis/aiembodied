@@ -86,6 +86,53 @@ export function resolveElectronCli(repoRoot) {
   );
 }
 
+export function readElectronVersion(repoRoot) {
+  const electronPackagePath = resolve(repoRoot, 'app/main/node_modules/electron/package.json');
+  if (!existsSync(electronPackagePath)) {
+    throw new Error(
+      `Electron package.json not found at ${electronPackagePath}. Run "pnpm install" for @aiembodied/main before launching dev mode.`,
+    );
+  }
+
+  let electronPkg;
+  try {
+    electronPkg = JSON.parse(readFileSync(electronPackagePath, 'utf8'));
+  } catch (error) {
+    throw new Error(`Failed to parse Electron package.json at ${electronPackagePath}: ${error.message}`);
+  }
+
+  if (!electronPkg?.version) {
+    throw new Error(`Electron package.json at ${electronPackagePath} is missing a version field.`);
+  }
+
+  return electronPkg.version;
+}
+
+export async function rebuildNativeDependenciesForElectron(
+  repoRoot,
+  { runImpl = run, baseEnv = process.env, platform = process.platform } = {},
+) {
+  const envIsolated = prepareDevHomeEnv(repoRoot, baseEnv, platform);
+  envIsolated.PREBUILD_INSTALL_FORBID = '1';
+
+  await runImpl('pnpm', ['--filter', '@aiembodied/main', 'exec', 'electron-builder', 'install-app-deps'], {
+    env: envIsolated,
+  });
+
+  const electronVersion = readElectronVersion(repoRoot);
+  const rebuildEnv = {
+    ...envIsolated,
+    npm_config_runtime: 'electron',
+    npm_config_target: electronVersion,
+    npm_config_disturl: 'https://electronjs.org/headers',
+    PREBUILD_INSTALL_FORBID: '1',
+  };
+
+  await runImpl('pnpm', ['--filter', '@aiembodied/main', 'rebuild', 'better-sqlite3', 'keytar'], {
+    env: rebuildEnv,
+  });
+}
+
 async function main() {
   const repoRoot = resolve(process.cwd());
   const envPath = resolve(repoRoot, '.env');
@@ -140,11 +187,7 @@ async function main() {
   // Rebuild native deps for Electron runtime (ensures better-sqlite3/keytar ABI matches Electron)
   console.log('[info] Rebuilding native dependencies for Electron...');
   try {
-    // Isolate HOME/APPDATA to avoid EPERM scandir on Windows junctions like "Application Data"
-    const envIsolated = prepareDevHomeEnv(repoRoot);
-    // Force source compilation for better-sqlite3 to avoid Node version mismatch issues
-    envIsolated.PREBUILD_INSTALL_FORBID = '1';
-    await run('pnpm', ['--filter', '@aiembodied/main', 'exec', 'electron-builder', 'install-app-deps'], { env: envIsolated });
+    await rebuildNativeDependenciesForElectron(repoRoot);
   } catch (error) {
     console.warn('[warn] Native dependency rebuild failed, continuing anyway:', error.message);
   }
