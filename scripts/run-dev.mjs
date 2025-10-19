@@ -69,6 +69,23 @@ export function prepareDevHomeEnv(repoRoot, baseEnv = process.env, platform = pr
   return envIsolated;
 }
 
+export function resolveElectronCli(repoRoot) {
+  const candidates = [
+    resolve(repoRoot, 'app/main/node_modules/electron/cli.js'),
+    resolve(repoRoot, 'node_modules/electron/cli.js'),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    'Electron CLI not found. Run "pnpm install" to ensure @aiembodied/main dependencies are installed before launching.',
+  );
+}
+
 async function main() {
   const repoRoot = resolve(process.cwd());
   const envPath = resolve(repoRoot, '.env');
@@ -135,7 +152,12 @@ async function main() {
   // Launch Electron with compiled main
   console.log('[info] Launching Electron...');
   const env = { ...process.env, AIEMBODIED_ENABLE_DIAGNOSTICS: '1' };
-  await run('pnpm', ['--filter', '@aiembodied/main', 'exec', 'electron', 'dist/main.js'], { env });
+  const electronCli = resolveElectronCli(repoRoot);
+  const electronEntrypoint = resolve(repoRoot, 'app/main/dist/main.js');
+  await run(process.execPath, [electronCli, electronEntrypoint], {
+    env,
+    shell: false,
+  });
 }
 
 const invokedDirectly = Boolean(
