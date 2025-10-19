@@ -11,7 +11,8 @@ describe('prepareDevHomeEnv', () => {
     const repoRoot = resolve(workspaceRoot, 'repo');
     const devHome = resolve(repoRoot, '.dev-home');
 
-    const env = prepareDevHomeEnv(repoRoot, {}, 'win32');
+    const pnpmStorePath = 'C:/Users/test/AppData/Local/pnpm/store/v3';
+    const env = prepareDevHomeEnv(repoRoot, {}, 'win32', { pnpmStorePath });
 
     try {
       expect(env.HOME).toBe(devHome);
@@ -31,6 +32,8 @@ describe('prepareDevHomeEnv', () => {
       expect(existsSync(env.LOCALAPPDATA)).toBe(true);
       expect(existsSync(env.npm_config_cache)).toBe(true);
       expect(existsSync(env.ELECTRON_BUILDER_CACHE)).toBe(true);
+      expect(env.PNPM_STORE_PATH).toBe(pnpmStorePath);
+      expect(env.npm_config_store_dir).toBe(pnpmStorePath);
     } finally {
       rmSync(workspaceRoot, { recursive: true, force: true });
     }

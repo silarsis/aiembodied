@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { resolve, join, parse } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -32,7 +32,40 @@ function parseDotEnv(envPath) {
   return envVars;
 }
 
-export function prepareDevHomeEnv(repoRoot, baseEnv = process.env, platform = process.platform) {
+export function resolvePnpmStorePath(env = process.env) {
+  const result = spawnSync('pnpm', ['store', 'path'], {
+    env,
+    encoding: 'utf8',
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status !== 0) {
+    const stderr = result.stderr?.trim();
+    throw new Error(`Failed to determine pnpm store path${stderr ? `: ${stderr}` : ''}`);
+  }
+
+  const combinedOutput = `${result.stdout ?? ''}${result.stderr ?? ''}`
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const storePath = combinedOutput.at(-1);
+  if (!storePath) {
+    throw new Error('pnpm store path command did not return a path.');
+  }
+
+  return storePath;
+}
+
+export function prepareDevHomeEnv(
+  repoRoot,
+  baseEnv = process.env,
+  platform = process.platform,
+  { pnpmStorePath } = {},
+) {
   const devHome = resolve(repoRoot, '.dev-home');
   const roamingAppData = join(devHome, 'AppData', 'Roaming');
   const localAppData = join(devHome, 'AppData', 'Local');
@@ -64,6 +97,11 @@ export function prepareDevHomeEnv(repoRoot, baseEnv = process.env, platform = pr
       envIsolated.HOMEDRIVE = devHome;
       envIsolated.HOMEPATH = devHome;
     }
+  }
+
+  if (pnpmStorePath) {
+    envIsolated.PNPM_STORE_PATH = pnpmStorePath;
+    envIsolated.npm_config_store_dir = pnpmStorePath;
   }
 
   return envIsolated;
@@ -110,9 +148,9 @@ export function readElectronVersion(repoRoot) {
 
 export async function rebuildNativeDependenciesForElectron(
   repoRoot,
-  { runImpl = run, baseEnv = process.env, platform = process.platform } = {},
+  { runImpl = run, baseEnv = process.env, platform = process.platform, pnpmStorePath } = {},
 ) {
-  const envIsolated = prepareDevHomeEnv(repoRoot, baseEnv, platform);
+  const envIsolated = prepareDevHomeEnv(repoRoot, baseEnv, platform, { pnpmStorePath });
   envIsolated.PREBUILD_INSTALL_FORBID = '1';
 
   await runImpl('pnpm', ['--filter', '@aiembodied/main', 'exec', 'electron-builder', 'install-app-deps'], {
@@ -163,6 +201,17 @@ async function main() {
     throw e;
   });
 
+  let pnpmStorePath;
+  try {
+    pnpmStorePath = resolvePnpmStorePath();
+    console.log(`[info] Using pnpm store at ${pnpmStorePath}`);
+  } catch (error) {
+    console.warn(
+      '[warn] Failed to determine pnpm store path. Dev home isolation may trigger pnpm store warnings:',
+      error.message,
+    );
+  }
+
   // Build renderer and main
   console.log('[info] Building renderer...');
   await run('pnpm', ['--filter', '@aiembodied/renderer', 'build']);
@@ -187,7 +236,7 @@ async function main() {
   // Rebuild native deps for Electron runtime (ensures better-sqlite3/keytar ABI matches Electron)
   console.log('[info] Rebuilding native dependencies for Electron...');
   try {
-    await rebuildNativeDependenciesForElectron(repoRoot);
+    await rebuildNativeDependenciesForElectron(repoRoot, { pnpmStorePath });
   } catch (error) {
     console.warn('[warn] Native dependency rebuild failed, continuing anyway:', error.message);
   }
