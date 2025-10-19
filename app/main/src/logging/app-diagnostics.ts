@@ -120,6 +120,9 @@ export function createAppDiagnostics(options: AppDiagnosticsOptions): AppDiagnos
     const register = <Args extends unknown[]>(event: string, handler: Listener<Args>) => {
       contents.on(event as never, handler as unknown as Listener<unknown[]>);
       disposers.push(() => {
+        if (typeof contents.isDestroyed === 'function' && contents.isDestroyed()) {
+          return;
+        }
         contents.removeListener(event as never, handler as unknown as Listener<unknown[]>);
       });
     };
@@ -235,7 +238,13 @@ export function createAppDiagnostics(options: AppDiagnosticsOptions): AppDiagnos
 
     webContentsCleanup.set(contents, () => {
       for (const dispose of disposers.splice(0)) {
-        dispose();
+        try {
+          dispose();
+        } catch (error) {
+          logger.warn('Diagnostics: exception removing webContents listener during cleanup.', {
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     });
   };
