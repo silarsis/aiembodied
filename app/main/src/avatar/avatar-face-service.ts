@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Buffer } from 'node:buffer';
+import { writeFile, mkdir } from 'node:fs/promises';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type OpenAI from 'openai';
 import type {
   ResponseCreateParamsNonStreaming,
@@ -8,6 +11,78 @@ import type {
   ResponseInputMessageContentList,
 } from 'openai/resources/responses/responses.mjs';
 import { z } from 'zod';
+
+// Image validation utilities
+function validatePNGHeader(buffer: Buffer): boolean {
+  if (buffer.length < 8) return false;
+  const pngHeader = buffer.subarray(0, 8);
+  const expectedHeader = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+  return pngHeader.equals(expectedHeader);
+}
+
+function extractPNGDimensions(buffer: Buffer): { width: number; height: number } | null {
+  if (buffer.length < 24) return null;
+  const width = buffer.readUInt32BE(16);
+  const height = buffer.readUInt32BE(20);
+  return { width, height };
+}
+
+function hasAlphaChannel(buffer: Buffer): boolean {
+  if (buffer.length < 25) return false;
+  const colorType = buffer[25];
+  return colorType === 4 || colorType === 6;
+}
+
+interface ValidationResult {
+  valid: boolean;
+  issues: string[];
+  dimensions: { width: number; height: number } | null;
+  fileSize: number;
+  hasAlpha: boolean;
+}
+
+function validateImageComponent(data: string, slot: string): ValidationResult {
+  const issues: string[] = [];
+  
+  try {
+    const buffer = Buffer.from(data, 'base64');
+    
+    if (!validatePNGHeader(buffer)) {
+      issues.push('Invalid PNG header');
+    }
+    
+    const dimensions = extractPNGDimensions(buffer);
+    if (!dimensions) {
+      issues.push('Cannot extract dimensions');
+    } else if (dimensions.width !== 150 || dimensions.height !== 150) {
+      issues.push(`Wrong size: ${dimensions.width}x${dimensions.height} (expected 150x150)`);
+    }
+    
+    if (!hasAlphaChannel(buffer)) {
+      issues.push('No alpha channel (transparent background)');
+    }
+    
+    if (buffer.length < 200) {
+      issues.push(`Very small file (${buffer.length} bytes) - likely empty`);
+    }
+    
+    return {
+      valid: issues.length === 0,
+      issues,
+      dimensions,
+      fileSize: buffer.length,
+      hasAlpha: hasAlphaChannel(buffer)
+    };
+  } catch (error) {
+    return {
+      valid: false,
+      issues: [`Validation error: ${error instanceof Error ? error.message : String(error)}`],
+      dimensions: null,
+      fileSize: 0,
+      hasAlpha: false
+    };
+  }
+}
 import type { MemoryStore, FaceRecord, FaceComponentRecord } from '../memory/memory-store.js';
 import {
   AVATAR_COMPONENT_SLOTS,
@@ -66,7 +141,7 @@ const RESPONSE_SCHEMA_DEFINITION = {
   schema: {
     type: 'object',
     additionalProperties: false,
-    required: ['components'],
+    required: ['name', 'components'],
     properties: {
       name: {
         type: 'string',
@@ -78,7 +153,7 @@ const RESPONSE_SCHEMA_DEFINITION = {
         items: {
           type: 'object',
           additionalProperties: false,
-          required: ['slot', 'mimeType', 'data'],
+          required: ['slot', 'mimeType', 'data', 'sequence'],
           properties: {
             slot: { type: 'string', enum: AVATAR_COMPONENT_SLOTS },
             data: {
@@ -126,6 +201,7 @@ export class AvatarFaceService {
   private readonly store: MemoryStore;
   private readonly now: () => number;
   private readonly logger?: { error?: (message: string, meta?: Record<string, unknown>) => void };
+  private readonly debugImagesEnabled: boolean;
 
   constructor(options: AvatarFaceServiceOptions) {
     if (!options.client?.responses || typeof options.client.responses.create !== 'function') {
@@ -136,6 +212,134 @@ export class AvatarFaceService {
     this.store = options.store;
     this.now = options.now ?? Date.now;
     this.logger = options.logger;
+    this.debugImagesEnabled = process.env.NODE_ENV !== 'production';
+  }
+
+  private async saveDebugImages(faceId: string, originalImageBase64: string, components: ParsedComponent[]): Promise<void> {
+    if (!this.debugImagesEnabled) {
+      return;
+    }
+
+    try {
+      const currentDir = dirname(fileURLToPath(import.meta.url));
+      const debugDir = resolve(currentDir, '../../../images', faceId);
+      await mkdir(debugDir, { recursive: true });
+
+      // Save original uploaded image
+      const originalBuffer = Buffer.from(originalImageBase64, 'base64');
+      await writeFile(resolve(debugDir, 'original.png'), originalBuffer);
+
+      // Save each generated component
+      for (const component of components) {
+        const componentBuffer = Buffer.from(component.data, 'base64');
+        const filename = `${component.slot}-seq${component.sequence ?? 0}.png`;
+        await writeFile(resolve(debugDir, filename), componentBuffer);
+      }
+
+      this.logger?.error?.('Debug images saved for inspection', {
+        faceId,
+        debugDir,
+        originalSize: originalBuffer.length,
+        componentCount: components.length
+      });
+    } catch (error) {
+      this.logger?.error?.('Failed to save debug images', {
+        faceId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  private async saveDebugRequest(faceId: string, requestBody: ResponseCreateParamsNonStreaming, imageBase64: string): Promise<void> {
+    if (!this.debugImagesEnabled) {
+      return;
+    }
+
+    try {
+      const currentDir = dirname(fileURLToPath(import.meta.url));
+      const debugDir = resolve(currentDir, '../../../images', faceId);
+      await mkdir(debugDir, { recursive: true });
+
+      // Create sanitized request data (remove actual image data to keep file readable)
+      const sanitizedRequest = {
+        ...requestBody,
+        input: Array.isArray(requestBody.input) 
+          ? requestBody.input.map((item: any) => ({
+              ...item,
+              content: Array.isArray(item.content) 
+                ? item.content.map((content: any) => {
+                    if (content.type === 'input_image') {
+                      return {
+                        ...content,
+                        image_url: `data:image/png;base64,... (${imageBase64.length} characters)`
+                      };
+                    }
+                    return content;
+                  })
+                : item.content
+            }))
+          : requestBody.input
+      };
+
+      const debugData = {
+        timestamp: new Date().toISOString(),
+        faceId,
+        request: {
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'aiembodied-avatar-service',
+            'Authorization': 'Bearer [REDACTED]'
+          },
+          body: sanitizedRequest,
+          imageBase64Length: imageBase64.length
+        }
+      };
+
+      await writeFile(
+        resolve(debugDir, 'request.json'),
+        JSON.stringify(debugData, null, 2)
+      );
+
+    } catch (error) {
+      this.logger?.error?.('Failed to save debug request', {
+        faceId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  private async saveDebugResponse(faceId: string, response: unknown): Promise<void> {
+    if (!this.debugImagesEnabled) {
+      return;
+    }
+
+    try {
+      const currentDir = dirname(fileURLToPath(import.meta.url));
+      const debugDir = resolve(currentDir, '../../../images', faceId);
+      await mkdir(debugDir, { recursive: true });
+
+      const debugData = {
+        timestamp: new Date().toISOString(),
+        faceId,
+        response: {
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: response
+        }
+      };
+
+      await writeFile(
+        resolve(debugDir, 'response.json'),
+        JSON.stringify(debugData, null, 2)
+      );
+
+    } catch (error) {
+      this.logger?.error?.('Failed to save debug response', {
+        faceId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
   }
 
   async uploadFace(request: AvatarUploadRequest): Promise<AvatarUploadResult> {
@@ -150,8 +354,13 @@ export class AvatarFaceService {
       {
         type: 'input_text',
         text:
-          'You are an assistant that extracts animation-ready avatar layers from a single cartoon face image. '
-          + 'Return transparent PNG components for the base, eyes (open/closed), and viseme mouth shapes (0-4, plus neutral).',
+          'You are an avatar generation specialist that converts portrait photos into animation-ready layered components. '
+          + 'Given a portrait photo, extract these transparent PNG layers at 150x150 pixels: '
+          + '- base: Face outline, hair, and static facial features (no eyes or mouth) '
+          + '- eyes-open: Open eyes only on transparent background '
+          + '- eyes-closed: Closed eyes only on transparent background '
+          + '- mouth-neutral through mouth-4: Different mouth shapes for speech animation (neutral, small-o, medium-o, wide-o, smile, open) '
+          + 'Each component must be precisely aligned and sized for perfect overlay compositing.',
       },
     ];
 
@@ -159,8 +368,13 @@ export class AvatarFaceService {
       {
         type: 'input_text',
         text:
-          'Produce layered assets sized consistently with the source image. Ensure components are centered and share a '
-          + 'transparent background so they can be composited for animation.',
+          'Convert this portrait into avatar animation layers. Make each component: '
+          + '- Exactly 150x150 pixels with transparent background '
+          + '- Perfectly aligned so they composite seamlessly '
+          + '- High contrast and clearly visible '
+          + '- Cartoon-style but recognizable as the source person '
+          + '- Ready for real-time animation overlay '
+          + 'Focus on clear, bold features that will be visible in a small avatar display.',
       },
       { type: 'input_image', image_url: `data:image/png;base64,${imageBase64}`, detail: 'auto' },
     ];
@@ -178,10 +392,21 @@ export class AvatarFaceService {
       },
     };
 
+    // Generate face ID early for debug logging
+    const faceId = randomUUID();
+    
+    // Save debug request
+    await this.saveDebugRequest(faceId, body, imageBase64);
+
     let responsePayload: unknown;
     try {
       responsePayload = await this.client.responses.create(body);
+      
+      // Save debug response
+      await this.saveDebugResponse(faceId, responsePayload);
     } catch (error) {
+      // Save debug response for errors too
+      await this.saveDebugResponse(faceId, { error: error instanceof Error ? error.message : String(error) });
       throw this.handleOpenAiError(error);
     }
 
@@ -189,7 +414,9 @@ export class AvatarFaceService {
 
     const components: ParsedComponent[] = parsed.components;
     const timestamp = this.now();
-    const faceId = randomUUID();
+
+    // Save debug images for inspection (development only)
+    await this.saveDebugImages(faceId, imageBase64, components);
     const faceName = sanitizeName(request.name ?? parsed.name, `Avatar face ${new Date(timestamp).toLocaleString()}`);
 
     const faceRecord: FaceRecord = {
@@ -199,6 +426,18 @@ export class AvatarFaceService {
     };
 
     const faceComponents: FaceComponentRecord[] = components.map((component, index) => {
+      // Validate component before storage
+      const validation = validateImageComponent(component.data, component.slot);
+      
+      if (!validation.valid) {
+        this.logger?.error?.(`Avatar component validation failed for slot ${component.slot}`, {
+          slot: component.slot,
+          issues: validation.issues,
+          fileSize: validation.fileSize,
+          dimensions: validation.dimensions
+        });
+      }
+
       const buffer = Buffer.from(component.data, 'base64');
       if (buffer.length === 0) {
         throw new Error(`Component for slot ${component.slot} is empty.`);
@@ -213,6 +452,21 @@ export class AvatarFaceService {
         data: buffer,
       };
     });
+
+    // Log validation summary
+    const validationResults = components.map(comp => validateImageComponent(comp.data, comp.slot));
+    const validComponents = validationResults.filter(v => v.valid).length;
+    const qualityScore = Math.round((validComponents / components.length) * 100);
+    
+    if (validComponents < components.length) {
+      this.logger?.error?.('Avatar face upload validation issues detected', {
+        faceId,
+        totalComponents: components.length,
+        validComponents,
+        qualityScore: `${qualityScore}%`,
+        failedComponents: components.length - validComponents
+      });
+    }
 
     this.store.createFace(faceRecord, faceComponents);
     this.store.setActiveFace(faceId);
