@@ -93,6 +93,16 @@ interface AvatarFaceServiceOptions {
   logger?: { error?: (message: string, meta?: Record<string, unknown>) => void };
 }
 
+interface AvatarFaceDescriptor {
+  hairColor: string;
+  hairStyle: string;
+  eyeColor: string;
+  skinTone: string;
+  facialHair: string;
+  accessories: string[];
+  notableFeatures: string;
+}
+
 interface ParsedComponent {
   slot: AvatarComponentSlot;
   mimeType: string;
@@ -148,6 +158,56 @@ const LAYER_SPECS = [
     sequence: 0,
   },
 ];
+
+const FACE_DESCRIPTOR_SCHEMA = {
+  name: 'AvatarFaceDescriptor',
+  type: 'json_schema' as const,
+  strict: true,
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    required: [
+      'hairColor',
+      'hairStyle',
+      'eyeColor',
+      'skinTone',
+      'facialHair',
+      'accessories',
+      'notableFeatures',
+    ],
+    properties: {
+      hairColor: {
+        type: 'string',
+        description: 'Primary hair color. Use "none" if the subject has no hair.',
+      },
+      hairStyle: {
+        type: 'string',
+        description: 'Short description of the hairstyle or head covering.',
+      },
+      eyeColor: {
+        type: 'string',
+        description: 'Dominant eye color or pattern.',
+      },
+      skinTone: {
+        type: 'string',
+        description: 'Visible skin tone rendered as a short description.',
+      },
+      facialHair: {
+        type: 'string',
+        description: 'Facial hair description or "none" when absent.',
+      },
+      accessories: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Accessories visible near the face (glasses, jewelry, hats, etc.). Use an empty array when none.',
+      },
+      notableFeatures: {
+        type: 'string',
+        description: 'Distinct traits like freckles, makeup, lighting, or other artistic cues. Use "none" if not notable.',
+      },
+    },
+  },
+};
 
 function sanitizeName(name: string | undefined, fallback: string): string {
   if (typeof name !== 'string') {
@@ -223,7 +283,12 @@ export class AvatarFaceService {
     }
   }
 
-  private async saveDebugRequest(faceId: string, layerPrompts: string[], imageBase64: string): Promise<void> {
+  private async saveDebugRequest(
+    faceId: string,
+    layerPrompts: string[],
+    imageBase64: string,
+    descriptor?: AvatarFaceDescriptor,
+  ): Promise<void> {
     if (!this.debugImagesEnabled) {
       return;
     }
@@ -239,7 +304,8 @@ export class AvatarFaceService {
         request: {
           model: 'gpt-image-1',
           layerPrompts,
-          imageBase64Length: imageBase64.length
+          imageBase64Length: imageBase64.length,
+          descriptor,
         }
       };
 
@@ -290,6 +356,188 @@ export class AvatarFaceService {
     }
   }
 
+  private buildLayerPrompt(basePrompt: string, descriptor: AvatarFaceDescriptor): string {
+    const accessories = descriptor.accessories.length > 0
+      ? descriptor.accessories.join(', ')
+      : 'none';
+
+    const descriptorSummary = [
+      `Hair: ${descriptor.hairColor} with ${descriptor.hairStyle}`,
+      `Eyes: ${descriptor.eyeColor}`,
+      `Skin tone: ${descriptor.skinTone}`,
+      `Facial hair: ${descriptor.facialHair}`,
+      `Accessories: ${accessories}`,
+      `Notable: ${descriptor.notableFeatures}`,
+    ].join('; ');
+
+    return `${basePrompt} Ensure the artwork reflects these subject traits: ${descriptorSummary}.`
+      + ' Match colors exactly and do not invent new accessories or features.';
+  }
+
+  private async generateFaceDescriptor(imageBase64: string): Promise<AvatarFaceDescriptor> {
+    const responses = (this.client as unknown as {
+      responses?: { create?: (params: unknown) => Promise<unknown> };
+    }).responses;
+
+    if (!responses || typeof responses.create !== 'function') {
+      throw new Error('AvatarFaceService requires an OpenAI responses client.');
+    }
+
+    const systemPrompt =
+      'You are an art director translating real faces into vivid cartoon avatar layers. '
+      + 'Extract concise, objective descriptors needed to recreate the subject.';
+
+    const userPrompt =
+      'Analyze the portrait and fill the schema. '
+      + 'Use short descriptive phrases. '
+      + 'Return "none" when a feature does not exist. '
+      + 'Accessories should include any glasses, jewelry, hats, hair accessories, or clothing elements near the face.';
+
+    const response = await responses.create({
+      model: 'gpt-4.1-mini',
+      input: [
+        {
+          type: 'message',
+          role: 'system',
+          content: [{ type: 'input_text', text: systemPrompt }],
+        },
+        {
+          type: 'message',
+          role: 'user',
+          content: [
+            { type: 'input_text', text: userPrompt },
+            { type: 'input_image', image_url: `data:image/png;base64,${imageBase64}`, detail: 'auto' },
+          ],
+        },
+      ],
+      text: {
+        format: FACE_DESCRIPTOR_SCHEMA,
+      },
+    });
+
+    const text = this.extractStructuredText(response);
+    if (!text) {
+      throw new Error('Descriptor analysis returned no text content.');
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch (error) {
+      throw new Error(
+        `Descriptor analysis returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    return this.normalizeDescriptor(parsed);
+  }
+
+  private extractStructuredText(payload: unknown): string {
+    if (!payload || typeof payload !== 'object') {
+      return '';
+    }
+
+    const response = payload as Record<string, unknown>;
+
+    const direct = response.output_text;
+    if (typeof direct === 'string') {
+      return direct.trim();
+    }
+
+    const output = response.output;
+    if (Array.isArray(output)) {
+      for (const item of output) {
+        if (!item || typeof item !== 'object') {
+          continue;
+        }
+
+        if ((item as { type?: unknown }).type === 'message' && Array.isArray((item as { content?: unknown }).content)) {
+          for (const chunk of (item as { content: unknown[] }).content) {
+            if (!chunk || typeof chunk !== 'object') {
+              continue;
+            }
+
+            const chunkType = (chunk as { type?: unknown }).type;
+            const chunkText = (chunk as { text?: unknown }).text;
+            if ((chunkType === 'output_text' || chunkType === 'text') && typeof chunkText === 'string') {
+              return chunkText.trim();
+            }
+          }
+        }
+      }
+    }
+
+    const choices = response.choices;
+    if (Array.isArray(choices)) {
+      for (const choice of choices) {
+        if (!choice || typeof choice !== 'object') {
+          continue;
+        }
+        const message = (choice as { message?: unknown }).message;
+        if (!message || typeof message !== 'object') {
+          continue;
+        }
+        const content = (message as { content?: unknown }).content;
+        if (!Array.isArray(content)) {
+          continue;
+        }
+        for (const chunk of content) {
+          if (!chunk || typeof chunk !== 'object') {
+            continue;
+          }
+          const chunkType = (chunk as { type?: unknown }).type;
+          const chunkText = (chunk as { text?: unknown }).text;
+          if (chunkType === 'text' && typeof chunkText === 'string') {
+            return chunkText.trim();
+          }
+        }
+      }
+    }
+
+    return '';
+  }
+
+  private normalizeDescriptor(payload: unknown): AvatarFaceDescriptor {
+    if (!payload || typeof payload !== 'object') {
+      throw new Error('Descriptor payload is missing expected fields.');
+    }
+
+    const descriptor = payload as Record<string, unknown>;
+    const accessoriesRaw = Array.isArray(descriptor.accessories) ? descriptor.accessories : [];
+    const accessories = accessoriesRaw
+      .map((item) => {
+        if (typeof item === 'string') {
+          return item.trim();
+        }
+        return String(item ?? '').trim();
+      })
+      .filter((item) => item.length > 0);
+
+    return {
+      hairColor: this.normalizeDescriptorString(descriptor.hairColor, 'unspecified'),
+      hairStyle: this.normalizeDescriptorString(descriptor.hairStyle, 'unspecified'),
+      eyeColor: this.normalizeDescriptorString(descriptor.eyeColor, 'unspecified'),
+      skinTone: this.normalizeDescriptorString(descriptor.skinTone, 'unspecified'),
+      facialHair: this.normalizeDescriptorString(descriptor.facialHair, 'none'),
+      notableFeatures: this.normalizeDescriptorString(descriptor.notableFeatures, 'none'),
+      accessories,
+    };
+  }
+
+  private normalizeDescriptorString(value: unknown, fallback: string): string {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : fallback;
+    }
+
+    if (value === null || value === undefined) {
+      return fallback;
+    }
+
+    const asString = String(value).trim();
+    return asString.length > 0 ? asString : fallback;
+  }
+
   async uploadFace(request: AvatarUploadRequest): Promise<AvatarUploadResult> {
     const imageDataUrl = request.imageDataUrl?.trim();
     if (!imageDataUrl) {
@@ -302,26 +550,39 @@ export class AvatarFaceService {
     const faceId = randomUUID();
     const timestamp = this.now();
     
-    // Extract layer prompts for debug logging
-    const layerPrompts = LAYER_SPECS.map(spec => spec.prompt);
-    
+    let descriptor: AvatarFaceDescriptor;
+    try {
+      descriptor = await this.generateFaceDescriptor(imageBase64);
+    } catch (error) {
+      this.logger?.error?.('Failed to analyze avatar face descriptors', {
+        faceId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await this.saveDebugResponse(faceId, {
+        analysisError: error instanceof Error ? error.message : String(error),
+      });
+      throw this.handleOpenAiError(error);
+    }
+
+    const layerPrompts = LAYER_SPECS.map(spec => this.buildLayerPrompt(spec.prompt, descriptor));
+
     // Save debug request
-    await this.saveDebugRequest(faceId, layerPrompts, imageBase64);
+    await this.saveDebugRequest(faceId, layerPrompts, imageBase64, descriptor);
 
     const components: ParsedComponent[] = [];
 
     try {
       // Generate each avatar component layer using the images create API
-      for (const layerSpec of LAYER_SPECS) {
+      for (const [index, layerSpec] of LAYER_SPECS.entries()) {
         try {
-          this.logger?.error?.(`Generating ${layerSpec.slot} layer...`, { 
-            faceId, 
-            slot: layerSpec.slot 
+          this.logger?.error?.(`Generating ${layerSpec.slot} layer...`, {
+            faceId,
+            slot: layerSpec.slot
           });
 
           const response = await (this.client as unknown as { images: { create: (params: unknown) => Promise<{ data: Array<{ b64_json: string }> }> } }).images.create({
             model: 'gpt-image-1',
-            prompt: layerSpec.prompt,
+            prompt: layerPrompts[index],
             size: '256x256', // OpenAI only supports specific sizes
             n: 1,
             response_format: 'b64_json',
@@ -377,7 +638,7 @@ export class AvatarFaceService {
       }
 
       // Save debug response
-      await this.saveDebugResponse(faceId, { componentsGenerated: components.length });
+      await this.saveDebugResponse(faceId, { componentsGenerated: components.length, descriptor });
 
     } catch (error) {
       // Save debug response for errors too
