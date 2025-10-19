@@ -29,8 +29,19 @@ function createLogger(): LoggerDouble {
 }
 
 class FakeWebContents extends EventEmitter {
+  private destroyed = false;
+
   constructor(public readonly id: number) {
     super();
+  }
+
+  destroy() {
+    this.destroyed = true;
+    this.emit('destroyed');
+  }
+
+  isDestroyed() {
+    return this.destroyed;
   }
 }
 
@@ -214,5 +225,29 @@ describe('createAppDiagnostics', () => {
     appEmitter.emit('before-quit');
 
     expect(logger.info).not.toHaveBeenCalled();
+  });
+
+  it('does not warn when cleaning up a destroyed webContents', async () => {
+    const logger = createLogger();
+    const { createAppDiagnostics } = await import('../src/logging/app-diagnostics.js');
+
+    const diagnostics = createAppDiagnostics({ logger, enabled: true });
+    activeDiagnostics = diagnostics;
+
+    const window = new FakeBrowserWindow(21);
+    diagnostics.trackWindow(window as unknown as import('electron').BrowserWindow);
+
+    logger.warn.mockClear();
+
+    window.webContents.destroy();
+    window.emit('closed');
+
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      'Diagnostics: exception cleaning up webContents from window.',
+      expect.anything(),
+    );
+
+    diagnostics.dispose();
+    activeDiagnostics = null;
   });
 });
