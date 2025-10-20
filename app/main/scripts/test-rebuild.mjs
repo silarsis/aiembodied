@@ -36,12 +36,17 @@ function main() {
   // Determine which store node_modules expects, if present
   let pnpmStorePath;
   try {
-    const modulesYaml = resolve(packageRoot, 'node_modules', '.modules.yaml');
-    if (existsSync(modulesYaml)) {
-      const raw = readFileSync(modulesYaml, 'utf8');
+    const candidates = [
+      resolve(packageRoot, 'node_modules', '.modules.yaml'),
+      resolve(repoRoot, 'node_modules', '.modules.yaml'),
+    ];
+    for (const file of candidates) {
+      if (!existsSync(file)) continue;
+      const raw = readFileSync(file, 'utf8');
       const m = raw.match(/\n\s*storeDir:\s*(.+)\s*\n/);
       if (m && m[1]) {
         pnpmStorePath = m[1].trim();
+        break;
       }
     }
   } catch {}

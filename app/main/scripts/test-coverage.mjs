@@ -30,11 +30,15 @@ function getPnpmStorePath(env = process.env) {
 
 function determineStoreEnv(repoRoot) {
   const packageRoot = resolve(repoRoot, 'app', 'main');
-  // Try to read storeDir from .modules.yaml, if present
+  // Try to read storeDir from .modules.yaml, if present (package or root)
   try {
-    const modulesYaml = resolve(packageRoot, 'node_modules', '.modules.yaml');
-    if (existsSync(modulesYaml)) {
-      const raw = readFileSync(modulesYaml, 'utf8');
+    const candidates = [
+      resolve(packageRoot, 'node_modules', '.modules.yaml'),
+      resolve(repoRoot, 'node_modules', '.modules.yaml'),
+    ];
+    for (const file of candidates) {
+      if (!existsSync(file)) continue;
+      const raw = readFileSync(file, 'utf8');
       const m = raw.match(/\n\s*storeDir:\s*(.+)\s*\n/);
       if (m && m[1]) {
         return m[1].trim();
