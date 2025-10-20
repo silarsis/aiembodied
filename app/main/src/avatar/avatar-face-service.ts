@@ -92,7 +92,7 @@ interface AvatarFaceServiceOptions {
   client: OpenAI;
   store: MemoryStore;
   now?: () => number;
-  logger?: { error?: (message: string, meta?: Record<string, unknown>) => void };
+  logger?: { error?: (message: string, meta?: Record<string, unknown>) => void; warn?: (message: string, meta?: Record<string, unknown>) => void };
 }
 
 interface ParsedComponent {
@@ -174,7 +174,7 @@ export class AvatarFaceService {
   private readonly client: OpenAI;
   private readonly store: MemoryStore;
   private readonly now: () => number;
-  private readonly logger?: { error?: (message: string, meta?: Record<string, unknown>) => void };
+  private readonly logger?: { error?: (message: string, meta?: Record<string, unknown>) => void; warn?: (message: string, meta?: Record<string, unknown>) => void };
   private readonly debugImagesEnabled: boolean;
   private readonly pendingGenerations: Map<string, { createdAt: number; candidates: { id: string; strategy: AvatarGenerationStrategy; components: ParsedComponent[] }[] }>; 
   private readonly hasImagesApi: boolean;
