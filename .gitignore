@@ -11,3 +11,4 @@ test-results
 *.pid
 app/main/*.png
 app/images/*
+.dev-home/
