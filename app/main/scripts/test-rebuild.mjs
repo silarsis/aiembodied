@@ -62,7 +62,7 @@ function main() {
   env.npm_config_runtime = 'node';
   env.npm_config_target = nodeVer;
 
-  const result = spawnSync('pnpm', ['rebuild', 'better-sqlite3'], { stdio: 'inherit', env });
+  const result = spawnSync('pnpm', ['--filter', '@aiembodied/main', 'rebuild', 'better-sqlite3'], { stdio: 'inherit', env });
   if (result.status !== 0) {
     process.exit(result.status || 1);
   }
