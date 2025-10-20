@@ -4,7 +4,6 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type OpenAI from 'openai';
-import { toFile } from 'openai';
 
 
 // Image validation utilities
@@ -505,9 +504,8 @@ export class AvatarFaceService {
           let res: any;
           const imageBuffer = Buffer.from(imageBase64, 'base64');
           if (typeof images.edit === 'function') {
-            // Align with debug script: use images.edit with a File
-            const imageFile = await toFile(imageBuffer, 'image.png', { type: 'image/png' });
-            res = await images.edit({ image: imageFile, prompt: spec.prompt, size: '256x256', n: 1, response_format: 'b64_json' });
+            // Use images.edit; pass Buffer directly to accommodate SDK variants without toFile
+            res = await images.edit({ image: imageBuffer, prompt: spec.prompt, size: '256x256', n: 1, response_format: 'b64_json' });
           } else if (images?.edits && typeof images.edits.create === 'function') {
             res = await images.edits.create({ model: 'gpt-image-1', image: imageBuffer, prompt: spec.prompt, size: '256x256', n: 1, response_format: 'b64_json' });
           } else if (typeof images.generate === 'function') {
