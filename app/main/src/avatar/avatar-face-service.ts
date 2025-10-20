@@ -4,6 +4,7 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type OpenAI from 'openai';
+import { toFile } from 'openai';
 
 
 // Image validation utilities
@@ -85,6 +86,7 @@ import {
   type AvatarUploadRequest,
   type AvatarUploadResult,
 } from './types.js';
+import type { AvatarGenerationResult, AvatarGenerationStrategy } from './types.js';
 
 interface AvatarFaceServiceOptions {
   client: OpenAI;
@@ -174,18 +176,25 @@ export class AvatarFaceService {
   private readonly now: () => number;
   private readonly logger?: { error?: (message: string, meta?: Record<string, unknown>) => void };
   private readonly debugImagesEnabled: boolean;
+  private readonly pendingGenerations: Map<string, { createdAt: number; candidates: { id: string; strategy: AvatarGenerationStrategy; components: ParsedComponent[] }[] }>; 
+  private readonly hasImagesApi: boolean;
 
   constructor(options: AvatarFaceServiceOptions) {
-    const imagesApi = (options.client as unknown as { images: { create: () => unknown } }).images;
-    if (!imagesApi || typeof imagesApi.create !== 'function') {
-      throw new Error('AvatarFaceService requires an OpenAI images client.');
-    }
-
     this.client = options.client;
     this.store = options.store;
     this.now = options.now ?? Date.now;
     this.logger = options.logger;
     this.debugImagesEnabled = process.env.NODE_ENV !== 'production';
+    this.pendingGenerations = new Map();
+
+    // Images API is optional now; prefer Responses image_generation tool.
+    // Detect any supported variant: generate, create, or edits.create.
+    const imagesApi = (options.client as any)?.images as any | undefined;
+    const hasEdit = Boolean(imagesApi && typeof imagesApi.edit === 'function');
+    const hasEditsCreate = Boolean(imagesApi?.edits && typeof imagesApi.edits.create === 'function');
+    const hasGenerate = Boolean(imagesApi && typeof imagesApi.generate === 'function');
+    const hasCreate = Boolean(imagesApi && typeof imagesApi.create === 'function');
+    this.hasImagesApi = hasEdit || hasEditsCreate || hasGenerate || hasCreate;
   }
 
   private async saveDebugImages(faceId: string, originalImageBase64: string, components: ParsedComponent[]): Promise<void> {
@@ -452,5 +461,112 @@ export class AvatarFaceService {
     }
 
     return payload;
+  }
+
+  // Parallel generation: Responses (image_generation) + Images Edit
+  async generateFace(request: AvatarUploadRequest): Promise<AvatarGenerationResult> {
+    const imageDataUrl = request.imageDataUrl?.trim();
+    if (!imageDataUrl) throw new Error('An image data URL is required to generate an avatar face.');
+    const imageBase64 = this.extractBase64Payload(imageDataUrl);
+    const generationId = randomUUID();
+    const candidates: { id: string; strategy: AvatarGenerationStrategy; components: ParsedComponent[] }[] = [];
+
+    const runResponses = (async () => {
+      try {
+        const comps: ParsedComponent[] = [];
+        for (const spec of LAYER_SPECS) {
+          const resp = await (this.client as any).responses.create({
+            model: 'gpt-4.1-mini',
+            input: `Generate a 150x150 PNG (transparent background): ${spec.prompt} The component must be clearly visible with opaque fills and high contrast. Do not include other parts.`,
+            tools: [{ type: 'image_generation' }],
+          });
+          const outputs = Array.isArray(resp?.output) ? resp.output : [];
+          const call = outputs.find((o: any) => o.type === 'image_generation_call');
+          const b64 = call?.result as string | undefined;
+          if (!b64) continue;
+          comps.push({ slot: spec.slot, mimeType: 'image/png', data: b64, sequence: spec.sequence });
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        if (comps.length > 0) candidates.push({ id: randomUUID(), strategy: 'responses', components: comps });
+      } catch (error) {
+        this.logger?.error?.('Responses generation failed', { error: error instanceof Error ? error.message : String(error) });
+      }
+    })();
+
+    const runImagesEdit = (async () => {
+      if (!this.hasImagesApi) {
+        this.logger?.warn?.('Images API not available on OpenAI client; skipping images strategy');
+        return;
+      }
+      try {
+        const comps: ParsedComponent[] = [];
+        for (const spec of LAYER_SPECS) {
+          const images = (this.client as any).images as any;
+          let res: any;
+          const imageBuffer = Buffer.from(imageBase64, 'base64');
+          if (typeof images.edit === 'function') {
+            // Align with debug script: use images.edit with a File
+            const imageFile = await toFile(imageBuffer, 'image.png', { type: 'image/png' });
+            res = await images.edit({ image: imageFile, prompt: spec.prompt, size: '256x256', n: 1, response_format: 'b64_json' });
+          } else if (images?.edits && typeof images.edits.create === 'function') {
+            res = await images.edits.create({ model: 'gpt-image-1', image: imageBuffer, prompt: spec.prompt, size: '256x256', n: 1, response_format: 'b64_json' });
+          } else if (typeof images.generate === 'function') {
+            res = await images.generate({ model: 'gpt-image-1', prompt: spec.prompt, size: '256x256', n: 1, response_format: 'b64_json' });
+          } else {
+            res = await images.create({ model: 'gpt-image-1', prompt: spec.prompt, size: '256x256', n: 1, response_format: 'b64_json' });
+          }
+          const b64 = res?.data?.[0]?.b64_json as string | undefined;
+          if (!b64) continue;
+          comps.push({ slot: spec.slot, mimeType: 'image/png', data: b64, sequence: spec.sequence });
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        if (comps.length > 0) candidates.push({ id: randomUUID(), strategy: 'images_edit', components: comps });
+      } catch (error) {
+        this.logger?.error?.('Images edit generation failed', { error: error instanceof Error ? error.message : String(error) });
+      }
+    })();
+
+    await Promise.allSettled([runResponses, runImagesEdit]);
+    if (candidates.length === 0) throw new Error('Failed to generate avatar candidates');
+
+    this.pendingGenerations.set(generationId, { createdAt: this.now(), candidates });
+    return {
+      generationId,
+      candidates: candidates.map((c) => {
+        const preview = c.components.find((cmp) => cmp.slot === 'base') ?? c.components.find((cmp) => cmp.slot === 'mouth-neutral') ?? c.components[0];
+        const validCount = c.components.map((cmp) => validateImageComponent(cmp.data)).filter((v) => v.valid).length;
+        const qualityScore = Math.round((validCount / c.components.length) * 100);
+        return {
+          id: c.id,
+          strategy: c.strategy,
+          previewDataUrl: preview ? `data:${preview.mimeType};base64,${preview.data}` : null,
+          componentsCount: c.components.length,
+          qualityScore,
+        };
+      }),
+    } as AvatarGenerationResult;
+  }
+
+  async applyGeneratedFace(generationId: string, candidateId: string, name?: string): Promise<AvatarUploadResult> {
+    const gen = this.pendingGenerations.get(generationId);
+    if (!gen) throw new Error('Generation not found.');
+    const cand = gen.candidates.find((c) => c.id === candidateId);
+    if (!cand) throw new Error('Candidate not found.');
+
+    const timestamp = this.now();
+    const faceId = randomUUID();
+    const faceRecord: FaceRecord = { id: faceId, name: sanitizeName(name, `Avatar face ${new Date(timestamp).toLocaleString()}`), createdAt: timestamp };
+    const faceComponents: FaceComponentRecord[] = cand.components.map((component, index) => ({
+      id: randomUUID(),
+      faceId,
+      slot: component.slot,
+      sequence: component.sequence ?? index,
+      mimeType: component.mimeType,
+      data: Buffer.from(component.data, 'base64'),
+    }));
+    this.store.createFace(faceRecord, faceComponents);
+    this.store.setActiveFace(faceId);
+    this.pendingGenerations.delete(generationId);
+    return { faceId };
   }
 }

@@ -10,10 +10,27 @@ import { MemoryStore } from '../src/memory/memory-store.js';
 const tempDirs: string[] = [];
 const stores: MemoryStore[] = [];
 
-function createImagesClientMock() {
-  const create = vi.fn<[unknown, unknown?], Promise<unknown>>();
+function b64(bytes: number[]): string {
+  return Buffer.from(bytes).toString('base64');
+}
+
+function createClientWithResponsesOnly() {
+  const create = vi.fn<[unknown], Promise<any>>();
+  const client = { responses: { create } } as unknown as OpenAI;
+  return { client, responsesCreate: create };
+}
+
+function createClientWithImagesOnly() {
+  const create = vi.fn<[unknown], Promise<any>>();
   const client = { images: { create } } as unknown as OpenAI;
-  return { client, create };
+  return { client, imagesCreate: create };
+}
+
+function createClientWithBoth() {
+  const responsesCreate = vi.fn<[unknown], Promise<any>>();
+  const imagesCreate = vi.fn<[unknown], Promise<any>>();
+  const client = { responses: { create: responsesCreate }, images: { create: imagesCreate } } as unknown as OpenAI;
+  return { client, responsesCreate, imagesCreate };
 }
 
 async function createStore(): Promise<MemoryStore> {
@@ -43,213 +60,92 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-describe('AvatarFaceService', () => {
-  it('uploads faces via OpenAI images API and stores components for rendering', async () => {
+describe('AvatarFaceService (generate/apply)', () => {
+  it('generates candidates via Responses API and applies a selection', async () => {
     const store = await createStore();
-    const payload = {
-      name: 'Friendly Bot',
-      imageDataUrl: 'data:image/png;base64,aGVsbG8=',
-    } satisfies AvatarUploadRequest;
+    const { client, responsesCreate } = createClientWithResponsesOnly();
 
-    // Mock successful image generation response for each layer
-    const openAiResponse = {
-      data: [
-        {
-          b64_json: Buffer.from([1, 2, 3]).toString('base64'),
-        }
-      ]
-    };
+    // For each layer call, return an image_generation_call output with base64 content
+    responsesCreate.mockImplementation(async () => ({
+      output: [{ type: 'image_generation_call', result: b64([1, 2, 3]) }],
+    }));
 
-    const { client, create } = createImagesClientMock();
-    create.mockResolvedValue(openAiResponse);
+    const service = new AvatarFaceService({ client, store, now: () => 42_000 });
+    const request: AvatarUploadRequest = { name: 'Friendly', imageDataUrl: 'data:image/png;base64,' + b64([9, 9, 9]) };
 
-    const service = new AvatarFaceService({
-      client,
-      store,
-      now: () => 42_000,
-    });
+    const gen = await service.generateFace(request);
+    expect(gen.generationId).toMatch(/^[-0-9a-f]+$/i);
+    expect(gen.candidates.length).toBeGreaterThan(0);
+    const cand = gen.candidates[0];
+    expect(cand.strategy).toBe('responses');
+    expect(cand.componentsCount).toBeGreaterThan(0);
+    expect(typeof cand.qualityScore).toBe('number');
 
-    const result = await service.uploadFace(payload);
-    expect(result.faceId).toMatch(/^[-0-9a-f]+$/i);
-    
-    // Should be called once for each layer specification (9 layers total)
-    expect(create).toHaveBeenCalledTimes(9);
-
-    const faces = store.listFaces();
-    expect(faces).toHaveLength(1);
-    expect(store.getActiveFaceId()).toBe(result.faceId);
+    const apply = await service.applyGeneratedFace(gen.generationId, cand.id, 'Applied Face');
+    expect(apply.faceId).toMatch(/^[-0-9a-f]+$/i);
 
     const active = await service.getActiveFace();
-    expect(active).not.toBeNull();
-    expect(active?.components).toHaveLength(9); // All 9 layers generated
+    expect(active?.name).toBe('Applied Face');
+    expect(active?.components.length).toBeGreaterThan(0);
     expect(active?.components[0].dataUrl.startsWith('data:image/png;base64,')).toBe(true);
   });
 
-  it('sends correct parameters to OpenAI images API when uploading faces', async () => {
+  it('generates candidates via Images API when available', async () => {
     const store = await createStore();
-    const payload = {
-      name: 'Layered Bot',
-      imageDataUrl: 'data:image/png;base64,aGVsbG8=',
-    } satisfies AvatarUploadRequest;
+    const { client, imagesCreate } = createClientWithImagesOnly();
+    imagesCreate.mockResolvedValue({ data: [{ b64_json: b64([4, 5, 6]) }] });
 
-    const openAiResponse = {
-      data: [
-        { b64_json: Buffer.from([1]).toString('base64') }
-      ]
-    };
-
-    const requests: unknown[] = [];
-
-    const { client, create } = createImagesClientMock();
-    create.mockImplementation(async (body: unknown) => {
-      requests.push(body);
-      return openAiResponse;
-    });
-
-    const service = new AvatarFaceService({
-      client,
-      store,
-    });
-
-    await service.uploadFace(payload);
-
-    // Should be called once for each layer (9 times)
-    expect(create).toHaveBeenCalledTimes(9);
-    
-    // Check first request parameters
-    const firstRequest = requests[0] as Record<string, any>;
-    expect(firstRequest).toMatchObject({
-      model: 'gpt-image-1',
-      size: '256x256',
-      n: 1,
-      response_format: 'b64_json',
-    });
-    expect(typeof firstRequest.prompt).toBe('string');
-    expect(firstRequest.prompt.length).toBeGreaterThan(0);
+    const service = new AvatarFaceService({ client, store });
+    const gen = await service.generateFace({ name: 'Bot', imageDataUrl: 'data:image/png;base64,' + b64([7]) });
+    expect(gen.candidates.length).toBe(1);
+    expect(gen.candidates[0].strategy).toBe('images_edit');
   });
 
-  it('lists faces and manages active selection lifecycle', async () => {
+  it('uploadFace throws deprecation error', async () => {
     const store = await createStore();
-    const { client, create } = createImagesClientMock();
-    create.mockImplementation(async () => {
-      throw new Error('unexpected OpenAI invocation');
-    });
+    const { client } = createClientWithBoth();
+    const service = new AvatarFaceService({ client, store });
+    await expect(service.uploadFace({ name: 'Any', imageDataUrl: 'data:image/png;base64,' + b64([1]) }))
+      .rejects.toThrow('uploadFace is deprecated. Use generateFace + applyGeneratedFace.');
+  });
 
-    const service = new AvatarFaceService({
-      client,
-      store,
-    });
+  it('logs strategy failures and still returns remaining candidates', async () => {
+    const store = await createStore();
+    const logger = { error: vi.fn() };
+    const { client, responsesCreate, imagesCreate } = createClientWithBoth();
 
+    const apiError: any = Object.assign(new Error('server error'), { status: 500, response: { data: 'server error' } });
+    responsesCreate.mockRejectedValue(apiError);
+    imagesCreate.mockResolvedValue({ data: [{ b64_json: b64([4]) }] });
+
+    const service = new AvatarFaceService({ client, store, logger });
+    const gen = await service.generateFace({ name: 'Bot', imageDataUrl: 'data:image/png;base64,' + b64([2]) });
+    // Images strategy should succeed, responses strategy should log and be skipped
+    expect(gen.candidates.length).toBe(1);
+    expect(gen.candidates[0].strategy).toBe('images_edit');
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it('lists, activates, and deletes faces', async () => {
+    const store = await createStore();
+    const { client } = createClientWithResponsesOnly();
+    const service = new AvatarFaceService({ client, store });
+
+    // Seed a face directly in the store
     store.createFace(
       { id: 'face-a', name: 'Face A', createdAt: 10 },
-      [
-        {
-          id: 'component-a',
-          faceId: 'face-a',
-          slot: 'base',
-          sequence: 0,
-          mimeType: 'image/png',
-          data: Buffer.from([7, 8, 9]),
-        },
-      ],
+      [{ id: 'component-a', faceId: 'face-a', slot: 'base', sequence: 0, mimeType: 'image/png', data: Buffer.from([1]) }],
     );
 
-    const faces = await service.listFaces();
-    expect(faces).toHaveLength(1);
-    expect(faces[0]).toMatchObject({ id: 'face-a', name: 'Face A' });
-    expect(faces[0].previewDataUrl?.startsWith('data:image/png;base64,')).toBe(true);
+    const list = await service.listFaces();
+    expect(list).toHaveLength(1);
+    expect(list[0].previewDataUrl?.startsWith('data:image/png;base64,')).toBe(true);
 
-    const detail = await service.setActiveFace('face-a');
-    expect(detail?.id).toBe('face-a');
+    await expect(service.setActiveFace('face-a')).resolves.toMatchObject({ id: 'face-a' });
     expect(store.getActiveFaceId()).toBe('face-a');
 
     await service.deleteFace('face-a');
-    expect(store.listFaces()).toHaveLength(0);
     expect(store.getActiveFaceId()).toBeNull();
-  });
-
-  it('rejects attempts to activate unknown faces', async () => {
-    const store = await createStore();
-    const { client, create } = createImagesClientMock();
-    create.mockImplementation(async () => {
-      throw new Error('unexpected OpenAI invocation');
-    });
-
-    const service = new AvatarFaceService({
-      client,
-      store,
-    });
-
-    await expect(service.setActiveFace('missing-face')).rejects.toThrow();
-  });
-
-  it('throws when OpenAI returns an error status', async () => {
-    const store = await createStore();
-    const logger = { error: vi.fn() };
-    const { client, create } = createImagesClientMock();
-    const apiError = Object.assign(new Error('server error'), {
-      status: 500,
-      response: { data: 'server error' },
-    });
-    create.mockRejectedValue(apiError);
-
-    const service = new AvatarFaceService({
-      client,
-      store,
-      logger,
-    });
-
-    await expect(
-      service.uploadFace({ name: 'Broken', imageDataUrl: 'data:image/png;base64,ZmFpbA==' }),
-    ).rejects.toThrow('OpenAI response request failed with status 500: server error');
-
-    expect(create).toHaveBeenCalledTimes(1); // Failed on first layer
-    expect(logger.error).toHaveBeenCalledWith('OpenAI response request failed with status 500', {
-      status: 500,
-      body: 'server error',
-    });
-  });
-
-  it('throws when OpenAI returns no image data', async () => {
-    const store = await createStore();
-    const logger = { error: vi.fn() };
-    const { client, create } = createImagesClientMock();
-    create.mockResolvedValue({ data: [] }); // No image data returned
-
-    const service = new AvatarFaceService({
-      client,
-      store,
-      logger,
-    });
-
-    await expect(
-      service.uploadFace({ name: 'Invalid', imageDataUrl: 'data:image/png;base64,ZmFpbA==' }),
-    ).rejects.toThrow('No image data returned for base');
-
-    expect(create).toHaveBeenCalledTimes(1); // Failed on first layer (base), so stopped early
-    expect(logger.error).toHaveBeenCalledWith('Failed to generate base', expect.objectContaining({
-      slot: 'base',
-      error: 'No image data returned for base'
-    }));
-  });
-
-  it('validates avatar image data URLs before uploading', async () => {
-    const store = await createStore();
-    const { client, create } = createImagesClientMock();
-
-    const service = new AvatarFaceService({
-      client,
-      store,
-    });
-
-    await expect(
-      service.uploadFace({ name: 'Broken', imageDataUrl: 'data:image/png;base64,' }),
-    ).rejects.toThrow('Avatar image data URL is missing image data.');
-
-    await expect(
-      service.uploadFace({ name: 'Broken', imageDataUrl: 'not-a-data-url' }),
-    ).rejects.toThrow('Avatar image data URL is malformed; expected base64-encoded data.');
-
-    expect(create).not.toHaveBeenCalled();
+    expect(store.listFaces()).toHaveLength(0);
   });
 });

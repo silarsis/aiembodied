@@ -37,7 +37,6 @@ describe('AvatarConfigurator', () => {
       getActiveFace,
       setActiveFace,
       deleteFace,
-      uploadFace: vi.fn(),
       generateFace,
       applyGeneratedFace,
     };
@@ -83,7 +82,6 @@ describe('AvatarConfigurator', () => {
     const avatarApi: AvatarBridge = {
       listFaces,
       getActiveFace,
-      uploadFace: vi.fn(),
       generateFace,
       applyGeneratedFace,
       setActiveFace,
@@ -170,7 +168,8 @@ describe('AvatarConfigurator', () => {
         listFaces: vi.fn().mockResolvedValue([]),
         getActiveFace: vi.fn().mockResolvedValue(null),
         setActiveFace: vi.fn().mockResolvedValue(null),
-        uploadFace: vi.fn().mockResolvedValue({ faceId: 'id' }),
+        generateFace: vi.fn().mockResolvedValue({ generationId: 'gen-x', candidates: [] } as AvatarGenerationResult),
+        applyGeneratedFace: vi.fn().mockResolvedValue({ faceId: 'id' }),
         deleteFace: vi.fn().mockResolvedValue(undefined),
       };
 
