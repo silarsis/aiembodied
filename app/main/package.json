@@ -34,7 +34,7 @@
     "@types/auto-launch": "^5.0.5",
     "@types/better-sqlite3": "^7.6.13",
     "@types/debug": "^4.1.12",
-    "cross-env": "^7.0.3",
+    "cross-env": "^10.1.0",
     "ts-node": "^10.9.2"
   }
 }
