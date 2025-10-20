@@ -515,6 +515,9 @@ export class AvatarFaceService {
             create?: (args: unknown) => Promise<unknown>;
           } | undefined;
           const images = (this.client as unknown as { images?: ImagesApi }).images;
+          if (!images) {
+            continue;
+          }
           let res: unknown;
           const imageBuffer = Buffer.from(imageBase64, 'base64');
           if (typeof images.edit === 'function') {
