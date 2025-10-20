@@ -4,13 +4,7 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type OpenAI from 'openai';
-import type {
-  ResponseCreateParamsNonStreaming,
-  ResponseFormatTextJSONSchemaConfig,
-  ResponseInput,
-  ResponseInputMessageContentList,
-} from 'openai/resources/responses/responses.mjs';
-import { z } from 'zod';
+
 
 // Image validation utilities
 function validatePNGHeader(buffer: Buffer): boolean {
@@ -41,7 +35,7 @@ interface ValidationResult {
   hasAlpha: boolean;
 }
 
-function validateImageComponent(data: string, slot: string): ValidationResult {
+function validateImageComponent(data: string): ValidationResult {
   const issues: string[] = [];
   
   try {
@@ -85,7 +79,6 @@ function validateImageComponent(data: string, slot: string): ValidationResult {
 }
 import type { MemoryStore, FaceRecord, FaceComponentRecord } from '../memory/memory-store.js';
 import {
-  AVATAR_COMPONENT_SLOTS,
   type AvatarComponentSlot,
   type AvatarFaceDetail,
   type AvatarFaceSummary,
@@ -94,7 +87,7 @@ import {
 } from './types.js';
 
 interface AvatarFaceServiceOptions {
-  client: Pick<OpenAI, 'responses'>;
+  client: OpenAI;
   store: MemoryStore;
   now?: () => number;
   logger?: { error?: (message: string, meta?: Record<string, unknown>) => void };
@@ -107,75 +100,54 @@ interface ParsedComponent {
   sequence?: number;
 }
 
-interface ParsedResponse {
-  name?: string;
-  components: ParsedComponent[];
-}
-
-const JsonResponseSchema = z.object({
-  name: z
-    .string()
-    .trim()
-    .max(120)
-    .optional(),
-  components: z
-    .array(
-      z.object({
-        slot: z.enum(AVATAR_COMPONENT_SLOTS),
-        mimeType: z
-          .string()
-          .trim()
-          .min(1)
-          .default('image/png'),
-        data: z.string().min(1),
-        sequence: z.number().int().min(0).optional(),
-      }),
-    )
-    .min(1),
-});
-
-const RESPONSE_SCHEMA_DEFINITION = {
-  name: 'AvatarComponents',
-  type: 'json_schema',
-  strict: true,
-  schema: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['name', 'components'],
-    properties: {
-      name: {
-        type: 'string',
-        description: 'Human-friendly name describing the style of the generated avatar components.',
-      },
-      components: {
-        type: 'array',
-        minItems: 1,
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['slot', 'mimeType', 'data', 'sequence'],
-          properties: {
-            slot: { type: 'string', enum: AVATAR_COMPONENT_SLOTS },
-            data: {
-              type: 'string',
-              description: 'Base64 encoded PNG with transparent background sized consistently for rendering.',
-            },
-            mimeType: {
-              type: 'string',
-              enum: ['image/png', 'image/webp'],
-              default: 'image/png',
-            },
-            sequence: {
-              type: 'integer',
-              minimum: 0,
-              description: 'Ordering hint when multiple frames exist for a slot.',
-            },
-          },
-        },
-      },
-    },
+// Layer specifications for generating avatar components
+const LAYER_SPECS = [
+  {
+    slot: 'base' as AvatarComponentSlot,
+    prompt: 'face outline, hair, and static facial features ONLY (no eyes, no mouth). Cartoon style, 150x150px, transparent background, bold lines.',
+    sequence: 0,
   },
-} satisfies ResponseFormatTextJSONSchemaConfig;
+  {
+    slot: 'eyes-open' as AvatarComponentSlot,
+    prompt: 'both eyes open ONLY, isolated on transparent canvas. Cartoon style, 150x150px, bold features, high contrast.',
+    sequence: 0,
+  },
+  {
+    slot: 'eyes-closed' as AvatarComponentSlot,
+    prompt: 'both eyes closed ONLY, isolated on transparent canvas. Cartoon style, 150x150px, bold features with eyelashes.',
+    sequence: 0,
+  },
+  {
+    slot: 'mouth-neutral' as AvatarComponentSlot,
+    prompt: 'neutral mouth ONLY, isolated on transparent canvas. Cartoon style, 150x150px, pink/red lips.',
+    sequence: 0,
+  },
+  {
+    slot: 'mouth-0' as AvatarComponentSlot,
+    prompt: 'small O phoneme mouth ONLY, isolated on transparent canvas. Cartoon style, 150x150px, pink/red lips.',
+    sequence: 0,
+  },
+  {
+    slot: 'mouth-1' as AvatarComponentSlot,
+    prompt: 'medium O phoneme mouth ONLY, isolated on transparent canvas. Cartoon style, 150x150px, pink/red lips.',
+    sequence: 0,
+  },
+  {
+    slot: 'mouth-2' as AvatarComponentSlot,
+    prompt: 'wide O phoneme mouth ONLY, isolated on transparent canvas. Cartoon style, 150x150px, pink/red lips.',
+    sequence: 0,
+  },
+  {
+    slot: 'mouth-3' as AvatarComponentSlot,
+    prompt: 'smiling mouth ONLY, isolated on transparent canvas. Cartoon style, 150x150px, pink/red lips showing teeth.',
+    sequence: 0,
+  },
+  {
+    slot: 'mouth-4' as AvatarComponentSlot,
+    prompt: 'open talking mouth ONLY, isolated on transparent canvas. Cartoon style, 150x150px, pink/red lips showing teeth.',
+    sequence: 0,
+  },
+];
 
 function sanitizeName(name: string | undefined, fallback: string): string {
   if (typeof name !== 'string') {
@@ -197,15 +169,16 @@ function toDataUrl(mimeType: string, data: Buffer): string {
 }
 
 export class AvatarFaceService {
-  private readonly client: Pick<OpenAI, 'responses'>;
+  private readonly client: OpenAI;
   private readonly store: MemoryStore;
   private readonly now: () => number;
   private readonly logger?: { error?: (message: string, meta?: Record<string, unknown>) => void };
   private readonly debugImagesEnabled: boolean;
 
   constructor(options: AvatarFaceServiceOptions) {
-    if (!options.client?.responses || typeof options.client.responses.create !== 'function') {
-      throw new Error('AvatarFaceService requires an OpenAI responses client.');
+    const imagesApi = (options.client as unknown as { images: { create: () => unknown } }).images;
+    if (!imagesApi || typeof imagesApi.create !== 'function') {
+      throw new Error('AvatarFaceService requires an OpenAI images client.');
     }
 
     this.client = options.client;
@@ -250,7 +223,7 @@ export class AvatarFaceService {
     }
   }
 
-  private async saveDebugRequest(faceId: string, requestBody: ResponseCreateParamsNonStreaming, imageBase64: string): Promise<void> {
+  private async saveDebugRequest(faceId: string, layerPrompts: string[], imageBase64: string): Promise<void> {
     if (!this.debugImagesEnabled) {
       return;
     }
@@ -260,37 +233,12 @@ export class AvatarFaceService {
       const debugDir = resolve(currentDir, '../../../images', faceId);
       await mkdir(debugDir, { recursive: true });
 
-      // Create sanitized request data (remove actual image data to keep file readable)
-      const sanitizedRequest = {
-        ...requestBody,
-        input: Array.isArray(requestBody.input) 
-          ? requestBody.input.map((item: any) => ({
-              ...item,
-              content: Array.isArray(item.content) 
-                ? item.content.map((content: any) => {
-                    if (content.type === 'input_image') {
-                      return {
-                        ...content,
-                        image_url: `data:image/png;base64,... (${imageBase64.length} characters)`
-                      };
-                    }
-                    return content;
-                  })
-                : item.content
-            }))
-          : requestBody.input
-      };
-
       const debugData = {
         timestamp: new Date().toISOString(),
         faceId,
         request: {
-          headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'aiembodied-avatar-service',
-            'Authorization': 'Bearer [REDACTED]'
-          },
-          body: sanitizedRequest,
+          model: 'gpt-image-1',
+          layerPrompts,
           imageBase64Length: imageBase64.length
         }
       };
@@ -350,74 +298,97 @@ export class AvatarFaceService {
 
     const imageBase64 = this.extractBase64Payload(imageDataUrl);
 
-    const systemContent: ResponseInputMessageContentList = [
-      {
-        type: 'input_text',
-        text:
-          'You are an avatar generation specialist that converts portrait photos into animation-ready layered components. '
-          + 'Given a portrait photo, extract these transparent PNG layers at 150x150 pixels: '
-          + '- base: Face outline, hair, and static facial features (no eyes or mouth) '
-          + '- eyes-open: Open eyes only on transparent background '
-          + '- eyes-closed: Closed eyes only on transparent background '
-          + '- mouth-neutral through mouth-4: Different mouth shapes for speech animation (neutral, small-o, medium-o, wide-o, smile, open) '
-          + 'Each component must be precisely aligned and sized for perfect overlay compositing.',
-      },
-    ];
-
-    const userContent: ResponseInputMessageContentList = [
-      {
-        type: 'input_text',
-        text:
-          'Convert this portrait into avatar animation layers. Make each component: '
-          + '- Exactly 150x150 pixels with transparent background '
-          + '- Perfectly aligned so they composite seamlessly '
-          + '- High contrast and clearly visible '
-          + '- Cartoon-style but recognizable as the source person '
-          + '- Ready for real-time animation overlay '
-          + 'Focus on clear, bold features that will be visible in a small avatar display.',
-      },
-      { type: 'input_image', image_url: `data:image/png;base64,${imageBase64}`, detail: 'auto' },
-    ];
-
-    const input: ResponseInput = [
-      { type: 'message', role: 'system', content: systemContent },
-      { type: 'message', role: 'user', content: userContent },
-    ];
-
-    const body: ResponseCreateParamsNonStreaming = {
-      model: 'gpt-4.1-mini',
-      input,
-      text: {
-        format: RESPONSE_SCHEMA_DEFINITION,
-      },
-    };
-
     // Generate face ID early for debug logging
     const faceId = randomUUID();
+    const timestamp = this.now();
+    
+    // Extract layer prompts for debug logging
+    const layerPrompts = LAYER_SPECS.map(spec => spec.prompt);
     
     // Save debug request
-    await this.saveDebugRequest(faceId, body, imageBase64);
+    await this.saveDebugRequest(faceId, layerPrompts, imageBase64);
 
-    let responsePayload: unknown;
+    const components: ParsedComponent[] = [];
+
     try {
-      responsePayload = await this.client.responses.create(body);
-      
+      // Generate each avatar component layer using the images create API
+      for (const layerSpec of LAYER_SPECS) {
+        try {
+          this.logger?.error?.(`Generating ${layerSpec.slot} layer...`, { 
+            faceId, 
+            slot: layerSpec.slot 
+          });
+
+          const response = await (this.client as unknown as { images: { create: (params: unknown) => Promise<{ data: Array<{ b64_json: string }> }> } }).images.create({
+            model: 'gpt-image-1',
+            prompt: layerSpec.prompt,
+            size: '256x256', // OpenAI only supports specific sizes
+            n: 1,
+            response_format: 'b64_json',
+          });
+
+          if (!response.data?.[0]?.b64_json) {
+            throw new Error(`No image data returned for ${layerSpec.slot}`);
+          }
+
+          const b64Data = response.data[0].b64_json;
+          
+          // Validate the generated component
+          const validation = validateImageComponent(b64Data);
+          
+          if (!validation.valid) {
+            this.logger?.error?.(`Component validation failed for ${layerSpec.slot}`, {
+              slot: layerSpec.slot,
+              issues: validation.issues,
+              fileSize: validation.fileSize,
+              dimensions: validation.dimensions
+            });
+          }
+
+          components.push({
+            slot: layerSpec.slot,
+            mimeType: 'image/png',
+            data: b64Data,
+            sequence: layerSpec.sequence,
+          });
+
+          // Gentle pacing to avoid rate limits
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+        } catch (error) {
+          this.logger?.error?.(`Failed to generate ${layerSpec.slot}`, {
+            faceId,
+            slot: layerSpec.slot,
+            error: error instanceof Error ? error.message : String(error)
+          });
+          
+          // If this is the first layer and it fails with API error, re-throw the original error
+          if (layerSpec.slot === 'base' && error instanceof Error) {
+            throw error;
+          }
+          
+          // Continue with other layers even if one fails
+          continue;
+        }
+      }
+
+      if (components.length === 0) {
+        throw new Error('Failed to generate any avatar components');
+      }
+
       // Save debug response
-      await this.saveDebugResponse(faceId, responsePayload);
+      await this.saveDebugResponse(faceId, { componentsGenerated: components.length });
+
     } catch (error) {
       // Save debug response for errors too
       await this.saveDebugResponse(faceId, { error: error instanceof Error ? error.message : String(error) });
       throw this.handleOpenAiError(error);
     }
 
-    const parsed = this.parseResponse(responsePayload);
-
-    const components: ParsedComponent[] = parsed.components;
-    const timestamp = this.now();
-
     // Save debug images for inspection (development only)
     await this.saveDebugImages(faceId, imageBase64, components);
-    const faceName = sanitizeName(request.name ?? parsed.name, `Avatar face ${new Date(timestamp).toLocaleString()}`);
+    
+    const faceName = sanitizeName(request.name, `Avatar face ${new Date(timestamp).toLocaleString()}`);
 
     const faceRecord: FaceRecord = {
       id: faceId,
@@ -426,18 +397,6 @@ export class AvatarFaceService {
     };
 
     const faceComponents: FaceComponentRecord[] = components.map((component, index) => {
-      // Validate component before storage
-      const validation = validateImageComponent(component.data, component.slot);
-      
-      if (!validation.valid) {
-        this.logger?.error?.(`Avatar component validation failed for slot ${component.slot}`, {
-          slot: component.slot,
-          issues: validation.issues,
-          fileSize: validation.fileSize,
-          dimensions: validation.dimensions
-        });
-      }
-
       const buffer = Buffer.from(component.data, 'base64');
       if (buffer.length === 0) {
         throw new Error(`Component for slot ${component.slot} is empty.`);
@@ -454,7 +413,7 @@ export class AvatarFaceService {
     });
 
     // Log validation summary
-    const validationResults = components.map(comp => validateImageComponent(comp.data, comp.slot));
+    const validationResults = components.map(comp => validateImageComponent(comp.data));
     const validComponents = validationResults.filter(v => v.valid).length;
     const qualityScore = Math.round((validComponents / components.length) * 100);
     
@@ -611,54 +570,7 @@ export class AvatarFaceService {
     };
   }
 
-  private parseResponse(response: unknown): ParsedResponse {
-    try {
-      const text = this.extractTextResponse(response);
-      const json = JSON.parse(text) as unknown;
-      return JsonResponseSchema.parse(json);
-    } catch (error) {
-      if (error instanceof SyntaxError) {
-        this.logger?.error?.('Failed to parse avatar component response JSON.', { message: error.message });
-        throw new Error('OpenAI returned an invalid avatar component payload.');
-      }
 
-      if (error instanceof z.ZodError) {
-        this.logger?.error?.('Avatar component response failed schema validation.', {
-          issues: error.issues,
-        });
-        throw new Error('OpenAI response missing required avatar component data.');
-      }
-
-      throw error;
-    }
-  }
-
-  private extractTextResponse(response: unknown): string {
-    if (!response) {
-      throw new Error('OpenAI response is empty.');
-    }
-
-    const typed = response as { output_text?: string; output?: Array<{ content?: Array<{ type: string; text?: string }> }>; };
-    if (typeof typed.output_text === 'string' && typed.output_text.trim()) {
-      return typed.output_text;
-    }
-
-    const output = typed.output;
-    if (Array.isArray(output)) {
-      for (const item of output) {
-        if (!item?.content) {
-          continue;
-        }
-        for (const chunk of item.content) {
-          if (chunk?.type === 'output_text' && typeof chunk.text === 'string' && chunk.text.trim()) {
-            return chunk.text;
-          }
-        }
-      }
-    }
-
-    throw new Error('OpenAI response does not contain text output.');
-  }
 
   private extractBase64Payload(imageDataUrl: string): string {
     const DATA_URL_PATTERN = /^data:(?<mime>[^;,]+)?;base64,(?<payload>.*)$/s;

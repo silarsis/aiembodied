@@ -170,7 +170,7 @@ async function generateOneLayer(client, imagePath, layerSpec, filename, slot, is
     const b64Data = response.data[0].b64_json;
     
     // Validate the generated image
-    const validation = validateImageComponent(b64Data, slot);
+    const validation = validateImageComponent(b64Data);
     
     console.log(`    📊 Generated Size: ${validation.fileSize} bytes`);
     console.log(`    📐 Dimensions: ${validation.dimensions ? `${validation.dimensions.width}x${validation.dimensions.height}` : 'Unknown'}`);

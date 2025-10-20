@@ -62,7 +62,10 @@ describe('rebuildNativeDependenciesForElectron', () => {
     const runImpl = vi.fn(() => Promise.resolve());
 
     try {
-      await rebuildNativeDependenciesForElectron(repoRoot, { runImpl });
+      await rebuildNativeDependenciesForElectron(repoRoot, {
+        runImpl,
+        pnpmStorePath: 'C:/Users/test/AppData/Local/pnpm/store/v3',
+      });
 
       expect(runImpl).toHaveBeenCalledTimes(2);
 
@@ -75,6 +78,8 @@ describe('rebuildNativeDependenciesForElectron', () => {
       expect(rebuildEnv?.npm_config_target).toBe('29.1.0');
       expect(rebuildEnv?.npm_config_disturl).toBe('https://electronjs.org/headers');
       expect(rebuildEnv?.PREBUILD_INSTALL_FORBID).toBe('1');
+      expect(rebuildEnv?.PNPM_STORE_PATH).toBe('C:/Users/test/AppData/Local/pnpm/store/v3');
+      expect(rebuildEnv?.npm_config_store_dir).toBe('C:/Users/test/AppData/Local/pnpm/store/v3');
     } finally {
       rmSync(workspaceRoot, { recursive: true, force: true });
     }
