@@ -10,11 +10,9 @@ import { MemoryStore } from '../src/memory/memory-store.js';
 const tempDirs: string[] = [];
 const stores: MemoryStore[] = [];
 
-type ResponsesClient = Pick<OpenAI, 'responses'>;
-
-function createResponsesClientMock() {
+function createImagesClientMock() {
   const create = vi.fn<[unknown, unknown?], Promise<unknown>>();
-  const client = { responses: { create } } as unknown as ResponsesClient;
+  const client = { images: { create } } as unknown as OpenAI;
   return { client, create };
 }
 
@@ -46,33 +44,23 @@ afterEach(async () => {
 });
 
 describe('AvatarFaceService', () => {
-  it('uploads faces via OpenAI and stores components for rendering', async () => {
+  it('uploads faces via OpenAI images API and stores components for rendering', async () => {
     const store = await createStore();
     const payload = {
       name: 'Friendly Bot',
       imageDataUrl: 'data:image/png;base64,aGVsbG8=',
     } satisfies AvatarUploadRequest;
 
+    // Mock successful image generation response for each layer
     const openAiResponse = {
-      output_text: JSON.stringify({
-        name: 'Cheerful Friend',
-        components: [
-          {
-            slot: 'base',
-            mimeType: 'image/png',
-            data: Buffer.from([1, 2, 3]).toString('base64'),
-          },
-          {
-            slot: 'mouth-0',
-            mimeType: 'image/png',
-            data: Buffer.from([4, 5, 6]).toString('base64'),
-            sequence: 0,
-          },
-        ],
-      }),
+      data: [
+        {
+          b64_json: Buffer.from([1, 2, 3]).toString('base64'),
+        }
+      ]
     };
 
-    const { client, create } = createResponsesClientMock();
+    const { client, create } = createImagesClientMock();
     create.mockResolvedValue(openAiResponse);
 
     const service = new AvatarFaceService({
@@ -83,7 +71,9 @@ describe('AvatarFaceService', () => {
 
     const result = await service.uploadFace(payload);
     expect(result.faceId).toMatch(/^[-0-9a-f]+$/i);
-    expect(create).toHaveBeenCalledTimes(1);
+    
+    // Should be called once for each layer specification (9 layers total)
+    expect(create).toHaveBeenCalledTimes(9);
 
     const faces = store.listFaces();
     expect(faces).toHaveLength(1);
@@ -91,11 +81,11 @@ describe('AvatarFaceService', () => {
 
     const active = await service.getActiveFace();
     expect(active).not.toBeNull();
-    expect(active?.components).toHaveLength(2);
+    expect(active?.components).toHaveLength(9); // All 9 layers generated
     expect(active?.components[0].dataUrl.startsWith('data:image/png;base64,')).toBe(true);
   });
 
-  it('sends base64 payloads to OpenAI when uploading faces', async () => {
+  it('sends correct parameters to OpenAI images API when uploading faces', async () => {
     const store = await createStore();
     const payload = {
       name: 'Layered Bot',
@@ -103,16 +93,14 @@ describe('AvatarFaceService', () => {
     } satisfies AvatarUploadRequest;
 
     const openAiResponse = {
-      output_text: JSON.stringify({
-        components: [
-          { slot: 'base', mimeType: 'image/png', data: Buffer.from([1]).toString('base64') },
-        ],
-      }),
+      data: [
+        { b64_json: Buffer.from([1]).toString('base64') }
+      ]
     };
 
     const requests: unknown[] = [];
 
-    const { client, create } = createResponsesClientMock();
+    const { client, create } = createImagesClientMock();
     create.mockImplementation(async (body: unknown) => {
       requests.push(body);
       return openAiResponse;
@@ -125,27 +113,24 @@ describe('AvatarFaceService', () => {
 
     await service.uploadFace(payload);
 
-    expect(create).toHaveBeenCalledTimes(1);
-    const requestBody = requests[0] as Record<string, any>;
-    const systemPayload = requestBody?.input?.[0]?.content?.[0];
-    const imagePayload = requestBody?.input?.[1]?.content?.[1];
-    const responseFormat = requestBody?.text?.format;
-    expect(systemPayload).toMatchObject({ type: 'input_text' });
-    expect(imagePayload).toEqual({
-      type: 'input_image',
-      image_url: 'data:image/png;base64,aGVsbG8=',
-      detail: 'auto',
+    // Should be called once for each layer (9 times)
+    expect(create).toHaveBeenCalledTimes(9);
+    
+    // Check first request parameters
+    const firstRequest = requests[0] as Record<string, any>;
+    expect(firstRequest).toMatchObject({
+      model: 'gpt-image-1',
+      size: '256x256',
+      n: 1,
+      response_format: 'b64_json',
     });
-    expect(responseFormat?.type).toBe('json_schema');
-    expect(responseFormat?.name).toBe('AvatarComponents');
-    expect(responseFormat?.schema).toMatchObject({ required: ['components'] });
-    const componentSchema = responseFormat?.schema?.properties?.components?.items;
-    expect(componentSchema?.required).toEqual(['slot', 'mimeType', 'data']);
+    expect(typeof firstRequest.prompt).toBe('string');
+    expect(firstRequest.prompt.length).toBeGreaterThan(0);
   });
 
   it('lists faces and manages active selection lifecycle', async () => {
     const store = await createStore();
-    const { client, create } = createResponsesClientMock();
+    const { client, create } = createImagesClientMock();
     create.mockImplementation(async () => {
       throw new Error('unexpected OpenAI invocation');
     });
@@ -185,7 +170,7 @@ describe('AvatarFaceService', () => {
 
   it('rejects attempts to activate unknown faces', async () => {
     const store = await createStore();
-    const { client, create } = createResponsesClientMock();
+    const { client, create } = createImagesClientMock();
     create.mockImplementation(async () => {
       throw new Error('unexpected OpenAI invocation');
     });
@@ -201,7 +186,7 @@ describe('AvatarFaceService', () => {
   it('throws when OpenAI returns an error status', async () => {
     const store = await createStore();
     const logger = { error: vi.fn() };
-    const { client, create } = createResponsesClientMock();
+    const { client, create } = createImagesClientMock();
     const apiError = Object.assign(new Error('server error'), {
       status: 500,
       response: { data: 'server error' },
@@ -218,18 +203,18 @@ describe('AvatarFaceService', () => {
       service.uploadFace({ name: 'Broken', imageDataUrl: 'data:image/png;base64,ZmFpbA==' }),
     ).rejects.toThrow('OpenAI response request failed with status 500: server error');
 
-    expect(create).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledTimes(1); // Failed on first layer
     expect(logger.error).toHaveBeenCalledWith('OpenAI response request failed with status 500', {
       status: 500,
       body: 'server error',
     });
   });
 
-  it('throws when OpenAI returns invalid JSON payload', async () => {
+  it('throws when OpenAI returns no image data', async () => {
     const store = await createStore();
     const logger = { error: vi.fn() };
-    const { client, create } = createResponsesClientMock();
-    create.mockResolvedValue({ output_text: 'not-json' });
+    const { client, create } = createImagesClientMock();
+    create.mockResolvedValue({ data: [] }); // No image data returned
 
     const service = new AvatarFaceService({
       client,
@@ -239,17 +224,18 @@ describe('AvatarFaceService', () => {
 
     await expect(
       service.uploadFace({ name: 'Invalid', imageDataUrl: 'data:image/png;base64,ZmFpbA==' }),
-    ).rejects.toThrow('OpenAI returned an invalid avatar component payload.');
+    ).rejects.toThrow('No image data returned for base');
 
-    expect(create).toHaveBeenCalledTimes(1);
-    expect(logger.error).toHaveBeenCalledWith('Failed to parse avatar component response JSON.', {
-      message: expect.stringContaining('Unexpected token'),
-    });
+    expect(create).toHaveBeenCalledTimes(1); // Failed on first layer (base), so stopped early
+    expect(logger.error).toHaveBeenCalledWith('Failed to generate base', expect.objectContaining({
+      slot: 'base',
+      error: 'No image data returned for base'
+    }));
   });
 
   it('validates avatar image data URLs before uploading', async () => {
     const store = await createStore();
-    const { client, create } = createResponsesClientMock();
+    const { client, create } = createImagesClientMock();
 
     const service = new AvatarFaceService({
       client,
