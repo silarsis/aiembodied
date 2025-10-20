@@ -665,12 +665,10 @@ describe('main process bootstrap', () => {
     await expect(setActiveHandler?.({}, 'face-1')).resolves.toBeNull();
     expect(avatarService?.setActiveFace).toHaveBeenCalledWith('face-1');
 
-    const uploadHandler = handleEntries.get('avatar:upload-face');
-    expect(typeof uploadHandler).toBe('function');
-    await expect(uploadHandler?.({}, { name: 'Friendly', imageDataUrl: 'data:' })).resolves.toEqual({
-      faceId: 'face-123',
-    });
-    expect(avatarService?.uploadFace).toHaveBeenCalledWith({ name: 'Friendly', imageDataUrl: 'data:' });
+    const generateHandler = handleEntries.get('avatar:generate-face');
+    expect(typeof generateHandler).toBe('function');
+    await expect(generateHandler?.({}, { name: 'Friendly', imageDataUrl: 'data:' })).resolves.toEqual({ generationId: 'gen-1', candidates: expect.any(Array) });
+    expect(avatarService?.generateFace).toHaveBeenCalledWith({ name: 'Friendly', imageDataUrl: 'data:' });
 
     const deleteHandler = handleEntries.get('avatar:delete-face');
     expect(typeof deleteHandler).toBe('function');

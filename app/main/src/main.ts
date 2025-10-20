@@ -486,13 +486,6 @@ function registerIpcHandlers(
 
     return avatarFaceService.setActiveFace(faceId);
   });
-  ipcMain.handle('avatar:upload-face', async (_event, payload: AvatarUploadRequest) => {
-    if (!avatarFaceService) {
-      throw new Error('Avatar configuration service is unavailable.');
-    }
-
-    return avatarFaceService.uploadFace(payload);
-  });
   ipcMain.handle('avatar:delete-face', async (_event, faceId: string) => {
     if (!avatarFaceService) {
       throw new Error('Avatar configuration service is unavailable.');

@@ -6,6 +6,7 @@ import type {
   AvatarFaceSummary,
   AvatarUploadRequest,
   AvatarUploadResult,
+  AvatarGenerationResult,
 } from './avatar/types.js';
 import type {
   ConversationAppendMessagePayload,
@@ -103,7 +104,8 @@ export interface AvatarBridge {
   listFaces(): Promise<AvatarFaceSummary[]>;
   getActiveFace(): Promise<AvatarFaceDetail | null>;
   setActiveFace(faceId: string | null): Promise<AvatarFaceDetail | null>;
-  uploadFace(request: AvatarUploadRequest): Promise<AvatarUploadResult>;
+  generateFace(request: AvatarUploadRequest): Promise<AvatarGenerationResult>;
+  applyGeneratedFace(generationId: string, candidateId: string, name?: string): Promise<AvatarUploadResult>;
   deleteFace(faceId: string): Promise<void>;
 }
 
@@ -159,8 +161,10 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     getActiveFace: () => ipcRenderer.invoke('avatar:get-active-face') as Promise<AvatarFaceDetail | null>,
     setActiveFace: (faceId) =>
       ipcRenderer.invoke('avatar:set-active-face', faceId) as Promise<AvatarFaceDetail | null>,
-    uploadFace: (payload) =>
-      ipcRenderer.invoke('avatar:upload-face', payload) as Promise<AvatarUploadResult>,
+    generateFace: (payload) =>
+      ipcRenderer.invoke('avatar:generate-face', payload) as Promise<AvatarGenerationResult>,
+    applyGeneratedFace: (generationId, candidateId, name) =>
+      ipcRenderer.invoke('avatar:apply-generated-face', { generationId, candidateId, name }) as Promise<AvatarUploadResult>,
     deleteFace: async (faceId) => {
       await ipcRenderer.invoke('avatar:delete-face', faceId);
     },

@@ -39,10 +39,26 @@ export interface AvatarUploadResult {
   faceId: string;
 }
 
+export type AvatarGenerationStrategy = 'responses' | 'images_edit';
+
+export interface AvatarGenerationCandidateSummary {
+  id: string;
+  strategy: AvatarGenerationStrategy;
+  previewDataUrl: string | null;
+  componentsCount: number;
+  qualityScore: number;
+}
+
+export interface AvatarGenerationResult {
+  generationId: string;
+  candidates: AvatarGenerationCandidateSummary[];
+}
+
 export interface AvatarBridge {
   listFaces(): Promise<AvatarFaceSummary[]>;
   getActiveFace(): Promise<AvatarFaceDetail | null>;
   setActiveFace(faceId: string | null): Promise<AvatarFaceDetail | null>;
-  uploadFace(request: AvatarUploadRequest): Promise<AvatarUploadResult>;
+  generateFace(request: AvatarUploadRequest): Promise<AvatarGenerationResult>;
+  applyGeneratedFace(generationId: string, candidateId: string, name?: string): Promise<AvatarUploadResult>;
   deleteFace(faceId: string): Promise<void>;
 }

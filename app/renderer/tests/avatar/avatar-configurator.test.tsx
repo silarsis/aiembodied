@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { AvatarConfigurator } from '../../src/avatar/avatar-configurator.js';
-import type { AvatarBridge } from '../../src/avatar/types.js';
+import type { AvatarBridge, AvatarGenerationResult } from '../../src/avatar/types.js';
 
 const SAMPLE_PREVIEW = 'data:image/png;base64,ZmFrZQ==';
 
@@ -29,14 +29,17 @@ describe('AvatarConfigurator', () => {
       components: [],
     });
     const deleteFace = vi.fn().mockResolvedValue(undefined);
-    const uploadFace = vi.fn();
+    const generateFace = vi.fn().mockResolvedValue({ generationId: 'gen-1', candidates: [{ id: 'cand-1', strategy: 'responses', previewDataUrl: SAMPLE_PREVIEW, componentsCount: 9, qualityScore: 100 }] } as AvatarGenerationResult);
+    const applyGeneratedFace = vi.fn().mockResolvedValue({ faceId: 'face-1' });
 
     const avatarApi: AvatarBridge = {
       listFaces,
       getActiveFace,
       setActiveFace,
       deleteFace,
-      uploadFace,
+      uploadFace: vi.fn(),
+      generateFace,
+      applyGeneratedFace,
     };
 
     const onActive = vi.fn();
@@ -72,14 +75,17 @@ describe('AvatarConfigurator', () => {
       createdAt: 1735689700000,
       components: [],
     });
-    const uploadFace = vi.fn().mockResolvedValue({ faceId: 'face-2' });
+    const generateFace = vi.fn().mockResolvedValue({ generationId: 'gen-2', candidates: [{ id: 'cand-2', strategy: 'responses', previewDataUrl: SAMPLE_PREVIEW, componentsCount: 9, qualityScore: 100 }] } as AvatarGenerationResult);
+    const applyGeneratedFace = vi.fn().mockResolvedValue({ faceId: 'face-2' });
     const setActiveFace = vi.fn();
     const deleteFace = vi.fn();
 
     const avatarApi: AvatarBridge = {
       listFaces,
       getActiveFace,
-      uploadFace,
+      uploadFace: vi.fn(),
+      generateFace,
+      applyGeneratedFace,
       setActiveFace,
       deleteFace,
     };
@@ -129,8 +135,10 @@ describe('AvatarConfigurator', () => {
       const form = screen.getByRole('form', { name: 'Upload new avatar face' });
       fireEvent.submit(form);
 
-      await waitFor(() => expect(uploadFace).toHaveBeenCalledTimes(1));
-      expect(uploadFace).toHaveBeenCalledWith({ name: 'friendly', imageDataUrl: mockDataUrl });
+      await waitFor(() => expect(generateFace).toHaveBeenCalledTimes(1));
+      const applyBtn = await screen.findByRole('button', { name: 'Apply' });
+      fireEvent.click(applyBtn);
+      await waitFor(() => expect(applyGeneratedFace).toHaveBeenCalledTimes(1));
       await waitFor(() => expect(listFaces).toHaveBeenCalledTimes(2));
     } finally {
       globalThis.FileReader = originalFileReader;
