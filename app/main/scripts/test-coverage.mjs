@@ -47,7 +47,7 @@ function determineStoreEnv(repoRoot) {
 }
 
 function run(cmd, args, env) {
-  const res = spawnSync(cmd, args, { stdio: 'inherit', env });
+  const res = spawnSync(cmd, args, { stdio: 'inherit', env, shell: true });
   if (res.status !== 0) process.exit(res.status || 1);
 }
 
@@ -64,4 +64,3 @@ function main() {
 }
 
 main();
-
