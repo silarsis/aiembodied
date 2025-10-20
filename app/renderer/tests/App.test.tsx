@@ -7,7 +7,7 @@ import type {
 } from '../../main/src/conversation/types.js';
 import type { RendererConfig } from '../../main/src/config/config-manager.js';
 import type { WakeWordDetectionEvent } from '../../main/src/wake-word/types.js';
-import type { AvatarBridge } from '../src/avatar/types.js';
+import type { AvatarBridge, AvatarGenerationResult } from '../src/avatar/types.js';
 
 type MockRealtimeInstance = {
   callbacks: {
@@ -102,7 +102,8 @@ function createAvatarBridgeMock(overrides: Partial<AvatarBridge> = {}): AvatarBr
     listFaces: vi.fn().mockResolvedValue([]),
     getActiveFace: vi.fn().mockResolvedValue(null),
     setActiveFace: vi.fn().mockResolvedValue(null),
-    uploadFace: vi.fn().mockResolvedValue({ faceId: 'avatar-face-id' }),
+    generateFace: vi.fn().mockResolvedValue({ generationId: 'gen-ui', candidates: [] } as AvatarGenerationResult),
+    applyGeneratedFace: vi.fn().mockResolvedValue({ faceId: 'avatar-face-id' }),
     deleteFace: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };

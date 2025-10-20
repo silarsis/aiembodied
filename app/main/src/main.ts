@@ -27,7 +27,7 @@ import type { LatencyObservation } from './metrics/types.js';
 import { AutoLaunchManager } from './lifecycle/auto-launch.js';
 import { createDevTray } from './lifecycle/dev-tray.js';
 import { AvatarFaceService } from './avatar/avatar-face-service.js';
-import type { AvatarUploadRequest } from './avatar/types.js';
+import type { AvatarUploadRequest, AvatarGenerationResult } from './avatar/types.js';
 import {
   resolvePreloadScriptPath,
   resolveRendererEntryPoint,
@@ -486,13 +486,6 @@ function registerIpcHandlers(
 
     return avatarFaceService.setActiveFace(faceId);
   });
-  ipcMain.handle('avatar:upload-face', async (_event, payload: AvatarUploadRequest) => {
-    if (!avatarFaceService) {
-      throw new Error('Avatar configuration service is unavailable.');
-    }
-
-    return avatarFaceService.uploadFace(payload);
-  });
   ipcMain.handle('avatar:delete-face', async (_event, faceId: string) => {
     if (!avatarFaceService) {
       throw new Error('Avatar configuration service is unavailable.');
@@ -500,6 +493,24 @@ function registerIpcHandlers(
 
     await avatarFaceService.deleteFace(faceId);
     return true;
+  });
+  ipcMain.handle('avatar:generate-face', async (_event, payload: AvatarUploadRequest) => {
+    if (!avatarFaceService) {
+      await refreshAvatarFaceService(manager, 'secret-update');
+    }
+    if (!avatarFaceService) {
+      throw new Error('Avatar configuration service is unavailable. Ensure REALTIME_API_KEY is set.');
+    }
+    return avatarFaceService.generateFace(payload) as Promise<AvatarGenerationResult>;
+  });
+  ipcMain.handle('avatar:apply-generated-face', async (_event, payload: { generationId: string; candidateId: string; name?: string }) => {
+    if (!avatarFaceService) {
+      await refreshAvatarFaceService(manager, 'secret-update');
+    }
+    if (!avatarFaceService) {
+      throw new Error('Avatar configuration service is unavailable. Ensure REALTIME_API_KEY is set.');
+    }
+    return avatarFaceService.applyGeneratedFace(payload.generationId, payload.candidateId, payload.name);
   });
 }
 

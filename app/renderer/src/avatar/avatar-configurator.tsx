@@ -7,7 +7,7 @@ import {
   type ChangeEvent,
   type FormEvent,
 } from 'react';
-import type { AvatarBridge, AvatarFaceDetail, AvatarFaceSummary } from './types.js';
+import type { AvatarBridge, AvatarFaceDetail, AvatarFaceSummary, AvatarGenerationResult, AvatarGenerationCandidateSummary } from './types.js';
 
 interface AvatarConfiguratorProps {
   avatarApi?: AvatarBridge;
@@ -51,6 +51,8 @@ export function AvatarConfigurator({ avatarApi, onActiveFaceChange }: AvatarConf
   const [error, setError] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [nameInput, setNameInput] = useState('');
+  const [generation, setGeneration] = useState<AvatarGenerationResult | null>(null);
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const isBridgeAvailable = Boolean(avatarApi);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const availabilityLogRef = useRef<'available' | 'missing' | null>(null);
@@ -149,13 +151,12 @@ export function AvatarConfigurator({ avatarApi, onActiveFaceChange }: AvatarConf
       try {
         const dataUrl = await fileToDataUrl(file);
         const name = nameInput.trim() || deriveName(file);
-        await avatarApi.uploadFace({ name, imageDataUrl: dataUrl });
-        setNameInput('');
-        setFile(null);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
+        if (!avatarApi.generateFace || !avatarApi.applyGeneratedFace) {
+          throw new Error('Avatar generation is not available.');
         }
-        await refresh();
+        const result = await avatarApi.generateFace({ name, imageDataUrl: dataUrl });
+        setGeneration(result);
+        setSelectedCandidateId(result.candidates[0]?.id ?? null);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to upload avatar face.';
         setError(message);
@@ -261,6 +262,58 @@ export function AvatarConfigurator({ avatarApi, onActiveFaceChange }: AvatarConf
           {uploading ? 'Generating…' : 'Generate avatar'}
         </button>
       </form>
+
+      {generation ? (
+        <section className="faces__selection" aria-label="Choose generated avatar">
+          <h3>Choose your avatar style</h3>
+          <div className="faces__options" role="radiogroup" aria-label="Avatar generation options">
+            {generation.candidates.map((c: AvatarGenerationCandidateSummary) => (
+              <label key={c.id} className="faces__option">
+                <input
+                  type="radio"
+                  name="avatar-option"
+                  value={c.id}
+                  checked={selectedCandidateId === c.id}
+                  onChange={() => setSelectedCandidateId(c.id)}
+                  disabled={uploading}
+                />
+                <div className="faces__optionCard">
+                  <div className="faces__optionPreview" aria-hidden="true">
+                    {c.previewDataUrl ? <img src={c.previewDataUrl} alt="" /> : <div className="faceCard__placeholder">No preview</div>}
+                  </div>
+                  <div className="faces__optionInfo">
+                    <strong>{c.strategy === 'responses' ? 'Responses (AI)' : 'Images (Edit)'}</strong>
+                    <span>{c.componentsCount} components · {c.qualityScore}%</span>
+                  </div>
+                </div>
+              </label>
+            ))}
+          </div>
+          <div className="faces__selectionActions">
+            <button type="button" onClick={() => { setGeneration(null); setSelectedCandidateId(null); }} disabled={uploading}>Cancel</button>
+            <button type="button" onClick={async () => {
+              if (!avatarApi || !generation || !selectedCandidateId) return;
+              setUploading(true);
+              setError(null);
+              try {
+                const name = nameInput.trim() || (file ? deriveName(file) : 'New avatar face');
+                await avatarApi.applyGeneratedFace(generation.generationId, selectedCandidateId, name);
+                setGeneration(null);
+                setSelectedCandidateId(null);
+                setNameInput('');
+                setFile(null);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+                await refresh();
+              } catch (err) {
+                const message = err instanceof Error ? err.message : 'Failed to apply generated avatar face.';
+                setError(message);
+              } finally {
+                setUploading(false);
+              }
+            }} disabled={uploading || !selectedCandidateId}>Apply</button>
+          </div>
+        </section>
+      ) : null}
 
       {error ? (
         <p role="alert" className="kiosk__error">
