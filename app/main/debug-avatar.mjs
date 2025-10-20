@@ -84,7 +84,6 @@ function analyzePixelContent(buffer) {
     return { hasContent: false, analysis: `Pixel analysis error: ${error.message}` };
   }
 }
-
 function validateImageComponent(comp, index) {
   const issues = [];
   
@@ -274,7 +273,6 @@ async function analyzeExistingPNG(pngPath) {
     return null;
   }
 }
-
 async function analyzeAvatarGeneration(imagePath, apiKey) {
   console.log('🔍 Avatar Generation Analysis Tool');
   console.log('================================');
