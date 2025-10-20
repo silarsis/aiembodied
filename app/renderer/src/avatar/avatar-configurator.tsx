@@ -269,6 +269,7 @@ export function AvatarConfigurator({ avatarApi, onActiveFaceChange }: AvatarConf
           <div className="faces__options" role="radiogroup" aria-label="Avatar generation options">
             {generation.candidates.map((c: AvatarGenerationCandidateSummary) => (
               <label key={c.id} className="faces__option">
+                <span className="visually-hidden">Select avatar candidate</span>
                 <input
                   type="radio"
                   name="avatar-option"

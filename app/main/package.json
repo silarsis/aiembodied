@@ -10,7 +10,7 @@
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run test:rebuild && vitest run",
-    "test:coverage": "npm run test:rebuild && vitest run --coverage",
+    "test:coverage": "node scripts/test-coverage.mjs",
     "test:rebuild": "node scripts/test-rebuild.mjs",
     "debug-avatar": "node debug-avatar.mjs",
     "debug-avatar-images": "node debug-avatar-images.mjs"

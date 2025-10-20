@@ -4,7 +4,6 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type OpenAI from 'openai';
-import { toFile } from 'openai';
 
 
 // Image validation utilities
@@ -92,7 +91,7 @@ interface AvatarFaceServiceOptions {
   client: OpenAI;
   store: MemoryStore;
   now?: () => number;
-  logger?: { error?: (message: string, meta?: Record<string, unknown>) => void };
+  logger?: { error?: (message: string, meta?: Record<string, unknown>) => void; warn?: (message: string, meta?: Record<string, unknown>) => void };
 }
 
 interface ParsedComponent {
@@ -174,7 +173,7 @@ export class AvatarFaceService {
   private readonly client: OpenAI;
   private readonly store: MemoryStore;
   private readonly now: () => number;
-  private readonly logger?: { error?: (message: string, meta?: Record<string, unknown>) => void };
+  private readonly logger?: { error?: (message: string, meta?: Record<string, unknown>) => void; warn?: (message: string, meta?: Record<string, unknown>) => void };
   private readonly debugImagesEnabled: boolean;
   private readonly pendingGenerations: Map<string, { createdAt: number; candidates: { id: string; strategy: AvatarGenerationStrategy; components: ParsedComponent[] }[] }>; 
   private readonly hasImagesApi: boolean;
@@ -189,7 +188,13 @@ export class AvatarFaceService {
 
     // Images API is optional now; prefer Responses image_generation tool.
     // Detect any supported variant: generate, create, or edits.create.
-    const imagesApi = (options.client as any)?.images as any | undefined;
+    type ImagesApi = {
+      edit?: (args: unknown) => Promise<unknown>;
+      edits?: { create?: (args: unknown) => Promise<unknown> };
+      generate?: (args: unknown) => Promise<unknown>;
+      create?: (args: unknown) => Promise<unknown>;
+    } | undefined;
+    const imagesApi = (options.client as unknown as { images?: ImagesApi }).images;
     const hasEdit = Boolean(imagesApi && typeof imagesApi.edit === 'function');
     const hasEditsCreate = Boolean(imagesApi?.edits && typeof imagesApi.edits.create === 'function');
     const hasGenerate = Boolean(imagesApi && typeof imagesApi.generate === 'function');
@@ -300,6 +305,7 @@ export class AvatarFaceService {
   }
 
   async uploadFace(_request: AvatarUploadRequest): Promise<AvatarUploadResult> {
+    void _request;
     throw new Error('uploadFace is deprecated. Use generateFace + applyGeneratedFace.');
   }
 
@@ -475,14 +481,15 @@ export class AvatarFaceService {
       try {
         const comps: ParsedComponent[] = [];
         for (const spec of LAYER_SPECS) {
-          const resp = await (this.client as any).responses.create({
+          const resp = await (this.client as unknown as { responses: { create: (args: unknown) => Promise<unknown> } }).responses.create({
             model: 'gpt-4.1-mini',
             input: `Generate a 150x150 PNG (transparent background): ${spec.prompt} The component must be clearly visible with opaque fills and high contrast. Do not include other parts.`,
             tools: [{ type: 'image_generation' }],
           });
-          const outputs = Array.isArray(resp?.output) ? resp.output : [];
-          const call = outputs.find((o: any) => o.type === 'image_generation_call');
-          const b64 = call?.result as string | undefined;
+          const outArr = (resp as { output?: unknown }).output;
+          const outputs = Array.isArray(outArr) ? (outArr as Array<{ type?: string; result?: unknown }>) : [];
+          const call = outputs.find((o) => o.type === 'image_generation_call');
+          const b64 = typeof call?.result === 'string' ? call.result : undefined;
           if (!b64) continue;
           comps.push({ slot: spec.slot, mimeType: 'image/png', data: b64, sequence: spec.sequence });
           await new Promise((r) => setTimeout(r, 50));
@@ -501,21 +508,32 @@ export class AvatarFaceService {
       try {
         const comps: ParsedComponent[] = [];
         for (const spec of LAYER_SPECS) {
-          const images = (this.client as any).images as any;
-          let res: any;
+          type ImagesApi = {
+            edit?: (args: unknown) => Promise<unknown>;
+            edits?: { create?: (args: unknown) => Promise<unknown> };
+            generate?: (args: unknown) => Promise<unknown>;
+            create?: (args: unknown) => Promise<unknown>;
+          } | undefined;
+          const images = (this.client as unknown as { images?: ImagesApi }).images;
+          if (!images) {
+            continue;
+          }
+          let res: unknown;
           const imageBuffer = Buffer.from(imageBase64, 'base64');
           if (typeof images.edit === 'function') {
-            // Align with debug script: use images.edit with a File
-            const imageFile = await toFile(imageBuffer, 'image.png', { type: 'image/png' });
-            res = await images.edit({ image: imageFile, prompt: spec.prompt, size: '256x256', n: 1, response_format: 'b64_json' });
+            // Use images.edit; pass Buffer directly to accommodate SDK variants without toFile
+            res = await images.edit({ image: imageBuffer, prompt: spec.prompt, size: '256x256', n: 1, response_format: 'b64_json' });
           } else if (images?.edits && typeof images.edits.create === 'function') {
             res = await images.edits.create({ model: 'gpt-image-1', image: imageBuffer, prompt: spec.prompt, size: '256x256', n: 1, response_format: 'b64_json' });
           } else if (typeof images.generate === 'function') {
             res = await images.generate({ model: 'gpt-image-1', prompt: spec.prompt, size: '256x256', n: 1, response_format: 'b64_json' });
-          } else {
+          } else if (typeof images.create === 'function') {
             res = await images.create({ model: 'gpt-image-1', prompt: spec.prompt, size: '256x256', n: 1, response_format: 'b64_json' });
+          } else {
+            continue;
           }
-          const b64 = res?.data?.[0]?.b64_json as string | undefined;
+          const maybe = (res as { data?: Array<{ b64_json?: unknown }> })?.data?.[0]?.b64_json;
+          const b64 = typeof maybe === 'string' ? maybe : undefined;
           if (!b64) continue;
           comps.push({ slot: spec.slot, mimeType: 'image/png', data: b64, sequence: spec.sequence });
           await new Promise((r) => setTimeout(r, 50));

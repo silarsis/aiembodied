@@ -132,6 +132,8 @@ class AvatarFaceServiceDouble {
   listFaces = vi.fn().mockResolvedValue([]);
   getActiveFace = vi.fn().mockResolvedValue(null);
   setActiveFace = vi.fn().mockResolvedValue(null);
+  generateFace = vi.fn().mockResolvedValue({ generationId: 'gen-1', candidates: [] });
+  applyGeneratedFace = vi.fn().mockResolvedValue({ faceId: 'face-123' });
   uploadFace = vi.fn().mockResolvedValue({ faceId: 'face-123' });
   deleteFace = vi.fn().mockResolvedValue(undefined);
   constructor(public readonly options: unknown) {}
@@ -560,7 +562,7 @@ describe('main process bootstrap', () => {
     expect(crashGuardInstances).toHaveLength(1);
     expect(crashGuardInstances[0].watch).toHaveBeenCalledWith(mainWindow);
 
-    expect(ipcMainMock.handle).toHaveBeenCalledTimes(13);
+    expect(ipcMainMock.handle).toHaveBeenCalledTimes(14);
     const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
 
     expect(mockLogger.info).toHaveBeenCalledWith('Avatar face service initialized.', {

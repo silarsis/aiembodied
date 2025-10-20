@@ -2,11 +2,10 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve, join } from 'node:path';
+import { dirname, resolve } from 'node:path';
 
 function getRepoRoot() {
   const here = dirname(fileURLToPath(import.meta.url));
-  // this file lives at repo/app/main/scripts/test-rebuild.mjs → repoRoot = here/../../..
   return resolve(here, '../../..');
 }
 
@@ -29,12 +28,9 @@ function getPnpmStorePath(env = process.env) {
   return lines.at(-1);
 }
 
-function main() {
-  const repoRoot = getRepoRoot();
+function determineStoreEnv(repoRoot) {
   const packageRoot = resolve(repoRoot, 'app', 'main');
-
-  // Determine which store node_modules expects, if present
-  let pnpmStorePath;
+  // Try to read storeDir from .modules.yaml, if present (package or root)
   try {
     const candidates = [
       resolve(packageRoot, 'node_modules', '.modules.yaml'),
@@ -45,32 +41,30 @@ function main() {
       const raw = readFileSync(file, 'utf8');
       const m = raw.match(/\n\s*storeDir:\s*(.+)\s*\n/);
       if (m && m[1]) {
-        pnpmStorePath = m[1].trim();
-        break;
+        return m[1].trim();
       }
     }
   } catch {}
+  // Fallback to isolated dev store, else system store
+  const isolated = resolveIsolatedStore(repoRoot);
+  return existsSync(isolated) ? isolated : getPnpmStorePath();
+}
 
-  // Fallbacks: prefer the dev isolated store if available, else system store
-  if (!pnpmStorePath) {
-    const isolated = resolveIsolatedStore(repoRoot);
-    pnpmStorePath = existsSync(isolated) ? isolated : getPnpmStorePath();
-  }
+function run(cmd, args, env) {
+  const res = spawnSync(cmd, args, { stdio: 'inherit', env, shell: true });
+  if (res.status !== 0) process.exit(res.status || 1);
+}
 
-  const env = { ...process.env };
-  env.PNPM_STORE_PATH = pnpmStorePath;
-  env.npm_config_store_dir = pnpmStorePath;
-  env.PREBUILD_INSTALL_FORBID = '1';
+function main() {
+  const repoRoot = getRepoRoot();
+  const pnpmStorePath = determineStoreEnv(repoRoot);
+  const env = { ...process.env, PNPM_STORE_PATH: pnpmStorePath, npm_config_store_dir: pnpmStorePath };
 
-  // Align runtime target with current Node for native rebuilds used by tests
-  const nodeVer = process.version.slice(1);
-  env.npm_config_runtime = 'node';
-  env.npm_config_target = nodeVer;
+  // 1) Rebuild native deps in a store-aligned environment
+  run('npm', ['run', 'test:rebuild'], env);
 
-  const result = spawnSync('pnpm', ['--filter', '@aiembodied/main', 'rebuild', 'better-sqlite3'], { stdio: 'inherit', env, shell: true });
-  if (result.status !== 0) {
-    process.exit(result.status || 1);
-  }
+  // 2) Run vitest with coverage using the same environment
+  run('vitest', ['run', '--coverage'], env);
 }
 
 main();
