@@ -101,3 +101,5 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 - 2025-10-19 — Diagnostics cleanup guards against calling `removeListener` on destroyed `webContents` instances so the Electron app can exit without spurious warnings on Windows.
 - 2025-10-19 — `scripts/run-dev.mjs` now reads the installed Electron version and re-runs `pnpm --filter @aiembodied/main rebuild better-sqlite3 keytar` inside the isolated dev HOME with `npm_config_runtime=electron`, `npm_config_target`, and `npm_config_disturl=https://electronjs.org/headers` to ensure native modules target the Electron ABI.
 - 2025-10-20 — Development script preserves the original pnpm store path inside the `.dev-home` isolation so Windows users avoid `Unexpected store location` errors during native rebuilds. The store is detected via `pnpm store path` and exported through `PNPM_STORE_PATH`.
+- 2025-10-20 — Avatar face generation prompts share the `ALIGNMENT_GUIDANCE` constant in `app/main/src/avatar/avatar-face-service.ts`.
+  Update that string if alignment expectations change so all layer prompts stay consistent.

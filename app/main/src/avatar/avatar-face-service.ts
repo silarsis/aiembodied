@@ -102,50 +102,53 @@ interface ParsedComponent {
 }
 
 // Layer specifications for generating avatar components
+const ALIGNMENT_GUIDANCE =
+  'Match the head scale and placement from the reference portrait, keep the eyes on the upper third, mouth on the lower third, no recentering.';
+
 const LAYER_SPECS = [
   {
     slot: 'base' as AvatarComponentSlot,
-    prompt: 'face outline, hair, and static facial features ONLY (no eyes, no mouth). Cartoon style, 150x150px, transparent background, bold lines.',
+    prompt: `face outline, hair, and static facial features ONLY (no eyes, no mouth). Cartoon style, 150x150px, transparent background, bold lines. ${ALIGNMENT_GUIDANCE}`,
     sequence: 0,
   },
   {
     slot: 'eyes-open' as AvatarComponentSlot,
-    prompt: 'both eyes open ONLY, isolated on transparent canvas. Cartoon style, 150x150px, bold features, high contrast.',
+    prompt: `both eyes open ONLY, isolated on transparent canvas. Cartoon style, 150x150px, bold features, high contrast. ${ALIGNMENT_GUIDANCE}`,
     sequence: 0,
   },
   {
     slot: 'eyes-closed' as AvatarComponentSlot,
-    prompt: 'both eyes closed ONLY, isolated on transparent canvas. Cartoon style, 150x150px, bold features with eyelashes.',
+    prompt: `both eyes closed ONLY, isolated on transparent canvas. Cartoon style, 150x150px, bold features with eyelashes. ${ALIGNMENT_GUIDANCE}`,
     sequence: 0,
   },
   {
     slot: 'mouth-neutral' as AvatarComponentSlot,
-    prompt: 'neutral mouth ONLY, isolated on transparent canvas. Cartoon style, 150x150px, pink/red lips.',
+    prompt: `neutral mouth ONLY, isolated on transparent canvas. Cartoon style, 150x150px, pink/red lips. ${ALIGNMENT_GUIDANCE}`,
     sequence: 0,
   },
   {
     slot: 'mouth-0' as AvatarComponentSlot,
-    prompt: 'small O phoneme mouth ONLY, isolated on transparent canvas. Cartoon style, 150x150px, pink/red lips.',
+    prompt: `small O phoneme mouth ONLY, isolated on transparent canvas. Cartoon style, 150x150px, pink/red lips. ${ALIGNMENT_GUIDANCE}`,
     sequence: 0,
   },
   {
     slot: 'mouth-1' as AvatarComponentSlot,
-    prompt: 'medium O phoneme mouth ONLY, isolated on transparent canvas. Cartoon style, 150x150px, pink/red lips.',
+    prompt: `medium O phoneme mouth ONLY, isolated on transparent canvas. Cartoon style, 150x150px, pink/red lips. ${ALIGNMENT_GUIDANCE}`,
     sequence: 0,
   },
   {
     slot: 'mouth-2' as AvatarComponentSlot,
-    prompt: 'wide O phoneme mouth ONLY, isolated on transparent canvas. Cartoon style, 150x150px, pink/red lips.',
+    prompt: `wide O phoneme mouth ONLY, isolated on transparent canvas. Cartoon style, 150x150px, pink/red lips. ${ALIGNMENT_GUIDANCE}`,
     sequence: 0,
   },
   {
     slot: 'mouth-3' as AvatarComponentSlot,
-    prompt: 'smiling mouth ONLY, isolated on transparent canvas. Cartoon style, 150x150px, pink/red lips showing teeth.',
+    prompt: `smiling mouth ONLY, isolated on transparent canvas. Cartoon style, 150x150px, pink/red lips showing teeth. ${ALIGNMENT_GUIDANCE}`,
     sequence: 0,
   },
   {
     slot: 'mouth-4' as AvatarComponentSlot,
-    prompt: 'open talking mouth ONLY, isolated on transparent canvas. Cartoon style, 150x150px, pink/red lips showing teeth.',
+    prompt: `open talking mouth ONLY, isolated on transparent canvas. Cartoon style, 150x150px, pink/red lips showing teeth. ${ALIGNMENT_GUIDANCE}`,
     sequence: 0,
   },
 ];
