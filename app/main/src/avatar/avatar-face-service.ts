@@ -527,8 +527,10 @@ export class AvatarFaceService {
             res = await images.edits.create({ model: 'gpt-image-1', image: imageBuffer, prompt: spec.prompt, size: '256x256', n: 1, response_format: 'b64_json' });
           } else if (typeof images.generate === 'function') {
             res = await images.generate({ model: 'gpt-image-1', prompt: spec.prompt, size: '256x256', n: 1, response_format: 'b64_json' });
-          } else {
+          } else if (typeof images.create === 'function') {
             res = await images.create({ model: 'gpt-image-1', prompt: spec.prompt, size: '256x256', n: 1, response_format: 'b64_json' });
+          } else {
+            continue;
           }
           const maybe = (res as { data?: Array<{ b64_json?: unknown }> })?.data?.[0]?.b64_json;
           const b64 = typeof maybe === 'string' ? maybe : undefined;
