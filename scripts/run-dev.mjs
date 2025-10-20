@@ -201,23 +201,28 @@ async function main() {
     throw e;
   });
 
-  let pnpmStorePath;
+  // Force pnpm store to live inside the isolated dev HOME to avoid mismatches
+  const devHome = resolve(repoRoot, '.dev-home');
+  const isolatedStore = resolve(devHome, 'AppData', 'Local', 'pnpm', 'store', 'v3');
   try {
-    pnpmStorePath = resolvePnpmStorePath();
-    console.log(`[info] Using pnpm store at ${pnpmStorePath}`);
-  } catch (error) {
-    console.warn(
-      '[warn] Failed to determine pnpm store path. Dev home isolation may trigger pnpm store warnings:',
-      error.message,
-    );
-  }
+    mkdirSync(isolatedStore, { recursive: true });
+  } catch {}
+  const pnpmStorePath = isolatedStore;
+  console.log(`[info] Isolated pnpm store set to ${pnpmStorePath}`);
+
+  // Prepare an isolated environment for all pnpm operations
+  const envIsolated = prepareDevHomeEnv(repoRoot, process.env, process.platform, { pnpmStorePath });
 
   // Build renderer and main
+  console.log('[info] Aligning workspace deps to isolated store...');
+  await run('pnpm', ['--filter', '@aiembodied/main', 'install', '--force'], { env: { ...envIsolated, CI: '1' } });
+  await run('pnpm', ['--filter', '@aiembodied/renderer', 'install', '--force'], { env: { ...envIsolated, CI: '1' } });
+
   console.log('[info] Building renderer...');
-  await run('pnpm', ['--filter', '@aiembodied/renderer', 'build']);
+  await run('pnpm', ['--filter', '@aiembodied/renderer', 'build'], { env: envIsolated });
   
   console.log('[info] Building main process...');
-  await run('pnpm', ['--filter', '@aiembodied/main', 'build']);
+  await run('pnpm', ['--filter', '@aiembodied/main', 'build'], { env: envIsolated });
 
   // Verify preload script exists
   const preloadPath = resolve(repoRoot, 'app/main/dist/preload.js');
@@ -243,7 +248,7 @@ async function main() {
 
   // Launch Electron with compiled main
   console.log('[info] Launching Electron...');
-  const env = { ...process.env, AIEMBODIED_ENABLE_DIAGNOSTICS: '1' };
+  const env = { ...envIsolated, AIEMBODIED_ENABLE_DIAGNOSTICS: '1' };
   const electronCli = resolveElectronCli(repoRoot);
   const electronEntrypoint = resolve(repoRoot, 'app/main/dist/main.js');
   await run(process.execPath, [electronCli, electronEntrypoint], {
