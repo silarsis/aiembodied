@@ -132,6 +132,8 @@ class AvatarFaceServiceDouble {
   listFaces = vi.fn().mockResolvedValue([]);
   getActiveFace = vi.fn().mockResolvedValue(null);
   setActiveFace = vi.fn().mockResolvedValue(null);
+  generateFace = vi.fn().mockResolvedValue({ generationId: 'gen-1', candidates: [] });
+  applyGeneratedFace = vi.fn().mockResolvedValue({ faceId: 'face-123' });
   uploadFace = vi.fn().mockResolvedValue({ faceId: 'face-123' });
   deleteFace = vi.fn().mockResolvedValue(undefined);
   constructor(public readonly options: unknown) {}
