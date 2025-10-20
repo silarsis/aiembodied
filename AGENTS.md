@@ -103,3 +103,4 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 - 2025-10-20 — Development script preserves the original pnpm store path inside the `.dev-home` isolation so Windows users avoid `Unexpected store location` errors during native rebuilds. The store is detected via `pnpm store path` and exported through `PNPM_STORE_PATH`.
 - 2025-10-20 — Avatar face generation prompts share the `ALIGNMENT_GUIDANCE` constant in `app/main/src/avatar/avatar-face-service.ts`.
   Update that string if alignment expectations change so all layer prompts stay consistent.
+- 2025-10-21 — Avatar face Responses prompts now send system+user message arrays with the reference portrait attached as an `input_image`. Update related tests/tooling if the schema changes again.

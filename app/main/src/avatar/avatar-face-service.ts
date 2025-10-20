@@ -4,6 +4,7 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type OpenAI from 'openai';
+import type { ResponseInput } from 'openai/resources/responses/responses';
 
 
 // Image validation utilities
@@ -104,6 +105,9 @@ interface ParsedComponent {
 // Layer specifications for generating avatar components
 const ALIGNMENT_GUIDANCE =
   'Match the head scale and placement from the reference portrait, keep the eyes on the upper third, mouth on the lower third, no recentering.';
+
+const RESPONSES_SYSTEM_PROMPT =
+  'You are an avatar layer illustrator using the image_generation tool. Produce exactly one 150x150 transparent PNG per request, keeping the character aligned to the provided reference portrait and omitting any extra elements.';
 
 const LAYER_SPECS = [
   {
@@ -484,9 +488,27 @@ export class AvatarFaceService {
       try {
         const comps: ParsedComponent[] = [];
         for (const spec of LAYER_SPECS) {
+          const inputMessages: ResponseInput = [
+            {
+              type: 'message',
+              role: 'system',
+              content: [{ type: 'input_text', text: RESPONSES_SYSTEM_PROMPT }],
+            },
+            {
+              type: 'message',
+              role: 'user',
+              content: [
+                {
+                  type: 'input_text',
+                  text: `Reference portrait attached. ${spec.prompt}`,
+                },
+                { type: 'input_image', image_url: imageDataUrl, detail: 'high' },
+              ],
+            },
+          ];
           const resp = await (this.client as unknown as { responses: { create: (args: unknown) => Promise<unknown> } }).responses.create({
             model: 'gpt-4.1-mini',
-            input: `Generate a 150x150 PNG (transparent background): ${spec.prompt} The component must be clearly visible with opaque fills and high contrast. Do not include other parts.`,
+            input: inputMessages,
             tools: [{ type: 'image_generation' }],
           });
           const outArr = (resp as { output?: unknown }).output;

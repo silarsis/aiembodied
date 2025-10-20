@@ -3,6 +3,7 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import type OpenAI from 'openai';
+import type { ResponseInput } from 'openai/resources/responses/responses';
 import { AvatarFaceService } from '../src/avatar/avatar-face-service.js';
 import type { AvatarUploadRequest } from '../src/avatar/types.js';
 import { MemoryStore } from '../src/memory/memory-store.js';
@@ -74,6 +75,32 @@ describe('AvatarFaceService (generate/apply)', () => {
     const request: AvatarUploadRequest = { name: 'Friendly', imageDataUrl: 'data:image/png;base64,' + b64([9, 9, 9]) };
 
     const gen = await service.generateFace(request);
+    expect(responsesCreate).toHaveBeenCalled();
+    for (const call of responsesCreate.mock.calls) {
+      const params = call[0] as { input?: ResponseInput; model?: string; tools?: unknown };
+      expect(params).toMatchObject({ model: 'gpt-4.1-mini', tools: [{ type: 'image_generation' }] });
+      const messages = params.input;
+      expect(Array.isArray(messages)).toBe(true);
+      if (!Array.isArray(messages)) continue;
+      expect(messages).toHaveLength(2);
+      expect(messages[0]).toMatchObject({ type: 'message', role: 'system' });
+      const systemContent = (messages[0] as { content?: Array<{ type?: string }> }).content ?? [];
+      expect(systemContent[0]).toMatchObject({ type: 'input_text' });
+      const userMessage = messages[1] as { content?: Array<Record<string, unknown>> };
+      expect(userMessage).toMatchObject({ type: 'message', role: 'user' });
+      expect(Array.isArray(userMessage.content)).toBe(true);
+      if (!Array.isArray(userMessage.content)) continue;
+      expect(userMessage.content).toHaveLength(2);
+      expect(userMessage.content[0]).toMatchObject({
+        type: 'input_text',
+        text: expect.stringContaining('Reference portrait attached.'),
+      });
+      expect(userMessage.content[1]).toMatchObject({
+        type: 'input_image',
+        image_url: request.imageDataUrl,
+        detail: 'high',
+      });
+    }
     expect(gen.generationId).toMatch(/^[-0-9a-f]+$/i);
     expect(gen.candidates.length).toBeGreaterThan(0);
     const cand = gen.candidates[0];
