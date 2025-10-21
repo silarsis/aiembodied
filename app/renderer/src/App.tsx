@@ -1006,11 +1006,29 @@ export default function App() {
     }
 
     try {
-      realtimeClient.updateSessionConfig({ voice: selectedVoice || undefined });
+      const payload = {
+        voice: selectedVoice || undefined,
+        instructions: basePrompt || undefined,
+        turnDetection: useServerVad ? 'server_vad' : 'none',
+        vad: useServerVad
+          ? { threshold: vadThreshold, silenceDurationMs: vadSilenceMs, minSpeechDurationMs: vadMinSpeechMs }
+          : undefined,
+      } as const;
+
+      realtimeClient.updateSessionConfig(payload);
     } catch (error) {
-      console.warn('[RealtimeClient] Failed to stage voice preference before connect', error);
+      console.warn('[RealtimeClient] Failed to stage session config before connect', error);
     }
-  }, [realtimeClient, selectedVoice, loadingConfig]);
+  }, [
+    realtimeClient,
+    selectedVoice,
+    basePrompt,
+    useServerVad,
+    vadThreshold,
+    vadSilenceMs,
+    vadMinSpeechMs,
+    loadingConfig,
+  ]);
 
   useEffect(() => {
     const bridge = resolveApi();
