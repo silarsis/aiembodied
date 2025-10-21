@@ -189,7 +189,9 @@ describe('RealtimeClient', () => {
     const sendCalls = peer.dataChannel.send.mock.calls;
     expect(sendCalls.length).toBeGreaterThan(0);
     const payloads = sendCalls.map((call) =>
-      JSON.parse(call[0] as string) as { session: { session_parameters?: Record<string, unknown>; voice?: string } },
+      JSON.parse(call[0] as string) as {
+        session: { session_parameters?: Record<string, unknown>; voice?: string; instructions?: string };
+      },
     );
     
     // Should include instructions in session_parameters
@@ -198,9 +200,10 @@ describe('RealtimeClient', () => {
     ).toBe(true);
     
     // Should include voice directly in session
-    expect(
-      payloads.some((payload) => payload.session.voice === 'alloy'),
-    ).toBe(true);
+    expect(payloads.some((payload) => payload.session.voice === 'alloy')).toBe(true);
+
+    // Should mirror instructions directly in session for backward compatibility
+    expect(payloads.some((payload) => payload.session.instructions === 'Be helpful')).toBe(true);
   });
 
   it('parses session.updated payloads using the new schema', async () => {

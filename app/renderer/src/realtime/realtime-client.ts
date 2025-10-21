@@ -379,8 +379,10 @@ export class RealtimeClient {
     const session = payload.session as Record<string, unknown>;
     const sessionParameters: Record<string, unknown> = {};
 
-    if (this.sessionConfig?.instructions) {
-      sessionParameters.instructions = this.sessionConfig.instructions;
+    const instructions = this.sessionConfig?.instructions;
+    if (instructions) {
+      sessionParameters.instructions = instructions;
+      session.instructions = instructions;
     }
 
     if (this.sessionConfig?.turnDetection === 'none') {
