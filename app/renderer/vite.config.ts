@@ -1,9 +1,15 @@
 import { defineConfig } from 'vitest/config';
+import { type PluginOption } from 'vite';
 import react from '@vitejs/plugin-react';
+
+const reactPlugin = react() as PluginOption | PluginOption[];
+const plugins: PluginOption[] = Array.isArray(reactPlugin)
+  ? [...reactPlugin]
+  : [reactPlugin];
 
 export default defineConfig(({ mode }) => ({
   base: mode === 'development' ? '/' : './',
-  plugins: [react()],
+  plugins,
   test: {
     environment: 'jsdom',
     globals: true,
