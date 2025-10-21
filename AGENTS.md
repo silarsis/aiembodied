@@ -104,3 +104,4 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 - 2025-10-20 — Avatar face generation prompts share the `ALIGNMENT_GUIDANCE` constant in `app/main/src/avatar/avatar-face-service.ts`.
   Update that string if alignment expectations change so all layer prompts stay consistent.
 - 2025-10-21 — Avatar face Responses prompts now send system+user message arrays with the reference portrait attached as an `input_image`. Update related tests/tooling if the schema changes again.
+- 2025-10-21 — Renderer realtime client now mirrors `sessionConfig.instructions` onto both `session.session_parameters.instructions` and `session.instructions` for backward compatibility; update realtime client tests when adjusting instruction handling.
