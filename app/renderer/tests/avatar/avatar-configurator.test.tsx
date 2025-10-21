@@ -5,6 +5,45 @@ import type { AvatarBridge, AvatarGenerationResult } from '../../src/avatar/type
 
 const SAMPLE_PREVIEW = 'data:image/png;base64,ZmFrZQ==';
 
+function mockFileReader(mockDataUrl: string) {
+  const originalFileReader = globalThis.FileReader;
+
+  class FileReaderMock {
+    public result: string | ArrayBuffer | null = null;
+    public onload: ((this: FileReader, ev: ProgressEvent<FileReader>) => unknown) | null = null;
+    public onerror: ((this: FileReader, ev: ProgressEvent<FileReader>) => unknown) | null = null;
+
+    readAsDataURL() {
+      this.result = mockDataUrl;
+      const event = { target: this } as unknown as ProgressEvent<FileReader>;
+      this.onload?.call(this as unknown as FileReader, event);
+    }
+
+    addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+      if (type === 'load') {
+        this.onload = listener as (this: FileReader, ev: ProgressEvent<FileReader>) => unknown;
+      }
+      if (type === 'error') {
+        this.onerror = listener as (this: FileReader, ev: ProgressEvent<FileReader>) => unknown;
+      }
+    }
+
+    removeEventListener() {}
+
+    abort() {}
+
+    dispatchEvent() {
+      return true;
+    }
+  }
+
+  globalThis.FileReader = FileReaderMock as unknown as typeof FileReader;
+
+  return () => {
+    globalThis.FileReader = originalFileReader;
+  };
+}
+
 describe('AvatarConfigurator', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -88,41 +127,10 @@ describe('AvatarConfigurator', () => {
       deleteFace,
     };
 
-    const originalFileReader = globalThis.FileReader;
     const mockDataUrl = 'data:image/png;base64,bmV3ZmFjZQ==';
 
-    class FileReaderMock {
-      public result: string | ArrayBuffer | null = null;
-      public onload: ((this: FileReader, ev: ProgressEvent<FileReader>) => unknown) | null = null;
-      public onerror: ((this: FileReader, ev: ProgressEvent<FileReader>) => unknown) | null = null;
-
-      readAsDataURL() {
-        this.result = mockDataUrl;
-        const event = { target: this } as unknown as ProgressEvent<FileReader>;
-        this.onload?.call(this as unknown as FileReader, event);
-      }
-
-      addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
-        if (type === 'load') {
-          this.onload = listener as (this: FileReader, ev: ProgressEvent<FileReader>) => unknown;
-        }
-        if (type === 'error') {
-          this.onerror = listener as (this: FileReader, ev: ProgressEvent<FileReader>) => unknown;
-        }
-      }
-
-      removeEventListener() {}
-
-      abort() {}
-
-      dispatchEvent() {
-        return true;
-      }
-    }
-
+    const restoreFileReader = mockFileReader(mockDataUrl);
     try {
-      globalThis.FileReader = FileReaderMock as unknown as typeof FileReader;
-
       const onActive = vi.fn();
       render(<AvatarConfigurator avatarApi={avatarApi} onActiveFaceChange={onActive} />);
 
@@ -139,7 +147,72 @@ describe('AvatarConfigurator', () => {
       await waitFor(() => expect(applyGeneratedFace).toHaveBeenCalledTimes(1));
       await waitFor(() => expect(listFaces).toHaveBeenCalledTimes(2));
     } finally {
-      globalThis.FileReader = originalFileReader;
+      restoreFileReader();
+    }
+  });
+
+  it('shows uploading state while generation is pending without blocking other controls', async () => {
+    const listFaces = vi.fn().mockResolvedValue([]);
+    const getActiveFace = vi.fn().mockResolvedValue(null);
+    let resolveGeneration: ((value: AvatarGenerationResult) => void) | undefined;
+    const generateFace = vi
+      .fn()
+      .mockImplementation(
+        () =>
+          new Promise<AvatarGenerationResult>((resolve) => {
+            resolveGeneration = resolve;
+          }),
+      );
+    const applyGeneratedFace = vi.fn().mockResolvedValue({ faceId: 'generated' });
+    const setActiveFace = vi.fn();
+    const deleteFace = vi.fn();
+
+    const avatarApi: AvatarBridge = {
+      listFaces,
+      getActiveFace,
+      generateFace,
+      applyGeneratedFace,
+      setActiveFace,
+      deleteFace,
+    };
+
+    const restoreFileReader = mockFileReader('data:image/png;base64,cGVuZGluZw==');
+
+    try {
+      const toggleSpy = vi.fn();
+      render(
+        <>
+          <button type="button" onClick={toggleSpy}>
+            Listening toggle
+          </button>
+          <AvatarConfigurator avatarApi={avatarApi} />
+        </>,
+      );
+
+      const file = new File([Uint8Array.from([4, 5, 6])], 'pending.png', { type: 'image/png' });
+      const fileInput = await screen.findByLabelText('Face image');
+      fireEvent.change(fileInput, { target: { files: [file] } });
+
+      const form = screen.getByRole('form', { name: 'Upload new avatar face' });
+      fireEvent.submit(form);
+
+      expect(screen.getByRole('button', { name: 'Generating…' })).toBeInTheDocument();
+
+      const toggleButton = screen.getByRole('button', { name: 'Listening toggle' });
+      fireEvent.click(toggleButton);
+      expect(toggleSpy).toHaveBeenCalledTimes(1);
+
+      await waitFor(() => expect(generateFace).toHaveBeenCalledTimes(1));
+      expect(screen.getByRole('button', { name: 'Generating…' })).toBeInTheDocument();
+
+      expect(resolveGeneration).toBeDefined();
+      resolveGeneration?.({ generationId: 'pending-gen', candidates: [] });
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Generate avatar' })).toBeEnabled(),
+      );
+    } finally {
+      restoreFileReader();
     }
   });
 

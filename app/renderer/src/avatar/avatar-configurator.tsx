@@ -132,7 +132,7 @@ export function AvatarConfigurator({ avatarApi, onActiveFaceChange }: AvatarConf
   }, []);
 
   const handleUpload = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
+    (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
 
       if (!avatarApi) {
@@ -148,23 +148,25 @@ export function AvatarConfigurator({ avatarApi, onActiveFaceChange }: AvatarConf
       setUploading(true);
       setError(null);
 
-      try {
-        const dataUrl = await fileToDataUrl(file);
-        const name = nameInput.trim() || deriveName(file);
-        if (!avatarApi.generateFace || !avatarApi.applyGeneratedFace) {
-          throw new Error('Avatar generation is not available.');
+      void (async () => {
+        try {
+          const dataUrl = await fileToDataUrl(file);
+          const name = nameInput.trim() || deriveName(file);
+          if (!avatarApi.generateFace || !avatarApi.applyGeneratedFace) {
+            throw new Error('Avatar generation is not available.');
+          }
+          const result = await avatarApi.generateFace({ name, imageDataUrl: dataUrl });
+          setGeneration(result);
+          setSelectedCandidateId(result.candidates[0]?.id ?? null);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Failed to upload avatar face.';
+          setError(message);
+        } finally {
+          setUploading(false);
         }
-        const result = await avatarApi.generateFace({ name, imageDataUrl: dataUrl });
-        setGeneration(result);
-        setSelectedCandidateId(result.candidates[0]?.id ?? null);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to upload avatar face.';
-        setError(message);
-      } finally {
-        setUploading(false);
-      }
+      })();
     },
-    [avatarApi, file, nameInput, refresh],
+    [avatarApi, file, nameInput],
   );
 
   const handleSelect = useCallback(
