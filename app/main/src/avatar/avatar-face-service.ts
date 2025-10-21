@@ -4,6 +4,7 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type OpenAI from 'openai';
+import { toFile } from 'openai/uploads';
 import type { ResponseInput } from 'openai/resources/responses/responses';
 
 
@@ -532,6 +533,13 @@ export class AvatarFaceService {
       }
       try {
         const comps: ParsedComponent[] = [];
+        let imageFilePromise: Promise<File> | null = null;
+        const getImageFile = () => {
+          if (!imageFilePromise) {
+            imageFilePromise = toFile(Buffer.from(imageBase64, 'base64'), 'avatar.png', { type: 'image/png' });
+          }
+          return imageFilePromise;
+        };
         for (const spec of LAYER_SPECS) {
           type ImagesApi = {
             edit?: (args: unknown) => Promise<unknown>;
@@ -544,12 +552,12 @@ export class AvatarFaceService {
             continue;
           }
           let res: unknown;
-          const imageBuffer = Buffer.from(imageBase64, 'base64');
           if (typeof images.edit === 'function') {
-            // Use images.edit; pass Buffer directly to accommodate SDK variants without toFile
-            res = await images.edit({ image: imageBuffer, prompt: spec.prompt, size: '256x256', n: 1, response_format: 'b64_json' });
+            const imageFile = await getImageFile();
+            res = await images.edit({ image: imageFile, prompt: spec.prompt, size: '256x256', n: 1, response_format: 'b64_json' });
           } else if (images?.edits && typeof images.edits.create === 'function') {
-            res = await images.edits.create({ model: 'gpt-image-1', image: imageBuffer, prompt: spec.prompt, size: '256x256', n: 1, response_format: 'b64_json' });
+            const imageFile = await getImageFile();
+            res = await images.edits.create({ model: 'gpt-image-1', image: imageFile, prompt: spec.prompt, size: '256x256', n: 1, response_format: 'b64_json' });
           } else if (typeof images.generate === 'function') {
             res = await images.generate({ model: 'gpt-image-1', prompt: spec.prompt, size: '256x256', n: 1, response_format: 'b64_json' });
           } else if (typeof images.create === 'function') {

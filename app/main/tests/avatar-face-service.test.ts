@@ -4,9 +4,14 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import type OpenAI from 'openai';
 import type { ResponseInput } from 'openai/resources/responses/responses';
+import { toFile } from 'openai/uploads';
 import { AvatarFaceService } from '../src/avatar/avatar-face-service.js';
 import type { AvatarUploadRequest } from '../src/avatar/types.js';
 import { MemoryStore } from '../src/memory/memory-store.js';
+
+vi.mock('openai/uploads', () => ({
+  toFile: vi.fn(),
+}));
 
 const tempDirs: string[] = [];
 const stores: MemoryStore[] = [];
@@ -25,6 +30,12 @@ function createClientWithImagesOnly() {
   const create = vi.fn<[unknown], Promise<any>>();
   const client = { images: { create } } as unknown as OpenAI;
   return { client, imagesCreate: create };
+}
+
+function createClientWithImagesEditOnly() {
+  const edit = vi.fn<[unknown], Promise<any>>();
+  const client = { images: { edit } } as unknown as OpenAI;
+  return { client, imagesEdit: edit };
 }
 
 function createClientWithBoth() {
@@ -126,6 +137,30 @@ describe('AvatarFaceService (generate/apply)', () => {
     const gen = await service.generateFace({ name: 'Bot', imageDataUrl: 'data:image/png;base64,' + b64([7]) });
     expect(gen.candidates.length).toBe(1);
     expect(gen.candidates[0].strategy).toBe('images_edit');
+  });
+
+  it('converts the source image to a File once when using images.edit', async () => {
+    const store = await createStore();
+    const { client, imagesEdit } = createClientWithImagesEditOnly();
+    const toFileMock = vi.mocked(toFile);
+    const file = new File([new Uint8Array([1, 2, 3])], 'avatar.png', { type: 'image/png' });
+    toFileMock.mockResolvedValue(file);
+    imagesEdit.mockResolvedValue({ data: [{ b64_json: b64([5, 5, 5]) }] });
+
+    const service = new AvatarFaceService({ client, store });
+    const request: AvatarUploadRequest = { name: 'Friendly', imageDataUrl: 'data:image/png;base64,' + b64([9, 9, 9]) };
+
+    const gen = await service.generateFace(request);
+
+    expect(toFileMock).toHaveBeenCalledTimes(1);
+    expect(imagesEdit).toHaveBeenCalled();
+    for (const call of imagesEdit.mock.calls) {
+      const params = call[0] as { image?: unknown };
+      expect(params?.image).toBe(file);
+    }
+
+    expect(gen.candidates.length).toBeGreaterThan(0);
+    expect(gen.candidates[0]?.strategy).toBe('images_edit');
   });
 
   it('uploadFace throws deprecation error', async () => {
