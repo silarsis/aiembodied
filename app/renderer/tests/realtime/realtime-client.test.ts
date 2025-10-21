@@ -75,7 +75,11 @@ class FakePeerConnection {
 
 describe('RealtimeClient', () => {
   const peers: FakePeerConnection[] = [];
-  let fetchMock: Mock<typeof fetch>;;
+  // Mock typed with tuple args and Promise<Response> return
+  let fetchMock: Mock<
+    [input: RequestInfo | URL, init?: RequestInit],
+    Promise<Response>
+  >;
   let client: RealtimeClient;
   const states: RealtimeClientState[] = [];
   const remoteStreamHandler = vi.fn();
@@ -87,7 +91,7 @@ describe('RealtimeClient', () => {
     remoteStreamHandler.mockReset();
 
     fetchMock = vi
-      .fn<Parameters<typeof fetch>, Promise<Response>>()
+      .fn()
       .mockResolvedValue({
         ok: true,
         status: 200,
