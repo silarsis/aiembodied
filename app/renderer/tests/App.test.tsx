@@ -1088,17 +1088,19 @@ describe('App component', () => {
         expect(instance.connect.mock.calls.length).toBeGreaterThan(initialConnectCalls);
       });
 
-      const infoCalls = (console.info as unknown as ReturnType<typeof vi.fn>).mock.calls;
-      expect(
-        infoCalls.some(
-          (call) => typeof call[0] === 'string' && call[0].includes('Voice change requested; disconnecting current session'),
-        ),
-      ).toBe(true);
-      expect(
-        infoCalls.some(
-          (call) => typeof call[0] === 'string' && call[0].includes('Voice change reconnect initiated with'),
-        ),
-      ).toBe(true);
+      await waitFor(() => {
+        const infoCalls = (console.info as unknown as ReturnType<typeof vi.fn>).mock.calls;
+        expect(
+          infoCalls.some(
+            (call) => typeof call[0] === 'string' && call[0].includes('Voice change requested; disconnecting current session'),
+          ),
+        ).toBe(true);
+        expect(
+          infoCalls.some(
+            (call) => typeof call[0] === 'string' && call[0].includes('Voice change reconnect initiated with'),
+          ),
+        ).toBe(true);
+      });
     } finally {
       if (originalFetch) {
         (globalThis as { fetch?: typeof fetch }).fetch = originalFetch;
