@@ -67,6 +67,7 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 
 ### Rendering & avatar
 - The initial avatar implementation is a Canvas/WebGL sprite renderer mapping viseme intensity to discrete mouth shapes and idle animations. Future Unity integration will consume the same `VisemeFrame` stream via IPC without altering upstream audio or persistence layers.
+- When using the OpenAI Images API from the avatar face service, always convert base64 source portraits to a `File` with `toFile` from `openai/uploads` and pass that `File` to `images.edit`/`images.edits.create` so uploads are handled as media payloads.
 
 ### Observability, packaging, and environment
 - Winston logging (with rolling files) captures lifecycle diagnostics across processes, supplemented by optional Prometheus metrics exporters for latency tracking.
