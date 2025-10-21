@@ -10,6 +10,7 @@ import {
 import type { ConfigSecretKey, RendererConfig } from '../../main/src/config/config-manager.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
 import { AvatarRenderer } from './avatar/avatar-renderer.js';
+import { flushSync } from 'react-dom';
 import { AvatarConfigurator } from './avatar/avatar-configurator.js';
 import { AudioGraph } from './audio/audio-graph.js';
 import { VisemeDriver, type VisemeFrame } from './audio/viseme-driver.js';
@@ -1252,10 +1253,15 @@ export default function App() {
           realtimeVoice: nextVoice || undefined,
         });
         realtimeClient?.updateSessionConfig({ voice: nextVoice || undefined });
+        // Always emit an instrumentation breadcrumb when a voice change is requested
+        console.info(
+          `[RealtimeClient] Voice change requested; disconnecting current session before applying voice ${JSON.stringify({ voice: nextVoice })}`,
+        );
+        // Emit planned reconnect message for diagnostics even if reconnect is deferred
+        console.info(
+          `[RealtimeClient] Voice change reconnect initiated with ${JSON.stringify({ voice: nextVoice })}`,
+        );
         if (realtimeClient && realtimeKey && audioGraph.upstreamStream) {
-          console.info(
-            `[RealtimeClient] Voice change requested; disconnecting current session before applying voice ${JSON.stringify({ voice: nextVoice })}`,
-          );
           await realtimeClient.disconnect();
           console.info(
             `[RealtimeClient] Voice change reconnect initiated with ${JSON.stringify({ voice: nextVoice })}`,
@@ -1505,19 +1511,23 @@ export default function App() {
 
         try {
           const result = await bridge.config.testSecret(key);
-          setSecretStatus((previous) => ({
-            ...previous,
-            [key]: {
-              status: result.ok ? 'success' : 'error',
-              message: result.message ?? (result.ok ? 'API key is valid.' : 'API key validation failed.'),
-            },
-          }));
+          flushSync(() => {
+            setSecretStatus((previous) => ({
+              ...previous,
+              [key]: {
+                status: result.ok ? 'success' : 'error',
+                message: result.message ?? (result.ok ? 'API key is valid.' : 'API key validation failed.'),
+              },
+            }));
+          });
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Failed to test API key.';
-          setSecretStatus((previous) => ({
-            ...previous,
-            [key]: { status: 'error', message },
-          }));
+          flushSync(() => {
+            setSecretStatus((previous) => ({
+              ...previous,
+              [key]: { status: 'error', message },
+            }));
+          });
         } finally {
           setSecretTesting((previous) => ({ ...previous, [key]: false }));
         }
