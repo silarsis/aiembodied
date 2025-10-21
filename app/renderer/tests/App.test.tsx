@@ -305,6 +305,88 @@ describe('App component', () => {
     }
   });
 
+  it('stages realtime session config with prompt before connecting', async () => {
+    (window as { RTCPeerConnection?: typeof RTCPeerConnection }).RTCPeerConnection = vi
+      .fn()
+      .mockReturnValue({ addEventListener: vi.fn(), removeEventListener: vi.fn(), close: vi.fn() }) as unknown as typeof RTCPeerConnection;
+
+    const configWithPrompt: RendererConfig = {
+      ...rendererConfig,
+      sessionInstructions: 'Follow the config script precisely.',
+      vadTurnDetection: 'server_vad',
+      vadThreshold: 0.61,
+      vadSilenceDurationMs: 720,
+      vadMinSpeechDurationMs: 280,
+    };
+
+    (window as PreloadWindow).aiembodied = {
+      ping: () => 'pong',
+      config: {
+        get: vi.fn().mockResolvedValue(configWithPrompt),
+        getSecret: vi.fn().mockResolvedValue('secret'),
+        setAudioDevicePreferences: setAudioDevicePreferencesMock,
+        setSecret: setSecretMock,
+        testSecret: testSecretMock,
+      },
+      wakeWord: { onWake: () => () => {} },
+      avatar: createAvatarBridgeMock(),
+      __bridgeReady: true,
+      __bridgeVersion: '1.0.0',
+    } as unknown as PreloadWindow['aiembodied'];
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(realtimeClientInstances.length).toBeGreaterThan(0);
+    });
+
+    const client = realtimeClientInstances[realtimeClientInstances.length - 1];
+
+    await waitFor(() => {
+      expect(client.updateSessionConfig).toHaveBeenCalled();
+    });
+
+    await waitFor(() => {
+      expect(
+        client.updateSessionConfig.mock.calls.some(([payload]) =>
+          payload &&
+          typeof payload === 'object' &&
+          'instructions' in payload &&
+          (payload as { instructions?: string }).instructions === 'Follow the config script precisely.',
+        ),
+      ).toBe(true);
+    });
+
+    await waitFor(() => {
+      expect(client.connect).toHaveBeenCalled();
+    });
+
+    const matchingCallIndex = client.updateSessionConfig.mock.calls.findIndex(([payload]) =>
+      payload &&
+      typeof payload === 'object' &&
+      (payload as { instructions?: string }).instructions === 'Follow the config script precisely.' &&
+      (payload as { vad?: { threshold?: number; silenceDurationMs?: number; minSpeechDurationMs?: number } }).vad?.threshold ===
+        0.61,
+    );
+    expect(matchingCallIndex).toBeGreaterThanOrEqual(0);
+
+    const stagedPayload = client.updateSessionConfig.mock.calls[matchingCallIndex]?.[0];
+    expect(stagedPayload).toMatchObject({
+      voice: 'verse',
+      instructions: 'Follow the config script precisely.',
+      turnDetection: 'server_vad',
+      vad: {
+        threshold: 0.61,
+        silenceDurationMs: 720,
+        minSpeechDurationMs: 280,
+      },
+    });
+
+    const stagedOrder = client.updateSessionConfig.mock.invocationCallOrder[matchingCallIndex];
+    const connectOrder = client.connect.mock.invocationCallOrder[0];
+    expect(stagedOrder).toBeLessThan(connectOrder);
+  });
+
   it('renders kiosk UI, toggles transcript overlay, and persists device preferences', async () => {
     (window as PreloadWindow).aiembodied = {
       ping: () => 'pong',
