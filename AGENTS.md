@@ -105,5 +105,6 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 - 2025-10-20 — Avatar face generation prompts share the `ALIGNMENT_GUIDANCE` constant in `app/main/src/avatar/avatar-face-service.ts`.
   Update that string if alignment expectations change so all layer prompts stay consistent.
 - 2025-10-21 — Avatar face Responses prompts now send system+user message arrays with the reference portrait attached as an `input_image`. Update related tests/tooling if the schema changes again.
+- 2025-10-22 — Avatar configurator uploads now start async processing via an IIFE to keep the submit handler synchronous; renderer tests assert the "Generating…" state appears while generation is pending and that other controls remain interactive.
 - 2025-10-21 — Renderer realtime client now mirrors `sessionConfig.instructions` onto both `session.session_parameters.instructions` and `session.instructions` for backward compatibility; update realtime client tests when adjusting instruction handling.
 - 2025-10-22 — Renderer pre-connect staging now pushes voice, instructions, and VAD preferences to the realtime client before any connection attempt. Tests in `app/renderer/tests/App.test.tsx` ensure `updateSessionConfig` runs prior to `connect`; keep them green when adjusting session config sequencing.
