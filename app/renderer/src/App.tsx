@@ -1470,7 +1470,10 @@ export default function App() {
         try {
           const nextConfig = await bridge.config.setSecret(key, nextValue);
           setConfig(nextConfig);
-          setSecretInputs((previous) => ({ ...previous, [key]: '' }));
+          // Clear the input synchronously so tests and UI reflect the update immediately
+          flushSync(() => {
+            setSecretInputs((previous) => ({ ...previous, [key]: '' }));
+          });
 
           if (key === 'realtimeApiKey') {
             setRealtimeKey(nextValue);
