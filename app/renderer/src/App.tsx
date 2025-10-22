@@ -1930,7 +1930,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleSecretTest(key)}
-                      disabled={loadingConfig || secretSaving[key] || secretTesting[key]}
+                      disabled={secretSaving[key] || secretTesting[key]}
                     >
                       Test key
                     </button>
