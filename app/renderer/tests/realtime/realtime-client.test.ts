@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RealtimeClient, type RealtimeClientState } from '../../src/realtime/realtime-client.js';
 
 class FakeMediaStreamTrack {
@@ -75,7 +75,9 @@ class FakePeerConnection {
 
 describe('RealtimeClient', () => {
   const peers: FakePeerConnection[] = [];
-  let fetchMock: Mock<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>;
+  // Function mock preserving vi.fn() metadata and fetch call signature
+  type FetchMock = ReturnType<typeof vi.fn> & ((input: RequestInfo | URL, init?: RequestInit) => Promise<Response>);
+  let fetchMock: FetchMock;
   let client: RealtimeClient;
   const states: RealtimeClientState[] = [];
   const remoteStreamHandler = vi.fn();
@@ -86,9 +88,7 @@ describe('RealtimeClient', () => {
     states.length = 0;
     remoteStreamHandler.mockReset();
 
-    fetchMock = vi
-      .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
-      .mockResolvedValue({
+    fetchMock = (vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
         headers: {
@@ -100,7 +100,7 @@ describe('RealtimeClient', () => {
           },
         }),
         text: vi.fn(async () => 'unused'),
-      } as unknown as Response);
+      } as unknown as Response) as unknown) as FetchMock;
 
     client = new RealtimeClient({
       fetchFn: (input, init) => fetchMock(input, init),
