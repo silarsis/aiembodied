@@ -1480,16 +1480,20 @@ export default function App() {
             setRealtimeKeyError(null);
           }
 
-          setSecretStatus((previous) => ({
-            ...previous,
-            [key]: { status: 'success', message: 'API key updated successfully.' },
-          }));
+          flushSync(() => {
+            setSecretStatus((previous) => ({
+              ...previous,
+              [key]: { status: 'success', message: 'API key updated successfully.' },
+            }));
+          });
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Failed to update API key.';
-          setSecretStatus((previous) => ({
-            ...previous,
-            [key]: { status: 'error', message },
-          }));
+          flushSync(() => {
+            setSecretStatus((previous) => ({
+              ...previous,
+              [key]: { status: 'error', message },
+            }));
+          });
         } finally {
           setSecretSaving((previous) => ({ ...previous, [key]: false }));
         }
@@ -1926,7 +1930,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleSecretTest(key)}
-                      disabled={loadingConfig || secretSaving[key] || secretTesting[key]}
+                      disabled={secretSaving[key] || secretTesting[key]}
                     >
                       Test key
                     </button>

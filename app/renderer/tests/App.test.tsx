@@ -852,7 +852,7 @@ describe('App component', () => {
     });
 
     expect(input.value).toBe('');
-    expect(within(realtimePanel).getByText(/API key updated successfully/i)).toBeInTheDocument();
+    expect(await within(realtimePanel).findByText(/API key updated successfully/i)).toBeInTheDocument();
   });
 
   it('uses the latest preload bridge when submitting a secret before the hook state updates', async () => {
@@ -898,7 +898,7 @@ describe('App component', () => {
       expect(setSecretMock).toHaveBeenCalledWith('realtimeApiKey', 'late-secret');
     });
 
-    expect(within(realtimePanel).getByText(/API key updated successfully/i)).toBeInTheDocument();
+    expect(await within(realtimePanel).findByText(/API key updated successfully/i)).toBeInTheDocument();
   });
 
   it('reports wake word access key test failures', async () => {
