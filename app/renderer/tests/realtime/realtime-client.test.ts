@@ -217,6 +217,7 @@ describe('RealtimeClient', () => {
         },
       },
     });
+    expect(latest?.json).toContain('"voice": "alloy"');
   });
 
   it('includes voice and instructions in session.update payloads', async () => {
@@ -326,5 +327,32 @@ describe('RealtimeClient', () => {
 
     await expect(client.connect({ apiKey: 'bad-key', inputStream: stream })).rejects.toThrow();
     expect(states.at(-1)).toMatchObject({ status: 'error' });
+  });
+
+  it('logs request details when the realtime endpoint responds with HTTP 400', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      headers: {
+        get: (name: string) => (name.toLowerCase() === 'content-type' ? 'application/json' : null),
+      } as Pick<Headers, 'get'>,
+      json: async () => ({ error: { message: 'bad request' } }),
+      text: vi.fn(async () => ''),
+    } as unknown as Response);
+
+    const stream = new FakeMediaStream() as unknown as MediaStream;
+
+    await expect(client.connect({ apiKey: 'test-key', inputStream: stream })).rejects.toThrow();
+
+    const errorLogs = logHandler.mock.calls
+      .map(([entry]) => entry)
+      .filter((entry) => entry.message === 'Realtime endpoint request failed with HTTP 400');
+    expect(errorLogs.length).toBeGreaterThan(0);
+    const logEntry = errorLogs.at(-1);
+    expect(logEntry?.data).toMatchObject({
+      endpoint: expect.stringContaining('/v1/realtime/calls'),
+      body: expect.objectContaining({ sdp: 'fake-offer' }),
+    });
+    expect(logEntry?.json).toContain('"fake-offer"');
   });
 });

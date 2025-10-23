@@ -9,7 +9,12 @@ export interface RealtimeClientState {
 export interface RealtimeClientCallbacks {
   onStateChange?: (state: RealtimeClientState) => void;
   onRemoteStream?: (stream: MediaStream) => void;
-  onLog?: (entry: { level: 'info' | 'warn' | 'error'; message: string; data?: unknown }) => void;
+  onLog?: (entry: {
+    level: 'info' | 'warn' | 'error';
+    message: string;
+    data?: unknown;
+    json?: string;
+  }) => void;
   onFirstAudioFrame?: () => void;
   onSessionUpdated?: (session: { voice?: string; instructions?: string; turnDetection?: string }) => void;
 }
@@ -391,6 +396,13 @@ export class RealtimeClient {
       contentType: normalizedContentType,
     });
 
+    if (response.status === 400) {
+      this.log('error', 'Realtime endpoint request failed with HTTP 400', {
+        endpoint: this.endpoint,
+        body: requestBody,
+      });
+    }
+
     if (!response.ok) {
       const { detail } = await this.readHandshakeErrorDetail(response, normalizedContentType);
       const message = `Realtime handshake failed: HTTP ${response.status}${detail ? `: ${detail}` : ''}`;
@@ -771,6 +783,23 @@ export class RealtimeClient {
   }
 
   private log(level: 'info' | 'warn' | 'error', message: string, data?: unknown): void {
-    this.callbacks.onLog?.({ level, message, data });
+    const json = this.serializeLogData(data);
+    this.callbacks.onLog?.({ level, message, data, json });
+  }
+
+  private serializeLogData(data: unknown): string | undefined {
+    if (data === undefined) {
+      return undefined;
+    }
+
+    if (typeof data === 'string') {
+      return data;
+    }
+
+    try {
+      return JSON.stringify(data, null, 2);
+    } catch {
+      return typeof data === 'object' ? '[unserializable object]' : String(data);
+    }
   }
 }
