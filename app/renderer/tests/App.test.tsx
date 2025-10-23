@@ -199,6 +199,48 @@ describe('App component', () => {
     }
   });
 
+  const openTab = async (name: RegExp | string) => {
+    const tab = await screen.findByRole('tab', { name });
+    fireEvent.click(tab);
+    return tab;
+  };
+
+  it('renders tab navigation and toggles panels', async () => {
+    (window as PreloadWindow).aiembodied = {
+      ping: () => 'pong',
+      config: {
+        get: vi.fn().mockResolvedValue(rendererConfig),
+        getSecret: vi.fn().mockResolvedValue('secret'),
+        setAudioDevicePreferences: setAudioDevicePreferencesMock,
+        setSecret: setSecretMock,
+        testSecret: testSecretMock,
+      },
+      wakeWord: { onWake: () => () => {} },
+      avatar: createAvatarBridgeMock(),
+      __bridgeReady: true,
+      __bridgeVersion: '1.0.0',
+    } as unknown as PreloadWindow['aiembodied'];
+
+    render(<App />);
+
+    const tabs = await screen.findAllByRole('tab');
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['ChatGPT', 'Character', 'Local']);
+
+    const chatPanel = await screen.findByRole('tabpanel', { name: /ChatGPT/i });
+    expect(within(chatPanel).getByRole('heading', { name: /Embodied Assistant/i })).toBeInTheDocument();
+
+    await openTab(/Character/i);
+    const characterPanel = await screen.findByRole('tabpanel', { name: /Character/i });
+    expect(within(characterPanel).getByLabelText('Voice')).toBeInTheDocument();
+
+    await openTab(/Local/i);
+    const localPanel = await screen.findByRole('tabpanel', { name: /Local/i });
+    expect(within(localPanel).getByLabelText('Microphone')).toBeInTheDocument();
+
+    await openTab(/ChatGPT/i);
+    expect(await screen.findByText(/Speech gate:/i)).toBeInTheDocument();
+  });
+
   it('renders the static realtime voice list without querying the API', async () => {
     const fetchMock = vi.fn();
     const originalFetch = global.fetch;
@@ -228,6 +270,8 @@ describe('App component', () => {
       } as unknown as PreloadWindow['aiembodied'];
 
       render(<App />);
+
+      await openTab(/Character/i);
 
       const select = (await screen.findByLabelText('Voice')) as HTMLSelectElement;
       const optionValues = Array.from(select.options).map((option) => option.value);
@@ -272,6 +316,8 @@ describe('App component', () => {
       } as unknown as PreloadWindow['aiembodied'];
 
       render(<App />);
+
+      await openTab(/Character/i);
 
       const select = (await screen.findByLabelText('Voice')) as HTMLSelectElement;
 
@@ -444,6 +490,8 @@ describe('App component', () => {
     fireEvent.keyDown(window, { key: 'T', code: 'KeyT', ctrlKey: true, shiftKey: true });
     expect(screen.getByTestId('transcript-overlay')).toBeInTheDocument();
 
+    await openTab(/Local/i);
+
     const inputSelect = await screen.findByLabelText('Microphone');
     fireEvent.change(inputSelect, { target: { value: 'mic-1' } });
 
@@ -471,8 +519,10 @@ describe('App component', () => {
       expect(within(realtimeCard).getByText(/Status: Configured/i)).toBeInTheDocument();
     }
 
-    expect(screen.getByText(/Speech gate:/i)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /Embodied Assistant/i })).toBeInTheDocument();
+    await openTab(/ChatGPT/i);
+
+    expect(await screen.findByText(/Speech gate:/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Embodied Assistant/i })).toBeInTheDocument();
   });
 
   it('allows pausing and resuming listening while disconnecting realtime sessions', async () => {
@@ -834,6 +884,8 @@ describe('App component', () => {
 
     render(<App />);
 
+    await openTab(/Local/i);
+
     const realtimeHeading = await screen.findByRole('heading', { name: /OpenAI Realtime API key/i });
     const realtimePanel = realtimeHeading.closest('article');
     expect(realtimePanel).not.toBeNull();
@@ -880,6 +932,8 @@ describe('App component', () => {
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
+
+    await openTab(/Local/i);
 
     const realtimeHeading = await screen.findByRole('heading', { name: /OpenAI Realtime API key/i });
     const realtimePanel = realtimeHeading.closest('article');
@@ -937,6 +991,8 @@ describe('App component', () => {
     testSecretMock.mockResolvedValueOnce({ ok: false, message: 'Invalid Porcupine access key' });
 
     render(<App />);
+
+    await openTab(/Local/i);
 
     const wakeHeading = await screen.findByRole('heading', { name: /Porcupine access key/i });
     const wakePanel = wakeHeading.closest('article');
@@ -996,6 +1052,8 @@ describe('App component', () => {
       .mockReturnValue({ addEventListener: vi.fn(), removeEventListener: vi.fn(), close: vi.fn() }) as unknown as typeof RTCPeerConnection;
 
     render(<App />);
+
+    await openTab(/Character/i);
 
     const textarea = (await screen.findByLabelText(/Base prompt/i)) as HTMLTextAreaElement;
 
@@ -1076,6 +1134,8 @@ describe('App component', () => {
       const instance = realtimeClientInstances[realtimeClientInstances.length - 1];
       const initialConnectCalls = instance.connect.mock.calls.length;
       const initialDisconnectCalls = instance.disconnect.mock.calls.length;
+
+      await openTab(/Character/i);
 
       const voiceSelect = (await screen.findByLabelText('Voice')) as HTMLSelectElement;
       fireEvent.change(voiceSelect, { target: { value: 'ash' } });
