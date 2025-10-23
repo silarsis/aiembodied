@@ -90,14 +90,13 @@ describe('RealtimeClient', () => {
 
     fetchMock = (vi.fn().mockResolvedValue({
         ok: true,
-        status: 200,
+        status: 201,
         headers: {
           get: (name: string) => (name.toLowerCase() === 'content-type' ? 'application/json' : null),
         } as Pick<Headers, 'get'>,
         json: async () => ({
-          rtc_connection: {
-            sdp: 'fake-answer',
-          },
+          id: 'call_123',
+          sdp: 'fake-answer',
         }),
         text: vi.fn(async () => 'unused'),
       } as unknown as Response) as unknown) as FetchMock;
@@ -135,15 +134,28 @@ describe('RealtimeClient', () => {
     const requestInit = fetchMock.mock.calls[0]?.[1];
     expect(requestInit).toBeDefined();
     expect(requestInit?.headers).toMatchObject({
-      'Content-Type': 'application/sdp',
+      'Content-Type': 'application/json',
       Authorization: 'Bearer test-key',
     });
     expect(typeof requestInit?.body).toBe('string');
-    expect(requestInit?.body).toBe('fake-offer');
-    
-    // Check that the model is passed as a query parameter
+    const parsedBody = JSON.parse(requestInit?.body as string) as {
+      sdp: string;
+      session: Record<string, unknown>;
+    };
+
+    expect(parsedBody.sdp).toBe('fake-offer');
+    expect(parsedBody.session).toMatchObject({
+      type: 'realtime',
+      model: 'gpt-4o-realtime-preview-2024-12-17',
+    });
+
+    const audioConfig = (parsedBody.session.audio ?? {}) as Record<string, unknown>;
+    const inputConfig = (audioConfig.input ?? {}) as { format?: Record<string, unknown> };
+    expect((inputConfig.format ?? {}).type).toBe('pcm16');
+
+    // Check that the request targets the calls endpoint
     const fetchUrl = fetchMock.mock.calls[0]?.[0] as string;
-    expect(fetchUrl).toContain('model=gpt-4o-realtime-preview-2024-12-17');
+    expect(fetchUrl).toContain('/v1/realtime/calls');
 
     const peer = peers[0];
     expect(peer.addTrack).toHaveBeenCalled();
@@ -165,7 +177,10 @@ describe('RealtimeClient', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const requestInit = fetchMock.mock.calls[0]?.[1];
     expect(typeof requestInit?.body).toBe('string');
-    expect(requestInit?.body).toBe('fake-offer');
+    const parsedBody = JSON.parse(requestInit?.body as string) as {
+      session?: { audio?: { output?: { voice?: string } } };
+    };
+    expect(parsedBody.session?.audio?.output?.voice).toBe('alloy');
     
     // Voice should be configured via session.update after connection
     const peer = peers[0];
@@ -190,7 +205,12 @@ describe('RealtimeClient', () => {
     expect(sendCalls.length).toBeGreaterThan(0);
     const payloads = sendCalls.map((call) =>
       JSON.parse(call[0] as string) as {
-        session: { session_parameters?: Record<string, unknown>; voice?: string; instructions?: string };
+        session: {
+          session_parameters?: Record<string, unknown>;
+          voice?: string;
+          instructions?: string;
+          audio?: { output?: { voice?: string } };
+        };
       },
     );
     
@@ -201,9 +221,16 @@ describe('RealtimeClient', () => {
     
     // Should include voice directly in session
     expect(payloads.some((payload) => payload.session.voice === 'alloy')).toBe(true);
+    expect(payloads.some((payload) => payload.session.audio?.output?.voice === 'alloy')).toBe(true);
 
     // Should mirror instructions directly in session for backward compatibility
     expect(payloads.some((payload) => payload.session.instructions === 'Be helpful')).toBe(true);
+
+    const handshakeBody = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string) as {
+      session: { instructions?: string; session_parameters?: Record<string, unknown> };
+    };
+    expect(handshakeBody.session.instructions).toBe('Be helpful');
+    expect(handshakeBody.session.session_parameters?.instructions).toBe('Be helpful');
   });
 
   it('parses session.updated payloads using the new schema', async () => {

@@ -107,7 +107,7 @@ export class RealtimeClient {
   private sessionConfig?: RealtimeClientOptions['sessionConfig'];
 
   constructor(options: RealtimeClientOptions = {}) {
-    this.endpoint = options.endpoint ?? 'https://api.openai.com/v1/realtime';
+    this.endpoint = options.endpoint ?? 'https://api.openai.com/v1/realtime/calls';
     this.model = options.model ?? 'gpt-4o-realtime-preview-2024-12-17';
     this.fetchFn = options.fetchFn ?? window.fetch.bind(window);
     this.createPeerConnectionFn = options.createPeerConnection ?? ((config?: RTCConfiguration) => new RTCPeerConnection(config));
@@ -311,17 +311,22 @@ export class RealtimeClient {
     const offer = await peer.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
     await peer.setLocalDescription(offer);
 
-    // Session configuration is now handled via WebRTC data channel after connection
+    const sessionConfig = this.buildInitialSessionConfiguration();
+    const requestBody: Record<string, unknown> = {
+      sdp: offer.sdp ?? '',
+    };
 
-    // Use the correct WebRTC SDP negotiation format per OpenAI documentation
-    const url = `${this.endpoint}?model=${encodeURIComponent(this.model)}`;
-    const response = await this.fetchFn(url, {
+    if (Object.keys(sessionConfig).length > 0) {
+      requestBody.session = sessionConfig;
+    }
+
+    const response = await this.fetchFn(this.endpoint, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/sdp',
+        'Content-Type': 'application/json',
       },
-      body: offer.sdp ?? '',
+      body: JSON.stringify(requestBody),
     });
 
     const contentTypeHeader = response.headers?.get?.('content-type') ?? '';
@@ -345,12 +350,18 @@ export class RealtimeClient {
     let answerSdp: string | undefined;
     if (normalizedContentType.includes('application/json')) {
       const payload = (await response.json()) as
-        | { rtc_connection?: { sdp?: unknown } | null }
+        | { sdp?: unknown; rtc_connection?: { sdp?: unknown } | null }
         | undefined
         | null;
-      const rtcConnection = payload?.rtc_connection;
-      if (rtcConnection && typeof rtcConnection === 'object' && typeof rtcConnection.sdp === 'string') {
-        answerSdp = rtcConnection.sdp;
+      if (payload && typeof payload === 'object') {
+        if (typeof payload.sdp === 'string') {
+          answerSdp = payload.sdp;
+        } else {
+          const rtcConnection = payload.rtc_connection;
+          if (rtcConnection && typeof rtcConnection === 'object' && typeof rtcConnection.sdp === 'string') {
+            answerSdp = rtcConnection.sdp;
+          }
+        }
       }
     } else {
       answerSdp = await response.text();
@@ -377,7 +388,9 @@ export class RealtimeClient {
 
     const payload: Record<string, unknown> = { type: 'session.update', session: {} };
     const session = payload.session as Record<string, unknown>;
-    const sessionParameters: Record<string, unknown> = {};
+    const sessionParameters: Record<string, unknown> = {
+      ...(this.sessionConfig?.sessionParameters ?? {}),
+    };
 
     const instructions = this.sessionConfig?.instructions;
     if (instructions) {
@@ -385,35 +398,33 @@ export class RealtimeClient {
       session.instructions = instructions;
     }
 
-    if (this.sessionConfig?.turnDetection === 'none') {
-      sessionParameters.turn_detection = { type: 'none' };
-    } else if (this.sessionConfig?.turnDetection === 'server_vad') {
-      sessionParameters.turn_detection = {
-        type: 'server_vad',
-        ...(typeof this.sessionConfig.vad?.threshold === 'number'
-          ? { threshold: this.sessionConfig.vad.threshold }
-          : {}),
-        ...(typeof this.sessionConfig.vad?.silenceDurationMs === 'number'
-          ? { silence_duration_ms: this.sessionConfig.vad.silenceDurationMs }
-          : {}),
-        ...(typeof this.sessionConfig.vad?.minSpeechDurationMs === 'number'
-          ? { min_speech_duration_ms: this.sessionConfig.vad.minSpeechDurationMs }
-          : {}),
-      } as Record<string, unknown>;
+    const turnDetection = this.buildTurnDetectionConfig();
+    if (turnDetection) {
+      sessionParameters.turn_detection = turnDetection;
+      session.turn_detection = turnDetection;
     }
 
-    const mergedSessionParameters = {
-      ...(this.sessionConfig?.sessionParameters ?? {}),
-      ...sessionParameters,
-    };
-
-    if (Object.keys(mergedSessionParameters).length > 0) {
-      session.session_parameters = mergedSessionParameters;
+    if (Object.keys(sessionParameters).length > 0) {
+      session.session_parameters = sessionParameters;
     }
 
-    // Add voice configuration to session update
     if (this.sessionConfig?.voice) {
       session.voice = this.sessionConfig.voice;
+      const previousAudio = (session.audio as Record<string, unknown> | undefined) ?? {};
+      const previousOutput =
+        previousAudio && typeof previousAudio['output'] === 'object' && previousAudio['output'] !== null
+          ? (previousAudio['output'] as Record<string, unknown>)
+          : {};
+
+      const audioPayload: Record<string, unknown> = {
+        ...previousAudio,
+        output: {
+          ...previousOutput,
+          voice: this.sessionConfig.voice,
+        },
+      };
+
+      session.audio = audioPayload;
     }
 
     try {
@@ -428,36 +439,87 @@ export class RealtimeClient {
     }
   }
 
-  private buildSessionDescriptor(): Record<string, unknown> {
-    const inputAudioFormat = this.sessionConfig?.inputAudioFormat
-      ? {
-          type: this.sessionConfig.inputAudioFormat.type,
-          ...(typeof this.sessionConfig.inputAudioFormat.sampleRateHz === 'number'
-            ? { sample_rate_hz: this.sessionConfig.inputAudioFormat.sampleRateHz }
-            : {}),
-          ...(typeof this.sessionConfig.inputAudioFormat.channels === 'number'
-            ? { channels: this.sessionConfig.inputAudioFormat.channels }
-            : {}),
-        }
-      : { type: 'pcm16', sample_rate_hz: 16000, channels: 1 };
-    const descriptor: Record<string, unknown> = {
+  private buildInitialSessionConfiguration(): Record<string, unknown> {
+    const session: Record<string, unknown> = {
+      type: 'realtime',
       model: this.model,
-      modalities: this.sessionConfig?.modalities ?? ['text', 'audio'],
-      input_audio_format: inputAudioFormat,
     };
+
+    const modalities = this.sessionConfig?.modalities;
+    if (Array.isArray(modalities) && modalities.length > 0) {
+      session.output_modalities = modalities;
+    } else {
+      session.output_modalities = ['audio'];
+    }
+
+    const instructions = this.sessionConfig?.instructions;
+    if (instructions) {
+      session.instructions = instructions;
+    }
+
+    const turnDetection = this.buildTurnDetectionConfig();
+    if (turnDetection) {
+      session.turn_detection = turnDetection;
+    }
+
+    const inputFormat = this.buildInputAudioFormat();
+    const audio: Record<string, unknown> = {};
+
+    if (inputFormat) {
+      audio.input = { format: inputFormat };
+    }
+
+    if (this.sessionConfig?.voice) {
+      audio.output = { voice: this.sessionConfig.voice };
+    }
+
+    if (Object.keys(audio).length > 0) {
+      session.audio = audio;
+    }
 
     const sessionParameters: Record<string, unknown> = {
       ...(this.sessionConfig?.sessionParameters ?? {}),
     };
 
-    if (this.sessionConfig?.instructions) {
-      sessionParameters.instructions = this.sessionConfig.instructions;
+    if (instructions) {
+      sessionParameters.instructions = instructions;
     }
 
+    if (turnDetection) {
+      sessionParameters.turn_detection = turnDetection;
+    }
+
+    if (Object.keys(sessionParameters).length > 0) {
+      session.session_parameters = sessionParameters;
+    }
+
+    return session;
+  }
+
+  private buildInputAudioFormat(): Record<string, unknown> | undefined {
+    if (!this.sessionConfig?.inputAudioFormat) {
+      return { type: 'pcm16', sample_rate_hz: 16000, channels: 1 };
+    }
+
+    const { type, sampleRateHz, channels } = this.sessionConfig.inputAudioFormat;
+    if (!type) {
+      return undefined;
+    }
+
+    return {
+      type,
+      ...(typeof sampleRateHz === 'number' ? { sample_rate_hz: sampleRateHz } : {}),
+      ...(typeof channels === 'number' ? { channels } : {}),
+    };
+  }
+
+  private buildTurnDetectionConfig(): Record<string, unknown> | undefined {
     if (this.sessionConfig?.turnDetection === 'none') {
-      sessionParameters.turn_detection = { type: 'none' };
-    } else if (this.sessionConfig?.turnDetection === 'server_vad') {
-      sessionParameters.turn_detection = {
+      return { type: 'none' };
+    }
+
+    if (this.sessionConfig?.turnDetection === 'server_vad') {
+      return {
         type: 'server_vad',
         ...(typeof this.sessionConfig.vad?.threshold === 'number'
           ? { threshold: this.sessionConfig.vad.threshold }
@@ -471,13 +533,7 @@ export class RealtimeClient {
       };
     }
 
-    if (Object.keys(sessionParameters).length > 0) {
-      descriptor.session_parameters = sessionParameters;
-    }
-
-    // Note: voice configuration is handled elsewhere per API changes
-
-    return descriptor;
+    return undefined;
   }
 
   private handleRemoteTrack(event: RTCTrackEvent): void {
