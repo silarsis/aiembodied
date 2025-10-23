@@ -126,7 +126,7 @@ describe('RealtimeClient', () => {
     sessionUpdateHandler.mockReset();
   });
 
-  it('performs SDP negotiation and reports connected state', async () => {
+  it('performs JSON handshake negotiation when supported and reports connected state', async () => {
     const stream = new FakeMediaStream() as unknown as MediaStream;
 
     await client.connect({ apiKey: 'test-key', inputStream: stream });
@@ -167,30 +167,66 @@ describe('RealtimeClient', () => {
     expect(states.at(-1)?.status).toBe('connected');
   });
 
-  it('sends SDP directly and configures voice via session.update', async () => {
+  it('falls back to legacy SDP handshake when JSON is rejected', async () => {
     const stream = new FakeMediaStream() as unknown as MediaStream;
+
+    const unsupportedResponse = {
+      ok: false,
+      status: 400,
+      headers: {
+        get: (name: string) => (name.toLowerCase() === 'content-type' ? 'application/json' : null),
+      } as Pick<Headers, 'get'>,
+      json: vi.fn(async () => ({
+        error: {
+          code: 'unsupported_content_type',
+          message: 'Unsupported content type. This API method only accepts application/sdp requests.',
+        },
+      })),
+      text: vi.fn(async () => 'should-not-be-called'),
+    } as unknown as Response;
+
+    const successResponse = {
+      ok: true,
+      status: 201,
+      headers: {
+        get: (name: string) => (name.toLowerCase() === 'content-type' ? 'application/sdp' : null),
+      } as Pick<Headers, 'get'>,
+      text: vi.fn(async () => 'fallback-answer'),
+      json: vi.fn(async () => ({ rtc_connection: { sdp: 'unused' } })),
+    } as unknown as Response;
+
+    fetchMock
+      .mockResolvedValueOnce(unsupportedResponse)
+      .mockResolvedValueOnce(successResponse);
 
     client.updateSessionConfig({ voice: 'alloy' });
 
     await client.connect({ apiKey: 'test-key', inputStream: stream });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const requestInit = fetchMock.mock.calls[0]?.[1];
-    expect(typeof requestInit?.body).toBe('string');
-    const parsedBody = JSON.parse(requestInit?.body as string) as {
-      session?: { audio?: { output?: { voice?: string } } };
-    };
-    expect(parsedBody.session?.audio?.output?.voice).toBe('alloy');
-    
-    // Voice should be configured via session.update after connection
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const firstCallInit = fetchMock.mock.calls[0]?.[1];
+    expect(firstCallInit?.headers).toMatchObject({
+      'Content-Type': 'application/json',
+    });
+
+    const secondCallUrl = fetchMock.mock.calls[1]?.[0] as string;
+    const secondCallInit = fetchMock.mock.calls[1]?.[1];
+    expect(secondCallUrl).toContain('/v1/realtime/calls');
+    expect(secondCallUrl).toContain('model=gpt-4o-realtime-preview-2024-12-17');
+    expect(secondCallInit?.headers).toMatchObject({
+      'Content-Type': 'application/sdp',
+    });
+    expect(secondCallInit?.body).toBe('fake-offer');
+
     const peer = peers[0];
     const sendCalls = peer.dataChannel.send.mock.calls;
     expect(sendCalls.length).toBeGreaterThan(0);
-    
+
     const sessionUpdatePayloads = sendCalls.map((call) => JSON.parse(call[0] as string));
-    expect(sessionUpdatePayloads.some((payload) => 
-      payload.type === 'session.update' && payload.session?.voice === 'alloy'
-    )).toBe(true);
+    expect(
+      sessionUpdatePayloads.some((payload) => payload.type === 'session.update' && payload.session?.voice === 'alloy'),
+    ).toBe(true);
   });
 
   it('includes voice and instructions in session.update payloads', async () => {

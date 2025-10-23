@@ -42,6 +42,8 @@ export interface RealtimeClientConnectOptions {
 
 // Note: older code used a typed negotiation answer; currently unused.
 
+type HandshakeMode = 'unknown' | 'json' | 'sdp';
+
 function wait(durationMs: number): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, durationMs);
@@ -60,6 +62,18 @@ function describeError(error: unknown): string {
   }
 
   return typeof error === 'string' ? error : 'Unknown realtime client error';
+}
+
+class UnsupportedHandshakeContentTypeError extends Error {
+  readonly status: number;
+
+  readonly code?: string;
+
+  constructor(message: string, options: { status: number; code?: string }) {
+    super(message);
+    this.status = options.status;
+    this.code = options.code;
+  }
 }
 
 export class RealtimeClient {
@@ -105,6 +119,7 @@ export class RealtimeClient {
 
   private jitterBufferMs: number;
   private sessionConfig?: RealtimeClientOptions['sessionConfig'];
+  private handshakeMode: HandshakeMode = 'unknown';
 
   constructor(options: RealtimeClientOptions = {}) {
     this.endpoint = options.endpoint ?? 'https://api.openai.com/v1/realtime/calls';
@@ -311,10 +326,41 @@ export class RealtimeClient {
     const offer = await peer.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
     await peer.setLocalDescription(offer);
 
+    const offerSdp = offer.sdp ?? '';
+
+    let answerSdp: string | null = null;
+
+    if (this.handshakeMode !== 'sdp') {
+      try {
+        answerSdp = await this.performJsonHandshake(apiKey, offerSdp);
+        this.handshakeMode = 'json';
+      } catch (error) {
+        if (error instanceof UnsupportedHandshakeContentTypeError) {
+          this.handshakeMode = 'sdp';
+          this.log('warn', 'Realtime API rejected JSON handshake, retrying with SDP offer', {
+            status: error.status,
+            code: error.code,
+          });
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    if (!answerSdp) {
+      answerSdp = await this.performSdpHandshake(apiKey, offerSdp);
+      this.handshakeMode = 'sdp';
+    }
+
+    await peer.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+    if (this.controlChannel && this.controlChannel.readyState === 'open') {
+      this.sendSessionUpdate();
+    }
+  }
+
+  private async performJsonHandshake(apiKey: string, offerSdp: string): Promise<string> {
     const sessionConfig = this.buildInitialSessionConfiguration();
-    const requestBody: Record<string, unknown> = {
-      sdp: offer.sdp ?? '',
-    };
+    const requestBody: Record<string, unknown> = { sdp: offerSdp };
 
     if (Object.keys(sessionConfig).length > 0) {
       requestBody.session = sessionConfig;
@@ -333,21 +379,14 @@ export class RealtimeClient {
     const normalizedContentType = contentTypeHeader.toLowerCase();
 
     if (!response.ok) {
-      let detail: string | undefined;
-      try {
-        if (normalizedContentType.includes('application/json')) {
-          const errorPayload = await response.json();
-          detail = JSON.stringify(errorPayload);
-        } else {
-          detail = await response.text();
-        }
-      } catch {
-        // ignore body read errors
+      const { detail, code } = await this.readHandshakeErrorDetail(response, normalizedContentType);
+      const message = `Realtime handshake failed: HTTP ${response.status}${detail ? `: ${detail}` : ''}`;
+      if (code === 'unsupported_content_type' || detail?.toLowerCase().includes('unsupported content type')) {
+        throw new UnsupportedHandshakeContentTypeError(message, { status: response.status, code });
       }
-      throw new Error(`Realtime handshake failed: HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
+      throw new Error(message);
     }
 
-    let answerSdp: string | undefined;
     if (normalizedContentType.includes('application/json')) {
       const payload = (await response.json()) as
         | { sdp?: unknown; rtc_connection?: { sdp?: unknown } | null }
@@ -355,25 +394,89 @@ export class RealtimeClient {
         | null;
       if (payload && typeof payload === 'object') {
         if (typeof payload.sdp === 'string') {
-          answerSdp = payload.sdp;
-        } else {
-          const rtcConnection = payload.rtc_connection;
-          if (rtcConnection && typeof rtcConnection === 'object' && typeof rtcConnection.sdp === 'string') {
-            answerSdp = rtcConnection.sdp;
-          }
+          return payload.sdp;
+        }
+        const rtcConnection = payload.rtc_connection;
+        if (rtcConnection && typeof rtcConnection === 'object' && typeof rtcConnection.sdp === 'string') {
+          return rtcConnection.sdp;
         }
       }
     } else {
-      answerSdp = await response.text();
+      const answerText = await response.text();
+      if (answerText) {
+        return answerText;
+      }
     }
 
-    if (!answerSdp) {
-      throw new Error('Realtime handshake failed: missing answer SDP in response.');
+    throw new Error('Realtime handshake failed: missing answer SDP in response.');
+  }
+
+  private async performSdpHandshake(apiKey: string, offerSdp: string): Promise<string> {
+    const url = `${this.endpoint}?model=${encodeURIComponent(this.model)}`;
+    const response = await this.fetchFn(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/sdp',
+      },
+      body: offerSdp,
+    });
+
+    const contentTypeHeader = response.headers?.get?.('content-type') ?? '';
+    const normalizedContentType = contentTypeHeader.toLowerCase();
+
+    if (!response.ok) {
+      const { detail } = await this.readHandshakeErrorDetail(response, normalizedContentType);
+      throw new Error(`Realtime handshake failed: HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
     }
-    await peer.setRemoteDescription({ type: 'answer', sdp: answerSdp });
-    if (this.controlChannel && this.controlChannel.readyState === 'open') {
-      this.sendSessionUpdate();
+
+    if (normalizedContentType.includes('application/json')) {
+      const payload = (await response.json()) as
+        | { rtc_connection?: { sdp?: unknown } | null }
+        | undefined
+        | null;
+      const rtcConnection = payload?.rtc_connection;
+      if (rtcConnection && typeof rtcConnection === 'object' && typeof rtcConnection.sdp === 'string') {
+        return rtcConnection.sdp;
+      }
+    } else {
+      const answerText = await response.text();
+      if (answerText) {
+        return answerText;
+      }
     }
+
+    throw new Error('Realtime handshake failed: missing answer SDP in response.');
+  }
+
+  private async readHandshakeErrorDetail(
+    response: Response,
+    normalizedContentType: string,
+  ): Promise<{ detail?: string; code?: string }> {
+    let detail: string | undefined;
+    let code: string | undefined;
+
+    try {
+      if (normalizedContentType.includes('application/json')) {
+        const errorPayload = await response.json();
+        if (errorPayload && typeof errorPayload === 'object') {
+          const errorField = (errorPayload as { error?: { code?: unknown } | null }).error;
+          if (errorField && typeof errorField === 'object') {
+            const codeValue = (errorField as { code?: unknown }).code;
+            if (typeof codeValue === 'string') {
+              code = codeValue;
+            }
+          }
+        }
+        detail = JSON.stringify(errorPayload);
+      } else {
+        detail = await response.text();
+      }
+    } catch {
+      // ignore body read errors for diagnostics
+    }
+
+    return { detail, code };
   }
 
   updateSessionConfig(next: RealtimeClientOptions['sessionConfig']): void {
