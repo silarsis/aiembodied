@@ -6,7 +6,7 @@ import {
   useState,
   type ChangeEvent,
   type FormEvent,
-  type KeyboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import type { ConfigSecretKey, RendererConfig } from '../../main/src/config/config-manager.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
@@ -630,7 +630,7 @@ export default function App() {
   );
 
   const handleTabKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLButtonElement>) => {
+    (event: ReactKeyboardEvent<HTMLButtonElement>) => {
       const currentTabId = event.currentTarget.dataset.tabId as TabId | undefined;
       if (!currentTabId) {
         return;
