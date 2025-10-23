@@ -135,6 +135,13 @@ standard platform log directory (e.g., `%APPDATA%/AI Embodied Assistant/logs/aie
 Embodied Assistant/aiembodied` on macOS). Use these logs to confirm that the renderer bundle loads, the wake-word service
 boots, or to spot navigation/IPC errors that would otherwise leave the window blank.
 
+### Realtime call configuration
+
+Realtime calls post an SDP offer to `/v1/realtime/calls` with a JSON payload that includes a `session` object. When selecting
+text-only versus audio responses, set `session.output_modalities` accordingly. The field accepts either `['audio']` (default,
+includes audio plus transcripts) or `['text']` (text responses only). The legacy `session.modalities` attribute applies only to
+deprecated `realtime.session` handshakes and should not be used with the current call flow.
+
 ### Package for Distribution
 
 Electron bundles for Windows, macOS, and Linux are generated with `electron-builder`.
