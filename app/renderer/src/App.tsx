@@ -1786,13 +1786,13 @@ export default function App() {
           })}
         </div>
         <div className="kiosk__tabPanels">
-          {activeTab === 'chatgpt' ? (
-            <section
-              role="tabpanel"
-              id="panel-chatgpt"
-              aria-labelledby="tab-chatgpt"
-              className="kiosk__tabPanel"
-            >
+          <section
+            role="tabpanel"
+            id="panel-chatgpt"
+            aria-labelledby="tab-chatgpt"
+            className="kiosk__tabPanel"
+            data-state={activeTab === 'chatgpt' ? 'active' : 'inactive'}
+          >
               <section className="kiosk__stage" aria-labelledby="avatar-preview-title">
                 <div className="kiosk__avatar" data-state={visemeSummary.status.toLowerCase()}>
                   <AvatarRenderer frame={visemeFrame} assets={activeAvatar?.components ?? null} />
@@ -1829,16 +1829,15 @@ export default function App() {
                   <p className="meter__status">Speech gate: {audioGraph.isActive ? 'open' : 'closed'}</p>
                 </div>
               </section>
-            </section>
-          ) : null}
+          </section>
 
-          {activeTab === 'character' ? (
-            <section
-              role="tabpanel"
-              id="panel-character"
-              aria-labelledby="tab-character"
-              className="kiosk__tabPanel"
-            >
+          <section
+            role="tabpanel"
+            id="panel-character"
+            aria-labelledby="tab-character"
+            className="kiosk__tabPanel"
+            data-state={activeTab === 'character' ? 'active' : 'inactive'}
+          >
               <AvatarConfigurator avatarApi={activeBridge?.avatar} onActiveFaceChange={handleActiveFaceChange} />
               <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
                 <h2 id="kiosk-realtime-title">Realtime</h2>
@@ -1884,16 +1883,15 @@ export default function App() {
                   />
                 </div>
               </section>
-            </section>
-          ) : null}
+          </section>
 
-          {activeTab === 'local' ? (
-            <section
-              role="tabpanel"
-              id="panel-local"
-              aria-labelledby="tab-local"
-              className="kiosk__tabPanel"
-            >
+          <section
+            role="tabpanel"
+            id="panel-local"
+            aria-labelledby="tab-local"
+            className="kiosk__tabPanel"
+            data-state={activeTab === 'local' ? 'active' : 'inactive'}
+          >
               <section className="kiosk__controls">
                 <div className="control">
                   <label htmlFor="input-device">Microphone</label>
@@ -2048,8 +2046,7 @@ export default function App() {
                   })}
                 </div>
               </section>
-            </section>
-          ) : null}
+          </section>
         </div>
       </div>
 
