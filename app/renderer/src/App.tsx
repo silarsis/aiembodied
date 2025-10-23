@@ -6,6 +6,7 @@ import {
   useState,
   type ChangeEvent,
   type FormEvent,
+  type KeyboardEvent,
 } from 'react';
 import type { ConfigSecretKey, RendererConfig } from '../../main/src/config/config-manager.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
@@ -610,7 +611,66 @@ export default function App() {
     [],
   );
   const [activeTab, setActiveTab] = useState<TabId>('chatgpt');
+  const tabRefs = useRef<Record<TabId, HTMLButtonElement | null>>({
+    chatgpt: null,
+    character: null,
+    local: null,
+  });
   const activeBridge = resolveApi();
+
+  const focusTab = useCallback(
+    (tabId: TabId) => {
+      const target = tabRefs.current[tabId];
+      if (target) {
+        target.focus();
+      }
+      setActiveTab(tabId);
+    },
+    [],
+  );
+
+  const handleTabKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLButtonElement>) => {
+      const currentTabId = event.currentTarget.dataset.tabId as TabId | undefined;
+      if (!currentTabId) {
+        return;
+      }
+
+      const currentIndex = tabs.findIndex((tab) => tab.id === currentTabId);
+      if (currentIndex === -1) {
+        return;
+      }
+
+      let nextIndex: number | null = null;
+      switch (event.key) {
+        case 'ArrowRight':
+        case 'ArrowDown':
+          nextIndex = (currentIndex + 1) % tabs.length;
+          break;
+        case 'ArrowLeft':
+        case 'ArrowUp':
+          nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+          break;
+        case 'Home':
+          nextIndex = 0;
+          break;
+        case 'End':
+          nextIndex = tabs.length - 1;
+          break;
+        default:
+          break;
+      }
+
+      if (nextIndex === null) {
+        return;
+      }
+
+      event.preventDefault();
+      const nextTab = tabs[nextIndex];
+      focusTab(nextTab.id);
+    },
+    [focusTab, tabs],
+  );
 
   const pushLatency = useCallback(
     (snapshot: LatencySnapshot) => {
@@ -1775,10 +1835,15 @@ export default function App() {
                 role="tab"
                 aria-controls={`panel-${tab.id}`}
                 aria-selected={isActive}
+                ref={(element) => {
+                  tabRefs.current[tab.id] = element;
+                }}
+                data-tab-id={tab.id}
                 tabIndex={isActive ? 0 : -1}
                 className="kiosk__tabButton"
                 data-active={isActive ? 'true' : 'false'}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => focusTab(tab.id)}
+                onKeyDown={handleTabKeyDown}
               >
                 {tab.label}
               </button>
