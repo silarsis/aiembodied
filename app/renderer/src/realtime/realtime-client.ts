@@ -42,6 +42,8 @@ export interface RealtimeClientConnectOptions {
 
 // Note: older code used a typed negotiation answer; currently unused.
 
+type HandshakeMode = 'unknown' | 'json' | 'sdp';
+
 function wait(durationMs: number): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, durationMs);
@@ -60,6 +62,18 @@ function describeError(error: unknown): string {
   }
 
   return typeof error === 'string' ? error : 'Unknown realtime client error';
+}
+
+class UnsupportedHandshakeContentTypeError extends Error {
+  readonly status: number;
+
+  readonly code?: string;
+
+  constructor(message: string, options: { status: number; code?: string }) {
+    super(message);
+    this.status = options.status;
+    this.code = options.code;
+  }
 }
 
 export class RealtimeClient {
@@ -105,9 +119,10 @@ export class RealtimeClient {
 
   private jitterBufferMs: number;
   private sessionConfig?: RealtimeClientOptions['sessionConfig'];
+  private handshakeMode: HandshakeMode = 'unknown';
 
   constructor(options: RealtimeClientOptions = {}) {
-    this.endpoint = options.endpoint ?? 'https://api.openai.com/v1/realtime';
+    this.endpoint = options.endpoint ?? 'https://api.openai.com/v1/realtime/calls';
     this.model = options.model ?? 'gpt-4o-realtime-preview-2024-12-17';
     this.fetchFn = options.fetchFn ?? window.fetch.bind(window);
     this.createPeerConnectionFn = options.createPeerConnection ?? ((config?: RTCConfiguration) => new RTCPeerConnection(config));
@@ -311,9 +326,92 @@ export class RealtimeClient {
     const offer = await peer.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
     await peer.setLocalDescription(offer);
 
-    // Session configuration is now handled via WebRTC data channel after connection
+    const offerSdp = offer.sdp ?? '';
 
-    // Use the correct WebRTC SDP negotiation format per OpenAI documentation
+    let answerSdp: string | null = null;
+
+    if (this.handshakeMode !== 'sdp') {
+      try {
+        answerSdp = await this.performJsonHandshake(apiKey, offerSdp);
+        this.handshakeMode = 'json';
+      } catch (error) {
+        if (error instanceof UnsupportedHandshakeContentTypeError) {
+          this.handshakeMode = 'sdp';
+          this.log('warn', 'Realtime API rejected JSON handshake, retrying with SDP offer', {
+            status: error.status,
+            code: error.code,
+          });
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    if (!answerSdp) {
+      answerSdp = await this.performSdpHandshake(apiKey, offerSdp);
+      this.handshakeMode = 'sdp';
+    }
+
+    await peer.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+    if (this.controlChannel && this.controlChannel.readyState === 'open') {
+      this.sendSessionUpdate();
+    }
+  }
+
+  private async performJsonHandshake(apiKey: string, offerSdp: string): Promise<string> {
+    const sessionConfig = this.buildInitialSessionConfiguration();
+    const requestBody: Record<string, unknown> = { sdp: offerSdp };
+
+    if (Object.keys(sessionConfig).length > 0) {
+      requestBody.session = sessionConfig;
+    }
+
+    const response = await this.fetchFn(this.endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    const contentTypeHeader = response.headers?.get?.('content-type') ?? '';
+    const normalizedContentType = contentTypeHeader.toLowerCase();
+
+    if (!response.ok) {
+      const { detail, code } = await this.readHandshakeErrorDetail(response, normalizedContentType);
+      const message = `Realtime handshake failed: HTTP ${response.status}${detail ? `: ${detail}` : ''}`;
+      if (code === 'unsupported_content_type' || detail?.toLowerCase().includes('unsupported content type')) {
+        throw new UnsupportedHandshakeContentTypeError(message, { status: response.status, code });
+      }
+      throw new Error(message);
+    }
+
+    if (normalizedContentType.includes('application/json')) {
+      const payload = (await response.json()) as
+        | { sdp?: unknown; rtc_connection?: { sdp?: unknown } | null }
+        | undefined
+        | null;
+      if (payload && typeof payload === 'object') {
+        if (typeof payload.sdp === 'string') {
+          return payload.sdp;
+        }
+        const rtcConnection = payload.rtc_connection;
+        if (rtcConnection && typeof rtcConnection === 'object' && typeof rtcConnection.sdp === 'string') {
+          return rtcConnection.sdp;
+        }
+      }
+    } else {
+      const answerText = await response.text();
+      if (answerText) {
+        return answerText;
+      }
+    }
+
+    throw new Error('Realtime handshake failed: missing answer SDP in response.');
+  }
+
+  private async performSdpHandshake(apiKey: string, offerSdp: string): Promise<string> {
     const url = `${this.endpoint}?model=${encodeURIComponent(this.model)}`;
     const response = await this.fetchFn(url, {
       method: 'POST',
@@ -321,28 +419,17 @@ export class RealtimeClient {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/sdp',
       },
-      body: offer.sdp ?? '',
+      body: offerSdp,
     });
 
     const contentTypeHeader = response.headers?.get?.('content-type') ?? '';
     const normalizedContentType = contentTypeHeader.toLowerCase();
 
     if (!response.ok) {
-      let detail: string | undefined;
-      try {
-        if (normalizedContentType.includes('application/json')) {
-          const errorPayload = await response.json();
-          detail = JSON.stringify(errorPayload);
-        } else {
-          detail = await response.text();
-        }
-      } catch {
-        // ignore body read errors
-      }
+      const { detail } = await this.readHandshakeErrorDetail(response, normalizedContentType);
       throw new Error(`Realtime handshake failed: HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
     }
 
-    let answerSdp: string | undefined;
     if (normalizedContentType.includes('application/json')) {
       const payload = (await response.json()) as
         | { rtc_connection?: { sdp?: unknown } | null }
@@ -350,19 +437,46 @@ export class RealtimeClient {
         | null;
       const rtcConnection = payload?.rtc_connection;
       if (rtcConnection && typeof rtcConnection === 'object' && typeof rtcConnection.sdp === 'string') {
-        answerSdp = rtcConnection.sdp;
+        return rtcConnection.sdp;
       }
     } else {
-      answerSdp = await response.text();
+      const answerText = await response.text();
+      if (answerText) {
+        return answerText;
+      }
     }
 
-    if (!answerSdp) {
-      throw new Error('Realtime handshake failed: missing answer SDP in response.');
+    throw new Error('Realtime handshake failed: missing answer SDP in response.');
+  }
+
+  private async readHandshakeErrorDetail(
+    response: Response,
+    normalizedContentType: string,
+  ): Promise<{ detail?: string; code?: string }> {
+    let detail: string | undefined;
+    let code: string | undefined;
+
+    try {
+      if (normalizedContentType.includes('application/json')) {
+        const errorPayload = await response.json();
+        if (errorPayload && typeof errorPayload === 'object') {
+          const errorField = (errorPayload as { error?: { code?: unknown } | null }).error;
+          if (errorField && typeof errorField === 'object') {
+            const codeValue = (errorField as { code?: unknown }).code;
+            if (typeof codeValue === 'string') {
+              code = codeValue;
+            }
+          }
+        }
+        detail = JSON.stringify(errorPayload);
+      } else {
+        detail = await response.text();
+      }
+    } catch {
+      // ignore body read errors for diagnostics
     }
-    await peer.setRemoteDescription({ type: 'answer', sdp: answerSdp });
-    if (this.controlChannel && this.controlChannel.readyState === 'open') {
-      this.sendSessionUpdate();
-    }
+
+    return { detail, code };
   }
 
   updateSessionConfig(next: RealtimeClientOptions['sessionConfig']): void {
@@ -377,7 +491,9 @@ export class RealtimeClient {
 
     const payload: Record<string, unknown> = { type: 'session.update', session: {} };
     const session = payload.session as Record<string, unknown>;
-    const sessionParameters: Record<string, unknown> = {};
+    const sessionParameters: Record<string, unknown> = {
+      ...(this.sessionConfig?.sessionParameters ?? {}),
+    };
 
     const instructions = this.sessionConfig?.instructions;
     if (instructions) {
@@ -385,35 +501,33 @@ export class RealtimeClient {
       session.instructions = instructions;
     }
 
-    if (this.sessionConfig?.turnDetection === 'none') {
-      sessionParameters.turn_detection = { type: 'none' };
-    } else if (this.sessionConfig?.turnDetection === 'server_vad') {
-      sessionParameters.turn_detection = {
-        type: 'server_vad',
-        ...(typeof this.sessionConfig.vad?.threshold === 'number'
-          ? { threshold: this.sessionConfig.vad.threshold }
-          : {}),
-        ...(typeof this.sessionConfig.vad?.silenceDurationMs === 'number'
-          ? { silence_duration_ms: this.sessionConfig.vad.silenceDurationMs }
-          : {}),
-        ...(typeof this.sessionConfig.vad?.minSpeechDurationMs === 'number'
-          ? { min_speech_duration_ms: this.sessionConfig.vad.minSpeechDurationMs }
-          : {}),
-      } as Record<string, unknown>;
+    const turnDetection = this.buildTurnDetectionConfig();
+    if (turnDetection) {
+      sessionParameters.turn_detection = turnDetection;
+      session.turn_detection = turnDetection;
     }
 
-    const mergedSessionParameters = {
-      ...(this.sessionConfig?.sessionParameters ?? {}),
-      ...sessionParameters,
-    };
-
-    if (Object.keys(mergedSessionParameters).length > 0) {
-      session.session_parameters = mergedSessionParameters;
+    if (Object.keys(sessionParameters).length > 0) {
+      session.session_parameters = sessionParameters;
     }
 
-    // Add voice configuration to session update
     if (this.sessionConfig?.voice) {
       session.voice = this.sessionConfig.voice;
+      const previousAudio = (session.audio as Record<string, unknown> | undefined) ?? {};
+      const previousOutput =
+        previousAudio && typeof previousAudio['output'] === 'object' && previousAudio['output'] !== null
+          ? (previousAudio['output'] as Record<string, unknown>)
+          : {};
+
+      const audioPayload: Record<string, unknown> = {
+        ...previousAudio,
+        output: {
+          ...previousOutput,
+          voice: this.sessionConfig.voice,
+        },
+      };
+
+      session.audio = audioPayload;
     }
 
     try {
@@ -428,36 +542,87 @@ export class RealtimeClient {
     }
   }
 
-  private buildSessionDescriptor(): Record<string, unknown> {
-    const inputAudioFormat = this.sessionConfig?.inputAudioFormat
-      ? {
-          type: this.sessionConfig.inputAudioFormat.type,
-          ...(typeof this.sessionConfig.inputAudioFormat.sampleRateHz === 'number'
-            ? { sample_rate_hz: this.sessionConfig.inputAudioFormat.sampleRateHz }
-            : {}),
-          ...(typeof this.sessionConfig.inputAudioFormat.channels === 'number'
-            ? { channels: this.sessionConfig.inputAudioFormat.channels }
-            : {}),
-        }
-      : { type: 'pcm16', sample_rate_hz: 16000, channels: 1 };
-    const descriptor: Record<string, unknown> = {
+  private buildInitialSessionConfiguration(): Record<string, unknown> {
+    const session: Record<string, unknown> = {
+      type: 'realtime',
       model: this.model,
-      modalities: this.sessionConfig?.modalities ?? ['text', 'audio'],
-      input_audio_format: inputAudioFormat,
     };
+
+    const modalities = this.sessionConfig?.modalities;
+    if (Array.isArray(modalities) && modalities.length > 0) {
+      session.output_modalities = modalities;
+    } else {
+      session.output_modalities = ['audio'];
+    }
+
+    const instructions = this.sessionConfig?.instructions;
+    if (instructions) {
+      session.instructions = instructions;
+    }
+
+    const turnDetection = this.buildTurnDetectionConfig();
+    if (turnDetection) {
+      session.turn_detection = turnDetection;
+    }
+
+    const inputFormat = this.buildInputAudioFormat();
+    const audio: Record<string, unknown> = {};
+
+    if (inputFormat) {
+      audio.input = { format: inputFormat };
+    }
+
+    if (this.sessionConfig?.voice) {
+      audio.output = { voice: this.sessionConfig.voice };
+    }
+
+    if (Object.keys(audio).length > 0) {
+      session.audio = audio;
+    }
 
     const sessionParameters: Record<string, unknown> = {
       ...(this.sessionConfig?.sessionParameters ?? {}),
     };
 
-    if (this.sessionConfig?.instructions) {
-      sessionParameters.instructions = this.sessionConfig.instructions;
+    if (instructions) {
+      sessionParameters.instructions = instructions;
     }
 
+    if (turnDetection) {
+      sessionParameters.turn_detection = turnDetection;
+    }
+
+    if (Object.keys(sessionParameters).length > 0) {
+      session.session_parameters = sessionParameters;
+    }
+
+    return session;
+  }
+
+  private buildInputAudioFormat(): Record<string, unknown> | undefined {
+    if (!this.sessionConfig?.inputAudioFormat) {
+      return { type: 'pcm16', sample_rate_hz: 16000, channels: 1 };
+    }
+
+    const { type, sampleRateHz, channels } = this.sessionConfig.inputAudioFormat;
+    if (!type) {
+      return undefined;
+    }
+
+    return {
+      type,
+      ...(typeof sampleRateHz === 'number' ? { sample_rate_hz: sampleRateHz } : {}),
+      ...(typeof channels === 'number' ? { channels } : {}),
+    };
+  }
+
+  private buildTurnDetectionConfig(): Record<string, unknown> | undefined {
     if (this.sessionConfig?.turnDetection === 'none') {
-      sessionParameters.turn_detection = { type: 'none' };
-    } else if (this.sessionConfig?.turnDetection === 'server_vad') {
-      sessionParameters.turn_detection = {
+      return { type: 'none' };
+    }
+
+    if (this.sessionConfig?.turnDetection === 'server_vad') {
+      return {
         type: 'server_vad',
         ...(typeof this.sessionConfig.vad?.threshold === 'number'
           ? { threshold: this.sessionConfig.vad.threshold }
@@ -471,13 +636,7 @@ export class RealtimeClient {
       };
     }
 
-    if (Object.keys(sessionParameters).length > 0) {
-      descriptor.session_parameters = sessionParameters;
-    }
-
-    // Note: voice configuration is handled elsewhere per API changes
-
-    return descriptor;
+    return undefined;
   }
 
   private handleRemoteTrack(event: RTCTrackEvent): void {
