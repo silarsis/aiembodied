@@ -6,6 +6,7 @@ import {
   useState,
   type ChangeEvent,
   type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import type { ConfigSecretKey, RendererConfig } from '../../main/src/config/config-manager.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
@@ -36,6 +37,15 @@ interface AudioGraphState {
   status: AudioGraphStatus;
   error: string | null;
 }
+
+type TabId = 'chatgpt' | 'character' | 'local';
+
+interface TabDefinition {
+  id: TabId;
+  label: string;
+}
+
+type SessionConfigUpdate = Parameters<RealtimeClient['updateSessionConfig']>[0];
 
 interface TranscriptEntry {
   id: string;
@@ -592,7 +602,75 @@ export default function App() {
   const [latencySnapshot, setLatencySnapshot] = useState<LatencySnapshot | null>(null);
   const [activeAvatar, setActiveAvatar] = useState<AvatarFaceDetail | null>(null);
   const [isListeningEnabled, setListeningEnabled] = useState(true);
+  const tabs = useMemo<TabDefinition[]>(
+    () => [
+      { id: 'chatgpt', label: 'ChatGPT' },
+      { id: 'character', label: 'Character' },
+      { id: 'local', label: 'Local' },
+    ],
+    [],
+  );
+  const [activeTab, setActiveTab] = useState<TabId>('chatgpt');
+  const tabRefs = useRef<Record<TabId, HTMLButtonElement | null>>({
+    chatgpt: null,
+    character: null,
+    local: null,
+  });
   const activeBridge = resolveApi();
+
+  const focusTab = useCallback(
+    (tabId: TabId) => {
+      const target = tabRefs.current[tabId];
+      if (target) {
+        target.focus();
+      }
+      setActiveTab(tabId);
+    },
+    [],
+  );
+
+  const handleTabKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+      const currentTabId = event.currentTarget.dataset.tabId as TabId | undefined;
+      if (!currentTabId) {
+        return;
+      }
+
+      const currentIndex = tabs.findIndex((tab) => tab.id === currentTabId);
+      if (currentIndex === -1) {
+        return;
+      }
+
+      let nextIndex: number | null = null;
+      switch (event.key) {
+        case 'ArrowRight':
+        case 'ArrowDown':
+          nextIndex = (currentIndex + 1) % tabs.length;
+          break;
+        case 'ArrowLeft':
+        case 'ArrowUp':
+          nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+          break;
+        case 'Home':
+          nextIndex = 0;
+          break;
+        case 'End':
+          nextIndex = tabs.length - 1;
+          break;
+        default:
+          break;
+      }
+
+      if (nextIndex === null) {
+        return;
+      }
+
+      event.preventDefault();
+      const nextTab = tabs[nextIndex];
+      focusTab(nextTab.id);
+    },
+    [focusTab, tabs],
+  );
 
   const pushLatency = useCallback(
     (snapshot: LatencySnapshot) => {
@@ -714,6 +792,8 @@ export default function App() {
   const [vadThreshold, setVadThreshold] = useState<number>(0.85);
   const [vadSilenceMs, setVadSilenceMs] = useState<number>(600);
   const [vadMinSpeechMs, setVadMinSpeechMs] = useState<number>(400);
+  const stagedSessionConfigRef = useRef<SessionConfigUpdate | null>(null);
+  const [isSessionConfigReady, setSessionConfigReady] = useState(false);
 
   const availableVoices = useMemo(() => {
     const base = [...STATIC_VOICE_OPTIONS];
@@ -1002,20 +1082,23 @@ export default function App() {
   const previousSpeechActiveRef = useRef(audioGraph.isActive);
 
   useEffect(() => {
+    const payload: SessionConfigUpdate = {
+      voice: selectedVoice || undefined,
+      instructions: basePrompt || undefined,
+      turnDetection: useServerVad ? 'server_vad' : 'none',
+      vad: useServerVad
+        ? { threshold: vadThreshold, silenceDurationMs: vadSilenceMs, minSpeechDurationMs: vadMinSpeechMs }
+        : undefined,
+    };
+
+    stagedSessionConfigRef.current = payload;
+    setSessionConfigReady(!loadingConfig);
+
     if (!realtimeClient || loadingConfig) {
       return;
     }
 
     try {
-      const payload = {
-        voice: selectedVoice || undefined,
-        instructions: basePrompt || undefined,
-        turnDetection: useServerVad ? 'server_vad' : 'none',
-        vad: useServerVad
-          ? { threshold: vadThreshold, silenceDurationMs: vadSilenceMs, minSpeechDurationMs: vadMinSpeechMs }
-          : undefined,
-      } as const;
-
       realtimeClient.updateSessionConfig(payload);
     } catch (error) {
       console.warn('[RealtimeClient] Failed to stage session config before connect', error);
@@ -1080,9 +1163,22 @@ export default function App() {
       return;
     }
 
+    if (loadingConfig || !isSessionConfigReady) {
+      return;
+    }
+
     if (!isListeningEnabled || !realtimeKey || !audioGraph.upstreamStream) {
       void realtimeClient.disconnect();
       return;
+    }
+
+    const stagedPayload = stagedSessionConfigRef.current;
+    if (stagedPayload) {
+      try {
+        realtimeClient.updateSessionConfig(stagedPayload);
+      } catch (error) {
+        console.warn('[RealtimeClient] Failed to stage session config before connect', error);
+      }
     }
 
     realtimeClient.bindRemoteAudioElement(remoteAudioRef.current);
@@ -1096,7 +1192,14 @@ export default function App() {
     return () => {
       void realtimeClient.disconnect();
     };
-  }, [realtimeClient, realtimeKey, audioGraph.upstreamStream, isListeningEnabled]);
+  }, [
+    realtimeClient,
+    realtimeKey,
+    audioGraph.upstreamStream,
+    isListeningEnabled,
+    loadingConfig,
+    isSessionConfigReady,
+  ]);
 
   useEffect(() => {
     if (!realtimeClient || !hasRealtimeApiKey) {
@@ -1719,238 +1822,299 @@ export default function App() {
         </button>
       </header>
 
-      <section className="kiosk__stage" aria-labelledby="avatar-preview-title">
-        <div className="kiosk__avatar" data-state={visemeSummary.status.toLowerCase()}>
-          <AvatarRenderer frame={visemeFrame} assets={activeAvatar?.components ?? null} />
-        </div>
-        <div className="kiosk__avatarDetails">
-          <h1 id="avatar-preview-title">{activeAvatarName}</h1>
-          <p className="kiosk__subtitle">Real-time viseme mapping derived from the decoded audio stream.</p>
-          <dl className="kiosk__metrics">
-            <div>
-              <dt>Viseme</dt>
-              <dd>
-                v{visemeSummary.index} -+ {visemeSummary.label}
-              </dd>
-            </div>
-            <div>
-              <dt>Intensity</dt>
-              <dd>{visemeSummary.intensity}%</dd>
-            </div>
-            <div>
-              <dt>Blink state</dt>
-              <dd>{visemeSummary.blink ? 'Blink triggered' : 'Eyes open'}</dd>
-            </div>
-            <div>
-              <dt>Driver status</dt>
-              <dd>{visemeSummary.status}</dd>
-            </div>
-          </dl>
-        </div>
-        <div className="kiosk__meter" aria-live="polite">
-          <div className="meter">
-            <div className="meter__fill" style={{ width: `${levelPercentage}%` }} />
-          </div>
-          <p className="meter__label">Input level: {levelPercentage}%</p>
-          <p className="meter__status">Speech gate: {audioGraph.isActive ? 'open' : 'closed'}</p>
-        </div>
-      </section>
 
-      <AvatarConfigurator avatarApi={activeBridge?.avatar} onActiveFaceChange={handleActiveFaceChange} />
-
-      <section className="kiosk__controls">
-        <div className="control">
-          <label htmlFor="input-device">Microphone</label>
-          <select
-            id="input-device"
-            value={selectedInput}
-            onChange={handleInputChange}
-            disabled={isSaving || loadingConfig}
-          >
-            <option value="">System default</option>
-            {inputs.map((device) => (
-              <option key={device.deviceId} value={device.deviceId}>
-                {device.label || 'Microphone'}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="control">
-          <label htmlFor="output-device">Speakers</label>
-          <select
-            id="output-device"
-            value={selectedOutput}
-            onChange={handleOutputChange}
-            disabled={isSaving || loadingConfig}
-          >
-            <option value="">System default</option>
-            {outputs.map((device) => (
-              <option key={device.deviceId} value={device.deviceId}>
-                {device.label || 'Speaker'}
-              </option>
-            ))}
-          </select>
-        </div>
-        {/* Voice and prompt controls moved to a dedicated Realtime section below */}
-        <div className="control">
-          <label>
-            <input
-              type="checkbox"
-              checked={useServerVad}
-              onChange={(e) => applyVadPrefs({ useServer: e.target.checked })}
-              disabled={loadingConfig}
-            />
-            Use server VAD
-          </label>
-          {useServerVad ? (
-            <div className="vadControls">
-              <label>
-                Threshold
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={vadThreshold}
-                  onChange={(e) => applyVadPrefs({ threshold: Number(e.target.value) })}
-                />
-                <span>{vadThreshold.toFixed(2)}</span>
-              </label>
-              <label>
-                Min speech (ms)
-                <input
-                  type="number"
-                  min={0}
-                  max={10000}
-                  step={50}
-                  value={vadMinSpeechMs}
-                  onChange={(e) => applyVadPrefs({ minSpeechMs: Number(e.target.value) })}
-                />
-              </label>
-              <label>
-                Silence (ms)
-                <input
-                  type="number"
-                  min={0}
-                  max={10000}
-                  step={50}
-                  value={vadSilenceMs}
-                  onChange={(e) => applyVadPrefs({ silenceMs: Number(e.target.value) })}
-                />
-              </label>
-            </div>
-          ) : null}
-        </div>
-      </section>
-
-        <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
-          <h2 id="kiosk-realtime-title">Realtime</h2>
-          <div className="control">
-            <label htmlFor="realtime-voice">Voice</label>
-            <select id="realtime-voice" value={selectedVoice} onChange={handleVoiceChange} disabled={isSaving || loadingConfig}>
-              {availableVoices.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-            <div className="kiosk__helper" aria-live="polite">
-              Current voice (server): {serverVoice ?? 'unknown'}
-            </div>
-            {playbackIssue ? (
-              <div className="kiosk__helper" role="alert" style={{ marginTop: 8 }}>
-                <span style={{ display: 'block', marginBottom: 4 }}>
-                  Audio playback is blocked ({playbackIssue}).
-                </span>
-                <button type="button" onClick={reconnectAndResume}>
-                  Reconnect & Resume Audio
-                </button>
-              </div>
-            ) : null}
-          </div>
-        <div className="control">
-          <label htmlFor="base-prompt">Base prompt</label>
-          <textarea
-            id="base-prompt"
-            placeholder="Stay in English and be concise. Add personality here�"
-            rows={6}
-            value={basePrompt}
-            onChange={(e) => setBasePrompt(e.target.value)}
-            onBlur={handlePromptBlur}
-            disabled={loadingConfig}
-            style={{ width: '100%' }}
-          />
-        </div>
-      </section>
-
-      <section className="kiosk__secrets" aria-labelledby="kiosk-secret-title">
-        <h2 id="kiosk-secret-title">API keys</h2>
-        <p className="kiosk__helper">Keys are stored securely via the system secret store. Provide a new value to update or test an existing key.</p>
-        <div className="kiosk__secretList">
-          {SECRET_KEYS.map((key) => {
-            const metadata = SECRET_METADATA[key];
-            const configured = metadata.isConfigured(config);
-            const status = secretStatus[key];
-            const busy = secretSaving[key] || secretTesting[key];
-            const message = status.message;
-            const messageRole = status.status === 'error' ? 'alert' : 'status';
-            const messageClass = status.status === 'error' ? 'kiosk__error' : 'kiosk__info';
-
+      <div className="kiosk__layout">
+        <div className="kiosk__tablist" role="tablist" aria-label="Kiosk sections">
+          {tabs.map((tab) => {
+            const isActive = tab.id === activeTab;
             return (
-              <article key={key} className="secretCard" data-configured={configured ? 'true' : 'false'}>
-                <header className="secretCard__header">
-                  <h3>{metadata.label}</h3>
-                  <p className="secretCard__description">{metadata.description}</p>
-                  <p className="secretCard__status">Status: {configured ? 'Configured' : 'Not configured'}</p>
-                </header>
-                <form className="secretCard__form" onSubmit={handleSecretSubmit(key)}>
-                  <input
-                    id={`${key}-input`}
-                    type="password"
-                    aria-label={`New ${metadata.label}`}
-                    placeholder="Enter new key"
-                    autoComplete="off"
-                    spellCheck={false}
-                    value={secretInputs[key]}
-                    onChange={handleSecretInputChange(key)}
-                    disabled={loadingConfig || isSaving || secretSaving[key] || secretTesting[key]}
-                  />
-                  <div className="secretCard__actions">
-                    <button
-                      type="submit"
-                      disabled={
-                        loadingConfig ||
-                        secretSaving[key] ||
-                        secretTesting[key] ||
-                        secretInputs[key].trim().length === 0
-                      }
-                    >
-                      Update key
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSecretTest(key)}
-                      disabled={secretSaving[key] || secretTesting[key]}
-                    >
-                      Test key
-                    </button>
-                  </div>
-                </form>
-                {busy ? (
-                  <p className="kiosk__info" aria-live="polite">
-                    {secretSaving[key] ? 'Updating secretGǪ' : 'Testing secretGǪ'}
-                  </p>
-                ) : null}
-                {message ? (
-                  <p role={messageRole} className={messageClass} aria-live="polite">
-                    {message}
-                  </p>
-                ) : null}
-              </article>
+              <button
+                key={tab.id}
+                id={`tab-${tab.id}`}
+                type="button"
+                role="tab"
+                aria-controls={`panel-${tab.id}`}
+                aria-selected={isActive}
+                ref={(element) => {
+                  tabRefs.current[tab.id] = element;
+                }}
+                data-tab-id={tab.id}
+                tabIndex={isActive ? 0 : -1}
+                className="kiosk__tabButton"
+                data-active={isActive ? 'true' : 'false'}
+                onClick={() => focusTab(tab.id)}
+                onKeyDown={handleTabKeyDown}
+              >
+                {tab.label}
+              </button>
             );
           })}
         </div>
-      </section>
+        <div className="kiosk__tabPanels">
+          <section
+            role="tabpanel"
+            id="panel-chatgpt"
+            aria-labelledby="tab-chatgpt"
+            className="kiosk__tabPanel"
+            data-state={activeTab === 'chatgpt' ? 'active' : 'inactive'}
+          >
+              <section className="kiosk__stage" aria-labelledby="avatar-preview-title">
+                <div className="kiosk__avatar" data-state={visemeSummary.status.toLowerCase()}>
+                  <AvatarRenderer frame={visemeFrame} assets={activeAvatar?.components ?? null} />
+                </div>
+                <div className="kiosk__avatarDetails">
+                  <h1 id="avatar-preview-title">{activeAvatarName}</h1>
+                  <p className="kiosk__subtitle">Real-time viseme mapping derived from the decoded audio stream.</p>
+                  <dl className="kiosk__metrics">
+                    <div>
+                      <dt>Viseme</dt>
+                      <dd>
+                        v{visemeSummary.index} -+ {visemeSummary.label}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Intensity</dt>
+                      <dd>{visemeSummary.intensity}%</dd>
+                    </div>
+                    <div>
+                      <dt>Blink state</dt>
+                      <dd>{visemeSummary.blink ? 'Blink triggered' : 'Eyes open'}</dd>
+                    </div>
+                    <div>
+                      <dt>Driver status</dt>
+                      <dd>{visemeSummary.status}</dd>
+                    </div>
+                  </dl>
+                </div>
+                <div className="kiosk__meter" aria-live="polite">
+                  <div className="meter">
+                    <div className="meter__fill" style={{ width: `${levelPercentage}%` }} />
+                  </div>
+                  <p className="meter__label">Input level: {levelPercentage}%</p>
+                  <p className="meter__status">Speech gate: {audioGraph.isActive ? 'open' : 'closed'}</p>
+                </div>
+              </section>
+          </section>
+
+          <section
+            role="tabpanel"
+            id="panel-character"
+            aria-labelledby="tab-character"
+            className="kiosk__tabPanel"
+            data-state={activeTab === 'character' ? 'active' : 'inactive'}
+          >
+              <AvatarConfigurator avatarApi={activeBridge?.avatar} onActiveFaceChange={handleActiveFaceChange} />
+              <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
+                <h2 id="kiosk-realtime-title">Realtime</h2>
+                <div className="control">
+                  <label htmlFor="realtime-voice">Voice</label>
+                  <select
+                    id="realtime-voice"
+                    value={selectedVoice}
+                    onChange={handleVoiceChange}
+                    disabled={isSaving || loadingConfig}
+                  >
+                    {availableVoices.map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="kiosk__helper" aria-live="polite">
+                    Current voice (server): {serverVoice ?? 'unknown'}
+                  </div>
+                  {playbackIssue ? (
+                    <div className="kiosk__helper" role="alert" style={{ marginTop: 8 }}>
+                      <span style={{ display: 'block', marginBottom: 4 }}>
+                        Audio playback is blocked ({playbackIssue}).
+                      </span>
+                      <button type="button" onClick={reconnectAndResume}>
+                        Reconnect & Resume Audio
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="control">
+                  <label htmlFor="base-prompt">Base prompt</label>
+                  <textarea
+                    id="base-prompt"
+                    placeholder="Stay in English and be concise. Add personality here…"
+                    rows={6}
+                    value={basePrompt}
+                    onChange={(e) => setBasePrompt(e.target.value)}
+                    onBlur={handlePromptBlur}
+                    disabled={loadingConfig}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              </section>
+          </section>
+
+          <section
+            role="tabpanel"
+            id="panel-local"
+            aria-labelledby="tab-local"
+            className="kiosk__tabPanel"
+            data-state={activeTab === 'local' ? 'active' : 'inactive'}
+          >
+              <section className="kiosk__controls">
+                <div className="control">
+                  <label htmlFor="input-device">Microphone</label>
+                  <select
+                    id="input-device"
+                    value={selectedInput}
+                    onChange={handleInputChange}
+                    disabled={isSaving || loadingConfig}
+                  >
+                    <option value="">System default</option>
+                    {inputs.map((device) => (
+                      <option key={device.deviceId} value={device.deviceId}>
+                        {device.label || 'Microphone'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="control">
+                  <label htmlFor="output-device">Speakers</label>
+                  <select
+                    id="output-device"
+                    value={selectedOutput}
+                    onChange={handleOutputChange}
+                    disabled={isSaving || loadingConfig}
+                  >
+                    <option value="">System default</option>
+                    {outputs.map((device) => (
+                      <option key={device.deviceId} value={device.deviceId}>
+                        {device.label || 'Speaker'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="control">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={useServerVad}
+                      onChange={(e) => applyVadPrefs({ useServer: e.target.checked })}
+                      disabled={loadingConfig}
+                    />
+                    Use server VAD
+                  </label>
+                  {useServerVad ? (
+                    <div className="vadControls">
+                      <label>
+                        Threshold
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={vadThreshold}
+                          onChange={(e) => applyVadPrefs({ threshold: Number(e.target.value) })}
+                        />
+                        <span>{vadThreshold.toFixed(2)}</span>
+                      </label>
+                      <label>
+                        Min speech (ms)
+                        <input
+                          type="number"
+                          min={0}
+                          max={10000}
+                          step={50}
+                          value={vadMinSpeechMs}
+                          onChange={(e) => applyVadPrefs({ minSpeechMs: Number(e.target.value) })}
+                        />
+                      </label>
+                      <label>
+                        Silence (ms)
+                        <input
+                          type="number"
+                          min={0}
+                          max={10000}
+                          step={50}
+                          value={vadSilenceMs}
+                          onChange={(e) => applyVadPrefs({ silenceMs: Number(e.target.value) })}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+
+              <section className="kiosk__secrets" aria-labelledby="kiosk-secret-title">
+                <h2 id="kiosk-secret-title">API keys</h2>
+                <p className="kiosk__helper">
+                  Keys are stored securely via the system secret store. Provide a new value to update or test an existing key.
+                </p>
+                <div className="kiosk__secretList">
+                  {SECRET_KEYS.map((key) => {
+                    const metadata = SECRET_METADATA[key];
+                    const configured = metadata.isConfigured(config);
+                    const status = secretStatus[key];
+                    const busy = secretSaving[key] || secretTesting[key];
+                    const message = status.message;
+                    const messageRole = status.status === 'error' ? 'alert' : 'status';
+                    const messageClass = status.status === 'error' ? 'kiosk__error' : 'kiosk__info';
+
+                    return (
+                      <article key={key} className="secretCard" data-configured={configured ? 'true' : 'false'}>
+                        <header className="secretCard__header">
+                          <h3>{metadata.label}</h3>
+                          <p className="secretCard__description">{metadata.description}</p>
+                          <p className="secretCard__status">Status: {configured ? 'Configured' : 'Not configured'}</p>
+                        </header>
+                        <form className="secretCard__form" onSubmit={handleSecretSubmit(key)}>
+                          <input
+                            id={`${key}-input`}
+                            type="password"
+                            aria-label={`New ${metadata.label}`}
+                            placeholder="Enter new key"
+                            autoComplete="off"
+                            spellCheck={false}
+                            value={secretInputs[key]}
+                            onChange={handleSecretInputChange(key)}
+                            disabled={loadingConfig || isSaving || secretSaving[key] || secretTesting[key]}
+                          />
+                          <div className="secretCard__actions">
+                            <button
+                              type="submit"
+                              disabled={
+                                loadingConfig ||
+                                secretSaving[key] ||
+                                secretTesting[key] ||
+                                secretInputs[key].trim().length === 0
+                              }
+                            >
+                              Update key
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleSecretTest(key)}
+                              disabled={secretSaving[key] || secretTesting[key]}
+                            >
+                              Test key
+                            </button>
+                          </div>
+                        </form>
+                        {busy ? (
+                          <p className="kiosk__info" aria-live="polite">
+                            {secretSaving[key] ? 'Updating secret…' : 'Testing secret…'}
+                          </p>
+                        ) : null}
+                        {message ? (
+                          <p role={messageRole} className={messageClass} aria-live="polite">
+                            {message}
+                          </p>
+                        ) : null}
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+          </section>
+        </div>
+      </div>
+
 
       {isSaving ? <p className="kiosk__info">Saving audio preferencesGǪ</p> : null}
       {saveError ? (

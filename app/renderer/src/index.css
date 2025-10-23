@@ -34,8 +34,8 @@ main {
 
 .kiosk {
   min-height: 100%;
-  display: grid;
-  grid-template-rows: auto 1fr auto;
+  display: flex;
+  flex-direction: column;
   padding: 2.5rem 3rem 3rem;
   gap: 2.5rem;
   position: relative;
@@ -46,6 +46,84 @@ main {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
+}
+
+.kiosk__layout {
+  display: flex;
+  gap: 2rem;
+  align-items: stretch;
+  min-height: 0;
+}
+
+.kiosk__tablist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 220px;
+  padding: 0.5rem;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  backdrop-filter: blur(14px);
+}
+
+.kiosk__tabButton {
+  all: unset;
+  cursor: pointer;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.85);
+  background: rgba(30, 41, 59, 0.4);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.kiosk__tabButton::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: transparent;
+  transition: background 0.2s ease;
+}
+
+.kiosk__tabButton[data-active='true'] {
+  color: #f8fafc;
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(59, 130, 246, 0.45);
+  box-shadow: 0 12px 32px rgba(59, 130, 246, 0.25);
+}
+
+.kiosk__tabButton[data-active='true']::after {
+  background: #3b82f6;
+}
+
+.kiosk__tabButton:hover {
+  background: rgba(30, 41, 59, 0.55);
+}
+
+.kiosk__tabButton:focus-visible {
+  outline: 3px solid rgba(96, 165, 250, 0.6);
+  outline-offset: 2px;
+}
+
+.kiosk__tabPanels {
+  flex: 1;
+  min-width: 0;
+}
+
+.kiosk__tabPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.kiosk__tabPanel[data-state='inactive'] {
+  display: none;
 }
 
 .statusChip {
@@ -156,6 +234,47 @@ main {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+}
+
+@media (max-width: 1100px) {
+  .kiosk {
+    padding: 2rem;
+  }
+
+  .kiosk__layout {
+    flex-direction: column;
+  }
+
+  .kiosk__tablist {
+    flex-direction: row;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .kiosk__tabButton {
+    flex: 1;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .kiosk__tabButton::after {
+    margin-left: 0.5rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .kiosk {
+    padding: 1.5rem;
+    gap: 2rem;
+  }
+
+  .kiosk__tablist {
+    padding: 0.5rem 0.25rem;
+  }
+
+  .kiosk__tabButton {
+    padding: 0.6rem 0.8rem;
+  }
 }
 
 .faces__header {
