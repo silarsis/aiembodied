@@ -241,6 +241,55 @@ describe('App component', () => {
     expect(await screen.findByText(/Speech gate:/i)).toBeInTheDocument();
   });
 
+  it('keeps configurator mounted and loads the active face even when the tab is inactive', async () => {
+    const now = Date.now();
+    const listFacesMock = vi
+      .fn()
+      .mockResolvedValue([{ id: 'face-1', name: 'Test Face', createdAt: now, previewDataUrl: null }]);
+    const getActiveFaceMock = vi
+      .fn()
+      .mockResolvedValue({ id: 'face-1', name: 'Test Face', createdAt: now, components: [] });
+
+    (window as PreloadWindow).aiembodied = {
+      ping: () => 'pong',
+      config: {
+        get: vi.fn().mockResolvedValue(rendererConfig),
+        getSecret: vi.fn().mockResolvedValue('secret'),
+        setAudioDevicePreferences: setAudioDevicePreferencesMock,
+        setSecret: setSecretMock,
+        testSecret: testSecretMock,
+      },
+      wakeWord: { onWake: () => () => {} },
+      avatar: createAvatarBridgeMock({ listFaces: listFacesMock, getActiveFace: getActiveFaceMock }),
+      __bridgeReady: true,
+      __bridgeVersion: '1.0.0',
+    } as unknown as PreloadWindow['aiembodied'];
+
+    render(<App />);
+
+    await waitFor(() => expect(listFacesMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(getActiveFaceMock).toHaveBeenCalledTimes(1));
+
+    const characterPanel = await waitFor(() => {
+      const panel = document.getElementById('panel-character');
+      if (!panel) {
+        throw new Error('Character panel not mounted');
+      }
+      return panel;
+    });
+
+    expect(characterPanel.getAttribute('data-state')).toBe('inactive');
+
+    await openTab(/Character/i);
+
+    await waitFor(() => expect(characterPanel.getAttribute('data-state')).toBe('active'));
+    expect(getActiveFaceMock).toHaveBeenCalledTimes(1);
+
+    const localPanel = document.getElementById('panel-local');
+    expect(localPanel).not.toBeNull();
+    expect(localPanel?.getAttribute('data-state')).toBe('inactive');
+  });
+
   it('renders the static realtime voice list without querying the API', async () => {
     const fetchMock = vi.fn();
     const originalFetch = global.fetch;

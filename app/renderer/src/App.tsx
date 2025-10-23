@@ -6,6 +6,7 @@ import {
   useState,
   type ChangeEvent,
   type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import type { ConfigSecretKey, RendererConfig } from '../../main/src/config/config-manager.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
@@ -610,7 +611,66 @@ export default function App() {
     [],
   );
   const [activeTab, setActiveTab] = useState<TabId>('chatgpt');
+  const tabRefs = useRef<Record<TabId, HTMLButtonElement | null>>({
+    chatgpt: null,
+    character: null,
+    local: null,
+  });
   const activeBridge = resolveApi();
+
+  const focusTab = useCallback(
+    (tabId: TabId) => {
+      const target = tabRefs.current[tabId];
+      if (target) {
+        target.focus();
+      }
+      setActiveTab(tabId);
+    },
+    [],
+  );
+
+  const handleTabKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+      const currentTabId = event.currentTarget.dataset.tabId as TabId | undefined;
+      if (!currentTabId) {
+        return;
+      }
+
+      const currentIndex = tabs.findIndex((tab) => tab.id === currentTabId);
+      if (currentIndex === -1) {
+        return;
+      }
+
+      let nextIndex: number | null = null;
+      switch (event.key) {
+        case 'ArrowRight':
+        case 'ArrowDown':
+          nextIndex = (currentIndex + 1) % tabs.length;
+          break;
+        case 'ArrowLeft':
+        case 'ArrowUp':
+          nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+          break;
+        case 'Home':
+          nextIndex = 0;
+          break;
+        case 'End':
+          nextIndex = tabs.length - 1;
+          break;
+        default:
+          break;
+      }
+
+      if (nextIndex === null) {
+        return;
+      }
+
+      event.preventDefault();
+      const nextTab = tabs[nextIndex];
+      focusTab(nextTab.id);
+    },
+    [focusTab, tabs],
+  );
 
   const pushLatency = useCallback(
     (snapshot: LatencySnapshot) => {
@@ -1775,10 +1835,15 @@ export default function App() {
                 role="tab"
                 aria-controls={`panel-${tab.id}`}
                 aria-selected={isActive}
+                ref={(element) => {
+                  tabRefs.current[tab.id] = element;
+                }}
+                data-tab-id={tab.id}
                 tabIndex={isActive ? 0 : -1}
                 className="kiosk__tabButton"
                 data-active={isActive ? 'true' : 'false'}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => focusTab(tab.id)}
+                onKeyDown={handleTabKeyDown}
               >
                 {tab.label}
               </button>
@@ -1786,13 +1851,13 @@ export default function App() {
           })}
         </div>
         <div className="kiosk__tabPanels">
-          {activeTab === 'chatgpt' ? (
-            <section
-              role="tabpanel"
-              id="panel-chatgpt"
-              aria-labelledby="tab-chatgpt"
-              className="kiosk__tabPanel"
-            >
+          <section
+            role="tabpanel"
+            id="panel-chatgpt"
+            aria-labelledby="tab-chatgpt"
+            className="kiosk__tabPanel"
+            data-state={activeTab === 'chatgpt' ? 'active' : 'inactive'}
+          >
               <section className="kiosk__stage" aria-labelledby="avatar-preview-title">
                 <div className="kiosk__avatar" data-state={visemeSummary.status.toLowerCase()}>
                   <AvatarRenderer frame={visemeFrame} assets={activeAvatar?.components ?? null} />
@@ -1829,16 +1894,15 @@ export default function App() {
                   <p className="meter__status">Speech gate: {audioGraph.isActive ? 'open' : 'closed'}</p>
                 </div>
               </section>
-            </section>
-          ) : null}
+          </section>
 
-          {activeTab === 'character' ? (
-            <section
-              role="tabpanel"
-              id="panel-character"
-              aria-labelledby="tab-character"
-              className="kiosk__tabPanel"
-            >
+          <section
+            role="tabpanel"
+            id="panel-character"
+            aria-labelledby="tab-character"
+            className="kiosk__tabPanel"
+            data-state={activeTab === 'character' ? 'active' : 'inactive'}
+          >
               <AvatarConfigurator avatarApi={activeBridge?.avatar} onActiveFaceChange={handleActiveFaceChange} />
               <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
                 <h2 id="kiosk-realtime-title">Realtime</h2>
@@ -1884,16 +1948,15 @@ export default function App() {
                   />
                 </div>
               </section>
-            </section>
-          ) : null}
+          </section>
 
-          {activeTab === 'local' ? (
-            <section
-              role="tabpanel"
-              id="panel-local"
-              aria-labelledby="tab-local"
-              className="kiosk__tabPanel"
-            >
+          <section
+            role="tabpanel"
+            id="panel-local"
+            aria-labelledby="tab-local"
+            className="kiosk__tabPanel"
+            data-state={activeTab === 'local' ? 'active' : 'inactive'}
+          >
               <section className="kiosk__controls">
                 <div className="control">
                   <label htmlFor="input-device">Microphone</label>
@@ -2048,8 +2111,7 @@ export default function App() {
                   })}
                 </div>
               </section>
-            </section>
-          ) : null}
+          </section>
         </div>
       </div>
 

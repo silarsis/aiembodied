@@ -122,6 +122,10 @@ main {
   gap: 2rem;
 }
 
+.kiosk__tabPanel[data-state='inactive'] {
+  display: none;
+}
+
 .statusChip {
   display: flex;
   flex-direction: column;
