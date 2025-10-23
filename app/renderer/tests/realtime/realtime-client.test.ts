@@ -22,10 +22,15 @@ class FakeReceiver {
 
 class FakePeerConnection {
   connectionState: RTCPeerConnectionState = 'new';
+  iceConnectionState: RTCIceConnectionState = 'new';
   iceGatheringState: RTCIceGatheringState = 'new';
+  signalingState: RTCSignalingState = 'stable';
   localDescription: RTCSessionDescriptionInit | null = null;
   remoteDescription: RTCSessionDescriptionInit | null = null;
-  onconnectionstatechange: (() => void) | null = null;
+  onconnectionstatechange: ((event: Event) => void) | null = null;
+  oniceconnectionstatechange: ((event: Event) => void) | null = null;
+  onicegatheringstatechange: ((event: Event) => void) | null = null;
+  onsignalingstatechange: ((event: Event) => void) | null = null;
   onicecandidate: ((event: RTCPeerConnectionIceEvent) => void) | null = null;
   ontrack: ((event: RTCTrackEvent) => void) | null = null;
   readonly addTrack = vi.fn();
@@ -44,6 +49,8 @@ class FakePeerConnection {
     send: vi.fn(),
     close: vi.fn(),
     onopen: null as ((this: RTCDataChannel, ev: Event) => void) | null,
+    onclose: null as ((this: RTCDataChannel, ev: Event) => void) | null,
+    onerror: null as ((this: RTCDataChannel, ev: Event) => void) | null,
     onmessage: null as ((this: RTCDataChannel, ev: MessageEvent) => void) | null,
   };
 
@@ -57,7 +64,7 @@ class FakePeerConnection {
 
   emitConnectionState(state: RTCPeerConnectionState) {
     this.connectionState = state;
-    this.onconnectionstatechange?.();
+    this.onconnectionstatechange?.(new Event('connectionstatechange'));
   }
 
   emitTrack(stream: MediaStream = new FakeMediaStream() as unknown as MediaStream) {
@@ -71,6 +78,21 @@ class FakePeerConnection {
   emitIceCandidate(candidate: RTCIceCandidate | null) {
     this.onicecandidate?.({ candidate } as RTCPeerConnectionIceEvent);
   }
+
+  emitIceConnectionState(state: RTCIceConnectionState) {
+    this.iceConnectionState = state;
+    this.oniceconnectionstatechange?.(new Event('iceconnectionstatechange'));
+  }
+
+  emitIceGatheringState(state: RTCIceGatheringState) {
+    this.iceGatheringState = state;
+    this.onicegatheringstatechange?.(new Event('icegatheringstatechange'));
+  }
+
+  emitSignalingState(state: RTCSignalingState) {
+    this.signalingState = state;
+    this.onsignalingstatechange?.(new Event('signalingstatechange'));
+  }
 }
 
 describe('RealtimeClient', () => {
@@ -82,11 +104,13 @@ describe('RealtimeClient', () => {
   const states: RealtimeClientState[] = [];
   const remoteStreamHandler = vi.fn();
   const sessionUpdateHandler = vi.fn();
+  const logHandler = vi.fn();
 
   beforeEach(() => {
     peers.length = 0;
     states.length = 0;
     remoteStreamHandler.mockReset();
+    logHandler.mockReset();
 
     fetchMock = (vi.fn().mockResolvedValue({
         ok: true,
@@ -115,6 +139,7 @@ describe('RealtimeClient', () => {
         },
         onRemoteStream: remoteStreamHandler,
         onSessionUpdated: sessionUpdateHandler,
+        onLog: logHandler,
       },
       jitterBufferMs: 80,
     });
@@ -124,6 +149,7 @@ describe('RealtimeClient', () => {
     await client.destroy();
     vi.useRealTimers();
     sessionUpdateHandler.mockReset();
+    logHandler.mockReset();
   });
 
   it('performs JSON handshake negotiation when supported and reports connected state', async () => {
@@ -167,66 +193,31 @@ describe('RealtimeClient', () => {
     expect(states.at(-1)?.status).toBe('connected');
   });
 
-  it('falls back to legacy SDP handshake when JSON is rejected', async () => {
+  it('logs handshake payloads including voice configuration', async () => {
     const stream = new FakeMediaStream() as unknown as MediaStream;
 
-    const unsupportedResponse = {
-      ok: false,
-      status: 400,
-      headers: {
-        get: (name: string) => (name.toLowerCase() === 'content-type' ? 'application/json' : null),
-      } as Pick<Headers, 'get'>,
-      json: vi.fn(async () => ({
-        error: {
-          code: 'unsupported_content_type',
-          message: 'Unsupported content type. This API method only accepts application/sdp requests.',
-        },
-      })),
-      text: vi.fn(async () => 'should-not-be-called'),
-    } as unknown as Response;
-
-    const successResponse = {
-      ok: true,
-      status: 201,
-      headers: {
-        get: (name: string) => (name.toLowerCase() === 'content-type' ? 'application/sdp' : null),
-      } as Pick<Headers, 'get'>,
-      text: vi.fn(async () => 'fallback-answer'),
-      json: vi.fn(async () => ({ rtc_connection: { sdp: 'unused' } })),
-    } as unknown as Response;
-
-    fetchMock
-      .mockResolvedValueOnce(unsupportedResponse)
-      .mockResolvedValueOnce(successResponse);
-
-    client.updateSessionConfig({ voice: 'alloy' });
+    client.updateSessionConfig({ voice: 'alloy', instructions: 'Hello' });
 
     await client.connect({ apiKey: 'test-key', inputStream: stream });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const logMessages = logHandler.mock.calls
+      .map(([entry]) => entry)
+      .filter((entry) => entry.message === 'Realtime JSON handshake request');
 
-    const firstCallInit = fetchMock.mock.calls[0]?.[1];
-    expect(firstCallInit?.headers).toMatchObject({
-      'Content-Type': 'application/json',
+    expect(logMessages.length).toBeGreaterThan(0);
+    const latest = logMessages.at(-1);
+    expect(latest?.data).toMatchObject({
+      body: {
+        sdp: 'fake-offer',
+        session: {
+          audio: { output: { voice: 'alloy' } },
+          session_parameters: {
+            instructions: 'Hello',
+          },
+        },
+      },
     });
-
-    const secondCallUrl = fetchMock.mock.calls[1]?.[0] as string;
-    const secondCallInit = fetchMock.mock.calls[1]?.[1];
-    expect(secondCallUrl).toContain('/v1/realtime/calls');
-    expect(secondCallUrl).toContain('model=gpt-4o-realtime-preview-2024-12-17');
-    expect(secondCallInit?.headers).toMatchObject({
-      'Content-Type': 'application/sdp',
-    });
-    expect(secondCallInit?.body).toBe('fake-offer');
-
-    const peer = peers[0];
-    const sendCalls = peer.dataChannel.send.mock.calls;
-    expect(sendCalls.length).toBeGreaterThan(0);
-
-    const sessionUpdatePayloads = sendCalls.map((call) => JSON.parse(call[0] as string));
-    expect(
-      sessionUpdatePayloads.some((payload) => payload.type === 'session.update' && payload.session?.voice === 'alloy'),
-    ).toBe(true);
+    expect(latest?.json).toContain('"voice": "alloy"');
   });
 
   it('includes voice and instructions in session.update payloads', async () => {
@@ -336,5 +327,32 @@ describe('RealtimeClient', () => {
 
     await expect(client.connect({ apiKey: 'bad-key', inputStream: stream })).rejects.toThrow();
     expect(states.at(-1)).toMatchObject({ status: 'error' });
+  });
+
+  it('logs request details when the realtime endpoint responds with HTTP 400', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      headers: {
+        get: (name: string) => (name.toLowerCase() === 'content-type' ? 'application/json' : null),
+      } as Pick<Headers, 'get'>,
+      json: async () => ({ error: { message: 'bad request' } }),
+      text: vi.fn(async () => ''),
+    } as unknown as Response);
+
+    const stream = new FakeMediaStream() as unknown as MediaStream;
+
+    await expect(client.connect({ apiKey: 'test-key', inputStream: stream })).rejects.toThrow();
+
+    const errorLogs = logHandler.mock.calls
+      .map(([entry]) => entry)
+      .filter((entry) => entry.message === 'Realtime endpoint request failed with HTTP 400');
+    expect(errorLogs.length).toBeGreaterThan(0);
+    const logEntry = errorLogs.at(-1);
+    expect(logEntry?.data).toMatchObject({
+      endpoint: expect.stringContaining('/v1/realtime/calls'),
+      body: expect.objectContaining({ sdp: 'fake-offer' }),
+    });
+    expect(logEntry?.json).toContain('"fake-offer"');
   });
 });

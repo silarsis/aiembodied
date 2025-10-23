@@ -9,7 +9,12 @@ export interface RealtimeClientState {
 export interface RealtimeClientCallbacks {
   onStateChange?: (state: RealtimeClientState) => void;
   onRemoteStream?: (stream: MediaStream) => void;
-  onLog?: (entry: { level: 'info' | 'warn' | 'error'; message: string; data?: unknown }) => void;
+  onLog?: (entry: {
+    level: 'info' | 'warn' | 'error';
+    message: string;
+    data?: unknown;
+    json?: string;
+  }) => void;
   onFirstAudioFrame?: () => void;
   onSessionUpdated?: (session: { voice?: string; instructions?: string; turnDetection?: string }) => void;
 }
@@ -42,8 +47,6 @@ export interface RealtimeClientConnectOptions {
 
 // Note: older code used a typed negotiation answer; currently unused.
 
-type HandshakeMode = 'unknown' | 'json' | 'sdp';
-
 function wait(durationMs: number): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, durationMs);
@@ -62,18 +65,6 @@ function describeError(error: unknown): string {
   }
 
   return typeof error === 'string' ? error : 'Unknown realtime client error';
-}
-
-class UnsupportedHandshakeContentTypeError extends Error {
-  readonly status: number;
-
-  readonly code?: string;
-
-  constructor(message: string, options: { status: number; code?: string }) {
-    super(message);
-    this.status = options.status;
-    this.code = options.code;
-  }
 }
 
 export class RealtimeClient {
@@ -119,8 +110,6 @@ export class RealtimeClient {
 
   private jitterBufferMs: number;
   private sessionConfig?: RealtimeClientOptions['sessionConfig'];
-  private handshakeMode: HandshakeMode = 'unknown';
-
   constructor(options: RealtimeClientOptions = {}) {
     this.endpoint = options.endpoint ?? 'https://api.openai.com/v1/realtime/calls';
     this.model = options.model ?? 'gpt-4o-realtime-preview-2024-12-17';
@@ -240,17 +229,48 @@ export class RealtimeClient {
     const peer = this.createPeerConnectionFn(configuration);
     this.peer = peer;
 
-    peer.onconnectionstatechange = () => {
+    peer.onconnectionstatechange = (event) => {
+      this.log('info', 'Realtime peer connection state change event', {
+        state: peer.connectionState,
+        iceConnectionState: peer.iceConnectionState,
+        event,
+      });
       this.handleConnectionStateChange();
     };
 
+    peer.oniceconnectionstatechange = (event) => {
+      this.log('info', 'Realtime ICE connection state change', {
+        state: peer.iceConnectionState,
+        event,
+      });
+    };
+
+    peer.onicegatheringstatechange = (event) => {
+      this.log('info', 'Realtime ICE gathering state change', {
+        state: peer.iceGatheringState,
+        event,
+      });
+    };
+
+    peer.onsignalingstatechange = (event) => {
+      this.log('info', 'Realtime signaling state change', {
+        state: peer.signalingState,
+        event,
+      });
+    };
+
     peer.onicecandidate = (event) => {
+      this.log('info', 'Realtime ICE candidate event', {
+        candidate: event.candidate,
+        event,
+      });
       if (!event.candidate) {
         this.log('info', 'ICE candidate gathering complete');
       }
     };
 
     peer.ontrack = (event) => {
+      this.log('info', 'Realtime track event received', event);
       this.handleRemoteTrack(event);
     };
 
@@ -270,10 +290,20 @@ export class RealtimeClient {
 
     try {
       this.controlChannel = peer.createDataChannel('oai-events', { ordered: true });
-      this.controlChannel.onopen = () => {
+      this.controlChannel.onopen = (event) => {
+        this.log('info', 'Realtime control data channel opened', event);
         this.sendSessionUpdate();
       };
+      this.controlChannel.onclose = (event) => {
+        this.log('warn', 'Realtime control data channel closed', event);
+      };
+      this.controlChannel.onerror = (event) => {
+        this.log('warn', 'Realtime control data channel error', event);
+      };
       this.controlChannel.onmessage = (event) => {
+        this.log('info', 'Realtime control channel message received', {
+          data: event.data,
+        });
         try {
           const payload = typeof event.data === 'string' ? JSON.parse(event.data) : null;
           if (payload && typeof payload === 'object') {
@@ -328,29 +358,7 @@ export class RealtimeClient {
 
     const offerSdp = offer.sdp ?? '';
 
-    let answerSdp: string | null = null;
-
-    if (this.handshakeMode !== 'sdp') {
-      try {
-        answerSdp = await this.performJsonHandshake(apiKey, offerSdp);
-        this.handshakeMode = 'json';
-      } catch (error) {
-        if (error instanceof UnsupportedHandshakeContentTypeError) {
-          this.handshakeMode = 'sdp';
-          this.log('warn', 'Realtime API rejected JSON handshake, retrying with SDP offer', {
-            status: error.status,
-            code: error.code,
-          });
-        } else {
-          throw error;
-        }
-      }
-    }
-
-    if (!answerSdp) {
-      answerSdp = await this.performSdpHandshake(apiKey, offerSdp);
-      this.handshakeMode = 'sdp';
-    }
+    const answerSdp = await this.performJsonHandshake(apiKey, offerSdp);
 
     await peer.setRemoteDescription({ type: 'answer', sdp: answerSdp });
     if (this.controlChannel && this.controlChannel.readyState === 'open') {
@@ -366,6 +374,11 @@ export class RealtimeClient {
       requestBody.session = sessionConfig;
     }
 
+    this.log('info', 'Realtime JSON handshake request', {
+      endpoint: this.endpoint,
+      body: requestBody,
+    });
+
     const response = await this.fetchFn(this.endpoint, {
       method: 'POST',
       headers: {
@@ -378,12 +391,21 @@ export class RealtimeClient {
     const contentTypeHeader = response.headers?.get?.('content-type') ?? '';
     const normalizedContentType = contentTypeHeader.toLowerCase();
 
+    this.log('info', 'Realtime JSON handshake response metadata', {
+      status: response.status,
+      contentType: normalizedContentType,
+    });
+
+    if (response.status === 400) {
+      this.log('error', 'Realtime endpoint request failed with HTTP 400', {
+        endpoint: this.endpoint,
+        body: requestBody,
+      });
+    }
+
     if (!response.ok) {
-      const { detail, code } = await this.readHandshakeErrorDetail(response, normalizedContentType);
+      const { detail } = await this.readHandshakeErrorDetail(response, normalizedContentType);
       const message = `Realtime handshake failed: HTTP ${response.status}${detail ? `: ${detail}` : ''}`;
-      if (code === 'unsupported_content_type' || detail?.toLowerCase().includes('unsupported content type')) {
-        throw new UnsupportedHandshakeContentTypeError(message, { status: response.status, code });
-      }
       throw new Error(message);
     }
 
@@ -400,44 +422,6 @@ export class RealtimeClient {
         if (rtcConnection && typeof rtcConnection === 'object' && typeof rtcConnection.sdp === 'string') {
           return rtcConnection.sdp;
         }
-      }
-    } else {
-      const answerText = await response.text();
-      if (answerText) {
-        return answerText;
-      }
-    }
-
-    throw new Error('Realtime handshake failed: missing answer SDP in response.');
-  }
-
-  private async performSdpHandshake(apiKey: string, offerSdp: string): Promise<string> {
-    const url = `${this.endpoint}?model=${encodeURIComponent(this.model)}`;
-    const response = await this.fetchFn(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/sdp',
-      },
-      body: offerSdp,
-    });
-
-    const contentTypeHeader = response.headers?.get?.('content-type') ?? '';
-    const normalizedContentType = contentTypeHeader.toLowerCase();
-
-    if (!response.ok) {
-      const { detail } = await this.readHandshakeErrorDetail(response, normalizedContentType);
-      throw new Error(`Realtime handshake failed: HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
-    }
-
-    if (normalizedContentType.includes('application/json')) {
-      const payload = (await response.json()) as
-        | { rtc_connection?: { sdp?: unknown } | null }
-        | undefined
-        | null;
-      const rtcConnection = payload?.rtc_connection;
-      if (rtcConnection && typeof rtcConnection === 'object' && typeof rtcConnection.sdp === 'string') {
-        return rtcConnection.sdp;
       }
     } else {
       const answerText = await response.text();
@@ -799,6 +783,23 @@ export class RealtimeClient {
   }
 
   private log(level: 'info' | 'warn' | 'error', message: string, data?: unknown): void {
-    this.callbacks.onLog?.({ level, message, data });
+    const json = this.serializeLogData(data);
+    this.callbacks.onLog?.({ level, message, data, json });
+  }
+
+  private serializeLogData(data: unknown): string | undefined {
+    if (data === undefined) {
+      return undefined;
+    }
+
+    if (typeof data === 'string') {
+      return data;
+    }
+
+    try {
+      return JSON.stringify(data, null, 2);
+    } catch {
+      return typeof data === 'object' ? '[unserializable object]' : String(data);
+    }
   }
 }

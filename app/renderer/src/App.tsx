@@ -881,12 +881,13 @@ export default function App() {
         },
         onLog: (entry) => {
           const prefix = '[RealtimeClient]';
+          const details = entry.json ?? entry.data;
           if (entry.level === 'error') {
-            console.error(prefix, entry.message, entry.data);
+            console.error(prefix, entry.message, details);
           } else if (entry.level === 'warn') {
-            console.warn(prefix, entry.message, entry.data);
+            console.warn(prefix, entry.message, details);
           } else {
-            console.debug(prefix, entry.message, entry.data);
+            console.debug(prefix, entry.message, details);
           }
         },
       },
