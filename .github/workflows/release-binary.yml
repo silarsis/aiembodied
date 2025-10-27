@@ -79,7 +79,7 @@ jobs:
 
       - name: Upload AppImage artifact
         if: steps.release.outputs.changed == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: aiembodied-${{ steps.release.outputs.release_version }}-appimage
           path: release/*.AppImage
