@@ -34,6 +34,7 @@ export interface MemoryStoreExport {
   kv: Record<string, string>;
   faces: FaceRecord[];
   faceComponents: SerializedFaceComponent[];
+  vrmModels: SerializedVrmModel[];
 }
 
 export type ImportStrategy = 'replace' | 'merge';
@@ -60,6 +61,20 @@ export interface FaceComponentRecord {
 
 interface SerializedFaceComponent extends Omit<FaceComponentRecord, 'data'> {
   data: string;
+}
+
+export interface VrmModelRecord {
+  id: string;
+  name: string;
+  createdAt: number;
+  filePath: string;
+  fileSha: string;
+  version: string;
+  thumbnail: Buffer | null;
+}
+
+interface SerializedVrmModel extends Omit<VrmModelRecord, 'thumbnail'> {
+  thumbnail: string | null;
 }
 
 const MIGRATIONS: readonly Migration[] = [
@@ -109,6 +124,21 @@ const MIGRATIONS: readonly Migration[] = [
       `CREATE INDEX IF NOT EXISTS faces_created_idx ON faces(created_at DESC, id DESC);`,
     ],
   },
+  {
+    version: 3,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS vrm_models (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        file_path TEXT NOT NULL,
+        file_sha TEXT NOT NULL,
+        version TEXT NOT NULL,
+        thumbnail BLOB NULL
+      );`,
+      `CREATE INDEX IF NOT EXISTS vrm_models_created_idx ON vrm_models(created_at DESC, id DESC);`,
+    ],
+  },
 ];
 
 function runMigrations(db: SqliteDatabase) {
@@ -149,6 +179,7 @@ function normalizeAudioPath(audioPath: string | null | undefined): string | null
 }
 
 const ACTIVE_FACE_KEY = 'avatar.activeFaceId';
+const ACTIVE_VRM_KEY = 'avatar.activeVrmId';
 
 export class MemoryStore {
   private readonly db: SqliteDatabase;
@@ -484,6 +515,101 @@ export class MemoryStore {
     }
   }
 
+  createVrmModel(model: VrmModelRecord): void {
+    this.ensureOpen();
+
+    const stmt = this.db.prepare<VrmModelRecord>(
+      `INSERT INTO vrm_models (id, name, created_at, file_path, file_sha, version, thumbnail)
+       VALUES (@id, @name, @createdAt, @filePath, @fileSha, @version, @thumbnail);`,
+    );
+
+    stmt.run({
+      id: model.id,
+      name: model.name,
+      createdAt: model.createdAt,
+      filePath: model.filePath,
+      fileSha: model.fileSha,
+      version: model.version,
+      thumbnail: model.thumbnail ?? null,
+    });
+  }
+
+  listVrmModels(): VrmModelRecord[] {
+    this.ensureOpen();
+
+    const stmt = this.db.prepare(
+      `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha, version, thumbnail
+       FROM vrm_models
+       ORDER BY created_at DESC, id DESC;`,
+    );
+
+    const rows = stmt.all() as Array<{
+      id: string;
+      name: string;
+      createdAt: number;
+      filePath: string;
+      fileSha: string;
+      version: string;
+      thumbnail: Buffer | null;
+    }>;
+
+    return rows.map((row) => ({
+      id: String(row.id),
+      name: String(row.name),
+      createdAt: Number(row.createdAt),
+      filePath: String(row.filePath),
+      fileSha: String(row.fileSha),
+      version: String(row.version),
+      thumbnail: row.thumbnail ? Buffer.from(row.thumbnail) : null,
+    }));
+  }
+
+  getVrmModel(id: string): VrmModelRecord | null {
+    this.ensureOpen();
+
+    const stmt = this.db.prepare(
+      `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha, version, thumbnail
+       FROM vrm_models WHERE id = ?;`,
+    );
+
+    const row = stmt.get(id) as
+      | {
+          id: string;
+          name: string;
+          createdAt: number;
+          filePath: string;
+          fileSha: string;
+          version: string;
+          thumbnail: Buffer | null;
+        }
+      | undefined;
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: String(row.id),
+      name: String(row.name),
+      createdAt: Number(row.createdAt),
+      filePath: String(row.filePath),
+      fileSha: String(row.fileSha),
+      version: String(row.version),
+      thumbnail: row.thumbnail ? Buffer.from(row.thumbnail) : null,
+    };
+  }
+
+  deleteVrmModel(modelId: string): void {
+    this.ensureOpen();
+
+    const stmt = this.db.prepare(`DELETE FROM vrm_models WHERE id = ?;`);
+    stmt.run(modelId);
+
+    if (this.getActiveVrmModelId() === modelId) {
+      this.setActiveVrmModel(null);
+    }
+  }
+
   getActiveFaceId(): string | null {
     return this.getValue(ACTIVE_FACE_KEY);
   }
@@ -495,6 +621,19 @@ export class MemoryStore {
     }
 
     this.setValue(ACTIVE_FACE_KEY, faceId);
+  }
+
+  getActiveVrmModelId(): string | null {
+    return this.getValue(ACTIVE_VRM_KEY);
+  }
+
+  setActiveVrmModel(modelId: string | null): void {
+    if (!modelId) {
+      this.deleteValue(ACTIVE_VRM_KEY);
+      return;
+    }
+
+    this.setValue(ACTIVE_VRM_KEY, modelId);
   }
 
   setValue(key: string, value: string): void {
@@ -545,6 +684,10 @@ export class MemoryStore {
       `SELECT id, face_id as faceId, slot, sequence, mime_type as mimeType, data
        FROM face_components ORDER BY face_id ASC, sequence ASC, id ASC;`,
     );
+    const vrmModelsStmt = this.db.prepare(
+      `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha, version, thumbnail
+       FROM vrm_models ORDER BY created_at ASC, id ASC;`,
+    );
     const kvStmt = this.db.prepare(`SELECT key, value FROM kv ORDER BY key ASC;`);
 
     const sessionRows = sessionsStmt.all() as Array<{
@@ -563,6 +706,15 @@ export class MemoryStore {
     }>;
 
     const faceRows = facesStmt.all() as Array<{ id: string; name: string; createdAt: number }>;
+    const vrmModelRows = vrmModelsStmt.all() as Array<{
+      id: string;
+      name: string;
+      createdAt: number;
+      filePath: string;
+      fileSha: string;
+      version: string;
+      thumbnail: Buffer | null;
+    }>;
     const componentRows = faceComponentsStmt.all() as Array<{
       id: string;
       faceId: string;
@@ -602,6 +754,16 @@ export class MemoryStore {
       data: Buffer.from(row.data).toString('base64'),
     }));
 
+    const vrmModels: SerializedVrmModel[] = vrmModelRows.map((row) => ({
+      id: String(row.id),
+      name: String(row.name),
+      createdAt: Number(row.createdAt),
+      filePath: String(row.filePath),
+      fileSha: String(row.fileSha),
+      version: String(row.version),
+      thumbnail: row.thumbnail ? Buffer.from(row.thumbnail).toString('base64') : null,
+    }));
+
     const kvEntries = kvStmt.all() as Array<{ key: string; value: string }>;
     const kv: Record<string, string> = {};
 
@@ -609,7 +771,7 @@ export class MemoryStore {
       kv[entry.key] = entry.value;
     }
 
-    return { sessions, messages, kv, faces, faceComponents };
+    return { sessions, messages, kv, faces, faceComponents, vrmModels };
   }
 
   importData(data: MemoryStoreExport, options?: { strategy?: ImportStrategy }): void {
@@ -623,6 +785,7 @@ export class MemoryStore {
         this.db.prepare(`DELETE FROM face_components;`).run();
         this.db.prepare(`DELETE FROM faces;`).run();
         this.db.prepare(`DELETE FROM kv;`).run();
+        this.db.prepare(`DELETE FROM vrm_models;`).run();
       }
 
       const insertSession = this.db.prepare<SessionRecord>(
@@ -694,6 +857,30 @@ export class MemoryStore {
           sequence: component.sequence,
           mimeType: component.mimeType,
           data: Buffer.from(component.data, 'base64'),
+        });
+      }
+
+      const insertVrmModel = this.db.prepare<VrmModelRecord>(
+        `INSERT INTO vrm_models (id, name, created_at, file_path, file_sha, version, thumbnail)
+         VALUES (@id, @name, @createdAt, @filePath, @fileSha, @version, @thumbnail)
+         ON CONFLICT(id) DO UPDATE SET
+           name = excluded.name,
+           created_at = excluded.created_at,
+           file_path = excluded.file_path,
+           file_sha = excluded.file_sha,
+           version = excluded.version,
+           thumbnail = excluded.thumbnail;`,
+      );
+
+      for (const model of data.vrmModels ?? []) {
+        insertVrmModel.run({
+          id: model.id,
+          name: model.name,
+          createdAt: model.createdAt,
+          filePath: model.filePath,
+          fileSha: model.fileSha,
+          version: model.version,
+          thumbnail: model.thumbnail ? Buffer.from(model.thumbnail, 'base64') : null,
         });
       }
 
