@@ -107,9 +107,12 @@ describe('preload bridge', () => {
     await api.avatar?.deleteModel('vrm-3');
     expect(invoke).toHaveBeenCalledWith('avatar-model:delete', 'vrm-3');
 
-    const buffer = new ArrayBuffer(8);
+    const buffer = new Uint8Array([1, 2, 3, 4]).buffer;
     invoke.mockResolvedValueOnce(buffer);
-    await expect(api.avatar?.loadModelBinary('vrm-4')).resolves.toBe(buffer);
+    const cloned = await api.avatar?.loadModelBinary('vrm-4');
+    expect(cloned).toBeInstanceOf(ArrayBuffer);
+    expect(cloned).not.toBe(buffer);
+    expect(new Uint8Array(cloned as ArrayBuffer)).toEqual(new Uint8Array(buffer));
     expect(invoke).toHaveBeenCalledWith('avatar-model:load', 'vrm-4');
   });
 });
