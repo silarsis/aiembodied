@@ -81,4 +81,30 @@ describe('preload bridge', () => {
     unsubscribe();
     expect(removeListener).toHaveBeenCalledWith('wake-word:event', handler);
   });
+
+  it('exposes avatar model helpers through the bridge', async () => {
+    const [, api] = exposeInMainWorld.mock.calls[0];
+
+    invoke.mockResolvedValueOnce([]);
+    await expect(api.avatar?.listModels()).resolves.toEqual([]);
+    expect(invoke).toHaveBeenCalledWith('avatar-model:list');
+
+    invoke.mockResolvedValueOnce({ id: 'vrm-1' });
+    await expect(api.avatar?.getActiveModel()).resolves.toEqual({ id: 'vrm-1' });
+    expect(invoke).toHaveBeenCalledWith('avatar-model:get-active');
+
+    invoke.mockResolvedValueOnce({ id: 'vrm-2' });
+    await expect(api.avatar?.setActiveModel('vrm-2')).resolves.toEqual({ id: 'vrm-2' });
+    expect(invoke).toHaveBeenCalledWith('avatar-model:set-active', 'vrm-2');
+
+    invoke.mockResolvedValueOnce({ model: { id: 'vrm-3' } });
+    await expect(api.avatar?.uploadModel({ fileName: 'model.vrm', data: 'AAAA' })).resolves.toEqual({
+      model: { id: 'vrm-3' },
+    });
+    expect(invoke).toHaveBeenCalledWith('avatar-model:upload', { fileName: 'model.vrm', data: 'AAAA' });
+
+    invoke.mockResolvedValueOnce(true);
+    await api.avatar?.deleteModel('vrm-3');
+    expect(invoke).toHaveBeenCalledWith('avatar-model:delete', 'vrm-3');
+  });
 });

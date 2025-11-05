@@ -27,7 +27,14 @@ import type { LatencyObservation } from './metrics/types.js';
 import { AutoLaunchManager } from './lifecycle/auto-launch.js';
 import { createDevTray } from './lifecycle/dev-tray.js';
 import { AvatarFaceService } from './avatar/avatar-face-service.js';
-import type { AvatarUploadRequest, AvatarGenerationResult } from './avatar/types.js';
+import { AvatarModelService } from './avatar/avatar-model-service.js';
+import type {
+  AvatarUploadRequest,
+  AvatarGenerationResult,
+  AvatarModelSummary,
+  AvatarModelUploadRequest,
+  AvatarModelUploadResult,
+} from './avatar/types.js';
 import {
   resolvePreloadScriptPath,
   resolveRendererEntryPoint,
@@ -90,6 +97,7 @@ let metricsCollector: PrometheusCollector | null = null;
 let autoLaunchManager: AutoLaunchManager | null = null;
 let developmentTray: Tray | null = null;
 let avatarFaceService: AvatarFaceService | null = null;
+let avatarModelService: AvatarModelService | null = null;
 let currentRealtimeApiKey: string | null = null;
 
 const createWindow = () => {
@@ -254,6 +262,7 @@ function registerIpcHandlers(
   manager: ConfigManager,
   conversation: ConversationManager | null,
   metrics: PrometheusCollector | null,
+  avatarModels: AvatarModelService | null,
 ) {
   // Preload diagnostics bridge: allow preload/renderer to forward logs to main logger
   try {
@@ -512,6 +521,42 @@ function registerIpcHandlers(
     }
     return avatarFaceService.applyGeneratedFace(payload.generationId, payload.candidateId, payload.name);
   });
+  ipcMain.handle('avatar-model:list', async () => {
+    if (!avatarModels) {
+      return [] as AvatarModelSummary[];
+    }
+
+    return avatarModels.listModels();
+  });
+  ipcMain.handle('avatar-model:get-active', async () => {
+    if (!avatarModels) {
+      return null;
+    }
+
+    return avatarModels.getActiveModel();
+  });
+  ipcMain.handle('avatar-model:set-active', async (_event, modelId: string | null) => {
+    if (!avatarModels) {
+      throw new Error('Avatar model service is unavailable.');
+    }
+
+    return avatarModels.setActiveModel(modelId);
+  });
+  ipcMain.handle('avatar-model:upload', async (_event, payload: AvatarModelUploadRequest) => {
+    if (!avatarModels) {
+      throw new Error('Avatar model service is unavailable.');
+    }
+
+    return avatarModels.uploadModel(payload) as Promise<AvatarModelUploadResult>;
+  });
+  ipcMain.handle('avatar-model:delete', async (_event, modelId: string) => {
+    if (!avatarModels) {
+      throw new Error('Avatar model service is unavailable.');
+    }
+
+    await avatarModels.deleteModel(modelId);
+    return true;
+  });
 }
 
 function focusExistingWindow() {
@@ -551,6 +596,11 @@ app.whenReady().then(async () => {
 
   try {
     memoryStore = new MemoryStore({ filePath: path.join(app.getPath('userData'), 'memory.db') });
+    avatarModelService = new AvatarModelService({
+      store: memoryStore,
+      modelsDirectory: path.join(app.getPath('userData'), 'vrm-models'),
+      logger,
+    });
     conversationManager = new ConversationManager({
       store: memoryStore,
       logger,
@@ -690,7 +740,7 @@ app.whenReady().then(async () => {
   }
 
   try {
-    registerIpcHandlers(manager, conversationManager, metricsCollector);
+    registerIpcHandlers(manager, conversationManager, metricsCollector, avatarModelService);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Unknown IPC handler registration error occurred.';

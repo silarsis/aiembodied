@@ -7,6 +7,7 @@ import {
   type MemoryStoreExport,
   type FaceComponentRecord,
   type FaceRecord,
+  type VrmModelRecord,
 } from '../src/memory/memory-store.js';
 
 const tempDirs: string[] = [];
@@ -132,6 +133,17 @@ describe('MemoryStore', () => {
     };
     original.createFace(face, [component]);
     original.setActiveFace('face-1');
+    const vrmModel: VrmModelRecord = {
+      id: 'vrm-1',
+      name: 'VRM Model',
+      createdAt: startedAt,
+      filePath: path.join('models', 'vrm-1.vrm'),
+      fileSha: 'sha-123',
+      version: '1.0',
+      thumbnail: Buffer.from([7, 7, 7]),
+    };
+    original.createVrmModel(vrmModel);
+    original.setActiveVrmModel('vrm-1');
 
     const exported = original.exportData();
 
@@ -144,6 +156,9 @@ describe('MemoryStore', () => {
     expect(replacement.getValue('lastSessionId')).toBe('session-1');
     expect(replacement.listFaces()).toHaveLength(1);
     expect(replacement.getFaceComponent('face-1', 'base')?.data.equals(Buffer.from([1, 2, 3]))).toBe(true);
+    expect(replacement.listVrmModels()).toHaveLength(1);
+    expect(replacement.getActiveVrmModelId()).toBe('vrm-1');
+    expect(replacement.getVrmModel('vrm-1')?.thumbnail?.equals(Buffer.from([7, 7, 7]))).toBe(true);
 
     const mergeTarget = await createStore();
     mergeTarget.createSession({ id: 'session-2', startedAt: startedAt + 500, title: 'Keep me' });
@@ -182,6 +197,7 @@ describe('MemoryStore', () => {
     expect(mergedSessions.map((session) => session.id)).toContain('session-1');
     expect(mergedSessions.map((session) => session.id)).toContain('session-2');
     expect(mergeTarget.listFaces().map((item) => item.id)).toEqual(['face-keep', 'face-1']);
+    expect(mergeTarget.listVrmModels().map((item) => item.id)).toContain('vrm-1');
   });
 
   it('stores avatar faces and resets active face when deleted', async () => {
@@ -208,5 +224,32 @@ describe('MemoryStore', () => {
     store.deleteFace('face-10');
     expect(store.listFaces()).toHaveLength(0);
     expect(store.getActiveFaceId()).toBeNull();
+  });
+
+  it('stores VRM models and resets active model when deleted', async () => {
+    const store = await createStore();
+    const createdAt = Date.now();
+    const model: VrmModelRecord = {
+      id: 'vrm-42',
+      name: 'Primary VRM',
+      createdAt,
+      filePath: path.join('assets', 'vrm-42.vrm'),
+      fileSha: 'hash-42',
+      version: '1.0',
+      thumbnail: Buffer.from([1, 2, 3]),
+    };
+
+    store.createVrmModel(model);
+    store.setActiveVrmModel('vrm-42');
+
+    const listed = store.listVrmModels();
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({ id: 'vrm-42', name: 'Primary VRM', version: '1.0' });
+    expect(listed[0].thumbnail?.equals(Buffer.from([1, 2, 3]))).toBe(true);
+    expect(store.getActiveVrmModelId()).toBe('vrm-42');
+
+    store.deleteVrmModel('vrm-42');
+    expect(store.listVrmModels()).toHaveLength(0);
+    expect(store.getActiveVrmModelId()).toBeNull();
   });
 });
