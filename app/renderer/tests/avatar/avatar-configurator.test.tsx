@@ -44,6 +44,35 @@ function mockFileReader(mockDataUrl: string) {
   };
 }
 
+function createAvatarBridgeStub(overrides: Partial<AvatarBridge> = {}): AvatarBridge {
+  return {
+    listFaces: vi.fn().mockResolvedValue([]),
+    getActiveFace: vi.fn().mockResolvedValue(null),
+    setActiveFace: vi.fn().mockResolvedValue(null),
+    generateFace: vi
+      .fn()
+      .mockResolvedValue({ generationId: 'gen-stub', candidates: [] } as AvatarGenerationResult),
+    applyGeneratedFace: vi.fn().mockResolvedValue({ faceId: 'stub' }),
+    deleteFace: vi.fn().mockResolvedValue(undefined),
+    listModels: vi.fn().mockResolvedValue([]),
+    getActiveModel: vi.fn().mockResolvedValue(null),
+    setActiveModel: vi.fn().mockResolvedValue(null),
+    uploadModel: vi.fn().mockResolvedValue({
+      model: {
+        id: 'vrm-stub',
+        name: 'Stub',
+        createdAt: Date.now(),
+        version: '1.0',
+        fileSha: 'stub',
+        thumbnailDataUrl: null,
+      },
+    }),
+    deleteModel: vi.fn().mockResolvedValue(undefined),
+    loadModelBinary: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
+    ...overrides,
+  };
+}
+
 describe('AvatarConfigurator', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -71,14 +100,14 @@ describe('AvatarConfigurator', () => {
     const generateFace = vi.fn().mockResolvedValue({ generationId: 'gen-1', candidates: [{ id: 'cand-1', strategy: 'responses', previewDataUrl: SAMPLE_PREVIEW, componentsCount: 9, qualityScore: 100 }] } as AvatarGenerationResult);
     const applyGeneratedFace = vi.fn().mockResolvedValue({ faceId: 'face-1' });
 
-    const avatarApi: AvatarBridge = {
+    const avatarApi = createAvatarBridgeStub({
       listFaces,
       getActiveFace,
       setActiveFace,
       deleteFace,
       generateFace,
       applyGeneratedFace,
-    };
+    });
 
     const onActive = vi.fn();
 
@@ -118,14 +147,14 @@ describe('AvatarConfigurator', () => {
     const setActiveFace = vi.fn();
     const deleteFace = vi.fn();
 
-    const avatarApi: AvatarBridge = {
+    const avatarApi = createAvatarBridgeStub({
       listFaces,
       getActiveFace,
       generateFace,
       applyGeneratedFace,
       setActiveFace,
       deleteFace,
-    };
+    });
 
     const mockDataUrl = 'data:image/png;base64,bmV3ZmFjZQ==';
 
@@ -167,14 +196,14 @@ describe('AvatarConfigurator', () => {
     const setActiveFace = vi.fn();
     const deleteFace = vi.fn();
 
-    const avatarApi: AvatarBridge = {
+    const avatarApi = createAvatarBridgeStub({
       listFaces,
       getActiveFace,
       generateFace,
       applyGeneratedFace,
       setActiveFace,
       deleteFace,
-    };
+    });
 
     const restoreFileReader = mockFileReader('data:image/png;base64,cGVuZGluZw==');
 
@@ -237,14 +266,14 @@ describe('AvatarConfigurator', () => {
     const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
 
     try {
-      const avatarApi: AvatarBridge = {
+      const avatarApi = createAvatarBridgeStub({
         listFaces: vi.fn().mockResolvedValue([]),
         getActiveFace: vi.fn().mockResolvedValue(null),
         setActiveFace: vi.fn().mockResolvedValue(null),
         generateFace: vi.fn().mockResolvedValue({ generationId: 'gen-x', candidates: [] } as AvatarGenerationResult),
         applyGeneratedFace: vi.fn().mockResolvedValue({ faceId: 'id' }),
         deleteFace: vi.fn().mockResolvedValue(undefined),
-      };
+      });
 
       render(<AvatarConfigurator avatarApi={avatarApi} />);
       await waitFor(() => expect(infoSpy).toHaveBeenCalled());

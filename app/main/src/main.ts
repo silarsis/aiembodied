@@ -557,6 +557,13 @@ function registerIpcHandlers(
     await avatarModels.deleteModel(modelId);
     return true;
   });
+  ipcMain.handle('avatar-model:load', async (_event, modelId: string) => {
+    if (!avatarModels) {
+      throw new Error('Avatar model service is unavailable.');
+    }
+
+    return avatarModels.loadModelBinary(modelId);
+  });
 }
 
 function focusExistingWindow() {

@@ -115,6 +115,7 @@ export interface AvatarBridge {
   setActiveModel(modelId: string | null): Promise<AvatarModelSummary | null>;
   uploadModel(request: AvatarModelUploadRequest): Promise<AvatarModelUploadResult>;
   deleteModel(modelId: string): Promise<void>;
+  loadModelBinary(modelId: string): Promise<ArrayBuffer>;
 }
 
 const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
@@ -184,6 +185,42 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       ipcRenderer.invoke('avatar-model:upload', payload) as Promise<AvatarModelUploadResult>,
     deleteModel: async (modelId) => {
       await ipcRenderer.invoke('avatar-model:delete', modelId);
+    },
+    loadModelBinary: async (modelId) => {
+      const payload = await ipcRenderer.invoke('avatar-model:load', modelId);
+      const sharedArrayBufferCtor = typeof SharedArrayBuffer === 'undefined' ? null : SharedArrayBuffer;
+
+      const cloneFromView = (view: ArrayBufferView): ArrayBuffer => {
+        const copy = new Uint8Array(view.byteLength);
+        copy.set(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+        return copy.buffer;
+      };
+
+      if (payload instanceof ArrayBuffer) {
+        return payload.slice(0);
+      }
+
+      if (sharedArrayBufferCtor && payload instanceof sharedArrayBufferCtor) {
+        const view = new Uint8Array(payload);
+        const copy = new Uint8Array(view.length);
+        copy.set(view);
+        return copy.buffer;
+      }
+
+      if (ArrayBuffer.isView(payload)) {
+        return cloneFromView(payload as ArrayBufferView);
+      }
+
+      if (payload && typeof payload === 'object' && 'data' in (payload as { data?: unknown })) {
+        const dataField = (payload as { data?: unknown }).data;
+        if (typeof dataField === 'object' && dataField && ArrayBuffer.isView(dataField)) {
+          return cloneFromView(dataField as ArrayBufferView);
+        }
+      }
+
+      const message = 'Unexpected VRM binary payload received from main process.';
+      logPreloadError(message, { modelId, payloadType: typeof payload });
+      throw new Error(message);
     },
   },
   ping: () => 'pong',
