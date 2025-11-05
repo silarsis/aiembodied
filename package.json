@@ -12,11 +12,17 @@
     "dev:run": "node scripts/run-dev.mjs",
     "dist": "pnpm build && electron-builder --config electron-builder.yml"
   },
+  "dependencies": {
+    "@pixiv/three-vrm": "^3.4.4",
+    "three": "^0.181.0",
+    "three-stdlib": "^2.36.0"
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@testing-library/jest-dom": "^6.4.2",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^24.10.0",
+    "@types/three": "^0.181.0",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^18.2.22",
     "@typescript-eslint/eslint-plugin": "^8.46.3",

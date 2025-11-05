@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { Buffer } from 'node:buffer';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile as fsReadFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -18,6 +18,7 @@ interface FileSystemAdapter {
   mkdir: (target: string) => Promise<void>;
   writeFile: (target: string, data: Buffer) => Promise<void>;
   rm: (target: string) => Promise<void>;
+  readFile: (target: string) => Promise<Buffer>;
 }
 
 interface AvatarModelServiceOptions {
@@ -291,6 +292,9 @@ const defaultFs: FileSystemAdapter = {
   rm: async (target) => {
     await rm(target, { force: true });
   },
+  readFile: async (target) => {
+    return await fsReadFile(target);
+  },
 };
 
 export class AvatarModelService {
@@ -340,6 +344,30 @@ export class AvatarModelService {
 
     this.store.setActiveVrmModel(modelId);
     return this.toSummary(record);
+  }
+
+  async loadModelBinary(modelId: string): Promise<ArrayBuffer> {
+    const record = this.store.getVrmModel(modelId);
+    if (!record) {
+      throw new Error('Requested VRM model is not available.');
+    }
+
+    try {
+      const buffer = await this.fs.readFile(record.filePath);
+      if (buffer.length === 0) {
+        throw new Error('VRM model binary is empty.');
+      }
+
+      return bufferToArrayBuffer(buffer);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.error?.('Failed to load VRM model binary.', {
+        modelId,
+        filePath: record.filePath,
+        message,
+      });
+      throw new Error('Failed to load VRM model binary from disk.');
+    }
   }
 
   async uploadModel(request: AvatarModelUploadRequest): Promise<AvatarModelUploadResult> {

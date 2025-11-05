@@ -251,4 +251,40 @@ describe('AvatarModelService', () => {
     await service.setActiveModel(null);
     expect(store.getActiveVrmModelId()).toBeNull();
   });
+
+  it('loads VRM binaries as array buffers for known models', async () => {
+    const { store, modelsDirectory } = await createEnvironment();
+    const service = new AvatarModelService({ store, modelsDirectory });
+
+    mockParser({ metaVersion: '1', name: 'Model' });
+    const uploaded = await service.uploadModel({
+      fileName: 'model.vrm',
+      data: createMockVrmGlb().toString('base64'),
+    });
+
+    const buffer = await service.loadModelBinary(uploaded.model.id);
+    expect(buffer).toBeInstanceOf(ArrayBuffer);
+    expect(new Uint8Array(buffer).length).toBeGreaterThan(0);
+  });
+
+  it('throws a descriptive error when loading binaries fails', async () => {
+    const { store, modelsDirectory } = await createEnvironment();
+    const failingFs = {
+      mkdir: vi.fn().mockResolvedValue(undefined),
+      writeFile: vi.fn().mockResolvedValue(undefined),
+      rm: vi.fn().mockResolvedValue(undefined),
+      readFile: vi.fn().mockRejectedValue(new Error('nope')),
+    };
+    const service = new AvatarModelService({ store, modelsDirectory, fs: failingFs });
+
+    mockParser({ metaVersion: '1', name: 'Model' });
+    const uploaded = await service.uploadModel({
+      fileName: 'model.vrm',
+      data: createMockVrmGlb().toString('base64'),
+    });
+
+    await expect(service.loadModelBinary(uploaded.model.id)).rejects.toThrow(
+      /failed to load vrm model binary/i,
+    );
+  });
 });

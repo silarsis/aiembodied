@@ -105,6 +105,21 @@ function createAvatarBridgeMock(overrides: Partial<AvatarBridge> = {}): AvatarBr
     generateFace: vi.fn().mockResolvedValue({ generationId: 'gen-ui', candidates: [] } as AvatarGenerationResult),
     applyGeneratedFace: vi.fn().mockResolvedValue({ faceId: 'avatar-face-id' }),
     deleteFace: vi.fn().mockResolvedValue(undefined),
+    listModels: vi.fn().mockResolvedValue([]),
+    getActiveModel: vi.fn().mockResolvedValue(null),
+    setActiveModel: vi.fn().mockResolvedValue(null),
+    uploadModel: vi.fn().mockResolvedValue({
+      model: {
+        id: 'vrm-0',
+        name: 'Default',
+        createdAt: Date.now(),
+        version: '1.0',
+        fileSha: 'sha',
+        thumbnailDataUrl: null,
+      },
+    }),
+    deleteModel: vi.fn().mockResolvedValue(undefined),
+    loadModelBinary: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
     ...overrides,
   };
 }
