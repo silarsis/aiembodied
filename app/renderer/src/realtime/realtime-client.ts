@@ -28,6 +28,8 @@ export interface RealtimeClientOptions {
   reconnectDelaysMs?: number[];
   jitterBufferMs?: number;
   maxReconnectAttempts?: number;
+  // Handshake content type: default JSON; some deployments require application/sdp
+  handshakeMode?: 'json' | 'sdp';
   sessionConfig?: {
     instructions?: string;
     turnDetection?: 'none' | 'server_vad';
@@ -110,6 +112,7 @@ export class RealtimeClient {
 
   private jitterBufferMs: number;
   private sessionConfig?: RealtimeClientOptions['sessionConfig'];
+  private handshakeMode: 'json' | 'sdp';
   constructor(options: RealtimeClientOptions = {}) {
     this.endpoint = options.endpoint ?? 'https://api.openai.com/v1/realtime/calls';
     this.model = options.model ?? 'gpt-4o-realtime-preview-2024-12-17';
@@ -120,6 +123,7 @@ export class RealtimeClient {
     this.maxReconnectAttempts = options.maxReconnectAttempts ?? Math.max(this.reconnectDelays.length, 3);
     this.jitterBufferMs = options.jitterBufferMs ?? 100;
     this.sessionConfig = options.sessionConfig;
+    this.handshakeMode = options.handshakeMode ?? 'json';
   }
 
   getState(): RealtimeClientState {
@@ -358,7 +362,10 @@ export class RealtimeClient {
 
     const offerSdp = offer.sdp ?? '';
 
-    const answerSdp = await this.performJsonHandshake(apiKey, offerSdp);
+    const answerSdp =
+      this.handshakeMode === 'sdp'
+        ? await this.performSdpHandshake(apiKey, offerSdp)
+        : await this.performJsonHandshake(apiKey, offerSdp);
 
     await peer.setRemoteDescription({ type: 'answer', sdp: answerSdp });
     if (this.controlChannel && this.controlChannel.readyState === 'open') {
@@ -400,6 +407,65 @@ export class RealtimeClient {
       this.log('error', 'Realtime endpoint request failed with HTTP 400', {
         endpoint: this.endpoint,
         body: requestBody,
+      });
+    }
+
+    if (!response.ok) {
+      const { detail } = await this.readHandshakeErrorDetail(response, normalizedContentType);
+      const message = `Realtime handshake failed: HTTP ${response.status}${detail ? `: ${detail}` : ''}`;
+      throw new Error(message);
+    }
+
+    if (normalizedContentType.includes('application/json')) {
+      const payload = (await response.json()) as
+        | { sdp?: unknown; rtc_connection?: { sdp?: unknown } | null }
+        | undefined
+        | null;
+      if (payload && typeof payload === 'object') {
+        if (typeof payload.sdp === 'string') {
+          return payload.sdp;
+        }
+        const rtcConnection = payload.rtc_connection;
+        if (rtcConnection && typeof rtcConnection === 'object' && typeof rtcConnection.sdp === 'string') {
+          return rtcConnection.sdp;
+        }
+      }
+    } else {
+      const answerText = await response.text();
+      if (answerText) {
+        return answerText;
+      }
+    }
+
+    throw new Error('Realtime handshake failed: missing answer SDP in response.');
+  }
+
+  private async performSdpHandshake(apiKey: string, offerSdp: string): Promise<string> {
+    this.log('info', 'Realtime SDP handshake request', {
+      endpoint: this.endpoint,
+    });
+
+    const response = await this.fetchFn(this.endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/sdp',
+      },
+      body: offerSdp,
+    });
+
+    const contentTypeHeader = response.headers?.get?.('content-type') ?? '';
+    const normalizedContentType = contentTypeHeader.toLowerCase();
+
+    this.log('info', 'Realtime SDP handshake response metadata', {
+      status: response.status,
+      contentType: normalizedContentType,
+    });
+
+    if (response.status === 400) {
+      this.log('error', 'Realtime endpoint request failed with HTTP 400', {
+        endpoint: this.endpoint,
+        body: '<SDP omitted>',
       });
     }
 
