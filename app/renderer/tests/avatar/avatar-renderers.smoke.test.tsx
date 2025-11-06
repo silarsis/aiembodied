@@ -1,14 +1,69 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AvatarRenderer } from '../../src/avatar/avatar-renderer.js';
 import { VrmAvatarRenderer } from '../../src/avatar/vrm-avatar-renderer.js';
+import { IdleAnimationScheduler } from '../../src/avatar/animations/idle-scheduler.js';
 
 vi.mock('three', () => {
   const noop = () => {};
+
+  class Euler {
+    constructor(public x = 0, public y = 0, public z = 0) {}
+  }
+
+  class Quaternion {
+    constructor(public x = 0, public y = 0, public z = 0, public w = 1) {}
+
+    clone(): Quaternion {
+      return new Quaternion(this.x, this.y, this.z, this.w);
+    }
+
+    setFromEuler(euler: Euler): Quaternion {
+      this.x = euler.x;
+      this.y = euler.y;
+      this.z = euler.z;
+      this.w = 1;
+      return this;
+    }
+
+    multiply(quaternion: Quaternion): Quaternion {
+      this.x += quaternion.x;
+      this.y += quaternion.y;
+      this.z += quaternion.z;
+      this.w += quaternion.w - 1;
+      return this;
+    }
+  }
+
+  class NumberKeyframeTrack {
+    constructor(public name: string, public times: number[], public values: number[]) {}
+
+    clone(): NumberKeyframeTrack {
+      return new NumberKeyframeTrack(this.name, [...this.times], [...this.values]);
+    }
+  }
+
+  class QuaternionKeyframeTrack extends NumberKeyframeTrack {}
+
+  class AnimationClip {
+    constructor(public name: string, public duration: number, public tracks: unknown[]) {}
+
+    clone(): AnimationClip {
+      return new AnimationClip(this.name, this.duration, [...this.tracks]);
+    }
+  }
+
+  const MathUtils = {
+    degToRad: (degrees: number) => (degrees * Math.PI) / 180,
+  } as const;
+
+  const LoopRepeat = 'loop-repeat';
+  const LoopOnce = 'loop-once';
 
   class MockScene {
     children: MockScene[] = [];
     position = { set: noop };
     rotation = { y: 0 };
+    quaternion = new Quaternion();
     frustumCulled = false;
 
     add(child: MockScene) {
@@ -58,21 +113,40 @@ vi.mock('three', () => {
     }
   }
   class AnimationMixer {
+    actions: Array<{ clip: AnimationClip; play: () => unknown; stop: () => unknown }> = [];
+    listeners = new Map<string, Set<(event: unknown) => void>>();
+
     constructor(public readonly root?: unknown) {}
-    clipAction() {
-      return {
+
+    clipAction(clip: AnimationClip) {
+      const action: any = {
+        clip,
         clampWhenFinished: false,
         enabled: false,
-        setLoop: noop,
-        setEffectiveWeight: noop,
-        setEffectiveTimeScale: noop,
-        reset: noop,
-        play: noop,
-        stop: noop,
-        fadeIn: noop,
-        fadeOut: noop,
+        setLoop: () => action,
+        setEffectiveWeight: () => action,
+        setEffectiveTimeScale: () => action,
+        reset: () => action,
+        play: () => action,
+        stop: () => action,
+        fadeIn: () => action,
+        fadeOut: () => action,
       };
+      this.actions.push(action);
+      return action;
     }
+
+    addEventListener(type: string, handler: (event: unknown) => void) {
+      if (!this.listeners.has(type)) {
+        this.listeners.set(type, new Set());
+      }
+      this.listeners.get(type)?.add(handler);
+    }
+
+    removeEventListener(type: string, handler: (event: unknown) => void) {
+      this.listeners.get(type)?.delete(handler);
+    }
+
     stopAllAction = noop;
     update = noop;
   }
@@ -91,6 +165,15 @@ vi.mock('three', () => {
     WebGLRenderer,
     AnimationMixer,
     Mesh,
+    Object3D,
+    Quaternion,
+    Euler,
+    NumberKeyframeTrack,
+    QuaternionKeyframeTrack,
+    AnimationClip,
+    MathUtils,
+    LoopRepeat,
+    LoopOnce,
     MockScene,
   };
 });
@@ -102,6 +185,15 @@ vi.mock('three/examples/jsm/loaders/GLTFLoader.js', () => {
     children: MockScene[] = [];
     position = { set: noop };
     rotation = { y: 0 };
+    quaternion = {
+      x: 0,
+      y: 0,
+      z: 0,
+      w: 1,
+      clone() {
+        return { ...this };
+      },
+    };
     frustumCulled = false;
 
     add(child: MockScene) {
@@ -130,7 +222,19 @@ vi.mock('three/examples/jsm/loaders/GLTFLoader.js', () => {
           setValue: noop,
           update: noop,
           resetValues: noop,
+          getExpressionTrackName: (name: string) => name,
         },
+        humanoid: {
+          getNormalizedBoneNode: (name: string) => {
+            const node = new MockScene();
+            (node as unknown as { name?: string }).name = name;
+            return node;
+          },
+          normalizedRestPose: {
+            hips: { position: [0, 1, 0] as [number, number, number] },
+          },
+        },
+        meta: { metaVersion: '1' },
         update: noop,
       };
       return { scene: new MockScene(), parser: {}, userData: { vrm } };
@@ -180,11 +284,23 @@ vi.mock('@pixiv/three-vrm', () => {
     setValue = noop;
     update = noop;
     resetValues = noop;
+    getExpressionTrackName = (name: string) => name;
   }
 
   class MockVRM {
     scene = new MockScene();
     expressionManager = new MockExpressionManager();
+    humanoid = {
+      getNormalizedBoneNode: (name: string) => {
+        const node = new MockScene();
+        (node as unknown as { name?: string }).name = name;
+        return node;
+      },
+      normalizedRestPose: {
+        hips: { position: [0, 1, 0] as [number, number, number] },
+      },
+    };
+    meta = { metaVersion: '1' };
     update = noop;
   }
 
@@ -256,6 +372,32 @@ describe('avatar renderer smoke tests', () => {
     expect(container.querySelector('canvas[data-renderer="vrm"]')).toBeTruthy();
     await waitFor(() => {
       expect(loadModelBinary).toHaveBeenCalledWith('vrm-1');
+    });
+  });
+
+  it('starts idle animation scheduling after the VRM model loads', async () => {
+    const loadModelBinary = vi.fn().mockResolvedValue(new ArrayBuffer(8));
+    (window as { aiembodied?: unknown }).aiembodied = {
+      avatar: { loadModelBinary },
+    };
+
+    const updateSpy = vi.spyOn(IdleAnimationScheduler.prototype, 'update');
+    const configSpy = vi.spyOn(IdleAnimationScheduler.prototype, 'updateConfig');
+
+    render(
+      <VrmAvatarRenderer
+        frame={null}
+        model={{ id: 'vrm-2', name: 'Idle Model', createdAt: Date.now(), version: '1.0', fileSha: 'def', thumbnailDataUrl: null }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(loadModelBinary).toHaveBeenCalledWith('vrm-2');
+    });
+
+    await waitFor(() => {
+      expect(configSpy).toHaveBeenCalled();
+      expect(updateSpy).toHaveBeenCalled();
     });
   });
 });

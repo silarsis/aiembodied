@@ -199,12 +199,17 @@ describe('VrmAvatarRenderer behavior cues', () => {
             }
             return null;
           },
+          normalizedRestPose: {
+            hips: { position: [0, 1, 0] as [number, number, number] },
+          },
         },
         expressionManager: {
           resetValues: vi.fn(),
           setValue: vi.fn(),
           update: vi.fn(),
+          getExpressionTrackName: vi.fn((name: string) => name),
         },
+        meta: { metaVersion: '1' },
         update: vi.fn(),
       } as unknown as VRM;
     };
@@ -280,7 +285,8 @@ describe('VrmAvatarRenderer behavior cues', () => {
 
     cameraListener?.({ cue: 'greet_face', timestamp: Date.now() });
 
-    const action = threeMockState.mixers[0]?.actions[0];
+    const mixer = threeMockState.mixers[0];
+    const action = mixer?.actions.at(-1);
     expect(action?.reset).toHaveBeenCalled();
     expect(action?.play).toHaveBeenCalled();
   });
