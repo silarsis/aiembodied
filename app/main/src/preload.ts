@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { ConfigSecretKey, RendererConfig } from './config/config-manager.js';
 import type { AudioDevicePreferences } from './config/preferences-store.js';
 import type {
+  AvatarDisplayMode,
   AvatarFaceDetail,
   AvatarFaceSummary,
   AvatarUploadRequest,
@@ -116,6 +117,9 @@ export interface AvatarBridge {
   uploadModel(request: AvatarModelUploadRequest): Promise<AvatarModelUploadResult>;
   deleteModel(modelId: string): Promise<void>;
   loadModelBinary(modelId: string): Promise<ArrayBuffer>;
+  getDisplayModePreference(): Promise<AvatarDisplayMode>;
+  setDisplayModePreference(mode: AvatarDisplayMode): Promise<void>;
+  triggerBehaviorCue(cue: string): Promise<void>;
 }
 
 const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
@@ -221,6 +225,14 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       const message = 'Unexpected VRM binary payload received from main process.';
       logPreloadError(message, { modelId, payloadType: typeof payload });
       throw new Error(message);
+    },
+    getDisplayModePreference: () =>
+      ipcRenderer.invoke('avatar:get-display-mode') as Promise<AvatarDisplayMode>,
+    setDisplayModePreference: async (mode) => {
+      await ipcRenderer.invoke('avatar:set-display-mode', mode);
+    },
+    triggerBehaviorCue: async (cue) => {
+      await ipcRenderer.invoke('avatar:trigger-behavior', cue);
     },
   },
   ping: () => 'pong',

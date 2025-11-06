@@ -120,6 +120,9 @@ function createAvatarBridgeMock(overrides: Partial<AvatarBridge> = {}): AvatarBr
     }),
     deleteModel: vi.fn().mockResolvedValue(undefined),
     loadModelBinary: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
+    getDisplayModePreference: vi.fn().mockResolvedValue('sprites'),
+    setDisplayModePreference: vi.fn().mockResolvedValue(undefined),
+    triggerBehaviorCue: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }

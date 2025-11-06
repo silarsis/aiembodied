@@ -1,3 +1,5 @@
+export type AvatarDisplayMode = 'sprites' | 'vrm';
+
 export type AvatarComponentSlot =
   | 'base'
   | 'eyes-open'
@@ -86,4 +88,7 @@ export interface AvatarBridge {
   uploadModel(request: AvatarModelUploadRequest): Promise<AvatarModelUploadResult>;
   deleteModel(modelId: string): Promise<void>;
   loadModelBinary(modelId: string): Promise<ArrayBuffer>;
+  getDisplayModePreference(): Promise<AvatarDisplayMode>;
+  setDisplayModePreference(mode: AvatarDisplayMode): Promise<void>;
+  triggerBehaviorCue(cue: string): Promise<void>;
 }

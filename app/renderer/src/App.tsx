@@ -23,14 +23,8 @@ import { getPreloadApi, type PreloadApi } from './preload-api.js';
 import { RealtimeClient, type RealtimeClientState } from './realtime/realtime-client.js';
 import { LatencyTracker, type LatencySnapshot } from './metrics/latency-tracker.js';
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
-import type { AvatarFaceDetail, AvatarModelSummary } from './avatar/types.js';
-import {
-  AVATAR_DISPLAY_STORAGE_KEY,
-  DEFAULT_AVATAR_DISPLAY_STATE,
-  avatarDisplayReducer,
-  parseAvatarDisplayMode,
-  shouldRenderVrm,
-} from './avatar/display-mode.js';
+import type { AvatarDisplayMode, AvatarFaceDetail, AvatarModelSummary } from './avatar/types.js';
+import { DEFAULT_AVATAR_DISPLAY_STATE, avatarDisplayReducer, shouldRenderVrm } from './avatar/display-mode.js';
 
 const CURSOR_IDLE_TIMEOUT_MS = 3000;
 const WAKE_ACTIVE_DURATION_MS = 4000;
@@ -614,23 +608,6 @@ export default function App() {
   const [avatarDisplayState, dispatchAvatarDisplay] = useReducer(
     avatarDisplayReducer,
     DEFAULT_AVATAR_DISPLAY_STATE,
-    (base) => {
-      if (typeof window === 'undefined') {
-        return base;
-      }
-
-      try {
-        const stored = window.localStorage?.getItem(AVATAR_DISPLAY_STORAGE_KEY);
-        const parsed = parseAvatarDisplayMode(stored);
-        if (parsed) {
-          return { ...base, mode: parsed, preference: parsed };
-        }
-      } catch (error) {
-        console.warn('Failed to read avatar display preference from storage.', error);
-      }
-
-      return base;
-    },
   );
   const [isListeningEnabled, setListeningEnabled] = useState(true);
   const tabs = useMemo<TabDefinition[]>(
@@ -649,17 +626,52 @@ export default function App() {
   });
   const activeBridge = resolveApi();
 
+  const persistAvatarDisplayPreference = useCallback(
+    async (mode: AvatarDisplayMode) => {
+      const bridge = resolveApi();
+      const avatar = bridge?.avatar;
+      if (!avatar?.setDisplayModePreference) {
+        return;
+      }
+
+      try {
+        await avatar.setDisplayModePreference(mode);
+      } catch (error) {
+        console.warn('Failed to persist avatar display preference.', error);
+      }
+    },
+    [resolveApi],
+  );
+
   useEffect(() => {
-    if (typeof window === 'undefined') {
+    const bridge = resolveApi();
+    const avatar = bridge?.avatar;
+    if (!avatar?.getDisplayModePreference) {
       return;
     }
 
-    try {
-      window.localStorage?.setItem(AVATAR_DISPLAY_STORAGE_KEY, avatarDisplayState.preference);
-    } catch (error) {
-      console.warn('Failed to persist avatar display preference to storage.', error);
-    }
-  }, [avatarDisplayState.preference]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const stored = await avatar.getDisplayModePreference();
+        if (cancelled) {
+          return;
+        }
+
+        if (stored === 'sprites' || stored === 'vrm') {
+          dispatchAvatarDisplay({ type: 'set-mode', mode: stored });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('Failed to load avatar display preference from store.', error);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dispatchAvatarDisplay, resolveApi]);
 
   useEffect(() => {
     if (avatarDisplayState.preference === 'vrm' && !activeVrmModel) {
@@ -796,12 +808,18 @@ export default function App() {
     [dispatchAvatarDisplay],
   );
 
+  const setAvatarDisplayPreference = useCallback(
+    (mode: AvatarDisplayMode) => {
+      dispatchAvatarDisplay({ type: 'set-mode', mode });
+      void persistAvatarDisplayPreference(mode);
+    },
+    [dispatchAvatarDisplay, persistAvatarDisplayPreference],
+  );
+
   const toggleAvatarDisplayMode = useCallback(() => {
-    dispatchAvatarDisplay({
-      type: 'set-mode',
-      mode: avatarDisplayState.preference === 'vrm' ? 'sprites' : 'vrm',
-    });
-  }, [avatarDisplayState.preference, dispatchAvatarDisplay]);
+    const nextMode: AvatarDisplayMode = avatarDisplayState.preference === 'vrm' ? 'sprites' : 'vrm';
+    setAvatarDisplayPreference(nextMode);
+  }, [avatarDisplayState.preference, setAvatarDisplayPreference]);
 
   const applySessionHistory = useCallback((session: ConversationSessionWithMessages | null) => {
     if (!session) {
@@ -2031,7 +2049,13 @@ export default function App() {
             className="kiosk__tabPanel"
             data-state={activeTab === 'character' ? 'active' : 'inactive'}
           >
-              <AvatarConfigurator avatarApi={activeBridge?.avatar} onActiveFaceChange={handleActiveFaceChange} />
+              <AvatarConfigurator
+                avatarApi={activeBridge?.avatar}
+                onActiveFaceChange={handleActiveFaceChange}
+                onActiveModelChange={setActiveVrmModel}
+                displayModePreference={avatarDisplayState.preference}
+                onDisplayModePreferenceChange={setAvatarDisplayPreference}
+              />
               <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
                 <h2 id="kiosk-realtime-title">Realtime</h2>
                 <div className="control">
