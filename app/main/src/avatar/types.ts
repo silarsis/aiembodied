@@ -12,6 +12,8 @@ export const AVATAR_COMPONENT_SLOTS = [
 
 export type AvatarComponentSlot = (typeof AVATAR_COMPONENT_SLOTS)[number];
 
+export type AvatarDisplayMode = 'sprites' | 'vrm';
+
 export interface AvatarFaceSummary {
   id: string;
   name: string;
@@ -55,4 +57,23 @@ export interface AvatarGenerationCandidateSummary {
 export interface AvatarGenerationResult {
   generationId: string;
   candidates: AvatarGenerationCandidateSummary[];
+}
+
+export interface AvatarModelSummary {
+  id: string;
+  name: string;
+  createdAt: number;
+  version: string;
+  fileSha: string;
+  thumbnailDataUrl: string | null;
+}
+
+export interface AvatarModelUploadRequest {
+  name?: string;
+  fileName: string;
+  data: string; // base64 encoded binary contents
+}
+
+export interface AvatarModelUploadResult {
+  model: AvatarModelSummary;
 }

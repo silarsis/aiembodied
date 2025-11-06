@@ -68,6 +68,7 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 ### Rendering & avatar
 - The initial avatar implementation is a Canvas/WebGL sprite renderer mapping viseme intensity to discrete mouth shapes and idle animations. Future Unity integration will consume the same `VisemeFrame` stream via IPC without altering upstream audio or persistence layers.
 - When using the OpenAI Images API from the avatar face service, always convert base64 source portraits to a `File` with `toFile` from `openai/uploads` and pass that `File` to `images.edit`/`images.edits.create` so uploads are handled as media payloads.
+- Idle animation helpers live in `app/renderer/src/avatar/animations`. Use `createVrmAnimationClip` and `IdleAnimationScheduler` to register background motions, ensure the scheduler is updated every frame, and add unit tests alongside any new idle clips.
 
 ### Observability, packaging, and environment
 - Winston logging (with rolling files) captures lifecycle diagnostics across processes, supplemented by optional Prometheus metrics exporters for latency tracking.
@@ -116,3 +117,11 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 - 2025-10-25 — Renderer kiosk layout now presents ChatGPT, Character, and Local panels via a left-rail tablist. Update renderer tests to activate the appropriate tab before querying controls.
 - 2025-10-26 — Renderer kiosk tab panels must remain mounted (use data-state toggles instead of conditional rendering) so avatar configuration loads immediately on launch. Tests should assert the character panel fetches its active face even when the tab starts inactive.
 - 2025-10-27 — When wiring global keyboard shortcuts in the renderer, use DOM `KeyboardEvent` types for window listeners and keep React synthetic `KeyboardEvent` typings scoped to component handlers so `pnpm typecheck` remains happy.
+- 2025-10-30 — VRM avatar models now persist under `userData/vrm-models` with metadata stored in the `vrm_models` table (`id`, `name`, `created_at`, `file_path`, `file_sha`, `version`, `thumbnail`). The active model key lives at `avatar.activeVrmId` in the memory store. Preload exposes `listModels`, `uploadModel`, `deleteModel`, `setActiveModel`, and `getActiveModel` bridges; update renderer code to use these IPC channels when managing VRM assets.
+- 2025-10-31 — VRM avatar renderer now ships alongside the sprite renderer. When touching renderer avatar code:
+  - Prefer updating `app/renderer/src/avatar/display-mode.ts` when adding new display toggles so tests in `tests/avatar/display-mode.test.ts` stay authoritative.
+  - VRM viseme/blink handling lives in `app/renderer/src/avatar/vrm-avatar-renderer.tsx`; keep helper functions exported for unit tests and extend `avatar-renderers.smoke.test.tsx` if the WebGL boot flow changes.
+  - Renderer IPC for VRM binaries flows through `avatar-model:load`; mocks in renderer tests should patch `window.aiembodied.avatar.loadModelBinary` when VRM coverage is required.
+- 2025-11-01 — Avatar configurator now surfaces VRM model management, display mode selection, and manual wave testing. Update `avatar-configurator.test.tsx` when adjusting VRM uploads, display preferences, or behavior cue plumbing.
+- 2025-11-02 — Behavior cues now flow through the camera detection bridge. When simulating gestures in renderer tests, prefer stubbing `window.aiembodied.camera.emitDetection`/`onDetection` so `BehaviorCueProvider` observes the event instead of calling `avatar.triggerBehaviorCue` directly.
+- 2025-11-03 — **Stub workflow:** Vitest suites that validate avatar gestures should wrap renders with `BehaviorCueProvider` (already applied in `App.tsx`) and patch the preload bridge via `vi.stubGlobal('aiembodied', { camera: { onDetection: fn, emitDetection: fn }})`. Emit normalized detections using `{ cue: 'greet_face', timestamp: Date.now() }` so cue listeners fire without touching legacy behavior triggers.

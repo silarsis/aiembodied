@@ -2,11 +2,15 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { ConfigSecretKey, RendererConfig } from './config/config-manager.js';
 import type { AudioDevicePreferences } from './config/preferences-store.js';
 import type {
+  AvatarDisplayMode,
   AvatarFaceDetail,
   AvatarFaceSummary,
   AvatarUploadRequest,
   AvatarUploadResult,
   AvatarGenerationResult,
+  AvatarModelSummary,
+  AvatarModelUploadRequest,
+  AvatarModelUploadResult,
 } from './avatar/types.js';
 import type {
   ConversationAppendMessagePayload,
@@ -80,6 +84,7 @@ export interface PreloadApi {
   conversation?: ConversationBridge;
   metrics?: MetricsBridge;
   avatar?: AvatarBridge;
+  camera?: CameraBridge;
   ping(): string;
   __bridgeReady?: boolean;
   __bridgeVersion?: string;
@@ -107,6 +112,28 @@ export interface AvatarBridge {
   generateFace(request: AvatarUploadRequest): Promise<AvatarGenerationResult>;
   applyGeneratedFace(generationId: string, candidateId: string, name?: string): Promise<AvatarUploadResult>;
   deleteFace(faceId: string): Promise<void>;
+  listModels(): Promise<AvatarModelSummary[]>;
+  getActiveModel(): Promise<AvatarModelSummary | null>;
+  setActiveModel(modelId: string | null): Promise<AvatarModelSummary | null>;
+  uploadModel(request: AvatarModelUploadRequest): Promise<AvatarModelUploadResult>;
+  deleteModel(modelId: string): Promise<void>;
+  loadModelBinary(modelId: string): Promise<ArrayBuffer>;
+  getDisplayModePreference(): Promise<AvatarDisplayMode>;
+  setDisplayModePreference(mode: AvatarDisplayMode): Promise<void>;
+  triggerBehaviorCue(cue: string): Promise<void>;
+}
+
+export interface CameraDetectionEvent {
+  cue: string;
+  timestamp?: number;
+  confidence?: number;
+  provider?: string;
+  payload?: Record<string, unknown> | null;
+}
+
+export interface CameraBridge {
+  onDetection(listener: (event: CameraDetectionEvent) => void): () => void;
+  emitDetection(event: CameraDetectionEvent): Promise<void>;
 }
 
 const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
@@ -168,6 +195,72 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     deleteFace: async (faceId) => {
       await ipcRenderer.invoke('avatar:delete-face', faceId);
     },
+    listModels: () => ipcRenderer.invoke('avatar-model:list') as Promise<AvatarModelSummary[]>,
+    getActiveModel: () => ipcRenderer.invoke('avatar-model:get-active') as Promise<AvatarModelSummary | null>,
+    setActiveModel: (modelId) =>
+      ipcRenderer.invoke('avatar-model:set-active', modelId) as Promise<AvatarModelSummary | null>,
+    uploadModel: (payload) =>
+      ipcRenderer.invoke('avatar-model:upload', payload) as Promise<AvatarModelUploadResult>,
+    deleteModel: async (modelId) => {
+      await ipcRenderer.invoke('avatar-model:delete', modelId);
+    },
+    loadModelBinary: async (modelId) => {
+      const payload = await ipcRenderer.invoke('avatar-model:load', modelId);
+      const sharedArrayBufferCtor = typeof SharedArrayBuffer === 'undefined' ? null : SharedArrayBuffer;
+
+      const cloneFromView = (view: ArrayBufferView): ArrayBuffer => {
+        const copy = new Uint8Array(view.byteLength);
+        copy.set(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+        return copy.buffer;
+      };
+
+      if (payload instanceof ArrayBuffer) {
+        return payload.slice(0);
+      }
+
+      if (sharedArrayBufferCtor && payload instanceof sharedArrayBufferCtor) {
+        const view = new Uint8Array(payload);
+        const copy = new Uint8Array(view.length);
+        copy.set(view);
+        return copy.buffer;
+      }
+
+      if (ArrayBuffer.isView(payload)) {
+        return cloneFromView(payload as ArrayBufferView);
+      }
+
+      if (payload && typeof payload === 'object' && 'data' in (payload as { data?: unknown })) {
+        const dataField = (payload as { data?: unknown }).data;
+        if (typeof dataField === 'object' && dataField && ArrayBuffer.isView(dataField)) {
+          return cloneFromView(dataField as ArrayBufferView);
+        }
+      }
+
+      const message = 'Unexpected VRM binary payload received from main process.';
+      logPreloadError(message, { modelId, payloadType: typeof payload });
+      throw new Error(message);
+    },
+    getDisplayModePreference: () =>
+      ipcRenderer.invoke('avatar:get-display-mode') as Promise<AvatarDisplayMode>,
+    setDisplayModePreference: async (mode) => {
+      await ipcRenderer.invoke('avatar:set-display-mode', mode);
+    },
+    triggerBehaviorCue: async (cue) => {
+      await ipcRenderer.invoke('avatar:trigger-behavior', cue);
+    },
+  },
+  camera: {
+    onDetection: (listener) => {
+      const channel = 'camera:detection';
+      const handler = (_event: unknown, payload: CameraDetectionEvent) => listener(payload);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
+    emitDetection: async (event) => {
+      await ipcRenderer.invoke('camera:emit-detection', event);
+    },
   },
   ping: () => 'pong',
   __bridgeReady: true,
@@ -177,6 +270,7 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
 logPreloadInfo('Preparing to expose renderer bridge.', {
   keys: Object.keys(api),
   hasAvatarBridge: typeof api.avatar !== 'undefined',
+  hasCameraBridge: typeof api.camera !== 'undefined',
 });
 
 function exposeBridge() {
@@ -185,6 +279,7 @@ function exposeBridge() {
     logPreloadInfo('Renderer bridge exposed successfully.', {
       keys: Object.keys(api),
       hasAvatarBridge: typeof api.avatar !== 'undefined',
+      hasCameraBridge: typeof api.camera !== 'undefined',
       bridgeReady: api.__bridgeReady,
       bridgeVersion: api.__bridgeVersion,
     });

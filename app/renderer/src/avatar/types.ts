@@ -1,3 +1,5 @@
+export type AvatarDisplayMode = 'sprites' | 'vrm';
+
 export type AvatarComponentSlot =
   | 'base'
   | 'eyes-open'
@@ -54,6 +56,25 @@ export interface AvatarGenerationResult {
   candidates: AvatarGenerationCandidateSummary[];
 }
 
+export interface AvatarModelSummary {
+  id: string;
+  name: string;
+  createdAt: number;
+  version: string;
+  fileSha: string;
+  thumbnailDataUrl: string | null;
+}
+
+export interface AvatarModelUploadRequest {
+  name?: string;
+  fileName: string;
+  data: string;
+}
+
+export interface AvatarModelUploadResult {
+  model: AvatarModelSummary;
+}
+
 export interface AvatarBridge {
   listFaces(): Promise<AvatarFaceSummary[]>;
   getActiveFace(): Promise<AvatarFaceDetail | null>;
@@ -61,4 +82,13 @@ export interface AvatarBridge {
   generateFace(request: AvatarUploadRequest): Promise<AvatarGenerationResult>;
   applyGeneratedFace(generationId: string, candidateId: string, name?: string): Promise<AvatarUploadResult>;
   deleteFace(faceId: string): Promise<void>;
+  listModels(): Promise<AvatarModelSummary[]>;
+  getActiveModel(): Promise<AvatarModelSummary | null>;
+  setActiveModel(modelId: string | null): Promise<AvatarModelSummary | null>;
+  uploadModel(request: AvatarModelUploadRequest): Promise<AvatarModelUploadResult>;
+  deleteModel(modelId: string): Promise<void>;
+  loadModelBinary(modelId: string): Promise<ArrayBuffer>;
+  getDisplayModePreference(): Promise<AvatarDisplayMode>;
+  setDisplayModePreference(mode: AvatarDisplayMode): Promise<void>;
+  triggerBehaviorCue(cue: string): Promise<void>;
 }

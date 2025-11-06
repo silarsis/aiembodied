@@ -105,6 +105,24 @@ function createAvatarBridgeMock(overrides: Partial<AvatarBridge> = {}): AvatarBr
     generateFace: vi.fn().mockResolvedValue({ generationId: 'gen-ui', candidates: [] } as AvatarGenerationResult),
     applyGeneratedFace: vi.fn().mockResolvedValue({ faceId: 'avatar-face-id' }),
     deleteFace: vi.fn().mockResolvedValue(undefined),
+    listModels: vi.fn().mockResolvedValue([]),
+    getActiveModel: vi.fn().mockResolvedValue(null),
+    setActiveModel: vi.fn().mockResolvedValue(null),
+    uploadModel: vi.fn().mockResolvedValue({
+      model: {
+        id: 'vrm-0',
+        name: 'Default',
+        createdAt: Date.now(),
+        version: '1.0',
+        fileSha: 'sha',
+        thumbnailDataUrl: null,
+      },
+    }),
+    deleteModel: vi.fn().mockResolvedValue(undefined),
+    loadModelBinary: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
+    getDisplayModePreference: vi.fn().mockResolvedValue('sprites'),
+    setDisplayModePreference: vi.fn().mockResolvedValue(undefined),
+    triggerBehaviorCue: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -199,8 +217,11 @@ describe('App component', () => {
     }
   });
 
+  const getMainTablist = () => screen.findByRole('tablist', { name: /Kiosk sections/i });
+
   const openTab = async (name: RegExp | string) => {
-    const tab = await screen.findByRole('tab', { name });
+    const tablist = await getMainTablist();
+    const tab = await within(tablist).findByRole('tab', { name });
     fireEvent.click(tab);
     return tab;
   };
@@ -223,7 +244,8 @@ describe('App component', () => {
 
     render(<App />);
 
-    const tabs = await screen.findAllByRole('tab');
+    const mainTablist = await getMainTablist();
+    const tabs = within(mainTablist).getAllByRole('tab');
     expect(tabs.map((tab) => tab.textContent)).toEqual(['ChatGPT', 'Character', 'Local']);
 
     const chatPanel = await screen.findByRole('tabpanel', { name: /ChatGPT/i });

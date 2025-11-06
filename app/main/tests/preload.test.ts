@@ -33,6 +33,7 @@ describe('preload bridge', () => {
     const [key, api] = exposeInMainWorld.mock.calls[0];
     expect(key).toBe('aiembodied');
     expect(api.config).toBeDefined();
+    expect(api.camera).toBeDefined();
     expect(api.ping()).toBe('pong');
 
     invoke.mockResolvedValueOnce({ hasRealtimeApiKey: true });
@@ -80,5 +81,73 @@ describe('preload bridge', () => {
 
     unsubscribe();
     expect(removeListener).toHaveBeenCalledWith('wake-word:event', handler);
+  });
+
+  it('exposes camera detection helpers through the bridge', async () => {
+    const [, api] = exposeInMainWorld.mock.calls[0];
+    const listener = vi.fn();
+    const unsubscribe = api.camera?.onDetection(listener);
+
+    const cameraCall = on.mock.calls.find(([channel]) => channel === 'camera:detection');
+    expect(cameraCall).toBeDefined();
+    const cameraHandler = cameraCall?.[1] as ((event: unknown, payload: unknown) => void) | undefined;
+    expect(typeof cameraHandler).toBe('function');
+
+    const payload = { cue: 'greet_face', confidence: 0.8, timestamp: 42 };
+    cameraHandler?.({}, payload);
+    expect(listener).toHaveBeenCalledWith(payload);
+
+    unsubscribe?.();
+    expect(removeListener).toHaveBeenCalledWith('camera:detection', cameraHandler);
+
+    invoke.mockResolvedValueOnce(true);
+    await api.camera?.emitDetection(payload);
+    expect(invoke).toHaveBeenCalledWith('camera:emit-detection', payload);
+  });
+
+  it('exposes avatar model helpers through the bridge', async () => {
+    const [, api] = exposeInMainWorld.mock.calls[0];
+
+    invoke.mockResolvedValueOnce([]);
+    await expect(api.avatar?.listModels()).resolves.toEqual([]);
+    expect(invoke).toHaveBeenCalledWith('avatar-model:list');
+
+    invoke.mockResolvedValueOnce({ id: 'vrm-1' });
+    await expect(api.avatar?.getActiveModel()).resolves.toEqual({ id: 'vrm-1' });
+    expect(invoke).toHaveBeenCalledWith('avatar-model:get-active');
+
+    invoke.mockResolvedValueOnce({ id: 'vrm-2' });
+    await expect(api.avatar?.setActiveModel('vrm-2')).resolves.toEqual({ id: 'vrm-2' });
+    expect(invoke).toHaveBeenCalledWith('avatar-model:set-active', 'vrm-2');
+
+    invoke.mockResolvedValueOnce({ model: { id: 'vrm-3' } });
+    await expect(api.avatar?.uploadModel({ fileName: 'model.vrm', data: 'AAAA' })).resolves.toEqual({
+      model: { id: 'vrm-3' },
+    });
+    expect(invoke).toHaveBeenCalledWith('avatar-model:upload', { fileName: 'model.vrm', data: 'AAAA' });
+
+    invoke.mockResolvedValueOnce(true);
+    await api.avatar?.deleteModel('vrm-3');
+    expect(invoke).toHaveBeenCalledWith('avatar-model:delete', 'vrm-3');
+
+    const buffer = new Uint8Array([1, 2, 3, 4]).buffer;
+    invoke.mockResolvedValueOnce(buffer);
+    const cloned = await api.avatar?.loadModelBinary('vrm-4');
+    expect(cloned).toBeInstanceOf(ArrayBuffer);
+    expect(cloned).not.toBe(buffer);
+    expect(new Uint8Array(cloned as ArrayBuffer)).toEqual(new Uint8Array(buffer));
+    expect(invoke).toHaveBeenCalledWith('avatar-model:load', 'vrm-4');
+
+    invoke.mockResolvedValueOnce('sprites');
+    await expect(api.avatar?.getDisplayModePreference()).resolves.toBe('sprites');
+    expect(invoke).toHaveBeenCalledWith('avatar:get-display-mode');
+
+    invoke.mockResolvedValueOnce(null);
+    await api.avatar?.setDisplayModePreference('vrm');
+    expect(invoke).toHaveBeenCalledWith('avatar:set-display-mode', 'vrm');
+
+    invoke.mockResolvedValueOnce(true);
+    await api.avatar?.triggerBehaviorCue('greet_face');
+    expect(invoke).toHaveBeenCalledWith('avatar:trigger-behavior', 'greet_face');
   });
 });

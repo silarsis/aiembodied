@@ -104,6 +104,8 @@ const deleteMessagesMock = vi.fn();
 const setValueMock = vi.fn();
 const getValueMock = vi.fn();
 const deleteValueMock = vi.fn();
+const getAvatarDisplayModeMock = vi.fn();
+const setAvatarDisplayModeMock = vi.fn();
 const exportDataMock = vi.fn();
 const importDataMock = vi.fn();
 const memoryStoreDisposeMock = vi.fn();
@@ -119,6 +121,8 @@ const MemoryStoreMock = vi.fn(() => ({
   setValue: setValueMock,
   getValue: getValueMock,
   deleteValue: deleteValueMock,
+  getAvatarDisplayMode: getAvatarDisplayModeMock,
+  setAvatarDisplayMode: setAvatarDisplayModeMock,
   exportData: exportDataMock,
   importData: importDataMock,
   dispose: memoryStoreDisposeMock,
@@ -238,6 +242,7 @@ BrowserWindowMock.getAllWindows = vi.fn(() => getAllWindowsResult);
 const dialogMock = { showErrorBox: vi.fn() };
 const ipcMainMock = {
   handle: vi.fn(),
+  on: vi.fn(),
 };
 
 const appEmitter = Object.assign(new EventEmitter(), {
@@ -266,6 +271,30 @@ vi.mock('electron', () => ({
   Tray: TrayMock,
   Menu: { buildFromTemplate: menuBuildFromTemplateMock },
   nativeImage: nativeImageMock,
+}));
+
+class AvatarModelServiceDouble {
+  listModels = vi.fn().mockResolvedValue([]);
+  getActiveModel = vi.fn().mockResolvedValue(null);
+  setActiveModel = vi.fn().mockResolvedValue(null);
+  uploadModel = vi.fn().mockResolvedValue({ model: { id: 'vrm-uploaded' } });
+  deleteModel = vi.fn().mockResolvedValue(undefined);
+  loadModelBinary = vi.fn().mockResolvedValue(new ArrayBuffer(0));
+
+  constructor(public readonly options: unknown) {}
+}
+
+const avatarModelServiceInstances: AvatarModelServiceDouble[] = [];
+const createAvatarModelServiceInstance = (options: unknown) => {
+  const instance = new AvatarModelServiceDouble(options);
+  avatarModelServiceInstances.push(instance);
+  return instance;
+};
+
+const AvatarModelServiceMock = vi.fn(createAvatarModelServiceInstance);
+
+vi.mock('../src/avatar/avatar-model-service.js', () => ({
+  AvatarModelService: AvatarModelServiceMock,
 }));
 
 const autoLaunchSyncMock = vi.fn<[], Promise<boolean>>();
@@ -347,6 +376,10 @@ describe('main process bootstrap', () => {
     AvatarFaceServiceMock.mockImplementation(createAvatarFaceServiceInstance);
     avatarFaceServiceInstances.length = 0;
 
+    AvatarModelServiceMock.mockReset();
+    AvatarModelServiceMock.mockImplementation(createAvatarModelServiceInstance);
+    avatarModelServiceInstances.length = 0;
+
     CrashGuardMock.mockReset();
     CrashGuardMock.mockImplementation(createCrashGuardInstance);
     crashGuardInstances.length = 0;
@@ -371,6 +404,7 @@ describe('main process bootstrap', () => {
 
     dialogMock.showErrorBox.mockReset();
     ipcMainMock.handle.mockReset();
+    ipcMainMock.on.mockReset();
 
     appEmitter.removeAllListeners();
     appEmitter.whenReady.mockReset();
@@ -402,6 +436,9 @@ describe('main process bootstrap', () => {
     setValueMock.mockReset();
     getValueMock.mockReset();
     deleteValueMock.mockReset();
+    getAvatarDisplayModeMock.mockReset();
+    setAvatarDisplayModeMock.mockReset();
+    getAvatarDisplayModeMock.mockReturnValue(null);
     exportDataMock.mockReset();
     importDataMock.mockReset();
     memoryStoreDisposeMock.mockReset();
@@ -562,7 +599,17 @@ describe('main process bootstrap', () => {
     expect(crashGuardInstances).toHaveLength(1);
     expect(crashGuardInstances[0].watch).toHaveBeenCalledWith(mainWindow);
 
-    expect(ipcMainMock.handle).toHaveBeenCalledTimes(14);
+    expect(ipcMainMock.on).toHaveBeenCalledWith('diagnostics:preload-log', expect.any(Function));
+    const diagnosticsHandler = ipcMainMock.on.mock.calls.find((call) => call[0] === 'diagnostics:preload-log')?.[1];
+    expect(typeof diagnosticsHandler).toBe('function');
+    diagnosticsHandler?.({}, { level: 'warn', message: 'preload warning', meta: { context: 'preload' }, ts: 1700000000 });
+    expect(mockLogger.warn).toHaveBeenCalledWith('preload warning', {
+      from: 'preload',
+      context: 'preload',
+      ts: 1700000000,
+    });
+
+    expect(ipcMainMock.handle).toHaveBeenCalledTimes(24);
     const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
 
     expect(mockLogger.info).toHaveBeenCalledWith('Avatar face service initialized.', {
@@ -676,6 +723,76 @@ describe('main process bootstrap', () => {
     expect(typeof deleteHandler).toBe('function');
     await expect(deleteHandler?.({}, 'face-1')).resolves.toBe(true);
     expect(avatarService?.deleteFace).toHaveBeenCalledWith('face-1');
+
+    const avatarModelService = avatarModelServiceInstances[avatarModelServiceInstances.length - 1];
+    expect(avatarModelService).toBeDefined();
+    expect(avatarModelService?.options).toMatchObject({
+      logger: mockLogger,
+      modelsDirectory: expect.stringContaining('vrm-models'),
+    });
+
+    const listModelsHandler = handleEntries.get('avatar-model:list');
+    expect(typeof listModelsHandler).toBe('function');
+    await expect(listModelsHandler?.({})).resolves.toEqual([]);
+    expect(avatarModelService?.listModels).toHaveBeenCalledTimes(1);
+
+    const getActiveModelHandler = handleEntries.get('avatar-model:get-active');
+    expect(typeof getActiveModelHandler).toBe('function');
+    await expect(getActiveModelHandler?.({})).resolves.toBeNull();
+    expect(avatarModelService?.getActiveModel).toHaveBeenCalledTimes(1);
+
+    const setActiveModelHandler = handleEntries.get('avatar-model:set-active');
+    expect(typeof setActiveModelHandler).toBe('function');
+    await expect(setActiveModelHandler?.({}, 'vrm-2')).resolves.toBeNull();
+    expect(avatarModelService?.setActiveModel).toHaveBeenCalledWith('vrm-2');
+
+    const uploadModelHandler = handleEntries.get('avatar-model:upload');
+    expect(typeof uploadModelHandler).toBe('function');
+    await expect(
+      uploadModelHandler?.({}, { fileName: 'model.vrm', data: 'AAAA' }),
+    ).resolves.toEqual({ model: { id: 'vrm-uploaded' } });
+    expect(avatarModelService?.uploadModel).toHaveBeenCalledWith({ fileName: 'model.vrm', data: 'AAAA' });
+
+    const deleteModelHandler = handleEntries.get('avatar-model:delete');
+    expect(typeof deleteModelHandler).toBe('function');
+    await expect(deleteModelHandler?.({}, 'vrm-3')).resolves.toBe(true);
+    expect(avatarModelService?.deleteModel).toHaveBeenCalledWith('vrm-3');
+
+    const loadModelBinaryHandler = handleEntries.get('avatar-model:load');
+    expect(typeof loadModelBinaryHandler).toBe('function');
+    await expect(loadModelBinaryHandler?.({}, 'vrm-4')).resolves.toBeInstanceOf(ArrayBuffer);
+    expect(avatarModelService?.loadModelBinary).toHaveBeenCalledWith('vrm-4');
+
+    getAvatarDisplayModeMock.mockReturnValueOnce('vrm');
+    const getDisplayModeHandler = handleEntries.get('avatar:get-display-mode');
+    expect(typeof getDisplayModeHandler).toBe('function');
+    await expect(getDisplayModeHandler?.({})).resolves.toBe('vrm');
+
+    const setDisplayModeHandler = handleEntries.get('avatar:set-display-mode');
+    expect(typeof setDisplayModeHandler).toBe('function');
+    await expect(setDisplayModeHandler?.({}, 'sprites')).resolves.toBeNull();
+    expect(setAvatarDisplayModeMock).toHaveBeenCalledWith('sprites');
+
+    const triggerBehaviorHandler = handleEntries.get('avatar:trigger-behavior');
+    expect(typeof triggerBehaviorHandler).toBe('function');
+    await expect(triggerBehaviorHandler?.({}, 'greet_face')).resolves.toBe(true);
+    expect(
+      mockLogger.info.mock.calls.some(
+        ([message, meta]) => message === 'Avatar behavior cue requested.' && (meta as { cue?: string })?.cue === 'greet_face',
+      ),
+    ).toBe(true);
+    expect(
+      mainWindow.webContents.send.mock.calls.some(
+        ([channel, payload]) => channel === 'camera:detection' && (payload as { cue?: string })?.cue === 'greet_face',
+      ),
+    ).toBe(true);
+
+    const cameraEmitHandler = handleEntries.get('camera:emit-detection');
+    expect(typeof cameraEmitHandler).toBe('function');
+    await expect(cameraEmitHandler?.({}, { cue: 'greet_face', confidence: 0.5 })).resolves.toBe(true);
+    expect(
+      mainWindow.webContents.send.mock.calls.filter((call) => call[0] === 'camera:detection').length,
+    ).toBeGreaterThanOrEqual(2);
 
     const wakePayload = { keywordLabel: 'Porcupine', confidence: 0.92, timestamp: Date.now() };
     wakeWordService.emit('wake', wakePayload);

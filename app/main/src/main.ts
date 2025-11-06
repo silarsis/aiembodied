@@ -27,7 +27,15 @@ import type { LatencyObservation } from './metrics/types.js';
 import { AutoLaunchManager } from './lifecycle/auto-launch.js';
 import { createDevTray } from './lifecycle/dev-tray.js';
 import { AvatarFaceService } from './avatar/avatar-face-service.js';
-import type { AvatarUploadRequest, AvatarGenerationResult } from './avatar/types.js';
+import { AvatarModelService } from './avatar/avatar-model-service.js';
+import type {
+  AvatarDisplayMode,
+  AvatarUploadRequest,
+  AvatarGenerationResult,
+  AvatarModelSummary,
+  AvatarModelUploadRequest,
+  AvatarModelUploadResult,
+} from './avatar/types.js';
 import {
   resolvePreloadScriptPath,
   resolveRendererEntryPoint,
@@ -39,6 +47,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const isProduction = app.isPackaged || process.env.NODE_ENV === 'production';
 const APP_NAME = 'AI Embodied Assistant';
+
+interface CameraDetectionEventPayload {
+  cue: string;
+  timestamp?: number;
+  confidence?: number;
+  provider?: string;
+  payload?: Record<string, unknown> | null;
+}
 
 if (!isProduction) {
   const repoRoot = path.resolve(__dirname, '../../..');
@@ -90,7 +106,35 @@ let metricsCollector: PrometheusCollector | null = null;
 let autoLaunchManager: AutoLaunchManager | null = null;
 let developmentTray: Tray | null = null;
 let avatarFaceService: AvatarFaceService | null = null;
+let avatarModelService: AvatarModelService | null = null;
 let currentRealtimeApiKey: string | null = null;
+
+function emitCameraDetection(event: CameraDetectionEventPayload): boolean {
+  const cue = typeof event.cue === 'string' ? event.cue.trim() : '';
+  if (!cue) {
+    throw new Error('Camera detection payload must include a cue identifier.');
+  }
+
+  const timestamp =
+    typeof event.timestamp === 'number' && Number.isFinite(event.timestamp) ? event.timestamp : Date.now();
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    logger.warn('Camera detection event dropped because main window is unavailable.', { cue });
+    return false;
+  }
+
+  const payload: CameraDetectionEventPayload = {
+    cue,
+    timestamp,
+    confidence: typeof event.confidence === 'number' ? event.confidence : undefined,
+    provider: typeof event.provider === 'string' ? event.provider : undefined,
+    payload: event.payload ?? null,
+  };
+
+  mainWindow.webContents.send('camera:detection', payload);
+  logger.info('Camera detection forwarded to renderer.', payload);
+  return true;
+}
 
 const createWindow = () => {
   let preloadPath: string;
@@ -254,6 +298,8 @@ function registerIpcHandlers(
   manager: ConfigManager,
   conversation: ConversationManager | null,
   metrics: PrometheusCollector | null,
+  avatarModels: AvatarModelService | null,
+  store: MemoryStore | null,
 ) {
   // Preload diagnostics bridge: allow preload/renderer to forward logs to main logger
   try {
@@ -512,6 +558,107 @@ function registerIpcHandlers(
     }
     return avatarFaceService.applyGeneratedFace(payload.generationId, payload.candidateId, payload.name);
   });
+  ipcMain.handle('avatar-model:list', async () => {
+    if (!avatarModels) {
+      return [] as AvatarModelSummary[];
+    }
+
+    return avatarModels.listModels();
+  });
+  ipcMain.handle('avatar-model:get-active', async () => {
+    if (!avatarModels) {
+      return null;
+    }
+
+    return avatarModels.getActiveModel();
+  });
+  ipcMain.handle('avatar-model:set-active', async (_event, modelId: string | null) => {
+    if (!avatarModels) {
+      throw new Error('Avatar model service is unavailable.');
+    }
+
+    return avatarModels.setActiveModel(modelId);
+  });
+  ipcMain.handle('avatar-model:upload', async (_event, payload: AvatarModelUploadRequest) => {
+    if (!avatarModels) {
+      throw new Error('Avatar model service is unavailable.');
+    }
+
+    return avatarModels.uploadModel(payload) as Promise<AvatarModelUploadResult>;
+  });
+  ipcMain.handle('avatar-model:delete', async (_event, modelId: string) => {
+    if (!avatarModels) {
+      throw new Error('Avatar model service is unavailable.');
+    }
+
+    await avatarModels.deleteModel(modelId);
+    return true;
+  });
+  ipcMain.handle('avatar-model:load', async (_event, modelId: string) => {
+    if (!avatarModels) {
+      throw new Error('Avatar model service is unavailable.');
+    }
+
+    return avatarModels.loadModelBinary(modelId);
+  });
+  ipcMain.handle('avatar:get-display-mode', async () => {
+    if (!store) {
+      return 'sprites';
+    }
+
+    const value = store.getAvatarDisplayMode();
+    return value ?? 'sprites';
+  });
+  ipcMain.handle('avatar:set-display-mode', async (_event, mode: string) => {
+    const normalized = typeof mode === 'string' ? mode.trim().toLowerCase() : '';
+    if (normalized !== 'sprites' && normalized !== 'vrm') {
+      throw new Error('Invalid avatar display mode preference received.');
+    }
+
+    if (!store) {
+      logger.warn('Display mode preference ignored because memory store is unavailable.', { mode: normalized });
+      return null;
+    }
+
+    store.setAvatarDisplayMode(normalized as AvatarDisplayMode);
+    return null;
+  });
+  ipcMain.handle('avatar:trigger-behavior', async (_event, cue: string) => {
+    const value = typeof cue === 'string' ? cue.trim() : '';
+    if (!value) {
+      throw new Error('Invalid avatar behavior cue received.');
+    }
+
+    logger.info('Avatar behavior cue requested.', { cue: value });
+    emitCameraDetection({
+      cue: value,
+      timestamp: Date.now(),
+      confidence: 1,
+      provider: 'behavior-trigger',
+      payload: { origin: 'avatar:trigger-behavior' },
+    });
+    return true;
+  });
+  ipcMain.handle('camera:emit-detection', async (_event, payload: CameraDetectionEventPayload) => {
+    if (!payload || typeof payload.cue !== 'string') {
+      throw new Error('Invalid camera detection payload received.');
+    }
+
+    const cue = payload.cue.trim();
+    if (!cue) {
+      throw new Error('Camera detection cue cannot be empty.');
+    }
+
+    const emitted = emitCameraDetection({
+      cue,
+      timestamp: payload.timestamp,
+      confidence: payload.confidence,
+      provider: payload.provider ?? 'camera-bridge',
+      payload: payload.payload ?? null,
+    });
+
+    return emitted;
+  });
 }
 
 function focusExistingWindow() {
@@ -551,6 +698,11 @@ app.whenReady().then(async () => {
 
   try {
     memoryStore = new MemoryStore({ filePath: path.join(app.getPath('userData'), 'memory.db') });
+    avatarModelService = new AvatarModelService({
+      store: memoryStore,
+      modelsDirectory: path.join(app.getPath('userData'), 'vrm-models'),
+      logger,
+    });
     conversationManager = new ConversationManager({
       store: memoryStore,
       logger,
@@ -690,7 +842,7 @@ app.whenReady().then(async () => {
   }
 
   try {
-    registerIpcHandlers(manager, conversationManager, metricsCollector);
+    registerIpcHandlers(manager, conversationManager, metricsCollector, avatarModelService, memoryStore);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Unknown IPC handler registration error occurred.';

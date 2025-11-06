@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type ChangeEvent,
@@ -11,6 +12,8 @@ import {
 import type { ConfigSecretKey, RendererConfig } from '../../main/src/config/config-manager.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
 import { AvatarRenderer } from './avatar/avatar-renderer.js';
+import { VrmAvatarRenderer, type VrmRendererStatus } from './avatar/vrm-avatar-renderer.js';
+import { BehaviorCueProvider } from './avatar/behavior-cues.js';
 import { flushSync } from 'react-dom';
 import { AvatarConfigurator } from './avatar/avatar-configurator.js';
 import { AudioGraph } from './audio/audio-graph.js';
@@ -21,7 +24,8 @@ import { getPreloadApi, type PreloadApi } from './preload-api.js';
 import { RealtimeClient, type RealtimeClientState } from './realtime/realtime-client.js';
 import { LatencyTracker, type LatencySnapshot } from './metrics/latency-tracker.js';
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
-import type { AvatarFaceDetail } from './avatar/types.js';
+import type { AvatarDisplayMode, AvatarFaceDetail, AvatarModelSummary } from './avatar/types.js';
+import { DEFAULT_AVATAR_DISPLAY_STATE, avatarDisplayReducer, shouldRenderVrm } from './avatar/display-mode.js';
 
 const CURSOR_IDLE_TIMEOUT_MS = 3000;
 const WAKE_ACTIVE_DURATION_MS = 4000;
@@ -601,6 +605,11 @@ export default function App() {
   const latencyTrackerRef = useRef<LatencyTracker>(new LatencyTracker());
   const [latencySnapshot, setLatencySnapshot] = useState<LatencySnapshot | null>(null);
   const [activeAvatar, setActiveAvatar] = useState<AvatarFaceDetail | null>(null);
+  const [activeVrmModel, setActiveVrmModel] = useState<AvatarModelSummary | null>(null);
+  const [avatarDisplayState, dispatchAvatarDisplay] = useReducer(
+    avatarDisplayReducer,
+    DEFAULT_AVATAR_DISPLAY_STATE,
+  );
   const [isListeningEnabled, setListeningEnabled] = useState(true);
   const tabs = useMemo<TabDefinition[]>(
     () => [
@@ -617,6 +626,59 @@ export default function App() {
     local: null,
   });
   const activeBridge = resolveApi();
+
+  const persistAvatarDisplayPreference = useCallback(
+    async (mode: AvatarDisplayMode) => {
+      const bridge = resolveApi();
+      const avatar = bridge?.avatar;
+      if (!avatar?.setDisplayModePreference) {
+        return;
+      }
+
+      try {
+        await avatar.setDisplayModePreference(mode);
+      } catch (error) {
+        console.warn('Failed to persist avatar display preference.', error);
+      }
+    },
+    [resolveApi],
+  );
+
+  useEffect(() => {
+    const bridge = resolveApi();
+    const avatar = bridge?.avatar;
+    if (!avatar?.getDisplayModePreference) {
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const stored = await avatar.getDisplayModePreference();
+        if (cancelled) {
+          return;
+        }
+
+        if (stored === 'sprites' || stored === 'vrm') {
+          dispatchAvatarDisplay({ type: 'set-mode', mode: stored });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('Failed to load avatar display preference from store.', error);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dispatchAvatarDisplay, resolveApi]);
+
+  useEffect(() => {
+    if (avatarDisplayState.preference === 'vrm' && !activeVrmModel) {
+      dispatchAvatarDisplay({ type: 'vrm-error', message: 'No VRM model is active.' });
+    }
+  }, [avatarDisplayState.preference, activeVrmModel]);
 
   const focusTab = useCallback(
     (tabId: TabId) => {
@@ -703,9 +765,62 @@ export default function App() {
     activeSessionIdRef.current = activeSessionId;
   }, [activeSessionId]);
 
+  useEffect(() => {
+    const bridge = resolveApi();
+    const avatarApi = bridge?.avatar;
+    if (!avatarApi?.getActiveModel) {
+      setActiveVrmModel(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const model = await avatarApi.getActiveModel();
+        if (!cancelled) {
+          setActiveVrmModel(model ?? null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('Failed to load active VRM model.', error);
+          setActiveVrmModel(null);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [resolveApi]);
+
   const handleActiveFaceChange = useCallback((detail: AvatarFaceDetail | null) => {
     setActiveAvatar(detail);
   }, []);
+
+  const handleVrmStatusChange = useCallback(
+    (status: VrmRendererStatus) => {
+      if (status.status === 'ready') {
+        dispatchAvatarDisplay({ type: 'vrm-ready' });
+      } else if (status.status === 'error') {
+        dispatchAvatarDisplay({ type: 'vrm-error', message: status.message ?? 'VRM renderer failed.' });
+      }
+    },
+    [dispatchAvatarDisplay],
+  );
+
+  const setAvatarDisplayPreference = useCallback(
+    (mode: AvatarDisplayMode) => {
+      dispatchAvatarDisplay({ type: 'set-mode', mode });
+      void persistAvatarDisplayPreference(mode);
+    },
+    [dispatchAvatarDisplay, persistAvatarDisplayPreference],
+  );
+
+  const toggleAvatarDisplayMode = useCallback(() => {
+    const nextMode: AvatarDisplayMode = avatarDisplayState.preference === 'vrm' ? 'sprites' : 'vrm';
+    setAvatarDisplayPreference(nextMode);
+  }, [avatarDisplayState.preference, setAvatarDisplayPreference]);
 
   const applySessionHistory = useCallback((session: ConversationSessionWithMessages | null) => {
     if (!session) {
@@ -1769,14 +1884,17 @@ export default function App() {
   const showDeveloperHud = Boolean(config?.featureFlags?.metricsHud);
   const hudSnapshot = latencySnapshot ?? latencyTrackerRef.current.getLastSnapshot();
   const activeAvatarName = activeAvatar?.name ?? 'Embodied Assistant';
+  const shouldShowVrm = shouldRenderVrm(avatarDisplayState, activeVrmModel);
+  const avatarDisplayToggleLabel = avatarDisplayState.preference === 'vrm' ? 'Use sprite avatar' : 'Use 3D avatar';
 
   return (
-    <main
-      className="kiosk"
-      data-wake-state={wakeState}
-      data-cursor-hidden={isCursorHidden ? 'true' : 'false'}
-      aria-live="polite"
-    >
+    <BehaviorCueProvider>
+      <main
+        className="kiosk"
+        data-wake-state={wakeState}
+        data-cursor-hidden={isCursorHidden ? 'true' : 'false'}
+        aria-live="polite"
+      >
       <header className="kiosk__statusBar" role="banner">
         <div className={`statusChip statusChip--${wakeStatusVariant}`} data-testid="wake-indicator">
           <span className="statusChip__label">Wake</span>
@@ -1861,12 +1979,41 @@ export default function App() {
             data-state={activeTab === 'chatgpt' ? 'active' : 'inactive'}
           >
               <section className="kiosk__stage" aria-labelledby="avatar-preview-title">
-                <div className="kiosk__avatar" data-state={visemeSummary.status.toLowerCase()}>
-                  <AvatarRenderer frame={visemeFrame} assets={activeAvatar?.components ?? null} />
+                <div
+                  className="kiosk__avatar"
+                  data-state={visemeSummary.status.toLowerCase()}
+                  data-avatar-mode={shouldShowVrm ? 'vrm' : 'sprites'}
+                >
+                  {shouldShowVrm ? (
+                    <VrmAvatarRenderer
+                      key={activeVrmModel?.id ?? 'vrm'}
+                      frame={visemeFrame}
+                      model={activeVrmModel}
+                      onStatusChange={handleVrmStatusChange}
+                    />
+                  ) : (
+                    <AvatarRenderer frame={visemeFrame} assets={activeAvatar?.components ?? null} />
+                  )}
                 </div>
                 <div className="kiosk__avatarDetails">
                   <h1 id="avatar-preview-title">{activeAvatarName}</h1>
                   <p className="kiosk__subtitle">Real-time viseme mapping derived from the decoded audio stream.</p>
+                  <div className="kiosk__avatarModeControls">
+                    <button
+                      type="button"
+                      className="kiosk__avatarModeToggle"
+                      onClick={toggleAvatarDisplayMode}
+                      aria-pressed={avatarDisplayState.preference === 'vrm'}
+                      data-testid="avatar-display-toggle"
+                    >
+                      {avatarDisplayToggleLabel}
+                    </button>
+                    {avatarDisplayState.lastError ? (
+                      <p className="kiosk__avatarModeError" role="status">
+                        {avatarDisplayState.lastError}
+                      </p>
+                    ) : null}
+                  </div>
                   <dl className="kiosk__metrics">
                     <div>
                       <dt>Viseme</dt>
@@ -1905,7 +2052,13 @@ export default function App() {
             className="kiosk__tabPanel"
             data-state={activeTab === 'character' ? 'active' : 'inactive'}
           >
-              <AvatarConfigurator avatarApi={activeBridge?.avatar} onActiveFaceChange={handleActiveFaceChange} />
+              <AvatarConfigurator
+                avatarApi={activeBridge?.avatar}
+                onActiveFaceChange={handleActiveFaceChange}
+                onActiveModelChange={setActiveVrmModel}
+                displayModePreference={avatarDisplayState.preference}
+                onDisplayModePreferenceChange={setAvatarDisplayPreference}
+              />
               <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
                 <h2 id="kiosk-realtime-title">Realtime</h2>
                 <div className="control">
@@ -2169,6 +2322,7 @@ export default function App() {
       {/* Hidden audio sink for realtime playback (no user-facing controls). */}
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <audio ref={remoteAudioRef} autoPlay aria-hidden="true" style={{ display: 'none' }} />
-    </main>
+      </main>
+    </BehaviorCueProvider>
   );
 }
