@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import {
@@ -11,6 +11,7 @@ import {
 import type { VisemeFrame } from '../audio/viseme-driver.js';
 import type { AvatarModelSummary } from './types.js';
 import { getPreloadApi } from '../preload-api.js';
+import { useBehaviorCues, type BehaviorCueEvent } from './behavior-cues.js';
 
 export interface VrmRendererStatus {
   status: 'idle' | 'loading' | 'ready' | 'error';
@@ -36,6 +37,87 @@ const BLINK_HOLD_SECONDS = 0.12;
 const CAMERA_DISTANCE = 1.45;
 const CAMERA_HEIGHT = 1.35;
 const CAMERA_FOV = 35;
+
+const WAVE_ANIMATION_NAME = 'greet_face_wave';
+
+function quaternionToArray(quaternion: THREE.Quaternion): number[] {
+  return [quaternion.x, quaternion.y, quaternion.z, quaternion.w];
+}
+
+function multiplyQuaternion(base: THREE.Quaternion, delta: THREE.Euler): THREE.Quaternion {
+  const next = base.clone();
+  next.multiply(new THREE.Quaternion().setFromEuler(delta));
+  return next;
+}
+
+export function createRightArmWaveClip(vrm: VRM): THREE.AnimationClip | null {
+  const humanoid = vrm.humanoid;
+  if (!humanoid) {
+    console.warn('[vrm-avatar-renderer] VRM humanoid is unavailable; cannot create wave animation clip.');
+    return null;
+  }
+
+  const upperArm = humanoid.getNormalizedBoneNode('rightUpperArm');
+  const lowerArm = humanoid.getNormalizedBoneNode('rightLowerArm');
+  const hand = humanoid.getNormalizedBoneNode('rightHand');
+
+  if (!upperArm || !lowerArm) {
+    console.warn('[vrm-avatar-renderer] Missing right arm bones; skipping wave animation setup.');
+    return null;
+  }
+
+  const times = [0, 0.35, 0.7, 1.05, 1.4];
+
+  const upperRest = upperArm.quaternion.clone();
+  const lowerRest = lowerArm.quaternion.clone();
+  const handRest = hand?.quaternion.clone() ?? null;
+
+  const upperRaised = multiplyQuaternion(upperRest, new THREE.Euler(-0.9, 0.25, 0));
+  const lowerRaised = multiplyQuaternion(lowerRest, new THREE.Euler(-0.7, 0.15, 0));
+  const handRaised = handRest ? multiplyQuaternion(handRest, new THREE.Euler(0, 0.4, 0)) : null;
+
+  const upperWaveOut = multiplyQuaternion(upperRaised, new THREE.Euler(0.2, 0, 0.3));
+  const upperWaveIn = multiplyQuaternion(upperRaised, new THREE.Euler(-0.2, 0, -0.3));
+
+  const lowerWaveOut = multiplyQuaternion(lowerRaised, new THREE.Euler(0.35, 0, 0.2));
+  const lowerWaveIn = multiplyQuaternion(lowerRaised, new THREE.Euler(-0.35, 0, -0.2));
+
+  const handWaveOut = handRaised ? multiplyQuaternion(handRaised, new THREE.Euler(0, 0.25, 0.15)) : null;
+  const handWaveIn = handRaised ? multiplyQuaternion(handRaised, new THREE.Euler(0, -0.25, -0.15)) : null;
+
+  const upperValues = [
+    ...quaternionToArray(upperRest),
+    ...quaternionToArray(upperRaised),
+    ...quaternionToArray(upperWaveOut),
+    ...quaternionToArray(upperWaveIn),
+    ...quaternionToArray(upperRest),
+  ];
+  const lowerValues = [
+    ...quaternionToArray(lowerRest),
+    ...quaternionToArray(lowerRaised),
+    ...quaternionToArray(lowerWaveOut),
+    ...quaternionToArray(lowerWaveIn),
+    ...quaternionToArray(lowerRest),
+  ];
+
+  const tracks: THREE.KeyframeTrack[] = [
+    new THREE.QuaternionKeyframeTrack(`${upperArm.name}.quaternion`, times, upperValues),
+    new THREE.QuaternionKeyframeTrack(`${lowerArm.name}.quaternion`, times, lowerValues),
+  ];
+
+  if (hand && handRest && handRaised && handWaveOut && handWaveIn) {
+    const handValues = [
+      ...quaternionToArray(handRest),
+      ...quaternionToArray(handRaised),
+      ...quaternionToArray(handWaveOut),
+      ...quaternionToArray(handWaveIn),
+      ...quaternionToArray(handRest),
+    ];
+    tracks.push(new THREE.QuaternionKeyframeTrack(`${hand.name}.quaternion`, times, handValues));
+  }
+
+  return new THREE.AnimationClip(WAVE_ANIMATION_NAME, times[times.length - 1], tracks);
+}
 
 export function clamp01(value: number): number {
   if (!Number.isFinite(value)) {
@@ -121,6 +203,8 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const currentVrmRef = useRef<VRM | null>(null);
+  const mixerRef = useRef<THREE.AnimationMixer | null>(null);
+  const waveActionRef = useRef<THREE.AnimationAction | null>(null);
   const expressionManagerRef = useRef<VRMExpressionManager | null>(null);
   const visemeStateRef = useRef<VisemeWeightState>(createDefaultVisemeState());
   const blinkStateRef = useRef<BlinkState>(createDefaultBlinkState());
@@ -130,6 +214,61 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   const [rendererReady, setRendererReady] = useState(false);
 
   frameRef.current = frame;
+
+  const playWave = useCallback(() => {
+    const mixer = mixerRef.current;
+    const action = waveActionRef.current;
+    if (!mixer || !action) {
+      return false;
+    }
+
+    try {
+      mixer.stopAllAction();
+    } catch (error) {
+      console.warn('[vrm-avatar-renderer] failed to stop existing animations before wave gesture', error);
+    }
+
+    try {
+      action.reset();
+      action.enabled = true;
+      action.setLoop(THREE.LoopOnce, 1);
+      action.setEffectiveWeight(1);
+      action.setEffectiveTimeScale(1);
+      if (typeof action.fadeIn === 'function') {
+        action.fadeIn(0.2);
+      }
+      action.play();
+      if (typeof action.fadeOut === 'function') {
+        action.fadeOut(0.25);
+      }
+      return true;
+    } catch (error) {
+      console.error('[vrm-avatar-renderer] failed to play wave animation', error);
+      return false;
+    }
+  }, []);
+
+  const handleBehaviorCue = useCallback(
+    (event: BehaviorCueEvent) => {
+      if (event.name !== 'greet_face') {
+        return;
+      }
+
+      const played = playWave();
+      if (!played) {
+        console.warn('[vrm-avatar-renderer] Received greet_face cue but wave animation is unavailable.', {
+          source: event.source,
+        });
+      } else {
+        console.info('[vrm-avatar-renderer] greet_face cue triggered wave animation.', {
+          source: event.source,
+        });
+      }
+    },
+    [playWave],
+  );
+
+  useBehaviorCues(handleBehaviorCue);
 
   const setStatus = useMemo(() => {
     return (status: VrmRendererStatus) => {
@@ -255,6 +394,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         manager.update();
       }
 
+      mixerRef.current?.update(delta);
       currentVrmRef.current?.update(delta);
       rendererInstance.render(sceneInstance, cameraInstance);
       animationFrameRef.current = requestAnimationFrame(renderFrame);
@@ -277,6 +417,13 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       rendererRef.current = null;
       sceneRef.current = null;
       cameraRef.current = null;
+      try {
+        mixerRef.current?.stopAllAction();
+      } catch (error) {
+        console.warn('[vrm-avatar-renderer] failed to stop animation mixer during cleanup', error);
+      }
+      mixerRef.current = null;
+      waveActionRef.current = null;
       expressionManagerRef.current = null;
       currentVrmRef.current = null;
       visemeStateRef.current = createDefaultVisemeState();
@@ -302,6 +449,13 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       }
       disposeVrm(currentVrmRef.current);
       currentVrmRef.current = null;
+      try {
+        mixerRef.current?.stopAllAction();
+      } catch (error) {
+        console.warn('[vrm-avatar-renderer] failed to stop animation mixer during unload', error);
+      }
+      mixerRef.current = null;
+      waveActionRef.current = null;
       expressionManagerRef.current = null;
       visemeStateRef.current = createDefaultVisemeState();
       blinkStateRef.current = createDefaultBlinkState();
@@ -358,6 +512,20 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         currentVrmRef.current = vrm;
         expressionManagerRef.current = vrm.expressionManager ?? null;
         expressionManagerRef.current?.resetValues();
+        const mixer = new THREE.AnimationMixer(vrm.scene);
+        mixerRef.current = mixer;
+        const clip = createRightArmWaveClip(vrm);
+        if (clip) {
+          const action = mixer.clipAction(clip);
+          action.clampWhenFinished = true;
+          action.enabled = false;
+          action.setLoop(THREE.LoopOnce, 1);
+          action.setEffectiveWeight(1);
+          action.setEffectiveTimeScale(1);
+          waveActionRef.current = action;
+        } else {
+          waveActionRef.current = null;
+        }
         setStatus({ status: 'ready' });
       } catch (error) {
         const message =

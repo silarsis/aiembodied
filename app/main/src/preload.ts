@@ -84,6 +84,7 @@ export interface PreloadApi {
   conversation?: ConversationBridge;
   metrics?: MetricsBridge;
   avatar?: AvatarBridge;
+  camera?: CameraBridge;
   ping(): string;
   __bridgeReady?: boolean;
   __bridgeVersion?: string;
@@ -120,6 +121,19 @@ export interface AvatarBridge {
   getDisplayModePreference(): Promise<AvatarDisplayMode>;
   setDisplayModePreference(mode: AvatarDisplayMode): Promise<void>;
   triggerBehaviorCue(cue: string): Promise<void>;
+}
+
+export interface CameraDetectionEvent {
+  cue: string;
+  timestamp?: number;
+  confidence?: number;
+  provider?: string;
+  payload?: Record<string, unknown> | null;
+}
+
+export interface CameraBridge {
+  onDetection(listener: (event: CameraDetectionEvent) => void): () => void;
+  emitDetection(event: CameraDetectionEvent): Promise<void>;
 }
 
 const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
@@ -235,6 +249,19 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       await ipcRenderer.invoke('avatar:trigger-behavior', cue);
     },
   },
+  camera: {
+    onDetection: (listener) => {
+      const channel = 'camera:detection';
+      const handler = (_event: unknown, payload: CameraDetectionEvent) => listener(payload);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
+    emitDetection: async (event) => {
+      await ipcRenderer.invoke('camera:emit-detection', event);
+    },
+  },
   ping: () => 'pong',
   __bridgeReady: true,
   __bridgeVersion: '1.0.0',
@@ -243,6 +270,7 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
 logPreloadInfo('Preparing to expose renderer bridge.', {
   keys: Object.keys(api),
   hasAvatarBridge: typeof api.avatar !== 'undefined',
+  hasCameraBridge: typeof api.camera !== 'undefined',
 });
 
 function exposeBridge() {
@@ -251,6 +279,7 @@ function exposeBridge() {
     logPreloadInfo('Renderer bridge exposed successfully.', {
       keys: Object.keys(api),
       hasAvatarBridge: typeof api.avatar !== 'undefined',
+      hasCameraBridge: typeof api.camera !== 'undefined',
       bridgeReady: api.__bridgeReady,
       bridgeVersion: api.__bridgeVersion,
     });

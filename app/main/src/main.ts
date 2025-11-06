@@ -48,6 +48,14 @@ const __dirname = path.dirname(__filename);
 const isProduction = app.isPackaged || process.env.NODE_ENV === 'production';
 const APP_NAME = 'AI Embodied Assistant';
 
+interface CameraDetectionEventPayload {
+  cue: string;
+  timestamp?: number;
+  confidence?: number;
+  provider?: string;
+  payload?: Record<string, unknown> | null;
+}
+
 if (!isProduction) {
   const repoRoot = path.resolve(__dirname, '../../..');
   dotenv.config({ path: path.join(repoRoot, '.env') });
@@ -100,6 +108,33 @@ let developmentTray: Tray | null = null;
 let avatarFaceService: AvatarFaceService | null = null;
 let avatarModelService: AvatarModelService | null = null;
 let currentRealtimeApiKey: string | null = null;
+
+function emitCameraDetection(event: CameraDetectionEventPayload): boolean {
+  const cue = typeof event.cue === 'string' ? event.cue.trim() : '';
+  if (!cue) {
+    throw new Error('Camera detection payload must include a cue identifier.');
+  }
+
+  const timestamp =
+    typeof event.timestamp === 'number' && Number.isFinite(event.timestamp) ? event.timestamp : Date.now();
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    logger.warn('Camera detection event dropped because main window is unavailable.', { cue });
+    return false;
+  }
+
+  const payload: CameraDetectionEventPayload = {
+    cue,
+    timestamp,
+    confidence: typeof event.confidence === 'number' ? event.confidence : undefined,
+    provider: typeof event.provider === 'string' ? event.provider : undefined,
+    payload: event.payload ?? null,
+  };
+
+  mainWindow.webContents.send('camera:detection', payload);
+  logger.info('Camera detection forwarded to renderer.', payload);
+  return true;
+}
 
 const createWindow = () => {
   let preloadPath: string;
@@ -595,7 +630,34 @@ function registerIpcHandlers(
     }
 
     logger.info('Avatar behavior cue requested.', { cue: value });
+    emitCameraDetection({
+      cue: value,
+      timestamp: Date.now(),
+      confidence: 1,
+      provider: 'behavior-trigger',
+      payload: { origin: 'avatar:trigger-behavior' },
+    });
     return true;
+  });
+  ipcMain.handle('camera:emit-detection', async (_event, payload: CameraDetectionEventPayload) => {
+    if (!payload || typeof payload.cue !== 'string') {
+      throw new Error('Invalid camera detection payload received.');
+    }
+
+    const cue = payload.cue.trim();
+    if (!cue) {
+      throw new Error('Camera detection cue cannot be empty.');
+    }
+
+    const emitted = emitCameraDetection({
+      cue,
+      timestamp: payload.timestamp,
+      confidence: payload.confidence,
+      provider: payload.provider ?? 'camera-bridge',
+      payload: payload.payload ?? null,
+    });
+
+    return emitted;
   });
 }
 

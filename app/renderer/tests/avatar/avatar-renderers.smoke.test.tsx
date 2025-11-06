@@ -57,6 +57,25 @@ vi.mock('three', () => {
       return { canvas: this.domElement };
     }
   }
+  class AnimationMixer {
+    constructor(public readonly root?: unknown) {}
+    clipAction() {
+      return {
+        clampWhenFinished: false,
+        enabled: false,
+        setLoop: noop,
+        setEffectiveWeight: noop,
+        setEffectiveTimeScale: noop,
+        reset: noop,
+        play: noop,
+        stop: noop,
+        fadeIn: noop,
+        fadeOut: noop,
+      };
+    }
+    stopAllAction = noop;
+    update = noop;
+  }
   class Mesh extends Object3D {
     isMesh = true;
     geometry = { dispose: noop };
@@ -70,6 +89,7 @@ vi.mock('three', () => {
     DirectionalLight,
     Clock,
     WebGLRenderer,
+    AnimationMixer,
     Mesh,
     MockScene,
   };
