@@ -8,14 +8,29 @@ import {
   VRMExpressionPresetName,
   type VRMExpressionManager,
 } from '@pixiv/three-vrm';
+import type { VRMAnimation } from '@pixiv/three-vrm-animation';
 import type { VisemeFrame } from '../audio/viseme-driver.js';
 import type { AvatarModelSummary } from './types.js';
 import { getPreloadApi } from '../preload-api.js';
 import { useBehaviorCues, type BehaviorCueEvent } from './behavior-cues.js';
+import { createClipFromVrma, createMixerForVrm } from './animations/index.js';
+import {
+  IdleAnimationScheduler,
+  type IdleAnimationSchedulerConfig,
+  type IdleClipRegistration,
+} from './animations/idle-scheduler.js';
 
 export interface VrmRendererStatus {
   status: 'idle' | 'loading' | 'ready' | 'error';
   message?: string;
+}
+
+export interface IdleAnimationOptions {
+  enableBreathing?: boolean;
+  enableMicroMovement?: boolean;
+  enableBlink?: boolean;
+  vrmaAnimations?: VRMAnimation[];
+  additionalClips?: IdleClipRegistration[];
 }
 
 export interface VrmAvatarRendererProps {
@@ -23,6 +38,7 @@ export interface VrmAvatarRendererProps {
   model: AvatarModelSummary | null | undefined;
   onStatusChange?: (status: VrmRendererStatus) => void;
   className?: string;
+  idleOptions?: IdleAnimationOptions;
 }
 
 const VISEME_PRESETS: VRMExpressionPresetName[] = [
@@ -40,12 +56,60 @@ const CAMERA_FOV = 35;
 
 const WAVE_ANIMATION_NAME = 'greet_face_wave';
 
+function buildIdleSchedulerConfig(
+  vrm: VRM,
+  options: IdleAnimationOptions | undefined,
+): IdleAnimationSchedulerConfig {
+  const config: IdleAnimationSchedulerConfig = {
+    enableBreathing: options?.enableBreathing ?? true,
+    enableMicroMovement: options?.enableMicroMovement ?? true,
+    enableBlink: options?.enableBlink ?? true,
+    additionalClips: [],
+  };
+
+  const extras: IdleClipRegistration[] = [];
+
+  if (options?.additionalClips?.length) {
+    for (const clip of options.additionalClips) {
+      extras.push({
+        ...clip,
+        clip: clip.clip.clone(),
+      });
+    }
+  }
+
+  if (options?.vrmaAnimations?.length) {
+    options.vrmaAnimations.forEach((animation, index) => {
+      if (!animation) {
+        return;
+      }
+      const maybeName = (animation as unknown as { name?: unknown } | null | undefined)?.name;
+      const animationName =
+        typeof maybeName === 'string' && maybeName.length > 0 ? maybeName : `vrma_idle_${index}`;
+      const clip = createClipFromVrma(vrm, animation, animationName);
+      extras.push({
+        name: animationName,
+        clip,
+        weight: 1,
+        priority: 0,
+        loop: THREE.LoopRepeat,
+      });
+    });
+  }
+
+  if (extras.length > 0) {
+    config.additionalClips = extras;
+  }
+
+  return config;
+}
+
 function quaternionToArray(quaternion: THREE.Quaternion): number[] {
   return [quaternion.x, quaternion.y, quaternion.z, quaternion.w];
 }
 
 function multiplyQuaternion(base: THREE.Quaternion, delta: THREE.Euler): THREE.Quaternion {
-  const next = base.clone();
+  const next = new THREE.Quaternion(base.x, base.y, base.z, base.w);
   next.multiply(new THREE.Quaternion().setFromEuler(delta));
   return next;
 }
@@ -197,6 +261,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   model,
   onStatusChange,
   className,
+  idleOptions,
 }: VrmAvatarRendererProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -204,6 +269,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const currentVrmRef = useRef<VRM | null>(null);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
+  const idleSchedulerRef = useRef<IdleAnimationScheduler | null>(null);
   const waveActionRef = useRef<THREE.AnimationAction | null>(null);
   const expressionManagerRef = useRef<VRMExpressionManager | null>(null);
   const visemeStateRef = useRef<VisemeWeightState>(createDefaultVisemeState());
@@ -211,9 +277,11 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   const frameRef = useRef<VisemeFrame | null>(frame);
   const animationFrameRef = useRef<number | null>(null);
   const clockRef = useRef(new THREE.Clock());
+  const idleOptionsRef = useRef<IdleAnimationOptions | undefined>(idleOptions);
   const [rendererReady, setRendererReady] = useState(false);
 
   frameRef.current = frame;
+  idleOptionsRef.current = idleOptions;
 
   const playWave = useCallback(() => {
     const mixer = mixerRef.current;
@@ -222,11 +290,21 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       return false;
     }
 
-    try {
-      mixer.stopAllAction();
-    } catch (error) {
-      console.warn('[vrm-avatar-renderer] failed to stop existing animations before wave gesture', error);
-    }
+    const idleScheduler = idleSchedulerRef.current;
+    const releaseIdle = idleScheduler?.suspend(5) ?? null;
+
+    const handleFinished = (event: { action?: THREE.AnimationAction | null }) => {
+      if (event.action !== action) {
+        return;
+      }
+      mixer.removeEventListener('finished', handleFinished);
+      releaseIdle?.();
+      try {
+        action.stop();
+      } catch (stopError) {
+        console.warn('[vrm-avatar-renderer] failed to stop wave animation after completion', stopError);
+      }
+    };
 
     try {
       action.reset();
@@ -234,15 +312,19 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       action.setLoop(THREE.LoopOnce, 1);
       action.setEffectiveWeight(1);
       action.setEffectiveTimeScale(1);
+      action.clampWhenFinished = true;
       if (typeof action.fadeIn === 'function') {
         action.fadeIn(0.2);
       }
+      mixer.addEventListener('finished', handleFinished);
       action.play();
       if (typeof action.fadeOut === 'function') {
         action.fadeOut(0.25);
       }
       return true;
     } catch (error) {
+      mixer.removeEventListener('finished', handleFinished);
+      releaseIdle?.();
       console.error('[vrm-avatar-renderer] failed to play wave animation', error);
       return false;
     }
@@ -395,6 +477,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       }
 
       mixerRef.current?.update(delta);
+      idleSchedulerRef.current?.update(delta);
       currentVrmRef.current?.update(delta);
       rendererInstance.render(sceneInstance, cameraInstance);
       animationFrameRef.current = requestAnimationFrame(renderFrame);
@@ -423,6 +506,8 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         console.warn('[vrm-avatar-renderer] failed to stop animation mixer during cleanup', error);
       }
       mixerRef.current = null;
+      idleSchedulerRef.current?.dispose();
+      idleSchedulerRef.current = null;
       waveActionRef.current = null;
       expressionManagerRef.current = null;
       currentVrmRef.current = null;
@@ -455,6 +540,8 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         console.warn('[vrm-avatar-renderer] failed to stop animation mixer during unload', error);
       }
       mixerRef.current = null;
+      idleSchedulerRef.current?.dispose();
+      idleSchedulerRef.current = null;
       waveActionRef.current = null;
       expressionManagerRef.current = null;
       visemeStateRef.current = createDefaultVisemeState();
@@ -512,8 +599,14 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         currentVrmRef.current = vrm;
         expressionManagerRef.current = vrm.expressionManager ?? null;
         expressionManagerRef.current?.resetValues();
-        const mixer = new THREE.AnimationMixer(vrm.scene);
+        const mixer = createMixerForVrm(vrm);
         mixerRef.current = mixer;
+        const idleScheduler = new IdleAnimationScheduler({
+          mixer,
+          vrm,
+          config: buildIdleSchedulerConfig(vrm, idleOptionsRef.current),
+        });
+        idleSchedulerRef.current = idleScheduler;
         const clip = createRightArmWaveClip(vrm);
         if (clip) {
           const action = mixer.clipAction(clip);
@@ -542,6 +635,16 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       cancelled = true;
     };
   }, [model, model?.id, model?.fileSha, rendererReady, setStatus]);
+
+  useEffect(() => {
+    const vrm = currentVrmRef.current;
+    const scheduler = idleSchedulerRef.current;
+    if (!vrm || !scheduler) {
+      return;
+    }
+
+    scheduler.updateConfig(buildIdleSchedulerConfig(vrm, idleOptions));
+  }, [idleOptions]);
 
   return <canvas ref={canvasRef} className={className} data-renderer="vrm" />;
 });

@@ -16,6 +16,9 @@ importers:
       '@pixiv/three-vrm':
         specifier: ^3.4.4
         version: 3.4.4(three@0.181.0)
+      '@pixiv/three-vrm-animation':
+        specifier: ^3.4.4
+        version: 3.4.4(three@0.181.0)
       three:
         specifier: ^0.181.0
         version: 0.181.0
@@ -693,11 +696,15 @@ packages:
   '@picovoice/porcupine-node@3.0.6':
     resolution: {integrity: sha512-vYlY0Hf9ovRB+Z9yyLReiVYZkLsm/kVPgDWTu2dgtqAooednohljfxSRzJUojapp8BFd7aW8P3H/4sm1zy49lw==}
     engines: {node: '>=18.0.0'}
-    cpu: ['!ia32', '!mips', '!ppc', '!ppc64']
 
   '@picovoice/pvrecorder-node@1.2.8':
     resolution: {integrity: sha512-dbLJlplQQNRkM2ja/hP4sRADGDILuJ54dEf8cU5eULeNrddxXvOtE8IiJ5F2VhhbXmIv3Qmn79DqhttCOxjH8Q==}
     engines: {node: '>=18.0.0'}
+
+  '@pixiv/three-vrm-animation@3.4.4':
+    resolution: {integrity: sha512-tZrlMlxjnO19dd/v61YbLoQkeFs4aJFHpUE6LjRa7qE/5Eoijd1+pcaWu+EhenkAckBOKwD1QmFH3xgm5fgATw==}
+    peerDependencies:
+      three: '>=0.137'
 
   '@pixiv/three-vrm-core@3.4.4':
     resolution: {integrity: sha512-jxTZSRrs8kiZovxuPe1c3dVUNRgVzMG5YPK4DVFfVGBoWARLsjrK3uGqJmdmALGIgDh8d7gUNciuVYBCStG3FA==}
@@ -752,8 +759,14 @@ packages:
   '@pixiv/types-vrmc-springbone-extended-collider-1.0@3.4.4':
     resolution: {integrity: sha512-1dGNULdu+2FT4TStGTRI/w/UNQh57yojiUJ/TftE6n1yueYXCgcsWRFXt43ndRwInc73lOsq+TCxZVmc8R+nJg==}
 
+  '@pixiv/types-vrmc-vrm-1.0@2.0.3':
+    resolution: {integrity: sha512-RMP34Bk1qLFQv/CRB1Zqvn2qMFfWQfP2Hms5QrrfoBsW9XroZdEe0zPLNbGmUPYh4F7VtBb+B7+RCuymRtpehA==}
+
   '@pixiv/types-vrmc-vrm-1.0@3.4.4':
     resolution: {integrity: sha512-NrgAe3ifMPRm1bPu/KLYrx4c1L+mvCGgFAkf1U6VIiHsWQdvKIMjQA8CqVoZZqBBHUCNHI4fVK7WEpX2YrKmhg==}
+
+  '@pixiv/types-vrmc-vrm-animation-1.0@3.4.4':
+    resolution: {integrity: sha512-nqLni9io/0gnDiebQyZ9z/Zy0HIgKxV6NtCwWLDV4lBX38DWaifkafz27KkvRVEUr68FTjq1fpppIt1lg/8rfQ==}
 
   '@pkgjs/parseargs@0.11.0':
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
@@ -4151,6 +4164,13 @@ snapshots:
 
   '@picovoice/pvrecorder-node@1.2.8': {}
 
+  '@pixiv/three-vrm-animation@3.4.4(three@0.181.0)':
+    dependencies:
+      '@pixiv/three-vrm-core': 3.4.4(three@0.181.0)
+      '@pixiv/types-vrmc-vrm-1.0': 3.4.4
+      '@pixiv/types-vrmc-vrm-animation-1.0': 3.4.4
+      three: 0.181.0
+
   '@pixiv/three-vrm-core@3.4.4(three@0.181.0)':
     dependencies:
       '@pixiv/types-vrm-0.0': 3.4.4
@@ -4208,7 +4228,13 @@ snapshots:
 
   '@pixiv/types-vrmc-springbone-extended-collider-1.0@3.4.4': {}
 
+  '@pixiv/types-vrmc-vrm-1.0@2.0.3': {}
+
   '@pixiv/types-vrmc-vrm-1.0@3.4.4': {}
+
+  '@pixiv/types-vrmc-vrm-animation-1.0@3.4.4':
+    dependencies:
+      '@pixiv/types-vrmc-vrm-1.0': 2.0.3
 
   '@pkgjs/parseargs@0.11.0':
     optional: true
