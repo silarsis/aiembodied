@@ -16,6 +16,7 @@ import type {
   AvatarGenerationResult,
   AvatarModelSummary,
 } from './types.js';
+import { getPreloadApi } from '../preload-api.js';
 
 type TabId = 'faces' | 'models';
 
@@ -493,7 +494,11 @@ export function AvatarConfigurator({
   }, []);
 
   const handleTestWave = useCallback(async () => {
-    if (!avatarApi?.triggerBehaviorCue) {
+    const bridge = getPreloadApi();
+    const emitDetection = bridge?.camera?.emitDetection;
+    const triggerBehaviorCue = avatarApi?.triggerBehaviorCue;
+
+    if (!emitDetection && !triggerBehaviorCue) {
       setBehaviorStatus('error');
       setBehaviorMessage('Behavior testing bridge is unavailable.');
       return;
@@ -502,7 +507,11 @@ export function AvatarConfigurator({
     setBehaviorStatus('pending');
     setBehaviorMessage(null);
     try {
-      await avatarApi.triggerBehaviorCue('greet_face');
+      if (emitDetection) {
+        await emitDetection({ cue: 'greet_face', provider: 'configurator-test', confidence: 1 });
+      } else if (triggerBehaviorCue) {
+        await triggerBehaviorCue('greet_face');
+      }
       setBehaviorStatus('success');
       setBehaviorMessage('Wave gesture triggered.');
     } catch (err) {
@@ -523,6 +532,7 @@ export function AvatarConfigurator({
   const displayMode = displayModePreference ?? 'sprites';
   const modelUploadDisabled = !isModelBridgeAvailable || modelUploadStatus === 'reading' || modelUploadStatus === 'uploading';
   const behaviorPending = behaviorStatus === 'pending';
+  const behaviorBridgeAvailable = Boolean(getPreloadApi()?.camera?.emitDetection || avatarApi?.triggerBehaviorCue);
 
   return (
     <section className="kiosk__faces" aria-labelledby="kiosk-faces-title">
@@ -573,7 +583,7 @@ export function AvatarConfigurator({
           <button
             type="button"
             onClick={handleTestWave}
-            disabled={behaviorPending || !avatarApi?.triggerBehaviorCue}
+            disabled={behaviorPending || !behaviorBridgeAvailable}
             aria-busy={behaviorPending}
           >
             {behaviorPending ? 'Triggering wave…' : 'Test wave gesture'}

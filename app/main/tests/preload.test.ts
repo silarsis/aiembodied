@@ -33,6 +33,7 @@ describe('preload bridge', () => {
     const [key, api] = exposeInMainWorld.mock.calls[0];
     expect(key).toBe('aiembodied');
     expect(api.config).toBeDefined();
+    expect(api.camera).toBeDefined();
     expect(api.ping()).toBe('pong');
 
     invoke.mockResolvedValueOnce({ hasRealtimeApiKey: true });
@@ -80,6 +81,28 @@ describe('preload bridge', () => {
 
     unsubscribe();
     expect(removeListener).toHaveBeenCalledWith('wake-word:event', handler);
+  });
+
+  it('exposes camera detection helpers through the bridge', async () => {
+    const [, api] = exposeInMainWorld.mock.calls[0];
+    const listener = vi.fn();
+    const unsubscribe = api.camera?.onDetection(listener);
+
+    const cameraCall = on.mock.calls.find(([channel]) => channel === 'camera:detection');
+    expect(cameraCall).toBeDefined();
+    const cameraHandler = cameraCall?.[1] as ((event: unknown, payload: unknown) => void) | undefined;
+    expect(typeof cameraHandler).toBe('function');
+
+    const payload = { cue: 'greet_face', confidence: 0.8, timestamp: 42 };
+    cameraHandler?.({}, payload);
+    expect(listener).toHaveBeenCalledWith(payload);
+
+    unsubscribe?.();
+    expect(removeListener).toHaveBeenCalledWith('camera:detection', cameraHandler);
+
+    invoke.mockResolvedValueOnce(true);
+    await api.camera?.emitDetection(payload);
+    expect(invoke).toHaveBeenCalledWith('camera:emit-detection', payload);
   });
 
   it('exposes avatar model helpers through the bridge', async () => {

@@ -418,29 +418,67 @@ describe('AvatarConfigurator', () => {
     expect(onPreferenceChange).toHaveBeenLastCalledWith('sprites');
   });
 
-  it('triggers the test wave behavior and reports status', async () => {
+  it('triggers the camera detection bridge for the test wave control', async () => {
+    const triggerBehaviorCue = vi.fn().mockResolvedValue(undefined);
+    const avatarApi = createAvatarBridgeStub({ triggerBehaviorCue });
+    const emitDetection = vi.fn().mockResolvedValue(undefined);
+    const originalBridge = (window as unknown as { aiembodied?: unknown }).aiembodied;
+    (window as unknown as { aiembodied?: unknown }).aiembodied = {
+      camera: {
+        emitDetection,
+        onDetection: vi.fn(),
+      },
+    };
+
+    try {
+      render(<AvatarConfigurator avatarApi={avatarApi} />);
+
+      const button = screen.getByRole('button', { name: 'Test wave gesture' });
+      fireEvent.click(button);
+      await waitFor(() => expect(emitDetection).toHaveBeenCalledWith({
+        cue: 'greet_face',
+        provider: 'configurator-test',
+        confidence: 1,
+      }));
+      expect(triggerBehaviorCue).not.toHaveBeenCalled();
+      expect(await screen.findByRole('status')).toHaveTextContent('Wave gesture triggered.');
+    } finally {
+      (window as unknown as { aiembodied?: unknown }).aiembodied = originalBridge;
+    }
+  });
+
+  it('falls back to the avatar behavior bridge when camera detection is unavailable', async () => {
     const triggerBehaviorCue = vi.fn().mockResolvedValue(undefined);
     const avatarApi = createAvatarBridgeStub({ triggerBehaviorCue });
 
     render(<AvatarConfigurator avatarApi={avatarApi} />);
 
-    const button = screen.getByRole('button', { name: 'Test wave gesture' });
-    fireEvent.click(button);
+    fireEvent.click(screen.getByRole('button', { name: 'Test wave gesture' }));
     await waitFor(() => expect(triggerBehaviorCue).toHaveBeenCalledWith('greet_face'));
     expect(await screen.findByRole('status')).toHaveTextContent('Wave gesture triggered.');
   });
 
-  it('surfaces an error when the wave gesture trigger fails', async () => {
-    const triggerBehaviorCue = vi
-      .fn()
-      .mockRejectedValue(new Error('Bridge unavailable'));
+  it('surfaces an error when the detection bridge fails', async () => {
+    const triggerBehaviorCue = vi.fn();
     const avatarApi = createAvatarBridgeStub({ triggerBehaviorCue });
+    const emitDetection = vi.fn().mockRejectedValue(new Error('Bridge unavailable'));
+    const originalBridge = (window as unknown as { aiembodied?: unknown }).aiembodied;
+    (window as unknown as { aiembodied?: unknown }).aiembodied = {
+      camera: {
+        emitDetection,
+        onDetection: vi.fn(),
+      },
+    };
 
-    render(<AvatarConfigurator avatarApi={avatarApi} />);
+    try {
+      render(<AvatarConfigurator avatarApi={avatarApi} />);
 
-    const button = screen.getByRole('button', { name: 'Test wave gesture' });
-    fireEvent.click(button);
-    expect(await screen.findByRole('alert')).toHaveTextContent('Bridge unavailable');
+      fireEvent.click(screen.getByRole('button', { name: 'Test wave gesture' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('Bridge unavailable');
+      expect(triggerBehaviorCue).not.toHaveBeenCalled();
+    } finally {
+      (window as unknown as { aiembodied?: unknown }).aiembodied = originalBridge;
+    }
   });
 
   it('logs a warning when the avatar bridge is unavailable', async () => {

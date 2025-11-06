@@ -609,7 +609,7 @@ describe('main process bootstrap', () => {
       ts: 1700000000,
     });
 
-    expect(ipcMainMock.handle).toHaveBeenCalledTimes(23);
+    expect(ipcMainMock.handle).toHaveBeenCalledTimes(24);
     const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
 
     expect(mockLogger.info).toHaveBeenCalledWith('Avatar face service initialized.', {
@@ -781,6 +781,18 @@ describe('main process bootstrap', () => {
         ([message, meta]) => message === 'Avatar behavior cue requested.' && (meta as { cue?: string })?.cue === 'greet_face',
       ),
     ).toBe(true);
+    expect(
+      mainWindow.webContents.send.mock.calls.some(
+        ([channel, payload]) => channel === 'camera:detection' && (payload as { cue?: string })?.cue === 'greet_face',
+      ),
+    ).toBe(true);
+
+    const cameraEmitHandler = handleEntries.get('camera:emit-detection');
+    expect(typeof cameraEmitHandler).toBe('function');
+    await expect(cameraEmitHandler?.({}, { cue: 'greet_face', confidence: 0.5 })).resolves.toBe(true);
+    expect(
+      mainWindow.webContents.send.mock.calls.filter((call) => call[0] === 'camera:detection').length,
+    ).toBeGreaterThanOrEqual(2);
 
     const wakePayload = { keywordLabel: 'Porcupine', confidence: 0.92, timestamp: Date.now() };
     wakeWordService.emit('wake', wakePayload);

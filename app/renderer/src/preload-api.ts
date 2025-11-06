@@ -9,6 +9,7 @@ import type {
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
 import type { WakeWordDetectionEvent } from '../../main/src/wake-word/types.js';
 import type { AvatarBridge } from './avatar/types.js';
+import type { CameraDetectionEvent } from './avatar/behavior-cues.js';
 
 export interface ConfigBridge {
   get(): Promise<RendererConfig>;
@@ -39,9 +40,15 @@ export interface PreloadApi {
   conversation?: ConversationBridge;
   metrics?: MetricsBridge;
   avatar?: AvatarBridge;
+  camera?: CameraBridge;
   ping(): string;
   __bridgeReady?: boolean;
   __bridgeVersion?: string;
+}
+
+export interface CameraBridge {
+  onDetection(listener: (event: CameraDetectionEvent) => void): () => void;
+  emitDetection(event: CameraDetectionEvent): Promise<void>;
 }
 
 export function getPreloadApi(): PreloadApi | undefined {
