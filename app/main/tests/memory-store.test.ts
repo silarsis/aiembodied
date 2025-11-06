@@ -226,6 +226,25 @@ describe('MemoryStore', () => {
     expect(store.getActiveFaceId()).toBeNull();
   });
 
+  it('persists avatar display mode preferences', async () => {
+    const store = await createStore();
+
+    expect(store.getAvatarDisplayMode()).toBeNull();
+
+    store.setAvatarDisplayMode('sprites');
+    expect(store.getAvatarDisplayMode()).toBe('sprites');
+
+    store.setAvatarDisplayMode('vrm');
+    expect(store.getAvatarDisplayMode()).toBe('vrm');
+
+    store.setAvatarDisplayMode(null);
+    expect(store.getAvatarDisplayMode()).toBeNull();
+
+    expect(() => store.setAvatarDisplayMode('invalid' as unknown as 'sprites')).toThrowError(
+      /invalid avatar display mode/i,
+    );
+  });
+
   it('stores VRM models and resets active model when deleted', async () => {
     const store = await createStore();
     const createdAt = Date.now();

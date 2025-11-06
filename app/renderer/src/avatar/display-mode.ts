@@ -1,6 +1,4 @@
-import type { AvatarModelSummary } from './types.js';
-
-export type AvatarDisplayMode = 'sprites' | 'vrm';
+import type { AvatarDisplayMode, AvatarModelSummary } from './types.js';
 
 export interface AvatarDisplayState {
   mode: AvatarDisplayMode;

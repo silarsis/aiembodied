@@ -104,6 +104,8 @@ const deleteMessagesMock = vi.fn();
 const setValueMock = vi.fn();
 const getValueMock = vi.fn();
 const deleteValueMock = vi.fn();
+const getAvatarDisplayModeMock = vi.fn();
+const setAvatarDisplayModeMock = vi.fn();
 const exportDataMock = vi.fn();
 const importDataMock = vi.fn();
 const memoryStoreDisposeMock = vi.fn();
@@ -119,6 +121,8 @@ const MemoryStoreMock = vi.fn(() => ({
   setValue: setValueMock,
   getValue: getValueMock,
   deleteValue: deleteValueMock,
+  getAvatarDisplayMode: getAvatarDisplayModeMock,
+  setAvatarDisplayMode: setAvatarDisplayModeMock,
   exportData: exportDataMock,
   importData: importDataMock,
   dispose: memoryStoreDisposeMock,
@@ -432,6 +436,9 @@ describe('main process bootstrap', () => {
     setValueMock.mockReset();
     getValueMock.mockReset();
     deleteValueMock.mockReset();
+    getAvatarDisplayModeMock.mockReset();
+    setAvatarDisplayModeMock.mockReset();
+    getAvatarDisplayModeMock.mockReturnValue(null);
     exportDataMock.mockReset();
     importDataMock.mockReset();
     memoryStoreDisposeMock.mockReset();
@@ -602,7 +609,7 @@ describe('main process bootstrap', () => {
       ts: 1700000000,
     });
 
-    expect(ipcMainMock.handle).toHaveBeenCalledTimes(20);
+    expect(ipcMainMock.handle).toHaveBeenCalledTimes(23);
     const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
 
     expect(mockLogger.info).toHaveBeenCalledWith('Avatar face service initialized.', {
@@ -755,6 +762,25 @@ describe('main process bootstrap', () => {
     expect(typeof loadModelBinaryHandler).toBe('function');
     await expect(loadModelBinaryHandler?.({}, 'vrm-4')).resolves.toBeInstanceOf(ArrayBuffer);
     expect(avatarModelService?.loadModelBinary).toHaveBeenCalledWith('vrm-4');
+
+    getAvatarDisplayModeMock.mockReturnValueOnce('vrm');
+    const getDisplayModeHandler = handleEntries.get('avatar:get-display-mode');
+    expect(typeof getDisplayModeHandler).toBe('function');
+    await expect(getDisplayModeHandler?.({})).resolves.toBe('vrm');
+
+    const setDisplayModeHandler = handleEntries.get('avatar:set-display-mode');
+    expect(typeof setDisplayModeHandler).toBe('function');
+    await expect(setDisplayModeHandler?.({}, 'sprites')).resolves.toBeNull();
+    expect(setAvatarDisplayModeMock).toHaveBeenCalledWith('sprites');
+
+    const triggerBehaviorHandler = handleEntries.get('avatar:trigger-behavior');
+    expect(typeof triggerBehaviorHandler).toBe('function');
+    await expect(triggerBehaviorHandler?.({}, 'greet_face')).resolves.toBe(true);
+    expect(
+      mockLogger.info.mock.calls.some(
+        ([message, meta]) => message === 'Avatar behavior cue requested.' && (meta as { cue?: string })?.cue === 'greet_face',
+      ),
+    ).toBe(true);
 
     const wakePayload = { keywordLabel: 'Porcupine', confidence: 0.92, timestamp: Date.now() };
     wakeWordService.emit('wake', wakePayload);

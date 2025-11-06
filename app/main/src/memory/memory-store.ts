@@ -180,6 +180,7 @@ function normalizeAudioPath(audioPath: string | null | undefined): string | null
 
 const ACTIVE_FACE_KEY = 'avatar.activeFaceId';
 const ACTIVE_VRM_KEY = 'avatar.activeVrmId';
+const AVATAR_DISPLAY_MODE_KEY = 'avatar.displayMode';
 
 export class MemoryStore {
   private readonly db: SqliteDatabase;
@@ -634,6 +635,33 @@ export class MemoryStore {
     }
 
     this.setValue(ACTIVE_VRM_KEY, modelId);
+  }
+
+  getAvatarDisplayMode(): 'sprites' | 'vrm' | null {
+    const value = this.getValue(AVATAR_DISPLAY_MODE_KEY);
+    if (!value) {
+      return null;
+    }
+
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'sprites' || normalized === 'vrm') {
+      return normalized;
+    }
+
+    return null;
+  }
+
+  setAvatarDisplayMode(mode: 'sprites' | 'vrm' | null): void {
+    if (!mode) {
+      this.deleteValue(AVATAR_DISPLAY_MODE_KEY);
+      return;
+    }
+
+    if (mode !== 'sprites' && mode !== 'vrm') {
+      throw new Error('Invalid avatar display mode preference.');
+    }
+
+    this.setValue(AVATAR_DISPLAY_MODE_KEY, mode);
   }
 
   setValue(key: string, value: string): void {

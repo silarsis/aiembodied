@@ -29,6 +29,7 @@ import { createDevTray } from './lifecycle/dev-tray.js';
 import { AvatarFaceService } from './avatar/avatar-face-service.js';
 import { AvatarModelService } from './avatar/avatar-model-service.js';
 import type {
+  AvatarDisplayMode,
   AvatarUploadRequest,
   AvatarGenerationResult,
   AvatarModelSummary,
@@ -263,6 +264,7 @@ function registerIpcHandlers(
   conversation: ConversationManager | null,
   metrics: PrometheusCollector | null,
   avatarModels: AvatarModelService | null,
+  store: MemoryStore | null,
 ) {
   // Preload diagnostics bridge: allow preload/renderer to forward logs to main logger
   try {
@@ -564,6 +566,37 @@ function registerIpcHandlers(
 
     return avatarModels.loadModelBinary(modelId);
   });
+  ipcMain.handle('avatar:get-display-mode', async () => {
+    if (!store) {
+      return 'sprites';
+    }
+
+    const value = store.getAvatarDisplayMode();
+    return value ?? 'sprites';
+  });
+  ipcMain.handle('avatar:set-display-mode', async (_event, mode: string) => {
+    const normalized = typeof mode === 'string' ? mode.trim().toLowerCase() : '';
+    if (normalized !== 'sprites' && normalized !== 'vrm') {
+      throw new Error('Invalid avatar display mode preference received.');
+    }
+
+    if (!store) {
+      logger.warn('Display mode preference ignored because memory store is unavailable.', { mode: normalized });
+      return null;
+    }
+
+    store.setAvatarDisplayMode(normalized as AvatarDisplayMode);
+    return null;
+  });
+  ipcMain.handle('avatar:trigger-behavior', async (_event, cue: string) => {
+    const value = typeof cue === 'string' ? cue.trim() : '';
+    if (!value) {
+      throw new Error('Invalid avatar behavior cue received.');
+    }
+
+    logger.info('Avatar behavior cue requested.', { cue: value });
+    return true;
+  });
 }
 
 function focusExistingWindow() {
@@ -747,7 +780,7 @@ app.whenReady().then(async () => {
   }
 
   try {
-    registerIpcHandlers(manager, conversationManager, metricsCollector, avatarModelService);
+    registerIpcHandlers(manager, conversationManager, metricsCollector, avatarModelService, memoryStore);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Unknown IPC handler registration error occurred.';

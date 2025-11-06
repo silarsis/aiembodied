@@ -12,6 +12,8 @@ export const AVATAR_COMPONENT_SLOTS = [
 
 export type AvatarComponentSlot = (typeof AVATAR_COMPONENT_SLOTS)[number];
 
+export type AvatarDisplayMode = 'sprites' | 'vrm';
+
 export interface AvatarFaceSummary {
   id: string;
   name: string;

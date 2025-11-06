@@ -121,3 +121,4 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
   - Prefer updating `app/renderer/src/avatar/display-mode.ts` when adding new display toggles so tests in `tests/avatar/display-mode.test.ts` stay authoritative.
   - VRM viseme/blink handling lives in `app/renderer/src/avatar/vrm-avatar-renderer.tsx`; keep helper functions exported for unit tests and extend `avatar-renderers.smoke.test.tsx` if the WebGL boot flow changes.
   - Renderer IPC for VRM binaries flows through `avatar-model:load`; mocks in renderer tests should patch `window.aiembodied.avatar.loadModelBinary` when VRM coverage is required.
+- 2025-11-01 — Avatar configurator now surfaces VRM model management, display mode selection, and manual wave testing. Update `avatar-configurator.test.tsx` when adjusting VRM uploads, display preferences, or behavior cue plumbing.
