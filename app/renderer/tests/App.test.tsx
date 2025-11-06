@@ -217,8 +217,11 @@ describe('App component', () => {
     }
   });
 
+  const getMainTablist = () => screen.findByRole('tablist', { name: /Kiosk sections/i });
+
   const openTab = async (name: RegExp | string) => {
-    const tab = await screen.findByRole('tab', { name });
+    const tablist = await getMainTablist();
+    const tab = await within(tablist).findByRole('tab', { name });
     fireEvent.click(tab);
     return tab;
   };
@@ -241,7 +244,8 @@ describe('App component', () => {
 
     render(<App />);
 
-    const tabs = await screen.findAllByRole('tab');
+    const mainTablist = await getMainTablist();
+    const tabs = within(mainTablist).getAllByRole('tab');
     expect(tabs.map((tab) => tab.textContent)).toEqual(['ChatGPT', 'Character', 'Local']);
 
     const chatPanel = await screen.findByRole('tabpanel', { name: /ChatGPT/i });
