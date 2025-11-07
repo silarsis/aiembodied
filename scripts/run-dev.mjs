@@ -150,24 +150,44 @@ export async function rebuildNativeDependenciesForElectron(
   { runImpl = run, baseEnv = process.env, platform = process.platform, pnpmStorePath } = {},
 ) {
   const envIsolated = prepareDevHomeEnv(repoRoot, baseEnv, platform, { pnpmStorePath });
-  envIsolated.PREBUILD_INSTALL_FORBID = '1';
+  const envNoPrebuilds = { ...envIsolated, PREBUILD_INSTALL_FORBID: '1' };
+  const envAllowPrebuilds = { ...envIsolated };
+  if (platform === 'win32') {
+    envNoPrebuilds.GYP_MSVS_VERSION = envNoPrebuilds.GYP_MSVS_VERSION || '2022';
+    envNoPrebuilds.npm_config_msvs_version = envNoPrebuilds.npm_config_msvs_version || '2022';
+    envAllowPrebuilds.GYP_MSVS_VERSION = envAllowPrebuilds.GYP_MSVS_VERSION || '2022';
+    envAllowPrebuilds.npm_config_msvs_version = envAllowPrebuilds.npm_config_msvs_version || '2022';
+  }
 
-  await runImpl('pnpm', ['--filter', '@aiembodied/main', 'exec', 'electron-builder', 'install-app-deps'], {
-    env: envIsolated,
-  });
+  let installAppDepsSucceeded = false;
+  try {
+    await runImpl('pnpm', ['--filter', '@aiembodied/main', 'exec', 'electron-builder', 'install-app-deps'], {
+      env: envNoPrebuilds,
+    });
+    installAppDepsSucceeded = true;
+  } catch (err) {
+    console.warn('[warn] install-app-deps with source build failed, retrying with prebuilt binaries allowed...');
+    await runImpl('pnpm', ['--filter', '@aiembodied/main', 'exec', 'electron-builder', 'install-app-deps'], {
+      env: envAllowPrebuilds,
+    });
+    installAppDepsSucceeded = true;
+  }
 
-  const electronVersion = readElectronVersion(repoRoot);
-  const rebuildEnv = {
-    ...envIsolated,
-    npm_config_runtime: 'electron',
-    npm_config_target: electronVersion,
-    npm_config_disturl: 'https://electronjs.org/headers',
-    PREBUILD_INSTALL_FORBID: '1',
-  };
-
-  await runImpl('pnpm', ['--filter', '@aiembodied/main', 'rebuild', 'better-sqlite3', 'keytar'], {
-    env: rebuildEnv,
-  });
+  // Optional targeted rebuild. If it fails, continue — install-app-deps already handled deps.
+  try {
+    const electronVersion = readElectronVersion(repoRoot);
+    const rebuildEnv = {
+      ...envAllowPrebuilds,
+      npm_config_runtime: 'electron',
+      npm_config_target: electronVersion,
+      npm_config_disturl: 'https://electronjs.org/headers',
+    };
+    await runImpl('pnpm', ['--filter', '@aiembodied/main', 'rebuild', 'better-sqlite3', 'keytar'], {
+      env: rebuildEnv,
+    });
+  } catch (err) {
+    console.warn('[warn] pnpm rebuild of native deps failed, continuing since install-app-deps succeeded:', err.message);
+  }
 }
 
 async function main() {
