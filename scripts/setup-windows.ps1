@@ -292,6 +292,88 @@ try {
     Ensure-Node
     Ensure-Pnpm
 
+    # Ensure native build prerequisites for Electron native modules (better-sqlite3, keytar)
+    function Test-VisualStudio2022BuildTools {
+        $vsDir = "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools"
+        return Test-Path -Path $vsDir -PathType Container
+    }
+
+    function Ensure-VisualStudio2022BuildTools {
+        if (Test-VisualStudio2022BuildTools) {
+            Write-Host 'Visual Studio 2022 Build Tools already installed.' -ForegroundColor Green
+            return
+        }
+
+        Write-Host 'Installing Visual Studio 2022 Build Tools (C++ workload + Windows SDK)...' -ForegroundColor Cyan
+        $installed = $false
+        if (Test-CommandExists -Name 'winget') {
+            try {
+                # Install Build Tools with VC Tools + Win10/11 SDK silently
+                winget install --id Microsoft.VisualStudio.2022.BuildTools --source winget --exact --accept-package-agreements --accept-source-agreements --override "--add Microsoft.VisualStudio.Workload.VCTools;Microsoft.VisualStudio.Component.VC.Tools.x86.x64;Microsoft.VisualStudio.Component.Windows10SDK.19041;Microsoft.VisualStudio.Component.Windows11SDK.22621 --quiet --wait --norestart"
+                $installed = $true
+            } catch {
+                Write-Warning "winget install of Visual Studio 2022 Build Tools failed: $($_.Exception.Message)"
+            }
+        }
+
+        if (-not $installed -and (Test-CommandExists -Name 'choco')) {
+            try {
+                choco install visualstudio2022buildtools --yes --no-progress --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --locale en-US"
+                # Ensure Windows 10 SDK as well
+                choco install windows-sdk-10-version-2004-all --yes --no-progress
+                $installed = $true
+            } catch {
+                Write-Warning "Chocolatey install of Visual Studio Build Tools failed: $($_.Exception.Message)"
+            }
+        }
+
+        if (-not $installed) {
+            throw 'Failed to install Visual Studio 2022 Build Tools via winget or Chocolatey. Install it manually and re-run this script.'
+        }
+
+        Write-Host 'Visual Studio 2022 Build Tools installation completed.' -ForegroundColor Green
+    }
+
+    function Test-Python3Available {
+        try { py -3 -c "print('ok')" | Out-Null; return $true } catch { return $false }
+    }
+
+    function Ensure-Python3ForNodeGyp {
+        if (Test-Python3Available) {
+            Write-Host 'Python 3 is available via py launcher.' -ForegroundColor Green
+            return
+        }
+        Write-Host 'Installing Python 3 for node-gyp...' -ForegroundColor Cyan
+        $installed = $false
+        if (Test-CommandExists -Name 'winget') {
+            try {
+                winget install --id Python.Python.3 --source winget --exact --accept-package-agreements --accept-source-agreements
+                $installed = $true
+            } catch { Write-Warning "winget install of Python 3 failed: $($_.Exception.Message)" }
+        }
+        if (-not $installed -and (Test-CommandExists -Name 'choco')) {
+            try {
+                choco install python --yes --no-progress
+                $installed = $true
+            } catch { Write-Warning "Chocolatey install of Python failed: $($_.Exception.Message)" }
+        }
+        if (-not $installed) {
+            throw 'Failed to install Python 3 via winget or Chocolatey.'
+        }
+        Write-Host 'Python 3 installation completed.' -ForegroundColor Green
+    }
+
+    function Ensure-NodeGypEnv {
+        # Set persistent user-level hints for node-gyp on Windows
+        [Environment]::SetEnvironmentVariable('GYP_MSVS_VERSION','2022',[EnvironmentVariableTarget]::User)
+        [Environment]::SetEnvironmentVariable('npm_config_msvs_version','2022',[EnvironmentVariableTarget]::User)
+        Write-Host 'Configured GYP_MSVS_VERSION=2022 for node-gyp.' -ForegroundColor Green
+    }
+
+    try { Ensure-VisualStudio2022BuildTools } catch { Write-Warning $_ }
+    try { Ensure-Python3ForNodeGyp } catch { Write-Warning $_ }
+    Ensure-NodeGypEnv
+
     # Optionally align system Node to Electron's embedded Node for native module ABI parity.
     # This requires that workspace dependencies are installed. If Electron is not yet installed,
     # we will skip with a helpful message.
