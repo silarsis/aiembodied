@@ -123,8 +123,8 @@ importers:
         specifier: ^17.2.3
         version: 17.2.3
       electron:
-        specifier: ^39.1.0
-        version: 39.1.0
+        specifier: ^39.1.1
+        version: 39.1.1
       keytar:
         specifier: ^7.9.0
         version: 7.9.0
@@ -696,6 +696,7 @@ packages:
   '@picovoice/porcupine-node@3.0.6':
     resolution: {integrity: sha512-vYlY0Hf9ovRB+Z9yyLReiVYZkLsm/kVPgDWTu2dgtqAooednohljfxSRzJUojapp8BFd7aW8P3H/4sm1zy49lw==}
     engines: {node: '>=18.0.0'}
+    cpu: ['!ia32', '!mips', '!ppc', '!ppc64']
 
   '@picovoice/pvrecorder-node@1.2.8':
     resolution: {integrity: sha512-dbLJlplQQNRkM2ja/hP4sRADGDILuJ54dEf8cU5eULeNrddxXvOtE8IiJ5F2VhhbXmIv3Qmn79DqhttCOxjH8Q==}
@@ -1692,8 +1693,8 @@ packages:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
     engines: {node: '>=8.0.0'}
 
-  electron@39.1.0:
-    resolution: {integrity: sha512-vPRbKKQUzKWZZX68fuYdz4iS/eavGcQkHOGK4ylv0YJLbBRxxUlflPRdqRGflFjwid+sja7gbNul2lArevYwrw==}
+  electron@39.1.1:
+    resolution: {integrity: sha512-VuFEI1yQ7BH3RYI5VZtwFlzGp4rpPRd5oEc26ZQIItVLcLTbXt4/O7o4hs+1fyg9Q3NvGAifgX5Vp5EBOIFpAg==}
     engines: {node: '>= 12.20.55'}
     hasBin: true
 
@@ -2189,8 +2190,8 @@ packages:
     resolution: {integrity: sha512-4gd7VpWNQNB4UKKCFFVcp1AVv+FMOgs9NKzjHKusc8jTMhd5eL1NqQqOpE0KzMds804/yHlglp3uxgluOqAPLw==}
     engines: {node: '>= 0.4'}
 
-  ip-address@10.0.1:
-    resolution: {integrity: sha512-NWv9YLW4PoW2B7xtzaS3NCot75m6nK7Icdv0o3lfMceJVRfSoQwqD4wEH5rLwoKJwUiZ/rfpiVBhnaF0FK4HoA==}
+  ip-address@10.1.0:
+    resolution: {integrity: sha512-XXADHxXmvT9+CRxhXg56LJovE+bmWnEWB78LB83VZTprKTmaC5QfruXocxzTZ2Kl0DNwKuBdlIhjL8LeY8Sf8Q==}
     engines: {node: '>= 12'}
 
   is-array-buffer@3.0.5:
@@ -5319,7 +5320,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@39.1.0:
+  electron@39.1.1:
     dependencies:
       '@electron/get': 2.0.3
       '@types/node': 22.19.0
@@ -5997,7 +5998,7 @@ snapshots:
       hasown: 2.0.2
       side-channel: 1.1.0
 
-  ip-address@10.0.1: {}
+  ip-address@10.1.0: {}
 
   is-array-buffer@3.0.5:
     dependencies:
@@ -6972,7 +6973,7 @@ snapshots:
 
   socks@2.8.7:
     dependencies:
-      ip-address: 10.0.1
+      ip-address: 10.1.0
       smart-buffer: 4.2.0
 
   source-map-js@1.2.1: {}
