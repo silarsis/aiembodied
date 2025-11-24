@@ -19,7 +19,7 @@
     "@picovoice/porcupine-node": "^3.0.6",
     "@picovoice/pvrecorder-node": "^1.2.8",
     "auto-launch": "^5.0.6",
-    "better-sqlite3": "^12.4.1",
+    "better-sqlite3": "^12.4.6",
     "debug": "^4.3.4",
     "dotenv": "^17.2.3",
     "electron": "^39.1.1",
