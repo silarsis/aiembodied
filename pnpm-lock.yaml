@@ -23,8 +23,8 @@ importers:
         specifier: ^0.181.1
         version: 0.181.1
       three-stdlib:
-        specifier: ^2.36.0
-        version: 2.36.0(three@0.181.1)
+        specifier: ^2.36.1
+        version: 2.36.1(three@0.181.1)
     devDependencies:
       '@eslint/js':
         specifier: ^9.39.1
@@ -178,8 +178,8 @@ importers:
         specifier: ^0.181.1
         version: 0.181.1
       three-stdlib:
-        specifier: ^2.36.0
-        version: 2.36.0(three@0.181.1)
+        specifier: ^2.36.1
+        version: 2.36.1(three@0.181.1)
     devDependencies:
       '@types/three':
         specifier: ^0.181.0
@@ -3282,8 +3282,8 @@ packages:
   text-hex@1.0.0:
     resolution: {integrity: sha512-uuVGNWzgJ4yhRaNSiubPY7OjISw4sw4E5Uv0wbjp+OzcbmVU/rsT8ujgcXJhn9ypzsgr5vlzpPqP+MBBKcGvbg==}
 
-  three-stdlib@2.36.0:
-    resolution: {integrity: sha512-kv0Byb++AXztEGsULgMAs8U2jgUdz6HPpAB/wDJnLiLlaWQX2APHhiTJIN7rqW+Of0eRgcp7jn05U1BsCP3xBA==}
+  three-stdlib@2.36.1:
+    resolution: {integrity: sha512-XyGQrFmNQ5O/IoKm556ftwKsBg11TIb301MB5dWNicziQBEs2g3gtOYIf7pFiLa0zI2gUwhtCjv9fmjnxKZ1Cg==}
     peerDependencies:
       three: '>=0.128.0'
 
@@ -7222,7 +7222,7 @@ snapshots:
 
   text-hex@1.0.0: {}
 
-  three-stdlib@2.36.0(three@0.181.1):
+  three-stdlib@2.36.1(three@0.181.1):
     dependencies:
       '@types/draco3d': 1.4.10
       '@types/offscreencanvas': 2019.7.3
