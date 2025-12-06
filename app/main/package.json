@@ -22,7 +22,7 @@
     "better-sqlite3": "^12.4.6",
     "debug": "^4.3.4",
     "dotenv": "^17.2.3",
-    "electron": "^39.1.1",
+    "electron": "^39.2.4",
     "@pixiv/three-vrm": "^3.4.4",
     "@pixiv/three-vrm-core": "^3.4.4",
     "three": "^0.181.2",
