@@ -9,6 +9,8 @@
     "test": "pnpm -r test",
     "test:coverage": "pnpm -r test:coverage",
     "build": "pnpm -r build",
+    "setup:windows": "powershell -ExecutionPolicy Bypass -File scripts/setup-windows.ps1",
+    "dev:prepare": "node scripts/prepare-dev.mjs",
     "dev:run": "node scripts/run-dev.mjs",
     "dist": "pnpm build && electron-builder --config electron-builder.yml"
   },
@@ -45,7 +47,9 @@
   },
   "pnpm": {
     "overrides": {
-      "@electron/node-gyp": "https://codeload.github.com/electron/node-gyp/tar.gz/06b29aafb7708acef8b3669835c8a7857ebc92d2"
+      "@electron/node-gyp": "https://codeload.github.com/electron/node-gyp/tar.gz/06b29aafb7708acef8b3669835c8a7857ebc92d2",
+      "js-yaml": "^4.1.1",
+      "glob": "^10.5.0"
     }
   },
   "packageManager": "pnpm@9.12.0"

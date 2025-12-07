@@ -2,6 +2,24 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { resolve, join, parse } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { homedir } from 'node:os';
+
+function getPnpmExecutable() {
+  try {
+    const check = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['pnpm'], { stdio: 'ignore' });
+    if (check.status === 0) return 'pnpm';
+  } catch { }
+
+  if (process.platform === 'win32') {
+    const localAppData = process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local');
+    const candidate = join(localAppData, 'pnpm', 'pnpm.exe');
+    if (existsSync(candidate)) return candidate;
+  }
+  return 'pnpm';
+}
+
+const pnpmExe = getPnpmExecutable();
+
 
 function run(cmd, args, options = {}) {
   return new Promise((resolvePromise, reject) => {
@@ -17,7 +35,7 @@ function run(cmd, args, options = {}) {
 function parseDotEnv(envPath) {
   const envVars = {};
   if (!existsSync(envPath)) return envVars;
-  
+
   const content = readFileSync(envPath, 'utf8');
   for (const line of content.split('\n')) {
     const trimmed = line.trim();
@@ -32,7 +50,7 @@ function parseDotEnv(envPath) {
 }
 
 export function resolvePnpmStorePath(env = process.env) {
-  const result = spawnSync('pnpm', ['store', 'path'], {
+  const result = spawnSync(pnpmExe, ['store', 'path'], {
     env,
     encoding: 'utf8',
   });
@@ -150,24 +168,45 @@ export async function rebuildNativeDependenciesForElectron(
   { runImpl = run, baseEnv = process.env, platform = process.platform, pnpmStorePath } = {},
 ) {
   const envIsolated = prepareDevHomeEnv(repoRoot, baseEnv, platform, { pnpmStorePath });
-  envIsolated.PREBUILD_INSTALL_FORBID = '1';
+  const envNoPrebuilds = { ...envIsolated, PREBUILD_INSTALL_FORBID: '1' };
+  const envAllowPrebuilds = { ...envIsolated };
+  if (platform === 'win32') {
+    envNoPrebuilds.GYP_MSVS_VERSION = envNoPrebuilds.GYP_MSVS_VERSION || '2022';
+    envNoPrebuilds.npm_config_msvs_version = envNoPrebuilds.npm_config_msvs_version || '2022';
+    envAllowPrebuilds.GYP_MSVS_VERSION = envAllowPrebuilds.GYP_MSVS_VERSION || '2022';
+    envAllowPrebuilds.npm_config_msvs_version = envAllowPrebuilds.npm_config_msvs_version || '2022';
+  }
 
-  await runImpl('pnpm', ['--filter', '@aiembodied/main', 'exec', 'electron-builder', 'install-app-deps'], {
-    env: envIsolated,
-  });
+  let installAppDepsSucceeded = false;
+  try {
+    await runImpl('pnpm', ['--filter', '@aiembodied/main', 'exec', 'electron-builder', 'install-app-deps'], {
+      env: envNoPrebuilds,
+    });
+    installAppDepsSucceeded = true;
+  } catch (err) {
+    console.warn('[warn] install-app-deps with source build failed, retrying with prebuilt binaries allowed...');
+    await runImpl(pnpmExe, ['--filter', '@aiembodied/main', 'exec', 'electron-builder', 'install-app-deps'], {
+      env: envAllowPrebuilds,
+    });
+    installAppDepsSucceeded = true;
+  }
 
-  const electronVersion = readElectronVersion(repoRoot);
-  const rebuildEnv = {
-    ...envIsolated,
-    npm_config_runtime: 'electron',
-    npm_config_target: electronVersion,
-    npm_config_disturl: 'https://electronjs.org/headers',
-    PREBUILD_INSTALL_FORBID: '1',
-  };
-
-  await runImpl('pnpm', ['--filter', '@aiembodied/main', 'rebuild', 'better-sqlite3', 'keytar'], {
-    env: rebuildEnv,
-  });
+  // Optional targeted rebuild. If it fails, continue — install-app-deps already handled deps.
+  try {
+    const electronVersion = readElectronVersion(repoRoot);
+    const rebuildEnv = {
+      ...envNoPrebuilds,
+      PREBUILD_INSTALL_FORBID: '1',
+      npm_config_runtime: 'electron',
+      npm_config_target: electronVersion,
+      npm_config_disturl: 'https://electronjs.org/headers',
+    };
+    await runImpl(pnpmExe, ['--filter', '@aiembodied/main', 'rebuild', 'better-sqlite3', 'keytar'], {
+      env: rebuildEnv,
+    });
+  } catch (err) {
+    console.warn('[warn] pnpm rebuild of native deps failed, continuing since install-app-deps succeeded:', err.message);
+  }
 }
 
 async function main() {
@@ -195,7 +234,7 @@ async function main() {
   }
 
   // Verify pnpm is available
-  await run('pnpm', ['-v']).catch((e) => {
+  await run(pnpmExe, ['-v']).catch((e) => {
     console.error('pnpm is required. Run the setup script first.');
     throw e;
   });
@@ -205,7 +244,7 @@ async function main() {
   const isolatedStore = resolve(devHome, 'AppData', 'Local', 'pnpm', 'store', 'v3');
   try {
     mkdirSync(isolatedStore, { recursive: true });
-  } catch {}
+  } catch { }
   const pnpmStorePath = isolatedStore;
   console.log(`[info] Isolated pnpm store set to ${pnpmStorePath}`);
 
@@ -214,14 +253,14 @@ async function main() {
 
   // Build renderer and main
   console.log('[info] Aligning workspace deps to isolated store...');
-  await run('pnpm', ['--filter', '@aiembodied/main', 'install', '--force'], { env: { ...envIsolated, CI: '1' } });
-  await run('pnpm', ['--filter', '@aiembodied/renderer', 'install', '--force'], { env: { ...envIsolated, CI: '1' } });
+  await run(pnpmExe, ['--filter', '@aiembodied/main', 'install', '--force'], { env: { ...envIsolated, CI: '1' } });
+  await run(pnpmExe, ['--filter', '@aiembodied/renderer', 'install', '--force'], { env: { ...envIsolated, CI: '1' } });
 
   console.log('[info] Building renderer...');
-  await run('pnpm', ['--filter', '@aiembodied/renderer', 'build'], { env: envIsolated });
-  
+  await run(pnpmExe, ['--filter', '@aiembodied/renderer', 'build'], { env: envIsolated });
+
   console.log('[info] Building main process...');
-  await run('pnpm', ['--filter', '@aiembodied/main', 'build'], { env: envIsolated });
+  await run(pnpmExe, ['--filter', '@aiembodied/main', 'build'], { env: envIsolated });
 
   // Verify preload script exists
   const preloadPath = resolve(repoRoot, 'app/main/dist/preload.js');

@@ -954,6 +954,7 @@ export default function App() {
     }
 
     return new RealtimeClient({
+      handshakeMode: 'sdp',
       callbacks: {
         onStateChange: setRealtimeState,
         onSessionUpdated: (session) => {
