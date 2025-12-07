@@ -195,7 +195,8 @@ export async function rebuildNativeDependenciesForElectron(
   try {
     const electronVersion = readElectronVersion(repoRoot);
     const rebuildEnv = {
-      ...envAllowPrebuilds,
+      ...envNoPrebuilds,
+      PREBUILD_INSTALL_FORBID: '1',
       npm_config_runtime: 'electron',
       npm_config_target: electronVersion,
       npm_config_disturl: 'https://electronjs.org/headers',
