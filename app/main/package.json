@@ -16,7 +16,7 @@
     "debug-avatar-images": "node debug-avatar-images.mjs"
   },
   "dependencies": {
-    "@picovoice/porcupine-node": "^3.0.6",
+    "@picovoice/porcupine-node": "^4.0.0",
     "@picovoice/pvrecorder-node": "^1.2.8",
     "@pixiv/three-vrm": "^3.4.4",
     "@pixiv/three-vrm-core": "^3.4.4",
