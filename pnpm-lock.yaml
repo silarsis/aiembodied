@@ -101,8 +101,8 @@ importers:
   app/main:
     dependencies:
       '@picovoice/porcupine-node':
-        specifier: ^3.0.6
-        version: 3.0.6
+        specifier: ^4.0.0
+        version: 4.0.0
       '@picovoice/pvrecorder-node':
         specifier: ^1.2.8
         version: 1.2.8
@@ -681,8 +681,8 @@ packages:
     resolution: {integrity: sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg==}
     engines: {node: '>=8.0.0'}
 
-  '@picovoice/porcupine-node@3.0.6':
-    resolution: {integrity: sha512-vYlY0Hf9ovRB+Z9yyLReiVYZkLsm/kVPgDWTu2dgtqAooednohljfxSRzJUojapp8BFd7aW8P3H/4sm1zy49lw==}
+  '@picovoice/porcupine-node@4.0.0':
+    resolution: {integrity: sha512-8DU1EvrPOU99mzoHCnhU9etEPMnCA9XCxNaUVl4y5xYTEar/8plYcPb2uPO+2/gcntWTvESRClQrZqvfuAEYUg==}
     engines: {node: '>=18.0.0'}
     cpu: ['!ia32', '!mips', '!ppc', '!ppc64']
 
@@ -4102,7 +4102,7 @@ snapshots:
 
   '@opentelemetry/api@1.9.0': {}
 
-  '@picovoice/porcupine-node@3.0.6': {}
+  '@picovoice/porcupine-node@4.0.0': {}
 
   '@picovoice/pvrecorder-node@1.2.8': {}
 
