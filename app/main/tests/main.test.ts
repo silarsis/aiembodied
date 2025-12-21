@@ -609,7 +609,7 @@ describe('main process bootstrap', () => {
       ts: 1700000000,
     });
 
-    expect(ipcMainMock.handle).toHaveBeenCalledTimes(24);
+    expect(ipcMainMock.handle).toHaveBeenCalledTimes(25);
     const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
 
     expect(mockLogger.info).toHaveBeenCalledWith('Avatar face service initialized.', {
@@ -688,6 +688,8 @@ describe('main process bootstrap', () => {
       audioInputDeviceId: 'mic',
       audioOutputDeviceId: 'spk',
     });
+
+    expect(typeof handleEntries.get('realtime:mint-ephemeral-token')).toBe('function');
 
     expect(typeof handleEntries.get('conversation:get-history')).toBe('function');
     expect(typeof handleEntries.get('conversation:append-message')).toBe('function');

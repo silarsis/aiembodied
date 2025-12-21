@@ -19,6 +19,7 @@ type MockRealtimeInstance = {
   bindRemoteAudioElement: ReturnType<typeof vi.fn>;
   setJitterBufferMs: ReturnType<typeof vi.fn>;
   updateSessionConfig: ReturnType<typeof vi.fn>;
+  getSessionConfigSnapshot: ReturnType<typeof vi.fn>;
 };
 
 const realtimeClientInstances: MockRealtimeInstance[] = [];
@@ -32,6 +33,12 @@ vi.mock('../src/realtime/realtime-client.js', () => {
     bindRemoteAudioElement = vi.fn();
     setJitterBufferMs = vi.fn();
     updateSessionConfig = vi.fn();
+    getSessionConfigSnapshot = vi.fn().mockReturnValue({
+      type: 'realtime',
+      model: 'gpt-4o-realtime-preview-2024-12-17',
+      output_modalities: ['audio'],
+      audio: { output: { voice: 'verse' } },
+    });
 
     constructor({ callbacks }: { callbacks?: MockRealtimeInstance['callbacks'] }) {
       this.callbacks = callbacks ?? {};
@@ -141,6 +148,7 @@ describe('App component', () => {
   const setAudioDevicePreferencesMock = vi.fn();
   const setSecretMock = vi.fn();
   const testSecretMock = vi.fn();
+  const mintEphemeralTokenMock = vi.fn();
   let wakeListener: ((event: WakeWordDetectionEvent) => void) | undefined;
   let rendererConfig: RendererConfig;
 
@@ -188,6 +196,8 @@ describe('App component', () => {
     setAudioDevicePreferencesMock.mockResolvedValue(rendererConfig);
     setSecretMock.mockResolvedValue(rendererConfig);
     testSecretMock.mockResolvedValue({ ok: true, message: 'API key verified successfully.' });
+    mintEphemeralTokenMock.mockReset();
+    mintEphemeralTokenMock.mockResolvedValue({ value: 'ephemeral-token' });
 
     wakeListener = undefined;
     console.error = vi.fn();
@@ -236,6 +246,7 @@ describe('App component', () => {
         setSecret: setSecretMock,
         testSecret: testSecretMock,
       },
+      realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: { onWake: () => () => {} },
       avatar: createAvatarBridgeMock(),
       __bridgeReady: true,
@@ -281,6 +292,7 @@ describe('App component', () => {
         setSecret: setSecretMock,
         testSecret: testSecretMock,
       },
+      realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: { onWake: () => () => {} },
       avatar: createAvatarBridgeMock({ listFaces: listFacesMock, getActiveFace: getActiveFaceMock }),
       __bridgeReady: true,
@@ -445,6 +457,7 @@ describe('App component', () => {
         setSecret: setSecretMock,
         testSecret: testSecretMock,
       },
+      realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: { onWake: () => () => {} },
       avatar: createAvatarBridgeMock(),
       __bridgeReady: true,
@@ -529,6 +542,7 @@ describe('App component', () => {
         setSecret: setSecretMock,
         testSecret: testSecretMock,
       },
+      realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: {
         onWake: (listener: (event: { keywordLabel: string; confidence: number }) => void) => {
           wakeListener = listener;
@@ -625,6 +639,7 @@ describe('App component', () => {
         setSecret: setSecretMock,
         testSecret: testSecretMock,
       },
+      realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: {
         onWake: (listener: (event: WakeWordDetectionEvent) => void) => {
           wakeListener = listener;
@@ -733,6 +748,7 @@ describe('App component', () => {
         setSecret: setSecretMock,
         testSecret: testSecretMock,
       },
+      realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: {
         onWake: (listener: (event: WakeWordDetectionEvent) => void) => {
           wakeListener = listener;
@@ -797,6 +813,7 @@ describe('App component', () => {
         setSecret: setSecretMock,
         testSecret: testSecretMock,
       },
+      realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: {
         onWake: (listener: (event: WakeWordDetectionEvent) => void) => {
           wakeListener = listener;
@@ -928,6 +945,7 @@ describe('App component', () => {
         setSecret: setSecretMock,
         testSecret: testSecretMock,
       },
+      realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: {
         onWake: () => () => {},
       },
@@ -941,6 +959,7 @@ describe('App component', () => {
       audioOutputDeviceId: '',
       featureFlags: {},
       hasRealtimeApiKey: true,
+      realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: {
         keywordPath: '',
         keywordLabel: '',
@@ -998,6 +1017,7 @@ describe('App component', () => {
         setSecret: setSecretMock,
         testSecret: testSecretMock,
       },
+      realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: { onWake: () => () => {} },
       avatar: createAvatarBridgeMock(),
       __bridgeReady: true,
@@ -1051,6 +1071,7 @@ describe('App component', () => {
         setSecret: setSecretMock,
         testSecret: testSecretMock,
       },
+      realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: {
         onWake: () => () => {},
       },
@@ -1112,6 +1133,7 @@ describe('App component', () => {
         setSecret: setSecretMock,
         testSecret: testSecretMock,
       },
+      realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: { onWake: () => () => {} },
       avatar: createAvatarBridgeMock(),
       __bridgeReady: true,
@@ -1185,6 +1207,7 @@ describe('App component', () => {
         setSecret: setSecretMock,
         testSecret: testSecretMock,
       },
+      realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: { onWake: () => () => {} },
       avatar: createAvatarBridgeMock(),
       __bridgeReady: true,

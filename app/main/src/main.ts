@@ -24,6 +24,7 @@ import type {
 import { MemoryStore } from './memory/index.js';
 import { PrometheusCollector } from './metrics/prometheus-collector.js';
 import type { LatencyObservation } from './metrics/types.js';
+import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from './realtime/types.js';
 import { AutoLaunchManager } from './lifecycle/auto-launch.js';
 import { createDevTray } from './lifecycle/dev-tray.js';
 import { AvatarFaceService } from './avatar/avatar-face-service.js';
@@ -483,6 +484,109 @@ function registerIpcHandlers(
   registerConfigHandler('config:set-audio-devices', (_event, preferences) =>
     manager.setAudioDevicePreferences(preferences),
   );
+
+  ipcMain.handle('realtime:mint-ephemeral-token', async (_event, payload: RealtimeEphemeralTokenRequest) => {
+    if (!payload || typeof payload !== 'object' || !payload.session || typeof payload.session !== 'object') {
+      throw new Error('Invalid realtime token request payload received.');
+    }
+
+    const apiKey = manager.getConfig().realtimeApiKey?.trim();
+    if (!apiKey) {
+      throw new Error('Realtime API key is not configured.');
+    }
+
+    const session = payload.session as Record<string, unknown>;
+    const audio = typeof session.audio === 'object' && session.audio ? (session.audio as Record<string, unknown>) : null;
+    const audioOutput =
+      audio && typeof audio.output === 'object' && audio.output ? (audio.output as Record<string, unknown>) : null;
+    const voice = typeof audioOutput?.voice === 'string' ? (audioOutput.voice as string) : undefined;
+    const turnDetection =
+      typeof session.turn_detection === 'object' && session.turn_detection
+        ? (session.turn_detection as { type?: unknown }).type
+        : undefined;
+    if (session.turn_detection) {
+      delete session.turn_detection;
+    }
+
+    if (session.session_parameters) {
+      delete session.session_parameters;
+    }
+
+    if (audio && typeof audio === 'object' && 'input' in audio) {
+      delete (audio as Record<string, unknown>).input;
+      if (Object.keys(audio).length === 0) {
+        delete session.audio;
+      }
+    }
+
+    logger.info('Minting realtime ephemeral token.', {
+      model: typeof session.model === 'string' ? session.model : undefined,
+      voice,
+      hasInstructions: Boolean(session.instructions),
+      turnDetection: typeof turnDetection === 'string' ? turnDetection : undefined,
+      outputModalities: Array.isArray(session.output_modalities) ? session.output_modalities : undefined,
+    });
+
+    const response = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ session }),
+    });
+
+    const contentTypeHeader = response.headers?.get?.('content-type') ?? '';
+    const normalizedContentType = contentTypeHeader.toLowerCase();
+    let responseBody: unknown = null;
+    let rawText: string | undefined;
+
+    try {
+      if (normalizedContentType.includes('application/json')) {
+        responseBody = await response.json();
+      } else {
+        rawText = await response.text();
+      }
+    } catch (error) {
+      logger.warn('Failed to parse realtime token response body.', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    if (!response.ok) {
+      const detail =
+        typeof responseBody === 'object' && responseBody && 'error' in responseBody
+          ? JSON.stringify((responseBody as { error?: unknown }).error)
+          : rawText;
+      logger.error('Realtime token request failed.', {
+        status: response.status,
+        detail: detail ? detail.slice(0, 500) : undefined,
+      });
+      throw new Error(`Realtime token request failed: HTTP ${response.status}`);
+    }
+
+    const value =
+      typeof (responseBody as { value?: unknown } | null)?.value === 'string'
+        ? ((responseBody as { value?: string }).value as string)
+        : undefined;
+    if (!value) {
+      throw new Error('Realtime token response missing value.');
+    }
+
+    const expiresAt =
+      typeof (responseBody as { expires_at?: unknown; expiresAt?: unknown } | null)?.expires_at === 'number'
+        ? ((responseBody as { expires_at?: number }).expires_at as number)
+        : typeof (responseBody as { expiresAt?: unknown } | null)?.expiresAt === 'number'
+        ? ((responseBody as { expiresAt?: number }).expiresAt as number)
+        : undefined;
+
+    const result: RealtimeEphemeralTokenResponse = {
+      value,
+      ...(typeof expiresAt === 'number' ? { expiresAt } : {}),
+    };
+
+    return result;
+  });
 
   logger.info('Configuration bridge IPC handlers registered.', {
     channels: [...configChannels],
