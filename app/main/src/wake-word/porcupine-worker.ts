@@ -1,5 +1,5 @@
 import { parentPort, workerData } from 'node:worker_threads';
-import { Porcupine } from '@picovoice/porcupine-node';
+import { Porcupine, type PorcupineOptions } from '@picovoice/porcupine-node';
 import { PvRecorder } from '@picovoice/pvrecorder-node';
 import type {
   SerializedError,
@@ -95,7 +95,11 @@ async function shutdown(): Promise<void> {
 function createPorcupine(options: WakeWordWorkerConfig): Porcupine {
   const keywords = [options.keywordPath];
   const sensitivities = [options.sensitivity];
-  return new Porcupine(options.accessKey, keywords, sensitivities, options.modelPath);
+  const porcupineOptions: PorcupineOptions = {};
+  if (options.modelPath) {
+    porcupineOptions.modelPath = options.modelPath;
+  }
+  return new Porcupine(options.accessKey, keywords, sensitivities, porcupineOptions);
 }
 
 function serializeError(error: unknown): SerializedError {

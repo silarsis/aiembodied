@@ -34,14 +34,19 @@ class PorcupineFake {
     public readonly accessKey: string,
     public readonly keywords: string[],
     public readonly sensitivities: number[],
-    public readonly modelPath?: string,
+    public readonly options: { modelPath?: string } = {},
   ) {}
 }
 
 const porcupineInstances: PorcupineFake[] = [];
 const PorcupineCtor = vi.fn(
-  (accessKey: string, keywords: string[], sensitivities: number[], modelPath?: string) => {
-    const instance = new PorcupineFake(accessKey, keywords, sensitivities, modelPath);
+  (
+    accessKey: string,
+    keywords: string[],
+    sensitivities: number[],
+    options: { modelPath?: string } = {},
+  ) => {
+    const instance = new PorcupineFake(accessKey, keywords, sensitivities, options);
     porcupineInstances.push(instance);
     return instance;
   },
@@ -144,7 +149,7 @@ describe('porcupine worker', () => {
       workerConfig.accessKey,
       [workerConfig.keywordPath],
       [workerConfig.sensitivity],
-      workerConfig.modelPath,
+      { modelPath: workerConfig.modelPath },
     );
 
     expect(PvRecorderCtor).toHaveBeenCalledWith(
