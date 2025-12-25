@@ -108,6 +108,9 @@ importers:
         version: 1.2.8
       '@pixiv/three-vrm':
         specifier: ^3.4.4
+        version: 3.4.4(three@0.181.2)
+      '@pixiv/three-vrm-animation':
+        specifier: ^3.4.4
         version: 3.4.4(three@0.182.0)
       '@pixiv/three-vrm-core':
         specifier: ^3.4.4
