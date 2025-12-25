@@ -11,6 +11,9 @@ import type {
   AvatarModelSummary,
   AvatarModelUploadRequest,
   AvatarModelUploadResult,
+  AvatarAnimationSummary,
+  AvatarAnimationUploadRequest,
+  AvatarAnimationUploadResult,
 } from './avatar/types.js';
 import type {
   ConversationAppendMessagePayload,
@@ -71,6 +74,44 @@ const logPreloadError = (message: string, meta?: Record<string, unknown>) => {
   forwardPreloadDiagnostics('error', message, meta);
 };
 
+function cloneBinaryPayload(
+  payload: unknown,
+  context: { id: string; errorMessage: string },
+): ArrayBuffer {
+  const sharedArrayBufferCtor = typeof SharedArrayBuffer === 'undefined' ? null : SharedArrayBuffer;
+
+  const cloneFromView = (view: ArrayBufferView): ArrayBuffer => {
+    const copy = new Uint8Array(view.byteLength);
+    copy.set(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+    return copy.buffer;
+  };
+
+  if (payload instanceof ArrayBuffer) {
+    return payload.slice(0);
+  }
+
+  if (sharedArrayBufferCtor && payload instanceof sharedArrayBufferCtor) {
+    const view = new Uint8Array(payload);
+    const copy = new Uint8Array(view.length);
+    copy.set(view);
+    return copy.buffer;
+  }
+
+  if (ArrayBuffer.isView(payload)) {
+    return cloneFromView(payload as ArrayBufferView);
+  }
+
+  if (payload && typeof payload === 'object' && 'data' in (payload as { data?: unknown })) {
+    const dataField = (payload as { data?: unknown }).data;
+    if (typeof dataField === 'object' && dataField && ArrayBuffer.isView(dataField)) {
+      return cloneFromView(dataField as ArrayBufferView);
+    }
+  }
+
+  logPreloadError(context.errorMessage, { id: context.id, payloadType: typeof payload });
+  throw new Error(context.errorMessage);
+}
+
 export interface ConfigBridge {
   get(): Promise<RendererConfig>;
   getSecret(key: ConfigSecretKey): Promise<string>;
@@ -124,6 +165,10 @@ export interface AvatarBridge {
   uploadModel(request: AvatarModelUploadRequest): Promise<AvatarModelUploadResult>;
   deleteModel(modelId: string): Promise<void>;
   loadModelBinary(modelId: string): Promise<ArrayBuffer>;
+  listAnimations(): Promise<AvatarAnimationSummary[]>;
+  uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult>;
+  deleteAnimation(animationId: string): Promise<void>;
+  loadAnimationBinary(animationId: string): Promise<ArrayBuffer>;
   getDisplayModePreference(): Promise<AvatarDisplayMode>;
   setDisplayModePreference(mode: AvatarDisplayMode): Promise<void>;
   triggerBehaviorCue(cue: string): Promise<void>;
@@ -216,39 +261,23 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     },
     loadModelBinary: async (modelId) => {
       const payload = await ipcRenderer.invoke('avatar-model:load', modelId);
-      const sharedArrayBufferCtor = typeof SharedArrayBuffer === 'undefined' ? null : SharedArrayBuffer;
-
-      const cloneFromView = (view: ArrayBufferView): ArrayBuffer => {
-        const copy = new Uint8Array(view.byteLength);
-        copy.set(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
-        return copy.buffer;
-      };
-
-      if (payload instanceof ArrayBuffer) {
-        return payload.slice(0);
-      }
-
-      if (sharedArrayBufferCtor && payload instanceof sharedArrayBufferCtor) {
-        const view = new Uint8Array(payload);
-        const copy = new Uint8Array(view.length);
-        copy.set(view);
-        return copy.buffer;
-      }
-
-      if (ArrayBuffer.isView(payload)) {
-        return cloneFromView(payload as ArrayBufferView);
-      }
-
-      if (payload && typeof payload === 'object' && 'data' in (payload as { data?: unknown })) {
-        const dataField = (payload as { data?: unknown }).data;
-        if (typeof dataField === 'object' && dataField && ArrayBuffer.isView(dataField)) {
-          return cloneFromView(dataField as ArrayBufferView);
-        }
-      }
-
-      const message = 'Unexpected VRM binary payload received from main process.';
-      logPreloadError(message, { modelId, payloadType: typeof payload });
-      throw new Error(message);
+      return cloneBinaryPayload(payload, {
+        id: modelId,
+        errorMessage: 'Unexpected VRM binary payload received from main process.',
+      });
+    },
+    listAnimations: () => ipcRenderer.invoke('avatar-animation:list') as Promise<AvatarAnimationSummary[]>,
+    uploadAnimation: (payload) =>
+      ipcRenderer.invoke('avatar-animation:upload', payload) as Promise<AvatarAnimationUploadResult>,
+    deleteAnimation: async (animationId) => {
+      await ipcRenderer.invoke('avatar-animation:delete', animationId);
+    },
+    loadAnimationBinary: async (animationId) => {
+      const payload = await ipcRenderer.invoke('avatar-animation:load', animationId);
+      return cloneBinaryPayload(payload, {
+        id: animationId,
+        errorMessage: 'Unexpected VRMA binary payload received from main process.',
+      });
     },
     getDisplayModePreference: () =>
       ipcRenderer.invoke('avatar:get-display-mode') as Promise<AvatarDisplayMode>,

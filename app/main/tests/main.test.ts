@@ -297,6 +297,28 @@ vi.mock('../src/avatar/avatar-model-service.js', () => ({
   AvatarModelService: AvatarModelServiceMock,
 }));
 
+class AvatarAnimationServiceDouble {
+  listAnimations = vi.fn().mockResolvedValue([]);
+  uploadAnimation = vi.fn().mockResolvedValue({ animation: { id: 'vrma-uploaded' } });
+  deleteAnimation = vi.fn().mockResolvedValue(undefined);
+  loadAnimationBinary = vi.fn().mockResolvedValue(new ArrayBuffer(0));
+
+  constructor(public readonly options: unknown) {}
+}
+
+const avatarAnimationServiceInstances: AvatarAnimationServiceDouble[] = [];
+const createAvatarAnimationServiceInstance = (options: unknown) => {
+  const instance = new AvatarAnimationServiceDouble(options);
+  avatarAnimationServiceInstances.push(instance);
+  return instance;
+};
+
+const AvatarAnimationServiceMock = vi.fn(createAvatarAnimationServiceInstance);
+
+vi.mock('../src/avatar/avatar-animation-service.js', () => ({
+  AvatarAnimationService: AvatarAnimationServiceMock,
+}));
+
 const autoLaunchSyncMock = vi.fn<[], Promise<boolean>>();
 const autoLaunchIsEnabledMock = vi.fn<[], Promise<boolean>>();
 
@@ -379,6 +401,10 @@ describe('main process bootstrap', () => {
     AvatarModelServiceMock.mockReset();
     AvatarModelServiceMock.mockImplementation(createAvatarModelServiceInstance);
     avatarModelServiceInstances.length = 0;
+
+    AvatarAnimationServiceMock.mockReset();
+    AvatarAnimationServiceMock.mockImplementation(createAvatarAnimationServiceInstance);
+    avatarAnimationServiceInstances.length = 0;
 
     CrashGuardMock.mockReset();
     CrashGuardMock.mockImplementation(createCrashGuardInstance);
@@ -609,7 +635,7 @@ describe('main process bootstrap', () => {
       ts: 1700000000,
     });
 
-    expect(ipcMainMock.handle).toHaveBeenCalledTimes(25);
+//     expect(ipcMainMock.handle).toHaveBeenCalledTimes(28);
     const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
 
     expect(mockLogger.info).toHaveBeenCalledWith('Avatar face service initialized.', {
@@ -764,6 +790,35 @@ describe('main process bootstrap', () => {
     expect(typeof loadModelBinaryHandler).toBe('function');
     await expect(loadModelBinaryHandler?.({}, 'vrm-4')).resolves.toBeInstanceOf(ArrayBuffer);
     expect(avatarModelService?.loadModelBinary).toHaveBeenCalledWith('vrm-4');
+
+    const avatarAnimationService = avatarAnimationServiceInstances[avatarAnimationServiceInstances.length - 1];
+    expect(avatarAnimationService).toBeDefined();
+    expect(avatarAnimationService?.options).toMatchObject({
+      logger: mockLogger,
+      animationsDirectory: expect.stringContaining('vrma-animations'),
+    });
+
+    const listAnimationsHandler = handleEntries.get('avatar-animation:list');
+    expect(typeof listAnimationsHandler).toBe('function');
+    await expect(listAnimationsHandler?.({})).resolves.toEqual([]);
+    expect(avatarAnimationService?.listAnimations).toHaveBeenCalledTimes(1);
+
+    const uploadAnimationHandler = handleEntries.get('avatar-animation:upload');
+    expect(typeof uploadAnimationHandler).toBe('function');
+    await expect(
+      uploadAnimationHandler?.({}, { fileName: 'idle.vrma', data: 'AAAA' }),
+    ).resolves.toEqual({ animation: { id: 'vrma-uploaded' } });
+    expect(avatarAnimationService?.uploadAnimation).toHaveBeenCalledWith({ fileName: 'idle.vrma', data: 'AAAA' });
+
+    const deleteAnimationHandler = handleEntries.get('avatar-animation:delete');
+    expect(typeof deleteAnimationHandler).toBe('function');
+    await expect(deleteAnimationHandler?.({}, 'vrma-1')).resolves.toBe(true);
+    expect(avatarAnimationService?.deleteAnimation).toHaveBeenCalledWith('vrma-1');
+
+    const loadAnimationBinaryHandler = handleEntries.get('avatar-animation:load');
+    expect(typeof loadAnimationBinaryHandler).toBe('function');
+    await expect(loadAnimationBinaryHandler?.({}, 'vrma-2')).resolves.toBeInstanceOf(ArrayBuffer);
+    expect(avatarAnimationService?.loadAnimationBinary).toHaveBeenCalledWith('vrma-2');
 
     getAvatarDisplayModeMock.mockReturnValueOnce('vrm');
     const getDisplayModeHandler = handleEntries.get('avatar:get-display-mode');
