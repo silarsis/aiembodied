@@ -13,6 +13,7 @@ import type { ConfigSecretKey, RendererConfig } from '../../main/src/config/conf
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
 import { AvatarRenderer } from './avatar/avatar-renderer.js';
 import { VrmAvatarRenderer, type VrmRendererStatus } from './avatar/vrm-avatar-renderer.js';
+import { AnimationBusProvider } from './avatar/animation-bus.js';
 import { BehaviorCueProvider } from './avatar/behavior-cues.js';
 import { flushSync } from 'react-dom';
 import { AvatarConfigurator } from './avatar/avatar-configurator.js';
@@ -1888,13 +1889,14 @@ export default function App() {
   const avatarDisplayToggleLabel = avatarDisplayState.preference === 'vrm' ? 'Use sprite avatar' : 'Use 3D avatar';
 
   return (
-    <BehaviorCueProvider>
-      <main
-        className="kiosk"
-        data-wake-state={wakeState}
-        data-cursor-hidden={isCursorHidden ? 'true' : 'false'}
-        aria-live="polite"
-      >
+    <AnimationBusProvider>
+      <BehaviorCueProvider>
+        <main
+          className="kiosk"
+          data-wake-state={wakeState}
+          data-cursor-hidden={isCursorHidden ? 'true' : 'false'}
+          aria-live="polite"
+        >
       <header className="kiosk__statusBar" role="banner">
         <div className={`statusChip statusChip--${wakeStatusVariant}`} data-testid="wake-indicator">
           <span className="statusChip__label">Wake</span>
@@ -2322,7 +2324,8 @@ export default function App() {
       {/* Hidden audio sink for realtime playback (no user-facing controls). */}
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <audio ref={remoteAudioRef} autoPlay aria-hidden="true" style={{ display: 'none' }} />
-      </main>
-    </BehaviorCueProvider>
+        </main>
+      </BehaviorCueProvider>
+    </AnimationBusProvider>
   );
 }
