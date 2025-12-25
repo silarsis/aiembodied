@@ -19,6 +19,7 @@
     "@picovoice/porcupine-node": "^4.0.1",
     "@picovoice/pvrecorder-node": "^1.2.8",
     "@pixiv/three-vrm": "^3.4.4",
+    "@pixiv/three-vrm-animation": "^3.4.4",
     "@pixiv/three-vrm-core": "^3.4.4",
     "auto-launch": "^5.0.6",
     "better-sqlite3": "^12.5.0",

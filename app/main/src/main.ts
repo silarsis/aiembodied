@@ -28,6 +28,7 @@ import { AutoLaunchManager } from './lifecycle/auto-launch.js';
 import { createDevTray } from './lifecycle/dev-tray.js';
 import { AvatarFaceService } from './avatar/avatar-face-service.js';
 import { AvatarModelService } from './avatar/avatar-model-service.js';
+import { AvatarAnimationService } from './avatar/avatar-animation-service.js';
 import type {
   AvatarDisplayMode,
   AvatarUploadRequest,
@@ -35,6 +36,9 @@ import type {
   AvatarModelSummary,
   AvatarModelUploadRequest,
   AvatarModelUploadResult,
+  AvatarAnimationSummary,
+  AvatarAnimationUploadRequest,
+  AvatarAnimationUploadResult,
 } from './avatar/types.js';
 import {
   resolvePreloadScriptPath,
@@ -107,6 +111,7 @@ let autoLaunchManager: AutoLaunchManager | null = null;
 let developmentTray: Tray | null = null;
 let avatarFaceService: AvatarFaceService | null = null;
 let avatarModelService: AvatarModelService | null = null;
+let avatarAnimationService: AvatarAnimationService | null = null;
 let currentRealtimeApiKey: string | null = null;
 
 function emitCameraDetection(event: CameraDetectionEventPayload): boolean {
@@ -299,6 +304,7 @@ function registerIpcHandlers(
   conversation: ConversationManager | null,
   metrics: PrometheusCollector | null,
   avatarModels: AvatarModelService | null,
+  avatarAnimations: AvatarAnimationService | null,
   store: MemoryStore | null,
 ) {
   // Preload diagnostics bridge: allow preload/renderer to forward logs to main logger
@@ -601,6 +607,35 @@ function registerIpcHandlers(
 
     return avatarModels.loadModelBinary(modelId);
   });
+  ipcMain.handle('avatar-animation:list', async () => {
+    if (!avatarAnimations) {
+      return [] as AvatarAnimationSummary[];
+    }
+
+    return avatarAnimations.listAnimations();
+  });
+  ipcMain.handle('avatar-animation:upload', async (_event, payload: AvatarAnimationUploadRequest) => {
+    if (!avatarAnimations) {
+      throw new Error('Avatar animation service is unavailable.');
+    }
+
+    return avatarAnimations.uploadAnimation(payload) as Promise<AvatarAnimationUploadResult>;
+  });
+  ipcMain.handle('avatar-animation:delete', async (_event, animationId: string) => {
+    if (!avatarAnimations) {
+      throw new Error('Avatar animation service is unavailable.');
+    }
+
+    await avatarAnimations.deleteAnimation(animationId);
+    return true;
+  });
+  ipcMain.handle('avatar-animation:load', async (_event, animationId: string) => {
+    if (!avatarAnimations) {
+      throw new Error('Avatar animation service is unavailable.');
+    }
+
+    return avatarAnimations.loadAnimationBinary(animationId);
+  });
   ipcMain.handle('avatar:get-display-mode', async () => {
     if (!store) {
       return 'sprites';
@@ -701,6 +736,11 @@ app.whenReady().then(async () => {
     avatarModelService = new AvatarModelService({
       store: memoryStore,
       modelsDirectory: path.join(app.getPath('userData'), 'vrm-models'),
+      logger,
+    });
+    avatarAnimationService = new AvatarAnimationService({
+      store: memoryStore,
+      animationsDirectory: path.join(app.getPath('userData'), 'vrma-animations'),
       logger,
     });
     conversationManager = new ConversationManager({
@@ -842,7 +882,14 @@ app.whenReady().then(async () => {
   }
 
   try {
-    registerIpcHandlers(manager, conversationManager, metricsCollector, avatarModelService, memoryStore);
+    registerIpcHandlers(
+      manager,
+      conversationManager,
+      metricsCollector,
+      avatarModelService,
+      avatarAnimationService,
+      memoryStore,
+    );
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Unknown IPC handler registration error occurred.';
