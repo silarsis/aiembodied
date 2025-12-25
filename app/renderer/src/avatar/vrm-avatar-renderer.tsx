@@ -353,6 +353,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   const animationQueueRef = useRef<QueuedAnimation[]>([]);
   const activeAnimationRef = useRef<ActiveAnimation | null>(null);
   const animationSuspensionRef = useRef<(() => void) | null>(null);
+  const vrmaRegistryReadyRef = useRef(false);
   const [rendererReady, setRendererReady] = useState(false);
 
   frameRef.current = frame;
@@ -403,6 +404,10 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
 
     const mixer = mixerRef.current;
     if (!mixer) {
+      return;
+    }
+
+    if (!vrmaRegistryReadyRef.current) {
       return;
     }
 
@@ -732,6 +737,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       clearActiveAnimation();
       clipRegistryRef.current.clear();
       animationQueueRef.current = [];
+      vrmaRegistryReadyRef.current = false;
       releaseIdleSuspension();
       disposeVrm(currentVrmRef.current);
       renderer.dispose();
@@ -770,6 +776,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       clearActiveAnimation();
       clipRegistryRef.current.clear();
       animationQueueRef.current = [];
+      vrmaRegistryReadyRef.current = false;
       if (currentVrmRef.current) {
         scene.remove(currentVrmRef.current.scene);
       }
@@ -851,11 +858,17 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         idleSchedulerRef.current = idleScheduler;
         clipRegistryRef.current.clear();
         animationQueueRef.current = [];
+        vrmaRegistryReadyRef.current = false;
         try {
           const animationRegistry = await loadVrmaClips(vrm);
           clipRegistryRef.current = animationRegistry;
         } catch (error) {
           console.warn('[vrm-avatar-renderer] failed to load VRMA registry', error);
+        } finally {
+          vrmaRegistryReadyRef.current = true;
+          if (!cancelled) {
+            playNextQueuedAnimation();
+          }
         }
         const clip = createRightArmWaveClip(vrm);
         if (clip) {
