@@ -15,12 +15,10 @@ import type {
   AvatarGenerationResult,
   AvatarModelSummary,
 } from './types.js';
-import { getPreloadApi } from '../preload-api.js';
 
 type TabId = 'faces' | 'models';
 
 type ModelUploadStatus = 'idle' | 'reading' | 'uploading' | 'success';
-type BehaviorStatus = 'idle' | 'pending' | 'success' | 'error';
 type VrmaGenerationStatus = 'idle' | 'pending' | 'success' | 'error';
 
 interface AvatarConfiguratorProps {
@@ -115,8 +113,6 @@ export function AvatarConfigurator({
   const [modelUploadStatus, setModelUploadStatus] = useState<ModelUploadStatus>('idle');
   const [modelUploadError, setModelUploadError] = useState<string | null>(null);
   const [lastUploadedModel, setLastUploadedModel] = useState<AvatarModelSummary | null>(null);
-  const [behaviorStatus, setBehaviorStatus] = useState<BehaviorStatus>('idle');
-  const [behaviorMessage, setBehaviorMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('faces');
   const [vrmaPrompt, setVrmaPrompt] = useState('');
   const [vrmaStatus, setVrmaStatus] = useState<VrmaGenerationStatus>('idle');
@@ -534,38 +530,10 @@ export function AvatarConfigurator({
     setSelectedCandidateId(null);
   }, []);
 
-  const handleTestWave = useCallback(async () => {
-    const bridge = getPreloadApi();
-    const emitDetection = bridge?.camera?.emitDetection;
-    const triggerBehaviorCue = avatarApi?.triggerBehaviorCue;
-
-    if (!emitDetection && !triggerBehaviorCue) {
-      setBehaviorStatus('error');
-      setBehaviorMessage('Behavior testing bridge is unavailable.');
-      return;
-    }
-
-    setBehaviorStatus('pending');
-    setBehaviorMessage(null);
-    try {
-      if (emitDetection) {
-        await emitDetection({ cue: 'greet_face', provider: 'configurator-test', confidence: 1 });
-      } else if (triggerBehaviorCue) {
-        await triggerBehaviorCue('greet_face');
-      }
-      setBehaviorStatus('success');
-      setBehaviorMessage('Wave gesture triggered.');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to trigger wave gesture.';
-      setBehaviorStatus('error');
-      setBehaviorMessage(message);
-    }
-  }, [avatarApi]);
-
   const tabButtons: Array<{ id: TabId; label: string }> = useMemo(
     () => [
-      { id: 'faces', label: 'Sprite faces' },
-      { id: 'models', label: 'VRM models' },
+      { id: 'faces', label: '2D Faces' },
+      { id: 'models', label: '3D Models' },
     ],
     [],
   );

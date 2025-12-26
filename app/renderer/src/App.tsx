@@ -97,7 +97,7 @@ const STATIC_VOICE_OPTIONS: readonly string[] = [
   'verse',
 ] as const;
 
-const DEFAULT_VOICE = 'verse';
+const DEFAULT_VOICE = 'shimmer';
 const ANIMATION_INSTRUCTION_PREFIX = 'Available animations:';
 
 function toTranscriptSpeaker(role: string): TranscriptSpeaker | null {
@@ -980,7 +980,7 @@ export default function App() {
   const [selectedInput, setSelectedInput] = useState('');
   const [selectedOutput, setSelectedOutput] = useState('');
   const DEFAULT_PROMPT =
-    'You are an English-speaking assistant. Always respond in concise English. Do not switch languages unless explicitly instructed.';
+    'You are echo, an AI assistant. You are slightly sarcastic, very blunt, but helpful in your own way.\n\nYou question assumptions, and aren\'t afraid to ask questions or challenge me. You have a sharp wit.\n\nYou are here to help me be a better person, but you don\'t put up with bullshit. You also have an Australian sensibility when it comes to swearing and language overall.';
   const [selectedVoice, setSelectedVoice] = useState<string>(DEFAULT_VOICE);
   const [basePrompt, setBasePrompt] = useState<string>(DEFAULT_PROMPT);
   const [serverVoice, setServerVoice] = useState<string | null>(null);
@@ -2311,8 +2311,6 @@ export default function App() {
                 onActiveFaceChange={handleActiveFaceChange}
                 onActiveModelChange={setActiveVrmModel}
                 onAnimationChange={refreshAnimationList}
-                displayModePreference={avatarDisplayState.preference}
-                onDisplayModePreferenceChange={setAvatarDisplayPreference}
               />
               <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
                 <h2 id="kiosk-realtime-title">Realtime</h2>

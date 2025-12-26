@@ -56,7 +56,7 @@ export type VrmaSchema = z.infer<typeof vrmaSchema>;
 export const VRMA_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['meta', 'tracks'],
+  required: ['meta', 'tracks', 'hips', 'expressions'],
   properties: {
     meta: {
       type: 'object',
