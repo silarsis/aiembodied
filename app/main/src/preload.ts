@@ -24,6 +24,7 @@ import type {
 } from './conversation/types.js';
 import type { WakeWordDetectionEvent } from './wake-word/types.js';
 import type { LatencyMetricName } from './metrics/types.js';
+import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from './realtime/types.js';
 
 function logPreloadMessage(
   level: 'info' | 'warn' | 'error',
@@ -122,6 +123,7 @@ export interface ConfigBridge {
 
 export interface PreloadApi {
   config: ConfigBridge;
+  realtime: RealtimeBridge;
   wakeWord: WakeWordBridge;
   conversation?: ConversationBridge;
   metrics?: MetricsBridge;
@@ -145,6 +147,10 @@ export interface ConversationBridge {
 
 export interface MetricsBridge {
   observeLatency(metric: LatencyMetricName, valueMs: number): Promise<void>;
+}
+
+export interface RealtimeBridge {
+  mintEphemeralToken(request: RealtimeEphemeralTokenRequest): Promise<RealtimeEphemeralTokenResponse>;
 }
 
 export interface AvatarBridge {
@@ -193,6 +199,10 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       ipcRenderer.invoke('config:test-secret', key) as Promise<{ ok: boolean; message?: string }>,
     setAudioDevicePreferences: (preferences) =>
       ipcRenderer.invoke('config:set-audio-devices', preferences) as Promise<RendererConfig>,
+  },
+  realtime: {
+    mintEphemeralToken: (request) =>
+      ipcRenderer.invoke('realtime:mint-ephemeral-token', request) as Promise<RealtimeEphemeralTokenResponse>,
   },
   wakeWord: {
     onWake: (listener) => {

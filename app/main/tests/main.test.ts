@@ -746,6 +746,8 @@ describe('main process bootstrap', () => {
       audioOutputDeviceId: 'spk',
     });
 
+    expect(typeof handleEntries.get('realtime:mint-ephemeral-token')).toBe('function');
+
     expect(typeof handleEntries.get('conversation:get-history')).toBe('function');
     expect(typeof handleEntries.get('conversation:append-message')).toBe('function');
     const metricsHandler = handleEntries.get('metrics:observe-latency');

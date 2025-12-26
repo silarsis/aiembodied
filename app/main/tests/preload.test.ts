@@ -33,6 +33,7 @@ describe('preload bridge', () => {
     const [key, api] = exposeInMainWorld.mock.calls[0];
     expect(key).toBe('aiembodied');
     expect(api.config).toBeDefined();
+    expect(api.realtime).toBeDefined();
     expect(api.camera).toBeDefined();
     expect(api.ping()).toBe('pong');
 
@@ -43,6 +44,10 @@ describe('preload bridge', () => {
     invoke.mockResolvedValueOnce('secret');
     await expect(api.config.getSecret('realtimeApiKey')).resolves.toBe('secret');
     expect(invoke).toHaveBeenCalledWith('config:get-secret', 'realtimeApiKey');
+
+    invoke.mockResolvedValueOnce({ value: 'token' });
+    await expect(api.realtime.mintEphemeralToken({ session: { type: 'realtime' } })).resolves.toEqual({ value: 'token' });
+    expect(invoke).toHaveBeenCalledWith('realtime:mint-ephemeral-token', { session: { type: 'realtime' } });
   });
 
   it('routes config mutations and tests through ipc channels', async () => {
