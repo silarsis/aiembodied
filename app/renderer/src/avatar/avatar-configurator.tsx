@@ -6,7 +6,6 @@ import {
   useState,
   type ChangeEvent,
   type FormEvent,
-  type ReactNode,
 } from 'react';
 import type {
   AvatarBridge,
@@ -17,7 +16,7 @@ import type {
   AvatarModelSummary,
 } from './types.js';
 
-type TabId = '2d' | '3d';
+type PanelId = '2d' | '3d';
 
 type ModelUploadStatus = 'idle' | 'reading' | 'uploading' | 'success';
 type VrmaGenerationStatus = 'idle' | 'pending' | 'success' | 'error';
@@ -27,8 +26,8 @@ interface AvatarConfiguratorProps {
   onActiveFaceChange?: (detail: AvatarFaceDetail | null) => void;
   onActiveModelChange?: (detail: AvatarModelSummary | null) => void;
   onAnimationChange?: () => void;
-  /** Slot for voice/prompt controls rendered above the 2D/3D tabs */
-  headerControls?: ReactNode;
+  /** Which panel to show: '2d' for face management, '3d' for VRM/VRMA */
+  panel?: PanelId;
 }
 
 function deriveName(file: File | null): string {
@@ -94,7 +93,7 @@ export function AvatarConfigurator({
   onActiveFaceChange,
   onActiveModelChange,
   onAnimationChange,
-  headerControls,
+  panel = '2d',
 }: AvatarConfiguratorProps) {
   const [faces, setFaces] = useState<AvatarFaceSummary[]>([]);
   const [models, setModels] = useState<AvatarModelSummary[]>([]);
@@ -117,7 +116,6 @@ export function AvatarConfigurator({
   const [modelUploadStatus, setModelUploadStatus] = useState<ModelUploadStatus>('idle');
   const [modelUploadError, setModelUploadError] = useState<string | null>(null);
   const [lastUploadedModel, setLastUploadedModel] = useState<AvatarModelSummary | null>(null);
-  const [activeTab, setActiveTab] = useState<TabId>('2d');
   const [vrmaPrompt, setVrmaPrompt] = useState('');
   const [vrmaStatus, setVrmaStatus] = useState<VrmaGenerationStatus>('idle');
   const [vrmaMessage, setVrmaMessage] = useState<string | null>(null);
@@ -534,25 +532,20 @@ export function AvatarConfigurator({
     setSelectedCandidateId(null);
   }, []);
 
-  const tabButtons: Array<{ id: TabId; label: string }> = useMemo(
-    () => [
-      { id: '2d', label: '2D' },
-      { id: '3d', label: '3D' },
-    ],
-    [],
-  );
-
   const modelUploadDisabled = !isModelBridgeAvailable || modelUploadStatus === 'reading' || modelUploadStatus === 'uploading';
   const vrmaPending = vrmaStatus === 'pending';
+
+  const panelTitle = panel === '2d' ? '2D Face Management' : '3D Model Management';
+  const panelDescription = panel === '2d'
+    ? 'Upload and manage 2D sprite faces for your avatar.'
+    : 'Upload VRM models and generate VRMA animations.';
 
   return (
     <section className="kiosk__faces" aria-labelledby="kiosk-faces-title">
       <div className="faces__header">
         <div>
-          <h2 id="kiosk-faces-title">Character configuration</h2>
-          <p className="kiosk__helper">
-            Configure voice, personality, and avatar appearance.
-          </p>
+          <h2 id="kiosk-faces-title">{panelTitle}</h2>
+          <p className="kiosk__helper">{panelDescription}</p>
         </div>
         {generalError ? (
           <p className="kiosk__error" role="alert">
@@ -561,33 +554,8 @@ export function AvatarConfigurator({
         ) : null}
       </div>
 
-      {headerControls ? <div className="faces__headerControls">{headerControls}</div> : null}
-
-      <div className="faces__tabs">
-        <div className="faces__tablist" role="tablist" aria-label="Avatar type (2D or 3D)">
-          {tabButtons.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              id={`avatar-tab-${tab.id}`}
-              aria-controls={`avatar-panel-${tab.id}`}
-              aria-selected={activeTab === tab.id}
-              data-active={activeTab === tab.id ? 'true' : 'false'}
-              className="faces__tabButton"
-              onClick={() => setActiveTab(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-        <section
-          role="tabpanel"
-          id="avatar-panel-2d"
-          aria-labelledby="avatar-tab-2d"
-          data-state={activeTab === '2d' ? 'active' : 'inactive'}
-          className="faces__panel"
-        >
+      {panel === '2d' ? (
+        <div className="faces__panel faces__panel--active">
           <form className="faces__form" onSubmit={handleUpload} aria-label="Upload new avatar face">
             <label className="faces__field">
               <span>Face image</span>
@@ -700,15 +668,9 @@ export function AvatarConfigurator({
           {!facesLoading && formattedFaces.length === 0 ? (
             <p className="kiosk__info">No avatar faces stored yet. Upload an image to get started.</p>
           ) : null}
-        </section>
-
-        <section
-          role="tabpanel"
-          id="avatar-panel-3d"
-          aria-labelledby="avatar-tab-3d"
-          data-state={activeTab === '3d' ? 'active' : 'inactive'}
-          className="faces__panel"
-        >
+        </div>
+      ) : (
+        <div className="faces__panel faces__panel--active">
           <form className="faces__form" onSubmit={handleGenerateAnimation} aria-label="Generate VRMA animation">
             <label className="faces__field">
               <span>Animation prompt</span>
@@ -842,8 +804,8 @@ export function AvatarConfigurator({
           {!modelsLoading && formattedModels.length === 0 ? (
             <p className="kiosk__info">No VRM models uploaded yet. Add a .vrm file to enable the 3D renderer.</p>
           ) : null}
-        </section>
-      </div>
+        </div>
+      )}
     </section>
   );
 }

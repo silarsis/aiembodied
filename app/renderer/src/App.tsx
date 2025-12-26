@@ -44,7 +44,7 @@ interface AudioGraphState {
   error: string | null;
 }
 
-type TabId = 'chatgpt' | 'character' | 'local';
+type TabId = 'chatgpt' | 'character' | '2d' | '3d' | 'local';
 
 interface TabDefinition {
   id: TabId;
@@ -120,7 +120,7 @@ function buildAnimationInstructions(availableSlugs: string[]): string {
   const list = availableSlugs.length > 0 ? availableSlugs.join(', ') : 'none';
   return [
     `${ANIMATION_INSTRUCTION_PREFIX} ${list}.`,
-    'To trigger an animation, include `{slug}` (multiple tags allowed).',
+    'You have a 3D body you can control through animations or poses. To trigger an animation or pose, include `{slug}` (multiple tags allowed).',
     'Slug format: lowercase letters, numbers, and hyphens (for example: `happy-wave`).',
   ].join(' ');
 }
@@ -651,6 +651,8 @@ export default function App() {
     () => [
       { id: 'chatgpt', label: 'ChatGPT' },
       { id: 'character', label: 'Character' },
+      { id: '2d', label: '2D' },
+      { id: '3d', label: '3D' },
       { id: 'local', label: 'Local' },
     ],
     [],
@@ -659,6 +661,8 @@ export default function App() {
   const tabRefs = useRef<Record<TabId, HTMLButtonElement | null>>({
     chatgpt: null,
     character: null,
+    '2d': null,
+    '3d': null,
     local: null,
   });
   const activeBridge = resolveApi();
@@ -980,7 +984,7 @@ export default function App() {
   const [selectedInput, setSelectedInput] = useState('');
   const [selectedOutput, setSelectedOutput] = useState('');
   const DEFAULT_PROMPT =
-    'You are echo, an AI assistant. You are slightly sarcastic, very blunt, but helpful in your own way.\n\nYou question assumptions, and aren\'t afraid to ask questions or challenge me. You have a sharp wit.\n\nYou are here to help me be a better person, but you don\'t put up with bullshit. You also have an Australian sensibility when it comes to swearing and language overall.';
+    'You are echo, an AI assistant. You are slightly sarcastic, very blunt, but helpful in your own way.\n\nYou question assumptions, and aren\'t afraid to ask questions or challenge me. You have a sharp wit.\n\nYou are here to help me be a better person, but you don\'t put up with bullshit. You also have an Australian sensibility when it comes to swearing and language overall.\n\nYou are good-natured and good-humoured.';
   const [selectedVoice, setSelectedVoice] = useState<string>(DEFAULT_VOICE);
   const [basePrompt, setBasePrompt] = useState<string>(DEFAULT_PROMPT);
   const [serverVoice, setServerVoice] = useState<string | null>(null);
@@ -2306,57 +2310,79 @@ export default function App() {
             className="kiosk__tabPanel"
             data-state={activeTab === 'character' ? 'active' : 'inactive'}
           >
+              <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
+                <h2 id="kiosk-realtime-title">Voice & Personality</h2>
+                <p className="kiosk__helper">Configure how your assistant sounds and behaves.</p>
+                <div className="control">
+                  <label htmlFor="realtime-voice">Voice</label>
+                  <select
+                    id="realtime-voice"
+                    value={selectedVoice}
+                    onChange={handleVoiceChange}
+                    disabled={isSaving || loadingConfig}
+                  >
+                    {availableVoices.map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="kiosk__helper" aria-live="polite">
+                    Current voice (server): {serverVoice ?? 'unknown'}
+                  </div>
+                  {playbackIssue ? (
+                    <div className="kiosk__helper" role="alert" style={{ marginTop: 8 }}>
+                      <span style={{ display: 'block', marginBottom: 4 }}>
+                        Audio playback is blocked ({playbackIssue}).
+                      </span>
+                      <button type="button" onClick={reconnectAndResume}>
+                        Reconnect & Resume Audio
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="control">
+                  <label htmlFor="base-prompt">Base prompt</label>
+                  <textarea
+                    id="base-prompt"
+                    placeholder="Stay in English and be concise. Add personality here…"
+                    rows={6}
+                    value={basePrompt}
+                    onChange={(e) => setBasePrompt(e.target.value)}
+                    onBlur={handlePromptBlur}
+                    disabled={loadingConfig}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              </section>
+          </section>
+
+          <section
+            role="tabpanel"
+            id="panel-2d"
+            aria-labelledby="tab-2d"
+            className="kiosk__tabPanel"
+            data-state={activeTab === '2d' ? 'active' : 'inactive'}
+          >
               <AvatarConfigurator
                 avatarApi={activeBridge?.avatar}
                 onActiveFaceChange={handleActiveFaceChange}
+                panel="2d"
+              />
+          </section>
+
+          <section
+            role="tabpanel"
+            id="panel-3d"
+            aria-labelledby="tab-3d"
+            className="kiosk__tabPanel"
+            data-state={activeTab === '3d' ? 'active' : 'inactive'}
+          >
+              <AvatarConfigurator
+                avatarApi={activeBridge?.avatar}
                 onActiveModelChange={setActiveVrmModel}
                 onAnimationChange={refreshAnimationList}
-                headerControls={
-                  <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
-                    <h3 id="kiosk-realtime-title">Voice & Personality</h3>
-                    <div className="control">
-                      <label htmlFor="realtime-voice">Voice</label>
-                      <select
-                        id="realtime-voice"
-                        value={selectedVoice}
-                        onChange={handleVoiceChange}
-                        disabled={isSaving || loadingConfig}
-                      >
-                        {availableVoices.map((v) => (
-                          <option key={v} value={v}>
-                            {v}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="kiosk__helper" aria-live="polite">
-                        Current voice (server): {serverVoice ?? 'unknown'}
-                      </div>
-                      {playbackIssue ? (
-                        <div className="kiosk__helper" role="alert" style={{ marginTop: 8 }}>
-                          <span style={{ display: 'block', marginBottom: 4 }}>
-                            Audio playback is blocked ({playbackIssue}).
-                          </span>
-                          <button type="button" onClick={reconnectAndResume}>
-                            Reconnect & Resume Audio
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
-                    <div className="control">
-                      <label htmlFor="base-prompt">Base prompt</label>
-                      <textarea
-                        id="base-prompt"
-                        placeholder="Stay in English and be concise. Add personality here…"
-                        rows={6}
-                        value={basePrompt}
-                        onChange={(e) => setBasePrompt(e.target.value)}
-                        onBlur={handlePromptBlur}
-                        disabled={loadingConfig}
-                        style={{ width: '100%' }}
-                      />
-                    </div>
-                  </section>
-                }
+                panel="3d"
               />
           </section>
 
