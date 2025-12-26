@@ -761,6 +761,16 @@ function registerIpcHandlers(
 
     return avatarModels.loadModelBinary(modelId);
   });
+  ipcMain.handle(
+    'avatar-model:update-thumbnail',
+    async (_event, payload: { modelId: string; thumbnailDataUrl: string }) => {
+      if (!avatarModels) {
+        throw new Error('Avatar model service is unavailable.');
+      }
+
+      return avatarModels.updateThumbnail(payload.modelId, payload.thumbnailDataUrl);
+    },
+  );
   ipcMain.handle('avatar-animation:list', async () => {
     if (!avatarAnimations) {
       return [] as AvatarAnimationSummary[];

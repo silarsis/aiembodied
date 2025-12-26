@@ -15,6 +15,7 @@ import type {
   AvatarGenerationResult,
   AvatarModelSummary,
 } from './types.js';
+import { generateVrmThumbnail } from './thumbnail-generator.js';
 
 type PanelId = '2d' | '3d';
 
@@ -383,8 +384,24 @@ export function AvatarConfigurator({
             data: base64,
             name,
           });
+
+          let uploadedModel = result.model;
+
+          if (!uploadedModel.thumbnailDataUrl && avatarApi.updateModelThumbnail) {
+            try {
+              const modelData = await avatarApi.loadModelBinary(uploadedModel.id);
+              const thumbnailResult = await generateVrmThumbnail(modelData);
+              const updated = await avatarApi.updateModelThumbnail(uploadedModel.id, thumbnailResult.dataUrl);
+              if (updated) {
+                uploadedModel = updated;
+              }
+            } catch (thumbErr) {
+              console.warn('[avatar-configurator] Failed to generate fallback thumbnail:', thumbErr);
+            }
+          }
+
           setModelUploadStatus('success');
-          setLastUploadedModel(result.model);
+          setLastUploadedModel(uploadedModel);
           setModelNameInput('');
           setModelFile(null);
           if (modelFileInputRef.current) {

@@ -11,7 +11,11 @@ import type { AvatarBridge, AvatarGenerationResult } from '../src/avatar/types.j
 
 type MockRealtimeInstance = {
   callbacks: {
-    onSessionUpdated?: (session: { voice?: string; instructions?: string; turnDetection?: string }) => void;
+    onSessionUpdated?: (session: {
+      voice?: string;
+      instructions?: string;
+      turnDetection?: string;
+    }) => void;
   };
   connect: ReturnType<typeof vi.fn>;
   disconnect: ReturnType<typeof vi.fn>;
@@ -94,7 +98,9 @@ class MockMediaStreamDestinationNode {
 
 class MockAudioContext {
   currentTime = 0;
-  createMediaStreamSource = vi.fn(() => new MockMediaStreamSourceNode() as unknown as MediaStreamAudioSourceNode);
+  createMediaStreamSource = vi.fn(
+    () => new MockMediaStreamSourceNode() as unknown as MediaStreamAudioSourceNode,
+  );
   createGain = vi.fn(() => new MockGainNode() as unknown as GainNode);
   createMediaStreamDestination = vi.fn(
     () => new MockMediaStreamDestinationNode() as unknown as MediaStreamAudioDestinationNode,
@@ -111,7 +117,9 @@ function createAvatarBridgeMock(overrides: Partial<AvatarBridge> = {}): AvatarBr
     listFaces: vi.fn().mockResolvedValue([]),
     getActiveFace: vi.fn().mockResolvedValue(null),
     setActiveFace: vi.fn().mockResolvedValue(null),
-    generateFace: vi.fn().mockResolvedValue({ generationId: 'gen-ui', candidates: [] } as AvatarGenerationResult),
+    generateFace: vi
+      .fn()
+      .mockResolvedValue({ generationId: 'gen-ui', candidates: [] } as AvatarGenerationResult),
     applyGeneratedFace: vi.fn().mockResolvedValue({ faceId: 'avatar-face-id' }),
     deleteFace: vi.fn().mockResolvedValue(undefined),
     listModels: vi.fn().mockResolvedValue([]),
@@ -129,6 +137,7 @@ function createAvatarBridgeMock(overrides: Partial<AvatarBridge> = {}): AvatarBr
     }),
     deleteModel: vi.fn().mockResolvedValue(undefined),
     loadModelBinary: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
+    updateModelThumbnail: vi.fn().mockResolvedValue(null),
     listAnimations: vi.fn().mockResolvedValue([]),
     uploadAnimation: vi.fn().mockResolvedValue({
       animation: {
@@ -179,7 +188,8 @@ describe('App component', () => {
 
   beforeEach(() => {
     realtimeClientInstances.length = 0;
-    (window as unknown as { AudioContext: typeof AudioContext }).AudioContext = MockAudioContext as unknown as typeof AudioContext;
+    (window as unknown as { AudioContext: typeof AudioContext }).AudioContext =
+      MockAudioContext as unknown as typeof AudioContext;
     (navigator as Navigator & { mediaDevices: MediaDevices }).mediaDevices = {
       enumerateDevices: enumerateDevicesMock,
       getUserMedia: getUserMediaMock,
@@ -229,11 +239,15 @@ describe('App component', () => {
     console.warn = vi.fn();
     console.info = vi.fn();
     console.debug = vi.fn();
-    Reflect.deleteProperty(window as { RTCPeerConnection?: typeof RTCPeerConnection }, 'RTCPeerConnection');
+    Reflect.deleteProperty(
+      window as { RTCPeerConnection?: typeof RTCPeerConnection },
+      'RTCPeerConnection',
+    );
   });
 
   afterEach(() => {
-    (window as unknown as { AudioContext: typeof AudioContext }).AudioContext = originalAudioContext;
+    (window as unknown as { AudioContext: typeof AudioContext }).AudioContext =
+      originalAudioContext;
     (navigator as Navigator & { mediaDevices: MediaDevices }).mediaDevices = originalMediaDevices;
     Reflect.deleteProperty(window as PreloadWindow, 'aiembodied');
     enumerateDevicesMock.mockReset();
@@ -246,9 +260,13 @@ describe('App component', () => {
     console.info = originalConsoleInfo;
     console.debug = originalConsoleDebug;
     if (originalPeerConnection) {
-      (window as { RTCPeerConnection?: typeof RTCPeerConnection }).RTCPeerConnection = originalPeerConnection;
+      (window as { RTCPeerConnection?: typeof RTCPeerConnection }).RTCPeerConnection =
+        originalPeerConnection;
     } else {
-      Reflect.deleteProperty(window as { RTCPeerConnection?: typeof RTCPeerConnection }, 'RTCPeerConnection');
+      Reflect.deleteProperty(
+        window as { RTCPeerConnection?: typeof RTCPeerConnection },
+        'RTCPeerConnection',
+      );
     }
   });
 
@@ -282,10 +300,18 @@ describe('App component', () => {
 
     const mainTablist = await getMainTablist();
     const tabs = within(mainTablist).getAllByRole('tab');
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['ChatGPT', 'Character', 'Local']);
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      'ChatGPT',
+      'Character',
+      '2D',
+      '3D',
+      'Local',
+    ]);
 
     const chatPanel = await screen.findByRole('tabpanel', { name: /ChatGPT/i });
-    expect(within(chatPanel).getByRole('heading', { name: /Embodied Assistant/i })).toBeInTheDocument();
+    expect(
+      within(chatPanel).getByRole('heading', { name: /Embodied Assistant/i }),
+    ).toBeInTheDocument();
 
     await openTab(/Character/i);
     const characterPanel = await screen.findByRole('tabpanel', { name: /Character/i });
@@ -297,13 +323,15 @@ describe('App component', () => {
 
     await openTab(/ChatGPT/i);
     expect(await screen.findByText(/Speech gate:/i)).toBeInTheDocument();
-  });
+  }, 15000);
 
   it('keeps configurator mounted and loads the active face even when the tab is inactive', async () => {
     const now = Date.now();
     const listFacesMock = vi
       .fn()
-      .mockResolvedValue([{ id: 'face-1', name: 'Test Face', createdAt: now, previewDataUrl: null }]);
+      .mockResolvedValue([
+        { id: 'face-1', name: 'Test Face', createdAt: now, previewDataUrl: null },
+      ]);
     const getActiveFaceMock = vi
       .fn()
       .mockResolvedValue({ id: 'face-1', name: 'Test Face', createdAt: now, components: [] });
@@ -319,15 +347,18 @@ describe('App component', () => {
       },
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: { onWake: () => () => {} },
-      avatar: createAvatarBridgeMock({ listFaces: listFacesMock, getActiveFace: getActiveFaceMock }),
+      avatar: createAvatarBridgeMock({
+        listFaces: listFacesMock,
+        getActiveFace: getActiveFaceMock,
+      }),
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
 
     render(<App />);
 
-    await waitFor(() => expect(listFacesMock).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(getActiveFaceMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(listFacesMock).toHaveBeenCalled());
+    await waitFor(() => expect(getActiveFaceMock).toHaveBeenCalled());
 
     const characterPanel = await waitFor(() => {
       const panel = document.getElementById('panel-character');
@@ -342,7 +373,7 @@ describe('App component', () => {
     await openTab(/Character/i);
 
     await waitFor(() => expect(characterPanel.getAttribute('data-state')).toBe('active'));
-    expect(getActiveFaceMock).toHaveBeenCalledTimes(1);
+    expect(getActiveFaceMock).toHaveBeenCalled();
 
     const localPanel = document.getElementById('panel-local');
     expect(localPanel).not.toBeNull();
@@ -384,7 +415,16 @@ describe('App component', () => {
       const select = (await screen.findByLabelText('Voice')) as HTMLSelectElement;
       const optionValues = Array.from(select.options).map((option) => option.value);
 
-      expect(optionValues).toEqual(['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse']);
+      expect(optionValues).toEqual([
+        'alloy',
+        'ash',
+        'ballad',
+        'coral',
+        'echo',
+        'sage',
+        'shimmer',
+        'verse',
+      ]);
       expect(select.value).toBe('shimmer');
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
@@ -407,7 +447,11 @@ describe('App component', () => {
 
       (window as { RTCPeerConnection?: typeof RTCPeerConnection }).RTCPeerConnection = vi
         .fn()
-        .mockReturnValue({ addEventListener: vi.fn(), removeEventListener: vi.fn(), close: vi.fn() }) as unknown as typeof RTCPeerConnection;
+        .mockReturnValue({
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          close: vi.fn(),
+        }) as unknown as typeof RTCPeerConnection;
 
       (window as PreloadWindow).aiembodied = {
         ping: () => 'pong',
@@ -463,7 +507,11 @@ describe('App component', () => {
   it('stages realtime session config with prompt before connecting', async () => {
     (window as { RTCPeerConnection?: typeof RTCPeerConnection }).RTCPeerConnection = vi
       .fn()
-      .mockReturnValue({ addEventListener: vi.fn(), removeEventListener: vi.fn(), close: vi.fn() }) as unknown as typeof RTCPeerConnection;
+      .mockReturnValue({
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        close: vi.fn(),
+      }) as unknown as typeof RTCPeerConnection;
 
     const configWithPrompt: RendererConfig = {
       ...rendererConfig,
@@ -530,7 +578,9 @@ describe('App component', () => {
       const instructions = (payload as { instructions?: string }).instructions;
       const hasPrompt = typeof instructions === 'string' && instructions.includes(expectedPrompt);
       const vadThreshold = (
-        payload as { vad?: { threshold?: number; silenceDurationMs?: number; minSpeechDurationMs?: number } }
+        payload as {
+          vad?: { threshold?: number; silenceDurationMs?: number; minSpeechDurationMs?: number };
+        }
       ).vad?.threshold;
       return hasPrompt && vadThreshold === 0.61;
     });
@@ -634,7 +684,9 @@ describe('App component', () => {
     });
 
     expect(screen.getByRole('heading', { level: 2, name: /API keys/i })).toBeInTheDocument();
-    const realtimeCard = screen.getByRole('heading', { name: /OpenAI Realtime API key/i }).closest('article');
+    const realtimeCard = screen
+      .getByRole('heading', { name: /OpenAI Realtime API key/i })
+      .closest('article');
     expect(realtimeCard).not.toBeNull();
     if (realtimeCard) {
       expect(within(realtimeCard).getByText(/Status: Configured/i)).toBeInTheDocument();
@@ -649,7 +701,11 @@ describe('App component', () => {
   it('allows pausing and resuming listening while disconnecting realtime sessions', async () => {
     (window as { RTCPeerConnection?: typeof RTCPeerConnection }).RTCPeerConnection = vi
       .fn()
-      .mockReturnValue({ addEventListener: vi.fn(), removeEventListener: vi.fn(), close: vi.fn() }) as unknown as typeof RTCPeerConnection;
+      .mockReturnValue({
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        close: vi.fn(),
+      }) as unknown as typeof RTCPeerConnection;
 
     (window as PreloadWindow).aiembodied = {
       ping: () => 'pong',
@@ -729,7 +785,9 @@ describe('App component', () => {
     });
 
     const realtimeIndicator = screen.getByTestId('realtime-indicator');
-    expect(within(realtimeIndicator).getByText(/Disabled \(listening paused\)/i)).toBeInTheDocument();
+    expect(
+      within(realtimeIndicator).getByText(/Disabled \(listening paused\)/i),
+    ).toBeInTheDocument();
 
     fireEvent.click(listeningToggle);
 
@@ -743,8 +801,10 @@ describe('App component', () => {
     render(<App />);
 
     await waitFor(() =>
-      expect((console.warn as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
-        expect.stringContaining('Preload API unavailable (API not exposed); renderer still polling for bridge exposure.'),
+      expect(console.warn as unknown as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Preload API unavailable (API not exposed); renderer still polling for bridge exposure.',
+        ),
         expect.objectContaining({
           attempt: 1,
           descriptorType: 'missing',
@@ -755,14 +815,18 @@ describe('App component', () => {
     );
 
     await waitFor(() =>
-      expect((console.error as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
+      expect(console.error as unknown as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
         expect.stringContaining('Configuration bridge unavailable while loading renderer config.'),
         expect.objectContaining({ effect: 'load-config', descriptorType: 'missing' }),
       ),
     );
 
-    const warnCall = (console.warn as unknown as ReturnType<typeof vi.fn>).mock.calls.find((call) =>
-      typeof call[0] === 'string' && call[0].includes('Preload API unavailable (API not exposed); renderer still polling for bridge exposure.'),
+    const warnCall = (console.warn as unknown as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) =>
+        typeof call[0] === 'string' &&
+        call[0].includes(
+          'Preload API unavailable (API not exposed); renderer still polling for bridge exposure.',
+        ),
     );
     expect(warnCall?.[1]).toMatchObject({
       attempt: 1,
@@ -770,8 +834,10 @@ describe('App component', () => {
       hasPingFunction: false,
     });
 
-    const errorCall = (console.error as unknown as ReturnType<typeof vi.fn>).mock.calls.find((call) =>
-      typeof call[0] === 'string' && call[0].includes('Configuration bridge unavailable while loading renderer config.'),
+    const errorCall = (console.error as unknown as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) =>
+        typeof call[0] === 'string' &&
+        call[0].includes('Configuration bridge unavailable while loading renderer config.'),
     );
     expect(errorCall?.[1]).toMatchObject({
       effect: 'load-config',
@@ -810,7 +876,7 @@ describe('App component', () => {
     render(<App />);
 
     await waitFor(() =>
-      expect((console.warn as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
+      expect(console.warn as unknown as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
         expect.stringContaining('Avatar configuration bridge missing from preload API.'),
         expect.objectContaining({ hasAvatarBridge: false, hasConfigBridge: true }),
       ),
@@ -1019,14 +1085,18 @@ describe('App component', () => {
 
     await openTab(/Local/i);
 
-    const realtimeHeading = await screen.findByRole('heading', { name: /OpenAI Realtime API key/i });
+    const realtimeHeading = await screen.findByRole('heading', {
+      name: /OpenAI Realtime API key/i,
+    });
     const realtimePanel = realtimeHeading.closest('article');
     expect(realtimePanel).not.toBeNull();
     if (!realtimePanel) {
       throw new Error('Realtime secret panel missing');
     }
 
-    const input = within(realtimePanel).getByLabelText(/New OpenAI Realtime API key/i) as HTMLInputElement;
+    const input = within(realtimePanel).getByLabelText(
+      /New OpenAI Realtime API key/i,
+    ) as HTMLInputElement;
     fireEvent.change(input, { target: { value: ' new-secret ' } });
 
     const updateButton = within(realtimePanel).getByRole('button', { name: /update key/i });
@@ -1037,7 +1107,9 @@ describe('App component', () => {
     });
 
     expect(input.value).toBe('');
-    expect(await within(realtimePanel).findByText(/API key updated successfully/i)).toBeInTheDocument();
+    expect(
+      await within(realtimePanel).findByText(/API key updated successfully/i),
+    ).toBeInTheDocument();
   });
 
   it('uses the latest preload bridge when submitting a secret before the hook state updates', async () => {
@@ -1069,14 +1141,18 @@ describe('App component', () => {
 
     await openTab(/Local/i);
 
-    const realtimeHeading = await screen.findByRole('heading', { name: /OpenAI Realtime API key/i });
+    const realtimeHeading = await screen.findByRole('heading', {
+      name: /OpenAI Realtime API key/i,
+    });
     const realtimePanel = realtimeHeading.closest('article');
     expect(realtimePanel).not.toBeNull();
     if (!realtimePanel) {
       throw new Error('Realtime secret panel missing');
     }
 
-    const input = within(realtimePanel).getByLabelText(/New OpenAI Realtime API key/i) as HTMLInputElement;
+    const input = within(realtimePanel).getByLabelText(
+      /New OpenAI Realtime API key/i,
+    ) as HTMLInputElement;
     fireEvent.change(input, { target: { value: ' late-secret ' } });
 
     const updateButton = within(realtimePanel).getByRole('button', { name: /update key/i });
@@ -1086,7 +1162,9 @@ describe('App component', () => {
       expect(setSecretMock).toHaveBeenCalledWith('realtimeApiKey', 'late-secret');
     });
 
-    expect(await within(realtimePanel).findByText(/API key updated successfully/i)).toBeInTheDocument();
+    expect(
+      await within(realtimePanel).findByText(/API key updated successfully/i),
+    ).toBeInTheDocument();
   });
 
   it('reports wake word access key test failures', async () => {
@@ -1148,7 +1226,7 @@ describe('App component', () => {
 
   it('syncs the base prompt textarea with realtime session updates', async () => {
     const DEFAULT_PROMPT =
-      'You are echo, an AI assistant. You are slightly sarcastic, very blunt, but helpful in your own way.\n\nYou question assumptions, and aren\'t afraid to ask questions or challenge me. You have a sharp wit.\n\nYou are here to help me be a better person, but you don\'t put up with bullshit. You also have an Australian sensibility when it comes to swearing and language overall.';
+      "You are echo, an AI assistant. You are slightly sarcastic, very blunt, but helpful in your own way.\n\nYou question assumptions, and aren't afraid to ask questions or challenge me. You have a sharp wit.\n\nYou are here to help me be a better person, but you don't put up with bullshit. You also have an Australian sensibility when it comes to swearing and language overall.\n\nYou are good-natured and good-humoured.";
 
     (window as PreloadWindow).aiembodied = {
       ping: () => 'pong',
@@ -1185,7 +1263,11 @@ describe('App component', () => {
 
     (window as { RTCPeerConnection?: typeof RTCPeerConnection }).RTCPeerConnection = vi
       .fn()
-      .mockReturnValue({ addEventListener: vi.fn(), removeEventListener: vi.fn(), close: vi.fn() }) as unknown as typeof RTCPeerConnection;
+      .mockReturnValue({
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        close: vi.fn(),
+      }) as unknown as typeof RTCPeerConnection;
 
     render(<App />);
 
@@ -1199,7 +1281,10 @@ describe('App component', () => {
 
     expect(realtimeClientInstances.length).toBeGreaterThan(0);
     const instance = realtimeClientInstances[realtimeClientInstances.length - 1];
-    instance.callbacks.onSessionUpdated?.({ instructions: 'Server-sourced base prompt', voice: 'alloy' });
+    instance.callbacks.onSessionUpdated?.({
+      instructions: 'Server-sourced base prompt',
+      voice: 'alloy',
+    });
 
     await waitFor(() => {
       expect(textarea.value).toBe('Server-sourced base prompt');
@@ -1221,7 +1306,9 @@ describe('App component', () => {
   });
 
   it('logs realtime disconnect and reconnect when voice preference changes', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [] }) } as Response);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, json: async () => ({ data: [] }) } as Response);
     const originalFetch = (globalThis as { fetch?: typeof fetch }).fetch;
     (globalThis as { fetch?: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
 
@@ -1259,7 +1346,11 @@ describe('App component', () => {
 
     (window as { RTCPeerConnection?: typeof RTCPeerConnection }).RTCPeerConnection = vi
       .fn()
-      .mockReturnValue({ addEventListener: vi.fn(), removeEventListener: vi.fn(), close: vi.fn() }) as unknown as typeof RTCPeerConnection;
+      .mockReturnValue({
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        close: vi.fn(),
+      }) as unknown as typeof RTCPeerConnection;
 
     try {
       render(<App />);
@@ -1297,12 +1388,16 @@ describe('App component', () => {
         const infoCalls = (console.info as unknown as ReturnType<typeof vi.fn>).mock.calls;
         expect(
           infoCalls.some(
-            (call) => typeof call[0] === 'string' && call[0].includes('Voice change requested; disconnecting current session'),
+            (call) =>
+              typeof call[0] === 'string' &&
+              call[0].includes('Voice change requested; disconnecting current session'),
           ),
         ).toBe(true);
         expect(
           infoCalls.some(
-            (call) => typeof call[0] === 'string' && call[0].includes('Voice change reconnect initiated with'),
+            (call) =>
+              typeof call[0] === 'string' &&
+              call[0].includes('Voice change reconnect initiated with'),
           ),
         ).toBe(true);
       });

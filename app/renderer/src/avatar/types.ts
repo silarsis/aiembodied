@@ -112,6 +112,7 @@ export interface AvatarBridge {
   uploadModel(request: AvatarModelUploadRequest): Promise<AvatarModelUploadResult>;
   deleteModel(modelId: string): Promise<void>;
   loadModelBinary(modelId: string): Promise<ArrayBuffer>;
+  updateModelThumbnail(modelId: string, thumbnailDataUrl: string): Promise<AvatarModelSummary | null>;
   listAnimations(): Promise<AvatarAnimationSummary[]>;
   uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult>;
   generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;

@@ -637,6 +637,13 @@ export class MemoryStore {
     }
   }
 
+  updateVrmModelThumbnail(modelId: string, thumbnail: Buffer): void {
+    this.ensureOpen();
+
+    const stmt = this.db.prepare(`UPDATE vrm_models SET thumbnail = ? WHERE id = ?;`);
+    stmt.run(thumbnail, modelId);
+  }
+
   createVrmAnimation(animation: VrmAnimationRecord): void {
     this.ensureOpen();
 

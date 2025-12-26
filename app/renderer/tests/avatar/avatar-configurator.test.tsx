@@ -69,6 +69,7 @@ function createAvatarBridgeStub(overrides: Partial<AvatarBridge> = {}): AvatarBr
     }),
     deleteModel: vi.fn().mockResolvedValue(undefined),
     loadModelBinary: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
+    updateModelThumbnail: vi.fn().mockResolvedValue(null),
     listAnimations: vi.fn().mockResolvedValue([]),
     uploadAnimation: vi.fn().mockResolvedValue({
       animation: {
@@ -295,9 +296,7 @@ describe('AvatarConfigurator', () => {
       generateAnimation,
     });
 
-    render(<AvatarConfigurator avatarApi={avatarApi} />);
-
-    fireEvent.click(screen.getByRole('tab', { name: '3D' }));
+    render(<AvatarConfigurator avatarApi={avatarApi} panel="3d" />);
 
     const promptInput = await screen.findByLabelText('Animation prompt');
     fireEvent.change(promptInput, { target: { value: 'Wave hello' } });
@@ -344,9 +343,7 @@ describe('AvatarConfigurator', () => {
       deleteModel,
     });
 
-    render(<AvatarConfigurator avatarApi={avatarApi} />);
-
-    fireEvent.click(screen.getByRole('tab', { name: '3D' }));
+    render(<AvatarConfigurator avatarApi={avatarApi} panel="3d" />);
 
     await waitFor(() => expect(screen.getByText('Model One')).toBeInTheDocument());
     expect(screen.getByText('Model Two')).toBeInTheDocument();
@@ -391,9 +388,7 @@ describe('AvatarConfigurator', () => {
 
     const restoreFileReader = mockFileReader('data:application/octet-stream;base64,QUJD');
     try {
-      render(<AvatarConfigurator avatarApi={avatarApi} />);
-
-      fireEvent.click(screen.getByRole('tab', { name: '3D' }));
+      render(<AvatarConfigurator avatarApi={avatarApi} panel="3d" />);
 
       const file = new File([Uint8Array.from([1, 2, 3])], 'avatar.vrm', { type: 'application/octet-stream' });
       const fileInput = await screen.findByLabelText('VRM file');
@@ -424,8 +419,7 @@ describe('AvatarConfigurator', () => {
     const uploadModel = vi.fn();
     const avatarApi = createAvatarBridgeStub({ uploadModel });
 
-    render(<AvatarConfigurator avatarApi={avatarApi} />);
-    fireEvent.click(screen.getByRole('tab', { name: '3D' }));
+    render(<AvatarConfigurator avatarApi={avatarApi} panel="3d" />);
 
     const invalidFile = new File([Uint8Array.from([1])], 'avatar.png', { type: 'image/png' });
     const fileInput = await screen.findByLabelText('VRM file');
