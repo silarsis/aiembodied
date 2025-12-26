@@ -129,3 +129,4 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 - 2025-11-05 — VRMA animations now persist under `userData/vrma-animations` with metadata in the `vrma_animations` table; IPC bridges expose list/upload/delete/load. Verify with `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm test:coverage`.
 - 2025-11-06 — VRM renderer now loads VRMA clips into a slug-keyed registry and processes queued pose/play requests through the animation bus.
 - 2025-11-07 — VRMA generation now validates schema output, converts local quaternion tracks into VRMAnimation, and persists generated VRMA clips via the animation service.
+- 2025-11-07 — Animation tags from realtime text are queued in arrival order and play sequentially; timestamp alignment is not yet implemented. Animation requests now accept an optional timing hook (`timing.onStart(startAt)`) so future audio timestamps can be surfaced without changing the queue API.
