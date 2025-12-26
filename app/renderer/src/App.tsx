@@ -619,8 +619,11 @@ export default function App() {
     realtimeApiKey: false,
     wakeWordAccessKey: false,
   }));
-  const [realtimeKey, setRealtimeKey] = useState<string | null>(null);
-  const [realtimeKeyError, setRealtimeKeyError] = useState<string | null>(null);
+  const [realtimeToken, setRealtimeToken] = useState<string | null>(null);
+  const [realtimeTokenError, setRealtimeTokenError] = useState<string | null>(null);
+  const realtimeTokenExpiresAtRef = useRef<number | null>(null);
+  const realtimeTokenRequestRef = useRef(0);
+  const realtimeTokenRefreshRef = useRef(true);
   const [realtimeState, setRealtimeState] = useState<RealtimeClientState>({ status: 'idle' });
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [visemeFrame, setVisemeFrame] = useState<VisemeFrame | null>(null);
@@ -1106,6 +1109,45 @@ export default function App() {
     });
   }, [hasRealtimeSupport, pushLatency]);
 
+  const mintEphemeralToken = useCallback(
+    async (reason: string) => {
+      const bridge = resolveApi();
+      if (!bridge?.realtime?.mintEphemeralToken) {
+        throw new Error('Realtime token bridge unavailable.');
+      }
+      if (!realtimeClient) {
+        throw new Error('Realtime client is unavailable.');
+      }
+
+      const requestId = realtimeTokenRequestRef.current + 1;
+      realtimeTokenRequestRef.current = requestId;
+      const session = realtimeClient.getSessionConfigSnapshot();
+
+      try {
+        const response = await bridge.realtime.mintEphemeralToken({ session });
+        if (requestId !== realtimeTokenRequestRef.current) {
+          return null;
+        }
+        setRealtimeToken(response.value);
+        realtimeTokenExpiresAtRef.current = typeof response.expiresAt === 'number' ? response.expiresAt : null;
+        realtimeTokenRefreshRef.current = false;
+        setRealtimeTokenError(null);
+        console.info('[RealtimeClient] Minted ephemeral token.', { reason });
+        return response.value;
+      } catch (error) {
+        if (requestId !== realtimeTokenRequestRef.current) {
+          return null;
+        }
+        const message = error instanceof Error ? error.message : 'Failed to mint realtime session token.';
+        setRealtimeToken(null);
+        setRealtimeTokenError(message);
+        console.error('[RealtimeClient] Failed to mint ephemeral token.', { reason, message });
+        throw error;
+      }
+    },
+    [realtimeClient, resolveApi],
+  );
+
   useEffect(() => {
     const driver = new VisemeDriver({
       onFrame: (frame) => {
@@ -1305,6 +1347,7 @@ export default function App() {
     };
 
     stagedSessionConfigRef.current = payload;
+    realtimeTokenRefreshRef.current = true;
     setSessionConfigReady(!loadingConfig);
 
     if (!realtimeClient || loadingConfig) {
@@ -1328,36 +1371,15 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    const bridge = resolveApi();
-    if (!bridge || !hasRealtimeApiKey || !hasRealtimeSupport) {
-      setRealtimeKey(null);
-      setRealtimeKeyError(null);
+    if (!hasRealtimeApiKey || !hasRealtimeSupport) {
+      setRealtimeToken(null);
+      setRealtimeTokenError(null);
+      realtimeTokenRefreshRef.current = true;
       return;
     }
 
-    let cancelled = false;
-    bridge.config
-      .getSecret('realtimeApiKey')
-      .then((key) => {
-        if (cancelled) {
-          return;
-        }
-        setRealtimeKey(key);
-        setRealtimeKeyError(null);
-      })
-      .catch((error) => {
-        if (cancelled) {
-          return;
-        }
-        const message = error instanceof Error ? error.message : 'Failed to load realtime API key.';
-        setRealtimeKey(null);
-        setRealtimeKeyError(message);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [api, hasRealtimeApiKey, hasRealtimeSupport, resolveApi]);
+    realtimeTokenRefreshRef.current = true;
+  }, [hasRealtimeApiKey, hasRealtimeSupport]);
 
   useEffect(() => {
     const wasActive = previousSpeechActiveRef.current;
@@ -1380,38 +1402,70 @@ export default function App() {
       return;
     }
 
-    if (!isListeningEnabled || !realtimeKey || !audioGraph.upstreamStream) {
+    if (!isListeningEnabled || !audioGraph.upstreamStream || !hasRealtimeApiKey) {
       void realtimeClient.disconnect();
       return;
     }
 
-    const stagedPayload = stagedSessionConfigRef.current;
-    if (stagedPayload) {
-      try {
-        realtimeClient.updateSessionConfig(stagedPayload);
-      } catch (error) {
-        console.warn('[RealtimeClient] Failed to stage session config before connect', error);
+    const inputStream = audioGraph.upstreamStream;
+    let cancelled = false;
+    const connect = async () => {
+      const stagedPayload = stagedSessionConfigRef.current;
+      if (stagedPayload) {
+        try {
+          realtimeClient.updateSessionConfig(stagedPayload);
+        } catch (error) {
+          console.warn('[RealtimeClient] Failed to stage session config before connect', error);
+        }
       }
-    }
 
-    realtimeClient.bindRemoteAudioElement(remoteAudioRef.current);
-    realtimeClient.setJitterBufferMs(100);
-    void realtimeClient
-      .connect({ apiKey: realtimeKey, inputStream: audioGraph.upstreamStream })
-      .catch((error) => {
-        console.error('Failed to connect to realtime API', error);
-      });
+      realtimeClient.bindRemoteAudioElement(remoteAudioRef.current);
+      realtimeClient.setJitterBufferMs(100);
+
+      let token = realtimeToken;
+      if (!token || realtimeTokenRefreshRef.current) {
+        try {
+          token = await mintEphemeralToken('connect');
+        } catch (error) {
+          if (!cancelled) {
+            console.error('Failed to mint realtime session token', error);
+          }
+          return;
+        }
+      }
+
+      if (!token || cancelled) {
+        return;
+      }
+
+      if (!inputStream) {
+        return;
+      }
+
+      try {
+        await realtimeClient.connect({ apiKey: token, inputStream });
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to connect to realtime API', error);
+        }
+      }
+    };
+
+    void connect();
 
     return () => {
+      cancelled = true;
       void realtimeClient.disconnect();
     };
   }, [
     realtimeClient,
-    realtimeKey,
+    realtimeToken,
     audioGraph.upstreamStream,
     isListeningEnabled,
     loadingConfig,
     isSessionConfigReady,
+    hasRealtimeApiKey,
+    mintEphemeralToken,
   ]);
 
   useEffect(() => {
@@ -1453,6 +1507,7 @@ export default function App() {
 
     const unsubscribe = bridge.wakeWord.onWake((event) => {
       if (event.sessionId && activeSessionIdRef.current !== event.sessionId) {
+        activeSessionIdRef.current = event.sessionId;
         setActiveSessionId(event.sessionId);
         messageIdsRef.current.clear();
         setTranscriptEntries([]);
@@ -1580,22 +1635,39 @@ export default function App() {
           `[RealtimeClient] Voice change reconnect initiated with ${JSON.stringify({ voice: nextVoice })}`,
         );
         console.info('Voice change reconnect initiated with');
-        if (realtimeClient && realtimeKey && audioGraph.upstreamStream) {
+        if (realtimeClient && audioGraph.upstreamStream && hasRealtimeApiKey) {
           await realtimeClient.disconnect();
           console.info(
             `[RealtimeClient] Voice change reconnect initiated with ${JSON.stringify({ voice: nextVoice })}`,
           );
-          void realtimeClient
-            .connect({ apiKey: realtimeKey, inputStream: audioGraph.upstreamStream })
-            .catch((error) => {
-              console.error('[RealtimeClient] Voice change reconnect failed', error);
-            });
+          try {
+            realtimeTokenRefreshRef.current = true;
+            const token = await mintEphemeralToken('voice-change');
+            if (!token) {
+              return;
+            }
+            void realtimeClient
+              .connect({ apiKey: token, inputStream: audioGraph.upstreamStream })
+              .catch((error) => {
+                console.error('[RealtimeClient] Voice change reconnect failed', error);
+              });
+          } catch (error) {
+            console.error('[RealtimeClient] Voice change reconnect failed', error);
+          }
         }
       } catch (error) {
         console.error('Failed to persist realtime voice preference', error);
       }
     },
-    [persistPreferences, selectedInput, selectedOutput, realtimeClient, realtimeKey, audioGraph.upstreamStream],
+    [
+      persistPreferences,
+      selectedInput,
+      selectedOutput,
+      realtimeClient,
+      audioGraph.upstreamStream,
+      hasRealtimeApiKey,
+      mintEphemeralToken,
+    ],
   );
 
   const handlePromptBlur = useCallback(
@@ -1722,9 +1794,14 @@ export default function App() {
         }
       }
 
-      if (realtimeClient && realtimeKey && audioGraph.upstreamStream) {
+      if (realtimeClient && audioGraph.upstreamStream && hasRealtimeApiKey) {
         await realtimeClient.disconnect();
-        await realtimeClient.connect({ apiKey: realtimeKey, inputStream: audioGraph.upstreamStream });
+        realtimeTokenRefreshRef.current = true;
+        const token = await mintEphemeralToken('resume');
+        if (!token) {
+          return;
+        }
+        await realtimeClient.connect({ apiKey: token, inputStream: audioGraph.upstreamStream });
         // After reconnect, try to play again once a stream is attached (onRemoteStream will also try)
         setTimeout(async () => {
           try {
@@ -1741,7 +1818,7 @@ export default function App() {
     } catch (error) {
       console.error('Failed to reconnect and resume audio', error);
     }
-  }, [realtimeClient, realtimeKey, audioGraph.upstreamStream]);
+  }, [realtimeClient, audioGraph.upstreamStream, hasRealtimeApiKey, mintEphemeralToken]);
 
   useEffect(() => {
     if (selectedVoice && !availableVoices.includes(selectedVoice)) {
@@ -1801,8 +1878,11 @@ export default function App() {
           });
 
           if (key === 'realtimeApiKey') {
-            setRealtimeKey(nextValue);
-            setRealtimeKeyError(null);
+            setRealtimeToken(null);
+            setRealtimeTokenError(null);
+            realtimeTokenExpiresAtRef.current = null;
+            realtimeTokenRefreshRef.current = true;
+            realtimeTokenRequestRef.current += 1;
           }
 
           flushSync(() => {
@@ -1910,8 +1990,8 @@ export default function App() {
       return 'Unavailable (WebRTC unsupported)';
     }
 
-    if (realtimeKeyError) {
-      return `Error G�� ${realtimeKeyError}`;
+    if (realtimeTokenError) {
+      return `Error G�� ${realtimeTokenError}`;
     }
 
     if (!isListeningEnabled) {
@@ -1935,7 +2015,7 @@ export default function App() {
   }, [
     hasRealtimeApiKey,
     hasRealtimeSupport,
-    realtimeKeyError,
+    realtimeTokenError,
     realtimeState,
     audioGraph.upstreamStream,
     isListeningEnabled,

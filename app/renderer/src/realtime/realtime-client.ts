@@ -540,6 +540,10 @@ export class RealtimeClient {
     this.sendSessionUpdate();
   }
 
+  getSessionConfigSnapshot(): Record<string, unknown> {
+    return this.buildInitialSessionConfiguration();
+  }
+
   private sendSessionUpdate(): void {
     if (!this.controlChannel || this.controlChannel.readyState !== 'open') {
       return;

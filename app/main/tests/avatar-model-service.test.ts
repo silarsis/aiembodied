@@ -1,37 +1,9 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryStore } from '../src/memory/memory-store.js';
 import { AvatarModelService } from '../src/avatar/avatar-model-service.js';
-
-const parseAsyncMock = vi.fn<[], Promise<{ userData: { vrm?: { meta?: unknown; dispose?: () => void } }; parser?: { dispose?: () => void } }>>();
-
-const hoistedMocks = vi.hoisted(() => ({
-  vrmLoaderPluginMock: vi.fn(),
-  vrmMetaLoaderPluginMock: vi.fn(),
-}));
-
-vi.mock('three/examples/jsm/loaders/GLTFLoader.js', () => {
-  class MockGLTFLoader {
-    register = vi.fn();
-    parseAsync = parseAsyncMock;
-  }
-  return { GLTFLoader: MockGLTFLoader };
-});
-
-vi.mock('@pixiv/three-vrm', () => ({
-  VRMLoaderPlugin: hoistedMocks.vrmLoaderPluginMock.mockImplementation((_parser, options) => options),
-}));
-
-vi.mock('@pixiv/three-vrm-core', () => ({
-  VRMMetaLoaderPlugin: hoistedMocks.vrmMetaLoaderPluginMock.mockImplementation((_parser, options?: { acceptV0Meta?: boolean }) => ({
-    acceptV0Meta: options?.acceptV0Meta ?? true,
-    needThumbnailImage: false,
-  })),
-}));
-
-const { vrmLoaderPluginMock, vrmMetaLoaderPluginMock } = hoistedMocks;
 
 function createMockThumbnail(): Buffer {
   return Buffer.from([
@@ -46,6 +18,8 @@ interface MockVrmOptions {
   version?: string;
   metaVersion?: string;
   thumbnail?: Buffer;
+  useVrmc?: boolean;
+  specVersion?: string;
 }
 
 function createMockVrmGlb(options?: MockVrmOptions): Buffer {
@@ -53,19 +27,34 @@ function createMockVrmGlb(options?: MockVrmOptions): Buffer {
   const metaVersion = options?.metaVersion ?? '1';
   const name = options?.name ?? 'Mock Model';
   const version = options?.version ?? '1.0';
+  const useVrmc = options?.useVrmc ?? false;
+  const specVersion = options?.specVersion ?? '1.0';
+
+  const vrmExtension = useVrmc
+    ? {
+        VRMC_vrm: {
+          specVersion,
+          meta: {
+            name,
+            version,
+            thumbnailImage: 0,
+          },
+        },
+      }
+    : {
+        VRM: {
+          meta: {
+            metaVersion,
+            name,
+            version,
+            thumbnailImage: 0,
+          },
+        },
+      };
 
   const json = {
     asset: { version: '2.0' },
-    extensions: {
-      VRM: {
-        meta: {
-          metaVersion,
-          name,
-          version,
-          thumbnailImage: 0,
-        },
-      },
-    },
+    extensions: vrmExtension,
     images: [
       {
         bufferView: 0,
@@ -122,12 +111,6 @@ async function createEnvironment() {
   return { store, modelsDirectory };
 }
 
-beforeEach(() => {
-  parseAsyncMock.mockReset();
-  vrmLoaderPluginMock.mockClear();
-  vrmMetaLoaderPluginMock.mockClear();
-});
-
 afterEach(async () => {
   while (stores.length > 0) {
     const store = stores.pop();
@@ -142,25 +125,12 @@ afterEach(async () => {
   }
 });
 
-function mockParser(meta: { metaVersion?: string; name?: string; version?: string }) {
-  parseAsyncMock.mockResolvedValueOnce({
-    userData: {
-      vrm: {
-        meta,
-        dispose: vi.fn(),
-      },
-    },
-    parser: { dispose: vi.fn() },
-  });
-}
-
 describe('AvatarModelService', () => {
   it('uploads VRM models, stores metadata, and sets active selection', async () => {
     const { store, modelsDirectory } = await createEnvironment();
     const service = new AvatarModelService({ store, modelsDirectory });
-    mockParser({ metaVersion: '1', name: 'Meta Model', version: '1.2' });
 
-    const glb = createMockVrmGlb({ name: 'Meta Model', version: '1.2' });
+    const glb = createMockVrmGlb({ name: 'Meta Model', version: '1.2', useVrmc: true });
     const base64 = glb.toString('base64');
     const result = await service.uploadModel({ fileName: 'sample.vrm', data: base64 });
 
@@ -177,29 +147,43 @@ describe('AvatarModelService', () => {
     expect(written.length).toBeGreaterThan(0);
   });
 
-  it('rejects uploads when VRM metadata is not 1.0', async () => {
+  it('rejects uploads when VRM metadata uses an unsupported version', async () => {
     const { store, modelsDirectory } = await createEnvironment();
     const service = new AvatarModelService({ store, modelsDirectory });
-    mockParser({ metaVersion: '0', name: 'Legacy Model' });
 
-    const glb = createMockVrmGlb({ metaVersion: '0' });
+    const glb = createMockVrmGlb({ metaVersion: '2' });
     const base64 = glb.toString('base64');
 
     await expect(service.uploadModel({ fileName: 'legacy.vrm', data: base64 })).rejects.toThrow(
-      /expected VRM 1\.0/i,
+      /expected VRM 0\.0\/1\.0/i,
     );
     expect(service.listModels()).toHaveLength(0);
+  });
+
+  it('accepts VRM 0.x metadata when VRM 1.0 metadata is not present', async () => {
+    const { store, modelsDirectory } = await createEnvironment();
+    const service = new AvatarModelService({ store, modelsDirectory });
+
+    const glb = createMockVrmGlb({ metaVersion: '0', name: 'Legacy Model' });
+    const base64 = glb.toString('base64');
+
+    const result = await service.uploadModel({ fileName: 'legacy.vrm', data: base64 });
+    expect(result.model.name).toBe('Legacy Model');
   });
 
   it('falls back to another model when the active model is deleted', async () => {
     const { store, modelsDirectory } = await createEnvironment();
     const service = new AvatarModelService({ store, modelsDirectory });
 
-    mockParser({ metaVersion: '1', name: 'Primary' });
-    const first = await service.uploadModel({ fileName: 'primary.vrm', data: createMockVrmGlb({ name: 'Primary' }).toString('base64') });
+    const first = await service.uploadModel({
+      fileName: 'primary.vrm',
+      data: createMockVrmGlb({ name: 'Primary', useVrmc: true }).toString('base64'),
+    });
 
-    mockParser({ metaVersion: '1', name: 'Secondary' });
-    const second = await service.uploadModel({ fileName: 'secondary.vrm', data: createMockVrmGlb({ name: 'Secondary' }).toString('base64') });
+    const second = await service.uploadModel({
+      fileName: 'secondary.vrm',
+      data: createMockVrmGlb({ name: 'Secondary', useVrmc: true }).toString('base64'),
+    });
 
     await service.setActiveModel(second.model.id);
     expect(service.getActiveModel()?.id).toBe(second.model.id);
@@ -214,10 +198,9 @@ describe('AvatarModelService', () => {
     const { store, modelsDirectory } = await createEnvironment();
     const service = new AvatarModelService({ store, modelsDirectory });
 
-    mockParser({ metaVersion: '1', name: 'Only Model' });
     const uploaded = await service.uploadModel({
       fileName: 'only.vrm',
-      data: createMockVrmGlb({ name: 'Only Model' }).toString('base64'),
+      data: createMockVrmGlb({ name: 'Only Model', useVrmc: true }).toString('base64'),
     });
 
     const activeBefore = service.getActiveModel();
@@ -245,8 +228,7 @@ describe('AvatarModelService', () => {
     const { store, modelsDirectory } = await createEnvironment();
     const service = new AvatarModelService({ store, modelsDirectory });
 
-    mockParser({ metaVersion: '1', name: 'Model' });
-    await service.uploadModel({ fileName: 'model.vrm', data: createMockVrmGlb().toString('base64') });
+    await service.uploadModel({ fileName: 'model.vrm', data: createMockVrmGlb({ useVrmc: true }).toString('base64') });
 
     await service.setActiveModel(null);
     expect(store.getActiveVrmModelId()).toBeNull();
@@ -256,10 +238,9 @@ describe('AvatarModelService', () => {
     const { store, modelsDirectory } = await createEnvironment();
     const service = new AvatarModelService({ store, modelsDirectory });
 
-    mockParser({ metaVersion: '1', name: 'Model' });
     const uploaded = await service.uploadModel({
       fileName: 'model.vrm',
-      data: createMockVrmGlb().toString('base64'),
+      data: createMockVrmGlb({ useVrmc: true }).toString('base64'),
     });
 
     const buffer = await service.loadModelBinary(uploaded.model.id);
@@ -277,10 +258,9 @@ describe('AvatarModelService', () => {
     };
     const service = new AvatarModelService({ store, modelsDirectory, fs: failingFs });
 
-    mockParser({ metaVersion: '1', name: 'Model' });
     const uploaded = await service.uploadModel({
       fileName: 'model.vrm',
-      data: createMockVrmGlb().toString('base64'),
+      data: createMockVrmGlb({ useVrmc: true }).toString('base64'),
     });
 
     await expect(service.loadModelBinary(uploaded.model.id)).rejects.toThrow(
