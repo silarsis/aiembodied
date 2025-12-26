@@ -491,6 +491,9 @@ describe('App component', () => {
 
     render(<App />);
 
+    const listeningToggle = await screen.findByTestId('listening-toggle');
+    fireEvent.click(listeningToggle);
+
     await waitFor(() => {
       expect(realtimeClientInstances.length).toBeGreaterThan(0);
     });
@@ -687,13 +690,20 @@ describe('App component', () => {
 
     render(<App />);
 
+    const listeningToggle = await screen.findByTestId('listening-toggle');
+    expect(listeningToggle).toHaveTextContent(/Enable listening/i);
+    expect(listeningToggle).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(listeningToggle);
+
+    await waitFor(() => {
+      expect(listeningToggle).toHaveTextContent(/Disable listening/i);
+      expect(listeningToggle).toHaveAttribute('aria-pressed', 'true');
+    });
+
     await waitFor(() => {
       expect(realtimeClientInstances.length).toBeGreaterThan(0);
     });
-
-    const listeningToggle = await screen.findByTestId('listening-toggle');
-    expect(listeningToggle).toHaveTextContent(/Disable listening/i);
-    expect(listeningToggle).toHaveAttribute('aria-pressed', 'true');
 
     for (const instance of realtimeClientInstances) {
       instance.disconnect.mockClear();
@@ -1253,11 +1263,19 @@ describe('App component', () => {
     try {
       render(<App />);
 
+      const listeningToggle = await screen.findByTestId('listening-toggle');
+      fireEvent.click(listeningToggle);
+
       await waitFor(() => {
         expect(realtimeClientInstances.length).toBeGreaterThan(0);
       });
 
       const instance = realtimeClientInstances[realtimeClientInstances.length - 1];
+
+      await waitFor(() => {
+        expect(instance.connect.mock.calls.length).toBeGreaterThan(0);
+      });
+
       const initialConnectCalls = instance.connect.mock.calls.length;
       const initialDisconnectCalls = instance.disconnect.mock.calls.length;
 
