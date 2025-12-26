@@ -17,6 +17,14 @@ vi.mock('three', () => {
       return new Quaternion(this.x, this.y, this.z, this.w);
     }
 
+    copy(other: Quaternion): Quaternion {
+      this.x = other.x;
+      this.y = other.y;
+      this.z = other.z;
+      this.w = other.w;
+      return this;
+    }
+
     setFromEuler(euler: Euler): Quaternion {
       this.x = euler.x;
       this.y = euler.y;
@@ -61,10 +69,20 @@ vi.mock('three', () => {
 
   class MockScene {
     children: MockScene[] = [];
-    position = { set: noop };
+    position = { x: 0, y: 0, z: 0, set: noop };
     rotation = { y: 0 };
     quaternion = new Quaternion();
     frustumCulled = false;
+    updateWorldMatrix = noop;
+    scale = { setScalar: noop };
+    matrixWorld = {};
+
+    getWorldPosition(target: { x: number; y: number; z: number }) {
+      target.x = this.position.x;
+      target.y = this.position.y;
+      target.z = this.position.z;
+      return target;
+    }
 
     add(child: MockScene) {
       this.children.push(child);
@@ -91,7 +109,7 @@ vi.mock('three', () => {
   }
   class AmbientLight extends Object3D {}
   class DirectionalLight extends Object3D {
-    position = { set: noop };
+    position = { x: 0, y: 0, z: 0, set: noop };
   }
   class Clock {
     getDelta() {
@@ -152,8 +170,83 @@ vi.mock('three', () => {
   }
   class Mesh extends Object3D {
     isMesh = true;
-    geometry = { dispose: noop };
+    geometry = {
+      boundingBox: null as Box3 | null,
+      dispose: noop,
+      computeBoundingBox() {
+        this.boundingBox = new Box3(new Vector3(0, 0, 0), new Vector3(1, 1, 1));
+      },
+    };
     material = { dispose: noop };
+    matrixWorld = {};
+  }
+
+  class Vector3 {
+    constructor(public x = 0, public y = 0, public z = 0) {}
+
+    add(other: Vector3) {
+      this.x += other.x;
+      this.y += other.y;
+      this.z += other.z;
+      return this;
+    }
+
+    multiplyScalar(scalar: number) {
+      this.x *= scalar;
+      this.y *= scalar;
+      this.z *= scalar;
+      return this;
+    }
+
+    setFromMatrixPosition() {
+      return this;
+    }
+
+    clone() {
+      return new Vector3(this.x, this.y, this.z);
+    }
+  }
+
+  class Box3 {
+    constructor(public min = new Vector3(), public max = new Vector3(1, 1, 1)) {}
+
+    clone() {
+      return new Box3(this.min.clone(), this.max.clone());
+    }
+
+    applyMatrix4() {
+      return this;
+    }
+
+    copy(box: Box3) {
+      this.min = box.min.clone();
+      this.max = box.max.clone();
+      return this;
+    }
+
+    union(box: Box3) {
+      this.min.x = Math.min(this.min.x, box.min.x);
+      this.min.y = Math.min(this.min.y, box.min.y);
+      this.min.z = Math.min(this.min.z, box.min.z);
+      this.max.x = Math.max(this.max.x, box.max.x);
+      this.max.y = Math.max(this.max.y, box.max.y);
+      this.max.z = Math.max(this.max.z, box.max.z);
+      return this;
+    }
+
+    getSize(target: Vector3) {
+      target.x = this.max.x - this.min.x;
+      target.y = this.max.y - this.min.y;
+      target.z = this.max.z - this.min.z;
+      return target;
+    }
+
+    getCenter(target: Vector3) {
+      target.x = (this.min.x + this.max.x) / 2;
+      target.y = (this.min.y + this.max.y) / 2;
+      target.z = (this.min.z + this.max.z) / 2;
+      return target;
+    }
   }
 
   return {
@@ -168,6 +261,8 @@ vi.mock('three', () => {
     Object3D,
     Quaternion,
     Euler,
+    Vector3,
+    Box3,
     NumberKeyframeTrack,
     QuaternionKeyframeTrack,
     AnimationClip,
@@ -181,20 +276,46 @@ vi.mock('three', () => {
 vi.mock('three/examples/jsm/loaders/GLTFLoader.js', () => {
   const noop = () => {};
 
+  class MockQuaternion {
+    constructor(public x = 0, public y = 0, public z = 0, public w = 1) {}
+
+    clone() {
+      return new MockQuaternion(this.x, this.y, this.z, this.w);
+    }
+
+    copy(other: MockQuaternion) {
+      this.x = other.x;
+      this.y = other.y;
+      this.z = other.z;
+      this.w = other.w;
+      return this;
+    }
+
+    multiply(quaternion: MockQuaternion) {
+      this.x += quaternion.x;
+      this.y += quaternion.y;
+      this.z += quaternion.z;
+      this.w += quaternion.w - 1;
+      return this;
+    }
+  }
+
   class MockScene {
     children: MockScene[] = [];
-    position = { set: noop };
+    position = { x: 0, y: 0, z: 0, set: noop };
     rotation = { y: 0 };
-    quaternion = {
-      x: 0,
-      y: 0,
-      z: 0,
-      w: 1,
-      clone() {
-        return { ...this };
-      },
-    };
+    quaternion = new MockQuaternion();
     frustumCulled = false;
+    updateWorldMatrix = noop;
+    scale = { setScalar: noop };
+    matrixWorld = {};
+
+    getWorldPosition(target: { x: number; y: number; z: number }) {
+      target.x = this.position.x;
+      target.y = this.position.y;
+      target.z = this.position.z;
+      return target;
+    }
 
     add(child: MockScene) {
       this.children.push(child);
@@ -249,11 +370,38 @@ vi.mock('three/examples/jsm/loaders/GLTFLoader.js', () => {
 vi.mock('@pixiv/three-vrm', () => {
   const noop = () => {};
 
+  class MockQuaternion {
+    constructor(public x = 0, public y = 0, public z = 0, public w = 1) {}
+
+    clone() {
+      return new MockQuaternion(this.x, this.y, this.z, this.w);
+    }
+
+    copy(other: MockQuaternion) {
+      this.x = other.x;
+      this.y = other.y;
+      this.z = other.z;
+      this.w = other.w;
+      return this;
+    }
+
+    multiply(quaternion: MockQuaternion) {
+      this.x += quaternion.x;
+      this.y += quaternion.y;
+      this.z += quaternion.z;
+      this.w += quaternion.w - 1;
+      return this;
+    }
+  }
+
   class MockScene {
     children: MockScene[] = [];
-    position = { set: noop };
+    position = { x: 0, y: 0, z: 0, set: noop };
     rotation = { y: 0 };
     frustumCulled = false;
+    scale = { setScalar: noop };
+    matrixWorld = {};
+    quaternion = new MockQuaternion();
 
     add(child: MockScene) {
       this.children.push(child);
@@ -268,6 +416,13 @@ vi.mock('@pixiv/three-vrm', () => {
       for (const child of this.children) {
         child.traverse(callback);
       }
+    }
+
+    getWorldPosition(target: { x: number; y: number; z: number }) {
+      target.x = this.position.x;
+      target.y = this.position.y;
+      target.z = this.position.z;
+      return target;
     }
   }
 

@@ -127,6 +127,29 @@ function createAvatarBridgeMock(overrides: Partial<AvatarBridge> = {}): AvatarBr
     }),
     deleteModel: vi.fn().mockResolvedValue(undefined),
     loadModelBinary: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
+    listAnimations: vi.fn().mockResolvedValue([]),
+    uploadAnimation: vi.fn().mockResolvedValue({
+      animation: {
+        id: 'vrma-0',
+        name: 'Idle',
+        createdAt: Date.now(),
+        fileSha: 'sha',
+        duration: null,
+        fps: null,
+      },
+    }),
+    generateAnimation: vi.fn().mockResolvedValue({
+      animation: {
+        id: 'vrma-generated',
+        name: 'Generated',
+        createdAt: Date.now(),
+        fileSha: 'sha',
+        duration: null,
+        fps: null,
+      },
+    }),
+    deleteAnimation: vi.fn().mockResolvedValue(undefined),
+    loadAnimationBinary: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
     getDisplayModePreference: vi.fn().mockResolvedValue('sprites'),
     setDisplayModePreference: vi.fn().mockResolvedValue(undefined),
     triggerBehaviorCue: vi.fn().mockResolvedValue(undefined),
@@ -476,14 +499,17 @@ describe('App component', () => {
       expect(client.updateSessionConfig).toHaveBeenCalled();
     });
 
+    const expectedPrompt = 'Follow the config script precisely.';
+
     await waitFor(() => {
       expect(
-        client.updateSessionConfig.mock.calls.some(([payload]) =>
-          payload &&
-          typeof payload === 'object' &&
-          'instructions' in payload &&
-          (payload as { instructions?: string }).instructions === 'Follow the config script precisely.',
-        ),
+        client.updateSessionConfig.mock.calls.some(([payload]) => {
+          if (!payload || typeof payload !== 'object' || !('instructions' in payload)) {
+            return false;
+          }
+          const instructions = (payload as { instructions?: string }).instructions;
+          return typeof instructions === 'string' && instructions.includes(expectedPrompt);
+        }),
       ).toBe(true);
     });
 
@@ -491,19 +517,22 @@ describe('App component', () => {
       expect(client.connect).toHaveBeenCalled();
     });
 
-    const matchingCallIndex = client.updateSessionConfig.mock.calls.findIndex(([payload]) =>
-      payload &&
-      typeof payload === 'object' &&
-      (payload as { instructions?: string }).instructions === 'Follow the config script precisely.' &&
-      (payload as { vad?: { threshold?: number; silenceDurationMs?: number; minSpeechDurationMs?: number } }).vad?.threshold ===
-        0.61,
-    );
+    const matchingCallIndex = client.updateSessionConfig.mock.calls.findIndex(([payload]) => {
+      if (!payload || typeof payload !== 'object') {
+        return false;
+      }
+      const instructions = (payload as { instructions?: string }).instructions;
+      const hasPrompt = typeof instructions === 'string' && instructions.includes(expectedPrompt);
+      const vadThreshold = (
+        payload as { vad?: { threshold?: number; silenceDurationMs?: number; minSpeechDurationMs?: number } }
+      ).vad?.threshold;
+      return hasPrompt && vadThreshold === 0.61;
+    });
     expect(matchingCallIndex).toBeGreaterThanOrEqual(0);
 
     const stagedPayload = client.updateSessionConfig.mock.calls[matchingCallIndex]?.[0];
     expect(stagedPayload).toMatchObject({
       voice: 'verse',
-      instructions: 'Follow the config script precisely.',
       turnDetection: 'server_vad',
       vad: {
         threshold: 0.61,
@@ -511,6 +540,7 @@ describe('App component', () => {
         minSpeechDurationMs: 280,
       },
     });
+    expect((stagedPayload as { instructions?: string }).instructions).toContain(expectedPrompt);
 
     const stagedOrder = client.updateSessionConfig.mock.invocationCallOrder[matchingCallIndex];
     const connectOrder = client.connect.mock.invocationCallOrder[0];

@@ -2,11 +2,6 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import { mkdir, readFile as fsReadFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { VRMLoaderPlugin } from '@pixiv/three-vrm';
-import { VRMMetaLoaderPlugin } from '@pixiv/three-vrm-core';
-import type { VRM1Meta } from '@pixiv/three-vrm-core';
 import type { MemoryStore, VrmModelRecord } from '../memory/memory-store.js';
 import type {
   AvatarModelSummary,
@@ -44,6 +39,40 @@ interface ThumbnailExtractionResult {
   mimeType: string | null;
 }
 
+interface VrmMetaSummary {
+  metaVersion: '0' | '1';
+  name?: string;
+  version?: string;
+}
+
+function extractHumanBoneNames(parsed: ParsedGlb): string[] {
+  const extensions = parsed.json?.extensions as Record<string, unknown> | undefined;
+  const vrmc = extensions?.VRMC_vrm as Record<string, unknown> | undefined;
+  const vrm = extensions?.VRM as Record<string, unknown> | undefined;
+
+  const vrmcHumanoid = vrmc?.humanoid as Record<string, unknown> | undefined;
+  const vrmcBones = vrmcHumanoid?.humanBones as Record<string, unknown> | undefined;
+  if (vrmcBones && typeof vrmcBones === 'object' && !Array.isArray(vrmcBones)) {
+    return Object.keys(vrmcBones).filter((bone) => bone.trim().length > 0);
+  }
+
+  const vrmHumanoid = vrm?.humanoid as Record<string, unknown> | undefined;
+  const vrmBones = vrmHumanoid?.humanBones as unknown;
+  if (Array.isArray(vrmBones)) {
+    const bones = vrmBones
+      .map((entry) => (entry && typeof entry === 'object' ? (entry as Record<string, unknown>).bone : undefined))
+      .filter((bone): bone is string => typeof bone === 'string' && bone.trim().length > 0)
+      .map((bone) => bone.trim());
+    return Array.from(new Set(bones));
+  }
+
+  if (vrmBones && typeof vrmBones === 'object') {
+    return Object.keys(vrmBones as Record<string, unknown>).filter((bone) => bone.trim().length > 0);
+  }
+
+  return [];
+}
+
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const JPEG_SIGNATURE = Buffer.from([0xff, 0xd8, 0xff]);
 const GIF87A_SIGNATURE = Buffer.from('GIF87a');
@@ -51,13 +80,7 @@ const GIF89A_SIGNATURE = Buffer.from('GIF89a');
 const WEBP_RIFF_SIGNATURE = Buffer.from('RIFF');
 const WEBP_WEBP_SIGNATURE = Buffer.from('WEBP');
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
-
-function ensureThreeCompatibility() {
-  const globalAny = globalThis as Record<string, unknown>;
-  if (typeof globalAny.self === 'undefined') {
-    globalAny.self = globalAny;
-  }
-}
+const VRMC_SPEC_VERSIONS = new Set(['1.0', '1.0-beta']);
 
 function sanitizeName(name: string | undefined, fallback: string): string {
   if (typeof name !== 'string') {
@@ -173,10 +196,29 @@ function toDataUrl(buffer: Buffer | null): string | null {
   return `data:${mime};base64,${buffer.toString('base64')}`;
 }
 
-function extractThumbnail(parsed: ParsedGlb): ThumbnailExtractionResult | null {
+function getVrmMetaSource(parsed: ParsedGlb): { meta: Record<string, unknown>; source: 'vrmc' | 'vrm'; specVersion?: string } | null {
   const extensions = parsed.json?.extensions as Record<string, unknown> | undefined;
+  const vrmc = extensions?.VRMC_vrm as Record<string, unknown> | undefined;
+  if (vrmc && typeof vrmc === 'object') {
+    const meta = vrmc.meta as Record<string, unknown> | undefined;
+    if (meta && typeof meta === 'object') {
+      const specVersion = typeof vrmc.specVersion === 'string' ? vrmc.specVersion : undefined;
+      return { meta, source: 'vrmc', specVersion };
+    }
+  }
+
   const vrm = extensions?.VRM as Record<string, unknown> | undefined;
   const meta = vrm?.meta as Record<string, unknown> | undefined;
+  if (meta && typeof meta === 'object') {
+    return { meta, source: 'vrm' };
+  }
+
+  return null;
+}
+
+function extractThumbnail(parsed: ParsedGlb): ThumbnailExtractionResult | null {
+  const metaSource = getVrmMetaSource(parsed);
+  const meta = metaSource?.meta;
   if (!meta) {
     return null;
   }
@@ -230,56 +272,42 @@ function extractThumbnail(parsed: ParsedGlb): ThumbnailExtractionResult | null {
   return null;
 }
 
-async function loadVrmMetadata(buffer: Buffer): Promise<VRM1Meta> {
-  ensureThreeCompatibility();
-
-  const loader = new GLTFLoader();
-
-  loader.register((parser: unknown) => {
-    const metaPlugin = new VRMMetaLoaderPlugin(parser, { acceptV0Meta: false });
-    metaPlugin.needThumbnailImage = false;
-
-    return new VRMLoaderPlugin(parser, {
-      metaPlugin,
-    });
-  });
-
-  let gltf: GLTF;
-  try {
-    gltf = await loader.parseAsync(bufferToArrayBuffer(buffer), '');
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : 'unknown error';
-    throw new Error(`VRM validation failed: ${reason}`);
-  }
-
-  const vrm = (gltf.userData as { vrm?: { meta?: unknown; dispose?: () => void } } | undefined)?.vrm;
-  if (!vrm || !vrm.meta) {
+function loadVrmMetadata(parsed: ParsedGlb): VrmMetaSummary {
+  const metaSource = getVrmMetaSource(parsed);
+  if (!metaSource) {
     throw new Error('VRM validation failed: VRM metadata missing from parsed model.');
   }
 
-  const meta = vrm.meta as VRM1Meta | { metaVersion?: string };
-  if ((meta as { metaVersion?: string }).metaVersion !== '1') {
-    throw new Error('VRM validation failed: expected VRM 1.0 metadata.');
-  }
-
-  try {
-    if (typeof vrm.dispose === 'function') {
-      vrm.dispose();
+  if (metaSource.source === 'vrmc') {
+    const specVersion = metaSource.specVersion;
+    if (specVersion && !VRMC_SPEC_VERSIONS.has(specVersion)) {
+      throw new Error(`VRM validation failed: unsupported VRMC_vrm specVersion "${specVersion}".`);
     }
-  } catch {
-    // Ignore disposal errors.
+
+  return {
+    metaVersion: '1',
+    name: typeof metaSource.meta.name === 'string' ? metaSource.meta.name : undefined,
+    version: typeof metaSource.meta.version === 'string' ? metaSource.meta.version : undefined,
+  };
   }
 
-  try {
-    const parser = gltf.parser as { dispose?: () => void } | undefined;
-    if (parser && typeof parser.dispose === 'function') {
-      parser.dispose();
-    }
-  } catch {
-    // Ignore parser disposal errors.
+  const metaVersion = typeof metaSource.meta.metaVersion === 'string' ? metaSource.meta.metaVersion : undefined;
+  if (metaVersion && metaVersion !== '1' && metaVersion !== '0') {
+    throw new Error('VRM validation failed: expected VRM 0.0/1.0 metadata.');
   }
 
-  return meta as VRM1Meta;
+  const nameCandidate =
+    typeof metaSource.meta.name === 'string'
+      ? metaSource.meta.name
+      : typeof metaSource.meta.title === 'string'
+        ? metaSource.meta.title
+        : undefined;
+
+  return {
+    metaVersion: metaVersion === '0' ? '0' : '1',
+    name: nameCandidate,
+    version: typeof metaSource.meta.version === 'string' ? metaSource.meta.version : undefined,
+  };
 }
 
 const defaultFs: FileSystemAdapter = {
@@ -370,6 +398,39 @@ export class AvatarModelService {
     }
   }
 
+  async listActiveModelBones(): Promise<string[]> {
+    const active = this.getActiveModel();
+    if (!active) {
+      return [];
+    }
+
+    return await this.listModelBones(active.id);
+  }
+
+  async listModelBones(modelId: string): Promise<string[]> {
+    const record = this.store.getVrmModel(modelId);
+    if (!record) {
+      this.logger?.warn?.('Requested VRM model not found when listing bones.', { modelId });
+      return [];
+    }
+
+    try {
+      const buffer = await this.fs.readFile(record.filePath);
+      if (buffer.length === 0) {
+        this.logger?.warn?.('VRM model binary is empty; cannot list bones.', { modelId, filePath: record.filePath });
+        return [];
+      }
+
+      const parsed = parseGlb(buffer);
+      const bones = extractHumanBoneNames(parsed);
+      return Array.from(new Set(bones)).sort();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.warn?.('Failed to read VRM bones from model binary.', { modelId, filePath: record.filePath, message });
+      return [];
+    }
+  }
+
   async uploadModel(request: AvatarModelUploadRequest): Promise<AvatarModelUploadResult> {
     if (!request || typeof request.fileName !== 'string' || typeof request.data !== 'string') {
       throw new Error('Invalid VRM upload payload.');
@@ -398,7 +459,7 @@ export class AvatarModelService {
     }
 
     const parsedGlb = parseGlb(buffer);
-    const meta = await loadVrmMetadata(buffer);
+    const meta = loadVrmMetadata(parsedGlb);
     const thumbnail = extractThumbnail(parsedGlb);
 
     const baseName = path.parse(fileName).name || 'VRM Model';

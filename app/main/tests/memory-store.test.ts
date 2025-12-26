@@ -8,6 +8,7 @@ import {
   type FaceComponentRecord,
   type FaceRecord,
   type VrmModelRecord,
+  type VrmAnimationRecord,
 } from '../src/memory/memory-store.js';
 
 const tempDirs: string[] = [];
@@ -144,6 +145,16 @@ describe('MemoryStore', () => {
     };
     original.createVrmModel(vrmModel);
     original.setActiveVrmModel('vrm-1');
+    const vrmaAnimation: VrmAnimationRecord = {
+      id: 'vrma-1',
+      name: 'Idle Loop',
+      createdAt: startedAt,
+      filePath: path.join('animations', 'idle.vrma'),
+      fileSha: 'sha-anim',
+      duration: 1.5,
+      fps: 30,
+    };
+    original.createVrmAnimation(vrmaAnimation);
 
     const exported = original.exportData();
 
@@ -159,6 +170,8 @@ describe('MemoryStore', () => {
     expect(replacement.listVrmModels()).toHaveLength(1);
     expect(replacement.getActiveVrmModelId()).toBe('vrm-1');
     expect(replacement.getVrmModel('vrm-1')?.thumbnail?.equals(Buffer.from([7, 7, 7]))).toBe(true);
+    expect(replacement.listVrmAnimations()).toHaveLength(1);
+    expect(replacement.getVrmAnimation('vrma-1')?.duration).toBeCloseTo(1.5);
 
     const mergeTarget = await createStore();
     mergeTarget.createSession({ id: 'session-2', startedAt: startedAt + 500, title: 'Keep me' });
@@ -198,6 +211,7 @@ describe('MemoryStore', () => {
     expect(mergedSessions.map((session) => session.id)).toContain('session-2');
     expect(mergeTarget.listFaces().map((item) => item.id)).toEqual(['face-keep', 'face-1']);
     expect(mergeTarget.listVrmModels().map((item) => item.id)).toContain('vrm-1');
+    expect(mergeTarget.listVrmAnimations().map((item) => item.id)).toContain('vrma-1');
   });
 
   it('stores avatar faces and resets active face when deleted', async () => {
@@ -270,5 +284,29 @@ describe('MemoryStore', () => {
     store.deleteVrmModel('vrm-42');
     expect(store.listVrmModels()).toHaveLength(0);
     expect(store.getActiveVrmModelId()).toBeNull();
+  });
+
+  it('stores VRMA animations metadata and supports deletion', async () => {
+    const store = await createStore();
+    const createdAt = Date.now();
+    const animation: VrmAnimationRecord = {
+      id: 'vrma-42',
+      name: 'Wave',
+      createdAt,
+      filePath: path.join('assets', 'wave.vrma'),
+      fileSha: 'anim-sha',
+      duration: 2.5,
+      fps: 60,
+    };
+
+    store.createVrmAnimation(animation);
+
+    const listed = store.listVrmAnimations();
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({ id: 'vrma-42', name: 'Wave', duration: 2.5, fps: 60 });
+    expect(store.getVrmAnimation('vrma-42')?.fileSha).toBe('anim-sha');
+
+    store.deleteVrmAnimation('vrma-42');
+    expect(store.listVrmAnimations()).toHaveLength(0);
   });
 });
