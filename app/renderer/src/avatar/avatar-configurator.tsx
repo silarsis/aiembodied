@@ -9,7 +9,6 @@ import {
 } from 'react';
 import type {
   AvatarBridge,
-  AvatarDisplayMode,
   AvatarFaceDetail,
   AvatarFaceSummary,
   AvatarGenerationCandidateSummary,
@@ -29,8 +28,6 @@ interface AvatarConfiguratorProps {
   onActiveFaceChange?: (detail: AvatarFaceDetail | null) => void;
   onActiveModelChange?: (detail: AvatarModelSummary | null) => void;
   onAnimationChange?: () => void;
-  displayModePreference?: AvatarDisplayMode;
-  onDisplayModePreferenceChange?: (mode: AvatarDisplayMode) => void;
 }
 
 function deriveName(file: File | null): string {
@@ -96,8 +93,6 @@ export function AvatarConfigurator({
   onActiveFaceChange,
   onActiveModelChange,
   onAnimationChange,
-  displayModePreference = 'sprites',
-  onDisplayModePreferenceChange,
 }: AvatarConfiguratorProps) {
   const [faces, setFaces] = useState<AvatarFaceSummary[]>([]);
   const [models, setModels] = useState<AvatarModelSummary[]>([]);
@@ -456,14 +451,6 @@ export function AvatarConfigurator({
     [avatarApi, activeModelId, onActiveModelChange, refreshModels],
   );
 
-  const handleDisplayModeChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const value = event.target.value === 'vrm' ? 'vrm' : 'sprites';
-      onDisplayModePreferenceChange?.(value);
-    },
-    [onDisplayModePreferenceChange],
-  );
-
   const handleVrmaPromptChange = useCallback((event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setVrmaPrompt(event.target.value);
     if (vrmaStatus === 'error') {
@@ -583,10 +570,7 @@ export function AvatarConfigurator({
     [],
   );
 
-  const displayMode = displayModePreference ?? 'sprites';
   const modelUploadDisabled = !isModelBridgeAvailable || modelUploadStatus === 'reading' || modelUploadStatus === 'uploading';
-  const behaviorPending = behaviorStatus === 'pending';
-  const behaviorBridgeAvailable = Boolean(getPreloadApi()?.camera?.emitDetection || avatarApi?.triggerBehaviorCue);
   const vrmaPending = vrmaStatus === 'pending';
 
   return (
@@ -604,54 +588,6 @@ export function AvatarConfigurator({
             {generalError}
           </p>
         ) : null}
-      </div>
-
-      <div className="faces__modeSelector" role="group" aria-labelledby="display-mode-heading">
-        <div className="faces__modeSelectorControls">
-          <h3 id="display-mode-heading">Display mode</h3>
-          <div className="faces__modeSelectorOptions" role="radiogroup" aria-label="Avatar display mode">
-            <label className="faces__modeOption">
-              <input
-                type="radio"
-                name="avatar-display-mode"
-                value="sprites"
-                checked={displayMode === 'sprites'}
-                onChange={handleDisplayModeChange}
-                disabled={!isFaceBridgeAvailable}
-              />
-              <span>2D sprites</span>
-            </label>
-            <label className="faces__modeOption">
-              <input
-                type="radio"
-                name="avatar-display-mode"
-                value="vrm"
-                checked={displayMode === 'vrm'}
-                onChange={handleDisplayModeChange}
-                disabled={!isModelBridgeAvailable || formattedModels.length === 0}
-              />
-              <span>3D VRM</span>
-            </label>
-          </div>
-        </div>
-        <div className="faces__behaviorTester">
-          <button
-            type="button"
-            onClick={handleTestWave}
-            disabled={behaviorPending || !behaviorBridgeAvailable}
-            aria-busy={behaviorPending}
-          >
-            {behaviorPending ? 'Triggering wave…' : 'Test wave gesture'}
-          </button>
-          {behaviorMessage ? (
-            <p
-              className={behaviorStatus === 'error' ? 'kiosk__error' : 'kiosk__info'}
-              role={behaviorStatus === 'error' ? 'alert' : 'status'}
-            >
-              {behaviorMessage}
-            </p>
-          ) : null}
-        </div>
       </div>
 
       <div className="faces__tabs">
