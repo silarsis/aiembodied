@@ -13,6 +13,7 @@ import type { VisemeFrame } from '../audio/viseme-driver.js';
 import type { AvatarModelSummary } from './types.js';
 import { getPreloadApi } from '../preload-api.js';
 import { useAvatarAnimationQueue, type AvatarAnimationEvent } from './animation-bus.js';
+import { toAnimationSlug } from './animation-tags.js';
 import { useBehaviorCues, type BehaviorCueEvent } from './behavior-cues.js';
 import { createClipFromVrma, createMixerForVrm } from './animations/index.js';
 import {
@@ -69,15 +70,6 @@ interface ActiveAnimation {
   action: THREE.AnimationAction;
   intent: AnimationQueueIntent;
   onFinish: (event: { action?: THREE.AnimationAction | null }) => void;
-}
-
-export function toAnimationSlug(name: string): string {
-  const slug = name
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '');
-  return slug;
 }
 
 function buildIdleSchedulerConfig(
