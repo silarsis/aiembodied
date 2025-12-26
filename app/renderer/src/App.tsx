@@ -2223,6 +2223,7 @@ export default function App() {
                       frame={visemeFrame}
                       model={activeVrmModel}
                       onStatusChange={handleVrmStatusChange}
+                      animationVersion={animationListVersion}
                     />
                   ) : (
                     <AvatarRenderer frame={visemeFrame} assets={activeAvatar?.components ?? null} />
