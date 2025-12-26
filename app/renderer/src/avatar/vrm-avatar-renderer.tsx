@@ -8,10 +8,12 @@ import {
   VRMExpressionPresetName,
   type VRMExpressionManager,
 } from '@pixiv/three-vrm';
-import type { VRMAnimation } from '@pixiv/three-vrm-animation';
+import { VRMAnimationLoaderPlugin, type VRMAnimation } from '@pixiv/three-vrm-animation';
 import type { VisemeFrame } from '../audio/viseme-driver.js';
 import type { AvatarModelSummary } from './types.js';
 import { getPreloadApi } from '../preload-api.js';
+import { useAvatarAnimationQueue, type AvatarAnimationEvent } from './animation-bus.js';
+import { toAnimationSlug } from './animation-tags.js';
 import { useBehaviorCues, type BehaviorCueEvent } from './behavior-cues.js';
 import {
   createClipFromVrma,
@@ -68,6 +70,20 @@ const VRM_CANVAS_HEIGHT = 640;
 
 const WAVE_ANIMATION_NAME = 'greet_face_wave';
 const DEFAULT_IDLE_CLIP_NAME = 'default_idle_sway';
+
+type AnimationQueueIntent = 'play' | 'pose';
+
+interface QueuedAnimation {
+  slug: string;
+  intent: AnimationQueueIntent;
+  source?: string;
+}
+
+interface ActiveAnimation {
+  action: THREE.AnimationAction;
+  intent: AnimationQueueIntent;
+  onFinish: (event: { action?: THREE.AnimationAction | null }) => void;
+}
 
 function buildIdleSchedulerConfig(
   vrm: VRM,
@@ -131,6 +147,53 @@ function buildIdleSchedulerConfig(
   }
 
   return config;
+}
+
+async function loadVrmaAnimation(binary: ArrayBuffer): Promise<VRMAnimation | null> {
+  const loader = new GLTFLoader();
+  loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
+  const gltf = (await loader.parseAsync(binary, '/')) as {
+    userData?: { vrmAnimations?: VRMAnimation[] };
+  };
+  const animations = gltf.userData?.vrmAnimations;
+  if (!animations || animations.length === 0) {
+    return null;
+  }
+  return animations[0] ?? null;
+}
+
+async function loadVrmaClips(vrm: VRM): Promise<Map<string, THREE.AnimationClip>> {
+  const registry = new Map<string, THREE.AnimationClip>();
+  const bridge = getPreloadApi();
+  if (!bridge?.avatar?.listAnimations || !bridge.avatar.loadAnimationBinary) {
+    return registry;
+  }
+
+  const animations = await bridge.avatar.listAnimations();
+  for (const [index, animation] of animations.entries()) {
+    try {
+      const binary = await bridge.avatar.loadAnimationBinary(animation.id);
+      if (!binary) {
+        continue;
+      }
+      const vrma = await loadVrmaAnimation(binary);
+      if (!vrma) {
+        continue;
+      }
+      const name = animation.name?.trim() || animation.id;
+      const slug = toAnimationSlug(name) || `animation-${index}`;
+      const clip = createClipFromVrma(vrm, vrma, name);
+      registry.set(slug, clip);
+    } catch (error) {
+      console.warn('[vrm-avatar-renderer] failed to load VRMA clip', {
+        id: animation.id,
+        name: animation.name,
+        error,
+      });
+    }
+  }
+
+  return registry;
 }
 
 function quaternionToArray(quaternion: THREE.Quaternion): number[] {
@@ -572,10 +635,147 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   const animationFrameRef = useRef<number | null>(null);
   const clockRef = useRef(new THREE.Clock());
   const idleOptionsRef = useRef<IdleAnimationOptions | undefined>(idleOptions);
+  const clipRegistryRef = useRef<Map<string, THREE.AnimationClip>>(new Map());
+  const animationQueueRef = useRef<QueuedAnimation[]>([]);
+  const activeAnimationRef = useRef<ActiveAnimation | null>(null);
+  const animationSuspensionRef = useRef<(() => void) | null>(null);
+  const vrmaRegistryReadyRef = useRef(false);
   const [rendererReady, setRendererReady] = useState(false);
 
   frameRef.current = frame;
   idleOptionsRef.current = idleOptions;
+
+  const releaseIdleSuspension = useCallback(() => {
+    if (animationSuspensionRef.current) {
+      animationSuspensionRef.current();
+      animationSuspensionRef.current = null;
+    }
+  }, []);
+
+  const suspendIdleAnimations = useCallback(() => {
+    if (animationSuspensionRef.current) {
+      return;
+    }
+    const scheduler = idleSchedulerRef.current;
+    animationSuspensionRef.current = scheduler?.suspend(8) ?? null;
+  }, []);
+
+  const clearActiveAnimation = useCallback(() => {
+    const active = activeAnimationRef.current;
+    if (!active) {
+      return;
+    }
+
+    const mixer = mixerRef.current;
+    if (mixer) {
+      mixer.removeEventListener('finished', active.onFinish);
+    }
+
+    try {
+      active.action.stop();
+    } catch (error) {
+      console.warn('[vrm-avatar-renderer] failed to stop animation action', error);
+    }
+
+    activeAnimationRef.current = null;
+    if (animationQueueRef.current.length === 0) {
+      releaseIdleSuspension();
+    }
+  }, [releaseIdleSuspension]);
+
+  const playNextQueuedAnimation = useCallback(() => {
+    if (activeAnimationRef.current) {
+      return;
+    }
+
+    const mixer = mixerRef.current;
+    if (!mixer) {
+      return;
+    }
+
+    if (!vrmaRegistryReadyRef.current) {
+      return;
+    }
+
+    const next = animationQueueRef.current.shift();
+    if (!next) {
+      releaseIdleSuspension();
+      return;
+    }
+
+    const clip = clipRegistryRef.current.get(next.slug);
+    if (!clip) {
+      console.warn('[vrm-avatar-renderer] requested animation clip is unavailable', { slug: next.slug });
+      playNextQueuedAnimation();
+      return;
+    }
+
+    suspendIdleAnimations();
+
+    const action = mixer.clipAction(clip);
+    const handleFinished = (event: { action?: THREE.AnimationAction | null }) => {
+      if (event.action !== action) {
+        return;
+      }
+
+      mixer.removeEventListener('finished', handleFinished);
+
+      if (next.intent === 'pose') {
+        action.clampWhenFinished = true;
+        action.enabled = true;
+        action.setEffectiveTimeScale(0);
+        activeAnimationRef.current = {
+          action,
+          intent: 'pose',
+          onFinish: handleFinished,
+        };
+        return;
+      }
+
+      try {
+        action.stop();
+      } catch (error) {
+        console.warn('[vrm-avatar-renderer] failed to stop animation after completion', error);
+      }
+
+      activeAnimationRef.current = null;
+      playNextQueuedAnimation();
+    };
+
+    activeAnimationRef.current = {
+      action,
+      intent: next.intent,
+      onFinish: handleFinished,
+    };
+
+    try {
+      action.reset();
+      action.enabled = true;
+      action.setLoop(THREE.LoopOnce, 1);
+      action.setEffectiveWeight(1);
+      action.setEffectiveTimeScale(1);
+      action.clampWhenFinished = true;
+      mixer.addEventListener('finished', handleFinished);
+      action.play();
+    } catch (error) {
+      mixer.removeEventListener('finished', handleFinished);
+      activeAnimationRef.current = null;
+      console.error('[vrm-avatar-renderer] failed to play animation clip', error);
+      playNextQueuedAnimation();
+    }
+  }, [releaseIdleSuspension, suspendIdleAnimations]);
+
+  const enqueueAnimation = useCallback(
+    (request: QueuedAnimation) => {
+      if (request.intent === 'pose' && activeAnimationRef.current?.intent === 'pose') {
+        clearActiveAnimation();
+      }
+
+      animationQueueRef.current.push(request);
+      playNextQueuedAnimation();
+    },
+    [clearActiveAnimation, playNextQueuedAnimation],
+  );
 
   const playWave = useCallback(() => {
     const mixer = mixerRef.current;
@@ -645,6 +845,37 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   );
 
   useBehaviorCues(handleBehaviorCue);
+
+  const handleAnimationEvent = useCallback(
+    (event: AvatarAnimationEvent) => {
+      if (event.type === 'response') {
+        if (activeAnimationRef.current?.intent === 'pose') {
+          clearActiveAnimation();
+          playNextQueuedAnimation();
+        }
+        return;
+      }
+
+      const slug = event.request.slug.trim();
+      if (!slug) {
+        console.warn('[vrm-avatar-renderer] received animation request without a slug');
+        return;
+      }
+
+      if (activeAnimationRef.current?.intent === 'pose') {
+        clearActiveAnimation();
+      }
+
+      enqueueAnimation({
+        slug,
+        intent: event.request.intent,
+        source: event.request.source,
+      });
+    },
+    [clearActiveAnimation, enqueueAnimation, playNextQueuedAnimation],
+  );
+
+  useAvatarAnimationQueue(handleAnimationEvent);
 
   const setStatus = useMemo(() => {
     return (status: VrmRendererStatus) => {
@@ -777,6 +1008,11 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       scene.remove(ambient);
       scene.remove(keyLight);
       scene.remove(fillLight);
+      clearActiveAnimation();
+      clipRegistryRef.current.clear();
+      animationQueueRef.current = [];
+      vrmaRegistryReadyRef.current = false;
+      releaseIdleSuspension();
       disposeVrm(currentVrmRef.current);
       renderer.dispose();
       rendererRef.current = null;
@@ -796,7 +1032,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       visemeStateRef.current = createDefaultVisemeState();
       blinkStateRef.current = createDefaultBlinkState();
     };
-  }, [setStatus]);
+  }, [clearActiveAnimation, releaseIdleSuspension, setStatus]);
 
   useEffect(() => {
     if (!rendererReady) {
@@ -811,6 +1047,10 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     let cancelled = false;
 
     const unload = () => {
+      clearActiveAnimation();
+      clipRegistryRef.current.clear();
+      animationQueueRef.current = [];
+      vrmaRegistryReadyRef.current = false;
       if (currentVrmRef.current) {
         scene.remove(currentVrmRef.current.scene);
       }
@@ -828,6 +1068,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       expressionManagerRef.current = null;
       visemeStateRef.current = createDefaultVisemeState();
       blinkStateRef.current = createDefaultBlinkState();
+      releaseIdleSuspension();
     };
 
     const load = async () => {
@@ -930,6 +1171,20 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         });
         idleScheduler.updateConfig(idleSchedulerConfig);
         idleSchedulerRef.current = idleScheduler;
+        clipRegistryRef.current.clear();
+        animationQueueRef.current = [];
+        vrmaRegistryReadyRef.current = false;
+        try {
+          const animationRegistry = await loadVrmaClips(vrm);
+          clipRegistryRef.current = animationRegistry;
+        } catch (error) {
+          console.warn('[vrm-avatar-renderer] failed to load VRMA registry', error);
+        } finally {
+          vrmaRegistryReadyRef.current = true;
+          if (!cancelled) {
+            playNextQueuedAnimation();
+          }
+        }
         const clip = createRightArmWaveClip(vrm);
         if (clip) {
           const action = mixer.clipAction(clip);
@@ -957,7 +1212,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     return () => {
       cancelled = true;
     };
-  }, [model, model?.id, model?.fileSha, rendererReady, setStatus]);
+  }, [clearActiveAnimation, model, model?.id, model?.fileSha, releaseIdleSuspension, rendererReady, setStatus]);
 
   useEffect(() => {
     const vrm = currentVrmRef.current;
