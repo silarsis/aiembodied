@@ -1411,6 +1411,7 @@ export default function App() {
 
     const unsubscribe = bridge.wakeWord.onWake((event) => {
       if (event.sessionId && activeSessionIdRef.current !== event.sessionId) {
+        activeSessionIdRef.current = event.sessionId;
         setActiveSessionId(event.sessionId);
         messageIdsRef.current.clear();
         setTranscriptEntries([]);
