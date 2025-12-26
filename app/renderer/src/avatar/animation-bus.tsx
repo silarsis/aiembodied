@@ -55,11 +55,16 @@ const AnimationBusContext = createContext<AvatarAnimationBus | null>(null);
 
 export interface AnimationBusProviderProps {
   children: ReactNode;
+  bus?: AvatarAnimationBus;
 }
 
-export function AnimationBusProvider({ children }: AnimationBusProviderProps) {
-  const bus = useMemo(() => new AnimationBus(), []);
-  return <AnimationBusContext.Provider value={bus}>{children}</AnimationBusContext.Provider>;
+export function createAvatarAnimationBus(): AvatarAnimationBus {
+  return new AnimationBus();
+}
+
+export function AnimationBusProvider({ children, bus }: AnimationBusProviderProps) {
+  const resolvedBus = useMemo(() => bus ?? new AnimationBus(), [bus]);
+  return <AnimationBusContext.Provider value={resolvedBus}>{children}</AnimationBusContext.Provider>;
 }
 
 export function useAvatarAnimationBus(): AvatarAnimationBus | null {

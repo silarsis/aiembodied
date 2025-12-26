@@ -105,12 +105,14 @@ describe('RealtimeClient', () => {
   const remoteStreamHandler = vi.fn();
   const sessionUpdateHandler = vi.fn();
   const logHandler = vi.fn();
+  const textHandler = vi.fn();
 
   beforeEach(() => {
     peers.length = 0;
     states.length = 0;
     remoteStreamHandler.mockReset();
     logHandler.mockReset();
+    textHandler.mockReset();
 
     fetchMock = (vi.fn().mockResolvedValue({
         ok: true,
@@ -140,6 +142,7 @@ describe('RealtimeClient', () => {
         onRemoteStream: remoteStreamHandler,
         onSessionUpdated: sessionUpdateHandler,
         onLog: logHandler,
+        onTextContent: textHandler,
       },
       jitterBufferMs: 80,
     });
@@ -174,6 +177,7 @@ describe('RealtimeClient', () => {
       type: 'realtime',
       model: 'gpt-4o-realtime-preview-2024-12-17',
     });
+    expect(parsedBody.session.output_modalities).toEqual(['audio', 'text']);
 
     const audioConfig = (parsedBody.session.audio ?? {}) as Record<string, unknown>;
     const inputConfig = (audioConfig.input ?? {}) as { format?: Record<string, unknown> };
@@ -295,6 +299,28 @@ describe('RealtimeClient', () => {
       instructions: 'Stay concise',
       turnDetection: 'server_vad',
     });
+  });
+
+  it('forwards text content deltas from the control channel', async () => {
+    const stream = new FakeMediaStream() as unknown as MediaStream;
+
+    await client.connect({ apiKey: 'test-key', inputStream: stream });
+
+    const peer = peers[0];
+    const dataChannel = peer.dataChannel;
+    const messageHandler = dataChannel.onmessage;
+    expect(messageHandler).toBeTypeOf('function');
+
+    const payload = {
+      type: 'response.output_text.delta',
+      delta: '{wave} Hello there.',
+    } satisfies Record<string, unknown>;
+
+    messageHandler?.call(dataChannel as unknown as RTCDataChannel, {
+      data: JSON.stringify(payload),
+    } as MessageEvent);
+
+    expect(textHandler).toHaveBeenCalledWith('{wave} Hello there.');
   });
 
   it('retries connection when the peer disconnects', async () => {

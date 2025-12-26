@@ -163,7 +163,8 @@ import type { VRM } from '@pixiv/three-vrm';
 import { useEffect } from 'react';
 import * as THREE from 'three';
 import { AnimationBusProvider, useAvatarAnimationBus } from '../../src/avatar/animation-bus.js';
-import { VrmAvatarRenderer, toAnimationSlug } from '../../src/avatar/vrm-avatar-renderer.js';
+import { VrmAvatarRenderer } from '../../src/avatar/vrm-avatar-renderer.js';
+import { toAnimationSlug } from '../../src/avatar/animation-tags.js';
 import type { AvatarModelSummary } from '../../src/avatar/types.js';
 
 function BusCapture({

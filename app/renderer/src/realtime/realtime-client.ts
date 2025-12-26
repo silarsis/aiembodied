@@ -17,6 +17,7 @@ export interface RealtimeClientCallbacks {
   }) => void;
   onFirstAudioFrame?: () => void;
   onSessionUpdated?: (session: { voice?: string; instructions?: string; turnDetection?: string }) => void;
+  onTextContent?: (content: string) => void;
 }
 
 export interface RealtimeClientOptions {
@@ -343,6 +344,11 @@ export class RealtimeClient {
               this.callbacks.onSessionUpdated?.({ voice, instructions, turnDetection });
               this.log('info', 'Received session.updated from realtime API', { voice, turnDetection, hasInstructions: Boolean(instructions) });
             }
+
+            const textContent = this.extractTextContent(payload as Record<string, unknown>);
+            if (textContent) {
+              this.callbacks.onTextContent?.(textContent);
+            }
           }
         } catch (error) {
           this.log('warn', 'Failed to parse control channel message', error);
@@ -600,9 +606,9 @@ export class RealtimeClient {
 
     const modalities = this.sessionConfig?.modalities;
     if (Array.isArray(modalities) && modalities.length > 0) {
-      session.output_modalities = modalities;
+      session.output_modalities = Array.from(new Set([...modalities, 'text']));
     } else {
-      session.output_modalities = ['audio'];
+      session.output_modalities = ['audio', 'text'];
     }
 
     const instructions = this.sessionConfig?.instructions;
@@ -867,5 +873,24 @@ export class RealtimeClient {
     } catch {
       return typeof data === 'object' ? '[unserializable object]' : String(data);
     }
+  }
+
+  private extractTextContent(payload: Record<string, unknown>): string | null {
+    const type = typeof payload.type === 'string' ? payload.type : null;
+    if (!type) {
+      return null;
+    }
+
+    if (type === 'response.output_text.delta' || type === 'response.text.delta') {
+      const delta = payload.delta;
+      return typeof delta === 'string' ? delta : null;
+    }
+
+    if (type === 'response.output_text.done' || type === 'response.text.done' || type === 'response.output_text') {
+      const text = payload.text ?? payload.output_text;
+      return typeof text === 'string' ? text : null;
+    }
+
+    return null;
   }
 }
