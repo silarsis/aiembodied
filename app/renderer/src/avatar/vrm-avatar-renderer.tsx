@@ -12,7 +12,11 @@ import { VRMAnimationLoaderPlugin, type VRMAnimation } from '@pixiv/three-vrm-an
 import type { VisemeFrame } from '../audio/viseme-driver.js';
 import type { AvatarModelSummary } from './types.js';
 import { getPreloadApi } from '../preload-api.js';
-import { useAvatarAnimationQueue, type AvatarAnimationEvent } from './animation-bus.js';
+import {
+  useAvatarAnimationQueue,
+  type AvatarAnimationEvent,
+  type AvatarAnimationTiming,
+} from './animation-bus.js';
 import { toAnimationSlug } from './animation-tags.js';
 import { useBehaviorCues, type BehaviorCueEvent } from './behavior-cues.js';
 import { createClipFromVrma, createMixerForVrm } from './animations/index.js';
@@ -64,6 +68,7 @@ interface QueuedAnimation {
   slug: string;
   intent: AnimationQueueIntent;
   source?: string;
+  timing?: AvatarAnimationTiming;
 }
 
 interface ActiveAnimation {
@@ -419,6 +424,10 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     suspendIdleAnimations();
 
     const action = mixer.clipAction(clip);
+    if (next.timing?.onStart) {
+      const startAt = next.timing.startAt ?? Date.now();
+      next.timing.onStart(startAt);
+    }
     const handleFinished = (event: { action?: THREE.AnimationAction | null }) => {
       if (event.action !== action) {
         return;
@@ -576,6 +585,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         slug,
         intent: event.request.intent,
         source: event.request.source,
+        timing: event.request.timing,
       });
     },
     [clearActiveAnimation, enqueueAnimation, playNextQueuedAnimation],
@@ -889,7 +899,16 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     return () => {
       cancelled = true;
     };
-  }, [clearActiveAnimation, model, model?.id, model?.fileSha, releaseIdleSuspension, rendererReady, setStatus]);
+  }, [
+    clearActiveAnimation,
+    model,
+    model?.id,
+    model?.fileSha,
+    playNextQueuedAnimation,
+    releaseIdleSuspension,
+    rendererReady,
+    setStatus,
+  ]);
 
   useEffect(() => {
     const vrm = currentVrmRef.current;

@@ -2,10 +2,16 @@ import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'r
 
 export type AvatarAnimationIntent = 'play' | 'pose';
 
+export interface AvatarAnimationTiming {
+  startAt?: number;
+  onStart?: (startAt: number) => void;
+}
+
 export interface AvatarAnimationRequest {
   slug: string;
   intent: AvatarAnimationIntent;
   source?: string;
+  timing?: AvatarAnimationTiming;
 }
 
 export type AvatarAnimationEvent =
