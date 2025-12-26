@@ -18,6 +18,7 @@ type MockRealtimeInstance = {
   destroy: ReturnType<typeof vi.fn>;
   bindRemoteAudioElement: ReturnType<typeof vi.fn>;
   setJitterBufferMs: ReturnType<typeof vi.fn>;
+  setReconnectApiKeyProvider: ReturnType<typeof vi.fn>;
   updateSessionConfig: ReturnType<typeof vi.fn>;
   getSessionConfigSnapshot: ReturnType<typeof vi.fn>;
 };
@@ -32,6 +33,7 @@ vi.mock('../src/realtime/realtime-client.js', () => {
     destroy = vi.fn().mockResolvedValue(undefined);
     bindRemoteAudioElement = vi.fn();
     setJitterBufferMs = vi.fn();
+    setReconnectApiKeyProvider = vi.fn();
     updateSessionConfig = vi.fn();
     getSessionConfigSnapshot = vi.fn().mockReturnValue({
       type: 'realtime',

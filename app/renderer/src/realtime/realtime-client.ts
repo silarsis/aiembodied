@@ -31,6 +31,7 @@ export interface RealtimeClientOptions {
   maxReconnectAttempts?: number;
   // Handshake content type: default JSON; some deployments require application/sdp
   handshakeMode?: 'json' | 'sdp';
+  reconnectApiKeyProvider?: () => Promise<string | null>;
   sessionConfig?: {
     instructions?: string;
     turnDetection?: 'none' | 'server_vad';
@@ -114,6 +115,7 @@ export class RealtimeClient {
   private jitterBufferMs: number;
   private sessionConfig?: RealtimeClientOptions['sessionConfig'];
   private handshakeMode: 'json' | 'sdp';
+  private reconnectApiKeyProvider: RealtimeClientOptions['reconnectApiKeyProvider'];
   constructor(options: RealtimeClientOptions = {}) {
     this.endpoint = options.endpoint ?? 'https://api.openai.com/v1/realtime/calls';
     this.model = options.model ?? 'gpt-4o-realtime-preview-2024-12-17';
@@ -125,6 +127,7 @@ export class RealtimeClient {
     this.jitterBufferMs = options.jitterBufferMs ?? 100;
     this.sessionConfig = options.sessionConfig;
     this.handshakeMode = options.handshakeMode ?? 'json';
+    this.reconnectApiKeyProvider = options.reconnectApiKeyProvider;
   }
 
   getState(): RealtimeClientState {
@@ -154,6 +157,10 @@ export class RealtimeClient {
   setJitterBufferMs(value: number): void {
     this.jitterBufferMs = value;
     this.applyJitterBufferHint();
+  }
+
+  setReconnectApiKeyProvider(provider: RealtimeClientOptions['reconnectApiKeyProvider']): void {
+    this.reconnectApiKeyProvider = provider;
   }
 
   async connect(options: RealtimeClientConnectOptions): Promise<void> {
@@ -779,6 +786,12 @@ export class RealtimeClient {
     this.reconnectAttempts = nextAttempt;
 
     try {
+      if (this.reconnectApiKeyProvider) {
+        const refreshedKey = await this.reconnectApiKeyProvider();
+        if (typeof refreshedKey === 'string' && refreshedKey.length > 0) {
+          this.currentApiKey = refreshedKey;
+        }
+      }
       await this.establishConnection({
         apiKey: this.currentApiKey,
         inputStream: this.currentStream,

@@ -338,6 +338,27 @@ describe('RealtimeClient', () => {
     expect(states.some((state) => state.status === 'reconnecting' && state.attempt === 1)).toBe(true);
   });
 
+  it('refreshes the API key before reconnecting', async () => {
+    vi.useFakeTimers();
+    const stream = new FakeMediaStream() as unknown as MediaStream;
+    const refreshMock = vi.fn(async () => 'refreshed-key');
+    client.setReconnectApiKeyProvider(refreshMock);
+
+    await client.connect({ apiKey: 'initial-key', inputStream: stream });
+    const firstPeer = peers[0];
+    firstPeer.emitConnectionState('connected');
+
+    firstPeer.emitConnectionState('disconnected');
+    await vi.runAllTimersAsync();
+
+    expect(refreshMock).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const secondRequest = fetchMock.mock.calls[1]?.[1];
+    expect(secondRequest?.headers).toMatchObject({
+      Authorization: 'Bearer refreshed-key',
+    });
+  });
+
   it('surfaces errors when negotiation fails', async () => {
     fetchMock.mockResolvedValueOnce({
       ok: false,
