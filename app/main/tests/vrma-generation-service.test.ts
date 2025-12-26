@@ -18,8 +18,12 @@ async function createStore() {
   return { store, directory };
 }
 
-function createClient(outputText: string) {
-  const create = vi.fn<[unknown], Promise<{ output_text: string }>>().mockResolvedValue({ output_text: outputText });
+function createClient(outputText: string | string[]) {
+  const outputs = Array.isArray(outputText) ? [...outputText] : [outputText];
+  const create = vi.fn<[unknown], Promise<{ output_text: string }>>().mockImplementation(async () => {
+    const next = outputs.shift() ?? '';
+    return { output_text: next };
+  });
   const client = { responses: { create } } as unknown as OpenAI;
   return { client, create };
 }
@@ -98,5 +102,53 @@ describe('VrmaGenerationService', () => {
     expect(stored).toHaveLength(1);
     expect(stored[0]?.name).toBe('friendly-wave');
     expect(stored[0]?.duration).toBeGreaterThan(0);
+  });
+
+  it('retries when the model returns invalid bones', async () => {
+    const { store, directory } = await createStore();
+    const animationService = new AvatarAnimationService({
+      store,
+      animationsDirectory: path.join(directory, 'vrma-animations'),
+    });
+
+    const invalidOutput = JSON.stringify({
+      meta: {
+        name: 'invalid-bones',
+        fps: 30,
+        loop: true,
+      },
+      tracks: [
+        {
+          bone: 'left_arm',
+          keyframes: [{ t: 0, q: [0, 0, 0, 1] }],
+        },
+      ],
+    });
+
+    const validOutput = JSON.stringify({
+      meta: {
+        name: 'valid-bones',
+        fps: 30,
+        loop: true,
+      },
+      tracks: [
+        {
+          bone: 'hips',
+          keyframes: [{ t: 0, q: [0, 0, 0, 1] }],
+        },
+      ],
+    });
+
+    const { client, create } = createClient([invalidOutput, validOutput]);
+    const service = new VrmaGenerationService({ client, animationService });
+
+    const result = await service.generateAnimation({ prompt: 'Wave hello', bones: ['hips', 'spine'] });
+    expect(result.animation.name).toBe('valid-bones');
+    expect(create).toHaveBeenCalledTimes(2);
+
+    const retryPayload = create.mock.calls[1]?.[0];
+    const serialized = JSON.stringify(retryPayload);
+    expect(serialized).toContain('left_arm');
+    expect(serialized).toContain('hips');
   });
 });

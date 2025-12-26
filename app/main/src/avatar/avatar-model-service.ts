@@ -45,6 +45,34 @@ interface VrmMetaSummary {
   version?: string;
 }
 
+function extractHumanBoneNames(parsed: ParsedGlb): string[] {
+  const extensions = parsed.json?.extensions as Record<string, unknown> | undefined;
+  const vrmc = extensions?.VRMC_vrm as Record<string, unknown> | undefined;
+  const vrm = extensions?.VRM as Record<string, unknown> | undefined;
+
+  const vrmcHumanoid = vrmc?.humanoid as Record<string, unknown> | undefined;
+  const vrmcBones = vrmcHumanoid?.humanBones as Record<string, unknown> | undefined;
+  if (vrmcBones && typeof vrmcBones === 'object' && !Array.isArray(vrmcBones)) {
+    return Object.keys(vrmcBones).filter((bone) => bone.trim().length > 0);
+  }
+
+  const vrmHumanoid = vrm?.humanoid as Record<string, unknown> | undefined;
+  const vrmBones = vrmHumanoid?.humanBones as unknown;
+  if (Array.isArray(vrmBones)) {
+    const bones = vrmBones
+      .map((entry) => (entry && typeof entry === 'object' ? (entry as Record<string, unknown>).bone : undefined))
+      .filter((bone): bone is string => typeof bone === 'string' && bone.trim().length > 0)
+      .map((bone) => bone.trim());
+    return Array.from(new Set(bones));
+  }
+
+  if (vrmBones && typeof vrmBones === 'object') {
+    return Object.keys(vrmBones as Record<string, unknown>).filter((bone) => bone.trim().length > 0);
+  }
+
+  return [];
+}
+
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const JPEG_SIGNATURE = Buffer.from([0xff, 0xd8, 0xff]);
 const GIF87A_SIGNATURE = Buffer.from('GIF87a');
@@ -367,6 +395,39 @@ export class AvatarModelService {
         message,
       });
       throw new Error('Failed to load VRM model binary from disk.');
+    }
+  }
+
+  async listActiveModelBones(): Promise<string[]> {
+    const active = this.getActiveModel();
+    if (!active) {
+      return [];
+    }
+
+    return await this.listModelBones(active.id);
+  }
+
+  async listModelBones(modelId: string): Promise<string[]> {
+    const record = this.store.getVrmModel(modelId);
+    if (!record) {
+      this.logger?.warn?.('Requested VRM model not found when listing bones.', { modelId });
+      return [];
+    }
+
+    try {
+      const buffer = await this.fs.readFile(record.filePath);
+      if (buffer.length === 0) {
+        this.logger?.warn?.('VRM model binary is empty; cannot list bones.', { modelId, filePath: record.filePath });
+        return [];
+      }
+
+      const parsed = parseGlb(buffer);
+      const bones = extractHumanBoneNames(parsed);
+      return Array.from(new Set(bones)).sort();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.warn?.('Failed to read VRM bones from model binary.', { modelId, filePath: record.filePath, message });
+      return [];
     }
   }
 

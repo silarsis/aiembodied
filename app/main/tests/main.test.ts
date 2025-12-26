@@ -281,6 +281,7 @@ class AvatarModelServiceDouble {
   uploadModel = vi.fn().mockResolvedValue({ model: { id: 'vrm-uploaded' } });
   deleteModel = vi.fn().mockResolvedValue(undefined);
   loadModelBinary = vi.fn().mockResolvedValue(new ArrayBuffer(0));
+  listActiveModelBones = vi.fn().mockResolvedValue([]);
 
   constructor(public readonly options: unknown) {}
 }
@@ -659,7 +660,7 @@ describe('main process bootstrap', () => {
       ts: 1700000000,
     });
 
-    expect(ipcMainMock.handle).toHaveBeenCalledTimes(29);
+    expect(ipcMainMock.handle).toHaveBeenCalledTimes(30);
     const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
 
     expect(mockLogger.info).toHaveBeenCalledWith('Avatar face service initialized.', {
@@ -856,7 +857,11 @@ describe('main process bootstrap', () => {
     const generateAnimationHandler = handleEntries.get('avatar-animation:generate');
     expect(typeof generateAnimationHandler).toBe('function');
     await expect(generateAnimationHandler?.({}, { prompt: 'Wave hello' })).resolves.toEqual({ animation: { id: 'vrma-generated' } });
-    expect(vrmaGenerationServiceInstances[vrmaGenerationServiceInstances.length - 1]?.generateAnimation).toHaveBeenCalledWith({ prompt: 'Wave hello' });
+    expect(avatarModelService?.listActiveModelBones).toHaveBeenCalledTimes(1);
+    expect(vrmaGenerationServiceInstances[vrmaGenerationServiceInstances.length - 1]?.generateAnimation).toHaveBeenCalledWith({
+      prompt: 'Wave hello',
+      bones: [],
+    });
 
     const deleteAnimationHandler = handleEntries.get('avatar-animation:delete');
     expect(typeof deleteAnimationHandler).toBe('function');

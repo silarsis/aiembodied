@@ -96,6 +96,7 @@ export interface AvatarAnimationUploadResult {
 
 export interface AvatarAnimationGenerationRequest {
   prompt: string;
+  bones?: string[];
 }
 
 export interface AvatarBridge {

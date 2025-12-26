@@ -783,7 +783,8 @@ function registerIpcHandlers(
       throw new Error('VRMA generation service is unavailable. Ensure REALTIME_API_KEY is set.');
     }
 
-    return vrmaGenerationService.generateAnimation(payload);
+    const bones = avatarModels ? await avatarModels.listActiveModelBones() : [];
+    return vrmaGenerationService.generateAnimation({ ...payload, bones });
   });
   ipcMain.handle('avatar-animation:delete', async (_event, animationId: string) => {
     if (!avatarAnimations) {

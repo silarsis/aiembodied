@@ -20,6 +20,7 @@ interface MockVrmOptions {
   thumbnail?: Buffer;
   useVrmc?: boolean;
   specVersion?: string;
+  bones?: string[];
 }
 
 function createMockVrmGlb(options?: MockVrmOptions): Buffer {
@@ -29,6 +30,23 @@ function createMockVrmGlb(options?: MockVrmOptions): Buffer {
   const version = options?.version ?? '1.0';
   const useVrmc = options?.useVrmc ?? false;
   const specVersion = options?.specVersion ?? '1.0';
+  const bones = options?.bones ?? [];
+
+  const vrmcHumanoid = bones.length
+    ? {
+        humanoid: {
+          humanBones: Object.fromEntries(bones.map((bone, index) => [bone, { node: index }])),
+        },
+      }
+    : {};
+
+  const vrmHumanoid = bones.length
+    ? {
+        humanoid: {
+          humanBones: bones.map((bone, index) => ({ bone, node: index })),
+        },
+      }
+    : {};
 
   const vrmExtension = useVrmc
     ? {
@@ -39,6 +57,7 @@ function createMockVrmGlb(options?: MockVrmOptions): Buffer {
             version,
             thumbnailImage: 0,
           },
+          ...vrmcHumanoid,
         },
       }
     : {
@@ -49,6 +68,7 @@ function createMockVrmGlb(options?: MockVrmOptions): Buffer {
             version,
             thumbnailImage: 0,
           },
+          ...vrmHumanoid,
         },
       };
 
@@ -73,6 +93,7 @@ function createMockVrmGlb(options?: MockVrmOptions): Buffer {
         byteLength: thumbnail.length,
       },
     ],
+    nodes: bones.map((bone) => ({ name: bone })),
   };
 
   const jsonBuffer = Buffer.from(JSON.stringify(json), 'utf8');
@@ -246,6 +267,19 @@ describe('AvatarModelService', () => {
     const buffer = await service.loadModelBinary(uploaded.model.id);
     expect(buffer).toBeInstanceOf(ArrayBuffer);
     expect(new Uint8Array(buffer).length).toBeGreaterThan(0);
+  });
+
+  it('lists bones for the active VRM model', async () => {
+    const { store, modelsDirectory } = await createEnvironment();
+    const service = new AvatarModelService({ store, modelsDirectory });
+
+    await service.uploadModel({
+      fileName: 'model.vrm',
+      data: createMockVrmGlb({ useVrmc: true, bones: ['hips', 'leftUpperArm', 'rightUpperArm'] }).toString('base64'),
+    });
+
+    const bones = await service.listActiveModelBones();
+    expect(bones).toEqual(['hips', 'leftUpperArm', 'rightUpperArm']);
   });
 
   it('throws a descriptive error when loading binaries fails', async () => {
