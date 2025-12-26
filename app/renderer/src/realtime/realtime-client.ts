@@ -615,11 +615,14 @@ export class RealtimeClient {
       model: this.model,
     };
 
+    // OpenAI Realtime API only supports ['text'] or ['audio'] individually, not combined
     const modalities = this.sessionConfig?.modalities;
-    if (Array.isArray(modalities) && modalities.length > 0) {
-      session.output_modalities = Array.from(new Set([...modalities, 'text']));
+    if (Array.isArray(modalities) && modalities.includes('audio')) {
+      session.output_modalities = ['audio'];
+    } else if (Array.isArray(modalities) && modalities.includes('text')) {
+      session.output_modalities = ['text'];
     } else {
-      session.output_modalities = ['audio', 'text'];
+      session.output_modalities = ['audio'];
     }
 
     const instructions = this.sessionConfig?.instructions;
@@ -898,13 +901,24 @@ export class RealtimeClient {
       return null;
     }
 
-    if (type === 'response.output_text.delta' || type === 'response.text.delta') {
+    // Handle text deltas from both text-only and audio transcript events
+    if (
+      type === 'response.output_text.delta' ||
+      type === 'response.text.delta' ||
+      type === 'response.output_audio_transcript.delta'
+    ) {
       const delta = payload.delta;
       return typeof delta === 'string' ? delta : null;
     }
 
-    if (type === 'response.output_text.done' || type === 'response.text.done' || type === 'response.output_text') {
-      const text = payload.text ?? payload.output_text;
+    // Handle completed text from both text-only and audio transcript events
+    if (
+      type === 'response.output_text.done' ||
+      type === 'response.text.done' ||
+      type === 'response.output_text' ||
+      type === 'response.output_audio_transcript.done'
+    ) {
+      const text = payload.text ?? payload.output_text ?? payload.transcript;
       return typeof text === 'string' ? text : null;
     }
 
