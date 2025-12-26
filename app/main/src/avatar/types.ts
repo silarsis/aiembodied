@@ -96,3 +96,8 @@ export interface AvatarAnimationUploadRequest {
 export interface AvatarAnimationUploadResult {
   animation: AvatarAnimationSummary;
 }
+
+export interface AvatarAnimationGenerationRequest {
+  prompt: string;
+  bones?: string[];
+}

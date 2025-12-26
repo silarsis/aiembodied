@@ -138,6 +138,16 @@ function createAvatarBridgeMock(overrides: Partial<AvatarBridge> = {}): AvatarBr
         fps: null,
       },
     }),
+    generateAnimation: vi.fn().mockResolvedValue({
+      animation: {
+        id: 'vrma-generated',
+        name: 'Generated',
+        createdAt: Date.now(),
+        fileSha: 'sha',
+        duration: null,
+        fps: null,
+      },
+    }),
     deleteAnimation: vi.fn().mockResolvedValue(undefined),
     loadAnimationBinary: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
     getDisplayModePreference: vi.fn().mockResolvedValue('sprites'),
