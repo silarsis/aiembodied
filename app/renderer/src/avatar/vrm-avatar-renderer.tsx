@@ -50,6 +50,7 @@ export interface VrmAvatarRendererProps {
   onStatusChange?: (status: VrmRendererStatus) => void;
   className?: string;
   idleOptions?: IdleAnimationOptions;
+  animationVersion?: number;
 }
 
 const VISEME_PRESETS: VRMExpressionPresetName[] = [
@@ -618,6 +619,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   onStatusChange,
   className,
   idleOptions,
+  animationVersion,
 }: VrmAvatarRendererProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -1236,6 +1238,36 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
 
     scheduler.updateConfig(buildIdleSchedulerConfig(vrm, idleOptions));
   }, [idleOptions]);
+
+  useEffect(() => {
+    const vrm = currentVrmRef.current;
+    if (!vrm || animationVersion === undefined) {
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      vrmaRegistryReadyRef.current = false;
+      try {
+        const animationRegistry = await loadVrmaClips(vrm);
+        if (cancelled) {
+          return;
+        }
+        clipRegistryRef.current = animationRegistry;
+      } catch (error) {
+        console.warn('[vrm-avatar-renderer] failed to reload VRMA registry', error);
+      } finally {
+        if (!cancelled) {
+          vrmaRegistryReadyRef.current = true;
+          playNextQueuedAnimation();
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [animationVersion, playNextQueuedAnimation]);
 
   return <canvas ref={canvasRef} className={className} data-renderer="vrm" />;
 });

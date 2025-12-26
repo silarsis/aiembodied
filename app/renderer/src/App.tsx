@@ -44,7 +44,7 @@ interface AudioGraphState {
   error: string | null;
 }
 
-type TabId = 'chatgpt' | 'character' | 'local';
+type TabId = 'chatgpt' | 'character' | '2d' | '3d' | 'local';
 
 interface TabDefinition {
   id: TabId;
@@ -97,7 +97,7 @@ const STATIC_VOICE_OPTIONS: readonly string[] = [
   'verse',
 ] as const;
 
-const DEFAULT_VOICE = 'verse';
+const DEFAULT_VOICE = 'shimmer';
 const ANIMATION_INSTRUCTION_PREFIX = 'Available animations:';
 
 function toTranscriptSpeaker(role: string): TranscriptSpeaker | null {
@@ -120,7 +120,7 @@ function buildAnimationInstructions(availableSlugs: string[]): string {
   const list = availableSlugs.length > 0 ? availableSlugs.join(', ') : 'none';
   return [
     `${ANIMATION_INSTRUCTION_PREFIX} ${list}.`,
-    'To trigger an animation, include `{slug}` (multiple tags allowed).',
+    'You have a 3D body you can control through animations or poses. To trigger an animation or pose, include `{slug}` (multiple tags allowed).',
     'Slug format: lowercase letters, numbers, and hyphens (for example: `happy-wave`).',
   ].join(' ');
 }
@@ -639,6 +639,8 @@ export default function App() {
   const [activeAvatar, setActiveAvatar] = useState<AvatarFaceDetail | null>(null);
   const [activeVrmModel, setActiveVrmModel] = useState<AvatarModelSummary | null>(null);
   const [availableAnimationSlugs, setAvailableAnimationSlugs] = useState<string[]>([]);
+  const [selectedTestAnimation, setSelectedTestAnimation] = useState<string>('');
+  const [animationListVersion, setAnimationListVersion] = useState(0);
   const animationBus = useMemo(() => createAvatarAnimationBus(), []);
   const [avatarDisplayState, dispatchAvatarDisplay] = useReducer(
     avatarDisplayReducer,
@@ -649,6 +651,8 @@ export default function App() {
     () => [
       { id: 'chatgpt', label: 'ChatGPT' },
       { id: 'character', label: 'Character' },
+      { id: '2d', label: '2D' },
+      { id: '3d', label: '3D' },
       { id: 'local', label: 'Local' },
     ],
     [],
@@ -657,6 +661,8 @@ export default function App() {
   const tabRefs = useRef<Record<TabId, HTMLButtonElement | null>>({
     chatgpt: null,
     character: null,
+    '2d': null,
+    '3d': null,
     local: null,
   });
   const activeBridge = resolveApi();
@@ -693,7 +699,11 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [resolveApi]);
+  }, [resolveApi, animationListVersion]);
+
+  const refreshAnimationList = useCallback(() => {
+    setAnimationListVersion((v) => v + 1);
+  }, []);
 
   const persistAvatarDisplayPreference = useCallback(
     async (mode: AvatarDisplayMode) => {
@@ -890,6 +900,13 @@ export default function App() {
     setAvatarDisplayPreference(nextMode);
   }, [avatarDisplayState.preference, setAvatarDisplayPreference]);
 
+  const handleTestAnimation = useCallback(() => {
+    if (!selectedTestAnimation) {
+      return;
+    }
+    animationBus.enqueue({ slug: selectedTestAnimation, intent: 'play', source: 'manual-test' });
+  }, [animationBus, selectedTestAnimation]);
+
   const applySessionHistory = useCallback((session: ConversationSessionWithMessages | null) => {
     if (!session) {
       messageIdsRef.current.clear();
@@ -967,7 +984,7 @@ export default function App() {
   const [selectedInput, setSelectedInput] = useState('');
   const [selectedOutput, setSelectedOutput] = useState('');
   const DEFAULT_PROMPT =
-    'You are an English-speaking assistant. Always respond in concise English. Do not switch languages unless explicitly instructed.';
+    'You are echo, an AI assistant. You are slightly sarcastic, very blunt, but helpful in your own way.\n\nYou question assumptions, and aren\'t afraid to ask questions or challenge me. You have a sharp wit.\n\nYou are here to help me be a better person, but you don\'t put up with bullshit. You also have an Australian sensibility when it comes to swearing and language overall.\n\nYou are good-natured and good-humoured.';
   const [selectedVoice, setSelectedVoice] = useState<string>(DEFAULT_VOICE);
   const [basePrompt, setBasePrompt] = useState<string>(DEFAULT_PROMPT);
   const [serverVoice, setServerVoice] = useState<string | null>(null);
@@ -2206,6 +2223,7 @@ export default function App() {
                       frame={visemeFrame}
                       model={activeVrmModel}
                       onStatusChange={handleVrmStatusChange}
+                      animationVersion={animationListVersion}
                     />
                   ) : (
                     <AvatarRenderer frame={visemeFrame} assets={activeAvatar?.components ?? null} />
@@ -2249,6 +2267,31 @@ export default function App() {
                       <dt>Driver status</dt>
                       <dd>{visemeSummary.status}</dd>
                     </div>
+                    <div>
+                      <dt>Test animation</dt>
+                      <dd className="kiosk__animationTest">
+                        <select
+                          id="test-animation-select"
+                          value={selectedTestAnimation}
+                          onChange={(e) => setSelectedTestAnimation(e.target.value)}
+                          disabled={availableAnimationSlugs.length === 0}
+                        >
+                          <option value="">Select animation…</option>
+                          {availableAnimationSlugs.map((slug) => (
+                            <option key={slug} value={slug}>
+                              {slug}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={handleTestAnimation}
+                          disabled={!selectedTestAnimation}
+                        >
+                          Play
+                        </button>
+                      </dd>
+                    </div>
                   </dl>
                 </div>
                 <div className="kiosk__meter" aria-live="polite">
@@ -2268,15 +2311,9 @@ export default function App() {
             className="kiosk__tabPanel"
             data-state={activeTab === 'character' ? 'active' : 'inactive'}
           >
-              <AvatarConfigurator
-                avatarApi={activeBridge?.avatar}
-                onActiveFaceChange={handleActiveFaceChange}
-                onActiveModelChange={setActiveVrmModel}
-                displayModePreference={avatarDisplayState.preference}
-                onDisplayModePreferenceChange={setAvatarDisplayPreference}
-              />
               <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
-                <h2 id="kiosk-realtime-title">Realtime</h2>
+                <h2 id="kiosk-realtime-title">Voice & Personality</h2>
+                <p className="kiosk__helper">Configure how your assistant sounds and behaves.</p>
                 <div className="control">
                   <label htmlFor="realtime-voice">Voice</label>
                   <select
@@ -2319,6 +2356,35 @@ export default function App() {
                   />
                 </div>
               </section>
+          </section>
+
+          <section
+            role="tabpanel"
+            id="panel-2d"
+            aria-labelledby="tab-2d"
+            className="kiosk__tabPanel"
+            data-state={activeTab === '2d' ? 'active' : 'inactive'}
+          >
+              <AvatarConfigurator
+                avatarApi={activeBridge?.avatar}
+                onActiveFaceChange={handleActiveFaceChange}
+                panel="2d"
+              />
+          </section>
+
+          <section
+            role="tabpanel"
+            id="panel-3d"
+            aria-labelledby="tab-3d"
+            className="kiosk__tabPanel"
+            data-state={activeTab === '3d' ? 'active' : 'inactive'}
+          >
+              <AvatarConfigurator
+                avatarApi={activeBridge?.avatar}
+                onActiveModelChange={setActiveVrmModel}
+                onAnimationChange={refreshAnimationList}
+                panel="3d"
+              />
           </section>
 
           <section

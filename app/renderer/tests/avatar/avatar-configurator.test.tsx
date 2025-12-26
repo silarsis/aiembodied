@@ -69,6 +69,7 @@ function createAvatarBridgeStub(overrides: Partial<AvatarBridge> = {}): AvatarBr
     }),
     deleteModel: vi.fn().mockResolvedValue(undefined),
     loadModelBinary: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
+    updateModelThumbnail: vi.fn().mockResolvedValue(null),
     listAnimations: vi.fn().mockResolvedValue([]),
     uploadAnimation: vi.fn().mockResolvedValue({
       animation: {
@@ -295,9 +296,7 @@ describe('AvatarConfigurator', () => {
       generateAnimation,
     });
 
-    render(<AvatarConfigurator avatarApi={avatarApi} />);
-
-    fireEvent.click(screen.getByRole('tab', { name: 'VRM models' }));
+    render(<AvatarConfigurator avatarApi={avatarApi} panel="3d" />);
 
     const promptInput = await screen.findByLabelText('Animation prompt');
     fireEvent.change(promptInput, { target: { value: 'Wave hello' } });
@@ -344,9 +343,7 @@ describe('AvatarConfigurator', () => {
       deleteModel,
     });
 
-    render(<AvatarConfigurator avatarApi={avatarApi} />);
-
-    fireEvent.click(screen.getByRole('tab', { name: 'VRM models' }));
+    render(<AvatarConfigurator avatarApi={avatarApi} panel="3d" />);
 
     await waitFor(() => expect(screen.getByText('Model One')).toBeInTheDocument());
     expect(screen.getByText('Model Two')).toBeInTheDocument();
@@ -391,9 +388,7 @@ describe('AvatarConfigurator', () => {
 
     const restoreFileReader = mockFileReader('data:application/octet-stream;base64,QUJD');
     try {
-      render(<AvatarConfigurator avatarApi={avatarApi} />);
-
-      fireEvent.click(screen.getByRole('tab', { name: 'VRM models' }));
+      render(<AvatarConfigurator avatarApi={avatarApi} panel="3d" />);
 
       const file = new File([Uint8Array.from([1, 2, 3])], 'avatar.vrm', { type: 'application/octet-stream' });
       const fileInput = await screen.findByLabelText('VRM file');
@@ -424,8 +419,7 @@ describe('AvatarConfigurator', () => {
     const uploadModel = vi.fn();
     const avatarApi = createAvatarBridgeStub({ uploadModel });
 
-    render(<AvatarConfigurator avatarApi={avatarApi} />);
-    fireEvent.click(screen.getByRole('tab', { name: 'VRM models' }));
+    render(<AvatarConfigurator avatarApi={avatarApi} panel="3d" />);
 
     const invalidFile = new File([Uint8Array.from([1])], 'avatar.png', { type: 'image/png' });
     const fileInput = await screen.findByLabelText('VRM file');
@@ -436,110 +430,6 @@ describe('AvatarConfigurator', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('VRM upload rejected: file must use the .vrm extension.');
     expect(uploadModel).not.toHaveBeenCalled();
-  });
-
-  it('invokes the display mode preference callback when toggled', async () => {
-    const listModels = vi.fn().mockResolvedValue([{
-      id: 'vrm-1',
-      name: 'Model',
-      createdAt: 1735689600000,
-      version: '1.0',
-      fileSha: 'abcdefabcdefabcdef',
-      thumbnailDataUrl: null,
-    }]);
-    const getActiveModel = vi.fn().mockResolvedValue(null);
-    const onPreferenceChange = vi.fn();
-
-    const avatarApi = createAvatarBridgeStub({ listModels, getActiveModel });
-
-    const { rerender } = render(
-      <AvatarConfigurator
-        avatarApi={avatarApi}
-        displayModePreference="sprites"
-        onDisplayModePreferenceChange={onPreferenceChange}
-      />,
-    );
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole('radio', { name: '3D VRM' }));
-    });
-    expect(onPreferenceChange).toHaveBeenCalledWith('vrm');
-
-    rerender(
-      <AvatarConfigurator
-        avatarApi={avatarApi}
-        displayModePreference="vrm"
-        onDisplayModePreferenceChange={onPreferenceChange}
-      />,
-    );
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole('radio', { name: '2D sprites' }));
-    });
-    expect(onPreferenceChange).toHaveBeenLastCalledWith('sprites');
-  });
-
-  it('triggers the camera detection bridge for the test wave control', async () => {
-    const triggerBehaviorCue = vi.fn().mockResolvedValue(undefined);
-    const avatarApi = createAvatarBridgeStub({ triggerBehaviorCue });
-    const emitDetection = vi.fn().mockResolvedValue(undefined);
-    const originalBridge = (window as unknown as { aiembodied?: unknown }).aiembodied;
-    (window as unknown as { aiembodied?: unknown }).aiembodied = {
-      camera: {
-        emitDetection,
-        onDetection: vi.fn(),
-      },
-    };
-
-    try {
-      render(<AvatarConfigurator avatarApi={avatarApi} />);
-
-      const button = screen.getByRole('button', { name: 'Test wave gesture' });
-      fireEvent.click(button);
-      await waitFor(() => expect(emitDetection).toHaveBeenCalledWith({
-        cue: 'greet_face',
-        provider: 'configurator-test',
-        confidence: 1,
-      }));
-      expect(triggerBehaviorCue).not.toHaveBeenCalled();
-      expect(await screen.findByRole('status')).toHaveTextContent('Wave gesture triggered.');
-    } finally {
-      (window as unknown as { aiembodied?: unknown }).aiembodied = originalBridge;
-    }
-  });
-
-  it('falls back to the avatar behavior bridge when camera detection is unavailable', async () => {
-    const triggerBehaviorCue = vi.fn().mockResolvedValue(undefined);
-    const avatarApi = createAvatarBridgeStub({ triggerBehaviorCue });
-
-    render(<AvatarConfigurator avatarApi={avatarApi} />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Test wave gesture' }));
-    await waitFor(() => expect(triggerBehaviorCue).toHaveBeenCalledWith('greet_face'));
-    expect(await screen.findByRole('status')).toHaveTextContent('Wave gesture triggered.');
-  });
-
-  it('surfaces an error when the detection bridge fails', async () => {
-    const triggerBehaviorCue = vi.fn();
-    const avatarApi = createAvatarBridgeStub({ triggerBehaviorCue });
-    const emitDetection = vi.fn().mockRejectedValue(new Error('Bridge unavailable'));
-    const originalBridge = (window as unknown as { aiembodied?: unknown }).aiembodied;
-    (window as unknown as { aiembodied?: unknown }).aiembodied = {
-      camera: {
-        emitDetection,
-        onDetection: vi.fn(),
-      },
-    };
-
-    try {
-      render(<AvatarConfigurator avatarApi={avatarApi} />);
-
-      fireEvent.click(screen.getByRole('button', { name: 'Test wave gesture' }));
-      expect(await screen.findByRole('alert')).toHaveTextContent('Bridge unavailable');
-      expect(triggerBehaviorCue).not.toHaveBeenCalled();
-    } finally {
-      (window as unknown as { aiembodied?: unknown }).aiembodied = originalBridge;
-    }
   });
 
   it('logs a warning when the avatar bridge is unavailable', async () => {

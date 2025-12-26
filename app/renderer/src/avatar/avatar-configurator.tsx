@@ -9,27 +9,26 @@ import {
 } from 'react';
 import type {
   AvatarBridge,
-  AvatarDisplayMode,
   AvatarFaceDetail,
   AvatarFaceSummary,
   AvatarGenerationCandidateSummary,
   AvatarGenerationResult,
   AvatarModelSummary,
 } from './types.js';
-import { getPreloadApi } from '../preload-api.js';
+import { generateVrmThumbnail } from './thumbnail-generator.js';
 
-type TabId = 'faces' | 'models';
+type PanelId = '2d' | '3d';
 
 type ModelUploadStatus = 'idle' | 'reading' | 'uploading' | 'success';
-type BehaviorStatus = 'idle' | 'pending' | 'success' | 'error';
 type VrmaGenerationStatus = 'idle' | 'pending' | 'success' | 'error';
 
 interface AvatarConfiguratorProps {
   avatarApi?: AvatarBridge;
   onActiveFaceChange?: (detail: AvatarFaceDetail | null) => void;
   onActiveModelChange?: (detail: AvatarModelSummary | null) => void;
-  displayModePreference?: AvatarDisplayMode;
-  onDisplayModePreferenceChange?: (mode: AvatarDisplayMode) => void;
+  onAnimationChange?: () => void;
+  /** Which panel to show: '2d' for face management, '3d' for VRM/VRMA */
+  panel?: PanelId;
 }
 
 function deriveName(file: File | null): string {
@@ -94,8 +93,8 @@ export function AvatarConfigurator({
   avatarApi,
   onActiveFaceChange,
   onActiveModelChange,
-  displayModePreference = 'sprites',
-  onDisplayModePreferenceChange,
+  onAnimationChange,
+  panel = '2d',
 }: AvatarConfiguratorProps) {
   const [faces, setFaces] = useState<AvatarFaceSummary[]>([]);
   const [models, setModels] = useState<AvatarModelSummary[]>([]);
@@ -118,9 +117,6 @@ export function AvatarConfigurator({
   const [modelUploadStatus, setModelUploadStatus] = useState<ModelUploadStatus>('idle');
   const [modelUploadError, setModelUploadError] = useState<string | null>(null);
   const [lastUploadedModel, setLastUploadedModel] = useState<AvatarModelSummary | null>(null);
-  const [behaviorStatus, setBehaviorStatus] = useState<BehaviorStatus>('idle');
-  const [behaviorMessage, setBehaviorMessage] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<TabId>('faces');
   const [vrmaPrompt, setVrmaPrompt] = useState('');
   const [vrmaStatus, setVrmaStatus] = useState<VrmaGenerationStatus>('idle');
   const [vrmaMessage, setVrmaMessage] = useState<string | null>(null);
@@ -388,8 +384,24 @@ export function AvatarConfigurator({
             data: base64,
             name,
           });
+
+          let uploadedModel = result.model;
+
+          if (!uploadedModel.thumbnailDataUrl && avatarApi.updateModelThumbnail) {
+            try {
+              const modelData = await avatarApi.loadModelBinary(uploadedModel.id);
+              const thumbnailResult = await generateVrmThumbnail(modelData);
+              const updated = await avatarApi.updateModelThumbnail(uploadedModel.id, thumbnailResult.dataUrl);
+              if (updated) {
+                uploadedModel = updated;
+              }
+            } catch (thumbErr) {
+              console.warn('[avatar-configurator] Failed to generate fallback thumbnail:', thumbErr);
+            }
+          }
+
           setModelUploadStatus('success');
-          setLastUploadedModel(result.model);
+          setLastUploadedModel(uploadedModel);
           setModelNameInput('');
           setModelFile(null);
           if (modelFileInputRef.current) {
@@ -454,14 +466,6 @@ export function AvatarConfigurator({
     [avatarApi, activeModelId, onActiveModelChange, refreshModels],
   );
 
-  const handleDisplayModeChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const value = event.target.value === 'vrm' ? 'vrm' : 'sprites';
-      onDisplayModePreferenceChange?.(value);
-    },
-    [onDisplayModePreferenceChange],
-  );
-
   const handleVrmaPromptChange = useCallback((event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setVrmaPrompt(event.target.value);
     if (vrmaStatus === 'error') {
@@ -497,6 +501,7 @@ export function AvatarConfigurator({
           setVrmaStatus('success');
           setVrmaResultName(result.animation.name);
           setVrmaPrompt('');
+          onAnimationChange?.();
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to generate VRMA animation.';
           setVrmaStatus('error');
@@ -504,7 +509,7 @@ export function AvatarConfigurator({
         }
       })();
     },
-    [avatarApi, vrmaPrompt],
+    [avatarApi, vrmaPrompt, onAnimationChange],
   );
 
   const handleApplyGeneratedFace = useCallback(async () => {
@@ -544,57 +549,20 @@ export function AvatarConfigurator({
     setSelectedCandidateId(null);
   }, []);
 
-  const handleTestWave = useCallback(async () => {
-    const bridge = getPreloadApi();
-    const emitDetection = bridge?.camera?.emitDetection;
-    const triggerBehaviorCue = avatarApi?.triggerBehaviorCue;
-
-    if (!emitDetection && !triggerBehaviorCue) {
-      setBehaviorStatus('error');
-      setBehaviorMessage('Behavior testing bridge is unavailable.');
-      return;
-    }
-
-    setBehaviorStatus('pending');
-    setBehaviorMessage(null);
-    try {
-      if (emitDetection) {
-        await emitDetection({ cue: 'greet_face', provider: 'configurator-test', confidence: 1 });
-      } else if (triggerBehaviorCue) {
-        await triggerBehaviorCue('greet_face');
-      }
-      setBehaviorStatus('success');
-      setBehaviorMessage('Wave gesture triggered.');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to trigger wave gesture.';
-      setBehaviorStatus('error');
-      setBehaviorMessage(message);
-    }
-  }, [avatarApi]);
-
-  const tabButtons: Array<{ id: TabId; label: string }> = useMemo(
-    () => [
-      { id: 'faces', label: 'Sprite faces' },
-      { id: 'models', label: 'VRM models' },
-    ],
-    [],
-  );
-
-  const displayMode = displayModePreference ?? 'sprites';
   const modelUploadDisabled = !isModelBridgeAvailable || modelUploadStatus === 'reading' || modelUploadStatus === 'uploading';
-  const behaviorPending = behaviorStatus === 'pending';
-  const behaviorBridgeAvailable = Boolean(getPreloadApi()?.camera?.emitDetection || avatarApi?.triggerBehaviorCue);
   const vrmaPending = vrmaStatus === 'pending';
+
+  const panelTitle = panel === '2d' ? '2D Face Management' : '3D Model Management';
+  const panelDescription = panel === '2d'
+    ? 'Upload and manage 2D sprite faces for your avatar.'
+    : 'Upload VRM models and generate VRMA animations.';
 
   return (
     <section className="kiosk__faces" aria-labelledby="kiosk-faces-title">
       <div className="faces__header">
         <div>
-          <h2 id="kiosk-faces-title">Avatar configuration</h2>
-          <p className="kiosk__helper">
-            Upload sprite faces or VRM models, then choose how the kiosk renders your assistant. Changes apply immediately after
-            activation.
-          </p>
+          <h2 id="kiosk-faces-title">{panelTitle}</h2>
+          <p className="kiosk__helper">{panelDescription}</p>
         </div>
         {generalError ? (
           <p className="kiosk__error" role="alert">
@@ -603,79 +571,8 @@ export function AvatarConfigurator({
         ) : null}
       </div>
 
-      <div className="faces__modeSelector" role="group" aria-labelledby="display-mode-heading">
-        <div className="faces__modeSelectorControls">
-          <h3 id="display-mode-heading">Display mode</h3>
-          <div className="faces__modeSelectorOptions" role="radiogroup" aria-label="Avatar display mode">
-            <label className="faces__modeOption">
-              <input
-                type="radio"
-                name="avatar-display-mode"
-                value="sprites"
-                checked={displayMode === 'sprites'}
-                onChange={handleDisplayModeChange}
-                disabled={!isFaceBridgeAvailable}
-              />
-              <span>2D sprites</span>
-            </label>
-            <label className="faces__modeOption">
-              <input
-                type="radio"
-                name="avatar-display-mode"
-                value="vrm"
-                checked={displayMode === 'vrm'}
-                onChange={handleDisplayModeChange}
-                disabled={!isModelBridgeAvailable || formattedModels.length === 0}
-              />
-              <span>3D VRM</span>
-            </label>
-          </div>
-        </div>
-        <div className="faces__behaviorTester">
-          <button
-            type="button"
-            onClick={handleTestWave}
-            disabled={behaviorPending || !behaviorBridgeAvailable}
-            aria-busy={behaviorPending}
-          >
-            {behaviorPending ? 'Triggering wave…' : 'Test wave gesture'}
-          </button>
-          {behaviorMessage ? (
-            <p
-              className={behaviorStatus === 'error' ? 'kiosk__error' : 'kiosk__info'}
-              role={behaviorStatus === 'error' ? 'alert' : 'status'}
-            >
-              {behaviorMessage}
-            </p>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="faces__tabs">
-        <div className="faces__tablist" role="tablist" aria-label="Avatar asset types">
-          {tabButtons.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              id={`avatar-tab-${tab.id}`}
-              aria-controls={`avatar-panel-${tab.id}`}
-              aria-selected={activeTab === tab.id}
-              data-active={activeTab === tab.id ? 'true' : 'false'}
-              className="faces__tabButton"
-              onClick={() => setActiveTab(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-        <section
-          role="tabpanel"
-          id="avatar-panel-faces"
-          aria-labelledby="avatar-tab-faces"
-          data-state={activeTab === 'faces' ? 'active' : 'inactive'}
-          className="faces__panel"
-        >
+      {panel === '2d' ? (
+        <div className="faces__panel faces__panel--active">
           <form className="faces__form" onSubmit={handleUpload} aria-label="Upload new avatar face">
             <label className="faces__field">
               <span>Face image</span>
@@ -788,15 +685,9 @@ export function AvatarConfigurator({
           {!facesLoading && formattedFaces.length === 0 ? (
             <p className="kiosk__info">No avatar faces stored yet. Upload an image to get started.</p>
           ) : null}
-        </section>
-
-        <section
-          role="tabpanel"
-          id="avatar-panel-models"
-          aria-labelledby="avatar-tab-models"
-          data-state={activeTab === 'models' ? 'active' : 'inactive'}
-          className="faces__panel"
-        >
+        </div>
+      ) : (
+        <div className="faces__panel faces__panel--active">
           <form className="faces__form" onSubmit={handleGenerateAnimation} aria-label="Generate VRMA animation">
             <label className="faces__field">
               <span>Animation prompt</span>
@@ -930,8 +821,8 @@ export function AvatarConfigurator({
           {!modelsLoading && formattedModels.length === 0 ? (
             <p className="kiosk__info">No VRM models uploaded yet. Add a .vrm file to enable the 3D renderer.</p>
           ) : null}
-        </section>
-      </div>
+        </div>
+      )}
     </section>
   );
 }

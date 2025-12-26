@@ -166,6 +166,7 @@ export interface AvatarBridge {
   uploadModel(request: AvatarModelUploadRequest): Promise<AvatarModelUploadResult>;
   deleteModel(modelId: string): Promise<void>;
   loadModelBinary(modelId: string): Promise<ArrayBuffer>;
+  updateModelThumbnail(modelId: string, thumbnailDataUrl: string): Promise<AvatarModelSummary | null>;
   listAnimations(): Promise<AvatarAnimationSummary[]>;
   uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult>;
   generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;
@@ -268,6 +269,11 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
         errorMessage: 'Unexpected VRM binary payload received from main process.',
       });
     },
+    updateModelThumbnail: (modelId, thumbnailDataUrl) =>
+      ipcRenderer.invoke('avatar-model:update-thumbnail', {
+        modelId,
+        thumbnailDataUrl,
+      }) as Promise<AvatarModelSummary | null>,
     listAnimations: () => ipcRenderer.invoke('avatar-animation:list') as Promise<AvatarAnimationSummary[]>,
     uploadAnimation: (payload) =>
       ipcRenderer.invoke('avatar-animation:upload', payload) as Promise<AvatarAnimationUploadResult>,

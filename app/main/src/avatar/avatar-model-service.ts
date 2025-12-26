@@ -553,4 +553,27 @@ export class AvatarModelService {
       thumbnailDataUrl: toDataUrl(record.thumbnail),
     };
   }
+
+  updateThumbnail(modelId: string, thumbnailDataUrl: string): AvatarModelSummary | null {
+    const record = this.store.getVrmModel(modelId);
+    if (!record) {
+      this.logger?.warn?.('Attempted to update thumbnail for missing VRM model.', { modelId });
+      return null;
+    }
+
+    const commaIndex = thumbnailDataUrl.indexOf(',');
+    if (commaIndex === -1) {
+      this.logger?.warn?.('Invalid thumbnail data URL format.', { modelId });
+      return null;
+    }
+
+    const base64 = thumbnailDataUrl.slice(commaIndex + 1);
+    const buffer = Buffer.from(base64, 'base64');
+
+    this.store.updateVrmModelThumbnail(modelId, buffer);
+    this.logger?.info?.('VRM model thumbnail updated.', { modelId });
+
+    const updated = this.store.getVrmModel(modelId);
+    return updated ? this.toSummary(updated) : null;
+  }
 }

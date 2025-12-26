@@ -177,7 +177,7 @@ describe('RealtimeClient', () => {
       type: 'realtime',
       model: 'gpt-4o-realtime-preview-2024-12-17',
     });
-    expect(parsedBody.session.output_modalities).toEqual(['audio', 'text']);
+    expect(parsedBody.session.output_modalities).toEqual(['audio']);
 
     const audioConfig = (parsedBody.session.audio ?? {}) as Record<string, unknown>;
     const inputConfig = (audioConfig.input ?? {}) as { format?: Record<string, unknown> };

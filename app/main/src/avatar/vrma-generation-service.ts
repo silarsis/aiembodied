@@ -24,6 +24,9 @@ const VRMA_SYSTEM_PROMPT = [
   'Return only JSON that matches the provided schema.',
   'Use local bone-space quaternions for rotation tracks.',
   'Keep loops smooth and avoid sudden snaps.',
+  'Only include hips.position if the animation requires vertical movement (jumping, crouching).',
+  'When included, hips.position.p values are world-space with Y=1 as standing rest height.',
+  'For most gestures (waving, nodding, shrugging), omit hips entirely and use bone rotations only.',
 ].join(' ');
 
 function normalizeBones(bones?: string[]): string[] {
