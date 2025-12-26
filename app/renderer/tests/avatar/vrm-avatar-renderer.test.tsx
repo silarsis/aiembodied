@@ -115,6 +115,7 @@ import {
   mapVisemeToPreset,
   smoothWeight,
   createRightArmWaveClip,
+  suppressOutlierMeshes,
 } from '../../src/avatar/vrm-avatar-renderer.js';
 import type { AvatarModelSummary } from '../../src/avatar/types.js';
 
@@ -163,6 +164,33 @@ describe('createRightArmWaveClip', () => {
       humanoid: null,
     } as unknown as VRM;
     expect(createRightArmWaveClip(vrm)).toBeNull();
+  });
+});
+
+describe('suppressOutlierMeshes', () => {
+  it('uses world-space bounds when hiding oversized meshes', () => {
+    const root = new THREE.Object3D();
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1000, 1000, 1000));
+    root.add(mesh);
+    root.scale.setScalar(0.01);
+    root.updateWorldMatrix(true, true);
+
+    const hidden = suppressOutlierMeshes(root, 50);
+
+    expect(hidden).toBe(0);
+    expect(mesh.visible).toBe(true);
+  });
+
+  it('hides meshes that exceed the max world-space size', () => {
+    const root = new THREE.Object3D();
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(200, 200, 200));
+    root.add(mesh);
+    root.updateWorldMatrix(true, true);
+
+    const hidden = suppressOutlierMeshes(root, 50);
+
+    expect(hidden).toBe(1);
+    expect(mesh.visible).toBe(false);
   });
 });
 

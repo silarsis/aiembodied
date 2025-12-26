@@ -1148,6 +1148,36 @@ export default function App() {
     [realtimeClient, resolveApi],
   );
 
+  const isRealtimeTokenExpired = useCallback(() => {
+    const expiresAt = realtimeTokenExpiresAtRef.current;
+    if (typeof expiresAt !== 'number') {
+      return true;
+    }
+    return Date.now() >= expiresAt;
+  }, []);
+
+  const resolveReconnectToken = useCallback(async () => {
+    if (!hasRealtimeApiKey) {
+      return null;
+    }
+    if (!realtimeToken || realtimeTokenRefreshRef.current || isRealtimeTokenExpired()) {
+      return await mintEphemeralToken('reconnect');
+    }
+    return realtimeToken;
+  }, [hasRealtimeApiKey, realtimeToken, isRealtimeTokenExpired, mintEphemeralToken]);
+
+  useEffect(() => {
+    if (!realtimeClient) {
+      return;
+    }
+
+    realtimeClient.setReconnectApiKeyProvider(resolveReconnectToken);
+
+    return () => {
+      realtimeClient.setReconnectApiKeyProvider(undefined);
+    };
+  }, [realtimeClient, resolveReconnectToken]);
+
   useEffect(() => {
     const driver = new VisemeDriver({
       onFrame: (frame) => {

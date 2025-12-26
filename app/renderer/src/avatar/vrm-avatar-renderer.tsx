@@ -560,9 +560,12 @@ function fitCameraToBounds(
   camera.lookAt(bounds.center);
 }
 
-function suppressOutlierMeshes(root: THREE.Object3D, maxSize: number) {
+export function suppressOutlierMeshes(root: THREE.Object3D, maxSize: number) {
   let hiddenCount = 0;
+  const worldBox = new THREE.Box3();
+  const size = new THREE.Vector3();
 
+  root.updateWorldMatrix(true, true);
   root.traverse((object) => {
     const mesh = object as THREE.Mesh | THREE.SkinnedMesh;
     const isMesh = (mesh as THREE.Mesh).isMesh === true;
@@ -571,21 +574,12 @@ function suppressOutlierMeshes(root: THREE.Object3D, maxSize: number) {
       return;
     }
 
-    const geometry = mesh.geometry;
-    if (!geometry) {
+    worldBox.setFromObject(mesh);
+    if (worldBox.isEmpty()) {
       return;
     }
 
-    if (!geometry.boundingBox) {
-      geometry.computeBoundingBox();
-    }
-    const box = geometry.boundingBox;
-    if (!box) {
-      return;
-    }
-
-    const size = new THREE.Vector3();
-    box.getSize(size);
+    worldBox.getSize(size);
     const maxDim = Math.max(size.x, size.y, size.z);
     if (maxDim > maxSize) {
       mesh.visible = false;
