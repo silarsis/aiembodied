@@ -75,6 +75,30 @@ export interface AvatarModelUploadResult {
   model: AvatarModelSummary;
 }
 
+export interface AvatarAnimationSummary {
+  id: string;
+  name: string;
+  createdAt: number;
+  fileSha: string;
+  duration: number | null;
+  fps: number | null;
+}
+
+export interface AvatarAnimationUploadRequest {
+  name?: string;
+  fileName: string;
+  data: string;
+}
+
+export interface AvatarAnimationUploadResult {
+  animation: AvatarAnimationSummary;
+}
+
+export interface AvatarAnimationGenerationRequest {
+  prompt: string;
+  bones?: string[];
+}
+
 export interface AvatarBridge {
   listFaces(): Promise<AvatarFaceSummary[]>;
   getActiveFace(): Promise<AvatarFaceDetail | null>;
@@ -88,6 +112,11 @@ export interface AvatarBridge {
   uploadModel(request: AvatarModelUploadRequest): Promise<AvatarModelUploadResult>;
   deleteModel(modelId: string): Promise<void>;
   loadModelBinary(modelId: string): Promise<ArrayBuffer>;
+  listAnimations(): Promise<AvatarAnimationSummary[]>;
+  uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult>;
+  generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;
+  deleteAnimation(animationId: string): Promise<void>;
+  loadAnimationBinary(animationId: string): Promise<ArrayBuffer>;
   getDisplayModePreference(): Promise<AvatarDisplayMode>;
   setDisplayModePreference(mode: AvatarDisplayMode): Promise<void>;
   triggerBehaviorCue(cue: string): Promise<void>;

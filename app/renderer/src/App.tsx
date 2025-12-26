@@ -13,6 +13,7 @@ import type { ConfigSecretKey, RendererConfig } from '../../main/src/config/conf
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
 import { AvatarRenderer } from './avatar/avatar-renderer.js';
 import { VrmAvatarRenderer, type VrmRendererStatus } from './avatar/vrm-avatar-renderer.js';
+import { AnimationBusProvider, createAvatarAnimationBus } from './avatar/animation-bus.js';
 import { BehaviorCueProvider } from './avatar/behavior-cues.js';
 import { flushSync } from 'react-dom';
 import { AvatarConfigurator } from './avatar/avatar-configurator.js';
@@ -26,6 +27,7 @@ import { LatencyTracker, type LatencySnapshot } from './metrics/latency-tracker.
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
 import type { AvatarDisplayMode, AvatarFaceDetail, AvatarModelSummary } from './avatar/types.js';
 import { DEFAULT_AVATAR_DISPLAY_STATE, avatarDisplayReducer, shouldRenderVrm } from './avatar/display-mode.js';
+import { extractAnimationTags, toAnimationSlug } from './avatar/animation-tags.js';
 
 const CURSOR_IDLE_TIMEOUT_MS = 3000;
 const WAKE_ACTIVE_DURATION_MS = 4000;
@@ -96,6 +98,7 @@ const STATIC_VOICE_OPTIONS: readonly string[] = [
 ] as const;
 
 const DEFAULT_VOICE = 'verse';
+const ANIMATION_INSTRUCTION_PREFIX = 'Available animations:';
 
 function toTranscriptSpeaker(role: string): TranscriptSpeaker | null {
   if (role === 'system' || role === 'user' || role === 'assistant') {
@@ -111,6 +114,32 @@ function formatLatency(value?: number): string {
   }
 
   return `${(value / 1000).toFixed(2)}s`;
+}
+
+function buildAnimationInstructions(availableSlugs: string[]): string {
+  const list = availableSlugs.length > 0 ? availableSlugs.join(', ') : 'none';
+  return [
+    `${ANIMATION_INSTRUCTION_PREFIX} ${list}.`,
+    'To trigger an animation, include `{slug}` (multiple tags allowed).',
+    'Slug format: lowercase letters, numbers, and hyphens (for example: `happy-wave`).',
+  ].join(' ');
+}
+
+function buildSessionInstructions(basePrompt: string, availableSlugs: string[]): string {
+  const trimmedBase = basePrompt.trim();
+  const animationInstructions = buildAnimationInstructions(availableSlugs);
+  if (!trimmedBase) {
+    return animationInstructions;
+  }
+  return `${trimmedBase}\n\n${animationInstructions}`;
+}
+
+function stripAnimationInstructions(instructions: string): string {
+  const index = instructions.indexOf(ANIMATION_INSTRUCTION_PREFIX);
+  if (index === -1) {
+    return instructions;
+  }
+  return instructions.slice(0, index).trim();
 }
 
 function useAudioGraphState(inputDeviceId?: string, enabled = true) {
@@ -609,6 +638,8 @@ export default function App() {
   const [latencySnapshot, setLatencySnapshot] = useState<LatencySnapshot | null>(null);
   const [activeAvatar, setActiveAvatar] = useState<AvatarFaceDetail | null>(null);
   const [activeVrmModel, setActiveVrmModel] = useState<AvatarModelSummary | null>(null);
+  const [availableAnimationSlugs, setAvailableAnimationSlugs] = useState<string[]>([]);
+  const animationBus = useMemo(() => createAvatarAnimationBus(), []);
   const [avatarDisplayState, dispatchAvatarDisplay] = useReducer(
     avatarDisplayReducer,
     DEFAULT_AVATAR_DISPLAY_STATE,
@@ -629,6 +660,40 @@ export default function App() {
     local: null,
   });
   const activeBridge = resolveApi();
+
+  useEffect(() => {
+    const bridge = resolveApi();
+    const avatar = bridge?.avatar;
+    if (!avatar?.listAnimations) {
+      setAvailableAnimationSlugs([]);
+      return;
+    }
+
+    let cancelled = false;
+    avatar
+      .listAnimations()
+      .then((animations) => {
+        if (cancelled) {
+          return;
+        }
+        const slugs = animations
+          .map((animation) => toAnimationSlug(animation.name?.trim() || animation.id))
+          .filter((slug) => slug.length > 0);
+        const uniqueSlugs = Array.from(new Set(slugs)).sort((a, b) => a.localeCompare(b));
+        setAvailableAnimationSlugs(uniqueSlugs);
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        console.warn('Failed to load avatar animations.', error);
+        setAvailableAnimationSlugs([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [resolveApi]);
 
   const persistAvatarDisplayPreference = useCallback(
     async (mode: AvatarDisplayMode) => {
@@ -947,6 +1012,34 @@ export default function App() {
   const configOutputDeviceId = config?.audioOutputDeviceId ?? '';
   const hasRealtimeSupport = typeof RTCPeerConnection === 'function';
   const hasRealtimeApiKey = config?.hasRealtimeApiKey ?? false;
+  const sessionInstructions = useMemo(
+    () => buildSessionInstructions(basePrompt, availableAnimationSlugs),
+    [basePrompt, availableAnimationSlugs],
+  );
+  const availableAnimationSlugSet = useMemo(
+    () => new Set(availableAnimationSlugs),
+    [availableAnimationSlugs],
+  );
+  const animationTextHandlerRef = useRef<(text: string) => void>(() => undefined);
+  const handleRealtimeTextContent = useCallback(
+    (content: string) => {
+      if (!content) {
+        return;
+      }
+      const tags = extractAnimationTags(content, { allowedSlugs: availableAnimationSlugSet });
+      if (tags.length === 0) {
+        return;
+      }
+      for (const slug of tags) {
+        animationBus.enqueue({ slug, intent: 'play', source: 'realtime-text' });
+      }
+    },
+    [animationBus, availableAnimationSlugSet],
+  );
+
+  useEffect(() => {
+    animationTextHandlerRef.current = handleRealtimeTextContent;
+  }, [handleRealtimeTextContent]);
 
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const visemeDriverRef = useRef<VisemeDriver | null>(null);
@@ -966,9 +1059,12 @@ export default function App() {
           }
 
           if (typeof session.instructions === 'string') {
-            const nextPrompt = session.instructions;
+            const nextPrompt = stripAnimationInstructions(session.instructions);
             setBasePrompt(nextPrompt.trim().length > 0 ? nextPrompt : DEFAULT_PROMPT);
           }
+        },
+        onTextContent: (content) => {
+          animationTextHandlerRef.current?.(content);
         },
         onRemoteStream: (stream) => {
           setRemoteStream(stream);
@@ -1243,7 +1339,7 @@ export default function App() {
   useEffect(() => {
     const payload: SessionConfigUpdate = {
       voice: selectedVoice || undefined,
-      instructions: basePrompt || undefined,
+      instructions: sessionInstructions || undefined,
       turnDetection: useServerVad ? 'server_vad' : 'none',
       vad: useServerVad
         ? { threshold: vadThreshold, silenceDurationMs: vadSilenceMs, minSpeechDurationMs: vadMinSpeechMs }
@@ -1266,7 +1362,7 @@ export default function App() {
   }, [
     realtimeClient,
     selectedVoice,
-    basePrompt,
+    sessionInstructions,
     useServerVad,
     vadThreshold,
     vadSilenceMs,
@@ -1411,6 +1507,7 @@ export default function App() {
 
     const unsubscribe = bridge.wakeWord.onWake((event) => {
       if (event.sessionId && activeSessionIdRef.current !== event.sessionId) {
+        activeSessionIdRef.current = event.sessionId;
         setActiveSessionId(event.sessionId);
         messageIdsRef.current.clear();
         setTranscriptEntries([]);
@@ -1581,12 +1678,12 @@ export default function App() {
           audioOutputDeviceId: selectedOutput || undefined,
           sessionInstructions: basePrompt || undefined,
         });
-        realtimeClient?.updateSessionConfig({ instructions: basePrompt || undefined });
+        realtimeClient?.updateSessionConfig({ instructions: sessionInstructions || undefined });
       } catch (error) {
         console.error('Failed to persist base prompt', error);
       }
     },
-    [persistPreferences, selectedInput, selectedOutput, basePrompt, realtimeClient],
+    [persistPreferences, selectedInput, selectedOutput, basePrompt, realtimeClient, sessionInstructions],
   );
 
   const applyVadPrefs = useCallback(
@@ -1650,7 +1747,7 @@ export default function App() {
     try {
       const payload = {
         voice: selectedVoice || undefined,
-        instructions: basePrompt || undefined,
+        instructions: sessionInstructions || undefined,
         turnDetection: useServerVad ? 'server_vad' : 'none',
         vad: useServerVad
           ? { threshold: vadThreshold, silenceDurationMs: vadSilenceMs, minSpeechDurationMs: vadMinSpeechMs }
@@ -1672,7 +1769,16 @@ export default function App() {
     } catch (error) {
       console.warn('[RealtimeClient] Failed to apply session config on connect', error);
     }
-  }, [realtimeClient, realtimeState.status, selectedVoice, basePrompt, useServerVad, vadThreshold, vadSilenceMs, vadMinSpeechMs]);
+  }, [
+    realtimeClient,
+    realtimeState.status,
+    selectedVoice,
+    sessionInstructions,
+    useServerVad,
+    vadThreshold,
+    vadSilenceMs,
+    vadMinSpeechMs,
+  ]);
 
   const reconnectAndResume = useCallback(async () => {
     try {
@@ -1771,13 +1877,13 @@ export default function App() {
             setSecretInputs((previous) => ({ ...previous, [key]: '' }));
           });
 
-            if (key === 'realtimeApiKey') {
-              setRealtimeToken(null);
-              setRealtimeTokenError(null);
-              realtimeTokenExpiresAtRef.current = null;
-              realtimeTokenRefreshRef.current = true;
-              realtimeTokenRequestRef.current += 1;
-            }
+          if (key === 'realtimeApiKey') {
+            setRealtimeToken(null);
+            setRealtimeTokenError(null);
+            realtimeTokenExpiresAtRef.current = null;
+            realtimeTokenRefreshRef.current = true;
+            realtimeTokenRequestRef.current += 1;
+          }
 
           flushSync(() => {
             setSecretStatus((previous) => ({
@@ -1967,13 +2073,14 @@ export default function App() {
   const avatarDisplayToggleLabel = avatarDisplayState.preference === 'vrm' ? 'Use sprite avatar' : 'Use 3D avatar';
 
   return (
-    <BehaviorCueProvider>
-      <main
-        className="kiosk"
-        data-wake-state={wakeState}
-        data-cursor-hidden={isCursorHidden ? 'true' : 'false'}
-        aria-live="polite"
-      >
+    <AnimationBusProvider bus={animationBus}>
+      <BehaviorCueProvider>
+        <main
+          className="kiosk"
+          data-wake-state={wakeState}
+          data-cursor-hidden={isCursorHidden ? 'true' : 'false'}
+          aria-live="polite"
+        >
       <header className="kiosk__statusBar" role="banner">
         <div className={`statusChip statusChip--${wakeStatusVariant}`} data-testid="wake-indicator">
           <span className="statusChip__label">Wake</span>
@@ -2401,7 +2508,8 @@ export default function App() {
       {/* Hidden audio sink for realtime playback (no user-facing controls). */}
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <audio ref={remoteAudioRef} autoPlay aria-hidden="true" style={{ display: 'none' }} />
-      </main>
-    </BehaviorCueProvider>
+        </main>
+      </BehaviorCueProvider>
+    </AnimationBusProvider>
   );
 }

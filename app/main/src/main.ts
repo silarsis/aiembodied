@@ -29,6 +29,8 @@ import { AutoLaunchManager } from './lifecycle/auto-launch.js';
 import { createDevTray } from './lifecycle/dev-tray.js';
 import { AvatarFaceService } from './avatar/avatar-face-service.js';
 import { AvatarModelService } from './avatar/avatar-model-service.js';
+import { AvatarAnimationService } from './avatar/avatar-animation-service.js';
+import { VrmaGenerationService } from './avatar/vrma-generation-service.js';
 import type {
   AvatarDisplayMode,
   AvatarUploadRequest,
@@ -36,6 +38,10 @@ import type {
   AvatarModelSummary,
   AvatarModelUploadRequest,
   AvatarModelUploadResult,
+  AvatarAnimationSummary,
+  AvatarAnimationUploadRequest,
+  AvatarAnimationUploadResult,
+  AvatarAnimationGenerationRequest,
 } from './avatar/types.js';
 import {
   resolvePreloadScriptPath,
@@ -108,7 +114,10 @@ let autoLaunchManager: AutoLaunchManager | null = null;
 let developmentTray: Tray | null = null;
 let avatarFaceService: AvatarFaceService | null = null;
 let avatarModelService: AvatarModelService | null = null;
+let avatarAnimationService: AvatarAnimationService | null = null;
+let vrmaGenerationService: VrmaGenerationService | null = null;
 let currentRealtimeApiKey: string | null = null;
+let currentVrmaApiKey: string | null = null;
 
 function emitCameraDetection(event: CameraDetectionEventPayload): boolean {
   const cue = typeof event.cue === 'string' ? event.cue.trim() : '';
@@ -295,11 +304,57 @@ async function refreshAvatarFaceService(
   }
 }
 
+async function refreshVrmaGenerationService(
+  manager: ConfigManager,
+  reason: 'startup' | 'secret-update' = 'startup',
+): Promise<void> {
+  const config = manager.getConfig();
+  const nextKey = typeof config.realtimeApiKey === 'string' ? config.realtimeApiKey.trim() : '';
+
+  if (!nextKey) {
+    if (reason === 'startup') {
+      logger.warn('Realtime API key unavailable; VRMA generation disabled.');
+    } else if (vrmaGenerationService || currentVrmaApiKey) {
+      logger.warn('Realtime API key removed; VRMA generation disabled.');
+    }
+    vrmaGenerationService = null;
+    currentVrmaApiKey = null;
+    return;
+  }
+
+  if (!avatarAnimationService) {
+    logger.warn('Avatar animation service unavailable; VRMA generation cannot be initialized.');
+    vrmaGenerationService = null;
+    currentVrmaApiKey = null;
+    return;
+  }
+
+  if (vrmaGenerationService && currentVrmaApiKey === nextKey) {
+    return;
+  }
+
+  try {
+    vrmaGenerationService = new VrmaGenerationService({
+      client: getOpenAIClient(nextKey),
+      animationService: avatarAnimationService,
+      logger,
+    });
+    currentVrmaApiKey = nextKey;
+    logger.info('VRMA generation service initialized.', { reason });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('Failed to initialize VRMA generation service', { message });
+    vrmaGenerationService = null;
+    currentVrmaApiKey = null;
+  }
+}
+
 function registerIpcHandlers(
   manager: ConfigManager,
   conversation: ConversationManager | null,
   metrics: PrometheusCollector | null,
   avatarModels: AvatarModelService | null,
+  avatarAnimations: AvatarAnimationService | null,
   store: MemoryStore | null,
 ) {
   // Preload diagnostics bridge: allow preload/renderer to forward logs to main logger
@@ -476,6 +531,7 @@ function registerIpcHandlers(
 
     if (payload.key === 'realtimeApiKey') {
       await refreshAvatarFaceService(manager, 'secret-update');
+      await refreshVrmaGenerationService(manager, 'secret-update');
     }
 
     return nextConfig;
@@ -705,6 +761,46 @@ function registerIpcHandlers(
 
     return avatarModels.loadModelBinary(modelId);
   });
+  ipcMain.handle('avatar-animation:list', async () => {
+    if (!avatarAnimations) {
+      return [] as AvatarAnimationSummary[];
+    }
+
+    return avatarAnimations.listAnimations();
+  });
+  ipcMain.handle('avatar-animation:upload', async (_event, payload: AvatarAnimationUploadRequest) => {
+    if (!avatarAnimations) {
+      throw new Error('Avatar animation service is unavailable.');
+    }
+
+    return avatarAnimations.uploadAnimation(payload) as Promise<AvatarAnimationUploadResult>;
+  });
+  ipcMain.handle('avatar-animation:generate', async (_event, payload: AvatarAnimationGenerationRequest) => {
+    if (!vrmaGenerationService) {
+      await refreshVrmaGenerationService(manager, 'secret-update');
+    }
+    if (!vrmaGenerationService) {
+      throw new Error('VRMA generation service is unavailable. Ensure REALTIME_API_KEY is set.');
+    }
+
+    const bones = avatarModels ? await avatarModels.listActiveModelBones() : [];
+    return vrmaGenerationService.generateAnimation({ ...payload, bones });
+  });
+  ipcMain.handle('avatar-animation:delete', async (_event, animationId: string) => {
+    if (!avatarAnimations) {
+      throw new Error('Avatar animation service is unavailable.');
+    }
+
+    await avatarAnimations.deleteAnimation(animationId);
+    return true;
+  });
+  ipcMain.handle('avatar-animation:load', async (_event, animationId: string) => {
+    if (!avatarAnimations) {
+      throw new Error('Avatar animation service is unavailable.');
+    }
+
+    return avatarAnimations.loadAnimationBinary(animationId);
+  });
   ipcMain.handle('avatar:get-display-mode', async () => {
     if (!store) {
       return 'sprites';
@@ -807,6 +903,11 @@ app.whenReady().then(async () => {
       modelsDirectory: path.join(app.getPath('userData'), 'vrm-models'),
       logger,
     });
+    avatarAnimationService = new AvatarAnimationService({
+      store: memoryStore,
+      animationsDirectory: path.join(app.getPath('userData'), 'vrma-animations'),
+      logger,
+    });
     conversationManager = new ConversationManager({
       store: memoryStore,
       logger,
@@ -835,6 +936,7 @@ app.whenReady().then(async () => {
   const appConfig = manager.getConfig();
 
   await refreshAvatarFaceService(manager);
+  await refreshVrmaGenerationService(manager);
 
   autoLaunchManager = new AutoLaunchManager({
     logger,
@@ -946,7 +1048,14 @@ app.whenReady().then(async () => {
   }
 
   try {
-    registerIpcHandlers(manager, conversationManager, metricsCollector, avatarModelService, memoryStore);
+    registerIpcHandlers(
+      manager,
+      conversationManager,
+      metricsCollector,
+      avatarModelService,
+      avatarAnimationService,
+      memoryStore,
+    );
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Unknown IPC handler registration error occurred.';
