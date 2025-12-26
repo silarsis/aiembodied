@@ -297,7 +297,7 @@ describe('AvatarConfigurator', () => {
 
     render(<AvatarConfigurator avatarApi={avatarApi} />);
 
-    fireEvent.click(screen.getByRole('tab', { name: '3D Models' }));
+    fireEvent.click(screen.getByRole('tab', { name: '3D' }));
 
     const promptInput = await screen.findByLabelText('Animation prompt');
     fireEvent.change(promptInput, { target: { value: 'Wave hello' } });
@@ -346,7 +346,7 @@ describe('AvatarConfigurator', () => {
 
     render(<AvatarConfigurator avatarApi={avatarApi} />);
 
-    fireEvent.click(screen.getByRole('tab', { name: '3D Models' }));
+    fireEvent.click(screen.getByRole('tab', { name: '3D' }));
 
     await waitFor(() => expect(screen.getByText('Model One')).toBeInTheDocument());
     expect(screen.getByText('Model Two')).toBeInTheDocument();
@@ -393,7 +393,7 @@ describe('AvatarConfigurator', () => {
     try {
       render(<AvatarConfigurator avatarApi={avatarApi} />);
 
-      fireEvent.click(screen.getByRole('tab', { name: '3D Models' }));
+      fireEvent.click(screen.getByRole('tab', { name: '3D' }));
 
       const file = new File([Uint8Array.from([1, 2, 3])], 'avatar.vrm', { type: 'application/octet-stream' });
       const fileInput = await screen.findByLabelText('VRM file');
@@ -425,7 +425,7 @@ describe('AvatarConfigurator', () => {
     const avatarApi = createAvatarBridgeStub({ uploadModel });
 
     render(<AvatarConfigurator avatarApi={avatarApi} />);
-    fireEvent.click(screen.getByRole('tab', { name: '3D Models' }));
+    fireEvent.click(screen.getByRole('tab', { name: '3D' }));
 
     const invalidFile = new File([Uint8Array.from([1])], 'avatar.png', { type: 'image/png' });
     const fileInput = await screen.findByLabelText('VRM file');

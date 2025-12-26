@@ -6,6 +6,7 @@ import {
   useState,
   type ChangeEvent,
   type FormEvent,
+  type ReactNode,
 } from 'react';
 import type {
   AvatarBridge,
@@ -16,7 +17,7 @@ import type {
   AvatarModelSummary,
 } from './types.js';
 
-type TabId = 'faces' | 'models';
+type TabId = '2d' | '3d';
 
 type ModelUploadStatus = 'idle' | 'reading' | 'uploading' | 'success';
 type VrmaGenerationStatus = 'idle' | 'pending' | 'success' | 'error';
@@ -26,6 +27,8 @@ interface AvatarConfiguratorProps {
   onActiveFaceChange?: (detail: AvatarFaceDetail | null) => void;
   onActiveModelChange?: (detail: AvatarModelSummary | null) => void;
   onAnimationChange?: () => void;
+  /** Slot for voice/prompt controls rendered above the 2D/3D tabs */
+  headerControls?: ReactNode;
 }
 
 function deriveName(file: File | null): string {
@@ -91,6 +94,7 @@ export function AvatarConfigurator({
   onActiveFaceChange,
   onActiveModelChange,
   onAnimationChange,
+  headerControls,
 }: AvatarConfiguratorProps) {
   const [faces, setFaces] = useState<AvatarFaceSummary[]>([]);
   const [models, setModels] = useState<AvatarModelSummary[]>([]);
@@ -113,7 +117,7 @@ export function AvatarConfigurator({
   const [modelUploadStatus, setModelUploadStatus] = useState<ModelUploadStatus>('idle');
   const [modelUploadError, setModelUploadError] = useState<string | null>(null);
   const [lastUploadedModel, setLastUploadedModel] = useState<AvatarModelSummary | null>(null);
-  const [activeTab, setActiveTab] = useState<TabId>('faces');
+  const [activeTab, setActiveTab] = useState<TabId>('2d');
   const [vrmaPrompt, setVrmaPrompt] = useState('');
   const [vrmaStatus, setVrmaStatus] = useState<VrmaGenerationStatus>('idle');
   const [vrmaMessage, setVrmaMessage] = useState<string | null>(null);
@@ -532,8 +536,8 @@ export function AvatarConfigurator({
 
   const tabButtons: Array<{ id: TabId; label: string }> = useMemo(
     () => [
-      { id: 'faces', label: '2D Faces' },
-      { id: 'models', label: '3D Models' },
+      { id: '2d', label: '2D' },
+      { id: '3d', label: '3D' },
     ],
     [],
   );
@@ -545,10 +549,9 @@ export function AvatarConfigurator({
     <section className="kiosk__faces" aria-labelledby="kiosk-faces-title">
       <div className="faces__header">
         <div>
-          <h2 id="kiosk-faces-title">Avatar configuration</h2>
+          <h2 id="kiosk-faces-title">Character configuration</h2>
           <p className="kiosk__helper">
-            Upload sprite faces or VRM models, then choose how the kiosk renders your assistant. Changes apply immediately after
-            activation.
+            Configure voice, personality, and avatar appearance.
           </p>
         </div>
         {generalError ? (
@@ -558,8 +561,10 @@ export function AvatarConfigurator({
         ) : null}
       </div>
 
+      {headerControls ? <div className="faces__headerControls">{headerControls}</div> : null}
+
       <div className="faces__tabs">
-        <div className="faces__tablist" role="tablist" aria-label="Avatar asset types">
+        <div className="faces__tablist" role="tablist" aria-label="Avatar type (2D or 3D)">
           {tabButtons.map((tab) => (
             <button
               key={tab.id}
@@ -578,9 +583,9 @@ export function AvatarConfigurator({
         </div>
         <section
           role="tabpanel"
-          id="avatar-panel-faces"
-          aria-labelledby="avatar-tab-faces"
-          data-state={activeTab === 'faces' ? 'active' : 'inactive'}
+          id="avatar-panel-2d"
+          aria-labelledby="avatar-tab-2d"
+          data-state={activeTab === '2d' ? 'active' : 'inactive'}
           className="faces__panel"
         >
           <form className="faces__form" onSubmit={handleUpload} aria-label="Upload new avatar face">
@@ -699,9 +704,9 @@ export function AvatarConfigurator({
 
         <section
           role="tabpanel"
-          id="avatar-panel-models"
-          aria-labelledby="avatar-tab-models"
-          data-state={activeTab === 'models' ? 'active' : 'inactive'}
+          id="avatar-panel-3d"
+          aria-labelledby="avatar-tab-3d"
+          data-state={activeTab === '3d' ? 'active' : 'inactive'}
           className="faces__panel"
         >
           <form className="faces__form" onSubmit={handleGenerateAnimation} aria-label="Generate VRMA animation">

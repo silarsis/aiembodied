@@ -2311,51 +2311,53 @@ export default function App() {
                 onActiveFaceChange={handleActiveFaceChange}
                 onActiveModelChange={setActiveVrmModel}
                 onAnimationChange={refreshAnimationList}
-              />
-              <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
-                <h2 id="kiosk-realtime-title">Realtime</h2>
-                <div className="control">
-                  <label htmlFor="realtime-voice">Voice</label>
-                  <select
-                    id="realtime-voice"
-                    value={selectedVoice}
-                    onChange={handleVoiceChange}
-                    disabled={isSaving || loadingConfig}
-                  >
-                    {availableVoices.map((v) => (
-                      <option key={v} value={v}>
-                        {v}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="kiosk__helper" aria-live="polite">
-                    Current voice (server): {serverVoice ?? 'unknown'}
-                  </div>
-                  {playbackIssue ? (
-                    <div className="kiosk__helper" role="alert" style={{ marginTop: 8 }}>
-                      <span style={{ display: 'block', marginBottom: 4 }}>
-                        Audio playback is blocked ({playbackIssue}).
-                      </span>
-                      <button type="button" onClick={reconnectAndResume}>
-                        Reconnect & Resume Audio
-                      </button>
+                headerControls={
+                  <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
+                    <h3 id="kiosk-realtime-title">Voice & Personality</h3>
+                    <div className="control">
+                      <label htmlFor="realtime-voice">Voice</label>
+                      <select
+                        id="realtime-voice"
+                        value={selectedVoice}
+                        onChange={handleVoiceChange}
+                        disabled={isSaving || loadingConfig}
+                      >
+                        {availableVoices.map((v) => (
+                          <option key={v} value={v}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="kiosk__helper" aria-live="polite">
+                        Current voice (server): {serverVoice ?? 'unknown'}
+                      </div>
+                      {playbackIssue ? (
+                        <div className="kiosk__helper" role="alert" style={{ marginTop: 8 }}>
+                          <span style={{ display: 'block', marginBottom: 4 }}>
+                            Audio playback is blocked ({playbackIssue}).
+                          </span>
+                          <button type="button" onClick={reconnectAndResume}>
+                            Reconnect & Resume Audio
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
-                  ) : null}
-                </div>
-                <div className="control">
-                  <label htmlFor="base-prompt">Base prompt</label>
-                  <textarea
-                    id="base-prompt"
-                    placeholder="Stay in English and be concise. Add personality here…"
-                    rows={6}
-                    value={basePrompt}
-                    onChange={(e) => setBasePrompt(e.target.value)}
-                    onBlur={handlePromptBlur}
-                    disabled={loadingConfig}
-                    style={{ width: '100%' }}
-                  />
-                </div>
-              </section>
+                    <div className="control">
+                      <label htmlFor="base-prompt">Base prompt</label>
+                      <textarea
+                        id="base-prompt"
+                        placeholder="Stay in English and be concise. Add personality here…"
+                        rows={6}
+                        value={basePrompt}
+                        onChange={(e) => setBasePrompt(e.target.value)}
+                        onBlur={handlePromptBlur}
+                        disabled={loadingConfig}
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                  </section>
+                }
+              />
           </section>
 
           <section

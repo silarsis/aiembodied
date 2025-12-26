@@ -39,7 +39,7 @@ vi.mock('../src/realtime/realtime-client.js', () => {
       type: 'realtime',
       model: 'gpt-4o-realtime-preview-2024-12-17',
       output_modalities: ['audio'],
-      audio: { output: { voice: 'verse' } },
+      audio: { output: { voice: 'shimmer' } },
     });
 
     constructor({ callbacks }: { callbacks?: MockRealtimeInstance['callbacks'] }) {
@@ -199,7 +199,7 @@ describe('App component', () => {
       audioOutputDeviceId: '',
       featureFlags: { transcriptOverlay: true },
       hasRealtimeApiKey: true,
-      realtimeVoice: 'verse',
+      realtimeVoice: 'shimmer',
       metrics: {
         enabled: false,
         host: '127.0.0.1',
@@ -357,7 +357,7 @@ describe('App component', () => {
     try {
       rendererConfig = {
         ...rendererConfig,
-        realtimeVoice: 'verse',
+        realtimeVoice: 'shimmer',
         hasRealtimeApiKey: true,
       };
       setAudioDevicePreferencesMock.mockResolvedValue(rendererConfig);
@@ -385,6 +385,7 @@ describe('App component', () => {
       const optionValues = Array.from(select.options).map((option) => option.value);
 
       expect(optionValues).toEqual(['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse']);
+      expect(select.value).toBe('shimmer');
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       (globalThis as { fetch?: typeof fetch }).fetch = originalFetch;
@@ -537,7 +538,7 @@ describe('App component', () => {
 
     const stagedPayload = client.updateSessionConfig.mock.calls[matchingCallIndex]?.[0];
     expect(stagedPayload).toMatchObject({
-      voice: 'verse',
+      voice: 'shimmer',
       turnDetection: 'server_vad',
       vad: {
         threshold: 0.61,
@@ -1147,7 +1148,7 @@ describe('App component', () => {
 
   it('syncs the base prompt textarea with realtime session updates', async () => {
     const DEFAULT_PROMPT =
-      'You are an English-speaking assistant. Always respond in concise English. Do not switch languages unless explicitly instructed.';
+      'You are echo, an AI assistant. You are slightly sarcastic, very blunt, but helpful in your own way.\n\nYou question assumptions, and aren\'t afraid to ask questions or challenge me. You have a sharp wit.\n\nYou are here to help me be a better person, but you don\'t put up with bullshit. You also have an Australian sensibility when it comes to swearing and language overall.';
 
     (window as PreloadWindow).aiembodied = {
       ping: () => 'pong',
@@ -1157,7 +1158,7 @@ describe('App component', () => {
           audioOutputDeviceId: '',
           featureFlags: {},
           hasRealtimeApiKey: true,
-          realtimeVoice: 'verse',
+          realtimeVoice: 'shimmer',
           sessionInstructions: 'Persisted instructions from config',
           wakeWord: {
             keywordPath: '',
