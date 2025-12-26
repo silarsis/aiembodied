@@ -19,7 +19,12 @@ import {
 } from './animation-bus.js';
 import { toAnimationSlug } from './animation-tags.js';
 import { useBehaviorCues, type BehaviorCueEvent } from './behavior-cues.js';
-import { createClipFromVrma, createMixerForVrm } from './animations/index.js';
+import {
+  createClipFromVrma,
+  createHumanoidRotationTrack,
+  createMixerForVrm,
+  createVrmAnimationClip,
+} from './animations/index.js';
 import {
   IdleAnimationScheduler,
   type IdleAnimationSchedulerConfig,
@@ -59,8 +64,16 @@ const BLINK_HOLD_SECONDS = 0.12;
 const CAMERA_DISTANCE = 1.45;
 const CAMERA_HEIGHT = 1.35;
 const CAMERA_FOV = 35;
+const TARGET_MODEL_HEIGHT = 1.6;
+const MIN_SCALE = 0.01;
+const MAX_SCALE = 100;
+const CAMERA_PADDING = 1.25;
+const MAX_RENDERABLE_SIZE = TARGET_MODEL_HEIGHT * 6;
+const VRM_CANVAS_WIDTH = 480;
+const VRM_CANVAS_HEIGHT = 640;
 
 const WAVE_ANIMATION_NAME = 'greet_face_wave';
+const DEFAULT_IDLE_CLIP_NAME = 'default_idle_sway';
 
 type AnimationQueueIntent = 'play' | 'pose';
 
@@ -89,6 +102,7 @@ function buildIdleSchedulerConfig(
   };
 
   const extras: IdleClipRegistration[] = [];
+  const reservedNames = new Set<string>();
 
   if (options?.additionalClips?.length) {
     for (const clip of options.additionalClips) {
@@ -96,6 +110,7 @@ function buildIdleSchedulerConfig(
         ...clip,
         clip: clip.clip.clone(),
       });
+      reservedNames.add(clip.name);
     }
   }
 
@@ -115,7 +130,21 @@ function buildIdleSchedulerConfig(
         priority: 0,
         loop: THREE.LoopRepeat,
       });
+      reservedNames.add(animationName);
     });
+  }
+
+  if (!reservedNames.has(DEFAULT_IDLE_CLIP_NAME)) {
+    const defaultClip = createDefaultIdleClip(vrm);
+    if (defaultClip) {
+      extras.push({
+        name: DEFAULT_IDLE_CLIP_NAME,
+        clip: defaultClip,
+        weight: 0.35,
+        priority: -1,
+        loop: THREE.LoopRepeat,
+      });
+    }
   }
 
   if (extras.length > 0) {
@@ -174,6 +203,15 @@ async function loadVrmaClips(vrm: VRM): Promise<Map<string, THREE.AnimationClip>
 
 function quaternionToArray(quaternion: THREE.Quaternion): number[] {
   return [quaternion.x, quaternion.y, quaternion.z, quaternion.w];
+}
+
+function applyBoneRotation(node: THREE.Object3D | null | undefined, rotation: THREE.Euler) {
+  if (!node) {
+    return;
+  }
+  const base = node.quaternion.clone();
+  const offset = new THREE.Quaternion().setFromEuler(rotation);
+  node.quaternion.copy(base.multiply(offset));
 }
 
 function multiplyQuaternion(base: THREE.Quaternion, delta: THREE.Euler): THREE.Quaternion {
@@ -304,6 +342,262 @@ function createDefaultVisemeState(): VisemeWeightState {
 
 function createDefaultBlinkState(): BlinkState {
   return { value: 0, target: 0, hold: 0 };
+}
+
+function createDefaultIdleClip(vrm: VRM): THREE.AnimationClip | null {
+  const duration = 4.5;
+  const hipsTrack = createHumanoidRotationTrack(vrm, 'hips', [
+    { time: 0, rotation: new THREE.Euler(0, 0, 0) },
+    { time: duration * 0.5, rotation: new THREE.Euler(0.04, 0, 0.03) },
+    { time: duration, rotation: new THREE.Euler(0, 0, 0) },
+  ]);
+  const spineTrack = createHumanoidRotationTrack(vrm, 'spine', [
+    { time: 0, rotation: new THREE.Euler(0, 0, 0) },
+    { time: duration * 0.5, rotation: new THREE.Euler(-0.03, 0.02, -0.025) },
+    { time: duration, rotation: new THREE.Euler(0, 0, 0) },
+  ]);
+  const headTrack = createHumanoidRotationTrack(vrm, 'head', [
+    { time: 0, rotation: new THREE.Euler(0, 0, 0) },
+    { time: duration * 0.5, rotation: new THREE.Euler(0.02, 0.05, 0.01) },
+    { time: duration, rotation: new THREE.Euler(0, 0, 0) },
+  ]);
+  const leftShoulderTrack = createHumanoidRotationTrack(vrm, 'leftShoulder', [
+    { time: 0, rotation: new THREE.Euler(0, 0, 0) },
+    { time: duration * 0.5, rotation: new THREE.Euler(-0.02, 0, 0.03) },
+    { time: duration, rotation: new THREE.Euler(0, 0, 0) },
+  ]);
+  const rightShoulderTrack = createHumanoidRotationTrack(vrm, 'rightShoulder', [
+    { time: 0, rotation: new THREE.Euler(0, 0, 0) },
+    { time: duration * 0.5, rotation: new THREE.Euler(-0.02, 0, -0.03) },
+    { time: duration, rotation: new THREE.Euler(0, 0, 0) },
+  ]);
+
+  return createVrmAnimationClip(vrm, {
+    name: DEFAULT_IDLE_CLIP_NAME,
+    duration,
+    rotations: [
+      { bone: 'hips', track: hipsTrack },
+      { bone: 'spine', track: spineTrack },
+      { bone: 'head', track: headTrack },
+      { bone: 'leftShoulder', track: leftShoulderTrack },
+      { bone: 'rightShoulder', track: rightShoulderTrack },
+    ],
+  });
+}
+
+function applyRelaxedPose(vrm: VRM) {
+  const humanoid = vrm.humanoid;
+  if (!humanoid) {
+    return;
+  }
+
+  applyBoneRotation(humanoid.getNormalizedBoneNode('leftShoulder'), new THREE.Euler(-0.1, 0, 0.06));
+  applyBoneRotation(humanoid.getNormalizedBoneNode('rightShoulder'), new THREE.Euler(-0.1, 0, -0.06));
+  applyBoneRotation(humanoid.getNormalizedBoneNode('leftUpperArm'), new THREE.Euler(-0.7, 0, 0.18));
+  applyBoneRotation(humanoid.getNormalizedBoneNode('rightUpperArm'), new THREE.Euler(-0.7, 0, -0.18));
+  applyBoneRotation(humanoid.getNormalizedBoneNode('leftLowerArm'), new THREE.Euler(0.08, 0, 0.04));
+  applyBoneRotation(humanoid.getNormalizedBoneNode('rightLowerArm'), new THREE.Euler(0.08, 0, -0.04));
+}
+
+function computeHumanoidMetrics(vrm: VRM) {
+  const humanoid = vrm.humanoid;
+  if (!humanoid) {
+    return null;
+  }
+
+  const head = humanoid.getNormalizedBoneNode('head');
+  const hips = humanoid.getNormalizedBoneNode('hips');
+  const leftFoot = humanoid.getNormalizedBoneNode('leftFoot');
+  const rightFoot = humanoid.getNormalizedBoneNode('rightFoot');
+
+  if (!head) {
+    return null;
+  }
+
+  const headPos = new THREE.Vector3();
+  head.getWorldPosition(headPos);
+
+  const candidates: THREE.Vector3[] = [];
+  if (leftFoot) {
+    const pos = new THREE.Vector3();
+    leftFoot.getWorldPosition(pos);
+    candidates.push(pos);
+  }
+  if (rightFoot) {
+    const pos = new THREE.Vector3();
+    rightFoot.getWorldPosition(pos);
+    candidates.push(pos);
+  }
+  if (hips) {
+    const pos = new THREE.Vector3();
+    hips.getWorldPosition(pos);
+    candidates.push(pos);
+  }
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const groundY = Math.min(...candidates.map((pos) => pos.y));
+  const height = headPos.y - groundY;
+  if (!Number.isFinite(height) || height <= 0) {
+    return null;
+  }
+
+  const center = hips
+    ? new THREE.Vector3().setFromMatrixPosition(hips.matrixWorld)
+    : candidates.reduce((acc, pos) => acc.add(pos), new THREE.Vector3()).multiplyScalar(1 / candidates.length);
+
+  return { height, groundY, center };
+}
+
+function computeRenderableBounds(root: THREE.Object3D): { box: THREE.Box3; size: THREE.Vector3; center: THREE.Vector3 } | null {
+  const box = new THREE.Box3();
+  let hasBounds = false;
+
+  root.traverse((object) => {
+    const mesh = object as THREE.Mesh | THREE.SkinnedMesh;
+    const isMesh = (mesh as THREE.Mesh).isMesh === true;
+    const isSkinnedMesh = (mesh as THREE.SkinnedMesh).isSkinnedMesh === true;
+    if (!isMesh && !isSkinnedMesh) {
+      return;
+    }
+    const geometry = mesh.geometry;
+    if (!geometry) {
+      return;
+    }
+    if (!geometry.boundingBox) {
+      geometry.computeBoundingBox();
+    }
+    const localBox = geometry.boundingBox;
+    if (!localBox) {
+      return;
+    }
+    const worldBox = localBox.clone();
+    worldBox.applyMatrix4(mesh.matrixWorld);
+    if (!hasBounds) {
+      box.copy(worldBox);
+      hasBounds = true;
+    } else {
+      box.union(worldBox);
+    }
+  });
+
+  if (!hasBounds) {
+    return null;
+  }
+
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  box.getSize(size);
+  box.getCenter(center);
+  return { box, size, center };
+}
+
+function normalizeVrmScene(vrm: VRM, targetHeight = TARGET_MODEL_HEIGHT) {
+  vrm.scene.updateWorldMatrix(true, true);
+  const humanoidMetrics = computeHumanoidMetrics(vrm);
+  if (humanoidMetrics) {
+    const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, targetHeight / humanoidMetrics.height));
+    vrm.scene.scale.setScalar(scale);
+    vrm.scene.updateWorldMatrix(true, true);
+    const scaledMetrics = computeHumanoidMetrics(vrm);
+    if (scaledMetrics) {
+      vrm.scene.position.x -= scaledMetrics.center.x;
+      vrm.scene.position.y -= scaledMetrics.groundY;
+      vrm.scene.position.z -= scaledMetrics.center.z;
+      vrm.scene.updateWorldMatrix(true, true);
+    }
+    return;
+  }
+
+  const bounds = computeRenderableBounds(vrm.scene);
+  if (!bounds) {
+    return;
+  }
+
+  const height = bounds.size.y;
+  if (!Number.isFinite(height) || height <= 0) {
+    return;
+  }
+
+  const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, targetHeight / height));
+  vrm.scene.scale.setScalar(scale);
+  vrm.scene.updateWorldMatrix(true, true);
+
+  const normalizedBounds = computeRenderableBounds(vrm.scene);
+  if (!normalizedBounds) {
+    return;
+  }
+
+  const center = normalizedBounds.center;
+  const groundY = normalizedBounds.box.min.y;
+  vrm.scene.position.x -= center.x;
+  vrm.scene.position.y -= groundY;
+  vrm.scene.position.z -= center.z;
+  vrm.scene.updateWorldMatrix(true, true);
+}
+
+function fitCameraToBounds(
+  camera: THREE.PerspectiveCamera,
+  bounds: { size: THREE.Vector3; center: THREE.Vector3 },
+) {
+  const maxSize = Math.max(bounds.size.x, bounds.size.y, bounds.size.z);
+  if (!Number.isFinite(maxSize) || maxSize <= 0) {
+    return;
+  }
+
+  const fovRadians = (camera.fov * Math.PI) / 180;
+  const distance = (maxSize * CAMERA_PADDING) / (2 * Math.tan(fovRadians / 2));
+  camera.position.set(
+    bounds.center.x,
+    bounds.center.y + bounds.size.y * 0.1,
+    bounds.center.z + distance,
+  );
+  camera.near = Math.max(0.01, distance / 100);
+  camera.far = Math.max(camera.near + 10, distance * 10);
+  camera.updateProjectionMatrix();
+  camera.lookAt(bounds.center);
+}
+
+function suppressOutlierMeshes(root: THREE.Object3D, maxSize: number) {
+  let hiddenCount = 0;
+
+  root.traverse((object) => {
+    const mesh = object as THREE.Mesh | THREE.SkinnedMesh;
+    const isMesh = (mesh as THREE.Mesh).isMesh === true;
+    const isSkinnedMesh = (mesh as THREE.SkinnedMesh).isSkinnedMesh === true;
+    if (!isMesh && !isSkinnedMesh) {
+      return;
+    }
+
+    const geometry = mesh.geometry;
+    if (!geometry) {
+      return;
+    }
+
+    if (!geometry.boundingBox) {
+      geometry.computeBoundingBox();
+    }
+    const box = geometry.boundingBox;
+    if (!box) {
+      return;
+    }
+
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const maxDim = Math.max(size.x, size.y, size.z);
+    if (maxDim > maxSize) {
+      mesh.visible = false;
+      hiddenCount += 1;
+      console.warn('[vrm-avatar-renderer] Hiding oversized mesh', {
+        name: mesh.name,
+        maxDim: Number(maxDim.toFixed(3)),
+      });
+    }
+  });
+
+  return hiddenCount;
 }
 
 function disposeVrm(vrm: VRM | null) {
@@ -648,27 +942,17 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     scene.add(keyLight);
     scene.add(fillLight);
 
-    const resize = () => {
-      const rect = canvas.getBoundingClientRect();
-      const pixelRatio = typeof window !== 'undefined' ? window.devicePixelRatio ?? 1 : 1;
-      const width = Math.max(1, Math.floor(rect.width * pixelRatio));
-      const height = Math.max(1, Math.floor(rect.height * pixelRatio));
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width;
-        canvas.height = height;
-      }
-      renderer.setPixelRatio(pixelRatio);
-      renderer.setSize(rect.width || 320, rect.height || 320, false);
-      if (camera) {
-        camera.aspect = rect.width > 0 && rect.height > 0 ? rect.width / rect.height : 1;
-        camera.updateProjectionMatrix();
-      }
-    };
-
-    resize();
-
-    const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resize) : null;
-    resizeObserver?.observe(canvas);
+    const pixelRatio = typeof window !== 'undefined' ? window.devicePixelRatio ?? 1 : 1;
+    canvas.width = Math.floor(VRM_CANVAS_WIDTH * pixelRatio);
+    canvas.height = Math.floor(VRM_CANVAS_HEIGHT * pixelRatio);
+    canvas.style.width = `${VRM_CANVAS_WIDTH}px`;
+    canvas.style.height = `${VRM_CANVAS_HEIGHT}px`;
+    renderer.setPixelRatio(pixelRatio);
+    renderer.setSize(VRM_CANVAS_WIDTH, VRM_CANVAS_HEIGHT, false);
+    if (camera) {
+      camera.aspect = VRM_CANVAS_WIDTH / VRM_CANVAS_HEIGHT;
+      camera.updateProjectionMatrix();
+    }
 
     clockRef.current = new THREE.Clock();
 
@@ -681,7 +965,6 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         return;
       }
 
-      resize();
       const delta = clockRef.current.getDelta();
 
       if (manager) {
@@ -732,7 +1015,6 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         cancelAnimationFrame(animationFrameRef.current);
       }
       animationFrameRef.current = null;
-      resizeObserver?.disconnect();
       scene.remove(ambient);
       scene.remove(keyLight);
       scene.remove(fillLight);
@@ -838,13 +1120,52 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
           object.frustumCulled = false;
         });
 
-        vrm.scene.position.set(0, -0.9, 0);
-        vrm.scene.rotation.y = Math.PI / 14;
+        vrm.scene.rotation.y = Math.PI;
+        vrm.scene.updateWorldMatrix(true, true);
+        normalizeVrmScene(vrm);
+        applyRelaxedPose(vrm);
+        vrm.scene.updateWorldMatrix(true, true);
+        const hiddenMeshes = suppressOutlierMeshes(vrm.scene, MAX_RENDERABLE_SIZE);
 
         if (cancelled) {
           disposeVrm(vrm);
           return;
         }
+
+        const renderableBounds = computeRenderableBounds(vrm.scene);
+        if (renderableBounds && cameraRef.current) {
+          fitCameraToBounds(cameraRef.current, renderableBounds);
+        }
+        const meshStats = { meshes: 0, skinnedMeshes: 0 };
+        vrm.scene.traverse((object) => {
+          if ((object as THREE.Mesh).isMesh) {
+            meshStats.meshes += 1;
+          }
+          if ((object as THREE.SkinnedMesh).isSkinnedMesh) {
+            meshStats.skinnedMeshes += 1;
+          }
+        });
+        const metricsPayload = {
+          modelId: model.id,
+          meshCount: meshStats.meshes,
+          skinnedMeshCount: meshStats.skinnedMeshes,
+          hiddenMeshes,
+          bounds: renderableBounds
+            ? {
+                size: {
+                  x: Number(renderableBounds.size.x.toFixed(3)),
+                  y: Number(renderableBounds.size.y.toFixed(3)),
+                  z: Number(renderableBounds.size.z.toFixed(3)),
+                },
+                center: {
+                  x: Number(renderableBounds.center.x.toFixed(3)),
+                  y: Number(renderableBounds.center.y.toFixed(3)),
+                  z: Number(renderableBounds.center.z.toFixed(3)),
+                },
+              }
+            : null,
+        };
+        console.info('[vrm-avatar-renderer] VRM scene metrics', JSON.stringify(metricsPayload));
 
         scene.add(vrm.scene);
         currentVrmRef.current = vrm;
@@ -852,11 +1173,13 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         expressionManagerRef.current?.resetValues();
         const mixer = createMixerForVrm(vrm);
         mixerRef.current = mixer;
+        const idleSchedulerConfig = buildIdleSchedulerConfig(vrm, idleOptionsRef.current);
         const idleScheduler = new IdleAnimationScheduler({
           mixer,
           vrm,
-          config: buildIdleSchedulerConfig(vrm, idleOptionsRef.current),
+          config: idleSchedulerConfig,
         });
+        idleScheduler.updateConfig(idleSchedulerConfig);
         idleSchedulerRef.current = idleScheduler;
         clipRegistryRef.current.clear();
         animationQueueRef.current = [];
