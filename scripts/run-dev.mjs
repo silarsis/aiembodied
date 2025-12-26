@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { resolve, join, parse } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -163,6 +164,29 @@ export function readElectronVersion(repoRoot) {
   return electronPkg.version;
 }
 
+function hashFile(filePath) {
+  if (!existsSync(filePath)) return null;
+  return createHash('sha256').update(readFileSync(filePath)).digest('hex');
+}
+
+function readStamp(stampPath) {
+  if (!existsSync(stampPath)) return null;
+  try {
+    return JSON.parse(readFileSync(stampPath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function writeStamp(stampPath, data) {
+  writeFileSync(stampPath, JSON.stringify(data, null, 2));
+}
+
+function stampMatches(oldStamp, newStamp) {
+  if (!oldStamp) return false;
+  return JSON.stringify(oldStamp) === JSON.stringify(newStamp);
+}
+
 export async function rebuildNativeDependenciesForElectron(
   repoRoot,
   { runImpl = run, baseEnv = process.env, platform = process.platform, pnpmStorePath } = {},
@@ -251,16 +275,71 @@ async function main() {
   // Prepare an isolated environment for all pnpm operations
   const envIsolated = prepareDevHomeEnv(repoRoot, process.env, process.platform, { pnpmStorePath });
 
-  // Build renderer and main
-  console.log('[info] Aligning workspace deps to isolated store...');
-  await run(pnpmExe, ['--filter', '@aiembodied/main', 'install', '--force'], { env: { ...envIsolated, CI: '1' } });
-  await run(pnpmExe, ['--filter', '@aiembodied/renderer', 'install', '--force'], { env: { ...envIsolated, CI: '1' } });
+  // Check if dependencies have changed using a stamp file
+  const stampPath = resolve(devHome, 'dev-deps-stamp.json');
+  const lockHash = hashFile(resolve(repoRoot, 'pnpm-lock.yaml'));
+  const forceRebuild = process.argv.includes('--force-deps');
 
-  console.log('[info] Building renderer...');
-  await run(pnpmExe, ['--filter', '@aiembodied/renderer', 'build'], { env: envIsolated });
+  // Read Electron version if available (may not exist on first run)
+  let electronVersion = null;
+  try {
+    electronVersion = readElectronVersion(repoRoot);
+  } catch {
+    // Electron not installed yet - will need full install
+  }
 
-  console.log('[info] Building main process...');
-  await run(pnpmExe, ['--filter', '@aiembodied/main', 'build'], { env: envIsolated });
+  const newStamp = {
+    lockHash,
+    electronVersion,
+    platform: process.platform,
+    arch: process.arch,
+    nodeVersion: process.version,
+  };
+
+  const oldStamp = readStamp(stampPath);
+  const depsChanged = forceRebuild || !stampMatches(oldStamp, newStamp);
+
+  if (depsChanged) {
+    if (forceRebuild) {
+      console.log('[info] --force-deps specified, running full install/build/rebuild...');
+    } else if (!oldStamp) {
+      console.log('[info] No stamp file found, running full install/build/rebuild...');
+    } else {
+      console.log('[info] Dependencies changed, running install/build/rebuild...');
+      if (oldStamp.lockHash !== newStamp.lockHash) console.log('  - pnpm-lock.yaml changed');
+      if (oldStamp.electronVersion !== newStamp.electronVersion) console.log('  - Electron version changed');
+      if (oldStamp.nodeVersion !== newStamp.nodeVersion) console.log('  - Node version changed');
+    }
+
+    // Install main and renderer in parallel
+    console.log('[info] Installing workspace dependencies...');
+    await Promise.all([
+      run(pnpmExe, ['--filter', '@aiembodied/main', 'install'], { env: { ...envIsolated, CI: '1' } }),
+      run(pnpmExe, ['--filter', '@aiembodied/renderer', 'install'], { env: { ...envIsolated, CI: '1' } }),
+    ]);
+
+    // Build renderer and main in parallel
+    console.log('[info] Building renderer and main process...');
+    await Promise.all([
+      run(pnpmExe, ['--filter', '@aiembodied/renderer', 'build'], { env: envIsolated }),
+      run(pnpmExe, ['--filter', '@aiembodied/main', 'build'], { env: envIsolated }),
+    ]);
+
+    // Rebuild native deps for Electron runtime (ensures better-sqlite3/keytar ABI matches Electron)
+    console.log('[info] Rebuilding native dependencies for Electron...');
+    try {
+      await rebuildNativeDependenciesForElectron(repoRoot, { pnpmStorePath });
+    } catch (error) {
+      console.warn('[warn] Native dependency rebuild failed, continuing anyway:', error.message);
+    }
+
+    // Update stamp after successful install/build/rebuild
+    const finalElectronVersion = readElectronVersion(repoRoot);
+    writeStamp(stampPath, { ...newStamp, electronVersion: finalElectronVersion });
+    console.log('[info] Stamp file updated.');
+  } else {
+    console.log('[info] Dependencies unchanged, skipping install/build/rebuild (use --force-deps to override)');
+  }
 
   // Verify preload script exists
   const preloadPath = resolve(repoRoot, 'app/main/dist/preload.js');
@@ -275,14 +354,6 @@ async function main() {
     throw new Error(`Renderer build not found at ${rendererIndexPath}. Ensure renderer build completed successfully.`);
   }
   console.log('[info] Renderer build verified at:', rendererIndexPath);
-
-  // Rebuild native deps for Electron runtime (ensures better-sqlite3/keytar ABI matches Electron)
-  console.log('[info] Rebuilding native dependencies for Electron...');
-  try {
-    await rebuildNativeDependenciesForElectron(repoRoot, { pnpmStorePath });
-  } catch (error) {
-    console.warn('[warn] Native dependency rebuild failed, continuing anyway:', error.message);
-  }
 
   // Launch Electron with compiled main
   console.log('[info] Launching Electron...');
