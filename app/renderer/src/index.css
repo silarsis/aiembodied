@@ -500,6 +500,44 @@ main {
   color: #f8fafc;
 }
 
+.kiosk__animationTest {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.kiosk__animationTest select {
+  flex: 1;
+  min-width: 120px;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  background: rgba(15, 23, 42, 0.9);
+  color: #f8fafc;
+  font-size: 0.875rem;
+}
+
+.kiosk__animationTest button {
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  border: 1px solid rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.kiosk__animationTest button:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.35);
+  border-color: rgba(59, 130, 246, 0.7);
+}
+
+.kiosk__animationTest button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .kiosk__hud {
   position: absolute;
   left: 3rem;

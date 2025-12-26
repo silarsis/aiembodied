@@ -28,6 +28,7 @@ interface AvatarConfiguratorProps {
   avatarApi?: AvatarBridge;
   onActiveFaceChange?: (detail: AvatarFaceDetail | null) => void;
   onActiveModelChange?: (detail: AvatarModelSummary | null) => void;
+  onAnimationChange?: () => void;
   displayModePreference?: AvatarDisplayMode;
   onDisplayModePreferenceChange?: (mode: AvatarDisplayMode) => void;
 }
@@ -94,6 +95,7 @@ export function AvatarConfigurator({
   avatarApi,
   onActiveFaceChange,
   onActiveModelChange,
+  onAnimationChange,
   displayModePreference = 'sprites',
   onDisplayModePreferenceChange,
 }: AvatarConfiguratorProps) {
@@ -497,6 +499,7 @@ export function AvatarConfigurator({
           setVrmaStatus('success');
           setVrmaResultName(result.animation.name);
           setVrmaPrompt('');
+          onAnimationChange?.();
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to generate VRMA animation.';
           setVrmaStatus('error');
@@ -504,7 +507,7 @@ export function AvatarConfigurator({
         }
       })();
     },
-    [avatarApi, vrmaPrompt],
+    [avatarApi, vrmaPrompt, onAnimationChange],
   );
 
   const handleApplyGeneratedFace = useCallback(async () => {

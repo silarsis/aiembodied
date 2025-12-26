@@ -639,6 +639,8 @@ export default function App() {
   const [activeAvatar, setActiveAvatar] = useState<AvatarFaceDetail | null>(null);
   const [activeVrmModel, setActiveVrmModel] = useState<AvatarModelSummary | null>(null);
   const [availableAnimationSlugs, setAvailableAnimationSlugs] = useState<string[]>([]);
+  const [selectedTestAnimation, setSelectedTestAnimation] = useState<string>('');
+  const [animationListVersion, setAnimationListVersion] = useState(0);
   const animationBus = useMemo(() => createAvatarAnimationBus(), []);
   const [avatarDisplayState, dispatchAvatarDisplay] = useReducer(
     avatarDisplayReducer,
@@ -693,7 +695,11 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [resolveApi]);
+  }, [resolveApi, animationListVersion]);
+
+  const refreshAnimationList = useCallback(() => {
+    setAnimationListVersion((v) => v + 1);
+  }, []);
 
   const persistAvatarDisplayPreference = useCallback(
     async (mode: AvatarDisplayMode) => {
@@ -889,6 +895,13 @@ export default function App() {
     const nextMode: AvatarDisplayMode = avatarDisplayState.preference === 'vrm' ? 'sprites' : 'vrm';
     setAvatarDisplayPreference(nextMode);
   }, [avatarDisplayState.preference, setAvatarDisplayPreference]);
+
+  const handleTestAnimation = useCallback(() => {
+    if (!selectedTestAnimation) {
+      return;
+    }
+    animationBus.enqueue({ slug: selectedTestAnimation, intent: 'play', source: 'manual-test' });
+  }, [animationBus, selectedTestAnimation]);
 
   const applySessionHistory = useCallback((session: ConversationSessionWithMessages | null) => {
     if (!session) {
@@ -2249,6 +2262,31 @@ export default function App() {
                       <dt>Driver status</dt>
                       <dd>{visemeSummary.status}</dd>
                     </div>
+                    <div>
+                      <dt>Test animation</dt>
+                      <dd className="kiosk__animationTest">
+                        <select
+                          id="test-animation-select"
+                          value={selectedTestAnimation}
+                          onChange={(e) => setSelectedTestAnimation(e.target.value)}
+                          disabled={availableAnimationSlugs.length === 0}
+                        >
+                          <option value="">Select animation…</option>
+                          {availableAnimationSlugs.map((slug) => (
+                            <option key={slug} value={slug}>
+                              {slug}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={handleTestAnimation}
+                          disabled={!selectedTestAnimation}
+                        >
+                          Play
+                        </button>
+                      </dd>
+                    </div>
                   </dl>
                 </div>
                 <div className="kiosk__meter" aria-live="polite">
@@ -2272,6 +2310,7 @@ export default function App() {
                 avatarApi={activeBridge?.avatar}
                 onActiveFaceChange={handleActiveFaceChange}
                 onActiveModelChange={setActiveVrmModel}
+                onAnimationChange={refreshAnimationList}
                 displayModePreference={avatarDisplayState.preference}
                 onDisplayModePreferenceChange={setAvatarDisplayPreference}
               />

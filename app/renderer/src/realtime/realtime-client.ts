@@ -223,6 +223,7 @@ export class RealtimeClient {
     const payload = JSON.stringify({ type: active ? 'user_speech_start' : 'user_speech_stop' });
     try {
       this.controlChannel.send(payload);
+      this.log('info', 'Sent speech activity update to realtime API', { active, payload });
     } catch (error) {
       this.log('warn', 'Failed to send speech activity update', error);
     }
