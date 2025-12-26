@@ -22,6 +22,7 @@ type TabId = 'faces' | 'models';
 
 type ModelUploadStatus = 'idle' | 'reading' | 'uploading' | 'success';
 type BehaviorStatus = 'idle' | 'pending' | 'success' | 'error';
+type VrmaGenerationStatus = 'idle' | 'pending' | 'success' | 'error';
 
 interface AvatarConfiguratorProps {
   avatarApi?: AvatarBridge;
@@ -120,11 +121,16 @@ export function AvatarConfigurator({
   const [behaviorStatus, setBehaviorStatus] = useState<BehaviorStatus>('idle');
   const [behaviorMessage, setBehaviorMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('faces');
+  const [vrmaPrompt, setVrmaPrompt] = useState('');
+  const [vrmaStatus, setVrmaStatus] = useState<VrmaGenerationStatus>('idle');
+  const [vrmaMessage, setVrmaMessage] = useState<string | null>(null);
+  const [vrmaResultName, setVrmaResultName] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const modelFileInputRef = useRef<HTMLInputElement | null>(null);
   const availabilityLogRef = useRef<'available' | 'missing' | null>(null);
   const isFaceBridgeAvailable = Boolean(avatarApi);
   const isModelBridgeAvailable = Boolean(avatarApi?.listModels && avatarApi?.uploadModel);
+  const isAnimationBridgeAvailable = Boolean(avatarApi?.generateAnimation);
 
   useEffect(() => {
     const nextState: 'available' | 'missing' = avatarApi ? 'available' : 'missing';
@@ -456,6 +462,51 @@ export function AvatarConfigurator({
     [onDisplayModePreferenceChange],
   );
 
+  const handleVrmaPromptChange = useCallback((event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    setVrmaPrompt(event.target.value);
+    if (vrmaStatus === 'error') {
+      setVrmaStatus('idle');
+      setVrmaMessage(null);
+    }
+  }, [vrmaStatus]);
+
+  const handleGenerateAnimation = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+
+      if (!avatarApi?.generateAnimation) {
+        setVrmaStatus('error');
+        setVrmaMessage('VRMA generation is unavailable.');
+        return;
+      }
+
+      const prompt = vrmaPrompt.trim();
+      if (!prompt) {
+        setVrmaStatus('error');
+        setVrmaMessage('Enter a prompt describing the animation.');
+        return;
+      }
+
+      setVrmaStatus('pending');
+      setVrmaMessage(null);
+      setVrmaResultName(null);
+
+      void (async () => {
+        try {
+          const result = await avatarApi.generateAnimation({ prompt });
+          setVrmaStatus('success');
+          setVrmaResultName(result.animation.name);
+          setVrmaPrompt('');
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Failed to generate VRMA animation.';
+          setVrmaStatus('error');
+          setVrmaMessage(message);
+        }
+      })();
+    },
+    [avatarApi, vrmaPrompt],
+  );
+
   const handleApplyGeneratedFace = useCallback(async () => {
     if (!avatarApi?.applyGeneratedFace) {
       setFaceError('Avatar generation is not available.');
@@ -533,6 +584,7 @@ export function AvatarConfigurator({
   const modelUploadDisabled = !isModelBridgeAvailable || modelUploadStatus === 'reading' || modelUploadStatus === 'uploading';
   const behaviorPending = behaviorStatus === 'pending';
   const behaviorBridgeAvailable = Boolean(getPreloadApi()?.camera?.emitDetection || avatarApi?.triggerBehaviorCue);
+  const vrmaPending = vrmaStatus === 'pending';
 
   return (
     <section className="kiosk__faces" aria-labelledby="kiosk-faces-title">
@@ -745,6 +797,33 @@ export function AvatarConfigurator({
           data-state={activeTab === 'models' ? 'active' : 'inactive'}
           className="faces__panel"
         >
+          <form className="faces__form" onSubmit={handleGenerateAnimation} aria-label="Generate VRMA animation">
+            <label className="faces__field">
+              <span>Animation prompt</span>
+              <textarea
+                value={vrmaPrompt}
+                onChange={handleVrmaPromptChange}
+                placeholder="Wave hello, then return to idle stance."
+                disabled={!isAnimationBridgeAvailable || vrmaPending}
+                rows={3}
+              />
+            </label>
+            <button type="submit" disabled={!isAnimationBridgeAvailable || vrmaPending || vrmaPrompt.trim().length === 0} className="faces__submit">
+              {vrmaPending ? 'Generating…' : 'Generate VRMA'}
+            </button>
+          </form>
+
+          {vrmaMessage ? (
+            <p className={vrmaStatus === 'error' ? 'kiosk__error' : 'kiosk__info'} role={vrmaStatus === 'error' ? 'alert' : 'status'}>
+              {vrmaMessage}
+            </p>
+          ) : null}
+          {vrmaStatus === 'success' && vrmaResultName ? (
+            <p className="kiosk__info" role="status">
+              Generated animation saved as {vrmaResultName}.
+            </p>
+          ) : null}
+
           <form className="faces__form" onSubmit={handleModelUpload} aria-label="Upload new VRM model">
             <label className="faces__field">
               <span>VRM file</span>

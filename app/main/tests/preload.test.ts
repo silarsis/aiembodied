@@ -150,4 +150,34 @@ describe('preload bridge', () => {
     await api.avatar?.triggerBehaviorCue('greet_face');
     expect(invoke).toHaveBeenCalledWith('avatar:trigger-behavior', 'greet_face');
   });
+
+  it('exposes avatar animation helpers through the bridge', async () => {
+    const [, api] = exposeInMainWorld.mock.calls[0];
+
+    invoke.mockResolvedValueOnce([]);
+    await expect(api.avatar?.listAnimations()).resolves.toEqual([]);
+    expect(invoke).toHaveBeenCalledWith('avatar-animation:list');
+
+    invoke.mockResolvedValueOnce({ animation: { id: 'vrma-1' } });
+    await expect(api.avatar?.uploadAnimation({ fileName: 'idle.vrma', data: 'AAAA' })).resolves.toEqual({
+      animation: { id: 'vrma-1' },
+    });
+    expect(invoke).toHaveBeenCalledWith('avatar-animation:upload', { fileName: 'idle.vrma', data: 'AAAA' });
+
+    invoke.mockResolvedValueOnce({ animation: { id: 'vrma-2' } });
+    await expect(api.avatar?.generateAnimation({ prompt: 'Wave hello' })).resolves.toEqual({ animation: { id: 'vrma-2' } });
+    expect(invoke).toHaveBeenCalledWith('avatar-animation:generate', { prompt: 'Wave hello' });
+
+    invoke.mockResolvedValueOnce(true);
+    await api.avatar?.deleteAnimation('vrma-2');
+    expect(invoke).toHaveBeenCalledWith('avatar-animation:delete', 'vrma-2');
+
+    const buffer = new Uint8Array([1, 2, 3, 4]).buffer;
+    invoke.mockResolvedValueOnce(buffer);
+    const cloned = await api.avatar?.loadAnimationBinary('vrma-3');
+    expect(cloned).toBeInstanceOf(ArrayBuffer);
+    expect(cloned).not.toBe(buffer);
+    expect(new Uint8Array(cloned as ArrayBuffer)).toEqual(new Uint8Array(buffer));
+    expect(invoke).toHaveBeenCalledWith('avatar-animation:load', 'vrma-3');
+  });
 });

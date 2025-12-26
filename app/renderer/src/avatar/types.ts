@@ -94,6 +94,10 @@ export interface AvatarAnimationUploadResult {
   animation: AvatarAnimationSummary;
 }
 
+export interface AvatarAnimationGenerationRequest {
+  prompt: string;
+}
+
 export interface AvatarBridge {
   listFaces(): Promise<AvatarFaceSummary[]>;
   getActiveFace(): Promise<AvatarFaceDetail | null>;
@@ -109,6 +113,7 @@ export interface AvatarBridge {
   loadModelBinary(modelId: string): Promise<ArrayBuffer>;
   listAnimations(): Promise<AvatarAnimationSummary[]>;
   uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult>;
+  generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;
   deleteAnimation(animationId: string): Promise<void>;
   loadAnimationBinary(animationId: string): Promise<ArrayBuffer>;
   getDisplayModePreference(): Promise<AvatarDisplayMode>;

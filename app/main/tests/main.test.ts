@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { IpcMainInvokeEvent } from 'electron';
+import type { ConfigSecretKey } from '../src/config/config-manager.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Deferred<T> = {
@@ -319,6 +320,25 @@ vi.mock('../src/avatar/avatar-animation-service.js', () => ({
   AvatarAnimationService: AvatarAnimationServiceMock,
 }));
 
+class VrmaGenerationServiceDouble {
+  generateAnimation = vi.fn().mockResolvedValue({ animation: { id: 'vrma-generated' } });
+
+  constructor(public readonly options: unknown) {}
+}
+
+const vrmaGenerationServiceInstances: VrmaGenerationServiceDouble[] = [];
+const createVrmaGenerationServiceInstance = (options: unknown) => {
+  const instance = new VrmaGenerationServiceDouble(options);
+  vrmaGenerationServiceInstances.push(instance);
+  return instance;
+};
+
+const VrmaGenerationServiceMock = vi.fn(createVrmaGenerationServiceInstance);
+
+vi.mock('../src/avatar/vrma-generation-service.js', () => ({
+  VrmaGenerationService: VrmaGenerationServiceMock,
+}));
+
 const autoLaunchSyncMock = vi.fn<[], Promise<boolean>>();
 const autoLaunchIsEnabledMock = vi.fn<[], Promise<boolean>>();
 
@@ -405,6 +425,10 @@ describe('main process bootstrap', () => {
     AvatarAnimationServiceMock.mockReset();
     AvatarAnimationServiceMock.mockImplementation(createAvatarAnimationServiceInstance);
     avatarAnimationServiceInstances.length = 0;
+
+    VrmaGenerationServiceMock.mockReset();
+    VrmaGenerationServiceMock.mockImplementation(createVrmaGenerationServiceInstance);
+    vrmaGenerationServiceInstances.length = 0;
 
     CrashGuardMock.mockReset();
     CrashGuardMock.mockImplementation(createCrashGuardInstance);
@@ -635,10 +659,13 @@ describe('main process bootstrap', () => {
       ts: 1700000000,
     });
 
-    expect(ipcMainMock.handle).toHaveBeenCalledTimes(28);
+    expect(ipcMainMock.handle).toHaveBeenCalledTimes(29);
     const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
 
     expect(mockLogger.info).toHaveBeenCalledWith('Avatar face service initialized.', {
+      reason: 'startup',
+    });
+    expect(mockLogger.info).toHaveBeenCalledWith('VRMA generation service initialized.', {
       reason: 'startup',
     });
 
@@ -680,8 +707,12 @@ describe('main process bootstrap', () => {
     expect(mockLogger.info).toHaveBeenCalledWith('Avatar face service initialized.', {
       reason: 'secret-update',
     });
+    expect(mockLogger.info).toHaveBeenCalledWith('VRMA generation service initialized.', {
+      reason: 'secret-update',
+    });
 
     expect(avatarFaceServiceInstances).toHaveLength(2);
+    expect(vrmaGenerationServiceInstances).toHaveLength(2);
 
     const avatarServiceOptionsList = avatarFaceServiceInstances.map(
       (instance) => instance.options as Record<string, unknown>,
@@ -796,6 +827,18 @@ describe('main process bootstrap', () => {
       animationsDirectory: expect.stringContaining('vrma-animations'),
     });
 
+    const vrmaGenerationService = vrmaGenerationServiceInstances[vrmaGenerationServiceInstances.length - 1];
+    expect(vrmaGenerationService).toBeDefined();
+    expect(vrmaGenerationService?.options).toMatchObject({
+      logger: mockLogger,
+      animationService: avatarAnimationService,
+      client: expect.objectContaining({
+        responses: expect.objectContaining({
+          create: expect.any(Function),
+        }),
+      }),
+    });
+
     const listAnimationsHandler = handleEntries.get('avatar-animation:list');
     expect(typeof listAnimationsHandler).toBe('function');
     await expect(listAnimationsHandler?.({})).resolves.toEqual([]);
@@ -807,6 +850,11 @@ describe('main process bootstrap', () => {
       uploadAnimationHandler?.({}, { fileName: 'idle.vrma', data: 'AAAA' }),
     ).resolves.toEqual({ animation: { id: 'vrma-uploaded' } });
     expect(avatarAnimationService?.uploadAnimation).toHaveBeenCalledWith({ fileName: 'idle.vrma', data: 'AAAA' });
+
+    const generateAnimationHandler = handleEntries.get('avatar-animation:generate');
+    expect(typeof generateAnimationHandler).toBe('function');
+    await expect(generateAnimationHandler?.({}, { prompt: 'Wave hello' })).resolves.toEqual({ animation: { id: 'vrma-generated' } });
+    expect(vrmaGenerationServiceInstances[vrmaGenerationServiceInstances.length - 1]?.generateAnimation).toHaveBeenCalledWith({ prompt: 'Wave hello' });
 
     const deleteAnimationHandler = handleEntries.get('avatar-animation:delete');
     expect(typeof deleteAnimationHandler).toBe('function');
@@ -979,10 +1027,16 @@ describe('main process bootstrap', () => {
       );
     });
 
-    const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
+    let handleEntries: Map<string, unknown>;
+    await waitForExpect(() => {
+      handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
+      const setSecretHandler = handleEntries.get('config:set-secret');
+      expect(typeof setSecretHandler).toBe('function');
+    });
 
-    const setSecretHandler = handleEntries.get('config:set-secret');
-    expect(typeof setSecretHandler).toBe('function');
+    const setSecretHandler = handleEntries.get('config:set-secret') as
+      | ((event: unknown, payload: { key: ConfigSecretKey; value: string }) => Promise<unknown>)
+      | undefined;
     await expect(setSecretHandler?.({}, { key: 'realtimeApiKey', value: 'fresh-key' })).resolves.toEqual({
       hasRealtimeApiKey: true,
     });

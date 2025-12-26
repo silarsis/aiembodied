@@ -80,6 +80,16 @@ function createAvatarBridgeStub(overrides: Partial<AvatarBridge> = {}): AvatarBr
         fps: null,
       },
     }),
+    generateAnimation: vi.fn().mockResolvedValue({
+      animation: {
+        id: 'vrma-generated',
+        name: 'wave-hello',
+        createdAt: Date.now(),
+        fileSha: 'stub',
+        duration: 1,
+        fps: 30,
+      },
+    }),
     deleteAnimation: vi.fn().mockResolvedValue(undefined),
     loadAnimationBinary: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
     getDisplayModePreference: vi.fn().mockResolvedValue('sprites'),
@@ -259,6 +269,44 @@ describe('AvatarConfigurator', () => {
     } finally {
       restoreFileReader();
     }
+  });
+
+  it('submits a VRMA prompt and reports success', async () => {
+    const listFaces = vi.fn().mockResolvedValue([]);
+    const getActiveFace = vi.fn().mockResolvedValue(null);
+    const listModels = vi.fn().mockResolvedValue([]);
+    const getActiveModel = vi.fn().mockResolvedValue(null);
+    const generateAnimation = vi.fn().mockResolvedValue({
+      animation: {
+        id: 'vrma-1',
+        name: 'friendly-wave',
+        createdAt: Date.now(),
+        fileSha: 'sha',
+        duration: 1.2,
+        fps: 30,
+      },
+    });
+
+    const avatarApi = createAvatarBridgeStub({
+      listFaces,
+      getActiveFace,
+      listModels,
+      getActiveModel,
+      generateAnimation,
+    });
+
+    render(<AvatarConfigurator avatarApi={avatarApi} />);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'VRM models' }));
+
+    const promptInput = await screen.findByLabelText('Animation prompt');
+    fireEvent.change(promptInput, { target: { value: 'Wave hello' } });
+
+    const form = screen.getByRole('form', { name: 'Generate VRMA animation' });
+    fireEvent.submit(form);
+
+    await waitFor(() => expect(generateAnimation).toHaveBeenCalledWith({ prompt: 'Wave hello' }));
+    expect(await screen.findByText('Generated animation saved as friendly-wave.')).toBeInTheDocument();
   });
 
   it('renders VRM models with metadata and handles activation and deletion', async () => {

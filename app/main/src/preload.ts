@@ -14,6 +14,7 @@ import type {
   AvatarAnimationSummary,
   AvatarAnimationUploadRequest,
   AvatarAnimationUploadResult,
+  AvatarAnimationGenerationRequest,
 } from './avatar/types.js';
 import type {
   ConversationAppendMessagePayload,
@@ -161,6 +162,7 @@ export interface AvatarBridge {
   loadModelBinary(modelId: string): Promise<ArrayBuffer>;
   listAnimations(): Promise<AvatarAnimationSummary[]>;
   uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult>;
+  generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;
   deleteAnimation(animationId: string): Promise<void>;
   loadAnimationBinary(animationId: string): Promise<ArrayBuffer>;
   getDisplayModePreference(): Promise<AvatarDisplayMode>;
@@ -259,6 +261,8 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     listAnimations: () => ipcRenderer.invoke('avatar-animation:list') as Promise<AvatarAnimationSummary[]>,
     uploadAnimation: (payload) =>
       ipcRenderer.invoke('avatar-animation:upload', payload) as Promise<AvatarAnimationUploadResult>,
+    generateAnimation: (payload: AvatarAnimationGenerationRequest) =>
+      ipcRenderer.invoke('avatar-animation:generate', payload) as Promise<AvatarAnimationUploadResult>,
     deleteAnimation: async (animationId) => {
       await ipcRenderer.invoke('avatar-animation:delete', animationId);
     },
