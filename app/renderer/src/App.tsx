@@ -613,7 +613,7 @@ export default function App() {
     avatarDisplayReducer,
     DEFAULT_AVATAR_DISPLAY_STATE,
   );
-  const [isListeningEnabled, setListeningEnabled] = useState(false);
+  const [isListeningEnabled, setListeningEnabled] = useState(true);
   const tabs = useMemo<TabDefinition[]>(
     () => [
       { id: 'chatgpt', label: 'ChatGPT' },
@@ -1771,13 +1771,13 @@ export default function App() {
             setSecretInputs((previous) => ({ ...previous, [key]: '' }));
           });
 
-            if (key === 'realtimeApiKey') {
-              setRealtimeToken(null);
-              setRealtimeTokenError(null);
-              realtimeTokenExpiresAtRef.current = null;
-              realtimeTokenRefreshRef.current = true;
-              realtimeTokenRequestRef.current += 1;
-            }
+          if (key === 'realtimeApiKey') {
+            setRealtimeToken(null);
+            setRealtimeTokenError(null);
+            realtimeTokenExpiresAtRef.current = null;
+            realtimeTokenRefreshRef.current = true;
+            realtimeTokenRequestRef.current += 1;
+          }
 
           flushSync(() => {
             setSecretStatus((previous) => ({

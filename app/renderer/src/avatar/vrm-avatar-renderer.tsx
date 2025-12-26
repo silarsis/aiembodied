@@ -922,11 +922,13 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         expressionManagerRef.current?.resetValues();
         const mixer = createMixerForVrm(vrm);
         mixerRef.current = mixer;
+        const idleSchedulerConfig = buildIdleSchedulerConfig(vrm, idleOptionsRef.current);
         const idleScheduler = new IdleAnimationScheduler({
           mixer,
           vrm,
-          config: buildIdleSchedulerConfig(vrm, idleOptionsRef.current),
+          config: idleSchedulerConfig,
         });
+        idleScheduler.updateConfig(idleSchedulerConfig);
         idleSchedulerRef.current = idleScheduler;
         const clip = createRightArmWaveClip(vrm);
         if (clip) {
