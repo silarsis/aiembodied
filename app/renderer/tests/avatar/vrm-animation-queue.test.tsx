@@ -162,7 +162,11 @@ vi.mock('../../src/avatar/animations/index.js', async () => {
 import type { VRM } from '@pixiv/three-vrm';
 import { useEffect } from 'react';
 import * as THREE from 'three';
-import { AnimationBusProvider, useAvatarAnimationBus } from '../../src/avatar/animation-bus.js';
+import {
+  AnimationBusProvider,
+  useAvatarAnimationBus,
+  type AvatarAnimationRequest,
+} from '../../src/avatar/animation-bus.js';
 import { VrmAvatarRenderer } from '../../src/avatar/vrm-avatar-renderer.js';
 import { toAnimationSlug } from '../../src/avatar/animation-tags.js';
 import type { AvatarModelSummary } from '../../src/avatar/types.js';
@@ -170,10 +174,10 @@ import type { AvatarModelSummary } from '../../src/avatar/types.js';
 function BusCapture({
   onReady,
 }: {
-  onReady: (bus: { enqueue: (request: { slug: string; intent: 'play' | 'pose' }) => void } | null) => void;
+  onReady: (bus: { enqueue: (request: AvatarAnimationRequest) => void } | null) => void;
 }) {
   const bus = useAvatarAnimationBus() as {
-    enqueue: (request: { slug: string; intent: 'play' | 'pose' }) => void;
+    enqueue: (request: AvatarAnimationRequest) => void;
   } | null;
   useEffect(() => {
     onReady(bus);
@@ -279,7 +283,7 @@ describe('VrmAvatarRenderer animation queue', () => {
   });
 
   it('queues animations sequentially', async () => {
-    let busRef: { enqueue: (request: { slug: string; intent: 'play' | 'pose' }) => void } | null = null;
+    let busRef: { enqueue: (request: AvatarAnimationRequest) => void } | null = null;
     render(
       <AnimationBusProvider>
         <BusCapture onReady={(bus) => (busRef = bus)} />
@@ -295,7 +299,7 @@ describe('VrmAvatarRenderer animation queue', () => {
     const initialActions = mixer.actions.length;
     const firstSlug = toAnimationSlug('First');
     const secondSlug = toAnimationSlug('Second');
-    const bus = busRef as unknown as { enqueue: (request: { slug: string; intent: 'play' | 'pose' }) => void } | null;
+    const bus = busRef as unknown as { enqueue: (request: AvatarAnimationRequest) => void } | null;
     bus?.enqueue({ slug: firstSlug, intent: 'play' });
     bus?.enqueue({ slug: secondSlug, intent: 'play' });
 
@@ -314,8 +318,35 @@ describe('VrmAvatarRenderer animation queue', () => {
     });
   });
 
+  it('invokes timing callbacks when starting playback', async () => {
+    let busRef: { enqueue: (request: AvatarAnimationRequest) => void } | null = null;
+    render(
+      <AnimationBusProvider>
+        <BusCapture onReady={(bus) => (busRef = bus)} />
+        <VrmAvatarRenderer frame={null} model={model} />
+      </AnimationBusProvider>,
+    );
+
+    await waitFor(() => {
+      expect(threeMockState.mixers.length).toBeGreaterThan(0);
+    });
+
+    const mixer = threeMockState.mixers[0];
+    const initialActions = mixer.actions.length;
+    const onStart = vi.fn();
+    const slug = toAnimationSlug('First');
+    const bus = busRef as unknown as { enqueue: (request: AvatarAnimationRequest) => void } | null;
+    bus?.enqueue({ slug, intent: 'play', timing: { startAt: 1234, onStart } });
+
+    await waitFor(() => {
+      expect(mixer.actions.length).toBe(initialActions + 1);
+    });
+
+    expect(onStart).toHaveBeenCalledWith(1234);
+  });
+
   it('holds pose animations on the final frame', async () => {
-    let busRef: { enqueue: (request: { slug: string; intent: 'play' | 'pose' }) => void } | null = null;
+    let busRef: { enqueue: (request: AvatarAnimationRequest) => void } | null = null;
     render(
       <AnimationBusProvider>
         <BusCapture onReady={(bus) => (busRef = bus)} />
@@ -330,7 +361,7 @@ describe('VrmAvatarRenderer animation queue', () => {
     const mixer = threeMockState.mixers[0];
     const initialActions = mixer.actions.length;
     const poseSlug = toAnimationSlug('First');
-    const bus = busRef as unknown as { enqueue: (request: { slug: string; intent: 'play' | 'pose' }) => void } | null;
+    const bus = busRef as unknown as { enqueue: (request: AvatarAnimationRequest) => void } | null;
     bus?.enqueue({ slug: poseSlug, intent: 'pose' });
 
     await waitFor(() => {
@@ -348,7 +379,7 @@ describe('VrmAvatarRenderer animation queue', () => {
   });
 
   it('looks up clips by slug name', async () => {
-    let busRef: { enqueue: (request: { slug: string; intent: 'play' | 'pose' }) => void } | null = null;
+    let busRef: { enqueue: (request: AvatarAnimationRequest) => void } | null = null;
     const avatarBridge = (window as unknown as { aiembodied?: { avatar?: { listAnimations?: ReturnType<typeof vi.fn> } } })
       .aiembodied?.avatar;
     if (avatarBridge?.listAnimations) {
@@ -378,7 +409,7 @@ describe('VrmAvatarRenderer animation queue', () => {
     const mixer = threeMockState.mixers[0];
     const initialActions = mixer.actions.length;
     const slug = toAnimationSlug('Happy Wave');
-    const bus = busRef as unknown as { enqueue: (request: { slug: string; intent: 'play' | 'pose' }) => void } | null;
+    const bus = busRef as unknown as { enqueue: (request: AvatarAnimationRequest) => void } | null;
     bus?.enqueue({ slug, intent: 'play' });
 
     await waitFor(() => {
