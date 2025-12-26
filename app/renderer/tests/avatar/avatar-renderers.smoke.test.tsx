@@ -109,7 +109,7 @@ vi.mock('three', () => {
   }
   class AmbientLight extends Object3D {}
   class DirectionalLight extends Object3D {
-    position = { set: noop };
+    position = { x: 0, y: 0, z: 0, set: noop };
   }
   class Clock {
     getDelta() {
