@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve, join, parse } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { homedir } from 'node:os';
@@ -166,7 +166,7 @@ export function readElectronVersion(repoRoot) {
 
 function hashFile(filePath) {
   if (!existsSync(filePath)) return null;
-  const stat = require('fs').statSync(filePath);
+  const stat = statSync(filePath);
   if (stat.isDirectory()) {
     return hashDirectory(filePath);
   }
@@ -174,7 +174,6 @@ function hashFile(filePath) {
 }
 
 function hashDirectory(dirPath) {
-  const { readdirSync, statSync } = require('fs');
   const hash = createHash('sha256');
   
   function hashDirRecursive(currentPath) {
@@ -184,7 +183,7 @@ function hashDirectory(dirPath) {
       if (entry === 'node_modules' || entry === 'dist' || entry.startsWith('.')) {
         continue;
       }
-      const fullPath = require('path').join(currentPath, entry);
+      const fullPath = join(currentPath, entry);
       const stat = statSync(fullPath);
       hash.update(entry);
       if (stat.isDirectory()) {
