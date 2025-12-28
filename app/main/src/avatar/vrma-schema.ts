@@ -73,6 +73,7 @@ export const VRMA_PLAN_JSON_SCHEMA = {
     globalStyle: {
       type: 'object',
       additionalProperties: false,
+      required: ['energy'],
       properties: {
         energy: { type: 'string', enum: ['low', 'medium', 'high'] },
         keyframeDensity: { type: 'string', enum: ['low', 'medium', 'high'] },
