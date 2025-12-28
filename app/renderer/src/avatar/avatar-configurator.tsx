@@ -651,7 +651,7 @@ export function AvatarConfigurator({
         }
       })();
     },
-    [avatarApi, vrmaPrompt, onAnimationChange],
+    [avatarApi, vrmaPrompt, onAnimationChange, refreshAnimations],
   );
 
   const handleApplyGeneratedFace = useCallback(async () => {
@@ -998,7 +998,6 @@ export function AvatarConfigurator({
                               handleCancelRenameAnimation();
                             }
                           }}
-                          autoFocus
                         />
                       </div>
                     ) : (

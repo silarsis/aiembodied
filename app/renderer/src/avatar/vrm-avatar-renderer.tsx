@@ -392,12 +392,15 @@ function applyRelaxedPose(vrm: VRM) {
     return;
   }
 
-  applyBoneRotation(humanoid.getNormalizedBoneNode('leftShoulder'), new THREE.Euler(-0.1, 0, 0.06));
-  applyBoneRotation(humanoid.getNormalizedBoneNode('rightShoulder'), new THREE.Euler(-0.1, 0, -0.06));
-  applyBoneRotation(humanoid.getNormalizedBoneNode('leftUpperArm'), new THREE.Euler(-0.7, 0, 0.18));
-  applyBoneRotation(humanoid.getNormalizedBoneNode('rightUpperArm'), new THREE.Euler(-0.7, 0, -0.18));
-  applyBoneRotation(humanoid.getNormalizedBoneNode('leftLowerArm'), new THREE.Euler(0.08, 0, 0.04));
-  applyBoneRotation(humanoid.getNormalizedBoneNode('rightLowerArm'), new THREE.Euler(0.08, 0, -0.04));
+  // Drop shoulders down and slightly forward
+  applyBoneRotation(humanoid.getNormalizedBoneNode('leftShoulder'), new THREE.Euler(-0.15, 0, 0.05));
+  applyBoneRotation(humanoid.getNormalizedBoneNode('rightShoulder'), new THREE.Euler(-0.15, 0, -0.05));
+  // Bring upper arms down from T-pose (horizontal) to natural hanging position with slight outward rotation
+  applyBoneRotation(humanoid.getNormalizedBoneNode('leftUpperArm'), new THREE.Euler(-1.3, 0, 0.15));
+  applyBoneRotation(humanoid.getNormalizedBoneNode('rightUpperArm'), new THREE.Euler(-1.3, 0, -0.15));
+  // Bend forearms forward naturally
+  applyBoneRotation(humanoid.getNormalizedBoneNode('leftLowerArm'), new THREE.Euler(0.35, 0, 0.03));
+  applyBoneRotation(humanoid.getNormalizedBoneNode('rightLowerArm'), new THREE.Euler(0.35, 0, -0.03));
 }
 
 function computeHumanoidMetrics(vrm: VRM) {

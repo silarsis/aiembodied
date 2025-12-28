@@ -127,13 +127,13 @@ export function buildVrmAnimation(definition: VrmaSchema): VRMAnimation {
     durations.push(collectDuration(track.keyframes));
   }
 
-  if (definition.hips?.position) {
+  if (definition.hips && definition.hips.position && definition.hips.position.keyframes && definition.hips.position.keyframes.length > 0) {
     const hipsTrack = buildVectorTrack('hips.position', definition.hips.position.keyframes);
     animation.humanoidTracks.translation.set('hips', hipsTrack);
     durations.push(collectDuration(definition.hips.position.keyframes));
   }
 
-  if (definition.expressions) {
+  if (definition.expressions && definition.expressions.length > 0) {
     for (const track of definition.expressions) {
       const expressionTrack = buildExpressionTrack(track.name, track.keyframes);
       durations.push(collectDuration(track.keyframes));
@@ -172,11 +172,11 @@ export function encodeVrmaGlb(definition: VrmaSchema): Buffer {
     ensureNode(track.bone, translation);
   }
 
-  if (definition.hips?.position) {
+  if (definition.hips && definition.hips.position && definition.hips.position.keyframes && definition.hips.position.keyframes.length > 0) {
     ensureNode('hips', [0, 1, 0]);
   }
 
-  if (definition.expressions) {
+  if (definition.expressions && definition.expressions.length > 0) {
     for (const track of definition.expressions) {
       if (expressionNodeMap.has(track.name)) continue;
       const index = nodes.length;
@@ -257,7 +257,7 @@ export function encodeVrmaGlb(definition: VrmaSchema): Buffer {
     addSamplerChannel(nodeIndex, 'rotation', times, values, 'VEC4');
   }
 
-  if (definition.hips?.position) {
+  if (definition.hips && definition.hips.position && definition.hips.position.keyframes && definition.hips.position.keyframes.length > 0) {
     const ordered = [...definition.hips.position.keyframes].sort((a, b) => a.t - b.t);
     const times = ordered.map((frame) => frame.t);
     const values = ordered.flatMap((frame) => frame.p);
@@ -265,7 +265,7 @@ export function encodeVrmaGlb(definition: VrmaSchema): Buffer {
     addSamplerChannel(nodeIndex, 'translation', times, values, 'VEC3');
   }
 
-  if (definition.expressions) {
+  if (definition.expressions && definition.expressions.length > 0) {
     for (const track of definition.expressions) {
       const ordered = [...track.keyframes].sort((a, b) => a.t - b.t);
       const times = ordered.map((frame) => frame.t);

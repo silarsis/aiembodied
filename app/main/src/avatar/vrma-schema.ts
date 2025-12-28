@@ -28,8 +28,8 @@ const vrmaTrackSchema = z.object({
 const vrmaHipsSchema = z.object({
   position: z.object({
     keyframes: z.array(vrmaPositionKeyframeSchema).min(1),
-  }),
-});
+  }).optional(),
+}).strict();
 
 const vrmaExpressionTrackSchema = z.object({
   name: z.string().min(1),
@@ -47,8 +47,8 @@ const vrmaMetaSchema = z.object({
 export const vrmaSchema = z.object({
   meta: vrmaMetaSchema,
   tracks: z.array(vrmaTrackSchema).min(1),
-  hips: vrmaHipsSchema.optional(),
-  expressions: z.array(vrmaExpressionTrackSchema).min(1).optional(),
+  hips: vrmaHipsSchema,
+  expressions: z.array(vrmaExpressionTrackSchema).min(0),
 });
 
 export type VrmaSchema = z.infer<typeof vrmaSchema>;
@@ -56,7 +56,7 @@ export type VrmaSchema = z.infer<typeof vrmaSchema>;
 export const VRMA_PLAN_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['meta', 'phases'],
+  required: ['meta', 'globalStyle', 'phases'],
   properties: {
     meta: {
       type: 'object',
@@ -87,7 +87,7 @@ export const VRMA_PLAN_JSON_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['name', 'startTime', 'endTime', 'purpose', 'bones'],
+        required: ['name', 'startTime', 'endTime', 'purpose', 'bones', 'description', 'keyframeDensity', 'easingHint', 'expressions'],
         properties: {
           name: { type: 'string' },
           startTime: { type: 'number', minimum: 0 },
@@ -102,7 +102,7 @@ export const VRMA_PLAN_JSON_SCHEMA = {
             items: {
               type: 'object',
               additionalProperties: false,
-              required: ['bone', 'role', 'motion'],
+              required: ['bone', 'role', 'motion', 'overlapWithPreviousMs', 'peakAnglesDeg'],
               properties: {
                 bone: { type: 'string' },
                 role: { type: 'string', enum: ['primary', 'secondary', 'counter', 'stabilizer'] },
@@ -111,6 +111,7 @@ export const VRMA_PLAN_JSON_SCHEMA = {
                 peakAnglesDeg: {
                   type: 'object',
                   additionalProperties: false,
+                  required: ['x', 'y', 'z'],
                   properties: {
                     x: { type: 'number' },
                     y: { type: 'number' },
@@ -125,7 +126,7 @@ export const VRMA_PLAN_JSON_SCHEMA = {
             items: {
               type: 'object',
               additionalProperties: false,
-              required: ['name', 'peakValue'],
+              required: ['name', 'peakValue', 'peakTime'],
               properties: {
                 name: { type: 'string' },
                 peakValue: { type: 'number', minimum: 0, maximum: 1 },
@@ -142,7 +143,7 @@ export const VRMA_PLAN_JSON_SCHEMA = {
 export const VRMA_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['meta', 'tracks'],
+  required: ['meta', 'tracks', 'hips', 'expressions'],
   properties: {
     meta: {
       type: 'object',
@@ -223,7 +224,7 @@ export const VRMA_JSON_SCHEMA = {
     },
     expressions: {
       type: 'array',
-      minItems: 1,
+      minItems: 0,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -239,7 +240,7 @@ export const VRMA_JSON_SCHEMA = {
               required: ['t', 'v'],
               properties: {
                 t: { type: 'number', minimum: 0 },
-                v: { type: 'number' },
+                v: { type: 'number', minimum: 0, maximum: 1 },
               },
             },
           },

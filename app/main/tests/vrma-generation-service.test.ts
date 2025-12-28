@@ -160,6 +160,7 @@ describe('VrmaGenerationService', () => {
         name: 'invalid-bones',
         fps: 30,
         loop: true,
+        duration: 1.0,
       },
       tracks: [
         {
@@ -167,6 +168,8 @@ describe('VrmaGenerationService', () => {
           keyframes: [{ t: 0, q: [0, 0, 0, 1] }],
         },
       ],
+      hips: {},
+      expressions: [],
     });
 
     const validOutput = JSON.stringify({
@@ -174,6 +177,7 @@ describe('VrmaGenerationService', () => {
         name: 'valid-bones',
         fps: 30,
         loop: true,
+        duration: 1.0,
       },
       tracks: [
         {
@@ -181,6 +185,8 @@ describe('VrmaGenerationService', () => {
           keyframes: [{ t: 0, q: [0, 0, 0, 1] }],
         },
       ],
+      hips: {},
+      expressions: [],
     });
 
     const { client, create } = createClient([planOutput, invalidOutput, validOutput]);

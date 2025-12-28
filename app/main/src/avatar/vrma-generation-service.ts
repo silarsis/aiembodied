@@ -59,8 +59,13 @@ const VRMA_COMPILER_SYSTEM_PROMPT = [
   '- Produce final VRM animation JSON that matches the provided VRMA JSON schema exactly.',
   '- Use only the valid bone names for rotation tracks.',
   '- Use local bone-space quaternions for all rotation keyframes.',
-  '- Only include "hips.position" if the plan explicitly calls for vertical body movement (jumping, crouching, big weight shifts).',
-  '- For typical gestures (nodding, shaking head, waving, shrugging, small turns), omit "hips" entirely.',
+  '- IMPORTANT: Only include hips.position keyframes if the animation has explicit vertical body movement.',
+  '- "Vertical body movement" means jumping, crouching, or major weight shifts down/up. DO NOT include hips.position for head turns, arm waves, or upper-body only gestures.',
+  '- CRITICAL: hips.position keyframes represent world-space Y displacement. The avatar rests at Y=1.0 (feet on ground).',
+  '  * When outputting hips keyframes, NEVER use Y=0 or any Y < 0.95. This drops the character below ground.',
+  '  * Use values close to 1.0: Y=1.03 for a jump, Y=0.98 for a slight crouch, Y=1.0 for standing.',
+  '  * If the plan does NOT call for vertical movement, MUST output: "hips": {} (empty object, no position field).',
+  '- Only populate "expressions" array if the plan indicates facial expressions; otherwise use an empty array: "expressions": []',
   '',
   'Animation quality guidelines:',
   '- Respect the phases and timing from the plan: anticipation, main action, overshoot, settle, etc.',
@@ -93,7 +98,11 @@ const VRMA_COMPILER_SYSTEM_PROMPT = [
   '- Copy "meta.name", "loop", and "kind" from the plan when present.',
   '- Choose "fps" from the plan\'s "recommendedFps" if available, otherwise use 30.',
   '- Set "duration" to the final keyframe time, or the plan\'s approxDuration if consistent.',
-  '- Use at least one expression track if the plan indicates expressions; otherwise "expressions" may be omitted.',
+  '- REQUIRED: Always include both "hips" and "expressions" in the output (schema requires them).',
+  '- For "hips": If there is NO vertical body movement, output "hips": {} (empty object, NO position field).',
+  '- For "hips": If there IS movement, ALL keyframes must use Y >= 0.997 (the rest position is Y=1.0).',
+  '- For "expressions": Always include as an array. Use [] if no facial expressions are needed.',
+  '- DO NOT output hips keyframes with Y=0. This causes the character to drop to the origin, creating visible bobbing.',
   '',
   'Keyframe density limits:',
   '- Use at most 3-4 keyframes per second per bone except during very fast accents.',
@@ -324,6 +333,15 @@ export class VrmaGenerationService {
     }
 
     const definition = parseVrmaSchema(parsed);
+
+    this.logger?.info?.('VRMA compiler output (JSON)', {
+      meta: definition.meta,
+      tracksCount: definition.tracks.length,
+      hasHipsPosition: !!(definition.hips && definition.hips.position && definition.hips.position.keyframes?.length),
+      hipsPositionKeyframes: definition.hips?.position?.keyframes?.length ?? 0,
+      expressionsCount: definition.expressions?.length ?? 0,
+      fullJson: JSON.stringify(definition),
+    });
 
     const detectedInvalidBones = findInvalidBones(definition, bones);
     if (detectedInvalidBones.length > 0) {

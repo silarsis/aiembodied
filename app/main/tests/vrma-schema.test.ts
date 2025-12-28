@@ -15,11 +15,12 @@ type JsonSchemaArray = {
 
 type JsonSchema = JsonSchemaObject | JsonSchemaArray | { type: string };
 
-function collectSchemaViolations(
-  schema: unknown,
-  path: string = '',
-  allowOptional: string[] = [],
-): string[] {
+/**
+ * Validates that every property in a JSON schema object is listed in its required array.
+ * This is required by OpenAI's Responses API validator.
+ * All nested object properties must be in their parent's required array if they have properties.
+ */
+function collectSchemaViolations(schema: unknown, path: string = '', isTopLevel: boolean = true): string[] {
   if (typeof schema !== 'object' || schema === null) {
     return [];
   }
@@ -32,21 +33,25 @@ function collectSchemaViolations(
     const required = Array.isArray(obj.required) ? obj.required : [];
     const propKeys = Object.keys(props);
 
-    for (const key of propKeys) {
-      const fullPath = `${path}.${key}`;
-      const isAllowedOptional = allowOptional.some((p) => fullPath.endsWith(p));
-      if (!required.includes(key) && !isAllowedOptional) {
-        violations.push(`${fullPath} is a property but not in required`);
+    // All non-top-level objects must list all their properties in required
+    if (!isTopLevel) {
+      for (const key of propKeys) {
+        const fullPath = path ? `${path} > ${key}` : key;
+        if (!required.includes(key)) {
+          violations.push(`MISSING from required: ${fullPath}`);
+        }
       }
     }
 
+    // Recursively validate nested schemas (all descendants are non-top-level)
     for (const key of propKeys) {
-      violations.push(...collectSchemaViolations(props[key], `${path}.${key}`, allowOptional));
+      const fullPath = path ? `${path} > ${key}` : key;
+      violations.push(...collectSchemaViolations(props[key], fullPath, false));
     }
   }
 
   if (obj.type === 'array' && obj.items) {
-    violations.push(...collectSchemaViolations(obj.items, `${path}[]`, allowOptional));
+    violations.push(...collectSchemaViolations(obj.items, path, false));
   }
 
   return violations;
@@ -109,26 +114,10 @@ describe('vrma schema', () => {
   });
 
   it('includes all properties in required arrays for OpenAI Responses API compatibility', () => {
-    const vrmaViolations = collectSchemaViolations(VRMA_JSON_SCHEMA, 'VRMA_JSON_SCHEMA', ['.hips', '.expressions']);
+    const vrmaViolations = collectSchemaViolations(VRMA_JSON_SCHEMA);
     expect(vrmaViolations).toEqual([]);
 
-    const planAllowedOptional = [
-      '.globalStyle',
-      '.energy',
-      '.keyframeDensity',
-      '.hipsMovement',
-      '.usesExpressions',
-      '.description',
-      '.expressions',
-      '.peakTime',
-      '.overlapWithPreviousMs',
-      '.peakAnglesDeg',
-      '.easingHint',
-      '.x',
-      '.y',
-      '.z',
-    ];
-    const planViolations = collectSchemaViolations(VRMA_PLAN_JSON_SCHEMA, 'VRMA_PLAN_JSON_SCHEMA', planAllowedOptional);
+    const planViolations = collectSchemaViolations(VRMA_PLAN_JSON_SCHEMA);
     expect(planViolations).toEqual([]);
   });
 });
