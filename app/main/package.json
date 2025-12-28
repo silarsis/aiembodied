@@ -35,6 +35,7 @@
     "zod": "^4.2.1"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.2",
     "@types/auto-launch": "^5.0.5",
     "@types/better-sqlite3": "^7.6.13",
     "@types/debug": "^4.1.12",
