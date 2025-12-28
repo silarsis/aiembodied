@@ -250,29 +250,6 @@ export function AvatarConfigurator({
   }, [avatarApi, onActiveModelChange]);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      await refreshFaces();
-      await refreshModels();
-      await refreshAnimations();
-      if (cancelled) {
-        return;
-      }
-
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-      if (modelFileInputRef.current) {
-        modelFileInputRef.current.value = '';
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshFaces, refreshModels, refreshAnimations]);
-
-  useEffect(() => {
     generateMissingThumbnails();
   }, [generateMissingThumbnails]);
 
@@ -542,6 +519,29 @@ export function AvatarConfigurator({
       setAnimationsLoading(false);
     }
   }, [avatarApi]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await refreshFaces();
+      await refreshModels();
+      await refreshAnimations();
+      if (cancelled) {
+        return;
+      }
+
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      if (modelFileInputRef.current) {
+        modelFileInputRef.current.value = '';
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshFaces, refreshModels, refreshAnimations]);
 
   const handleDeleteAnimation = useCallback(
     async (animationId: string) => {

@@ -752,6 +752,23 @@ export class MemoryStore {
     stmt.run(animationId);
   }
 
+  updateVrmAnimation(animationId: string, record: VrmAnimationRecord): void {
+    this.ensureOpen();
+
+    const stmt = this.db.prepare<VrmAnimationRecord>(
+      `UPDATE vrma_animations SET name = @name, created_at = @createdAt, file_path = @filePath, file_sha = @fileSha, duration = @duration, fps = @fps WHERE id = @id;`,
+    );
+    stmt.run({
+      id: animationId,
+      name: record.name,
+      createdAt: record.createdAt,
+      filePath: record.filePath,
+      fileSha: record.fileSha,
+      duration: record.duration ?? null,
+      fps: record.fps ?? null,
+    });
+  }
+
   getActiveFaceId(): string | null {
     return this.getValue(ACTIVE_FACE_KEY);
   }
