@@ -217,7 +217,7 @@ function findPnpmModulePath(repoRoot, packageName) {
 
 export async function rebuildNativeDependenciesForElectron(
   repoRoot,
-  { runImpl = run, baseEnv = process.env, platform = process.platform, pnpmStorePath } = {},
+  { runImpl = run, baseEnv = process.env, platform = process.platform, arch = process.arch, pnpmStorePath } = {},
 ) {
   const electronVersion = readElectronVersion(repoRoot);
 
@@ -239,7 +239,7 @@ export async function rebuildNativeDependenciesForElectron(
       continue;
     }
 
-    console.log(`[info] Rebuilding ${moduleName} at ${modulePath} for Electron ${electronVersion}...`);
+    console.log(`[info] Rebuilding ${moduleName} at ${modulePath} for Electron ${electronVersion} (${arch})...`);
 
     try {
       // Use node-gyp directly with Electron headers - this bypasses the buggy
@@ -251,7 +251,7 @@ export async function rebuildNativeDependenciesForElectron(
           'node-gyp',
           'rebuild',
           `--target=${electronVersion}`,
-          '--arch=x64',
+          `--arch=${arch}`,
           '--dist-url=https://electronjs.org/headers',
           '--runtime=electron',
         ],
