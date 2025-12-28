@@ -166,7 +166,37 @@ export function readElectronVersion(repoRoot) {
 
 function hashFile(filePath) {
   if (!existsSync(filePath)) return null;
+  const stat = require('fs').statSync(filePath);
+  if (stat.isDirectory()) {
+    return hashDirectory(filePath);
+  }
   return createHash('sha256').update(readFileSync(filePath)).digest('hex');
+}
+
+function hashDirectory(dirPath) {
+  const { readdirSync, statSync } = require('fs');
+  const hash = createHash('sha256');
+  
+  function hashDirRecursive(currentPath) {
+    const entries = readdirSync(currentPath).sort();
+    for (const entry of entries) {
+      // Skip node_modules and build artifacts
+      if (entry === 'node_modules' || entry === 'dist' || entry.startsWith('.')) {
+        continue;
+      }
+      const fullPath = require('path').join(currentPath, entry);
+      const stat = statSync(fullPath);
+      hash.update(entry);
+      if (stat.isDirectory()) {
+        hashDirRecursive(fullPath);
+      } else {
+        hash.update(readFileSync(fullPath));
+      }
+    }
+  }
+  
+  hashDirRecursive(dirPath);
+  return hash.digest('hex');
 }
 
 function readStamp(stampPath) {
@@ -306,9 +336,11 @@ async function main() {
   // Prepare an isolated environment for all pnpm operations
   const envIsolated = prepareDevHomeEnv(repoRoot, process.env, process.platform, { pnpmStorePath });
 
-  // Check if dependencies have changed using a stamp file
+  // Check if dependencies or source have changed using a stamp file
   const stampPath = resolve(devHome, 'dev-deps-stamp.json');
   const lockHash = hashFile(resolve(repoRoot, 'pnpm-lock.yaml'));
+  const mainSourceHash = hashFile(resolve(repoRoot, 'app/main/src'));
+  const rendererSourceHash = hashFile(resolve(repoRoot, 'app/renderer/src'));
   const forceRebuild = process.argv.includes('--force-deps');
 
   // Read Electron version if available (may not exist on first run)
@@ -321,6 +353,8 @@ async function main() {
 
   const newStamp = {
     lockHash,
+    mainSourceHash,
+    rendererSourceHash,
     electronVersion,
     platform: process.platform,
     arch: process.arch,
