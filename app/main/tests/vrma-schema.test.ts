@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseVrmaSchema, VRMA_JSON_SCHEMA } from '../src/avatar/vrma-schema.js';
+import { parseVrmaSchema, VRMA_JSON_SCHEMA, VRMA_PLAN_JSON_SCHEMA } from '../src/avatar/vrma-schema.js';
 
 type JsonSchemaObject = {
   type: 'object';
@@ -15,7 +15,11 @@ type JsonSchemaArray = {
 
 type JsonSchema = JsonSchemaObject | JsonSchemaArray | { type: string };
 
-function collectSchemaViolations(schema: unknown, path: string = ''): string[] {
+function collectSchemaViolations(
+  schema: unknown,
+  path: string = '',
+  allowOptional: string[] = [],
+): string[] {
   if (typeof schema !== 'object' || schema === null) {
     return [];
   }
@@ -29,18 +33,20 @@ function collectSchemaViolations(schema: unknown, path: string = ''): string[] {
     const propKeys = Object.keys(props);
 
     for (const key of propKeys) {
-      if (!required.includes(key)) {
-        violations.push(`${path}.${key} is a property but not in required`);
+      const fullPath = `${path}.${key}`;
+      const isAllowedOptional = allowOptional.some((p) => fullPath.endsWith(p));
+      if (!required.includes(key) && !isAllowedOptional) {
+        violations.push(`${fullPath} is a property but not in required`);
       }
     }
 
     for (const key of propKeys) {
-      violations.push(...collectSchemaViolations(props[key], `${path}.${key}`));
+      violations.push(...collectSchemaViolations(props[key], `${path}.${key}`, allowOptional));
     }
   }
 
   if (obj.type === 'array' && obj.items) {
-    violations.push(...collectSchemaViolations(obj.items, `${path}[]`));
+    violations.push(...collectSchemaViolations(obj.items, `${path}[]`, allowOptional));
   }
 
   return violations;
@@ -103,7 +109,26 @@ describe('vrma schema', () => {
   });
 
   it('includes all properties in required arrays for OpenAI Responses API compatibility', () => {
-    const violations = collectSchemaViolations(VRMA_JSON_SCHEMA, 'VRMA_JSON_SCHEMA');
-    expect(violations).toEqual([]);
+    const vrmaViolations = collectSchemaViolations(VRMA_JSON_SCHEMA, 'VRMA_JSON_SCHEMA', ['.hips', '.expressions']);
+    expect(vrmaViolations).toEqual([]);
+
+    const planAllowedOptional = [
+      '.globalStyle',
+      '.energy',
+      '.keyframeDensity',
+      '.hipsMovement',
+      '.usesExpressions',
+      '.description',
+      '.expressions',
+      '.peakTime',
+      '.overlapWithPreviousMs',
+      '.peakAnglesDeg',
+      '.easingHint',
+      '.x',
+      '.y',
+      '.z',
+    ];
+    const planViolations = collectSchemaViolations(VRMA_PLAN_JSON_SCHEMA, 'VRMA_PLAN_JSON_SCHEMA', planAllowedOptional);
+    expect(planViolations).toEqual([]);
   });
 });

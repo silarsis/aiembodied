@@ -63,6 +63,7 @@ export interface AvatarModelSummary {
   version: string;
   fileSha: string;
   thumbnailDataUrl: string | null;
+  description: string | null;
 }
 
 export interface AvatarModelUploadRequest {
@@ -113,6 +114,8 @@ export interface AvatarBridge {
   deleteModel(modelId: string): Promise<void>;
   loadModelBinary(modelId: string): Promise<ArrayBuffer>;
   updateModelThumbnail(modelId: string, thumbnailDataUrl: string): Promise<AvatarModelSummary | null>;
+  updateModelDescription(modelId: string, description: string): Promise<AvatarModelSummary | null>;
+  generateModelDescription(thumbnailDataUrl: string): Promise<string>;
   listAnimations(): Promise<AvatarAnimationSummary[]>;
   uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult>;
   generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;

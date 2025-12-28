@@ -53,10 +53,95 @@ export const vrmaSchema = z.object({
 
 export type VrmaSchema = z.infer<typeof vrmaSchema>;
 
+export const VRMA_PLAN_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['meta', 'phases'],
+  properties: {
+    meta: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['name', 'loop', 'approxDuration', 'recommendedFps', 'kind'],
+      properties: {
+        name: { type: 'string', pattern: VRMA_SLUG_PATTERN.source },
+        loop: { type: 'boolean' },
+        approxDuration: { type: 'number', minimum: 0.3 },
+        recommendedFps: { type: 'number', minimum: 15 },
+        kind: { type: 'string' },
+      },
+    },
+    globalStyle: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        energy: { type: 'string', enum: ['low', 'medium', 'high'] },
+        keyframeDensity: { type: 'string', enum: ['low', 'medium', 'high'] },
+        hipsMovement: { type: 'string', enum: ['none', 'subtle', 'strong'] },
+        usesExpressions: { type: 'boolean' },
+      },
+    },
+    phases: {
+      type: 'array',
+      minItems: 1,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'startTime', 'endTime', 'purpose', 'bones'],
+        properties: {
+          name: { type: 'string' },
+          startTime: { type: 'number', minimum: 0 },
+          endTime: { type: 'number', minimum: 0 },
+          purpose: { type: 'string' },
+          description: { type: 'string' },
+          keyframeDensity: { type: 'string', enum: ['low', 'medium', 'high'] },
+          easingHint: { type: 'string', enum: ['linear', 'easeIn', 'easeOut', 'easeInOut', 'elastic'] },
+          bones: {
+            type: 'array',
+            minItems: 1,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['bone', 'role', 'motion'],
+              properties: {
+                bone: { type: 'string' },
+                role: { type: 'string', enum: ['primary', 'secondary', 'counter', 'stabilizer'] },
+                motion: { type: 'string' },
+                overlapWithPreviousMs: { type: 'number', minimum: 0 },
+                peakAnglesDeg: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    x: { type: 'number' },
+                    y: { type: 'number' },
+                    z: { type: 'number' },
+                  },
+                },
+              },
+            },
+          },
+          expressions: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['name', 'peakValue'],
+              properties: {
+                name: { type: 'string' },
+                peakValue: { type: 'number', minimum: 0, maximum: 1 },
+                peakTime: { type: 'number', minimum: 0 },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
 export const VRMA_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['meta', 'tracks', 'hips', 'expressions'],
+  required: ['meta', 'tracks'],
   properties: {
     meta: {
       type: 'object',

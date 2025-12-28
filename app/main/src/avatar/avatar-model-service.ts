@@ -487,6 +487,7 @@ export class AvatarModelService {
       fileSha,
       version,
       thumbnail: thumbnail ? thumbnail.buffer : null,
+      description: null,
     };
 
     try {
@@ -551,6 +552,7 @@ export class AvatarModelService {
       version: record.version,
       fileSha: record.fileSha,
       thumbnailDataUrl: toDataUrl(record.thumbnail),
+      description: record.description,
     };
   }
 
@@ -572,6 +574,20 @@ export class AvatarModelService {
 
     this.store.updateVrmModelThumbnail(modelId, buffer);
     this.logger?.info?.('VRM model thumbnail updated.', { modelId });
+
+    const updated = this.store.getVrmModel(modelId);
+    return updated ? this.toSummary(updated) : null;
+  }
+
+  updateDescription(modelId: string, description: string): AvatarModelSummary | null {
+    const record = this.store.getVrmModel(modelId);
+    if (!record) {
+      this.logger?.warn?.('Attempted to update description for missing VRM model.', { modelId });
+      return null;
+    }
+
+    this.store.updateVrmModelDescription(modelId, description);
+    this.logger?.info?.('VRM model description updated.', { modelId, descriptionLength: description.length });
 
     const updated = this.store.getVrmModel(modelId);
     return updated ? this.toSummary(updated) : null;

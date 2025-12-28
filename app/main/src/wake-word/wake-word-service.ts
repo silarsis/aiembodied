@@ -18,6 +18,9 @@ export interface WakeWordServiceOptions {
   workerFactory?: WorkerFactory;
   workerPath?: URL;
   workerOptions?: WorkerOptions;
+  autoRestart?: boolean;
+  restartDelayMs?: number;
+  maxRestartDelayMs?: number;
 }
 
 export type WorkerFactory = (filename: URL, options: WorkerOptions) => WorkerLike;
@@ -67,19 +70,32 @@ class WakeWordEventFilter {
   }
 }
 
+const DEFAULT_RESTART_DELAY_MS = 1000;
+const DEFAULT_MAX_RESTART_DELAY_MS = 30000;
+
 export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
   private readonly logger: Logger;
   private readonly workerFactory: WorkerFactory;
   private readonly workerPath: URL;
   private readonly baseWorkerOptions: WorkerOptions;
   private readonly filter: WakeWordEventFilter;
+  private readonly autoRestart: boolean;
+  private readonly baseRestartDelayMs: number;
+  private readonly maxRestartDelayMs: number;
   private worker: WorkerLike | null = null;
   private started = false;
+  private lastConfig: WakeWordStartOptions | null = null;
+  private restartAttempts = 0;
+  private restartTimer: ReturnType<typeof setTimeout> | null = null;
+  private disposed = false;
 
   constructor(options: WakeWordServiceOptions) {
     super();
     this.logger = options.logger;
     this.workerFactory = options.workerFactory ?? defaultWorkerFactory;
+    this.autoRestart = options.autoRestart ?? true;
+    this.baseRestartDelayMs = options.restartDelayMs ?? DEFAULT_RESTART_DELAY_MS;
+    this.maxRestartDelayMs = options.maxRestartDelayMs ?? DEFAULT_MAX_RESTART_DELAY_MS;
     if (options.workerPath) {
       this.workerPath = options.workerPath;
       this.baseWorkerOptions = { ...(options.workerOptions ?? {}) } as WorkerOptions;
@@ -103,6 +119,11 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
       return;
     }
 
+    this.lastConfig = config;
+    this.spawnWorker(config);
+  }
+
+  private spawnWorker(config: WakeWordStartOptions): void {
     const worker = this.workerFactory(this.workerPath, {
       ...this.baseWorkerOptions,
       workerData: config,
@@ -125,10 +146,14 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
           stack: error.stack,
         });
         this.emit('error', error);
+        if (message.fatal) {
+          this.scheduleRestart();
+        }
         return;
       }
 
       if (message.type === 'ready') {
+        this.restartAttempts = 0;
         this.logger.info('Wake word worker ready', {
           frameLength: message.info.frameLength,
           sampleRate: message.info.sampleRate,
@@ -144,6 +169,7 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
         stack: error.stack,
       });
       this.emit('error', error);
+      this.scheduleRestart();
     };
 
     const handleExit = (code: number) => {
@@ -160,7 +186,44 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
     this.worker = worker;
   }
 
+  private scheduleRestart(): void {
+    if (!this.autoRestart || this.disposed || !this.lastConfig) {
+      return;
+    }
+
+    if (this.restartTimer) {
+      return;
+    }
+
+    const delay = Math.min(
+      this.baseRestartDelayMs * Math.pow(2, this.restartAttempts),
+      this.maxRestartDelayMs
+    );
+    this.restartAttempts++;
+
+    this.logger.info('Scheduling wake word worker restart', {
+      delayMs: delay,
+      attempt: this.restartAttempts,
+    });
+
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = null;
+      if (this.disposed || !this.lastConfig) {
+        return;
+      }
+      this.logger.info('Restarting wake word worker after audio device error');
+      this.spawnWorker(this.lastConfig);
+    }, delay);
+  }
+
   async dispose(): Promise<void> {
+    this.disposed = true;
+
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
+
     if (!this.worker) {
       return;
     }

@@ -66,6 +66,7 @@ export interface AvatarModelSummary {
   version: string;
   fileSha: string;
   thumbnailDataUrl: string | null;
+  description: string | null;
 }
 
 export interface AvatarModelUploadRequest {
@@ -100,4 +101,5 @@ export interface AvatarAnimationUploadResult {
 export interface AvatarAnimationGenerationRequest {
   prompt: string;
   bones?: string[];
+  modelDescription?: string;
 }

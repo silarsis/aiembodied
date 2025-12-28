@@ -1,6 +1,6 @@
 import type OpenAI from 'openai';
 import type { ResponseInput } from 'openai/resources/responses/responses';
-import { VRMA_JSON_SCHEMA, parseVrmaSchema, VRMA_SLUG_PATTERN } from './vrma-schema.js';
+import { VRMA_JSON_SCHEMA, VRMA_PLAN_JSON_SCHEMA, parseVrmaSchema, VRMA_SLUG_PATTERN } from './vrma-schema.js';
 import { buildVrmAnimation, encodeVrmaGlb } from './vrma-converter.js';
 import type {
   AvatarAnimationUploadResult,
@@ -19,15 +19,91 @@ export interface VrmaGenerationServiceOptions {
   };
 }
 
-const VRMA_SYSTEM_PROMPT = [
-  'You are generating VRM animation data for a kiosk avatar.',
-  'Return only JSON that matches the provided schema.',
-  'Use local bone-space quaternions for rotation tracks.',
-  'Keep loops smooth and avoid sudden snaps.',
-  'Only include hips.position if the animation requires vertical movement (jumping, crouching).',
-  'When included, hips.position.p values are world-space with Y=1 as standing rest height.',
-  'For most gestures (waving, nodding, shrugging), omit hips entirely and use bone rotations only.',
-].join(' ');
+const VRMA_PLANNER_SYSTEM_PROMPT = [
+  'You are a senior character animator planning high-quality VRM humanoid animations for a kiosk avatar.',
+  '',
+  'Your task in THIS STEP is ONLY to design an animation plan, NOT to output final VRM keyframes.',
+  'You will output a JSON animation plan that describes:',
+  '- Phases of motion over time (anticipation, main action, overshoot, settle, idle, etc.).',
+  '- Which bones are involved, their roles (primary/secondary/counter/stabilizer), and how they move.',
+  '- Timing, approximate peak angles, arcs, and easing hints.',
+  '- Where to use secondary motion: follow-through, overlap, small delays between bones.',
+  '- Facial expressions and eye/head motion where relevant.',
+  '',
+  'Do NOT output quaternions or numeric keyframe arrays in this step.',
+  'Instead, give clear, concise descriptions that a separate compiler can convert into bone-space quaternions.',
+  '',
+  'Constraints and style:',
+  '- Use only the provided valid VRM human bones.',
+  '- Keep animations anatomically reasonable for a standing humanoid; avoid impossible joint angles.',
+  '- Favor upper-body gestures (head, neck, spine, shoulders, arms, hands) for kiosk scenarios.',
+  '- Use classic animation principles: anticipation, clear key poses, arcs, follow-through, overlapping action, ease-in/ease-out, and settling into a relaxed neutral.',
+  '- For looping animations, make sure the last phase returns smoothly to a neutral pose that matches the loop start.',
+  '',
+  'Keyframe density guidance (for the compiler):',
+  '- Slow or idle motions: low to medium density.',
+  '- Gestures and head moves: medium density.',
+  '- Quick accents, overshoots, or eye blinks: high density over short intervals.',
+  '',
+  'Output ONLY valid JSON that matches the provided planning schema.',
+].join('\n');
+
+const VRMA_COMPILER_SYSTEM_PROMPT = [
+  'You are a VRM animation compiler that converts an animation PLAN into precise VRM humanoid animation data.',
+  '',
+  'You are given:',
+  '- A JSON animation plan describing phases, timing, bones, and easing hints.',
+  '- A list of valid VRM human bones.',
+  '',
+  'Your task:',
+  '- Produce final VRM animation JSON that matches the provided VRMA JSON schema exactly.',
+  '- Use only the valid bone names for rotation tracks.',
+  '- Use local bone-space quaternions for all rotation keyframes.',
+  '- Only include "hips.position" if the plan explicitly calls for vertical body movement (jumping, crouching, big weight shifts).',
+  '- For typical gestures (nodding, shaking head, waving, shrugging, small turns), omit "hips" entirely.',
+  '',
+  'Animation quality guidelines:',
+  '- Respect the phases and timing from the plan: anticipation, main action, overshoot, settle, etc.',
+  '- Use the plan\'s "approxDuration" and "recommendedFps" to determine the time range and spacing of keyframes.',
+  '- Place keyframes at:',
+  '  * The start and end of each phase.',
+  '  * Important extremes of motion (highest wave, deepest nod, furthest turn).',
+  '  * Anticipation and overshoot poses.',
+  '  * Settling poses as the avatar returns to neutral.',
+  '- Use keyframe spacing to approximate easing:',
+  '  * easeIn: tighter spacing near the start.',
+  '  * easeOut: tighter spacing near the end.',
+  '  * easeInOut: more spacing in the middle, tighter at both ends.',
+  '- Keep rotations anatomically plausible; avoid extreme angles that would look broken.',
+  '',
+  'Secondary motion and realism:',
+  '- Let primary bones lead and secondary bones follow with a slight delay (a few frames):',
+  '  * e.g. shoulder leads, upperArm follows, forearm and hand lag slightly.',
+  '  * head and neck settle a bit after the torso finishes turning.',
+  '- Add small, subtle motion to avoid stiffness:',
+  '  * gentle breathing in spine/shoulders during holds.',
+  '  * tiny head and eye adjustments during longer phases.',
+  '- For facial expressions, smoothly blend weights in and out (no instant snaps) unless the plan calls for a sharp reaction.',
+  '',
+  'Looping:',
+  '- If meta.loop is true, ensure the pose and expression at the final time closely match the start so the animation loops seamlessly.',
+  '- Avoid abrupt changes at the loop seam; let motions slow slightly into the loop.',
+  '',
+  'Meta and schema rules:',
+  '- Copy "meta.name", "loop", and "kind" from the plan when present.',
+  '- Choose "fps" from the plan\'s "recommendedFps" if available, otherwise use 30.',
+  '- Set "duration" to the final keyframe time, or the plan\'s approxDuration if consistent.',
+  '- Use at least one expression track if the plan indicates expressions; otherwise "expressions" may be omitted.',
+  '',
+  'Keyframe density limits:',
+  '- Use at most 3-4 keyframes per second per bone except during very fast accents.',
+  '- For a 2-second animation, most bones should have 4-8 keyframes total.',
+  '',
+  'Very important:',
+  '- Do NOT invent movements that contradict the plan. You may add small natural overlaps or settles consistent with it.',
+  '- Do NOT include bones that are not in the valid VRM list.',
+  '- Return ONLY JSON that matches the VRMA JSON schema. No comments or explanations.',
+].join('\n');
 
 function normalizeBones(bones?: string[]): string[] {
   if (!Array.isArray(bones)) {
@@ -57,17 +133,29 @@ function findInvalidBones(definition: { tracks: Array<{ bone: string }> }, valid
   return Array.from(invalid).sort();
 }
 
-function buildInput(prompt: string, bones: string[], invalidBones?: string[]): ResponseInput {
+function buildPlannerInput(prompt: string, bones: string[], modelDescription?: string): ResponseInput {
   const messages: ResponseInput = [
     {
       type: 'message',
       role: 'system',
-      content: [{ type: 'input_text', text: VRMA_SYSTEM_PROMPT }],
+      content: [{ type: 'input_text', text: VRMA_PLANNER_SYSTEM_PROMPT }],
     },
   ];
 
+  if (modelDescription) {
+    const descText = [
+      'Character description (adapt animations to match this character):',
+      modelDescription,
+    ].join('\n');
+    messages.push({
+      type: 'message',
+      role: 'system',
+      content: [{ type: 'input_text', text: descText }],
+    });
+  }
+
   if (bones.length > 0) {
-    const boneText = `Valid VRM human bones: ${bones.join(', ')}. Use only these bone names.`;
+    const boneText = `Valid VRM human bones: ${bones.join(', ')}. Use only these bone names in the 'bones.bone' fields.`;
     messages.push({
       type: 'message',
       role: 'system',
@@ -75,19 +163,54 @@ function buildInput(prompt: string, bones: string[], invalidBones?: string[]): R
     });
   }
 
-  if (invalidBones && invalidBones.length > 0) {
-    const invalidText = `Invalid bones detected: ${invalidBones.join(', ')}. Regenerate using only valid bones.`;
+  messages.push({
+    type: 'message',
+    role: 'user',
+    content: [{ type: 'input_text', text: prompt }],
+  });
+
+  return messages;
+}
+
+function buildCompilerInput(planJson: unknown, bones: string[], invalidBones?: string[]): ResponseInput {
+  const messages: ResponseInput = [
+    {
+      type: 'message',
+      role: 'system',
+      content: [{ type: 'input_text', text: VRMA_COMPILER_SYSTEM_PROMPT }],
+    },
+  ];
+
+  if (bones.length > 0) {
     messages.push({
       type: 'message',
       role: 'system',
-      content: [{ type: 'input_text', text: invalidText }],
+      content: [{ type: 'input_text', text: `Valid VRM human bones: ${bones.join(', ')}. Use only these bone names.` }],
+    });
+  }
+
+  if (invalidBones && invalidBones.length > 0) {
+    messages.push({
+      type: 'message',
+      role: 'system',
+      content: [
+        {
+          type: 'input_text',
+          text: `Invalid bones detected in the previous output: ${invalidBones.join(', ')}. Regenerate using only the valid bone names.`,
+        },
+      ],
     });
   }
 
   messages.push({
     type: 'message',
     role: 'user',
-    content: [{ type: 'input_text', text: prompt }],
+    content: [
+      {
+        type: 'input_text',
+        text: `Here is the animation plan JSON. Convert it into final VRM animation JSON:\n\n${JSON.stringify(planJson, null, 2)}`,
+      },
+    ],
   });
 
   return messages;
@@ -111,51 +234,13 @@ export class VrmaGenerationService {
     }
 
     const bones = normalizeBones(request?.bones);
+    const modelDescription = typeof request?.modelDescription === 'string' ? request.modelDescription.trim() : undefined;
 
-    const text = {
-      format: {
-        type: 'json_schema',
-        name: 'vrma_animation',
-        schema: VRMA_JSON_SCHEMA,
-      },
-    };
+    const plan = await this.runPlannerStep(prompt, bones, modelDescription);
+    const planMeta = plan as { meta?: { name?: string } };
+    this.logger?.info?.('VRMA animation plan generated.', { planName: planMeta?.meta?.name, hasModelDescription: !!modelDescription });
 
-    const runGeneration = async (input: ResponseInput) => {
-      const response = await (this.client as unknown as {
-        responses: { create: (args: unknown) => Promise<{ output_text: string }> };
-      }).responses.create({
-        model: 'gpt-4.1-mini',
-        input,
-        text,
-      });
-
-      const outputText = response?.output_text ?? '';
-      if (!outputText) {
-        throw new Error('VRMA generation returned an empty response.');
-      }
-
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(outputText);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`VRMA generation returned invalid JSON: ${message}`);
-      }
-
-      return parseVrmaSchema(parsed);
-    };
-
-    let definition = await runGeneration(buildInput(prompt, bones));
-    const invalidBones = findInvalidBones(definition, bones);
-    if (invalidBones.length > 0) {
-      definition = await runGeneration(buildInput(prompt, bones, invalidBones));
-      const retryInvalid = findInvalidBones(definition, bones);
-      if (retryInvalid.length > 0) {
-        throw new Error(
-          `VRMA generation used unsupported bones: ${retryInvalid.join(', ')}. Valid bones: ${bones.join(', ')}.`,
-        );
-      }
-    }
+    const definition = await this.runCompilerStep(plan, bones);
 
     if (!VRMA_SLUG_PATTERN.test(definition.meta.name)) {
       throw new Error('VRMA metadata name must be a slug.');
@@ -188,5 +273,85 @@ export class VrmaGenerationService {
     });
 
     return result;
+  }
+
+  private async runPlannerStep(prompt: string, bones: string[], modelDescription?: string): Promise<unknown> {
+    const input = buildPlannerInput(prompt, bones, modelDescription);
+
+    const response = await this.callModel(input, {
+      type: 'json_schema',
+      name: 'vrma_animation_plan',
+      schema: VRMA_PLAN_JSON_SCHEMA,
+    });
+
+    const outputText = response?.output_text ?? '';
+    if (!outputText) {
+      throw new Error('VRMA planner returned an empty response.');
+    }
+
+    try {
+      return JSON.parse(outputText);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`VRMA planner returned invalid JSON: ${message}`);
+    }
+  }
+
+  private async runCompilerStep(
+    plan: unknown,
+    bones: string[],
+    invalidBones?: string[],
+  ): Promise<ReturnType<typeof parseVrmaSchema>> {
+    const input = buildCompilerInput(plan, bones, invalidBones);
+
+    const response = await this.callModel(input, {
+      type: 'json_schema',
+      name: 'vrma_animation',
+      schema: VRMA_JSON_SCHEMA,
+    });
+
+    const outputText = response?.output_text ?? '';
+    if (!outputText) {
+      throw new Error('VRMA compiler returned an empty response.');
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(outputText);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`VRMA compiler returned invalid JSON: ${message}`);
+    }
+
+    const definition = parseVrmaSchema(parsed);
+
+    const detectedInvalidBones = findInvalidBones(definition, bones);
+    if (detectedInvalidBones.length > 0) {
+      if (invalidBones && invalidBones.length > 0) {
+        throw new Error(
+          `VRMA generation used unsupported bones: ${detectedInvalidBones.join(', ')}. Valid bones: ${bones.join(', ')}.`,
+        );
+      }
+      return this.runCompilerStep(plan, bones, detectedInvalidBones);
+    }
+
+    return definition;
+  }
+
+  private async callModel(
+    input: ResponseInput,
+    format: { type: 'json_schema'; name: string; schema: unknown },
+  ): Promise<{ output_text: string }> {
+    const response = await (
+      this.client as unknown as {
+        responses: { create: (args: unknown) => Promise<{ output_text: string }> };
+      }
+    ).responses.create({
+      model: 'gpt-4.1-mini',
+      input,
+      text: { format },
+    });
+
+    return response;
   }
 }

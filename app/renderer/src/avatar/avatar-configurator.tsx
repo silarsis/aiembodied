@@ -394,6 +394,20 @@ export function AvatarConfigurator({
               const updated = await avatarApi.updateModelThumbnail(uploadedModel.id, thumbnailResult.dataUrl);
               if (updated) {
                 uploadedModel = updated;
+
+                if (!uploadedModel.description && avatarApi.generateModelDescription) {
+                  try {
+                    const description = await avatarApi.generateModelDescription(thumbnailResult.dataUrl);
+                    if (description && avatarApi.updateModelDescription) {
+                      const withDescription = await avatarApi.updateModelDescription(uploadedModel.id, description);
+                      if (withDescription) {
+                        uploadedModel = withDescription;
+                      }
+                    }
+                  } catch (descErr) {
+                    console.warn('[avatar-configurator] Failed to generate model description:', descErr);
+                  }
+                }
               }
             } catch (thumbErr) {
               console.warn('[avatar-configurator] Failed to generate fallback thumbnail:', thumbErr);

@@ -55,7 +55,32 @@ describe('VrmaGenerationService', () => {
       animationsDirectory: path.join(directory, 'vrma-animations'),
     });
 
-    const outputText = JSON.stringify({
+    const planOutput = JSON.stringify({
+      meta: {
+        name: 'friendly-wave',
+        loop: true,
+        approxDuration: 1.2,
+        recommendedFps: 30,
+        kind: 'gesture',
+      },
+      globalStyle: {
+        energy: 'medium',
+        keyframeDensity: 'medium',
+        hipsMovement: 'none',
+        usesExpressions: true,
+      },
+      phases: [
+        {
+          name: 'wave',
+          startTime: 0,
+          endTime: 1.2,
+          purpose: 'friendly wave gesture',
+          bones: [{ bone: 'hips', role: 'primary', motion: 'slight sway' }],
+        },
+      ],
+    });
+
+    const compilerOutput = JSON.stringify({
       meta: {
         name: 'friendly-wave',
         fps: 30,
@@ -91,11 +116,11 @@ describe('VrmaGenerationService', () => {
       ],
     });
 
-    const { client, create } = createClient(outputText);
+    const { client, create } = createClient([planOutput, compilerOutput]);
     const service = new VrmaGenerationService({ client, animationService });
 
     const result = await service.generateAnimation({ prompt: 'Wave hello' });
-    expect(create).toHaveBeenCalled();
+    expect(create).toHaveBeenCalledTimes(2);
     expect(result.animation.name).toBe('friendly-wave');
 
     const stored = animationService.listAnimations();
@@ -109,6 +134,25 @@ describe('VrmaGenerationService', () => {
     const animationService = new AvatarAnimationService({
       store,
       animationsDirectory: path.join(directory, 'vrma-animations'),
+    });
+
+    const planOutput = JSON.stringify({
+      meta: {
+        name: 'valid-bones',
+        loop: true,
+        approxDuration: 1.0,
+        recommendedFps: 30,
+        kind: 'gesture',
+      },
+      phases: [
+        {
+          name: 'wave',
+          startTime: 0,
+          endTime: 1.0,
+          purpose: 'wave gesture',
+          bones: [{ bone: 'hips', role: 'primary', motion: 'sway' }],
+        },
+      ],
     });
 
     const invalidOutput = JSON.stringify({
@@ -139,14 +183,14 @@ describe('VrmaGenerationService', () => {
       ],
     });
 
-    const { client, create } = createClient([invalidOutput, validOutput]);
+    const { client, create } = createClient([planOutput, invalidOutput, validOutput]);
     const service = new VrmaGenerationService({ client, animationService });
 
     const result = await service.generateAnimation({ prompt: 'Wave hello', bones: ['hips', 'spine'] });
     expect(result.animation.name).toBe('valid-bones');
-    expect(create).toHaveBeenCalledTimes(2);
+    expect(create).toHaveBeenCalledTimes(3);
 
-    const retryPayload = create.mock.calls[1]?.[0];
+    const retryPayload = create.mock.calls[2]?.[0];
     const serialized = JSON.stringify(retryPayload);
     expect(serialized).toContain('left_arm');
     expect(serialized).toContain('hips');

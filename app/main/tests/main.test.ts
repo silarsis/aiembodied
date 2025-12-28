@@ -660,7 +660,7 @@ describe('main process bootstrap', () => {
       ts: 1700000000,
     });
 
-    expect(ipcMainMock.handle).toHaveBeenCalledTimes(31);
+    expect(ipcMainMock.handle).toHaveBeenCalledTimes(33);
     const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
 
     expect(mockLogger.info).toHaveBeenCalledWith('Avatar face service initialized.', {

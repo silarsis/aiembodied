@@ -167,6 +167,8 @@ export interface AvatarBridge {
   deleteModel(modelId: string): Promise<void>;
   loadModelBinary(modelId: string): Promise<ArrayBuffer>;
   updateModelThumbnail(modelId: string, thumbnailDataUrl: string): Promise<AvatarModelSummary | null>;
+  updateModelDescription(modelId: string, description: string): Promise<AvatarModelSummary | null>;
+  generateModelDescription(thumbnailDataUrl: string): Promise<string>;
   listAnimations(): Promise<AvatarAnimationSummary[]>;
   uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult>;
   generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;
@@ -274,6 +276,15 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
         modelId,
         thumbnailDataUrl,
       }) as Promise<AvatarModelSummary | null>,
+    updateModelDescription: (modelId, description) =>
+      ipcRenderer.invoke('avatar-model:update-description', {
+        modelId,
+        description,
+      }) as Promise<AvatarModelSummary | null>,
+    generateModelDescription: (thumbnailDataUrl) =>
+      ipcRenderer.invoke('avatar-model:generate-description', {
+        thumbnailDataUrl,
+      }) as Promise<string>,
     listAnimations: () => ipcRenderer.invoke('avatar-animation:list') as Promise<AvatarAnimationSummary[]>,
     uploadAnimation: (payload) =>
       ipcRenderer.invoke('avatar-animation:upload', payload) as Promise<AvatarAnimationUploadResult>,

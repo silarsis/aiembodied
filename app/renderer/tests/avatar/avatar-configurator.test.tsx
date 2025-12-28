@@ -65,6 +65,7 @@ function createAvatarBridgeStub(overrides: Partial<AvatarBridge> = {}): AvatarBr
         version: '1.0',
         fileSha: 'stub',
         thumbnailDataUrl: null,
+        description: null,
       },
     }),
     deleteModel: vi.fn().mockResolvedValue(undefined),
@@ -96,6 +97,8 @@ function createAvatarBridgeStub(overrides: Partial<AvatarBridge> = {}): AvatarBr
     getDisplayModePreference: vi.fn().mockResolvedValue('sprites'),
     setDisplayModePreference: vi.fn().mockResolvedValue(undefined),
     triggerBehaviorCue: vi.fn().mockResolvedValue(undefined),
+    updateModelDescription: vi.fn().mockResolvedValue(null),
+    generateModelDescription: vi.fn().mockResolvedValue(''),
     ...overrides,
   };
 }
@@ -317,6 +320,7 @@ describe('AvatarConfigurator', () => {
         version: '1.0',
         fileSha: '0123456789abcdef',
         thumbnailDataUrl: SAMPLE_PREVIEW,
+        description: null,
       },
       {
         id: 'vrm-2',
@@ -325,6 +329,7 @@ describe('AvatarConfigurator', () => {
         version: '2.0',
         fileSha: 'fedcba9876543210',
         thumbnailDataUrl: null,
+        description: null,
       },
     ];
 
@@ -378,6 +383,7 @@ describe('AvatarConfigurator', () => {
       version: '1.1',
       fileSha: 'aaaaaaaaaaaaaaaabbbb',
       thumbnailDataUrl: SAMPLE_PREVIEW,
+      description: null,
     } satisfies AvatarModelSummary;
 
     const listModels = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([uploadedModel]);

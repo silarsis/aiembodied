@@ -133,6 +133,7 @@ function createAvatarBridgeMock(overrides: Partial<AvatarBridge> = {}): AvatarBr
         version: '1.0',
         fileSha: 'sha',
         thumbnailDataUrl: null,
+        description: null,
       },
     }),
     deleteModel: vi.fn().mockResolvedValue(undefined),
@@ -164,6 +165,8 @@ function createAvatarBridgeMock(overrides: Partial<AvatarBridge> = {}): AvatarBr
     getDisplayModePreference: vi.fn().mockResolvedValue('sprites'),
     setDisplayModePreference: vi.fn().mockResolvedValue(undefined),
     triggerBehaviorCue: vi.fn().mockResolvedValue(undefined),
+    updateModelDescription: vi.fn().mockResolvedValue(null),
+    generateModelDescription: vi.fn().mockResolvedValue(''),
     ...overrides,
   };
 }

@@ -520,7 +520,7 @@ describe('avatar renderer smoke tests', () => {
     const { container } = render(
       <VrmAvatarRenderer
         frame={null}
-        model={{ id: 'vrm-1', name: 'Model', createdAt: Date.now(), version: '1.0', fileSha: 'abc', thumbnailDataUrl: null }}
+        model={{ id: 'vrm-1', name: 'Model', createdAt: Date.now(), version: '1.0', fileSha: 'abc', thumbnailDataUrl: null, description: null }}
       />,
     );
 
@@ -542,7 +542,7 @@ describe('avatar renderer smoke tests', () => {
     render(
       <VrmAvatarRenderer
         frame={null}
-        model={{ id: 'vrm-2', name: 'Idle Model', createdAt: Date.now(), version: '1.0', fileSha: 'def', thumbnailDataUrl: null }}
+        model={{ id: 'vrm-2', name: 'Idle Model', createdAt: Date.now(), version: '1.0', fileSha: 'def', thumbnailDataUrl: null, description: null }}
       />,
     );
 
