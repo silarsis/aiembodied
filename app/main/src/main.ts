@@ -869,6 +869,13 @@ function registerIpcHandlers(
     await avatarAnimations.deleteAnimation(animationId);
     return true;
   });
+  ipcMain.handle('avatar-animation:rename', async (_event, animationId: string, newName: string) => {
+    if (!avatarAnimations) {
+      throw new Error('Avatar animation service is unavailable.');
+    }
+
+    return avatarAnimations.renameAnimation(animationId, newName);
+  });
   ipcMain.handle('avatar-animation:load', async (_event, animationId: string) => {
     if (!avatarAnimations) {
       throw new Error('Avatar animation service is unavailable.');

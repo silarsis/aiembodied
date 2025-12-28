@@ -173,6 +173,7 @@ export interface AvatarBridge {
   uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult>;
   generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;
   deleteAnimation(animationId: string): Promise<void>;
+  renameAnimation(animationId: string, newName: string): Promise<AvatarAnimationSummary>;
   loadAnimationBinary(animationId: string): Promise<ArrayBuffer>;
   getDisplayModePreference(): Promise<AvatarDisplayMode>;
   setDisplayModePreference(mode: AvatarDisplayMode): Promise<void>;
@@ -293,6 +294,8 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     deleteAnimation: async (animationId) => {
       await ipcRenderer.invoke('avatar-animation:delete', animationId);
     },
+    renameAnimation: async (animationId, newName) =>
+      ipcRenderer.invoke('avatar-animation:rename', animationId, newName) as Promise<AvatarAnimationSummary>,
     loadAnimationBinary: async (animationId) => {
       const payload = await ipcRenderer.invoke('avatar-animation:load', animationId);
       return cloneBinaryPayload(payload, {

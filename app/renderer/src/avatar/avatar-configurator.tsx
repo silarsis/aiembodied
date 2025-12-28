@@ -8,6 +8,7 @@ import {
   type FormEvent,
 } from 'react';
 import type {
+  AvatarAnimationSummary,
   AvatarBridge,
   AvatarFaceDetail,
   AvatarFaceSummary,
@@ -121,6 +122,12 @@ export function AvatarConfigurator({
   const [vrmaStatus, setVrmaStatus] = useState<VrmaGenerationStatus>('idle');
   const [vrmaMessage, setVrmaMessage] = useState<string | null>(null);
   const [vrmaResultName, setVrmaResultName] = useState<string | null>(null);
+  const [animations, setAnimations] = useState<AvatarAnimationSummary[]>([]);
+  const [animationsLoading, setAnimationsLoading] = useState(false);
+  const [animationError, setAnimationError] = useState<string | null>(null);
+  const [animationBusyId, setAnimationBusyId] = useState<string | null>(null);
+  const [renamingAnimationId, setRenamingAnimationId] = useState<string | null>(null);
+  const [renamingAnimationName, setRenamingAnimationName] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const modelFileInputRef = useRef<HTMLInputElement | null>(null);
   const availabilityLogRef = useRef<'available' | 'missing' | null>(null);
@@ -186,6 +193,35 @@ export function AvatarConfigurator({
     }
   }, [avatarApi, onActiveFaceChange]);
 
+  const generateMissingThumbnails = useCallback(async () => {
+    if (!avatarApi?.loadModelBinary || !avatarApi.updateModelThumbnail) {
+      return;
+    }
+
+    const modelsNeedingThumbnails = models.filter((m) => !m.thumbnailDataUrl);
+    if (modelsNeedingThumbnails.length === 0) {
+      return;
+    }
+
+    for (const model of modelsNeedingThumbnails) {
+      try {
+        setModelBusyId(model.id);
+        const modelData = await avatarApi.loadModelBinary(model.id);
+        const thumbnailResult = await generateVrmThumbnail(modelData);
+        const updated = await avatarApi.updateModelThumbnail(model.id, thumbnailResult.dataUrl);
+        if (updated) {
+          setModels((prev) =>
+            prev.map((m) => (m.id === model.id ? updated : m)),
+          );
+        }
+      } catch (err) {
+        console.warn(`[avatar-configurator] Failed to generate thumbnail for model ${model.id}:`, err);
+      } finally {
+        setModelBusyId(null);
+      }
+    }
+  }, [models, avatarApi]);
+
   const refreshModels = useCallback(async () => {
     if (!avatarApi?.listModels || !avatarApi.getActiveModel) {
       setModels([]);
@@ -218,6 +254,7 @@ export function AvatarConfigurator({
     (async () => {
       await refreshFaces();
       await refreshModels();
+      await refreshAnimations();
       if (cancelled) {
         return;
       }
@@ -233,7 +270,11 @@ export function AvatarConfigurator({
     return () => {
       cancelled = true;
     };
-  }, [refreshFaces, refreshModels]);
+  }, [refreshFaces, refreshModels, refreshAnimations]);
+
+  useEffect(() => {
+    generateMissingThumbnails();
+  }, [generateMissingThumbnails]);
 
   const handleFileChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const nextFile = event.target.files?.[0] ?? null;
@@ -480,6 +521,92 @@ export function AvatarConfigurator({
     [avatarApi, activeModelId, onActiveModelChange, refreshModels],
   );
 
+  const refreshAnimations = useCallback(async () => {
+    if (!avatarApi?.listAnimations) {
+      setAnimations([]);
+      setAnimationsLoading(false);
+      setAnimationError('VRMA configuration bridge is unavailable.');
+      return;
+    }
+
+    setAnimationsLoading(true);
+    setAnimationError(null);
+
+    try {
+      const list = await avatarApi.listAnimations();
+      setAnimations(list);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load VRMA animations.';
+      setAnimationError(message);
+    } finally {
+      setAnimationsLoading(false);
+    }
+  }, [avatarApi]);
+
+  const handleDeleteAnimation = useCallback(
+    async (animationId: string) => {
+      if (!avatarApi?.deleteAnimation) {
+        setAnimationError('VRMA configuration bridge is unavailable.');
+        return;
+      }
+
+      setAnimationBusyId(animationId);
+      setAnimationError(null);
+      try {
+        await avatarApi.deleteAnimation(animationId);
+        await refreshAnimations();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to delete VRMA animation.';
+        setAnimationError(message);
+      } finally {
+        setAnimationBusyId(null);
+      }
+    },
+    [avatarApi, refreshAnimations],
+  );
+
+  const handleStartRenameAnimation = useCallback((animationId: string, currentName: string) => {
+    setRenamingAnimationId(animationId);
+    setRenamingAnimationName(currentName);
+  }, []);
+
+  const handleCancelRenameAnimation = useCallback(() => {
+    setRenamingAnimationId(null);
+    setRenamingAnimationName('');
+  }, []);
+
+  const handleRenameAnimation = useCallback(
+    async (animationId: string) => {
+      if (!avatarApi?.renameAnimation) {
+        setAnimationError('VRMA configuration bridge is unavailable.');
+        return;
+      }
+
+      const newName = renamingAnimationName.trim();
+      if (!newName) {
+        setAnimationError('Animation name cannot be empty.');
+        return;
+      }
+
+      setAnimationBusyId(animationId);
+      setAnimationError(null);
+      try {
+        const updated = await avatarApi.renameAnimation(animationId, newName);
+        setAnimations((prev) =>
+          prev.map((a) => (a.id === animationId ? updated : a)),
+        );
+        setRenamingAnimationId(null);
+        setRenamingAnimationName('');
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to rename VRMA animation.';
+        setAnimationError(message);
+      } finally {
+        setAnimationBusyId(null);
+      }
+    },
+    [avatarApi, renamingAnimationName],
+  );
+
   const handleVrmaPromptChange = useCallback((event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setVrmaPrompt(event.target.value);
     if (vrmaStatus === 'error') {
@@ -515,6 +642,7 @@ export function AvatarConfigurator({
           setVrmaStatus('success');
           setVrmaResultName(result.animation.name);
           setVrmaPrompt('');
+          await refreshAnimations();
           onAnimationChange?.();
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to generate VRMA animation.';
@@ -834,6 +962,107 @@ export function AvatarConfigurator({
 
           {!modelsLoading && formattedModels.length === 0 ? (
             <p className="kiosk__info">No VRM models uploaded yet. Add a .vrm file to enable the 3D renderer.</p>
+          ) : null}
+
+          <hr className="faces__divider" />
+
+          <h2 className="faces__heading">Stored VRMA Animations</h2>
+
+          {animationError ? (
+            <p role="alert" className="kiosk__error">
+              {animationError}
+            </p>
+          ) : null}
+          {animationsLoading ? <p className="kiosk__info">Loading stored animations…</p> : null}
+
+          <div className="faces__grid" role="list">
+            {animations.map((animation) => {
+              const busy = animationBusyId === animation.id;
+              const isRenaming = renamingAnimationId === animation.id;
+
+              return (
+                <article key={animation.id} className="faceCard" role="listitem">
+                  <div className="faceCard__info">
+                    {isRenaming ? (
+                      <div className="faceCard__renameForm">
+                        <input
+                          type="text"
+                          value={renamingAnimationName}
+                          onChange={(e) => setRenamingAnimationName(e.target.value)}
+                          placeholder="Animation name"
+                          disabled={busy}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleRenameAnimation(animation.id);
+                            } else if (e.key === 'Escape') {
+                              handleCancelRenameAnimation();
+                            }
+                          }}
+                          autoFocus
+                        />
+                      </div>
+                    ) : (
+                      <h3>{animation.name}</h3>
+                    )}
+                    <dl className="faceCard__metaList">
+                      <div>
+                        <dt>Duration</dt>
+                        <dd>{animation.duration !== null ? `${(animation.duration).toFixed(2)}s` : '—'}</dd>
+                      </div>
+                      <div>
+                        <dt>FPS</dt>
+                        <dd>{animation.fps !== null ? `${(animation.fps).toFixed(1)}` : '—'}</dd>
+                      </div>
+                      <div>
+                        <dt>Uploaded</dt>
+                        <dd>{formatTimestamp(animation.createdAt)}</dd>
+                      </div>
+                      <div>
+                        <dt>Checksum</dt>
+                        <dd>{truncateSha(animation.fileSha)}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                  <div className="faceCard__actions">
+                    {isRenaming ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleRenameAnimation(animation.id)}
+                          disabled={busy || !renamingAnimationName.trim()}
+                        >
+                          Save
+                        </button>
+                        <button type="button" onClick={handleCancelRenameAnimation} disabled={busy}>
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleStartRenameAnimation(animation.id, animation.name)}
+                          disabled={busy}
+                        >
+                          Rename
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAnimation(animation.id)}
+                          disabled={busy}
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          {!animationsLoading && animations.length === 0 ? (
+            <p className="kiosk__info">No VRMA animations stored yet. Generate or upload an animation to get started.</p>
           ) : null}
         </div>
       )}

@@ -273,6 +273,19 @@ export class AvatarAnimationService {
     this.logger?.info?.('VRMA animation removed.', { animationId });
   }
 
+  async renameAnimation(animationId: string, newName: string): Promise<AvatarAnimationSummary> {
+    const record = this.store.getVrmAnimation(animationId);
+    if (!record) {
+      throw new Error('Requested VRMA animation is not available.');
+    }
+
+    const sanitized = sanitizeName(newName, record.name);
+    this.store.updateVrmAnimation(animationId, { ...record, name: sanitized });
+
+    this.logger?.info?.('VRMA animation renamed.', { animationId, oldName: record.name, newName: sanitized });
+    return this.toSummary({ ...record, name: sanitized });
+  }
+
   private toSummary(record: VrmAnimationRecord): AvatarAnimationSummary {
     return {
       id: record.id,

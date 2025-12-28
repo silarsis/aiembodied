@@ -120,6 +120,7 @@ export interface AvatarBridge {
   uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult>;
   generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;
   deleteAnimation(animationId: string): Promise<void>;
+  renameAnimation(animationId: string, newName: string): Promise<AvatarAnimationSummary>;
   loadAnimationBinary(animationId: string): Promise<ArrayBuffer>;
   getDisplayModePreference(): Promise<AvatarDisplayMode>;
   setDisplayModePreference(mode: AvatarDisplayMode): Promise<void>;
