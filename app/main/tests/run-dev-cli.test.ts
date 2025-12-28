@@ -56,30 +56,42 @@ describe('rebuildNativeDependenciesForElectron', () => {
     const repoRoot = resolve(workspaceRoot, 'repo');
     const electronPkgPath = resolve(repoRoot, 'app/main/node_modules/electron/package.json');
 
+    // Create electron version file
     mkdirSync(resolve(repoRoot, 'app/main/node_modules/electron'), { recursive: true });
     writeFileSync(electronPkgPath, JSON.stringify({ name: 'electron', version: '29.1.0' }), 'utf8');
+
+    // Create stub module directories so findPnpmModulePath can locate them
+    const pnpmDir = resolve(repoRoot, 'node_modules/.pnpm');
+    mkdirSync(resolve(pnpmDir, 'better-sqlite3@1.0.0/node_modules/better-sqlite3'), { recursive: true });
+    mkdirSync(resolve(pnpmDir, 'keytar@8.0.0/node_modules/keytar'), { recursive: true });
 
     const runImpl = vi.fn(() => Promise.resolve());
 
     try {
       await rebuildNativeDependenciesForElectron(repoRoot, {
         runImpl,
+        arch: 'x64',
         pnpmStorePath: 'C:/Users/test/AppData/Local/pnpm/store/v3',
       });
 
+      // Should call npx node-gyp rebuild twice (once per module)
       expect(runImpl).toHaveBeenCalledTimes(2);
 
-      const rebuildCall = runImpl.mock.calls[1];
-      expect(rebuildCall?.[0]).toBe('pnpm');
-      expect(rebuildCall?.[1]).toEqual(['--filter', '@aiembodied/main', 'rebuild', 'better-sqlite3', 'keytar']);
+      // Verify first module rebuild call
+      const firstCall = runImpl.mock.calls[0];
+      expect(firstCall?.[0]).toBe('npx');
+      expect(firstCall?.[1]?.[0]).toBe('node-gyp');
+      expect(firstCall?.[1]?.[1]).toBe('rebuild');
+      expect(firstCall?.[1]).toContain('--target=29.1.0');
+      expect(firstCall?.[1]).toContain('--arch=x64');
+      expect(firstCall?.[1]).toContain('--dist-url=https://electronjs.org/headers');
+      expect(firstCall?.[1]).toContain('--runtime=electron');
 
-      const rebuildEnv = rebuildCall?.[2]?.env;
-      expect(rebuildEnv?.npm_config_runtime).toBe('electron');
-      expect(rebuildEnv?.npm_config_target).toBe('29.1.0');
-      expect(rebuildEnv?.npm_config_disturl).toBe('https://electronjs.org/headers');
-      expect(rebuildEnv?.PREBUILD_INSTALL_FORBID).toBe('1');
-      expect(rebuildEnv?.PNPM_STORE_PATH).toBe('C:/Users/test/AppData/Local/pnpm/store/v3');
-      expect(rebuildEnv?.npm_config_store_dir).toBe('C:/Users/test/AppData/Local/pnpm/store/v3');
+      // Verify second module rebuild call
+      const secondCall = runImpl.mock.calls[1];
+      expect(secondCall?.[0]).toBe('npx');
+      expect(secondCall?.[1]?.[0]).toBe('node-gyp');
+      expect(secondCall?.[1]?.[1]).toBe('rebuild');
     } finally {
       rmSync(workspaceRoot, { recursive: true, force: true });
     }
