@@ -55,6 +55,12 @@ function run(cmd, args, env) {
   if (res.status !== 0) process.exit(res.status || 1);
 }
 
+function runTestGroup(pattern, label, baseEnv) {
+  console.log(`\nRunning ${label} tests with coverage...`);
+  const env = { ...baseEnv, VITEST_PATTERN: pattern };
+  run('vitest', ['run', '--coverage'], env);
+}
+
 function main() {
   const repoRoot = getRepoRoot();
   const pnpmStorePath = determineStoreEnv(repoRoot);
@@ -63,8 +69,28 @@ function main() {
   // 1) Rebuild native deps in a store-aligned environment
   run('npm', ['run', 'test:rebuild'], env);
 
-  // 2) Run vitest with coverage using the same environment
-  run('vitest', ['run', '--coverage'], env);
+  // 2) Run vitest with coverage in groups to avoid heap exhaustion
+  // Groups are run sequentially, each in its own process
+  runTestGroup('tests/config*.test.ts', 'Config', env);
+  runTestGroup('tests/preferences*.test.ts', 'Preferences', env);
+  runTestGroup('tests/avatar-*.test.ts', 'Avatar', env);
+  runTestGroup('tests/vrm*.test.ts', 'VRMA', env);
+  runTestGroup('tests/openai*.test.ts', 'OpenAI', env);
+  runTestGroup('tests/memory*.test.ts', 'Memory', env);
+  runTestGroup('tests/preload.test.ts', 'Preload', env);
+  runTestGroup('tests/main.test.ts', 'Main', env);
+  runTestGroup('tests/conversation*.test.ts', 'Conversation', env);
+  runTestGroup('tests/wake-word*.test.ts', 'Wake Word', env);
+  runTestGroup('tests/porcupine*.test.ts', 'Porcupine', env);
+  runTestGroup('tests/logger.test.ts', 'Logger', env);
+  runTestGroup('tests/crash-guard.test.ts', 'Crash Guard', env);
+  runTestGroup('tests/runtime-paths.test.ts', 'Runtime Paths', env);
+  runTestGroup('tests/auto-launch*.test.ts', 'Auto Launch', env);
+  runTestGroup('tests/app-diagnostics.test.ts', 'App Diagnostics', env);
+  runTestGroup('tests/metrics/*.test.ts', 'Metrics', env);
+  runTestGroup('tests/run-dev-*.test.ts', 'Run Dev', env);
+
+  console.log('\n✅ All coverage groups completed!');
 }
 
 main();

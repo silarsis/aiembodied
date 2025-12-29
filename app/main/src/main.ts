@@ -31,6 +31,7 @@ import { AvatarFaceService } from './avatar/avatar-face-service.js';
 import { AvatarModelService } from './avatar/avatar-model-service.js';
 import { AvatarAnimationService } from './avatar/avatar-animation-service.js';
 import { VrmaGenerationService } from './avatar/vrma-generation-service.js';
+import { AvatarDescriptionService } from './avatar/avatar-description-service.js';
 import type {
   AvatarDisplayMode,
   AvatarUploadRequest,
@@ -116,8 +117,10 @@ let avatarFaceService: AvatarFaceService | null = null;
 let avatarModelService: AvatarModelService | null = null;
 let avatarAnimationService: AvatarAnimationService | null = null;
 let vrmaGenerationService: VrmaGenerationService | null = null;
+let avatarDescriptionService: AvatarDescriptionService | null = null;
 let currentRealtimeApiKey: string | null = null;
 let currentVrmaApiKey: string | null = null;
+let currentDescriptionApiKey: string | null = null;
 
 function emitCameraDetection(event: CameraDetectionEventPayload): boolean {
   const cue = typeof event.cue === 'string' ? event.cue.trim() : '';
@@ -346,6 +349,43 @@ async function refreshVrmaGenerationService(
     logger.warn('Failed to initialize VRMA generation service', { message });
     vrmaGenerationService = null;
     currentVrmaApiKey = null;
+  }
+}
+
+async function refreshAvatarDescriptionService(
+  manager: ConfigManager,
+  reason: 'startup' | 'secret-update' = 'startup',
+): Promise<void> {
+  const config = manager.getConfig();
+  const nextKey = typeof config.realtimeApiKey === 'string' ? config.realtimeApiKey.trim() : '';
+
+  if (!nextKey) {
+    if (reason === 'startup') {
+      logger.warn('Realtime API key unavailable; avatar description generation disabled.');
+    } else if (avatarDescriptionService || currentDescriptionApiKey) {
+      logger.warn('Realtime API key removed; avatar description generation disabled.');
+    }
+    avatarDescriptionService = null;
+    currentDescriptionApiKey = null;
+    return;
+  }
+
+  if (avatarDescriptionService && currentDescriptionApiKey === nextKey) {
+    return;
+  }
+
+  try {
+    avatarDescriptionService = new AvatarDescriptionService({
+      client: getOpenAIClient(nextKey),
+      logger,
+    });
+    currentDescriptionApiKey = nextKey;
+    logger.info('Avatar description service initialized.', { reason });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('Failed to initialize avatar description service', { message });
+    avatarDescriptionService = null;
+    currentDescriptionApiKey = null;
   }
 }
 
@@ -771,6 +811,29 @@ function registerIpcHandlers(
       return avatarModels.updateThumbnail(payload.modelId, payload.thumbnailDataUrl);
     },
   );
+  ipcMain.handle(
+    'avatar-model:update-description',
+    async (_event, payload: { modelId: string; description: string }) => {
+      if (!avatarModels) {
+        throw new Error('Avatar model service is unavailable.');
+      }
+
+      return avatarModels.updateDescription(payload.modelId, payload.description);
+    },
+  );
+  ipcMain.handle(
+    'avatar-model:generate-description',
+    async (_event, payload: { thumbnailDataUrl: string }) => {
+      if (!avatarDescriptionService) {
+        await refreshAvatarDescriptionService(manager, 'secret-update');
+      }
+      if (!avatarDescriptionService) {
+        throw new Error('Avatar description service is unavailable. Ensure REALTIME_API_KEY is set.');
+      }
+
+      return avatarDescriptionService.generateDescription(payload.thumbnailDataUrl);
+    },
+  );
   ipcMain.handle('avatar-animation:list', async () => {
     if (!avatarAnimations) {
       return [] as AvatarAnimationSummary[];
@@ -794,7 +857,9 @@ function registerIpcHandlers(
     }
 
     const bones = avatarModels ? await avatarModels.listActiveModelBones() : [];
-    return vrmaGenerationService.generateAnimation({ ...payload, bones });
+    const activeModel = avatarModels?.getActiveModel() ?? null;
+    const modelDescription = activeModel?.description ?? undefined;
+    return vrmaGenerationService.generateAnimation({ ...payload, bones, modelDescription });
   });
   ipcMain.handle('avatar-animation:delete', async (_event, animationId: string) => {
     if (!avatarAnimations) {
@@ -803,6 +868,13 @@ function registerIpcHandlers(
 
     await avatarAnimations.deleteAnimation(animationId);
     return true;
+  });
+  ipcMain.handle('avatar-animation:rename', async (_event, animationId: string, newName: string) => {
+    if (!avatarAnimations) {
+      throw new Error('Avatar animation service is unavailable.');
+    }
+
+    return avatarAnimations.renameAnimation(animationId, newName);
   });
   ipcMain.handle('avatar-animation:load', async (_event, animationId: string) => {
     if (!avatarAnimations) {

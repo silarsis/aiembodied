@@ -55,7 +55,38 @@ describe('VrmaGenerationService', () => {
       animationsDirectory: path.join(directory, 'vrma-animations'),
     });
 
-    const outputText = JSON.stringify({
+    const analystOutput = `The greeting wave is a friendly, relaxed gesture initiated from the shoulder. The movement starts with the elbow extending slightly forward and upward, the forearm follows with a gentle rotational motion from the wrist. The head tilts slightly upward and to the side, indicating engagement. The shoulders remain stable and slightly dropped. The movement is smooth and sustained, suggesting ease and warmth. The wave resolves gradually, returning the arm and head to a neutral position.`;
+
+    const planOutput = JSON.stringify({
+      meta: {
+        name: 'friendly-wave',
+        loop: true,
+        approxDuration: 1.2,
+        recommendedFps: 30,
+        kind: 'gesture',
+      },
+      globalStyle: {
+        energy: 'medium',
+        keyframeDensity: 'medium',
+        hipsMovement: 'none',
+        usesExpressions: true,
+      },
+      phases: [
+        {
+          name: 'wave',
+          startTime: 0,
+          endTime: 1.2,
+          purpose: 'friendly wave gesture',
+          bones: [{ bone: 'hips', role: 'primary', motion: 'slight sway' }],
+          description: 'Wave motion from shoulder to wrist',
+          keyframeDensity: 'medium',
+          easingHint: 'easeInOut',
+          expressions: [],
+        },
+      ],
+    });
+
+    const compilerOutput = JSON.stringify({
       meta: {
         name: 'friendly-wave',
         fps: 30,
@@ -91,11 +122,11 @@ describe('VrmaGenerationService', () => {
       ],
     });
 
-    const { client, create } = createClient(outputText);
+    const { client, create } = createClient([analystOutput, planOutput, compilerOutput]);
     const service = new VrmaGenerationService({ client, animationService });
 
     const result = await service.generateAnimation({ prompt: 'Wave hello' });
-    expect(create).toHaveBeenCalled();
+    expect(create).toHaveBeenCalledTimes(3);
     expect(result.animation.name).toBe('friendly-wave');
 
     const stored = animationService.listAnimations();
@@ -111,11 +142,43 @@ describe('VrmaGenerationService', () => {
       animationsDirectory: path.join(directory, 'vrma-animations'),
     });
 
+    const analystOutput = 'A simple waving motion from the shoulder down through the arm and wrist.';
+
+    const planOutput = JSON.stringify({
+      meta: {
+        name: 'valid-bones',
+        loop: true,
+        approxDuration: 1.0,
+        recommendedFps: 30,
+        kind: 'gesture',
+      },
+      globalStyle: {
+        energy: 'medium',
+        keyframeDensity: 'medium',
+        hipsMovement: 'none',
+        usesExpressions: false,
+      },
+      phases: [
+        {
+          name: 'wave',
+          startTime: 0,
+          endTime: 1.0,
+          purpose: 'wave gesture',
+          bones: [{ bone: 'hips', role: 'primary', motion: 'sway' }],
+          description: 'Wave motion',
+          keyframeDensity: 'medium',
+          easingHint: 'easeInOut',
+          expressions: [],
+        },
+      ],
+    });
+
     const invalidOutput = JSON.stringify({
       meta: {
         name: 'invalid-bones',
         fps: 30,
         loop: true,
+        duration: 1.0,
       },
       tracks: [
         {
@@ -123,6 +186,8 @@ describe('VrmaGenerationService', () => {
           keyframes: [{ t: 0, q: [0, 0, 0, 1] }],
         },
       ],
+      hips: {},
+      expressions: [],
     });
 
     const validOutput = JSON.stringify({
@@ -130,6 +195,7 @@ describe('VrmaGenerationService', () => {
         name: 'valid-bones',
         fps: 30,
         loop: true,
+        duration: 1.0,
       },
       tracks: [
         {
@@ -137,16 +203,18 @@ describe('VrmaGenerationService', () => {
           keyframes: [{ t: 0, q: [0, 0, 0, 1] }],
         },
       ],
+      hips: {},
+      expressions: [],
     });
 
-    const { client, create } = createClient([invalidOutput, validOutput]);
+    const { client, create } = createClient([analystOutput, planOutput, invalidOutput, validOutput]);
     const service = new VrmaGenerationService({ client, animationService });
 
     const result = await service.generateAnimation({ prompt: 'Wave hello', bones: ['hips', 'spine'] });
     expect(result.animation.name).toBe('valid-bones');
-    expect(create).toHaveBeenCalledTimes(2);
+    expect(create).toHaveBeenCalledTimes(4);
 
-    const retryPayload = create.mock.calls[1]?.[0];
+    const retryPayload = create.mock.calls[3]?.[0];
     const serialized = JSON.stringify(retryPayload);
     expect(serialized).toContain('left_arm');
     expect(serialized).toContain('hips');

@@ -48,7 +48,18 @@ async function start(): Promise<void> {
         parentPort!.postMessage({ type: 'wake', event } satisfies WakeWordWorkerMessage);
       }
     } catch (error) {
-      parentPort!.postMessage({ type: 'error', error: serializeError(error) } satisfies WakeWordWorkerMessage);
+      const isFatalAudioError =
+        error instanceof Error && error.message.includes('PvRecorder failed to read audio data frame');
+      parentPort!.postMessage({
+        type: 'error',
+        error: serializeError(error),
+        fatal: isFatalAudioError,
+      } satisfies WakeWordWorkerMessage);
+      if (isFatalAudioError) {
+        isRunning = false;
+        await shutdown();
+        break;
+      }
     }
   }
 }

@@ -199,6 +199,7 @@ describe('VrmAvatarRenderer animation queue', () => {
     version: '1.0',
     fileSha: 'abc',
     thumbnailDataUrl: null,
+    description: null,
   };
 
   beforeEach(() => {

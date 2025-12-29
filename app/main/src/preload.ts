@@ -167,10 +167,13 @@ export interface AvatarBridge {
   deleteModel(modelId: string): Promise<void>;
   loadModelBinary(modelId: string): Promise<ArrayBuffer>;
   updateModelThumbnail(modelId: string, thumbnailDataUrl: string): Promise<AvatarModelSummary | null>;
+  updateModelDescription(modelId: string, description: string): Promise<AvatarModelSummary | null>;
+  generateModelDescription(thumbnailDataUrl: string): Promise<string>;
   listAnimations(): Promise<AvatarAnimationSummary[]>;
   uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult>;
   generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;
   deleteAnimation(animationId: string): Promise<void>;
+  renameAnimation(animationId: string, newName: string): Promise<AvatarAnimationSummary>;
   loadAnimationBinary(animationId: string): Promise<ArrayBuffer>;
   getDisplayModePreference(): Promise<AvatarDisplayMode>;
   setDisplayModePreference(mode: AvatarDisplayMode): Promise<void>;
@@ -274,6 +277,15 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
         modelId,
         thumbnailDataUrl,
       }) as Promise<AvatarModelSummary | null>,
+    updateModelDescription: (modelId, description) =>
+      ipcRenderer.invoke('avatar-model:update-description', {
+        modelId,
+        description,
+      }) as Promise<AvatarModelSummary | null>,
+    generateModelDescription: (thumbnailDataUrl) =>
+      ipcRenderer.invoke('avatar-model:generate-description', {
+        thumbnailDataUrl,
+      }) as Promise<string>,
     listAnimations: () => ipcRenderer.invoke('avatar-animation:list') as Promise<AvatarAnimationSummary[]>,
     uploadAnimation: (payload) =>
       ipcRenderer.invoke('avatar-animation:upload', payload) as Promise<AvatarAnimationUploadResult>,
@@ -282,6 +294,8 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     deleteAnimation: async (animationId) => {
       await ipcRenderer.invoke('avatar-animation:delete', animationId);
     },
+    renameAnimation: async (animationId, newName) =>
+      ipcRenderer.invoke('avatar-animation:rename', animationId, newName) as Promise<AvatarAnimationSummary>,
     loadAnimationBinary: async (animationId) => {
       const payload = await ipcRenderer.invoke('avatar-animation:load', animationId);
       return cloneBinaryPayload(payload, {

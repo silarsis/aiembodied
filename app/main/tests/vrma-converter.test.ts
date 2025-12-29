@@ -42,21 +42,66 @@ describe('vrma converter', () => {
   });
 
   it('encodes a VRMA GLB container', () => {
-    const definition: VrmaSchema = {
-      meta: { name: 'test-wave', fps: 30, loop: true },
-      tracks: [
-        {
-          bone: 'hips',
-          keyframes: [
-            { t: 0, q: [0, 0, 0, 1] },
-            { t: 1, q: [0, 0.2, 0, 0.98] },
-          ],
-        },
-      ],
-    };
+     const definition: VrmaSchema = {
+       meta: { name: 'test-wave', fps: 30, loop: true },
+       tracks: [
+         {
+           bone: 'hips',
+           keyframes: [
+             { t: 0, q: [0, 0, 0, 1] },
+             { t: 1, q: [0, 0.2, 0, 0.98] },
+           ],
+         },
+       ],
+     };
 
-    const glb = encodeVrmaGlb(definition);
-    expect(glb.byteLength).toBeGreaterThan(20);
-    expect(glb.subarray(0, 4).toString('utf8')).toBe('glTF');
-  });
-});
+     const glb = encodeVrmaGlb(definition);
+     expect(glb.byteLength).toBeGreaterThan(20);
+     expect(glb.subarray(0, 4).toString('utf8')).toBe('glTF');
+   });
+
+   it('encodes expressions as VRMC metadata, not animation channels', () => {
+     const definition: VrmaSchema = {
+       meta: { name: 'test-happy', fps: 30, loop: false, duration: 1 },
+       tracks: [
+         {
+           bone: 'hips',
+           keyframes: [{ t: 0, q: [0, 0, 0, 1] }],
+         },
+       ],
+       hips: {},
+       expressions: [
+         {
+           name: 'happy',
+           keyframes: [
+             { t: 0, v: 0 },
+             { t: 0.5, v: 0.8 },
+             { t: 1, v: 0 },
+           ],
+         },
+       ],
+     };
+
+     const glb = encodeVrmaGlb(definition);
+     
+     // Parse the GLB to extract JSON
+     const view = new DataView(glb.buffer, glb.byteOffset, glb.byteLength);
+     const jsonLength = view.getUint32(12, true);
+     const jsonStr = glb.subarray(20, 20 + jsonLength).toString('utf8').trim();
+     const gltf = JSON.parse(jsonStr);
+
+     // Assert: No translation channels in animations (only rotation and hips)
+     const channels = gltf.animations?.[0]?.channels || [];
+     const translationChannels = channels.filter((c: any) => c.target.path === 'translation');
+     expect(translationChannels).toHaveLength(0);
+
+     // Assert: Expressions in VRMC metadata
+     const vrmaExt = gltf.extensions?.VRMC_vrm_animation;
+     expect(vrmaExt?.expressionSamplers?.preset?.[0]?.name).toBe('happy');
+     expect(vrmaExt?.expressionSamplers?.preset?.[0]?.keyframes).toEqual([
+       { t: 0, v: 0 },
+       { t: 0.5, v: 0.8 },
+       { t: 1, v: 0 },
+     ]);
+     });
+     });

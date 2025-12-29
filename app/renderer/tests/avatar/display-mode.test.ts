@@ -13,6 +13,7 @@ const SAMPLE_MODEL = {
   version: '1.0',
   fileSha: 'abc',
   thumbnailDataUrl: null,
+  description: null,
 };
 
 describe('parseAvatarDisplayMode', () => {

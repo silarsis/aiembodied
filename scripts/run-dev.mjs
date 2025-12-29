@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve, join, parse } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { homedir } from 'node:os';
@@ -166,7 +166,36 @@ export function readElectronVersion(repoRoot) {
 
 function hashFile(filePath) {
   if (!existsSync(filePath)) return null;
+  const stat = statSync(filePath);
+  if (stat.isDirectory()) {
+    return hashDirectory(filePath);
+  }
   return createHash('sha256').update(readFileSync(filePath)).digest('hex');
+}
+
+function hashDirectory(dirPath) {
+  const hash = createHash('sha256');
+  
+  function hashDirRecursive(currentPath) {
+    const entries = readdirSync(currentPath).sort();
+    for (const entry of entries) {
+      // Skip node_modules and build artifacts
+      if (entry === 'node_modules' || entry === 'dist' || entry.startsWith('.')) {
+        continue;
+      }
+      const fullPath = join(currentPath, entry);
+      const stat = statSync(fullPath);
+      hash.update(entry);
+      if (stat.isDirectory()) {
+        hashDirRecursive(fullPath);
+      } else {
+        hash.update(readFileSync(fullPath));
+      }
+    }
+  }
+  
+  hashDirRecursive(dirPath);
+  return hash.digest('hex');
 }
 
 function readStamp(stampPath) {
@@ -187,49 +216,80 @@ function stampMatches(oldStamp, newStamp) {
   return JSON.stringify(oldStamp) === JSON.stringify(newStamp);
 }
 
+function findPnpmModulePath(repoRoot, packageName) {
+  const pnpmDir = resolve(repoRoot, 'node_modules', '.pnpm');
+
+  if (existsSync(pnpmDir)) {
+    try {
+      const entries = readdirSync(pnpmDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory() && entry.name.startsWith(`${packageName}@`)) {
+          const modulePath = resolve(pnpmDir, entry.name, 'node_modules', packageName);
+          if (existsSync(modulePath)) {
+            return modulePath;
+          }
+        }
+      }
+    } catch {
+      // Ignore read errors
+    }
+  }
+
+  // Fallback to app/main/node_modules
+  const fallback = resolve(repoRoot, 'app', 'main', 'node_modules', packageName);
+  if (existsSync(fallback)) {
+    return fallback;
+  }
+
+  return null;
+}
+
 export async function rebuildNativeDependenciesForElectron(
   repoRoot,
-  { runImpl = run, baseEnv = process.env, platform = process.platform, pnpmStorePath } = {},
+  { runImpl = run, baseEnv = process.env, platform = process.platform, arch = process.arch, pnpmStorePath } = {},
 ) {
-  const envIsolated = prepareDevHomeEnv(repoRoot, baseEnv, platform, { pnpmStorePath });
-  const envNoPrebuilds = { ...envIsolated, PREBUILD_INSTALL_FORBID: '1' };
-  const envAllowPrebuilds = { ...envIsolated };
+  const electronVersion = readElectronVersion(repoRoot);
+
+  // For native rebuilds, use the original environment (not the isolated .dev-home)
+  // to ensure Python, VS Build Tools, and other native build dependencies are found
+  const rebuildEnv = { ...baseEnv };
   if (platform === 'win32') {
-    envNoPrebuilds.GYP_MSVS_VERSION = envNoPrebuilds.GYP_MSVS_VERSION || '2022';
-    envNoPrebuilds.npm_config_msvs_version = envNoPrebuilds.npm_config_msvs_version || '2022';
-    envAllowPrebuilds.GYP_MSVS_VERSION = envAllowPrebuilds.GYP_MSVS_VERSION || '2022';
-    envAllowPrebuilds.npm_config_msvs_version = envAllowPrebuilds.npm_config_msvs_version || '2022';
+    rebuildEnv.GYP_MSVS_VERSION = rebuildEnv.GYP_MSVS_VERSION || '2022';
+    rebuildEnv.npm_config_msvs_version = rebuildEnv.npm_config_msvs_version || '2022';
   }
 
-  let installAppDepsSucceeded = false;
-  try {
-    await runImpl('pnpm', ['--filter', '@aiembodied/main', 'exec', 'electron-builder', 'install-app-deps'], {
-      env: envNoPrebuilds,
-    });
-    installAppDepsSucceeded = true;
-  } catch (err) {
-    console.warn('[warn] install-app-deps with source build failed, retrying with prebuilt binaries allowed...');
-    await runImpl(pnpmExe, ['--filter', '@aiembodied/main', 'exec', 'electron-builder', 'install-app-deps'], {
-      env: envAllowPrebuilds,
-    });
-    installAppDepsSucceeded = true;
-  }
+  // Native modules to rebuild for Electron
+  const nativeModules = ['better-sqlite3', 'keytar'];
 
-  // Optional targeted rebuild. If it fails, continue — install-app-deps already handled deps.
-  try {
-    const electronVersion = readElectronVersion(repoRoot);
-    const rebuildEnv = {
-      ...envNoPrebuilds,
-      PREBUILD_INSTALL_FORBID: '1',
-      npm_config_runtime: 'electron',
-      npm_config_target: electronVersion,
-      npm_config_disturl: 'https://electronjs.org/headers',
-    };
-    await runImpl(pnpmExe, ['--filter', '@aiembodied/main', 'rebuild', 'better-sqlite3', 'keytar'], {
-      env: rebuildEnv,
-    });
-  } catch (err) {
-    console.warn('[warn] pnpm rebuild of native deps failed, continuing since install-app-deps succeeded:', err.message);
+  for (const moduleName of nativeModules) {
+    const modulePath = findPnpmModulePath(repoRoot, moduleName);
+    if (!modulePath) {
+      console.warn(`[warn] Could not find ${moduleName} in node_modules, skipping rebuild.`);
+      continue;
+    }
+
+    console.log(`[info] Rebuilding ${moduleName} at ${modulePath} for Electron ${electronVersion} (${arch})...`);
+
+    try {
+      // Use node-gyp directly with Electron headers - this bypasses the buggy
+      // @electron/rebuild which incorrectly tries to stat platform-specific
+      // optional dependencies that don't exist (e.g., @esbuild/aix-ppc64 on Windows)
+      await runImpl(
+        'npx',
+        [
+          'node-gyp',
+          'rebuild',
+          `--target=${electronVersion}`,
+          `--arch=${arch}`,
+          '--dist-url=https://electronjs.org/headers',
+          '--runtime=electron',
+        ],
+        { cwd: modulePath, env: rebuildEnv },
+      );
+      console.log(`[info] Successfully rebuilt ${moduleName} for Electron ${electronVersion}.`);
+    } catch (err) {
+      console.warn(`[warn] Failed to rebuild ${moduleName}: ${err.message}`);
+    }
   }
 }
 
@@ -275,9 +335,11 @@ async function main() {
   // Prepare an isolated environment for all pnpm operations
   const envIsolated = prepareDevHomeEnv(repoRoot, process.env, process.platform, { pnpmStorePath });
 
-  // Check if dependencies have changed using a stamp file
+  // Check if dependencies or source have changed using a stamp file
   const stampPath = resolve(devHome, 'dev-deps-stamp.json');
   const lockHash = hashFile(resolve(repoRoot, 'pnpm-lock.yaml'));
+  const mainSourceHash = hashFile(resolve(repoRoot, 'app/main/src'));
+  const rendererSourceHash = hashFile(resolve(repoRoot, 'app/renderer/src'));
   const forceRebuild = process.argv.includes('--force-deps');
 
   // Read Electron version if available (may not exist on first run)
@@ -290,6 +352,8 @@ async function main() {
 
   const newStamp = {
     lockHash,
+    mainSourceHash,
+    rendererSourceHash,
     electronVersion,
     platform: process.platform,
     arch: process.arch,

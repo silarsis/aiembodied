@@ -297,6 +297,7 @@ describe('VrmAvatarRenderer behavior cues', () => {
       version: '1.0',
       fileSha: 'abc',
       thumbnailDataUrl: null,
+      description: null,
     };
 
     render(

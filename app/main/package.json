@@ -9,7 +9,7 @@
     "dev": "node --loader ts-node/esm src/main.ts",
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run test:rebuild && vitest run",
+    "test": "npm run test:rebuild && node scripts/test-split.mjs",
     "test:coverage": "node scripts/test-coverage.mjs",
     "test:rebuild": "node scripts/test-rebuild.mjs",
     "debug-avatar": "node debug-avatar.mjs",
@@ -35,6 +35,7 @@
     "zod": "^4.2.1"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.2",
     "@types/auto-launch": "^5.0.5",
     "@types/better-sqlite3": "^7.6.13",
     "@types/debug": "^4.1.12",

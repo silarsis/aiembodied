@@ -125,13 +125,24 @@ function buildAnimationInstructions(availableSlugs: string[]): string {
   ].join(' ');
 }
 
-function buildSessionInstructions(basePrompt: string, availableSlugs: string[]): string {
-  const trimmedBase = basePrompt.trim();
-  const animationInstructions = buildAnimationInstructions(availableSlugs);
-  if (!trimmedBase) {
-    return animationInstructions;
+function buildAvatarDescription(model: AvatarModelSummary | null): string {
+  if (!model?.description || model.description.trim().length === 0) {
+    return '';
   }
-  return `${trimmedBase}\n\n${animationInstructions}`;
+  return `[About your appearance: ${model.description}]`;
+}
+
+function buildSessionInstructions(
+  basePrompt: string,
+  availableSlugs: string[],
+  activeVrmModel: AvatarModelSummary | null,
+): string {
+  const trimmedBase = basePrompt.trim();
+  const avatarDescription = buildAvatarDescription(activeVrmModel);
+  const animationInstructions = buildAnimationInstructions(availableSlugs);
+  
+  const parts = [trimmedBase, avatarDescription, animationInstructions].filter((s) => s.length > 0);
+  return parts.join('\n\n');
 }
 
 function stripAnimationInstructions(instructions: string): string {
@@ -1030,8 +1041,8 @@ export default function App() {
   const hasRealtimeSupport = typeof RTCPeerConnection === 'function';
   const hasRealtimeApiKey = config?.hasRealtimeApiKey ?? false;
   const sessionInstructions = useMemo(
-    () => buildSessionInstructions(basePrompt, availableAnimationSlugs),
-    [basePrompt, availableAnimationSlugs],
+    () => buildSessionInstructions(basePrompt, availableAnimationSlugs, activeVrmModel),
+    [basePrompt, availableAnimationSlugs, activeVrmModel],
   );
   const availableAnimationSlugSet = useMemo(
     () => new Set(availableAnimationSlugs),

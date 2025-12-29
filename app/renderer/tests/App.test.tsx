@@ -133,6 +133,7 @@ function createAvatarBridgeMock(overrides: Partial<AvatarBridge> = {}): AvatarBr
         version: '1.0',
         fileSha: 'sha',
         thumbnailDataUrl: null,
+        description: null,
       },
     }),
     deleteModel: vi.fn().mockResolvedValue(undefined),
@@ -160,10 +161,20 @@ function createAvatarBridgeMock(overrides: Partial<AvatarBridge> = {}): AvatarBr
       },
     }),
     deleteAnimation: vi.fn().mockResolvedValue(undefined),
+    renameAnimation: vi.fn().mockResolvedValue({
+      id: 'vrma-0',
+      name: 'Renamed',
+      createdAt: Date.now(),
+      fileSha: 'sha',
+      duration: null,
+      fps: null,
+    }),
     loadAnimationBinary: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
     getDisplayModePreference: vi.fn().mockResolvedValue('sprites'),
     setDisplayModePreference: vi.fn().mockResolvedValue(undefined),
     triggerBehaviorCue: vi.fn().mockResolvedValue(undefined),
+    updateModelDescription: vi.fn().mockResolvedValue(null),
+    generateModelDescription: vi.fn().mockResolvedValue(''),
     ...overrides,
   };
 }

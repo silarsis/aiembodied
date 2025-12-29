@@ -28,8 +28,8 @@ const vrmaTrackSchema = z.object({
 const vrmaHipsSchema = z.object({
   position: z.object({
     keyframes: z.array(vrmaPositionKeyframeSchema).min(1),
-  }),
-});
+  }).optional(),
+}).strict();
 
 const vrmaExpressionTrackSchema = z.object({
   name: z.string().min(1),
@@ -47,11 +47,98 @@ const vrmaMetaSchema = z.object({
 export const vrmaSchema = z.object({
   meta: vrmaMetaSchema,
   tracks: z.array(vrmaTrackSchema).min(1),
-  hips: vrmaHipsSchema.optional(),
-  expressions: z.array(vrmaExpressionTrackSchema).min(1).optional(),
+  hips: vrmaHipsSchema,
+  expressions: z.array(vrmaExpressionTrackSchema).min(0),
 });
 
 export type VrmaSchema = z.infer<typeof vrmaSchema>;
+
+export const VRMA_PLAN_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['meta', 'globalStyle', 'phases'],
+  properties: {
+    meta: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['name', 'loop', 'approxDuration', 'recommendedFps', 'kind'],
+      properties: {
+        name: { type: 'string', pattern: VRMA_SLUG_PATTERN.source },
+        loop: { type: 'boolean' },
+        approxDuration: { type: 'number', minimum: 0.3 },
+        recommendedFps: { type: 'number', minimum: 15 },
+        kind: { type: 'string' },
+      },
+    },
+    globalStyle: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['energy', 'keyframeDensity', 'hipsMovement', 'usesExpressions'],
+      properties: {
+        energy: { type: 'string', enum: ['low', 'medium', 'high'] },
+        keyframeDensity: { type: 'string', enum: ['low', 'medium', 'high'] },
+        hipsMovement: { type: 'string', enum: ['none', 'subtle', 'strong'] },
+        usesExpressions: { type: 'boolean' },
+      },
+    },
+    phases: {
+      type: 'array',
+      minItems: 1,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'startTime', 'endTime', 'purpose', 'bones', 'description', 'keyframeDensity', 'easingHint', 'expressions'],
+        properties: {
+          name: { type: 'string' },
+          startTime: { type: 'number', minimum: 0 },
+          endTime: { type: 'number', minimum: 0 },
+          purpose: { type: 'string' },
+          description: { type: 'string' },
+          keyframeDensity: { type: 'string', enum: ['low', 'medium', 'high'] },
+          easingHint: { type: 'string', enum: ['linear', 'easeIn', 'easeOut', 'easeInOut', 'elastic'] },
+          bones: {
+            type: 'array',
+            minItems: 1,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['bone', 'role', 'motion', 'overlapWithPreviousMs', 'peakAnglesDeg'],
+              properties: {
+                bone: { type: 'string' },
+                role: { type: 'string', enum: ['primary', 'secondary', 'counter', 'stabilizer'] },
+                motion: { type: 'string' },
+                overlapWithPreviousMs: { type: 'number', minimum: 0 },
+                peakAnglesDeg: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['x', 'y', 'z'],
+                  properties: {
+                    x: { type: 'number' },
+                    y: { type: 'number' },
+                    z: { type: 'number' },
+                  },
+                },
+              },
+            },
+          },
+          expressions: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['name', 'peakValue', 'peakTime'],
+              properties: {
+                name: { type: 'string' },
+                peakValue: { type: 'number', minimum: 0, maximum: 1 },
+                peakTime: { type: 'number', minimum: 0 },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
 
 export const VRMA_JSON_SCHEMA = {
   type: 'object',
@@ -137,7 +224,7 @@ export const VRMA_JSON_SCHEMA = {
     },
     expressions: {
       type: 'array',
-      minItems: 1,
+      minItems: 0,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -153,7 +240,7 @@ export const VRMA_JSON_SCHEMA = {
               required: ['t', 'v'],
               properties: {
                 t: { type: 'number', minimum: 0 },
-                v: { type: 'number' },
+                v: { type: 'number', minimum: 0, maximum: 1 },
               },
             },
           },

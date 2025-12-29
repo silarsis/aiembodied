@@ -72,6 +72,7 @@ export interface VrmModelRecord {
   fileSha: string;
   version: string;
   thumbnail: Buffer | null;
+  description: string | null;
 }
 
 interface SerializedVrmModel extends Omit<VrmModelRecord, 'thumbnail'> {
@@ -164,6 +165,10 @@ const MIGRATIONS: readonly Migration[] = [
       );`,
       `CREATE INDEX IF NOT EXISTS vrma_animations_created_idx ON vrma_animations(created_at DESC, id DESC);`,
     ],
+  },
+  {
+    version: 5,
+    statements: [`ALTER TABLE vrm_models ADD COLUMN description TEXT NULL;`],
   },
 ];
 
@@ -546,8 +551,8 @@ export class MemoryStore {
     this.ensureOpen();
 
     const stmt = this.db.prepare<VrmModelRecord>(
-      `INSERT INTO vrm_models (id, name, created_at, file_path, file_sha, version, thumbnail)
-       VALUES (@id, @name, @createdAt, @filePath, @fileSha, @version, @thumbnail);`,
+      `INSERT INTO vrm_models (id, name, created_at, file_path, file_sha, version, thumbnail, description)
+       VALUES (@id, @name, @createdAt, @filePath, @fileSha, @version, @thumbnail, @description);`,
     );
 
     stmt.run({
@@ -558,6 +563,7 @@ export class MemoryStore {
       fileSha: model.fileSha,
       version: model.version,
       thumbnail: model.thumbnail ?? null,
+      description: model.description ?? null,
     });
   }
 
@@ -565,7 +571,7 @@ export class MemoryStore {
     this.ensureOpen();
 
     const stmt = this.db.prepare(
-      `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha, version, thumbnail
+      `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha, version, thumbnail, description
        FROM vrm_models
        ORDER BY created_at DESC, id DESC;`,
     );
@@ -578,6 +584,7 @@ export class MemoryStore {
       fileSha: string;
       version: string;
       thumbnail: Buffer | null;
+      description: string | null;
     }>;
 
     return rows.map((row) => ({
@@ -588,6 +595,7 @@ export class MemoryStore {
       fileSha: String(row.fileSha),
       version: String(row.version),
       thumbnail: row.thumbnail ? Buffer.from(row.thumbnail) : null,
+      description: row.description ? String(row.description) : null,
     }));
   }
 
@@ -595,7 +603,7 @@ export class MemoryStore {
     this.ensureOpen();
 
     const stmt = this.db.prepare(
-      `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha, version, thumbnail
+      `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha, version, thumbnail, description
        FROM vrm_models WHERE id = ?;`,
     );
 
@@ -608,6 +616,7 @@ export class MemoryStore {
           fileSha: string;
           version: string;
           thumbnail: Buffer | null;
+          description: string | null;
         }
       | undefined;
 
@@ -623,6 +632,7 @@ export class MemoryStore {
       fileSha: String(row.fileSha),
       version: String(row.version),
       thumbnail: row.thumbnail ? Buffer.from(row.thumbnail) : null,
+      description: row.description ? String(row.description) : null,
     };
   }
 
@@ -642,6 +652,13 @@ export class MemoryStore {
 
     const stmt = this.db.prepare(`UPDATE vrm_models SET thumbnail = ? WHERE id = ?;`);
     stmt.run(thumbnail, modelId);
+  }
+
+  updateVrmModelDescription(modelId: string, description: string): void {
+    this.ensureOpen();
+
+    const stmt = this.db.prepare(`UPDATE vrm_models SET description = ? WHERE id = ?;`);
+    stmt.run(description, modelId);
   }
 
   createVrmAnimation(animation: VrmAnimationRecord): void {
@@ -733,6 +750,23 @@ export class MemoryStore {
 
     const stmt = this.db.prepare(`DELETE FROM vrma_animations WHERE id = ?;`);
     stmt.run(animationId);
+  }
+
+  updateVrmAnimation(animationId: string, record: VrmAnimationRecord): void {
+    this.ensureOpen();
+
+    const stmt = this.db.prepare<VrmAnimationRecord>(
+      `UPDATE vrma_animations SET name = @name, created_at = @createdAt, file_path = @filePath, file_sha = @fileSha, duration = @duration, fps = @fps WHERE id = @id;`,
+    );
+    stmt.run({
+      id: animationId,
+      name: record.name,
+      createdAt: record.createdAt,
+      filePath: record.filePath,
+      fileSha: record.fileSha,
+      duration: record.duration ?? null,
+      fps: record.fps ?? null,
+    });
   }
 
   getActiveFaceId(): string | null {
@@ -837,7 +871,7 @@ export class MemoryStore {
        FROM face_components ORDER BY face_id ASC, sequence ASC, id ASC;`,
     );
     const vrmModelsStmt = this.db.prepare(
-      `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha, version, thumbnail
+      `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha, version, thumbnail, description
        FROM vrm_models ORDER BY created_at ASC, id ASC;`,
     );
     const vrmaAnimationsStmt = this.db.prepare(
@@ -870,6 +904,7 @@ export class MemoryStore {
       fileSha: string;
       version: string;
       thumbnail: Buffer | null;
+      description: string | null;
     }>;
     const vrmaAnimationRows = vrmaAnimationsStmt.all() as Array<{
       id: string;
@@ -927,6 +962,7 @@ export class MemoryStore {
       fileSha: String(row.fileSha),
       version: String(row.version),
       thumbnail: row.thumbnail ? Buffer.from(row.thumbnail).toString('base64') : null,
+      description: row.description ? String(row.description) : null,
     }));
 
     const vrmaAnimations: VrmAnimationRecord[] = vrmaAnimationRows.map((row) => ({
@@ -1037,15 +1073,16 @@ export class MemoryStore {
       }
 
       const insertVrmModel = this.db.prepare<VrmModelRecord>(
-        `INSERT INTO vrm_models (id, name, created_at, file_path, file_sha, version, thumbnail)
-         VALUES (@id, @name, @createdAt, @filePath, @fileSha, @version, @thumbnail)
+        `INSERT INTO vrm_models (id, name, created_at, file_path, file_sha, version, thumbnail, description)
+         VALUES (@id, @name, @createdAt, @filePath, @fileSha, @version, @thumbnail, @description)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name,
            created_at = excluded.created_at,
            file_path = excluded.file_path,
            file_sha = excluded.file_sha,
            version = excluded.version,
-           thumbnail = excluded.thumbnail;`,
+           thumbnail = excluded.thumbnail,
+           description = excluded.description;`,
       );
 
       for (const model of data.vrmModels ?? []) {
@@ -1057,6 +1094,7 @@ export class MemoryStore {
           fileSha: model.fileSha,
           version: model.version,
           thumbnail: model.thumbnail ? Buffer.from(model.thumbnail, 'base64') : null,
+          description: model.description ?? null,
         });
       }
 

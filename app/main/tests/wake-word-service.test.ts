@@ -29,18 +29,32 @@ function createService({
   cooldownMs = 1000,
   minConfidence = 0.5,
   worker = new FakeWorker(),
+  autoRestart = true,
+  restartDelayMs = 100,
+  maxRestartDelayMs = 1000,
   onSpawn,
 }: {
   cooldownMs?: number;
   minConfidence?: number;
   worker?: FakeWorker;
+  autoRestart?: boolean;
+  restartDelayMs?: number;
+  maxRestartDelayMs?: number;
   onSpawn?: (filename: URL, options: WorkerOptions) => void;
 } = {}) {
   const factory: WorkerFactory = (filename, options) => {
     onSpawn?.(filename, options);
     return worker as unknown as ReturnType<WorkerFactory>;
   };
-  const service = new WakeWordService({ logger, cooldownMs, minConfidence, workerFactory: factory });
+  const service = new WakeWordService({
+    logger,
+    cooldownMs,
+    minConfidence,
+    workerFactory: factory,
+    autoRestart,
+    restartDelayMs,
+    maxRestartDelayMs,
+  });
   return { service, worker };
 }
 
@@ -162,5 +176,217 @@ describe('WakeWordService', () => {
     expect(capturedPath?.pathname.endsWith('porcupine-worker.ts')).toBe(true);
     expect(capturedOptions?.execArgv).toBeDefined();
     expect(capturedOptions?.execArgv).toEqual(expect.arrayContaining(['--loader', 'ts-node/esm']));
+  });
+
+  it('schedules restart when fatal error is received', async () => {
+    vi.useFakeTimers();
+    let spawnCount = 0;
+    const workers: FakeWorker[] = [];
+
+    const factory: WorkerFactory = () => {
+      const worker = new FakeWorker();
+      workers.push(worker);
+      spawnCount++;
+      return worker as unknown as ReturnType<WorkerFactory>;
+    };
+
+    const service = new WakeWordService({
+      logger,
+      cooldownMs: 1000,
+      minConfidence: 0.5,
+      workerFactory: factory,
+      autoRestart: true,
+      restartDelayMs: 100,
+      maxRestartDelayMs: 1000,
+    });
+
+    service.on('error', () => {});
+
+    service.start({
+      accessKey: 'key',
+      keywordPath: 'porcupine',
+      keywordLabel: 'Porcupine',
+      sensitivity: 0.5,
+    });
+
+    expect(spawnCount).toBe(1);
+
+    workers[0].emit('message', {
+      type: 'error',
+      error: { message: 'PvRecorder failed to read audio data frame.' },
+      fatal: true,
+    } satisfies WakeWordWorkerMessage);
+    workers[0].emit('exit', 0);
+
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(spawnCount).toBe(2);
+
+    await service.dispose();
+    vi.useRealTimers();
+  });
+
+  it('does not restart when autoRestart is disabled', async () => {
+    vi.useFakeTimers();
+    let spawnCount = 0;
+    const workers: FakeWorker[] = [];
+
+    const factory: WorkerFactory = () => {
+      const worker = new FakeWorker();
+      workers.push(worker);
+      spawnCount++;
+      return worker as unknown as ReturnType<WorkerFactory>;
+    };
+
+    const service = new WakeWordService({
+      logger,
+      cooldownMs: 1000,
+      minConfidence: 0.5,
+      workerFactory: factory,
+      autoRestart: false,
+    });
+
+    service.on('error', () => {});
+
+    service.start({
+      accessKey: 'key',
+      keywordPath: 'porcupine',
+      keywordLabel: 'Porcupine',
+      sensitivity: 0.5,
+    });
+
+    workers[0].emit('message', {
+      type: 'error',
+      error: { message: 'PvRecorder failed to read audio data frame.' },
+      fatal: true,
+    } satisfies WakeWordWorkerMessage);
+    workers[0].emit('exit', 0);
+
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(spawnCount).toBe(1);
+
+    await service.dispose();
+    vi.useRealTimers();
+  });
+
+  it('applies exponential backoff on repeated restarts', async () => {
+    vi.useFakeTimers();
+    const workers: FakeWorker[] = [];
+    let spawnCount = 0;
+
+    const factory: WorkerFactory = () => {
+      const worker = new FakeWorker();
+      workers.push(worker);
+      spawnCount++;
+      return worker as unknown as ReturnType<WorkerFactory>;
+    };
+
+    const service = new WakeWordService({
+      logger,
+      cooldownMs: 1000,
+      minConfidence: 0.5,
+      workerFactory: factory,
+      autoRestart: true,
+      restartDelayMs: 100,
+      maxRestartDelayMs: 1000,
+    });
+
+    service.on('error', () => {});
+
+    service.start({
+      accessKey: 'key',
+      keywordPath: 'porcupine',
+      keywordLabel: 'Porcupine',
+      sensitivity: 0.5,
+    });
+
+    expect(spawnCount).toBe(1);
+
+    workers[0].emit('message', {
+      type: 'error',
+      error: { message: 'PvRecorder failed to read audio data frame.' },
+      fatal: true,
+    } satisfies WakeWordWorkerMessage);
+    workers[0].emit('exit', 0);
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(spawnCount).toBe(2);
+
+    workers[1].emit('message', {
+      type: 'error',
+      error: { message: 'PvRecorder failed to read audio data frame.' },
+      fatal: true,
+    } satisfies WakeWordWorkerMessage);
+    workers[1].emit('exit', 0);
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(spawnCount).toBe(2);
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(spawnCount).toBe(3);
+
+    await service.dispose();
+    vi.useRealTimers();
+  });
+
+  it('resets restart attempts on successful ready', async () => {
+    vi.useFakeTimers();
+    const workers: FakeWorker[] = [];
+    let spawnCount = 0;
+
+    const factory: WorkerFactory = () => {
+      const worker = new FakeWorker();
+      workers.push(worker);
+      spawnCount++;
+      return worker as unknown as ReturnType<WorkerFactory>;
+    };
+
+    const service = new WakeWordService({
+      logger,
+      cooldownMs: 1000,
+      minConfidence: 0.5,
+      workerFactory: factory,
+      autoRestart: true,
+      restartDelayMs: 100,
+      maxRestartDelayMs: 1000,
+    });
+
+    service.on('error', () => {});
+
+    service.start({
+      accessKey: 'key',
+      keywordPath: 'porcupine',
+      keywordLabel: 'Porcupine',
+      sensitivity: 0.5,
+    });
+
+    workers[0].emit('message', {
+      type: 'error',
+      error: { message: 'PvRecorder failed to read audio data frame.' },
+      fatal: true,
+    } satisfies WakeWordWorkerMessage);
+    workers[0].emit('exit', 0);
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(spawnCount).toBe(2);
+
+    workers[1].emit('message', {
+      type: 'ready',
+      info: { frameLength: 512, sampleRate: 16000, keywordLabel: 'Porcupine' },
+    } satisfies WakeWordWorkerMessage);
+
+    workers[1].emit('message', {
+      type: 'error',
+      error: { message: 'PvRecorder failed to read audio data frame.' },
+      fatal: true,
+    } satisfies WakeWordWorkerMessage);
+    workers[1].emit('exit', 0);
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(spawnCount).toBe(3);
+
+    await service.dispose();
+    vi.useRealTimers();
   });
 });

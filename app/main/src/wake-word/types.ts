@@ -23,7 +23,7 @@ export interface WakeWordWorkerConfig {
 
 export type WakeWordWorkerMessage =
   | { type: 'wake'; event: WakeWordDetectionEvent }
-  | { type: 'error'; error: SerializedError }
+  | { type: 'error'; error: SerializedError; fatal?: boolean }
   | { type: 'ready'; info: WakeWordReadyEvent };
 
 export interface SerializedError {
