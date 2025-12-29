@@ -932,20 +932,6 @@ export function AvatarConfigurator({
                   </div>
                   <div className="faceCard__info">
                     <h3>{model.name}</h3>
-                    <dl className="faceCard__metaList">
-                      <div>
-                        <dt>Version</dt>
-                        <dd>{model.version || '—'}</dd>
-                      </div>
-                      <div>
-                        <dt>Uploaded</dt>
-                        <dd>{model.createdLabel}</dd>
-                      </div>
-                      <div>
-                        <dt>Checksum</dt>
-                        <dd>{truncateSha(model.fileSha)}</dd>
-                      </div>
-                    </dl>
                   </div>
                   <div className="faceCard__actions">
                     <button type="button" onClick={() => handleModelSelect(model.id)} disabled={busy || !isModelBridgeAvailable}>
