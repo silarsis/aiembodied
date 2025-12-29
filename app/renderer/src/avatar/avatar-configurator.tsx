@@ -10,26 +10,17 @@ import {
 import type {
   AvatarAnimationSummary,
   AvatarBridge,
-  AvatarFaceDetail,
-  AvatarFaceSummary,
-  AvatarGenerationCandidateSummary,
-  AvatarGenerationResult,
   AvatarModelSummary,
 } from './types.js';
 import { generateVrmThumbnail } from './thumbnail-generator.js';
-
-type PanelId = '2d' | '3d';
 
 type ModelUploadStatus = 'idle' | 'reading' | 'uploading' | 'success';
 type VrmaGenerationStatus = 'idle' | 'pending' | 'success' | 'error';
 
 interface AvatarConfiguratorProps {
   avatarApi?: AvatarBridge;
-  onActiveFaceChange?: (detail: AvatarFaceDetail | null) => void;
   onActiveModelChange?: (detail: AvatarModelSummary | null) => void;
   onAnimationChange?: () => void;
-  /** Which panel to show: '2d' for face management, '3d' for VRM/VRMA */
-  panel?: PanelId;
 }
 
 function deriveName(file: File | null): string {
@@ -38,7 +29,7 @@ function deriveName(file: File | null): string {
   }
 
   const name = file.name.replace(/\.[^/.]+$/, '').trim();
-  return name || 'New avatar face';
+  return name || 'New model';
 }
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -92,27 +83,15 @@ function truncateSha(value: string | null | undefined): string {
 
 export function AvatarConfigurator({
   avatarApi,
-  onActiveFaceChange,
   onActiveModelChange,
   onAnimationChange,
-  panel = '2d',
 }: AvatarConfiguratorProps) {
-  const [faces, setFaces] = useState<AvatarFaceSummary[]>([]);
   const [models, setModels] = useState<AvatarModelSummary[]>([]);
-  const [activeFaceId, setActiveFaceId] = useState<string | null>(null);
   const [activeModelId, setActiveModelId] = useState<string | null>(null);
-  const [facesLoading, setFacesLoading] = useState(true);
   const [modelsLoading, setModelsLoading] = useState(true);
-  const [faceUploading, setFaceUploading] = useState(false);
-  const [faceBusyId, setFaceBusyId] = useState<string | null>(null);
   const [modelBusyId, setModelBusyId] = useState<string | null>(null);
-  const [faceError, setFaceError] = useState<string | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);
   const [generalError, setGeneralError] = useState<string | null>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const [nameInput, setNameInput] = useState('');
-  const [generation, setGeneration] = useState<AvatarGenerationResult | null>(null);
-  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [modelFile, setModelFile] = useState<File | null>(null);
   const [modelNameInput, setModelNameInput] = useState('');
   const [modelUploadStatus, setModelUploadStatus] = useState<ModelUploadStatus>('idle');
@@ -128,10 +107,8 @@ export function AvatarConfigurator({
   const [animationBusyId, setAnimationBusyId] = useState<string | null>(null);
   const [renamingAnimationId, setRenamingAnimationId] = useState<string | null>(null);
   const [renamingAnimationName, setRenamingAnimationName] = useState('');
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const modelFileInputRef = useRef<HTMLInputElement | null>(null);
   const availabilityLogRef = useRef<'available' | 'missing' | null>(null);
-  const isFaceBridgeAvailable = Boolean(avatarApi);
   const isModelBridgeAvailable = Boolean(avatarApi?.listModels && avatarApi?.uploadModel);
   const isAnimationBridgeAvailable = Boolean(avatarApi?.generateAnimation);
 
@@ -151,47 +128,12 @@ export function AvatarConfigurator({
     }
   }, [avatarApi]);
 
-  const formattedFaces = useMemo(() => {
-    return faces.map((face) => ({
-      ...face,
-      createdLabel: formatTimestamp(face.createdAt),
-    }));
-  }, [faces]);
-
   const formattedModels = useMemo(() => {
     return models.map((model) => ({
       ...model,
       createdLabel: formatTimestamp(model.createdAt),
     }));
   }, [models]);
-
-  const refreshFaces = useCallback(async () => {
-    if (!avatarApi) {
-      setFaces([]);
-      setActiveFaceId(null);
-      onActiveFaceChange?.(null);
-      setFacesLoading(false);
-      setFaceError('Avatar configuration bridge is unavailable.');
-      return;
-    }
-
-    setFacesLoading(true);
-    setFaceError(null);
-
-    try {
-      const [list, active] = await Promise.all([avatarApi.listFaces(), avatarApi.getActiveFace()]);
-      setFaces(list);
-      setActiveFaceId(active?.id ?? null);
-      onActiveFaceChange?.(active ?? null);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load avatar faces.';
-      setFaceError(message);
-    } finally {
-      setFacesLoading(false);
-      setFaceBusyId(null);
-      setFaceUploading(false);
-    }
-  }, [avatarApi, onActiveFaceChange]);
 
   const generateMissingThumbnails = useCallback(async () => {
     if (!avatarApi?.loadModelBinary || !avatarApi.updateModelThumbnail) {
@@ -252,106 +194,6 @@ export function AvatarConfigurator({
   useEffect(() => {
     generateMissingThumbnails();
   }, [generateMissingThumbnails]);
-
-  const handleFileChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-    const nextFile = event.target.files?.[0] ?? null;
-    setFile(nextFile);
-    if (nextFile) {
-      setNameInput((previous) => (previous.trim().length > 0 ? previous : deriveName(nextFile)));
-    }
-  }, []);
-
-  const handleNameChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-    setNameInput(event.target.value);
-  }, []);
-
-  const handleUpload = useCallback(
-    (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-
-      if (!avatarApi) {
-        setFaceError('Avatar configuration bridge is unavailable.');
-        return;
-      }
-
-      if (!file) {
-        setFaceError('Select an image to upload.');
-        return;
-      }
-
-      if (!avatarApi.generateFace || !avatarApi.applyGeneratedFace) {
-        setFaceError('Avatar generation is not available.');
-        return;
-      }
-
-      setFaceUploading(true);
-      setFaceError(null);
-
-      void (async () => {
-        try {
-          const dataUrl = await fileToDataUrl(file);
-          const name = nameInput.trim() || deriveName(file);
-          const result = await avatarApi.generateFace({ name, imageDataUrl: dataUrl });
-          setGeneration(result);
-          setSelectedCandidateId(result.candidates[0]?.id ?? null);
-        } catch (err) {
-          const message = err instanceof Error ? err.message : 'Failed to upload avatar face.';
-          setFaceError(message);
-        } finally {
-          setFaceUploading(false);
-        }
-      })();
-    },
-    [avatarApi, file, nameInput],
-  );
-
-  const handleSelectFace = useCallback(
-    async (faceId: string) => {
-      if (!avatarApi) {
-        setFaceError('Avatar configuration bridge is unavailable.');
-        return;
-      }
-
-      setFaceBusyId(faceId);
-      setFaceError(null);
-      try {
-        const detail = await avatarApi.setActiveFace(faceId);
-        setActiveFaceId(detail?.id ?? null);
-        onActiveFaceChange?.(detail ?? null);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to activate avatar face.';
-        setFaceError(message);
-      } finally {
-        setFaceBusyId(null);
-      }
-    },
-    [avatarApi, onActiveFaceChange],
-  );
-
-  const handleDeleteFace = useCallback(
-    async (faceId: string) => {
-      if (!avatarApi) {
-        setFaceError('Avatar configuration bridge is unavailable.');
-        return;
-      }
-
-      setFaceBusyId(faceId);
-      setFaceError(null);
-      try {
-        await avatarApi.deleteFace(faceId);
-        if (activeFaceId === faceId) {
-          onActiveFaceChange?.(null);
-        }
-        await refreshFaces();
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to delete avatar face.';
-        setFaceError(message);
-      } finally {
-        setFaceBusyId(null);
-      }
-    },
-    [avatarApi, activeFaceId, onActiveFaceChange, refreshFaces],
-  );
 
   const handleModelFileChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const nextFile = event.target.files?.[0] ?? null;
@@ -523,16 +365,12 @@ export function AvatarConfigurator({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      await refreshFaces();
       await refreshModels();
       await refreshAnimations();
       if (cancelled) {
         return;
       }
 
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
       if (modelFileInputRef.current) {
         modelFileInputRef.current.value = '';
       }
@@ -541,7 +379,7 @@ export function AvatarConfigurator({
     return () => {
       cancelled = true;
     };
-  }, [refreshFaces, refreshModels, refreshAnimations]);
+  }, [refreshModels, refreshAnimations]);
 
   const handleDeleteAnimation = useCallback(
     async (animationId: string) => {
@@ -654,57 +492,15 @@ export function AvatarConfigurator({
     [avatarApi, vrmaPrompt, onAnimationChange, refreshAnimations],
   );
 
-  const handleApplyGeneratedFace = useCallback(async () => {
-    if (!avatarApi?.applyGeneratedFace) {
-      setFaceError('Avatar generation is not available.');
-      return;
-    }
-
-    if (!generation || !selectedCandidateId) {
-      setFaceError('Select a generated avatar style before applying.');
-      return;
-    }
-
-    setFaceUploading(true);
-    setFaceError(null);
-    try {
-      const name = nameInput.trim() || (file ? deriveName(file) : 'New avatar face');
-      await avatarApi.applyGeneratedFace(generation.generationId, selectedCandidateId, name);
-      setGeneration(null);
-      setSelectedCandidateId(null);
-      setNameInput('');
-      setFile(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-      await refreshFaces();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to apply generated avatar face.';
-      setFaceError(message);
-    } finally {
-      setFaceUploading(false);
-    }
-  }, [avatarApi, file, generation, nameInput, refreshFaces, selectedCandidateId]);
-
-  const handleCancelGeneration = useCallback(() => {
-    setGeneration(null);
-    setSelectedCandidateId(null);
-  }, []);
-
   const modelUploadDisabled = !isModelBridgeAvailable || modelUploadStatus === 'reading' || modelUploadStatus === 'uploading';
   const vrmaPending = vrmaStatus === 'pending';
-
-  const panelTitle = panel === '2d' ? '2D Face Management' : '3D Model Management';
-  const panelDescription = panel === '2d'
-    ? 'Upload and manage 2D sprite faces for your avatar.'
-    : 'Upload VRM models and generate VRMA animations.';
 
   return (
     <section className="kiosk__faces" aria-labelledby="kiosk-faces-title">
       <div className="faces__header">
         <div>
-          <h2 id="kiosk-faces-title">{panelTitle}</h2>
-          <p className="kiosk__helper">{panelDescription}</p>
+          <h2 id="kiosk-faces-title">3D Avatar Management</h2>
+          <p className="kiosk__helper">Upload VRM models and generate VRMA animations.</p>
         </div>
         {generalError ? (
           <p className="kiosk__error" role="alert">
@@ -713,344 +509,227 @@ export function AvatarConfigurator({
         ) : null}
       </div>
 
-      {panel === '2d' ? (
-        <div className="faces__panel faces__panel--active">
-          <form className="faces__form" onSubmit={handleUpload} aria-label="Upload new avatar face">
-            <label className="faces__field">
-              <span>Face image</span>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleFileChange}
-                disabled={!isFaceBridgeAvailable || faceUploading}
-                required
-              />
-            </label>
-            <label className="faces__field">
-              <span>Display name</span>
-              <input
-                type="text"
-                value={nameInput}
-                onChange={handleNameChange}
-                placeholder="Cheerful assistant"
-                disabled={!isFaceBridgeAvailable || faceUploading}
-              />
-            </label>
-            <button
-              className="faces__submit"
-              type="submit"
-              disabled={!isFaceBridgeAvailable || faceUploading || !file}
-            >
-              {faceUploading ? 'Generating…' : 'Generate avatar'}
-            </button>
-          </form>
+      <div className="faces__panel faces__panel--active">
+        <form className="faces__form" onSubmit={handleGenerateAnimation} aria-label="Generate VRMA animation">
+          <label className="faces__field">
+            <span>Animation prompt</span>
+            <textarea
+              value={vrmaPrompt}
+              onChange={handleVrmaPromptChange}
+              placeholder="Wave hello, then return to idle stance."
+              disabled={!isAnimationBridgeAvailable || vrmaPending}
+              rows={3}
+            />
+          </label>
+          <button type="submit" disabled={!isAnimationBridgeAvailable || vrmaPending || vrmaPrompt.trim().length === 0} className="faces__submit">
+            {vrmaPending ? 'Generating…' : 'Generate VRMA'}
+          </button>
+        </form>
 
-          {generation ? (
-            <section className="faces__selection" aria-label="Choose generated avatar">
-              <h3>Choose your avatar style</h3>
-              <div className="faces__options" role="radiogroup" aria-label="Avatar generation options">
-                {generation.candidates.map((candidate: AvatarGenerationCandidateSummary) => (
-                  <label key={candidate.id} className="faces__option">
-                    <span className="visually-hidden">Select avatar candidate</span>
-                    <input
-                      type="radio"
-                      name="avatar-option"
-                      value={candidate.id}
-                      checked={selectedCandidateId === candidate.id}
-                      onChange={() => setSelectedCandidateId(candidate.id)}
-                      disabled={faceUploading}
-                    />
-                    <div className="faces__optionCard">
-                      <div className="faces__optionPreview" aria-hidden="true">
-                        {candidate.previewDataUrl ? (
-                          <img src={candidate.previewDataUrl} alt="" />
-                        ) : (
-                          <div className="faceCard__placeholder">No preview</div>
-                        )}
-                      </div>
-                      <div className="faces__optionInfo">
-                        <strong>{candidate.strategy === 'responses' ? 'Responses (AI)' : 'Images (Edit)'}</strong>
-                        <span>
-                          {candidate.componentsCount} components · {candidate.qualityScore}%
-                        </span>
-                      </div>
+        {vrmaMessage ? (
+          <p className={vrmaStatus === 'error' ? 'kiosk__error' : 'kiosk__info'} role={vrmaStatus === 'error' ? 'alert' : 'status'}>
+            {vrmaMessage}
+          </p>
+        ) : null}
+        {vrmaStatus === 'success' && vrmaResultName ? (
+          <p className="kiosk__info" role="status">
+            Generated animation saved as {vrmaResultName}.
+          </p>
+        ) : null}
+
+        <form className="faces__form" onSubmit={handleModelUpload} aria-label="Upload new VRM model">
+          <label className="faces__field">
+            <span>VRM file</span>
+            <input
+              ref={modelFileInputRef}
+              type="file"
+              accept=".vrm"
+              onChange={handleModelFileChange}
+              disabled={!isModelBridgeAvailable || modelUploadDisabled}
+              required
+            />
+          </label>
+          <label className="faces__field">
+            <span>Display name</span>
+            <input
+              type="text"
+              value={modelNameInput}
+              onChange={handleModelNameChange}
+              placeholder="3D assistant"
+              disabled={!isModelBridgeAvailable || modelUploadDisabled}
+            />
+          </label>
+          <button type="submit" disabled={modelUploadDisabled || !modelFile} className="faces__submit">
+            {modelUploadStatus === 'reading' ? 'Processing…' : modelUploadStatus === 'uploading' ? 'Uploading…' : 'Upload VRM'}
+          </button>
+        </form>
+
+        {modelUploadError ? (
+          <p className="kiosk__error" role="alert">
+            {modelUploadError}
+          </p>
+        ) : null}
+        {modelUploadStatus === 'uploading' ? <p className="kiosk__info">Uploading VRM model…</p> : null}
+        {modelUploadStatus === 'reading' ? <p className="kiosk__info">Preparing VRM payload…</p> : null}
+
+        {lastUploadedModel ? (
+          <div className="faces__uploadResult" role="status">
+            <h3>Upload complete</h3>
+            <p>
+              {lastUploadedModel.name} · v{lastUploadedModel.version}
+            </p>
+            {lastUploadedModel.thumbnailDataUrl ? (
+              <img
+                src={lastUploadedModel.thumbnailDataUrl}
+                alt={`${lastUploadedModel.name} thumbnail`}
+                className="faces__uploadThumbnail"
+              />
+            ) : (
+              <div className="faceCard__placeholder">No thumbnail</div>
+            )}
+          </div>
+        ) : null}
+
+        {modelError ? (
+          <p role="alert" className="kiosk__error">
+            {modelError}
+          </p>
+        ) : null}
+        {modelsLoading ? <p className="kiosk__info">Loading stored VRM models…</p> : null}
+
+        <div className="faces__grid" role="list">
+          {formattedModels.map((model) => {
+            const isActive = model.id === activeModelId;
+            const busy = modelBusyId === model.id || modelUploadStatus === 'uploading';
+            return (
+              <article key={model.id} className="faceCard" data-active={isActive ? 'true' : 'false'} role="listitem">
+                <div className="faceCard__preview" aria-hidden="true">
+                  {model.thumbnailDataUrl ? (
+                    <img src={model.thumbnailDataUrl} alt="" loading="lazy" />
+                  ) : (
+                    <div className="faceCard__placeholder">No thumbnail</div>
+                  )}
+                </div>
+                <div className="faceCard__info">
+                  <h3>{model.name}</h3>
+                </div>
+                <div className="faceCard__actions">
+                  <button type="button" onClick={() => handleModelSelect(model.id)} disabled={busy || !isModelBridgeAvailable}>
+                    {isActive ? 'Active' : 'Use model'}
+                  </button>
+                  <button type="button" onClick={() => handleModelDelete(model.id)} disabled={busy || !isModelBridgeAvailable}>
+                    Delete
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+
+        {!modelsLoading && formattedModels.length === 0 ? (
+          <p className="kiosk__info">No VRM models uploaded yet. Add a .vrm file to enable the 3D renderer.</p>
+        ) : null}
+
+        <hr className="faces__divider" />
+
+        <h2 className="faces__heading">Stored VRMA Animations</h2>
+
+        {animationError ? (
+          <p role="alert" className="kiosk__error">
+            {animationError}
+          </p>
+        ) : null}
+        {animationsLoading ? <p className="kiosk__info">Loading stored animations…</p> : null}
+
+        <div className="faces__grid" role="list">
+          {animations.map((animation) => {
+            const busy = animationBusyId === animation.id;
+            const isRenaming = renamingAnimationId === animation.id;
+
+            return (
+              <article key={animation.id} className="faceCard" role="listitem">
+                <div className="faceCard__info">
+                  {isRenaming ? (
+                    <div className="faceCard__renameForm">
+                      <input
+                        type="text"
+                        value={renamingAnimationName}
+                        onChange={(e) => setRenamingAnimationName(e.target.value)}
+                        placeholder="Animation name"
+                        disabled={busy}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleRenameAnimation(animation.id);
+                          } else if (e.key === 'Escape') {
+                            handleCancelRenameAnimation();
+                          }
+                        }}
+                      />
                     </div>
-                  </label>
-                ))}
-              </div>
-              <div className="faces__selectionActions">
-                <button type="button" onClick={handleCancelGeneration} disabled={faceUploading}>
-                  Cancel
-                </button>
-                <button type="button" onClick={handleApplyGeneratedFace} disabled={faceUploading || !selectedCandidateId}>
-                  Apply
-                </button>
-              </div>
-            </section>
-          ) : null}
-
-          {faceError ? (
-            <p role="alert" className="kiosk__error">
-              {faceError}
-            </p>
-          ) : null}
-          {faceUploading ? <p className="kiosk__info">Processing avatar assets…</p> : null}
-          {facesLoading ? <p className="kiosk__info">Loading stored faces…</p> : null}
-
-          <div className="faces__grid" role="list">
-            {formattedFaces.map((face) => {
-              const isActive = face.id === activeFaceId;
-              const busy = faceBusyId === face.id || faceUploading;
-              return (
-                <article key={face.id} className="faceCard" data-active={isActive ? 'true' : 'false'} role="listitem">
-                  <div className="faceCard__preview" aria-hidden="true">
-                    {face.previewDataUrl ? <img src={face.previewDataUrl} alt="" loading="lazy" /> : <div className="faceCard__placeholder">No preview</div>}
-                  </div>
-                  <div className="faceCard__info">
-                    <h3>{face.name}</h3>
-                    <p className="faceCard__meta">Added {face.createdLabel}</p>
-                  </div>
-                  <div className="faceCard__actions">
-                    <button type="button" onClick={() => handleSelectFace(face.id)} disabled={busy || !isFaceBridgeAvailable}>
-                      {isActive ? 'Active' : 'Use face'}
-                    </button>
-                    <button type="button" onClick={() => handleDeleteFace(face.id)} disabled={busy || !isFaceBridgeAvailable}>
-                      Delete
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-
-          {!facesLoading && formattedFaces.length === 0 ? (
-            <p className="kiosk__info">No avatar faces stored yet. Upload an image to get started.</p>
-          ) : null}
+                  ) : (
+                    <h3>{animation.name}</h3>
+                  )}
+                  <dl className="faceCard__metaList">
+                    <div>
+                      <dt>Duration</dt>
+                      <dd>{animation.duration !== null ? `${(animation.duration).toFixed(2)}s` : '—'}</dd>
+                    </div>
+                    <div>
+                      <dt>FPS</dt>
+                      <dd>{animation.fps !== null ? `${(animation.fps).toFixed(1)}` : '—'}</dd>
+                    </div>
+                    <div>
+                      <dt>Uploaded</dt>
+                      <dd>{formatTimestamp(animation.createdAt)}</dd>
+                    </div>
+                    <div>
+                      <dt>Checksum</dt>
+                      <dd>{truncateSha(animation.fileSha)}</dd>
+                    </div>
+                  </dl>
+                </div>
+                <div className="faceCard__actions">
+                  {isRenaming ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleRenameAnimation(animation.id)}
+                        disabled={busy || !renamingAnimationName.trim()}
+                      >
+                        Save
+                      </button>
+                      <button type="button" onClick={handleCancelRenameAnimation} disabled={busy}>
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleStartRenameAnimation(animation.id, animation.name)}
+                        disabled={busy}
+                      >
+                        Rename
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteAnimation(animation.id)}
+                        disabled={busy}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
+                </div>
+              </article>
+            );
+          })}
         </div>
-      ) : (
-        <div className="faces__panel faces__panel--active">
-          <form className="faces__form" onSubmit={handleGenerateAnimation} aria-label="Generate VRMA animation">
-            <label className="faces__field">
-              <span>Animation prompt</span>
-              <textarea
-                value={vrmaPrompt}
-                onChange={handleVrmaPromptChange}
-                placeholder="Wave hello, then return to idle stance."
-                disabled={!isAnimationBridgeAvailable || vrmaPending}
-                rows={3}
-              />
-            </label>
-            <button type="submit" disabled={!isAnimationBridgeAvailable || vrmaPending || vrmaPrompt.trim().length === 0} className="faces__submit">
-              {vrmaPending ? 'Generating…' : 'Generate VRMA'}
-            </button>
-          </form>
 
-          {vrmaMessage ? (
-            <p className={vrmaStatus === 'error' ? 'kiosk__error' : 'kiosk__info'} role={vrmaStatus === 'error' ? 'alert' : 'status'}>
-              {vrmaMessage}
-            </p>
-          ) : null}
-          {vrmaStatus === 'success' && vrmaResultName ? (
-            <p className="kiosk__info" role="status">
-              Generated animation saved as {vrmaResultName}.
-            </p>
-          ) : null}
-
-          <form className="faces__form" onSubmit={handleModelUpload} aria-label="Upload new VRM model">
-            <label className="faces__field">
-              <span>VRM file</span>
-              <input
-                ref={modelFileInputRef}
-                type="file"
-                accept=".vrm"
-                onChange={handleModelFileChange}
-                disabled={!isModelBridgeAvailable || modelUploadDisabled}
-                required
-              />
-            </label>
-            <label className="faces__field">
-              <span>Display name</span>
-              <input
-                type="text"
-                value={modelNameInput}
-                onChange={handleModelNameChange}
-                placeholder="3D assistant"
-                disabled={!isModelBridgeAvailable || modelUploadDisabled}
-              />
-            </label>
-            <button type="submit" disabled={modelUploadDisabled || !modelFile} className="faces__submit">
-              {modelUploadStatus === 'reading' ? 'Processing…' : modelUploadStatus === 'uploading' ? 'Uploading…' : 'Upload VRM'}
-            </button>
-          </form>
-
-          {modelUploadError ? (
-            <p className="kiosk__error" role="alert">
-              {modelUploadError}
-            </p>
-          ) : null}
-          {modelUploadStatus === 'uploading' ? <p className="kiosk__info">Uploading VRM model…</p> : null}
-          {modelUploadStatus === 'reading' ? <p className="kiosk__info">Preparing VRM payload…</p> : null}
-
-          {lastUploadedModel ? (
-            <div className="faces__uploadResult" role="status">
-              <h3>Upload complete</h3>
-              <p>
-                {lastUploadedModel.name} · v{lastUploadedModel.version}
-              </p>
-              {lastUploadedModel.thumbnailDataUrl ? (
-                <img
-                  src={lastUploadedModel.thumbnailDataUrl}
-                  alt={`${lastUploadedModel.name} thumbnail`}
-                  className="faces__uploadThumbnail"
-                />
-              ) : (
-                <div className="faceCard__placeholder">No thumbnail</div>
-              )}
-            </div>
-          ) : null}
-
-          {modelError ? (
-            <p role="alert" className="kiosk__error">
-              {modelError}
-            </p>
-          ) : null}
-          {modelsLoading ? <p className="kiosk__info">Loading stored VRM models…</p> : null}
-
-          <div className="faces__grid" role="list">
-            {formattedModels.map((model) => {
-              const isActive = model.id === activeModelId;
-              const busy = modelBusyId === model.id || modelUploadStatus === 'uploading';
-              return (
-                <article key={model.id} className="faceCard" data-active={isActive ? 'true' : 'false'} role="listitem">
-                  <div className="faceCard__preview" aria-hidden="true">
-                    {model.thumbnailDataUrl ? (
-                      <img src={model.thumbnailDataUrl} alt="" loading="lazy" />
-                    ) : (
-                      <div className="faceCard__placeholder">No thumbnail</div>
-                    )}
-                  </div>
-                  <div className="faceCard__info">
-                    <h3>{model.name}</h3>
-                  </div>
-                  <div className="faceCard__actions">
-                    <button type="button" onClick={() => handleModelSelect(model.id)} disabled={busy || !isModelBridgeAvailable}>
-                      {isActive ? 'Active' : 'Use model'}
-                    </button>
-                    <button type="button" onClick={() => handleModelDelete(model.id)} disabled={busy || !isModelBridgeAvailable}>
-                      Delete
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-
-          {!modelsLoading && formattedModels.length === 0 ? (
-            <p className="kiosk__info">No VRM models uploaded yet. Add a .vrm file to enable the 3D renderer.</p>
-          ) : null}
-
-          <hr className="faces__divider" />
-
-          <h2 className="faces__heading">Stored VRMA Animations</h2>
-
-          {animationError ? (
-            <p role="alert" className="kiosk__error">
-              {animationError}
-            </p>
-          ) : null}
-          {animationsLoading ? <p className="kiosk__info">Loading stored animations…</p> : null}
-
-          <div className="faces__grid" role="list">
-            {animations.map((animation) => {
-              const busy = animationBusyId === animation.id;
-              const isRenaming = renamingAnimationId === animation.id;
-
-              return (
-                <article key={animation.id} className="faceCard" role="listitem">
-                  <div className="faceCard__info">
-                    {isRenaming ? (
-                      <div className="faceCard__renameForm">
-                        <input
-                          type="text"
-                          value={renamingAnimationName}
-                          onChange={(e) => setRenamingAnimationName(e.target.value)}
-                          placeholder="Animation name"
-                          disabled={busy}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              handleRenameAnimation(animation.id);
-                            } else if (e.key === 'Escape') {
-                              handleCancelRenameAnimation();
-                            }
-                          }}
-                        />
-                      </div>
-                    ) : (
-                      <h3>{animation.name}</h3>
-                    )}
-                    <dl className="faceCard__metaList">
-                      <div>
-                        <dt>Duration</dt>
-                        <dd>{animation.duration !== null ? `${(animation.duration).toFixed(2)}s` : '—'}</dd>
-                      </div>
-                      <div>
-                        <dt>FPS</dt>
-                        <dd>{animation.fps !== null ? `${(animation.fps).toFixed(1)}` : '—'}</dd>
-                      </div>
-                      <div>
-                        <dt>Uploaded</dt>
-                        <dd>{formatTimestamp(animation.createdAt)}</dd>
-                      </div>
-                      <div>
-                        <dt>Checksum</dt>
-                        <dd>{truncateSha(animation.fileSha)}</dd>
-                      </div>
-                    </dl>
-                  </div>
-                  <div className="faceCard__actions">
-                    {isRenaming ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleRenameAnimation(animation.id)}
-                          disabled={busy || !renamingAnimationName.trim()}
-                        >
-                          Save
-                        </button>
-                        <button type="button" onClick={handleCancelRenameAnimation} disabled={busy}>
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleStartRenameAnimation(animation.id, animation.name)}
-                          disabled={busy}
-                        >
-                          Rename
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteAnimation(animation.id)}
-                          disabled={busy}
-                        >
-                          Delete
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-
-          {!animationsLoading && animations.length === 0 ? (
-            <p className="kiosk__info">No VRMA animations stored yet. Generate or upload an animation to get started.</p>
-          ) : null}
-        </div>
-      )}
+        {!animationsLoading && animations.length === 0 ? (
+          <p className="kiosk__info">No VRMA animations stored yet. Generate or upload an animation to get started.</p>
+        ) : null}
+      </div>
     </section>
   );
 }

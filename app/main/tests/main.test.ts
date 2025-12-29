@@ -105,8 +105,6 @@ const deleteMessagesMock = vi.fn();
 const setValueMock = vi.fn();
 const getValueMock = vi.fn();
 const deleteValueMock = vi.fn();
-const getAvatarDisplayModeMock = vi.fn();
-const setAvatarDisplayModeMock = vi.fn();
 const exportDataMock = vi.fn();
 const importDataMock = vi.fn();
 const memoryStoreDisposeMock = vi.fn();
@@ -122,8 +120,6 @@ const MemoryStoreMock = vi.fn(() => ({
   setValue: setValueMock,
   getValue: getValueMock,
   deleteValue: deleteValueMock,
-  getAvatarDisplayMode: getAvatarDisplayModeMock,
-  setAvatarDisplayMode: setAvatarDisplayModeMock,
   exportData: exportDataMock,
   importData: importDataMock,
   dispose: memoryStoreDisposeMock,
@@ -131,29 +127,6 @@ const MemoryStoreMock = vi.fn(() => ({
 
 vi.mock('../src/memory/index.js', () => ({
   MemoryStore: MemoryStoreMock,
-}));
-
-class AvatarFaceServiceDouble {
-  listFaces = vi.fn().mockResolvedValue([]);
-  getActiveFace = vi.fn().mockResolvedValue(null);
-  setActiveFace = vi.fn().mockResolvedValue(null);
-  generateFace = vi.fn().mockResolvedValue({ generationId: 'gen-1', candidates: [] });
-  applyGeneratedFace = vi.fn().mockResolvedValue({ faceId: 'face-123' });
-  uploadFace = vi.fn().mockResolvedValue({ faceId: 'face-123' });
-  deleteFace = vi.fn().mockResolvedValue(undefined);
-  constructor(public readonly options: unknown) {}
-}
-
-const avatarFaceServiceInstances: AvatarFaceServiceDouble[] = [];
-const createAvatarFaceServiceInstance = (options: unknown) => {
-  const instance = new AvatarFaceServiceDouble(options);
-  avatarFaceServiceInstances.push(instance);
-  return instance;
-};
-const AvatarFaceServiceMock = vi.fn(createAvatarFaceServiceInstance);
-
-vi.mock('../src/avatar/avatar-face-service.js', () => ({
-  AvatarFaceService: AvatarFaceServiceMock,
 }));
 
 const resolvePreloadScriptPathMock = vi.fn();
@@ -415,10 +388,6 @@ describe('main process bootstrap', () => {
     WakeWordServiceMock.mockImplementation(createWakeWordServiceInstance);
     wakeWordServiceInstances.length = 0;
 
-    AvatarFaceServiceMock.mockReset();
-    AvatarFaceServiceMock.mockImplementation(createAvatarFaceServiceInstance);
-    avatarFaceServiceInstances.length = 0;
-
     AvatarModelServiceMock.mockReset();
     AvatarModelServiceMock.mockImplementation(createAvatarModelServiceInstance);
     avatarModelServiceInstances.length = 0;
@@ -487,9 +456,6 @@ describe('main process bootstrap', () => {
     setValueMock.mockReset();
     getValueMock.mockReset();
     deleteValueMock.mockReset();
-    getAvatarDisplayModeMock.mockReset();
-    setAvatarDisplayModeMock.mockReset();
-    getAvatarDisplayModeMock.mockReturnValue(null);
     exportDataMock.mockReset();
     importDataMock.mockReset();
     memoryStoreDisposeMock.mockReset();
@@ -712,27 +678,7 @@ describe('main process bootstrap', () => {
       reason: 'secret-update',
     });
 
-    expect(avatarFaceServiceInstances).toHaveLength(2);
     expect(vrmaGenerationServiceInstances).toHaveLength(2);
-
-    const avatarServiceOptionsList = avatarFaceServiceInstances.map(
-      (instance) => instance.options as Record<string, unknown>,
-    );
-
-    for (const options of avatarServiceOptionsList) {
-      expect(options).toMatchObject({
-        client: expect.objectContaining({
-          responses: expect.objectContaining({
-            create: expect.any(Function),
-          }),
-        }),
-        logger: mockLogger,
-      });
-
-      expect(options).not.toHaveProperty('apiKey');
-      expect(options).not.toHaveProperty('endpoint');
-      expect(options).not.toHaveProperty('fetch');
-    }
 
     const testSecretHandler = handleEntries.get('config:test-secret');
     expect(typeof testSecretHandler).toBe('function');
@@ -755,34 +701,6 @@ describe('main process bootstrap', () => {
     expect(typeof metricsHandler).toBe('function');
     const metricsResult = metricsHandler?.({}, { metric: 'wake_to_capture_ms', valueMs: 100 });
     expect(metricsResult).toBe(false);
-
-    const avatarService = avatarFaceServiceInstances[avatarFaceServiceInstances.length - 1];
-    expect(avatarService).toBeDefined();
-
-    const listFacesHandler = handleEntries.get('avatar:list-faces');
-    expect(typeof listFacesHandler).toBe('function');
-    await expect(listFacesHandler?.({})).resolves.toEqual([]);
-    expect(avatarService?.listFaces).toHaveBeenCalledTimes(1);
-
-    const getActiveHandler = handleEntries.get('avatar:get-active-face');
-    expect(typeof getActiveHandler).toBe('function');
-    await expect(getActiveHandler?.({})).resolves.toBeNull();
-    expect(avatarService?.getActiveFace).toHaveBeenCalledTimes(1);
-
-    const setActiveHandler = handleEntries.get('avatar:set-active-face');
-    expect(typeof setActiveHandler).toBe('function');
-    await expect(setActiveHandler?.({}, 'face-1')).resolves.toBeNull();
-    expect(avatarService?.setActiveFace).toHaveBeenCalledWith('face-1');
-
-    const generateHandler = handleEntries.get('avatar:generate-face');
-    expect(typeof generateHandler).toBe('function');
-    await expect(generateHandler?.({}, { name: 'Friendly', imageDataUrl: 'data:' })).resolves.toEqual({ generationId: 'gen-1', candidates: expect.any(Array) });
-    expect(avatarService?.generateFace).toHaveBeenCalledWith({ name: 'Friendly', imageDataUrl: 'data:' });
-
-    const deleteHandler = handleEntries.get('avatar:delete-face');
-    expect(typeof deleteHandler).toBe('function');
-    await expect(deleteHandler?.({}, 'face-1')).resolves.toBe(true);
-    expect(avatarService?.deleteFace).toHaveBeenCalledWith('face-1');
 
     const avatarModelService = avatarModelServiceInstances[avatarModelServiceInstances.length - 1];
     expect(avatarModelService).toBeDefined();
@@ -872,16 +790,6 @@ describe('main process bootstrap', () => {
     expect(typeof loadAnimationBinaryHandler).toBe('function');
     await expect(loadAnimationBinaryHandler?.({}, 'vrma-2')).resolves.toBeInstanceOf(ArrayBuffer);
     expect(avatarAnimationService?.loadAnimationBinary).toHaveBeenCalledWith('vrma-2');
-
-    getAvatarDisplayModeMock.mockReturnValueOnce('vrm');
-    const getDisplayModeHandler = handleEntries.get('avatar:get-display-mode');
-    expect(typeof getDisplayModeHandler).toBe('function');
-    await expect(getDisplayModeHandler?.({})).resolves.toBe('vrm');
-
-    const setDisplayModeHandler = handleEntries.get('avatar:set-display-mode');
-    expect(typeof setDisplayModeHandler).toBe('function');
-    await expect(setDisplayModeHandler?.({}, 'sprites')).resolves.toBeNull();
-    expect(setAvatarDisplayModeMock).toHaveBeenCalledWith('sprites');
 
     const triggerBehaviorHandler = handleEntries.get('avatar:trigger-behavior');
     expect(typeof triggerBehaviorHandler).toBe('function');
@@ -979,83 +887,6 @@ describe('main process bootstrap', () => {
 
     appEmitter.emit('window-all-closed');
     expect(appEmitter.quit).toHaveBeenCalledTimes(1);
-  });
-
-  it('initializes the avatar face service when the realtime key is added after startup', async () => {
-    const baseConfig = {
-      realtimeApiKey: '',
-      audioInputDeviceId: undefined,
-      audioOutputDeviceId: undefined,
-      featureFlags: {},
-      wakeWord: {
-        accessKey: 'access',
-        keywordPath: 'keyword.ppn',
-        keywordLabel: 'Porcupine',
-        sensitivity: 0.5,
-        minConfidence: 0.6,
-        cooldownMs: 900,
-        deviceIndex: 1,
-        modelPath: '/path/to/model',
-      },
-      metrics: {
-        enabled: false,
-        host: '127.0.0.1',
-        port: 9477,
-        path: '/metrics',
-      },
-    } as const;
-
-    let currentConfig = { ...baseConfig };
-
-    loadMock.mockResolvedValue(baseConfig);
-    getConfigMock.mockImplementation(() => currentConfig);
-    getRendererConfigMock.mockImplementation(() => ({
-      hasRealtimeApiKey: Boolean(currentConfig.realtimeApiKey),
-    }));
-    setSecretMock.mockImplementation(async (_key: string, value: string) => {
-      currentConfig = { ...currentConfig, realtimeApiKey: value };
-      return { hasRealtimeApiKey: Boolean(currentConfig.realtimeApiKey) };
-    });
-    setAudioDevicePreferencesMock.mockImplementation(async () => ({
-      hasRealtimeApiKey: Boolean(currentConfig.realtimeApiKey),
-    }));
-    testSecretMock.mockResolvedValue({ ok: true });
-
-    await import('../src/main.js');
-
-    whenReadyDeferred.resolve();
-    await whenReadyDeferred.promise;
-    await flushPromises();
-
-    expect(avatarFaceServiceInstances).toHaveLength(0);
-    await waitForExpect(() => {
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        'Realtime API key unavailable; avatar face uploads disabled.',
-      );
-    });
-
-    let handleEntries: Map<string, unknown>;
-    await waitForExpect(() => {
-      handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
-      const setSecretHandler = handleEntries.get('config:set-secret');
-      expect(typeof setSecretHandler).toBe('function');
-    });
-
-    const setSecretHandler = handleEntries.get('config:set-secret') as
-      | ((event: unknown, payload: { key: ConfigSecretKey; value: string }) => Promise<unknown>)
-      | undefined;
-    await expect(setSecretHandler?.({}, { key: 'realtimeApiKey', value: 'fresh-key' })).resolves.toEqual({
-      hasRealtimeApiKey: true,
-    });
-
-    expect(avatarFaceServiceInstances).toHaveLength(1);
-    expect(mockLogger.info).toHaveBeenCalledWith('Avatar face service initialized.', {
-      reason: 'secret-update',
-    });
-
-    const listFacesHandler = handleEntries.get('avatar:list-faces');
-    expect(typeof listFacesHandler).toBe('function');
-    await expect(listFacesHandler?.({})).resolves.toEqual([]);
   });
 
   it('surfaces configuration validation failures to the user', async () => {

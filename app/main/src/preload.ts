@@ -2,12 +2,6 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { ConfigSecretKey, RendererConfig } from './config/config-manager.js';
 import type { AudioDevicePreferences } from './config/preferences-store.js';
 import type {
-  AvatarDisplayMode,
-  AvatarFaceDetail,
-  AvatarFaceSummary,
-  AvatarUploadRequest,
-  AvatarUploadResult,
-  AvatarGenerationResult,
   AvatarModelSummary,
   AvatarModelUploadRequest,
   AvatarModelUploadResult,
@@ -154,12 +148,6 @@ export interface RealtimeBridge {
 }
 
 export interface AvatarBridge {
-  listFaces(): Promise<AvatarFaceSummary[]>;
-  getActiveFace(): Promise<AvatarFaceDetail | null>;
-  setActiveFace(faceId: string | null): Promise<AvatarFaceDetail | null>;
-  generateFace(request: AvatarUploadRequest): Promise<AvatarGenerationResult>;
-  applyGeneratedFace(generationId: string, candidateId: string, name?: string): Promise<AvatarUploadResult>;
-  deleteFace(faceId: string): Promise<void>;
   listModels(): Promise<AvatarModelSummary[]>;
   getActiveModel(): Promise<AvatarModelSummary | null>;
   setActiveModel(modelId: string | null): Promise<AvatarModelSummary | null>;
@@ -175,10 +163,8 @@ export interface AvatarBridge {
   deleteAnimation(animationId: string): Promise<void>;
   renameAnimation(animationId: string, newName: string): Promise<AvatarAnimationSummary>;
   loadAnimationBinary(animationId: string): Promise<ArrayBuffer>;
-  getDisplayModePreference(): Promise<AvatarDisplayMode>;
-  setDisplayModePreference(mode: AvatarDisplayMode): Promise<void>;
   triggerBehaviorCue(cue: string): Promise<void>;
-}
+  }
 
 export interface CameraDetectionEvent {
   cue: string;
@@ -245,17 +231,6 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     },
   },
   avatar: {
-    listFaces: () => ipcRenderer.invoke('avatar:list-faces') as Promise<AvatarFaceSummary[]>,
-    getActiveFace: () => ipcRenderer.invoke('avatar:get-active-face') as Promise<AvatarFaceDetail | null>,
-    setActiveFace: (faceId) =>
-      ipcRenderer.invoke('avatar:set-active-face', faceId) as Promise<AvatarFaceDetail | null>,
-    generateFace: (payload) =>
-      ipcRenderer.invoke('avatar:generate-face', payload) as Promise<AvatarGenerationResult>,
-    applyGeneratedFace: (generationId, candidateId, name) =>
-      ipcRenderer.invoke('avatar:apply-generated-face', { generationId, candidateId, name }) as Promise<AvatarUploadResult>,
-    deleteFace: async (faceId) => {
-      await ipcRenderer.invoke('avatar:delete-face', faceId);
-    },
     listModels: () => ipcRenderer.invoke('avatar-model:list') as Promise<AvatarModelSummary[]>,
     getActiveModel: () => ipcRenderer.invoke('avatar-model:get-active') as Promise<AvatarModelSummary | null>,
     setActiveModel: (modelId) =>
@@ -302,13 +277,8 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
         id: animationId,
         errorMessage: 'Unexpected VRMA binary payload received from main process.',
       });
-    },
-    getDisplayModePreference: () =>
-      ipcRenderer.invoke('avatar:get-display-mode') as Promise<AvatarDisplayMode>,
-    setDisplayModePreference: async (mode) => {
-      await ipcRenderer.invoke('avatar:set-display-mode', mode);
-    },
-    triggerBehaviorCue: async (cue) => {
+      },
+      triggerBehaviorCue: async (cue) => {
       await ipcRenderer.invoke('avatar:trigger-behavior', cue);
     },
   },

@@ -27,15 +27,11 @@ import type { LatencyObservation } from './metrics/types.js';
 import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from './realtime/types.js';
 import { AutoLaunchManager } from './lifecycle/auto-launch.js';
 import { createDevTray } from './lifecycle/dev-tray.js';
-import { AvatarFaceService } from './avatar/avatar-face-service.js';
 import { AvatarModelService } from './avatar/avatar-model-service.js';
 import { AvatarAnimationService } from './avatar/avatar-animation-service.js';
 import { VrmaGenerationService } from './avatar/vrma-generation-service.js';
 import { AvatarDescriptionService } from './avatar/avatar-description-service.js';
 import type {
-  AvatarDisplayMode,
-  AvatarUploadRequest,
-  AvatarGenerationResult,
   AvatarModelSummary,
   AvatarModelUploadRequest,
   AvatarModelUploadResult,
@@ -113,12 +109,10 @@ let removeConversationListeners: (() => void) | null = null;
 let metricsCollector: PrometheusCollector | null = null;
 let autoLaunchManager: AutoLaunchManager | null = null;
 let developmentTray: Tray | null = null;
-let avatarFaceService: AvatarFaceService | null = null;
 let avatarModelService: AvatarModelService | null = null;
 let avatarAnimationService: AvatarAnimationService | null = null;
 let vrmaGenerationService: VrmaGenerationService | null = null;
 let avatarDescriptionService: AvatarDescriptionService | null = null;
-let currentRealtimeApiKey: string | null = null;
 let currentVrmaApiKey: string | null = null;
 let currentDescriptionApiKey: string | null = null;
 
@@ -261,52 +255,6 @@ const crashGuard = new CrashGuard({
   logger,
 });
 
-async function refreshAvatarFaceService(
-  manager: ConfigManager,
-  reason: 'startup' | 'secret-update' = 'startup',
-): Promise<void> {
-  const config = manager.getConfig();
-  const nextKey = typeof config.realtimeApiKey === 'string' ? config.realtimeApiKey.trim() : '';
-
-  if (!nextKey) {
-    if (reason === 'startup') {
-      logger.warn('Realtime API key unavailable; avatar face uploads disabled.');
-    } else if (avatarFaceService || currentRealtimeApiKey) {
-      logger.warn('Realtime API key removed; avatar face service disabled.');
-    }
-    avatarFaceService = null;
-    currentRealtimeApiKey = null;
-    return;
-  }
-
-  const store = memoryStore;
-  if (!store) {
-    logger.warn('Memory store unavailable; avatar face service cannot be initialized.');
-    avatarFaceService = null;
-    currentRealtimeApiKey = null;
-    return;
-  }
-
-  if (avatarFaceService && currentRealtimeApiKey === nextKey) {
-    return;
-  }
-
-  try {
-    avatarFaceService = new AvatarFaceService({
-      client: getOpenAIClient(nextKey),
-      store,
-      logger,
-    });
-    currentRealtimeApiKey = nextKey;
-    logger.info('Avatar face service initialized.', { reason });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.warn('Failed to initialize avatar face service', { message });
-    avatarFaceService = null;
-    currentRealtimeApiKey = null;
-  }
-}
-
 async function refreshVrmaGenerationService(
   manager: ConfigManager,
   reason: 'startup' | 'secret-update' = 'startup',
@@ -395,7 +343,6 @@ function registerIpcHandlers(
   metrics: PrometheusCollector | null,
   avatarModels: AvatarModelService | null,
   avatarAnimations: AvatarAnimationService | null,
-  store: MemoryStore | null,
 ) {
   // Preload diagnostics bridge: allow preload/renderer to forward logs to main logger
   try {
@@ -570,7 +517,6 @@ function registerIpcHandlers(
     const nextConfig = await manager.setSecret(payload.key, payload.value);
 
     if (payload.key === 'realtimeApiKey') {
-      await refreshAvatarFaceService(manager, 'secret-update');
       await refreshVrmaGenerationService(manager, 'secret-update');
     }
 
@@ -711,53 +657,6 @@ function registerIpcHandlers(
     metrics.observeLatency(payload.metric, payload.valueMs);
     return true;
   });
-  ipcMain.handle('avatar:list-faces', async () => {
-    if (!avatarFaceService) {
-      return [];
-    }
-
-    return avatarFaceService.listFaces();
-  });
-  ipcMain.handle('avatar:get-active-face', async () => {
-    if (!avatarFaceService) {
-      return null;
-    }
-
-    return avatarFaceService.getActiveFace();
-  });
-  ipcMain.handle('avatar:set-active-face', async (_event, faceId: string | null) => {
-    if (!avatarFaceService) {
-      throw new Error('Avatar configuration service is unavailable.');
-    }
-
-    return avatarFaceService.setActiveFace(faceId);
-  });
-  ipcMain.handle('avatar:delete-face', async (_event, faceId: string) => {
-    if (!avatarFaceService) {
-      throw new Error('Avatar configuration service is unavailable.');
-    }
-
-    await avatarFaceService.deleteFace(faceId);
-    return true;
-  });
-  ipcMain.handle('avatar:generate-face', async (_event, payload: AvatarUploadRequest) => {
-    if (!avatarFaceService) {
-      await refreshAvatarFaceService(manager, 'secret-update');
-    }
-    if (!avatarFaceService) {
-      throw new Error('Avatar configuration service is unavailable. Ensure REALTIME_API_KEY is set.');
-    }
-    return avatarFaceService.generateFace(payload) as Promise<AvatarGenerationResult>;
-  });
-  ipcMain.handle('avatar:apply-generated-face', async (_event, payload: { generationId: string; candidateId: string; name?: string }) => {
-    if (!avatarFaceService) {
-      await refreshAvatarFaceService(manager, 'secret-update');
-    }
-    if (!avatarFaceService) {
-      throw new Error('Avatar configuration service is unavailable. Ensure REALTIME_API_KEY is set.');
-    }
-    return avatarFaceService.applyGeneratedFace(payload.generationId, payload.candidateId, payload.name);
-  });
   ipcMain.handle('avatar-model:list', async () => {
     if (!avatarModels) {
       return [] as AvatarModelSummary[];
@@ -883,28 +782,6 @@ function registerIpcHandlers(
 
     return avatarAnimations.loadAnimationBinary(animationId);
   });
-  ipcMain.handle('avatar:get-display-mode', async () => {
-    if (!store) {
-      return 'sprites';
-    }
-
-    const value = store.getAvatarDisplayMode();
-    return value ?? 'sprites';
-  });
-  ipcMain.handle('avatar:set-display-mode', async (_event, mode: string) => {
-    const normalized = typeof mode === 'string' ? mode.trim().toLowerCase() : '';
-    if (normalized !== 'sprites' && normalized !== 'vrm') {
-      throw new Error('Invalid avatar display mode preference received.');
-    }
-
-    if (!store) {
-      logger.warn('Display mode preference ignored because memory store is unavailable.', { mode: normalized });
-      return null;
-    }
-
-    store.setAvatarDisplayMode(normalized as AvatarDisplayMode);
-    return null;
-  });
   ipcMain.handle('avatar:trigger-behavior', async (_event, cue: string) => {
     const value = typeof cue === 'string' ? cue.trim() : '';
     if (!value) {
@@ -1021,7 +898,6 @@ app.whenReady().then(async () => {
 
   const appConfig = manager.getConfig();
 
-  await refreshAvatarFaceService(manager);
   await refreshVrmaGenerationService(manager);
 
   autoLaunchManager = new AutoLaunchManager({
@@ -1140,7 +1016,6 @@ app.whenReady().then(async () => {
       metricsCollector,
       avatarModelService,
       avatarAnimationService,
-      memoryStore,
     );
   } catch (error) {
     const message =
@@ -1161,7 +1036,7 @@ app.whenReady().then(async () => {
       hasRealtimeApiKey: Boolean(configSnapshot.realtimeApiKey),
       hasWakeWordAccessKey: Boolean(configSnapshot.wakeWord.accessKey),
     },
-    avatar: { enabled: Boolean(avatarFaceService) },
+    avatar: { enabled: Boolean(avatarModelService) },
     conversation: { enabled: Boolean(conversationManager) },
     metrics: { enabled: Boolean(metricsCollector) },
   });
