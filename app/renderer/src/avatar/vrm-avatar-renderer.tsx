@@ -454,6 +454,48 @@ function createDefaultIdleClip(vrm: VRM): THREE.AnimationClip | null {
   });
 }
 
+// Detect Y-axis direction by comparing hips and feet positions
+function detectYAxisDirection(vrm: VRM): 'down-is-negative' | 'down-is-positive' {
+  const humanoid = vrm.humanoid;
+  if (!humanoid) {
+    return 'down-is-negative'; // Default assumption
+  }
+
+  const hips = humanoid.getNormalizedBoneNode('hips');
+  const leftFoot = humanoid.getNormalizedBoneNode('leftFoot');
+  const rightFoot = humanoid.getNormalizedBoneNode('rightFoot');
+
+  if (!hips || (!leftFoot && !rightFoot)) {
+    return 'down-is-negative'; // Fallback
+  }
+
+  const hipsPos = new THREE.Vector3();
+  hips.getWorldPosition(hipsPos);
+
+  const footPos = new THREE.Vector3();
+  if (leftFoot) {
+    leftFoot.getWorldPosition(footPos);
+  } else if (rightFoot) {
+    rightFoot.getWorldPosition(footPos);
+  }
+
+  // Feet should always be BELOW hips
+  // If foot.y < hips.y, then negative Y = down (standard)
+  // If foot.y > hips.y, then positive Y = down (inverted)
+  const yDifference = footPos.y - hipsPos.y;
+
+  const direction = yDifference < 0 ? 'down-is-negative' : 'down-is-positive';
+
+  console.log('[vrm-avatar-renderer] Y-axis direction detection:', {
+    hipsY: hipsPos.y.toFixed(3),
+    footY: footPos.y.toFixed(3),
+    yDifference: yDifference.toFixed(3),
+    direction,
+  });
+
+  return direction;
+}
+
 // Detect if model is in T-pose by checking arm orientation relative to spine
 function isInTPose(vrm: VRM): boolean {
   const humanoid = vrm.humanoid;
@@ -614,6 +656,10 @@ function applyRelaxedPose(vrm: VRM) {
     return;
   }
 
+  // Detect Y-axis direction to handle different coordinate systems
+  const yAxisDir = detectYAxisDirection(vrm);
+  const yMultiplier = yAxisDir === 'down-is-negative' ? -1 : 1;
+
   // Check if model is in T-pose
   const inTPose = isInTPose(vrm);
   console.log('[vrm-avatar-renderer] T-pose detection result:', inTPose);
@@ -623,7 +669,7 @@ function applyRelaxedPose(vrm: VRM) {
     return; // Already in natural pose
   }
 
-  console.log('[vrm-avatar-renderer] Applying relaxed pose with IK...');
+  console.log('[vrm-avatar-renderer] Applying relaxed pose with IK (Y-axis direction: ' + yAxisDir + ', multiplier: ' + yMultiplier + ')...');
 
   // Get shoulder positions for IK targets
   const leftShoulder = humanoid.getNormalizedBoneNode('leftShoulder');
@@ -666,12 +712,16 @@ function applyRelaxedPose(vrm: VRM) {
   // Left hand: slightly forward and to the left, hanging down
   const leftShoulderWorldPos = new THREE.Vector3();
   leftShoulder.getWorldPosition(leftShoulderWorldPos);
-  const leftHandTarget = leftShoulderWorldPos.clone().add(new THREE.Vector3(-0.08, -0.35, 0.05));
+  const leftHandTarget = leftShoulderWorldPos.clone().add(
+    new THREE.Vector3(-0.08, 0.35 * yMultiplier, 0.05)
+  );
 
   // Right hand: slightly forward and to the right, hanging down
   const rightShoulderWorldPos = new THREE.Vector3();
   rightShoulder.getWorldPosition(rightShoulderWorldPos);
-  const rightHandTarget = rightShoulderWorldPos.clone().add(new THREE.Vector3(0.08, -0.35, -0.05));
+  const rightHandTarget = rightShoulderWorldPos.clone().add(
+    new THREE.Vector3(0.08, 0.35 * yMultiplier, -0.05)
+  );
 
   console.log('[vrm-avatar-renderer] IK target hand positions:', {
     leftHandTarget: { x: leftHandTarget.x.toFixed(3), y: leftHandTarget.y.toFixed(3), z: leftHandTarget.z.toFixed(3) },
