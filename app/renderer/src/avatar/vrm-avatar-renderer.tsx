@@ -728,17 +728,16 @@ function applyRelaxedPose(vrm: VRM) {
     rightHandTarget: { x: rightHandTarget.x.toFixed(3), y: rightHandTarget.y.toFixed(3), z: rightHandTarget.z.toFixed(3) },
   });
 
-  // Gather left arm chain: shoulder → upper arm → lower arm → hand
+  // Gather left arm chain: upper arm → lower arm → hand (NO shoulder)
+  // Shoulder is kept fixed; only arm joints rotate for stable IK convergence
   const leftArmChain = [
-    humanoid.getNormalizedBoneNode('leftShoulder'),
     humanoid.getNormalizedBoneNode('leftUpperArm'),
     humanoid.getNormalizedBoneNode('leftLowerArm'),
     humanoid.getNormalizedBoneNode('leftHand'),
   ];
 
-  // Gather right arm chain
+  // Gather right arm chain: upper arm → lower arm → hand (NO shoulder)
   const rightArmChain = [
-    humanoid.getNormalizedBoneNode('rightShoulder'),
     humanoid.getNormalizedBoneNode('rightUpperArm'),
     humanoid.getNormalizedBoneNode('rightLowerArm'),
     humanoid.getNormalizedBoneNode('rightHand'),
