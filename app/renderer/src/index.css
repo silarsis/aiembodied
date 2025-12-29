@@ -342,7 +342,7 @@ main {
 .faces__grid {
   display: grid;
   gap: 1rem;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 150px));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
 .faceCard {

@@ -568,84 +568,105 @@ function getHandWorldPosition(bones: (THREE.Object3D | null)[]): THREE.Vector3 {
   return handPos;
 }
 
-// CCD (Cyclic Coordinate Descent) IK solver
-function solveCCDIK(
+// Simple CCD IK solver with proper local-space rotations
+// Works backward from hand to shoulder, rotating each joint toward target
+function solveSimpleArmIK(
   targetPosition: THREE.Vector3,
-  bones: (THREE.Object3D | null)[],
-  maxIterations: number = 15,
-  tolerance: number = 0.01,
-  dampingFactor: number = 0.5,
+  upperArm: THREE.Object3D | null,
+  lowerArm: THREE.Object3D | null,
+  hand: THREE.Object3D | null,
   side: string = 'unknown',
 ) {
-  const validBones = bones.filter((b): b is THREE.Object3D => b !== null);
-  if (validBones.length < 2) {
-    console.warn(`[vrm-avatar-renderer] IK[${side}] Not enough bones in chain: ${validBones.length}`);
+  if (!upperArm || !lowerArm || !hand) {
+    console.warn(`[vrm-avatar-renderer] IK[${side}] Missing arm bones`);
     return;
   }
 
-  console.log(`[vrm-avatar-renderer] IK[${side}] Starting with ${validBones.length} bones, target at (${targetPosition.x.toFixed(3)}, ${targetPosition.y.toFixed(3)}, ${targetPosition.z.toFixed(3)})`);
+  const bones = [upperArm, lowerArm, hand];
+  const maxIterations = 8;
 
+  // Get current hand position
+  const currentHandPos = getHandWorldPosition(bones);
+  let error = currentHandPos.distanceTo(targetPosition);
+
+  console.log(`[vrm-avatar-renderer] IK[${side}] Simple solver: initial error = ${error.toFixed(4)}m`);
+
+  // Iterative CCD-style solving with local-space rotations
   for (let iteration = 0; iteration < maxIterations; iteration++) {
-    // Get current hand position
-    const currentHandPos = getHandWorldPosition(validBones);
-    const error = currentHandPos.distanceTo(targetPosition);
+    const handPos = getHandWorldPosition(bones);
+    error = handPos.distanceTo(targetPosition);
 
-    if (iteration === 0 || iteration % 5 === 0 || error < tolerance) {
-      console.log(`[vrm-avatar-renderer] IK[${side}] Iteration ${iteration}: error = ${error.toFixed(4)}m`);
-    }
-
-    // Early exit if close enough
-    if (error < tolerance) {
+    if (error < 0.05) {
       console.log(`[vrm-avatar-renderer] IK[${side}] Converged at iteration ${iteration}`);
       break;
     }
 
-    // Work backwards from hand toward shoulder
-    for (let i = validBones.length - 2; i >= 0; i--) {
-      const joint = validBones[i];
+    // Work backward: elbow first, then shoulder
+    for (let i = 1; i >= 0; i--) {
+      const joint = bones[i];
+      const parent = i > 0 ? bones[i - 1] : null;
+
       const jointWorldPos = new THREE.Vector3();
       joint.getWorldPosition(jointWorldPos);
 
-      const handPos = getHandWorldPosition(validBones);
+      const currentHandPos = getHandWorldPosition(bones);
 
-      // Vectors from joint to current hand and joint to target
-      const toHand = handPos.clone().sub(jointWorldPos);
+      // Vectors from joint to hand and joint to target
+      const toHand = currentHandPos.clone().sub(jointWorldPos);
       const toTarget = targetPosition.clone().sub(jointWorldPos);
 
-      // Avoid division by zero
       const handDist = toHand.length();
       const targetDist = toTarget.length();
-      if (handDist < 0.0001 || targetDist < 0.0001) {
+
+      if (handDist < 0.001 || targetDist < 0.001) {
         continue;
       }
 
       toHand.normalize();
       toTarget.normalize();
 
-      // Axis of rotation (perpendicular to both vectors)
-      const axis = new THREE.Vector3().crossVectors(toHand, toTarget);
-      const axisDist = axis.length();
+      // Angle between current hand direction and target direction
+      let angle = Math.acos(Math.max(-1, Math.min(1, toHand.dot(toTarget))));
 
-      if (axisDist < 0.0001) {
-        // Already aligned
+      // Clamp angles: shoulder ±70°, elbow ±90°
+      const maxAngle = i === 0 ? (Math.PI * 0.7) : (Math.PI * 0.5);
+      angle = Math.min(angle, maxAngle);
+
+      if (angle < 0.001) {
+        continue;
+      }
+
+      // Rotation axis (perpendicular to both vectors)
+      const axis = new THREE.Vector3().crossVectors(toHand, toTarget);
+      if (axis.length() < 0.001) {
         continue;
       }
 
       axis.normalize();
 
-      // Angle between vectors
-      let angle = Math.acos(Math.max(-1, Math.min(1, toHand.dot(toTarget))));
+      // Apply damping (reduce rotation per iteration for stability)
+      angle *= 0.5;
 
-      // Apply damping to smooth the movement
-      angle *= dampingFactor;
+      // Convert world-space axis to local-space axis
+      if (parent) {
+        const parentWorldQuat = parent.getWorldQuaternion(new THREE.Quaternion());
+        const localAxis = axis.clone().applyQuaternion(parentWorldQuat.invert());
 
-      // Rotate joint toward target
-      joint.rotateOnWorldAxis(axis, angle);
+        // Apply rotation in local space
+        const localRotation = new THREE.Quaternion();
+        localRotation.setFromAxisAngle(localAxis, angle);
+        joint.quaternion.multiplyQuaternions(localRotation, joint.quaternion);
+      } else {
+        // Root joint: rotate in world space
+        joint.rotateOnWorldAxis(axis, angle);
+      }
+
+      joint.updateWorldMatrix(true, true);
     }
   }
-  
+
   // Final error check
-  const finalHandPos = getHandWorldPosition(validBones);
+  const finalHandPos = getHandWorldPosition(bones);
   const finalError = finalHandPos.distanceTo(targetPosition);
   console.log(`[vrm-avatar-renderer] IK[${side}] Final error: ${finalError.toFixed(4)}m, hand at (${finalHandPos.x.toFixed(3)}, ${finalHandPos.y.toFixed(3)}, ${finalHandPos.z.toFixed(3)})`);
 }
@@ -709,18 +730,31 @@ function applyRelaxedPose(vrm: VRM) {
   });
 
   // Define natural resting hand positions relative to shoulders
-  // Left hand: slightly forward and to the left, hanging down
+  // Compute arm length from upper arm to hand (used to set realistic targets)
+  const leftUpperArmWorldPos = new THREE.Vector3();
+  leftUpperArm?.getWorldPosition(leftUpperArmWorldPos);
+  const leftHandWorldPos = new THREE.Vector3();
+  leftHand?.getWorldPosition(leftHandWorldPos);
+  const leftArmLength = leftUpperArmWorldPos.distanceTo(leftHandWorldPos);
+  
+  // Left hand: slightly forward and to the left, hanging down at ~70% arm length
   const leftShoulderWorldPos = new THREE.Vector3();
   leftShoulder.getWorldPosition(leftShoulderWorldPos);
   const leftHandTarget = leftShoulderWorldPos.clone().add(
-    new THREE.Vector3(-0.08, 0.35 * yMultiplier, 0.05)
+    new THREE.Vector3(-0.05, (leftArmLength * 0.7) * yMultiplier, 0.03)
   );
 
-  // Right hand: slightly forward and to the right, hanging down
+  // Right hand: slightly forward and to the right, hanging down at ~70% arm length
+  const rightUpperArmWorldPos = new THREE.Vector3();
+  rightUpperArm?.getWorldPosition(rightUpperArmWorldPos);
+  const rightHandWorldPos = new THREE.Vector3();
+  rightHand?.getWorldPosition(rightHandWorldPos);
+  const rightArmLength = rightUpperArmWorldPos.distanceTo(rightHandWorldPos);
+  
   const rightShoulderWorldPos = new THREE.Vector3();
   rightShoulder.getWorldPosition(rightShoulderWorldPos);
   const rightHandTarget = rightShoulderWorldPos.clone().add(
-    new THREE.Vector3(0.08, 0.35 * yMultiplier, -0.05)
+    new THREE.Vector3(0.05, (rightArmLength * 0.7) * yMultiplier, -0.03)
   );
 
   console.log('[vrm-avatar-renderer] IK target hand positions:', {
@@ -728,24 +762,21 @@ function applyRelaxedPose(vrm: VRM) {
     rightHandTarget: { x: rightHandTarget.x.toFixed(3), y: rightHandTarget.y.toFixed(3), z: rightHandTarget.z.toFixed(3) },
   });
 
-  // Gather left arm chain: upper arm → lower arm → hand (NO shoulder)
-  // Shoulder is kept fixed; only arm joints rotate for stable IK convergence
-  const leftArmChain = [
-    humanoid.getNormalizedBoneNode('leftUpperArm'),
+  // Solve IK for both arms using simple analytical solver
+  solveSimpleArmIK(
+    leftHandTarget,
+    leftUpperArm,
     humanoid.getNormalizedBoneNode('leftLowerArm'),
-    humanoid.getNormalizedBoneNode('leftHand'),
-  ];
-
-  // Gather right arm chain: upper arm → lower arm → hand (NO shoulder)
-  const rightArmChain = [
-    humanoid.getNormalizedBoneNode('rightUpperArm'),
+    leftHand,
+    'LEFT',
+  );
+  solveSimpleArmIK(
+    rightHandTarget,
+    rightUpperArm,
     humanoid.getNormalizedBoneNode('rightLowerArm'),
-    humanoid.getNormalizedBoneNode('rightHand'),
-  ];
-
-  // Solve IK for both arms
-  solveCCDIK(leftHandTarget, leftArmChain, 15, 0.01, 0.5, 'LEFT');
-  solveCCDIK(rightHandTarget, rightArmChain, 15, 0.01, 0.5, 'RIGHT');
+    rightHand,
+    'RIGHT',
+  );
 
   // Log AFTER positions
   const leftShoulderAfter = new THREE.Vector3();
