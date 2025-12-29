@@ -340,6 +340,56 @@ export class AvatarModelService {
     this.fs = options.fs ?? defaultFs;
   }
 
+  async seedDefaultModelIfMissing(assetPath: string): Promise<void> {
+    // If models already exist, don't seed
+    if (this.store.listVrmModels().length > 0) {
+      this.logger?.debug?.('VRM models already exist; skipping default model seed.');
+      return;
+    }
+
+    try {
+      const buffer = await this.fs.readFile(assetPath);
+      if (buffer.length === 0) {
+        this.logger?.warn?.('Default VRM asset file is empty; skipping seed.', { assetPath });
+        return;
+      }
+
+      const parsedGlb = parseGlb(buffer);
+      const meta = loadVrmMetadata(parsedGlb);
+      const thumbnail = extractThumbnail(parsedGlb);
+
+      const modelName = sanitizeName(meta.name, 'Default Avatar');
+      const version = typeof meta.version === 'string' && meta.version.trim().length > 0 ? meta.version.trim() : '1.0';
+      const id = randomUUID();
+      const filePath = path.join(this.modelsDirectory, `${id}.vrm`);
+      const createdAt = this.now();
+      const fileSha = createHash('sha256').update(buffer).digest('hex');
+
+      await this.fs.mkdir(this.modelsDirectory);
+      await this.fs.writeFile(filePath, buffer);
+
+      const record: VrmModelRecord = {
+        id,
+        name: modelName,
+        createdAt,
+        filePath,
+        fileSha,
+        version,
+        thumbnail: thumbnail ? thumbnail.buffer : null,
+        description: null,
+      };
+
+      this.store.createVrmModel(record);
+      this.store.setActiveVrmModel(id);
+
+      this.logger?.info?.('Default VRM model seeded successfully.', { id, modelName, filePath });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.warn?.('Failed to seed default VRM model.', { assetPath, message });
+      // Don't throw; allow app to continue without default model
+    }
+  }
+
   listModels(): AvatarModelSummary[] {
     return this.store.listVrmModels().map((record) => this.toSummary(record));
   }

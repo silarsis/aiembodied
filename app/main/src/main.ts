@@ -994,6 +994,10 @@ app.whenReady().then(async () => {
       store: memoryStore,
       logger,
     });
+
+    // Seed default model if this is the first run
+    const defaultModelAssetPath = path.join(__dirname, '../assets/vrm-models/default-avatar.vrm');
+    await avatarModelService.seedDefaultModelIfMissing(defaultModelAssetPath);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown database initialization error occurred.';
     logger.error('Failed to initialize memory store', { message });
