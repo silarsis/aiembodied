@@ -19,11 +19,32 @@ export interface VrmaGenerationServiceOptions {
   };
 }
 
+const VRMA_ANALYST_SYSTEM_PROMPT = [
+  'You are a movement analyst trained in Laban Movement Analysis and animation acting.',
+  '',
+  'Your task in THIS STEP is ONLY to analyze and describe movement, NOT to plan VRM animations or output JSON.',
+  'Given a high-level request for a pose or movement, produce a rich, precise English description that could be used by a choreographer, animator, or motion system.',
+  '',
+  'Your description must include:',
+  '- Where the movement initiates and how it propagates through the body.',
+  '- The effort qualities (weight, time, space, flow).',
+  '- Changes in balance and center of gravity.',
+  '- Spatial direction, level, and pathway.',
+  '- Emotional or intentional subtext expressed through the movement.',
+  '- Whether the movement resolves, suspends, or transitions.',
+  '',
+  'Guidelines:',
+  '- Use concrete anatomical references.',
+  '- Avoid vague adjectives unless physically explained.',
+  '- Write clearly, not poetically.',
+  '- Be thorough but concise.',
+].join('\n');
+
 const VRMA_PLANNER_SYSTEM_PROMPT = [
   'You are a senior character animator planning high-quality VRM humanoid animations for a kiosk avatar.',
   '',
   'Your task in THIS STEP is ONLY to design an animation plan, NOT to output final VRM keyframes.',
-  'You will output a JSON animation plan that describes:',
+  'You are given a rich movement analysis. Convert it into a JSON animation plan that describes:',
   '- Phases of motion over time (anticipation, main action, overshoot, settle, idle, etc.).',
   '- Which bones are involved, their roles (primary/secondary/counter/stabilizer), and how they move.',
   '- Timing, approximate peak angles, arcs, and easing hints.',
@@ -142,7 +163,37 @@ function findInvalidBones(definition: { tracks: Array<{ bone: string }> }, valid
   return Array.from(invalid).sort();
 }
 
-function buildPlannerInput(prompt: string, bones: string[], modelDescription?: string): ResponseInput {
+function buildAnalystInput(prompt: string, modelDescription?: string): ResponseInput {
+  const messages: ResponseInput = [
+    {
+      type: 'message',
+      role: 'system',
+      content: [{ type: 'input_text', text: VRMA_ANALYST_SYSTEM_PROMPT }],
+    },
+  ];
+
+  if (modelDescription) {
+    const descText = [
+      'Character description (consider this when analyzing the movement):',
+      modelDescription,
+    ].join('\n');
+    messages.push({
+      type: 'message',
+      role: 'system',
+      content: [{ type: 'input_text', text: descText }],
+    });
+  }
+
+  messages.push({
+    type: 'message',
+    role: 'user',
+    content: [{ type: 'input_text', text: prompt }],
+  });
+
+  return messages;
+}
+
+function buildPlannerInput(analysis: string, bones: string[], modelDescription?: string): ResponseInput {
   const messages: ResponseInput = [
     {
       type: 'message',
@@ -175,7 +226,7 @@ function buildPlannerInput(prompt: string, bones: string[], modelDescription?: s
   messages.push({
     type: 'message',
     role: 'user',
-    content: [{ type: 'input_text', text: prompt }],
+    content: [{ type: 'input_text', text: `Here is the movement analysis:\n\n${analysis}` }],
   });
 
   return messages;
@@ -245,7 +296,10 @@ export class VrmaGenerationService {
     const bones = normalizeBones(request?.bones);
     const modelDescription = typeof request?.modelDescription === 'string' ? request.modelDescription.trim() : undefined;
 
-    const plan = await this.runPlannerStep(prompt, bones, modelDescription);
+    const analysis = await this.runAnalystStep(prompt, modelDescription);
+    this.logger?.info?.('VRMA movement analysis generated.');
+
+    const plan = await this.runPlannerStep(analysis, bones, modelDescription);
     const planMeta = plan as { meta?: { name?: string } };
     this.logger?.info?.('VRMA animation plan generated.', { planName: planMeta?.meta?.name, hasModelDescription: !!modelDescription });
 
@@ -284,8 +338,23 @@ export class VrmaGenerationService {
     return result;
   }
 
-  private async runPlannerStep(prompt: string, bones: string[], modelDescription?: string): Promise<unknown> {
-    const input = buildPlannerInput(prompt, bones, modelDescription);
+  private async runAnalystStep(prompt: string, modelDescription?: string): Promise<string> {
+    const input = buildAnalystInput(prompt, modelDescription);
+
+    const response = await this.callModel(input, {
+      type: 'text',
+    });
+
+    const outputText = response?.output_text ?? '';
+    if (!outputText) {
+      throw new Error('VRMA analyst returned an empty response.');
+    }
+
+    return outputText;
+  }
+
+  private async runPlannerStep(analysis: string, bones: string[], modelDescription?: string): Promise<unknown> {
+    const input = buildPlannerInput(analysis, bones, modelDescription);
 
     const response = await this.callModel(input, {
       type: 'json_schema',
@@ -358,8 +427,9 @@ export class VrmaGenerationService {
 
   private async callModel(
     input: ResponseInput,
-    format: { type: 'json_schema'; name: string; schema: unknown },
+    format: { type: 'text' } | { type: 'json_schema'; name: string; schema: unknown },
   ): Promise<{ output_text: string }> {
+    const textConfig = format.type === 'text' ? undefined : { format };
     const response = await (
       this.client as unknown as {
         responses: { create: (args: unknown) => Promise<{ output_text: string }> };
@@ -367,7 +437,7 @@ export class VrmaGenerationService {
     ).responses.create({
       model: 'gpt-4.1-mini',
       input,
-      text: { format },
+      ...(textConfig ? { text: textConfig } : {}),
     });
 
     return response;
