@@ -153,9 +153,8 @@ export function buildVrmAnimation(definition: VrmaSchema): VRMAnimation {
 }
 
 export function encodeVrmaGlb(definition: VrmaSchema): Buffer {
-  const nodes: Array<{ name: string; translation?: [number, number, number] }> = [];
-  const boneNodeMap = new Map<string, number>();
-  const expressionNodeMap = new Map<string, number>();
+   const nodes: Array<{ name: string; translation?: [number, number, number] }> = [];
+   const boneNodeMap = new Map<string, number>();
 
   const ensureNode = (name: string, translation?: [number, number, number]) => {
     if (boneNodeMap.has(name)) {
@@ -176,14 +175,7 @@ export function encodeVrmaGlb(definition: VrmaSchema): Buffer {
     ensureNode('hips', [0, 1, 0]);
   }
 
-  if (definition.expressions && definition.expressions.length > 0) {
-    for (const track of definition.expressions) {
-      if (expressionNodeMap.has(track.name)) continue;
-      const index = nodes.length;
-      nodes.push({ name: `expression_${track.name}` });
-      expressionNodeMap.set(track.name, index);
-    }
-  }
+  // Don't create expression nodes at all—expressions are stored in metadata only
 
   const bufferChunks: Uint8Array[] = [];
   const bufferViews: Array<{ buffer: number; byteOffset: number; byteLength: number }> = [];
@@ -265,30 +257,37 @@ export function encodeVrmaGlb(definition: VrmaSchema): Buffer {
     addSamplerChannel(nodeIndex, 'translation', times, values, 'VEC3');
   }
 
-  if (definition.expressions && definition.expressions.length > 0) {
-    for (const track of definition.expressions) {
-      const ordered = [...track.keyframes].sort((a, b) => a.t - b.t);
-      const times = ordered.map((frame) => frame.t);
-      const values = ordered.flatMap((frame) => [frame.v, 0, 0]);
-      const nodeIndex = expressionNodeMap.get(track.name);
-      if (nodeIndex === undefined) continue;
-      addSamplerChannel(nodeIndex, 'translation', times, values, 'VEC3');
-    }
-  }
+  // Don't output expression nodes to GLB animation channels
+  // Expressions are stored in VRMC metadata instead (see below)
 
   const humanoidBones: Record<string, { node: number }> = {};
   for (const [bone, node] of boneNodeMap.entries()) {
     humanoidBones[bone] = { node };
   }
 
-  const expressions: { preset?: Record<string, { node: number }>; custom?: Record<string, { node: number }> } = {};
-  for (const [name, node] of expressionNodeMap.entries()) {
-    if (PRESET_EXPRESSIONS.has(name as VRMExpressionPresetName)) {
-      expressions.preset ??= {};
-      expressions.preset[name] = { node };
-    } else {
-      expressions.custom ??= {};
-      expressions.custom[name] = { node };
+  const expressionSamplers = {
+    preset: [] as Array<{ name: string; keyframes: Array<{ t: number; v: number }> }>,
+    custom: [] as Array<{ name: string; keyframes: Array<{ t: number; v: number }> }>,
+  };
+
+  if (definition.expressions && definition.expressions.length > 0) {
+    for (const track of definition.expressions) {
+      const sampler = {
+        name: track.name,
+        keyframes: track.keyframes,
+      };
+
+      const PRESET_EXPRESSIONS_SET = new Set<string>([
+        'aa', 'ih', 'ou', 'ee', 'oh', 'blink', 'blinkLeft', 'blinkRight',
+        'happy', 'angry', 'sad', 'relaxed', 'surprised',
+        'lookUp', 'lookDown', 'lookLeft', 'lookRight', 'neutral',
+      ]);
+
+      if (PRESET_EXPRESSIONS_SET.has(track.name)) {
+        expressionSamplers.preset.push(sampler);
+      } else {
+        expressionSamplers.custom.push(sampler);
+      }
     }
   }
 
@@ -305,7 +304,15 @@ export function encodeVrmaGlb(definition: VrmaSchema): Buffer {
         ...(typeof definition.meta.duration === 'number' ? { duration: definition.meta.duration } : {}),
         ...(definition.meta.kind ? { kind: definition.meta.kind } : {}),
       },
-      ...(Object.keys(expressions).length > 0 ? { expressions } : {}),
+      // Store expressions as samplers in metadata, not as animation channels
+      ...(expressionSamplers.preset.length > 0 || expressionSamplers.custom.length > 0 
+        ? { 
+            expressionSamplers: {
+              ...(expressionSamplers.preset.length > 0 ? { preset: expressionSamplers.preset } : {}),
+              ...(expressionSamplers.custom.length > 0 ? { custom: expressionSamplers.custom } : {}),
+            }
+          }
+        : {}),
     },
   };
 

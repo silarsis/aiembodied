@@ -76,6 +76,29 @@ const VRM_CANVAS_HEIGHT = 640;
 const WAVE_ANIMATION_NAME = 'greet_face_wave';
 const DEFAULT_IDLE_CLIP_NAME = 'default_idle_sway';
 
+interface ExpressionSampler {
+  name: string;
+  keyframes: Array<{ t: number; v: number }>;
+}
+
+interface VrmaGltfExtensions {
+  VRMC_vrm_animation?: {
+    expressionSamplers?: {
+      preset?: ExpressionSampler[];
+      custom?: ExpressionSampler[];
+    };
+  };
+}
+
+interface VrmaGltf {
+  extensions?: VrmaGltfExtensions;
+}
+
+interface VrmaClipWithMetadata {
+  clip: THREE.AnimationClip;
+  vrmaData?: VrmaGltf;
+}
+
 type AnimationQueueIntent = 'play' | 'pose';
 
 interface QueuedAnimation {
@@ -86,10 +109,11 @@ interface QueuedAnimation {
 }
 
 interface ActiveAnimation {
-  action: THREE.AnimationAction;
-  intent: AnimationQueueIntent;
-  onFinish: (event: { action?: THREE.AnimationAction | null }) => void;
-}
+    action: THREE.AnimationAction;
+    intent: AnimationQueueIntent;
+    onFinish: (event: { action?: THREE.AnimationAction | null }) => void;
+    vrmaData?: VrmaGltf;
+  }
 
 function buildIdleSchedulerConfig(
   vrm: VRM,
@@ -155,52 +179,53 @@ function buildIdleSchedulerConfig(
   return config;
 }
 
-async function loadVrmaAnimation(binary: ArrayBuffer): Promise<VRMAnimation | null> {
-  const loader = new GLTFLoader();
-  loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
-  const gltf = (await loader.parseAsync(binary, '/')) as {
-    userData?: { vrmAnimations?: VRMAnimation[] };
-  };
-  const animations = gltf.userData?.vrmAnimations;
-  if (!animations || animations.length === 0) {
-    return null;
-  }
-  return animations[0] ?? null;
-}
-
-async function loadVrmaClips(vrm: VRM): Promise<Map<string, THREE.AnimationClip>> {
-  const registry = new Map<string, THREE.AnimationClip>();
-  const bridge = getPreloadApi();
-  if (!bridge?.avatar?.listAnimations || !bridge.avatar.loadAnimationBinary) {
-    return registry;
-  }
-
-  const animations = await bridge.avatar.listAnimations();
-  for (const [index, animation] of animations.entries()) {
-    try {
-      const binary = await bridge.avatar.loadAnimationBinary(animation.id);
-      if (!binary) {
-        continue;
-      }
-      const vrma = await loadVrmaAnimation(binary);
-      if (!vrma) {
-        continue;
-      }
-      const name = animation.name?.trim() || animation.id;
-      const slug = toAnimationSlug(name) || `animation-${index}`;
-      const clip = createClipFromVrma(vrm, vrma, name);
-      registry.set(slug, clip);
-    } catch (error) {
-      console.warn('[vrm-avatar-renderer] failed to load VRMA clip', {
-        id: animation.id,
-        name: animation.name,
-        error,
-      });
+async function loadVrmaAnimation(binary: ArrayBuffer): Promise<{ animation: VRMAnimation; gltf: VrmaGltf } | null> {
+    const loader = new GLTFLoader();
+    loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
+    const gltf = (await loader.parseAsync(binary, '/')) as {
+      userData?: { vrmAnimations?: VRMAnimation[] };
+      extensions?: VrmaGltfExtensions;
+    };
+    const animations = gltf.userData?.vrmAnimations;
+    if (!animations || animations.length === 0) {
+      return null;
     }
+    return { animation: animations[0]!, gltf: { extensions: gltf.extensions } };
   }
 
-  return registry;
-}
+async function loadVrmaClips(vrm: VRM): Promise<Map<string, VrmaClipWithMetadata>> {
+   const registry = new Map<string, VrmaClipWithMetadata>();
+   const bridge = getPreloadApi();
+   if (!bridge?.avatar?.listAnimations || !bridge.avatar.loadAnimationBinary) {
+     return registry;
+   }
+
+   const animations = await bridge.avatar.listAnimations();
+   for (const [index, animation] of animations.entries()) {
+     try {
+       const binary = await bridge.avatar.loadAnimationBinary(animation.id);
+       if (!binary) {
+         continue;
+       }
+       const result = await loadVrmaAnimation(binary);
+       if (!result) {
+         continue;
+       }
+       const name = animation.name?.trim() || animation.id;
+       const slug = toAnimationSlug(name) || `animation-${index}`;
+       const clip = createClipFromVrma(vrm, result.animation, name);
+       registry.set(slug, { clip, vrmaData: result.gltf });
+     } catch (error) {
+       console.warn('[vrm-avatar-renderer] failed to load VRMA clip', {
+         id: animation.id,
+         name: animation.name,
+         error,
+       });
+     }
+   }
+
+   return registry;
+ }
 
 function quaternionToArray(quaternion: THREE.Quaternion): number[] {
   return [quaternion.x, quaternion.y, quaternion.z, quaternion.w];
@@ -216,10 +241,62 @@ function applyBoneRotation(node: THREE.Object3D | null | undefined, rotation: TH
 }
 
 function multiplyQuaternion(base: THREE.Quaternion, delta: THREE.Euler): THREE.Quaternion {
-  const next = new THREE.Quaternion(base.x, base.y, base.z, base.w);
-  next.multiply(new THREE.Quaternion().setFromEuler(delta));
-  return next;
-}
+   const next = new THREE.Quaternion(base.x, base.y, base.z, base.w);
+   next.multiply(new THREE.Quaternion().setFromEuler(delta));
+   return next;
+ }
+
+ // Helper: Linear interpolation between expression keyframes
+ function evaluateKeyframes(keyframes: Array<{ t: number; v: number }>, time: number): number | null {
+   if (!keyframes || keyframes.length === 0) return null;
+
+   // Clamp to bounds
+   if (time < keyframes[0].t) return keyframes[0].v;
+   if (time > keyframes[keyframes.length - 1].t) return keyframes[keyframes.length - 1].v;
+
+   // Find surrounding keyframes
+   for (let i = 0; i < keyframes.length - 1; i++) {
+     const current = keyframes[i];
+     const next = keyframes[i + 1];
+     if (time >= current.t && time <= next.t) {
+       // Linear interpolation
+       const progress = (time - current.t) / (next.t - current.t);
+       return current.v + (next.v - current.v) * progress;
+     }
+   }
+
+   return keyframes[keyframes.length - 1].v;
+ }
+
+ // Apply expression keyframes from VRMA metadata at the given time
+ function applyExpressionFrameAtTime(vrm: VRM, vrmaData: VrmaGltf, currentTime: number) {
+   if (!vrmaData?.extensions?.VRMC_vrm_animation?.expressionSamplers) {
+     return;
+   }
+
+   const samplers = vrmaData.extensions.VRMC_vrm_animation.expressionSamplers;
+   const expressionManager = vrm.expressionManager;
+
+   if (!expressionManager) return;
+
+   // Process preset expressions
+   const presetSamplers = samplers.preset || [];
+   for (const sampler of presetSamplers) {
+     const value = evaluateKeyframes(sampler.keyframes, currentTime);
+     if (value !== null) {
+       expressionManager.setValue(sampler.name, value);
+     }
+   }
+
+   // Process custom expressions
+   const customSamplers = samplers.custom || [];
+   for (const sampler of customSamplers) {
+     const value = evaluateKeyframes(sampler.keyframes, currentTime);
+     if (value !== null) {
+       expressionManager.setValue(sampler.name, value);
+     }
+   }
+ }
 
 export function createRightArmWaveClip(vrm: VRM): THREE.AnimationClip | null {
   const humanoid = vrm.humanoid;
@@ -639,7 +716,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   const animationFrameRef = useRef<number | null>(null);
   const clockRef = useRef(new THREE.Clock());
   const idleOptionsRef = useRef<IdleAnimationOptions | undefined>(idleOptions);
-  const clipRegistryRef = useRef<Map<string, THREE.AnimationClip>>(new Map());
+  const clipRegistryRef = useRef<Map<string, VrmaClipWithMetadata>>(new Map());
   const animationQueueRef = useRef<QueuedAnimation[]>([]);
   const activeAnimationRef = useRef<ActiveAnimation | null>(null);
   const animationSuspensionRef = useRef<(() => void) | null>(null);
@@ -707,8 +784,8 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       return;
     }
 
-    const clip = clipRegistryRef.current.get(next.slug);
-    if (!clip) {
+    const clipData = clipRegistryRef.current.get(next.slug);
+    if (!clipData) {
       console.warn('[vrm-avatar-renderer] requested animation clip is unavailable', { slug: next.slug });
       playNextQueuedAnimation();
       return;
@@ -716,7 +793,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
 
     suspendIdleAnimations();
 
-    const action = mixer.clipAction(clip);
+    const action = mixer.clipAction(clipData.clip);
     if (next.timing?.onStart) {
       const startAt = next.timing.startAt ?? Date.now();
       next.timing.onStart(startAt);
@@ -736,6 +813,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
           action,
           intent: 'pose',
           onFinish: handleFinished,
+          vrmaData: clipData.vrmaData,
         };
         return;
       }
@@ -748,13 +826,14 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
 
       activeAnimationRef.current = null;
       playNextQueuedAnimation();
-    };
+      };
 
-    activeAnimationRef.current = {
+      activeAnimationRef.current = {
       action,
       intent: next.intent,
       onFinish: handleFinished,
-    };
+      vrmaData: clipData.vrmaData,
+      };
 
     try {
       action.reset();
@@ -1000,6 +1079,14 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       }
 
       mixerRef.current?.update(delta);
+      
+      // Apply expression keyframes from VRMA metadata at current animation time
+      const activeAnimation = activeAnimationRef.current;
+      if (activeAnimation?.vrmaData && currentVrmRef.current) {
+        const animationTime = activeAnimation.action.time;
+        applyExpressionFrameAtTime(currentVrmRef.current, activeAnimation.vrmaData, animationTime);
+      }
+      
       idleSchedulerRef.current?.update(delta);
       currentVrmRef.current?.update(delta);
       rendererInstance.render(sceneInstance, cameraInstance);
