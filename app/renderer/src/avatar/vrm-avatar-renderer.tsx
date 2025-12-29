@@ -494,13 +494,22 @@ function isInTPose(vrm: VRM): boolean {
   humanoid.getNormalizedBoneNode('leftShoulder')?.getWorldPosition(leftShoulderPos);
   humanoid.getNormalizedBoneNode('rightShoulder')?.getWorldPosition(rightShoulderPos);
 
-  const leftArmDir = leftArmWorldPos.sub(leftShoulderPos).normalize();
-  const rightArmDir = rightArmWorldPos.sub(rightShoulderPos).normalize();
+  const leftArmDir = leftArmWorldPos.clone().sub(leftShoulderPos.clone()).normalize();
+  const rightArmDir = rightArmWorldPos.clone().sub(rightShoulderPos.clone()).normalize();
 
   // In T-pose, arms point perpendicular to spine (dot product near 0)
   // In natural pose, arms point downward (dot product near -0.7 to -1.0)
   const leftDot = spineDir.dot(leftArmDir);
   const rightDot = spineDir.dot(rightArmDir);
+
+  console.log('[vrm-avatar-renderer] T-pose detection:', {
+    spineDirY: spineDir.y.toFixed(3),
+    leftArmDot: leftDot.toFixed(3),
+    rightArmDot: rightDot.toFixed(3),
+    absLeftDot: Math.abs(leftDot).toFixed(3),
+    absRightDot: Math.abs(rightDot).toFixed(3),
+    inTPose: Math.abs(leftDot) < 0.3 && Math.abs(rightDot) < 0.3,
+  });
 
   // If both arms are roughly horizontal (dot product between -0.3 and 0.3), it's T-pose
   return Math.abs(leftDot) < 0.3 && Math.abs(rightDot) < 0.3;
@@ -524,19 +533,28 @@ function solveCCDIK(
   maxIterations: number = 15,
   tolerance: number = 0.01,
   dampingFactor: number = 0.5,
+  side: string = 'unknown',
 ) {
   const validBones = bones.filter((b): b is THREE.Object3D => b !== null);
   if (validBones.length < 2) {
+    console.warn(`[vrm-avatar-renderer] IK[${side}] Not enough bones in chain: ${validBones.length}`);
     return;
   }
+
+  console.log(`[vrm-avatar-renderer] IK[${side}] Starting with ${validBones.length} bones, target at (${targetPosition.x.toFixed(3)}, ${targetPosition.y.toFixed(3)}, ${targetPosition.z.toFixed(3)})`);
 
   for (let iteration = 0; iteration < maxIterations; iteration++) {
     // Get current hand position
     const currentHandPos = getHandWorldPosition(validBones);
     const error = currentHandPos.distanceTo(targetPosition);
 
+    if (iteration === 0 || iteration % 5 === 0 || error < tolerance) {
+      console.log(`[vrm-avatar-renderer] IK[${side}] Iteration ${iteration}: error = ${error.toFixed(4)}m`);
+    }
+
     // Early exit if close enough
     if (error < tolerance) {
+      console.log(`[vrm-avatar-renderer] IK[${side}] Converged at iteration ${iteration}`);
       break;
     }
 
@@ -549,8 +567,8 @@ function solveCCDIK(
       const handPos = getHandWorldPosition(validBones);
 
       // Vectors from joint to current hand and joint to target
-      const toHand = handPos.sub(jointWorldPos);
-      const toTarget = targetPosition.sub(jointWorldPos);
+      const toHand = handPos.clone().sub(jointWorldPos);
+      const toTarget = targetPosition.clone().sub(jointWorldPos);
 
       // Avoid division by zero
       const handDist = toHand.length();
@@ -583,6 +601,11 @@ function solveCCDIK(
       joint.rotateOnWorldAxis(axis, angle);
     }
   }
+  
+  // Final error check
+  const finalHandPos = getHandWorldPosition(validBones);
+  const finalError = finalHandPos.distanceTo(targetPosition);
+  console.log(`[vrm-avatar-renderer] IK[${side}] Final error: ${finalError.toFixed(4)}m, hand at (${finalHandPos.x.toFixed(3)}, ${finalHandPos.y.toFixed(3)}, ${finalHandPos.z.toFixed(3)})`);
 }
 
 function applyRelaxedPose(vrm: VRM) {
@@ -592,17 +615,52 @@ function applyRelaxedPose(vrm: VRM) {
   }
 
   // Check if model is in T-pose
-  if (!isInTPose(vrm)) {
+  const inTPose = isInTPose(vrm);
+  console.log('[vrm-avatar-renderer] T-pose detection result:', inTPose);
+
+  if (!inTPose) {
+    console.log('[vrm-avatar-renderer] Model not in T-pose, skipping relaxed pose adjustment');
     return; // Already in natural pose
   }
+
+  console.log('[vrm-avatar-renderer] Applying relaxed pose with IK...');
 
   // Get shoulder positions for IK targets
   const leftShoulder = humanoid.getNormalizedBoneNode('leftShoulder');
   const rightShoulder = humanoid.getNormalizedBoneNode('rightShoulder');
+  const leftUpperArm = humanoid.getNormalizedBoneNode('leftUpperArm');
+  const rightUpperArm = humanoid.getNormalizedBoneNode('rightUpperArm');
+  const leftHand = humanoid.getNormalizedBoneNode('leftHand');
+  const rightHand = humanoid.getNormalizedBoneNode('rightHand');
 
   if (!leftShoulder || !rightShoulder) {
+    console.warn('[vrm-avatar-renderer] Missing shoulder bones for IK');
     return;
   }
+
+  // Log BEFORE positions
+  const leftShoulderBefore = new THREE.Vector3();
+  const rightShoulderBefore = new THREE.Vector3();
+  const leftUpperArmBefore = new THREE.Vector3();
+  const rightUpperArmBefore = new THREE.Vector3();
+  const leftHandBefore = new THREE.Vector3();
+  const rightHandBefore = new THREE.Vector3();
+
+  leftShoulder.getWorldPosition(leftShoulderBefore);
+  rightShoulder.getWorldPosition(rightShoulderBefore);
+  leftUpperArm?.getWorldPosition(leftUpperArmBefore);
+  rightUpperArm?.getWorldPosition(rightUpperArmBefore);
+  leftHand?.getWorldPosition(leftHandBefore);
+  rightHand?.getWorldPosition(rightHandBefore);
+
+  console.log('[vrm-avatar-renderer] BEFORE relaxed pose:', {
+    leftShoulder: { x: leftShoulderBefore.x.toFixed(3), y: leftShoulderBefore.y.toFixed(3), z: leftShoulderBefore.z.toFixed(3) },
+    leftUpperArm: { x: leftUpperArmBefore.x.toFixed(3), y: leftUpperArmBefore.y.toFixed(3), z: leftUpperArmBefore.z.toFixed(3) },
+    leftHand: { x: leftHandBefore.x.toFixed(3), y: leftHandBefore.y.toFixed(3), z: leftHandBefore.z.toFixed(3) },
+    rightShoulder: { x: rightShoulderBefore.x.toFixed(3), y: rightShoulderBefore.y.toFixed(3), z: rightShoulderBefore.z.toFixed(3) },
+    rightUpperArm: { x: rightUpperArmBefore.x.toFixed(3), y: rightUpperArmBefore.y.toFixed(3), z: rightUpperArmBefore.z.toFixed(3) },
+    rightHand: { x: rightHandBefore.x.toFixed(3), y: rightHandBefore.y.toFixed(3), z: rightHandBefore.z.toFixed(3) },
+  });
 
   // Define natural resting hand positions relative to shoulders
   // Left hand: slightly forward and to the left, hanging down
@@ -614,6 +672,11 @@ function applyRelaxedPose(vrm: VRM) {
   const rightShoulderWorldPos = new THREE.Vector3();
   rightShoulder.getWorldPosition(rightShoulderWorldPos);
   const rightHandTarget = rightShoulderWorldPos.clone().add(new THREE.Vector3(0.08, -0.35, -0.05));
+
+  console.log('[vrm-avatar-renderer] IK target hand positions:', {
+    leftHandTarget: { x: leftHandTarget.x.toFixed(3), y: leftHandTarget.y.toFixed(3), z: leftHandTarget.z.toFixed(3) },
+    rightHandTarget: { x: rightHandTarget.x.toFixed(3), y: rightHandTarget.y.toFixed(3), z: rightHandTarget.z.toFixed(3) },
+  });
 
   // Gather left arm chain: shoulder → upper arm → lower arm → hand
   const leftArmChain = [
@@ -632,8 +695,37 @@ function applyRelaxedPose(vrm: VRM) {
   ];
 
   // Solve IK for both arms
-  solveCCDIK(leftHandTarget, leftArmChain, 15, 0.01, 0.5);
-  solveCCDIK(rightHandTarget, rightArmChain, 15, 0.01, 0.5);
+  solveCCDIK(leftHandTarget, leftArmChain, 15, 0.01, 0.5, 'LEFT');
+  solveCCDIK(rightHandTarget, rightArmChain, 15, 0.01, 0.5, 'RIGHT');
+
+  // Log AFTER positions
+  const leftShoulderAfter = new THREE.Vector3();
+  const rightShoulderAfter = new THREE.Vector3();
+  const leftUpperArmAfter = new THREE.Vector3();
+  const rightUpperArmAfter = new THREE.Vector3();
+  const leftHandAfter = new THREE.Vector3();
+  const rightHandAfter = new THREE.Vector3();
+
+  leftShoulder.getWorldPosition(leftShoulderAfter);
+  rightShoulder.getWorldPosition(rightShoulderAfter);
+  leftUpperArm?.getWorldPosition(leftUpperArmAfter);
+  rightUpperArm?.getWorldPosition(rightUpperArmAfter);
+  leftHand?.getWorldPosition(leftHandAfter);
+  rightHand?.getWorldPosition(rightHandAfter);
+
+  const leftHandError = leftHandAfter.distanceTo(leftHandTarget);
+  const rightHandError = rightHandAfter.distanceTo(rightHandTarget);
+
+  console.log('[vrm-avatar-renderer] AFTER relaxed pose:', {
+    leftShoulder: { x: leftShoulderAfter.x.toFixed(3), y: leftShoulderAfter.y.toFixed(3), z: leftShoulderAfter.z.toFixed(3) },
+    leftUpperArm: { x: leftUpperArmAfter.x.toFixed(3), y: leftUpperArmAfter.y.toFixed(3), z: leftUpperArmAfter.z.toFixed(3) },
+    leftHand: { x: leftHandAfter.x.toFixed(3), y: leftHandAfter.y.toFixed(3), z: leftHandAfter.z.toFixed(3) },
+    leftHandError: leftHandError.toFixed(4),
+    rightShoulder: { x: rightShoulderAfter.x.toFixed(3), y: rightShoulderAfter.y.toFixed(3), z: rightShoulderAfter.z.toFixed(3) },
+    rightUpperArm: { x: rightUpperArmAfter.x.toFixed(3), y: rightUpperArmAfter.y.toFixed(3), z: rightUpperArmAfter.z.toFixed(3) },
+    rightHand: { x: rightHandAfter.x.toFixed(3), y: rightHandAfter.y.toFixed(3), z: rightHandAfter.z.toFixed(3) },
+    rightHandError: rightHandError.toFixed(4),
+  });
 }
 
 function computeHumanoidMetrics(vrm: VRM) {
