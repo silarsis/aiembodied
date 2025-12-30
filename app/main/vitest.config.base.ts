@@ -12,6 +12,11 @@ export const createVitestConfig = (testPattern?: string) =>
         forks: {
           singleFork: false,
           isolate: true,
+          // Porcupine test uses vi.resetModules() which causes heap exhaustion
+          // Allocate more memory per worker
+          execArgv: testPattern?.includes('porcupine') 
+            ? ['--max-old-space-size=2048']
+            : [],
         },
       },
       testTimeout: 30000,

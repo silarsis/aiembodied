@@ -37,6 +37,12 @@ Run these commands from the repository root unless a task specifies otherwise:
 - `pnpm test:coverage` — run tests with coverage measurement and reporting.
 - `pnpm build` — (as needed) validate production builds for Electron targets.
 
+**Note on Porcupine tests:** The wake-word worker test (`tests/porcupine-worker.test.ts`) is skipped in the default test suite due to heap exhaustion from `vi.resetModules()` in test isolation. The test uses module reloading in each beforeEach hook which exhausts memory even with increased heap limits. Currently, this test is excluded from `pnpm test` and CI runs. To run it locally, increase the Node heap:
+```bash
+cd app/main && NODE_OPTIONS=--max-old-space-size=4096 pnpm vitest run tests/porcupine-worker.test.ts
+```
+(Note: this may still hit OOM or timeout in some environments; a long-term fix would be to redesign the test to avoid `vi.resetModules()`.)
+
 ### OpenAI Responses API usage
 - When crafting requests, ensure every content chunk conforms to the Responses API schema (e.g., text prompts must use `{ type: 'input_text', text: '...' }`).
 - Structured outputs must configure `text.format` with `{ type: 'json_schema', name: <identifier>, schema: <definition> }`. Do not send the deprecated `response_format` field or the unsupported `response` wrapper.
