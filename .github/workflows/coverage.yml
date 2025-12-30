@@ -31,6 +31,8 @@ jobs:
           PREBUILD_INSTALL_FORBID=1 npm_config_runtime=node npm_config_target=$NODE_VERSION pnpm --filter @aiembodied/main rebuild better-sqlite3
       - name: Run tests with coverage
         run: pnpm test:coverage
+        # Note: Porcupine tests are excluded due to heap exhaustion from vi.resetModules()
+        # Run manually with: cd app/main && NODE_OPTIONS=--max-old-space-size=4096 pnpm vitest run tests/porcupine-worker.test.ts
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:

@@ -34,3 +34,5 @@ jobs:
         run: pnpm typecheck
       - name: Test
         run: pnpm test
+        # Note: Porcupine tests are excluded due to heap exhaustion from vi.resetModules()
+        # Run manually with: cd app/main && NODE_OPTIONS=--max-old-space-size=4096 pnpm vitest run tests/porcupine-worker.test.ts
