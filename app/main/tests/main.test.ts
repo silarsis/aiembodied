@@ -255,6 +255,7 @@ class AvatarModelServiceDouble {
   deleteModel = vi.fn().mockResolvedValue(undefined);
   loadModelBinary = vi.fn().mockResolvedValue(new ArrayBuffer(0));
   listActiveModelBones = vi.fn().mockResolvedValue([]);
+  seedDefaultModelIfMissing = vi.fn().mockResolvedValue(undefined);
 
   constructor(public readonly options: unknown) {}
 }
@@ -626,12 +627,9 @@ describe('main process bootstrap', () => {
       ts: 1700000000,
     });
 
-    expect(ipcMainMock.handle).toHaveBeenCalledTimes(34);
+    expect(ipcMainMock.handle).toHaveBeenCalledTimes(26);
     const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
 
-    expect(mockLogger.info).toHaveBeenCalledWith('Avatar face service initialized.', {
-      reason: 'startup',
-    });
     expect(mockLogger.info).toHaveBeenCalledWith('VRMA generation service initialized.', {
       reason: 'startup',
     });
@@ -671,9 +669,6 @@ describe('main process bootstrap', () => {
     });
     expect(setSecretMock).toHaveBeenCalledWith('realtimeApiKey', 'next-key');
 
-    expect(mockLogger.info).toHaveBeenCalledWith('Avatar face service initialized.', {
-      reason: 'secret-update',
-    });
     expect(mockLogger.info).toHaveBeenCalledWith('VRMA generation service initialized.', {
       reason: 'secret-update',
     });

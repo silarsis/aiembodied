@@ -13,18 +13,12 @@ function runTests(pattern, label) {
 
   const env = { ...process.env, VITEST_PATTERN: pattern };
   
-  // Windows requires different shell handling for env vars
-  const isWindows = platform() === 'win32';
-  const result = spawnSync(isWindows ? 'cmd' : 'sh', 
-    isWindows 
-      ? ['/c', `set VITEST_PATTERN=${pattern} && pnpm exec vitest run`]
-      : ['-c', `VITEST_PATTERN=${pattern} pnpm exec vitest run`],
-    {
-      stdio: 'inherit',
-      shell: false,
-      env,
-    }
-  );
+  // Use shell: true to properly handle environment variable expansion
+  const result = spawnSync('pnpm', ['exec', 'vitest', 'run'], {
+    stdio: 'inherit',
+    shell: true,
+    env,
+  });
 
   if (result.status !== 0) {
     console.error(`\n❌ ${label} tests failed`);
