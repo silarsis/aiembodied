@@ -313,7 +313,7 @@ describe('App component', () => {
     ).toBeInTheDocument();
 
     await openTab(/Character/i);
-    const characterPanel = await screen.findByRole('tabpanel', { name: /Character/i });
+    const characterPanel = screen.getByRole('tabpanel', { name: /Character/i });
     expect(within(characterPanel).getByLabelText('Voice')).toBeInTheDocument();
 
     await openTab(/Local/i);

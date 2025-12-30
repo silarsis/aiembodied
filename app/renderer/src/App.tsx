@@ -2264,15 +2264,7 @@ export default function App() {
                   />
                 </div>
               </section>
-          </section>
 
-          <section
-            role="tabpanel"
-            id="panel-character"
-            aria-labelledby="tab-character"
-            className="kiosk__tabPanel"
-            data-state={activeTab === 'character' ? 'active' : 'inactive'}
-          >
               <AvatarConfigurator
                 avatarApi={activeBridge?.avatar}
                 onActiveModelChange={setActiveVrmModel}

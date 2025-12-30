@@ -283,6 +283,7 @@ export async function rebuildNativeDependenciesForElectron(
           `--arch=${arch}`,
           '--dist-url=https://electronjs.org/headers',
           '--runtime=electron',
+          '--yes',
         ],
         { cwd: modulePath, env: rebuildEnv },
       );
