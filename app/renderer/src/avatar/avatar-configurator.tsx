@@ -162,9 +162,9 @@ export function AvatarConfigurator({
         setModelBusyId(null);
       }
     }
-  }, [models, avatarApi]);
+    }, [models, avatarApi]);
 
-  const refreshModels = useCallback(async () => {
+    const refreshModels = useCallback(async () => {
     if (!avatarApi?.listModels || !avatarApi.getActiveModel) {
       setModels([]);
       setActiveModelId(null);

@@ -335,9 +335,9 @@ async function refreshAvatarDescriptionService(
     avatarDescriptionService = null;
     currentDescriptionApiKey = null;
   }
-}
+  }
 
-function registerIpcHandlers(
+  function registerIpcHandlers(
   manager: ConfigManager,
   conversation: ConversationManager | null,
   metrics: PrometheusCollector | null,

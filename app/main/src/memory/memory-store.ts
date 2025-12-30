@@ -93,41 +93,61 @@ const MIGRATIONS: readonly Migration[] = [
       `CREATE INDEX IF NOT EXISTS sessions_started_at_idx ON sessions(started_at DESC);`,
     ],
   },
-
-{
-version: 2,
-statements: [
-`CREATE TABLE IF NOT EXISTS vrm_models (
-id TEXT PRIMARY KEY,
-name TEXT NOT NULL,
-created_at INTEGER NOT NULL,
-file_path TEXT NOT NULL,
-file_sha TEXT NOT NULL,
-version TEXT NOT NULL,
-thumbnail BLOB NULL
-);`,
-`CREATE INDEX IF NOT EXISTS vrm_models_created_idx ON vrm_models(created_at DESC, id DESC);`,
-],
-},
-{
-version: 3,
-statements: [
-`CREATE TABLE IF NOT EXISTS vrma_animations (
-id TEXT PRIMARY KEY,
-name TEXT NOT NULL,
-created_at INTEGER NOT NULL,
-file_path TEXT NOT NULL,
-file_sha TEXT NOT NULL,
-duration REAL NULL,
-fps REAL NULL
-);`,
-`CREATE INDEX IF NOT EXISTS vrma_animations_created_idx ON vrma_animations(created_at DESC, id DESC);`,
-],
-},
-{
-version: 4,
-statements: [`ALTER TABLE vrm_models ADD COLUMN description TEXT NULL;`],
-},
+  {
+    version: 2,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS faces (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );`,
+      `CREATE TABLE IF NOT EXISTS face_components (
+        id TEXT PRIMARY KEY,
+        face_id TEXT NOT NULL,
+        slot TEXT NOT NULL,
+        sequence INTEGER NOT NULL DEFAULT 0,
+        mime_type TEXT NOT NULL,
+        data BLOB NOT NULL,
+        FOREIGN KEY(face_id) REFERENCES faces(id) ON DELETE CASCADE
+      );`,
+      `CREATE INDEX IF NOT EXISTS face_components_face_idx ON face_components(face_id, sequence);`,
+      `CREATE INDEX IF NOT EXISTS faces_created_idx ON faces(created_at DESC, id DESC);`,
+    ],
+  },
+  {
+    version: 3,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS vrm_models (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        file_path TEXT NOT NULL,
+        file_sha TEXT NOT NULL,
+        version TEXT NOT NULL,
+        thumbnail BLOB NULL
+      );`,
+      `CREATE INDEX IF NOT EXISTS vrm_models_created_idx ON vrm_models(created_at DESC, id DESC);`,
+    ],
+  },
+  {
+    version: 4,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS vrma_animations (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        file_path TEXT NOT NULL,
+        file_sha TEXT NOT NULL,
+        duration REAL NULL,
+        fps REAL NULL
+      );`,
+      `CREATE INDEX IF NOT EXISTS vrma_animations_created_idx ON vrma_animations(created_at DESC, id DESC);`,
+    ],
+  },
+  {
+    version: 5,
+    statements: [`ALTER TABLE vrm_models ADD COLUMN description TEXT NULL;`],
+  },
 ];
 
 function runMigrations(db: SqliteDatabase) {
