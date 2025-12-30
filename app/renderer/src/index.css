@@ -342,7 +342,7 @@ main {
 .faces__grid {
   display: grid;
   gap: 1rem;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 150px));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
 .faceCard {
@@ -448,12 +448,7 @@ main {
   border-radius: 999px;
 }
 
-.avatar__canvas {
-  width: 100%;
-  max-width: 380px;
-  border-radius: 18px;
-  aspect-ratio: 1 / 1;
-}
+
 
 .kiosk__avatarDetails {
   display: flex;

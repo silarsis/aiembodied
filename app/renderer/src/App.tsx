@@ -2,7 +2,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useReducer,
   useRef,
   useState,
   type ChangeEvent,
@@ -11,7 +10,6 @@ import {
 } from 'react';
 import type { ConfigSecretKey, RendererConfig } from '../../main/src/config/config-manager.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
-import { AvatarRenderer } from './avatar/avatar-renderer.js';
 import { VrmAvatarRenderer, type VrmRendererStatus } from './avatar/vrm-avatar-renderer.js';
 import { AnimationBusProvider, createAvatarAnimationBus } from './avatar/animation-bus.js';
 import { BehaviorCueProvider } from './avatar/behavior-cues.js';
@@ -25,8 +23,7 @@ import { getPreloadApi, type PreloadApi } from './preload-api.js';
 import { RealtimeClient, type RealtimeClientState } from './realtime/realtime-client.js';
 import { LatencyTracker, type LatencySnapshot } from './metrics/latency-tracker.js';
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
-import type { AvatarDisplayMode, AvatarFaceDetail, AvatarModelSummary } from './avatar/types.js';
-import { DEFAULT_AVATAR_DISPLAY_STATE, avatarDisplayReducer, shouldRenderVrm } from './avatar/display-mode.js';
+import type { AvatarModelSummary } from './avatar/types.js';
 import { extractAnimationTags, toAnimationSlug } from './avatar/animation-tags.js';
 
 const CURSOR_IDLE_TIMEOUT_MS = 3000;
@@ -44,7 +41,7 @@ interface AudioGraphState {
   error: string | null;
 }
 
-type TabId = 'chatgpt' | 'character' | '2d' | '3d' | 'local';
+type TabId = 'chatgpt' | 'character' | 'local';
 
 interface TabDefinition {
   id: TabId;
@@ -647,23 +644,16 @@ export default function App() {
   const messageIdsRef = useRef<Set<string>>(new Set());
   const latencyTrackerRef = useRef<LatencyTracker>(new LatencyTracker());
   const [latencySnapshot, setLatencySnapshot] = useState<LatencySnapshot | null>(null);
-  const [activeAvatar, setActiveAvatar] = useState<AvatarFaceDetail | null>(null);
   const [activeVrmModel, setActiveVrmModel] = useState<AvatarModelSummary | null>(null);
   const [availableAnimationSlugs, setAvailableAnimationSlugs] = useState<string[]>([]);
   const [selectedTestAnimation, setSelectedTestAnimation] = useState<string>('');
   const [animationListVersion, setAnimationListVersion] = useState(0);
   const animationBus = useMemo(() => createAvatarAnimationBus(), []);
-  const [avatarDisplayState, dispatchAvatarDisplay] = useReducer(
-    avatarDisplayReducer,
-    DEFAULT_AVATAR_DISPLAY_STATE,
-  );
   const [isListeningEnabled, setListeningEnabled] = useState(false);
   const tabs = useMemo<TabDefinition[]>(
     () => [
       { id: 'chatgpt', label: 'ChatGPT' },
       { id: 'character', label: 'Character' },
-      { id: '2d', label: '2D' },
-      { id: '3d', label: '3D' },
       { id: 'local', label: 'Local' },
     ],
     [],
@@ -672,8 +662,6 @@ export default function App() {
   const tabRefs = useRef<Record<TabId, HTMLButtonElement | null>>({
     chatgpt: null,
     character: null,
-    '2d': null,
-    '3d': null,
     local: null,
   });
   const activeBridge = resolveApi();
@@ -716,58 +704,7 @@ export default function App() {
     setAnimationListVersion((v) => v + 1);
   }, []);
 
-  const persistAvatarDisplayPreference = useCallback(
-    async (mode: AvatarDisplayMode) => {
-      const bridge = resolveApi();
-      const avatar = bridge?.avatar;
-      if (!avatar?.setDisplayModePreference) {
-        return;
-      }
 
-      try {
-        await avatar.setDisplayModePreference(mode);
-      } catch (error) {
-        console.warn('Failed to persist avatar display preference.', error);
-      }
-    },
-    [resolveApi],
-  );
-
-  useEffect(() => {
-    const bridge = resolveApi();
-    const avatar = bridge?.avatar;
-    if (!avatar?.getDisplayModePreference) {
-      return;
-    }
-
-    let cancelled = false;
-    (async () => {
-      try {
-        const stored = await avatar.getDisplayModePreference();
-        if (cancelled) {
-          return;
-        }
-
-        if (stored === 'sprites' || stored === 'vrm') {
-          dispatchAvatarDisplay({ type: 'set-mode', mode: stored });
-        }
-      } catch (error) {
-        if (!cancelled) {
-          console.warn('Failed to load avatar display preference from store.', error);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [dispatchAvatarDisplay, resolveApi]);
-
-  useEffect(() => {
-    if (avatarDisplayState.preference === 'vrm' && !activeVrmModel) {
-      dispatchAvatarDisplay({ type: 'vrm-error', message: 'No VRM model is active.' });
-    }
-  }, [avatarDisplayState.preference, activeVrmModel]);
 
   const focusTab = useCallback(
     (tabId: TabId) => {
@@ -883,33 +820,14 @@ export default function App() {
     };
   }, [resolveApi]);
 
-  const handleActiveFaceChange = useCallback((detail: AvatarFaceDetail | null) => {
-    setActiveAvatar(detail);
-  }, []);
-
   const handleVrmStatusChange = useCallback(
     (status: VrmRendererStatus) => {
-      if (status.status === 'ready') {
-        dispatchAvatarDisplay({ type: 'vrm-ready' });
-      } else if (status.status === 'error') {
-        dispatchAvatarDisplay({ type: 'vrm-error', message: status.message ?? 'VRM renderer failed.' });
+      if (status.status === 'error') {
+        console.warn('VRM renderer error:', status.message);
       }
     },
-    [dispatchAvatarDisplay],
+    [],
   );
-
-  const setAvatarDisplayPreference = useCallback(
-    (mode: AvatarDisplayMode) => {
-      dispatchAvatarDisplay({ type: 'set-mode', mode });
-      void persistAvatarDisplayPreference(mode);
-    },
-    [dispatchAvatarDisplay, persistAvatarDisplayPreference],
-  );
-
-  const toggleAvatarDisplayMode = useCallback(() => {
-    const nextMode: AvatarDisplayMode = avatarDisplayState.preference === 'vrm' ? 'sprites' : 'vrm';
-    setAvatarDisplayPreference(nextMode);
-  }, [avatarDisplayState.preference, setAvatarDisplayPreference]);
 
   const handleTestAnimation = useCallback(() => {
     if (!selectedTestAnimation) {
@@ -2126,9 +2044,8 @@ export default function App() {
   const deviceStatusLabel = deviceError ? `Error G�� ${deviceError}` : inputs.length > 0 ? 'Devices ready' : 'ScanningGǪ';
   const showDeveloperHud = Boolean(config?.featureFlags?.metricsHud);
   const hudSnapshot = latencySnapshot ?? latencyTrackerRef.current.getLastSnapshot();
-  const activeAvatarName = activeAvatar?.name ?? 'Embodied Assistant';
-  const shouldShowVrm = shouldRenderVrm(avatarDisplayState, activeVrmModel);
-  const avatarDisplayToggleLabel = avatarDisplayState.preference === 'vrm' ? 'Use sprite avatar' : 'Use 3D avatar';
+  const activeAvatarName = activeVrmModel?.name ?? 'Embodied Assistant';
+
 
   return (
     <AnimationBusProvider bus={animationBus}>
@@ -2226,39 +2143,19 @@ export default function App() {
                 <div
                   className="kiosk__avatar"
                   data-state={visemeSummary.status.toLowerCase()}
-                  data-avatar-mode={shouldShowVrm ? 'vrm' : 'sprites'}
+                  data-avatar-mode="vrm"
                 >
-                  {shouldShowVrm ? (
-                    <VrmAvatarRenderer
-                      key={activeVrmModel?.id ?? 'vrm'}
-                      frame={visemeFrame}
-                      model={activeVrmModel}
-                      onStatusChange={handleVrmStatusChange}
-                      animationVersion={animationListVersion}
-                    />
-                  ) : (
-                    <AvatarRenderer frame={visemeFrame} assets={activeAvatar?.components ?? null} />
-                  )}
+                  <VrmAvatarRenderer
+                    key={activeVrmModel?.id ?? 'vrm'}
+                    frame={visemeFrame}
+                    model={activeVrmModel}
+                    onStatusChange={handleVrmStatusChange}
+                    animationVersion={animationListVersion}
+                  />
                 </div>
                 <div className="kiosk__avatarDetails">
                   <h1 id="avatar-preview-title">{activeAvatarName}</h1>
                   <p className="kiosk__subtitle">Real-time viseme mapping derived from the decoded audio stream.</p>
-                  <div className="kiosk__avatarModeControls">
-                    <button
-                      type="button"
-                      className="kiosk__avatarModeToggle"
-                      onClick={toggleAvatarDisplayMode}
-                      aria-pressed={avatarDisplayState.preference === 'vrm'}
-                      data-testid="avatar-display-toggle"
-                    >
-                      {avatarDisplayToggleLabel}
-                    </button>
-                    {avatarDisplayState.lastError ? (
-                      <p className="kiosk__avatarModeError" role="status">
-                        {avatarDisplayState.lastError}
-                      </p>
-                    ) : null}
-                  </div>
                   <dl className="kiosk__metrics">
                     <div>
                       <dt>Viseme</dt>
@@ -2367,34 +2264,11 @@ export default function App() {
                   />
                 </div>
               </section>
-          </section>
 
-          <section
-            role="tabpanel"
-            id="panel-2d"
-            aria-labelledby="tab-2d"
-            className="kiosk__tabPanel"
-            data-state={activeTab === '2d' ? 'active' : 'inactive'}
-          >
-              <AvatarConfigurator
-                avatarApi={activeBridge?.avatar}
-                onActiveFaceChange={handleActiveFaceChange}
-                panel="2d"
-              />
-          </section>
-
-          <section
-            role="tabpanel"
-            id="panel-3d"
-            aria-labelledby="tab-3d"
-            className="kiosk__tabPanel"
-            data-state={activeTab === '3d' ? 'active' : 'inactive'}
-          >
               <AvatarConfigurator
                 avatarApi={activeBridge?.avatar}
                 onActiveModelChange={setActiveVrmModel}
                 onAnimationChange={refreshAnimationList}
-                panel="3d"
               />
           </section>
 

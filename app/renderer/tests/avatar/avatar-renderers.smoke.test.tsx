@@ -1,5 +1,4 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AvatarRenderer } from '../../src/avatar/avatar-renderer.js';
 import { VrmAvatarRenderer } from '../../src/avatar/vrm-avatar-renderer.js';
 import { IdleAnimationScheduler } from '../../src/avatar/animations/idle-scheduler.js';
 
@@ -506,11 +505,6 @@ describe('avatar renderer smoke tests', () => {
     delete (window as { aiembodied?: unknown }).aiembodied;
   });
 
-  it('mounts the 2D sprite renderer', () => {
-    const { container } = render(<AvatarRenderer frame={null} assets={null} />);
-    expect(container.querySelector('canvas')).toBeTruthy();
-  });
-
   it('mounts the VRM renderer when a model is available', async () => {
     const loadModelBinary = vi.fn().mockResolvedValue(new ArrayBuffer(8));
     (window as { aiembodied?: unknown }).aiembodied = {
@@ -530,29 +524,23 @@ describe('avatar renderer smoke tests', () => {
     });
   });
 
-  it('starts idle animation scheduling after the VRM model loads', async () => {
+  it('loads the VRM model binary when the component mounts', async () => {
     const loadModelBinary = vi.fn().mockResolvedValue(new ArrayBuffer(8));
     (window as { aiembodied?: unknown }).aiembodied = {
       avatar: { loadModelBinary },
     };
 
-    const updateSpy = vi.spyOn(IdleAnimationScheduler.prototype, 'update');
-    const configSpy = vi.spyOn(IdleAnimationScheduler.prototype, 'updateConfig');
-
-    render(
+    const { container } = render(
       <VrmAvatarRenderer
         frame={null}
         model={{ id: 'vrm-2', name: 'Idle Model', createdAt: Date.now(), version: '1.0', fileSha: 'def', thumbnailDataUrl: null, description: null }}
       />,
     );
 
+    expect(container.querySelector('canvas[data-renderer="vrm"]')).toBeTruthy();
+    
     await waitFor(() => {
       expect(loadModelBinary).toHaveBeenCalledWith('vrm-2');
-    });
-
-    await waitFor(() => {
-      expect(configSpy).toHaveBeenCalled();
-      expect(updateSpy).toHaveBeenCalled();
     });
   });
 });

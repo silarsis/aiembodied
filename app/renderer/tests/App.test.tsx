@@ -7,7 +7,7 @@ import type {
 } from '../../main/src/conversation/types.js';
 import type { RendererConfig } from '../../main/src/config/config-manager.js';
 import type { WakeWordDetectionEvent } from '../../main/src/wake-word/types.js';
-import type { AvatarBridge, AvatarGenerationResult } from '../src/avatar/types.js';
+import type { AvatarBridge } from '../src/avatar/types.js';
 
 type MockRealtimeInstance = {
   callbacks: {
@@ -114,14 +114,6 @@ type PreloadWindow = Window & { aiembodied?: import('../src/preload-api.js').Pre
 
 function createAvatarBridgeMock(overrides: Partial<AvatarBridge> = {}): AvatarBridge {
   return {
-    listFaces: vi.fn().mockResolvedValue([]),
-    getActiveFace: vi.fn().mockResolvedValue(null),
-    setActiveFace: vi.fn().mockResolvedValue(null),
-    generateFace: vi
-      .fn()
-      .mockResolvedValue({ generationId: 'gen-ui', candidates: [] } as AvatarGenerationResult),
-    applyGeneratedFace: vi.fn().mockResolvedValue({ faceId: 'avatar-face-id' }),
-    deleteFace: vi.fn().mockResolvedValue(undefined),
     listModels: vi.fn().mockResolvedValue([]),
     getActiveModel: vi.fn().mockResolvedValue(null),
     setActiveModel: vi.fn().mockResolvedValue(null),
@@ -170,8 +162,6 @@ function createAvatarBridgeMock(overrides: Partial<AvatarBridge> = {}): AvatarBr
       fps: null,
     }),
     loadAnimationBinary: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
-    getDisplayModePreference: vi.fn().mockResolvedValue('sprites'),
-    setDisplayModePreference: vi.fn().mockResolvedValue(undefined),
     triggerBehaviorCue: vi.fn().mockResolvedValue(undefined),
     updateModelDescription: vi.fn().mockResolvedValue(null),
     generateModelDescription: vi.fn().mockResolvedValue(''),
@@ -314,8 +304,6 @@ describe('App component', () => {
     expect(tabs.map((tab) => tab.textContent)).toEqual([
       'ChatGPT',
       'Character',
-      '2D',
-      '3D',
       'Local',
     ]);
 
@@ -325,7 +313,7 @@ describe('App component', () => {
     ).toBeInTheDocument();
 
     await openTab(/Character/i);
-    const characterPanel = await screen.findByRole('tabpanel', { name: /Character/i });
+    const characterPanel = screen.getByRole('tabpanel', { name: /Character/i });
     expect(within(characterPanel).getByLabelText('Voice')).toBeInTheDocument();
 
     await openTab(/Local/i);
@@ -336,17 +324,7 @@ describe('App component', () => {
     expect(await screen.findByText(/Speech gate:/i)).toBeInTheDocument();
   }, 15000);
 
-  it('keeps configurator mounted and loads the active face even when the tab is inactive', async () => {
-    const now = Date.now();
-    const listFacesMock = vi
-      .fn()
-      .mockResolvedValue([
-        { id: 'face-1', name: 'Test Face', createdAt: now, previewDataUrl: null },
-      ]);
-    const getActiveFaceMock = vi
-      .fn()
-      .mockResolvedValue({ id: 'face-1', name: 'Test Face', createdAt: now, components: [] });
-
+  it('character tab loads the avatar configurator when active', async () => {
     (window as PreloadWindow).aiembodied = {
       ping: () => 'pong',
       config: {
@@ -358,18 +336,12 @@ describe('App component', () => {
       },
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: { onWake: () => () => {} },
-      avatar: createAvatarBridgeMock({
-        listFaces: listFacesMock,
-        getActiveFace: getActiveFaceMock,
-      }),
+      avatar: createAvatarBridgeMock(),
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
 
     render(<App />);
-
-    await waitFor(() => expect(listFacesMock).toHaveBeenCalled());
-    await waitFor(() => expect(getActiveFaceMock).toHaveBeenCalled());
 
     const characterPanel = await waitFor(() => {
       const panel = document.getElementById('panel-character');
@@ -384,7 +356,6 @@ describe('App component', () => {
     await openTab(/Character/i);
 
     await waitFor(() => expect(characterPanel.getAttribute('data-state')).toBe('active'));
-    expect(getActiveFaceMock).toHaveBeenCalled();
 
     const localPanel = document.getElementById('panel-local');
     expect(localPanel).not.toBeNull();

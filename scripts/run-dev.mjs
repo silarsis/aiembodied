@@ -259,7 +259,7 @@ export async function rebuildNativeDependenciesForElectron(
   }
 
   // Native modules to rebuild for Electron
-  const nativeModules = ['better-sqlite3', 'keytar'];
+  const nativeModules = ['better-sqlite3', 'keytar', '@picovoice/porcupine-node', '@picovoice/pvrecorder-node'];
 
   for (const moduleName of nativeModules) {
     const modulePath = findPnpmModulePath(repoRoot, moduleName);
@@ -283,6 +283,7 @@ export async function rebuildNativeDependenciesForElectron(
           `--arch=${arch}`,
           '--dist-url=https://electronjs.org/headers',
           '--runtime=electron',
+          '--yes',
         ],
         { cwd: modulePath, env: rebuildEnv },
       );

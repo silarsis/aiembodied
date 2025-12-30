@@ -143,14 +143,6 @@ describe('preload bridge', () => {
     expect(new Uint8Array(cloned as ArrayBuffer)).toEqual(new Uint8Array(buffer));
     expect(invoke).toHaveBeenCalledWith('avatar-model:load', 'vrm-4');
 
-    invoke.mockResolvedValueOnce('sprites');
-    await expect(api.avatar?.getDisplayModePreference()).resolves.toBe('sprites');
-    expect(invoke).toHaveBeenCalledWith('avatar:get-display-mode');
-
-    invoke.mockResolvedValueOnce(null);
-    await api.avatar?.setDisplayModePreference('vrm');
-    expect(invoke).toHaveBeenCalledWith('avatar:set-display-mode', 'vrm');
-
     invoke.mockResolvedValueOnce(true);
     await api.avatar?.triggerBehaviorCue('greet_face');
     expect(invoke).toHaveBeenCalledWith('avatar:trigger-behavior', 'greet_face');

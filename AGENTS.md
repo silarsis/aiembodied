@@ -37,6 +37,12 @@ Run these commands from the repository root unless a task specifies otherwise:
 - `pnpm test:coverage` — run tests with coverage measurement and reporting.
 - `pnpm build` — (as needed) validate production builds for Electron targets.
 
+**Note on Porcupine tests:** The wake-word worker test (`tests/porcupine-worker.test.ts`) is skipped in the default test suite due to heap exhaustion from `vi.resetModules()` in test isolation. The test uses module reloading in each beforeEach hook which exhausts memory even with increased heap limits. Currently, this test is excluded from `pnpm test` and CI runs. To run it locally, increase the Node heap:
+```bash
+cd app/main && NODE_OPTIONS=--max-old-space-size=4096 pnpm vitest run tests/porcupine-worker.test.ts
+```
+(Note: this may still hit OOM or timeout in some environments; a long-term fix would be to redesign the test to avoid `vi.resetModules()`.)
+
 ### OpenAI Responses API usage
 - When crafting requests, ensure every content chunk conforms to the Responses API schema (e.g., text prompts must use `{ type: 'input_text', text: '...' }`).
 - Structured outputs must configure `text.format` with `{ type: 'json_schema', name: <identifier>, schema: <definition> }`. Do not send the deprecated `response_format` field or the unsupported `response` wrapper.
@@ -132,3 +138,4 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 - 2025-11-07 — VRMA generation now validates schema output, converts local quaternion tracks into VRMAnimation, and persists generated VRMA clips via the animation service.
 - 2025-11-07 — Animation tags from realtime text are queued in arrival order and play sequentially; timestamp alignment is not yet implemented. Animation requests now accept an optional timing hook (`timing.onStart(startAt)`) so future audio timestamps can be surfaced without changing the queue API.
 - 2025-12-26 — OpenAI Realtime API no longer supports combined `output_modalities: ['audio', 'text']`; only `['audio']` or `['text']` individually. Renderer now uses `['audio']` and extracts text transcripts from `response.output_audio_transcript.delta` / `response.output_audio_transcript.done` events for animation prompts and transcript display.
+- 2025-12-29 — VRM relaxed pose now uses IK-based iterative solver (`setNaturalArmPose` in `vrm-avatar-renderer.tsx`) instead of fixed rotation angles. Algorithm measures actual arm length from skeleton, defines dynamic target position (8cm to side, 85% of arm length down), and iteratively adjusts shoulder/elbow rotations to converge within 0.5cm. Works model-agnostic; logs detailed metrics (iterations, error in cm, target/achieved positions) for debugging. See `RELAXED_POSE_FIX.md` for implementation details.
