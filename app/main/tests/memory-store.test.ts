@@ -152,8 +152,6 @@ describe('MemoryStore', () => {
     replacement.importData(exported, { strategy: 'replace' });
     expect(replacement.listSessions()).toHaveLength(1);
     expect(replacement.getValue('lastSessionId')).toBe('session-1');
-    expect(replacement.listFaces()).toHaveLength(1);
-    expect(replacement.getFaceComponent('face-1', 'base')?.data.equals(Buffer.from([1, 2, 3]))).toBe(true);
     expect(replacement.listVrmModels()).toHaveLength(1);
     expect(replacement.getActiveVrmModelId()).toBe('vrm-1');
     expect(replacement.getVrmModel('vrm-1')?.thumbnail?.equals(Buffer.from([7, 7, 7]))).toBe(true);
@@ -162,32 +160,14 @@ describe('MemoryStore', () => {
 
     const mergeTarget = await createStore();
     mergeTarget.createSession({ id: 'session-2', startedAt: startedAt + 500, title: 'Keep me' });
-    mergeTarget.createFace(
-      { id: 'face-keep', name: 'Keep', createdAt: startedAt + 500 },
-      [
-        {
-          id: 'component-keep',
-          faceId: 'face-keep',
-          slot: 'base',
-          sequence: 0,
-          mimeType: 'image/png',
-          data: Buffer.from([4, 5, 6]),
-        },
-      ],
-    );
-
-    const mergeComponents = exported.faceComponents.map((item) => ({
-      ...item,
-      data: item.data,
-    }));
 
     const mergeData: MemoryStoreExport = {
       ...exported,
       sessions: [...exported.sessions, { id: 'session-2', startedAt: startedAt + 500, title: 'Keep me' }],
       messages: exported.messages,
       kv: exported.kv,
-      faces: exported.faces,
-      faceComponents: mergeComponents,
+      vrmModels: exported.vrmModels,
+      vrmaAnimations: exported.vrmaAnimations,
     };
 
     mergeTarget.importData(mergeData, { strategy: 'merge' });
@@ -196,7 +176,6 @@ describe('MemoryStore', () => {
     expect(mergedSessions).toHaveLength(2);
     expect(mergedSessions.map((session) => session.id)).toContain('session-1');
     expect(mergedSessions.map((session) => session.id)).toContain('session-2');
-    expect(mergeTarget.listFaces().map((item) => item.id)).toEqual(['face-keep', 'face-1']);
     expect(mergeTarget.listVrmModels().map((item) => item.id)).toContain('vrm-1');
     expect(mergeTarget.listVrmAnimations().map((item) => item.id)).toContain('vrma-1');
   });
