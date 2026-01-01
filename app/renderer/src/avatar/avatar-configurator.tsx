@@ -172,9 +172,9 @@ export function AvatarConfigurator({
         setModelBusyId(null);
       }
     }
-    }, [models, avatarApi]);
+  }, [models, avatarApi]);
 
-    const refreshModels = useCallback(async () => {
+  const refreshModels = useCallback(async () => {
     if (!avatarApi?.listModels || !avatarApi.getActiveModel) {
       setModels([]);
       setActiveModelId(null);
@@ -603,44 +603,54 @@ export function AvatarConfigurator({
 
   return (
     <section className="kiosk__faces" aria-labelledby="kiosk-faces-title">
-      <div className="faces__header">
-        <div>
-          <h2 id="kiosk-faces-title">3D Avatar Management</h2>
-          <p className="kiosk__helper">Upload VRM models and generate VRMA animations.</p>
+      {generalError ? (
+        <p className="kiosk__error" role="alert">
+          {generalError}
+        </p>
+      ) : null}
+
+      {/* VRM Models Section */}
+      <div className="faces__section">
+        <h3 className="faces__heading">VRM Avatars</h3>
+
+        {modelError ? (
+          <p role="alert" className="kiosk__error">
+            {modelError}
+          </p>
+        ) : null}
+        {modelsLoading ? <p className="kiosk__info">Loading stored VRM models…</p> : null}
+
+        <div className="faces__grid faces__grid--compact" role="list">
+          {formattedModels.map((model) => {
+            const isActive = model.id === activeModelId;
+            const busy = modelBusyId === model.id || modelUploadStatus === 'uploading';
+            return (
+              <article key={model.id} className="faceCard faceCard--compact" data-active={isActive ? 'true' : 'false'} role="listitem">
+                <div className="faceCard__preview" aria-hidden="true">
+                  {model.thumbnailDataUrl ? (
+                    <img src={model.thumbnailDataUrl} alt="" loading="lazy" />
+                  ) : (
+                    <div className="faceCard__placeholder">No thumbnail</div>
+                  )}
+                </div>
+                <div className="faceCard__info">
+                  <h4>{model.name}</h4>
+                </div>
+                <div className="faceCard__actions">
+                  <button type="button" onClick={() => handleModelSelect(model.id)} disabled={busy || !isModelBridgeAvailable}>
+                    {isActive ? 'Active' : 'Use model'}
+                  </button>
+                  <button type="button" onClick={() => handleModelDelete(model.id)} disabled={busy || !isModelBridgeAvailable}>
+                    Delete
+                  </button>
+                </div>
+              </article>
+            );
+          })}
         </div>
-        {generalError ? (
-          <p className="kiosk__error" role="alert">
-            {generalError}
-          </p>
-        ) : null}
-      </div>
 
-      <div className="faces__panel faces__panel--active">
-        <form className="faces__form" onSubmit={handleGenerateAnimation} aria-label="Generate VRMA animation">
-          <label className="faces__field">
-            <span>Animation prompt</span>
-            <textarea
-              value={vrmaPrompt}
-              onChange={handleVrmaPromptChange}
-              placeholder="Wave hello, then return to idle stance."
-              disabled={!isAnimationBridgeAvailable || vrmaPending}
-              rows={3}
-            />
-          </label>
-          <button type="submit" disabled={!isAnimationBridgeAvailable || vrmaPending || vrmaPrompt.trim().length === 0} className="faces__submit">
-            {vrmaPending ? 'Generating…' : 'Generate VRMA'}
-          </button>
-        </form>
-
-        {vrmaMessage ? (
-          <p className={vrmaStatus === 'error' ? 'kiosk__error' : 'kiosk__info'} role={vrmaStatus === 'error' ? 'alert' : 'status'}>
-            {vrmaMessage}
-          </p>
-        ) : null}
-        {vrmaStatus === 'success' && vrmaResultName ? (
-          <p className="kiosk__info" role="status">
-            Generated animation saved as {vrmaResultName}.
-          </p>
+        {!modelsLoading && formattedModels.length === 0 ? (
+          <p className="kiosk__info">No VRM models uploaded yet. Add a .vrm file to enable the 3D renderer.</p>
         ) : null}
 
         <form className="faces__form" onSubmit={handleModelUpload} aria-label="Upload new VRM model">
@@ -680,7 +690,7 @@ export function AvatarConfigurator({
 
         {lastUploadedModel ? (
           <div className="faces__uploadResult" role="status">
-            <h3>Upload complete</h3>
+            <h4>Upload complete</h4>
             <p>
               {lastUploadedModel.name} · v{lastUploadedModel.version}
             </p>
@@ -695,50 +705,11 @@ export function AvatarConfigurator({
             )}
           </div>
         ) : null}
+      </div>
 
-        {modelError ? (
-          <p role="alert" className="kiosk__error">
-            {modelError}
-          </p>
-        ) : null}
-        {modelsLoading ? <p className="kiosk__info">Loading stored VRM models…</p> : null}
-
-        <div className="faces__grid" role="list">
-          {formattedModels.map((model) => {
-            const isActive = model.id === activeModelId;
-            const busy = modelBusyId === model.id || modelUploadStatus === 'uploading';
-            return (
-              <article key={model.id} className="faceCard" data-active={isActive ? 'true' : 'false'} role="listitem">
-                <div className="faceCard__preview" aria-hidden="true">
-                  {model.thumbnailDataUrl ? (
-                    <img src={model.thumbnailDataUrl} alt="" loading="lazy" />
-                  ) : (
-                    <div className="faceCard__placeholder">No thumbnail</div>
-                  )}
-                </div>
-                <div className="faceCard__info">
-                  <h3>{model.name}</h3>
-                </div>
-                <div className="faceCard__actions">
-                  <button type="button" onClick={() => handleModelSelect(model.id)} disabled={busy || !isModelBridgeAvailable}>
-                    {isActive ? 'Active' : 'Use model'}
-                  </button>
-                  <button type="button" onClick={() => handleModelDelete(model.id)} disabled={busy || !isModelBridgeAvailable}>
-                    Delete
-                  </button>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-
-        {!modelsLoading && formattedModels.length === 0 ? (
-          <p className="kiosk__info">No VRM models uploaded yet. Add a .vrm file to enable the 3D renderer.</p>
-        ) : null}
-
-        <hr className="faces__divider" />
-
-        <h2 className="faces__heading">Stored VRMA Animations</h2>
+      {/* Animations Section */}
+      <div className="faces__section">
+        <h3 className="faces__heading">Animations</h3>
 
         {animationError ? (
           <p role="alert" className="kiosk__error">
@@ -747,13 +718,13 @@ export function AvatarConfigurator({
         ) : null}
         {animationsLoading ? <p className="kiosk__info">Loading stored animations…</p> : null}
 
-        <div className="faces__grid" role="list">
+        <div className="faces__grid faces__grid--compact" role="list">
           {animations.map((animation) => {
             const busy = animationBusyId === animation.id;
             const isRenaming = renamingAnimationId === animation.id;
 
             return (
-              <article key={animation.id} className="faceCard" role="listitem">
+              <article key={animation.id} className="faceCard faceCard--compact" role="listitem">
                 <div className="faceCard__info">
                   {isRenaming ? (
                     <div className="faceCard__renameForm">
@@ -773,24 +744,12 @@ export function AvatarConfigurator({
                       />
                     </div>
                   ) : (
-                    <h3>{animation.name}</h3>
+                    <h4>{animation.name}</h4>
                   )}
-                  <dl className="faceCard__metaList">
+                  <dl className="faceCard__metaList faceCard__metaList--compact">
                     <div>
                       <dt>Duration</dt>
-                      <dd>{animation.duration !== null ? `${(animation.duration).toFixed(2)}s` : '—'}</dd>
-                    </div>
-                    <div>
-                      <dt>FPS</dt>
-                      <dd>{animation.fps !== null ? `${(animation.fps).toFixed(1)}` : '—'}</dd>
-                    </div>
-                    <div>
-                      <dt>Uploaded</dt>
-                      <dd>{formatTimestamp(animation.createdAt)}</dd>
-                    </div>
-                    <div>
-                      <dt>Checksum</dt>
-                      <dd>{truncateSha(animation.fileSha)}</dd>
+                      <dd>{animation.duration !== null ? `${(animation.duration).toFixed(1)}s` : '—'}</dd>
                     </div>
                   </dl>
                 </div>
@@ -836,31 +795,37 @@ export function AvatarConfigurator({
           <p className="kiosk__info">No VRMA animations stored yet. Generate or upload an animation to get started.</p>
         ) : null}
 
-        <hr className="faces__divider" />
-
-        <h2 className="faces__heading">Stored VRM Poses</h2>
-
-        <form className="faces__form" onSubmit={handleGeneratePose} aria-label="Generate VRM pose">
+        <form className="faces__form" onSubmit={handleGenerateAnimation} aria-label="Generate VRMA animation">
           <label className="faces__field">
-            <span>Pose prompt</span>
+            <span>Animation prompt</span>
             <textarea
-              value={posePrompt}
-              onChange={handlePosePromptChange}
-              placeholder="Confident power stance with arms crossed."
-              disabled={!isPoseBridgeAvailable || posePending}
-              rows={3}
+              value={vrmaPrompt}
+              onChange={handleVrmaPromptChange}
+              placeholder="Wave hello, then return to idle stance."
+              disabled={!isAnimationBridgeAvailable || vrmaPending}
+              rows={2}
             />
           </label>
-          <button type="submit" disabled={!isPoseBridgeAvailable || posePending || posePrompt.trim().length === 0} className="faces__submit">
-            {posePending ? 'Generating…' : 'Generate Pose'}
+          <button type="submit" disabled={!isAnimationBridgeAvailable || vrmaPending || vrmaPrompt.trim().length === 0} className="faces__submit">
+            {vrmaPending ? 'Generating…' : 'Generate Animation'}
           </button>
         </form>
 
-        {poseMessage ? (
-          <p className={poseStatus === 'error' ? 'kiosk__error' : 'kiosk__info'} role={poseStatus === 'error' ? 'alert' : 'status'}>
-            {poseMessage}
+        {vrmaMessage ? (
+          <p className={vrmaStatus === 'error' ? 'kiosk__error' : 'kiosk__info'} role={vrmaStatus === 'error' ? 'alert' : 'status'}>
+            {vrmaMessage}
           </p>
         ) : null}
+        {vrmaStatus === 'success' && vrmaResultName ? (
+          <p className="kiosk__info" role="status">
+            Generated animation saved as {vrmaResultName}.
+          </p>
+        ) : null}
+      </div>
+
+      {/* Poses Section */}
+      <div className="faces__section">
+        <h3 className="faces__heading">Poses</h3>
 
         {poseError ? (
           <p role="alert" className="kiosk__error">
@@ -869,23 +834,13 @@ export function AvatarConfigurator({
         ) : null}
         {posesLoading ? <p className="kiosk__info">Loading stored poses…</p> : null}
 
-        <div className="faces__grid" role="list">
+        <div className="faces__grid faces__grid--compact" role="list">
           {poses.map((pose) => {
             const busy = poseBusyId === pose.id;
             return (
-              <article key={pose.id} className="faceCard" role="listitem">
+              <article key={pose.id} className="faceCard faceCard--compact" role="listitem">
                 <div className="faceCard__info">
-                  <h3>{pose.name}</h3>
-                  <dl className="faceCard__metaList">
-                    <div>
-                      <dt>Created</dt>
-                      <dd>{formatTimestamp(pose.createdAt)}</dd>
-                    </div>
-                    <div>
-                      <dt>Checksum</dt>
-                      <dd>{truncateSha(pose.fileSha)}</dd>
-                    </div>
-                  </dl>
+                  <h4>{pose.name}</h4>
                 </div>
                 <div className="faceCard__actions">
                   <button
@@ -903,6 +858,28 @@ export function AvatarConfigurator({
 
         {!posesLoading && poses.length === 0 ? (
           <p className="kiosk__info">No VRM poses stored yet. Generate a pose to get started.</p>
+        ) : null}
+
+        <form className="faces__form" onSubmit={handleGeneratePose} aria-label="Generate VRM pose">
+          <label className="faces__field">
+            <span>Pose prompt</span>
+            <textarea
+              value={posePrompt}
+              onChange={handlePosePromptChange}
+              placeholder="Confident power stance with arms crossed."
+              disabled={!isPoseBridgeAvailable || posePending}
+              rows={2}
+            />
+          </label>
+          <button type="submit" disabled={!isPoseBridgeAvailable || posePending || posePrompt.trim().length === 0} className="faces__submit">
+            {posePending ? 'Generating…' : 'Generate Pose'}
+          </button>
+        </form>
+
+        {poseMessage ? (
+          <p className={poseStatus === 'error' ? 'kiosk__error' : 'kiosk__info'} role={poseStatus === 'error' ? 'alert' : 'status'}>
+            {poseMessage}
+          </p>
         ) : null}
       </div>
     </section>

@@ -25,6 +25,7 @@ import { LatencyTracker, type LatencySnapshot } from './metrics/latency-tracker.
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
 import type { AvatarModelSummary, AvatarPoseSummary } from './avatar/types.js';
 import { extractAvatarTags, toAnimationSlug } from './avatar/animation-tags.js';
+import { Vector3 } from 'three';
 
 const CURSOR_IDLE_TIMEOUT_MS = 3000;
 const WAKE_ACTIVE_DURATION_MS = 4000;
@@ -790,11 +791,12 @@ export default function App() {
         let rightElbow: { x: number; y: number; z: number } | null = null;
         let rightHand: { x: number; y: number; z: number } | null = null;
 
+        const worldPos = new Vector3();
         scene.traverse?.((object: Record<string, unknown>) => {
           const name = object.name as string | undefined;
           const pos =
             typeof object.getWorldPosition === 'function'
-              ? object.getWorldPosition()
+              ? (object.getWorldPosition as (target: Vector3) => Vector3)(worldPos)
               : (object.position as { x: number; y: number; z: number } | undefined);
 
           if (!pos) return;
