@@ -47,8 +47,8 @@ export function createAppDiagnostics(options: AppDiagnosticsOptions): AppDiagnos
 
   if (!enabled) {
     return {
-      trackWindow: () => {},
-      dispose: () => {},
+      trackWindow: () => { },
+      dispose: () => { },
     };
   }
 
@@ -338,12 +338,15 @@ export function createAppDiagnostics(options: AppDiagnosticsOptions): AppDiagnos
           });
         }
       }
-      try {
-        cleanupWebContents(window.webContents);
-      } catch (error) {
-        logger.warn('Diagnostics: exception cleaning up webContents from window.', {
-          message: error instanceof Error ? error.message : String(error),
-        });
+      // Only cleanup webContents if window is not destroyed
+      if (!window.isDestroyed()) {
+        try {
+          cleanupWebContents(window.webContents);
+        } catch (error) {
+          logger.warn('Diagnostics: exception cleaning up webContents from window.', {
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     });
   };

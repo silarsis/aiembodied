@@ -335,9 +335,9 @@ async function refreshAvatarDescriptionService(
     avatarDescriptionService = null;
     currentDescriptionApiKey = null;
   }
-  }
+}
 
-  function registerIpcHandlers(
+function registerIpcHandlers(
   manager: ConfigManager,
   conversation: ConversationManager | null,
   metrics: PrometheusCollector | null,
@@ -619,8 +619,8 @@ async function refreshAvatarDescriptionService(
       typeof (responseBody as { expires_at?: unknown; expiresAt?: unknown } | null)?.expires_at === 'number'
         ? ((responseBody as { expires_at?: number }).expires_at as number)
         : typeof (responseBody as { expiresAt?: unknown } | null)?.expiresAt === 'number'
-        ? ((responseBody as { expiresAt?: number }).expiresAt as number)
-        : undefined;
+          ? ((responseBody as { expiresAt?: number }).expiresAt as number)
+          : undefined;
 
     const result: RealtimeEphemeralTokenResponse = {
       value,
@@ -1089,30 +1089,78 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
+let isAppQuitting = false;
+
+app.on('before-quit', async (event) => {
+  if (isAppQuitting) {
+    return;
+  }
+
+  // Prevent default quit to allow async cleanup
+  event.preventDefault();
+  isAppQuitting = true;
+
+  logger.info('Application shutdown sequence initiated.');
+
   diagnostics.dispose();
   crashGuard.notifyAppQuitting();
-  logger.info('Application is quitting.');
+
+  // Async cleanup tasks
+  const cleanupTasks: Promise<void>[] = [];
+
   if (wakeWordService) {
-    void wakeWordService.dispose();
+    cleanupTasks.push(
+      wakeWordService.dispose().catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn('Failed to dispose wake word service during shutdown', { message });
+      }),
+    );
   }
+
+  if (metricsCollector) {
+    cleanupTasks.push(
+      metricsCollector.stop().catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn('Failed to stop metrics exporter cleanly', { message });
+      }),
+    );
+  }
+
+  // Synchronous cleanup
   if (memoryStore) {
-    memoryStore.dispose();
-    memoryStore = null;
+    try {
+      memoryStore.dispose();
+      memoryStore = null;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('Failed to dispose memory store', { message });
+    }
   }
+
   if (removeConversationListeners) {
     removeConversationListeners();
   }
   conversationManager = null;
-  if (metricsCollector) {
-    void metricsCollector.stop().catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.warn('Failed to stop metrics exporter cleanly', { message });
-    });
-    metricsCollector = null;
-  }
+
   if (developmentTray) {
     developmentTray.destroy();
     developmentTray = null;
   }
+
+  // Wait for all async cleanup to finish
+  if (cleanupTasks.length > 0) {
+    try {
+      // Set a timeout to force quit if cleanup hangs
+      await Promise.race([
+        Promise.all(cleanupTasks),
+        new Promise((resolve) => setTimeout(resolve, 2000)),
+      ]);
+    } catch (error) {
+      // Should be caught by individual catch blocks, but just in case
+      logger.warn('Error during shutdown cleanup tasks', { error });
+    }
+  }
+
+  logger.info('Application cleanup complete. Quitting now.');
+  app.quit();
 });

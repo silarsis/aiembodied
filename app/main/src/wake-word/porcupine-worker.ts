@@ -67,7 +67,7 @@ async function start(): Promise<void> {
 parentPort.on('message', (message: WakeWordWorkerCommand) => {
   if (message.type === 'shutdown') {
     shutdown().finally(() => {
-      // no-op
+      process.exit(0);
     });
   }
 });

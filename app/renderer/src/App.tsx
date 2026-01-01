@@ -650,6 +650,22 @@ export default function App() {
   const [animationListVersion, setAnimationListVersion] = useState(0);
   const animationBus = useMemo(() => createAvatarAnimationBus(), []);
   const [isListeningEnabled, setListeningEnabled] = useState(false);
+  const [bonePositions, setBonePositions] = useState<{
+    leftShoulder: { x: number; y: number; z: number } | null;
+    leftElbow: { x: number; y: number; z: number } | null;
+    leftHand: { x: number; y: number; z: number } | null;
+    rightShoulder: { x: number; y: number; z: number } | null;
+    rightElbow: { x: number; y: number; z: number } | null;
+    rightHand: { x: number; y: number; z: number } | null;
+  }>({
+    leftShoulder: null,
+    leftElbow: null,
+    leftHand: null,
+    rightShoulder: null,
+    rightElbow: null,
+    rightHand: null,
+  });
+  const animationFrameRef = useRef<number | null>(null);
   const tabs = useMemo<TabDefinition[]>(
     () => [
       { id: 'chatgpt', label: 'ChatGPT' },
@@ -702,6 +718,88 @@ export default function App() {
 
   const refreshAnimationList = useCallback(() => {
     setAnimationListVersion((v) => v + 1);
+  }, []);
+
+  // Update bone positions from VRM in real-time
+  useEffect(() => {
+    const updateBonePositions = () => {
+      const canvas = document.querySelector('[data-renderer="vrm"]') as HTMLCanvasElement | null;
+      if (!canvas) {
+        animationFrameRef.current = requestAnimationFrame(updateBonePositions);
+        return;
+      }
+
+      // Access the VRM through the renderer's internals
+      // This is a workaround; ideally this would be exposed via the preload bridge
+      try {
+        const canvasWithThree = canvas as {
+          __THREE_RENDERER__?: Record<string, unknown>;
+          __THREE_SCENE__?: { traverse?: (fn: (obj: Record<string, unknown>) => void) => void };
+        };
+        const renderer = canvasWithThree.__THREE_RENDERER__;
+        const scene = canvasWithThree.__THREE_SCENE__;
+
+        if (!renderer || !scene) {
+          animationFrameRef.current = requestAnimationFrame(updateBonePositions);
+          return;
+        }
+
+        // Traverse the scene to find bone positions
+        let leftShoulder: { x: number; y: number; z: number } | null = null;
+        let leftElbow: { x: number; y: number; z: number } | null = null;
+        let leftHand: { x: number; y: number; z: number } | null = null;
+        let rightShoulder: { x: number; y: number; z: number } | null = null;
+        let rightElbow: { x: number; y: number; z: number } | null = null;
+        let rightHand: { x: number; y: number; z: number } | null = null;
+
+        scene.traverse?.((object: Record<string, unknown>) => {
+          const name = object.name as string | undefined;
+          const pos =
+            typeof object.getWorldPosition === 'function'
+              ? object.getWorldPosition()
+              : (object.position as { x: number; y: number; z: number } | undefined);
+
+          if (!pos) return;
+
+          if (name?.includes('LeftShoulder')) {
+            leftShoulder = { x: pos.x, y: pos.y, z: pos.z };
+          } else if (name?.includes('LeftUpperArm')) {
+            leftElbow = { x: pos.x, y: pos.y, z: pos.z };
+          } else if (name?.includes('LeftHand')) {
+            leftHand = { x: pos.x, y: pos.y, z: pos.z };
+          } else if (name?.includes('RightShoulder')) {
+            rightShoulder = { x: pos.x, y: pos.y, z: pos.z };
+          } else if (name?.includes('RightUpperArm')) {
+            rightElbow = { x: pos.x, y: pos.y, z: pos.z };
+          } else if (name?.includes('RightHand')) {
+            rightHand = { x: pos.x, y: pos.y, z: pos.z };
+          }
+        });
+
+        if (leftShoulder || leftElbow || leftHand || rightShoulder || rightElbow || rightHand) {
+          setBonePositions({
+            leftShoulder,
+            leftElbow,
+            leftHand,
+            rightShoulder,
+            rightElbow,
+            rightHand,
+          });
+        }
+      } catch {
+        // Silently fail - VRM not loaded yet
+      }
+
+      animationFrameRef.current = requestAnimationFrame(updateBonePositions);
+    };
+
+    animationFrameRef.current = requestAnimationFrame(updateBonePositions);
+
+    return () => {
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
   }, []);
 
 
@@ -2201,6 +2299,35 @@ export default function App() {
                       </dd>
                     </div>
                   </dl>
+                  <details className="kiosk__bonePositions" style={{ marginTop: 16 }}>
+                    <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Bone Positions</summary>
+                    <div style={{ fontSize: '0.875rem', marginTop: 8, fontFamily: 'monospace', color: '#666' }}>
+                      <div style={{ marginBottom: 8 }}>
+                        <strong>Left Side:</strong>
+                        {bonePositions.leftShoulder && (
+                          <div>Shoulder: ({bonePositions.leftShoulder.x.toFixed(4)}, {bonePositions.leftShoulder.y.toFixed(4)}, {bonePositions.leftShoulder.z.toFixed(4)})</div>
+                        )}
+                        {bonePositions.leftElbow && (
+                          <div>Elbow: ({bonePositions.leftElbow.x.toFixed(4)}, {bonePositions.leftElbow.y.toFixed(4)}, {bonePositions.leftElbow.z.toFixed(4)})</div>
+                        )}
+                        {bonePositions.leftHand && (
+                          <div>Hand: ({bonePositions.leftHand.x.toFixed(4)}, {bonePositions.leftHand.y.toFixed(4)}, {bonePositions.leftHand.z.toFixed(4)})</div>
+                        )}
+                      </div>
+                      <div>
+                        <strong>Right Side:</strong>
+                        {bonePositions.rightShoulder && (
+                          <div>Shoulder: ({bonePositions.rightShoulder.x.toFixed(4)}, {bonePositions.rightShoulder.y.toFixed(4)}, {bonePositions.rightShoulder.z.toFixed(4)})</div>
+                        )}
+                        {bonePositions.rightElbow && (
+                          <div>Elbow: ({bonePositions.rightElbow.x.toFixed(4)}, {bonePositions.rightElbow.y.toFixed(4)}, {bonePositions.rightElbow.z.toFixed(4)})</div>
+                        )}
+                        {bonePositions.rightHand && (
+                          <div>Hand: ({bonePositions.rightHand.x.toFixed(4)}, {bonePositions.rightHand.y.toFixed(4)}, {bonePositions.rightHand.z.toFixed(4)})</div>
+                        )}
+                      </div>
+                    </div>
+                  </details>
                 </div>
                 <div className="kiosk__meter" aria-live="polite">
                   <div className="meter">
