@@ -1026,21 +1026,18 @@ function createNaturalStancePose(): VRMPose {
   const fingerCurlAngle = Math.PI * 0.08; // ~15 degrees per joint
   const thumbCurlAngle = Math.PI * 0.08;
 
-  const fingerRot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -fingerCurlAngle); // Negative Z for left hand curl usually?
-  // Actually, standard VRM T-pose palms are down. Fingers point +X (left arm).
-  // Curling down towards palm is +Z or -Z?
-  // Left Arm (+X): Z axis is Forward/Back. Y is Up.
-  // Wait, if palms are DOWN, curl is around Z axis.
-  // Let's try -Z for curl on left hand.
-  // Right hand will need opposite.
+  // Revised: User reported backwards curl. Flipping signs.
+  // Previous: Left = -Z (Negative), Right = +Z (Positive)
+  // New: Left = +Z (Positive), Right = -Z (Negative)
 
-  const leftFingerQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, -1), fingerCurlAngle); // Curl down?
-  const rightFingerQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), fingerCurlAngle); // Mirror
+  const leftFingerQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), fingerCurlAngle);
+  const rightFingerQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, -1), fingerCurlAngle);
 
   // Thumb is special.
   // Thumbs usually need to rotate down/in.
-  const leftThumbQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, fingerCurlAngle, 0)); // Y rotation for thumb?
-  const rightThumbQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -fingerCurlAngle, 0));
+  // Flipping thumb rotation as well to match
+  const leftThumbQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -fingerCurlAngle, 0));
+  const rightThumbQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, fingerCurlAngle, 0));
 
   const fingers = ['Index', 'Middle', 'Ring', 'Little'];
   const segments = ['Proximal', 'Intermediate', 'Distal'];
