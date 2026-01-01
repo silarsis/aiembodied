@@ -24,7 +24,7 @@ import { RealtimeClient, type RealtimeClientState } from './realtime/realtime-cl
 import { LatencyTracker, type LatencySnapshot } from './metrics/latency-tracker.js';
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
 import type { AvatarModelSummary, AvatarPoseSummary } from './avatar/types.js';
-import { extractAnimationTags, toAnimationSlug } from './avatar/animation-tags.js';
+import { extractAvatarTags, toAnimationSlug } from './avatar/animation-tags.js';
 
 const CURSOR_IDLE_TIMEOUT_MS = 3000;
 const WAKE_ACTIVE_DURATION_MS = 4000;
@@ -113,12 +113,16 @@ function formatLatency(value?: number): string {
   return `${(value / 1000).toFixed(2)}s`;
 }
 
-function buildAnimationInstructions(availableSlugs: string[]): string {
-  const list = availableSlugs.length > 0 ? availableSlugs.join(', ') : 'none';
+function buildAnimationInstructions(availableAnimations: string[], availablePoses: string[]): string {
+  const animList = availableAnimations.length > 0 ? availableAnimations.join(', ') : 'none';
+  const poseList = availablePoses.length > 0 ? availablePoses.join(', ') : 'none';
   return [
-    `${ANIMATION_INSTRUCTION_PREFIX} ${list}.`,
-    'You have a 3D body you can control through animations or poses. To trigger an animation or pose, include `{slug}` (multiple tags allowed).',
-    'Slug format: lowercase letters, numbers, and hyphens (for example: `happy-wave`).',
+    `Available animations: ${animList}.`,
+    `Available poses: ${poseList}.`,
+    'You have a 3D body you can control through animations or poses.',
+    'To trigger an animation, include `{anim:<slug>}` in your response (e.g. `{anim:happy-wave}`).',
+    'To apply a pose, include `{pose:<slug>}` in your response (e.g. `{pose:power-stance}`).',
+    'Multiple tags are allowed. Slug format: lowercase letters, numbers, and hyphens.',
   ].join(' ');
 }
 
@@ -131,12 +135,13 @@ function buildAvatarDescription(model: AvatarModelSummary | null): string {
 
 function buildSessionInstructions(
   basePrompt: string,
-  availableSlugs: string[],
+  availableAnimations: string[],
+  availablePoses: string[],
   activeVrmModel: AvatarModelSummary | null,
 ): string {
   const trimmedBase = basePrompt.trim();
   const avatarDescription = buildAvatarDescription(activeVrmModel);
-  const animationInstructions = buildAnimationInstructions(availableSlugs);
+  const animationInstructions = buildAnimationInstructions(availableAnimations, availablePoses);
 
   const parts = [trimmedBase, avatarDescription, animationInstructions].filter((s) => s.length > 0);
   return parts.join('\n\n');
@@ -1109,12 +1114,19 @@ export default function App() {
   const hasRealtimeSupport = typeof RTCPeerConnection === 'function';
   const hasRealtimeApiKey = config?.hasRealtimeApiKey ?? false;
   const sessionInstructions = useMemo(
-    () => buildSessionInstructions(basePrompt, availableAnimationSlugs, activeVrmModel),
-    [basePrompt, availableAnimationSlugs, activeVrmModel],
+    () => {
+      const poseSlugs = availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0);
+      return buildSessionInstructions(basePrompt, availableAnimationSlugs, poseSlugs, activeVrmModel);
+    },
+    [basePrompt, availableAnimationSlugs, availablePoses, activeVrmModel],
   );
   const availableAnimationSlugSet = useMemo(
     () => new Set(availableAnimationSlugs),
     [availableAnimationSlugs],
+  );
+  const availablePoseSlugSet = useMemo(
+    () => new Set(availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0)),
+    [availablePoses],
   );
   const animationTextHandlerRef = useRef<(text: string) => void>(() => undefined);
   const handleRealtimeTextContent = useCallback(
@@ -1122,15 +1134,33 @@ export default function App() {
       if (!content) {
         return;
       }
-      const tags = extractAnimationTags(content, { allowedSlugs: availableAnimationSlugSet });
+      const tags = extractAvatarTags(content, {
+        allowedAnimationSlugs: availableAnimationSlugSet,
+        allowedPoseSlugs: availablePoseSlugSet,
+      });
       if (tags.length === 0) {
         return;
       }
-      for (const slug of tags) {
-        animationBus.enqueue({ slug, intent: 'play', source: 'realtime-text' });
+      for (const tag of tags) {
+        if (tag.type === 'pose') {
+          // Find the pose by slug and load its data to apply
+          const pose = availablePoses.find((p) => toAnimationSlug(p.name) === tag.slug);
+          if (pose) {
+            const bridge = resolveApi();
+            bridge?.avatar?.loadPose(pose.id).then((poseData) => {
+              if (poseData && typeof poseData === 'object') {
+                animationBus.applyPose(poseData as Record<string, { rotation: number[]; position?: number[] }>, 'realtime-text');
+              }
+            }).catch((error) => {
+              console.error('[App] Failed to load pose from LLM tag', error);
+            });
+          }
+        } else {
+          animationBus.enqueue({ slug: tag.slug, intent: 'play', source: 'realtime-text' });
+        }
       }
     },
-    [animationBus, availableAnimationSlugSet],
+    [animationBus, availableAnimationSlugSet, availablePoseSlugSet, availablePoses, resolveApi],
   );
 
   useEffect(() => {
