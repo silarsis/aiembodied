@@ -740,6 +740,57 @@ function applyRelaxedPose(vrm: VRM) {
   console.log('[vrm-avatar-renderer] Relaxed pose applied successfully using VRM pose system');
 }
 
+/**
+ * Save the natural stance pose as 'default' if it doesn't already exist.
+ * This allows users to restore the avatar to its natural pose.
+ */
+async function saveDefaultPoseIfNeeded(): Promise<void> {
+  const bridge = getPreloadApi();
+  const avatar = bridge?.avatar;
+  if (!avatar?.listPoses || !avatar?.uploadPose) {
+    console.warn('[vrm-avatar-renderer] Pose API unavailable, skipping default pose save');
+    return;
+  }
+
+  try {
+    const existingPoses = await avatar.listPoses();
+    const hasDefault = existingPoses.some((p) => p.name.toLowerCase() === 'default');
+
+    if (hasDefault) {
+      console.info('[vrm-avatar-renderer] Default pose already exists, skipping save');
+      return;
+    }
+
+    // Get the natural stance pose and convert to uploadable format
+    const naturalPose = createNaturalStancePose();
+    const poseData: Record<string, { rotation: number[]; position?: number[] }> = {};
+
+    for (const [boneName, boneData] of Object.entries(naturalPose)) {
+      if (boneData?.rotation) {
+        const rotation = boneData.rotation as { x: number; y: number; z: number; w: number } | [number, number, number, number];
+        const rotationArray = Array.isArray(rotation)
+          ? rotation
+          : [rotation.x, rotation.y, rotation.z, rotation.w];
+        poseData[boneName] = { rotation: rotationArray };
+      }
+    }
+
+    const jsonData = JSON.stringify(poseData, null, 2);
+
+    await avatar.uploadPose({
+      name: 'default',
+      fileName: 'default.pose.json',
+      data: jsonData,
+    });
+
+    console.info('[vrm-avatar-renderer] Default pose saved successfully', {
+      boneCount: Object.keys(poseData).length
+    });
+  } catch (error) {
+    console.warn('[vrm-avatar-renderer] Failed to save default pose', error);
+  }
+}
+
 function getHeadBounds(vrm: VRM): { width: number; height: number; depth: number } | null {
   const humanoid = vrm.humanoid;
   if (!humanoid) {
@@ -1565,6 +1616,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         vrm.scene.updateWorldMatrix(true, true);
         normalizeVrmScene(vrm);
         applyRelaxedPose(vrm);
+        saveDefaultPoseIfNeeded().catch(() => { }); // Fire-and-forget, errors handled internally
         vrm.scene.updateWorldMatrix(true, true);
         const hiddenMeshes = suppressOutlierMeshes(vrm.scene, MAX_RENDERABLE_SIZE);
 
