@@ -42,12 +42,12 @@ vi.mock('three', async () => {
   const actual = await vi.importActual<typeof import('three')>('three');
 
   class MockWebGLRenderer {
-    constructor(public readonly options: unknown) {}
-    setClearColor() {}
-    setPixelRatio() {}
-    setSize() {}
-    render() {}
-    dispose() {}
+    constructor(public readonly options: unknown) { }
+    setClearColor() { }
+    setPixelRatio() { }
+    setSize() { }
+    render() { }
+    dispose() { }
   }
 
   class MockClock {
@@ -97,7 +97,7 @@ vi.mock('@pixiv/three-vrm', async () => {
   const actual = await vi.importActual<typeof import('@pixiv/three-vrm')>('@pixiv/three-vrm');
   return {
     ...actual,
-    VRMLoaderPlugin: class {},
+    VRMLoaderPlugin: class { },
     VRMUtils: {
       removeUnnecessaryVertices: vi.fn(),
       removeUnnecessaryJoints: vi.fn(),
@@ -118,11 +118,7 @@ import {
   suppressOutlierMeshes,
 } from '../../src/avatar/vrm-avatar-renderer.js';
 
-// TODO: Import setNaturalArmPose when exported from vrm-avatar-renderer
-// For now, tests using this function are skipped
-const setNaturalArmPose = (() => {
-  throw new Error('setNaturalArmPose is not yet exported from vrm-avatar-renderer');
-}) as any;
+
 import type { AvatarModelSummary } from '../../src/avatar/types.js';
 
 describe('mapVisemeToPreset', () => {
@@ -260,8 +256,8 @@ describe('VrmAvatarRenderer behavior cues', () => {
     window.cancelAnimationFrame = vi.fn();
     originalResizeObserver = window.ResizeObserver;
     window.ResizeObserver = class {
-      observe() {}
-      disconnect() {}
+      observe() { }
+      disconnect() { }
     } as unknown as typeof ResizeObserver;
 
     (window as unknown as { aiembodied?: unknown }).aiembodied = {
@@ -327,134 +323,4 @@ describe('VrmAvatarRenderer behavior cues', () => {
   });
 });
 
-describe.skip('setNaturalArmPose', () => {
-  // TODO: Enable when setNaturalArmPose is exported from vrm-avatar-renderer
-  it('applies fixed rotations to achieve relaxed arm pose', () => {
-    // Create arm bone hierarchy in T-pose (arms extended horizontally)
-    const shoulder = new THREE.Object3D();
-    shoulder.position.set(0.026, 1.479, -0.032);
 
-    const upperArm = new THREE.Object3D();
-    upperArm.position.set(0.076, -0.01, 0); // Relative to shoulder
-    shoulder.add(upperArm);
-
-    const lowerArm = new THREE.Object3D();
-    lowerArm.position.set(0.607, 0, 0.001); // Relative to upperArm
-    upperArm.add(lowerArm);
-
-    const hand = new THREE.Object3D();
-    hand.position.set(0, 0, 0); // Hand is at lowerArm origin
-    lowerArm.add(hand);
-
-    // Update world matrices
-    shoulder.updateWorldMatrix(true, true);
-
-    // Record initial hand position (extended to the side in T-pose)
-    const initialHandPos = new THREE.Vector3();
-    hand.getWorldPosition(initialHandPos);
-
-    // Define a target position: down and slightly to the left of the shoulder
-    const shoulderWorldPos = new THREE.Vector3();
-    shoulder.getWorldPosition(shoulderWorldPos);
-    const targetPos = shoulderWorldPos.clone().add(new THREE.Vector3(-0.05, -0.5, 0.03));
-
-    // Call setNaturalArmPose to apply IK toward natural resting pose
-    setNaturalArmPose(shoulder, upperArm, lowerArm, hand, targetPos, 'LEFT');
-
-    // Record final hand position
-    const finalHandPos = new THREE.Vector3();
-    hand.getWorldPosition(finalHandPos);
-
-    const movement = initialHandPos.distanceTo(finalHandPos);
-
-    // Hand should move significantly from T-pose (extended) toward the target position
-    // We expect substantial movement due to the IK adjustments
-    expect(movement).toBeGreaterThan(0.1);
-    // Arm should achieve a natural-looking pose with elbow bent
-    expect(finalHandPos.y).toBeLessThan(initialHandPos.y);
-  });
-
-  it('handles missing bones gracefully', () => {
-    const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const targetPos = new THREE.Vector3(0, -0.5, 0);
-
-    setNaturalArmPose(null, null, null, null, targetPos, 'LEFT');
-
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringMatching(/Missing arm bones/));
-    consoleSpy.mockRestore();
-  });
-
-  it('logs convergence metrics after pose adjustment', () => {
-    const shoulder = new THREE.Object3D();
-    shoulder.position.set(0.026, 1.479, -0.032);
-
-    const upperArm = new THREE.Object3D();
-    upperArm.position.set(0.076, -0.01, 0);
-    shoulder.add(upperArm);
-
-    const lowerArm = new THREE.Object3D();
-    lowerArm.position.set(0.607, 0, 0.001);
-    upperArm.add(lowerArm);
-
-    const hand = new THREE.Object3D();
-    hand.position.set(0, 0, 0);
-    lowerArm.add(hand);
-
-    shoulder.updateWorldMatrix(true, true);
-
-    const shoulderWorldPos = new THREE.Vector3();
-    shoulder.getWorldPosition(shoulderWorldPos);
-    const targetPos = shoulderWorldPos.clone().add(new THREE.Vector3(-0.05, -0.5, 0.03));
-
-    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-
-    setNaturalArmPose(shoulder, upperArm, lowerArm, hand, targetPos, 'LEFT');
-
-    // Verify that console.log was called with a string containing relaxed pose metrics
-    const logCalls = consoleSpy.mock.calls.filter((call) =>
-      String(call[0]).includes('Applied IK-based relaxed arm pose'),
-    );
-    expect(logCalls.length).toBeGreaterThan(0);
-
-    const logStr = String(logCalls[0]?.[0] ?? '');
-    expect(logStr).toMatch(/finalErrorCm/);
-
-    consoleSpy.mockRestore();
-  });
-
-  it('applies different target positions for left vs right arms', () => {
-    const createArm = (side: string, sideMultiplier: number) => {
-      const shoulder = new THREE.Object3D();
-      shoulder.position.set(sideMultiplier * 0.026, 1.479, -0.032);
-
-      const upperArm = new THREE.Object3D();
-      upperArm.position.set(sideMultiplier * 0.076, -0.01, 0);
-      shoulder.add(upperArm);
-
-      const lowerArm = new THREE.Object3D();
-      lowerArm.position.set(0.607, 0, 0.001);
-      upperArm.add(lowerArm);
-
-      const hand = new THREE.Object3D();
-      hand.position.set(0, 0, 0);
-      lowerArm.add(hand);
-
-      shoulder.updateWorldMatrix(true, true);
-      
-      const shoulderWorldPos = new THREE.Vector3();
-      shoulder.getWorldPosition(shoulderWorldPos);
-      const targetPos = shoulderWorldPos.clone().add(new THREE.Vector3(sideMultiplier * 0.05, -0.5, 0.03));
-      
-      setNaturalArmPose(shoulder, upperArm, lowerArm, hand, targetPos, side);
-
-      return { shoulder, lowerArm };
-    };
-
-    const left = createArm('LEFT', -1);
-    const right = createArm('RIGHT', 1);
-
-    // Both arms should have rotations applied
-    expect(!left.shoulder.quaternion.equals(new THREE.Quaternion())).toBe(true);
-    expect(!right.shoulder.quaternion.equals(new THREE.Quaternion())).toBe(true);
-  });
-});
