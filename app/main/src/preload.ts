@@ -10,6 +10,7 @@ import type {
   AvatarAnimationUploadResult,
   AvatarAnimationGenerationRequest,
   AvatarPoseSummary,
+  AvatarPoseUploadRequest,
   AvatarPoseUploadResult,
   AvatarPoseGenerationRequest,
 } from './avatar/types.js';
@@ -168,6 +169,7 @@ export interface AvatarBridge {
   loadAnimationBinary(animationId: string): Promise<ArrayBuffer>;
   triggerBehaviorCue(cue: string): Promise<void>;
   listPoses(): Promise<AvatarPoseSummary[]>;
+  uploadPose(payload: AvatarPoseUploadRequest): Promise<AvatarPoseUploadResult>;
   generatePose(request: AvatarPoseGenerationRequest): Promise<AvatarPoseUploadResult>;
   deletePose(poseId: string): Promise<void>;
   loadPose(poseId: string): Promise<unknown>;
@@ -289,6 +291,8 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       await ipcRenderer.invoke('avatar:trigger-behavior', cue);
     },
     listPoses: () => ipcRenderer.invoke('avatar-pose:list') as Promise<AvatarPoseSummary[]>,
+    uploadPose: (payload: AvatarPoseUploadRequest) =>
+      ipcRenderer.invoke('avatar-pose:upload', payload) as Promise<AvatarPoseUploadResult>,
     generatePose: (payload: AvatarPoseGenerationRequest) =>
       ipcRenderer.invoke('avatar-pose:generate', payload) as Promise<AvatarPoseUploadResult>,
     deletePose: async (poseId: string) => {

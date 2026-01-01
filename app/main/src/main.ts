@@ -42,6 +42,7 @@ import type {
   AvatarAnimationUploadResult,
   AvatarAnimationGenerationRequest,
   AvatarPoseSummary,
+  AvatarPoseUploadRequest,
   AvatarPoseGenerationRequest,
 } from './avatar/types.js';
 import {
@@ -833,6 +834,13 @@ function registerIpcHandlers(
     }
 
     return avatarPoses.listPoses();
+  });
+  ipcMain.handle('avatar-pose:upload', async (_event, payload: AvatarPoseUploadRequest) => {
+    if (!avatarPoses) {
+      throw new Error('Avatar pose service is unavailable.');
+    }
+
+    return avatarPoses.uploadPose(payload);
   });
   ipcMain.handle('avatar-pose:generate', async (_event, payload: AvatarPoseGenerationRequest) => {
     if (!poseGenerationService) {

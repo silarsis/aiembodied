@@ -28,9 +28,9 @@ function mockFileReader(mockDataUrl: string) {
       }
     }
 
-    removeEventListener() {}
+    removeEventListener() { }
 
-    abort() {}
+    abort() { }
 
     dispatchEvent() {
       return true;
@@ -98,6 +98,14 @@ function createAvatarBridgeStub(overrides: Partial<AvatarBridge> = {}): AvatarBr
     updateModelDescription: vi.fn().mockResolvedValue(null),
     generateModelDescription: vi.fn().mockResolvedValue(''),
     listPoses: vi.fn().mockResolvedValue([]),
+    uploadPose: vi.fn().mockResolvedValue({
+      pose: {
+        id: 'pose-stub',
+        name: 'default',
+        createdAt: Date.now(),
+        fileSha: 'stub',
+      },
+    }),
     generatePose: vi.fn().mockResolvedValue({
       pose: {
         id: 'pose-stub',
@@ -276,8 +284,8 @@ describe('AvatarConfigurator', () => {
   });
 
   it('logs a warning when the avatar bridge is unavailable', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => { });
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => { });
 
     try {
       await act(async () => {
@@ -294,8 +302,8 @@ describe('AvatarConfigurator', () => {
   });
 
   it('logs connection info when the avatar bridge is provided', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => { });
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => { });
 
     try {
       const avatarApi = createAvatarBridgeStub();
