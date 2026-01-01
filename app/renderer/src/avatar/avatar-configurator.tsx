@@ -11,11 +11,13 @@ import type {
   AvatarAnimationSummary,
   AvatarBridge,
   AvatarModelSummary,
+  AvatarPoseSummary,
 } from './types.js';
 import { generateVrmThumbnail } from './thumbnail-generator.js';
 
 type ModelUploadStatus = 'idle' | 'reading' | 'uploading' | 'success';
 type VrmaGenerationStatus = 'idle' | 'pending' | 'success' | 'error';
+type PoseGenerationStatus = 'idle' | 'pending' | 'success' | 'error';
 
 interface AvatarConfiguratorProps {
   avatarApi?: AvatarBridge;
@@ -107,10 +109,18 @@ export function AvatarConfigurator({
   const [animationBusyId, setAnimationBusyId] = useState<string | null>(null);
   const [renamingAnimationId, setRenamingAnimationId] = useState<string | null>(null);
   const [renamingAnimationName, setRenamingAnimationName] = useState('');
+  const [posePrompt, setPosePrompt] = useState('');
+  const [poseStatus, setPoseStatus] = useState<PoseGenerationStatus>('idle');
+  const [poseMessage, setPoseMessage] = useState<string | null>(null);
+  const [poses, setPoses] = useState<AvatarPoseSummary[]>([]);
+  const [posesLoading, setPostsLoading] = useState(false);
+  const [poseError, setPoseError] = useState<string | null>(null);
+  const [poseBusyId, setPositBusyId] = useState<string | null>(null);
   const modelFileInputRef = useRef<HTMLInputElement | null>(null);
   const availabilityLogRef = useRef<'available' | 'missing' | null>(null);
   const isModelBridgeAvailable = Boolean(avatarApi?.listModels && avatarApi?.uploadModel);
   const isAnimationBridgeAvailable = Boolean(avatarApi?.generateAnimation);
+  const isPoseBridgeAvailable = Boolean(avatarApi?.generatePose && avatarApi?.listPoses);
 
   useEffect(() => {
     const nextState: 'available' | 'missing' = avatarApi ? 'available' : 'missing';
@@ -492,8 +502,104 @@ export function AvatarConfigurator({
     [avatarApi, vrmaPrompt, onAnimationChange, refreshAnimations],
   );
 
+  const refreshPoses = useCallback(async () => {
+    if (!avatarApi?.listPoses) {
+      setPoses([]);
+      setPostsLoading(false);
+      setPoseError('Pose service is unavailable.');
+      return;
+    }
+
+    setPostsLoading(true);
+    setPoseError(null);
+
+    try {
+      const list = await avatarApi.listPoses();
+      setPoses(list);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load poses.';
+      setPoseError(message);
+    } finally {
+      setPostsLoading(false);
+    }
+  }, [avatarApi]);
+
+  useEffect(() => {
+    void refreshPoses();
+  }, [refreshPoses]);
+
+  const handlePosePromptChange = useCallback((event: ChangeEvent<HTMLTextAreaElement>) => {
+    setPosePrompt(event.target.value);
+    if (poseStatus === 'error') {
+      setPoseStatus('idle');
+      setPoseMessage(null);
+    }
+  }, [poseStatus]);
+
+  const handleGeneratePose = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+
+      if (!avatarApi?.generatePose) {
+        setPoseStatus('error');
+        setPoseMessage('Pose generation is unavailable.');
+        return;
+      }
+
+      const prompt = posePrompt.trim();
+      if (!prompt) {
+        setPoseStatus('error');
+        setPoseMessage('Enter a prompt describing the pose.');
+        return;
+      }
+
+      setPoseStatus('pending');
+      setPoseMessage(null);
+
+      void (async () => {
+        try {
+          await avatarApi.generatePose({ prompt });
+          setPoseStatus('success');
+          setPosePrompt('');
+          await refreshPoses();
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Failed to generate pose.';
+          setPoseStatus('error');
+          setPoseMessage(message);
+        }
+      })();
+    },
+    [avatarApi, posePrompt, refreshPoses],
+  );
+
+  const handleDeletePose = useCallback(
+    (poseId: string) => {
+      if (!avatarApi?.deletePose) {
+        setPoseError('Pose service is unavailable.');
+        return;
+      }
+
+      setPositBusyId(poseId);
+      setPoseError(null);
+
+      void (async () => {
+        try {
+          await avatarApi.deletePose(poseId);
+          setPoses((prev) => prev.filter((p) => p.id !== poseId));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Failed to delete pose.';
+          setPoseError(message);
+        } finally {
+          setPositBusyId(null);
+        }
+      })();
+    },
+    [avatarApi],
+  );
+
   const modelUploadDisabled = !isModelBridgeAvailable || modelUploadStatus === 'reading' || modelUploadStatus === 'uploading';
   const vrmaPending = vrmaStatus === 'pending';
+  const posePending = poseStatus === 'pending';
 
   return (
     <section className="kiosk__faces" aria-labelledby="kiosk-faces-title">
@@ -728,6 +834,75 @@ export function AvatarConfigurator({
 
         {!animationsLoading && animations.length === 0 ? (
           <p className="kiosk__info">No VRMA animations stored yet. Generate or upload an animation to get started.</p>
+        ) : null}
+
+        <hr className="faces__divider" />
+
+        <h2 className="faces__heading">Stored VRM Poses</h2>
+
+        <form className="faces__form" onSubmit={handleGeneratePose} aria-label="Generate VRM pose">
+          <label className="faces__field">
+            <span>Pose prompt</span>
+            <textarea
+              value={posePrompt}
+              onChange={handlePosePromptChange}
+              placeholder="Confident power stance with arms crossed."
+              disabled={!isPoseBridgeAvailable || posePending}
+              rows={3}
+            />
+          </label>
+          <button type="submit" disabled={!isPoseBridgeAvailable || posePending || posePrompt.trim().length === 0} className="faces__submit">
+            {posePending ? 'Generating…' : 'Generate Pose'}
+          </button>
+        </form>
+
+        {poseMessage ? (
+          <p className={poseStatus === 'error' ? 'kiosk__error' : 'kiosk__info'} role={poseStatus === 'error' ? 'alert' : 'status'}>
+            {poseMessage}
+          </p>
+        ) : null}
+
+        {poseError ? (
+          <p role="alert" className="kiosk__error">
+            {poseError}
+          </p>
+        ) : null}
+        {posesLoading ? <p className="kiosk__info">Loading stored poses…</p> : null}
+
+        <div className="faces__grid" role="list">
+          {poses.map((pose) => {
+            const busy = poseBusyId === pose.id;
+            return (
+              <article key={pose.id} className="faceCard" role="listitem">
+                <div className="faceCard__info">
+                  <h3>{pose.name}</h3>
+                  <dl className="faceCard__metaList">
+                    <div>
+                      <dt>Created</dt>
+                      <dd>{formatTimestamp(pose.createdAt)}</dd>
+                    </div>
+                    <div>
+                      <dt>Checksum</dt>
+                      <dd>{truncateSha(pose.fileSha)}</dd>
+                    </div>
+                  </dl>
+                </div>
+                <div className="faceCard__actions">
+                  <button
+                    type="button"
+                    onClick={() => handleDeletePose(pose.id)}
+                    disabled={busy || !isPoseBridgeAvailable}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+
+        {!posesLoading && poses.length === 0 ? (
+          <p className="kiosk__info">No VRM poses stored yet. Generate a pose to get started.</p>
         ) : null}
       </div>
     </section>

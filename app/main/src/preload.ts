@@ -9,6 +9,9 @@ import type {
   AvatarAnimationUploadRequest,
   AvatarAnimationUploadResult,
   AvatarAnimationGenerationRequest,
+  AvatarPoseSummary,
+  AvatarPoseUploadResult,
+  AvatarPoseGenerationRequest,
 } from './avatar/types.js';
 import type {
   ConversationAppendMessagePayload,
@@ -164,7 +167,11 @@ export interface AvatarBridge {
   renameAnimation(animationId: string, newName: string): Promise<AvatarAnimationSummary>;
   loadAnimationBinary(animationId: string): Promise<ArrayBuffer>;
   triggerBehaviorCue(cue: string): Promise<void>;
-  }
+  listPoses(): Promise<AvatarPoseSummary[]>;
+  generatePose(request: AvatarPoseGenerationRequest): Promise<AvatarPoseUploadResult>;
+  deletePose(poseId: string): Promise<void>;
+  loadPose(poseId: string): Promise<unknown>;
+}
 
 export interface CameraDetectionEvent {
   cue: string;
@@ -277,9 +284,18 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
         id: animationId,
         errorMessage: 'Unexpected VRMA binary payload received from main process.',
       });
-      },
-      triggerBehaviorCue: async (cue) => {
+    },
+    triggerBehaviorCue: async (cue) => {
       await ipcRenderer.invoke('avatar:trigger-behavior', cue);
+    },
+    listPoses: () => ipcRenderer.invoke('avatar-pose:list') as Promise<AvatarPoseSummary[]>,
+    generatePose: (payload: AvatarPoseGenerationRequest) =>
+      ipcRenderer.invoke('avatar-pose:generate', payload) as Promise<AvatarPoseUploadResult>,
+    deletePose: async (poseId: string) => {
+      await ipcRenderer.invoke('avatar-pose:delete', poseId);
+    },
+    loadPose: async (poseId: string) => {
+      return ipcRenderer.invoke('avatar-pose:load', poseId) as Promise<unknown>;
     },
   },
   camera: {

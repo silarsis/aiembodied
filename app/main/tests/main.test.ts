@@ -122,6 +122,10 @@ const MemoryStoreMock = vi.fn(() => ({
   deleteValue: deleteValueMock,
   exportData: exportDataMock,
   importData: importDataMock,
+  listVrmPoses: vi.fn(() => []),
+  createVrmPose: vi.fn(),
+  getVrmPose: vi.fn(() => null),
+  deleteVrmPose: vi.fn(),
   dispose: memoryStoreDisposeMock,
 }));
 
@@ -627,7 +631,7 @@ describe('main process bootstrap', () => {
       ts: 1700000000,
     });
 
-    expect(ipcMainMock.handle).toHaveBeenCalledTimes(26);
+    expect(ipcMainMock.handle).toHaveBeenCalledTimes(30);
     const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
 
     expect(mockLogger.info).toHaveBeenCalledWith('VRMA generation service initialized.', {
@@ -785,6 +789,19 @@ describe('main process bootstrap', () => {
     expect(typeof loadAnimationBinaryHandler).toBe('function');
     await expect(loadAnimationBinaryHandler?.({}, 'vrma-2')).resolves.toBeInstanceOf(ArrayBuffer);
     expect(avatarAnimationService?.loadAnimationBinary).toHaveBeenCalledWith('vrma-2');
+
+    const listPosesHandler = handleEntries.get('avatar-pose:list');
+    expect(typeof listPosesHandler).toBe('function');
+    await expect(listPosesHandler?.({})).resolves.toEqual([]);
+
+    const generatePoseHandler = handleEntries.get('avatar-pose:generate');
+    expect(typeof generatePoseHandler).toBe('function');
+
+    const deletePoseHandler = handleEntries.get('avatar-pose:delete');
+    expect(typeof deletePoseHandler).toBe('function');
+
+    const loadPoseHandler = handleEntries.get('avatar-pose:load');
+    expect(typeof loadPoseHandler).toBe('function');
 
     const triggerBehaviorHandler = handleEntries.get('avatar:trigger-behavior');
     expect(typeof triggerBehaviorHandler).toBe('function');

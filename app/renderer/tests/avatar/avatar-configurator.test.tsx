@@ -97,6 +97,17 @@ function createAvatarBridgeStub(overrides: Partial<AvatarBridge> = {}): AvatarBr
     triggerBehaviorCue: vi.fn().mockResolvedValue(undefined),
     updateModelDescription: vi.fn().mockResolvedValue(null),
     generateModelDescription: vi.fn().mockResolvedValue(''),
+    listPoses: vi.fn().mockResolvedValue([]),
+    generatePose: vi.fn().mockResolvedValue({
+      pose: {
+        id: 'pose-stub',
+        name: 'power-stance',
+        createdAt: Date.now(),
+        fileSha: 'stub',
+      },
+    }),
+    deletePose: vi.fn().mockResolvedValue(undefined),
+    loadPose: vi.fn().mockResolvedValue({}),
     ...overrides,
   };
 }

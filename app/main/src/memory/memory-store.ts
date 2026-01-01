@@ -33,6 +33,7 @@ export interface MemoryStoreExport {
   kv: Record<string, string>;
   vrmModels: SerializedVrmModel[];
   vrmaAnimations: VrmAnimationRecord[];
+  vrmPoses: VrmPoseRecord[];
 }
 
 export type ImportStrategy = 'replace' | 'merge';
@@ -65,6 +66,14 @@ export interface VrmAnimationRecord {
   fileSha: string;
   duration: number | null;
   fps: number | null;
+}
+
+export interface VrmPoseRecord {
+  id: string;
+  name: string;
+  createdAt: number;
+  filePath: string;
+  fileSha: string;
 }
 
 const MIGRATIONS: readonly Migration[] = [
@@ -147,6 +156,19 @@ const MIGRATIONS: readonly Migration[] = [
   {
     version: 5,
     statements: [`ALTER TABLE vrm_models ADD COLUMN description TEXT NULL;`],
+  },
+  {
+    version: 6,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS vrm_poses (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        file_path TEXT NOT NULL,
+        file_sha TEXT NOT NULL
+      );`,
+      `CREATE INDEX IF NOT EXISTS vrm_poses_created_idx ON vrm_poses(created_at DESC, id DESC);`,
+    ],
   },
 ];
 
@@ -436,15 +458,15 @@ export class MemoryStore {
 
     const row = stmt.get(id) as
       | {
-          id: string;
-          name: string;
-          createdAt: number;
-          filePath: string;
-          fileSha: string;
-          version: string;
-          thumbnail: Buffer | null;
-          description: string | null;
-        }
+        id: string;
+        name: string;
+        createdAt: number;
+        filePath: string;
+        fileSha: string;
+        version: string;
+        thumbnail: Buffer | null;
+        description: string | null;
+      }
       | undefined;
 
     if (!row) {
@@ -547,14 +569,14 @@ export class MemoryStore {
 
     const row = stmt.get(id) as
       | {
-          id: string;
-          name: string;
-          createdAt: number;
-          filePath: string;
-          fileSha: string;
-          duration: number | null;
-          fps: number | null;
-        }
+        id: string;
+        name: string;
+        createdAt: number;
+        filePath: string;
+        fileSha: string;
+        duration: number | null;
+        fps: number | null;
+      }
       | undefined;
 
     if (!row) {
@@ -577,6 +599,87 @@ export class MemoryStore {
 
     const stmt = this.db.prepare(`DELETE FROM vrma_animations WHERE id = ?;`);
     stmt.run(animationId);
+  }
+
+  createVrmPose(pose: VrmPoseRecord): void {
+    this.ensureOpen();
+
+    const stmt = this.db.prepare<VrmPoseRecord>(
+      `INSERT INTO vrm_poses (id, name, created_at, file_path, file_sha)
+       VALUES (@id, @name, @createdAt, @filePath, @fileSha);`,
+    );
+
+    stmt.run({
+      id: pose.id,
+      name: pose.name,
+      createdAt: pose.createdAt,
+      filePath: pose.filePath,
+      fileSha: pose.fileSha,
+    });
+  }
+
+  listVrmPoses(): VrmPoseRecord[] {
+    this.ensureOpen();
+
+    const stmt = this.db.prepare(
+      `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha
+       FROM vrm_poses
+       ORDER BY created_at DESC, id DESC;`,
+    );
+
+    const rows = stmt.all() as Array<{
+      id: string;
+      name: string;
+      createdAt: number;
+      filePath: string;
+      fileSha: string;
+    }>;
+
+    return rows.map((row) => ({
+      id: String(row.id),
+      name: String(row.name),
+      createdAt: Number(row.createdAt),
+      filePath: String(row.filePath),
+      fileSha: String(row.fileSha),
+    }));
+  }
+
+  getVrmPose(id: string): VrmPoseRecord | null {
+    this.ensureOpen();
+
+    const stmt = this.db.prepare(
+      `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha
+       FROM vrm_poses WHERE id = ?;`,
+    );
+
+    const row = stmt.get(id) as
+      | {
+        id: string;
+        name: string;
+        createdAt: number;
+        filePath: string;
+        fileSha: string;
+      }
+      | undefined;
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: String(row.id),
+      name: String(row.name),
+      createdAt: Number(row.createdAt),
+      filePath: String(row.filePath),
+      fileSha: String(row.fileSha),
+    };
+  }
+
+  deleteVrmPose(poseId: string): void {
+    this.ensureOpen();
+
+    const stmt = this.db.prepare(`DELETE FROM vrm_poses WHERE id = ?;`);
+    stmt.run(poseId);
   }
 
   updateVrmAnimation(animationId: string, record: VrmAnimationRecord): void {
@@ -658,6 +761,10 @@ export class MemoryStore {
       `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha, duration, fps
        FROM vrma_animations ORDER BY created_at ASC, id ASC;`,
     );
+    const vrmPosesStmt = this.db.prepare(
+      `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha
+       FROM vrm_poses ORDER BY created_at ASC, id ASC;`,
+    );
     const kvStmt = this.db.prepare(`SELECT key, value FROM kv ORDER BY key ASC;`);
 
     const sessionRows = sessionsStmt.all() as Array<{
@@ -693,6 +800,13 @@ export class MemoryStore {
       fileSha: string;
       duration: number | null;
       fps: number | null;
+    }>;
+    const vrmPoseRows = vrmPosesStmt.all() as Array<{
+      id: string;
+      name: string;
+      createdAt: number;
+      filePath: string;
+      fileSha: string;
     }>;
 
     const sessions = sessionRows.map((row) => ({
@@ -731,6 +845,14 @@ export class MemoryStore {
       fps: typeof row.fps === 'number' ? row.fps : null,
     }));
 
+    const vrmPoses: VrmPoseRecord[] = vrmPoseRows.map((row) => ({
+      id: String(row.id),
+      name: String(row.name),
+      createdAt: Number(row.createdAt),
+      filePath: String(row.filePath),
+      fileSha: String(row.fileSha),
+    }));
+
     const kvEntries = kvStmt.all() as Array<{ key: string; value: string }>;
     const kv: Record<string, string> = {};
 
@@ -738,7 +860,7 @@ export class MemoryStore {
       kv[entry.key] = entry.value;
     }
 
-    return { sessions, messages, kv, vrmModels, vrmaAnimations };
+    return { sessions, messages, kv, vrmModels, vrmaAnimations, vrmPoses };
   }
 
   importData(data: MemoryStoreExport, options?: { strategy?: ImportStrategy }): void {
@@ -752,6 +874,7 @@ export class MemoryStore {
         this.db.prepare(`DELETE FROM kv;`).run();
         this.db.prepare(`DELETE FROM vrm_models;`).run();
         this.db.prepare(`DELETE FROM vrma_animations;`).run();
+        this.db.prepare(`DELETE FROM vrm_poses;`).run();
       }
 
       const insertSession = this.db.prepare<SessionRecord>(
@@ -837,6 +960,26 @@ export class MemoryStore {
           fileSha: animation.fileSha,
           duration: animation.duration ?? null,
           fps: animation.fps ?? null,
+        });
+      }
+
+      const insertVrmPose = this.db.prepare<VrmPoseRecord>(
+        `INSERT INTO vrm_poses (id, name, created_at, file_path, file_sha)
+         VALUES (@id, @name, @createdAt, @filePath, @fileSha)
+         ON CONFLICT(id) DO UPDATE SET
+           name = excluded.name,
+           created_at = excluded.created_at,
+           file_path = excluded.file_path,
+           file_sha = excluded.file_sha;`,
+      );
+
+      for (const pose of data.vrmPoses) {
+        insertVrmPose.run({
+          id: pose.id,
+          name: pose.name,
+          createdAt: pose.createdAt,
+          filePath: pose.filePath,
+          fileSha: pose.fileSha,
         });
       }
 

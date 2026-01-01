@@ -30,6 +30,8 @@ import { createDevTray } from './lifecycle/dev-tray.js';
 import { AvatarModelService } from './avatar/avatar-model-service.js';
 import { AvatarAnimationService } from './avatar/avatar-animation-service.js';
 import { VrmaGenerationService } from './avatar/vrma-generation-service.js';
+import { AvatarPoseService } from './avatar/avatar-pose-service.js';
+import { PoseGenerationService } from './avatar/pose-generation-service.js';
 import { AvatarDescriptionService } from './avatar/avatar-description-service.js';
 import type {
   AvatarModelSummary,
@@ -39,6 +41,8 @@ import type {
   AvatarAnimationUploadRequest,
   AvatarAnimationUploadResult,
   AvatarAnimationGenerationRequest,
+  AvatarPoseSummary,
+  AvatarPoseGenerationRequest,
 } from './avatar/types.js';
 import {
   resolvePreloadScriptPath,
@@ -111,7 +115,9 @@ let autoLaunchManager: AutoLaunchManager | null = null;
 let developmentTray: Tray | null = null;
 let avatarModelService: AvatarModelService | null = null;
 let avatarAnimationService: AvatarAnimationService | null = null;
+let avatarPoseService: AvatarPoseService | null = null;
 let vrmaGenerationService: VrmaGenerationService | null = null;
+let poseGenerationService: PoseGenerationService | null = null;
 let avatarDescriptionService: AvatarDescriptionService | null = null;
 let currentVrmaApiKey: string | null = null;
 let currentDescriptionApiKey: string | null = null;
@@ -300,6 +306,43 @@ async function refreshVrmaGenerationService(
   }
 }
 
+async function refreshPoseGenerationService(
+  manager: ConfigManager,
+  reason: 'startup' | 'secret-update' = 'startup',
+): Promise<void> {
+  const config = manager.getConfig();
+  const nextKey = typeof config.realtimeApiKey === 'string' ? config.realtimeApiKey.trim() : '';
+
+  if (!nextKey) {
+    poseGenerationService = null;
+    return;
+  }
+
+  if (!avatarPoseService) {
+    poseGenerationService = null;
+    return;
+  }
+
+  if (poseGenerationService && currentVrmaApiKey === nextKey) {
+    return;
+  }
+
+  try {
+    poseGenerationService = new PoseGenerationService({
+      client: getOpenAIClient(nextKey),
+      poseService: avatarPoseService,
+      logger,
+    });
+    // Reuse currentVrmaApiKey as it tracks the same key
+    if (!currentVrmaApiKey) currentVrmaApiKey = nextKey;
+    logger.info('Pose generation service initialized.', { reason });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('Failed to initialize pose generation service', { message });
+    poseGenerationService = null;
+  }
+}
+
 async function refreshAvatarDescriptionService(
   manager: ConfigManager,
   reason: 'startup' | 'secret-update' = 'startup',
@@ -343,6 +386,7 @@ function registerIpcHandlers(
   metrics: PrometheusCollector | null,
   avatarModels: AvatarModelService | null,
   avatarAnimations: AvatarAnimationService | null,
+  avatarPoses: AvatarPoseService | null,
 ) {
   // Preload diagnostics bridge: allow preload/renderer to forward logs to main logger
   try {
@@ -518,6 +562,7 @@ function registerIpcHandlers(
 
     if (payload.key === 'realtimeApiKey') {
       await refreshVrmaGenerationService(manager, 'secret-update');
+      await refreshPoseGenerationService(manager, 'secret-update');
     }
 
     return nextConfig;
@@ -782,6 +827,41 @@ function registerIpcHandlers(
 
     return avatarAnimations.loadAnimationBinary(animationId);
   });
+  ipcMain.handle('avatar-pose:list', async () => {
+    if (!avatarPoses) {
+      return [] as AvatarPoseSummary[];
+    }
+
+    return avatarPoses.listPoses();
+  });
+  ipcMain.handle('avatar-pose:generate', async (_event, payload: AvatarPoseGenerationRequest) => {
+    if (!poseGenerationService) {
+      await refreshPoseGenerationService(manager, 'secret-update');
+    }
+    if (!poseGenerationService) {
+      throw new Error('Pose generation service is unavailable. Ensure REALTIME_API_KEY is set.');
+    }
+
+    const bones = avatarModels ? await avatarModels.listActiveModelBones() : [];
+    const activeModel = avatarModels?.getActiveModel() ?? null;
+    const modelDescription = activeModel?.description ?? undefined;
+    return poseGenerationService.generatePose({ ...payload, bones, modelDescription });
+  });
+  ipcMain.handle('avatar-pose:delete', async (_event, poseId: string) => {
+    if (!avatarPoses) {
+      throw new Error('Avatar pose service is unavailable.');
+    }
+
+    await avatarPoses.deletePose(poseId);
+    return true;
+  });
+  ipcMain.handle('avatar-pose:load', async (_event, poseId: string) => {
+    if (!avatarPoses) {
+      throw new Error('Avatar pose service is unavailable.');
+    }
+
+    return avatarPoses.loadPose(poseId);
+  });
   ipcMain.handle('avatar:trigger-behavior', async (_event, cue: string) => {
     const value = typeof cue === 'string' ? cue.trim() : '';
     if (!value) {
@@ -867,6 +947,11 @@ app.whenReady().then(async () => {
       animationsDirectory: path.join(app.getPath('userData'), 'vrma-animations'),
       logger,
     });
+    avatarPoseService = new AvatarPoseService({
+      store: memoryStore,
+      posesDirectory: path.join(app.getPath('userData'), 'vrm-poses'),
+      logger,
+    });
     conversationManager = new ConversationManager({
       store: memoryStore,
       logger,
@@ -899,6 +984,7 @@ app.whenReady().then(async () => {
   const appConfig = manager.getConfig();
 
   await refreshVrmaGenerationService(manager);
+  await refreshPoseGenerationService(manager);
 
   autoLaunchManager = new AutoLaunchManager({
     logger,
@@ -1016,6 +1102,7 @@ app.whenReady().then(async () => {
       metricsCollector,
       avatarModelService,
       avatarAnimationService,
+      avatarPoseService,
     );
   } catch (error) {
     const message =
