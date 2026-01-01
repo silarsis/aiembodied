@@ -7,6 +7,10 @@ export interface AvatarAnimationTiming {
   onStart?: (startAt: number) => void;
 }
 
+export interface VRMPoseData {
+  [boneName: string]: { rotation: number[]; position?: number[] };
+}
+
 export interface AvatarAnimationRequest {
   slug: string;
   intent: AvatarAnimationIntent;
@@ -16,6 +20,7 @@ export interface AvatarAnimationRequest {
 
 export type AvatarAnimationEvent =
   | { type: 'enqueue'; request: AvatarAnimationRequest }
+  | { type: 'applyPose'; pose: VRMPoseData; source?: string }
   | { type: 'response' };
 
 type AnimationListener = (event: AvatarAnimationEvent) => void;
@@ -24,6 +29,7 @@ type Unsubscribe = () => void;
 
 export interface AvatarAnimationBus {
   enqueue(request: AvatarAnimationRequest): void;
+  applyPose(pose: VRMPoseData, source?: string): void;
   signalResponse(): void;
   subscribe(listener: AnimationListener): Unsubscribe;
 }
@@ -33,6 +39,10 @@ class AnimationBus implements AvatarAnimationBus {
 
   enqueue(request: AvatarAnimationRequest) {
     this.emit({ type: 'enqueue', request });
+  }
+
+  applyPose(pose: VRMPoseData, source?: string) {
+    this.emit({ type: 'applyPose', pose, source });
   }
 
   signalResponse() {

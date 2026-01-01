@@ -1258,6 +1258,46 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         return;
       }
 
+      if (event.type === 'applyPose') {
+        // Apply pose directly to VRM humanoid
+        const vrm = currentVrmRef.current;
+        if (!vrm?.humanoid) {
+          console.warn('[vrm-avatar-renderer] VRM humanoid not available for pose application');
+          return;
+        }
+
+        try {
+          // Convert pose data to VRM pose format
+          // The pose data is { [boneName]: { rotation: [x,y,z,w], position?: [x,y,z] } }
+          const vrmPose: Record<string, { rotation: { x: number; y: number; z: number; w: number }; position?: { x: number; y: number; z: number } }> = {};
+          for (const [boneName, boneData] of Object.entries(event.pose)) {
+            const rotation = boneData.rotation;
+            if (rotation && rotation.length === 4) {
+              vrmPose[boneName] = {
+                rotation: { x: rotation[0], y: rotation[1], z: rotation[2], w: rotation[3] },
+              };
+              if (boneData.position && boneData.position.length === 3) {
+                vrmPose[boneName].position = {
+                  x: boneData.position[0],
+                  y: boneData.position[1],
+                  z: boneData.position[2]
+                };
+              }
+            }
+          }
+
+          vrm.humanoid.setRawPose(vrmPose);
+          vrm.scene.updateWorldMatrix(true, true);
+          console.info('[vrm-avatar-renderer] Applied pose via humanoid.setRawPose()', {
+            source: event.source,
+            boneCount: Object.keys(event.pose).length
+          });
+        } catch (error) {
+          console.error('[vrm-avatar-renderer] Failed to apply pose', error);
+        }
+        return;
+      }
+
       const slug = event.request.slug.trim();
       if (!slug) {
         console.warn('[vrm-avatar-renderer] received animation request without a slug');
