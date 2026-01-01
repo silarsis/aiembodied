@@ -51,13 +51,17 @@ describe('PoseGenerationService', () => {
   it('should generate a pose with 2-step workflow', async () => {
     const { store, directory } = await createStore();
     const poseService = new AvatarPoseService({ store, posesDirectory: directory });
-    
+
     const expandedDescription = 'Arms at sides, legs straight, confident posture with chest out.';
+    // API returns array format: { bones: [{ name, rotation, position }] }
+    // The service converts this to object format internally
     const poseJson = {
-      Armature_Hips: { rotation: [0, 0, 0, 1] },
-      Armature_Chest: { rotation: [0.1, 0, 0, 0.995] },
-      Armature_LeftShoulder: { rotation: [0, 0, 0, 1] },
-      Armature_RightShoulder: { rotation: [0, 0, 0, 1] },
+      bones: [
+        { name: 'Armature_Hips', rotation: [0, 0, 0, 1], position: null },
+        { name: 'Armature_Chest', rotation: [0.1, 0, 0, 0.995], position: null },
+        { name: 'Armature_LeftShoulder', rotation: [0, 0, 0, 1], position: null },
+        { name: 'Armature_RightShoulder', rotation: [0, 0, 0, 1], position: null },
+      ],
     };
 
     const { client } = createClient([expandedDescription, JSON.stringify(poseJson)]);
@@ -98,11 +102,11 @@ describe('PoseGenerationService', () => {
   it('should normalize bones list', async () => {
     const { store, directory } = await createStore();
     const poseService = new AvatarPoseService({ store, posesDirectory: directory });
-    
+
     const expandedDescription = 'Test pose';
-    const poseJson = { Armature_Hips: { rotation: [0, 0, 0, 1] } };
+    const poseJson = { bones: [{ name: 'Armature_Hips', rotation: [0, 0, 0, 1], position: null }] };
     const { client, create } = createClient([expandedDescription, JSON.stringify(poseJson)]);
-    
+
     const service = new PoseGenerationService({
       client,
       poseService,
@@ -125,7 +129,7 @@ describe('PoseGenerationService', () => {
     const { store, directory } = await createStore();
     const poseService = new AvatarPoseService({ store, posesDirectory: directory });
     const { client } = createClient(['expanded', 'not json']);
-    
+
     const service = new PoseGenerationService({
       client,
       poseService,
@@ -142,11 +146,11 @@ describe('PoseGenerationService', () => {
   it('should include model description in prompts', async () => {
     const { store, directory } = await createStore();
     const poseService = new AvatarPoseService({ store, posesDirectory: directory });
-    
+
     const expandedDescription = 'Test pose for a cheerful character';
-    const poseJson = { Armature_Hips: { rotation: [0, 0, 0, 1] } };
+    const poseJson = { bones: [{ name: 'Armature_Hips', rotation: [0, 0, 0, 1], position: null }] };
     const { client, create } = createClient([expandedDescription, JSON.stringify(poseJson)]);
-    
+
     const service = new PoseGenerationService({
       client,
       poseService,
@@ -160,7 +164,7 @@ describe('PoseGenerationService', () => {
 
     const calls = create.mock.calls;
     expect(calls.length).toBe(2);
-    
+
     // Check that model description is in both calls
     for (const call of calls) {
       const inputStr = JSON.stringify(call[0]);

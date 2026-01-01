@@ -32,23 +32,24 @@ const POSE_EXPANDER_SYSTEM_PROMPT = [
 
 const POSE_COMPILER_SYSTEM_PROMPT = [
     'You are a VRM pose specialist.',
-    'Your task is to convert a detailed pose description into a valid VRM Pose JSON object.',
+    'Your task is to convert a detailed pose description into a VRM Pose JSON object.',
     '',
-    'Target Schema:',
+    'Output Schema:',
     '{',
-    '  [boneName: string]: { "rotation": [x, y, z, w] }',
+    '  "bones": [',
+    '    { "name": "boneName", "rotation": [x, y, z, w], "position": null }',
+    '  ]',
     '}',
     '',
     'Requirements:',
-    '- Output ONLY valid JSON.',
-    '- Use ONLY the provided valid VRM human bones.',
+    '- Output ONLY valid JSON matching the schema above.',
+    '- Use ONLY the provided valid VRM human bones for the "name" field.',
     '- All rotations must be local Quaternions [x, y, z, w].',
+    '- Set "position" to null for all bones EXCEPT hips when vertical movement is needed.',
+    '- For hips position (crouching/jumping only), use [x, y, z] where Y≈1.0 is standing.',
     '- Ensure anatomical plausibility.',
     '- Symmetrize where appropriate if the description implies symmetry.',
     '- For hands: Provide detailed finger rotations if described.',
-    '',
-    'IMPORTANT: Do NOT include position keys unless absolutely necessary for hips (e.g. crouching). VRM poses generally only use rotations.',
-    'If hips position is needed, add "position": [x, y, z] to the hips object. Hips rest at Y≈1.0.',
 ].join('\n');
 
 export class PoseGenerationService {
@@ -164,24 +165,42 @@ export class PoseGenerationService {
         });
 
         // Define a strict schema for the pose
-        // Note: OpenAI requires all properties to be in 'required', so we only include 'rotation'.
-        // Position is rarely needed and the model can still output it as the schema allows additional properties at the bone level.
+        // OpenAI structured outputs require all properties in 'required' and don't support
+        // dynamic keys via additionalProperties. Use an array of bone transforms instead.
+        // Position is nullable since it's only needed for hips in crouching/jumping poses.
         const schema = {
             type: 'object',
-            properties: {},
-            required: [],
-            additionalProperties: {
-                type: 'object',
-                properties: {
-                    rotation: {
-                        type: 'array',
-                        items: { type: 'number' },
-                        minItems: 4,
-                        maxItems: 4,
+            additionalProperties: false,
+            required: ['bones'],
+            properties: {
+                bones: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        additionalProperties: false,
+                        required: ['name', 'rotation', 'position'],
+                        properties: {
+                            name: { type: 'string' },
+                            rotation: {
+                                type: 'array',
+                                items: { type: 'number' },
+                                minItems: 4,
+                                maxItems: 4,
+                            },
+                            position: {
+                                anyOf: [
+                                    { type: 'null' },
+                                    {
+                                        type: 'array',
+                                        items: { type: 'number' },
+                                        minItems: 3,
+                                        maxItems: 3,
+                                    },
+                                ],
+                            },
+                        },
                     },
                 },
-                required: ['rotation'],
-                additionalProperties: true,
             },
         };
 
@@ -204,7 +223,18 @@ export class PoseGenerationService {
         const outputText = response.output_text;
         if (!outputText) throw new Error('Empty response from pose compiler');
 
-        return JSON.parse(outputText);
+        // Parse the array-based response and convert to object format
+        // The API returns: { bones: [{ name, rotation, position }] }
+        // We need: { [boneName]: { rotation, position? } }
+        const parsed = JSON.parse(outputText) as { bones: Array<{ name: string; rotation: number[]; position: number[] | null }> };
+        const result: Record<string, { rotation: number[]; position?: number[] }> = {};
+        for (const bone of parsed.bones) {
+            result[bone.name] = { rotation: bone.rotation };
+            if (bone.position !== null) {
+                result[bone.name].position = bone.position;
+            }
+        }
+        return result;
     }
 
     private normalizeBones(bones?: string[]): string[] {
