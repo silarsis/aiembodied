@@ -76,6 +76,56 @@ export interface VrmPoseRecord {
   fileSha: string;
 }
 
+// Row types for database queries (internal use only)
+interface SessionRow {
+  id: string;
+  startedAt: number;
+  title: string | null;
+}
+
+interface MessageRow {
+  id: string;
+  sessionId: string;
+  role: string;
+  ts: number;
+  content: string;
+  audioPath: string | null;
+}
+
+interface VrmModelRow {
+  id: string;
+  name: string;
+  createdAt: number;
+  filePath: string;
+  fileSha: string;
+  version: string;
+  thumbnail: Buffer | null;
+  description: string | null;
+}
+
+interface VrmAnimationRow {
+  id: string;
+  name: string;
+  createdAt: number;
+  filePath: string;
+  fileSha: string;
+  duration: number | null;
+  fps: number | null;
+}
+
+interface VrmPoseRow {
+  id: string;
+  name: string;
+  createdAt: number;
+  filePath: string;
+  fileSha: string;
+}
+
+interface KvRow {
+  key: string;
+  value: string;
+}
+
 const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -304,18 +354,14 @@ export class MemoryStore {
     const limit = Math.max(0, options?.limit ?? 50);
     const offset = Math.max(0, options?.offset ?? 0);
 
-    const stmt = this.db.prepare(
+    const stmt = this.db.prepare<[number, number], SessionRow>(
       `SELECT id, started_at as startedAt, title
        FROM sessions
        ORDER BY started_at DESC, id DESC
        LIMIT ? OFFSET ?;`,
     );
 
-    const rows = stmt.all(limit, offset) as Array<{
-      id: string;
-      startedAt: number;
-      title: string | null;
-    }>;
+    const rows = stmt.all(limit, offset);
 
     return rows.map((row) => ({
       id: String(row.id),
@@ -327,14 +373,12 @@ export class MemoryStore {
   getSessionWithMessages(sessionId: string): SessionWithMessages | null {
     this.ensureOpen();
 
-    const sessionStmt = this.db.prepare(
+    const sessionStmt = this.db.prepare<[string], SessionRow>(
       `SELECT id, started_at as startedAt, title
        FROM sessions WHERE id = ?;`,
     );
 
-    const session = sessionStmt.get(sessionId) as
-      | { id: string; startedAt: number; title: string | null }
-      | undefined;
+    const session = sessionStmt.get(sessionId);
 
     if (!session) {
       return null;
@@ -353,20 +397,13 @@ export class MemoryStore {
   listMessages(sessionId: string): MessageRecord[] {
     this.ensureOpen();
 
-    const stmt = this.db.prepare(
+    const stmt = this.db.prepare<[string], MessageRow>(
       `SELECT id, session_id as sessionId, role, ts, content, audio_path as audioPath
        FROM messages WHERE session_id = ?
        ORDER BY ts ASC, id ASC;`,
     );
 
-    const rows = stmt.all(sessionId) as Array<{
-      id: string;
-      sessionId: string;
-      role: string;
-      ts: number;
-      content: string;
-      audioPath: string | null;
-    }>;
+    const rows = stmt.all(sessionId);
 
     return rows.map((row) => ({
       id: String(row.id),
@@ -419,22 +456,13 @@ export class MemoryStore {
   listVrmModels(): VrmModelRecord[] {
     this.ensureOpen();
 
-    const stmt = this.db.prepare(
+    const stmt = this.db.prepare<[], VrmModelRow>(
       `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha, version, thumbnail, description
        FROM vrm_models
        ORDER BY created_at DESC, id DESC;`,
     );
 
-    const rows = stmt.all() as Array<{
-      id: string;
-      name: string;
-      createdAt: number;
-      filePath: string;
-      fileSha: string;
-      version: string;
-      thumbnail: Buffer | null;
-      description: string | null;
-    }>;
+    const rows = stmt.all();
 
     return rows.map((row) => ({
       id: String(row.id),
@@ -451,23 +479,12 @@ export class MemoryStore {
   getVrmModel(id: string): VrmModelRecord | null {
     this.ensureOpen();
 
-    const stmt = this.db.prepare(
+    const stmt = this.db.prepare<[string], VrmModelRow>(
       `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha, version, thumbnail, description
        FROM vrm_models WHERE id = ?;`,
     );
 
-    const row = stmt.get(id) as
-      | {
-        id: string;
-        name: string;
-        createdAt: number;
-        filePath: string;
-        fileSha: string;
-        version: string;
-        thumbnail: Buffer | null;
-        description: string | null;
-      }
-      | undefined;
+    const row = stmt.get(id);
 
     if (!row) {
       return null;
@@ -532,21 +549,13 @@ export class MemoryStore {
   listVrmAnimations(): VrmAnimationRecord[] {
     this.ensureOpen();
 
-    const stmt = this.db.prepare(
+    const stmt = this.db.prepare<[], VrmAnimationRow>(
       `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha, duration, fps
        FROM vrma_animations
        ORDER BY created_at DESC, id DESC;`,
     );
 
-    const rows = stmt.all() as Array<{
-      id: string;
-      name: string;
-      createdAt: number;
-      filePath: string;
-      fileSha: string;
-      duration: number | null;
-      fps: number | null;
-    }>;
+    const rows = stmt.all();
 
     return rows.map((row) => ({
       id: String(row.id),
@@ -562,22 +571,12 @@ export class MemoryStore {
   getVrmAnimation(id: string): VrmAnimationRecord | null {
     this.ensureOpen();
 
-    const stmt = this.db.prepare(
+    const stmt = this.db.prepare<[string], VrmAnimationRow>(
       `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha, duration, fps
        FROM vrma_animations WHERE id = ?;`,
     );
 
-    const row = stmt.get(id) as
-      | {
-        id: string;
-        name: string;
-        createdAt: number;
-        filePath: string;
-        fileSha: string;
-        duration: number | null;
-        fps: number | null;
-      }
-      | undefined;
+    const row = stmt.get(id);
 
     if (!row) {
       return null;
@@ -621,19 +620,13 @@ export class MemoryStore {
   listVrmPoses(): VrmPoseRecord[] {
     this.ensureOpen();
 
-    const stmt = this.db.prepare(
+    const stmt = this.db.prepare<[], VrmPoseRow>(
       `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha
        FROM vrm_poses
        ORDER BY created_at DESC, id DESC;`,
     );
 
-    const rows = stmt.all() as Array<{
-      id: string;
-      name: string;
-      createdAt: number;
-      filePath: string;
-      fileSha: string;
-    }>;
+    const rows = stmt.all();
 
     return rows.map((row) => ({
       id: String(row.id),
@@ -647,20 +640,12 @@ export class MemoryStore {
   getVrmPose(id: string): VrmPoseRecord | null {
     this.ensureOpen();
 
-    const stmt = this.db.prepare(
+    const stmt = this.db.prepare<[string], VrmPoseRow>(
       `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha
        FROM vrm_poses WHERE id = ?;`,
     );
 
-    const row = stmt.get(id) as
-      | {
-        id: string;
-        name: string;
-        createdAt: number;
-        filePath: string;
-        fileSha: string;
-      }
-      | undefined;
+    const row = stmt.get(id);
 
     if (!row) {
       return null;
@@ -726,8 +711,10 @@ export class MemoryStore {
   getValue(key: string): string | null {
     this.ensureOpen();
 
-    const stmt = this.db.prepare(`SELECT value FROM kv WHERE key = ?;`);
-    const row = stmt.get(key) as { value: string } | undefined;
+    const stmt = this.db.prepare<[string], { value: string }>(
+      `SELECT value FROM kv WHERE key = ?;`,
+    );
+    const row = stmt.get(key);
 
     if (!row) {
       return null;
@@ -746,68 +733,34 @@ export class MemoryStore {
   exportData(): MemoryStoreExport {
     this.ensureOpen();
 
-    const sessionsStmt = this.db.prepare(
+    const sessionsStmt = this.db.prepare<[], SessionRow>(
       `SELECT id, started_at as startedAt, title FROM sessions ORDER BY started_at ASC, id ASC;`,
     );
-    const messagesStmt = this.db.prepare(
+    const messagesStmt = this.db.prepare<[], MessageRow>(
       `SELECT id, session_id as sessionId, role, ts, content, audio_path as audioPath
        FROM messages ORDER BY ts ASC, id ASC;`,
     );
-    const vrmModelsStmt = this.db.prepare(
+    const vrmModelsStmt = this.db.prepare<[], VrmModelRow>(
       `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha, version, thumbnail, description
        FROM vrm_models ORDER BY created_at ASC, id ASC;`,
     );
-    const vrmaAnimationsStmt = this.db.prepare(
+    const vrmaAnimationsStmt = this.db.prepare<[], VrmAnimationRow>(
       `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha, duration, fps
        FROM vrma_animations ORDER BY created_at ASC, id ASC;`,
     );
-    const vrmPosesStmt = this.db.prepare(
+    const vrmPosesStmt = this.db.prepare<[], VrmPoseRow>(
       `SELECT id, name, created_at as createdAt, file_path as filePath, file_sha as fileSha
        FROM vrm_poses ORDER BY created_at ASC, id ASC;`,
     );
-    const kvStmt = this.db.prepare(`SELECT key, value FROM kv ORDER BY key ASC;`);
+    const kvStmt = this.db.prepare<[], KvRow>(`SELECT key, value FROM kv ORDER BY key ASC;`);
 
-    const sessionRows = sessionsStmt.all() as Array<{
-      id: string;
-      startedAt: number;
-      title: string | null;
-    }>;
+    const sessionRows = sessionsStmt.all();
 
-    const messageRows = messagesStmt.all() as Array<{
-      id: string;
-      sessionId: string;
-      role: string;
-      ts: number;
-      content: string;
-      audioPath: string | null;
-    }>;
+    const messageRows = messagesStmt.all();
 
-    const vrmModelRows = vrmModelsStmt.all() as Array<{
-      id: string;
-      name: string;
-      createdAt: number;
-      filePath: string;
-      fileSha: string;
-      version: string;
-      thumbnail: Buffer | null;
-      description: string | null;
-    }>;
-    const vrmaAnimationRows = vrmaAnimationsStmt.all() as Array<{
-      id: string;
-      name: string;
-      createdAt: number;
-      filePath: string;
-      fileSha: string;
-      duration: number | null;
-      fps: number | null;
-    }>;
-    const vrmPoseRows = vrmPosesStmt.all() as Array<{
-      id: string;
-      name: string;
-      createdAt: number;
-      filePath: string;
-      fileSha: string;
-    }>;
+    const vrmModelRows = vrmModelsStmt.all();
+    const vrmaAnimationRows = vrmaAnimationsStmt.all();
+    const vrmPoseRows = vrmPosesStmt.all();
 
     const sessions = sessionRows.map((row) => ({
       id: String(row.id),
@@ -853,7 +806,7 @@ export class MemoryStore {
       fileSha: String(row.fileSha),
     }));
 
-    const kvEntries = kvStmt.all() as Array<{ key: string; value: string }>;
+    const kvEntries = kvStmt.all();
     const kv: Record<string, string> = {};
 
     for (const entry of kvEntries) {
