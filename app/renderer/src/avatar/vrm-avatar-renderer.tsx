@@ -7,6 +7,7 @@ import {
   VRMUtils,
   VRMExpressionPresetName,
   type VRMExpressionManager,
+  type VRMPose,
 } from '@pixiv/three-vrm';
 import { VRMAnimationLoaderPlugin, type VRMAnimation } from '@pixiv/three-vrm-animation';
 import type { VisemeFrame } from '../audio/viseme-driver.js';
@@ -16,6 +17,7 @@ import {
   useAvatarAnimationQueue,
   type AvatarAnimationEvent,
   type AvatarAnimationTiming,
+  type VRMPoseData,
 } from './animation-bus.js';
 import { toAnimationSlug } from './animation-tags.js';
 import { useBehaviorCues, type BehaviorCueEvent } from './behavior-cues.js';
@@ -109,11 +111,11 @@ interface QueuedAnimation {
 }
 
 interface ActiveAnimation {
-    action: THREE.AnimationAction;
-    intent: AnimationQueueIntent;
-    onFinish: (event: { action?: THREE.AnimationAction | null }) => void;
-    vrmaData?: VrmaGltf;
-  }
+  action: THREE.AnimationAction;
+  intent: AnimationQueueIntent;
+  onFinish: (event: { action?: THREE.AnimationAction | null }) => void;
+  vrmaData?: VrmaGltf;
+}
 
 function buildIdleSchedulerConfig(
   vrm: VRM,
@@ -160,6 +162,19 @@ function buildIdleSchedulerConfig(
   }
 
   if (!reservedNames.has(DEFAULT_IDLE_CLIP_NAME)) {
+    // // Capture current shoulder rotations after relaxed pose is applied
+    // const humanoid = vrm.humanoid;
+    // let baselineShoulderRotations: { left: THREE.Euler; right: THREE.Euler } | undefined;
+    // if (humanoid) {
+    //   const leftShoulder = humanoid.getNormalizedBoneNode('leftShoulder');
+    //   const rightShoulder = humanoid.getNormalizedBoneNode('rightShoulder');
+    //   if (leftShoulder && rightShoulder) {
+    //     baselineShoulderRotations = {
+    //       left: new THREE.Euler().setFromQuaternion(leftShoulder.quaternion),
+    //       right: new THREE.Euler().setFromQuaternion(rightShoulder.quaternion),
+    //     };
+    //   }
+    // }
     const defaultClip = createDefaultIdleClip(vrm);
     if (defaultClip) {
       extras.push({
@@ -180,114 +195,210 @@ function buildIdleSchedulerConfig(
 }
 
 async function loadVrmaAnimation(binary: ArrayBuffer): Promise<{ animation: VRMAnimation; gltf: VrmaGltf } | null> {
-    const loader = new GLTFLoader();
-    loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
-    const gltf = (await loader.parseAsync(binary, '/')) as {
-      userData?: { vrmAnimations?: VRMAnimation[] };
-      extensions?: VrmaGltfExtensions;
-    };
-    const animations = gltf.userData?.vrmAnimations;
-    if (!animations || animations.length === 0) {
-      return null;
-    }
-    return { animation: animations[0]!, gltf: { extensions: gltf.extensions } };
+  const loader = new GLTFLoader();
+  loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
+  const gltf = (await loader.parseAsync(binary, '/')) as {
+    userData?: { vrmAnimations?: VRMAnimation[] };
+    extensions?: VrmaGltfExtensions;
+  };
+  const animations = gltf.userData?.vrmAnimations;
+  if (!animations || animations.length === 0) {
+    return null;
   }
+  // Safe to access index 0 after empty check
+  const animation = animations[0];
+  if (!animation) {
+    return null;
+  }
+  return { animation, gltf: { extensions: gltf.extensions } };
+}
 
 async function loadVrmaClips(vrm: VRM): Promise<Map<string, VrmaClipWithMetadata>> {
-   const registry = new Map<string, VrmaClipWithMetadata>();
-   const bridge = getPreloadApi();
-   if (!bridge?.avatar?.listAnimations || !bridge.avatar.loadAnimationBinary) {
-     return registry;
-   }
+  const registry = new Map<string, VrmaClipWithMetadata>();
+  const bridge = getPreloadApi();
+  if (!bridge?.avatar?.listAnimations || !bridge.avatar.loadAnimationBinary) {
+    return registry;
+  }
 
-   const animations = await bridge.avatar.listAnimations();
-   for (const [index, animation] of animations.entries()) {
-     try {
-       const binary = await bridge.avatar.loadAnimationBinary(animation.id);
-       if (!binary) {
-         continue;
-       }
-       const result = await loadVrmaAnimation(binary);
-       if (!result) {
-         continue;
-       }
-       const name = animation.name?.trim() || animation.id;
-       const slug = toAnimationSlug(name) || `animation-${index}`;
-       const clip = createClipFromVrma(vrm, result.animation, name);
-       registry.set(slug, { clip, vrmaData: result.gltf });
-     } catch (error) {
-       console.warn('[vrm-avatar-renderer] failed to load VRMA clip', {
-         id: animation.id,
-         name: animation.name,
-         error,
-       });
-     }
-   }
+  const animations = await bridge.avatar.listAnimations();
+  for (const [index, animation] of animations.entries()) {
+    try {
+      const binary = await bridge.avatar.loadAnimationBinary(animation.id);
+      if (!binary) {
+        continue;
+      }
+      const result = await loadVrmaAnimation(binary);
+      if (!result) {
+        continue;
+      }
+      const name = animation.name?.trim() || animation.id;
+      const slug = toAnimationSlug(name) || `animation-${index}`;
+      const clip = createClipFromVrma(vrm, result.animation, name);
+      registry.set(slug, { clip, vrmaData: result.gltf });
+    } catch (error) {
+      console.warn('[vrm-avatar-renderer] failed to load VRMA clip', {
+        id: animation.id,
+        name: animation.name,
+        error,
+      });
+    }
+  }
 
-   return registry;
- }
+  return registry;
+}
 
 function quaternionToArray(quaternion: THREE.Quaternion): number[] {
   return [quaternion.x, quaternion.y, quaternion.z, quaternion.w];
 }
 
 function multiplyQuaternion(base: THREE.Quaternion, delta: THREE.Euler): THREE.Quaternion {
-   const next = new THREE.Quaternion(base.x, base.y, base.z, base.w);
-   next.multiply(new THREE.Quaternion().setFromEuler(delta));
-   return next;
- }
+  const next = new THREE.Quaternion(base.x, base.y, base.z, base.w);
+  next.multiply(new THREE.Quaternion().setFromEuler(delta));
+  return next;
+}
 
- // Helper: Linear interpolation between expression keyframes
- function evaluateKeyframes(keyframes: Array<{ t: number; v: number }>, time: number): number | null {
-   if (!keyframes || keyframes.length === 0) return null;
+// Helper: Linear interpolation between expression keyframes
+function evaluateKeyframes(keyframes: Array<{ t: number; v: number }>, time: number): number | null {
+  if (!keyframes || keyframes.length === 0) return null;
 
-   // Clamp to bounds
-   if (time < keyframes[0].t) return keyframes[0].v;
-   if (time > keyframes[keyframes.length - 1].t) return keyframes[keyframes.length - 1].v;
+  // Clamp to bounds
+  if (time < keyframes[0].t) return keyframes[0].v;
+  if (time > keyframes[keyframes.length - 1].t) return keyframes[keyframes.length - 1].v;
 
-   // Find surrounding keyframes
-   for (let i = 0; i < keyframes.length - 1; i++) {
-     const current = keyframes[i];
-     const next = keyframes[i + 1];
-     if (time >= current.t && time <= next.t) {
-       // Linear interpolation
-       const progress = (time - current.t) / (next.t - current.t);
-       return current.v + (next.v - current.v) * progress;
-     }
-   }
+  // Find surrounding keyframes
+  for (let i = 0; i < keyframes.length - 1; i++) {
+    const current = keyframes[i];
+    const next = keyframes[i + 1];
+    if (time >= current.t && time <= next.t) {
+      // Linear interpolation
+      const progress = (time - current.t) / (next.t - current.t);
+      return current.v + (next.v - current.v) * progress;
+    }
+  }
 
-   return keyframes[keyframes.length - 1].v;
- }
+  return keyframes[keyframes.length - 1].v;
+}
 
- // Apply expression keyframes from VRMA metadata at the given time
- function applyExpressionFrameAtTime(vrm: VRM, vrmaData: VrmaGltf, currentTime: number) {
-   if (!vrmaData?.extensions?.VRMC_vrm_animation?.expressionSamplers) {
-     return;
-   }
+// Apply expression keyframes from VRMA metadata at the given time
+function applyExpressionFrameAtTime(vrm: VRM, vrmaData: VrmaGltf, currentTime: number) {
+  if (!vrmaData?.extensions?.VRMC_vrm_animation?.expressionSamplers) {
+    return;
+  }
 
-   const samplers = vrmaData.extensions.VRMC_vrm_animation.expressionSamplers;
-   const expressionManager = vrm.expressionManager;
+  const samplers = vrmaData.extensions.VRMC_vrm_animation.expressionSamplers;
+  const expressionManager = vrm.expressionManager;
 
-   if (!expressionManager) return;
+  if (!expressionManager) return;
 
-   // Process preset expressions
-   const presetSamplers = samplers.preset || [];
-   for (const sampler of presetSamplers) {
-     const value = evaluateKeyframes(sampler.keyframes, currentTime);
-     if (value !== null) {
-       expressionManager.setValue(sampler.name, value);
-     }
-   }
+  // Process preset expressions
+  const presetSamplers = samplers.preset || [];
+  for (const sampler of presetSamplers) {
+    const value = evaluateKeyframes(sampler.keyframes, currentTime);
+    if (value !== null) {
+      expressionManager.setValue(sampler.name, value);
+    }
+  }
 
-   // Process custom expressions
-   const customSamplers = samplers.custom || [];
-   for (const sampler of customSamplers) {
-     const value = evaluateKeyframes(sampler.keyframes, currentTime);
-     if (value !== null) {
-       expressionManager.setValue(sampler.name, value);
-     }
-   }
- }
+  // Process custom expressions
+  const customSamplers = samplers.custom || [];
+  for (const sampler of customSamplers) {
+    const value = evaluateKeyframes(sampler.keyframes, currentTime);
+    if (value !== null) {
+      expressionManager.setValue(sampler.name, value);
+    }
+  }
+}
+
+const DEFAULT_POSE_TRANSITION_DURATION = 0.5; // seconds
+
+/**
+ * Creates an AnimationClip that transitions from the current bone rotations to the target pose.
+ * Uses SLERP (spherical linear interpolation) for smooth quaternion interpolation.
+ */
+export function createPoseTransitionClip(
+  vrm: VRM,
+  targetPose: VRMPoseData,
+  duration: number = DEFAULT_POSE_TRANSITION_DURATION,
+): THREE.AnimationClip | null {
+  const humanoid = vrm.humanoid;
+  if (!humanoid) {
+    return null;
+  }
+
+  const tracks: THREE.KeyframeTrack[] = [];
+  const resolvedBones: string[] = [];
+  const unresolvedBones: string[] = [];
+
+  for (const [boneName, boneData] of Object.entries(targetPose)) {
+    const rotation = boneData.rotation;
+    if (!rotation || rotation.length !== 4) {
+      continue;
+    }
+
+    // Get the normalized bone node (used by VRM animations - same as wave animation)
+    const node = humanoid.getNormalizedBoneNode(boneName as Parameters<typeof humanoid.getNormalizedBoneNode>[0]);
+    if (!node) {
+      unresolvedBones.push(boneName);
+      continue;
+    }
+
+    resolvedBones.push(boneName);
+
+    // Current quaternion values (clone to avoid mutation)
+    const currentQuat = node.quaternion.clone();
+    const targetQuat = new THREE.Quaternion(rotation[0], rotation[1], rotation[2], rotation[3]);
+
+    // Create keyframe track: times [0, duration], values [current, target]
+    const times = [0, duration];
+    const values = [
+      currentQuat.x, currentQuat.y, currentQuat.z, currentQuat.w,
+      targetQuat.x, targetQuat.y, targetQuat.z, targetQuat.w,
+    ];
+
+    // Use the node's name for the track (AnimationMixer finds nodes by name)
+    const track = new THREE.QuaternionKeyframeTrack(
+      `${node.name}.quaternion`,
+      times,
+      values,
+    );
+    tracks.push(track);
+
+    // Handle position if present (e.g., for hips in crouching poses)
+    if (boneData.position && boneData.position.length === 3) {
+      const currentPos = node.position.clone();
+      const targetPos = boneData.position;
+      const posTimes = [0, duration];
+      const posValues = [
+        currentPos.x, currentPos.y, currentPos.z,
+        targetPos[0], targetPos[1], targetPos[2],
+      ];
+      const posTrack = new THREE.VectorKeyframeTrack(
+        `${node.name}.position`,
+        posTimes,
+        posValues,
+      );
+      tracks.push(posTrack);
+    }
+  }
+
+  if (unresolvedBones.length > 0) {
+    console.warn('[vrm-avatar-renderer] Could not resolve bones for pose transition:', JSON.stringify(unresolvedBones));
+  }
+
+  if (tracks.length === 0) {
+    console.warn('[vrm-avatar-renderer] No valid tracks created for pose transition');
+    return null;
+  }
+
+  console.info('[vrm-avatar-renderer] Created pose transition clip:', JSON.stringify({
+    trackCount: tracks.length,
+    resolvedBones,
+    unresolvedBones,
+    duration,
+  }));
+
+  return new THREE.AnimationClip('pose-transition', duration, tracks);
+}
 
 export function createRightArmWaveClip(vrm: VRM): THREE.AnimationClip | null {
   const humanoid = vrm.humanoid;
@@ -454,47 +565,7 @@ function createDefaultIdleClip(vrm: VRM): THREE.AnimationClip | null {
   });
 }
 
-// Detect Y-axis direction by comparing hips and feet positions
-function detectYAxisDirection(vrm: VRM): 'down-is-negative' | 'down-is-positive' {
-  const humanoid = vrm.humanoid;
-  if (!humanoid) {
-    return 'down-is-negative'; // Default assumption
-  }
-
-  const hips = humanoid.getNormalizedBoneNode('hips');
-  const leftFoot = humanoid.getNormalizedBoneNode('leftFoot');
-  const rightFoot = humanoid.getNormalizedBoneNode('rightFoot');
-
-  if (!hips || (!leftFoot && !rightFoot)) {
-    return 'down-is-negative'; // Fallback
-  }
-
-  const hipsPos = new THREE.Vector3();
-  hips.getWorldPosition(hipsPos);
-
-  const footPos = new THREE.Vector3();
-  if (leftFoot) {
-    leftFoot.getWorldPosition(footPos);
-  } else if (rightFoot) {
-    rightFoot.getWorldPosition(footPos);
-  }
-
-  // Feet should always be BELOW hips
-  // If foot.y < hips.y, then negative Y = down (standard)
-  // If foot.y > hips.y, then positive Y = down (inverted)
-  const yDifference = footPos.y - hipsPos.y;
-
-  const direction = yDifference < 0 ? 'down-is-negative' : 'down-is-positive';
-
-  console.log('[vrm-avatar-renderer] Y-axis direction detection:', {
-    hipsY: hipsPos.y.toFixed(3),
-    footY: footPos.y.toFixed(3),
-    yDifference: yDifference.toFixed(3),
-    direction,
-  });
-
-  return direction;
-}
+// detectYAxisDirection removed (unused)
 
 // Detect if model is in T-pose by checking arm orientation relative to spine
 function isInTPose(vrm: VRM): boolean {
@@ -557,112 +628,125 @@ function isInTPose(vrm: VRM): boolean {
   return Math.abs(leftDot) < 0.3 && Math.abs(rightDot) < 0.3;
 }
 
-// Set natural resting arm pose: shoulders down, elbows bent, arms at sides
-// Uses iterative IK with aggressive convergence parameters
-function setNaturalArmPose(
-  shoulder: THREE.Object3D | null,
-  upperArm: THREE.Object3D | null,
-  lowerArm: THREE.Object3D | null,
-  side: string = 'unknown',
-  yMultiplier: number = -1, // -1 for down-is-negative (standard), 1 for down-is-positive
-) {
-  if (!shoulder || !upperArm || !lowerArm) {
-    console.warn(`[vrm-avatar-renderer] Pose[${side}] Missing arm bones`);
-    return;
-  }
 
-  const sideMultiplier = side === 'LEFT' ? -1 : 1;
-  const maxIterations = 200; // Increased from 30
-  const positionTolerance = 0.01; // Relaxed from 0.5cm to 1cm
 
-  // Get shoulder position
-  const shoulderWorldPos = new THREE.Vector3();
-  shoulder.getWorldPosition(shoulderWorldPos);
 
-  // Get initial hand endpoint for arm length calculation
-  const hand = lowerArm.children.length > 0 ? lowerArm.children[0] : lowerArm;
-  const initialHandWorldPos = new THREE.Vector3();
-  hand.getWorldPosition(initialHandWorldPos);
-  const armLength = shoulderWorldPos.distanceTo(initialHandWorldPos);
 
-  // Define natural resting position: close to body, down
-  const targetHandPos = shoulderWorldPos.clone().add(
-    new THREE.Vector3(
-      sideMultiplier * 0.005,             // Very close to body
-      -armLength * 0.95 * yMultiplier,    // Down 95% of arm length
-      0.01                                 // Slightly forward
-    )
-  );
 
-  let iteration = 0;
-  let currentHandPos = new THREE.Vector3();
 
-  while (iteration < maxIterations) {
-    hand.getWorldPosition(currentHandPos);
-    const error = currentHandPos.distanceTo(targetHandPos);
 
-    if (error < positionTolerance) {
-      break;
-    }
 
-    // Compute vector from shoulder to target
-    const shoulderToTarget = targetHandPos.clone().sub(shoulderWorldPos);
-    const shoulderToHand = currentHandPos.clone().sub(shoulderWorldPos);
+/**
+ * Create a natural stance pose for VRM humanoid using the VRM pose system.
+ * Returns a VRMPose object with rotations relative to T-pose.
+ * 
+ * This creates a relaxed arm position:
+ * - Shoulders (clavicles) relaxed slightly down (~5 degrees)
+ * - Shoulders (clavicles) relaxed slightly down
+ * - Upper arms rotated down but flared out slightly (not pinned to sides)
+ * - Elbows bent
+ * - Hands relaxed (fingers curved)
+ * 
+ * @returns VRMPose object with quaternion rotations for natural arm stance
+ */
+function createNaturalStancePose(): VRMPose {
+  const pose: VRMPose = {};
 
-    // Compute rotation needed
-    const crossProduct = shoulderToHand.clone().cross(shoulderToTarget);
-    const dotProduct = shoulderToHand.clone().normalize().dot(shoulderToTarget.clone().normalize());
-    const angle = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
+  // =========================================================================
+  // 1. Arms & Shoulders
+  // =========================================================================
 
-    if (angle > 0.01) {
-      const rotationAxis = crossProduct.length() > 0.001
-        ? crossProduct.normalize()
-        : new THREE.Vector3(0, 1, 0);
+  // Shoulder (Clavicle)
+  const shoulderRelaxAngle = Math.PI * 0.03; // ~5 degrees down
 
-      // Use larger adjustment steps (50% instead of 15%)
-      const adjustment = Math.min(angle * 0.5, 0.15);
-      const rotationQuat = new THREE.Quaternion().setFromAxisAngle(rotationAxis, adjustment);
-      shoulder.quaternion.multiplyQuaternions(rotationQuat, shoulder.quaternion);
-      shoulder.updateWorldMatrix(true, true);
-    }
+  const leftShoulderQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), shoulderRelaxAngle);
+  pose['leftShoulder'] = { rotation: leftShoulderQuat.toArray() as [number, number, number, number] };
 
-    // Elbow adjustment with larger steps
-    const elbowWorldPos = new THREE.Vector3();
-    upperArm.getWorldPosition(elbowWorldPos);
-    const elbowToHand = currentHandPos.clone().sub(elbowWorldPos);
-    const elbowToTarget = targetHandPos.clone().sub(elbowWorldPos);
+  const rightShoulderQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, -1), shoulderRelaxAngle);
+  pose['rightShoulder'] = { rotation: rightShoulderQuat.toArray() as [number, number, number, number] };
 
-    const elbowCross = elbowToHand.clone().cross(elbowToTarget);
-    const elbowDot = elbowToHand.clone().normalize().dot(elbowToTarget.clone().normalize());
-    const elbowAngle = Math.acos(Math.max(-1, Math.min(1, elbowDot)));
+  // Upper Arm
+  // Adjusted: Reduced down angle (75 -> 70) to flare elbows out slightly
+  // Reduced inward angle (18 -> 10) to keep arms less crossed
+  const armDownAngle = Math.PI * 0.39; // ~70 degrees down (was 75)
+  const armForwardAngle = Math.PI * 0.05; // ~9 degrees forward
+  const armInwardAngle = Math.PI * 0.06; // ~10 degrees inward (was 18)
 
-    if (elbowAngle > 0.01 && elbowCross.length() > 0.001) {
-      const elbowAxis = elbowCross.normalize();
-      const elbowAdjustment = Math.min(elbowAngle * 0.3, 0.12); // Larger steps
-      const elbowQuat = new THREE.Quaternion().setFromAxisAngle(elbowAxis, elbowAdjustment);
-      lowerArm.quaternion.multiplyQuaternions(elbowQuat, lowerArm.quaternion);
-      lowerArm.updateWorldMatrix(true, true);
-    }
+  // Left upper arm
+  const leftUpperArmQuat = new THREE.Quaternion();
+  const leftUpperArmEuler = new THREE.Euler(armForwardAngle, -armInwardAngle, armDownAngle, 'XYZ');
+  leftUpperArmQuat.setFromEuler(leftUpperArmEuler);
+  pose['leftUpperArm'] = { rotation: leftUpperArmQuat.toArray() as [number, number, number, number] };
 
-    // Update matrices
-    upperArm.updateWorldMatrix(true, true);
-    hand.updateWorldMatrix(true, true);
+  // Right upper arm
+  const rightUpperArmQuat = new THREE.Quaternion();
+  const rightUpperArmEuler = new THREE.Euler(armForwardAngle, armInwardAngle, -armDownAngle, 'XYZ');
+  rightUpperArmQuat.setFromEuler(rightUpperArmEuler);
+  pose['rightUpperArm'] = { rotation: rightUpperArmQuat.toArray() as [number, number, number, number] };
 
-    iteration++;
-  }
+  // Lower Arm (Elbow)
+  const elbowBendAngle = Math.PI * 0.1; // ~18 degrees
+  const elbowBendQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), elbowBendAngle);
 
-  // Final logging
-  hand.getWorldPosition(currentHandPos);
-  const finalError = currentHandPos.distanceTo(targetHandPos);
-  const detailedLog = {
-    side,
-    iterations: iteration,
-    finalErrorCm: (finalError * 100).toFixed(2),
-    armLengthM: armLength.toFixed(3),
-  };
-  console.log(
-    `[vrm-avatar-renderer] Pose[${side}] Applied relaxed arm pose ${JSON.stringify(detailedLog)}`
-  );
+  pose['leftLowerArm'] = { rotation: elbowBendQuat.toArray() as [number, number, number, number] };
+  pose['rightLowerArm'] = { rotation: elbowBendQuat.toArray() as [number, number, number, number] };
+
+  // =========================================================================
+  // 2. Hands (Fingers)
+  // =========================================================================
+
+  // Finger curl angles
+  // Fingers curl around Z axis in default VRM T-pose usually
+  // Progressive curl: Proximal < Intermediate < Distal usually looks natural, 
+  // or consistent curl.
+  const fingerCurlAngle = Math.PI * 0.08; // ~15 degrees per joint
+  // thumbCurlAngle was defined but unused because the thumb loop used fingerCurlAngle incorrectly.
+  // Now it is used below in leftThumbQuat/rightThumbQuat.
+  const thumbCurlAngle = Math.PI * 0.08;
+
+  // Revised: User reported backwards curl. Flipping signs.
+  // Previous: Left = -Z (Negative), Right = +Z (Positive)
+  // New: Left = +Z (Positive), Right = -Z (Negative)
+
+  const leftFingerQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), fingerCurlAngle);
+  const rightFingerQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, -1), fingerCurlAngle);
+
+  // Thumb is special.
+  // Thumbs usually need to rotate down/in.
+  // Flipping thumb rotation as well to match
+  // Using thumbCurlAngle correctly now
+  const leftThumbQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -thumbCurlAngle, 0));
+  const rightThumbQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, thumbCurlAngle, 0));
+
+  const fingers = ['Index', 'Middle', 'Ring', 'Little'];
+  const segments = ['Proximal', 'Intermediate', 'Distal'];
+
+  fingers.forEach(finger => {
+    segments.forEach(segment => {
+      // Left Hand
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (pose as Record<string, any>)[`left${finger}${segment}`] = { rotation: leftFingerQuat.toArray() as [number, number, number, number] };
+      // Right Hand
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (pose as Record<string, any>)[`right${finger}${segment}`] = { rotation: rightFingerQuat.toArray() as [number, number, number, number] };
+    });
+  });
+
+  // Thumbs
+  ['Proximal', 'Intermediate', 'Distal'].forEach(segment => {
+    // Apply a different rotation for thumbs if needed, or simple curl
+    // Thumbs in T-pose are often 45 deg?
+    // Let's try a simple Z curl similar to fingers but maybe varying axis
+    // For now using the same curl but maybe adjusting axis if it looks wrong.
+    // Safer to stick to Z curl for now as a starting point for "relaxed" 
+    // Use distinct thumb rotation
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (pose as Record<string, any>)[`leftThumb${segment}`] = { rotation: leftThumbQuat.toArray() as [number, number, number, number] };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (pose as Record<string, any>)[`rightThumb${segment}`] = { rotation: rightThumbQuat.toArray() as [number, number, number, number] };
+  });
+
+  return pose;
 }
 
 function applyRelaxedPose(vrm: VRM) {
@@ -670,10 +754,6 @@ function applyRelaxedPose(vrm: VRM) {
   if (!humanoid) {
     return;
   }
-
-  // Detect Y-axis direction to handle different coordinate systems
-  const yAxisDir = detectYAxisDirection(vrm);
-  const yMultiplier = yAxisDir === 'down-is-negative' ? -1 : 1;
 
   // Check if model is in T-pose
   const inTPose = isInTPose(vrm);
@@ -684,119 +764,151 @@ function applyRelaxedPose(vrm: VRM) {
     return; // Already in natural pose
   }
 
-  console.log('[vrm-avatar-renderer] Applying relaxed pose adjustment...');
+  console.log('[vrm-avatar-renderer] Applying relaxed pose adjustment using VRM pose system...');
 
-  // Get arm joints
-  const leftShoulder = humanoid.getNormalizedBoneNode('leftShoulder');
-  const rightShoulder = humanoid.getNormalizedBoneNode('rightShoulder');
-  const leftUpperArm = humanoid.getNormalizedBoneNode('leftUpperArm');
-  const rightUpperArm = humanoid.getNormalizedBoneNode('rightUpperArm');
-  const leftLowerArm = humanoid.getNormalizedBoneNode('leftLowerArm');
-  const rightLowerArm = humanoid.getNormalizedBoneNode('rightLowerArm');
+  // Log BEFORE positions (for debugging)
   const leftHand = humanoid.getNormalizedBoneNode('leftHand');
   const rightHand = humanoid.getNormalizedBoneNode('rightHand');
 
-  if (!leftShoulder || !rightShoulder) {
-    console.warn('[vrm-avatar-renderer] Missing shoulder bones for relaxed pose');
+  if (leftHand && rightHand) {
+    const leftHandBefore = new THREE.Vector3();
+    const rightHandBefore = new THREE.Vector3();
+    leftHand.getWorldPosition(leftHandBefore);
+    rightHand.getWorldPosition(rightHandBefore);
+
+    console.log('[vrm-avatar-renderer] BEFORE relaxed pose:', JSON.stringify({
+      leftHand: { x: leftHandBefore.x.toFixed(3), y: leftHandBefore.y.toFixed(3), z: leftHandBefore.z.toFixed(3) },
+      rightHand: { x: rightHandBefore.x.toFixed(3), y: rightHandBefore.y.toFixed(3), z: rightHandBefore.z.toFixed(3) },
+    }));
+  }
+
+  // Apply natural stance pose using VRM's pose system
+  const naturalPose = createNaturalStancePose();
+  humanoid.setNormalizedPose(naturalPose);
+
+  // Update the world matrix to reflect the new pose
+  vrm.scene.updateWorldMatrix(true, true);
+
+  // Log AFTER positions (for debugging)
+  if (leftHand && rightHand) {
+    const leftHandAfter = new THREE.Vector3();
+    const rightHandAfter = new THREE.Vector3();
+    leftHand.getWorldPosition(leftHandAfter);
+    rightHand.getWorldPosition(rightHandAfter);
+
+    console.log('[vrm-avatar-renderer] AFTER relaxed pose:', JSON.stringify({
+      leftHand: { x: leftHandAfter.x.toFixed(3), y: leftHandAfter.y.toFixed(3), z: leftHandAfter.z.toFixed(3) },
+      rightHand: { x: rightHandAfter.x.toFixed(3), y: rightHandAfter.y.toFixed(3), z: rightHandAfter.z.toFixed(3) },
+    }));
+  }
+
+  console.log('[vrm-avatar-renderer] Relaxed pose applied successfully using VRM pose system');
+}
+
+/**
+ * Save the natural stance pose as 'default' if it doesn't already exist.
+ * This allows users to restore the avatar to its natural pose.
+ */
+async function saveDefaultPoseIfNeeded(): Promise<void> {
+  const bridge = getPreloadApi();
+  const avatar = bridge?.avatar;
+  if (!avatar?.listPoses || !avatar?.uploadPose) {
+    console.warn('[vrm-avatar-renderer] Pose API unavailable, skipping default pose save');
     return;
   }
 
-  // Log BEFORE positions
-  const leftShoulderBefore = new THREE.Vector3();
-  const rightShoulderBefore = new THREE.Vector3();
-  const leftUpperArmBefore = new THREE.Vector3();
-  const rightUpperArmBefore = new THREE.Vector3();
-  const leftHandBefore = new THREE.Vector3();
-  const rightHandBefore = new THREE.Vector3();
+  try {
+    const existingPoses = await avatar.listPoses();
+    const hasDefault = existingPoses.some((p) => p.name.toLowerCase() === 'default');
 
-  leftShoulder.getWorldPosition(leftShoulderBefore);
-  rightShoulder.getWorldPosition(rightShoulderBefore);
-  leftUpperArm?.getWorldPosition(leftUpperArmBefore);
-  rightUpperArm?.getWorldPosition(rightUpperArmBefore);
-  leftHand?.getWorldPosition(leftHandBefore);
-  rightHand?.getWorldPosition(rightHandBefore);
+    if (hasDefault) {
+      console.info('[vrm-avatar-renderer] Default pose already exists, skipping save');
+      return;
+    }
 
-  console.log('[vrm-avatar-renderer] BEFORE relaxed pose:', {
-    leftShoulder: { x: leftShoulderBefore.x.toFixed(3), y: leftShoulderBefore.y.toFixed(3), z: leftShoulderBefore.z.toFixed(3) },
-    leftUpperArm: { x: leftUpperArmBefore.x.toFixed(3), y: leftUpperArmBefore.y.toFixed(3), z: leftUpperArmBefore.z.toFixed(3) },
-    leftHand: { x: leftHandBefore.x.toFixed(3), y: leftHandBefore.y.toFixed(3), z: leftHandBefore.z.toFixed(3) },
-    rightShoulder: { x: rightShoulderBefore.x.toFixed(3), y: rightShoulderBefore.y.toFixed(3), z: rightShoulderBefore.z.toFixed(3) },
-    rightUpperArm: { x: rightUpperArmBefore.x.toFixed(3), y: rightUpperArmBefore.y.toFixed(3), z: rightUpperArmBefore.z.toFixed(3) },
-    rightHand: { x: rightHandBefore.x.toFixed(3), y: rightHandBefore.y.toFixed(3), z: rightHandBefore.z.toFixed(3) },
+    // Get the natural stance pose and convert to uploadable format
+    const naturalPose = createNaturalStancePose();
+    const poseData: Record<string, { rotation: number[]; position?: number[] }> = {};
+
+    for (const [boneName, boneData] of Object.entries(naturalPose)) {
+      if (boneData?.rotation) {
+        const rotation = boneData.rotation as { x: number; y: number; z: number; w: number } | [number, number, number, number];
+        const rotationArray = Array.isArray(rotation)
+          ? rotation
+          : [rotation.x, rotation.y, rotation.z, rotation.w];
+        poseData[boneName] = { rotation: rotationArray };
+      }
+    }
+
+    const jsonData = JSON.stringify(poseData, null, 2);
+
+    await avatar.uploadPose({
+      name: 'default',
+      fileName: 'default.pose.json',
+      data: jsonData,
+    });
+
+    console.info('[vrm-avatar-renderer] Default pose saved successfully', {
+      boneCount: Object.keys(poseData).length
+    });
+  } catch (error) {
+    console.warn('[vrm-avatar-renderer] Failed to save default pose', error);
+  }
+}
+
+function getHeadBounds(vrm: VRM): { width: number; height: number; depth: number } | null {
+  const humanoid = vrm.humanoid;
+  if (!humanoid) {
+    return null;
+  }
+
+  const head = humanoid.getNormalizedBoneNode('head');
+  if (!head) {
+    return null;
+  }
+
+  const box = new THREE.Box3();
+  let hasBounds = false;
+
+  head.traverse((object) => {
+    const mesh = object as THREE.Mesh | THREE.SkinnedMesh;
+    const isMesh = (mesh as THREE.Mesh).isMesh === true;
+    const isSkinnedMesh = (mesh as THREE.SkinnedMesh).isSkinnedMesh === true;
+    if (!isMesh && !isSkinnedMesh) {
+      return;
+    }
+    const geometry = mesh.geometry;
+    if (!geometry) {
+      return;
+    }
+    if (!geometry.boundingBox) {
+      geometry.computeBoundingBox();
+    }
+    const localBox = geometry.boundingBox;
+    if (!localBox) {
+      return;
+    }
+    const worldBox = localBox.clone();
+    worldBox.applyMatrix4(mesh.matrixWorld);
+    if (!hasBounds) {
+      box.copy(worldBox);
+      hasBounds = true;
+    } else {
+      box.union(worldBox);
+    }
   });
 
-  // Define natural resting hand positions relative to shoulders
-  // Compute arm length from upper arm to hand (used to set realistic targets)
-  const leftUpperArmWorldPos = new THREE.Vector3();
-  leftUpperArm?.getWorldPosition(leftUpperArmWorldPos);
-  const leftHandWorldPos = new THREE.Vector3();
-  leftHand?.getWorldPosition(leftHandWorldPos);
-  const leftArmLength = leftUpperArmWorldPos.distanceTo(leftHandWorldPos);
-  
-  // Left hand: slightly forward and to the left, hanging down at ~70% arm length
-  const leftShoulderWorldPos = new THREE.Vector3();
-  leftShoulder.getWorldPosition(leftShoulderWorldPos);
-  const leftHandTarget = leftShoulderWorldPos.clone().add(
-    new THREE.Vector3(-0.05, (leftArmLength * 0.7) * yMultiplier, 0.03)
-  );
+  if (!hasBounds) {
+    return null;
+  }
 
-  // Right hand: slightly forward and to the right, hanging down at ~70% arm length
-  const rightUpperArmWorldPos = new THREE.Vector3();
-  rightUpperArm?.getWorldPosition(rightUpperArmWorldPos);
-  const rightHandWorldPos = new THREE.Vector3();
-  rightHand?.getWorldPosition(rightHandWorldPos);
-  const rightArmLength = rightUpperArmWorldPos.distanceTo(rightHandWorldPos);
-  
-  const rightShoulderWorldPos = new THREE.Vector3();
-  rightShoulder.getWorldPosition(rightShoulderWorldPos);
-  const rightHandTarget = rightShoulderWorldPos.clone().add(
-    new THREE.Vector3(0.05, (rightArmLength * 0.7) * yMultiplier, -0.03)
-  );
-
-  // Apply natural resting pose: arms down from shoulders, elbows bent
-  setNaturalArmPose(
-    leftShoulder,
-    leftUpperArm,
-    leftLowerArm,
-    'LEFT',
-    yMultiplier,
-  );
-  setNaturalArmPose(
-    rightShoulder,
-    rightUpperArm,
-    rightLowerArm,
-    'RIGHT',
-    yMultiplier,
-  );
-
-  // Log AFTER positions
-  const leftShoulderAfter = new THREE.Vector3();
-  const rightShoulderAfter = new THREE.Vector3();
-  const leftUpperArmAfter = new THREE.Vector3();
-  const rightUpperArmAfter = new THREE.Vector3();
-  const leftHandAfter = new THREE.Vector3();
-  const rightHandAfter = new THREE.Vector3();
-
-  leftShoulder.getWorldPosition(leftShoulderAfter);
-  rightShoulder.getWorldPosition(rightShoulderAfter);
-  leftUpperArm?.getWorldPosition(leftUpperArmAfter);
-  rightUpperArm?.getWorldPosition(rightUpperArmAfter);
-  leftHand?.getWorldPosition(leftHandAfter);
-  rightHand?.getWorldPosition(rightHandAfter);
-
-  const leftHandError = leftHandAfter.distanceTo(leftHandTarget);
-  const rightHandError = rightHandAfter.distanceTo(rightHandTarget);
-
-  console.log('[vrm-avatar-renderer] AFTER relaxed pose:', {
-    leftShoulder: { x: leftShoulderAfter.x.toFixed(3), y: leftShoulderAfter.y.toFixed(3), z: leftShoulderAfter.z.toFixed(3) },
-    leftUpperArm: { x: leftUpperArmAfter.x.toFixed(3), y: leftUpperArmAfter.y.toFixed(3), z: leftUpperArmAfter.z.toFixed(3) },
-    leftHand: { x: leftHandAfter.x.toFixed(3), y: leftHandAfter.y.toFixed(3), z: leftHandAfter.z.toFixed(3) },
-    leftHandError: leftHandError.toFixed(4),
-    rightShoulder: { x: rightShoulderAfter.x.toFixed(3), y: rightShoulderAfter.y.toFixed(3), z: rightShoulderAfter.z.toFixed(3) },
-    rightUpperArm: { x: rightUpperArmAfter.x.toFixed(3), y: rightUpperArmAfter.y.toFixed(3), z: rightUpperArmAfter.z.toFixed(3) },
-    rightHand: { x: rightHandAfter.x.toFixed(3), y: rightHandAfter.y.toFixed(3), z: rightHandAfter.z.toFixed(3) },
-    rightHandError: rightHandError.toFixed(4),
-  });
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  return {
+    width: size.x,
+    height: size.y,
+    depth: size.z,
+  };
 }
 
 function computeHumanoidMetrics(vrm: VRM) {
@@ -1145,14 +1257,14 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
 
       activeAnimationRef.current = null;
       playNextQueuedAnimation();
-      };
+    };
 
-      activeAnimationRef.current = {
+    activeAnimationRef.current = {
       action,
       intent: next.intent,
       onFinish: handleFinished,
       vrmaData: clipData.vrmaData,
-      };
+    };
 
     try {
       action.reset();
@@ -1262,6 +1374,85 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         return;
       }
 
+      if (event.type === 'applyPose') {
+        // Apply pose via animated transition for smooth interpolation
+        const vrm = currentVrmRef.current;
+        const mixer = mixerRef.current;
+        if (!vrm?.humanoid || !mixer) {
+          console.warn('[vrm-avatar-renderer] VRM humanoid or mixer not available for pose application');
+          return;
+        }
+
+        try {
+          // Clear any existing pose animation
+          if (activeAnimationRef.current?.intent === 'pose') {
+            clearActiveAnimation();
+          }
+
+          // Create transition clip from current pose to target pose
+          const duration = event.transitionDuration ?? DEFAULT_POSE_TRANSITION_DURATION;
+          const transitionClip = createPoseTransitionClip(vrm, event.pose, duration);
+
+          if (!transitionClip) {
+            console.warn('[vrm-avatar-renderer] Could not create pose transition clip');
+            return;
+          }
+
+          // Suspend idle animations during transition
+          suspendIdleAnimations();
+
+          const action = mixer.clipAction(transitionClip);
+
+          const handleFinished = (finishedEvent: { action?: THREE.AnimationAction | null }) => {
+            if (finishedEvent.action !== action) {
+              return;
+            }
+
+            mixer.removeEventListener('finished', handleFinished);
+
+            // Keep the pose clamped at the end
+            action.clampWhenFinished = true;
+            action.enabled = true;
+            action.setEffectiveTimeScale(0);
+            activeAnimationRef.current = {
+              action,
+              intent: 'pose',
+              onFinish: handleFinished,
+            };
+
+            console.info('[vrm-avatar-renderer] Pose transition completed:', JSON.stringify({
+              source: event.source,
+            }));
+          };
+
+          activeAnimationRef.current = {
+            action,
+            intent: 'pose',
+            onFinish: handleFinished,
+          };
+
+          // Play the transition animation
+          action.reset();
+          action.enabled = true;
+          action.setLoop(THREE.LoopOnce, 1);
+          action.setEffectiveWeight(1);
+          action.setEffectiveTimeScale(1);
+          action.clampWhenFinished = true;
+          mixer.addEventListener('finished', handleFinished);
+          action.play();
+
+          console.info('[vrm-avatar-renderer] Started smooth pose transition:', JSON.stringify({
+            source: event.source,
+            boneCount: Object.keys(event.pose).length,
+            duration,
+          }));
+        } catch (error) {
+          console.error('[vrm-avatar-renderer] Failed to apply pose transition', error);
+          releaseIdleSuspension();
+        }
+        return;
+      }
+
       const slug = event.request.slug.trim();
       if (!slug) {
         console.warn('[vrm-avatar-renderer] received animation request without a slug');
@@ -1279,7 +1470,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         timing: event.request.timing,
       });
     },
-    [clearActiveAnimation, enqueueAnimation, playNextQueuedAnimation],
+    [clearActiveAnimation, enqueueAnimation, playNextQueuedAnimation, suspendIdleAnimations, releaseIdleSuspension],
   );
 
   useAvatarAnimationQueue(handleAnimationEvent);
@@ -1398,14 +1589,14 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       }
 
       mixerRef.current?.update(delta);
-      
+
       // Apply expression keyframes from VRMA metadata at current animation time
       const activeAnimation = activeAnimationRef.current;
       if (activeAnimation?.vrmaData && currentVrmRef.current) {
         const animationTime = activeAnimation.action.time;
         applyExpressionFrameAtTime(currentVrmRef.current, activeAnimation.vrmaData, animationTime);
       }
-      
+
       idleSchedulerRef.current?.update(delta);
       currentVrmRef.current?.update(delta);
       rendererInstance.render(sceneInstance, cameraInstance);
@@ -1529,6 +1720,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         vrm.scene.updateWorldMatrix(true, true);
         normalizeVrmScene(vrm);
         applyRelaxedPose(vrm);
+        saveDefaultPoseIfNeeded().catch(() => { }); // Fire-and-forget, errors handled internally
         vrm.scene.updateWorldMatrix(true, true);
         const hiddenMeshes = suppressOutlierMeshes(vrm.scene, MAX_RENDERABLE_SIZE);
 
@@ -1550,6 +1742,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
             meshStats.skinnedMeshes += 1;
           }
         });
+        const headBounds = getHeadBounds(vrm);
         const metricsPayload = {
           modelId: model.id,
           meshCount: meshStats.meshes,
@@ -1557,17 +1750,24 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
           hiddenMeshes,
           bounds: renderableBounds
             ? {
-                size: {
-                  x: Number(renderableBounds.size.x.toFixed(3)),
-                  y: Number(renderableBounds.size.y.toFixed(3)),
-                  z: Number(renderableBounds.size.z.toFixed(3)),
-                },
-                center: {
-                  x: Number(renderableBounds.center.x.toFixed(3)),
-                  y: Number(renderableBounds.center.y.toFixed(3)),
-                  z: Number(renderableBounds.center.z.toFixed(3)),
-                },
-              }
+              size: {
+                x: Number(renderableBounds.size.x.toFixed(3)),
+                y: Number(renderableBounds.size.y.toFixed(3)),
+                z: Number(renderableBounds.size.z.toFixed(3)),
+              },
+              center: {
+                x: Number(renderableBounds.center.x.toFixed(3)),
+                y: Number(renderableBounds.center.y.toFixed(3)),
+                z: Number(renderableBounds.center.z.toFixed(3)),
+              },
+            }
+            : null,
+          head: headBounds
+            ? {
+              widthCm: Number((headBounds.width * 100).toFixed(1)),
+              heightCm: Number((headBounds.height * 100).toFixed(1)),
+              depthCm: Number((headBounds.depth * 100).toFixed(1)),
+            }
             : null,
         };
         console.info('[vrm-avatar-renderer] VRM scene metrics', JSON.stringify(metricsPayload));

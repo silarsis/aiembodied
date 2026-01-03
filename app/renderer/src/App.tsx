@@ -23,8 +23,9 @@ import { getPreloadApi, type PreloadApi } from './preload-api.js';
 import { RealtimeClient, type RealtimeClientState } from './realtime/realtime-client.js';
 import { LatencyTracker, type LatencySnapshot } from './metrics/latency-tracker.js';
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
-import type { AvatarModelSummary } from './avatar/types.js';
-import { extractAnimationTags, toAnimationSlug } from './avatar/animation-tags.js';
+import type { AvatarModelSummary, AvatarPoseSummary } from './avatar/types.js';
+import { extractAvatarTags, toAnimationSlug } from './avatar/animation-tags.js';
+import { Vector3 } from 'three';
 
 const CURSOR_IDLE_TIMEOUT_MS = 3000;
 const WAKE_ACTIVE_DURATION_MS = 4000;
@@ -113,12 +114,16 @@ function formatLatency(value?: number): string {
   return `${(value / 1000).toFixed(2)}s`;
 }
 
-function buildAnimationInstructions(availableSlugs: string[]): string {
-  const list = availableSlugs.length > 0 ? availableSlugs.join(', ') : 'none';
+function buildAnimationInstructions(availableAnimations: string[], availablePoses: string[]): string {
+  const animList = availableAnimations.length > 0 ? availableAnimations.join(', ') : 'none';
+  const poseList = availablePoses.length > 0 ? availablePoses.join(', ') : 'none';
   return [
-    `${ANIMATION_INSTRUCTION_PREFIX} ${list}.`,
-    'You have a 3D body you can control through animations or poses. To trigger an animation or pose, include `{slug}` (multiple tags allowed).',
-    'Slug format: lowercase letters, numbers, and hyphens (for example: `happy-wave`).',
+    `Available animations: ${animList}.`,
+    `Available poses: ${poseList}.`,
+    'You have a 3D body you can control through animations or poses.',
+    'To trigger an animation, include `{anim:<slug>}` in your response (e.g. `{anim:happy-wave}`).',
+    'To apply a pose, include `{pose:<slug>}` in your response (e.g. `{pose:power-stance}`).',
+    'Multiple tags are allowed. Slug format: lowercase letters, numbers, and hyphens.',
   ].join(' ');
 }
 
@@ -131,13 +136,14 @@ function buildAvatarDescription(model: AvatarModelSummary | null): string {
 
 function buildSessionInstructions(
   basePrompt: string,
-  availableSlugs: string[],
+  availableAnimations: string[],
+  availablePoses: string[],
   activeVrmModel: AvatarModelSummary | null,
 ): string {
   const trimmedBase = basePrompt.trim();
   const avatarDescription = buildAvatarDescription(activeVrmModel);
-  const animationInstructions = buildAnimationInstructions(availableSlugs);
-  
+  const animationInstructions = buildAnimationInstructions(availableAnimations, availablePoses);
+
   const parts = [trimmedBase, avatarDescription, animationInstructions].filter((s) => s.length > 0);
   return parts.join('\n\n');
 }
@@ -160,10 +166,10 @@ function useAudioGraphState(inputDeviceId?: string, enabled = true) {
   const [internalUpstreamStream, setInternalUpstreamStream] = useState<MediaStream | null>(null);
 
   // Derive state based on enabled prop
-  const state = enabled 
-    ? internalState 
+  const state = enabled
+    ? internalState
     : { level: 0, isActive: false, status: 'idle' as const, error: null };
-  
+
   // Derive stream based on enabled prop
   const upstreamStream = enabled ? internalUpstreamStream : null;
 
@@ -497,7 +503,7 @@ function useOnlineStatus() {
 
 function useIdleCursor(enabled: boolean) {
   const [internalIsIdle, setInternalIsIdle] = useState(false);
-  
+
   // Derive idle state - never idle when disabled
   const isIdle = enabled && internalIsIdle;
 
@@ -647,9 +653,29 @@ export default function App() {
   const [activeVrmModel, setActiveVrmModel] = useState<AvatarModelSummary | null>(null);
   const [availableAnimationSlugs, setAvailableAnimationSlugs] = useState<string[]>([]);
   const [selectedTestAnimation, setSelectedTestAnimation] = useState<string>('');
+  const [availablePoses, setAvailablePoses] = useState<AvatarPoseSummary[]>([]);
+  const [selectedTestPose, setSelectedTestPose] = useState<string>('');
+  const [jsonPoseInput, setJsonPoseInput] = useState<string>('');
+  const [jsonPoseError, setJsonPoseError] = useState<string | null>(null);
   const [animationListVersion, setAnimationListVersion] = useState(0);
   const animationBus = useMemo(() => createAvatarAnimationBus(), []);
   const [isListeningEnabled, setListeningEnabled] = useState(false);
+  const [bonePositions, setBonePositions] = useState<{
+    leftShoulder: { x: number; y: number; z: number } | null;
+    leftElbow: { x: number; y: number; z: number } | null;
+    leftHand: { x: number; y: number; z: number } | null;
+    rightShoulder: { x: number; y: number; z: number } | null;
+    rightElbow: { x: number; y: number; z: number } | null;
+    rightHand: { x: number; y: number; z: number } | null;
+  }>({
+    leftShoulder: null,
+    leftElbow: null,
+    leftHand: null,
+    rightShoulder: null,
+    rightElbow: null,
+    rightHand: null,
+  });
+  const animationFrameRef = useRef<number | null>(null);
   const tabs = useMemo<TabDefinition[]>(
     () => [
       { id: 'chatgpt', label: 'ChatGPT' },
@@ -702,6 +728,120 @@ export default function App() {
 
   const refreshAnimationList = useCallback(() => {
     setAnimationListVersion((v) => v + 1);
+  }, []);
+
+  // Load available poses for the test pose dropdown
+  useEffect(() => {
+    const bridge = resolveApi();
+    const avatar = bridge?.avatar;
+    if (!avatar?.listPoses) {
+      setAvailablePoses([]);
+      return;
+    }
+
+    let cancelled = false;
+    avatar
+      .listPoses()
+      .then((poses) => {
+        if (cancelled) {
+          return;
+        }
+        setAvailablePoses(poses);
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        console.warn('Failed to load avatar poses.', error);
+        setAvailablePoses([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [resolveApi]);
+
+  // Update bone positions from VRM in real-time
+  useEffect(() => {
+    const updateBonePositions = () => {
+      const canvas = document.querySelector('[data-renderer="vrm"]') as HTMLCanvasElement | null;
+      if (!canvas) {
+        animationFrameRef.current = requestAnimationFrame(updateBonePositions);
+        return;
+      }
+
+      // Access the VRM through the renderer's internals
+      // This is a workaround; ideally this would be exposed via the preload bridge
+      try {
+        const canvasWithThree = canvas as {
+          __THREE_RENDERER__?: Record<string, unknown>;
+          __THREE_SCENE__?: { traverse?: (fn: (obj: Record<string, unknown>) => void) => void };
+        };
+        const renderer = canvasWithThree.__THREE_RENDERER__;
+        const scene = canvasWithThree.__THREE_SCENE__;
+
+        if (!renderer || !scene) {
+          animationFrameRef.current = requestAnimationFrame(updateBonePositions);
+          return;
+        }
+
+        // Traverse the scene to find bone positions
+        let leftShoulder: { x: number; y: number; z: number } | null = null;
+        let leftElbow: { x: number; y: number; z: number } | null = null;
+        let leftHand: { x: number; y: number; z: number } | null = null;
+        let rightShoulder: { x: number; y: number; z: number } | null = null;
+        let rightElbow: { x: number; y: number; z: number } | null = null;
+        let rightHand: { x: number; y: number; z: number } | null = null;
+
+        const worldPos = new Vector3();
+        scene.traverse?.((object: Record<string, unknown>) => {
+          const name = object.name as string | undefined;
+          const pos =
+            typeof object.getWorldPosition === 'function'
+              ? (object.getWorldPosition as (target: Vector3) => Vector3)(worldPos)
+              : (object.position as { x: number; y: number; z: number } | undefined);
+
+          if (!pos) return;
+
+          if (name?.includes('LeftShoulder')) {
+            leftShoulder = { x: pos.x, y: pos.y, z: pos.z };
+          } else if (name?.includes('LeftUpperArm')) {
+            leftElbow = { x: pos.x, y: pos.y, z: pos.z };
+          } else if (name?.includes('LeftHand')) {
+            leftHand = { x: pos.x, y: pos.y, z: pos.z };
+          } else if (name?.includes('RightShoulder')) {
+            rightShoulder = { x: pos.x, y: pos.y, z: pos.z };
+          } else if (name?.includes('RightUpperArm')) {
+            rightElbow = { x: pos.x, y: pos.y, z: pos.z };
+          } else if (name?.includes('RightHand')) {
+            rightHand = { x: pos.x, y: pos.y, z: pos.z };
+          }
+        });
+
+        if (leftShoulder || leftElbow || leftHand || rightShoulder || rightElbow || rightHand) {
+          setBonePositions({
+            leftShoulder,
+            leftElbow,
+            leftHand,
+            rightShoulder,
+            rightElbow,
+            rightHand,
+          });
+        }
+      } catch {
+        // Silently fail - VRM not loaded yet
+      }
+
+      animationFrameRef.current = requestAnimationFrame(updateBonePositions);
+    };
+
+    animationFrameRef.current = requestAnimationFrame(updateBonePositions);
+
+    return () => {
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
   }, []);
 
 
@@ -836,6 +976,69 @@ export default function App() {
     animationBus.enqueue({ slug: selectedTestAnimation, intent: 'play', source: 'manual-test' });
   }, [animationBus, selectedTestAnimation]);
 
+  const handleApplyPose = useCallback(async () => {
+    if (!selectedTestPose) {
+      return;
+    }
+    const bridge = resolveApi();
+    if (!bridge?.avatar?.loadPose) {
+      console.warn('[App] Pose loading is unavailable');
+      return;
+    }
+    try {
+      const poseData = await bridge.avatar.loadPose(selectedTestPose);
+      if (poseData && typeof poseData === 'object') {
+        animationBus.applyPose(poseData as Record<string, { rotation: number[]; position?: number[] }>, 'manual-test');
+      }
+    } catch (error) {
+      console.error('[App] Failed to load pose', error);
+    }
+  }, [animationBus, selectedTestPose, resolveApi]);
+
+  const handleApplyJsonPose = useCallback(() => {
+    const input = jsonPoseInput.trim();
+    if (!input) {
+      setJsonPoseError('Please enter JSON pose data.');
+      return;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(input);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid JSON';
+      setJsonPoseError(`JSON parse error: ${message}`);
+      return;
+    }
+
+    // Validate the parsed object has the expected VRMPoseData shape
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      setJsonPoseError('Invalid pose data: expected an object mapping bone names to transforms.');
+      return;
+    }
+
+    const poseData = parsed as Record<string, unknown>;
+    for (const [boneName, transform] of Object.entries(poseData)) {
+      if (typeof transform !== 'object' || transform === null) {
+        setJsonPoseError(`Invalid pose data: bone "${boneName}" must have an object value.`);
+        return;
+      }
+      const t = transform as Record<string, unknown>;
+      if (!Array.isArray(t.rotation) || t.rotation.length !== 4) {
+        setJsonPoseError(`Invalid pose data: bone "${boneName}" must have a 4-element rotation array.`);
+        return;
+      }
+      if (t.position !== undefined && (!Array.isArray(t.position) || t.position.length !== 3)) {
+        setJsonPoseError(`Invalid pose data: bone "${boneName}" position must be a 3-element array.`);
+        return;
+      }
+    }
+
+    // Apply the pose
+    animationBus.applyPose(poseData as Record<string, { rotation: number[]; position?: number[] }>, 'json-paste');
+    setJsonPoseError(null);
+  }, [animationBus, jsonPoseInput]);
+
   const applySessionHistory = useCallback((session: ConversationSessionWithMessages | null) => {
     if (!session) {
       messageIdsRef.current.clear();
@@ -884,17 +1087,21 @@ export default function App() {
       let entryId = `${timestamp}-${Math.random().toString(36).slice(2, 10)}`;
 
       if (canPersist) {
-        try {
-          const message = await api!.conversation!.appendMessage({
-            sessionId: activeSessionIdRef.current ?? undefined,
-            role: speaker,
-            content: text,
-            ts: timestamp,
-          });
-          entryId = message.id;
-          messageIdsRef.current.add(message.id);
-        } catch (error) {
-          console.error('Failed to persist conversation message', error);
+        // We verified api.conversation exists in canPersist check, but TypeScript needs a direct check
+        const conversationApi = api?.conversation;
+        if (conversationApi) {
+          try {
+            const message = await conversationApi.appendMessage({
+              sessionId: activeSessionIdRef.current ?? undefined,
+              role: speaker,
+              content: text,
+              ts: timestamp,
+            });
+            entryId = message.id;
+            messageIdsRef.current.add(message.id);
+          } catch (error) {
+            console.error('Failed to persist conversation message', error);
+          }
         }
       }
 
@@ -959,12 +1166,19 @@ export default function App() {
   const hasRealtimeSupport = typeof RTCPeerConnection === 'function';
   const hasRealtimeApiKey = config?.hasRealtimeApiKey ?? false;
   const sessionInstructions = useMemo(
-    () => buildSessionInstructions(basePrompt, availableAnimationSlugs, activeVrmModel),
-    [basePrompt, availableAnimationSlugs, activeVrmModel],
+    () => {
+      const poseSlugs = availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0);
+      return buildSessionInstructions(basePrompt, availableAnimationSlugs, poseSlugs, activeVrmModel);
+    },
+    [basePrompt, availableAnimationSlugs, availablePoses, activeVrmModel],
   );
   const availableAnimationSlugSet = useMemo(
     () => new Set(availableAnimationSlugs),
     [availableAnimationSlugs],
+  );
+  const availablePoseSlugSet = useMemo(
+    () => new Set(availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0)),
+    [availablePoses],
   );
   const animationTextHandlerRef = useRef<(text: string) => void>(() => undefined);
   const handleRealtimeTextContent = useCallback(
@@ -972,15 +1186,33 @@ export default function App() {
       if (!content) {
         return;
       }
-      const tags = extractAnimationTags(content, { allowedSlugs: availableAnimationSlugSet });
+      const tags = extractAvatarTags(content, {
+        allowedAnimationSlugs: availableAnimationSlugSet,
+        allowedPoseSlugs: availablePoseSlugSet,
+      });
       if (tags.length === 0) {
         return;
       }
-      for (const slug of tags) {
-        animationBus.enqueue({ slug, intent: 'play', source: 'realtime-text' });
+      for (const tag of tags) {
+        if (tag.type === 'pose') {
+          // Find the pose by slug and load its data to apply
+          const pose = availablePoses.find((p) => toAnimationSlug(p.name) === tag.slug);
+          if (pose) {
+            const bridge = resolveApi();
+            bridge?.avatar?.loadPose(pose.id).then((poseData) => {
+              if (poseData && typeof poseData === 'object') {
+                animationBus.applyPose(poseData as Record<string, { rotation: number[]; position?: number[] }>, 'realtime-text');
+              }
+            }).catch((error) => {
+              console.error('[App] Failed to load pose from LLM tag', error);
+            });
+          }
+        } else {
+          animationBus.enqueue({ slug: tag.slug, intent: 'play', source: 'realtime-text' });
+        }
       }
     },
-    [animationBus, availableAnimationSlugSet],
+    [animationBus, availableAnimationSlugSet, availablePoseSlugSet, availablePoses, resolveApi],
   );
 
   useEffect(() => {
@@ -2056,439 +2288,521 @@ export default function App() {
           data-cursor-hidden={isCursorHidden ? 'true' : 'false'}
           aria-live="polite"
         >
-      <header className="kiosk__statusBar" role="banner">
-        <div className={`statusChip statusChip--${wakeStatusVariant}`} data-testid="wake-indicator">
-          <span className="statusChip__label">Wake</span>
-          <span className="statusChip__value" data-testid="wake-value">
-            {wakeState === 'awake' ? 'Awake' : 'Idle'}
-          </span>
-        </div>
-        <div className={`statusChip statusChip--${realtimeVariant}`} data-testid="realtime-indicator">
-          <span className="statusChip__label">Realtime</span>
-          <span className="statusChip__value">{realtimeStatusLabel}</span>
-        </div>
-        <div className={`statusChip statusChip--${audioVariant}`} data-testid="audio-indicator">
-          <span className="statusChip__label">Audio</span>
-          <span className="statusChip__value">{audioGraphStatusLabel}</span>
-        </div>
-        <div className={`statusChip statusChip--${deviceVariant}`} data-testid="device-indicator">
-          <span className="statusChip__label">Devices</span>
-          <span className="statusChip__value">{deviceStatusLabel}</span>
-        </div>
-        <div className={`statusChip statusChip--${networkVariant}`} data-testid="network-indicator">
-          <span className="statusChip__label">Network</span>
-          <span className="statusChip__value">{isOnline ? 'Online' : 'Offline'}</span>
-        </div>
-        <div className={`statusChip statusChip--${ping === 'available' ? 'active' : 'error'}`}>
-          <span className="statusChip__label">Preload</span>
-          <span className="statusChip__value">{ping === 'available' ? 'Connected' : 'Unavailable'}</span>
-        </div>
-        <button
-          type="button"
-          className="kiosk__listeningToggle"
-          onClick={toggleListening}
-          aria-pressed={isListeningEnabled}
-          data-testid="listening-toggle"
-        >
-          {listeningToggleLabel}
-        </button>
-        <button
-          type="button"
-          className="kiosk__transcriptToggle"
-          onClick={toggleTranscriptVisibility}
-          data-testid="transcript-toggle"
-        >
-          {transcriptToggleLabel}
-          <span className="kiosk__shortcutHint">Ctrl/Cmd + Shift + T</span>
-        </button>
-      </header>
+          <header className="kiosk__statusBar" role="banner">
+            <div className={`statusChip statusChip--${wakeStatusVariant}`} data-testid="wake-indicator">
+              <span className="statusChip__label">Wake</span>
+              <span className="statusChip__value" data-testid="wake-value">
+                {wakeState === 'awake' ? 'Awake' : 'Idle'}
+              </span>
+            </div>
+            <div className={`statusChip statusChip--${realtimeVariant}`} data-testid="realtime-indicator">
+              <span className="statusChip__label">Realtime</span>
+              <span className="statusChip__value">{realtimeStatusLabel}</span>
+            </div>
+            <div className={`statusChip statusChip--${audioVariant}`} data-testid="audio-indicator">
+              <span className="statusChip__label">Audio</span>
+              <span className="statusChip__value">{audioGraphStatusLabel}</span>
+            </div>
+            <div className={`statusChip statusChip--${deviceVariant}`} data-testid="device-indicator">
+              <span className="statusChip__label">Devices</span>
+              <span className="statusChip__value">{deviceStatusLabel}</span>
+            </div>
+            <div className={`statusChip statusChip--${networkVariant}`} data-testid="network-indicator">
+              <span className="statusChip__label">Network</span>
+              <span className="statusChip__value">{isOnline ? 'Online' : 'Offline'}</span>
+            </div>
+            <div className={`statusChip statusChip--${ping === 'available' ? 'active' : 'error'}`}>
+              <span className="statusChip__label">Preload</span>
+              <span className="statusChip__value">{ping === 'available' ? 'Connected' : 'Unavailable'}</span>
+            </div>
+            <button
+              type="button"
+              className="kiosk__listeningToggle"
+              onClick={toggleListening}
+              aria-pressed={isListeningEnabled}
+              data-testid="listening-toggle"
+            >
+              {listeningToggleLabel}
+            </button>
+            <button
+              type="button"
+              className="kiosk__transcriptToggle"
+              onClick={toggleTranscriptVisibility}
+              data-testid="transcript-toggle"
+            >
+              {transcriptToggleLabel}
+              <span className="kiosk__shortcutHint">Ctrl/Cmd + Shift + T</span>
+            </button>
+          </header>
 
 
-      <div className="kiosk__layout">
-        <div className="kiosk__tablist" role="tablist" aria-label="Kiosk sections">
-          {tabs.map((tab) => {
-            const isActive = tab.id === activeTab;
-            return (
-              <button
-                key={tab.id}
-                id={`tab-${tab.id}`}
-                type="button"
-                role="tab"
-                aria-controls={`panel-${tab.id}`}
-                aria-selected={isActive}
-                ref={(element) => {
-                  tabRefs.current[tab.id] = element;
-                }}
-                data-tab-id={tab.id}
-                tabIndex={isActive ? 0 : -1}
-                className="kiosk__tabButton"
-                data-active={isActive ? 'true' : 'false'}
-                onClick={() => focusTab(tab.id)}
-                onKeyDown={handleTabKeyDown}
+          <div className="kiosk__layout">
+            <div className="kiosk__tablist" role="tablist" aria-label="Kiosk sections">
+              {tabs.map((tab) => {
+                const isActive = tab.id === activeTab;
+                return (
+                  <button
+                    key={tab.id}
+                    id={`tab-${tab.id}`}
+                    type="button"
+                    role="tab"
+                    aria-controls={`panel-${tab.id}`}
+                    aria-selected={isActive}
+                    ref={(element) => {
+                      tabRefs.current[tab.id] = element;
+                    }}
+                    data-tab-id={tab.id}
+                    tabIndex={isActive ? 0 : -1}
+                    className="kiosk__tabButton"
+                    data-active={isActive ? 'true' : 'false'}
+                    onClick={() => focusTab(tab.id)}
+                    onKeyDown={handleTabKeyDown}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="kiosk__tabPanels">
+              <section
+                role="tabpanel"
+                id="panel-chatgpt"
+                aria-labelledby="tab-chatgpt"
+                className="kiosk__tabPanel"
+                data-state={activeTab === 'chatgpt' ? 'active' : 'inactive'}
               >
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-        <div className="kiosk__tabPanels">
-          <section
-            role="tabpanel"
-            id="panel-chatgpt"
-            aria-labelledby="tab-chatgpt"
-            className="kiosk__tabPanel"
-            data-state={activeTab === 'chatgpt' ? 'active' : 'inactive'}
-          >
-              <section className="kiosk__stage" aria-labelledby="avatar-preview-title">
-                <div
-                  className="kiosk__avatar"
-                  data-state={visemeSummary.status.toLowerCase()}
-                  data-avatar-mode="vrm"
-                >
-                  <VrmAvatarRenderer
-                    key={activeVrmModel?.id ?? 'vrm'}
-                    frame={visemeFrame}
-                    model={activeVrmModel}
-                    onStatusChange={handleVrmStatusChange}
-                    animationVersion={animationListVersion}
-                  />
-                </div>
-                <div className="kiosk__avatarDetails">
-                  <h1 id="avatar-preview-title">{activeAvatarName}</h1>
-                  <p className="kiosk__subtitle">Real-time viseme mapping derived from the decoded audio stream.</p>
-                  <dl className="kiosk__metrics">
-                    <div>
-                      <dt>Viseme</dt>
-                      <dd>
-                        v{visemeSummary.index} -+ {visemeSummary.label}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Intensity</dt>
-                      <dd>{visemeSummary.intensity}%</dd>
-                    </div>
-                    <div>
-                      <dt>Blink state</dt>
-                      <dd>{visemeSummary.blink ? 'Blink triggered' : 'Eyes open'}</dd>
-                    </div>
-                    <div>
-                      <dt>Driver status</dt>
-                      <dd>{visemeSummary.status}</dd>
-                    </div>
-                    <div>
-                      <dt>Test animation</dt>
-                      <dd className="kiosk__animationTest">
-                        <select
-                          id="test-animation-select"
-                          value={selectedTestAnimation}
-                          onChange={(e) => setSelectedTestAnimation(e.target.value)}
-                          disabled={availableAnimationSlugs.length === 0}
-                        >
-                          <option value="">Select animation…</option>
-                          {availableAnimationSlugs.map((slug) => (
-                            <option key={slug} value={slug}>
-                              {slug}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          type="button"
-                          onClick={handleTestAnimation}
-                          disabled={!selectedTestAnimation}
-                        >
-                          Play
-                        </button>
-                      </dd>
-                    </div>
-                  </dl>
-                </div>
-                <div className="kiosk__meter" aria-live="polite">
-                  <div className="meter">
-                    <div className="meter__fill" style={{ width: `${levelPercentage}%` }} />
-                  </div>
-                  <p className="meter__label">Input level: {levelPercentage}%</p>
-                  <p className="meter__status">Speech gate: {audioGraph.isActive ? 'open' : 'closed'}</p>
-                </div>
-              </section>
-          </section>
-
-          <section
-            role="tabpanel"
-            id="panel-character"
-            aria-labelledby="tab-character"
-            className="kiosk__tabPanel"
-            data-state={activeTab === 'character' ? 'active' : 'inactive'}
-          >
-              <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
-                <h2 id="kiosk-realtime-title">Voice & Personality</h2>
-                <p className="kiosk__helper">Configure how your assistant sounds and behaves.</p>
-                <div className="control">
-                  <label htmlFor="realtime-voice">Voice</label>
-                  <select
-                    id="realtime-voice"
-                    value={selectedVoice}
-                    onChange={handleVoiceChange}
-                    disabled={isSaving || loadingConfig}
+                <section className="kiosk__stage" aria-labelledby="avatar-preview-title">
+                  <div
+                    className="kiosk__avatar"
+                    data-state={visemeSummary.status.toLowerCase()}
+                    data-avatar-mode="vrm"
                   >
-                    {availableVoices.map((v) => (
-                      <option key={v} value={v}>
-                        {v}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="kiosk__helper" aria-live="polite">
-                    Current voice (server): {serverVoice ?? 'unknown'}
-                  </div>
-                  {playbackIssue ? (
-                    <div className="kiosk__helper" role="alert" style={{ marginTop: 8 }}>
-                      <span style={{ display: 'block', marginBottom: 4 }}>
-                        Audio playback is blocked ({playbackIssue}).
-                      </span>
-                      <button type="button" onClick={reconnectAndResume}>
-                        Reconnect & Resume Audio
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-                <div className="control">
-                  <label htmlFor="base-prompt">Base prompt</label>
-                  <textarea
-                    id="base-prompt"
-                    placeholder="Stay in English and be concise. Add personality here…"
-                    rows={6}
-                    value={basePrompt}
-                    onChange={(e) => setBasePrompt(e.target.value)}
-                    onBlur={handlePromptBlur}
-                    disabled={loadingConfig}
-                    style={{ width: '100%' }}
-                  />
-                </div>
-              </section>
-
-              <AvatarConfigurator
-                avatarApi={activeBridge?.avatar}
-                onActiveModelChange={setActiveVrmModel}
-                onAnimationChange={refreshAnimationList}
-              />
-          </section>
-
-          <section
-            role="tabpanel"
-            id="panel-local"
-            aria-labelledby="tab-local"
-            className="kiosk__tabPanel"
-            data-state={activeTab === 'local' ? 'active' : 'inactive'}
-          >
-              <section className="kiosk__controls">
-                <div className="control">
-                  <label htmlFor="input-device">Microphone</label>
-                  <select
-                    id="input-device"
-                    value={selectedInput}
-                    onChange={handleInputChange}
-                    disabled={isSaving || loadingConfig}
-                  >
-                    <option value="">System default</option>
-                    {inputs.map((device) => (
-                      <option key={device.deviceId} value={device.deviceId}>
-                        {device.label || 'Microphone'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="control">
-                  <label htmlFor="output-device">Speakers</label>
-                  <select
-                    id="output-device"
-                    value={selectedOutput}
-                    onChange={handleOutputChange}
-                    disabled={isSaving || loadingConfig}
-                  >
-                    <option value="">System default</option>
-                    {outputs.map((device) => (
-                      <option key={device.deviceId} value={device.deviceId}>
-                        {device.label || 'Speaker'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="control">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={useServerVad}
-                      onChange={(e) => applyVadPrefs({ useServer: e.target.checked })}
-                      disabled={loadingConfig}
+                    <VrmAvatarRenderer
+                      key={activeVrmModel?.id ?? 'vrm'}
+                      frame={visemeFrame}
+                      model={activeVrmModel}
+                      onStatusChange={handleVrmStatusChange}
+                      animationVersion={animationListVersion}
                     />
-                    Use server VAD
-                  </label>
-                  {useServerVad ? (
-                    <div className="vadControls">
-                      <label>
-                        Threshold
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={vadThreshold}
-                          onChange={(e) => applyVadPrefs({ threshold: Number(e.target.value) })}
-                        />
-                        <span>{vadThreshold.toFixed(2)}</span>
-                      </label>
-                      <label>
-                        Min speech (ms)
-                        <input
-                          type="number"
-                          min={0}
-                          max={10000}
-                          step={50}
-                          value={vadMinSpeechMs}
-                          onChange={(e) => applyVadPrefs({ minSpeechMs: Number(e.target.value) })}
-                        />
-                      </label>
-                      <label>
-                        Silence (ms)
-                        <input
-                          type="number"
-                          min={0}
-                          max={10000}
-                          step={50}
-                          value={vadSilenceMs}
-                          onChange={(e) => applyVadPrefs({ silenceMs: Number(e.target.value) })}
-                        />
-                      </label>
-                    </div>
-                  ) : null}
-                </div>
-              </section>
-
-              <section className="kiosk__secrets" aria-labelledby="kiosk-secret-title">
-                <h2 id="kiosk-secret-title">API keys</h2>
-                <p className="kiosk__helper">
-                  Keys are stored securely via the system secret store. Provide a new value to update or test an existing key.
-                </p>
-                <div className="kiosk__secretList">
-                  {SECRET_KEYS.map((key) => {
-                    const metadata = SECRET_METADATA[key];
-                    const configured = metadata.isConfigured(config);
-                    const status = secretStatus[key];
-                    const busy = secretSaving[key] || secretTesting[key];
-                    const message = status.message;
-                    const messageRole = status.status === 'error' ? 'alert' : 'status';
-                    const messageClass = status.status === 'error' ? 'kiosk__error' : 'kiosk__info';
-
-                    return (
-                      <article key={key} className="secretCard" data-configured={configured ? 'true' : 'false'}>
-                        <header className="secretCard__header">
-                          <h3>{metadata.label}</h3>
-                          <p className="secretCard__description">{metadata.description}</p>
-                          <p className="secretCard__status">Status: {configured ? 'Configured' : 'Not configured'}</p>
-                        </header>
-                        <form className="secretCard__form" onSubmit={handleSecretSubmit(key)}>
-                          <input
-                            id={`${key}-input`}
-                            type="password"
-                            aria-label={`New ${metadata.label}`}
-                            placeholder="Enter new key"
-                            autoComplete="off"
-                            spellCheck={false}
-                            value={secretInputs[key]}
-                            onChange={handleSecretInputChange(key)}
-                            disabled={loadingConfig || isSaving || secretSaving[key] || secretTesting[key]}
+                  </div>
+                  <div className="kiosk__avatarDetails">
+                    <h1 id="avatar-preview-title">{activeAvatarName}</h1>
+                    <p className="kiosk__subtitle">Real-time viseme mapping derived from the decoded audio stream.</p>
+                    <dl className="kiosk__metrics">
+                      <div>
+                        <dt>Viseme</dt>
+                        <dd>
+                          v{visemeSummary.index} -+ {visemeSummary.label}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Intensity</dt>
+                        <dd>{visemeSummary.intensity}%</dd>
+                      </div>
+                      <div>
+                        <dt>Blink state</dt>
+                        <dd>{visemeSummary.blink ? 'Blink triggered' : 'Eyes open'}</dd>
+                      </div>
+                      <div>
+                        <dt>Driver status</dt>
+                        <dd>{visemeSummary.status}</dd>
+                      </div>
+                      <div>
+                        <dt>Test animation</dt>
+                        <dd className="kiosk__animationTest">
+                          <select
+                            id="test-animation-select"
+                            value={selectedTestAnimation}
+                            onChange={(e) => setSelectedTestAnimation(e.target.value)}
+                            disabled={availableAnimationSlugs.length === 0}
+                          >
+                            <option value="">Select animation…</option>
+                            {availableAnimationSlugs.map((slug) => (
+                              <option key={slug} value={slug}>
+                                {slug}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={handleTestAnimation}
+                            disabled={!selectedTestAnimation}
+                          >
+                            Play
+                          </button>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Test pose</dt>
+                        <dd className="kiosk__animationTest">
+                          <select
+                            id="test-pose-select"
+                            value={selectedTestPose}
+                            onChange={(e) => setSelectedTestPose(e.target.value)}
+                            disabled={availablePoses.length === 0}
+                          >
+                            <option value="">Select pose…</option>
+                            {availablePoses.map((pose) => (
+                              <option key={pose.id} value={pose.id}>
+                                {pose.name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={handleApplyPose}
+                            disabled={!selectedTestPose}
+                          >
+                            Apply
+                          </button>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>JSON Pose</dt>
+                        <dd className="kiosk__animationTest" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                          <textarea
+                            id="json-pose-input"
+                            placeholder='Paste VRM pose JSON, e.g. {"hips":{"rotation":[0,0,0,1]}}'
+                            rows={4}
+                            value={jsonPoseInput}
+                            onChange={(e) => {
+                              setJsonPoseInput(e.target.value);
+                              setJsonPoseError(null);
+                            }}
+                            style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.75rem', marginBottom: '0.5rem' }}
                           />
-                          <div className="secretCard__actions">
-                            <button
-                              type="submit"
-                              disabled={
-                                loadingConfig ||
-                                secretSaving[key] ||
-                                secretTesting[key] ||
-                                secretInputs[key].trim().length === 0
-                              }
-                            >
-                              Update key
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleSecretTest(key)}
-                              disabled={secretSaving[key] || secretTesting[key]}
-                            >
-                              Test key
-                            </button>
-                          </div>
-                        </form>
-                        {busy ? (
-                          <p className="kiosk__info" aria-live="polite">
-                            {secretSaving[key] ? 'Updating secret…' : 'Testing secret…'}
-                          </p>
-                        ) : null}
-                        {message ? (
-                          <p role={messageRole} className={messageClass} aria-live="polite">
-                            {message}
-                          </p>
-                        ) : null}
-                      </article>
-                    );
-                  })}
-                </div>
+                          <button
+                            type="button"
+                            onClick={handleApplyJsonPose}
+                            disabled={!jsonPoseInput.trim()}
+                          >
+                            Apply JSON Pose
+                          </button>
+                          {jsonPoseError && (
+                            <div role="alert" style={{ color: '#e53e3e', fontSize: '0.75rem', marginTop: '0.5rem' }}>
+                              {jsonPoseError}
+                            </div>
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                    <details className="kiosk__bonePositions" style={{ marginTop: 16 }}>
+                      <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Bone Positions</summary>
+                      <div style={{ fontSize: '0.875rem', marginTop: 8, fontFamily: 'monospace', color: '#666' }}>
+                        <div style={{ marginBottom: 8 }}>
+                          <strong>Left Side:</strong>
+                          {bonePositions.leftShoulder && (
+                            <div>Shoulder: ({bonePositions.leftShoulder.x.toFixed(4)}, {bonePositions.leftShoulder.y.toFixed(4)}, {bonePositions.leftShoulder.z.toFixed(4)})</div>
+                          )}
+                          {bonePositions.leftElbow && (
+                            <div>Elbow: ({bonePositions.leftElbow.x.toFixed(4)}, {bonePositions.leftElbow.y.toFixed(4)}, {bonePositions.leftElbow.z.toFixed(4)})</div>
+                          )}
+                          {bonePositions.leftHand && (
+                            <div>Hand: ({bonePositions.leftHand.x.toFixed(4)}, {bonePositions.leftHand.y.toFixed(4)}, {bonePositions.leftHand.z.toFixed(4)})</div>
+                          )}
+                        </div>
+                        <div>
+                          <strong>Right Side:</strong>
+                          {bonePositions.rightShoulder && (
+                            <div>Shoulder: ({bonePositions.rightShoulder.x.toFixed(4)}, {bonePositions.rightShoulder.y.toFixed(4)}, {bonePositions.rightShoulder.z.toFixed(4)})</div>
+                          )}
+                          {bonePositions.rightElbow && (
+                            <div>Elbow: ({bonePositions.rightElbow.x.toFixed(4)}, {bonePositions.rightElbow.y.toFixed(4)}, {bonePositions.rightElbow.z.toFixed(4)})</div>
+                          )}
+                          {bonePositions.rightHand && (
+                            <div>Hand: ({bonePositions.rightHand.x.toFixed(4)}, {bonePositions.rightHand.y.toFixed(4)}, {bonePositions.rightHand.z.toFixed(4)})</div>
+                          )}
+                        </div>
+                      </div>
+                    </details>
+                  </div>
+                  <div className="kiosk__meter" aria-live="polite">
+                    <div className="meter">
+                      <div className="meter__fill" style={{ width: `${levelPercentage}%` }} />
+                    </div>
+                    <p className="meter__label">Input level: {levelPercentage}%</p>
+                    <p className="meter__status">Speech gate: {audioGraph.isActive ? 'open' : 'closed'}</p>
+                  </div>
+                </section>
               </section>
-          </section>
-        </div>
-      </div>
 
+              <section
+                role="tabpanel"
+                id="panel-character"
+                aria-labelledby="tab-character"
+                className="kiosk__tabPanel"
+                data-state={activeTab === 'character' ? 'active' : 'inactive'}
+              >
+                <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
+                  <h2 id="kiosk-realtime-title">Voice & Personality</h2>
+                  <p className="kiosk__helper">Configure how your assistant sounds and behaves.</p>
+                  <div className="control">
+                    <label htmlFor="realtime-voice">Voice</label>
+                    <select
+                      id="realtime-voice"
+                      value={selectedVoice}
+                      onChange={handleVoiceChange}
+                      disabled={isSaving || loadingConfig}
+                    >
+                      {availableVoices.map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="kiosk__helper" aria-live="polite">
+                      Current voice (server): {serverVoice ?? 'unknown'}
+                    </div>
+                    {playbackIssue ? (
+                      <div className="kiosk__helper" role="alert" style={{ marginTop: 8 }}>
+                        <span style={{ display: 'block', marginBottom: 4 }}>
+                          Audio playback is blocked ({playbackIssue}).
+                        </span>
+                        <button type="button" onClick={reconnectAndResume}>
+                          Reconnect & Resume Audio
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="control">
+                    <label htmlFor="base-prompt">Base prompt</label>
+                    <textarea
+                      id="base-prompt"
+                      placeholder="Stay in English and be concise. Add personality here…"
+                      rows={6}
+                      value={basePrompt}
+                      onChange={(e) => setBasePrompt(e.target.value)}
+                      onBlur={handlePromptBlur}
+                      disabled={loadingConfig}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                </section>
 
-      {isSaving ? <p className="kiosk__info">Saving audio preferencesGǪ</p> : null}
-      {saveError ? (
-        <p role="alert" className="kiosk__error">
-          {saveError}
-        </p>
-      ) : null}
-      {audioGraph.status === 'error' && audioGraph.error ? (
-        <p role="alert" className="kiosk__error">
-          {audioGraph.error}
-        </p>
-      ) : null}
-      {configError ? (
-        <p role="alert" className="kiosk__error">
-          {configError}
-        </p>
-      ) : null}
+                <AvatarConfigurator
+                  avatarApi={activeBridge?.avatar}
+                  onActiveModelChange={setActiveVrmModel}
+                  onAnimationChange={refreshAnimationList}
+                />
+              </section>
 
-      {isTranscriptVisible ? (
-        <aside
-          className="kiosk__transcript"
-          role="region"
-          aria-label="Transcript overlay"
-          data-testid="transcript-overlay"
-        >
-          <TranscriptOverlay entries={transcriptEntries} />
-        </aside>
-      ) : null}
+              <section
+                role="tabpanel"
+                id="panel-local"
+                aria-labelledby="tab-local"
+                className="kiosk__tabPanel"
+                data-state={activeTab === 'local' ? 'active' : 'inactive'}
+              >
+                <section className="kiosk__controls">
+                  <div className="control">
+                    <label htmlFor="input-device">Microphone</label>
+                    <select
+                      id="input-device"
+                      value={selectedInput}
+                      onChange={handleInputChange}
+                      disabled={isSaving || loadingConfig}
+                    >
+                      <option value="">System default</option>
+                      {inputs.map((device) => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                          {device.label || 'Microphone'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="control">
+                    <label htmlFor="output-device">Speakers</label>
+                    <select
+                      id="output-device"
+                      value={selectedOutput}
+                      onChange={handleOutputChange}
+                      disabled={isSaving || loadingConfig}
+                    >
+                      <option value="">System default</option>
+                      {outputs.map((device) => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                          {device.label || 'Speaker'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="control">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={useServerVad}
+                        onChange={(e) => applyVadPrefs({ useServer: e.target.checked })}
+                        disabled={loadingConfig}
+                      />
+                      Use server VAD
+                    </label>
+                    {useServerVad ? (
+                      <div className="vadControls">
+                        <label>
+                          Threshold
+                          <input
+                            type="range"
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            value={vadThreshold}
+                            onChange={(e) => applyVadPrefs({ threshold: Number(e.target.value) })}
+                          />
+                          <span>{vadThreshold.toFixed(2)}</span>
+                        </label>
+                        <label>
+                          Min speech (ms)
+                          <input
+                            type="number"
+                            min={0}
+                            max={10000}
+                            step={50}
+                            value={vadMinSpeechMs}
+                            onChange={(e) => applyVadPrefs({ minSpeechMs: Number(e.target.value) })}
+                          />
+                        </label>
+                        <label>
+                          Silence (ms)
+                          <input
+                            type="number"
+                            min={0}
+                            max={10000}
+                            step={50}
+                            value={vadSilenceMs}
+                            onChange={(e) => applyVadPrefs({ silenceMs: Number(e.target.value) })}
+                          />
+                        </label>
+                      </div>
+                    ) : null}
+                  </div>
+                </section>
 
-      {showDeveloperHud ? (
-        <aside className="kiosk__hud" aria-label="Latency metrics HUD">
-          <h2 className="kiosk__hudTitle">Latency</h2>
-          <dl className="kiosk__hudMetrics">
-            <div>
-              <dt>Wake G�� Capture</dt>
-              <dd>{formatLatency(hudSnapshot?.wakeToCaptureMs)}</dd>
+                <section className="kiosk__secrets" aria-labelledby="kiosk-secret-title">
+                  <h2 id="kiosk-secret-title">API keys</h2>
+                  <p className="kiosk__helper">
+                    Keys are stored securely via the system secret store. Provide a new value to update or test an existing key.
+                  </p>
+                  <div className="kiosk__secretList">
+                    {SECRET_KEYS.map((key) => {
+                      const metadata = SECRET_METADATA[key];
+                      const configured = metadata.isConfigured(config);
+                      const status = secretStatus[key];
+                      const busy = secretSaving[key] || secretTesting[key];
+                      const message = status.message;
+                      const messageRole = status.status === 'error' ? 'alert' : 'status';
+                      const messageClass = status.status === 'error' ? 'kiosk__error' : 'kiosk__info';
+
+                      return (
+                        <article key={key} className="secretCard" data-configured={configured ? 'true' : 'false'}>
+                          <header className="secretCard__header">
+                            <h3>{metadata.label}</h3>
+                            <p className="secretCard__description">{metadata.description}</p>
+                            <p className="secretCard__status">Status: {configured ? 'Configured' : 'Not configured'}</p>
+                          </header>
+                          <form className="secretCard__form" onSubmit={handleSecretSubmit(key)}>
+                            <input
+                              id={`${key}-input`}
+                              type="password"
+                              aria-label={`New ${metadata.label}`}
+                              placeholder="Enter new key"
+                              autoComplete="off"
+                              spellCheck={false}
+                              value={secretInputs[key]}
+                              onChange={handleSecretInputChange(key)}
+                              disabled={loadingConfig || isSaving || secretSaving[key] || secretTesting[key]}
+                            />
+                            <div className="secretCard__actions">
+                              <button
+                                type="submit"
+                                disabled={
+                                  loadingConfig ||
+                                  secretSaving[key] ||
+                                  secretTesting[key] ||
+                                  secretInputs[key].trim().length === 0
+                                }
+                              >
+                                Update key
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleSecretTest(key)}
+                                disabled={secretSaving[key] || secretTesting[key]}
+                              >
+                                Test key
+                              </button>
+                            </div>
+                          </form>
+                          {busy ? (
+                            <p className="kiosk__info" aria-live="polite">
+                              {secretSaving[key] ? 'Updating secret…' : 'Testing secret…'}
+                            </p>
+                          ) : null}
+                          {message ? (
+                            <p role={messageRole} className={messageClass} aria-live="polite">
+                              {message}
+                            </p>
+                          ) : null}
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+              </section>
             </div>
-            <div>
-              <dt>Capture G�� First audio</dt>
-              <dd>{formatLatency(hudSnapshot?.captureToFirstAudioMs)}</dd>
-            </div>
-            <div>
-              <dt>Wake G�� First audio</dt>
-              <dd>{formatLatency(hudSnapshot?.wakeToFirstAudioMs)}</dd>
-            </div>
-          </dl>
-        </aside>
-      ) : null}
+          </div>
 
-      {/* Hidden audio sink for realtime playback (no user-facing controls). */}
-      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-      <audio ref={remoteAudioRef} autoPlay aria-hidden="true" style={{ display: 'none' }} />
+
+          {isSaving ? <p className="kiosk__info">Saving audio preferencesGǪ</p> : null}
+          {saveError ? (
+            <p role="alert" className="kiosk__error">
+              {saveError}
+            </p>
+          ) : null}
+          {audioGraph.status === 'error' && audioGraph.error ? (
+            <p role="alert" className="kiosk__error">
+              {audioGraph.error}
+            </p>
+          ) : null}
+          {configError ? (
+            <p role="alert" className="kiosk__error">
+              {configError}
+            </p>
+          ) : null}
+
+          {isTranscriptVisible ? (
+            <aside
+              className="kiosk__transcript"
+              role="region"
+              aria-label="Transcript overlay"
+              data-testid="transcript-overlay"
+            >
+              <TranscriptOverlay entries={transcriptEntries} />
+            </aside>
+          ) : null}
+
+          {showDeveloperHud ? (
+            <aside className="kiosk__hud" aria-label="Latency metrics HUD">
+              <h2 className="kiosk__hudTitle">Latency</h2>
+              <dl className="kiosk__hudMetrics">
+                <div>
+                  <dt>Wake G�� Capture</dt>
+                  <dd>{formatLatency(hudSnapshot?.wakeToCaptureMs)}</dd>
+                </div>
+                <div>
+                  <dt>Capture G�� First audio</dt>
+                  <dd>{formatLatency(hudSnapshot?.captureToFirstAudioMs)}</dd>
+                </div>
+                <div>
+                  <dt>Wake G�� First audio</dt>
+                  <dd>{formatLatency(hudSnapshot?.wakeToFirstAudioMs)}</dd>
+                </div>
+              </dl>
+            </aside>
+          ) : null}
+
+          {/* Hidden audio sink for realtime playback (no user-facing controls). */}
+          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+          <audio ref={remoteAudioRef} autoPlay aria-hidden="true" style={{ display: 'none' }} />
         </main>
       </BehaviorCueProvider>
     </AnimationBusProvider>

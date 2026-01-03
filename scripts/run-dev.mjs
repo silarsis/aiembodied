@@ -336,6 +336,24 @@ async function main() {
   // Prepare an isolated environment for all pnpm operations
   const envIsolated = prepareDevHomeEnv(repoRoot, process.env, process.platform, { pnpmStorePath });
 
+  // Clean up stale Electron process if it exists
+  const pidFile = resolve(repoRoot, '.electron-app.pid');
+  if (existsSync(pidFile)) {
+    try {
+      const pid = parseInt(readFileSync(pidFile, 'utf8').trim(), 10);
+      if (!isNaN(pid)) {
+        if (process.platform === 'win32') {
+          spawnSync('taskkill', ['/PID', String(pid), '/F'], { stdio: 'ignore' });
+        } else {
+          process.kill(pid, 'SIGTERM');
+        }
+        console.log(`[info] Cleaned up stale process (PID ${pid}).`);
+      }
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+
   // Check if dependencies or source have changed using a stamp file
   const stampPath = resolve(devHome, 'dev-deps-stamp.json');
   const lockHash = hashFile(resolve(repoRoot, 'pnpm-lock.yaml'));

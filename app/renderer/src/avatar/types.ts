@@ -42,6 +42,29 @@ export interface AvatarAnimationGenerationRequest {
   bones?: string[];
 }
 
+export interface AvatarPoseSummary {
+  id: string;
+  name: string;
+  createdAt: number;
+  fileSha: string;
+}
+
+export interface AvatarPoseGenerationRequest {
+  prompt: string;
+  bones?: string[];
+  modelDescription?: string;
+}
+
+export interface AvatarPoseUploadRequest {
+  name: string;
+  fileName: string;
+  data: string; // JSON string of the pose data
+}
+
+export interface AvatarPoseUploadResult {
+  pose: AvatarPoseSummary;
+}
+
 export interface AvatarBridge {
   listModels(): Promise<AvatarModelSummary[]>;
   getActiveModel(): Promise<AvatarModelSummary | null>;
@@ -58,5 +81,11 @@ export interface AvatarBridge {
   deleteAnimation(animationId: string): Promise<void>;
   renameAnimation(animationId: string, newName: string): Promise<AvatarAnimationSummary>;
   loadAnimationBinary(animationId: string): Promise<ArrayBuffer>;
+  loadAnimationBinary(animationId: string): Promise<ArrayBuffer>;
   triggerBehaviorCue(cue: string): Promise<void>;
+  listPoses(): Promise<AvatarPoseSummary[]>;
+  uploadPose(request: AvatarPoseUploadRequest): Promise<AvatarPoseUploadResult>;
+  generatePose(request: AvatarPoseGenerationRequest): Promise<AvatarPoseUploadResult>;
+  deletePose(poseId: string): Promise<void>;
+  loadPose(poseId: string): Promise<unknown>;
 }

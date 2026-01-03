@@ -9,6 +9,10 @@ import type {
   AvatarAnimationUploadRequest,
   AvatarAnimationUploadResult,
   AvatarAnimationGenerationRequest,
+  AvatarPoseSummary,
+  AvatarPoseUploadRequest,
+  AvatarPoseUploadResult,
+  AvatarPoseGenerationRequest,
 } from './avatar/types.js';
 import type {
   ConversationAppendMessagePayload,
@@ -164,7 +168,12 @@ export interface AvatarBridge {
   renameAnimation(animationId: string, newName: string): Promise<AvatarAnimationSummary>;
   loadAnimationBinary(animationId: string): Promise<ArrayBuffer>;
   triggerBehaviorCue(cue: string): Promise<void>;
-  }
+  listPoses(): Promise<AvatarPoseSummary[]>;
+  uploadPose(payload: AvatarPoseUploadRequest): Promise<AvatarPoseUploadResult>;
+  generatePose(request: AvatarPoseGenerationRequest): Promise<AvatarPoseUploadResult>;
+  deletePose(poseId: string): Promise<void>;
+  loadPose(poseId: string): Promise<unknown>;
+}
 
 export interface CameraDetectionEvent {
   cue: string;
@@ -241,7 +250,7 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       await ipcRenderer.invoke('avatar-model:delete', modelId);
     },
     loadModelBinary: async (modelId) => {
-      const payload = await ipcRenderer.invoke('avatar-model:load', modelId);
+      const payload: unknown = await ipcRenderer.invoke('avatar-model:load', modelId);
       return cloneBinaryPayload(payload, {
         id: modelId,
         errorMessage: 'Unexpected VRM binary payload received from main process.',
@@ -272,14 +281,25 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     renameAnimation: async (animationId, newName) =>
       ipcRenderer.invoke('avatar-animation:rename', animationId, newName) as Promise<AvatarAnimationSummary>,
     loadAnimationBinary: async (animationId) => {
-      const payload = await ipcRenderer.invoke('avatar-animation:load', animationId);
+      const payload: unknown = await ipcRenderer.invoke('avatar-animation:load', animationId);
       return cloneBinaryPayload(payload, {
         id: animationId,
         errorMessage: 'Unexpected VRMA binary payload received from main process.',
       });
-      },
-      triggerBehaviorCue: async (cue) => {
+    },
+    triggerBehaviorCue: async (cue) => {
       await ipcRenderer.invoke('avatar:trigger-behavior', cue);
+    },
+    listPoses: () => ipcRenderer.invoke('avatar-pose:list') as Promise<AvatarPoseSummary[]>,
+    uploadPose: (payload: AvatarPoseUploadRequest) =>
+      ipcRenderer.invoke('avatar-pose:upload', payload) as Promise<AvatarPoseUploadResult>,
+    generatePose: (payload: AvatarPoseGenerationRequest) =>
+      ipcRenderer.invoke('avatar-pose:generate', payload) as Promise<AvatarPoseUploadResult>,
+    deletePose: async (poseId: string) => {
+      await ipcRenderer.invoke('avatar-pose:delete', poseId);
+    },
+    loadPose: async (poseId: string) => {
+      return ipcRenderer.invoke('avatar-pose:load', poseId) as Promise<unknown>;
     },
   },
   camera: {

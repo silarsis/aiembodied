@@ -106,8 +106,8 @@ class MockAudioContext {
     () => new MockMediaStreamDestinationNode() as unknown as MediaStreamAudioDestinationNode,
   );
   createAnalyser = vi.fn(() => new MockAnalyserNode() as unknown as AnalyserNode);
-  resume = vi.fn(async () => {});
-  close = vi.fn(async () => {});
+  resume = vi.fn(async () => { });
+  close = vi.fn(async () => { });
 }
 
 type PreloadWindow = Window & { aiembodied?: import('../src/preload-api.js').PreloadApi };
@@ -165,6 +165,25 @@ function createAvatarBridgeMock(overrides: Partial<AvatarBridge> = {}): AvatarBr
     triggerBehaviorCue: vi.fn().mockResolvedValue(undefined),
     updateModelDescription: vi.fn().mockResolvedValue(null),
     generateModelDescription: vi.fn().mockResolvedValue(''),
+    listPoses: vi.fn().mockResolvedValue([]),
+    uploadPose: vi.fn().mockResolvedValue({
+      pose: {
+        id: 'pose-0',
+        name: 'Default Pose',
+        createdAt: Date.now(),
+        fileSha: 'sha',
+      },
+    }),
+    generatePose: vi.fn().mockResolvedValue({
+      pose: {
+        id: 'pose-0',
+        name: 'Default Pose',
+        createdAt: Date.now(),
+        fileSha: 'sha',
+      },
+    }),
+    deletePose: vi.fn().mockResolvedValue(undefined),
+    loadPose: vi.fn().mockResolvedValue({}),
     ...overrides,
   };
 }
@@ -291,7 +310,7 @@ describe('App component', () => {
         testSecret: testSecretMock,
       },
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
-      wakeWord: { onWake: () => () => {} },
+      wakeWord: { onWake: () => () => { } },
       avatar: createAvatarBridgeMock(),
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
@@ -335,7 +354,7 @@ describe('App component', () => {
         testSecret: testSecretMock,
       },
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
-      wakeWord: { onWake: () => () => {} },
+      wakeWord: { onWake: () => () => { } },
       avatar: createAvatarBridgeMock(),
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
@@ -384,7 +403,7 @@ describe('App component', () => {
           setSecret: setSecretMock,
           testSecret: testSecretMock,
         },
-        wakeWord: { onWake: () => () => {} },
+        wakeWord: { onWake: () => () => { } },
         avatar: createAvatarBridgeMock(),
         __bridgeReady: true,
         __bridgeVersion: '1.0.0',
@@ -444,7 +463,7 @@ describe('App component', () => {
           setSecret: setSecretMock,
           testSecret: testSecretMock,
         },
-        wakeWord: { onWake: () => () => {} },
+        wakeWord: { onWake: () => () => { } },
         avatar: createAvatarBridgeMock(),
         __bridgeReady: true,
         __bridgeVersion: '1.0.0',
@@ -514,7 +533,7 @@ describe('App component', () => {
         testSecret: testSecretMock,
       },
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
-      wakeWord: { onWake: () => () => {} },
+      wakeWord: { onWake: () => () => { } },
       avatar: createAvatarBridgeMock(),
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
@@ -1038,7 +1057,7 @@ describe('App component', () => {
       },
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: {
-        onWake: () => () => {},
+        onWake: () => () => { },
       },
       avatar: createAvatarBridgeMock(),
       __bridgeReady: true,
@@ -1115,7 +1134,7 @@ describe('App component', () => {
         testSecret: testSecretMock,
       },
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
-      wakeWord: { onWake: () => () => {} },
+      wakeWord: { onWake: () => () => { } },
       avatar: createAvatarBridgeMock(),
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
@@ -1176,7 +1195,7 @@ describe('App component', () => {
       },
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: {
-        onWake: () => () => {},
+        onWake: () => () => { },
       },
       avatar: createAvatarBridgeMock(),
       __bridgeReady: true,
@@ -1237,7 +1256,7 @@ describe('App component', () => {
         testSecret: testSecretMock,
       },
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
-      wakeWord: { onWake: () => () => {} },
+      wakeWord: { onWake: () => () => { } },
       avatar: createAvatarBridgeMock(),
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
@@ -1320,7 +1339,7 @@ describe('App component', () => {
         testSecret: testSecretMock,
       },
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
-      wakeWord: { onWake: () => () => {} },
+      wakeWord: { onWake: () => () => { } },
       avatar: createAvatarBridgeMock(),
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',

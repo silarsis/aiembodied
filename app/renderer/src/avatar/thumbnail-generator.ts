@@ -38,12 +38,15 @@ function computeHeadBoundingBox(vrm: VRM): THREE.Box3 | null {
 
   const box = new THREE.Box3();
   headNode.traverse((child) => {
-    if (child instanceof THREE.Mesh && child.geometry) {
-      child.geometry.computeBoundingBox();
-      const meshBox = child.geometry.boundingBox;
-      if (meshBox) {
-        const worldBox = meshBox.clone().applyMatrix4(child.matrixWorld);
-        box.union(worldBox);
+    if (child instanceof THREE.Mesh) {
+      const mesh = child as THREE.Mesh;
+      if (mesh.geometry) {
+        mesh.geometry.computeBoundingBox();
+        const meshBox = mesh.geometry.boundingBox;
+        if (meshBox) {
+          const worldBox = meshBox.clone().applyMatrix4(mesh.matrixWorld);
+          box.union(worldBox);
+        }
       }
     }
   });

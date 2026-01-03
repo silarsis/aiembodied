@@ -18,16 +18,30 @@ export interface PreferencesStore {
   save(preferences: AudioDevicePreferences): Promise<void>;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasErrnoCode(error: unknown): error is { code: string } {
+  if (typeof error !== 'object' || error === null) return false;
+  if (!('code' in error)) return false;
+  // After 'in' check, TypeScript knows 'code' exists
+  return typeof error.code === 'string';
+}
+
 export class FilePreferencesStore implements PreferencesStore {
-  constructor(private readonly filePath: string) {}
+  constructor(private readonly filePath: string) { }
 
   async load(): Promise<AudioDevicePreferences> {
     try {
       const raw = await fs.readFile(this.filePath, 'utf8');
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const parsed: unknown = JSON.parse(raw);
+      if (!isRecord(parsed)) {
+        return {};
+      }
       return this.sanitize(parsed);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      if (hasErrnoCode(error) && error.code === 'ENOENT') {
         return {};
       }
 

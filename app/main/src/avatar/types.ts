@@ -42,3 +42,27 @@ export interface AvatarAnimationGenerationRequest {
   bones?: string[];
   modelDescription?: string;
 }
+
+export interface AvatarPoseSummary {
+  id: string;
+  name: string;
+  createdAt: number;
+  fileSha: string;
+}
+
+export interface AvatarPoseUploadRequest {
+  name: string;
+  fileName: string;
+  data: string; // JSON string of the VRMPose
+}
+
+export interface AvatarPoseUploadResult {
+  pose: AvatarPoseSummary;
+}
+
+export interface AvatarPoseGenerationRequest {
+  prompt: string;
+  bones?: string[];
+  boneHierarchy?: Record<string, string | null>;
+  modelDescription?: string;
+}

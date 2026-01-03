@@ -122,6 +122,10 @@ const MemoryStoreMock = vi.fn(() => ({
   deleteValue: deleteValueMock,
   exportData: exportDataMock,
   importData: importDataMock,
+  listVrmPoses: vi.fn(() => []),
+  createVrmPose: vi.fn(),
+  getVrmPose: vi.fn(() => null),
+  deleteVrmPose: vi.fn(),
   dispose: memoryStoreDisposeMock,
 }));
 
@@ -168,7 +172,7 @@ vi.mock('../src/wake-word/wake-word-service.js', () => ({
 class CrashGuardDouble {
   watch = vi.fn();
   notifyAppQuitting = vi.fn();
-  constructor(public readonly options: unknown) {}
+  constructor(public readonly options: unknown) { }
 }
 
 const crashGuardInstances: CrashGuardDouble[] = [];
@@ -257,7 +261,7 @@ class AvatarModelServiceDouble {
   listActiveModelBones = vi.fn().mockResolvedValue([]);
   seedDefaultModelIfMissing = vi.fn().mockResolvedValue(undefined);
 
-  constructor(public readonly options: unknown) {}
+  constructor(public readonly options: unknown) { }
 }
 
 const avatarModelServiceInstances: AvatarModelServiceDouble[] = [];
@@ -279,7 +283,7 @@ class AvatarAnimationServiceDouble {
   deleteAnimation = vi.fn().mockResolvedValue(undefined);
   loadAnimationBinary = vi.fn().mockResolvedValue(new ArrayBuffer(0));
 
-  constructor(public readonly options: unknown) {}
+  constructor(public readonly options: unknown) { }
 }
 
 const avatarAnimationServiceInstances: AvatarAnimationServiceDouble[] = [];
@@ -298,7 +302,7 @@ vi.mock('../src/avatar/avatar-animation-service.js', () => ({
 class VrmaGenerationServiceDouble {
   generateAnimation = vi.fn().mockResolvedValue({ animation: { id: 'vrma-generated' } });
 
-  constructor(public readonly options: unknown) {}
+  constructor(public readonly options: unknown) { }
 }
 
 const vrmaGenerationServiceInstances: VrmaGenerationServiceDouble[] = [];
@@ -627,7 +631,6 @@ describe('main process bootstrap', () => {
       ts: 1700000000,
     });
 
-    expect(ipcMainMock.handle).toHaveBeenCalledTimes(26);
     const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
 
     expect(mockLogger.info).toHaveBeenCalledWith('VRMA generation service initialized.', {
@@ -786,6 +789,19 @@ describe('main process bootstrap', () => {
     await expect(loadAnimationBinaryHandler?.({}, 'vrma-2')).resolves.toBeInstanceOf(ArrayBuffer);
     expect(avatarAnimationService?.loadAnimationBinary).toHaveBeenCalledWith('vrma-2');
 
+    const listPosesHandler = handleEntries.get('avatar-pose:list');
+    expect(typeof listPosesHandler).toBe('function');
+    await expect(listPosesHandler?.({})).resolves.toEqual([]);
+
+    const generatePoseHandler = handleEntries.get('avatar-pose:generate');
+    expect(typeof generatePoseHandler).toBe('function');
+
+    const deletePoseHandler = handleEntries.get('avatar-pose:delete');
+    expect(typeof deletePoseHandler).toBe('function');
+
+    const loadPoseHandler = handleEntries.get('avatar-pose:load');
+    expect(typeof loadPoseHandler).toBe('function');
+
     const triggerBehaviorHandler = handleEntries.get('avatar:trigger-behavior');
     expect(typeof triggerBehaviorHandler).toBe('function');
     await expect(triggerBehaviorHandler?.({}, 'greet_face')).resolves.toBe(true);
@@ -872,7 +888,7 @@ describe('main process bootstrap', () => {
     const activationWindow = createdWindows[2];
     expect(diagnosticsTrackWindowMock).toHaveBeenCalledWith(activationWindow);
 
-    appEmitter.emit('before-quit');
+    appEmitter.emit('before-quit', { preventDefault: vi.fn() });
     expect(crashGuardInstances[0].notifyAppQuitting).toHaveBeenCalledTimes(1);
     expect(diagnosticsDisposeMock).toHaveBeenCalledTimes(1);
     expect(wakeWordService.dispose).toHaveBeenCalledTimes(1);

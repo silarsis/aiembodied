@@ -42,12 +42,12 @@ vi.mock('three', async () => {
   const actual = await vi.importActual<typeof import('three')>('three');
 
   class MockWebGLRenderer {
-    constructor(public readonly options: unknown) {}
-    setClearColor() {}
-    setPixelRatio() {}
-    setSize() {}
-    render() {}
-    dispose() {}
+    constructor(public readonly options: unknown) { }
+    setClearColor() { }
+    setPixelRatio() { }
+    setSize() { }
+    render() { }
+    dispose() { }
   }
 
   class MockClock {
@@ -97,7 +97,7 @@ vi.mock('@pixiv/three-vrm', async () => {
   const actual = await vi.importActual<typeof import('@pixiv/three-vrm')>('@pixiv/three-vrm');
   return {
     ...actual,
-    VRMLoaderPlugin: class {},
+    VRMLoaderPlugin: class { },
     VRMUtils: {
       removeUnnecessaryVertices: vi.fn(),
       removeUnnecessaryJoints: vi.fn(),
@@ -117,6 +117,8 @@ import {
   createRightArmWaveClip,
   suppressOutlierMeshes,
 } from '../../src/avatar/vrm-avatar-renderer.js';
+
+
 import type { AvatarModelSummary } from '../../src/avatar/types.js';
 
 describe('mapVisemeToPreset', () => {
@@ -254,8 +256,8 @@ describe('VrmAvatarRenderer behavior cues', () => {
     window.cancelAnimationFrame = vi.fn();
     originalResizeObserver = window.ResizeObserver;
     window.ResizeObserver = class {
-      observe() {}
-      disconnect() {}
+      observe() { }
+      disconnect() { }
     } as unknown as typeof ResizeObserver;
 
     (window as unknown as { aiembodied?: unknown }).aiembodied = {
@@ -320,3 +322,5 @@ describe('VrmAvatarRenderer behavior cues', () => {
     expect(action?.play).toHaveBeenCalled();
   });
 });
+
+

@@ -47,7 +47,7 @@ export interface WakeWordServiceEvents {
 class WakeWordEventFilter {
   private lastEmitTimestamp: number | null = null;
 
-  constructor(private readonly options: { cooldownMs: number; minConfidence: number }) {}
+  constructor(private readonly options: { cooldownMs: number; minConfidence: number }) { }
 
   shouldEmit(event: WakeWordDetectionEvent): boolean {
     if (event.confidence < this.options.minConfidence) {
@@ -98,14 +98,14 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
     this.maxRestartDelayMs = options.maxRestartDelayMs ?? DEFAULT_MAX_RESTART_DELAY_MS;
     if (options.workerPath) {
       this.workerPath = options.workerPath;
-      this.baseWorkerOptions = { ...(options.workerOptions ?? {}) } as WorkerOptions;
+      this.baseWorkerOptions = { ...(options.workerOptions ?? {}) } satisfies WorkerOptions;
     } else {
       const entrypoint = defaultWorkerEntrypoint();
       this.workerPath = entrypoint.url;
       this.baseWorkerOptions = {
         ...(entrypoint.options ?? {}),
         ...(options.workerOptions ?? {}),
-      } as WorkerOptions;
+      } satisfies WorkerOptions;
     }
     this.filter = new WakeWordEventFilter({
       cooldownMs: options.cooldownMs,
@@ -228,16 +228,44 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
       return;
     }
 
+    const worker = this.worker;
+    this.worker = null; // Detach immediately so we don't try to use it again
+
+    // Negotiate graceful shutdown
+    const gracefulExit = new Promise<void>((resolve) => {
+      const exitHandler = () => {
+        worker.off('exit', exitHandler);
+        resolve();
+      };
+      worker.on('exit', exitHandler);
+    });
+
     try {
-      this.worker.postMessage({ type: 'shutdown' });
+      worker.postMessage({ type: 'shutdown' });
     } catch (error) {
       this.logger.warn('Failed to post shutdown command to wake word worker', {
         message: error instanceof Error ? error.message : String(error),
       });
+      // If we can't communicate, we have to force terminate
+      void worker.terminate();
+      return;
     }
 
-    await this.worker.terminate();
-    this.worker = null;
+    // Wait for exit or timeout
+    const timeout = new Promise<void>((_, reject) =>
+      setTimeout(() => reject(new Error('Wake word worker shutdown timeout')), 3000),
+    );
+
+    try {
+      await Promise.race([gracefulExit, timeout]);
+      this.logger.info('Wake word worker exited gracefully');
+    } catch (error) {
+      this.logger.warn('Wake word worker failed to exit gracefully, forcing termination.', {
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      await worker.terminate();
+    }
+
     this.filter.reset();
     this.started = false;
   }

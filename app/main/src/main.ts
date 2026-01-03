@@ -30,6 +30,8 @@ import { createDevTray } from './lifecycle/dev-tray.js';
 import { AvatarModelService } from './avatar/avatar-model-service.js';
 import { AvatarAnimationService } from './avatar/avatar-animation-service.js';
 import { VrmaGenerationService } from './avatar/vrma-generation-service.js';
+import { AvatarPoseService } from './avatar/avatar-pose-service.js';
+import { PoseGenerationService } from './avatar/pose-generation-service.js';
 import { AvatarDescriptionService } from './avatar/avatar-description-service.js';
 import type {
   AvatarModelSummary,
@@ -39,6 +41,9 @@ import type {
   AvatarAnimationUploadRequest,
   AvatarAnimationUploadResult,
   AvatarAnimationGenerationRequest,
+  AvatarPoseSummary,
+  AvatarPoseUploadRequest,
+  AvatarPoseGenerationRequest,
 } from './avatar/types.js';
 import {
   resolvePreloadScriptPath,
@@ -77,11 +82,11 @@ try {
     ) => {
       const level = (typeof payload?.level === 'string' ? payload.level : 'info').toLowerCase();
       const message = typeof payload?.message === 'string' ? payload.message : 'preload-diagnostics';
-      const meta = {
+      const meta: Record<string, unknown> = {
         from: 'preload',
         ...(payload?.meta ?? {}),
         ...(typeof payload?.ts === 'number' ? { ts: payload.ts } : {}),
-      } as Record<string, unknown>;
+      };
 
       if (level === 'debug') {
         logger.debug(message, meta);
@@ -111,7 +116,9 @@ let autoLaunchManager: AutoLaunchManager | null = null;
 let developmentTray: Tray | null = null;
 let avatarModelService: AvatarModelService | null = null;
 let avatarAnimationService: AvatarAnimationService | null = null;
+let avatarPoseService: AvatarPoseService | null = null;
 let vrmaGenerationService: VrmaGenerationService | null = null;
+let poseGenerationService: PoseGenerationService | null = null;
 let avatarDescriptionService: AvatarDescriptionService | null = null;
 let currentVrmaApiKey: string | null = null;
 let currentDescriptionApiKey: string | null = null;
@@ -234,8 +241,10 @@ const createWindow = () => {
     .then(() => {
       logger.info('Renderer bundle loaded successfully.');
     })
-    .catch((error) => {
-      logger.error('Failed to load renderer bundle', { message: error?.message, stack: error?.stack });
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : undefined;
+      logger.error('Failed to load renderer bundle', { message, stack });
     });
 
   window.on('ready-to-show', () => {
@@ -300,6 +309,43 @@ async function refreshVrmaGenerationService(
   }
 }
 
+async function refreshPoseGenerationService(
+  manager: ConfigManager,
+  reason: 'startup' | 'secret-update' = 'startup',
+): Promise<void> {
+  const config = manager.getConfig();
+  const nextKey = typeof config.realtimeApiKey === 'string' ? config.realtimeApiKey.trim() : '';
+
+  if (!nextKey) {
+    poseGenerationService = null;
+    return;
+  }
+
+  if (!avatarPoseService) {
+    poseGenerationService = null;
+    return;
+  }
+
+  if (poseGenerationService && currentVrmaApiKey === nextKey) {
+    return;
+  }
+
+  try {
+    poseGenerationService = new PoseGenerationService({
+      client: getOpenAIClient(nextKey),
+      poseService: avatarPoseService,
+      logger,
+    });
+    // Reuse currentVrmaApiKey as it tracks the same key
+    if (!currentVrmaApiKey) currentVrmaApiKey = nextKey;
+    logger.info('Pose generation service initialized.', { reason });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('Failed to initialize pose generation service', { message });
+    poseGenerationService = null;
+  }
+}
+
 async function refreshAvatarDescriptionService(
   manager: ConfigManager,
   reason: 'startup' | 'secret-update' = 'startup',
@@ -335,21 +381,22 @@ async function refreshAvatarDescriptionService(
     avatarDescriptionService = null;
     currentDescriptionApiKey = null;
   }
-  }
+}
 
-  function registerIpcHandlers(
+function registerIpcHandlers(
   manager: ConfigManager,
   conversation: ConversationManager | null,
   metrics: PrometheusCollector | null,
   avatarModels: AvatarModelService | null,
   avatarAnimations: AvatarAnimationService | null,
+  avatarPoses: AvatarPoseService | null,
 ) {
   // Preload diagnostics bridge: allow preload/renderer to forward logs to main logger
   try {
     ipcMain.on('diagnostics:preload-log', (_event, payload: { level?: string; message?: string; meta?: Record<string, unknown>; ts?: number }) => {
       const level = (typeof payload?.level === 'string' ? payload.level : 'info').toLowerCase();
       const message = typeof payload?.message === 'string' ? payload.message : 'preload-diagnostics';
-      const meta = { from: 'preload', ...(payload?.meta ?? {}), ...(typeof payload?.ts === 'number' ? { ts: payload.ts } : {}) } as Record<string, unknown>;
+      const meta: Record<string, unknown> = { from: 'preload', ...(payload?.meta ?? {}), ...(typeof payload?.ts === 'number' ? { ts: payload.ts } : {}) };
 
       if (level === 'debug') {
         logger.debug(message, meta);
@@ -479,7 +526,7 @@ async function refreshAvatarDescriptionService(
       });
 
       try {
-        const result = await handler(event, ...args);
+        const result: unknown = await (handler as (event: unknown, ...args: unknown[]) => Promise<unknown>)(event, ...args);
         logger.debug('Configuration IPC handler completed.', {
           channel,
           result: sanitizeResult(channel, result, args),
@@ -518,6 +565,7 @@ async function refreshAvatarDescriptionService(
 
     if (payload.key === 'realtimeApiKey') {
       await refreshVrmaGenerationService(manager, 'secret-update');
+      await refreshPoseGenerationService(manager, 'secret-update');
     }
 
     return nextConfig;
@@ -619,8 +667,8 @@ async function refreshAvatarDescriptionService(
       typeof (responseBody as { expires_at?: unknown; expiresAt?: unknown } | null)?.expires_at === 'number'
         ? ((responseBody as { expires_at?: number }).expires_at as number)
         : typeof (responseBody as { expiresAt?: unknown } | null)?.expiresAt === 'number'
-        ? ((responseBody as { expiresAt?: number }).expiresAt as number)
-        : undefined;
+          ? ((responseBody as { expiresAt?: number }).expiresAt as number)
+          : undefined;
 
     const result: RealtimeEphemeralTokenResponse = {
       value,
@@ -782,6 +830,49 @@ async function refreshAvatarDescriptionService(
 
     return avatarAnimations.loadAnimationBinary(animationId);
   });
+  ipcMain.handle('avatar-pose:list', async () => {
+    if (!avatarPoses) {
+      return [] as AvatarPoseSummary[];
+    }
+
+    return avatarPoses.listPoses();
+  });
+  ipcMain.handle('avatar-pose:upload', async (_event, payload: AvatarPoseUploadRequest) => {
+    if (!avatarPoses) {
+      throw new Error('Avatar pose service is unavailable.');
+    }
+
+    return avatarPoses.uploadPose(payload);
+  });
+  ipcMain.handle('avatar-pose:generate', async (_event, payload: AvatarPoseGenerationRequest) => {
+    if (!poseGenerationService) {
+      await refreshPoseGenerationService(manager, 'secret-update');
+    }
+    if (!poseGenerationService) {
+      throw new Error('Pose generation service is unavailable. Ensure REALTIME_API_KEY is set.');
+    }
+
+    const bones = avatarModels ? await avatarModels.listActiveModelBones() : [];
+    const boneHierarchy = avatarModels ? await avatarModels.listActiveModelBoneHierarchy() : {};
+    const activeModel = avatarModels?.getActiveModel() ?? null;
+    const modelDescription = activeModel?.description ?? undefined;
+    return poseGenerationService.generatePose({ ...payload, bones, boneHierarchy, modelDescription });
+  });
+  ipcMain.handle('avatar-pose:delete', async (_event, poseId: string) => {
+    if (!avatarPoses) {
+      throw new Error('Avatar pose service is unavailable.');
+    }
+
+    await avatarPoses.deletePose(poseId);
+    return true;
+  });
+  ipcMain.handle('avatar-pose:load', async (_event, poseId: string) => {
+    if (!avatarPoses) {
+      throw new Error('Avatar pose service is unavailable.');
+    }
+
+    return avatarPoses.loadPose(poseId);
+  });
   ipcMain.handle('avatar:trigger-behavior', async (_event, cue: string) => {
     const value = typeof cue === 'string' ? cue.trim() : '';
     if (!value) {
@@ -867,6 +958,11 @@ app.whenReady().then(async () => {
       animationsDirectory: path.join(app.getPath('userData'), 'vrma-animations'),
       logger,
     });
+    avatarPoseService = new AvatarPoseService({
+      store: memoryStore,
+      posesDirectory: path.join(app.getPath('userData'), 'vrm-poses'),
+      logger,
+    });
     conversationManager = new ConversationManager({
       store: memoryStore,
       logger,
@@ -899,6 +995,7 @@ app.whenReady().then(async () => {
   const appConfig = manager.getConfig();
 
   await refreshVrmaGenerationService(manager);
+  await refreshPoseGenerationService(manager);
 
   autoLaunchManager = new AutoLaunchManager({
     logger,
@@ -1016,6 +1113,7 @@ app.whenReady().then(async () => {
       metricsCollector,
       avatarModelService,
       avatarAnimationService,
+      avatarPoseService,
     );
   } catch (error) {
     const message =
@@ -1083,36 +1181,84 @@ app.whenReady().then(async () => {
   });
 });
 
+let isAppQuitting = false;
+
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  if (process.platform !== 'darwin' && !isAppQuitting) {
     app.quit();
   }
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', async (event) => {
+  if (isAppQuitting) {
+    return;
+  }
+
+  // Prevent default quit to allow async cleanup
+  event.preventDefault();
+  isAppQuitting = true;
+
+  logger.info('Application shutdown sequence initiated.');
+
   diagnostics.dispose();
   crashGuard.notifyAppQuitting();
-  logger.info('Application is quitting.');
+
+  // Async cleanup tasks
+  const cleanupTasks: Promise<void>[] = [];
+
   if (wakeWordService) {
-    void wakeWordService.dispose();
+    cleanupTasks.push(
+      wakeWordService.dispose().catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn('Failed to dispose wake word service during shutdown', { message });
+      }),
+    );
   }
+
+  if (metricsCollector) {
+    cleanupTasks.push(
+      metricsCollector.stop().catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn('Failed to stop metrics exporter cleanly', { message });
+      }),
+    );
+  }
+
+  // Synchronous cleanup
   if (memoryStore) {
-    memoryStore.dispose();
-    memoryStore = null;
+    try {
+      memoryStore.dispose();
+      memoryStore = null;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('Failed to dispose memory store', { message });
+    }
   }
+
   if (removeConversationListeners) {
     removeConversationListeners();
   }
   conversationManager = null;
-  if (metricsCollector) {
-    void metricsCollector.stop().catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.warn('Failed to stop metrics exporter cleanly', { message });
-    });
-    metricsCollector = null;
-  }
+
   if (developmentTray) {
     developmentTray.destroy();
     developmentTray = null;
   }
+
+  // Wait for all async cleanup to finish
+  if (cleanupTasks.length > 0) {
+    try {
+      // Set a timeout to force quit if cleanup hangs
+      await Promise.race([
+        Promise.all(cleanupTasks),
+        new Promise((resolve) => setTimeout(resolve, 2000)),
+      ]);
+    } catch (error) {
+      // Should be caught by individual catch blocks, but just in case
+      logger.warn('Error during shutdown cleanup tasks', { error });
+    }
+  }
+
+  logger.info('Application cleanup complete. Quitting now.');
+  app.quit();
 });

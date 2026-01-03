@@ -1,0 +1,48 @@
+
+> aiembodied@0.0.1 lint C:\Users\kevin\repos\aiembodied
+> pnpm -r lint
+
+Scope: 2 of 3 workspace projects
+app/main lint$ eslint "src/**/*.ts"
+app/renderer lint$ eslint "src/**/*.{ts,tsx}"
+app/main lint: Warning: React version was set to "detect" in eslint-plugin-react settings, but the "react" package is not installed. Assuming latest React version for linting.
+app/main lint: Done
+app/renderer lint: C:\Users\kevin\repos\aiembodied\app\renderer\src\App.tsx
+app/renderer lint:   1091:33  error  Forbidden non-null assertion  @typescript-eslint/no-non-null-assertion
+app/renderer lint:   1091:33  error  Forbidden non-null assertion  @typescript-eslint/no-non-null-assertion
+app/renderer lint: C:\Users\kevin\repos\aiembodied\app\renderer\src\avatar\avatar-configurator.tsx
+app/renderer lint:   74:10  error  'truncateSha' is defined but never used  @typescript-eslint/no-unused-vars
+app/renderer lint: C:\Users\kevin\repos\aiembodied\app\renderer\src\avatar\thumbnail-generator.ts
+app/renderer lint:   42:7   error  Unsafe call of a(n) `any` typed value                       @typescript-eslint/no-unsafe-call
+app/renderer lint:   42:22  error  Unsafe member access .computeBoundingBox on an `any` value  @typescript-eslint/no-unsafe-member-access
+app/renderer lint:   43:13  error  Unsafe assignment of an `any` value                         @typescript-eslint/no-unsafe-assignment
+app/renderer lint:   43:38  error  Unsafe member access .boundingBox on an `any` value         @typescript-eslint/no-unsafe-member-access
+app/renderer lint:   45:15  error  Unsafe assignment of an `any` value                         @typescript-eslint/no-unsafe-assignment
+app/renderer lint:   45:26  error  Unsafe call of a(n) `any` typed value                       @typescript-eslint/no-unsafe-call
+app/renderer lint:   45:26  error  Unsafe call of a(n) `any` typed value                       @typescript-eslint/no-unsafe-call
+app/renderer lint:   45:34  error  Unsafe member access .clone on an `any` value               @typescript-eslint/no-unsafe-member-access
+app/renderer lint:   45:42  error  Unsafe member access .applyMatrix4 on an `any` value        @typescript-eslint/no-unsafe-member-access
+app/renderer lint: C:\Users\kevin\repos\aiembodied\app\renderer\src\avatar\vrm-avatar-renderer.tsx
+app/renderer lint:   208:23  error  Forbidden non-null assertion                                         @typescript-eslint/no-non-null-assertion
+app/renderer lint:   564:10  error  'detectYAxisDirection' is defined but never used                     @typescript-eslint/no-unused-vars
+app/renderer lint:   738:9   error  'thumbCurlAngle' is assigned a value but never used                  @typescript-eslint/no-unused-vars
+app/renderer lint:   750:9   error  'leftThumbQuat' is assigned a value but never used                   @typescript-eslint/no-unused-vars
+app/renderer lint:   751:9   error  'rightThumbQuat' is assigned a value but never used                  @typescript-eslint/no-unused-vars
+app/renderer lint:   759:16  error  Unexpected any. Specify a different type                             @typescript-eslint/no-explicit-any
+app/renderer lint:   759:21  error  Unsafe member access [`left${finger}${segment}`] on an `any` value   @typescript-eslint/no-unsafe-member-access
+app/renderer lint:   761:16  error  Unexpected any. Specify a different type                             @typescript-eslint/no-explicit-any
+app/renderer lint:   761:21  error  Unsafe member access [`right${finger}${segment}`] on an `any` value  @typescript-eslint/no-unsafe-member-access
+app/renderer lint:   772:14  error  Unexpected any. Specify a different type                             @typescript-eslint/no-explicit-any
+app/renderer lint:   772:19  error  Unsafe member access [`leftThumb${segment}`] on an `any` value       @typescript-eslint/no-unsafe-member-access
+app/renderer lint:   773:14  error  Unexpected any. Specify a different type                             @typescript-eslint/no-explicit-any
+app/renderer lint:   773:19  error  Unsafe member access [`rightThumb${segment}`] on an `any` value      @typescript-eslint/no-unsafe-member-access
+app/renderer lint: C:\Users\kevin\repos\aiembodied\app\renderer\src\realtime\realtime-client.ts
+app/renderer lint:   318:11  error  Unsafe assignment of an `any` value  @typescript-eslint/no-unsafe-assignment
+app/renderer lint:   321:17  error  Unsafe assignment of an `any` value  @typescript-eslint/no-unsafe-assignment
+app/renderer lint:   525:15  error  Unsafe assignment of an `any` value  @typescript-eslint/no-unsafe-assignment
+app/renderer lint: ✖ 28 problems (28 errors, 0 warnings)
+app/renderer lint: Failed
+C:\Users\kevin\repos\aiembodied\app\renderer:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @aiembodied/renderer@0.0.1 lint: `eslint "src/**/*.{ts,tsx}"`
+Exit status 1
+ ELIFECYCLE  Command failed with exit code 1.
