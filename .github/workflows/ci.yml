@@ -23,16 +23,22 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Rebuild native dependencies for Node.js
+      - name: Get Electron version
+        id: electron-version
         run: |
-          NODE_VERSION=$(node --version | sed 's/v//')
-          echo "Rebuilding better-sqlite3 for Node.js version: $NODE_VERSION"
-          PREBUILD_INSTALL_FORBID=1 npm_config_runtime=node npm_config_target=$NODE_VERSION pnpm --filter @aiembodied/main rebuild better-sqlite3
+          ELECTRON_VERSION=$(node -e "console.log(require('./app/main/node_modules/electron/package.json').version)")
+          echo "version=$ELECTRON_VERSION" >> $GITHUB_OUTPUT
+          echo "Electron version: $ELECTRON_VERSION"
+      - name: Rebuild native dependencies for Electron
+        run: |
+          echo "Rebuilding better-sqlite3 for Electron ${{ steps.electron-version.outputs.version }}"
+          cd app/main/node_modules/better-sqlite3 && npx node-gyp rebuild --target=${{ steps.electron-version.outputs.version }} --arch=x64 --dist-url=https://electronjs.org/headers --runtime=electron
       - name: Lint
         run: pnpm lint
       - name: Typecheck
         run: pnpm typecheck
       - name: Test
-        run: pnpm test
-        # Note: Porcupine tests are excluded due to heap exhaustion from vi.resetModules()
-        # Run manually with: cd app/main && NODE_OPTIONS=--max-old-space-size=4096 pnpm vitest run tests/porcupine-worker.test.ts
+        run: xvfb-run --auto-servernum pnpm test
+        # Note: xvfb-run is needed because tests run in Electron which requires a display
+        # Porcupine tests are excluded due to heap exhaustion from vi.resetModules()
+

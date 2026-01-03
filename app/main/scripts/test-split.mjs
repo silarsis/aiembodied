@@ -12,14 +12,15 @@ function runTests(pattern, label) {
   console.log(`${'='.repeat(70)}\n`);
 
   const env = { ...process.env, VITEST_PATTERN: pattern };
-  
+
   // Porcupine tests have memory issues due to module reloading in test isolation
   // Run in a completely separate node process with increased heap
   const isPorcupineTest = pattern.includes('porcupine');
   let result;
-  
-  // Use pnpm for all tests - memory settings are in vitest.config.base.ts
-  result = spawnSync('pnpm', ['exec', 'vitest', 'run'], {
+
+  // Use test-electron.mjs to run tests in Electron's runtime
+  // This ensures native modules (keytar, better-sqlite3) work without needing rebuilds
+  result = spawnSync('node', ['scripts/test-electron.mjs'], {
     stdio: 'inherit',
     shell: true,
     env,

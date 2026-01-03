@@ -7,16 +7,13 @@ export const createVitestConfig = (testPattern?: string) =>
       include: testPattern ? [testPattern] : ['tests/**/*.test.ts'],
       exclude: ['tests/run-dev-env.test.ts'],
       setupFiles: ['tests/setup.ts'],
+      // Tests are run via test-electron.mjs which uses Electron as the runtime,
+      // so the forks pool workers will inherit Electron's process.execPath
       pool: 'forks',
       poolOptions: {
         forks: {
           singleFork: false,
           isolate: true,
-          // Porcupine test uses vi.resetModules() which causes heap exhaustion
-          // Allocate more memory per worker
-          execArgv: testPattern?.includes('porcupine') 
-            ? ['--max-old-space-size=2048']
-            : [],
         },
       },
       testTimeout: 30000,
@@ -32,3 +29,4 @@ export const createVitestConfig = (testPattern?: string) =>
       },
     },
   });
+
