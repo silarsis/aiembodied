@@ -17,21 +17,40 @@ const repoRoot = resolve(__dirname, '../../..');
 const mainRoot = resolve(__dirname, '..');
 
 // Find the actual Electron executable
-// On Windows, electron/cli.js is a wrapper that uses the electron in dist/
+// Works on Windows (electron.exe), Linux (electron), and macOS (Electron.app)
 function findElectronExe() {
-    // Try the packaged electron location
-    const electronDist = resolve(mainRoot, 'node_modules/electron/dist/electron.exe');
-    if (existsSync(electronDist)) {
-        return electronDist;
-    }
-
-    // Fallback: read electron/path.txt which contains the path to the executable
+    // First, try reading electron/path.txt which contains the platform-specific path
     const pathTxt = resolve(mainRoot, 'node_modules/electron/path.txt');
     if (existsSync(pathTxt)) {
         const relativePath = readFileSync(pathTxt, 'utf8').trim();
         const fullPath = resolve(mainRoot, 'node_modules/electron', relativePath);
         if (existsSync(fullPath)) {
             return fullPath;
+        }
+    }
+
+    // Fallback: try platform-specific default locations
+    const platform = process.platform;
+    let candidates = [];
+
+    if (platform === 'win32') {
+        candidates = [
+            resolve(mainRoot, 'node_modules/electron/dist/electron.exe'),
+        ];
+    } else if (platform === 'darwin') {
+        candidates = [
+            resolve(mainRoot, 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron'),
+        ];
+    } else {
+        // Linux
+        candidates = [
+            resolve(mainRoot, 'node_modules/electron/dist/electron'),
+        ];
+    }
+
+    for (const candidate of candidates) {
+        if (existsSync(candidate)) {
+            return candidate;
         }
     }
 
