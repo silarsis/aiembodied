@@ -1,97 +1,147 @@
 #!/usr/bin/env node
-import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+/**
+ * Run tests with coverage using Electron as the runtime.
+ * This ensures native modules built for Electron work correctly.
+ */
+import { spawnSync, execSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
-function getRepoRoot() {
-  const here = dirname(fileURLToPath(import.meta.url));
-  return resolve(here, '../../..');
-}
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(__dirname, '../../..');
+const mainRoot = resolve(__dirname, '..');
 
-function ensureDir(dir) {
-  try { mkdirSync(dir, { recursive: true }); } catch {}
-}
-
-function resolveIsolatedStore(repoRoot) {
-  const store = resolve(repoRoot, '.dev-home', 'AppData', 'Local', 'pnpm', 'store', 'v3');
-  ensureDir(store);
-  return store;
-}
-
-function getPnpmStorePath(env = process.env) {
-  const out = spawnSync('pnpm', ['store', 'path'], { env, encoding: 'utf8' });
-  if (out.status !== 0) {
-    throw new Error(`Failed to resolve pnpm store path: ${out.stderr || out.stdout || out.status}`);
-  }
-  const lines = `${out.stdout || ''}${out.stderr || ''}`.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  return lines.at(-1);
-}
-
-function determineStoreEnv(repoRoot) {
-  const packageRoot = resolve(repoRoot, 'app', 'main');
-  // Try to read storeDir from .modules.yaml, if present (package or root)
-  try {
-    const candidates = [
-      resolve(packageRoot, 'node_modules', '.modules.yaml'),
-      resolve(repoRoot, 'node_modules', '.modules.yaml'),
-    ];
-    for (const file of candidates) {
-      if (!existsSync(file)) continue;
-      const raw = readFileSync(file, 'utf8');
-      const m = raw.match(/\n\s*storeDir:\s*(.+)\s*\n/);
-      if (m && m[1]) {
-        return m[1].trim();
-      }
+// Find the actual Electron executable (same logic as test-electron.mjs)
+function findElectronExe() {
+  // First, try reading electron/path.txt which contains the platform-specific path
+  const pathTxt = resolve(mainRoot, 'node_modules/electron/path.txt');
+  if (existsSync(pathTxt)) {
+    const relativePath = readFileSync(pathTxt, 'utf8').trim();
+    const fullPath = resolve(mainRoot, 'node_modules/electron', relativePath);
+    if (existsSync(fullPath)) {
+      return fullPath;
     }
-  } catch {}
-  // Fallback to isolated dev store, else system store
-  const isolated = resolveIsolatedStore(repoRoot);
-  return existsSync(isolated) ? isolated : getPnpmStorePath();
+  }
+
+  // Fallback: try platform-specific default locations
+  const platform = process.platform;
+  let candidates = [];
+
+  if (platform === 'win32') {
+    candidates = [
+      resolve(mainRoot, 'node_modules/electron/dist/electron.exe'),
+    ];
+  } else if (platform === 'darwin') {
+    candidates = [
+      resolve(mainRoot, 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron'),
+    ];
+  } else {
+    // Linux
+    candidates = [
+      resolve(mainRoot, 'node_modules/electron/dist/electron'),
+    ];
+  }
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
-function run(cmd, args, env) {
-  const res = spawnSync(cmd, args, { stdio: 'inherit', env, shell: true });
-  if (res.status !== 0) process.exit(res.status || 1);
+// Find vitest entry point
+function findVitestEntry() {
+  const vitestBin = resolve(repoRoot, 'node_modules/vitest/vitest.mjs');
+  if (existsSync(vitestBin)) {
+    return vitestBin;
+  }
+
+  // Try to find it via pnpm
+  try {
+    const result = execSync('pnpm exec which vitest', {
+      cwd: mainRoot,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe']
+    }).trim();
+    // The result is a Unix-style path, convert to Windows if needed
+    return result.replace(/^\/([a-z])\//, '$1:/').replace(/\//g, '\\');
+  } catch {
+    return null;
+  }
 }
 
-function runTestGroup(pattern, label, baseEnv) {
-  console.log(`\nRunning ${label} tests with coverage...`);
-  const env = { ...baseEnv, VITEST_PATTERN: pattern };
-  run('vitest', ['run', '--coverage'], env);
+function runTestGroup(pattern, label, electronExe, vitestEntry) {
+  console.log(`\n${'='.repeat(70)}`);
+  console.log(`Running ${label} tests with coverage...`);
+  console.log(`${'='.repeat(70)}\n`);
+
+  const env = {
+    ...process.env,
+    VITEST_PATTERN: pattern,
+    ELECTRON_RUN_AS_NODE: '1',
+  };
+
+  // Run vitest with coverage using Electron
+  const result = spawnSync(electronExe, [vitestEntry, 'run', '--coverage'], {
+    stdio: 'inherit',
+    env,
+    cwd: mainRoot,
+  });
+
+  if (result.status !== 0) {
+    console.error(`\n❌ ${label} tests failed`);
+    process.exit(result.status || 1);
+  }
+
+  console.log(`✓ ${label} tests passed\n`);
 }
 
 function main() {
-  const repoRoot = getRepoRoot();
-  const pnpmStorePath = determineStoreEnv(repoRoot);
-  const env = { ...process.env, PNPM_STORE_PATH: pnpmStorePath, npm_config_store_dir: pnpmStorePath };
+  const electronExe = findElectronExe();
+  if (!electronExe) {
+    console.error('Electron executable not found.');
+    console.error('Run "pnpm install" in app/main first.');
+    process.exit(1);
+  }
 
-  // 1) Rebuild native deps in a store-aligned environment
-  run('npm', ['run', 'test:rebuild'], env);
+  const vitestEntry = findVitestEntry();
+  if (!vitestEntry) {
+    console.error('Could not find vitest.');
+    process.exit(1);
+  }
 
-  // 2) Run vitest with coverage in groups to avoid heap exhaustion
+  console.log('[test-coverage] Electron executable:', electronExe);
+  console.log('[test-coverage] Vitest entry:', vitestEntry);
+  console.log('[test-coverage] Running with ELECTRON_RUN_AS_NODE=1\n');
+
+  // Run vitest with coverage in groups to avoid heap exhaustion
   // Groups are run sequentially, each in its own process
-  runTestGroup('tests/config*.test.ts', 'Config', env);
-  runTestGroup('tests/preferences*.test.ts', 'Preferences', env);
-  runTestGroup('tests/avatar-*.test.ts', 'Avatar', env);
-  runTestGroup('tests/vrm*.test.ts', 'VRMA', env);
-  runTestGroup('tests/openai*.test.ts', 'OpenAI', env);
-  runTestGroup('tests/memory*.test.ts', 'Memory', env);
-  runTestGroup('tests/preload.test.ts', 'Preload', env);
-  runTestGroup('tests/main.test.ts', 'Main', env);
-  runTestGroup('tests/conversation*.test.ts', 'Conversation', env);
-  runTestGroup('tests/wake-word*.test.ts', 'Wake Word', env);
+  runTestGroup('tests/config*.test.ts', 'Config', electronExe, vitestEntry);
+  runTestGroup('tests/preferences*.test.ts', 'Preferences', electronExe, vitestEntry);
+  runTestGroup('tests/avatar-*.test.ts', 'Avatar', electronExe, vitestEntry);
+  runTestGroup('tests/vrm*.test.ts', 'VRMA', electronExe, vitestEntry);
+  runTestGroup('tests/openai*.test.ts', 'OpenAI', electronExe, vitestEntry);
+  runTestGroup('tests/memory*.test.ts', 'Memory', electronExe, vitestEntry);
+  runTestGroup('tests/preload.test.ts', 'Preload', electronExe, vitestEntry);
+  runTestGroup('tests/main.test.ts', 'Main', electronExe, vitestEntry);
+  runTestGroup('tests/conversation*.test.ts', 'Conversation', electronExe, vitestEntry);
+  runTestGroup('tests/wake-word*.test.ts', 'Wake Word', electronExe, vitestEntry);
   // NOTE: Porcupine tests are skipped due to heap exhaustion from vi.resetModules()
   // See AGENTS.md for manual execution instructions
-  runTestGroup('tests/logger.test.ts', 'Logger', env);
-  runTestGroup('tests/crash-guard.test.ts', 'Crash Guard', env);
-  runTestGroup('tests/runtime-paths.test.ts', 'Runtime Paths', env);
-  runTestGroup('tests/auto-launch*.test.ts', 'Auto Launch', env);
-  runTestGroup('tests/app-diagnostics.test.ts', 'App Diagnostics', env);
-  runTestGroup('tests/metrics/*.test.ts', 'Metrics', env);
-  runTestGroup('tests/run-dev-*.test.ts', 'Run Dev', env);
+  runTestGroup('tests/logger.test.ts', 'Logger', electronExe, vitestEntry);
+  runTestGroup('tests/crash-guard.test.ts', 'Crash Guard', electronExe, vitestEntry);
+  runTestGroup('tests/runtime-paths.test.ts', 'Runtime Paths', electronExe, vitestEntry);
+  runTestGroup('tests/auto-launch*.test.ts', 'Auto Launch', electronExe, vitestEntry);
+  runTestGroup('tests/app-diagnostics.test.ts', 'App Diagnostics', electronExe, vitestEntry);
+  runTestGroup('tests/metrics/*.test.ts', 'Metrics', electronExe, vitestEntry);
+  runTestGroup('tests/run-dev-*.test.ts', 'Run Dev', electronExe, vitestEntry);
 
-  console.log('\n✅ All coverage groups completed!');
+  console.log('\n' + '='.repeat(70));
+  console.log('✅ All coverage groups completed!');
+  console.log('='.repeat(70) + '\n');
 }
 
 main();
