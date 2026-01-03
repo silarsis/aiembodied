@@ -311,14 +311,58 @@ function applyExpressionFrameAtTime(vrm: VRM, vrmaData: VrmaGltf, currentTime: n
 
 const DEFAULT_POSE_TRANSITION_DURATION = 0.5; // seconds
 
+/** Captured state for a single bone */
+export interface CapturedBoneState {
+  quaternion: THREE.Quaternion;
+  position?: THREE.Vector3;
+}
+
+/**
+ * Captures the current bone rotations and positions from a VRM humanoid.
+ * This should be called BEFORE stopping any active animation to preserve the current pose.
+ */
+export function captureCurrentPose(
+  vrm: VRM,
+  boneNames?: string[],
+): Map<string, CapturedBoneState> {
+  const result = new Map<string, CapturedBoneState>();
+  const humanoid = vrm.humanoid;
+  if (!humanoid) {
+    return result;
+  }
+
+  // If specific bone names provided, capture those; otherwise capture all available
+  const bonesToCapture = boneNames ?? Object.keys(humanoid.humanBones);
+
+  for (const boneName of bonesToCapture) {
+    const node = humanoid.getNormalizedBoneNode(boneName as Parameters<typeof humanoid.getNormalizedBoneNode>[0]);
+    if (!node) {
+      continue;
+    }
+
+    result.set(boneName, {
+      quaternion: node.quaternion.clone(),
+      position: node.position.clone(),
+    });
+  }
+
+  return result;
+}
+
 /**
  * Creates an AnimationClip that transitions from the current bone rotations to the target pose.
  * Uses SLERP (spherical linear interpolation) for smooth quaternion interpolation.
+ * 
+ * @param vrm - The VRM model
+ * @param targetPose - The target pose to transition to
+ * @param duration - Duration of the transition in seconds
+ * @param startingPose - Optional captured pose to start from (if not provided, reads current node values)
  */
 export function createPoseTransitionClip(
   vrm: VRM,
   targetPose: VRMPoseData,
   duration: number = DEFAULT_POSE_TRANSITION_DURATION,
+  startingPose?: Map<string, CapturedBoneState>,
 ): THREE.AnimationClip | null {
   const humanoid = vrm.humanoid;
   if (!humanoid) {
@@ -344,8 +388,9 @@ export function createPoseTransitionClip(
 
     resolvedBones.push(boneName);
 
-    // Current quaternion values (clone to avoid mutation)
-    const currentQuat = node.quaternion.clone();
+    // Use captured pose if available, otherwise read current node values
+    const capturedState = startingPose?.get(boneName);
+    const currentQuat = capturedState?.quaternion ?? node.quaternion.clone();
     const targetQuat = new THREE.Quaternion(rotation[0], rotation[1], rotation[2], rotation[3]);
 
     // Create keyframe track: times [0, duration], values [current, target]
@@ -365,7 +410,7 @@ export function createPoseTransitionClip(
 
     // Handle position if present (e.g., for hips in crouching poses)
     if (boneData.position && boneData.position.length === 3) {
-      const currentPos = node.position.clone();
+      const currentPos = capturedState?.position ?? node.position.clone();
       const targetPos = boneData.position;
       const posTimes = [0, duration];
       const posValues = [
@@ -1384,14 +1429,19 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         }
 
         try {
-          // Clear any existing pose animation
+          // IMPORTANT: Capture current bone rotations BEFORE clearing the active animation
+          // This prevents the bones from snapping back to default when action.stop() is called
+          const targetBoneNames = Object.keys(event.pose);
+          const capturedPose = captureCurrentPose(vrm, targetBoneNames);
+
+          // Clear any existing pose animation (this may reset bones, but we've captured them)
           if (activeAnimationRef.current?.intent === 'pose') {
             clearActiveAnimation();
           }
 
-          // Create transition clip from current pose to target pose
+          // Create transition clip from captured pose to target pose
           const duration = event.transitionDuration ?? DEFAULT_POSE_TRANSITION_DURATION;
-          const transitionClip = createPoseTransitionClip(vrm, event.pose, duration);
+          const transitionClip = createPoseTransitionClip(vrm, event.pose, duration, capturedPose);
 
           if (!transitionClip) {
             console.warn('[vrm-avatar-renderer] Could not create pose transition clip');
