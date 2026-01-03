@@ -1,0 +1,10 @@
+
+> aiembodied@0.0.1 lint C:\Users\kevin\repos\aiembodied
+> pnpm -r lint
+
+Scope: 2 of 3 workspace projects
+app/main lint$ eslint "src/**/*.ts"
+app/renderer lint$ eslint "src/**/*.{ts,tsx}"
+app/main lint: Warning: React version was set to "detect" in eslint-plugin-react settings, but the "react" package is not installed. Assuming latest React version for linting.
+app/main lint: Done
+app/renderer lint: Done
