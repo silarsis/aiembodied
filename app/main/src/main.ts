@@ -526,7 +526,7 @@ function registerIpcHandlers(
       });
 
       try {
-        const result = await handler(event, ...args);
+        const result: unknown = await (handler as (event: unknown, ...args: unknown[]) => Promise<unknown>)(event, ...args);
         logger.debug('Configuration IPC handler completed.', {
           channel,
           result: sanitizeResult(channel, result, args),
@@ -1181,13 +1181,13 @@ app.whenReady().then(async () => {
   });
 });
 
+let isAppQuitting = false;
+
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  if (process.platform !== 'darwin' && !isAppQuitting) {
     app.quit();
   }
 });
-
-let isAppQuitting = false;
 
 app.on('before-quit', async (event) => {
   if (isAppQuitting) {

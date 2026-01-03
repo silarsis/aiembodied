@@ -250,7 +250,7 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       await ipcRenderer.invoke('avatar-model:delete', modelId);
     },
     loadModelBinary: async (modelId) => {
-      const payload = await ipcRenderer.invoke('avatar-model:load', modelId);
+      const payload: unknown = await ipcRenderer.invoke('avatar-model:load', modelId);
       return cloneBinaryPayload(payload, {
         id: modelId,
         errorMessage: 'Unexpected VRM binary payload received from main process.',
@@ -281,7 +281,7 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     renameAnimation: async (animationId, newName) =>
       ipcRenderer.invoke('avatar-animation:rename', animationId, newName) as Promise<AvatarAnimationSummary>,
     loadAnimationBinary: async (animationId) => {
-      const payload = await ipcRenderer.invoke('avatar-animation:load', animationId);
+      const payload: unknown = await ipcRenderer.invoke('avatar-animation:load', animationId);
       return cloneBinaryPayload(payload, {
         id: animationId,
         errorMessage: 'Unexpected VRMA binary payload received from main process.',

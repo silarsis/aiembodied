@@ -1087,17 +1087,21 @@ export default function App() {
       let entryId = `${timestamp}-${Math.random().toString(36).slice(2, 10)}`;
 
       if (canPersist) {
-        try {
-          const message = await api!.conversation!.appendMessage({
-            sessionId: activeSessionIdRef.current ?? undefined,
-            role: speaker,
-            content: text,
-            ts: timestamp,
-          });
-          entryId = message.id;
-          messageIdsRef.current.add(message.id);
-        } catch (error) {
-          console.error('Failed to persist conversation message', error);
+        // We verified api.conversation exists in canPersist check, but TypeScript needs a direct check
+        const conversationApi = api?.conversation;
+        if (conversationApi) {
+          try {
+            const message = await conversationApi.appendMessage({
+              sessionId: activeSessionIdRef.current ?? undefined,
+              role: speaker,
+              content: text,
+              ts: timestamp,
+            });
+            entryId = message.id;
+            messageIdsRef.current.add(message.id);
+          } catch (error) {
+            console.error('Failed to persist conversation message', error);
+          }
         }
       }
 

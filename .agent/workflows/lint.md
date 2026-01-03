@@ -4,11 +4,13 @@ description: Check and fix all lint issues
 
 This workflow runs lint and tests, then commits and pushes once clean.
 
-* Run `pnpm lint` in the base directory, pipe output to a temporary file
-* Fix all discovered issues and re-run `pnpm lint` until clean
-* Run `pnpm test` in the base directory
-* Fix all discovered issues, then re-run from the top - lint, then tests
+* Run `pnpm lint > test_output.txt` in the base directory
+* Read the output file, fix all discovered issues and re-run `pnpm lint` until clean
+* Remove the test_output.txt file
+* Run `pnpm test > test_output.txt` in the base directory
+* Read the output file, fix all discovered issues, then re-run from the top - lint, then tests
 * Once all lint and all tests are clean, `git commit` and `git push` all the code changes
+* Remove the test_output.txt file
 * Remove any temp files created during the above
 
 Rules:

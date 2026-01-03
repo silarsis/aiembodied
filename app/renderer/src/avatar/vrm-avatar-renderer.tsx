@@ -205,7 +205,12 @@ async function loadVrmaAnimation(binary: ArrayBuffer): Promise<{ animation: VRMA
   if (!animations || animations.length === 0) {
     return null;
   }
-  return { animation: animations[0]!, gltf: { extensions: gltf.extensions } };
+  // Safe to access index 0 after empty check
+  const animation = animations[0];
+  if (!animation) {
+    return null;
+  }
+  return { animation, gltf: { extensions: gltf.extensions } };
 }
 
 async function loadVrmaClips(vrm: VRM): Promise<Map<string, VrmaClipWithMetadata>> {
@@ -560,47 +565,7 @@ function createDefaultIdleClip(vrm: VRM): THREE.AnimationClip | null {
   });
 }
 
-// Detect Y-axis direction by comparing hips and feet positions
-function detectYAxisDirection(vrm: VRM): 'down-is-negative' | 'down-is-positive' {
-  const humanoid = vrm.humanoid;
-  if (!humanoid) {
-    return 'down-is-negative'; // Default assumption
-  }
-
-  const hips = humanoid.getNormalizedBoneNode('hips');
-  const leftFoot = humanoid.getNormalizedBoneNode('leftFoot');
-  const rightFoot = humanoid.getNormalizedBoneNode('rightFoot');
-
-  if (!hips || (!leftFoot && !rightFoot)) {
-    return 'down-is-negative'; // Fallback
-  }
-
-  const hipsPos = new THREE.Vector3();
-  hips.getWorldPosition(hipsPos);
-
-  const footPos = new THREE.Vector3();
-  if (leftFoot) {
-    leftFoot.getWorldPosition(footPos);
-  } else if (rightFoot) {
-    rightFoot.getWorldPosition(footPos);
-  }
-
-  // Feet should always be BELOW hips
-  // If foot.y < hips.y, then negative Y = down (standard)
-  // If foot.y > hips.y, then positive Y = down (inverted)
-  const yDifference = footPos.y - hipsPos.y;
-
-  const direction = yDifference < 0 ? 'down-is-negative' : 'down-is-positive';
-
-  console.log('[vrm-avatar-renderer] Y-axis direction detection:', {
-    hipsY: hipsPos.y.toFixed(3),
-    footY: footPos.y.toFixed(3),
-    yDifference: yDifference.toFixed(3),
-    direction,
-  });
-
-  return direction;
-}
+// detectYAxisDirection removed (unused)
 
 // Detect if model is in T-pose by checking arm orientation relative to spine
 function isInTPose(vrm: VRM): boolean {
@@ -735,6 +700,8 @@ function createNaturalStancePose(): VRMPose {
   // Progressive curl: Proximal < Intermediate < Distal usually looks natural, 
   // or consistent curl.
   const fingerCurlAngle = Math.PI * 0.08; // ~15 degrees per joint
+  // thumbCurlAngle was defined but unused because the thumb loop used fingerCurlAngle incorrectly.
+  // Now it is used below in leftThumbQuat/rightThumbQuat.
   const thumbCurlAngle = Math.PI * 0.08;
 
   // Revised: User reported backwards curl. Flipping signs.
@@ -747,8 +714,9 @@ function createNaturalStancePose(): VRMPose {
   // Thumb is special.
   // Thumbs usually need to rotate down/in.
   // Flipping thumb rotation as well to match
-  const leftThumbQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -fingerCurlAngle, 0));
-  const rightThumbQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, fingerCurlAngle, 0));
+  // Using thumbCurlAngle correctly now
+  const leftThumbQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -thumbCurlAngle, 0));
+  const rightThumbQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, thumbCurlAngle, 0));
 
   const fingers = ['Index', 'Middle', 'Ring', 'Little'];
   const segments = ['Proximal', 'Intermediate', 'Distal'];
@@ -756,9 +724,11 @@ function createNaturalStancePose(): VRMPose {
   fingers.forEach(finger => {
     segments.forEach(segment => {
       // Left Hand
-      (pose as any)[`left${finger}${segment}`] = { rotation: leftFingerQuat.toArray() as [number, number, number, number] };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (pose as Record<string, any>)[`left${finger}${segment}`] = { rotation: leftFingerQuat.toArray() as [number, number, number, number] };
       // Right Hand
-      (pose as any)[`right${finger}${segment}`] = { rotation: rightFingerQuat.toArray() as [number, number, number, number] };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (pose as Record<string, any>)[`right${finger}${segment}`] = { rotation: rightFingerQuat.toArray() as [number, number, number, number] };
     });
   });
 
@@ -769,8 +739,11 @@ function createNaturalStancePose(): VRMPose {
     // Let's try a simple Z curl similar to fingers but maybe varying axis
     // For now using the same curl but maybe adjusting axis if it looks wrong.
     // Safer to stick to Z curl for now as a starting point for "relaxed" 
-    (pose as any)[`leftThumb${segment}`] = { rotation: leftFingerQuat.toArray() as [number, number, number, number] };
-    (pose as any)[`rightThumb${segment}`] = { rotation: rightFingerQuat.toArray() as [number, number, number, number] };
+    // Use distinct thumb rotation
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (pose as Record<string, any>)[`leftThumb${segment}`] = { rotation: leftThumbQuat.toArray() as [number, number, number, number] };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (pose as Record<string, any>)[`rightThumb${segment}`] = { rotation: rightThumbQuat.toArray() as [number, number, number, number] };
   });
 
   return pose;

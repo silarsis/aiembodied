@@ -71,17 +71,7 @@ function formatTimestamp(value: number): string {
   }
 }
 
-function truncateSha(value: string | null | undefined): string {
-  if (!value) {
-    return '—';
-  }
 
-  if (value.length <= 12) {
-    return value;
-  }
-
-  return `${value.slice(0, 12)}…`;
-}
 
 export function AvatarConfigurator({
   avatarApi,

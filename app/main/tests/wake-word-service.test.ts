@@ -200,7 +200,7 @@ describe('WakeWordService', () => {
       maxRestartDelayMs: 1000,
     });
 
-    service.on('error', () => {});
+    service.on('error', () => { });
 
     service.start({
       accessKey: 'key',
@@ -218,12 +218,12 @@ describe('WakeWordService', () => {
     } satisfies WakeWordWorkerMessage);
     workers[0].emit('exit', 0);
 
-    await vi.advanceTimersByTimeAsync(100);
+    vi.advanceTimersByTime(100);
 
     expect(spawnCount).toBe(2);
 
-    await service.dispose();
     vi.useRealTimers();
+    await service.dispose();
   });
 
   it('does not restart when autoRestart is disabled', async () => {
@@ -246,7 +246,7 @@ describe('WakeWordService', () => {
       autoRestart: false,
     });
 
-    service.on('error', () => {});
+    service.on('error', () => { });
 
     service.start({
       accessKey: 'key',
@@ -262,12 +262,12 @@ describe('WakeWordService', () => {
     } satisfies WakeWordWorkerMessage);
     workers[0].emit('exit', 0);
 
-    await vi.advanceTimersByTimeAsync(5000);
+    vi.advanceTimersByTime(5000);
 
     expect(spawnCount).toBe(1);
 
-    await service.dispose();
     vi.useRealTimers();
+    await service.dispose();
   });
 
   it('applies exponential backoff on repeated restarts', async () => {
@@ -292,7 +292,7 @@ describe('WakeWordService', () => {
       maxRestartDelayMs: 1000,
     });
 
-    service.on('error', () => {});
+    service.on('error', () => { });
 
     service.start({
       accessKey: 'key',
@@ -310,7 +310,7 @@ describe('WakeWordService', () => {
     } satisfies WakeWordWorkerMessage);
     workers[0].emit('exit', 0);
 
-    await vi.advanceTimersByTimeAsync(100);
+    vi.advanceTimersByTime(100);
     expect(spawnCount).toBe(2);
 
     workers[1].emit('message', {
@@ -320,14 +320,14 @@ describe('WakeWordService', () => {
     } satisfies WakeWordWorkerMessage);
     workers[1].emit('exit', 0);
 
-    await vi.advanceTimersByTimeAsync(100);
+    vi.advanceTimersByTime(100);
     expect(spawnCount).toBe(2);
 
-    await vi.advanceTimersByTimeAsync(100);
+    vi.advanceTimersByTime(100);
     expect(spawnCount).toBe(3);
 
-    await service.dispose();
     vi.useRealTimers();
+    await service.dispose();
   });
 
   it('resets restart attempts on successful ready', async () => {
@@ -352,7 +352,7 @@ describe('WakeWordService', () => {
       maxRestartDelayMs: 1000,
     });
 
-    service.on('error', () => {});
+    service.on('error', () => { });
 
     service.start({
       accessKey: 'key',
@@ -368,7 +368,7 @@ describe('WakeWordService', () => {
     } satisfies WakeWordWorkerMessage);
     workers[0].emit('exit', 0);
 
-    await vi.advanceTimersByTimeAsync(100);
+    vi.advanceTimersByTime(100);
     expect(spawnCount).toBe(2);
 
     workers[1].emit('message', {
@@ -383,10 +383,10 @@ describe('WakeWordService', () => {
     } satisfies WakeWordWorkerMessage);
     workers[1].emit('exit', 0);
 
-    await vi.advanceTimersByTimeAsync(100);
+    vi.advanceTimersByTime(100);
     expect(spawnCount).toBe(3);
 
-    await service.dispose();
     vi.useRealTimers();
+    await service.dispose();
   });
 });

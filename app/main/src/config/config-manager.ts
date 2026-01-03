@@ -502,7 +502,7 @@ export class ConfigManager {
     }
 
     try {
-      const parsed = JSON.parse(trimmed);
+      const parsed: unknown = JSON.parse(trimmed);
       return FeatureFlagsSchema.parse(parsed);
     } catch {
       // fall back to comma-separated parsing

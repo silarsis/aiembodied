@@ -315,10 +315,10 @@ export class RealtimeClient {
       };
       this.controlChannel.onmessage = (event) => {
         this.log('info', 'Realtime control channel message received', {
-          data: event.data,
+          data: event.data as unknown,
         });
         try {
-          const payload = typeof event.data === 'string' ? JSON.parse(event.data) : null;
+          const payload: unknown = typeof event.data === 'string' ? JSON.parse(event.data) : null;
           if (payload && typeof payload === 'object') {
             const type = (payload as { type?: string }).type;
             if (type === 'session.updated' || type === 'session.update') {
@@ -345,8 +345,8 @@ export class RealtimeClient {
                 typeof sessionParameters?.['instructions'] === 'string'
                   ? (sessionParameters['instructions'] as string)
                   : typeof session['instructions'] === 'string'
-                  ? (session['instructions'] as string)
-                  : undefined;
+                    ? (session['instructions'] as string)
+                    : undefined;
               const td = (sessionParameters?.['turn_detection'] ?? session['turn_detection']) as { type?: string } | undefined;
               const turnDetection = td && typeof td.type === 'string' ? td.type : undefined;
               this.callbacks.onSessionUpdated?.({ voice, instructions, turnDetection });
@@ -522,7 +522,7 @@ export class RealtimeClient {
 
     try {
       if (normalizedContentType.includes('application/json')) {
-        const errorPayload = await response.json();
+        const errorPayload: unknown = await response.json();
         if (errorPayload && typeof errorPayload === 'object') {
           const errorField = (errorPayload as { error?: { code?: unknown } | null }).error;
           if (errorField && typeof errorField === 'object') {
