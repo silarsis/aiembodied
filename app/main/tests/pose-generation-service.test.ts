@@ -53,15 +53,12 @@ describe('PoseGenerationService', () => {
     const poseService = new AvatarPoseService({ store, posesDirectory: directory });
 
     const expandedDescription = 'Arms at sides, legs straight, confident posture with chest out.';
-    // API returns array format: { bones: [{ name, rotation, position }] }
-    // The service converts this to object format internally
+    // API now returns object format: { [boneName]: { rotation, position? } }
     const poseJson = {
-      bones: [
-        { name: 'Armature_Hips', rotation: [0, 0, 0, 1], position: null },
-        { name: 'Armature_Chest', rotation: [0.1, 0, 0, 0.995], position: null },
-        { name: 'Armature_LeftShoulder', rotation: [0, 0, 0, 1], position: null },
-        { name: 'Armature_RightShoulder', rotation: [0, 0, 0, 1], position: null },
-      ],
+      'Armature_Hips': { rotation: [0, 0, 0, 1] },
+      'Armature_Chest': { rotation: [0.1, 0, 0, 0.995] },
+      'Armature_LeftShoulder': { rotation: [0, 0, 0, 1] },
+      'Armature_RightShoulder': { rotation: [0, 0, 0, 1] },
     };
 
     const { client } = createClient([expandedDescription, JSON.stringify(poseJson)]);
@@ -104,7 +101,7 @@ describe('PoseGenerationService', () => {
     const poseService = new AvatarPoseService({ store, posesDirectory: directory });
 
     const expandedDescription = 'Test pose';
-    const poseJson = { bones: [{ name: 'Armature_Hips', rotation: [0, 0, 0, 1], position: null }] };
+    const poseJson = { 'Armature_Hips': { rotation: [0, 0, 0, 1] } };
     const { client, create } = createClient([expandedDescription, JSON.stringify(poseJson)]);
 
     const service = new PoseGenerationService({
@@ -148,7 +145,7 @@ describe('PoseGenerationService', () => {
     const poseService = new AvatarPoseService({ store, posesDirectory: directory });
 
     const expandedDescription = 'Test pose for a cheerful character';
-    const poseJson = { bones: [{ name: 'Armature_Hips', rotation: [0, 0, 0, 1], position: null }] };
+    const poseJson = { 'Armature_Hips': { rotation: [0, 0, 0, 1] } };
     const { client, create } = createClient([expandedDescription, JSON.stringify(poseJson)]);
 
     const service = new PoseGenerationService({
@@ -165,10 +162,63 @@ describe('PoseGenerationService', () => {
     const calls = create.mock.calls;
     expect(calls.length).toBe(2);
 
-    // Check that model description is in both calls
-    for (const call of calls) {
-      const inputStr = JSON.stringify(call[0]);
-      expect(inputStr).toContain('cheerful robot');
-    }
+    // Model description is only included in the expander step (first call), not the compiler step
+    const expanderCall = calls[0]?.[0] as unknown;
+    const expanderInputStr = JSON.stringify(expanderCall);
+    expect(expanderInputStr).toContain('cheerful robot');
+  });
+
+  it('should parse object-based pose format correctly', async () => {
+    const { store, directory } = await createStore();
+    const poseService = new AvatarPoseService({ store, posesDirectory: directory });
+
+    // Test the new object-based format with position included
+    const poseJson = {
+      'hips': { rotation: [0, 0, 0, 1], position: [0, 1.0, 0] },
+      'spine': { rotation: [0.1, 0, 0, 0.995] },
+      'chest': { rotation: [0, 0.05, 0, 0.999] },
+    };
+
+    const { client } = createClient(['expanded description', JSON.stringify(poseJson)]);
+    const service = new PoseGenerationService({ client, poseService });
+
+    const result = await service.generatePose({
+      prompt: 'standing pose',
+      bones: ['hips', 'spine', 'chest'],
+    });
+
+    expect(result.pose).toBeDefined();
+    expect(result.pose.name).toBe('standing pose');
+  });
+
+  it('should skip bones with invalid rotation data', async () => {
+    const { store, directory } = await createStore();
+    const poseService = new AvatarPoseService({ store, posesDirectory: directory });
+
+    // Include invalid data that should be skipped
+    const poseJson = {
+      'hips': { rotation: [0, 0, 0, 1] },           // Valid
+      'spine': { rotation: 'invalid' },             // Invalid - not an array
+      'chest': { rotation: [0, 0, 0] },             // Invalid - wrong length
+      'neck': { rotation: [0, 0, 0, 1] },           // Valid
+    };
+
+    const { client } = createClient(['expanded', JSON.stringify(poseJson)]);
+    const warnSpy = vi.fn();
+    const service = new PoseGenerationService({
+      client,
+      poseService,
+      logger: { warn: warnSpy },
+    });
+
+    const result = await service.generatePose({
+      prompt: 'test',
+      bones: ['hips', 'spine', 'chest', 'neck'],
+    });
+
+    // Should still succeed with valid bones
+    expect(result.pose).toBeDefined();
+    // Should have logged warnings
+    expect(warnSpy).toHaveBeenCalled();
   });
 });

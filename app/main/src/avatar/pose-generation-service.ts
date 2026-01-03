@@ -36,9 +36,9 @@ const POSE_COMPILER_SYSTEM_PROMPT_BASE = [
     '',
     'Output Schema:',
     '{',
-    '  "bones": [',
-    '    { "name": "boneName", "rotation": [x, y, z, w], "position": null }',
-    '  ]',
+    '  "hips": { "rotation": [x, y, z, w], "position": [x, y, z] },',
+    '  "spine": { "rotation": [x, y, z, w] },',
+    '  "chest": { "rotation": [x, y, z, w] }',
     '}',
 ].join('\n');
 
@@ -65,9 +65,10 @@ const POSE_ROTATION_GUIDANCE = [
 const POSE_REQUIREMENTS = [
     'Requirements:',
     '- Output ONLY valid JSON matching the schema above.',
-    '- Use ONLY the provided valid VRM human bones for the "name" field.',
+    '- You MUST include ALL provided VRM bone names as top-level property keys.',
     '- All rotations must be local Quaternions [x, y, z, w].',
-    '- Set "position" to null for all bones EXCEPT hips when vertical movement is needed.',
+    '- For bones that do not change from the default pose, use identity rotation [0, 0, 0, 1].',
+    '- Set position to null for all bones EXCEPT hips when vertical movement is needed.',
     '- For hips position (crouching/jumping only), use [x, y, z] where Y≈1.0 is standing.',
     '- Ensure anatomical plausibility.',
     '- Symmetrize where appropriate if the description implies symmetry.',
@@ -248,44 +249,45 @@ export class PoseGenerationService {
             content: [{ type: 'input_text', text: `Description: ${description}` }],
         });
 
-        // Define a strict schema for the pose
-        // OpenAI structured outputs require all properties in 'required' and don't support
-        // dynamic keys via additionalProperties. Use an array of bone transforms instead.
-        // Position is nullable since it's only needed for hips in crouching/jumping poses.
-        const schema = {
-            type: 'object',
+        // Build a strict JSON schema with all model bones as required properties
+        // Each bone has rotation (required, 4 numbers) and position (optional, 3 numbers or null)
+        // OpenAI's strict mode requires additionalProperties:false and all properties in required
+        const boneSchema = {
+            type: 'object' as const,
             additionalProperties: false,
-            required: ['bones'],
+            required: ['rotation', 'position'],
             properties: {
-                bones: {
-                    type: 'array',
-                    items: {
-                        type: 'object',
-                        additionalProperties: false,
-                        required: ['name', 'rotation', 'position'],
-                        properties: {
-                            name: { type: 'string' },
-                            rotation: {
-                                type: 'array',
-                                items: { type: 'number' },
-                                minItems: 4,
-                                maxItems: 4,
-                            },
-                            position: {
-                                anyOf: [
-                                    { type: 'null' },
-                                    {
-                                        type: 'array',
-                                        items: { type: 'number' },
-                                        minItems: 3,
-                                        maxItems: 3,
-                                    },
-                                ],
-                            },
+                rotation: {
+                    type: 'array' as const,
+                    items: { type: 'number' as const },
+                    minItems: 4,
+                    maxItems: 4,
+                },
+                position: {
+                    anyOf: [
+                        { type: 'null' as const },
+                        {
+                            type: 'array' as const,
+                            items: { type: 'number' as const },
+                            minItems: 3,
+                            maxItems: 3,
                         },
-                    },
+                    ],
                 },
             },
+        };
+
+        // Build properties object with each bone using the same schema
+        const boneProperties: Record<string, typeof boneSchema> = {};
+        for (const bone of bones) {
+            boneProperties[bone] = boneSchema;
+        }
+
+        const schema = {
+            type: 'object' as const,
+            additionalProperties: false,
+            required: bones, // All bones are required
+            properties: boneProperties,
         };
 
         const response = await (
@@ -300,6 +302,7 @@ export class PoseGenerationService {
                     type: 'json_schema',
                     name: 'vrm_pose',
                     schema: schema as unknown,
+                    strict: true,
                 },
             },
         });
@@ -308,17 +311,81 @@ export class PoseGenerationService {
         if (!outputText) throw new Error('Empty response from pose compiler');
         console.log(JSON.stringify(messages), outputText);
 
-        // Parse the array-based response and convert to object format
-        // The API returns: { bones: [{ name, rotation, position }] }
-        // We need: { [boneName]: { rotation, position? } }
-        const parsed = JSON.parse(outputText) as { bones: Array<{ name: string; rotation: number[]; position: number[] | null }> };
-        const result: Record<string, { rotation: number[]; position?: number[] }> = {};
-        for (const bone of parsed.bones) {
-            result[bone.name] = { rotation: bone.rotation };
-            if (bone.position !== null) {
-                result[bone.name].position = bone.position;
-            }
+        // Parse the object-based response directly
+        // Expected format: { [boneName]: { rotation: [x,y,z,w], position?: [x,y,z] | null } }
+        let parsed: Record<string, unknown>;
+        try {
+            parsed = JSON.parse(outputText) as Record<string, unknown>;
+        } catch (parseError) {
+            const preview = outputText.slice(0, 200);
+            const message = parseError instanceof Error ? parseError.message : String(parseError);
+            this.logger?.error?.('Failed to parse pose JSON from LLM', { message, preview });
+            throw new Error(`Pose compiler returned invalid JSON: ${message}. Response preview: ${preview}...`);
         }
+
+        const result: Record<string, { rotation: number[]; position?: number[] }> = {};
+        const validBoneSet = new Set(bones);
+        const warnings: string[] = [];
+
+        for (const [boneName, boneData] of Object.entries(parsed)) {
+            // Validate bone name
+            if (!validBoneSet.has(boneName)) {
+                warnings.push(`Unknown bone '${boneName}' in response (not in valid bones list)`);
+            }
+
+            // Validate bone data structure
+            if (typeof boneData !== 'object' || boneData === null) {
+                warnings.push(`Invalid data for bone '${boneName}': expected object, got ${typeof boneData}`);
+                continue;
+            }
+
+            const data = boneData as { rotation?: unknown; position?: unknown };
+
+            // Validate rotation
+            if (!Array.isArray(data.rotation) || data.rotation.length !== 4) {
+                warnings.push(`Invalid rotation for bone '${boneName}': expected array of 4 numbers`);
+                continue;
+            }
+
+            const rotation = data.rotation as number[];
+            if (!rotation.every(n => typeof n === 'number' && Number.isFinite(n))) {
+                warnings.push(`Invalid rotation values for bone '${boneName}': all values must be finite numbers`);
+                continue;
+            }
+
+            // Build the result entry
+            const entry: { rotation: number[]; position?: number[] } = { rotation };
+
+            // Validate and add position if present
+            if (data.position !== null && data.position !== undefined) {
+                if (Array.isArray(data.position) && data.position.length === 3) {
+                    const position = data.position as number[];
+                    if (position.every(n => typeof n === 'number' && Number.isFinite(n))) {
+                        entry.position = position;
+                    } else {
+                        warnings.push(`Invalid position values for bone '${boneName}': all values must be finite numbers`);
+                    }
+                } else {
+                    warnings.push(`Invalid position for bone '${boneName}': expected array of 3 numbers or null`);
+                }
+            }
+
+            result[boneName] = entry;
+        }
+
+        // Log any warnings
+        if (warnings.length > 0) {
+            this.logger?.warn?.('Pose parsing had validation issues', { warnings, boneCount: Object.keys(result).length });
+            console.warn('[pose-generation] Validation warnings:', warnings);
+        }
+
+        // Ensure we have at least one valid bone
+        if (Object.keys(result).length === 0) {
+            const preview = outputText.slice(0, 200);
+            this.logger?.error?.('No valid bones found in pose response', { preview, warnings });
+            throw new Error(`Pose compiler returned no valid bones. Warnings: ${warnings.join('; ')}. Response preview: ${preview}...`);
+        }
+
         console.log(JSON.stringify(result));
         return result;
     }

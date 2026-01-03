@@ -23,6 +23,7 @@ interface AvatarConfiguratorProps {
   avatarApi?: AvatarBridge;
   onActiveModelChange?: (detail: AvatarModelSummary | null) => void;
   onAnimationChange?: () => void;
+  onPoseChange?: () => void;
 }
 
 function deriveName(file: File | null): string {
@@ -77,6 +78,7 @@ export function AvatarConfigurator({
   avatarApi,
   onActiveModelChange,
   onAnimationChange,
+  onPoseChange,
 }: AvatarConfiguratorProps) {
   const [models, setModels] = useState<AvatarModelSummary[]>([]);
   const [activeModelId, setActiveModelId] = useState<string | null>(null);
@@ -552,6 +554,7 @@ export function AvatarConfigurator({
           setPoseStatus('success');
           setPosePrompt('');
           await refreshPoses();
+          onPoseChange?.();
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to generate pose.';
           setPoseStatus('error');
@@ -559,7 +562,7 @@ export function AvatarConfigurator({
         }
       })();
     },
-    [avatarApi, posePrompt, refreshPoses],
+    [avatarApi, posePrompt, refreshPoses, onPoseChange],
   );
 
   const handleDeletePose = useCallback(
@@ -576,6 +579,7 @@ export function AvatarConfigurator({
         try {
           await avatarApi.deletePose(poseId);
           setPoses((prev) => prev.filter((p) => p.id !== poseId));
+          onPoseChange?.();
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to delete pose.';
           setPoseError(message);
@@ -584,7 +588,7 @@ export function AvatarConfigurator({
         }
       })();
     },
-    [avatarApi],
+    [avatarApi, onPoseChange],
   );
 
   const modelUploadDisabled = !isModelBridgeAvailable || modelUploadStatus === 'reading' || modelUploadStatus === 'uploading';

@@ -658,6 +658,7 @@ export default function App() {
   const [jsonPoseInput, setJsonPoseInput] = useState<string>('');
   const [jsonPoseError, setJsonPoseError] = useState<string | null>(null);
   const [animationListVersion, setAnimationListVersion] = useState(0);
+  const [poseListVersion, setPoseListVersion] = useState(0);
   const animationBus = useMemo(() => createAvatarAnimationBus(), []);
   const [isListeningEnabled, setListeningEnabled] = useState(false);
   const [bonePositions, setBonePositions] = useState<{
@@ -759,7 +760,11 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [resolveApi]);
+  }, [resolveApi, poseListVersion]);
+
+  const refreshPoseList = useCallback(() => {
+    setPoseListVersion((v) => v + 1);
+  }, []);
 
   // Update bone positions from VRM in real-time
   useEffect(() => {
@@ -2583,6 +2588,7 @@ export default function App() {
                   avatarApi={activeBridge?.avatar}
                   onActiveModelChange={setActiveVrmModel}
                   onAnimationChange={refreshAnimationList}
+                  onPoseChange={refreshPoseList}
                 />
               </section>
 
