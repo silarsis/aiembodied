@@ -43,12 +43,12 @@ const POSE_COMPILER_SYSTEM_PROMPT_BASE = [
 ].join('\n');
 
 const POSE_HIERARCHY_FALLBACK = [
-    'Bone Hierarchy (parent → child):',
-    '- hips (root) → spine → chest → upperChest → neck → head',
-    '- upperChest → leftShoulder → leftUpperArm → leftLowerArm → leftHand → fingers',
-    '- upperChest → rightShoulder → rightUpperArm → rightLowerArm → rightHand → fingers',
-    '- hips → leftUpperLeg → leftLowerLeg → leftFoot → leftToes',
-    '- hips → rightUpperLeg → rightLowerLeg → rightFoot → rightToes',
+    'Bone Hierarchy (parent > child):',
+    '- hips (root) > spine > chest > upperChest > neck > head',
+    '- upperChest > leftShoulder > leftUpperArm > leftLowerArm > leftHand > fingers',
+    '- upperChest > rightShoulder > rightUpperArm > rightLowerArm > rightHand > fingers',
+    '- hips > leftUpperLeg > leftLowerLeg > leftFoot > leftToes',
+    '- hips > rightUpperLeg > rightLowerLeg > rightFoot > rightToes',
 ].join('\n');
 
 const POSE_ROTATION_GUIDANCE = [
@@ -57,7 +57,7 @@ const POSE_ROTATION_GUIDANCE = [
     '- Child bones inherit their parent\'s rotation automatically.',
     '- When a parent rotates, all descendants move with it.',
     '- Account for parent rotation when setting child rotations. For example:',
-    '  - If leftUpperArm rotates 45° forward, leftLowerArm is already 45° forward.',
+    '  - If leftUpperArm rotates 45 degrees forward, leftLowerArm is already 45 degrees forward.',
     '  - To keep the forearm straight relative to world, set leftLowerArm rotation to identity [0,0,0,1].',
     '  - To bend the elbow further, apply only the additional local rotation.',
 ].join('\n');
@@ -76,14 +76,14 @@ const POSE_REQUIREMENTS = [
 ].join('\n');
 
 /**
- * Format bone hierarchy from a map of bone → parent into readable chains.
+ * Format bone hierarchy from a map of bone > parent into readable chains.
  */
 function formatBoneHierarchy(hierarchy: Record<string, string | null>): string {
     if (!hierarchy || Object.keys(hierarchy).length === 0) {
         return POSE_HIERARCHY_FALLBACK;
     }
 
-    // Build child → parent into parent → children
+    // Build child > parent into parent > children
     const childrenMap = new Map<string | null, string[]>();
     for (const [bone, parent] of Object.entries(hierarchy)) {
         const children = childrenMap.get(parent) ?? [];
@@ -107,7 +107,7 @@ function formatBoneHierarchy(hierarchy: Record<string, string | null>): string {
         }
 
         for (const child of children) {
-            chains.push(`- ${bone} → ${child}`);
+            chains.push(`- ${bone} > ${child}`);
             buildChain(child, depth + 1);
         }
     }
