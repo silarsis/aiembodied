@@ -7,17 +7,24 @@ export interface CrashGuardOptions {
   relaunchDelayMs?: number;
 }
 
+function isWatchedWindow(window: BrowserWindow): window is WatchedWindow {
+  return window.webContents !== undefined;
+}
+
 type WatchedWindow = BrowserWindow & { webContents: WebContents };
 
 export class CrashGuard {
   private window: WatchedWindow | null = null;
   private quitting = false;
 
-  constructor(private readonly options: CrashGuardOptions) {}
+  constructor(private readonly options: CrashGuardOptions) { }
 
   watch(window: BrowserWindow): void {
     this.dispose();
-    this.window = window as WatchedWindow;
+    if (!isWatchedWindow(window)) {
+      throw new Error('BrowserWindow must have webContents');
+    }
+    this.window = window;
     this.registerEventHandlers();
   }
 

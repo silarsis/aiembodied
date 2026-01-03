@@ -1,0 +1,697 @@
+
+> @aiembodied/main@0.0.1 test C:\Users\kevin\repos\aiembodied\app\main
+> npm run test:rebuild && node scripts/test-split.mjs
+
+
+> @aiembodied/main@0.0.1 test:rebuild
+> node scripts/test-rebuild.mjs
+
+.../node_modules/better-sqlite3 install$ prebuild-install || node-gyp rebuild --release
+.../node_modules/better-sqlite3 install: Done
+
+======================================================================
+Running Config tests...
+======================================================================
+
+
+[1m[46m RUN [49m[22m [36mv3.2.4 [39m[90mC:/Users/kevin/repos/aiembodied/app/main[39m
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mvalidates and returns configuration from environment variables
+[22m[39mLoading configuration from environment and secret stores.
+Resolving realtime API key from environment variables. { keys: [ [32m'REALTIME_API_KEY'[39m, [32m'realtime_api_key'[39m ] }
+Realtime API key resolved from environment variables. { length: [33m12[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mvalidates and returns configuration from environment variables
+[22m[39mResolving wake word access key from environment variables. { keys: [ [32m'PORCUPINE_ACCESS_KEY'[39m, [32m'porcupine_access_key'[39m ] }
+Wake word access key resolved from environment variables. { length: [33m13[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mvalidates and returns configuration from environment variables
+[22m[39mConfiguration loaded. {
+  hasRealtimeApiKey: [33mtrue[39m,
+  wakeWordHasAccessKey: [33mtrue[39m,
+  audioInputConfigured: [33mtrue[39m,
+  audioOutputConfigured: [33mtrue[39m,
+  featureFlagCount: [33m1[39m
+}
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mprefers stored preferences over environment configuration
+[22m[39mLoading configuration from environment and secret stores.
+Resolving realtime API key from environment variables. { keys: [ [32m'REALTIME_API_KEY'[39m, [32m'realtime_api_key'[39m ] }
+Realtime API key resolved from environment variables. { length: [33m12[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mprefers stored preferences over environment configuration
+[22m[39mResolving wake word access key from environment variables. { keys: [ [32m'PORCUPINE_ACCESS_KEY'[39m, [32m'porcupine_access_key'[39m ] }
+Wake word access key resolved from environment variables. { length: [33m13[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mprefers stored preferences over environment configuration
+[22m[39mConfiguration loaded. {
+  hasRealtimeApiKey: [33mtrue[39m,
+  wakeWordHasAccessKey: [33mtrue[39m,
+  audioInputConfigured: [33mtrue[39m,
+  audioOutputConfigured: [33mtrue[39m,
+  featureFlagCount: [33m1[39m
+}
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mfalls back to secret store when environment variable is missing
+[22m[39mLoading configuration from environment and secret stores.
+Resolving realtime API key from environment variables. { keys: [ [32m'REALTIME_API_KEY'[39m, [32m'realtime_api_key'[39m ] }
+Realtime API key not found in environment. { hasSecretStore: [33mtrue[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mfalls back to secret store when environment variable is missing
+[22m[39mRealtime API key resolved from secret store. { length: [33m10[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mfalls back to secret store when environment variable is missing
+[22m[39mResolving wake word access key from environment variables. { keys: [ [32m'PORCUPINE_ACCESS_KEY'[39m, [32m'porcupine_access_key'[39m ] }
+Wake word access key not found in environment. { hasSecretStore: [33mtrue[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mfalls back to secret store when environment variable is missing
+[22m[39mWake word access key resolved from secret store. { length: [33m16[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mfalls back to secret store when environment variable is missing
+[22m[39mConfiguration loaded. {
+  hasRealtimeApiKey: [33mtrue[39m,
+  wakeWordHasAccessKey: [33mtrue[39m,
+  audioInputConfigured: [33mfalse[39m,
+  audioOutputConfigured: [33mfalse[39m,
+  featureFlagCount: [33m0[39m
+}
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mparses comma separated feature flags
+[22m[39mLoading configuration from environment and secret stores.
+Resolving realtime API key from environment variables. { keys: [ [32m'REALTIME_API_KEY'[39m, [32m'realtime_api_key'[39m ] }
+Realtime API key resolved from environment variables. { length: [33m3[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mparses comma separated feature flags
+[22m[39mResolving wake word access key from environment variables. { keys: [ [32m'PORCUPINE_ACCESS_KEY'[39m, [32m'porcupine_access_key'[39m ] }
+Wake word access key resolved from environment variables. { length: [33m8[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mparses comma separated feature flags
+[22m[39mConfiguration loaded. {
+  hasRealtimeApiKey: [33mtrue[39m,
+  wakeWordHasAccessKey: [33mtrue[39m,
+  audioInputConfigured: [33mfalse[39m,
+  audioOutputConfigured: [33mfalse[39m,
+  featureFlagCount: [33m3[39m
+}
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mparses metrics configuration from environment variables
+[22m[39mLoading configuration from environment and secret stores.
+Resolving realtime API key from environment variables. { keys: [ [32m'REALTIME_API_KEY'[39m, [32m'realtime_api_key'[39m ] }
+Realtime API key resolved from environment variables. { length: [33m3[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mparses metrics configuration from environment variables
+[22m[39mResolving wake word access key from environment variables. { keys: [ [32m'PORCUPINE_ACCESS_KEY'[39m, [32m'porcupine_access_key'[39m ] }
+Wake word access key resolved from environment variables. { length: [33m8[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mparses metrics configuration from environment variables
+[22m[39mConfiguration loaded. {
+  hasRealtimeApiKey: [33mtrue[39m,
+  wakeWordHasAccessKey: [33mtrue[39m,
+  audioInputConfigured: [33mfalse[39m,
+  audioOutputConfigured: [33mfalse[39m,
+  featureFlagCount: [33m0[39m
+}
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mthrows a validation error when the wake word access key is missing
+[22m[39mLoading configuration from environment and secret stores.
+Resolving realtime API key from environment variables. { keys: [ [32m'REALTIME_API_KEY'[39m, [32m'realtime_api_key'[39m ] }
+Realtime API key resolved from environment variables. { length: [33m3[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mthrows a validation error when the wake word access key is missing
+[22m[39mResolving wake word access key from environment variables. { keys: [ [32m'PORCUPINE_ACCESS_KEY'[39m, [32m'porcupine_access_key'[39m ] }
+Wake word access key not found in environment. { hasSecretStore: [33mfalse[39m }
+
+stderr | tests/config-manager.test.ts > ConfigManager > throws a validation error when the wake word access key is missing
+Wake word access key unavailable: secret store is not configured.
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mloads with an empty realtime api key and marks the renderer config as unconfigured
+[22m[39mLoading configuration from environment and secret stores.
+Resolving realtime API key from environment variables. { keys: [ [32m'REALTIME_API_KEY'[39m, [32m'realtime_api_key'[39m ] }
+Realtime API key not found in environment. { hasSecretStore: [33mfalse[39m }
+
+stderr | tests/config-manager.test.ts > ConfigManager > loads with an empty realtime api key and marks the renderer config as unconfigured
+Realtime API key unavailable: secret store is not configured.
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mloads with an empty realtime api key and marks the renderer config as unconfigured
+[22m[39mResolving wake word access key from environment variables. { keys: [ [32m'PORCUPINE_ACCESS_KEY'[39m, [32m'porcupine_access_key'[39m ] }
+Wake word access key resolved from environment variables. { length: [33m8[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mloads with an empty realtime api key and marks the renderer config as unconfigured
+[22m[39mConfiguration loaded. {
+  hasRealtimeApiKey: [33mfalse[39m,
+  wakeWordHasAccessKey: [33mtrue[39m,
+  audioInputConfigured: [33mfalse[39m,
+  audioOutputConfigured: [33mfalse[39m,
+  featureFlagCount: [33m0[39m
+}
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mreads realtime api keys from case-insensitive environment variables
+[22m[39mLoading configuration from environment and secret stores.
+Resolving realtime API key from environment variables. { keys: [ [32m'REALTIME_API_KEY'[39m, [32m'realtime_api_key'[39m ] }
+Realtime API key resolved from environment variables. { length: [33m9[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mreads realtime api keys from case-insensitive environment variables
+[22m[39mResolving wake word access key from environment variables. { keys: [ [32m'PORCUPINE_ACCESS_KEY'[39m, [32m'porcupine_access_key'[39m ] }
+Wake word access key resolved from environment variables. { length: [33m8[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mreads realtime api keys from case-insensitive environment variables
+[22m[39mConfiguration loaded. {
+  hasRealtimeApiKey: [33mtrue[39m,
+  wakeWordHasAccessKey: [33mtrue[39m,
+  audioInputConfigured: [33mfalse[39m,
+  audioOutputConfigured: [33mfalse[39m,
+  featureFlagCount: [33m0[39m
+}
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mreads api secrets from lowercase .env keys and trims whitespace
+[22m[39mLoading configuration from environment and secret stores.
+Resolving realtime API key from environment variables. { keys: [ [32m'REALTIME_API_KEY'[39m, [32m'realtime_api_key'[39m ] }
+Realtime API key resolved from environment variables. { length: [33m12[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mreads api secrets from lowercase .env keys and trims whitespace
+[22m[39mResolving wake word access key from environment variables. { keys: [ [32m'PORCUPINE_ACCESS_KEY'[39m, [32m'porcupine_access_key'[39m ] }
+Wake word access key resolved from environment variables. { length: [33m13[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mreads api secrets from lowercase .env keys and trims whitespace
+[22m[39mConfiguration loaded. {
+  hasRealtimeApiKey: [33mtrue[39m,
+  wakeWordHasAccessKey: [33mtrue[39m,
+  audioInputConfigured: [33mfalse[39m,
+  audioOutputConfigured: [33mfalse[39m,
+  featureFlagCount: [33m0[39m
+}
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mupdates and persists audio device preferences
+[22m[39mLoading configuration from environment and secret stores.
+Resolving realtime API key from environment variables. { keys: [ [32m'REALTIME_API_KEY'[39m, [32m'realtime_api_key'[39m ] }
+Realtime API key resolved from environment variables. { length: [33m3[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mupdates and persists audio device preferences
+[22m[39mResolving wake word access key from environment variables. { keys: [ [32m'PORCUPINE_ACCESS_KEY'[39m, [32m'porcupine_access_key'[39m ] }
+Wake word access key resolved from environment variables. { length: [33m4[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mupdates and persists audio device preferences
+[22m[39mConfiguration loaded. {
+  hasRealtimeApiKey: [33mtrue[39m,
+  wakeWordHasAccessKey: [33mtrue[39m,
+  audioInputConfigured: [33mfalse[39m,
+  audioOutputConfigured: [33mfalse[39m,
+  featureFlagCount: [33m0[39m
+}
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mupdates secrets securely and refreshes renderer config state
+[22m[39mLoading configuration from environment and secret stores.
+Resolving realtime API key from environment variables. { keys: [ [32m'REALTIME_API_KEY'[39m, [32m'realtime_api_key'[39m ] }
+Realtime API key resolved from environment variables. { length: [33m11[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mupdates secrets securely and refreshes renderer config state
+[22m[39mResolving wake word access key from environment variables. { keys: [ [32m'PORCUPINE_ACCESS_KEY'[39m, [32m'porcupine_access_key'[39m ] }
+Wake word access key resolved from environment variables. { length: [33m12[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mupdates secrets securely and refreshes renderer config state
+[22m[39mConfiguration loaded. {
+  hasRealtimeApiKey: [33mtrue[39m,
+  wakeWordHasAccessKey: [33mtrue[39m,
+  audioInputConfigured: [33mfalse[39m,
+  audioOutputConfigured: [33mfalse[39m,
+  featureFlagCount: [33m0[39m
+}
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mupdates secrets securely and refreshes renderer config state
+[22m[39mRealtime API key updated. { length: [33m11[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mupdates secrets securely and refreshes renderer config state
+[22m[39mWake word access key updated. { length: [33m17[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mthrows when attempting to persist secrets without a configured store
+[22m[39mLoading configuration from environment and secret stores.
+Resolving realtime API key from environment variables. { keys: [ [32m'REALTIME_API_KEY'[39m, [32m'realtime_api_key'[39m ] }
+Realtime API key resolved from environment variables. { length: [33m7[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mthrows when attempting to persist secrets without a configured store
+[22m[39mResolving wake word access key from environment variables. { keys: [ [32m'PORCUPINE_ACCESS_KEY'[39m, [32m'porcupine_access_key'[39m ] }
+Wake word access key resolved from environment variables. { length: [33m4[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mthrows when attempting to persist secrets without a configured store
+[22m[39mConfiguration loaded. {
+  hasRealtimeApiKey: [33mtrue[39m,
+  wakeWordHasAccessKey: [33mtrue[39m,
+  audioInputConfigured: [33mfalse[39m,
+  audioOutputConfigured: [33mfalse[39m,
+  featureFlagCount: [33m0[39m
+}
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mtests realtime api keys using the configured OpenAI client
+[22m[39mLoading configuration from environment and secret stores.
+Resolving realtime API key from environment variables. { keys: [ [32m'REALTIME_API_KEY'[39m, [32m'realtime_api_key'[39m ] }
+Realtime API key resolved from environment variables. { length: [33m8[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mtests realtime api keys using the configured OpenAI client
+[22m[39mResolving wake word access key from environment variables. { keys: [ [32m'PORCUPINE_ACCESS_KEY'[39m, [32m'porcupine_access_key'[39m ] }
+Wake word access key resolved from environment variables. { length: [33m4[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mtests realtime api keys using the configured OpenAI client
+[22m[39mConfiguration loaded. {
+  hasRealtimeApiKey: [33mtrue[39m,
+  wakeWordHasAccessKey: [33mtrue[39m,
+  audioInputConfigured: [33mfalse[39m,
+  audioOutputConfigured: [33mfalse[39m,
+  featureFlagCount: [33m0[39m
+}
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mtests realtime api keys using the configured OpenAI client
+[22m[39mTesting realtime API key.
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mreturns a helpful error when testing an unconfigured realtime api key
+[22m[39mLoading configuration from environment and secret stores.
+Resolving realtime API key from environment variables. { keys: [ [32m'REALTIME_API_KEY'[39m, [32m'realtime_api_key'[39m ] }
+Realtime API key not found in environment. { hasSecretStore: [33mfalse[39m }
+
+stderr | tests/config-manager.test.ts > ConfigManager > returns a helpful error when testing an unconfigured realtime api key
+Realtime API key unavailable: secret store is not configured.
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mreturns a helpful error when testing an unconfigured realtime api key
+[22m[39mResolving wake word access key from environment variables. { keys: [ [32m'PORCUPINE_ACCESS_KEY'[39m, [32m'porcupine_access_key'[39m ] }
+Wake word access key resolved from environment variables. { length: [33m8[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mreturns a helpful error when testing an unconfigured realtime api key
+[22m[39mConfiguration loaded. {
+  hasRealtimeApiKey: [33mfalse[39m,
+  wakeWordHasAccessKey: [33mtrue[39m,
+  audioInputConfigured: [33mfalse[39m,
+  audioOutputConfigured: [33mfalse[39m,
+  featureFlagCount: [33m0[39m
+}
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mreports when no OpenAI client is available for realtime key testing
+[22m[39mLoading configuration from environment and secret stores.
+Resolving realtime API key from environment variables. { keys: [ [32m'REALTIME_API_KEY'[39m, [32m'realtime_api_key'[39m ] }
+Realtime API key resolved from environment variables. { length: [33m14[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mreports when no OpenAI client is available for realtime key testing
+[22m[39mResolving wake word access key from environment variables. { keys: [ [32m'PORCUPINE_ACCESS_KEY'[39m, [32m'porcupine_access_key'[39m ] }
+Wake word access key resolved from environment variables. { length: [33m8[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mreports when no OpenAI client is available for realtime key testing
+[22m[39mConfiguration loaded. {
+  hasRealtimeApiKey: [33mtrue[39m,
+  wakeWordHasAccessKey: [33mtrue[39m,
+  audioInputConfigured: [33mfalse[39m,
+  audioOutputConfigured: [33mfalse[39m,
+  featureFlagCount: [33m0[39m
+}
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mreports when no OpenAI client is available for realtime key testing
+[22m[39mTesting realtime API key.
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mreports HTTP failures when validating wake word access keys
+[22m[39mLoading configuration from environment and secret stores.
+Resolving realtime API key from environment variables. { keys: [ [32m'REALTIME_API_KEY'[39m, [32m'realtime_api_key'[39m ] }
+Realtime API key resolved from environment variables. { length: [33m3[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mreports HTTP failures when validating wake word access keys
+[22m[39mResolving wake word access key from environment variables. { keys: [ [32m'PORCUPINE_ACCESS_KEY'[39m, [32m'porcupine_access_key'[39m ] }
+Wake word access key resolved from environment variables. { length: [33m4[39m }
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mreports HTTP failures when validating wake word access keys
+[22m[39mConfiguration loaded. {
+  hasRealtimeApiKey: [33mtrue[39m,
+  wakeWordHasAccessKey: [33mtrue[39m,
+  audioInputConfigured: [33mfalse[39m,
+  audioOutputConfigured: [33mfalse[39m,
+  featureFlagCount: [33m0[39m
+}
+
+[90mstdout[2m | tests/config-manager.test.ts[2m > [22m[2mConfigManager[2m > [22m[2mreports HTTP failures when validating wake word access keys
+[22m[39mTesting wake word access key.
+
+ [32mΓ£ô[39m tests/config-manager.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 64[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m17 passed[39m[22m[90m (17)[39m
+[2m   Start at [22m 11:01:32
+[2m   Duration [22m 1.68s[2m (transform 278ms, setup 97ms, collect 404ms, tests 64ms, environment 0ms, prepare 356ms)[22m
+
+Γ£ô Config tests passed
+
+
+======================================================================
+Running Preferences tests...
+======================================================================
+
+
+[1m[46m RUN [49m[22m [36mv3.2.4 [39m[90mC:/Users/kevin/repos/aiembodied/app/main[39m
+
+ [32mΓ£ô[39m tests/preferences-store.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m   Start at [22m 11:01:36
+[2m   Duration [22m 1.51s[2m (transform 129ms, setup 86ms, collect 70ms, tests 19ms, environment 0ms, prepare 373ms)[22m
+
+Γ£ô Preferences tests passed
+
+
+======================================================================
+Running Avatar tests...
+======================================================================
+
+
+[1m[46m RUN [49m[22m [36mv3.2.4 [39m[90mC:/Users/kevin/repos/aiembodied/app/main[39m
+
+ [32mΓ£ô[39m tests/avatar-animation-service.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 190[2mms[22m[39m
+ [32mΓ£ô[39m tests/avatar-pose-service.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 335[2mms[22m[39m
+ [32mΓ£ô[39m tests/avatar-model-service.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 382[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[32m26 passed[39m[22m[90m (26)[39m
+[2m   Start at [22m 11:01:40
+[2m   Duration [22m 1.89s[2m (transform 570ms, setup 153ms, collect 924ms, tests 908ms, environment 1ms, prepare 1.06s)[22m
+
+Γ£ô Avatar tests passed
+
+
+======================================================================
+Running VRMA tests...
+======================================================================
+
+
+[1m[46m RUN [49m[22m [36mv3.2.4 [39m[90mC:/Users/kevin/repos/aiembodied/app/main[39m
+
+ [32mΓ£ô[39m tests/vrma-converter.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32mΓ£ô[39m tests/vrma-schema.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32mΓ£ô[39m tests/vrma-generation-service.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 123[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[32m8 passed[39m[22m[90m (8)[39m
+[2m   Start at [22m 11:01:44
+[2m   Duration [22m 2.05s[2m (transform 419ms, setup 153ms, collect 1.15s, tests 156ms, environment 1ms, prepare 1.22s)[22m
+
+Γ£ô VRMA tests passed
+
+
+======================================================================
+Running OpenAI tests...
+======================================================================
+
+
+[1m[46m RUN [49m[22m [36mv3.2.4 [39m[90mC:/Users/kevin/repos/aiembodied/app/main[39m
+
+ [32mΓ£ô[39m tests/openai-client.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m   Start at [22m 11:01:49
+[2m   Duration [22m 1.20s[2m (transform 108ms, setup 82ms, collect 77ms, tests 11ms, environment 0ms, prepare 334ms)[22m
+
+Γ£ô OpenAI tests passed
+
+
+======================================================================
+Running Memory tests...
+======================================================================
+
+
+[1m[46m RUN [49m[22m [36mv3.2.4 [39m[90mC:/Users/kevin/repos/aiembodied/app/main[39m
+
+ [32mΓ£ô[39m tests/memory-store.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 249[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m6 passed[39m[22m[90m (6)[39m
+[2m   Start at [22m 11:01:52
+[2m   Duration [22m 2.30s[2m (transform 434ms, setup 114ms, collect 453ms, tests 249ms, environment 1ms, prepare 554ms)[22m
+
+Γ£ô Memory tests passed
+
+
+======================================================================
+Running Preload tests...
+======================================================================
+
+
+[1m[46m RUN [49m[22m [36mv3.2.4 [39m[90mC:/Users/kevin/repos/aiembodied/app/main[39m
+
+[90mstdout[2m | tests/preload.test.ts[2m > [22m[2mpreload bridge[2m > [22m[2mregisters the aiembodied api with config bridge and ping helper
+[22m[39m[preload bridge] Preparing to expose renderer bridge. {
+  keys: [
+    [32m'config'[39m,
+    [32m'realtime'[39m,
+    [32m'wakeWord'[39m,
+    [32m'conversation'[39m,
+    [32m'metrics'[39m,
+    [32m'avatar'[39m,
+    [32m'camera'[39m,
+    [32m'ping'[39m,
+    [32m'__bridgeReady'[39m,
+    [32m'__bridgeVersion'[39m
+  ],
+  hasAvatarBridge: [33mtrue[39m,
+  hasCameraBridge: [33mtrue[39m
+}
+[preload bridge] Renderer bridge exposed successfully. {
+  keys: [
+    [32m'config'[39m,
+    [32m'realtime'[39m,
+    [32m'wakeWord'[39m,
+    [32m'conversation'[39m,
+    [32m'metrics'[39m,
+    [32m'avatar'[39m,
+    [32m'camera'[39m,
+    [32m'ping'[39m,
+    [32m'__bridgeReady'[39m,
+    [32m'__bridgeVersion'[39m
+  ],
+  hasAvatarBridge: [33mtrue[39m,
+  hasCameraBridge: [33mtrue[39m,
+  bridgeReady: [33mtrue[39m,
+  bridgeVersion: [32m'1.0.0'[39m
+}
+
+[90mstdout[2m | tests/preload.test.ts[2m > [22m[2mpreload bridge[2m > [22m[2mroutes config mutations and tests through ipc channels
+[22m[39m[preload bridge] Preparing to expose renderer bridge. {
+  keys: [
+    [32m'config'[39m,
+    [32m'realtime'[39m,
+    [32m'wakeWord'[39m,
+    [32m'conversation'[39m,
+    [32m'metrics'[39m,
+    [32m'avatar'[39m,
+    [32m'camera'[39m,
+    [32m'ping'[39m,
+    [32m'__bridgeReady'[39m,
+    [32m'__bridgeVersion'[39m
+  ],
+  hasAvatarBridge: [33mtrue[39m,
+  hasCameraBridge: [33mtrue[39m
+}
+[preload bridge] Renderer bridge exposed successfully. {
+  keys: [
+    [32m'config'[39m,
+    [32m'realtime'[39m,
+    [32m'wakeWord'[39m,
+    [32m'conversation'[39m,
+    [32m'metrics'[39m,
+    [32m'avatar'[39m,
+    [32m'camera'[39m,
+    [32m'ping'[39m,
+    [32m'__bridgeReady'[39m,
+    [32m'__bridgeVersion'[39m
+  ],
+  hasAvatarBridge: [33mtrue[39m,
+  hasCameraBridge: [33mtrue[39m,
+  bridgeReady: [33mtrue[39m,
+  bridgeVersion: [32m'1.0.0'[39m
+}
+
+[90mstdout[2m | tests/preload.test.ts[2m > [22m[2mpreload bridge[2m > [22m[2mprovides a wake word subscription bridge
+[22m[39m[preload bridge] Preparing to expose renderer bridge. {
+  keys: [
+    [32m'config'[39m,
+    [32m'realtime'[39m,
+    [32m'wakeWord'[39m,
+    [32m'conversation'[39m,
+    [32m'metrics'[39m,
+    [32m'avatar'[39m,
+    [32m'camera'[39m,
+    [32m'ping'[39m,
+    [32m'__bridgeReady'[39m,
+    [32m'__bridgeVersion'[39m
+  ],
+  hasAvatarBridge: [33mtrue[39m,
+  hasCameraBridge: [33mtrue[39m
+}
+[preload bridge] Renderer bridge exposed successfully. {
+  keys: [
+    [32m'config'[39m,
+    [32m'realtime'[39m,
+    [32m'wakeWord'[39m,
+    [32m'conversation'[39m,
+    [32m'metrics'[39m,
+    [32m'avatar'[39m,
+    [32m'camera'[39m,
+    [32m'ping'[39m,
+    [32m'__bridgeReady'[39m,
+    [32m'__bridgeVersion'[39m
+  ],
+  hasAvatarBridge: [33mtrue[39m,
+  hasCameraBridge: [33mtrue[39m,
+  bridgeReady: [33mtrue[39m,
+  bridgeVersion: [32m'1.0.0'[39m
+}
+
+[90mstdout[2m | tests/preload.test.ts[2m > [22m[2mpreload bridge[2m > [22m[2mexposes camera detection helpers through the bridge
+[22m[39m[preload bridge] Preparing to expose renderer bridge. {
+  keys: [
+    [32m'config'[39m,
+    [32m'realtime'[39m,
+    [32m'wakeWord'[39m,
+    [32m'conversation'[39m,
+    [32m'metrics'[39m,
+    [32m'avatar'[39m,
+    [32m'camera'[39m,
+    [32m'ping'[39m,
+    [32m'__bridgeReady'[39m,
+    [32m'__bridgeVersion'[39m
+  ],
+  hasAvatarBridge: [33mtrue[39m,
+  hasCameraBridge: [33mtrue[39m
+}
+[preload bridge] Renderer bridge exposed successfully. {
+  keys: [
+    [32m'config'[39m,
+    [32m'realtime'[39m,
+    [32m'wakeWord'[39m,
+    [32m'conversation'[39m,
+    [32m'metrics'[39m,
+    [32m'avatar'[39m,
+    [32m'camera'[39m,
+    [32m'ping'[39m,
+    [32m'__bridgeReady'[39m,
+    [32m'__bridgeVersion'[39m
+  ],
+  hasAvatarBridge: [33mtrue[39m,
+  hasCameraBridge: [33mtrue[39m,
+  bridgeReady: [33mtrue[39m,
+  bridgeVersion: [32m'1.0.0'[39m
+}
+
+[90mstdout[2m | tests/preload.test.ts[2m > [22m[2mpreload bridge[2m > [22m[2mexposes avatar model helpers through the bridge
+[22m[39m[preload bridge] Preparing to expose renderer bridge. {
+  keys: [
+    [32m'config'[39m,
+    [32m'realtime'[39m,
+    [32m'wakeWord'[39m,
+    [32m'conversation'[39m,
+    [32m'metrics'[39m,
+    [32m'avatar'[39m,
+    [32m'camera'[39m,
+    [32m'ping'[39m,
+    [32m'__bridgeReady'[39m,
+    [32m'__bridgeVersion'[39m
+  ],
+  hasAvatarBridge: [33mtrue[39m,
+  hasCameraBridge: [33mtrue[39m
+}
+[preload bridge] Renderer bridge exposed successfully. {
+  keys: [
+    [32m'config'[39m,
+    [32m'realtime'[39m,
+    [32m'wakeWord'[39m,
+    [32m'conversation'[39m,
+    [32m'metrics'[39m,
+    [32m'avatar'[39m,
+    [32m'camera'[39m,
+    [32m'ping'[39m,
+    [32m'__bridgeReady'[39m,
+    [32m'__bridgeVersion'[39m
+  ],
+  hasAvatarBridge: [33mtrue[39m,
+  hasCameraBridge: [33mtrue[39m,
+  bridgeReady: [33mtrue[39m,
+  bridgeVersion: [32m'1.0.0'[39m
+}
+
+[90mstdout[2m | tests/preload.test.ts[2m > [22m[2mpreload bridge[2m > [22m[2mexposes avatar animation helpers through the bridge
+[22m[39m[preload bridge] Preparing to expose renderer bridge. {
+  keys: [
+    [32m'config'[39m,
+    [32m'realtime'[39m,
+    [32m'wakeWord'[39m,
+    [32m'conversation'[39m,
+    [32m'metrics'[39m,
+    [32m'avatar'[39m,
+    [32m'camera'[39m,
+    [32m'ping'[39m,
+    [32m'__bridgeReady'[39m,
+    [32m'__bridgeVersion'[39m
+  ],
+  hasAvatarBridge: [33mtrue[39m,
+  hasCameraBridge: [33mtrue[39m
+}
+[preload bridge] Renderer bridge exposed successfully. {
+  keys: [
+    [32m'config'[39m,
+    [32m'realtime'[39m,
+    [32m'wakeWord'[39m,
+    [32m'conversation'[39m,
+    [32m'metrics'[39m,
+    [32m'avatar'[39m,
+    [32m'camera'[39m,
+    [32m'ping'[39m,
+    [32m'__bridgeReady'[39m,
+    [32m'__bridgeVersion'[39m
+  ],
+  hasAvatarBridge: [33mtrue[39m,
+  hasCameraBridge: [33mtrue[39m,
+  bridgeReady: [33mtrue[39m,
+  bridgeVersion: [32m'1.0.0'[39m
+}
+
+ [32mΓ£ô[39m tests/preload.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 114[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m6 passed[39m[22m[90m (6)[39m
+[2m   Start at [22m 11:01:57
+[2m   Duration [22m 1.41s[2m (transform 189ms, setup 84ms, collect 104ms, tests 114ms, environment 0ms, prepare 303ms)[22m
+
+Γ£ô Preload tests passed
+
+
+======================================================================
+Running Main tests...
+======================================================================
+
+
+[1m[46m RUN [49m[22m [36mv3.2.4 [39m[90mC:/Users/kevin/repos/aiembodied/app/main[39m
+
+ [31mΓ¥»[39m tests/main.test.ts [2m([22m[2m5 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 916[2mms[22m[39m
+   [33m[2mΓ£ô[22m[39m main process bootstrap[2m > [22mquits when another instance already holds the lock [33m 524[2mms[22m[39m
+[31m   [31m├ù[31m main process bootstrap[2m > [22minitializes wake word service, ipc handlers, and window lifecycle on ready[39m[32m 200[2mms[22m[39m
+[31m     ΓåÆ expected "spy" to be called 1 times, but got 2 times[39m
+   [32mΓ£ô[39m main process bootstrap[2m > [22msurfaces configuration validation failures to the user[32m 56[2mms[22m[39m
+   [32mΓ£ô[39m main process bootstrap[2m > [22msurfaces preload resolution failures and aborts window creation[32m 54[2mms[22m[39m
+   [32mΓ£ô[39m main process bootstrap[2m > [22mlogs and surfaces configuration bridge registration failures[32m 78[2mms[22m[39m
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ» Failed Tests 1 ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+
+ FAIL  tests/main.test.ts > main process bootstrap > initializes wake word service, ipc handlers, and window lifecycle on ready
+AssertionError: expected "spy" to be called 1 times, but got 2 times
+ Γ¥» tests/main.test.ts:900:29
+    898| 
+    899|     appEmitter.emit('window-all-closed');
+    900|     expect(appEmitter.quit).toHaveBeenCalledTimes(1);
+       |                             ^
+    901|   });
+    902| 
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[1/1]ΓÄ»
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m4 passed[39m[22m[90m (5)[39m
+[2m   Start at [22m 11:02:03
+[2m   Duration [22m 4.23s[2m (transform 1.47s, setup 245ms, collect 724ms, tests 916ms, environment 0ms, prepare 816ms)[22m
+
+
+Γ¥î Main tests failed
+ΓÇëELIFECYCLEΓÇë Test failed. See above for more details.

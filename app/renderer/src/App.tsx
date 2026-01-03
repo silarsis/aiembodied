@@ -655,6 +655,8 @@ export default function App() {
   const [selectedTestAnimation, setSelectedTestAnimation] = useState<string>('');
   const [availablePoses, setAvailablePoses] = useState<AvatarPoseSummary[]>([]);
   const [selectedTestPose, setSelectedTestPose] = useState<string>('');
+  const [jsonPoseInput, setJsonPoseInput] = useState<string>('');
+  const [jsonPoseError, setJsonPoseError] = useState<string | null>(null);
   const [animationListVersion, setAnimationListVersion] = useState(0);
   const animationBus = useMemo(() => createAvatarAnimationBus(), []);
   const [isListeningEnabled, setListeningEnabled] = useState(false);
@@ -992,6 +994,50 @@ export default function App() {
       console.error('[App] Failed to load pose', error);
     }
   }, [animationBus, selectedTestPose, resolveApi]);
+
+  const handleApplyJsonPose = useCallback(() => {
+    const input = jsonPoseInput.trim();
+    if (!input) {
+      setJsonPoseError('Please enter JSON pose data.');
+      return;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(input);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid JSON';
+      setJsonPoseError(`JSON parse error: ${message}`);
+      return;
+    }
+
+    // Validate the parsed object has the expected VRMPoseData shape
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      setJsonPoseError('Invalid pose data: expected an object mapping bone names to transforms.');
+      return;
+    }
+
+    const poseData = parsed as Record<string, unknown>;
+    for (const [boneName, transform] of Object.entries(poseData)) {
+      if (typeof transform !== 'object' || transform === null) {
+        setJsonPoseError(`Invalid pose data: bone "${boneName}" must have an object value.`);
+        return;
+      }
+      const t = transform as Record<string, unknown>;
+      if (!Array.isArray(t.rotation) || t.rotation.length !== 4) {
+        setJsonPoseError(`Invalid pose data: bone "${boneName}" must have a 4-element rotation array.`);
+        return;
+      }
+      if (t.position !== undefined && (!Array.isArray(t.position) || t.position.length !== 3)) {
+        setJsonPoseError(`Invalid pose data: bone "${boneName}" position must be a 3-element array.`);
+        return;
+      }
+    }
+
+    // Apply the pose
+    animationBus.applyPose(poseData as Record<string, { rotation: number[]; position?: number[] }>, 'json-paste');
+    setJsonPoseError(null);
+  }, [animationBus, jsonPoseInput]);
 
   const applySessionHistory = useCallback((session: ConversationSessionWithMessages | null) => {
     if (!session) {
@@ -2405,6 +2451,34 @@ export default function App() {
                           >
                             Apply
                           </button>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>JSON Pose</dt>
+                        <dd className="kiosk__animationTest" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                          <textarea
+                            id="json-pose-input"
+                            placeholder='Paste VRM pose JSON, e.g. {"hips":{"rotation":[0,0,0,1]}}'
+                            rows={4}
+                            value={jsonPoseInput}
+                            onChange={(e) => {
+                              setJsonPoseInput(e.target.value);
+                              setJsonPoseError(null);
+                            }}
+                            style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.75rem', marginBottom: '0.5rem' }}
+                          />
+                          <button
+                            type="button"
+                            onClick={handleApplyJsonPose}
+                            disabled={!jsonPoseInput.trim()}
+                          >
+                            Apply JSON Pose
+                          </button>
+                          {jsonPoseError && (
+                            <div role="alert" style={{ color: '#e53e3e', fontSize: '0.75rem', marginTop: '0.5rem' }}>
+                              {jsonPoseError}
+                            </div>
+                          )}
                         </dd>
                       </div>
                     </dl>

@@ -30,9 +30,14 @@ export function initializeLogger(options: LoggerOptions = {}): LoggerBundle {
         format: format.combine(
           format.colorize(),
           format.printf(({ level, message, timestamp, stack, ...meta }) => {
-            const base = `${timestamp as string} [${level}] ${message as string}`;
+            const ts = typeof timestamp === 'string' ? timestamp : String(timestamp ?? '');
+            const msg = typeof message === 'string' ? message : String(message ?? '');
+            const base = `${ts} [${level}] ${msg}`;
             const metaString = Object.keys(meta).length > 0 ? ` ${JSON.stringify(meta)}` : '';
-            return stack ? `${base}\n${stack as string}` : `${base}${metaString}`;
+            if (typeof stack === 'string') {
+              return `${base}\n${stack}`;
+            }
+            return `${base}${metaString}`;
           }),
         ),
       }),
@@ -66,7 +71,9 @@ export function initializeLogger(options: LoggerOptions = {}): LoggerBundle {
 
   const debug = debugFactory(`${serviceName}:main`);
   debug.log = (...args: unknown[]) => {
-    const [message, ...rest] = args as [string, ...unknown[]];
+    const first = args[0];
+    const message = typeof first === 'string' ? first : String(first ?? '');
+    const rest = args.slice(1);
     logger.debug(message, ...rest);
   };
 

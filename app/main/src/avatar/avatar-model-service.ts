@@ -73,6 +73,84 @@ function extractHumanBoneNames(parsed: ParsedGlb): string[] {
   return [];
 }
 
+/**
+ * Extract bone hierarchy from VRM by traversing the glTF node graph.
+ * Returns a map of bone name -> parent bone name (or null for root bones).
+ */
+function extractBoneHierarchy(parsed: ParsedGlb): Record<string, string | null> {
+  const extensions = parsed.json?.extensions as Record<string, unknown> | undefined;
+  const vrmc = extensions?.VRMC_vrm as Record<string, unknown> | undefined;
+  const vrm = extensions?.VRM as Record<string, unknown> | undefined;
+  const nodes = parsed.json?.nodes as Array<{ children?: number[] }> | undefined;
+
+  if (!nodes || nodes.length === 0) {
+    return {};
+  }
+
+  // Build node index -> bone name map
+  const nodeIndexToBone = new Map<number, string>();
+
+  // VRMC format: humanBones is an object { boneName: { node: nodeIndex } }
+  const vrmcHumanoid = vrmc?.humanoid as Record<string, unknown> | undefined;
+  const vrmcBones = vrmcHumanoid?.humanBones as Record<string, { node?: number }> | undefined;
+  if (vrmcBones && typeof vrmcBones === 'object' && !Array.isArray(vrmcBones)) {
+    for (const [boneName, boneData] of Object.entries(vrmcBones)) {
+      if (typeof boneData?.node === 'number') {
+        nodeIndexToBone.set(boneData.node, boneName);
+      }
+    }
+  } else {
+    // VRM 0.x format: humanBones is an array [{ bone: "boneName", node: nodeIndex }]
+    const vrmHumanoid = vrm?.humanoid as Record<string, unknown> | undefined;
+    const vrmBones = vrmHumanoid?.humanBones as Array<{ bone?: string; node?: number }> | undefined;
+    if (Array.isArray(vrmBones)) {
+      for (const entry of vrmBones) {
+        if (typeof entry?.bone === 'string' && typeof entry?.node === 'number') {
+          nodeIndexToBone.set(entry.node, entry.bone);
+        }
+      }
+    }
+  }
+
+  if (nodeIndexToBone.size === 0) {
+    return {};
+  }
+
+  // Build node index -> parent node index map
+  const nodeToParent = new Map<number, number>();
+  for (let parentIndex = 0; parentIndex < nodes.length; parentIndex++) {
+    const node = nodes[parentIndex];
+    if (node?.children && Array.isArray(node.children)) {
+      for (const childIndex of node.children) {
+        if (typeof childIndex === 'number') {
+          nodeToParent.set(childIndex, parentIndex);
+        }
+      }
+    }
+  }
+
+  // Build bone -> parent bone map
+  const hierarchy: Record<string, string | null> = {};
+  for (const [nodeIndex, boneName] of nodeIndexToBone) {
+    // Walk up the node tree to find the first ancestor that is also a bone
+    let parentNodeIndex = nodeToParent.get(nodeIndex);
+    let parentBoneName: string | null = null;
+
+    while (parentNodeIndex !== undefined) {
+      const ancestorBone = nodeIndexToBone.get(parentNodeIndex);
+      if (ancestorBone) {
+        parentBoneName = ancestorBone;
+        break;
+      }
+      parentNodeIndex = nodeToParent.get(parentNodeIndex);
+    }
+
+    hierarchy[boneName] = parentBoneName;
+  }
+
+  return hierarchy;
+}
+
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const JPEG_SIGNATURE = Buffer.from([0xff, 0xd8, 0xff]);
 const GIF87A_SIGNATURE = Buffer.from('GIF87a');
@@ -284,11 +362,11 @@ function loadVrmMetadata(parsed: ParsedGlb): VrmMetaSummary {
       throw new Error(`VRM validation failed: unsupported VRMC_vrm specVersion "${specVersion}".`);
     }
 
-  return {
-    metaVersion: '1',
-    name: typeof metaSource.meta.name === 'string' ? metaSource.meta.name : undefined,
-    version: typeof metaSource.meta.version === 'string' ? metaSource.meta.version : undefined,
-  };
+    return {
+      metaVersion: '1',
+      name: typeof metaSource.meta.name === 'string' ? metaSource.meta.name : undefined,
+      version: typeof metaSource.meta.version === 'string' ? metaSource.meta.version : undefined,
+    };
   }
 
   const metaVersion = typeof metaSource.meta.metaVersion === 'string' ? metaSource.meta.metaVersion : undefined;
@@ -478,6 +556,38 @@ export class AvatarModelService {
       const message = error instanceof Error ? error.message : String(error);
       this.logger?.warn?.('Failed to read VRM bones from model binary.', { modelId, filePath: record.filePath, message });
       return [];
+    }
+  }
+
+  async listActiveModelBoneHierarchy(): Promise<Record<string, string | null>> {
+    const active = this.getActiveModel();
+    if (!active) {
+      return {};
+    }
+
+    return await this.listModelBoneHierarchy(active.id);
+  }
+
+  async listModelBoneHierarchy(modelId: string): Promise<Record<string, string | null>> {
+    const record = this.store.getVrmModel(modelId);
+    if (!record) {
+      this.logger?.warn?.('Requested VRM model not found when listing bone hierarchy.', { modelId });
+      return {};
+    }
+
+    try {
+      const buffer = await this.fs.readFile(record.filePath);
+      if (buffer.length === 0) {
+        this.logger?.warn?.('VRM model binary is empty; cannot extract bone hierarchy.', { modelId, filePath: record.filePath });
+        return {};
+      }
+
+      const parsed = parseGlb(buffer);
+      return extractBoneHierarchy(parsed);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.warn?.('Failed to extract bone hierarchy from model binary.', { modelId, filePath: record.filePath, message });
+      return {};
     }
   }
 

@@ -98,14 +98,14 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
     this.maxRestartDelayMs = options.maxRestartDelayMs ?? DEFAULT_MAX_RESTART_DELAY_MS;
     if (options.workerPath) {
       this.workerPath = options.workerPath;
-      this.baseWorkerOptions = { ...(options.workerOptions ?? {}) } as WorkerOptions;
+      this.baseWorkerOptions = { ...(options.workerOptions ?? {}) } satisfies WorkerOptions;
     } else {
       const entrypoint = defaultWorkerEntrypoint();
       this.workerPath = entrypoint.url;
       this.baseWorkerOptions = {
         ...(entrypoint.options ?? {}),
         ...(options.workerOptions ?? {}),
-      } as WorkerOptions;
+      } satisfies WorkerOptions;
     }
     this.filter = new WakeWordEventFilter({
       cooldownMs: options.cooldownMs,
@@ -233,7 +233,7 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
 
     // Negotiate graceful shutdown
     const gracefulExit = new Promise<void>((resolve) => {
-      const exitHandler = (code: number) => {
+      const exitHandler = () => {
         worker.off('exit', exitHandler);
         resolve();
       };

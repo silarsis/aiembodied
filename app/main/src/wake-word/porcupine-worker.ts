@@ -13,6 +13,9 @@ if (!parentPort) {
   throw new Error('porcupine-worker must be run as a worker thread');
 }
 
+// After the null check above, we know parentPort is defined
+const port = parentPort;
+
 const config = workerData as WakeWordWorkerConfig;
 
 let recorder: PvRecorder | null = null;
@@ -25,7 +28,7 @@ async function start(): Promise<void> {
   recorder.start();
   isRunning = true;
 
-  parentPort!.postMessage({
+  port.postMessage({
     type: 'ready',
     info: {
       frameLength: porcupine.frameLength,
@@ -45,12 +48,12 @@ async function start(): Promise<void> {
           timestamp: Date.now(),
           keywordIndex,
         };
-        parentPort!.postMessage({ type: 'wake', event } satisfies WakeWordWorkerMessage);
+        port.postMessage({ type: 'wake', event } satisfies WakeWordWorkerMessage);
       }
     } catch (error) {
       const isFatalAudioError =
         error instanceof Error && error.message.includes('PvRecorder failed to read audio data frame');
-      parentPort!.postMessage({
+      port.postMessage({
         type: 'error',
         error: serializeError(error),
         fatal: isFatalAudioError,
@@ -64,7 +67,7 @@ async function start(): Promise<void> {
   }
 }
 
-parentPort.on('message', (message: WakeWordWorkerCommand) => {
+port.on('message', (message: WakeWordWorkerCommand) => {
   if (message.type === 'shutdown') {
     shutdown().finally(() => {
       process.exit(0);
@@ -73,7 +76,7 @@ parentPort.on('message', (message: WakeWordWorkerCommand) => {
 });
 
 void start().catch((error) => {
-  parentPort!.postMessage({ type: 'error', error: serializeError(error) } satisfies WakeWordWorkerMessage);
+  port.postMessage({ type: 'error', error: serializeError(error) } satisfies WakeWordWorkerMessage);
   shutdown().catch(() => {
     // ignore errors during shutdown
   });

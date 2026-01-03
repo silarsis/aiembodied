@@ -17,6 +17,7 @@ import {
   useAvatarAnimationQueue,
   type AvatarAnimationEvent,
   type AvatarAnimationTiming,
+  type VRMPoseData,
 } from './animation-bus.js';
 import { toAnimationSlug } from './animation-tags.js';
 import { useBehaviorCues, type BehaviorCueEvent } from './behavior-cues.js';
@@ -301,6 +302,97 @@ function applyExpressionFrameAtTime(vrm: VRM, vrmaData: VrmaGltf, currentTime: n
       expressionManager.setValue(sampler.name, value);
     }
   }
+}
+
+const DEFAULT_POSE_TRANSITION_DURATION = 0.5; // seconds
+
+/**
+ * Creates an AnimationClip that transitions from the current bone rotations to the target pose.
+ * Uses SLERP (spherical linear interpolation) for smooth quaternion interpolation.
+ */
+export function createPoseTransitionClip(
+  vrm: VRM,
+  targetPose: VRMPoseData,
+  duration: number = DEFAULT_POSE_TRANSITION_DURATION,
+): THREE.AnimationClip | null {
+  const humanoid = vrm.humanoid;
+  if (!humanoid) {
+    return null;
+  }
+
+  const tracks: THREE.KeyframeTrack[] = [];
+  const resolvedBones: string[] = [];
+  const unresolvedBones: string[] = [];
+
+  for (const [boneName, boneData] of Object.entries(targetPose)) {
+    const rotation = boneData.rotation;
+    if (!rotation || rotation.length !== 4) {
+      continue;
+    }
+
+    // Get the normalized bone node (used by VRM animations - same as wave animation)
+    const node = humanoid.getNormalizedBoneNode(boneName as Parameters<typeof humanoid.getNormalizedBoneNode>[0]);
+    if (!node) {
+      unresolvedBones.push(boneName);
+      continue;
+    }
+
+    resolvedBones.push(boneName);
+
+    // Current quaternion values (clone to avoid mutation)
+    const currentQuat = node.quaternion.clone();
+    const targetQuat = new THREE.Quaternion(rotation[0], rotation[1], rotation[2], rotation[3]);
+
+    // Create keyframe track: times [0, duration], values [current, target]
+    const times = [0, duration];
+    const values = [
+      currentQuat.x, currentQuat.y, currentQuat.z, currentQuat.w,
+      targetQuat.x, targetQuat.y, targetQuat.z, targetQuat.w,
+    ];
+
+    // Use the node's name for the track (AnimationMixer finds nodes by name)
+    const track = new THREE.QuaternionKeyframeTrack(
+      `${node.name}.quaternion`,
+      times,
+      values,
+    );
+    tracks.push(track);
+
+    // Handle position if present (e.g., for hips in crouching poses)
+    if (boneData.position && boneData.position.length === 3) {
+      const currentPos = node.position.clone();
+      const targetPos = boneData.position;
+      const posTimes = [0, duration];
+      const posValues = [
+        currentPos.x, currentPos.y, currentPos.z,
+        targetPos[0], targetPos[1], targetPos[2],
+      ];
+      const posTrack = new THREE.VectorKeyframeTrack(
+        `${node.name}.position`,
+        posTimes,
+        posValues,
+      );
+      tracks.push(posTrack);
+    }
+  }
+
+  if (unresolvedBones.length > 0) {
+    console.warn('[vrm-avatar-renderer] Could not resolve bones for pose transition:', JSON.stringify(unresolvedBones));
+  }
+
+  if (tracks.length === 0) {
+    console.warn('[vrm-avatar-renderer] No valid tracks created for pose transition');
+    return null;
+  }
+
+  console.info('[vrm-avatar-renderer] Created pose transition clip:', JSON.stringify({
+    trackCount: tracks.length,
+    resolvedBones,
+    unresolvedBones,
+    duration,
+  }));
+
+  return new THREE.AnimationClip('pose-transition', duration, tracks);
 }
 
 export function createRightArmWaveClip(vrm: VRM): THREE.AnimationClip | null {
@@ -1310,41 +1402,80 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       }
 
       if (event.type === 'applyPose') {
-        // Apply pose directly to VRM humanoid
+        // Apply pose via animated transition for smooth interpolation
         const vrm = currentVrmRef.current;
-        if (!vrm?.humanoid) {
-          console.warn('[vrm-avatar-renderer] VRM humanoid not available for pose application');
+        const mixer = mixerRef.current;
+        if (!vrm?.humanoid || !mixer) {
+          console.warn('[vrm-avatar-renderer] VRM humanoid or mixer not available for pose application');
           return;
         }
 
         try {
-          // Convert pose data to VRM pose format
-          // The pose data is { [boneName]: { rotation: [x,y,z,w], position?: [x,y,z] } }
-          const vrmPose: Record<string, { rotation: { x: number; y: number; z: number; w: number }; position?: { x: number; y: number; z: number } }> = {};
-          for (const [boneName, boneData] of Object.entries(event.pose)) {
-            const rotation = boneData.rotation;
-            if (rotation && rotation.length === 4) {
-              vrmPose[boneName] = {
-                rotation: { x: rotation[0], y: rotation[1], z: rotation[2], w: rotation[3] },
-              };
-              if (boneData.position && boneData.position.length === 3) {
-                vrmPose[boneName].position = {
-                  x: boneData.position[0],
-                  y: boneData.position[1],
-                  z: boneData.position[2]
-                };
-              }
-            }
+          // Clear any existing pose animation
+          if (activeAnimationRef.current?.intent === 'pose') {
+            clearActiveAnimation();
           }
 
-          vrm.humanoid.setRawPose(vrmPose);
-          vrm.scene.updateWorldMatrix(true, true);
-          console.info('[vrm-avatar-renderer] Applied pose via humanoid.setRawPose()', {
+          // Create transition clip from current pose to target pose
+          const duration = event.transitionDuration ?? DEFAULT_POSE_TRANSITION_DURATION;
+          const transitionClip = createPoseTransitionClip(vrm, event.pose, duration);
+
+          if (!transitionClip) {
+            console.warn('[vrm-avatar-renderer] Could not create pose transition clip');
+            return;
+          }
+
+          // Suspend idle animations during transition
+          suspendIdleAnimations();
+
+          const action = mixer.clipAction(transitionClip);
+
+          const handleFinished = (finishedEvent: { action?: THREE.AnimationAction | null }) => {
+            if (finishedEvent.action !== action) {
+              return;
+            }
+
+            mixer.removeEventListener('finished', handleFinished);
+
+            // Keep the pose clamped at the end
+            action.clampWhenFinished = true;
+            action.enabled = true;
+            action.setEffectiveTimeScale(0);
+            activeAnimationRef.current = {
+              action,
+              intent: 'pose',
+              onFinish: handleFinished,
+            };
+
+            console.info('[vrm-avatar-renderer] Pose transition completed:', JSON.stringify({
+              source: event.source,
+            }));
+          };
+
+          activeAnimationRef.current = {
+            action,
+            intent: 'pose',
+            onFinish: handleFinished,
+          };
+
+          // Play the transition animation
+          action.reset();
+          action.enabled = true;
+          action.setLoop(THREE.LoopOnce, 1);
+          action.setEffectiveWeight(1);
+          action.setEffectiveTimeScale(1);
+          action.clampWhenFinished = true;
+          mixer.addEventListener('finished', handleFinished);
+          action.play();
+
+          console.info('[vrm-avatar-renderer] Started smooth pose transition:', JSON.stringify({
             source: event.source,
-            boneCount: Object.keys(event.pose).length
-          });
+            boneCount: Object.keys(event.pose).length,
+            duration,
+          }));
         } catch (error) {
-          console.error('[vrm-avatar-renderer] Failed to apply pose', error);
+          console.error('[vrm-avatar-renderer] Failed to apply pose transition', error);
+          releaseIdleSuspension();
         }
         return;
       }
@@ -1366,7 +1497,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         timing: event.request.timing,
       });
     },
-    [clearActiveAnimation, enqueueAnimation, playNextQueuedAnimation],
+    [clearActiveAnimation, enqueueAnimation, playNextQueuedAnimation, suspendIdleAnimations, releaseIdleSuspension],
   );
 
   useAvatarAnimationQueue(handleAnimationEvent);

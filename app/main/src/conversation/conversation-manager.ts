@@ -50,6 +50,14 @@ function sortMessagesAscending(messages: MessageRecord[]): MessageRecord[] {
   });
 }
 
+function toConversationRole(role: string): ConversationRole {
+  if (role === 'system' || role === 'user' || role === 'assistant') {
+    return role;
+  }
+  // Default to 'assistant' for unknown roles
+  return 'assistant';
+}
+
 export class ConversationManager extends EventEmitter {
   private readonly store: MemoryStore;
 
@@ -108,7 +116,7 @@ export class ConversationManager extends EventEmitter {
         messages: loaded.messages.map((message) => ({
           id: message.id,
           sessionId: message.sessionId,
-          role: message.role as ConversationRole,
+          role: toConversationRole(message.role),
           ts: message.ts,
           content: message.content,
           audioPath: message.audioPath,
@@ -168,7 +176,7 @@ export class ConversationManager extends EventEmitter {
     this.emit('message-appended', {
       id: message.id,
       sessionId: message.sessionId,
-      role: message.role as ConversationRole,
+      role: toConversationRole(message.role),
       ts: message.ts,
       content: message.content,
       audioPath: message.audioPath,
@@ -177,7 +185,7 @@ export class ConversationManager extends EventEmitter {
     return {
       id: message.id,
       sessionId: message.sessionId,
-      role: message.role as ConversationRole,
+      role: toConversationRole(message.role),
       ts: message.ts,
       content: message.content,
       audioPath: message.audioPath,

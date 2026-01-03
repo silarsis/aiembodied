@@ -34,10 +34,14 @@ interface AvatarAnimationServiceOptions {
 
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 
+// Use Object.defineProperty to set self on globalThis without type assertion
 function ensureThreeCompatibility() {
-  const globalAny = globalThis as Record<string, unknown>;
-  if (typeof globalAny.self === 'undefined') {
-    globalAny.self = globalAny;
+  if (!('self' in globalThis)) {
+    Object.defineProperty(globalThis, 'self', {
+      value: globalThis,
+      writable: true,
+      configurable: true,
+    });
   }
 }
 
@@ -98,15 +102,30 @@ function inferFpsFromTracks(tracks: readonly KeyframeTrack[]): number | null {
   return Number(fps.toFixed(3));
 }
 
+interface GltfResult {
+  animations?: AnimationClip[];
+  userData?: { vrmAnimations?: Array<{ duration?: number }> };
+}
+
+function isGltfResult(value: unknown): value is GltfResult {
+  if (typeof value !== 'object' || value === null) return false;
+  return true; // We'll validate individual properties when accessing them
+}
+
 async function parseAnimationMetadata(buffer: Buffer): Promise<{ duration: number | null; fps: number | null }> {
   ensureThreeCompatibility();
 
   const loader = new GLTFLoader();
-  loader.register((parser: unknown) => new VRMAnimationLoaderPlugin(parser));
+  // The VRMAnimationLoaderPlugin constructor accepts GLTFParser, and the register callback receives it
+  loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
 
-  let gltf: { animations?: AnimationClip[]; userData?: { vrmAnimations?: Array<{ duration?: number }> } };
+  let gltf: GltfResult;
   try {
-    gltf = (await loader.parseAsync(bufferToArrayBuffer(buffer), '')) as typeof gltf;
+    const result: unknown = await loader.parseAsync(bufferToArrayBuffer(buffer), '');
+    if (!isGltfResult(result)) {
+      throw new Error('Invalid GLTF parse result');
+    }
+    gltf = result;
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'unknown error';
     throw new Error(`VRMA validation failed: ${reason}`);

@@ -1,0 +1,42 @@
+Warning: React version was set to "detect" in eslint-plugin-react settings, but the "react" package is not installed. Assuming latest React version for linting.
+
+C:\Users\kevin\repos\aiembodied\app\main\src\avatar\avatar-animation-service.ts
+  120:31  error  Unsafe construction of a(n) `error` type typed value  @typescript-eslint/no-unsafe-call
+
+C:\Users\kevin\repos\aiembodied\app\main\src\avatar\vrma-converter.ts
+  121:9   error  Unsafe assignment of an error typed value                         @typescript-eslint/no-unsafe-assignment
+  121:21  error  Unsafe construction of a(n) `error` type typed value              @typescript-eslint/no-unsafe-call
+  126:5   error  Unsafe call of a(n) `error` type typed value                      @typescript-eslint/no-unsafe-call
+  126:15  error  Unsafe member access .humanoidTracks on an `error` typed value    @typescript-eslint/no-unsafe-member-access
+  132:5   error  Unsafe call of a(n) `error` type typed value                      @typescript-eslint/no-unsafe-call
+  132:15  error  Unsafe member access .humanoidTracks on an `error` typed value    @typescript-eslint/no-unsafe-member-access
+  141:9   error  Unsafe call of a(n) `error` type typed value                      @typescript-eslint/no-unsafe-call
+  141:19  error  Unsafe member access .expressionTracks on an `error` typed value  @typescript-eslint/no-unsafe-member-access
+  143:9   error  Unsafe call of a(n) `error` type typed value                      @typescript-eslint/no-unsafe-call
+  143:19  error  Unsafe member access .expressionTracks on an `error` typed value  @typescript-eslint/no-unsafe-member-access
+  149:13  error  Unsafe member access .duration on an `error` typed value          @typescript-eslint/no-unsafe-member-access
+  150:13  error  Unsafe member access .restHipsPosition on an `error` typed value  @typescript-eslint/no-unsafe-member-access
+
+C:\Users\kevin\repos\aiembodied\app\main\src\avatar\vrma-generation-service.ts
+  312:11  error  Unsafe assignment of an error typed value                 @typescript-eslint/no-unsafe-assignment
+  334:53  error  Unsafe member access .duration on an `error` typed value  @typescript-eslint/no-unsafe-member-access
+
+C:\Users\kevin\repos\aiembodied\app\main\src\config\config-manager.ts
+  505:13  error  Unsafe assignment of an `any` value  @typescript-eslint/no-unsafe-assignment
+
+C:\Users\kevin\repos\aiembodied\app\main\src\main.ts
+   85:20  error  Always prefer const x: T = { ... }               @typescript-eslint/consistent-type-assertions
+  245:56  error  Unsafe assignment of an `any` value              @typescript-eslint/no-unsafe-assignment
+  245:72  error  Unsafe member access .message on an `any` value  @typescript-eslint/no-unsafe-member-access
+  245:81  error  Unsafe assignment of an `any` value              @typescript-eslint/no-unsafe-assignment
+  245:95  error  Unsafe member access .stack on an `any` value    @typescript-eslint/no-unsafe-member-access
+  397:20  error  Always prefer const x: T = { ... }               @typescript-eslint/consistent-type-assertions
+  527:15  error  Unsafe assignment of an `any` value              @typescript-eslint/no-unsafe-assignment
+  532:9   error  Unsafe return of a value of type `any`           @typescript-eslint/no-unsafe-return
+
+C:\Users\kevin\repos\aiembodied\app\main\src\preload.ts
+  253:13  error  Unsafe assignment of an `any` value  @typescript-eslint/no-unsafe-assignment
+  284:13  error  Unsafe assignment of an `any` value  @typescript-eslint/no-unsafe-assignment
+
+Γ£û 26 problems (26 errors, 0 warnings)
+

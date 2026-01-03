@@ -82,11 +82,11 @@ try {
     ) => {
       const level = (typeof payload?.level === 'string' ? payload.level : 'info').toLowerCase();
       const message = typeof payload?.message === 'string' ? payload.message : 'preload-diagnostics';
-      const meta = {
+      const meta: Record<string, unknown> = {
         from: 'preload',
         ...(payload?.meta ?? {}),
         ...(typeof payload?.ts === 'number' ? { ts: payload.ts } : {}),
-      } as Record<string, unknown>;
+      };
 
       if (level === 'debug') {
         logger.debug(message, meta);
@@ -241,8 +241,10 @@ const createWindow = () => {
     .then(() => {
       logger.info('Renderer bundle loaded successfully.');
     })
-    .catch((error) => {
-      logger.error('Failed to load renderer bundle', { message: error?.message, stack: error?.stack });
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : undefined;
+      logger.error('Failed to load renderer bundle', { message, stack });
     });
 
   window.on('ready-to-show', () => {
@@ -394,7 +396,7 @@ function registerIpcHandlers(
     ipcMain.on('diagnostics:preload-log', (_event, payload: { level?: string; message?: string; meta?: Record<string, unknown>; ts?: number }) => {
       const level = (typeof payload?.level === 'string' ? payload.level : 'info').toLowerCase();
       const message = typeof payload?.message === 'string' ? payload.message : 'preload-diagnostics';
-      const meta = { from: 'preload', ...(payload?.meta ?? {}), ...(typeof payload?.ts === 'number' ? { ts: payload.ts } : {}) } as Record<string, unknown>;
+      const meta: Record<string, unknown> = { from: 'preload', ...(payload?.meta ?? {}), ...(typeof payload?.ts === 'number' ? { ts: payload.ts } : {}) };
 
       if (level === 'debug') {
         logger.debug(message, meta);
@@ -851,9 +853,10 @@ function registerIpcHandlers(
     }
 
     const bones = avatarModels ? await avatarModels.listActiveModelBones() : [];
+    const boneHierarchy = avatarModels ? await avatarModels.listActiveModelBoneHierarchy() : {};
     const activeModel = avatarModels?.getActiveModel() ?? null;
     const modelDescription = activeModel?.description ?? undefined;
-    return poseGenerationService.generatePose({ ...payload, bones, modelDescription });
+    return poseGenerationService.generatePose({ ...payload, bones, boneHierarchy, modelDescription });
   });
   ipcMain.handle('avatar-pose:delete', async (_event, poseId: string) => {
     if (!avatarPoses) {

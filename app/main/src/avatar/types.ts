@@ -63,5 +63,6 @@ export interface AvatarPoseUploadResult {
 export interface AvatarPoseGenerationRequest {
   prompt: string;
   bones?: string[];
+  boneHierarchy?: Record<string, string | null>;
   modelDescription?: string;
 }

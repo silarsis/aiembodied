@@ -30,7 +30,7 @@ const POSE_EXPANDER_SYSTEM_PROMPT = [
     'Do NOT output JSON. Output a clear, descriptive paragraph.',
 ].join('\n');
 
-const POSE_COMPILER_SYSTEM_PROMPT = [
+const POSE_COMPILER_SYSTEM_PROMPT_BASE = [
     'You are a VRM pose specialist.',
     'Your task is to convert a detailed pose description into a VRM Pose JSON object.',
     '',
@@ -40,7 +40,29 @@ const POSE_COMPILER_SYSTEM_PROMPT = [
     '    { "name": "boneName", "rotation": [x, y, z, w], "position": null }',
     '  ]',
     '}',
-    '',
+].join('\n');
+
+const POSE_HIERARCHY_FALLBACK = [
+    'Bone Hierarchy (parent → child):',
+    '- hips (root) → spine → chest → upperChest → neck → head',
+    '- upperChest → leftShoulder → leftUpperArm → leftLowerArm → leftHand → fingers',
+    '- upperChest → rightShoulder → rightUpperArm → rightLowerArm → rightHand → fingers',
+    '- hips → leftUpperLeg → leftLowerLeg → leftFoot → leftToes',
+    '- hips → rightUpperLeg → rightLowerLeg → rightFoot → rightToes',
+].join('\n');
+
+const POSE_ROTATION_GUIDANCE = [
+    'IMPORTANT - Parent-Child Rotation Inheritance:',
+    '- All rotations are LOCAL (relative to the parent bone).',
+    '- Child bones inherit their parent\'s rotation automatically.',
+    '- When a parent rotates, all descendants move with it.',
+    '- Account for parent rotation when setting child rotations. For example:',
+    '  - If leftUpperArm rotates 45° forward, leftLowerArm is already 45° forward.',
+    '  - To keep the forearm straight relative to world, set leftLowerArm rotation to identity [0,0,0,1].',
+    '  - To bend the elbow further, apply only the additional local rotation.',
+].join('\n');
+
+const POSE_REQUIREMENTS = [
     'Requirements:',
     '- Output ONLY valid JSON matching the schema above.',
     '- Use ONLY the provided valid VRM human bones for the "name" field.',
@@ -51,6 +73,51 @@ const POSE_COMPILER_SYSTEM_PROMPT = [
     '- Symmetrize where appropriate if the description implies symmetry.',
     '- For hands: Provide detailed finger rotations if described.',
 ].join('\n');
+
+/**
+ * Format bone hierarchy from a map of bone → parent into readable chains.
+ */
+function formatBoneHierarchy(hierarchy: Record<string, string | null>): string {
+    if (!hierarchy || Object.keys(hierarchy).length === 0) {
+        return POSE_HIERARCHY_FALLBACK;
+    }
+
+    // Build child → parent into parent → children
+    const childrenMap = new Map<string | null, string[]>();
+    for (const [bone, parent] of Object.entries(hierarchy)) {
+        const children = childrenMap.get(parent) ?? [];
+        children.push(bone);
+        childrenMap.set(parent, children);
+    }
+
+    // Find root bones (those with null parent)
+    const roots = childrenMap.get(null) ?? [];
+    if (roots.length === 0) {
+        return POSE_HIERARCHY_FALLBACK;
+    }
+
+    // Build chains from each root
+    const chains: string[] = [];
+
+    function buildChain(bone: string, depth: number = 0): void {
+        const children = childrenMap.get(bone) ?? [];
+        if (children.length === 0) {
+            return;
+        }
+
+        for (const child of children) {
+            chains.push(`- ${bone} → ${child}`);
+            buildChain(child, depth + 1);
+        }
+    }
+
+    for (const root of roots) {
+        chains.push(`- ${root} (root)`);
+        buildChain(root);
+    }
+
+    return `Bone Hierarchy (from model):\n${chains.join('\n')}`;
+}
 
 export class PoseGenerationService {
     private readonly client: OpenAI;
@@ -72,6 +139,8 @@ export class PoseGenerationService {
         const bones = this.normalizeBones(request?.bones);
         const modelDescription = typeof request?.modelDescription === 'string' ? request.modelDescription.trim() : undefined;
 
+        const boneHierarchy = request?.boneHierarchy ?? {};
+
         // Step 1: Expansion
         const expandedDescription = await this.runExpanderStep(prompt, modelDescription);
         this.logger?.info?.('Pose expansion generated.', {
@@ -82,7 +151,7 @@ export class PoseGenerationService {
 
         // Step 2: Compiler
         // We use a simplified JSON schema for the compiler output to ensure structure
-        const poseJson = await this.runCompilerStep(expandedDescription, bones);
+        const poseJson = await this.runCompilerStep(expandedDescription, bones, boneHierarchy);
         this.logger?.info?.('Pose JSON compiled.', { keys: Object.keys(poseJson).length });
 
         // Save
@@ -141,12 +210,27 @@ export class PoseGenerationService {
         return response.output_text || '';
     }
 
-    private async runCompilerStep(description: string, bones: string[]): Promise<Record<string, unknown>> {
+    private async runCompilerStep(
+        description: string,
+        bones: string[],
+        boneHierarchy: Record<string, string | null>
+    ): Promise<Record<string, unknown>> {
+        const hierarchyText = formatBoneHierarchy(boneHierarchy);
+        const systemPrompt = [
+            POSE_COMPILER_SYSTEM_PROMPT_BASE,
+            '',
+            hierarchyText,
+            '',
+            POSE_ROTATION_GUIDANCE,
+            '',
+            POSE_REQUIREMENTS,
+        ].join('\n');
+
         const messages: ResponseInput = [
             {
                 type: 'message',
                 role: 'system',
-                content: [{ type: 'input_text', text: POSE_COMPILER_SYSTEM_PROMPT }],
+                content: [{ type: 'input_text', text: systemPrompt }],
             },
         ];
 
@@ -222,6 +306,7 @@ export class PoseGenerationService {
 
         const outputText = response.output_text;
         if (!outputText) throw new Error('Empty response from pose compiler');
+        console.log(JSON.stringify(messages), outputText);
 
         // Parse the array-based response and convert to object format
         // The API returns: { bones: [{ name, rotation, position }] }
@@ -234,6 +319,7 @@ export class PoseGenerationService {
                 result[bone.name].position = bone.position;
             }
         }
+        console.log(JSON.stringify(result));
         return result;
     }
 
