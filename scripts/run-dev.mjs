@@ -175,7 +175,7 @@ function hashFile(filePath) {
 
 function hashDirectory(dirPath) {
   const hash = createHash('sha256');
-  
+
   function hashDirRecursive(currentPath) {
     const entries = readdirSync(currentPath).sort();
     for (const entry of entries) {
@@ -193,7 +193,7 @@ function hashDirectory(dirPath) {
       }
     }
   }
-  
+
   hashDirRecursive(dirPath);
   return hash.digest('hex');
 }
@@ -394,12 +394,10 @@ async function main() {
       if (oldStamp.nodeVersion !== newStamp.nodeVersion) console.log('  - Node version changed');
     }
 
-    // Install main and renderer in parallel
+    // Install both workspaces in a single pnpm command to avoid Windows race conditions
+    // (parallel pnpm processes can race on .pnpm directory creation causing ENOENT errors)
     console.log('[info] Installing workspace dependencies...');
-    await Promise.all([
-      run(pnpmExe, ['--filter', '@aiembodied/main', 'install'], { env: { ...envIsolated, CI: '1' } }),
-      run(pnpmExe, ['--filter', '@aiembodied/renderer', 'install'], { env: { ...envIsolated, CI: '1' } }),
-    ]);
+    await run(pnpmExe, ['--filter', '@aiembodied/main', '--filter', '@aiembodied/renderer', 'install'], { env: { ...envIsolated, CI: '1' } });
 
     // Build renderer and main in parallel
     console.log('[info] Building renderer and main process...');
