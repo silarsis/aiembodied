@@ -52,8 +52,10 @@ const POSE_HIERARCHY_FALLBACK = [
 ].join('\n');
 
 const POSE_ROTATION_GUIDANCE = [
-    'IMPORTANT - Parent-Child Rotation Inheritance:',
-    '- All rotations are LOCAL (relative to the parent bone).',
+    'IMPORTANT - T-Pose Bind Pose and Rotation System:',
+    '- VRM models use T-pose as the bind/rest pose (arms extended horizontally, palms down).',
+    '- All rotations are RELATIVE to T-pose. Identity quaternion [0,0,0,1] = T-pose orientation.',
+    '- Rotations are LOCAL (relative to the parent bone in the hierarchy).',
     '- Child bones inherit their parent\'s rotation automatically.',
     '- When a parent rotates, all descendants move with it.',
     '- Account for parent rotation when setting child rotations. For example:',
@@ -62,16 +64,39 @@ const POSE_ROTATION_GUIDANCE = [
     '  - To bend the elbow further, apply only the additional local rotation.',
 ].join('\n');
 
+const POSE_SYMMETRY_RULE = [
+    'CRITICAL - Symmetry Rule for Left/Right Bone Pairs:',
+    '- VRM uses a specific mirroring pattern for symmetric poses.',
+    '- For any left/right bone pair (shoulders, arms, hands, fingers, legs, feet):',
+    '  - Left quaternion:  [x,  y,  z, w]',
+    '  - Right quaternion: [x, -y, -z, w]  (NEGATE both Y and Z components)',
+    '- This rule applies because left and right bones have mirrored local coordinate systems.',
+    '- Example: If leftUpperArm is [-0.087, -0.423, 0.259, 0.861],',
+    '  then rightUpperArm should be [-0.087, 0.423, -0.259, 0.861].',
+].join('\n');
+
+const POSE_EXAMPLE = [
+    'Reference Example - Crossed Arms Pose (arms folded across chest):',
+    '{',
+    '  "leftUpperArm":  { "rotation": [-0.087, -0.423,  0.259, 0.861] },',
+    '  "leftLowerArm":  { "rotation": [ 0.000, -0.707,  0.000, 0.707] },',
+    '  "rightUpperArm": { "rotation": [-0.087,  0.423, -0.259, 0.861] },',
+    '  "rightLowerArm": { "rotation": [ 0.000,  0.707,  0.000, 0.707] }',
+    '}',
+    'Note how Y and Z are negated between left and right pairs.',
+].join('\n');
+
 const POSE_REQUIREMENTS = [
     'Requirements:',
     '- Output ONLY valid JSON matching the schema above.',
     '- You MUST include ALL provided VRM bone names as top-level property keys.',
-    '- All rotations must be local Quaternions [x, y, z, w].',
+    '- All rotations must be local Quaternions [x, y, z, w] relative to T-pose.',
+    '- Identity rotation [0, 0, 0, 1] means the bone stays in T-pose orientation.',
     '- For bones that do not change from the default pose, use identity rotation [0, 0, 0, 1].',
     '- Set position to null for all bones EXCEPT hips when vertical movement is needed.',
     '- For hips position (crouching/jumping only), use [x, y, z] where Y≈1.0 is standing.',
     '- Ensure anatomical plausibility.',
-    '- Symmetrize where appropriate if the description implies symmetry.',
+    '- ALWAYS apply the symmetry rule above for left/right bone pairs.',
     '- For hands: Provide detailed finger rotations if described.',
 ].join('\n');
 
@@ -223,6 +248,10 @@ export class PoseGenerationService {
             hierarchyText,
             '',
             POSE_ROTATION_GUIDANCE,
+            '',
+            POSE_SYMMETRY_RULE,
+            '',
+            POSE_EXAMPLE,
             '',
             POSE_REQUIREMENTS,
         ].join('\n');
