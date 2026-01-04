@@ -325,28 +325,30 @@ export function applyPoseExpressions(vrm: VRM, expressions: VRMPoseExpressions |
   const availableExpressions = expressionManager.expressions?.map(e => e.expressionName) ?? [];
   console.info('[vrm-avatar-renderer] Available model expressions:', JSON.stringify(availableExpressions));
 
-  // Apply preset expressions
+  // Apply preset expressions (always apply, including 0, to clear previous poses)
   if (expressions.presets) {
     for (const [name, weight] of Object.entries(expressions.presets)) {
-      if (typeof weight === 'number' && Number.isFinite(weight) && weight > 0) {
+      if (typeof weight === 'number' && Number.isFinite(weight)) {
         const clampedWeight = Math.max(0, Math.min(1, weight));
 
         // Check if expression exists in the model
         const expressionExists = availableExpressions.includes(name);
-        if (!expressionExists) {
+        if (!expressionExists && clampedWeight > 0) {
           console.warn(`[vrm-avatar-renderer] Expression '${name}' not found in VRM model. Available: ${availableExpressions.join(', ')}`);
         }
 
         expressionManager.setValue(name, clampedWeight);
-        console.info(`[vrm-avatar-renderer] Set expression '${name}' to ${clampedWeight.toFixed(2)}`);
+        if (clampedWeight > 0) {
+          console.info(`[vrm-avatar-renderer] Set expression '${name}' to ${clampedWeight.toFixed(2)}`);
+        }
       }
     }
   }
 
-  // Apply custom expressions
+  // Apply custom expressions (always apply, including 0, to clear previous poses)
   if (expressions.custom) {
     for (const [name, weight] of Object.entries(expressions.custom)) {
-      if (typeof weight === 'number' && Number.isFinite(weight) && weight > 0) {
+      if (typeof weight === 'number' && Number.isFinite(weight)) {
         const clampedWeight = Math.max(0, Math.min(1, weight));
         expressionManager.setValue(name, clampedWeight);
       }
