@@ -1000,6 +1000,31 @@ export default function App() {
     }
   }, [animationBus, selectedTestPose, resolveApi]);
 
+  const handleCopyPose = useCallback(async () => {
+    if (!selectedTestPose) {
+      return;
+    }
+    const bridge = resolveApi();
+    if (!bridge?.avatar?.loadPose) {
+      console.warn('[App] Pose loading is unavailable');
+      return;
+    }
+    try {
+      const poseData = await bridge.avatar.loadPose(selectedTestPose);
+      if (poseData && typeof poseData === 'object') {
+        // Format with one bone per line, arrays inline
+        const lines = Object.entries(poseData).map(([bone, data]) => {
+          return `  "${bone}": ${JSON.stringify(data)}`;
+        });
+        const jsonString = `{\n${lines.join(',\n')}\n}`;
+        await navigator.clipboard.writeText(jsonString);
+        console.log('[App] Pose JSON copied to clipboard');
+      }
+    } catch (error) {
+      console.error('[App] Failed to copy pose', error);
+    }
+  }, [selectedTestPose, resolveApi]);
+
   const handleApplyJsonPose = useCallback(() => {
     const input = jsonPoseInput.trim();
     if (!input) {
@@ -2459,6 +2484,13 @@ export default function App() {
                             disabled={!selectedTestPose}
                           >
                             Apply
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleCopyPose}
+                            disabled={!selectedTestPose}
+                          >
+                            Copy
                           </button>
                         </dd>
                       </div>
