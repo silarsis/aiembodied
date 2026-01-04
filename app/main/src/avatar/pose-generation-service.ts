@@ -52,8 +52,10 @@ const POSE_HIERARCHY_FALLBACK = [
 ].join('\n');
 
 const POSE_ROTATION_GUIDANCE = [
-    'IMPORTANT - Parent-Child Rotation Inheritance:',
-    '- All rotations are LOCAL (relative to the parent bone).',
+    'IMPORTANT - T-Pose Bind Pose and Rotation System:',
+    '- VRM models use T-pose as the bind/rest pose (arms extended horizontally, palms down).',
+    '- All rotations are RELATIVE to T-pose. Identity quaternion [0,0,0,1] = T-pose orientation.',
+    '- Rotations are LOCAL (relative to the parent bone in the hierarchy).',
     '- Child bones inherit their parent\'s rotation automatically.',
     '- When a parent rotates, all descendants move with it.',
     '- Account for parent rotation when setting child rotations. For example:',
@@ -62,16 +64,103 @@ const POSE_ROTATION_GUIDANCE = [
     '  - To bend the elbow further, apply only the additional local rotation.',
 ].join('\n');
 
+const POSE_AXIS_MAPPING = [
+    'CRITICAL - Axis-to-Movement Mapping (quaternion [x, y, z, w]):',
+    '',
+    'Upper Arms (leftUpperArm, rightUpperArm) - FROM T-POSE:',
+    '- Y-axis is PRIMARY: Controls bringing arm toward/away from body',
+    '  - Left arm: negative Y = rotate arm forward and inward toward chest',
+    '  - Right arm: positive Y = rotate arm forward and inward toward chest (mirrored)',
+    '- Z-axis: Additional forward/backward swing adjustment',
+    '- X-axis: Minor vertical adjustment (small values only)',
+    '- For crossed arms: Y is the LARGEST component (≈0.4), Z is medium (≈0.25), X is small (≈0.09)',
+    '',
+    'Lower Arms/Forearms (leftLowerArm, rightLowerArm):',
+    '- Y-axis is PRIMARY: Controls elbow bend/flexion',
+    '  - Left arm: negative Y = bend elbow to bring forearm across chest',
+    '  - Right arm: positive Y = bend elbow to bring forearm across chest (mirrored)',
+    '- For crossed arms: Y should be ≈0.707 (90° bend) with X and Z near zero',
+    '',
+    'Head and Neck:',
+    '- X-axis: Nod up/down (negative X = look down, positive X = look up)',
+    '- Y-axis: Turn left/right (positive Y = turn left, negative Y = turn right)',
+    '- Z-axis: Tilt ear to shoulder (positive Z = tilt left, negative Z = tilt right)',
+    '',
+    'Spine, Chest, UpperChest:',
+    '- X-axis: Lean forward/backward (positive X = lean back, negative X = lean forward)',
+    '- Y-axis: Twist torso left/right',
+    '- Z-axis: Lean side to side (positive Z = lean left, negative Z = lean right)',
+    '',
+    'Fingers (all finger bones):',
+    '- X-axis: Curl fingers (positive X = curl/close fist)',
+    '- Z-axis: Spread fingers apart',
+].join('\n');
+
+const POSE_MAGNITUDE_GUIDE = [
+    'Rotation Magnitude Reference (quaternion component values):',
+    '- Subtle/slight movement: |value| ≈ 0.05 to 0.15 (~5-15 degrees)',
+    '- Small movement: |value| ≈ 0.15 to 0.25 (~15-25 degrees)',
+    '- Medium movement: |value| ≈ 0.25 to 0.40 (~25-45 degrees)',
+    '- Large movement: |value| ≈ 0.40 to 0.60 (~45-70 degrees)',
+    '- Extreme movement: |value| ≈ 0.60 to 0.707 (~70-90 degrees)',
+    '',
+    'Remember: The w component adjusts to keep the quaternion normalized.',
+    'For single-axis rotations, use: [x, y, z, w] where w = sqrt(1 - x² - y² - z²)',
+].join('\n');
+
+const POSE_SYMMETRY_RULE = [
+    'CRITICAL - Symmetry Rule for Left/Right Bone Pairs:',
+    '- VRM uses a specific mirroring pattern for symmetric poses.',
+    '- For any left/right bone pair (shoulders, arms, hands, fingers, legs, feet):',
+    '  - Left quaternion:  [x,  y,  z, w]',
+    '  - Right quaternion: [x, -y, -z, w]  (NEGATE both Y and Z components)',
+    '- This rule applies because left and right bones have mirrored local coordinate systems.',
+    '- Example: If leftUpperArm is [-0.087, -0.423, 0.259, 0.861],',
+    '  then rightUpperArm should be [-0.087, 0.423, -0.259, 0.861].',
+].join('\n');
+
+const POSE_CONVERGENT_EXCEPTION = [
+    'EXCEPTION - Convergent Poses (arms crossed, hands clasped, praying, hugging self):',
+    '',
+    'The symmetry rule above is for MIRRORED poses (hands on hips, arms akimbo, waving).',
+    'For CONVERGENT poses where limbs meet at the body center, do NOT blindly negate Y and Z.',
+    '',
+    'Crossed Arms Example - What happens in 3D space:',
+    '- BOTH upper arms must swing FORWARD (toward chest) - this requires considering the arm direction',
+    '- BOTH forearms fold INWARD across the chest',
+    '- Left arm typically goes OVER or UNDER right arm (or vice versa)',
+    '',
+    'Key insight for crossed arms:',
+    '- leftUpperArm needs: negative X (lower from T-pose) AND rotation to bring arm toward chest center',
+    '- rightUpperArm needs: same lowering AND rotation to bring arm toward chest center',
+    '- The Z components work together to bring arms to center, not oppose each other',
+    '- Think about WHERE the hands end up (opposite shoulders/upper arms), then work backward',
+    '',
+    'Use the Reference Example below as your primary guide for crossed arms.',
+].join('\n');
+
+const POSE_EXAMPLE = [
+    'Reference Example - Crossed Arms Pose (arms folded across chest):',
+    '{',
+    '  "leftUpperArm":  { "rotation": [-0.087, -0.423,  0.259, 0.861] },',
+    '  "leftLowerArm":  { "rotation": [ 0.000, -0.707,  0.000, 0.707] },',
+    '  "rightUpperArm": { "rotation": [-0.087,  0.423, -0.259, 0.861] },',
+    '  "rightLowerArm": { "rotation": [ 0.000,  0.707,  0.000, 0.707] }',
+    '}',
+    'Note: Y and Z are negated between left and right pairs.',
+    'The Y component is CRITICAL for both upper arm positioning and elbow bending.',
+].join('\n');
+
 const POSE_REQUIREMENTS = [
     'Requirements:',
     '- Output ONLY valid JSON matching the schema above.',
     '- You MUST include ALL provided VRM bone names as top-level property keys.',
-    '- All rotations must be local Quaternions [x, y, z, w].',
-    '- For bones that do not change from the default pose, use identity rotation [0, 0, 0, 1].',
-    '- Set position to null for all bones EXCEPT hips when vertical movement is needed.',
-    '- For hips position (crouching/jumping only), use [x, y, z] where Y≈1.0 is standing.',
+    '- All rotations must be local Quaternions [x, y, z, w] relative to T-pose.',
+    '- Identity rotation [0, 0, 0, 1] means the bone stays in T-pose orientation.',
+    '- For bones that do not change from the T-pose, use identity rotation [0, 0, 0, 1].',
+    '- Set position to null for ALL bones. Do not adjust position values.',
     '- Ensure anatomical plausibility.',
-    '- Symmetrize where appropriate if the description implies symmetry.',
+    '- ALWAYS apply the symmetry rule above for left/right bone pairs.',
     '- For hands: Provide detailed finger rotations if described.',
 ].join('\n');
 
@@ -223,6 +312,16 @@ export class PoseGenerationService {
             hierarchyText,
             '',
             POSE_ROTATION_GUIDANCE,
+            '',
+            POSE_AXIS_MAPPING,
+            '',
+            POSE_MAGNITUDE_GUIDE,
+            '',
+            POSE_SYMMETRY_RULE,
+            '',
+            POSE_CONVERGENT_EXCEPTION,
+            '',
+            POSE_EXAMPLE,
             '',
             POSE_REQUIREMENTS,
         ].join('\n');
