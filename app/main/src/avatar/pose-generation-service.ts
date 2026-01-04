@@ -1,7 +1,7 @@
 
 import type OpenAI from 'openai';
 import type { ResponseInput } from 'openai/resources/responses/responses';
-import type { AvatarPoseGenerationRequest, AvatarPoseUploadResult } from './types.js';
+import type { AvatarPoseGenerationRequest, AvatarPoseUploadResult, AvatarPoseData, PoseExpressionState } from './types.js';
 import type { AvatarPoseService } from './avatar-pose-service.js';
 
 export interface PoseGenerationServiceOptions {
@@ -154,7 +154,7 @@ const POSE_EXAMPLE = [
 const POSE_REQUIREMENTS = [
     'Requirements:',
     '- Output ONLY valid JSON matching the schema above.',
-    '- You MUST include ALL provided VRM bone names as top-level property keys.',
+    '- You MUST include ALL provided VRM bone names as top-level property keys under "bones".',
     '- All rotations must be local Quaternions [x, y, z, w] relative to T-pose.',
     '- Identity rotation [0, 0, 0, 1] means the bone stays in T-pose orientation.',
     '- For bones that do not change from the T-pose, use identity rotation [0, 0, 0, 1].',
@@ -162,6 +162,36 @@ const POSE_REQUIREMENTS = [
     '- Ensure anatomical plausibility.',
     '- ALWAYS apply the symmetry rule above for left/right bone pairs.',
     '- For hands: Provide detailed finger rotations if described.',
+    '- ALWAYS include facial expressions in the "expressions" object.',
+].join('\n');
+
+const POSE_EXPRESSION_GUIDANCE = [
+    'FACIAL EXPRESSIONS - VRM 1.0 Preset Names:',
+    '',
+    'You must include an "expressions" object with facial expression weights.',
+    'Expression weights range from 0.0 (off) to 1.0 (full intensity).',
+    '',
+    'Available emotion presets (use 1-2 that match the pose mood):',
+    '- happy: Joy, smile, positive emotions',
+    '- angry: Frown, furrowed brows, tension',
+    '- sad: Downturned mouth, sorrowful look',
+    '- relaxed: Calm, peaceful, slight smile',
+    '- surprised: Wide eyes, raised brows',
+    '- neutral: Default, no particular emotion',
+    '',
+    'Guidelines:',
+    '- Choose expressions that match the pose\'s emotional intent.',
+    '- Use weights between 0.3-0.8 for natural looks; 1.0 can look exaggerated.',
+    '- Blend 2 emotions for nuance (e.g., happy: 0.6, relaxed: 0.3).',
+    '- For neutral poses, use neutral: 1.0 or relaxed: 0.5.',
+    '',
+    'Example output structure:',
+    '{',
+    '  "bones": { "hips": {...}, "spine": {...}, ... },',
+    '  "expressions": {',
+    '    "presets": { "happy": 0.7, "relaxed": 0.3 }',
+    '  }',
+    '}',
 ].join('\n');
 
 /**
@@ -228,7 +258,6 @@ export class PoseGenerationService {
 
         const bones = this.normalizeBones(request?.bones);
         const modelDescription = typeof request?.modelDescription === 'string' ? request.modelDescription.trim() : undefined;
-
         const boneHierarchy = request?.boneHierarchy ?? {};
 
         // Step 1: Expansion
@@ -242,7 +271,11 @@ export class PoseGenerationService {
         // Step 2: Compiler
         // We use a simplified JSON schema for the compiler output to ensure structure
         const poseJson = await this.runCompilerStep(expandedDescription, bones, boneHierarchy);
-        this.logger?.info?.('Pose JSON compiled.', { keys: Object.keys(poseJson).length });
+        this.logger?.info?.('Pose JSON compiled.', {
+            boneCount: Object.keys(poseJson.bones).length,
+            hasExpressions: !!poseJson.expressions,
+            expressionPresets: poseJson.expressions?.presets ? Object.keys(poseJson.expressions.presets) : [],
+        });
 
         // Save
         const fileName = `${this.slugify(prompt.slice(0, 30))}-${Date.now()}.pose.json`;
@@ -304,7 +337,7 @@ export class PoseGenerationService {
         description: string,
         bones: string[],
         boneHierarchy: Record<string, string | null>
-    ): Promise<Record<string, unknown>> {
+    ): Promise<AvatarPoseData> {
         const hierarchyText = formatBoneHierarchy(boneHierarchy);
         const systemPrompt = [
             POSE_COMPILER_SYSTEM_PROMPT_BASE,
@@ -322,6 +355,8 @@ export class PoseGenerationService {
             POSE_CONVERGENT_EXCEPTION,
             '',
             POSE_EXAMPLE,
+            '',
+            POSE_EXPRESSION_GUIDANCE,
             '',
             POSE_REQUIREMENTS,
         ].join('\n');
@@ -348,8 +383,8 @@ export class PoseGenerationService {
             content: [{ type: 'input_text', text: `Description: ${description}` }],
         });
 
-        // Build a strict JSON schema with all model bones as required properties
-        // Each bone has rotation (required, 4 numbers) and position (optional, 3 numbers or null)
+        // Build a strict JSON schema with nested structure:
+        // { bones: { [boneName]: { rotation, position } }, expressions: { presets: { [name]: weight } } }
         // OpenAI's strict mode requires additionalProperties:false and all properties in required
         const boneSchema = {
             type: 'object' as const,
@@ -370,6 +405,46 @@ export class PoseGenerationService {
                             items: { type: 'number' as const },
                             minItems: 3,
                             maxItems: 3,
+                        },
+                    ],
+                },
+            },
+        };
+
+        // Build properties object with each bone using the same schema
+        const boneProperties: Record<string, typeof boneSchema> = {};
+        for (const bone of bones) {
+            boneProperties[bone] = boneSchema;
+        }
+
+        // Expression presets schema - VRM 1.0 emotion names with 0-1 weights
+        const expressionPresetNames = ['happy', 'angry', 'sad', 'relaxed', 'surprised', 'neutral'] as const;
+        const expressionPresetProperties: Record<string, { type: 'number' }> = {};
+        for (const preset of expressionPresetNames) {
+            expressionPresetProperties[preset] = { type: 'number' as const };
+        }
+
+        const schema = {
+            type: 'object' as const,
+            additionalProperties: false,
+            required: ['bones', 'expressions'],
+            properties: {
+                bones: {
+                    type: 'object' as const,
+                    additionalProperties: false,
+                    required: bones,
+                    properties: boneProperties,
+                },
+                expressions: {
+                    type: 'object' as const,
+                    additionalProperties: false,
+                    required: ['presets'],
+                    properties: {
+                        presets: {
+                            type: 'object' as const,
+                            additionalProperties: false,
+                            required: expressionPresetNames as unknown as string[],
+                            properties: expressionPresetProperties,
                         },
                     ],
                 },
@@ -410,11 +485,11 @@ export class PoseGenerationService {
         if (!outputText) throw new Error('Empty response from pose compiler');
         console.log(JSON.stringify(messages), outputText);
 
-        // Parse the object-based response directly
-        // Expected format: { [boneName]: { rotation: [x,y,z,w], position?: [x,y,z] | null } }
-        let parsed: Record<string, unknown>;
+        // Parse the object-based response with new structure:
+        // { bones: { [boneName]: { rotation, position } }, expressions: { presets: {...} } }
+        let parsed: { bones?: Record<string, unknown>; expressions?: { presets?: Record<string, unknown> } };
         try {
-            parsed = JSON.parse(outputText) as Record<string, unknown>;
+            parsed = JSON.parse(outputText) as typeof parsed;
         } catch (parseError) {
             const preview = outputText.slice(0, 200);
             const message = parseError instanceof Error ? parseError.message : String(parseError);
@@ -422,11 +497,14 @@ export class PoseGenerationService {
             throw new Error(`Pose compiler returned invalid JSON: ${message}. Response preview: ${preview}...`);
         }
 
-        const result: Record<string, { rotation: number[]; position?: number[] }> = {};
+        const bonesData = parsed.bones ?? {};
+        const expressionsData = parsed.expressions ?? {};
+
+        const resultBones: Record<string, { rotation: number[]; position?: number[] | null }> = {};
         const validBoneSet = new Set(bones);
         const warnings: string[] = [];
 
-        for (const [boneName, boneData] of Object.entries(parsed)) {
+        for (const [boneName, boneData] of Object.entries(bonesData)) {
             // Validate bone name
             if (!validBoneSet.has(boneName)) {
                 warnings.push(`Unknown bone '${boneName}' in response (not in valid bones list)`);
@@ -453,7 +531,7 @@ export class PoseGenerationService {
             }
 
             // Build the result entry
-            const entry: { rotation: number[]; position?: number[] } = { rotation };
+            const entry: { rotation: number[]; position?: number[] | null } = { rotation };
 
             // Validate and add position if present
             if (data.position !== null && data.position !== undefined) {
@@ -469,21 +547,49 @@ export class PoseGenerationService {
                 }
             }
 
-            result[boneName] = entry;
+            resultBones[boneName] = entry;
+        }
+
+        // Parse and validate expressions
+        const resultExpressions: PoseExpressionState = {};
+        const validPresetNames = new Set(['happy', 'angry', 'sad', 'relaxed', 'surprised', 'neutral']);
+
+        if (expressionsData.presets && typeof expressionsData.presets === 'object') {
+            const presets: Partial<Record<string, number>> = {};
+            for (const [name, weight] of Object.entries(expressionsData.presets)) {
+                if (!validPresetNames.has(name)) {
+                    warnings.push(`Unknown expression preset '${name}'`);
+                    continue;
+                }
+                if (typeof weight === 'number' && Number.isFinite(weight)) {
+                    // Clamp to 0-1 range
+                    presets[name] = Math.max(0, Math.min(1, weight));
+                } else {
+                    warnings.push(`Invalid weight for expression '${name}': expected number`);
+                }
+            }
+            if (Object.keys(presets).length > 0) {
+                resultExpressions.presets = presets as PoseExpressionState['presets'];
+            }
         }
 
         // Log any warnings
         if (warnings.length > 0) {
-            this.logger?.warn?.('Pose parsing had validation issues', { warnings, boneCount: Object.keys(result).length });
+            this.logger?.warn?.('Pose parsing had validation issues', { warnings, boneCount: Object.keys(resultBones).length });
             console.warn('[pose-generation] Validation warnings:', warnings);
         }
 
         // Ensure we have at least one valid bone
-        if (Object.keys(result).length === 0) {
+        if (Object.keys(resultBones).length === 0) {
             const preview = outputText.slice(0, 200);
             this.logger?.error?.('No valid bones found in pose response', { preview, warnings });
             throw new Error(`Pose compiler returned no valid bones. Warnings: ${warnings.join('; ')}. Response preview: ${preview}...`);
         }
+
+        const result: AvatarPoseData = {
+            bones: resultBones,
+            expressions: Object.keys(resultExpressions).length > 0 ? resultExpressions : undefined,
+        };
 
         console.log(JSON.stringify(result));
         return result;
