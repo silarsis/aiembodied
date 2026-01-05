@@ -297,7 +297,7 @@ export class PoseEvaluationService {
      * Generate a refined pose based on evaluation feedback.
      */
     async refinePose(request: PoseEvaluationRequest): Promise<AvatarPoseUploadResult> {
-        const { poseData, originalPrompt, userFeedback, bones, boneHierarchy, modelDescription } = request;
+        const { poseData, originalPrompt, userFeedback, bones, modelDescription } = request;
 
         if (!originalPrompt?.trim()) {
             throw new Error('Original prompt is required for pose refinement.');
