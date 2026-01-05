@@ -18,6 +18,7 @@ import {
   type AvatarAnimationEvent,
   type AvatarAnimationTiming,
   type VRMPoseData,
+  type VRMPoseExpressions,
 } from './animation-bus.js';
 import { toAnimationSlug } from './animation-tags.js';
 import { useBehaviorCues, type BehaviorCueEvent } from './behavior-cues.js';
@@ -309,6 +310,84 @@ function applyExpressionFrameAtTime(vrm: VRM, vrmaData: VrmaGltf, currentTime: n
   }
 }
 
+/**
+ * Apply facial expressions from pose data to a VRM model.
+ * Uses VRM 1.0 preset names (happy, sad, angry, etc.)
+ */
+export function applyPoseExpressions(vrm: VRM, expressions: VRMPoseExpressions | undefined) {
+  if (!expressions || !vrm.expressionManager) {
+    return;
+  }
+
+  const expressionManager = vrm.expressionManager;
+
+  // Log available expressions for debugging
+  const availableExpressions = expressionManager.expressions?.map(e => e.expressionName) ?? [];
+  console.info('[vrm-avatar-renderer] Available model expressions:', JSON.stringify(availableExpressions));
+
+  // Apply preset expressions (always apply, including 0, to clear previous poses)
+  if (expressions.presets) {
+    for (const [name, weight] of Object.entries(expressions.presets)) {
+      if (typeof weight === 'number' && Number.isFinite(weight)) {
+        const clampedWeight = Math.max(0, Math.min(1, weight));
+
+        // Check if expression exists in the model
+        const expressionExists = availableExpressions.includes(name);
+        if (!expressionExists && clampedWeight > 0) {
+          console.warn(`[vrm-avatar-renderer] Expression '${name}' not found in VRM model. Available: ${availableExpressions.join(', ')}`);
+        }
+
+        expressionManager.setValue(name, clampedWeight);
+        if (clampedWeight > 0) {
+          console.info(`[vrm-avatar-renderer] Set expression '${name}' to ${clampedWeight.toFixed(2)}`);
+        }
+      }
+    }
+  }
+
+  // Apply custom expressions (always apply, including 0, to clear previous poses)
+  if (expressions.custom) {
+    for (const [name, weight] of Object.entries(expressions.custom)) {
+      if (typeof weight === 'number' && Number.isFinite(weight)) {
+        const clampedWeight = Math.max(0, Math.min(1, weight));
+        expressionManager.setValue(name, clampedWeight);
+      }
+    }
+  }
+}
+
+/**
+ * Normalize VRMPoseData to extract bones, handling both legacy flat format and new nested format.
+ * Legacy format: { boneName: { rotation: [...] } }
+ * New format: { bones: { boneName: { rotation: [...] } }, expressions: { presets: {...} } }
+ */
+export function normalizePoseData(pose: VRMPoseData): {
+  bones: Record<string, { rotation: number[]; position?: number[] | null }>;
+  expressions: VRMPoseExpressions | undefined;
+} {
+  // Check if this is the new nested format
+  if (pose.bones && typeof pose.bones === 'object') {
+    return {
+      bones: pose.bones as Record<string, { rotation: number[]; position?: number[] | null }>,
+      expressions: pose.expressions,
+    };
+  }
+
+  // Legacy flat format - all keys are bone names
+  const bones: Record<string, { rotation: number[]; position?: number[] | null }> = {};
+  for (const [key, value] of Object.entries(pose)) {
+    // Skip known non-bone keys
+    if (key === 'expressions' || key === 'bones') continue;
+
+    // Check if value looks like bone data
+    if (value && typeof value === 'object' && 'rotation' in value && Array.isArray(value.rotation)) {
+      bones[key] = value as { rotation: number[]; position?: number[] | null };
+    }
+  }
+
+  return { bones, expressions: undefined };
+}
+
 const DEFAULT_POSE_TRANSITION_DURATION = 0.5; // seconds
 
 /** Captured state for a single bone */
@@ -357,23 +436,27 @@ export function captureCurrentPose(
  * @param targetPose - The target pose to transition to
  * @param duration - Duration of the transition in seconds
  * @param startingPose - Optional captured pose to start from (if not provided, reads current node values)
+ * @returns Object with the animation clip and any expressions to apply, or null if no tracks created
  */
 export function createPoseTransitionClip(
   vrm: VRM,
   targetPose: VRMPoseData,
   duration: number = DEFAULT_POSE_TRANSITION_DURATION,
   startingPose?: Map<string, CapturedBoneState>,
-): THREE.AnimationClip | null {
+): { clip: THREE.AnimationClip; expressions: VRMPoseExpressions | undefined } | null {
   const humanoid = vrm.humanoid;
   if (!humanoid) {
     return null;
   }
 
+  // Normalize pose data to handle both legacy and new formats
+  const { bones, expressions } = normalizePoseData(targetPose);
+
   const tracks: THREE.KeyframeTrack[] = [];
   const resolvedBones: string[] = [];
   const unresolvedBones: string[] = [];
 
-  for (const [boneName, boneData] of Object.entries(targetPose)) {
+  for (const [boneName, boneData] of Object.entries(bones)) {
     const rotation = boneData.rotation;
     if (!rotation || rotation.length !== 4) {
       continue;
@@ -440,9 +523,13 @@ export function createPoseTransitionClip(
     resolvedBones,
     unresolvedBones,
     duration,
+    hasExpressions: !!expressions,
   }));
 
-  return new THREE.AnimationClip('pose-transition', duration, tracks);
+  return {
+    clip: new THREE.AnimationClip('pose-transition', duration, tracks),
+    expressions,
+  };
 }
 
 export function createRightArmWaveClip(vrm: VRM): THREE.AnimationClip | null {
@@ -1429,9 +1516,12 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         }
 
         try {
+          // Normalize pose to get bone names for capture
+          const { bones: targetBones } = normalizePoseData(event.pose);
+
           // IMPORTANT: Capture current bone rotations BEFORE clearing the active animation
           // This prevents the bones from snapping back to default when action.stop() is called
-          const targetBoneNames = Object.keys(event.pose);
+          const targetBoneNames = Object.keys(targetBones);
           const capturedPose = captureCurrentPose(vrm, targetBoneNames);
 
           // Clear any existing pose animation (this may reset bones, but we've captured them)
@@ -1441,12 +1531,14 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
 
           // Create transition clip from captured pose to target pose
           const duration = event.transitionDuration ?? DEFAULT_POSE_TRANSITION_DURATION;
-          const transitionClip = createPoseTransitionClip(vrm, event.pose, duration, capturedPose);
+          const transitionResult = createPoseTransitionClip(vrm, event.pose, duration, capturedPose);
 
-          if (!transitionClip) {
+          if (!transitionResult) {
             console.warn('[vrm-avatar-renderer] Could not create pose transition clip');
             return;
           }
+
+          const { clip: transitionClip, expressions: poseExpressions } = transitionResult;
 
           // Suspend idle animations during transition
           suspendIdleAnimations();
@@ -1469,6 +1561,14 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
               intent: 'pose',
               onFinish: handleFinished,
             };
+
+            // Apply facial expressions when transition completes
+            if (poseExpressions && vrm.expressionManager) {
+              applyPoseExpressions(vrm, poseExpressions);
+              console.info('[vrm-avatar-renderer] Applied pose expressions:', JSON.stringify({
+                presets: poseExpressions.presets ? Object.keys(poseExpressions.presets) : [],
+              }));
+            }
 
             console.info('[vrm-avatar-renderer] Pose transition completed:', JSON.stringify({
               source: event.source,
@@ -1493,8 +1593,9 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
 
           console.info('[vrm-avatar-renderer] Started smooth pose transition:', JSON.stringify({
             source: event.source,
-            boneCount: Object.keys(event.pose).length,
+            boneCount: targetBoneNames.length,
             duration,
+            hasExpressions: !!poseExpressions,
           }));
         } catch (error) {
           console.error('[vrm-avatar-renderer] Failed to apply pose transition', error);

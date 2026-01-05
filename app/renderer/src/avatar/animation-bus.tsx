@@ -7,8 +7,22 @@ export interface AvatarAnimationTiming {
   onStart?: (startAt: number) => void;
 }
 
+export interface VRMPoseExpressions {
+  presets?: Partial<Record<
+    | 'happy' | 'angry' | 'sad' | 'relaxed' | 'surprised' | 'neutral'
+    | 'blink' | 'blinkLeft' | 'blinkRight'
+    | 'lookUp' | 'lookDown' | 'lookLeft' | 'lookRight'
+    | 'aa' | 'ih' | 'ou' | 'ee' | 'oh',
+    number
+  >>;
+  custom?: Record<string, number>;
+}
+
 export interface VRMPoseData {
-  [boneName: string]: { rotation: number[]; position?: number[] };
+  // Can be either flat bone format (legacy) or nested with expressions
+  [boneName: string]: { rotation: number[]; position?: number[] } | VRMPoseExpressions | undefined;
+  bones?: Record<string, { rotation: number[]; position?: number[] | null }>;
+  expressions?: VRMPoseExpressions;
 }
 
 export interface AvatarAnimationRequest {
