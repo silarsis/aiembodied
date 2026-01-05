@@ -6,7 +6,7 @@
   "scripts": {
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test",
+    "test": "pnpm typecheck && pnpm -r test",
     "test:coverage": "pnpm -r test:coverage",
     "build": "pnpm -r build",
     "setup:windows": "powershell -ExecutionPolicy Bypass -File scripts/setup-windows.ps1",
