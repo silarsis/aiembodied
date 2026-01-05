@@ -1570,6 +1570,10 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
               }));
             }
 
+            // Resume idle animations (breathing, micro-movements) on top of the pose
+            // This allows the static pose to still have natural breathing applied
+            releaseIdleSuspension();
+
             console.info('[vrm-avatar-renderer] Pose transition completed:', JSON.stringify({
               source: event.source,
             }));
