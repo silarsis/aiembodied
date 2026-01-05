@@ -158,6 +158,14 @@ function applyPoseToVrm(
                 }
             }
         }
+
+        if (expressions.custom) {
+            for (const [name, weight] of Object.entries(expressions.custom)) {
+                if (typeof weight === 'number' && Number.isFinite(weight)) {
+                    expressionManager.setValue(name, Math.max(0, Math.min(1, weight)));
+                }
+            }
+        }
     }
 }
 
