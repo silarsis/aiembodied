@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRM, VRMLoaderPlugin, VRMUtils, VRMHumanBoneName } from '@pixiv/three-vrm';
+import { normalizePoseData } from './vrm-avatar-renderer.js';
 
 const SNAPSHOT_WIDTH = 512;
 const SNAPSHOT_HEIGHT = 768;
@@ -9,13 +10,7 @@ const FULL_BODY_PADDING = 1.3;
 
 export interface PoseSnapshotOptions {
     modelData: ArrayBuffer;
-    poseData?: {
-        bones: Record<string, { rotation: number[]; position?: number[] | null }>;
-        expressions?: {
-            presets?: Partial<Record<string, number>>;
-            custom?: Record<string, number>;
-        };
-    };
+    poseData?: Record<string, unknown>; // Accepts both legacy flat format and new nested format
     width?: number;
     height?: number;
 }
@@ -122,16 +117,17 @@ function setupLighting(scene: THREE.Scene): void {
 
 function applyPoseToVrm(
     vrm: VRM,
-    poseData: PoseSnapshotOptions['poseData']
+    rawPoseData: PoseSnapshotOptions['poseData']
 ): void {
-    if (!poseData || !vrm.humanoid) {
+    if (!rawPoseData || !vrm.humanoid) {
         return;
     }
 
+    // Normalize pose data to handle both legacy flat format and new nested format
+    const { bones, expressions } = normalizePoseData(rawPoseData as Parameters<typeof normalizePoseData>[0]);
     const humanoid = vrm.humanoid;
 
-    // Apply bone rotations (with null check for bones property)
-    const bones = poseData.bones ?? {};
+    // Apply bone rotations
     for (const [boneName, boneData] of Object.entries(bones)) {
         const rotation = boneData.rotation;
         if (!rotation || rotation.length !== 4) {
@@ -152,19 +148,11 @@ function applyPoseToVrm(
     }
 
     // Apply expressions
-    if (poseData.expressions && vrm.expressionManager) {
+    if (expressions && vrm.expressionManager) {
         const expressionManager = vrm.expressionManager;
 
-        if (poseData.expressions.presets) {
-            for (const [name, weight] of Object.entries(poseData.expressions.presets)) {
-                if (typeof weight === 'number' && Number.isFinite(weight)) {
-                    expressionManager.setValue(name, Math.max(0, Math.min(1, weight)));
-                }
-            }
-        }
-
-        if (poseData.expressions.custom) {
-            for (const [name, weight] of Object.entries(poseData.expressions.custom)) {
+        if (expressions.presets) {
+            for (const [name, weight] of Object.entries(expressions.presets)) {
                 if (typeof weight === 'number' && Number.isFinite(weight)) {
                     expressionManager.setValue(name, Math.max(0, Math.min(1, weight)));
                 }
