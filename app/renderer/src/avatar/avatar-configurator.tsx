@@ -639,10 +639,16 @@ export function AvatarConfigurator({
     try {
       // Load model binary for snapshot generation
       const modelData = await avatarApi.loadModelBinary(activeModelId);
-      const poseData = await avatarApi.loadPose(selectedPoseForEdit) as { bones: Record<string, { rotation: number[] }> };
+      const rawPoseData = await avatarApi.loadPose(selectedPoseForEdit);
+
+      // Validate pose data structure
+      const poseData = rawPoseData as { bones?: Record<string, { rotation?: number[] }> };
+      if (!poseData || typeof poseData !== 'object' || !poseData.bones || Object.keys(poseData.bones).length === 0) {
+        throw new Error('Pose data is missing or has no bone rotations.');
+      }
 
       // Generate pose snapshot
-      const snapshot = await generatePoseSnapshot({ modelData, poseData });
+      const snapshot = await generatePoseSnapshot({ modelData, poseData: poseData as Parameters<typeof generatePoseSnapshot>[0]['poseData'] });
 
       // Call evaluation API
       const result = await avatarApi.evaluatePose({
@@ -686,10 +692,16 @@ export function AvatarConfigurator({
     try {
       // Load model binary for snapshot generation
       const modelData = await avatarApi.loadModelBinary(activeModelId);
-      const poseData = await avatarApi.loadPose(selectedPoseForEdit) as { bones: Record<string, { rotation: number[] }> };
+      const rawPoseData = await avatarApi.loadPose(selectedPoseForEdit);
+
+      // Validate pose data structure
+      const poseData = rawPoseData as { bones?: Record<string, { rotation?: number[] }> };
+      if (!poseData || typeof poseData !== 'object' || !poseData.bones || Object.keys(poseData.bones).length === 0) {
+        throw new Error('Pose data is missing or has no bone rotations.');
+      }
 
       // Generate pose snapshot
-      const snapshot = await generatePoseSnapshot({ modelData, poseData });
+      const snapshot = await generatePoseSnapshot({ modelData, poseData: poseData as Parameters<typeof generatePoseSnapshot>[0]['poseData'] });
 
       // Call refinement API
       const result = await avatarApi.refinePose({
