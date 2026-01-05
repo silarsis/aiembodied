@@ -32,6 +32,7 @@ import { AvatarAnimationService } from './avatar/avatar-animation-service.js';
 import { VrmaGenerationService } from './avatar/vrma-generation-service.js';
 import { AvatarPoseService } from './avatar/avatar-pose-service.js';
 import { PoseGenerationService } from './avatar/pose-generation-service.js';
+import { PoseEvaluationService } from './avatar/pose-evaluation-service.js';
 import { AvatarDescriptionService } from './avatar/avatar-description-service.js';
 import type {
   AvatarModelSummary,
@@ -44,6 +45,7 @@ import type {
   AvatarPoseSummary,
   AvatarPoseUploadRequest,
   AvatarPoseGenerationRequest,
+  PoseEvaluationRequest,
 } from './avatar/types.js';
 import {
   resolvePreloadScriptPath,
@@ -119,6 +121,7 @@ let avatarAnimationService: AvatarAnimationService | null = null;
 let avatarPoseService: AvatarPoseService | null = null;
 let vrmaGenerationService: VrmaGenerationService | null = null;
 let poseGenerationService: PoseGenerationService | null = null;
+let poseEvaluationService: PoseEvaluationService | null = null;
 let avatarDescriptionService: AvatarDescriptionService | null = null;
 let currentVrmaApiKey: string | null = null;
 let currentDescriptionApiKey: string | null = null;
@@ -343,6 +346,42 @@ async function refreshPoseGenerationService(
     const message = error instanceof Error ? error.message : String(error);
     logger.warn('Failed to initialize pose generation service', { message });
     poseGenerationService = null;
+  }
+}
+
+async function refreshPoseEvaluationService(
+  manager: ConfigManager,
+  reason: 'startup' | 'secret-update' = 'startup',
+): Promise<void> {
+  const config = manager.getConfig();
+  const nextKey = typeof config.realtimeApiKey === 'string' ? config.realtimeApiKey.trim() : '';
+
+  if (!nextKey) {
+    poseEvaluationService = null;
+    return;
+  }
+
+  if (!avatarPoseService) {
+    poseEvaluationService = null;
+    return;
+  }
+
+  if (poseEvaluationService && currentVrmaApiKey === nextKey) {
+    return;
+  }
+
+  try {
+    poseEvaluationService = new PoseEvaluationService({
+      client: getOpenAIClient(nextKey),
+      poseService: avatarPoseService,
+      logger,
+    });
+    if (!currentVrmaApiKey) currentVrmaApiKey = nextKey;
+    logger.info('Pose evaluation service initialized.', { reason });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('Failed to initialize pose evaluation service', { message });
+    poseEvaluationService = null;
   }
 }
 
@@ -872,6 +911,66 @@ function registerIpcHandlers(
     }
 
     return avatarPoses.loadPose(poseId);
+  });
+  ipcMain.handle('avatar-pose:evaluate', async (_event, payload: PoseEvaluationRequest) => {
+    if (!poseEvaluationService) {
+      await refreshPoseEvaluationService(manager, 'secret-update');
+    }
+    if (!poseEvaluationService) {
+      throw new Error('Pose evaluation service is unavailable. Ensure REALTIME_API_KEY is set.');
+    }
+
+    // Load pose data if only poseId is provided
+    let poseData = payload.poseData;
+    if (!poseData && payload.poseId && avatarPoses) {
+      poseData = (await avatarPoses.loadPose(payload.poseId)) as typeof poseData;
+    }
+    if (!poseData) {
+      throw new Error('Pose data is required for evaluation.');
+    }
+
+    const bones = avatarModels ? await avatarModels.listActiveModelBones() : [];
+    const boneHierarchy = avatarModels ? await avatarModels.listActiveModelBoneHierarchy() : {};
+    const activeModel = avatarModels?.getActiveModel() ?? null;
+    const modelDescription = activeModel?.description ?? undefined;
+
+    return poseEvaluationService.evaluatePose({
+      ...payload,
+      poseData,
+      bones,
+      boneHierarchy,
+      modelDescription,
+    });
+  });
+  ipcMain.handle('avatar-pose:refine', async (_event, payload: PoseEvaluationRequest) => {
+    if (!poseEvaluationService) {
+      await refreshPoseEvaluationService(manager, 'secret-update');
+    }
+    if (!poseEvaluationService) {
+      throw new Error('Pose evaluation service is unavailable. Ensure REALTIME_API_KEY is set.');
+    }
+
+    // Load pose data if only poseId is provided
+    let poseData = payload.poseData;
+    if (!poseData && payload.poseId && avatarPoses) {
+      poseData = (await avatarPoses.loadPose(payload.poseId)) as typeof poseData;
+    }
+    if (!poseData) {
+      throw new Error('Pose data is required for refinement.');
+    }
+
+    const bones = avatarModels ? await avatarModels.listActiveModelBones() : [];
+    const boneHierarchy = avatarModels ? await avatarModels.listActiveModelBoneHierarchy() : {};
+    const activeModel = avatarModels?.getActiveModel() ?? null;
+    const modelDescription = activeModel?.description ?? undefined;
+
+    return poseEvaluationService.refinePose({
+      ...payload,
+      poseData,
+      bones,
+      boneHierarchy,
+      modelDescription,
+    });
   });
   ipcMain.handle('avatar:trigger-behavior', async (_event, cue: string) => {
     const value = typeof cue === 'string' ? cue.trim() : '';

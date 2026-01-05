@@ -12,12 +12,15 @@ import type {
   AvatarBridge,
   AvatarModelSummary,
   AvatarPoseSummary,
+  PoseEvaluationResult,
 } from './types.js';
 import { generateVrmThumbnail } from './thumbnail-generator.js';
+import { generatePoseSnapshot } from './pose-snapshot-generator.js';
 
 type ModelUploadStatus = 'idle' | 'reading' | 'uploading' | 'success';
 type VrmaGenerationStatus = 'idle' | 'pending' | 'success' | 'error';
 type PoseGenerationStatus = 'idle' | 'pending' | 'success' | 'error';
+type PoseEditStatus = 'idle' | 'evaluating' | 'refining' | 'success' | 'error';
 
 interface AvatarConfiguratorProps {
   avatarApi?: AvatarBridge;
@@ -108,11 +111,19 @@ export function AvatarConfigurator({
   const [posesLoading, setPostsLoading] = useState(false);
   const [poseError, setPoseError] = useState<string | null>(null);
   const [poseBusyId, setPositBusyId] = useState<string | null>(null);
+  // Pose editing state
+  const [selectedPoseForEdit, setSelectedPoseForEdit] = useState<string | null>(null);
+  const [poseEditFeedback, setPoseEditFeedback] = useState('');
+  const [poseEditStatus, setPoseEditStatus] = useState<PoseEditStatus>('idle');
+  const [poseEditResult, setPoseEditResult] = useState<PoseEvaluationResult | null>(null);
+  const [refinedPoseId, setRefinedPoseId] = useState<string | null>(null);
+  const [poseEditError, setPoseEditError] = useState<string | null>(null);
   const modelFileInputRef = useRef<HTMLInputElement | null>(null);
   const availabilityLogRef = useRef<'available' | 'missing' | null>(null);
   const isModelBridgeAvailable = Boolean(avatarApi?.listModels && avatarApi?.uploadModel);
   const isAnimationBridgeAvailable = Boolean(avatarApi?.generateAnimation);
   const isPoseBridgeAvailable = Boolean(avatarApi?.generatePose && avatarApi?.listPoses);
+  const isPoseEditBridgeAvailable = Boolean(avatarApi?.evaluatePose && avatarApi?.refinePose);
 
   useEffect(() => {
     const nextState: 'available' | 'missing' = avatarApi ? 'available' : 'missing';
@@ -591,9 +602,141 @@ export function AvatarConfigurator({
     [avatarApi, onPoseChange],
   );
 
+  // Pose editing handlers
+  const handleSelectPoseForEdit = useCallback((poseId: string | null) => {
+    setSelectedPoseForEdit(poseId);
+    setPoseEditFeedback('');
+    setPoseEditStatus('idle');
+    setPoseEditResult(null);
+    setRefinedPoseId(null);
+    setPoseEditError(null);
+  }, []);
+
+  const handlePoseEditFeedbackChange = useCallback((event: ChangeEvent<HTMLTextAreaElement>) => {
+    setPoseEditFeedback(event.target.value);
+    if (poseEditStatus === 'error') {
+      setPoseEditStatus('idle');
+      setPoseEditError(null);
+    }
+  }, [poseEditStatus]);
+
+  const handleEvaluatePose = useCallback(async () => {
+    if (!avatarApi?.evaluatePose || !avatarApi?.loadModelBinary || !avatarApi?.loadPose || !selectedPoseForEdit || !activeModelId) {
+      setPoseEditError('Pose evaluation requires an active model and selected pose.');
+      return;
+    }
+
+    const selectedPose = poses.find((p) => p.id === selectedPoseForEdit);
+    if (!selectedPose) {
+      setPoseEditError('Selected pose not found.');
+      return;
+    }
+
+    setPoseEditStatus('evaluating');
+    setPoseEditError(null);
+    setPoseEditResult(null);
+
+    try {
+      // Load model binary for snapshot generation
+      const modelData = await avatarApi.loadModelBinary(activeModelId);
+      const poseData = await avatarApi.loadPose(selectedPoseForEdit) as { bones: Record<string, { rotation: number[] }> };
+
+      // Generate pose snapshot
+      const snapshot = await generatePoseSnapshot({ modelData, poseData });
+
+      // Call evaluation API
+      const result = await avatarApi.evaluatePose({
+        poseId: selectedPoseForEdit,
+        imageDataUrl: snapshot.dataUrl,
+        originalPrompt: selectedPose.name,
+        userFeedback: poseEditFeedback.trim() || undefined,
+      });
+
+      setPoseEditResult(result);
+      setPoseEditFeedback(result.feedback);
+      setPoseEditStatus('success');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to evaluate pose.';
+      setPoseEditError(message);
+      setPoseEditStatus('error');
+    }
+  }, [avatarApi, selectedPoseForEdit, activeModelId, poses, poseEditFeedback]);
+
+  const handleRefinePose = useCallback(async () => {
+    if (!avatarApi?.refinePose || !avatarApi?.loadModelBinary || !avatarApi?.loadPose || !selectedPoseForEdit || !activeModelId) {
+      setPoseEditError('Pose refinement requires an active model and selected pose.');
+      return;
+    }
+
+    const selectedPose = poses.find((p) => p.id === selectedPoseForEdit);
+    if (!selectedPose) {
+      setPoseEditError('Selected pose not found.');
+      return;
+    }
+
+    const feedback = poseEditFeedback.trim();
+    if (!feedback) {
+      setPoseEditError('Please enter feedback describing how to improve the pose.');
+      return;
+    }
+
+    setPoseEditStatus('refining');
+    setPoseEditError(null);
+
+    try {
+      // Load model binary for snapshot generation
+      const modelData = await avatarApi.loadModelBinary(activeModelId);
+      const poseData = await avatarApi.loadPose(selectedPoseForEdit) as { bones: Record<string, { rotation: number[] }> };
+
+      // Generate pose snapshot
+      const snapshot = await generatePoseSnapshot({ modelData, poseData });
+
+      // Call refinement API
+      const result = await avatarApi.refinePose({
+        poseId: selectedPoseForEdit,
+        imageDataUrl: snapshot.dataUrl,
+        originalPrompt: selectedPose.name,
+        userFeedback: feedback,
+      });
+
+      setRefinedPoseId(result.pose.id);
+      await refreshPoses();
+      setPoseEditStatus('success');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to refine pose.';
+      setPoseEditError(message);
+      setPoseEditStatus('error');
+    }
+  }, [avatarApi, selectedPoseForEdit, activeModelId, poses, poseEditFeedback, refreshPoses]);
+
+  const handleAcceptRefinement = useCallback(() => {
+    if (refinedPoseId) {
+      setSelectedPoseForEdit(refinedPoseId);
+      setRefinedPoseId(null);
+      setPoseEditFeedback('');
+      setPoseEditResult(null);
+      setPoseEditStatus('idle');
+      onPoseChange?.();
+    }
+  }, [refinedPoseId, onPoseChange]);
+
+  const handleRejectRefinement = useCallback(async () => {
+    if (refinedPoseId && avatarApi?.deletePose) {
+      try {
+        await avatarApi.deletePose(refinedPoseId);
+        await refreshPoses();
+      } catch {
+        // Ignore deletion errors - just proceed
+      }
+    }
+    setRefinedPoseId(null);
+    setPoseEditStatus('idle');
+  }, [refinedPoseId, avatarApi, refreshPoses]);
+
   const modelUploadDisabled = !isModelBridgeAvailable || modelUploadStatus === 'reading' || modelUploadStatus === 'uploading';
   const vrmaPending = vrmaStatus === 'pending';
   const posePending = poseStatus === 'pending';
+  const poseEditPending = poseEditStatus === 'evaluating' || poseEditStatus === 'refining';
 
   return (
     <section className="kiosk__faces" aria-labelledby="kiosk-faces-title">
@@ -875,6 +1018,111 @@ export function AvatarConfigurator({
             {poseMessage}
           </p>
         ) : null}
+      </div>
+
+      {/* Pose Editor Section */}
+      <div className="faces__section">
+        <h3 className="faces__heading">Pose Editor</h3>
+
+        {poseEditError ? (
+          <p role="alert" className="kiosk__error">
+            {poseEditError}
+          </p>
+        ) : null}
+
+        {poses.length === 0 ? (
+          <p className="kiosk__info">Generate a pose first, then you can refine it here.</p>
+        ) : (
+          <>
+            <label className="faces__field">
+              <span>Select pose to edit</span>
+              <select
+                value={selectedPoseForEdit ?? ''}
+                onChange={(e) => handleSelectPoseForEdit(e.target.value || null)}
+                disabled={poseEditPending}
+              >
+                <option value="">-- Select a pose --</option>
+                {poses.map((pose) => (
+                  <option key={pose.id} value={pose.id}>
+                    {pose.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {selectedPoseForEdit ? (
+              <div className="faces__form" aria-label="Pose editing controls">
+                <label className="faces__field">
+                  <span>Feedback / improvement suggestions</span>
+                  <textarea
+                    value={poseEditFeedback}
+                    onChange={handlePoseEditFeedbackChange}
+                    placeholder="Click 'Evaluate with LLM' to get AI feedback, or enter your own suggestions."
+                    disabled={poseEditPending}
+                    rows={4}
+                  />
+                </label>
+
+                <div className="faces__actions" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={handleEvaluatePose}
+                    disabled={!isPoseEditBridgeAvailable || !activeModelId || poseEditPending}
+                    className="faces__submit"
+                  >
+                    {poseEditStatus === 'evaluating' ? 'Evaluating…' : 'Evaluate with LLM'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleRefinePose}
+                    disabled={!isPoseEditBridgeAvailable || !activeModelId || poseEditPending || !poseEditFeedback.trim()}
+                    className="faces__submit"
+                  >
+                    {poseEditStatus === 'refining' ? 'Refining…' : 'Apply Feedback & Refine'}
+                  </button>
+                </div>
+
+                {poseEditResult && !refinedPoseId ? (
+                  <div className="kiosk__info" style={{ marginTop: '0.75rem' }}>
+                    <strong>Evaluation Result:</strong>{' '}
+                    {poseEditResult.meetsRequirement ? '✅ Pose meets requirements' : '⚠️ Pose needs improvement'}
+                    {poseEditResult.suggestedImprovements && poseEditResult.suggestedImprovements.length > 0 ? (
+                      <ul style={{ margin: '0.5rem 0 0 1rem', paddingLeft: '0.5rem' }}>
+                        {poseEditResult.suggestedImprovements.map((suggestion, idx) => (
+                          <li key={idx}>{suggestion}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {refinedPoseId ? (
+                  <div className="kiosk__info" style={{ marginTop: '0.75rem' }}>
+                    <strong>🎉 Refined pose created!</strong>
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                      <button
+                        type="button"
+                        onClick={handleAcceptRefinement}
+                        className="faces__submit"
+                        style={{ backgroundColor: '#059669' }}
+                      >
+                        ✓ Accept
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRejectRefinement}
+                        style={{ backgroundColor: '#dc2626' }}
+                      >
+                        ✕ Reject
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
     </section>
   );

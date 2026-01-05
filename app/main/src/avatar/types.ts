@@ -85,3 +85,23 @@ export interface AvatarPoseData {
   bones: Record<string, { rotation: number[]; position?: number[] | null }>;
   expressions?: PoseExpressionState;
 }
+
+/** Request to evaluate a pose against its original prompt using vision LLM */
+export interface PoseEvaluationRequest {
+  poseId: string;
+  poseData: AvatarPoseData;
+  imageDataUrl: string;
+  originalPrompt: string;
+  userFeedback?: string;
+  modelDescription?: string;
+  bones?: string[];
+  boneHierarchy?: Record<string, string | null>;
+}
+
+/** Result of pose evaluation with feedback and optional refined pose */
+export interface PoseEvaluationResult {
+  meetsRequirement: boolean;
+  feedback: string;
+  suggestedImprovements?: string[];
+  refinedPoseId?: string;
+}

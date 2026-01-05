@@ -13,6 +13,8 @@ import type {
   AvatarPoseUploadRequest,
   AvatarPoseUploadResult,
   AvatarPoseGenerationRequest,
+  PoseEvaluationRequest,
+  PoseEvaluationResult,
 } from './avatar/types.js';
 import type {
   ConversationAppendMessagePayload,
@@ -173,6 +175,8 @@ export interface AvatarBridge {
   generatePose(request: AvatarPoseGenerationRequest): Promise<AvatarPoseUploadResult>;
   deletePose(poseId: string): Promise<void>;
   loadPose(poseId: string): Promise<unknown>;
+  evaluatePose(request: PoseEvaluationRequest): Promise<PoseEvaluationResult>;
+  refinePose(request: PoseEvaluationRequest): Promise<AvatarPoseUploadResult>;
 }
 
 export interface CameraDetectionEvent {
@@ -301,6 +305,10 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     loadPose: async (poseId: string) => {
       return ipcRenderer.invoke('avatar-pose:load', poseId) as Promise<unknown>;
     },
+    evaluatePose: (payload: PoseEvaluationRequest) =>
+      ipcRenderer.invoke('avatar-pose:evaluate', payload) as Promise<PoseEvaluationResult>,
+    refinePose: (payload: PoseEvaluationRequest) =>
+      ipcRenderer.invoke('avatar-pose:refine', payload) as Promise<AvatarPoseUploadResult>,
   },
   camera: {
     onDetection: (listener) => {

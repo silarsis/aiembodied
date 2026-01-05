@@ -446,22 +446,9 @@ export class PoseGenerationService {
                             required: expressionPresetNames as unknown as string[],
                             properties: expressionPresetProperties,
                         },
-                    ],
+                    },
                 },
             },
-        };
-
-        // Build properties object with each bone using the same schema
-        const boneProperties: Record<string, typeof boneSchema> = {};
-        for (const bone of bones) {
-            boneProperties[bone] = boneSchema;
-        }
-
-        const schema = {
-            type: 'object' as const,
-            additionalProperties: false,
-            required: bones, // All bones are required
-            properties: boneProperties,
         };
 
         const response = await (
