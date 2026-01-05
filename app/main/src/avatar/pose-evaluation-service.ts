@@ -399,7 +399,7 @@ export class PoseEvaluationService {
                 }
             }
             if (Object.keys(presets).length > 0) {
-                resultExpressions.presets = presets as AvatarPoseData['expressions']['presets'];
+                resultExpressions.presets = presets as NonNullable<AvatarPoseData['expressions']>['presets'];
             }
         }
 
