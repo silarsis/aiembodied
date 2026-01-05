@@ -65,6 +65,22 @@ export interface AvatarPoseUploadResult {
   pose: AvatarPoseSummary;
 }
 
+/** Request to evaluate a pose against its original prompt using vision LLM */
+export interface PoseEvaluationRequest {
+  poseId: string;
+  imageDataUrl: string;
+  originalPrompt: string;
+  userFeedback?: string;
+}
+
+/** Result of pose evaluation with feedback and optional refined pose */
+export interface PoseEvaluationResult {
+  meetsRequirement: boolean;
+  feedback: string;
+  suggestedImprovements?: string[];
+  refinedPoseId?: string;
+}
+
 export interface AvatarBridge {
   listModels(): Promise<AvatarModelSummary[]>;
   getActiveModel(): Promise<AvatarModelSummary | null>;
@@ -88,4 +104,6 @@ export interface AvatarBridge {
   generatePose(request: AvatarPoseGenerationRequest): Promise<AvatarPoseUploadResult>;
   deletePose(poseId: string): Promise<void>;
   loadPose(poseId: string): Promise<unknown>;
+  evaluatePose(request: PoseEvaluationRequest): Promise<PoseEvaluationResult>;
+  refinePose(request: PoseEvaluationRequest): Promise<AvatarPoseUploadResult>;
 }

@@ -116,6 +116,19 @@ function createAvatarBridgeStub(overrides: Partial<AvatarBridge> = {}): AvatarBr
     }),
     deletePose: vi.fn().mockResolvedValue(undefined),
     loadPose: vi.fn().mockResolvedValue({}),
+    evaluatePose: vi.fn().mockResolvedValue({
+      meetsRequirement: true,
+      feedback: 'Pose looks good',
+      suggestedImprovements: [],
+    }),
+    refinePose: vi.fn().mockResolvedValue({
+      pose: {
+        id: 'pose-refined',
+        name: 'Refined Pose',
+        createdAt: Date.now(),
+        fileSha: 'sha',
+      },
+    }),
     ...overrides,
   };
 }

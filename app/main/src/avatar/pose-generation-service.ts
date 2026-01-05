@@ -1,7 +1,7 @@
 
 import type OpenAI from 'openai';
 import type { ResponseInput } from 'openai/resources/responses/responses';
-import type { AvatarPoseGenerationRequest, AvatarPoseUploadResult } from './types.js';
+import type { AvatarPoseGenerationRequest, AvatarPoseUploadResult, AvatarPoseData, PoseExpressionState } from './types.js';
 import type { AvatarPoseService } from './avatar-pose-service.js';
 
 export interface PoseGenerationServiceOptions {
@@ -43,47 +43,166 @@ const POSE_COMPILER_SYSTEM_PROMPT_BASE = [
 ].join('\n');
 
 const POSE_HIERARCHY_FALLBACK = [
-    'Bone Hierarchy (parent → child):',
-    '- hips (root) → spine → chest → upperChest → neck → head',
-    '- upperChest → leftShoulder → leftUpperArm → leftLowerArm → leftHand → fingers',
-    '- upperChest → rightShoulder → rightUpperArm → rightLowerArm → rightHand → fingers',
-    '- hips → leftUpperLeg → leftLowerLeg → leftFoot → leftToes',
-    '- hips → rightUpperLeg → rightLowerLeg → rightFoot → rightToes',
+    'Bone Hierarchy (parent > child):',
+    '- hips (root) > spine > chest > upperChest > neck > head',
+    '- upperChest > leftShoulder > leftUpperArm > leftLowerArm > leftHand > fingers',
+    '- upperChest > rightShoulder > rightUpperArm > rightLowerArm > rightHand > fingers',
+    '- hips > leftUpperLeg > leftLowerLeg > leftFoot > leftToes',
+    '- hips > rightUpperLeg > rightLowerLeg > rightFoot > rightToes',
 ].join('\n');
 
 const POSE_ROTATION_GUIDANCE = [
-    'IMPORTANT - Parent-Child Rotation Inheritance:',
-    '- All rotations are LOCAL (relative to the parent bone).',
+    'IMPORTANT - T-Pose Bind Pose and Rotation System:',
+    '- VRM models use T-pose as the bind/rest pose (arms extended horizontally, palms down).',
+    '- All rotations are RELATIVE to T-pose. Identity quaternion [0,0,0,1] = T-pose orientation.',
+    '- Rotations are LOCAL (relative to the parent bone in the hierarchy).',
     '- Child bones inherit their parent\'s rotation automatically.',
     '- When a parent rotates, all descendants move with it.',
     '- Account for parent rotation when setting child rotations. For example:',
-    '  - If leftUpperArm rotates 45° forward, leftLowerArm is already 45° forward.',
+    '  - If leftUpperArm rotates 45 degrees forward, leftLowerArm is already 45 degrees forward.',
     '  - To keep the forearm straight relative to world, set leftLowerArm rotation to identity [0,0,0,1].',
     '  - To bend the elbow further, apply only the additional local rotation.',
+].join('\n');
+
+const POSE_AXIS_MAPPING = [
+    'CRITICAL - Axis-to-Movement Mapping (quaternion [x, y, z, w]):',
+    '',
+    'Upper Arms (leftUpperArm, rightUpperArm) - FROM T-POSE:',
+    '- Y-axis is PRIMARY: Controls bringing arm toward/away from body',
+    '  - Left arm: negative Y = rotate arm forward and inward toward chest',
+    '  - Right arm: positive Y = rotate arm forward and inward toward chest (mirrored)',
+    '- Z-axis: Additional forward/backward swing adjustment',
+    '- X-axis: Minor vertical adjustment (small values only)',
+    '- For crossed arms: Y is the LARGEST component (≈0.4), Z is medium (≈0.25), X is small (≈0.09)',
+    '',
+    'Lower Arms/Forearms (leftLowerArm, rightLowerArm):',
+    '- Y-axis is PRIMARY: Controls elbow bend/flexion',
+    '  - Left arm: negative Y = bend elbow to bring forearm across chest',
+    '  - Right arm: positive Y = bend elbow to bring forearm across chest (mirrored)',
+    '- For crossed arms: Y should be ≈0.707 (90° bend) with X and Z near zero',
+    '',
+    'Head and Neck:',
+    '- X-axis: Nod up/down (negative X = look down, positive X = look up)',
+    '- Y-axis: Turn left/right (positive Y = turn left, negative Y = turn right)',
+    '- Z-axis: Tilt ear to shoulder (positive Z = tilt left, negative Z = tilt right)',
+    '',
+    'Spine, Chest, UpperChest:',
+    '- X-axis: Lean forward/backward (positive X = lean back, negative X = lean forward)',
+    '- Y-axis: Twist torso left/right',
+    '- Z-axis: Lean side to side (positive Z = lean left, negative Z = lean right)',
+    '',
+    'Fingers (all finger bones):',
+    '- X-axis: Curl fingers (positive X = curl/close fist)',
+    '- Z-axis: Spread fingers apart',
+].join('\n');
+
+const POSE_MAGNITUDE_GUIDE = [
+    'Rotation Magnitude Reference (quaternion component values):',
+    '- Subtle/slight movement: |value| ≈ 0.05 to 0.15 (~5-15 degrees)',
+    '- Small movement: |value| ≈ 0.15 to 0.25 (~15-25 degrees)',
+    '- Medium movement: |value| ≈ 0.25 to 0.40 (~25-45 degrees)',
+    '- Large movement: |value| ≈ 0.40 to 0.60 (~45-70 degrees)',
+    '- Extreme movement: |value| ≈ 0.60 to 0.707 (~70-90 degrees)',
+    '',
+    'Remember: The w component adjusts to keep the quaternion normalized.',
+    'For single-axis rotations, use: [x, y, z, w] where w = sqrt(1 - x² - y² - z²)',
+].join('\n');
+
+const POSE_SYMMETRY_RULE = [
+    'CRITICAL - Symmetry Rule for Left/Right Bone Pairs:',
+    '- VRM uses a specific mirroring pattern for symmetric poses.',
+    '- For any left/right bone pair (shoulders, arms, hands, fingers, legs, feet):',
+    '  - Left quaternion:  [x,  y,  z, w]',
+    '  - Right quaternion: [x, -y, -z, w]  (NEGATE both Y and Z components)',
+    '- This rule applies because left and right bones have mirrored local coordinate systems.',
+    '- Example: If leftUpperArm is [-0.087, -0.423, 0.259, 0.861],',
+    '  then rightUpperArm should be [-0.087, 0.423, -0.259, 0.861].',
+].join('\n');
+
+const POSE_CONVERGENT_EXCEPTION = [
+    'EXCEPTION - Convergent Poses (arms crossed, hands clasped, praying, hugging self):',
+    '',
+    'The symmetry rule above is for MIRRORED poses (hands on hips, arms akimbo, waving).',
+    'For CONVERGENT poses where limbs meet at the body center, do NOT blindly negate Y and Z.',
+    '',
+    'Crossed Arms Example - What happens in 3D space:',
+    '- BOTH upper arms must swing FORWARD (toward chest) - this requires considering the arm direction',
+    '- BOTH forearms fold INWARD across the chest',
+    '- Left arm typically goes OVER or UNDER right arm (or vice versa)',
+    '',
+    'Key insight for crossed arms:',
+    '- leftUpperArm needs: negative X (lower from T-pose) AND rotation to bring arm toward chest center',
+    '- rightUpperArm needs: same lowering AND rotation to bring arm toward chest center',
+    '- The Z components work together to bring arms to center, not oppose each other',
+    '- Think about WHERE the hands end up (opposite shoulders/upper arms), then work backward',
+    '',
+    'Use the Reference Example below as your primary guide for crossed arms.',
+].join('\n');
+
+const POSE_EXAMPLE = [
+    'Reference Example - Crossed Arms Pose (arms folded across chest):',
+    '{',
+    '  "leftUpperArm":  { "rotation": [-0.087, -0.423,  0.259, 0.861] },',
+    '  "leftLowerArm":  { "rotation": [ 0.000, -0.707,  0.000, 0.707] },',
+    '  "rightUpperArm": { "rotation": [-0.087,  0.423, -0.259, 0.861] },',
+    '  "rightLowerArm": { "rotation": [ 0.000,  0.707,  0.000, 0.707] }',
+    '}',
+    'Note: Y and Z are negated between left and right pairs.',
+    'The Y component is CRITICAL for both upper arm positioning and elbow bending.',
 ].join('\n');
 
 const POSE_REQUIREMENTS = [
     'Requirements:',
     '- Output ONLY valid JSON matching the schema above.',
-    '- You MUST include ALL provided VRM bone names as top-level property keys.',
-    '- All rotations must be local Quaternions [x, y, z, w].',
-    '- For bones that do not change from the default pose, use identity rotation [0, 0, 0, 1].',
-    '- Set position to null for all bones EXCEPT hips when vertical movement is needed.',
-    '- For hips position (crouching/jumping only), use [x, y, z] where Y≈1.0 is standing.',
+    '- You MUST include ALL provided VRM bone names as top-level property keys under "bones".',
+    '- All rotations must be local Quaternions [x, y, z, w] relative to T-pose.',
+    '- Identity rotation [0, 0, 0, 1] means the bone stays in T-pose orientation.',
+    '- For bones that do not change from the T-pose, use identity rotation [0, 0, 0, 1].',
+    '- Set position to null for ALL bones. Do not adjust position values.',
     '- Ensure anatomical plausibility.',
-    '- Symmetrize where appropriate if the description implies symmetry.',
+    '- ALWAYS apply the symmetry rule above for left/right bone pairs.',
     '- For hands: Provide detailed finger rotations if described.',
+    '- ALWAYS include facial expressions in the "expressions" object.',
+].join('\n');
+
+const POSE_EXPRESSION_GUIDANCE = [
+    'FACIAL EXPRESSIONS - VRM 1.0 Preset Names:',
+    '',
+    'You must include an "expressions" object with facial expression weights.',
+    'Expression weights range from 0.0 (off) to 1.0 (full intensity).',
+    '',
+    'Available emotion presets (use 1-2 that match the pose mood):',
+    '- happy: Joy, smile, positive emotions',
+    '- angry: Frown, furrowed brows, tension',
+    '- sad: Downturned mouth, sorrowful look',
+    '- relaxed: Calm, peaceful, slight smile',
+    '- surprised: Wide eyes, raised brows',
+    '- neutral: Default, no particular emotion',
+    '',
+    'Guidelines:',
+    '- Choose expressions that match the pose\'s emotional intent.',
+    '- Use weights between 0.3-0.8 for natural looks; 1.0 can look exaggerated.',
+    '- Blend 2 emotions for nuance (e.g., happy: 0.6, relaxed: 0.3).',
+    '- For neutral poses, use neutral: 1.0 or relaxed: 0.5.',
+    '',
+    'Example output structure:',
+    '{',
+    '  "bones": { "hips": {...}, "spine": {...}, ... },',
+    '  "expressions": {',
+    '    "presets": { "happy": 0.7, "relaxed": 0.3 }',
+    '  }',
+    '}',
 ].join('\n');
 
 /**
- * Format bone hierarchy from a map of bone → parent into readable chains.
+ * Format bone hierarchy from a map of bone > parent into readable chains.
  */
 function formatBoneHierarchy(hierarchy: Record<string, string | null>): string {
     if (!hierarchy || Object.keys(hierarchy).length === 0) {
         return POSE_HIERARCHY_FALLBACK;
     }
 
-    // Build child → parent into parent → children
+    // Build child > parent into parent > children
     const childrenMap = new Map<string | null, string[]>();
     for (const [bone, parent] of Object.entries(hierarchy)) {
         const children = childrenMap.get(parent) ?? [];
@@ -107,7 +226,7 @@ function formatBoneHierarchy(hierarchy: Record<string, string | null>): string {
         }
 
         for (const child of children) {
-            chains.push(`- ${bone} → ${child}`);
+            chains.push(`- ${bone} > ${child}`);
             buildChain(child, depth + 1);
         }
     }
@@ -139,7 +258,6 @@ export class PoseGenerationService {
 
         const bones = this.normalizeBones(request?.bones);
         const modelDescription = typeof request?.modelDescription === 'string' ? request.modelDescription.trim() : undefined;
-
         const boneHierarchy = request?.boneHierarchy ?? {};
 
         // Step 1: Expansion
@@ -153,7 +271,11 @@ export class PoseGenerationService {
         // Step 2: Compiler
         // We use a simplified JSON schema for the compiler output to ensure structure
         const poseJson = await this.runCompilerStep(expandedDescription, bones, boneHierarchy);
-        this.logger?.info?.('Pose JSON compiled.', { keys: Object.keys(poseJson).length });
+        this.logger?.info?.('Pose JSON compiled.', {
+            boneCount: Object.keys(poseJson.bones).length,
+            hasExpressions: !!poseJson.expressions,
+            expressionPresets: poseJson.expressions?.presets ? Object.keys(poseJson.expressions.presets) : [],
+        });
 
         // Save
         const fileName = `${this.slugify(prompt.slice(0, 30))}-${Date.now()}.pose.json`;
@@ -215,7 +337,7 @@ export class PoseGenerationService {
         description: string,
         bones: string[],
         boneHierarchy: Record<string, string | null>
-    ): Promise<Record<string, unknown>> {
+    ): Promise<AvatarPoseData> {
         const hierarchyText = formatBoneHierarchy(boneHierarchy);
         const systemPrompt = [
             POSE_COMPILER_SYSTEM_PROMPT_BASE,
@@ -223,6 +345,18 @@ export class PoseGenerationService {
             hierarchyText,
             '',
             POSE_ROTATION_GUIDANCE,
+            '',
+            POSE_AXIS_MAPPING,
+            '',
+            POSE_MAGNITUDE_GUIDE,
+            '',
+            POSE_SYMMETRY_RULE,
+            '',
+            POSE_CONVERGENT_EXCEPTION,
+            '',
+            POSE_EXAMPLE,
+            '',
+            POSE_EXPRESSION_GUIDANCE,
             '',
             POSE_REQUIREMENTS,
         ].join('\n');
@@ -249,8 +383,8 @@ export class PoseGenerationService {
             content: [{ type: 'input_text', text: `Description: ${description}` }],
         });
 
-        // Build a strict JSON schema with all model bones as required properties
-        // Each bone has rotation (required, 4 numbers) and position (optional, 3 numbers or null)
+        // Build a strict JSON schema with nested structure:
+        // { bones: { [boneName]: { rotation, position } }, expressions: { presets: { [name]: weight } } }
         // OpenAI's strict mode requires additionalProperties:false and all properties in required
         const boneSchema = {
             type: 'object' as const,
@@ -283,11 +417,38 @@ export class PoseGenerationService {
             boneProperties[bone] = boneSchema;
         }
 
+        // Expression presets schema - VRM 1.0 emotion names with 0-1 weights
+        const expressionPresetNames = ['happy', 'angry', 'sad', 'relaxed', 'surprised', 'neutral'] as const;
+        const expressionPresetProperties: Record<string, { type: 'number' }> = {};
+        for (const preset of expressionPresetNames) {
+            expressionPresetProperties[preset] = { type: 'number' as const };
+        }
+
         const schema = {
             type: 'object' as const,
             additionalProperties: false,
-            required: bones, // All bones are required
-            properties: boneProperties,
+            required: ['bones', 'expressions'],
+            properties: {
+                bones: {
+                    type: 'object' as const,
+                    additionalProperties: false,
+                    required: bones,
+                    properties: boneProperties,
+                },
+                expressions: {
+                    type: 'object' as const,
+                    additionalProperties: false,
+                    required: ['presets'],
+                    properties: {
+                        presets: {
+                            type: 'object' as const,
+                            additionalProperties: false,
+                            required: expressionPresetNames as unknown as string[],
+                            properties: expressionPresetProperties,
+                        },
+                    },
+                },
+            },
         };
 
         const response = await (
@@ -311,11 +472,11 @@ export class PoseGenerationService {
         if (!outputText) throw new Error('Empty response from pose compiler');
         console.log(JSON.stringify(messages), outputText);
 
-        // Parse the object-based response directly
-        // Expected format: { [boneName]: { rotation: [x,y,z,w], position?: [x,y,z] | null } }
-        let parsed: Record<string, unknown>;
+        // Parse the object-based response with new structure:
+        // { bones: { [boneName]: { rotation, position } }, expressions: { presets: {...} } }
+        let parsed: { bones?: Record<string, unknown>; expressions?: { presets?: Record<string, unknown> } };
         try {
-            parsed = JSON.parse(outputText) as Record<string, unknown>;
+            parsed = JSON.parse(outputText) as typeof parsed;
         } catch (parseError) {
             const preview = outputText.slice(0, 200);
             const message = parseError instanceof Error ? parseError.message : String(parseError);
@@ -323,11 +484,14 @@ export class PoseGenerationService {
             throw new Error(`Pose compiler returned invalid JSON: ${message}. Response preview: ${preview}...`);
         }
 
-        const result: Record<string, { rotation: number[]; position?: number[] }> = {};
+        const bonesData = parsed.bones ?? {};
+        const expressionsData = parsed.expressions ?? {};
+
+        const resultBones: Record<string, { rotation: number[]; position?: number[] | null }> = {};
         const validBoneSet = new Set(bones);
         const warnings: string[] = [];
 
-        for (const [boneName, boneData] of Object.entries(parsed)) {
+        for (const [boneName, boneData] of Object.entries(bonesData)) {
             // Validate bone name
             if (!validBoneSet.has(boneName)) {
                 warnings.push(`Unknown bone '${boneName}' in response (not in valid bones list)`);
@@ -354,7 +518,7 @@ export class PoseGenerationService {
             }
 
             // Build the result entry
-            const entry: { rotation: number[]; position?: number[] } = { rotation };
+            const entry: { rotation: number[]; position?: number[] | null } = { rotation };
 
             // Validate and add position if present
             if (data.position !== null && data.position !== undefined) {
@@ -370,21 +534,49 @@ export class PoseGenerationService {
                 }
             }
 
-            result[boneName] = entry;
+            resultBones[boneName] = entry;
+        }
+
+        // Parse and validate expressions
+        const resultExpressions: PoseExpressionState = {};
+        const validPresetNames = new Set(['happy', 'angry', 'sad', 'relaxed', 'surprised', 'neutral']);
+
+        if (expressionsData.presets && typeof expressionsData.presets === 'object') {
+            const presets: Partial<Record<string, number>> = {};
+            for (const [name, weight] of Object.entries(expressionsData.presets)) {
+                if (!validPresetNames.has(name)) {
+                    warnings.push(`Unknown expression preset '${name}'`);
+                    continue;
+                }
+                if (typeof weight === 'number' && Number.isFinite(weight)) {
+                    // Clamp to 0-1 range
+                    presets[name] = Math.max(0, Math.min(1, weight));
+                } else {
+                    warnings.push(`Invalid weight for expression '${name}': expected number`);
+                }
+            }
+            if (Object.keys(presets).length > 0) {
+                resultExpressions.presets = presets as PoseExpressionState['presets'];
+            }
         }
 
         // Log any warnings
         if (warnings.length > 0) {
-            this.logger?.warn?.('Pose parsing had validation issues', { warnings, boneCount: Object.keys(result).length });
+            this.logger?.warn?.('Pose parsing had validation issues', { warnings, boneCount: Object.keys(resultBones).length });
             console.warn('[pose-generation] Validation warnings:', warnings);
         }
 
         // Ensure we have at least one valid bone
-        if (Object.keys(result).length === 0) {
+        if (Object.keys(resultBones).length === 0) {
             const preview = outputText.slice(0, 200);
             this.logger?.error?.('No valid bones found in pose response', { preview, warnings });
             throw new Error(`Pose compiler returned no valid bones. Warnings: ${warnings.join('; ')}. Response preview: ${preview}...`);
         }
+
+        const result: AvatarPoseData = {
+            bones: resultBones,
+            expressions: Object.keys(resultExpressions).length > 0 ? resultExpressions : undefined,
+        };
 
         console.log(JSON.stringify(result));
         return result;
