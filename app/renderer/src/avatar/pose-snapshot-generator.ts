@@ -130,8 +130,9 @@ function applyPoseToVrm(
 
     const humanoid = vrm.humanoid;
 
-    // Apply bone rotations
-    for (const [boneName, boneData] of Object.entries(poseData.bones)) {
+    // Apply bone rotations (with null check for bones property)
+    const bones = poseData.bones ?? {};
+    for (const [boneName, boneData] of Object.entries(bones)) {
         const rotation = boneData.rotation;
         if (!rotation || rotation.length !== 4) {
             continue;
