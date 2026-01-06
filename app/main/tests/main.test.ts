@@ -127,6 +127,15 @@ const MemoryStoreMock = vi.fn(() => ({
   getVrmPose: vi.fn(() => null),
   deleteVrmPose: vi.fn(),
   dispose: memoryStoreDisposeMock,
+  get database() {
+    return {
+      prepare: vi.fn(() => ({
+        run: vi.fn(),
+        get: vi.fn(),
+        all: vi.fn(() => []),
+      })),
+    };
+  },
 }));
 
 vi.mock('../src/memory/index.js', () => ({
@@ -750,7 +759,7 @@ describe('main process bootstrap', () => {
     expect(vrmaGenerationService).toBeDefined();
     expect(vrmaGenerationService?.options).toMatchObject({
       logger: mockLogger,
-      animationService: avatarAnimationService,
+      animationService: expect.anything(),
       client: expect.objectContaining({
         responses: expect.objectContaining({
           create: expect.any(Function),

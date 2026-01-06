@@ -71,6 +71,8 @@ export interface PoseEvaluationRequest {
   imageDataUrl: string;
   originalPrompt: string;
   userFeedback?: string;
+  /** Previous evaluation result to include in refinement context */
+  previousEvaluation?: PoseEvaluationResult;
 }
 
 /** Result of pose evaluation with feedback and optional refined pose */
