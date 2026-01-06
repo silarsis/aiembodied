@@ -96,6 +96,8 @@ export interface PoseEvaluationRequest {
   modelDescription?: string;
   bones?: string[];
   boneHierarchy?: Record<string, string | null>;
+  /** Previous evaluation result to include in refinement context */
+  previousEvaluation?: PoseEvaluationResult;
 }
 
 /** Result of pose evaluation with feedback and optional refined pose */

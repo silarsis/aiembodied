@@ -19,6 +19,7 @@ import {
   type AvatarAnimationTiming,
   type VRMPoseData,
   type VRMPoseExpressions,
+  type PoseTransitionConfig,
 } from './animation-bus.js';
 import { toAnimationSlug } from './animation-tags.js';
 import { useBehaviorCues, type BehaviorCueEvent } from './behavior-cues.js';
@@ -390,6 +391,86 @@ export function normalizePoseData(pose: VRMPoseData): {
 
 const DEFAULT_POSE_TRANSITION_DURATION = 0.5; // seconds
 
+// Default config for eased staggered transitions (can be disabled by passing staggerFactor: 0, easing: 'linear')
+const DEFAULT_POSE_TRANSITION_CONFIG: Required<PoseTransitionConfig> = {
+  staggerFactor: 0.15, // 15% of duration for full stagger spread
+  easing: 'easeOut',
+};
+
+/**
+ * Bone chain depth from root (hips = 0).
+ * Used to stagger transition start times for natural wave-like motion.
+ */
+const BONE_CHAIN_DEPTH: Record<string, number> = {
+  // Core chain (depth 0-5)
+  hips: 0,
+  spine: 1,
+  chest: 2,
+  upperChest: 3,
+  neck: 4,
+  head: 5,
+  // Left arm chain (branches from depth 3)
+  leftShoulder: 3,
+  leftUpperArm: 4,
+  leftLowerArm: 5,
+  leftHand: 6,
+  // Right arm chain (branches from depth 3)
+  rightShoulder: 3,
+  rightUpperArm: 4,
+  rightLowerArm: 5,
+  rightHand: 6,
+  // Left leg chain (branches from depth 0)
+  leftUpperLeg: 1,
+  leftLowerLeg: 2,
+  leftFoot: 3,
+  leftToes: 4,
+  // Right leg chain (branches from depth 0)
+  rightUpperLeg: 1,
+  rightLowerLeg: 2,
+  rightFoot: 3,
+  rightToes: 4,
+  // Left fingers (depth 7-9)
+  leftThumbProximal: 7, leftThumbIntermediate: 8, leftThumbDistal: 9,
+  leftIndexProximal: 7, leftIndexIntermediate: 8, leftIndexDistal: 9,
+  leftMiddleProximal: 7, leftMiddleIntermediate: 8, leftMiddleDistal: 9,
+  leftRingProximal: 7, leftRingIntermediate: 8, leftRingDistal: 9,
+  leftLittleProximal: 7, leftLittleIntermediate: 8, leftLittleDistal: 9,
+  // Right fingers (depth 7-9)
+  rightThumbProximal: 7, rightThumbIntermediate: 8, rightThumbDistal: 9,
+  rightIndexProximal: 7, rightIndexIntermediate: 8, rightIndexDistal: 9,
+  rightMiddleProximal: 7, rightMiddleIntermediate: 8, rightMiddleDistal: 9,
+  rightRingProximal: 7, rightRingIntermediate: 8, rightRingDistal: 9,
+  rightLittleProximal: 7, rightLittleIntermediate: 8, rightLittleDistal: 9,
+  // Eyes
+  leftEye: 5,
+  rightEye: 5,
+  jaw: 5,
+};
+
+const MAX_BONE_DEPTH = 9;
+
+/**
+ * Easing functions for natural motion curves.
+ */
+function easeOutCubic(t: number): number {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function easeInOutQuad(t: number): number {
+  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
+
+function applyEasing(t: number, easing: PoseTransitionConfig['easing']): number {
+  switch (easing) {
+    case 'easeOut': return easeOutCubic(t);
+    case 'easeInOut': return easeInOutQuad(t);
+    case 'linear':
+    default:
+      return t;
+  }
+}
+
+
 /** Captured state for a single bone */
 export interface CapturedBoneState {
   quaternion: THREE.Quaternion;
@@ -430,12 +511,13 @@ export function captureCurrentPose(
 
 /**
  * Creates an AnimationClip that transitions from the current bone rotations to the target pose.
- * Uses SLERP (spherical linear interpolation) for smooth quaternion interpolation.
+ * Supports eased staggered transitions for natural wave-like motion through the skeleton.
  * 
  * @param vrm - The VRM model
  * @param targetPose - The target pose to transition to
  * @param duration - Duration of the transition in seconds
  * @param startingPose - Optional captured pose to start from (if not provided, reads current node values)
+ * @param config - Optional transition config for easing and staggering
  * @returns Object with the animation clip and any expressions to apply, or null if no tracks created
  */
 export function createPoseTransitionClip(
@@ -443,11 +525,17 @@ export function createPoseTransitionClip(
   targetPose: VRMPoseData,
   duration: number = DEFAULT_POSE_TRANSITION_DURATION,
   startingPose?: Map<string, CapturedBoneState>,
+  config?: PoseTransitionConfig,
 ): { clip: THREE.AnimationClip; expressions: VRMPoseExpressions | undefined } | null {
   const humanoid = vrm.humanoid;
   if (!humanoid) {
     return null;
   }
+
+  // Merge with defaults
+  const { staggerFactor, easing } = { ...DEFAULT_POSE_TRANSITION_CONFIG, ...config };
+  const useStagger = staggerFactor > 0;
+  const useEasing = easing !== 'linear';
 
   // Normalize pose data to handle both legacy and new formats
   const { bones, expressions } = normalizePoseData(targetPose);
@@ -455,6 +543,13 @@ export function createPoseTransitionClip(
   const tracks: THREE.KeyframeTrack[] = [];
   const resolvedBones: string[] = [];
   const unresolvedBones: string[] = [];
+
+  // Calculate total clip duration including stagger delay for deepest bones
+  const maxStaggerDelay = useStagger ? staggerFactor * duration : 0;
+  const totalClipDuration = duration + maxStaggerDelay;
+
+  // Number of intermediate keyframes for easing (more = smoother curve)
+  const KEYFRAME_COUNT = useEasing ? 5 : 2;
 
   for (const [boneName, boneData] of Object.entries(bones)) {
     const rotation = boneData.rotation;
@@ -476,12 +571,26 @@ export function createPoseTransitionClip(
     const currentQuat = capturedState?.quaternion ?? node.quaternion.clone();
     const targetQuat = new THREE.Quaternion(rotation[0], rotation[1], rotation[2], rotation[3]);
 
-    // Create keyframe track: times [0, duration], values [current, target]
-    const times = [0, duration];
-    const values = [
-      currentQuat.x, currentQuat.y, currentQuat.z, currentQuat.w,
-      targetQuat.x, targetQuat.y, targetQuat.z, targetQuat.w,
-    ];
+    // Calculate stagger delay based on bone chain depth
+    const boneDepth = BONE_CHAIN_DEPTH[boneName] ?? 0;
+    const normalizedDepth = boneDepth / MAX_BONE_DEPTH;
+    const startDelay = useStagger ? normalizedDepth * maxStaggerDelay : 0;
+
+    // Generate keyframes with easing
+    const times: number[] = [];
+    const values: number[] = [];
+
+    for (let i = 0; i < KEYFRAME_COUNT; i++) {
+      const linearT = i / (KEYFRAME_COUNT - 1); // 0 to 1
+      const easedT = applyEasing(linearT, easing);
+      const time = startDelay + linearT * duration;
+
+      // SLERP between current and target quaternion
+      const interpQuat = new THREE.Quaternion().slerpQuaternions(currentQuat, targetQuat, easedT);
+
+      times.push(time);
+      values.push(interpQuat.x, interpQuat.y, interpQuat.z, interpQuat.w);
+    }
 
     // Use the node's name for the track (AnimationMixer finds nodes by name)
     const track = new THREE.QuaternionKeyframeTrack(
@@ -495,11 +604,24 @@ export function createPoseTransitionClip(
     if (boneData.position && boneData.position.length === 3) {
       const currentPos = capturedState?.position ?? node.position.clone();
       const targetPos = boneData.position;
-      const posTimes = [0, duration];
-      const posValues = [
-        currentPos.x, currentPos.y, currentPos.z,
-        targetPos[0], targetPos[1], targetPos[2],
-      ];
+
+      const posTimes: number[] = [];
+      const posValues: number[] = [];
+
+      for (let i = 0; i < KEYFRAME_COUNT; i++) {
+        const linearT = i / (KEYFRAME_COUNT - 1);
+        const easedT = applyEasing(linearT, easing);
+        const time = startDelay + linearT * duration;
+
+        // Lerp between current and target position
+        const interpX = currentPos.x + (targetPos[0] - currentPos.x) * easedT;
+        const interpY = currentPos.y + (targetPos[1] - currentPos.y) * easedT;
+        const interpZ = currentPos.z + (targetPos[2] - currentPos.z) * easedT;
+
+        posTimes.push(time);
+        posValues.push(interpX, interpY, interpZ);
+      }
+
       const posTrack = new THREE.VectorKeyframeTrack(
         `${node.name}.position`,
         posTimes,
@@ -522,12 +644,14 @@ export function createPoseTransitionClip(
     trackCount: tracks.length,
     resolvedBones,
     unresolvedBones,
-    duration,
+    duration: totalClipDuration,
     hasExpressions: !!expressions,
+    easing,
+    staggerFactor,
   }));
 
   return {
-    clip: new THREE.AnimationClip('pose-transition', duration, tracks),
+    clip: new THREE.AnimationClip('pose-transition', totalClipDuration, tracks),
     expressions,
   };
 }
@@ -1531,7 +1655,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
 
           // Create transition clip from captured pose to target pose
           const duration = event.transitionDuration ?? DEFAULT_POSE_TRANSITION_DURATION;
-          const transitionResult = createPoseTransitionClip(vrm, event.pose, duration, capturedPose);
+          const transitionResult = createPoseTransitionClip(vrm, event.pose, duration, capturedPose, event.transitionConfig);
 
           if (!transitionResult) {
             console.warn('[vrm-avatar-renderer] Could not create pose transition clip');

@@ -208,6 +208,9 @@ export async function generatePoseSnapshot(
         applyPoseToVrm(vrm, options.poseData);
     }
 
+    // Update VRM state to apply bone rotations and expressions to the mesh
+    vrm.update(0);
+
     setupLighting(scene);
     const camera = setupFullBodyCamera(vrm, scene, aspectRatio);
 

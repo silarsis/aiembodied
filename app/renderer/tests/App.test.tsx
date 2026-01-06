@@ -337,6 +337,7 @@ describe('App component', () => {
       'ChatGPT',
       'Character',
       'Local',
+      'MCP Servers',
     ]);
 
     const chatPanel = await screen.findByRole('tabpanel', { name: /ChatGPT/i });

@@ -703,12 +703,13 @@ export function AvatarConfigurator({
       // Generate pose snapshot
       const snapshot = await generatePoseSnapshot({ modelData, poseData: poseData as Parameters<typeof generatePoseSnapshot>[0]['poseData'] });
 
-      // Call refinement API
+      // Call refinement API with full context
       const result = await avatarApi.refinePose({
         poseId: selectedPoseForEdit,
         imageDataUrl: snapshot.dataUrl,
         originalPrompt: selectedPose.name,
         userFeedback: feedback,
+        previousEvaluation: poseEditResult ?? undefined,
       });
 
       setRefinedPoseId(result.pose.id);
@@ -719,7 +720,7 @@ export function AvatarConfigurator({
       setPoseEditError(message);
       setPoseEditStatus('error');
     }
-  }, [avatarApi, selectedPoseForEdit, activeModelId, poses, poseEditFeedback, refreshPoses]);
+  }, [avatarApi, selectedPoseForEdit, activeModelId, poses, poseEditFeedback, poseEditResult, refreshPoses]);
 
   const handleAcceptRefinement = useCallback(() => {
     if (refinedPoseId) {

@@ -220,6 +220,59 @@ const MIGRATIONS: readonly Migration[] = [
       `CREATE INDEX IF NOT EXISTS vrm_poses_created_idx ON vrm_poses(created_at DESC, id DESC);`,
     ],
   },
+  {
+    version: 7,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS mcp_servers (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        transport_type TEXT NOT NULL,
+        sse_url TEXT,
+        sse_auth_header TEXT,
+        sse_auth_token_encrypted TEXT,
+        stdio_command TEXT,
+        stdio_args_json TEXT,
+        stdio_env_json_encrypted TEXT,
+        enabled INTEGER DEFAULT 1,
+        auto_start INTEGER DEFAULT 0,
+        connection_status TEXT DEFAULT 'disconnected',
+        last_error TEXT,
+        tools_discovered INTEGER DEFAULT 0,
+        last_connected_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );`,
+      `CREATE TABLE IF NOT EXISTS mcp_tools (
+        id TEXT PRIMARY KEY,
+        server_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        display_name TEXT,
+        description TEXT,
+        input_schema_json TEXT NOT NULL,
+        enabled INTEGER DEFAULT 1,
+        confirmation_level TEXT DEFAULT 'none',
+        custom_description TEXT,
+        discovered_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE
+      );`,
+      `CREATE INDEX IF NOT EXISTS idx_mcp_tools_server ON mcp_tools(server_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_mcp_tools_enabled ON mcp_tools(enabled);`,
+      `CREATE TABLE IF NOT EXISTS mcp_tool_executions (
+        id TEXT PRIMARY KEY,
+        tool_id TEXT NOT NULL,
+        params_json TEXT,
+        result_json TEXT,
+        error_message TEXT,
+        status TEXT NOT NULL,
+        duration_ms INTEGER,
+        triggered_by TEXT,
+        executed_at INTEGER NOT NULL,
+        FOREIGN KEY (tool_id) REFERENCES mcp_tools(id)
+      );`,
+      `CREATE INDEX IF NOT EXISTS idx_executions_executed_at ON mcp_tool_executions(executed_at);`,
+    ],
+  },
 ];
 
 function runMigrations(db: SqliteDatabase) {
@@ -264,6 +317,14 @@ const ACTIVE_VRM_KEY = 'avatar.activeVrmId';
 export class MemoryStore {
   private readonly db: SqliteDatabase;
   private disposed = false;
+
+  /**
+   * Get access to the underlying SQLite database.
+   * Use with caution - prefer using the MemoryStore methods when possible.
+   */
+  get database(): SqliteDatabase {
+    return this.db;
+  }
 
   constructor(options: MemoryStoreOptions) {
     if (!options.readOnly) {

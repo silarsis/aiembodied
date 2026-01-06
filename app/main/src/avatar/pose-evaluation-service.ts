@@ -297,7 +297,7 @@ export class PoseEvaluationService {
      * Generate a refined pose based on evaluation feedback.
      */
     async refinePose(request: PoseEvaluationRequest): Promise<AvatarPoseUploadResult> {
-        const { poseData, originalPrompt, userFeedback, bones, modelDescription } = request;
+        const { poseData, imageDataUrl, originalPrompt, userFeedback, bones, modelDescription, previousEvaluation } = request;
 
         if (!originalPrompt?.trim()) {
             throw new Error('Original prompt is required for pose refinement.');
@@ -310,21 +310,54 @@ export class PoseEvaluationService {
 
         const poseJsonStr = JSON.stringify(poseData, null, 2);
 
-        // Build the refinement prompt
-        let refinementContext = [
+        // Build the refinement prompt with full context
+        const contextParts = [
             `Original pose request: "${originalPrompt}"`,
             '',
             'Current pose that needs improvement:',
             '```json',
             poseJsonStr,
             '```',
-            '',
-            `Feedback to address: "${feedback}"`,
-        ].join('\n');
+        ];
+
+        // Include previous LLM evaluation if available
+        if (previousEvaluation) {
+            contextParts.push('');
+            contextParts.push('Previous LLM evaluation:');
+            contextParts.push(`- Meets requirement: ${previousEvaluation.meetsRequirement ? 'Yes' : 'No'}`);
+            contextParts.push(`- Feedback: ${previousEvaluation.feedback}`);
+            if (previousEvaluation.suggestedImprovements && previousEvaluation.suggestedImprovements.length > 0) {
+                contextParts.push('- Suggested improvements:');
+                for (const suggestion of previousEvaluation.suggestedImprovements) {
+                    contextParts.push(`  • ${suggestion}`);
+                }
+            }
+        }
+
+        contextParts.push('');
+        contextParts.push(`User feedback to address: "${feedback}"`);
 
         if (modelDescription) {
-            refinementContext += `\n\nCharacter description: ${modelDescription}`;
+            contextParts.push('');
+            contextParts.push(`Character description: ${modelDescription}`);
         }
+
+        const refinementContext = contextParts.join('\n');
+
+        // Build message content - include image if available
+        const userContent: Array<{ type: 'input_image'; image_url: string } | { type: 'input_text'; text: string }> = [];
+
+        if (imageDataUrl && imageDataUrl.startsWith('data:image/')) {
+            userContent.push({
+                type: 'input_image',
+                image_url: imageDataUrl,
+            });
+        }
+
+        userContent.push({
+            type: 'input_text',
+            text: refinementContext,
+        });
 
         const messages: ResponseInput = [
             {
@@ -335,7 +368,7 @@ export class PoseEvaluationService {
             {
                 type: 'message',
                 role: 'user',
-                content: [{ type: 'input_text', text: refinementContext }],
+                content: userContent,
             },
         ];
 
