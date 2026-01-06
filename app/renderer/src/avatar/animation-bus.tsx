@@ -25,6 +25,27 @@ export interface VRMPoseData {
   expressions?: VRMPoseExpressions;
 }
 
+/**
+ * Configuration for pose transition animations.
+ * Allows customizing easing and staggering behavior.
+ */
+export interface PoseTransitionConfig {
+  /**
+   * Factor controlling how much bones are staggered based on chain depth.
+   * 0 = no staggering (all bones move simultaneously)
+   * 0.15 = moderate staggering (default, natural wave effect)
+   * 0.3 = heavy staggering (very pronounced cascade)
+   */
+  staggerFactor?: number;
+  /**
+   * Easing function for the transition.
+   * 'linear' = constant speed (current behavior)
+   * 'easeOut' = starts fast, slows at end (default, natural deceleration)
+   * 'easeInOut' = slow start and end (smooth both ways)
+   */
+  easing?: 'linear' | 'easeOut' | 'easeInOut';
+}
+
 export interface AvatarAnimationRequest {
   slug: string;
   intent: AvatarAnimationIntent;
@@ -34,7 +55,7 @@ export interface AvatarAnimationRequest {
 
 export type AvatarAnimationEvent =
   | { type: 'enqueue'; request: AvatarAnimationRequest }
-  | { type: 'applyPose'; pose: VRMPoseData; source?: string; transitionDuration?: number }
+  | { type: 'applyPose'; pose: VRMPoseData; source?: string; transitionDuration?: number; transitionConfig?: PoseTransitionConfig }
   | { type: 'response' };
 
 type AnimationListener = (event: AvatarAnimationEvent) => void;
@@ -43,7 +64,7 @@ type Unsubscribe = () => void;
 
 export interface AvatarAnimationBus {
   enqueue(request: AvatarAnimationRequest): void;
-  applyPose(pose: VRMPoseData, source?: string, transitionDuration?: number): void;
+  applyPose(pose: VRMPoseData, source?: string, transitionDuration?: number, transitionConfig?: PoseTransitionConfig): void;
   signalResponse(): void;
   subscribe(listener: AnimationListener): Unsubscribe;
 }
@@ -55,8 +76,8 @@ class AnimationBus implements AvatarAnimationBus {
     this.emit({ type: 'enqueue', request });
   }
 
-  applyPose(pose: VRMPoseData, source?: string, transitionDuration?: number) {
-    this.emit({ type: 'applyPose', pose, source, transitionDuration });
+  applyPose(pose: VRMPoseData, source?: string, transitionDuration?: number, transitionConfig?: PoseTransitionConfig) {
+    this.emit({ type: 'applyPose', pose, source, transitionDuration, transitionConfig });
   }
 
   signalResponse() {

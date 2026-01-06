@@ -25,6 +25,14 @@ import type {
 import type { WakeWordDetectionEvent } from './wake-word/types.js';
 import type { LatencyMetricName } from './metrics/types.js';
 import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from './realtime/types.js';
+import type {
+  MCPServerConfig,
+  MCPServerConfigInput,
+  MCPToolSummary,
+  MCPConnectionResult,
+  MCPToolResult,
+} from './mcp/types.js';
+import type { OpenAIFunction } from './tools/tool-registry.js';
 
 function logPreloadMessage(
   level: 'info' | 'warn' | 'error',
@@ -129,6 +137,7 @@ export interface PreloadApi {
   metrics?: MetricsBridge;
   avatar?: AvatarBridge;
   camera?: CameraBridge;
+  mcp: MCPBridge;
   ping(): string;
   __bridgeReady?: boolean;
   __bridgeVersion?: string;
@@ -190,6 +199,43 @@ export interface CameraDetectionEvent {
 export interface CameraBridge {
   onDetection(listener: (event: CameraDetectionEvent) => void): () => void;
   emitDetection(event: CameraDetectionEvent): Promise<void>;
+}
+
+export interface ServerStatusEvent {
+  serverId: string;
+  status: 'connected' | 'disconnected' | 'error';
+}
+
+export interface MCPBridge {
+  // Server management
+  listServers(): Promise<MCPServerConfig[]>;
+  addServer(config: MCPServerConfigInput): Promise<MCPServerConfig>;
+  updateServer(id: string, updates: Partial<MCPServerConfigInput>): Promise<MCPServerConfig>;
+  deleteServer(id: string): Promise<void>;
+  connectServer(id: string): Promise<MCPConnectionResult>;
+  disconnectServer(id: string): Promise<void>;
+  testConnection(id: string): Promise<MCPConnectionResult>;
+
+  // Tool management
+  listTools(serverId?: string): Promise<MCPToolSummary[]>;
+  updateToolPreferences(
+    toolId: string,
+    prefs: {
+      enabled?: boolean;
+      confirmationLevel?: string;
+      customDescription?: string;
+    },
+  ): Promise<void>;
+
+  // Tool execution (for manual testing)
+  executeTool(toolId: string, params: unknown): Promise<MCPToolResult>;
+
+  // Events
+  onServerStatusChanged(callback: (event: ServerStatusEvent) => void): () => void;
+  onToolsDiscovered(callback: (serverId: string, count: number) => void): () => void;
+
+  // LLM integration
+  getToolDefinitionsForLLM(): Promise<OpenAIFunction[]>;
 }
 
 const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
@@ -322,6 +368,42 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     emitDetection: async (event) => {
       await ipcRenderer.invoke('camera:emit-detection', event);
     },
+  },
+  mcp: {
+    listServers: () => ipcRenderer.invoke('mcp:list-servers') as Promise<MCPServerConfig[]>,
+    addServer: (config) => ipcRenderer.invoke('mcp:add-server', config) as Promise<MCPServerConfig>,
+    updateServer: (id, updates) =>
+      ipcRenderer.invoke('mcp:update-server', id, updates) as Promise<MCPServerConfig>,
+    deleteServer: (id) => ipcRenderer.invoke('mcp:delete-server', id) as Promise<void>,
+    connectServer: (id) => ipcRenderer.invoke('mcp:connect-server', id) as Promise<MCPConnectionResult>,
+    disconnectServer: (id) => ipcRenderer.invoke('mcp:disconnect-server', id) as Promise<void>,
+    testConnection: (id) => ipcRenderer.invoke('mcp:test-connection', id) as Promise<MCPConnectionResult>,
+
+    listTools: (serverId?) => ipcRenderer.invoke('mcp:list-tools', serverId) as Promise<MCPToolSummary[]>,
+    updateToolPreferences: (toolId, prefs) =>
+      ipcRenderer.invoke('mcp:update-tool-preferences', toolId, prefs) as Promise<void>,
+    executeTool: (toolId, params) =>
+      ipcRenderer.invoke('mcp:execute-tool', toolId, params) as Promise<MCPToolResult>,
+
+    onServerStatusChanged: (callback) => {
+      const channel = 'mcp:server-status-changed';
+      const handler = (_event: unknown, event: ServerStatusEvent) => callback(event);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
+
+    onToolsDiscovered: (callback) => {
+      const channel = 'mcp:tools-discovered';
+      const handler = (_event: unknown, serverId: string, count: number) => callback(serverId, count);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
+
+    getToolDefinitionsForLLM: () => ipcRenderer.invoke('mcp:get-tool-definitions') as Promise<OpenAIFunction[]>,
   },
   ping: () => 'pong',
   __bridgeReady: true,

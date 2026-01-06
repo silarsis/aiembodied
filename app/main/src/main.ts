@@ -53,6 +53,9 @@ import {
   RuntimeResourceNotFoundError,
 } from './runtime-paths.js';
 import { getOpenAIClient } from './openai/client.js';
+import { MCPManager } from './mcp/mcp-manager.js';
+import { ToolRegistry } from './tools/tool-registry.js';
+import { registerMCPHandlers } from './mcp/ipc-handlers.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -125,6 +128,9 @@ let poseEvaluationService: PoseEvaluationService | null = null;
 let avatarDescriptionService: AvatarDescriptionService | null = null;
 let currentVrmaApiKey: string | null = null;
 let currentDescriptionApiKey: string | null = null;
+
+let toolRegistry: ToolRegistry | null = null;
+let mcpManager: MCPManager | null = null;
 
 function emitCameraDetection(event: CameraDetectionEventPayload): boolean {
   const cue = typeof event.cue === 'string' ? event.cue.trim() : '';
@@ -1008,6 +1014,12 @@ function registerIpcHandlers(
 
     return emitted;
   });
+
+  // Register MCP handlers
+  if (toolRegistry && mcpManager) {
+    registerMCPHandlers(mcpManager, toolRegistry);
+    logger.info('MCP IPC handlers registered');
+  }
 }
 
 function focusExistingWindow() {
@@ -1065,6 +1077,14 @@ app.whenReady().then(async () => {
     conversationManager = new ConversationManager({
       store: memoryStore,
       logger,
+    });
+
+    // Initialize MCP tool registry and manager
+    toolRegistry = new ToolRegistry();
+    mcpManager = new MCPManager(memoryStore.database, toolRegistry);
+    await mcpManager.initialize();
+    logger.info('MCP Manager initialized', {
+      autoStartedServers: mcpManager.listServers().filter(s => s.autoStart && s.enabled).length
     });
 
     // Seed default model if this is the first run

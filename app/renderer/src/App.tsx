@@ -42,7 +42,7 @@ interface AudioGraphState {
   error: string | null;
 }
 
-type TabId = 'chatgpt' | 'character' | 'local';
+type TabId = 'chatgpt' | 'character' | 'local' | 'mcp';
 
 interface TabDefinition {
   id: TabId;
@@ -682,6 +682,7 @@ export default function App() {
       { id: 'chatgpt', label: 'ChatGPT' },
       { id: 'character', label: 'Character' },
       { id: 'local', label: 'Local' },
+      { id: 'mcp', label: 'MCP Servers' },
     ],
     [],
   );
@@ -690,6 +691,7 @@ export default function App() {
     chatgpt: null,
     character: null,
     local: null,
+    mcp: null,
   });
   const activeBridge = resolveApi();
 
@@ -2785,6 +2787,46 @@ export default function App() {
                     })}
                   </div>
                 </section>
+              </section>
+
+              {/* MCP Servers Tab */}
+              <section
+                role="tabpanel"
+                id="panel-mcp"
+                aria-labelledby="tab-mcp"
+                className="kiosk__tabPanel"
+                data-state={activeTab === 'mcp' ? 'active' : 'inactive'}
+              >
+                <div className="mcp-tab">
+                  <h2>MCP Server Management</h2>
+                  <p className="mcp-tab__description">
+                    Configure Model Context Protocol (MCP) servers to extend the assistant&apos;s capabilities with external tools and services.
+                  </p>
+
+                  <section className="mcp-tab__section">
+                    <h3>Server Connections</h3>
+                    <p className="mcp-tab__helper">
+                      MCP servers provide tools that the assistant can use during conversations. Add servers to enable new capabilities.
+                    </p>
+                    <div className="mcp-tab__placeholder">
+                      <p>🚧 MCP server configuration UI coming soon in Phase 2-4.</p>
+                      <p>Phase 1 foundation is complete:</p>
+                      <ul>
+                        <li>✅ Database schema and migrations</li>
+                        <li>✅ MCP Manager and Tool Registry</li>
+                        <li>✅ IPC bridge setup</li>
+                        <li>✅ Basic UI tab structure</li>
+                      </ul>
+                      <p>Next steps:</p>
+                      <ul>
+                        <li>⏭️ stdio MCP client implementation</li>
+                        <li>⏭️ SSE MCP client implementation</li>
+                        <li>⏭️ Server configuration UI components</li>
+                        <li>⏭️ Tool discovery and management UI</li>
+                      </ul>
+                    </div>
+                  </section>
+                </div>
               </section>
             </div>
           </div>
