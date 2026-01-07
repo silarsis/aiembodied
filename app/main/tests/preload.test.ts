@@ -146,6 +146,24 @@ describe('preload bridge', () => {
     invoke.mockResolvedValueOnce(true);
     await api.avatar?.triggerBehaviorCue('greet_face');
     expect(invoke).toHaveBeenCalledWith('avatar:trigger-behavior', 'greet_face');
+
+    invoke.mockResolvedValueOnce({ jobId: 'job-1' });
+    await expect(api.avatar?.generateMeshyModel({ prompt: 'A friendly assistant' })).resolves.toEqual({
+      jobId: 'job-1',
+    });
+    expect(invoke).toHaveBeenCalledWith('avatar:meshy-generate', { prompt: 'A friendly assistant' });
+
+    invoke.mockResolvedValueOnce({ jobId: 'job-1', status: 'queued' });
+    await expect(api.avatar?.getMeshyStatus('job-1')).resolves.toEqual({ jobId: 'job-1', status: 'queued' });
+    expect(invoke).toHaveBeenCalledWith('avatar:meshy-status', 'job-1');
+
+    invoke.mockResolvedValueOnce({ vrmId: 'vrm-99' });
+    await expect(api.avatar?.acceptMeshyModel('job-1')).resolves.toEqual({ vrmId: 'vrm-99' });
+    expect(invoke).toHaveBeenCalledWith('avatar:meshy-accept', 'job-1');
+
+    invoke.mockResolvedValueOnce(true);
+    await api.avatar?.rejectMeshyModel('job-1');
+    expect(invoke).toHaveBeenCalledWith('avatar:meshy-reject', 'job-1');
   });
 
   it('exposes avatar animation helpers through the bridge', async () => {

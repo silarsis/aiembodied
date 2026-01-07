@@ -502,6 +502,7 @@ describe('main process bootstrap', () => {
 
     const config = {
       realtimeApiKey: 'rt-key',
+      meshyApiKey: 'meshy-key',
       featureFlags: {},
       wakeWord: {
         accessKey: 'access',
@@ -538,6 +539,7 @@ describe('main process bootstrap', () => {
   it('initializes wake word service, ipc handlers, and window lifecycle on ready', async () => {
     const baseConfig = {
       realtimeApiKey: 'rt-key',
+      meshyApiKey: 'meshy-key',
       audioInputDeviceId: undefined,
       audioOutputDeviceId: undefined,
       featureFlags: {},
@@ -563,11 +565,11 @@ describe('main process bootstrap', () => {
 
     loadMock.mockResolvedValue(baseConfig);
     getConfigMock.mockImplementation(() => currentConfig);
-    getRendererConfigMock.mockReturnValue({ hasRealtimeApiKey: true });
-    setAudioDevicePreferencesMock.mockImplementation(async () => ({ hasRealtimeApiKey: true }));
+    getRendererConfigMock.mockReturnValue({ hasRealtimeApiKey: true, hasMeshyApiKey: true });
+    setAudioDevicePreferencesMock.mockImplementation(async () => ({ hasRealtimeApiKey: true, hasMeshyApiKey: true }));
     setSecretMock.mockImplementation(async (_key: string, value: string) => {
       currentConfig = { ...currentConfig, realtimeApiKey: value };
-      return { hasRealtimeApiKey: true };
+      return { hasRealtimeApiKey: true, hasMeshyApiKey: true };
     });
     testSecretMock.mockResolvedValue({ ok: true });
 
@@ -666,6 +668,7 @@ describe('main process bootstrap', () => {
     expect(typeof configHandler).toBe('function');
     await expect(configHandler?.({} as unknown as IpcMainInvokeEvent)).resolves.toEqual({
       hasRealtimeApiKey: true,
+      hasMeshyApiKey: true,
     });
 
     const secretHandler = handleEntries.get('config:get-secret');
@@ -678,6 +681,7 @@ describe('main process bootstrap', () => {
     expect(typeof setSecretHandler).toBe('function');
     await expect(setSecretHandler?.({}, { key: 'realtimeApiKey', value: 'next-key' })).resolves.toEqual({
       hasRealtimeApiKey: true,
+      hasMeshyApiKey: true,
     });
     expect(setSecretMock).toHaveBeenCalledWith('realtimeApiKey', 'next-key');
 
@@ -940,6 +944,7 @@ describe('main process bootstrap', () => {
 
     const baseConfig = {
       realtimeApiKey: 'rt-key',
+      meshyApiKey: 'meshy-key',
       audioInputDeviceId: undefined,
       audioOutputDeviceId: undefined,
       featureFlags: {},
@@ -961,9 +966,9 @@ describe('main process bootstrap', () => {
 
     loadMock.mockResolvedValue(baseConfig);
     getConfigMock.mockReturnValue(baseConfig);
-    getRendererConfigMock.mockReturnValue({ hasRealtimeApiKey: true });
-    setAudioDevicePreferencesMock.mockResolvedValue({ hasRealtimeApiKey: true });
-    setSecretMock.mockResolvedValue({ hasRealtimeApiKey: true });
+    getRendererConfigMock.mockReturnValue({ hasRealtimeApiKey: true, hasMeshyApiKey: true });
+    setAudioDevicePreferencesMock.mockResolvedValue({ hasRealtimeApiKey: true, hasMeshyApiKey: true });
+    setSecretMock.mockResolvedValue({ hasRealtimeApiKey: true, hasMeshyApiKey: true });
     testSecretMock.mockResolvedValue({ ok: true });
 
     await import('../src/main.js');
@@ -1002,6 +1007,7 @@ describe('main process bootstrap', () => {
 
     const config = {
       realtimeApiKey: 'rt-key',
+      meshyApiKey: 'meshy-key',
       audioInputDeviceId: undefined,
       audioOutputDeviceId: undefined,
       featureFlags: {},
@@ -1025,7 +1031,7 @@ describe('main process bootstrap', () => {
 
     loadMock.mockResolvedValue(config);
     getConfigMock.mockReturnValue(config);
-    getRendererConfigMock.mockReturnValue({ hasRealtimeApiKey: true });
+    getRendererConfigMock.mockReturnValue({ hasRealtimeApiKey: true, hasMeshyApiKey: true });
 
     await import('../src/main.js');
 

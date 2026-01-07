@@ -15,6 +15,10 @@ import type {
   AvatarPoseGenerationRequest,
   PoseEvaluationRequest,
   PoseEvaluationResult,
+  MeshyModelGenerationRequest,
+  MeshyModelGenerationResult,
+  MeshyModelStatus,
+  MeshyModelAcceptanceResult,
 } from './avatar/types.js';
 import type {
   ConversationAppendMessagePayload,
@@ -186,6 +190,10 @@ export interface AvatarBridge {
   loadPose(poseId: string): Promise<unknown>;
   evaluatePose(request: PoseEvaluationRequest): Promise<PoseEvaluationResult>;
   refinePose(request: PoseEvaluationRequest): Promise<AvatarPoseUploadResult>;
+  generateMeshyModel(request: MeshyModelGenerationRequest): Promise<MeshyModelGenerationResult>;
+  getMeshyStatus(jobId: string): Promise<MeshyModelStatus>;
+  acceptMeshyModel(jobId: string): Promise<MeshyModelAcceptanceResult>;
+  rejectMeshyModel(jobId: string): Promise<void>;
 }
 
 export interface CameraDetectionEvent {
@@ -355,6 +363,15 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       ipcRenderer.invoke('avatar-pose:evaluate', payload) as Promise<PoseEvaluationResult>,
     refinePose: (payload: PoseEvaluationRequest) =>
       ipcRenderer.invoke('avatar-pose:refine', payload) as Promise<AvatarPoseUploadResult>,
+    generateMeshyModel: (payload: MeshyModelGenerationRequest) =>
+      ipcRenderer.invoke('avatar:meshy-generate', payload) as Promise<MeshyModelGenerationResult>,
+    getMeshyStatus: (jobId: string) =>
+      ipcRenderer.invoke('avatar:meshy-status', jobId) as Promise<MeshyModelStatus>,
+    acceptMeshyModel: (jobId: string) =>
+      ipcRenderer.invoke('avatar:meshy-accept', jobId) as Promise<MeshyModelAcceptanceResult>,
+    rejectMeshyModel: async (jobId: string) => {
+      await ipcRenderer.invoke('avatar:meshy-reject', jobId);
+    },
   },
   camera: {
     onDetection: (listener) => {
