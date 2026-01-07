@@ -25,6 +25,7 @@ import { LatencyTracker, type LatencySnapshot } from './metrics/latency-tracker.
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
 import type { AvatarModelSummary, AvatarPoseSummary } from './avatar/types.js';
 import { extractAvatarTags, toAnimationSlug } from './avatar/animation-tags.js';
+import { useSpeechMovement } from './hooks/use-speech-movement.js';
 import { Vector3 } from 'three';
 
 const CURSOR_IDLE_TIMEOUT_MS = 3000;
@@ -660,6 +661,55 @@ export default function App() {
   const [animationListVersion, setAnimationListVersion] = useState(0);
   const [poseListVersion, setPoseListVersion] = useState(0);
   const animationBus = useMemo(() => createAvatarAnimationBus(), []);
+
+  // Speech-driven animation: accumulate transcript and trigger movement generation
+  const speechTranscriptRef = useRef<string>('');
+  const speechMovementTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const SPEECH_MOVEMENT_DEBOUNCE_MS = 1500; // Debounce time before generating movements
+
+  const speechMovement = useSpeechMovement({
+    enabled: true,
+    transitionDuration: 0.5,
+    transitionConfig: { easing: 'easeOut', staggerFactor: 0.15 },
+    onError: (error) => console.warn('[SpeechMovement] Generation failed:', error.message),
+  });
+
+  // Handler to accumulate transcript and trigger debounced movement generation
+  const handleSpeechForMovement = useCallback((content: string) => {
+    if (!speechMovement.isAvailable || !content.trim()) {
+      return;
+    }
+
+    // Accumulate transcript
+    speechTranscriptRef.current += content;
+
+    // Clear existing timeout
+    if (speechMovementTimeoutRef.current) {
+      clearTimeout(speechMovementTimeoutRef.current);
+    }
+
+    // Debounce: generate movements after speech pause
+    speechMovementTimeoutRef.current = setTimeout(() => {
+      const transcript = speechTranscriptRef.current.trim();
+      speechTranscriptRef.current = ''; // Reset for next utterance
+
+      if (transcript.length < 5) {
+        return; // Too short to generate meaningful movements
+      }
+
+      // Estimate speech duration (~150 words per minute, ~5 chars per word)
+      const estimatedDuration = (transcript.length / 5) / 150 * 60;
+
+      speechMovement.generateAndPlay(transcript, estimatedDuration)
+        .then(({ startPlayback }) => {
+          startPlayback();
+        })
+        .catch((error) => {
+          console.warn('[SpeechMovement] Failed to generate:', error);
+        });
+    }, SPEECH_MOVEMENT_DEBOUNCE_MS);
+  }, [speechMovement]);
+
   const [isListeningEnabled, setListeningEnabled] = useState(false);
   const [bonePositions, setBonePositions] = useState<{
     leftShoulder: { x: number; y: number; z: number } | null;
@@ -1213,6 +1263,7 @@ export default function App() {
     [availablePoses],
   );
   const animationTextHandlerRef = useRef<(text: string) => void>(() => undefined);
+  const speechMovementHandlerRef = useRef<(text: string) => void>(() => undefined);
   const handleRealtimeTextContent = useCallback(
     (content: string) => {
       if (!content) {
@@ -1249,7 +1300,8 @@ export default function App() {
 
   useEffect(() => {
     animationTextHandlerRef.current = handleRealtimeTextContent;
-  }, [handleRealtimeTextContent]);
+    speechMovementHandlerRef.current = handleSpeechForMovement;
+  }, [handleRealtimeTextContent, handleSpeechForMovement]);
 
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const visemeDriverRef = useRef<VisemeDriver | null>(null);
@@ -1275,6 +1327,7 @@ export default function App() {
         },
         onTextContent: (content) => {
           animationTextHandlerRef.current?.(content);
+          speechMovementHandlerRef.current?.(content);
         },
         onRemoteStream: (stream) => {
           setRemoteStream(stream);
