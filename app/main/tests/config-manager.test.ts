@@ -8,6 +8,7 @@ describe('ConfigManager', () => {
     const manager = new ConfigManager({
       env: {
         REALTIME_API_KEY: 'test-api-key',
+        MESHY_API_KEY: 'meshy-key',
         PORCUPINE_ACCESS_KEY: 'porcupine-key',
         AUDIO_INPUT_DEVICE_ID: 'input-device',
         AUDIO_OUTPUT_DEVICE_ID: 'output-device',
@@ -24,6 +25,7 @@ describe('ConfigManager', () => {
 
     expect(config.audioInputDeviceId).toBe('input-device');
     expect(config.audioOutputDeviceId).toBe('output-device');
+    expect(config.meshyApiKey).toBe('meshy-key');
   });
 
   it('prefers stored preferences over environment configuration', async () => {
@@ -36,6 +38,7 @@ describe('ConfigManager', () => {
     const manager = new ConfigManager({
       env: {
         REALTIME_API_KEY: 'test-api-key',
+        MESHY_API_KEY: 'meshy-key',
         PORCUPINE_ACCESS_KEY: 'porcupine-key',
         AUDIO_INPUT_DEVICE_ID: 'env-input',
         AUDIO_OUTPUT_DEVICE_ID: 'env-output',
@@ -60,11 +63,13 @@ describe('ConfigManager', () => {
 
     await expect(manager.getSecret('realtimeApiKey')).resolves.toBe('test-api-key');
     await expect(manager.getSecret('wakeWordAccessKey')).resolves.toBe('porcupine-key');
+    await expect(manager.getSecret('meshyApiKey')).resolves.toBe('meshy-key');
   });
 
   it('falls back to secret store when environment variable is missing', async () => {
     const secretStore = new InMemorySecretStore();
     await secretStore.setSecret('REALTIME_API_KEY', 'stored-key');
+    await secretStore.setSecret('MESHY_API_KEY', 'meshy-secret');
     await secretStore.setSecret('PORCUPINE_ACCESS_KEY', 'porcupine-secret');
 
     const manager = new ConfigManager({
@@ -74,6 +79,7 @@ describe('ConfigManager', () => {
 
     const config = await manager.load();
     expect(config.realtimeApiKey).toBe('stored-key');
+    expect(config.meshyApiKey).toBe('meshy-secret');
     expect(config.wakeWord.accessKey).toBe('porcupine-secret');
     expect(config.wakeWord.keywordPath).toBe('bumblebee');
     expect(config.wakeWord.keywordLabel).toBe('Bumblebee');
@@ -155,6 +161,7 @@ describe('ConfigManager', () => {
     const manager = new ConfigManager({
       env: {
         realtime_api_key: ' \trealtime-key \n',
+        meshy_api_key: ' meshy-key ',
         porcupine_access_key: '  porcupine-key  ',
         WAKE_WORD_BUILTIN: 'porcupine',
       } as NodeJS.ProcessEnv,
@@ -163,6 +170,7 @@ describe('ConfigManager', () => {
     const config = await manager.load();
 
     expect(config.realtimeApiKey).toBe('realtime-key');
+    expect(config.meshyApiKey).toBe('meshy-key');
     expect(config.wakeWord.accessKey).toBe('porcupine-key');
     expect(config.wakeWord.keywordPath).toBe('porcupine');
     expect(config.wakeWord.keywordLabel).toBe('Porcupine');
@@ -178,6 +186,7 @@ describe('ConfigManager', () => {
 
     const env = {
       REALTIME_API_KEY: 'rt-secret-value',
+      MESHY_API_KEY: 'meshy-secret-value',
       PORCUPINE_ACCESS_KEY: 'wake-secret-value',
       WAKE_WORD_BUILTIN: 'porcupine',
     } as NodeJS.ProcessEnv;
@@ -191,6 +200,10 @@ describe('ConfigManager', () => {
       expect.objectContaining({ length: env.REALTIME_API_KEY.length }),
     );
     expect(logger.debug).toHaveBeenCalledWith(
+      'Meshy API key resolved from environment variables.',
+      expect.objectContaining({ length: env.MESHY_API_KEY.length }),
+    );
+    expect(logger.debug).toHaveBeenCalledWith(
       'Wake word access key resolved from environment variables.',
       expect.objectContaining({ length: env.PORCUPINE_ACCESS_KEY.length }),
     );
@@ -198,6 +211,7 @@ describe('ConfigManager', () => {
       'Configuration loaded.',
       expect.objectContaining({
         hasRealtimeApiKey: true,
+        hasMeshyApiKey: true,
         wakeWordHasAccessKey: true,
       }),
     );
@@ -205,8 +219,27 @@ describe('ConfigManager', () => {
     for (const call of [...logger.debug.mock.calls, ...logger.info.mock.calls]) {
       const serialized = JSON.stringify(call);
       expect(serialized).not.toContain(env.REALTIME_API_KEY);
+      expect(serialized).not.toContain(env.MESHY_API_KEY);
       expect(serialized).not.toContain(env.PORCUPINE_ACCESS_KEY);
     }
+  });
+
+  it('stores and reports Meshy API keys through the config manager', async () => {
+    const secretStore = new InMemorySecretStore();
+    const manager = new ConfigManager({
+      env: { PORCUPINE_ACCESS_KEY: 'wake-key' } as NodeJS.ProcessEnv,
+      secretStore,
+    });
+
+    await manager.load();
+
+    const rendererConfig = await manager.setSecret('meshyApiKey', 'meshy-updated');
+    expect(rendererConfig.hasMeshyApiKey).toBe(true);
+    await expect(manager.getSecret('meshyApiKey')).resolves.toBe('meshy-updated');
+    await expect(manager.testSecret('meshyApiKey')).resolves.toEqual({
+      ok: false,
+      message: 'Meshy API key validation is not available yet.',
+    });
   });
 
   it('updates and persists audio device preferences', async () => {
