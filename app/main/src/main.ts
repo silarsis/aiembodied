@@ -46,6 +46,10 @@ import type {
   AvatarPoseUploadRequest,
   AvatarPoseGenerationRequest,
   PoseEvaluationRequest,
+  MeshyModelGenerationRequest,
+  MeshyModelGenerationResult,
+  MeshyModelStatus,
+  MeshyModelAcceptanceResult,
 } from './avatar/types.js';
 import {
   resolvePreloadScriptPath,
@@ -526,6 +530,16 @@ function registerIpcHandlers(
     return undefined;
   };
 
+  const throwMeshyUnavailable = (action: string): never => {
+    const { meshyApiKey } = manager.getConfig();
+    if (!meshyApiKey) {
+      throw new Error('Meshy API key is not configured.');
+    }
+
+    logger.warn('Meshy IPC handler invoked before service is available.', { action });
+    throw new Error('Meshy service is unavailable.');
+  };
+
   const sanitizeResult = (
     channel: (typeof configChannels)[number],
     result: unknown,
@@ -793,6 +807,18 @@ function registerIpcHandlers(
     }
 
     return avatarModels.loadModelBinary(modelId);
+  });
+  ipcMain.handle('avatar:meshy-generate', async (_event, _payload: MeshyModelGenerationRequest) => {
+    return throwMeshyUnavailable('generate');
+  });
+  ipcMain.handle('avatar:meshy-status', async (_event, _jobId: string) => {
+    return throwMeshyUnavailable('status');
+  });
+  ipcMain.handle('avatar:meshy-accept', async (_event, _jobId: string) => {
+    return throwMeshyUnavailable('accept');
+  });
+  ipcMain.handle('avatar:meshy-reject', async (_event, _jobId: string) => {
+    return throwMeshyUnavailable('reject');
   });
   ipcMain.handle(
     'avatar-model:update-thumbnail',
