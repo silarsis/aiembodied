@@ -108,4 +108,36 @@ export interface AvatarBridge {
   loadPose(poseId: string): Promise<unknown>;
   evaluatePose(request: PoseEvaluationRequest): Promise<PoseEvaluationResult>;
   refinePose(request: PoseEvaluationRequest): Promise<AvatarPoseUploadResult>;
+  generateMovementTimeline?(request: SpeechMovementRequest): Promise<MovementTimeline>;
 }
+
+/** Request to generate a movement timeline from speech */
+export interface SpeechMovementRequest {
+  transcript: string;
+  speechDuration?: number;
+  modelDescription?: string;
+  bones?: string[];
+  boneHierarchy?: Record<string, string | null>;
+}
+
+/** Keyframe in a movement timeline */
+export interface MovementKeyframe {
+  time: number;
+  pose: {
+    bones: Record<string, { rotation: number[]; position?: number[] | null }>;
+    expressions?: {
+      presets?: Partial<Record<
+        'happy' | 'angry' | 'sad' | 'relaxed' | 'surprised' | 'neutral',
+        number
+      >>;
+    };
+  };
+  emotion?: string;
+}
+
+/** Timeline of movement keyframes for speech-driven animation */
+export interface MovementTimeline {
+  duration: number;
+  keyframes: MovementKeyframe[];
+}
+

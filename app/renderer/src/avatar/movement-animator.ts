@@ -15,17 +15,9 @@ import type {
     VRMPoseData,
     PoseTransitionConfig,
 } from './animation-bus.js';
+import type { MovementKeyframe, MovementTimeline } from './types.js';
 
-export interface MovementKeyframe {
-    time: number;
-    pose: { bones: Record<string, { rotation: number[]; position?: number[] | null }>; expressions?: object };
-    emotion?: string;
-}
-
-export interface MovementTimeline {
-    duration: number;
-    keyframes: MovementKeyframe[];
-}
+export type { MovementKeyframe, MovementTimeline } from './types.js';
 
 export interface MovementAnimatorOptions {
     /** The animation bus to emit poses to */
