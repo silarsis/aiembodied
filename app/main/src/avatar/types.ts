@@ -107,3 +107,44 @@ export interface PoseEvaluationResult {
   suggestedImprovements?: string[];
   refinedPoseId?: string;
 }
+
+// ============================================================================
+// Speech-Driven Movement Types
+// ============================================================================
+
+/** A single keyframe in a movement timeline */
+export interface MovementKeyframe {
+  /** Time offset in seconds from start of speech */
+  time: number;
+  /** Target pose at this keyframe */
+  pose: AvatarPoseData;
+  /** Optional emotion hint for the keyframe */
+  emotion?: string;
+}
+
+/** A timeline of movements synchronized to speech */
+export interface MovementTimeline {
+  /** Total duration in seconds */
+  duration: number;
+  /** Ordered list of keyframes */
+  keyframes: MovementKeyframe[];
+}
+
+/** Delay mode for synchronizing speech with movement animation */
+export type SpeechMovementDelayMode = 'none' | 'short' | 'full';
+
+/** Request to generate a movement timeline from speech transcript */
+export interface SpeechMovementRequest {
+  /** The speech transcript to generate movements for */
+  transcript: string;
+  /** Estimated speech duration in seconds (helps with timing) */
+  speechDuration?: number;
+  /** Description of the avatar model for context */
+  modelDescription?: string;
+  /** List of available bone names */
+  bones?: string[];
+  /** Bone hierarchy mapping (child -> parent) */
+  boneHierarchy?: Record<string, string | null>;
+  /** Current pose to transition from */
+  currentPose?: AvatarPoseData;
+}
