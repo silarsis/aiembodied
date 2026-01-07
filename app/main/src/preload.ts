@@ -15,6 +15,8 @@ import type {
   AvatarPoseGenerationRequest,
   PoseEvaluationRequest,
   PoseEvaluationResult,
+  SpeechMovementRequest,
+  MovementTimeline,
 } from './avatar/types.js';
 import type {
   ConversationAppendMessagePayload,
@@ -186,6 +188,7 @@ export interface AvatarBridge {
   loadPose(poseId: string): Promise<unknown>;
   evaluatePose(request: PoseEvaluationRequest): Promise<PoseEvaluationResult>;
   refinePose(request: PoseEvaluationRequest): Promise<AvatarPoseUploadResult>;
+  generateMovementTimeline(request: SpeechMovementRequest): Promise<MovementTimeline>;
 }
 
 export interface CameraDetectionEvent {
@@ -355,6 +358,8 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       ipcRenderer.invoke('avatar-pose:evaluate', payload) as Promise<PoseEvaluationResult>,
     refinePose: (payload: PoseEvaluationRequest) =>
       ipcRenderer.invoke('avatar-pose:refine', payload) as Promise<AvatarPoseUploadResult>,
+    generateMovementTimeline: (payload: SpeechMovementRequest) =>
+      ipcRenderer.invoke('avatar-movement:generate', payload) as Promise<MovementTimeline>,
   },
   camera: {
     onDetection: (listener) => {

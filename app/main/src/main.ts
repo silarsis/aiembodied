@@ -34,6 +34,7 @@ import { AvatarPoseService } from './avatar/avatar-pose-service.js';
 import { PoseGenerationService } from './avatar/pose-generation-service.js';
 import { PoseEvaluationService } from './avatar/pose-evaluation-service.js';
 import { AvatarDescriptionService } from './avatar/avatar-description-service.js';
+import { SpeechMovementService } from './avatar/speech-movement-service.js';
 import type {
   AvatarModelSummary,
   AvatarModelUploadRequest,
@@ -46,6 +47,7 @@ import type {
   AvatarPoseUploadRequest,
   AvatarPoseGenerationRequest,
   PoseEvaluationRequest,
+  SpeechMovementRequest,
 } from './avatar/types.js';
 import {
   resolvePreloadScriptPath,
@@ -126,6 +128,7 @@ let vrmaGenerationService: VrmaGenerationService | null = null;
 let poseGenerationService: PoseGenerationService | null = null;
 let poseEvaluationService: PoseEvaluationService | null = null;
 let avatarDescriptionService: AvatarDescriptionService | null = null;
+let speechMovementService: SpeechMovementService | null = null;
 let currentVrmaApiKey: string | null = null;
 let currentDescriptionApiKey: string | null = null;
 
@@ -425,6 +428,36 @@ async function refreshAvatarDescriptionService(
     logger.warn('Failed to initialize avatar description service', { message });
     avatarDescriptionService = null;
     currentDescriptionApiKey = null;
+  }
+}
+
+async function refreshSpeechMovementService(
+  manager: ConfigManager,
+  reason: 'startup' | 'secret-update' = 'startup',
+): Promise<void> {
+  const config = manager.getConfig();
+  const nextKey = typeof config.realtimeApiKey === 'string' ? config.realtimeApiKey.trim() : '';
+
+  if (!nextKey) {
+    speechMovementService = null;
+    return;
+  }
+
+  if (speechMovementService && currentVrmaApiKey === nextKey) {
+    return;
+  }
+
+  try {
+    speechMovementService = new SpeechMovementService({
+      client: getOpenAIClient(nextKey),
+      logger,
+    });
+    if (!currentVrmaApiKey) currentVrmaApiKey = nextKey;
+    logger.info('Speech movement service initialized.', { reason });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('Failed to initialize speech movement service', { message });
+    speechMovementService = null;
   }
 }
 
@@ -973,6 +1006,26 @@ function registerIpcHandlers(
     return poseEvaluationService.refinePose({
       ...payload,
       poseData,
+      bones,
+      boneHierarchy,
+      modelDescription,
+    });
+  });
+  ipcMain.handle('avatar-movement:generate', async (_event, payload: SpeechMovementRequest) => {
+    if (!speechMovementService) {
+      await refreshSpeechMovementService(manager, 'secret-update');
+    }
+    if (!speechMovementService) {
+      throw new Error('Speech movement service is unavailable. Ensure REALTIME_API_KEY is set.');
+    }
+
+    const bones = avatarModels ? await avatarModels.listActiveModelBones() : [];
+    const boneHierarchy = avatarModels ? await avatarModels.listActiveModelBoneHierarchy() : {};
+    const activeModel = avatarModels?.getActiveModel() ?? null;
+    const modelDescription = activeModel?.description ?? undefined;
+
+    return speechMovementService.generateTimeline({
+      ...payload,
       bones,
       boneHierarchy,
       modelDescription,
