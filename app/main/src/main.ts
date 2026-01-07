@@ -34,6 +34,7 @@ import { AvatarPoseService } from './avatar/avatar-pose-service.js';
 import { PoseGenerationService } from './avatar/pose-generation-service.js';
 import { PoseEvaluationService } from './avatar/pose-evaluation-service.js';
 import { AvatarDescriptionService } from './avatar/avatar-description-service.js';
+import { MeshyClient } from './avatar/meshy-client.js';
 import type {
   AvatarModelSummary,
   AvatarModelUploadRequest,
@@ -130,8 +131,10 @@ let vrmaGenerationService: VrmaGenerationService | null = null;
 let poseGenerationService: PoseGenerationService | null = null;
 let poseEvaluationService: PoseEvaluationService | null = null;
 let avatarDescriptionService: AvatarDescriptionService | null = null;
+let meshyClient: MeshyClient | null = null;
 let currentVrmaApiKey: string | null = null;
 let currentDescriptionApiKey: string | null = null;
+let currentMeshyApiKey: string | null = null;
 
 let toolRegistry: ToolRegistry | null = null;
 let mcpManager: MCPManager | null = null;
@@ -432,6 +435,43 @@ async function refreshAvatarDescriptionService(
   }
 }
 
+async function refreshMeshyClient(
+  manager: ConfigManager,
+  reason: 'startup' | 'secret-update' = 'startup',
+): Promise<void> {
+  const config = manager.getConfig();
+  const nextKey = typeof config.meshyApiKey === 'string' ? config.meshyApiKey.trim() : '';
+
+  if (!nextKey) {
+    if (reason === 'startup') {
+      logger.warn('Meshy API key unavailable; Meshy client disabled.');
+    } else if (meshyClient || currentMeshyApiKey) {
+      logger.warn('Meshy API key removed; Meshy client disabled.');
+    }
+    meshyClient = null;
+    currentMeshyApiKey = null;
+    return;
+  }
+
+  if (meshyClient && currentMeshyApiKey === nextKey) {
+    return;
+  }
+
+  try {
+    meshyClient = new MeshyClient({
+      apiKey: nextKey,
+      logger,
+    });
+    currentMeshyApiKey = nextKey;
+    logger.info('Meshy client initialized.', { reason });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('Failed to initialize Meshy client', { message });
+    meshyClient = null;
+    currentMeshyApiKey = null;
+  }
+}
+
 function registerIpcHandlers(
   manager: ConfigManager,
   conversation: ConversationManager | null,
@@ -540,6 +580,18 @@ function registerIpcHandlers(
     throw new Error('Meshy service is unavailable.');
   };
 
+  const ensureMeshyClient = async (action: string): Promise<MeshyClient> => {
+    if (!meshyClient) {
+      await refreshMeshyClient(manager, 'secret-update');
+    }
+
+    if (!meshyClient) {
+      return throwMeshyUnavailable(action);
+    }
+
+    return meshyClient;
+  };
+
   const sanitizeResult = (
     channel: (typeof configChannels)[number],
     result: unknown,
@@ -626,6 +678,9 @@ function registerIpcHandlers(
     if (payload.key === 'realtimeApiKey') {
       await refreshVrmaGenerationService(manager, 'secret-update');
       await refreshPoseGenerationService(manager, 'secret-update');
+    }
+    if (payload.key === 'meshyApiKey') {
+      await refreshMeshyClient(manager, 'secret-update');
     }
 
     return nextConfig;
@@ -808,18 +863,29 @@ function registerIpcHandlers(
 
     return avatarModels.loadModelBinary(modelId);
   });
-  ipcMain.handle('avatar:meshy-generate', async (_event, _payload: MeshyModelGenerationRequest) => {
-    return throwMeshyUnavailable('generate');
+  ipcMain.handle(
+    'avatar:meshy-generate',
+    async (_event, payload: MeshyModelGenerationRequest): Promise<MeshyModelGenerationResult> => {
+      const client = await ensureMeshyClient('generate');
+      return client.createGenerationJob(payload);
+    },
+  );
+  ipcMain.handle('avatar:meshy-status', async (_event, jobId: string): Promise<MeshyModelStatus> => {
+    const client = await ensureMeshyClient('status');
+    return client.getJobStatus(jobId);
   });
-  ipcMain.handle('avatar:meshy-status', async (_event, _jobId: string) => {
-    return throwMeshyUnavailable('status');
-  });
-  ipcMain.handle('avatar:meshy-accept', async (_event, _jobId: string) => {
-    return throwMeshyUnavailable('accept');
-  });
-  ipcMain.handle('avatar:meshy-reject', async (_event, _jobId: string) => {
-    return throwMeshyUnavailable('reject');
-  });
+  ipcMain.handle(
+    'avatar:meshy-accept',
+    async (): Promise<MeshyModelAcceptanceResult> => {
+      return throwMeshyUnavailable('accept');
+    },
+  );
+  ipcMain.handle(
+    'avatar:meshy-reject',
+    async (): Promise<void> => {
+      return throwMeshyUnavailable('reject');
+    },
+  );
   ipcMain.handle(
     'avatar-model:update-thumbnail',
     async (_event, payload: { modelId: string; thumbnailDataUrl: string }) => {
@@ -1142,6 +1208,7 @@ app.whenReady().then(async () => {
 
   await refreshVrmaGenerationService(manager);
   await refreshPoseGenerationService(manager);
+  await refreshMeshyClient(manager);
 
   autoLaunchManager = new AutoLaunchManager({
     logger,
