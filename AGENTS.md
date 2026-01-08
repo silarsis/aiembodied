@@ -141,3 +141,5 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 - 2025-12-29 — VRM relaxed pose now uses IK-based iterative solver (`setNaturalArmPose` in `vrm-avatar-renderer.tsx`) instead of fixed rotation angles. Algorithm measures actual arm length from skeleton, defines dynamic target position (8cm to side, 85% of arm length down), and iteratively adjusts shoulder/elbow rotations to converge within 0.5cm. Works model-agnostic; logs detailed metrics (iterations, error in cm, target/achieved positions) for debugging. See `RELAXED_POSE_FIX.md` for implementation details.
 - 2025-03-08 — Added a design-only Meshy API integration plan in `meshy-plan.md`.
 - 2025-03-08 — Appended a step-by-step build plan to `meshy-plan.md`.
+- 2025-03-09 — Completed Meshy plan steps 1-2 by confirming scope against `prd.md`/`archspec.md`/`plan.md` and defining Meshy config + IPC data contracts.
+- 2025-03-10 — Installed Electron runtime dependencies for Ubuntu 24.04 to unblock test execution in root CI environments.

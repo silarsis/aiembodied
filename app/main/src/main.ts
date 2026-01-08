@@ -471,6 +471,7 @@ function registerIpcHandlers(
 
   const summarizeRendererConfig = (config: RendererConfig) => ({
     hasRealtimeApiKey: config.hasRealtimeApiKey,
+    hasMeshyApiKey: config.hasMeshyApiKey,
     wakeWordHasAccessKey: config.wakeWord?.hasAccessKey ?? false,
     audioInputConfigured: Boolean(config.audioInputDeviceId),
     audioOutputConfigured: Boolean(config.audioOutputDeviceId),
@@ -1251,6 +1252,7 @@ app.whenReady().then(async () => {
   logger.info('Renderer bridge readiness state.', {
     config: {
       hasRealtimeApiKey: Boolean(configSnapshot.realtimeApiKey),
+      hasMeshyApiKey: Boolean(configSnapshot.meshyApiKey),
       hasWakeWordAccessKey: Boolean(configSnapshot.wakeWord.accessKey),
     },
     avatar: { enabled: Boolean(avatarModelService) },

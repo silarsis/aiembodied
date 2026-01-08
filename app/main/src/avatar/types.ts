@@ -67,6 +67,29 @@ export interface AvatarPoseGenerationRequest {
   modelDescription?: string;
 }
 
+export type MeshyJobStatus = 'queued' | 'generating' | 'rigging' | 'completed' | 'failed';
+
+export interface MeshyModelGenerationRequest {
+  prompt: string;
+}
+
+export interface MeshyModelGenerationResult {
+  jobId: string;
+}
+
+export interface MeshyModelStatus {
+  jobId: string;
+  status: MeshyJobStatus;
+  progress?: number;
+  previewPath?: string | null;
+  fbxPath?: string | null;
+  errorMessage?: string | null;
+}
+
+export interface MeshyModelAcceptanceResult {
+  vrmId: string;
+}
+
 // VRM 1.0 expression preset names
 export type VrmExpressionPresetName =
   | 'happy' | 'angry' | 'sad' | 'relaxed' | 'surprised' | 'neutral'  // emotions

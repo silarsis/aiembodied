@@ -60,7 +60,7 @@ interface TranscriptEntry {
 
 type SecretKeyState<T> = Record<ConfigSecretKey, T>;
 
-const SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey', 'wakeWordAccessKey'];
+const SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey', 'wakeWordAccessKey', 'meshyApiKey'];
 const REQUIRED_BRIDGE_KEYS: (keyof PreloadApi)[] = ['config', 'wakeWord', 'ping'];
 
 interface SecretStatusState {
@@ -81,6 +81,11 @@ const SECRET_METADATA: Record<
     label: 'Porcupine access key',
     description: 'Authorizes on-device wake word detection.',
     isConfigured: (config) => Boolean(config?.wakeWord?.hasAccessKey),
+  },
+  meshyApiKey: {
+    label: 'Meshy API key',
+    description: 'Enables Meshy avatar generation workflows.',
+    isConfigured: (config) => Boolean(config?.hasMeshyApiKey),
   },
 };
 
@@ -620,18 +625,22 @@ export default function App() {
   const [secretInputs, setSecretInputs] = useState<SecretKeyState<string>>(() => ({
     realtimeApiKey: '',
     wakeWordAccessKey: '',
+    meshyApiKey: '',
   }));
   const [secretStatus, setSecretStatus] = useState<SecretKeyState<SecretStatusState>>(() => ({
     realtimeApiKey: { status: 'idle', message: null },
     wakeWordAccessKey: { status: 'idle', message: null },
+    meshyApiKey: { status: 'idle', message: null },
   }));
   const [secretSaving, setSecretSaving] = useState<SecretKeyState<boolean>>(() => ({
     realtimeApiKey: false,
     wakeWordAccessKey: false,
+    meshyApiKey: false,
   }));
   const [secretTesting, setSecretTesting] = useState<SecretKeyState<boolean>>(() => ({
     realtimeApiKey: false,
     wakeWordAccessKey: false,
+    meshyApiKey: false,
   }));
   const [realtimeToken, setRealtimeToken] = useState<string | null>(null);
   const [realtimeTokenError, setRealtimeTokenError] = useState<string | null>(null);

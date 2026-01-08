@@ -65,6 +65,29 @@ export interface AvatarPoseUploadResult {
   pose: AvatarPoseSummary;
 }
 
+export type MeshyJobStatus = 'queued' | 'generating' | 'rigging' | 'completed' | 'failed';
+
+export interface MeshyModelGenerationRequest {
+  prompt: string;
+}
+
+export interface MeshyModelGenerationResult {
+  jobId: string;
+}
+
+export interface MeshyModelStatus {
+  jobId: string;
+  status: MeshyJobStatus;
+  progress?: number;
+  previewPath?: string | null;
+  fbxPath?: string | null;
+  errorMessage?: string | null;
+}
+
+export interface MeshyModelAcceptanceResult {
+  vrmId: string;
+}
+
 /** Request to evaluate a pose against its original prompt using vision LLM */
 export interface PoseEvaluationRequest {
   poseId: string;
@@ -108,4 +131,8 @@ export interface AvatarBridge {
   loadPose(poseId: string): Promise<unknown>;
   evaluatePose(request: PoseEvaluationRequest): Promise<PoseEvaluationResult>;
   refinePose(request: PoseEvaluationRequest): Promise<AvatarPoseUploadResult>;
+  generateMeshyModel(request: MeshyModelGenerationRequest): Promise<MeshyModelGenerationResult>;
+  getMeshyStatus(jobId: string): Promise<MeshyModelStatus>;
+  acceptMeshyModel(jobId: string): Promise<MeshyModelAcceptanceResult>;
+  rejectMeshyModel(jobId: string): Promise<void>;
 }
