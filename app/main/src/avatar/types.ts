@@ -148,3 +148,45 @@ export interface SpeechMovementRequest {
   /** Current pose to transition from */
   currentPose?: AvatarPoseData;
 }
+
+/** Request to generate a single pose from streaming text (rolling window approach) */
+export interface StreamingPoseRequest {
+  /** Recent text segment to focus on (last ~1s of speech) */
+  recentText: string;
+  /** Full transcript context (all text so far) */
+  fullContext?: string;
+  /** Description of the avatar model for context */
+  modelDescription?: string;
+  /** List of available bone names */
+  bones?: string[];
+  /** Bone hierarchy mapping (child -> parent) */
+  boneHierarchy?: Record<string, string | null>;
+}
+
+/** Result of single pose generation */
+export interface SinglePoseResult {
+  /** The generated pose data */
+  pose: AvatarPoseData;
+  /** Detected emotion/mood */
+  emotion?: string;
+}
+
+/** Request for fast pose generation (uses pose library) */
+export interface FastPoseRequest {
+  /** Recent text segment to analyze */
+  recentText: string;
+  /** Available pre-defined pose slugs to choose from */
+  availablePoses: string[];
+}
+
+/** Result of fast pose generation */
+export interface FastPoseResult {
+  /** Whether a preset was selected or raw bones generated */
+  type: 'preset' | 'raw';
+  /** Selected preset pose slug (if type === 'preset') */
+  presetSlug?: string;
+  /** Generated pose data (if type === 'raw') */
+  pose?: AvatarPoseData;
+  /** Detected emotion/mood */
+  emotion?: string;
+}

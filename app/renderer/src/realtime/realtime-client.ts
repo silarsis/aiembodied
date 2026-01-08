@@ -229,6 +229,41 @@ export class RealtimeClient {
     }
   }
 
+  sendTextMessage(text: string): void {
+    if (!this.controlChannel || this.controlChannel.readyState !== 'open') {
+      this.log('warn', 'Cannot send text message: control channel not available');
+      return;
+    }
+
+    if (!text || text.trim().length === 0) {
+      this.log('warn', 'Cannot send empty text message');
+      return;
+    }
+
+    const conversationItemPayload = JSON.stringify({
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: text.trim() }],
+      },
+    });
+
+    const responseCreatePayload = JSON.stringify({
+      type: 'response.create',
+    });
+
+    try {
+      this.controlChannel.send(conversationItemPayload);
+      this.log('info', 'Sent conversation.item.create to realtime API', { text: text.trim() });
+
+      this.controlChannel.send(responseCreatePayload);
+      this.log('info', 'Sent response.create to realtime API');
+    } catch (error) {
+      this.log('warn', 'Failed to send text message', error);
+    }
+  }
+
   private async establishConnection(options: RealtimeClientConnectOptions): Promise<void> {
     if (!this.currentStream) {
       throw new Error('No microphone stream available for realtime connection.');
@@ -559,6 +594,7 @@ export class RealtimeClient {
 
     const payload: Record<string, unknown> = { type: 'session.update', session: {} };
     const session = payload.session as Record<string, unknown>;
+    session.type = 'realtime';  // Required by OpenAI Realtime API
     const sessionParameters: Record<string, unknown> = {
       ...(this.sessionConfig?.sessionParameters ?? {}),
     };

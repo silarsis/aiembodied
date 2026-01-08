@@ -115,17 +115,17 @@ describe('RealtimeClient', () => {
     textHandler.mockReset();
 
     fetchMock = (vi.fn().mockResolvedValue({
-        ok: true,
-        status: 201,
-        headers: {
-          get: (name: string) => (name.toLowerCase() === 'content-type' ? 'application/json' : null),
-        } as Pick<Headers, 'get'>,
-        json: async () => ({
-          id: 'call_123',
-          sdp: 'fake-answer',
-        }),
-        text: vi.fn(async () => 'unused'),
-      } as unknown as Response) as unknown) as FetchMock;
+      ok: true,
+      status: 201,
+      headers: {
+        get: (name: string) => (name.toLowerCase() === 'content-type' ? 'application/json' : null),
+      } as Pick<Headers, 'get'>,
+      json: async () => ({
+        id: 'call_123',
+        sdp: 'fake-answer',
+      }),
+      text: vi.fn(async () => 'unused'),
+    } as unknown as Response) as unknown) as FetchMock;
 
     client = new RealtimeClient({
       fetchFn: (input, init) => fetchMock(input, init),
@@ -244,12 +244,12 @@ describe('RealtimeClient', () => {
         };
       },
     );
-    
+
     // Should include instructions in session_parameters
     expect(
       payloads.some((payload) => payload.session.session_parameters?.instructions === 'Be helpful'),
     ).toBe(true);
-    
+
     // Should include voice directly in session
     expect(payloads.some((payload) => payload.session.voice === 'alloy')).toBe(true);
     expect(payloads.some((payload) => payload.session.audio?.output?.voice === 'alloy')).toBe(true);
@@ -401,5 +401,66 @@ describe('RealtimeClient', () => {
       body: expect.objectContaining({ sdp: 'fake-offer' }),
     });
     expect(logEntry?.json).toContain('"fake-offer"');
+  });
+
+  it('sendTextMessage sends conversation.item.create and response.create through the control channel', async () => {
+    const stream = new FakeMediaStream() as unknown as MediaStream;
+
+    await client.connect({ apiKey: 'test-key', inputStream: stream });
+
+    const peer = peers[0];
+    peer.emitConnectionState('connected');
+
+    // Simulate data channel open event to ensure sendTextMessage can send
+    const dataChannel = peer.dataChannel;
+    dataChannel.onopen?.call(dataChannel as unknown as RTCDataChannel, new Event('open'));
+
+    // Clear any previous send calls from session updates
+    dataChannel.send.mockClear();
+
+    // Call sendTextMessage
+    client.sendTextMessage('Hello, AI!');
+
+    // Verify the control channel received both messages
+    expect(dataChannel.send).toHaveBeenCalledTimes(2);
+
+    const firstCall = JSON.parse(dataChannel.send.mock.calls[0][0] as string) as {
+      type: string;
+      item: { type: string; role: string; content: Array<{ type: string; text: string }> };
+    };
+    expect(firstCall.type).toBe('conversation.item.create');
+    expect(firstCall.item.type).toBe('message');
+    expect(firstCall.item.role).toBe('user');
+    expect(firstCall.item.content[0].type).toBe('input_text');
+    expect(firstCall.item.content[0].text).toBe('Hello, AI!');
+
+    const secondCall = JSON.parse(dataChannel.send.mock.calls[1][0] as string) as { type: string };
+    expect(secondCall.type).toBe('response.create');
+  });
+
+  it('sendTextMessage does nothing when the control channel is not open', async () => {
+    const stream = new FakeMediaStream() as unknown as MediaStream;
+
+    await client.connect({ apiKey: 'test-key', inputStream: stream });
+
+    const peer = peers[0];
+    // Do NOT emit connected state or trigger data channel open
+    // The data channel readyState defaults to 'open' in our mock, so we'll change it
+    peer.dataChannel.readyState = 'closed';
+
+    // Clear any previous send calls
+    peer.dataChannel.send.mockClear();
+
+    // Call sendTextMessage
+    client.sendTextMessage('Hello, AI!');
+
+    // Verify nothing was sent since the channel is closed
+    expect(peer.dataChannel.send).not.toHaveBeenCalled();
+
+    // Verify a warning was logged
+    const warnLogs = logHandler.mock.calls
+      .map(([entry]) => entry)
+      .filter((entry) => entry.level === 'warn' && entry.message.includes('control channel not available'));
+    expect(warnLogs.length).toBeGreaterThan(0);
   });
 });

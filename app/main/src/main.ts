@@ -48,6 +48,8 @@ import type {
   AvatarPoseGenerationRequest,
   PoseEvaluationRequest,
   SpeechMovementRequest,
+  StreamingPoseRequest,
+  FastPoseRequest,
 } from './avatar/types.js';
 import {
   resolvePreloadScriptPath,
@@ -1030,6 +1032,36 @@ function registerIpcHandlers(
       boneHierarchy,
       modelDescription,
     });
+  });
+  ipcMain.handle('avatar-movement:generate-single', async (_event, payload: StreamingPoseRequest) => {
+    if (!speechMovementService) {
+      await refreshSpeechMovementService(manager, 'secret-update');
+    }
+    if (!speechMovementService) {
+      throw new Error('Speech movement service is unavailable. Ensure REALTIME_API_KEY is set.');
+    }
+
+    const bones = avatarModels ? await avatarModels.listActiveModelBones() : [];
+    const boneHierarchy = avatarModels ? await avatarModels.listActiveModelBoneHierarchy() : {};
+    const activeModel = avatarModels?.getActiveModel() ?? null;
+    const modelDescription = activeModel?.description ?? undefined;
+
+    return speechMovementService.generateSinglePose({
+      ...payload,
+      bones,
+      boneHierarchy,
+      modelDescription,
+    });
+  });
+  ipcMain.handle('avatar-movement:generate-fast', async (_event, payload: FastPoseRequest) => {
+    if (!speechMovementService) {
+      await refreshSpeechMovementService(manager, 'secret-update');
+    }
+    if (!speechMovementService) {
+      throw new Error('Speech movement service is unavailable. Ensure REALTIME_API_KEY is set.');
+    }
+
+    return speechMovementService.generateFastPose(payload);
   });
   ipcMain.handle('avatar:trigger-behavior', async (_event, cue: string) => {
     const value = typeof cue === 'string' ? cue.trim() : '';

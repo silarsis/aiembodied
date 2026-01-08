@@ -973,3 +973,76 @@ main {
   margin: 0;
   color: #e2e8f0;
 }
+
+/* ===== Text Message Input ===== */
+.kiosk__textInput {
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.75rem;
+  width: clamp(320px, 50vw, 640px);
+  padding: 0.75rem 1rem;
+  background: rgba(2, 6, 23, 0.85);
+  border-radius: 999px;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  box-shadow: 0 16px 48px rgba(2, 6, 23, 0.55);
+  backdrop-filter: blur(16px);
+  z-index: 100;
+}
+
+.kiosk__textInputField {
+  flex: 1;
+  padding: 0.65rem 1rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.7);
+  color: #f8fafc;
+  font-size: 1rem;
+  transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.kiosk__textInputField::placeholder {
+  color: rgba(148, 163, 184, 0.6);
+}
+
+.kiosk__textInputField:focus {
+  border-color: rgba(59, 130, 246, 0.75);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+  outline: none;
+}
+
+.kiosk__textInputField:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.kiosk__textInputButton {
+  padding: 0.65rem 1.5rem;
+  border-radius: 999px;
+  border: none;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.9), rgba(45, 212, 191, 0.9));
+  color: #0f172a;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.kiosk__textInputButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.4);
+}
+
+.kiosk__textInputButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+  .kiosk__textInput {
+    width: calc(100% - 2rem);
+    bottom: 1rem;
+  }
+}

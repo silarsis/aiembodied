@@ -25,7 +25,7 @@ import { LatencyTracker, type LatencySnapshot } from './metrics/latency-tracker.
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
 import type { AvatarModelSummary, AvatarPoseSummary } from './avatar/types.js';
 import { extractAvatarTags, toAnimationSlug } from './avatar/animation-tags.js';
-import { useSpeechMovement } from './hooks/use-speech-movement.js';
+import { useRollingPoseGeneration } from './hooks/use-rolling-pose-generation.js';
 import { Vector3 } from 'three';
 
 const CURSOR_IDLE_TIMEOUT_MS = 3000;
@@ -662,55 +662,35 @@ export default function App() {
   const [poseListVersion, setPoseListVersion] = useState(0);
   const animationBus = useMemo(() => createAvatarAnimationBus(), []);
 
-  // Speech-driven animation: accumulate transcript and trigger movement generation
-  const speechTranscriptRef = useRef<string>('');
-  const speechMovementTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const SPEECH_MOVEMENT_DEBOUNCE_MS = 1500; // Debounce time before generating movements
-
-  const speechMovement = useSpeechMovement({
+  // Rolling pose generation for real-time speech-driven animation
+  const rollingPose = useRollingPoseGeneration({
     enabled: true,
+    bus: animationBus,
     transitionDuration: 0.5,
-    transitionConfig: { easing: 'easeOut', staggerFactor: 0.15 },
-    onError: (error) => console.warn('[SpeechMovement] Generation failed:', error.message),
+    initialWindowMs: 500,
+    refractoryMs: 1000,
+    onError: (error) => console.warn('[RollingPose] Generation failed:', error.message),
   });
 
-  // Handler to accumulate transcript and trigger debounced movement generation
+  // Debug: Check what's actually exposed on the preload API
+  useEffect(() => {
+    const bridge = resolveApi();
+    console.info('[App] Preload API debug:', {
+      hasBridge: !!bridge,
+      hasAvatar: !!bridge?.avatar,
+      hasGenerateSinglePose: typeof bridge?.avatar?.generateSinglePose === 'function',
+      rollingPoseIsAvailable: rollingPose.isAvailable,
+    });
+  }, [resolveApi, rollingPose.isAvailable]);
+
+  // Handler for speech text - delegates to rolling pose hook
   const handleSpeechForMovement = useCallback((content: string) => {
-    if (!speechMovement.isAvailable || !content.trim()) {
-      return;
-    }
-
-    // Accumulate transcript
-    speechTranscriptRef.current += content;
-
-    // Clear existing timeout
-    if (speechMovementTimeoutRef.current) {
-      clearTimeout(speechMovementTimeoutRef.current);
-    }
-
-    // Debounce: generate movements after speech pause
-    speechMovementTimeoutRef.current = setTimeout(() => {
-      const transcript = speechTranscriptRef.current.trim();
-      speechTranscriptRef.current = ''; // Reset for next utterance
-
-      if (transcript.length < 5) {
-        return; // Too short to generate meaningful movements
-      }
-
-      // Estimate speech duration (~150 words per minute, ~5 chars per word)
-      const estimatedDuration = (transcript.length / 5) / 150 * 60;
-
-      speechMovement.generateAndPlay(transcript, estimatedDuration)
-        .then(({ startPlayback }) => {
-          startPlayback();
-        })
-        .catch((error) => {
-          console.warn('[SpeechMovement] Failed to generate:', error);
-        });
-    }, SPEECH_MOVEMENT_DEBOUNCE_MS);
-  }, [speechMovement]);
+    rollingPose.processText(content);
+  }, [rollingPose]);
 
   const [isListeningEnabled, setListeningEnabled] = useState(false);
+  const [textMessageInput, setTextMessageInput] = useState('');
+  const pendingTextMessageRef = useRef<string | null>(null);
   const [bonePositions, setBonePositions] = useState<{
     leftShoulder: { x: number; y: number; z: number } | null;
     leftElbow: { x: number; y: number; z: number } | null;
@@ -2327,6 +2307,48 @@ export default function App() {
     setTranscriptVisible((previous) => !previous);
   }, []);
 
+  const handleTextMessageSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      const text = textMessageInput.trim();
+      if (!text) {
+        return;
+      }
+
+      // Record the user message in the transcript
+      await recordTranscriptEntry({
+        speaker: 'user',
+        text,
+        timestamp: Date.now(),
+      });
+
+      // Clear the input
+      setTextMessageInput('');
+
+      // If connected, send immediately
+      if (realtimeClient && realtimeState.status === 'connected') {
+        realtimeClient.sendTextMessage(text);
+        return;
+      }
+
+      // Not connected - queue the message and enable listening to trigger connection
+      pendingTextMessageRef.current = text;
+      if (!isListeningEnabled) {
+        setListeningEnabled(true);
+      }
+    },
+    [textMessageInput, realtimeClient, realtimeState.status, recordTranscriptEntry, isListeningEnabled],
+  );
+
+  // Send pending text message when connected
+  useEffect(() => {
+    if (realtimeState.status === 'connected' && pendingTextMessageRef.current && realtimeClient) {
+      const text = pendingTextMessageRef.current;
+      pendingTextMessageRef.current = null;
+      realtimeClient.sendTextMessage(text);
+    }
+  }, [realtimeState.status, realtimeClient]);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const isToggleShortcut = (event.ctrlKey || event.metaKey) && event.shiftKey && event.code === 'KeyT';
@@ -2912,6 +2934,32 @@ export default function App() {
               <TranscriptOverlay entries={transcriptEntries} />
             </aside>
           ) : null}
+
+          {/* Text input for typing messages to the AI */}
+          <form
+            className="kiosk__textInput"
+            onSubmit={handleTextMessageSubmit}
+            data-testid="text-message-form"
+          >
+            <input
+              type="text"
+              className="kiosk__textInputField"
+              placeholder="Type a message..."
+              value={textMessageInput}
+              onChange={(e) => setTextMessageInput(e.target.value)}
+              aria-label="Message input"
+              data-testid="text-message-input"
+            />
+            <button
+              type="submit"
+              className="kiosk__textInputButton"
+              disabled={textMessageInput.trim().length === 0}
+              aria-label="Send message"
+              data-testid="text-message-submit"
+            >
+              Send
+            </button>
+          </form>
 
           {showDeveloperHud ? (
             <aside className="kiosk__hud" aria-label="Latency metrics HUD">

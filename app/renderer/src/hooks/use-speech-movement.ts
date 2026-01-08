@@ -16,7 +16,7 @@
  * await generateAndPlay(transcript, speechDuration);
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAvatarAnimationBus } from '../avatar/animation-bus.js';
 import { MovementAnimator } from '../avatar/movement-animator.js';
 import type { MovementTimeline } from '../avatar/types.js';
@@ -99,7 +99,22 @@ export function useSpeechMovement(options: UseSpeechMovementOptions = {}): UseSp
         return api.avatar;
     };
 
-    const isAvailable = Boolean(enabled && bus && getAvatarBridge());
+    // isAvailable only checks if the API is ready - bus is needed for playback but not availability
+    const isAvailable = Boolean(enabled && getAvatarBridge());
+
+    // Debug logging - only on mount
+    useEffect(() => {
+        const api = getPreloadApi();
+        console.info('[useSpeechMovement] Hook initialized:', {
+            enabled,
+            hasBus: !!bus,
+            hasApi: !!api,
+            hasAvatar: !!api?.avatar,
+            hasGenerateMovementTimeline: !!api?.avatar?.generateMovementTimeline,
+            isAvailable,
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);  // Only run once on mount
 
     const generateTimeline = useCallback(async (
         transcript: string,
@@ -129,6 +144,13 @@ export function useSpeechMovement(options: UseSpeechMovementOptions = {}): UseSp
     }, [isAvailable, onTimelineGenerated, onError]);
 
     const playTimeline = useCallback((timeline: MovementTimeline) => {
+        console.info('[useSpeechMovement] playTimeline called', {
+            hasTimeline: !!timeline,
+            keyframeCount: timeline?.keyframes?.length ?? 0,
+            duration: timeline?.duration ?? 0,
+            hasBus: !!bus,
+        });
+
         if (!bus) {
             console.warn('[useSpeechMovement] Cannot play: animation bus not available');
             return;
@@ -146,12 +168,14 @@ export function useSpeechMovement(options: UseSpeechMovementOptions = {}): UseSp
             transitionDuration,
             transitionConfig,
             onComplete: () => {
+                console.info('[useSpeechMovement] Playback complete');
                 setIsPlaying(false);
                 onPlaybackComplete?.();
             },
         });
 
         setIsPlaying(true);
+        console.info('[useSpeechMovement] Starting playback...');
         animatorRef.current.play();
     }, [bus, transitionDuration, transitionConfig, onPlaybackComplete]);
 

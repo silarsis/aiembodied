@@ -109,6 +109,8 @@ export interface AvatarBridge {
   evaluatePose(request: PoseEvaluationRequest): Promise<PoseEvaluationResult>;
   refinePose(request: PoseEvaluationRequest): Promise<AvatarPoseUploadResult>;
   generateMovementTimeline?(request: SpeechMovementRequest): Promise<MovementTimeline>;
+  generateSinglePose?(request: StreamingPoseRequest): Promise<SinglePoseResult>;
+  generateFastPose?(request: FastPoseRequest): Promise<FastPoseResult>;
 }
 
 /** Request to generate a movement timeline from speech */
@@ -141,3 +143,47 @@ export interface MovementTimeline {
   keyframes: MovementKeyframe[];
 }
 
+/** Request to generate a single pose from streaming text */
+export interface StreamingPoseRequest {
+  recentText: string;
+  fullContext?: string;
+  modelDescription?: string;
+  bones?: string[];
+  boneHierarchy?: Record<string, string | null>;
+}
+
+/** Result of single pose generation */
+export interface SinglePoseResult {
+  pose: {
+    bones: Record<string, { rotation: number[]; position?: number[] | null }>;
+    expressions?: {
+      presets?: Partial<Record<
+        'happy' | 'angry' | 'sad' | 'relaxed' | 'surprised' | 'neutral',
+        number
+      >>;
+    };
+  };
+  emotion?: string;
+}
+
+/** Request for fast pose generation (uses pose library) */
+export interface FastPoseRequest {
+  recentText: string;
+  availablePoses: string[];
+}
+
+/** Result of fast pose generation */
+export interface FastPoseResult {
+  type: 'preset' | 'raw';
+  presetSlug?: string;
+  pose?: {
+    bones: Record<string, { rotation: number[]; position?: number[] | null }>;
+    expressions?: {
+      presets?: Partial<Record<
+        'happy' | 'angry' | 'sad' | 'relaxed' | 'surprised' | 'neutral',
+        number
+      >>;
+    };
+  };
+  emotion?: string;
+}

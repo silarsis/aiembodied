@@ -94,7 +94,13 @@ export class MovementAnimator {
      * Start or resume playback.
      */
     play(): void {
+        console.debug('[MovementAnimator] play() called', {
+            keyframeCount: this.timeline.keyframes.length,
+            currentState: this.state,
+        });
+
         if (this.timeline.keyframes.length === 0) {
+            console.debug('[MovementAnimator] No keyframes - completing immediately');
             this.state = 'stopped';
             this.onComplete?.();
             return;
@@ -197,6 +203,13 @@ export class MovementAnimator {
     }
 
     private applyKeyframe(index: number, keyframe: MovementKeyframe): void {
+        console.debug('[MovementAnimator] Applying keyframe', {
+            index,
+            time: keyframe.time,
+            boneCount: Object.keys(keyframe.pose.bones).length,
+            emotion: keyframe.emotion,
+        });
+
         // Convert keyframe pose to VRMPoseData format
         const poseData: VRMPoseData = {
             bones: keyframe.pose.bones,
@@ -212,6 +225,7 @@ export class MovementAnimator {
             duration = Math.min(timeToNext * 0.8, this.transitionDuration);
         }
 
+        console.debug('[MovementAnimator] Calling bus.applyPose', { duration });
         this.bus.applyPose(
             poseData,
             'movement-animator',

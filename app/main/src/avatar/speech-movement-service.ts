@@ -5,7 +5,17 @@
 
 import type OpenAI from 'openai';
 import type { ResponseInput } from 'openai/resources/responses/responses';
-import type { MovementTimeline, MovementKeyframe, SpeechMovementRequest, AvatarPoseData, PoseExpressionState } from './types.js';
+import type {
+    MovementTimeline,
+    MovementKeyframe,
+    SpeechMovementRequest,
+    StreamingPoseRequest,
+    SinglePoseResult,
+    FastPoseRequest,
+    FastPoseResult,
+    AvatarPoseData,
+    PoseExpressionState,
+} from './types.js';
 import {
     POSE_AXIS_MAPPING,
     POSE_EXPRESSION_GUIDANCE,
@@ -179,6 +189,304 @@ export class SpeechMovementService {
         return this.parseTimeline(outputText, bones, speechDuration);
     }
 
+    /**
+     * Generate a single pose from a streaming text segment.
+     * Faster than generateTimeline - designed for real-time rolling window approach.
+     */
+    async generateSinglePose(request: StreamingPoseRequest): Promise<SinglePoseResult> {
+        const recentText = typeof request?.recentText === 'string' ? request.recentText.trim() : '';
+        if (!recentText) {
+            this.logger?.warn?.('Empty recent text provided for single pose generation');
+            return { pose: { bones: {} } };
+        }
+
+        // OPTIMIZATION: Use only expressive bones to minimize schema size and generation time
+        // Full skeleton has 54+ bones, but we only need ~10 for expressive poses
+        const expressiveBones = [
+            'head', 'neck', 'chest', 'spine',
+            'leftShoulder', 'leftUpperArm',
+            'rightShoulder', 'rightUpperArm',
+        ];
+        const bones = expressiveBones;
+
+        // OPTIMIZATION: Short, focused prompt for speed
+        const systemPrompt = `You are animating a character based on speech. Output ONE pose.
+
+Bones: ${bones.join(', ')}
+Each bone needs rotation as quaternion [x, y, z, w]. Identity=[0,0,0,1].
+Small rotations (~0.1-0.2) create subtle movements. Head tilts, shoulder shrugs, chest lean.
+
+expressions.presets: happy (0-1), neutral (0-1). Should sum to ~1.
+
+Match the emotional tone of the speech.`;
+
+        const messages: ResponseInput = [
+            {
+                type: 'message',
+                role: 'system',
+                content: [{ type: 'input_text', text: systemPrompt }],
+            },
+        ];
+
+        // OPTIMIZATION: Minimal user message - just the recent speech
+        // Skip full context to reduce tokens
+        const userContent = `Speech: "${recentText}"`;
+
+        messages.push({
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: userContent }],
+        });
+
+        // Build simpler schema for single pose
+        const schema = this.buildSinglePoseSchema(bones);
+
+        this.logger?.info?.('Generating single pose', {
+            recentTextLength: recentText.length,
+            boneCount: bones.length,
+        });
+
+        const llmStartTime = Date.now();
+        const response = await (
+            this.client as unknown as {
+                responses: { create: (args: unknown) => Promise<{ output_text: string }> };
+            }
+        ).responses.create({
+            model: this.model,
+            input: messages,
+            text: {
+                format: {
+                    type: 'json_schema',
+                    name: 'single_pose',
+                    schema: schema as unknown,
+                    strict: true,
+                },
+            },
+        });
+        const llmElapsed = Date.now() - llmStartTime;
+
+        const outputText = response.output_text;
+        if (!outputText) {
+            this.logger?.error?.('Empty response from single pose generator');
+            return { pose: { bones: {} } };
+        }
+
+        const parseStartTime = Date.now();
+        const result = this.parseSinglePose(outputText, new Set(bones));
+        const parseElapsed = Date.now() - parseStartTime;
+
+        this.logger?.info?.('Single pose timing', {
+            llmMs: llmElapsed,
+            parseMs: parseElapsed,
+            totalMs: llmElapsed + parseElapsed,
+            outputLength: outputText.length,
+        });
+
+        return result;
+    }
+
+    /**
+     * Fast pose generation using pose library selection.
+     * Does NOT use structured output for faster response.
+     * LLM picks from available presets or generates simple raw pose.
+     */
+    async generateFastPose(request: FastPoseRequest): Promise<FastPoseResult> {
+        const recentText = typeof request?.recentText === 'string' ? request.recentText.trim() : '';
+        if (!recentText) {
+            this.logger?.warn?.('Empty recent text provided for fast pose generation');
+            return { type: 'preset', presetSlug: 'default', emotion: 'neutral' };
+        }
+
+        const availablePoses = Array.isArray(request.availablePoses) && request.availablePoses.length > 0
+            ? request.availablePoses
+            : ['default'];
+
+        // Short, focused prompt for speed
+        const systemPrompt = `Pick the best pose for the speech from the list. Respond with ONLY JSON.
+
+Available poses: ${availablePoses.join(', ')}
+
+Response format:
+{"type":"preset","pose":"<slug>","emotion":"<mood>"}
+
+If no pose fits well, use "default".`;
+
+        const messages: ResponseInput = [
+            {
+                type: 'message',
+                role: 'system',
+                content: [{ type: 'input_text', text: systemPrompt }],
+            },
+            {
+                type: 'message',
+                role: 'user',
+                content: [{ type: 'input_text', text: `Speech: "${recentText}"` }],
+            },
+        ];
+
+        this.logger?.info?.('Generating fast pose', {
+            recentTextLength: recentText.length,
+            availablePosesCount: availablePoses.length,
+        });
+
+        const llmStartTime = Date.now();
+        const response = await (
+            this.client as unknown as {
+                responses: { create: (args: unknown) => Promise<{ output_text: string }> };
+            }
+        ).responses.create({
+            model: this.model,
+            input: messages,
+            // NO structured output - let it respond freely for speed
+        });
+        const llmElapsed = Date.now() - llmStartTime;
+
+        const outputText = response.output_text?.trim() ?? '';
+        this.logger?.info?.('Fast pose timing', {
+            llmMs: llmElapsed,
+            outputLength: outputText.length,
+            output: outputText.slice(0, 100),
+        });
+
+        if (!outputText) {
+            this.logger?.warn?.('Empty response from fast pose generator');
+            return { type: 'preset', presetSlug: 'default', emotion: 'neutral' };
+        }
+
+        // Parse the JSON response
+        return this.parseFastPoseResponse(outputText, availablePoses);
+    }
+
+    private parseFastPoseResponse(outputText: string, availablePoses: string[]): FastPoseResult {
+        // Try to extract JSON from the response
+        const jsonMatch = outputText.match(/\{[^}]+\}/);
+        if (!jsonMatch) {
+            this.logger?.warn?.('No JSON found in fast pose response', { outputText: outputText.slice(0, 100) });
+            return { type: 'preset', presetSlug: 'default', emotion: 'neutral' };
+        }
+
+        try {
+            const parsed = JSON.parse(jsonMatch[0]) as {
+                type?: string;
+                pose?: string;
+                emotion?: string;
+            };
+
+            const poseSlug = parsed.pose?.toLowerCase().trim() ?? 'default';
+            const emotion = parsed.emotion ?? 'neutral';
+
+            // Validate the pose is in the available list
+            if (availablePoses.includes(poseSlug)) {
+                return { type: 'preset', presetSlug: poseSlug, emotion };
+            }
+
+            // Try fuzzy match
+            const fuzzyMatch = availablePoses.find(p =>
+                p.includes(poseSlug) || poseSlug.includes(p)
+            );
+            if (fuzzyMatch) {
+                return { type: 'preset', presetSlug: fuzzyMatch, emotion };
+            }
+
+            this.logger?.warn?.('Pose not in available list, using default', { requested: poseSlug, available: availablePoses });
+            return { type: 'preset', presetSlug: 'default', emotion };
+        } catch (parseError) {
+            this.logger?.warn?.('Failed to parse fast pose JSON', { error: String(parseError), outputText: outputText.slice(0, 100) });
+            return { type: 'preset', presetSlug: 'default', emotion: 'neutral' };
+        }
+    }
+
+    private buildSinglePoseSchema(bones: string[]): object {
+        // Simpler bone schema for faster generation
+        const boneSchema = {
+            type: 'object' as const,
+            additionalProperties: false,
+            required: ['rotation'],
+            properties: {
+                rotation: {
+                    type: 'array' as const,
+                    items: { type: 'number' as const },
+                    minItems: 4,
+                    maxItems: 4,
+                },
+            },
+        };
+
+        const boneProperties: Record<string, typeof boneSchema> = {};
+        for (const bone of bones) {
+            boneProperties[bone] = boneSchema;
+        }
+
+        // OPTIMIZATION: Simplified expression - just happy and neutral weights
+        // This reduces output tokens significantly
+        const expressionPresetNames = ['happy', 'neutral'] as const;
+        const expressionPresetProperties: Record<string, { type: 'number' }> = {};
+        for (const preset of expressionPresetNames) {
+            expressionPresetProperties[preset] = { type: 'number' as const };
+        }
+
+        return {
+            type: 'object' as const,
+            additionalProperties: false,
+            required: ['emotion', 'pose'],
+            properties: {
+                emotion: { type: 'string' as const },
+                pose: {
+                    type: 'object' as const,
+                    additionalProperties: false,
+                    required: ['bones', 'expressions'],
+                    properties: {
+                        bones: {
+                            type: 'object' as const,
+                            additionalProperties: false,
+                            required: bones,
+                            properties: boneProperties,
+                        },
+                        expressions: {
+                            type: 'object' as const,
+                            additionalProperties: false,
+                            required: ['presets'],
+                            properties: {
+                                presets: {
+                                    type: 'object' as const,
+                                    additionalProperties: false,
+                                    required: expressionPresetNames as unknown as string[],
+                                    properties: expressionPresetProperties,
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+    }
+
+    private parseSinglePose(outputText: string, validBones: Set<string>): SinglePoseResult {
+        let parsed: { emotion?: string; pose?: unknown };
+        try {
+            parsed = JSON.parse(outputText) as typeof parsed;
+        } catch (parseError) {
+            const preview = outputText.slice(0, 200);
+            const message = parseError instanceof Error ? parseError.message : String(parseError);
+            this.logger?.error?.('Failed to parse single pose JSON', { message, preview });
+            return { pose: { bones: {} } };
+        }
+
+        const emotion = typeof parsed.emotion === 'string' ? parsed.emotion : undefined;
+        const warnings: string[] = [];
+        const pose = this.parsePose(parsed.pose, validBones, warnings, 0);
+
+        if (warnings.length > 0) {
+            this.logger?.warn?.('Single pose parsing had issues', { warnings });
+        }
+
+        if (!pose) {
+            return { pose: { bones: {} }, emotion };
+        }
+
+        this.logger?.info?.('Single pose generated', { emotion, boneCount: Object.keys(pose.bones).length });
+        return { pose, emotion };
+    }
     private buildTimelineSchema(bones: string[]): object {
         // Build bone properties for the schema
         const boneSchema = {
@@ -211,7 +519,7 @@ export class SpeechMovementService {
         const keyframeSchema = {
             type: 'object' as const,
             additionalProperties: false,
-            required: ['time', 'pose'],
+            required: ['time', 'pose', 'emotion'],  // All properties must be in required for strict mode
             properties: {
                 time: { type: 'number' as const },
                 emotion: { type: 'string' as const },
