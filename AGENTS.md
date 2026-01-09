@@ -143,3 +143,4 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 - 2025-03-08 — Appended a step-by-step build plan to `meshy-plan.md`.
 - 2025-03-09 — Completed Meshy plan steps 1-2 by confirming scope against `prd.md`/`archspec.md`/`plan.md` and defining Meshy config + IPC data contracts.
 - 2025-03-10 — Installed Electron runtime dependencies for Ubuntu 24.04 to unblock test execution in root CI environments.
+- 2025-03-11 — Added Meshy client unit tests to cover job creation, status normalization, and asset downloads.
