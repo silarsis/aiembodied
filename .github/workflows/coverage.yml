@@ -39,7 +39,7 @@ jobs:
         # Note: xvfb-run is needed because tests run in Electron which requires a display
         # Porcupine tests are excluded due to heap exhaustion from vi.resetModules()
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           directory: ./coverage
           flags: unittests
