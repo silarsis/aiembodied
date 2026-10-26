@@ -84,9 +84,12 @@ WAKE_WORD_BUILTIN=porcupine
 WAKE_WORD_SENSITIVITY=0.6
 WAKE_WORD_MIN_CONFIDENCE=0.5
 WAKE_WORD_COOLDOWN_MS=1500
+COMFYUI_BASE_URL=http://127.0.0.1:8188
 ```
 
 Additional knobs include `WAKE_WORD_KEYWORD_PATH`/`WAKE_WORD_KEYWORD_LABEL` for custom models and `FEATURE_FLAGS` (JSON or comma syntax) for experimental toggles.
+
+**Local avatar generation.** The Avatar tab's "Generate an avatar" panel repaints the bundled VRoid avatar's outfit and hair textures from a text description, keeping its rig, expressions and lip-sync. It needs a local ComfyUI server (default `http://127.0.0.1:8188`, override with `COMFYUI_BASE_URL`) with the Qwen-Image 2.1 models installed (`qwen_image_2.1_int8_convrot`, `qwen3vl_8b_int8_convrot`, `qwen_image_2.1_vae_bf16`). Nothing is sent to a cloud service.
 
 ### Run the App in Development
 

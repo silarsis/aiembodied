@@ -10,7 +10,7 @@ export type FeatureFlags = Record<string, boolean>;
 
 export interface AppConfig {
   realtimeApiKey: string;
-  meshyApiKey: string;
+  comfyUiBaseUrl: string;
   audioInputDeviceId?: string;
   audioOutputDeviceId?: string;
   realtimeModel?: string;
@@ -47,13 +47,12 @@ export type RendererWakeWordConfig = Omit<WakeWordConfig, 'accessKey'> & {
   hasAccessKey: boolean;
 };
 
-export type RendererConfig = Omit<AppConfig, 'realtimeApiKey' | 'meshyApiKey' | 'wakeWord'> & {
+export type RendererConfig = Omit<AppConfig, 'realtimeApiKey' | 'wakeWord' | 'comfyUiBaseUrl'> & {
   hasRealtimeApiKey: boolean;
-  hasMeshyApiKey: boolean;
   wakeWord: RendererWakeWordConfig;
 };
 
-export type ConfigSecretKey = 'realtimeApiKey' | 'wakeWordAccessKey' | 'meshyApiKey';
+export type ConfigSecretKey = 'realtimeApiKey' | 'wakeWordAccessKey';
 
 type OpenAIModelsClient = {
   models?: {
@@ -104,10 +103,11 @@ const MetricsSchema = z.object({
 });
 
 const RealtimeApiKeySchema = z.string().min(1, 'Realtime API key is required');
-const MeshyApiKeySchema = z.string().min(1, 'Meshy API key is required');
 const WakeWordAccessKeySchema = z.string().min(1, 'Porcupine access key is required');
 
-const DEFAULT_SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey', 'wakeWordAccessKey', 'meshyApiKey'];
+const DEFAULT_SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey', 'wakeWordAccessKey'];
+
+const DEFAULT_COMFYUI_BASE_URL = 'http://127.0.0.1:8188';
 
 export class ConfigManager {
   private config: AppConfig | null = null;
@@ -141,7 +141,6 @@ export class ConfigManager {
 
     const realtimeApiKey = await this.resolveRealtimeApiKey();
     const wakeWordAccessKey = await this.resolveWakeWordAccessKey();
-    const meshyApiKey = await this.resolveMeshyApiKey();
     const storedPreferences = (await this.preferencesStore?.load()) ?? {};
 
     if (!wakeWordAccessKey) {
@@ -159,7 +158,7 @@ export class ConfigManager {
 
     const config: AppConfig = {
       realtimeApiKey: realtimeApiKey ?? '',
-      meshyApiKey: meshyApiKey ?? '',
+      comfyUiBaseUrl: this.env.COMFYUI_BASE_URL?.trim() || DEFAULT_COMFYUI_BASE_URL,
       audioInputDeviceId,
       audioOutputDeviceId,
       realtimeModel: this.normalizeDeviceId(storedPreferences.realtimeModel),
@@ -179,7 +178,6 @@ export class ConfigManager {
     this.config = config;
     this.logger.info('Configuration loaded.', {
       hasRealtimeApiKey: Boolean(config.realtimeApiKey),
-      hasMeshyApiKey: Boolean(config.meshyApiKey),
       wakeWordHasAccessKey: Boolean(config.wakeWord.accessKey),
       audioInputConfigured: Boolean(config.audioInputDeviceId),
       audioOutputConfigured: Boolean(config.audioOutputDeviceId),
@@ -243,14 +241,15 @@ export class ConfigManager {
 
   getRendererConfig(): RendererConfig {
     const config = this.getConfig();
-    const { realtimeApiKey, meshyApiKey, wakeWord, ...rest } = config;
+    // comfyUiBaseUrl is main-process only.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { realtimeApiKey, wakeWord, comfyUiBaseUrl, ...rest } = config;
 
     const { accessKey, ...rendererWakeWord } = wakeWord;
 
     return {
       ...rest,
       hasRealtimeApiKey: Boolean(realtimeApiKey),
-      hasMeshyApiKey: Boolean(meshyApiKey),
       wakeWord: {
         ...rendererWakeWord,
         hasAccessKey: Boolean(accessKey),
@@ -270,10 +269,6 @@ export class ConfigManager {
 
     if (key === 'wakeWordAccessKey') {
       return config.wakeWord.accessKey;
-    }
-
-    if (key === 'meshyApiKey') {
-      return config.meshyApiKey;
     }
 
     throw new Error(`Unhandled secret key requested: ${key}`);
@@ -311,17 +306,6 @@ export class ConfigManager {
       return this.getRendererConfig();
     }
 
-    if (key === 'meshyApiKey') {
-      const parsed = MeshyApiKeySchema.parse(trimmed);
-      await this.persistSecret('MESHY_API_KEY', parsed);
-      this.config = {
-        ...this.config,
-        meshyApiKey: parsed,
-      };
-      this.logger.info('Meshy API key updated.', { length: parsed.length });
-      return this.getRendererConfig();
-    }
-
     throw new Error(`Unhandled secret key update requested: ${key}`);
   }
 
@@ -348,13 +332,6 @@ export class ConfigManager {
       }
       this.logger.debug('Testing wake word access key.');
       return this.testWakeWordKey(fetchFn, this.config.wakeWord.accessKey);
-    }
-
-    if (key === 'meshyApiKey') {
-      if (!this.config.meshyApiKey) {
-        return { ok: false, message: 'Meshy API key is not configured.' };
-      }
-      return { ok: false, message: 'Meshy API key validation is not available yet.' };
     }
 
     throw new Error(`Unhandled secret test requested: ${key}`);
@@ -414,35 +391,6 @@ export class ConfigManager {
       this.logger.debug('Wake word access key resolved from secret store.', { length: stored.length });
     } else {
       this.logger.error('Wake word access key not found in secret store.');
-    }
-    return stored ?? undefined;
-  }
-
-  private async resolveMeshyApiKey(): Promise<string | undefined> {
-    this.logger.debug('Resolving Meshy API key from environment variables.', {
-      keys: ['MESHY_API_KEY', 'meshy_api_key'],
-    });
-    const envValue = this.readSecretFromEnv(['MESHY_API_KEY', 'meshy_api_key']);
-    if (envValue) {
-      this.logger.debug('Meshy API key resolved from environment variables.', {
-        length: envValue.length,
-      });
-      return envValue;
-    }
-
-    this.logger.debug('Meshy API key not found in environment.', {
-      hasSecretStore: Boolean(this.secretStore),
-    });
-    if (!this.secretStore) {
-      this.logger.warn('Meshy API key unavailable: secret store is not configured.');
-      return undefined;
-    }
-
-    const stored = await this.secretStore.getSecret('MESHY_API_KEY');
-    if (stored) {
-      this.logger.debug('Meshy API key resolved from secret store.', { length: stored.length });
-    } else {
-      this.logger.warn('Meshy API key not found in secret store.');
     }
     return stored ?? undefined;
   }

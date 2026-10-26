@@ -1,5 +1,7 @@
 # Meshy API Integration Plan (Design Only)
 
+> **Superseded (2026-10-26).** Meshy integration was removed in favour of local generation through ComfyUI. See `app/main/src/avatar/generation/`.
+
 ## Goals
 - Add support for the Meshy API to generate FBX avatars from plain-English prompts and rig them with a skeleton.
 - Store a Meshy API key in the Local tab settings (alongside existing secrets) with secure main-process persistence.
