@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REQUIRED_NODE_VERSION="20.0.0"
-TARGET_PNPM_VERSION="9.12.0"
+REQUIRED_NODE_VERSION="22.12.0"
+TARGET_PNPM_VERSION="10.34.9"
 
 version_ge() {
   local current="$1"

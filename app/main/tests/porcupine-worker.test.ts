@@ -40,12 +40,12 @@ class PorcupineFake {
 
 const porcupineInstances: PorcupineFake[] = [];
 const PorcupineCtor = vi.fn(
-  (
+  function (
     accessKey: string,
     keywords: string[],
     sensitivities: number[],
     options: { modelPath?: string } = {},
-  ) => {
+  ) {
     const instance = new PorcupineFake(accessKey, keywords, sensitivities, options);
     porcupineInstances.push(instance);
     return instance;
@@ -78,7 +78,7 @@ class PvRecorderFake {
 }
 
 const recorderInstances: PvRecorderFake[] = [];
-const PvRecorderCtor = vi.fn((frameLength: number, deviceIndex: number, bufferSize: number) => {
+const PvRecorderCtor = vi.fn(function (frameLength: number, deviceIndex: number, bufferSize: number) {
   const instance = new PvRecorderFake(frameLength, deviceIndex, bufferSize);
   recorderInstances.push(instance);
   return instance;

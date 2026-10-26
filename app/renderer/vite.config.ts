@@ -15,7 +15,6 @@ export default defineConfig(({ mode }) => ({
     globals: true,
     setupFiles: './vitest.setup.ts',
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
-    environmentMatchGlobs: [['tests/vite-config.test.ts', 'node']],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

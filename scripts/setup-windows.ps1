@@ -11,7 +11,7 @@
 
 $ErrorActionPreference = 'Stop'
 
-$RequiredNodeVersion = [Version]'20.0.0'
+$RequiredNodeVersion = [Version]'22.12.0'
 $scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Resolve-Path (Join-Path $scriptDirectory '..')
 
@@ -44,7 +44,7 @@ function Get-TargetPnpmVersionFromPackageJson {
 
 $TargetPnpmVersion = Get-TargetPnpmVersionFromPackageJson
 if (-not $TargetPnpmVersion) {
-    $TargetPnpmVersion = '9.12.0'
+    $TargetPnpmVersion = '10.34.9'
 }
 
 function Test-CommandExists {

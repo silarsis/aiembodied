@@ -10,12 +10,7 @@ export const createVitestConfig = (testPattern?: string) =>
       // Tests are run via test-electron.mjs which uses Electron as the runtime,
       // so the forks pool workers will inherit Electron's process.execPath
       pool: 'forks',
-      poolOptions: {
-        forks: {
-          singleFork: false,
-          isolate: true,
-        },
-      },
+      isolate: true,
       testTimeout: 30000,
       coverage: {
         provider: 'v8',

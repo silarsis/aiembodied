@@ -49,15 +49,13 @@ jobs:
 
       - name: Setup pnpm
         if: steps.release.outputs.changed == 'true'
-        uses: pnpm/action-setup@v4
-        with:
-          version: latest
+        uses: pnpm/action-setup@v5
 
       - name: Setup Node.js
         if: steps.release.outputs.changed == 'true'
         uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
       - name: Sync package versions
@@ -79,7 +77,7 @@ jobs:
 
       - name: Upload AppImage artifact
         if: steps.release.outputs.changed == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: aiembodied-${{ steps.release.outputs.release_version }}-appimage
           path: release/*.AppImage

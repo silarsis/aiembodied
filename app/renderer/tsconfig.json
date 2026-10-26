@@ -6,9 +6,8 @@
     "types": [
       "vite/client",
       "vitest/globals",
-      "@testing-library/jest-dom"
-    ],
-    "baseUrl": "./src"
+      "@testing-library/jest-dom/vitest"
+    ]
   },
   "include": [
     "src",

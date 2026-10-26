@@ -14,32 +14,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.12.0
+        uses: pnpm/action-setup@v5
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Get Electron version
-        id: electron-version
-        run: |
-          ELECTRON_VERSION=$(node -e "console.log(require('./app/main/node_modules/electron/package.json').version)")
-          echo "version=$ELECTRON_VERSION" >> $GITHUB_OUTPUT
-          echo "Electron version: $ELECTRON_VERSION"
-      - name: Rebuild native dependencies for Electron
-        run: |
-          echo "Rebuilding better-sqlite3 for Electron ${{ steps.electron-version.outputs.version }}"
-          cd app/main/node_modules/better-sqlite3 && npx node-gyp rebuild --target=${{ steps.electron-version.outputs.version }} --arch=x64 --dist-url=https://electronjs.org/headers --runtime=electron
+      - name: Download Electron binary
+        run: pnpm --filter @aiembodied/main exec install-electron
       - name: Run tests with coverage
         run: xvfb-run --auto-servernum pnpm test:coverage
         # Note: xvfb-run is needed because tests run in Electron which requires a display
         # Porcupine tests are excluded due to heap exhaustion from vi.resetModules()
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           directory: ./coverage
           flags: unittests
