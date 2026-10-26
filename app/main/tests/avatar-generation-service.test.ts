@@ -20,10 +20,11 @@ function fakeComfy(overrides: Partial<Record<keyof ComfyUIClient, unknown>> = {}
 
 const runner: RetextureRunner = {
   prepare: vi.fn(async () => [
-    { name: 'outfit', prompt: 'outfit prompt', box: { x: 0, y: 0, width: 64, height: 32 }, png: Buffer.from('a') },
-    { name: 'hair', prompt: 'hair prompt', box: { x: 64, y: 0, width: 64, height: 64 }, png: Buffer.from('b') },
+    { name: 'outfit', prompt: 'Recolour the outfit: "{description}"', box: { x: 0, y: 0, width: 64, height: 32 }, png: Buffer.from('a') },
+    { name: 'hair', prompt: 'Recolour the hair: "{description}"', box: { x: 64, y: 0, width: 64, height: 64 }, png: Buffer.from('b') },
   ]),
   assemble: vi.fn(async () => Buffer.from('vrm-bytes')),
+  score: vi.fn(async () => 0.9),
 };
 
 async function waitFor(service: AvatarGenerationService, jobId: string, status: string) {
@@ -80,8 +81,11 @@ describe('AvatarGenerationService', () => {
     expect(conceptGraph.encode.inputs.prompt).toContain('A cheerful pirate with red hair.');
     const hairGraph = comfy.run.mock.calls[2][0] as Record<string, { inputs: Record<string, unknown> }>;
     expect(hairGraph.cropImage.inputs.image).toBe(`aiembodied/${jobId}-hair.png`);
-    expect(hairGraph.ref2.inputs.image).toBe(`aiembodied/${jobId}-concept.png`);
+    expect(hairGraph.encode.inputs.prompt).toBe('Recolour the hair: "A cheerful pirate with red hair"');
+    // the concept is only a preview; the texture edit sees just the crop
+    expect(hairGraph.encode.inputs).not.toHaveProperty(['images.image_2']);
     expect(hairGraph.resize.inputs).toMatchObject({ width: 64, height: 64 });
+    expect(runner.score).toHaveBeenCalledWith(Buffer.from('b'), Buffer.from('png-bytes'));
 
     expect(runner.assemble).toHaveBeenCalledWith(
       Buffer.from('base-vrm'),
@@ -91,6 +95,38 @@ describe('AvatarGenerationService', () => {
       ],
       'A cheerful pirate with red hair',
     );
+  });
+
+  it('retries a region whose repaint lost the layout, then keeps the original if it never recovers', async () => {
+    const run = vi.fn(async () => Buffer.from(`png-${run.mock.calls.length}`));
+    const { comfy, service } = create(fakeComfy({ run }));
+    // outfit: bad then good; hair: bad twice
+    vi.mocked(runner.score)
+      .mockResolvedValueOnce(0.2)
+      .mockResolvedValueOnce(0.85)
+      .mockResolvedValueOnce(0.1)
+      .mockResolvedValueOnce(0.3);
+    const { jobId } = await service.startJob({ prompt: 'A robot' });
+    await waitFor(service, jobId, 'completed');
+
+    // concept + 2 outfit attempts + 2 hair attempts
+    expect(comfy.run).toHaveBeenCalledTimes(5);
+    const seeds = run.mock.calls.slice(1, 3).map((call) => (call[0] as { sample: { inputs: { seed: number } } }).sample.inputs.seed);
+    expect(seeds[1]).toBe(seeds[0] + 1);
+    expect(runner.assemble).toHaveBeenCalledWith(
+      Buffer.from('base-vrm'),
+      [{ box: { x: 0, y: 0, width: 64, height: 32 }, png: Buffer.from('png-3') }],
+      'A robot',
+    );
+  });
+
+  it('fails when no region repaints cleanly', async () => {
+    const { service } = create();
+    vi.mocked(runner.score).mockResolvedValue(0.1);
+    const { jobId } = await service.startJob({ prompt: 'A robot' });
+    const status = await waitFor(service, jobId, 'failed');
+    expect(status.errorMessage).toMatch(/didn't keep the model's layout/);
+    vi.mocked(runner.score).mockResolvedValue(0.9);
   });
 
   it('accepts a finished avatar into the model library and cleans up', async () => {

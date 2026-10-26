@@ -20,7 +20,7 @@ export const CONCEPT_NEGATIVE =
   'cropped, cut off feet, cut off head, partial body, close-up, multiple views, multiple characters, ' +
   'background scenery, floor shadow, text, watermark, dynamic pose, crossed arms, hands in pockets, blurry';
 
-const TEXTURE_NEGATIVE = 'character, person, face, background scene, text, watermark';
+const TEXTURE_NEGATIVE = 'character, person, face, body, figure, background scene, text, watermark';
 
 /** Wrap the user's description in the framing the retexture step relies on. */
 export function buildConceptPrompt(description: string): string {
@@ -86,8 +86,6 @@ export interface RetextureGraphInput {
   crop: string;
   cropWidth: number;
   cropHeight: number;
-  /** Uploaded concept image. */
-  concept: string;
   prompt: string;
   seed: number;
   denoise?: number;
@@ -105,9 +103,10 @@ export function sampleSize(width: number, height: number): { width: number; heig
 }
 
 /**
- * Img2img over one texture-atlas crop: the crop is both the starting latent (so the UV layout
- * survives) and reference image 1; the concept is reference image 2. The result is scaled back
- * to the crop's own size so it can be pasted straight into the atlas.
+ * Instruction edit of one texture-atlas crop: the crop is both the starting latent and the only
+ * reference image, and the prompt carries the description. Passing the concept image as a second
+ * reference made Qwen draw the whole character over the atlas instead of recolouring it. The
+ * result is scaled back to the crop's own size so it can be pasted straight into the atlas.
  */
 export function retextureGraph(input: RetextureGraphInput): ComfyGraph {
   const models = input.models ?? DEFAULT_QWEN_IMAGE_MODELS;
@@ -125,7 +124,6 @@ export function retextureGraph(input: RetextureGraphInput): ComfyGraph {
         crop: 'disabled',
       },
     },
-    ref2: { class_type: 'LoadImage', inputs: { image: input.concept } },
     encode: {
       class_type: 'TextEncodeQwenImage21',
       inputs: {
@@ -135,7 +133,6 @@ export function retextureGraph(input: RetextureGraphInput): ComfyGraph {
         negative_prompt: TEXTURE_NEGATIVE,
         resolution: 1024,
         'images.image_1': ['ref1', 0],
-        'images.image_2': ['ref2', 0],
       },
     },
     latent: { class_type: 'VAEEncode', inputs: { pixels: ['ref1', 0], vae: ['vae', 0] } },

@@ -5,6 +5,7 @@
 import { Worker } from 'node:worker_threads';
 import {
   assembleRetexturedVrm,
+  layoutSimilarity,
   prepareRegions,
   type EditedRegion,
   type PreparedRegion,
@@ -12,17 +13,21 @@ import {
 
 export type RetextureTask =
   | { kind: 'prepare'; vrm: Uint8Array }
-  | { kind: 'assemble'; vrm: Uint8Array; edited: EditedRegion[]; title?: string };
+  | { kind: 'assemble'; vrm: Uint8Array; edited: EditedRegion[]; title?: string }
+  | { kind: 'score'; original: Uint8Array; repainted: Uint8Array };
 
 export interface RetextureRunner {
   prepare(vrm: Buffer): Promise<PreparedRegion[]>;
   assemble(vrm: Buffer, edited: EditedRegion[], title?: string): Promise<Buffer>;
+  /** How well a repainted crop kept the original's layout (see `layoutSimilarity`). */
+  score(original: Buffer, repainted: Buffer): Promise<number>;
 }
 
 /** Same work on the calling thread; for tests and scripts. */
 export const inlineRetextureRunner: RetextureRunner = {
   prepare: async (vrm) => prepareRegions(vrm),
   assemble: async (vrm, edited, title) => assembleRetexturedVrm(vrm, edited, title),
+  score: async (original, repainted) => layoutSimilarity(original, repainted),
 };
 
 function runInWorker<T>(task: RetextureTask): Promise<T> {
@@ -59,5 +64,8 @@ export const workerRetextureRunner: RetextureRunner = {
   async assemble(vrm, edited, title) {
     const bytes = await runInWorker<Uint8Array>({ kind: 'assemble', vrm, edited, title });
     return Buffer.from(bytes);
+  },
+  score(original, repainted) {
+    return runInWorker<number>({ kind: 'score', original, repainted });
   },
 };

@@ -3,8 +3,10 @@ import { PNG } from 'pngjs';
 import {
   assembleRetexturedVrm,
   getImageBytes,
+  layoutSimilarity,
   prepareRegions,
   readGlb,
+  regionPrompt,
   writeGlb,
   type RetextureRegion,
 } from '../src/avatar/generation/vrm-retexture.js';
@@ -88,6 +90,52 @@ describe('vrm retexture', () => {
     // old ratio was (50+1)/(100+1) ≈ 0.505
     expect(shade.data[0]).toBe(Math.round(200 * (51 / 101)));
     expect(shade.data[1]).toBe(Math.round(20 * (51 / 101)));
+  });
+
+  it('scores a recolour as keeping the layout and a different picture as not', () => {
+    const stripes = (light: [number, number, number], dark: [number, number, number]) => {
+      const png = new PNG({ width: 128, height: 128 });
+      for (let index = 0; index < png.data.length; index += 4) {
+        const col = (index / 4) % 128;
+        png.data.set([...(Math.floor(col / 16) % 2 ? dark : light), 255], index);
+      }
+      return PNG.sync.write(png);
+    };
+    const blob = new PNG({ width: 128, height: 128 });
+    for (let index = 0; index < blob.data.length; index += 4) {
+      const col = (index / 4) % 128;
+      const row = Math.floor(index / 4 / 128);
+      const inside = (col - 64) ** 2 + (row - 64) ** 2 < 30 ** 2;
+      blob.data.set(inside ? [240, 240, 240, 255] : [128, 128, 128, 255], index);
+    }
+
+    const original = stripes([120, 80, 60], [60, 40, 30]);
+    expect(layoutSimilarity(original, stripes([40, 200, 190], [10, 90, 90]))).toBeGreaterThan(0.9);
+    expect(layoutSimilarity(original, PNG.sync.write(blob))).toBeLessThan(0.3);
+    expect(layoutSimilarity(original, solidPng(128, 128, [128, 128, 128, 255]))).toBe(0);
+  });
+
+  it('ignores whatever the repaint puts in the unpainted background', () => {
+    // left half: striped panel; right half: flat grey background as prepareRegions leaves it
+    const panel = (background: (row: number, col: number) => number[]) => {
+      const png = new PNG({ width: 128, height: 128 });
+      for (let index = 0; index < png.data.length; index += 4) {
+        const col = (index / 4) % 128;
+        const row = Math.floor(index / 4 / 128);
+        const pixel = col < 64 ? (Math.floor(row / 16) % 2 ? [200, 60, 60] : [90, 20, 20]) : background(row, col);
+        png.data.set([...pixel, 255], index);
+      }
+      return PNG.sync.write(png);
+    };
+    const original = panel(() => [128, 128, 128]);
+    const noisyBackground = panel((row, col) => ((row * 7 + col * 13) % 5 < 2 ? [0, 0, 0] : [255, 255, 255]));
+    expect(layoutSimilarity(original, noisyBackground)).toBeGreaterThan(0.9);
+  });
+
+  it('fills region prompts with a single-line description', () => {
+    expect(regionPrompt('Recolour to "{description}".', '  Teal hair,\n a "cool" hoodie ')).toBe(
+      `Recolour to "Teal hair, a 'cool' hoodie".`,
+    );
   });
 
   it('rejects models without a VRoid atlas', () => {

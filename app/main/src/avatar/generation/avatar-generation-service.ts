@@ -1,7 +1,9 @@
 /**
- * Local avatar generation: description → concept image → the bundled VRoid VRM with its
- * outfit and hair textures repainted to match. Everything runs on a local ComfyUI server, so
- * the result keeps the base model's rig, spring bones and expressions (and therefore lip-sync).
+ * Local avatar generation: description → concept image (shown as a preview) → the bundled VRoid
+ * VRM with its outfit and hair textures recoloured from the description. Everything runs on a
+ * local ComfyUI server, so the result keeps the base model's rig, spring bones and expressions
+ * (and therefore lip-sync). Each repaint is checked against the original atlas layout and retried
+ * if Qwen drew something else instead of editing the texture.
  */
 import { randomInt, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -9,6 +11,7 @@ import path from 'node:path';
 import type { ComfyUIClient } from './comfyui-client.js';
 import { buildConceptPrompt, conceptGraph, retextureGraph } from './graphs.js';
 import { workerRetextureRunner, type RetextureRunner } from './retexture-tasks.js';
+import { regionPrompt } from './vrm-retexture.js';
 import type {
   AvatarGenerationAcceptance,
   AvatarGenerationJob,
@@ -47,6 +50,14 @@ interface JobState {
 }
 
 const MAX_PROMPT_LENGTH = 1000;
+/** Seeds tried per atlas region before falling back to its original texture. */
+const MAX_REGION_ATTEMPTS = 2;
+/**
+ * Minimum `layoutSimilarity` for a repaint to be used. Against the bundled model, clean repaints
+ * measured 0.73–0.98 (one at 0.52 that added a lot of new trim); ones where Qwen drew a character
+ * or garments over the panels measured 0.11–0.57.
+ */
+const MIN_LAYOUT_SIMILARITY = 0.6;
 
 export class AvatarGenerationService {
   private readonly jobs = new Map<string, JobState>();
@@ -156,31 +167,58 @@ export class AvatarGenerationService {
 
       const baseVrm = await readFile(this.options.baseModelPath);
       const regions = await this.runner.prepare(baseVrm);
-      const conceptName = await comfy.uploadImage(`${job.status.jobId}-concept.png`, concept);
 
       const edited = [];
       for (const [index, region] of regions.entries()) {
-        throwIfAborted(signal);
-        this.update(job, {
-          status: 'texturing',
-          progress: 0.15 + (0.75 * index) / regions.length,
-          message: `Repainting ${region.name.replace('_', ' ')} (${index + 1} of ${regions.length})`,
-        });
+        const label = `${region.name.replace('_', ' ')} (${index + 1} of ${regions.length})`;
         const cropName = await comfy.uploadImage(`${job.status.jobId}-${region.name}.png`, region.png);
-        const png = await comfy.run(
-          retextureGraph({
-            crop: cropName,
-            cropWidth: region.box.width,
-            cropHeight: region.box.height,
-            concept: conceptName,
-            prompt: region.prompt,
-            seed,
-          }),
-          { signal },
-        );
-        edited.push({ box: region.box, png });
+        let best: { png: Buffer; score: number } | null = null;
+        for (let attempt = 0; attempt < MAX_REGION_ATTEMPTS; attempt += 1) {
+          throwIfAborted(signal);
+          this.update(job, {
+            status: 'texturing',
+            progress: 0.15 + (0.75 * (index + attempt / MAX_REGION_ATTEMPTS)) / regions.length,
+            message: attempt === 0 ? `Repainting ${label}` : `Repainting ${label}, retry ${attempt}`,
+          });
+          const png = await comfy.run(
+            retextureGraph({
+              crop: cropName,
+              cropWidth: region.box.width,
+              cropHeight: region.box.height,
+              prompt: regionPrompt(region.prompt, job.prompt),
+              seed: seed + attempt,
+            }),
+            { signal },
+          );
+          const score = await this.runner.score(region.png, png);
+          if (!best || score > best.score) {
+            best = { png, score };
+          }
+          if (score >= MIN_LAYOUT_SIMILARITY) {
+            break;
+          }
+          this.options.logger?.warn?.('Repainted region lost the atlas layout.', {
+            jobId: job.status.jobId,
+            region: region.name,
+            attempt,
+            score: Number(score.toFixed(3)),
+          });
+        }
+        if (best && best.score >= MIN_LAYOUT_SIMILARITY) {
+          edited.push({ box: region.box, png: best.png });
+        } else {
+          this.options.logger?.warn?.('Keeping the original texture for a region that never repainted cleanly.', {
+            jobId: job.status.jobId,
+            region: region.name,
+          });
+        }
       }
 
+      if (edited.length === 0) {
+        throw new Error(
+          "The texture repaint didn't keep the model's layout. Try again, or describe the colours more plainly.",
+        );
+      }
       throwIfAborted(signal);
       this.update(job, { status: 'packaging', progress: 0.92, message: 'Building the VRM' });
       const vrm = await this.runner.assemble(baseVrm, edited, summarise(job.prompt));

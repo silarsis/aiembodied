@@ -31,37 +31,63 @@ export interface RetextureRegion {
   name: string;
   /** Fractions of the atlas: [left, top, right, bottom]. */
   box: [number, number, number, number];
+  /** Edit instruction; `{description}` is replaced with the user's avatar description. */
   prompt: string;
 }
 
-/** Regions of VRoid's body/outfit/hair atlas, as laid out in the bundled AvatarSample_A. */
+/**
+ * Regions of VRoid's body/outfit/hair atlas, as laid out in the bundled AvatarSample_A. The
+ * sleeves and body panels are separate regions: cropped together, Qwen kept redrawing the two
+ * sleeve panels as little pictures of the described garment.
+ */
 export const VROID_ATLAS_REGIONS: RetextureRegion[] = [
   {
-    name: 'outfit',
-    box: [0, 0, 0.5, 0.46875],
+    name: 'outfit_body',
+    // Atlas rows 1000–1920: front and back body panels.
+    box: [0, 0.244140625, 0.5, 0.46875],
     prompt:
-      "Image 1 is a UV texture atlas for an anime character's top or jacket: flat unwrapped sleeve and body " +
-      'panels. Repaint it as the top worn by the character in image 2, matching its colours, trim and ' +
-      'pattern. Keep every panel exactly where it is, same outline, same seams and folds, flat even ' +
-      'lighting, texture-map style, no character, no background objects.',
+      'Edit this image. It is a flat UV texture atlas of the front and back body panels of a 3D anime ' +
+      "character's top, on a grey background. Recolour these panels so the clothing matches this " +
+      'description: "{description}". Use the main fabric colour for the large areas and the trim or accent ' +
+      'colour for the edges, hems, ribbons and stripes. This is a recolour only: do not draw any garments, ' +
+      'people, hoods, pockets or new objects, and do not move or reshape anything. Every panel keeps exactly ' +
+      'the same outline, position, seams and folds, and the grey background stays grey.',
+  },
+  {
+    name: 'outfit_sleeves',
+    // Atlas rows 0–1000: the two sleeve panels.
+    box: [0, 0, 0.5, 0.244140625],
+    prompt:
+      'Edit this image. It is a flat fabric texture: two unwrapped sleeve panels from a 3D model, on a grey ' +
+      'background. Recolour the fabric to the main colour of the top in this description: "{description}", ' +
+      'with the trim or accent colour only on the ribbed cuff band along the bottom edge. Keep the same ' +
+      'folds and shading. This is a recolour only: do not draw any clothing, people, hoods, pockets or ' +
+      'objects, and do not move or reshape the panels. The grey background stays grey.',
   },
   {
     name: 'hair',
     box: [0.5, 0, 1, 0.5],
     prompt:
-      'Image 1 is a UV texture atlas of anime hair strands: vertical hair strips with a gradient. Repaint ' +
-      'the hair in the hair colour of the character in image 2, with slightly darker shading at the roots ' +
-      'and lighter highlights toward the tips. Keep every strip, edge and gradient in exactly the same ' +
-      'place, texture-map style, no face, no character.',
+      'Edit this image. It is a flat UV texture atlas of anime hair strands (vertical strips with a ' +
+      'gradient). Recolour the hair to match this description: "{description}". Darker at the roots, ' +
+      'lighter toward the tips. Keep every strip, edge, gradient and the grey background exactly where ' +
+      'they are. Flat texture map, not a picture of a person.',
   },
   {
     name: 'hair_back',
     box: [0.5, 0.75, 0.75, 1],
     prompt:
-      'Image 1 is a UV texture of anime hair. Repaint it in the hair colour of the character in image 2, ' +
-      'with soft darker vertical strand lines, same layout, texture-map style.',
+      'Edit this image. It is a flat UV texture of anime hair. Recolour the hair to match this ' +
+      'description: "{description}", with soft darker vertical strand lines. Same layout. Flat texture ' +
+      'map, not a picture of a person.',
   },
 ];
+
+/** Put the user's description into a region's edit instruction. */
+export function regionPrompt(template: string, description: string): string {
+  const flat = description.replace(/\s+/g, ' ').replace(/"/g, "'").trim();
+  return template.replaceAll('{description}', flat);
+}
 
 const GLB_MAGIC = 0x46546c67; // 'glTF'
 const CHUNK_JSON = 0x4e4f534a;
@@ -229,6 +255,91 @@ export function prepareRegions(vrm: Buffer, regions: RetextureRegion[] = VROID_A
     }
     return { name: region.name, prompt: region.prompt, box, png: PNG.sync.write(crop) };
   });
+}
+
+const LAYOUT_GRID = 64;
+const FLATTEN_GREY = 128;
+
+interface GridImage {
+  luma: Float64Array;
+  /** Fraction of each cell that is painted (not the flat grey `prepareRegions` puts behind). */
+  painted: Float64Array;
+}
+
+function toGrid(png: Buffer): GridImage {
+  const image = PNG.sync.read(png);
+  const luma = new Float64Array(LAYOUT_GRID * LAYOUT_GRID);
+  const painted = new Float64Array(LAYOUT_GRID * LAYOUT_GRID);
+  const counts = new Float64Array(LAYOUT_GRID * LAYOUT_GRID);
+  for (let row = 0; row < image.height; row += 1) {
+    const gridRow = Math.min(LAYOUT_GRID - 1, Math.floor((row * LAYOUT_GRID) / image.height));
+    for (let col = 0; col < image.width; col += 1) {
+      const gridCol = Math.min(LAYOUT_GRID - 1, Math.floor((col * LAYOUT_GRID) / image.width));
+      const index = (row * image.width + col) * 4;
+      const [red, green, blue] = [image.data[index], image.data[index + 1], image.data[index + 2]];
+      const cell = gridRow * LAYOUT_GRID + gridCol;
+      luma[cell] += 0.299 * red + 0.587 * green + 0.114 * blue;
+      if (red !== FLATTEN_GREY || green !== FLATTEN_GREY || blue !== FLATTEN_GREY) {
+        painted[cell] += 1;
+      }
+      counts[cell] += 1;
+    }
+  }
+  for (let cell = 0; cell < luma.length; cell += 1) {
+    luma[cell] /= Math.max(1, counts[cell]);
+    painted[cell] /= Math.max(1, counts[cell]);
+  }
+  return { luma, painted };
+}
+
+/** Luminance edge strength on the coarse grid, so colour changes matter less than shapes. */
+function edgeMap(luma: Float64Array): Float64Array {
+  const edges = new Float64Array(LAYOUT_GRID * LAYOUT_GRID);
+  const at = (row: number, col: number) => luma[row * LAYOUT_GRID + col];
+  for (let row = 1; row < LAYOUT_GRID - 1; row += 1) {
+    for (let col = 1; col < LAYOUT_GRID - 1; col += 1) {
+      edges[row * LAYOUT_GRID + col] = Math.hypot(at(row, col + 1) - at(row, col - 1), at(row + 1, col) - at(row - 1, col));
+    }
+  }
+  return edges;
+}
+
+/**
+ * How well a repainted crop keeps the original's layout: correlation of coarse edge maps over
+ * the cells that are painted in the original (the only texels that get pasted back), from -1 to
+ * 1. A true repaint scores high; an image where the model drew a character or a garment instead
+ * of editing the texture scores low. `original` is a crop from `prepareRegions`.
+ */
+export function layoutSimilarity(original: Buffer, repainted: Buffer): number {
+  const source = toGrid(original);
+  const a = edgeMap(source.luma);
+  const b = edgeMap(toGrid(repainted).luma);
+  const cells: number[] = [];
+  for (let cell = 0; cell < a.length; cell += 1) {
+    if (source.painted[cell] >= 0.5) {
+      cells.push(cell);
+    }
+  }
+  if (cells.length === 0) {
+    return 0;
+  }
+  let meanA = 0;
+  let meanB = 0;
+  for (const cell of cells) {
+    meanA += a[cell];
+    meanB += b[cell];
+  }
+  meanA /= cells.length;
+  meanB /= cells.length;
+  let covariance = 0;
+  let varianceA = 0;
+  let varianceB = 0;
+  for (const cell of cells) {
+    covariance += (a[cell] - meanA) * (b[cell] - meanB);
+    varianceA += (a[cell] - meanA) ** 2;
+    varianceB += (b[cell] - meanB) ** 2;
+  }
+  return varianceA && varianceB ? covariance / Math.sqrt(varianceA * varianceB) : 0;
 }
 
 export interface EditedRegion {
