@@ -56,15 +56,17 @@ const setAudioDevicePreferencesMock = vi.fn();
 const loadPreferencesMock = vi.fn();
 const savePreferencesMock = vi.fn();
 
-const ConfigManagerMock = vi.fn(() => ({
-  load: loadMock,
-  getConfig: getConfigMock,
-  getRendererConfig: getRendererConfigMock,
-  getSecret: getSecretMock,
-  setSecret: setSecretMock,
-  testSecret: testSecretMock,
-  setAudioDevicePreferences: setAudioDevicePreferencesMock,
-}));
+const ConfigManagerMock = vi.fn(function () {
+  return {
+    load: loadMock,
+    getConfig: getConfigMock,
+    getRendererConfig: getRendererConfigMock,
+    getSecret: getSecretMock,
+    setSecret: setSecretMock,
+    testSecret: testSecretMock,
+    setAudioDevicePreferences: setAudioDevicePreferencesMock,
+  };
+});
 
 class ConfigValidationErrorMock extends Error {
   constructor(message: string) {
@@ -86,10 +88,12 @@ vi.mock('../src/config/secret-store.js', () => ({
   InMemorySecretStore: vi.fn(),
 }));
 
-const FilePreferencesStoreMock = vi.fn(() => ({
-  load: loadPreferencesMock,
-  save: savePreferencesMock,
-}));
+const FilePreferencesStoreMock = vi.fn(function () {
+  return {
+    load: loadPreferencesMock,
+    save: savePreferencesMock,
+  };
+});
 
 vi.mock('../src/config/preferences-store.js', () => ({
   FilePreferencesStore: FilePreferencesStoreMock,
@@ -109,34 +113,36 @@ const exportDataMock = vi.fn();
 const importDataMock = vi.fn();
 const memoryStoreDisposeMock = vi.fn();
 
-const MemoryStoreMock = vi.fn(() => ({
-  createSession: createSessionMock,
-  appendMessage: appendMessageMock,
-  listSessions: listSessionsMock,
-  listMessages: listMessagesMock,
-  getSessionWithMessages: getSessionWithMessagesMock,
-  deleteSession: deleteSessionMock,
-  deleteMessages: deleteMessagesMock,
-  setValue: setValueMock,
-  getValue: getValueMock,
-  deleteValue: deleteValueMock,
-  exportData: exportDataMock,
-  importData: importDataMock,
-  listVrmPoses: vi.fn(() => []),
-  createVrmPose: vi.fn(),
-  getVrmPose: vi.fn(() => null),
-  deleteVrmPose: vi.fn(),
-  dispose: memoryStoreDisposeMock,
-  get database() {
-    return {
-      prepare: vi.fn(() => ({
-        run: vi.fn(),
-        get: vi.fn(),
-        all: vi.fn(() => []),
-      })),
-    };
-  },
-}));
+const MemoryStoreMock = vi.fn(function () {
+  return {
+    createSession: createSessionMock,
+    appendMessage: appendMessageMock,
+    listSessions: listSessionsMock,
+    listMessages: listMessagesMock,
+    getSessionWithMessages: getSessionWithMessagesMock,
+    deleteSession: deleteSessionMock,
+    deleteMessages: deleteMessagesMock,
+    setValue: setValueMock,
+    getValue: getValueMock,
+    deleteValue: deleteValueMock,
+    exportData: exportDataMock,
+    importData: importDataMock,
+    listVrmPoses: vi.fn(() => []),
+    createVrmPose: vi.fn(),
+    getVrmPose: vi.fn(() => null),
+    deleteVrmPose: vi.fn(),
+    dispose: memoryStoreDisposeMock,
+    get database() {
+      return {
+        prepare: vi.fn(() => ({
+          run: vi.fn(),
+          get: vi.fn(),
+          all: vi.fn(() => []),
+        })),
+      };
+    },
+  };
+});
 
 vi.mock('../src/memory/index.js', () => ({
   MemoryStore: MemoryStoreMock,
@@ -167,11 +173,11 @@ class WakeWordServiceDouble extends EventEmitter {
 }
 
 const wakeWordServiceInstances: WakeWordServiceDouble[] = [];
-const createWakeWordServiceInstance = (options: unknown) => {
+function createWakeWordServiceInstance(options: unknown) {
   const instance = new WakeWordServiceDouble(options);
   wakeWordServiceInstances.push(instance);
   return instance;
-};
+}
 const WakeWordServiceMock = vi.fn(createWakeWordServiceInstance);
 
 vi.mock('../src/wake-word/wake-word-service.js', () => ({
@@ -185,11 +191,11 @@ class CrashGuardDouble {
 }
 
 const crashGuardInstances: CrashGuardDouble[] = [];
-const createCrashGuardInstance = (options: unknown) => {
+function createCrashGuardInstance(options: unknown) {
   const instance = new CrashGuardDouble(options);
   crashGuardInstances.push(instance);
   return instance;
-};
+}
 const CrashGuardMock = vi.fn(createCrashGuardInstance);
 
 vi.mock('../src/crash-guard.js', () => ({
@@ -209,7 +215,7 @@ interface MockBrowserWindow extends EventEmitter {
 const createdWindows: MockBrowserWindow[] = [];
 let getAllWindowsResult: MockBrowserWindow[] = createdWindows;
 
-const BrowserWindowMock = vi.fn(() => {
+const BrowserWindowMock = vi.fn(function () {
   const windowEmitter = new EventEmitter() as MockBrowserWindow;
   const webContents = new EventEmitter() as MockBrowserWindow['webContents'];
   webContents.send = vi.fn();
@@ -233,7 +239,7 @@ const ipcMainMock = {
 };
 
 const appEmitter = Object.assign(new EventEmitter(), {
-  whenReady: vi.fn<[], Promise<void>>(),
+  whenReady: vi.fn<() => Promise<void>>(),
   requestSingleInstanceLock: vi.fn(() => true),
   quit: vi.fn(),
   getPath: vi.fn(() => '/tmp/aiembodied-test'),
@@ -241,7 +247,9 @@ const appEmitter = Object.assign(new EventEmitter(), {
 });
 
 const trayDestroyMock = vi.fn();
-const TrayMock = vi.fn(() => ({ destroy: trayDestroyMock }));
+const TrayMock = vi.fn(function () {
+  return { destroy: trayDestroyMock };
+});
 
 const nativeImageMock = {
   createFromDataURL: vi.fn(() => ({ isEmpty: () => false })),
@@ -274,11 +282,11 @@ class AvatarModelServiceDouble {
 }
 
 const avatarModelServiceInstances: AvatarModelServiceDouble[] = [];
-const createAvatarModelServiceInstance = (options: unknown) => {
+function createAvatarModelServiceInstance(options: unknown) {
   const instance = new AvatarModelServiceDouble(options);
   avatarModelServiceInstances.push(instance);
   return instance;
-};
+}
 
 const AvatarModelServiceMock = vi.fn(createAvatarModelServiceInstance);
 
@@ -296,11 +304,11 @@ class AvatarAnimationServiceDouble {
 }
 
 const avatarAnimationServiceInstances: AvatarAnimationServiceDouble[] = [];
-const createAvatarAnimationServiceInstance = (options: unknown) => {
+function createAvatarAnimationServiceInstance(options: unknown) {
   const instance = new AvatarAnimationServiceDouble(options);
   avatarAnimationServiceInstances.push(instance);
   return instance;
-};
+}
 
 const AvatarAnimationServiceMock = vi.fn(createAvatarAnimationServiceInstance);
 
@@ -315,11 +323,11 @@ class VrmaGenerationServiceDouble {
 }
 
 const vrmaGenerationServiceInstances: VrmaGenerationServiceDouble[] = [];
-const createVrmaGenerationServiceInstance = (options: unknown) => {
+function createVrmaGenerationServiceInstance(options: unknown) {
   const instance = new VrmaGenerationServiceDouble(options);
   vrmaGenerationServiceInstances.push(instance);
   return instance;
-};
+}
 
 const VrmaGenerationServiceMock = vi.fn(createVrmaGenerationServiceInstance);
 
@@ -327,13 +335,15 @@ vi.mock('../src/avatar/vrma-generation-service.js', () => ({
   VrmaGenerationService: VrmaGenerationServiceMock,
 }));
 
-const autoLaunchSyncMock = vi.fn<[], Promise<boolean>>();
-const autoLaunchIsEnabledMock = vi.fn<[], Promise<boolean>>();
+const autoLaunchSyncMock = vi.fn<() => Promise<boolean>>();
+const autoLaunchIsEnabledMock = vi.fn<() => Promise<boolean>>();
 
-const AutoLaunchManagerMock = vi.fn(() => ({
-  sync: autoLaunchSyncMock,
-  isEnabled: autoLaunchIsEnabledMock,
-}));
+const AutoLaunchManagerMock = vi.fn(function () {
+  return {
+    sync: autoLaunchSyncMock,
+    isEnabled: autoLaunchIsEnabledMock,
+  };
+});
 
 const createDevTrayDestroyMock = vi.fn();
 const createDevTrayMock = vi.fn(() =>
@@ -574,7 +584,7 @@ describe('main process bootstrap', () => {
     testSecretMock.mockResolvedValue({ ok: true });
 
     const serviceReady = createDeferred<void>();
-    WakeWordServiceMock.mockImplementation((options: unknown) => {
+    WakeWordServiceMock.mockImplementation(function (options: unknown) {
       const instance = createWakeWordServiceInstance(options);
       serviceReady.resolve();
       return instance;

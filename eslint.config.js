@@ -75,6 +75,12 @@ export default [
       ...reactHooks.configs.recommended.rules,
       ...jsxA11y.configs.recommended.rules,
       'react/react-in-jsx-scope': 'off',
+      // React Compiler rules from react-hooks v7. Existing components predate them,
+      // so report as warnings until App.tsx / avatar-configurator are refactored.
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/preserve-manual-memoization': 'warn',
+      'react-hooks/refs': 'warn',
+      'react-hooks/purity': 'warn',
     },
     settings: {
       react: {

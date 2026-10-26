@@ -36,8 +36,8 @@ Check `AGENTS.md` for the authoritative status checklist that mirrors these mile
 
 ### Prerequisites
 
-- **Node.js 20+** (matches Electron runtime expectations).
-- **pnpm 9+** (the repo pins `pnpm@9.12.0`; enable via `corepack enable`).
+- **Node.js 22.12+** (required by Electron 45 and better-sqlite3 13; CI uses Node 24).
+- **pnpm 10+** (the repo pins `pnpm@10.34.9`; enable via `corepack enable`).
 - Picovoice Porcupine access key (free tier available) for wake-word detection.
 - OpenAI Realtime API access with a corresponding key.
 

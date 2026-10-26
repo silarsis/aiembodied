@@ -1,3 +1,4 @@
+// @vitest-environment node
 import config from '../vite.config';
 import type { ConfigEnv, UserConfig } from 'vite';
 import { describe, expect, it } from 'vitest';

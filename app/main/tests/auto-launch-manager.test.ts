@@ -12,7 +12,7 @@ const autoLaunchInstances: AutoLaunchLike[] = [];
 
 vi.mock('auto-launch', () => {
   return {
-    default: vi.fn(() => {
+    default: vi.fn(function () {
       const instance: AutoLaunchLike = {
         isEnabled: vi.fn(),
         enable: vi.fn().mockResolvedValue(undefined),

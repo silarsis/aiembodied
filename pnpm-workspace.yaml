@@ -1,2 +1,15 @@
 packages:
   - "app/*"
+
+overrides:
+  js-yaml: ^4.1.1
+
+onlyBuiltDependencies:
+  - "@picovoice/porcupine-node"
+  - "@picovoice/pvrecorder-node"
+  - better-sqlite3
+  - esbuild
+  - keytar
+
+ignoredBuiltDependencies:
+  - electron-winstaller

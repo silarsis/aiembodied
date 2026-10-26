@@ -23,7 +23,7 @@ jobs:
         run: echo "Auto-merge is limited to Dependabot patch updates after successful CI runs."
       - name: Dependabot metadata
         id: metadata
-        uses: dependabot/fetch-metadata@08eff52bf64351f401fb50d4972fa95b9f2c2d1b
+        uses: dependabot/fetch-metadata@ffa630c65fa7e0ecfa0625b5ceda64399aea1b36
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
           pull-request: ${{ github.event.workflow_run.pull_requests[0].number }}
