@@ -197,10 +197,10 @@ function createAvatarBridgeMock(overrides: Partial<AvatarBridge> = {}): AvatarBr
         fileSha: 'sha',
       },
     }),
-    generateMeshyModel: vi.fn().mockResolvedValue({ jobId: 'meshy-job-1' }),
-    getMeshyStatus: vi.fn().mockResolvedValue({ jobId: 'meshy-job-1', status: 'queued' }),
-    acceptMeshyModel: vi.fn().mockResolvedValue({ vrmId: 'meshy-vrm-1' }),
-    rejectMeshyModel: vi.fn().mockResolvedValue(undefined),
+    generateAvatar: vi.fn().mockResolvedValue({ jobId: 'gen-job-1' }),
+    getAvatarGenerationStatus: vi.fn().mockResolvedValue({ jobId: 'gen-job-1', status: 'queued', progress: 0 }),
+    acceptGeneratedAvatar: vi.fn().mockResolvedValue({ vrmId: 'gen-vrm-1' }),
+    rejectGeneratedAvatar: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -246,7 +246,6 @@ describe('App component', () => {
       audioOutputDeviceId: '',
       featureFlags: { transcriptOverlay: true },
       hasRealtimeApiKey: true,
-      hasMeshyApiKey: false,
       realtimeVoice: 'shimmer',
       metrics: {
         enabled: false,
@@ -632,8 +631,7 @@ describe('App component', () => {
           audioOutputDeviceId: '',
           featureFlags: { transcriptOverlay: true },
           hasRealtimeApiKey: true,
-          hasMeshyApiKey: false,
-          wakeWord: {
+              wakeWord: {
             keywordPath: '',
             keywordLabel: '',
             sensitivity: 0.5,
@@ -713,13 +711,7 @@ describe('App component', () => {
       expect(within(realtimeCard).getByText(/Status: Configured/i)).toBeInTheDocument();
     }
 
-    const meshyCard = screen
-      .getByRole('heading', { name: /Meshy API key/i })
-      .closest('article');
-    expect(meshyCard).not.toBeNull();
-    if (meshyCard) {
-      expect(within(meshyCard).getByText(/Status: Not configured/i)).toBeInTheDocument();
-    }
+    expect(screen.queryByRole('heading', { name: /Meshy API key/i })).not.toBeInTheDocument();
 
     await openTab(/ChatGPT/i);
 
@@ -744,8 +736,7 @@ describe('App component', () => {
           audioOutputDeviceId: '',
           featureFlags: { transcriptOverlay: true },
           hasRealtimeApiKey: true,
-          hasMeshyApiKey: false,
-          wakeWord: {
+              wakeWord: {
             keywordPath: '',
             keywordLabel: '',
             sensitivity: 0.5,
@@ -936,8 +927,7 @@ describe('App component', () => {
           audioOutputDeviceId: '',
           featureFlags: { transcriptOverlay: true },
           hasRealtimeApiKey: true,
-          hasMeshyApiKey: false,
-          wakeWord: {
+              wakeWord: {
             keywordPath: '',
             keywordLabel: '',
             sensitivity: 0.5,
@@ -1069,8 +1059,7 @@ describe('App component', () => {
           audioOutputDeviceId: '',
           featureFlags: {},
           hasRealtimeApiKey: true,
-          hasMeshyApiKey: false,
-          wakeWord: {
+              wakeWord: {
             keywordPath: '',
             keywordLabel: '',
             sensitivity: 0.5,
@@ -1100,7 +1089,6 @@ describe('App component', () => {
       audioOutputDeviceId: '',
       featureFlags: {},
       hasRealtimeApiKey: true,
-      hasMeshyApiKey: false,
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: {
         keywordPath: '',
@@ -1209,8 +1197,7 @@ describe('App component', () => {
           audioOutputDeviceId: '',
           featureFlags: {},
           hasRealtimeApiKey: true,
-          hasMeshyApiKey: false,
-          wakeWord: {
+              wakeWord: {
             keywordPath: '',
             keywordLabel: '',
             sensitivity: 0.5,
@@ -1270,8 +1257,7 @@ describe('App component', () => {
           audioOutputDeviceId: '',
           featureFlags: {},
           hasRealtimeApiKey: true,
-          hasMeshyApiKey: false,
-          realtimeVoice: 'shimmer',
+              realtimeVoice: 'shimmer',
           sessionInstructions: 'Persisted instructions from config',
           wakeWord: {
             keywordPath: '',
@@ -1355,8 +1341,7 @@ describe('App component', () => {
           audioOutputDeviceId: '',
           featureFlags: {},
           hasRealtimeApiKey: true,
-          hasMeshyApiKey: false,
-          realtimeVoice: 'verse',
+              realtimeVoice: 'verse',
           wakeWord: {
             keywordPath: '',
             keywordLabel: '',

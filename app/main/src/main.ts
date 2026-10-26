@@ -34,7 +34,8 @@ import { AvatarPoseService } from './avatar/avatar-pose-service.js';
 import { PoseGenerationService } from './avatar/pose-generation-service.js';
 import { PoseEvaluationService } from './avatar/pose-evaluation-service.js';
 import { AvatarDescriptionService } from './avatar/avatar-description-service.js';
-import { MeshyClient } from './avatar/meshy-client.js';
+import { AvatarGenerationService } from './avatar/generation/avatar-generation-service.js';
+import { ComfyUIClient } from './avatar/generation/comfyui-client.js';
 import type {
   AvatarModelSummary,
   AvatarModelUploadRequest,
@@ -47,10 +48,10 @@ import type {
   AvatarPoseUploadRequest,
   AvatarPoseGenerationRequest,
   PoseEvaluationRequest,
-  MeshyModelGenerationRequest,
-  MeshyModelGenerationResult,
-  MeshyModelStatus,
-  MeshyModelAcceptanceResult,
+  AvatarGenerationRequest,
+  AvatarGenerationJob,
+  AvatarGenerationStatus,
+  AvatarGenerationAcceptance,
 } from './avatar/types.js';
 import {
   resolvePreloadScriptPath,
@@ -66,6 +67,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const isProduction = app.isPackaged || process.env.NODE_ENV === 'production';
 const APP_NAME = 'AI Embodied Assistant';
+const DEFAULT_MODEL_ASSET_PATH = path.join(__dirname, '../assets/vrm-models/default-avatar.vrm');
 
 interface CameraDetectionEventPayload {
   cue: string;
@@ -131,10 +133,9 @@ let vrmaGenerationService: VrmaGenerationService | null = null;
 let poseGenerationService: PoseGenerationService | null = null;
 let poseEvaluationService: PoseEvaluationService | null = null;
 let avatarDescriptionService: AvatarDescriptionService | null = null;
-let meshyClient: MeshyClient | null = null;
+let avatarGenerationService: AvatarGenerationService | null = null;
 let currentVrmaApiKey: string | null = null;
 let currentDescriptionApiKey: string | null = null;
-let currentMeshyApiKey: string | null = null;
 
 let toolRegistry: ToolRegistry | null = null;
 let mcpManager: MCPManager | null = null;
@@ -435,43 +436,6 @@ async function refreshAvatarDescriptionService(
   }
 }
 
-async function refreshMeshyClient(
-  manager: ConfigManager,
-  reason: 'startup' | 'secret-update' = 'startup',
-): Promise<void> {
-  const config = manager.getConfig();
-  const nextKey = typeof config.meshyApiKey === 'string' ? config.meshyApiKey.trim() : '';
-
-  if (!nextKey) {
-    if (reason === 'startup') {
-      logger.warn('Meshy API key unavailable; Meshy client disabled.');
-    } else if (meshyClient || currentMeshyApiKey) {
-      logger.warn('Meshy API key removed; Meshy client disabled.');
-    }
-    meshyClient = null;
-    currentMeshyApiKey = null;
-    return;
-  }
-
-  if (meshyClient && currentMeshyApiKey === nextKey) {
-    return;
-  }
-
-  try {
-    meshyClient = new MeshyClient({
-      apiKey: nextKey,
-      logger,
-    });
-    currentMeshyApiKey = nextKey;
-    logger.info('Meshy client initialized.', { reason });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.warn('Failed to initialize Meshy client', { message });
-    meshyClient = null;
-    currentMeshyApiKey = null;
-  }
-}
-
 function registerIpcHandlers(
   manager: ConfigManager,
   conversation: ConversationManager | null,
@@ -515,7 +479,6 @@ function registerIpcHandlers(
 
   const summarizeRendererConfig = (config: RendererConfig) => ({
     hasRealtimeApiKey: config.hasRealtimeApiKey,
-    hasMeshyApiKey: config.hasMeshyApiKey,
     wakeWordHasAccessKey: config.wakeWord?.hasAccessKey ?? false,
     audioInputConfigured: Boolean(config.audioInputDeviceId),
     audioOutputConfigured: Boolean(config.audioOutputDeviceId),
@@ -568,28 +531,6 @@ function registerIpcHandlers(
     }
 
     return undefined;
-  };
-
-  const throwMeshyUnavailable = (action: string): never => {
-    const { meshyApiKey } = manager.getConfig();
-    if (!meshyApiKey) {
-      throw new Error('Meshy API key is not configured.');
-    }
-
-    logger.warn('Meshy IPC handler invoked before service is available.', { action });
-    throw new Error('Meshy service is unavailable.');
-  };
-
-  const ensureMeshyClient = async (action: string): Promise<MeshyClient> => {
-    if (!meshyClient) {
-      await refreshMeshyClient(manager, 'secret-update');
-    }
-
-    if (!meshyClient) {
-      return throwMeshyUnavailable(action);
-    }
-
-    return meshyClient;
   };
 
   const sanitizeResult = (
@@ -678,9 +619,6 @@ function registerIpcHandlers(
     if (payload.key === 'realtimeApiKey') {
       await refreshVrmaGenerationService(manager, 'secret-update');
       await refreshPoseGenerationService(manager, 'secret-update');
-    }
-    if (payload.key === 'meshyApiKey') {
-      await refreshMeshyClient(manager, 'secret-update');
     }
 
     return nextConfig;
@@ -863,28 +801,27 @@ function registerIpcHandlers(
 
     return avatarModels.loadModelBinary(modelId);
   });
+  const requireAvatarGeneration = (): AvatarGenerationService => {
+    if (!avatarGenerationService) {
+      throw new Error('Avatar generation is unavailable.');
+    }
+    return avatarGenerationService;
+  };
   ipcMain.handle(
-    'avatar:meshy-generate',
-    async (_event, payload: MeshyModelGenerationRequest): Promise<MeshyModelGenerationResult> => {
-      const client = await ensureMeshyClient('generate');
-      return client.createGenerationJob(payload);
-    },
-  );
-  ipcMain.handle('avatar:meshy-status', async (_event, jobId: string): Promise<MeshyModelStatus> => {
-    const client = await ensureMeshyClient('status');
-    return client.getJobStatus(jobId);
-  });
-  ipcMain.handle(
-    'avatar:meshy-accept',
-    async (): Promise<MeshyModelAcceptanceResult> => {
-      return throwMeshyUnavailable('accept');
-    },
+    'avatar:generation-start',
+    async (_event, payload: AvatarGenerationRequest): Promise<AvatarGenerationJob> =>
+      requireAvatarGeneration().startJob(payload),
   );
   ipcMain.handle(
-    'avatar:meshy-reject',
-    async (): Promise<void> => {
-      return throwMeshyUnavailable('reject');
-    },
+    'avatar:generation-status',
+    async (_event, jobId: string): Promise<AvatarGenerationStatus> => requireAvatarGeneration().getStatus(jobId),
+  );
+  ipcMain.handle(
+    'avatar:generation-accept',
+    async (_event, jobId: string): Promise<AvatarGenerationAcceptance> => requireAvatarGeneration().accept(jobId),
+  );
+  ipcMain.handle('avatar:generation-reject', async (_event, jobId: string): Promise<void> =>
+    requireAvatarGeneration().reject(jobId),
   );
   ipcMain.handle(
     'avatar-model:update-thumbnail',
@@ -1181,8 +1118,7 @@ app.whenReady().then(async () => {
     });
 
     // Seed default model if this is the first run
-    const defaultModelAssetPath = path.join(__dirname, '../assets/vrm-models/default-avatar.vrm');
-    await avatarModelService.seedDefaultModelIfMissing(defaultModelAssetPath);
+    await avatarModelService.seedDefaultModelIfMissing(DEFAULT_MODEL_ASSET_PATH);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown database initialization error occurred.';
     logger.error('Failed to initialize memory store', { message });
@@ -1208,7 +1144,16 @@ app.whenReady().then(async () => {
 
   await refreshVrmaGenerationService(manager);
   await refreshPoseGenerationService(manager);
-  await refreshMeshyClient(manager);
+
+  if (avatarModelService) {
+    avatarGenerationService = new AvatarGenerationService({
+      comfy: new ComfyUIClient({ baseUrl: appConfig.comfyUiBaseUrl }),
+      models: avatarModelService,
+      baseModelPath: DEFAULT_MODEL_ASSET_PATH,
+      workDirectory: path.join(app.getPath('userData'), 'avatar-generation'),
+      logger,
+    });
+  }
 
   autoLaunchManager = new AutoLaunchManager({
     logger,
@@ -1345,7 +1290,7 @@ app.whenReady().then(async () => {
   logger.info('Renderer bridge readiness state.', {
     config: {
       hasRealtimeApiKey: Boolean(configSnapshot.realtimeApiKey),
-      hasMeshyApiKey: Boolean(configSnapshot.meshyApiKey),
+      comfyUiBaseUrl: configSnapshot.comfyUiBaseUrl,
       hasWakeWordAccessKey: Boolean(configSnapshot.wakeWord.accessKey),
     },
     avatar: { enabled: Boolean(avatarModelService) },

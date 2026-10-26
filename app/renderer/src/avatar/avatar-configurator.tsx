@@ -15,6 +15,7 @@ import type {
   PoseEvaluationResult,
 } from './types.js';
 import { generateVrmThumbnail } from './thumbnail-generator.js';
+import { AvatarGeneratorPanel } from './avatar-generator-panel.js';
 import { generatePoseSnapshot } from './pose-snapshot-generator.js';
 
 type ModelUploadStatus = 'idle' | 'reading' | 'uploading' | 'success';
@@ -856,6 +857,8 @@ export function AvatarConfigurator({
           </div>
         ) : null}
       </div>
+
+      <AvatarGeneratorPanel avatarApi={avatarApi} onAccepted={refreshModels} />
 
       {/* Animations Section */}
       <div className="faces__section">

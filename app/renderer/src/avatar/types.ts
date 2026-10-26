@@ -65,26 +65,36 @@ export interface AvatarPoseUploadResult {
   pose: AvatarPoseSummary;
 }
 
-export type MeshyJobStatus = 'queued' | 'generating' | 'rigging' | 'completed' | 'failed';
+export type AvatarGenerationStage =
+  | 'queued'
+  | 'concept'
+  | 'texturing'
+  | 'packaging'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
 
-export interface MeshyModelGenerationRequest {
+export interface AvatarGenerationRequest {
+  /** Plain-English description of the character's look. */
   prompt: string;
 }
 
-export interface MeshyModelGenerationResult {
+export interface AvatarGenerationJob {
   jobId: string;
 }
 
-export interface MeshyModelStatus {
+export interface AvatarGenerationStatus {
   jobId: string;
-  status: MeshyJobStatus;
-  progress?: number;
-  previewPath?: string | null;
-  fbxPath?: string | null;
+  status: AvatarGenerationStage;
+  /** 0..1 */
+  progress: number;
+  message?: string | null;
+  /** Concept image as a PNG data URL, once it exists. */
+  previewDataUrl?: string | null;
   errorMessage?: string | null;
 }
 
-export interface MeshyModelAcceptanceResult {
+export interface AvatarGenerationAcceptance {
   vrmId: string;
 }
 
@@ -131,8 +141,8 @@ export interface AvatarBridge {
   loadPose(poseId: string): Promise<unknown>;
   evaluatePose(request: PoseEvaluationRequest): Promise<PoseEvaluationResult>;
   refinePose(request: PoseEvaluationRequest): Promise<AvatarPoseUploadResult>;
-  generateMeshyModel(request: MeshyModelGenerationRequest): Promise<MeshyModelGenerationResult>;
-  getMeshyStatus(jobId: string): Promise<MeshyModelStatus>;
-  acceptMeshyModel(jobId: string): Promise<MeshyModelAcceptanceResult>;
-  rejectMeshyModel(jobId: string): Promise<void>;
+  generateAvatar(request: AvatarGenerationRequest): Promise<AvatarGenerationJob>;
+  getAvatarGenerationStatus(jobId: string): Promise<AvatarGenerationStatus>;
+  acceptGeneratedAvatar(jobId: string): Promise<AvatarGenerationAcceptance>;
+  rejectGeneratedAvatar(jobId: string): Promise<void>;
 }

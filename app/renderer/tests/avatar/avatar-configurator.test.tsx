@@ -129,10 +129,10 @@ function createAvatarBridgeStub(overrides: Partial<AvatarBridge> = {}): AvatarBr
         fileSha: 'sha',
       },
     }),
-    generateMeshyModel: vi.fn().mockResolvedValue({ jobId: 'meshy-job-1' }),
-    getMeshyStatus: vi.fn().mockResolvedValue({ jobId: 'meshy-job-1', status: 'queued' }),
-    acceptMeshyModel: vi.fn().mockResolvedValue({ vrmId: 'meshy-vrm-1' }),
-    rejectMeshyModel: vi.fn().mockResolvedValue(undefined),
+    generateAvatar: vi.fn().mockResolvedValue({ jobId: 'gen-job-1' }),
+    getAvatarGenerationStatus: vi.fn().mockResolvedValue({ jobId: 'gen-job-1', status: 'queued', progress: 0 }),
+    acceptGeneratedAvatar: vi.fn().mockResolvedValue({ vrmId: 'gen-vrm-1' }),
+    rejectGeneratedAvatar: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
