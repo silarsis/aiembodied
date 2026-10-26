@@ -216,82 +216,33 @@ function stampMatches(oldStamp, newStamp) {
   return JSON.stringify(oldStamp) === JSON.stringify(newStamp);
 }
 
-function findPnpmModulePath(repoRoot, packageName) {
-  const pnpmDir = resolve(repoRoot, 'node_modules', '.pnpm');
+export function resolveElectronInstaller(repoRoot) {
+  const candidates = [
+    resolve(repoRoot, 'app/main/node_modules/electron/install.js'),
+    resolve(repoRoot, 'node_modules/electron/install.js'),
+  ];
 
-  if (existsSync(pnpmDir)) {
-    try {
-      const entries = readdirSync(pnpmDir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory() && entry.name.startsWith(`${packageName}@`)) {
-          const modulePath = resolve(pnpmDir, entry.name, 'node_modules', packageName);
-          if (existsSync(modulePath)) {
-            return modulePath;
-          }
-        }
-      }
-    } catch {
-      // Ignore read errors
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
     }
   }
 
-  // Fallback to app/main/node_modules
-  const fallback = resolve(repoRoot, 'app', 'main', 'node_modules', packageName);
-  if (existsSync(fallback)) {
-    return fallback;
-  }
-
-  return null;
+  throw new Error(
+    'Electron installer not found. Run "pnpm install" to ensure @aiembodied/main dependencies are installed before launching.',
+  );
 }
 
-export async function rebuildNativeDependenciesForElectron(
-  repoRoot,
-  { runImpl = run, baseEnv = process.env, platform = process.platform, arch = process.arch, pnpmStorePath } = {},
-) {
-  const electronVersion = readElectronVersion(repoRoot);
-
-  // For native rebuilds, use the original environment (not the isolated .dev-home)
-  // to ensure Python, VS Build Tools, and other native build dependencies are found
-  const rebuildEnv = { ...baseEnv };
-  if (platform === 'win32') {
-    rebuildEnv.GYP_MSVS_VERSION = rebuildEnv.GYP_MSVS_VERSION || '2022';
-    rebuildEnv.npm_config_msvs_version = rebuildEnv.npm_config_msvs_version || '2022';
-  }
-
-  // Native modules to rebuild for Electron
-  const nativeModules = ['better-sqlite3', 'keytar', '@picovoice/porcupine-node', '@picovoice/pvrecorder-node'];
-
-  for (const moduleName of nativeModules) {
-    const modulePath = findPnpmModulePath(repoRoot, moduleName);
-    if (!modulePath) {
-      console.warn(`[warn] Could not find ${moduleName} in node_modules, skipping rebuild.`);
-      continue;
-    }
-
-    console.log(`[info] Rebuilding ${moduleName} at ${modulePath} for Electron ${electronVersion} (${arch})...`);
-
-    try {
-      // Use node-gyp directly with Electron headers - this bypasses the buggy
-      // @electron/rebuild which incorrectly tries to stat platform-specific
-      // optional dependencies that don't exist (e.g., @esbuild/aix-ppc64 on Windows)
-      await runImpl(
-        'npx',
-        [
-          'node-gyp',
-          'rebuild',
-          `--target=${electronVersion}`,
-          `--arch=${arch}`,
-          '--dist-url=https://electronjs.org/headers',
-          '--runtime=electron',
-          '--yes',
-        ],
-        { cwd: modulePath, env: rebuildEnv },
-      );
-      console.log(`[info] Successfully rebuilt ${moduleName} for Electron ${electronVersion}.`);
-    } catch (err) {
-      console.warn(`[warn] Failed to rebuild ${moduleName}: ${err.message}`);
-    }
-  }
+// Electron 45 no longer downloads its binary in a postinstall hook, and a reinstall
+// (e.g. into the isolated dev store) drops a previously downloaded one. The installer
+// exits immediately when the binary is already present.
+//
+// Native modules need no Electron rebuild: better-sqlite3, keytar and the Picovoice
+// packages all ship N-API prebuilds that load in Electron as-is.
+export async function ensureElectronBinary(repoRoot, { runImpl = run, baseEnv = process.env } = {}) {
+  const installer = resolveElectronInstaller(repoRoot);
+  console.log(`[info] Ensuring the Electron ${readElectronVersion(repoRoot)} binary is downloaded...`);
+  await runImpl(process.execPath, [installer], { env: baseEnv, shell: false });
 }
 
 async function main() {
@@ -384,11 +335,11 @@ async function main() {
 
   if (depsChanged) {
     if (forceRebuild) {
-      console.log('[info] --force-deps specified, running full install/build/rebuild...');
+      console.log('[info] --force-deps specified, running full install/build...');
     } else if (!oldStamp) {
-      console.log('[info] No stamp file found, running full install/build/rebuild...');
+      console.log('[info] No stamp file found, running full install/build...');
     } else {
-      console.log('[info] Dependencies changed, running install/build/rebuild...');
+      console.log('[info] Dependencies changed, running install/build...');
       if (oldStamp.lockHash !== newStamp.lockHash) console.log('  - pnpm-lock.yaml changed');
       if (oldStamp.electronVersion !== newStamp.electronVersion) console.log('  - Electron version changed');
       if (oldStamp.nodeVersion !== newStamp.nodeVersion) console.log('  - Node version changed');
@@ -406,20 +357,12 @@ async function main() {
       run(pnpmExe, ['--filter', '@aiembodied/main', 'build'], { env: envIsolated }),
     ]);
 
-    // Rebuild native deps for Electron runtime (ensures better-sqlite3/keytar ABI matches Electron)
-    console.log('[info] Rebuilding native dependencies for Electron...');
-    try {
-      await rebuildNativeDependenciesForElectron(repoRoot, { pnpmStorePath });
-    } catch (error) {
-      console.warn('[warn] Native dependency rebuild failed, continuing anyway:', error.message);
-    }
-
-    // Update stamp after successful install/build/rebuild
+    // Update stamp after successful install/build
     const finalElectronVersion = readElectronVersion(repoRoot);
     writeStamp(stampPath, { ...newStamp, electronVersion: finalElectronVersion });
     console.log('[info] Stamp file updated.');
   } else {
-    console.log('[info] Dependencies unchanged, skipping install/build/rebuild (use --force-deps to override)');
+    console.log('[info] Dependencies unchanged, skipping install/build (use --force-deps to override)');
   }
 
   // Verify preload script exists
@@ -435,6 +378,8 @@ async function main() {
     throw new Error(`Renderer build not found at ${rendererIndexPath}. Ensure renderer build completed successfully.`);
   }
   console.log('[info] Renderer build verified at:', rendererIndexPath);
+
+  await ensureElectronBinary(repoRoot);
 
   // Launch Electron with compiled main
   console.log('[info] Launching Electron...');

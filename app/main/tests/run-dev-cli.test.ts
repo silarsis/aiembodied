@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
-const { resolveElectronCli, rebuildNativeDependenciesForElectron } = await import(
+const { resolveElectronCli, ensureElectronBinary } = await import(
   '../../../scripts/run-dev.mjs',
 );
 
@@ -50,48 +50,40 @@ describe('resolveElectronCli', () => {
   });
 });
 
-describe('rebuildNativeDependenciesForElectron', () => {
-  it('rebuilds native modules with Electron runtime settings applied to the environment', async () => {
-    const workspaceRoot = mkdtempSync(join(tmpdir(), 'aiembodied-electron-rebuild-'));
+describe('ensureElectronBinary', () => {
+  it('runs the Electron installer with the current Node executable', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'aiembodied-electron-install-'));
     const repoRoot = resolve(workspaceRoot, 'repo');
-    const electronPkgPath = resolve(repoRoot, 'app/main/node_modules/electron/package.json');
+    const electronDir = resolve(repoRoot, 'app/main/node_modules/electron');
+    mkdirSync(electronDir, { recursive: true });
+    writeFileSync(resolve(electronDir, 'package.json'), JSON.stringify({ name: 'electron', version: '45.0.0' }), 'utf8');
+    writeFileSync(resolve(electronDir, 'install.js'), '', 'utf8');
 
-    // Create electron version file
-    mkdirSync(resolve(repoRoot, 'app/main/node_modules/electron'), { recursive: true });
-    writeFileSync(electronPkgPath, JSON.stringify({ name: 'electron', version: '29.1.0' }), 'utf8');
+    const runImpl = vi.fn(() => Promise.resolve());
+    const baseEnv = { PATH: '/usr/bin' };
 
-    // Create stub module directories so findPnpmModulePath can locate them
-    const pnpmDir = resolve(repoRoot, 'node_modules/.pnpm');
-    mkdirSync(resolve(pnpmDir, 'better-sqlite3@1.0.0/node_modules/better-sqlite3'), { recursive: true });
-    mkdirSync(resolve(pnpmDir, 'keytar@8.0.0/node_modules/keytar'), { recursive: true });
+    try {
+      await ensureElectronBinary(repoRoot, { runImpl, baseEnv });
 
+      expect(runImpl).toHaveBeenCalledTimes(1);
+      expect(runImpl).toHaveBeenCalledWith(process.execPath, [resolve(electronDir, 'install.js')], {
+        env: baseEnv,
+        shell: false,
+      });
+    } finally {
+      rmSync(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('throws a helpful error when Electron is not installed', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'aiembodied-electron-install-'));
     const runImpl = vi.fn(() => Promise.resolve());
 
     try {
-      await rebuildNativeDependenciesForElectron(repoRoot, {
-        runImpl,
-        arch: 'x64',
-        pnpmStorePath: 'C:/Users/test/AppData/Local/pnpm/store/v3',
-      });
-
-      // Should call npx node-gyp rebuild twice (once per module)
-      expect(runImpl).toHaveBeenCalledTimes(2);
-
-      // Verify first module rebuild call
-      const firstCall = runImpl.mock.calls[0];
-      expect(firstCall?.[0]).toBe('npx');
-      expect(firstCall?.[1]?.[0]).toBe('node-gyp');
-      expect(firstCall?.[1]?.[1]).toBe('rebuild');
-      expect(firstCall?.[1]).toContain('--target=29.1.0');
-      expect(firstCall?.[1]).toContain('--arch=x64');
-      expect(firstCall?.[1]).toContain('--dist-url=https://electronjs.org/headers');
-      expect(firstCall?.[1]).toContain('--runtime=electron');
-
-      // Verify second module rebuild call
-      const secondCall = runImpl.mock.calls[1];
-      expect(secondCall?.[0]).toBe('npx');
-      expect(secondCall?.[1]?.[0]).toBe('node-gyp');
-      expect(secondCall?.[1]?.[1]).toBe('rebuild');
+      await expect(ensureElectronBinary(resolve(workspaceRoot, 'repo'), { runImpl })).rejects.toThrow(
+        /Electron installer not found/,
+      );
+      expect(runImpl).not.toHaveBeenCalled();
     } finally {
       rmSync(workspaceRoot, { recursive: true, force: true });
     }

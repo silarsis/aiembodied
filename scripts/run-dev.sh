@@ -7,8 +7,8 @@ pnpm --filter @aiembodied/renderer build
 echo "[info] Building main..."
 pnpm --filter @aiembodied/main build
 
-echo "[info] Rebuilding native modules for Electron..."
-pnpm --filter @aiembodied/main exec electron-builder install-app-deps
+echo "[info] Ensuring the Electron binary is downloaded..."
+pnpm --filter @aiembodied/main exec install-electron
 
 if [[ ! -f "$(pwd)/.env" ]]; then
   echo "[warn] .env not found at repo root. Ensure REALTIME_API_KEY and PORCUPINE_ACCESS_KEY are set." >&2
