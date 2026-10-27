@@ -61,7 +61,7 @@ interface TranscriptEntry {
 
 type SecretKeyState<T> = Record<ConfigSecretKey, T>;
 
-const SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey', 'wakeWordAccessKey'];
+const SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey'];
 const REQUIRED_BRIDGE_KEYS: (keyof PreloadApi)[] = ['config', 'wakeWord', 'ping'];
 
 interface SecretStatusState {
@@ -77,11 +77,6 @@ const SECRET_METADATA: Record<
     label: 'OpenAI Realtime API key',
     description: 'Required to negotiate realtime model sessions.',
     isConfigured: (config) => Boolean(config?.hasRealtimeApiKey),
-  },
-  wakeWordAccessKey: {
-    label: 'Porcupine access key',
-    description: 'Authorizes on-device wake word detection.',
-    isConfigured: (config) => Boolean(config?.wakeWord?.hasAccessKey),
   },
 };
 
@@ -634,19 +629,15 @@ export default function App() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [secretInputs, setSecretInputs] = useState<SecretKeyState<string>>(() => ({
     realtimeApiKey: '',
-    wakeWordAccessKey: '',
   }));
   const [secretStatus, setSecretStatus] = useState<SecretKeyState<SecretStatusState>>(() => ({
     realtimeApiKey: { status: 'idle', message: null },
-    wakeWordAccessKey: { status: 'idle', message: null },
   }));
   const [secretSaving, setSecretSaving] = useState<SecretKeyState<boolean>>(() => ({
     realtimeApiKey: false,
-    wakeWordAccessKey: false,
   }));
   const [secretTesting, setSecretTesting] = useState<SecretKeyState<boolean>>(() => ({
     realtimeApiKey: false,
-    wakeWordAccessKey: false,
   }));
   const [realtimeToken, setRealtimeToken] = useState<string | null>(null);
   const [realtimeTokenError, setRealtimeTokenError] = useState<string | null>(null);
@@ -1544,7 +1535,7 @@ export default function App() {
         setTranscriptVisible(overlayEnabled);
         logRendererBridge('info', 'Renderer configuration received from main process.', {
           hasRealtimeApiKey: value.hasRealtimeApiKey,
-          wakeWordHasAccessKey: value.wakeWord?.hasAccessKey ?? false,
+          wakeWordModel: value.wakeWord?.model ?? null,
           audioInputConfigured: Boolean(value.audioInputDeviceId),
           audioOutputConfigured: Boolean(value.audioOutputDeviceId),
           featureFlagKeys: Object.keys(value.featureFlags ?? {}),

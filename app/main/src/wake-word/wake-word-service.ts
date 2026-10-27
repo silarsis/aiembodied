@@ -295,12 +295,12 @@ interface WorkerEntrypoint {
 }
 
 function defaultWorkerEntrypoint(): WorkerEntrypoint {
-  const jsEntrypoint = new URL('./porcupine-worker.js', import.meta.url);
+  const jsEntrypoint = new URL('./wake-word-worker.js', import.meta.url);
   if (fileExists(jsEntrypoint)) {
     return { url: jsEntrypoint };
   }
 
-  const tsEntrypoint = new URL('./porcupine-worker.ts', import.meta.url);
+  const tsEntrypoint = new URL('./wake-word-worker.ts', import.meta.url);
   return {
     url: tsEntrypoint,
     options: resolveTsNodeWorkerOptions(),

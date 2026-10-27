@@ -5,12 +5,13 @@ overrides:
   js-yaml: ^4.1.1
 
 onlyBuiltDependencies:
-  - "@picovoice/porcupine-node"
   - "@picovoice/pvrecorder-node"
   - esbuild
   - keytar
 
 ignoredBuiltDependencies:
+  # Ships prebuilt CPU binaries; its install script only fetches optional CUDA providers.
+  - onnxruntime-node
   # Ships N-API prebuilds; its implicit node-gyp build would need a C++ toolchain.
   - better-sqlite3
   - electron-winstaller

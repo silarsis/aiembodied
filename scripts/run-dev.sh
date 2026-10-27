@@ -11,7 +11,7 @@ echo "[info] Ensuring the Electron binary is downloaded..."
 pnpm --filter @aiembodied/main exec install-electron
 
 if [[ ! -f "$(pwd)/.env" ]]; then
-  echo "[warn] .env not found at repo root. Ensure REALTIME_API_KEY and PORCUPINE_ACCESS_KEY are set." >&2
+  echo "[warn] .env not found at repo root. Ensure REALTIME_API_KEY is set." >&2
 fi
 
 echo "[info] Launching Electron..."

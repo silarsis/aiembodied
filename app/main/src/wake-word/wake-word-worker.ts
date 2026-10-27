@@ -1,6 +1,6 @@
 import { parentPort, workerData } from 'node:worker_threads';
-import { Porcupine, type PorcupineOptions } from '@picovoice/porcupine-node';
 import { PvRecorder } from '@picovoice/pvrecorder-node';
+import { OWW_FRAME_LENGTH, OWW_SAMPLE_RATE, OpenWakeWordDetector } from './open-wake-word.js';
 import type {
   SerializedError,
   WakeWordDetectionEvent,
@@ -10,7 +10,7 @@ import type {
 } from './types.js';
 
 if (!parentPort) {
-  throw new Error('porcupine-worker must be run as a worker thread');
+  throw new Error('wake-word-worker must be run as a worker thread');
 }
 
 // After the null check above, we know parentPort is defined
@@ -19,20 +19,22 @@ const port = parentPort;
 const config = workerData as WakeWordWorkerConfig;
 
 let recorder: PvRecorder | null = null;
-let porcupine: Porcupine | null = null;
+let detector: OpenWakeWordDetector | null = null;
 let isRunning = false;
 
 async function start(): Promise<void> {
-  porcupine = createPorcupine(config);
-  recorder = new PvRecorder(porcupine.frameLength, config.deviceIndex ?? -1, 50);
+  detector = await OpenWakeWordDetector.create(config.modelPaths);
+  // PvRecorder (open source, no access key) always captures 16 kHz mono int16, which is what
+  // openWakeWord expects.
+  recorder = new PvRecorder(OWW_FRAME_LENGTH, config.deviceIndex ?? -1, 50);
   recorder.start();
   isRunning = true;
 
   port.postMessage({
     type: 'ready',
     info: {
-      frameLength: porcupine.frameLength,
-      sampleRate: porcupine.sampleRate,
+      frameLength: OWW_FRAME_LENGTH,
+      sampleRate: OWW_SAMPLE_RATE,
       keywordLabel: config.keywordLabel,
     },
   } satisfies WakeWordWorkerMessage);
@@ -40,13 +42,12 @@ async function start(): Promise<void> {
   while (isRunning) {
     try {
       const frame = await recorder.read();
-      const keywordIndex = porcupine.process(frame);
-      if (keywordIndex >= 0) {
+      const score = await detector.process(frame);
+      if (score >= config.threshold) {
         const event: WakeWordDetectionEvent = {
           keywordLabel: config.keywordLabel,
-          confidence: 1,
+          confidence: score,
           timestamp: Date.now(),
-          keywordIndex,
         };
         port.postMessage({ type: 'wake', event } satisfies WakeWordWorkerMessage);
       }
@@ -97,23 +98,13 @@ async function shutdown(): Promise<void> {
     }
   }
 
-  if (porcupine) {
+  if (detector) {
     try {
-      porcupine.release();
+      await detector.release();
     } catch {
       // ignore release errors
     }
   }
-}
-
-function createPorcupine(options: WakeWordWorkerConfig): Porcupine {
-  const keywords = [options.keywordPath];
-  const sensitivities = [options.sensitivity];
-  const porcupineOptions: PorcupineOptions = {};
-  if (options.modelPath) {
-    porcupineOptions.modelPath = options.modelPath;
-  }
-  return new Porcupine(options.accessKey, keywords, sensitivities, porcupineOptions);
 }
 
 function serializeError(error: unknown): SerializedError {

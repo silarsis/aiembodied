@@ -65,10 +65,9 @@ describe('WakeWordService', () => {
     service.on('wake', listener);
 
     service.start({
-      accessKey: 'key',
-      keywordPath: 'porcupine',
+      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
       keywordLabel: 'Porcupine',
-      sensitivity: 0.5,
+      threshold: 0.5,
     });
 
     const event: WakeWordDetectionEvent = {
@@ -88,10 +87,9 @@ describe('WakeWordService', () => {
     service.on('wake', listener);
 
     service.start({
-      accessKey: 'key',
-      keywordPath: 'porcupine',
+      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
       keywordLabel: 'Porcupine',
-      sensitivity: 0.5,
+      threshold: 0.5,
     });
 
     const event: WakeWordDetectionEvent = {
@@ -111,10 +109,9 @@ describe('WakeWordService', () => {
     service.on('wake', listener);
 
     service.start({
-      accessKey: 'key',
-      keywordPath: 'porcupine',
+      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
       keywordLabel: 'Porcupine',
-      sensitivity: 0.5,
+      threshold: 0.5,
     });
 
     const timestamp = Date.now();
@@ -142,10 +139,9 @@ describe('WakeWordService', () => {
     const { service } = createService({ worker });
 
     service.start({
-      accessKey: 'key',
-      keywordPath: 'porcupine',
+      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
       keywordLabel: 'Porcupine',
-      sensitivity: 0.5,
+      threshold: 0.5,
     });
 
     await service.dispose();
@@ -167,13 +163,12 @@ describe('WakeWordService', () => {
     });
 
     service.start({
-      accessKey: 'key',
-      keywordPath: 'porcupine',
+      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
       keywordLabel: 'Porcupine',
-      sensitivity: 0.5,
+      threshold: 0.5,
     });
 
-    expect(capturedPath?.pathname.endsWith('porcupine-worker.ts')).toBe(true);
+    expect(capturedPath?.pathname.endsWith('wake-word-worker.ts')).toBe(true);
     expect(capturedOptions?.execArgv).toBeDefined();
     expect(capturedOptions?.execArgv).toEqual(expect.arrayContaining(['--loader', 'ts-node/esm']));
   });
@@ -203,10 +198,9 @@ describe('WakeWordService', () => {
     service.on('error', () => { });
 
     service.start({
-      accessKey: 'key',
-      keywordPath: 'porcupine',
+      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
       keywordLabel: 'Porcupine',
-      sensitivity: 0.5,
+      threshold: 0.5,
     });
 
     expect(spawnCount).toBe(1);
@@ -249,10 +243,9 @@ describe('WakeWordService', () => {
     service.on('error', () => { });
 
     service.start({
-      accessKey: 'key',
-      keywordPath: 'porcupine',
+      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
       keywordLabel: 'Porcupine',
-      sensitivity: 0.5,
+      threshold: 0.5,
     });
 
     workers[0].emit('message', {
@@ -295,10 +288,9 @@ describe('WakeWordService', () => {
     service.on('error', () => { });
 
     service.start({
-      accessKey: 'key',
-      keywordPath: 'porcupine',
+      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
       keywordLabel: 'Porcupine',
-      sensitivity: 0.5,
+      threshold: 0.5,
     });
 
     expect(spawnCount).toBe(1);
@@ -355,10 +347,9 @@ describe('WakeWordService', () => {
     service.on('error', () => { });
 
     service.start({
-      accessKey: 'key',
-      keywordPath: 'porcupine',
+      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
       keywordLabel: 'Porcupine',
-      sensitivity: 0.5,
+      threshold: 0.5,
     });
 
     workers[0].emit('message', {

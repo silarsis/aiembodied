@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { z } from 'zod';
-import { BuiltinKeyword } from '@picovoice/porcupine-node';
+import { BUILTIN_WAKE_WORD_MODELS } from '../wake-word/open-wake-word.js';
 import type { SecretStore } from './secret-store.js';
 import type { AudioDevicePreferences, PreferencesStore } from './preferences-store.js';
 
@@ -27,14 +27,13 @@ export interface AppConfig {
 }
 
 export interface WakeWordConfig {
-  accessKey: string;
-  keywordPath: string;
+  /** openWakeWord builtin model name (e.g. hey_jarvis) or an absolute path to a custom .onnx model. */
+  model: string;
   keywordLabel: string;
-  sensitivity: number;
-  minConfidence: number;
+  /** Score (0..1) a frame must reach to count as a detection. */
+  threshold: number;
   cooldownMs: number;
   deviceIndex?: number;
-  modelPath?: string;
 }
 
 export interface MetricsConfig {
@@ -44,16 +43,14 @@ export interface MetricsConfig {
   path: string;
 }
 
-export type RendererWakeWordConfig = Omit<WakeWordConfig, 'accessKey'> & {
-  hasAccessKey: boolean;
-};
+export type RendererWakeWordConfig = WakeWordConfig;
 
 export type RendererConfig = Omit<AppConfig, 'realtimeApiKey' | 'wakeWord' | 'comfyUiBaseUrl' | 'motionServiceUrl'> & {
   hasRealtimeApiKey: boolean;
   wakeWord: RendererWakeWordConfig;
 };
 
-export type ConfigSecretKey = 'realtimeApiKey' | 'wakeWordAccessKey';
+export type ConfigSecretKey = 'realtimeApiKey';
 
 type OpenAIModelsClient = {
   models?: {
@@ -68,7 +65,6 @@ export interface ConfigManagerOptions {
   preferencesStore?: PreferencesStore;
   env?: NodeJS.ProcessEnv;
   fetchFn?: typeof fetch;
-  wakeWordTestEndpoint?: string;
   logger?: ConfigLogger;
   openAIClientFactory?: OpenAIClientFactory;
 }
@@ -83,14 +79,11 @@ export class ConfigValidationError extends Error {
 const FeatureFlagsSchema = z.record(z.string().min(1), z.boolean());
 
 const WakeWordSchema = z.object({
-  accessKey: z.string().min(1, 'Porcupine access key is required'),
-  keywordPath: z.string().min(1, 'Wake word keyword path is required'),
+  model: z.string().min(1, 'Wake word model is required'),
   keywordLabel: z.string().min(1, 'Wake word keyword label is required'),
-  sensitivity: z.number().min(0).max(1),
-  minConfidence: z.number().min(0).max(1),
+  threshold: z.number().min(0).max(1),
   cooldownMs: z.number().int().min(0),
   deviceIndex: z.number().int().optional(),
-  modelPath: z.string().min(1).optional(),
 });
 
 const MetricsSchema = z.object({
@@ -104,9 +97,9 @@ const MetricsSchema = z.object({
 });
 
 const RealtimeApiKeySchema = z.string().min(1, 'Realtime API key is required');
-const WakeWordAccessKeySchema = z.string().min(1, 'Porcupine access key is required');
 
-const DEFAULT_SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey', 'wakeWordAccessKey'];
+const DEFAULT_SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey'];
+const DEFAULT_WAKE_WORD_MODEL = 'hey_jarvis';
 
 const DEFAULT_COMFYUI_BASE_URL = 'http://127.0.0.1:8188';
 const DEFAULT_MOTION_SERVICE_URL = 'http://127.0.0.1:8190';
@@ -117,7 +110,6 @@ export class ConfigManager {
   private readonly preferencesStore?: PreferencesStore;
   private readonly env: NodeJS.ProcessEnv;
   private readonly fetchFn?: typeof fetch;
-  private readonly wakeWordTestEndpoint: string;
   private readonly secretTestTimeoutMs = 5000;
   private readonly logger: ConfigLogger;
   private readonly openAIClientFactory?: OpenAIClientFactory;
@@ -127,8 +119,6 @@ export class ConfigManager {
     this.preferencesStore = options.preferencesStore;
     this.env = options.env ?? process.env;
     this.fetchFn = options.fetchFn ?? (typeof fetch === 'function' ? fetch : undefined);
-    this.wakeWordTestEndpoint = options.wakeWordTestEndpoint ??
-      'https://api.picovoice.ai/api/v1/porcupine/validate';
     this.logger = options.logger ?? console;
     this.openAIClientFactory = options.openAIClientFactory;
   }
@@ -142,14 +132,7 @@ export class ConfigManager {
     this.logger.info('Loading configuration from environment and secret stores.');
 
     const realtimeApiKey = await this.resolveRealtimeApiKey();
-    const wakeWordAccessKey = await this.resolveWakeWordAccessKey();
     const storedPreferences = (await this.preferencesStore?.load()) ?? {};
-
-    if (!wakeWordAccessKey) {
-      throw new ConfigValidationError(
-        'Porcupine access key is required. Provide PORCUPINE_ACCESS_KEY in the environment or store it securely.',
-      );
-    }
 
     const audioInputDeviceId =
       this.normalizeDeviceId(storedPreferences.audioInputDeviceId) ??
@@ -174,14 +157,14 @@ export class ConfigManager {
       vadSilenceDurationMs: typeof storedPreferences.vadSilenceDurationMs === 'number' ? storedPreferences.vadSilenceDurationMs : undefined,
       vadMinSpeechDurationMs: typeof storedPreferences.vadMinSpeechDurationMs === 'number' ? storedPreferences.vadMinSpeechDurationMs : undefined,
       featureFlags: this.parseFeatureFlags(this.env.FEATURE_FLAGS),
-      wakeWord: this.parseWakeWordConfig({ accessKey: wakeWordAccessKey }),
+      wakeWord: this.parseWakeWordConfig(),
       metrics: this.parseMetricsConfig(),
     };
 
     this.config = config;
     this.logger.info('Configuration loaded.', {
       hasRealtimeApiKey: Boolean(config.realtimeApiKey),
-      wakeWordHasAccessKey: Boolean(config.wakeWord.accessKey),
+      wakeWordModel: config.wakeWord.model,
       audioInputConfigured: Boolean(config.audioInputDeviceId),
       audioOutputConfigured: Boolean(config.audioOutputDeviceId),
       featureFlagCount: Object.keys(config.featureFlags ?? {}).length,
@@ -248,15 +231,10 @@ export class ConfigManager {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { realtimeApiKey, wakeWord, comfyUiBaseUrl, motionServiceUrl, ...rest } = config;
 
-    const { accessKey, ...rendererWakeWord } = wakeWord;
-
     return {
       ...rest,
       hasRealtimeApiKey: Boolean(realtimeApiKey),
-      wakeWord: {
-        ...rendererWakeWord,
-        hasAccessKey: Boolean(accessKey),
-      },
+      wakeWord: { ...wakeWord },
     };
   }
 
@@ -268,10 +246,6 @@ export class ConfigManager {
     const config = this.getConfig();
     if (key === 'realtimeApiKey') {
       return config.realtimeApiKey;
-    }
-
-    if (key === 'wakeWordAccessKey') {
-      return config.wakeWord.accessKey;
     }
 
     throw new Error(`Unhandled secret key requested: ${key}`);
@@ -295,19 +269,6 @@ export class ConfigManager {
       return this.getRendererConfig();
     }
 
-    if (key === 'wakeWordAccessKey') {
-      const parsed = WakeWordAccessKeySchema.parse(trimmed);
-      await this.persistSecret('PORCUPINE_ACCESS_KEY', parsed);
-      this.config = {
-        ...this.config,
-        wakeWord: {
-          ...this.config.wakeWord,
-          accessKey: parsed,
-        },
-      };
-      this.logger.info('Wake word access key updated.', { length: parsed.length });
-      return this.getRendererConfig();
-    }
 
     throw new Error(`Unhandled secret key update requested: ${key}`);
   }
@@ -325,17 +286,6 @@ export class ConfigManager {
       return this.testRealtimeKey(this.config.realtimeApiKey);
     }
 
-    if (key === 'wakeWordAccessKey') {
-      const fetchFn = this.fetchFn;
-      if (!fetchFn) {
-        return { ok: false, message: 'Secret testing is unavailable: no HTTP client configured.' };
-      }
-      if (!this.config.wakeWord.accessKey) {
-        return { ok: false, message: 'Porcupine access key is not configured.' };
-      }
-      this.logger.debug('Testing wake word access key.');
-      return this.testWakeWordKey(fetchFn, this.config.wakeWord.accessKey);
-    }
 
     throw new Error(`Unhandled secret test requested: ${key}`);
   }
@@ -369,34 +319,6 @@ export class ConfigManager {
     return stored ?? undefined;
   }
 
-  private async resolveWakeWordAccessKey(): Promise<string | undefined> {
-    this.logger.debug('Resolving wake word access key from environment variables.', {
-      keys: ['PORCUPINE_ACCESS_KEY', 'porcupine_access_key'],
-    });
-    const envValue = this.readSecretFromEnv(['PORCUPINE_ACCESS_KEY', 'porcupine_access_key']);
-    if (envValue) {
-      this.logger.debug('Wake word access key resolved from environment variables.', {
-        length: envValue.length,
-      });
-      return envValue;
-    }
-
-    this.logger.debug('Wake word access key not found in environment.', {
-      hasSecretStore: Boolean(this.secretStore),
-    });
-    if (!this.secretStore) {
-      this.logger.error('Wake word access key unavailable: secret store is not configured.');
-      return undefined;
-    }
-
-    const stored = await this.secretStore.getSecret('PORCUPINE_ACCESS_KEY');
-    if (stored) {
-      this.logger.debug('Wake word access key resolved from secret store.', { length: stored.length });
-    } else {
-      this.logger.error('Wake word access key not found in secret store.');
-    }
-    return stored ?? undefined;
-  }
 
   private readSecretFromEnv(keys: string[]): string | undefined {
     for (const key of keys) {
@@ -459,31 +381,6 @@ export class ConfigManager {
     }
   }
 
-  private async testWakeWordKey(fetchFn: typeof fetch, key: string): Promise<{ ok: boolean; message?: string }> {
-    try {
-      const response = await fetchFn(this.wakeWordTestEndpoint, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${key}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ operation: 'validate' }),
-        signal: this.createTimeoutSignal(),
-      });
-
-      if (!response.ok) {
-        return {
-          ok: false,
-          message: `Wake word service responded with HTTP ${response.status}`,
-        };
-      }
-
-      return { ok: true, message: 'Porcupine access key verified successfully.' };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error while testing Porcupine access key.';
-      return { ok: false, message };
-    }
-  }
 
   private parseMetricsConfig(): MetricsConfig {
     const enabledValue = this.env.METRICS_ENABLED?.trim();
@@ -546,21 +443,13 @@ export class ConfigManager {
     return trimmed.length > 0 ? trimmed : undefined;
   }
 
-  private parseWakeWordConfig({ accessKey }: { accessKey: string }): WakeWordConfig {
-    const keywordPath = this.resolveKeywordPath();
-    const keywordLabel = this.resolveKeywordLabel(keywordPath);
+  private parseWakeWordConfig(): WakeWordConfig {
+    const model = this.resolveWakeWordModel();
+    const keywordLabel = this.env.WAKE_WORD_KEYWORD_LABEL?.trim() || this.formatKeywordLabel(model);
 
-    const sensitivity = this.parseNumberInRange({
-      name: 'WAKE_WORD_SENSITIVITY',
-      raw: this.env.WAKE_WORD_SENSITIVITY,
-      defaultValue: 0.6,
-      min: 0,
-      max: 1,
-    });
-
-    const minConfidence = this.parseNumberInRange({
-      name: 'WAKE_WORD_MIN_CONFIDENCE',
-      raw: this.env.WAKE_WORD_MIN_CONFIDENCE,
+    const threshold = this.parseNumberInRange({
+      name: 'WAKE_WORD_THRESHOLD',
+      raw: this.env.WAKE_WORD_THRESHOLD,
       defaultValue: 0.5,
       min: 0,
       max: 1,
@@ -578,73 +467,35 @@ export class ConfigManager {
       raw: this.env.WAKE_WORD_DEVICE_INDEX,
     });
 
-    const modelPath = this.env.WAKE_WORD_MODEL_PATH?.trim() || undefined;
-
-    return WakeWordSchema.parse({
-      accessKey,
-      keywordPath,
-      keywordLabel,
-      sensitivity,
-      minConfidence,
-      cooldownMs,
-      deviceIndex,
-      modelPath,
-    });
+    return WakeWordSchema.parse({ model, keywordLabel, threshold, cooldownMs, deviceIndex });
   }
 
-  private resolveKeywordPath(): string {
-    const explicitPath = this.env.WAKE_WORD_KEYWORD_PATH?.trim();
-    if (explicitPath) {
-      return path.resolve(explicitPath);
+  /** WAKE_WORD_MODEL is a builtin openWakeWord model name or a path to a custom .onnx model. */
+  private resolveWakeWordModel(): string {
+    const raw = this.env.WAKE_WORD_MODEL?.trim();
+    if (!raw) {
+      return DEFAULT_WAKE_WORD_MODEL;
     }
 
-    const builtin = this.env.WAKE_WORD_BUILTIN?.trim();
-    const keyword = this.resolveBuiltinKeyword(builtin);
-    return keyword;
+    const builtin = BUILTIN_WAKE_WORD_MODELS.find((name) => name === raw.toLowerCase().replace(/[\s-]+/g, '_'));
+    if (builtin) {
+      return builtin;
+    }
+
+    if (raw.toLowerCase().endsWith('.onnx')) {
+      return path.resolve(raw);
+    }
+
+    throw new ConfigValidationError(
+      `Unknown wake word model: ${raw}. Use one of ${BUILTIN_WAKE_WORD_MODELS.join(', ')} or a path to an .onnx model.`,
+    );
   }
 
-  private resolveKeywordLabel(keywordPath: string): string {
-    const label = this.env.WAKE_WORD_KEYWORD_LABEL?.trim();
-    if (label) {
-      return label;
-    }
-
-    const builtinKeyword = this.getBuiltinKeywordIfValid(keywordPath);
-    if (builtinKeyword) {
-      return this.formatKeywordLabel(builtinKeyword);
-    }
-
-    const base = path.basename(keywordPath);
-    const withoutExtension = base.replace(path.extname(base), '');
-    return withoutExtension;
-  }
-
-  private resolveBuiltinKeyword(input: string | undefined): BuiltinKeyword {
-    if (!input) {
-      return BuiltinKeyword.PORCUPINE;
-    }
-
-    const normalized = input.trim().toLowerCase();
-    const match = (Object.values(BuiltinKeyword) as string[]).find((keyword) => keyword.toLowerCase() === normalized);
-
-    if (!match) {
-      throw new ConfigValidationError(`Unknown wake word builtin keyword: ${input}`);
-    }
-
-    return match as BuiltinKeyword;
-  }
-
-  private getBuiltinKeywordIfValid(keywordPath: string): BuiltinKeyword | null {
-    if ((Object.values(BuiltinKeyword) as string[]).includes(keywordPath as BuiltinKeyword)) {
-      return keywordPath as BuiltinKeyword;
-    }
-
-    return null;
-  }
-
-  private formatKeywordLabel(keyword: BuiltinKeyword): string {
-    return keyword
-      .split(' ')
+  private formatKeywordLabel(model: string): string {
+    const base = path.basename(model).replace(/\.onnx$/i, '').replace(/_v\d+(\.\d+)*$/, '');
+    return base
+      .split(/[_\s-]+/)
+      .filter((segment) => segment.length > 0)
       .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
       .join(' ');
   }

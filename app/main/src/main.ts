@@ -15,6 +15,7 @@ import { initializeLogger } from './logging/logger.js';
 import { createAppDiagnostics } from './logging/app-diagnostics.js';
 import { CrashGuard } from './crash-guard.js';
 import { WakeWordService } from './wake-word/wake-word-service.js';
+import { resolveOpenWakeWordModelPaths } from './wake-word/open-wake-word.js';
 import { ConversationManager } from './conversation/conversation-manager.js';
 import type {
   ConversationAppendMessagePayload,
@@ -72,6 +73,10 @@ const __dirname = path.dirname(__filename);
 const isProduction = app.isPackaged || process.env.NODE_ENV === 'production';
 const APP_NAME = 'AI Embodied Assistant';
 const DEFAULT_MODEL_ASSET_PATH = path.join(__dirname, '../assets/vrm-models/default-avatar.vrm');
+// Unpacked from the asar in packaged builds (see electron-builder.yml): onnxruntime reads them natively.
+const WAKE_WORD_ASSETS_DIRECTORY = path
+  .join(__dirname, '../assets/wake-word')
+  .replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
 
 interface CameraDetectionEventPayload {
   cue: string;
@@ -484,7 +489,7 @@ function registerIpcHandlers(
 
   const summarizeRendererConfig = (config: RendererConfig) => ({
     hasRealtimeApiKey: config.hasRealtimeApiKey,
-    wakeWordHasAccessKey: config.wakeWord?.hasAccessKey ?? false,
+    wakeWordModel: config.wakeWord?.model ?? null,
     audioInputConfigured: Boolean(config.audioInputDeviceId),
     audioOutputConfigured: Boolean(config.audioOutputDeviceId),
     realtimeModel: config.realtimeModel ?? null,
@@ -1249,7 +1254,7 @@ app.whenReady().then(async () => {
   wakeWordService = new WakeWordService({
     logger,
     cooldownMs: appConfig.wakeWord.cooldownMs,
-    minConfidence: appConfig.wakeWord.minConfidence,
+    minConfidence: appConfig.wakeWord.threshold,
   });
 
   wakeWordService.on('wake', (event) => {
@@ -1290,11 +1295,9 @@ app.whenReady().then(async () => {
 
   try {
     wakeWordService.start({
-      accessKey: appConfig.wakeWord.accessKey,
-      keywordPath: appConfig.wakeWord.keywordPath,
+      modelPaths: resolveOpenWakeWordModelPaths(WAKE_WORD_ASSETS_DIRECTORY, appConfig.wakeWord.model),
       keywordLabel: appConfig.wakeWord.keywordLabel,
-      sensitivity: appConfig.wakeWord.sensitivity,
-      modelPath: appConfig.wakeWord.modelPath,
+      threshold: appConfig.wakeWord.threshold,
       deviceIndex: appConfig.wakeWord.deviceIndex,
     });
   } catch (error) {
@@ -1332,7 +1335,7 @@ app.whenReady().then(async () => {
       hasRealtimeApiKey: Boolean(configSnapshot.realtimeApiKey),
       comfyUiBaseUrl: configSnapshot.comfyUiBaseUrl,
       motionServiceUrl: configSnapshot.motionServiceUrl,
-      hasWakeWordAccessKey: Boolean(configSnapshot.wakeWord.accessKey),
+      wakeWordModel: configSnapshot.wakeWord.model,
     },
     avatar: { enabled: Boolean(avatarModelService) },
     conversation: { enabled: Boolean(conversationManager) },

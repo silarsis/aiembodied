@@ -1,8 +1,9 @@
+import type { OpenWakeWordModelPaths } from './open-wake-word.js';
+
 export interface WakeWordDetectionEvent {
   keywordLabel: string;
   confidence: number;
   timestamp: number;
-  keywordIndex?: number;
   sessionId?: string;
 }
 
@@ -13,11 +14,10 @@ export interface WakeWordReadyEvent {
 }
 
 export interface WakeWordWorkerConfig {
-  accessKey: string;
-  keywordPath: string;
+  modelPaths: OpenWakeWordModelPaths;
   keywordLabel: string;
-  sensitivity: number;
-  modelPath?: string;
+  /** Score (0..1) a frame must reach to be reported as a wake event. */
+  threshold: number;
   deviceIndex?: number;
 }
 

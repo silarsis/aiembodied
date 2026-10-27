@@ -23,7 +23,7 @@ The development script (`scripts/run-dev.mjs`) is cross-platform and handles:
 - Building renderer and main packages
 - Rebuilding native dependencies (better-sqlite3, keytar) for Electron
 - Environment isolation using `.dev-home` to avoid Windows permission issues
-- API key validation (requires `PORCUPINE_ACCESS_KEY`, warns if `REALTIME_API_KEY` missing)
+- API key validation (warns if `REALTIME_API_KEY` missing)
 - Launching Electron with diagnostics enabled
 
 An alternative shell script exists (`run-dev.sh`) but the `.mjs` version is preferred for consistency.
@@ -36,12 +36,6 @@ Run these commands from the repository root unless a task specifies otherwise:
 - `pnpm test` — execute automated unit/integration tests.
 - `pnpm test:coverage` — run tests with coverage measurement and reporting.
 - `pnpm build` — (as needed) validate production builds for Electron targets.
-
-**Note on Porcupine tests:** The wake-word worker test (`tests/porcupine-worker.test.ts`) is skipped in the default test suite due to heap exhaustion from `vi.resetModules()` in test isolation. The test uses module reloading in each beforeEach hook which exhausts memory even with increased heap limits. Currently, this test is excluded from `pnpm test` and CI runs. To run it locally, increase the Node heap:
-```bash
-cd app/main && NODE_OPTIONS=--max-old-space-size=4096 pnpm vitest run tests/porcupine-worker.test.ts
-```
-(Note: this may still hit OOM or timeout in some environments; a long-term fix would be to redesign the test to avoid `vi.resetModules()`.)
 
 ### OpenAI Responses API usage
 - When crafting requests, ensure every content chunk conforms to the Responses API schema (e.g., text prompts must use `{ type: 'input_text', text: '...' }`).
@@ -58,7 +52,7 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 ### System composition
 - **Electron main process** owns kiosk window lifecycle, crash recovery, configuration, and persistence. It validates environment secrets with Zod, hydrates runtime config via the preload bridge, and manages the synchronous `better-sqlite3` memory store.
 - **Renderer process (Vite + React)** delivers the user interface, WebRTC client, Web Audio capture/processing graph, and 2D avatar canvas. Renderer code consumes main-process services through contextBridge APIs exposed in `app/preload` and exchanges realtime state via typed IPC channels.
-- **Worker processes** are dedicated to latency-sensitive tasks. A Porcupine wake-word worker streams microphone data, applies cooldown/confidence logic, and notifies the main process. Optional viseme workers can offload PCM analysis if the renderer frame budget is constrained.
+- **Worker processes** are dedicated to latency-sensitive tasks. An openWakeWord worker (onnxruntime-node, models in `app/main/assets/wake-word/`) streams microphone data via PvRecorder, applies cooldown/threshold logic, and notifies the main process. Optional viseme workers can offload PCM analysis if the renderer frame budget is constrained.
 
 ### Frontend ↔ backend linkage
 - The preload script acts as the contract boundary: configuration, logging, and memory APIs are marshalled from the main process into the renderer with strict channel whitelists to preserve Electron security best practices.
@@ -147,3 +141,4 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 - 2026-10-26 — Replaced the Meshy cloud integration with local avatar generation (`app/main/src/avatar/generation/`): a ComfyUI client, Qwen-Image 2.1 graphs, and a worker-thread VRoid atlas retexture. IPC channels are `avatar:generation-start/status/accept/reject`; `COMFYUI_BASE_URL` sets the server. Never call ComfyUI's `/free` endpoint (it crashes Comfy Desktop).
 - 2026-10-27 — Local avatar retexture fixes from an end-to-end run against ComfyUI: texture passes send only the atlas crop as a reference (with the description in the prompt). Passing the concept image as a second reference made Qwen draw the whole character over the atlas. The outfit is split into `outfit_body` and `outfit_sleeves` regions, because cropped together Qwen redrew the sleeve panels as garment pictures. Each repaint is scored with `layoutSimilarity` (edge correlation over painted texels) in the worker; below 0.6 it retries with the next seed, and a region that never passes keeps its original texture. Recalibrate that threshold if you change the base model or the prompts.
 - 2026-10-27 — Added local text-to-motion (`app/main/src/avatar/motion/`): `LocalMotionClient` talks to the Python service in `services/motion/` (contract in `services/motion/API.md`, URL from `MOTION_SERVICE_URL`). `avatar-animation:generate` prefers it over the OpenAI pipeline when `/health` reports ready. `avatar-motion:stream` streams ARDY chunks to the renderer as `avatar-motion:chunk` events; the renderer plays them through the animation bus as one-off clips (`vrmaBinary` on the request). The assistant triggers them with `{move:<description>}` tags, offered in the session instructions only while the service is ready.
+- 2026-10-27 — Replaced Picovoice Porcupine with openWakeWord (`app/main/src/wake-word/open-wake-word.ts`), a TypeScript port of its streaming pipeline (melspectrogram → speech embedding → wake-word model) on onnxruntime-node; its scores match the Python reference exactly. No access key is needed any more: `PORCUPINE_ACCESS_KEY`, the `wakeWordAccessKey` secret and `WAKE_WORD_BUILTIN/SENSITIVITY/MIN_CONFIDENCE` are gone, replaced by `WAKE_WORD_MODEL` (builtin name or .onnx path) and `WAKE_WORD_THRESHOLD`. PvRecorder (open source, keyless) still captures audio. The bundled pre-trained models are CC BY-NC-SA 4.0.
