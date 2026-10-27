@@ -81,6 +81,21 @@ describe('WakeWordService', () => {
     expect(listener).toHaveBeenCalledWith(event);
   });
 
+  it('logs detections without overriding the logger timestamp', async () => {
+    const { service, worker } = createService();
+    service.start({
+      modelPaths: { melspectrogram: 'mel.onnx', embedding: 'embedding.onnx', wakeWord: 'hey_jarvis.onnx' },
+      keywordLabel: 'Hey Jarvis',
+      threshold: 0.5,
+    });
+    const event: WakeWordDetectionEvent = { keywordLabel: 'Hey Jarvis', confidence: 0.99, timestamp: 1234 };
+
+    worker.emit('message', { type: 'wake', event } satisfies WakeWordWorkerMessage);
+
+    const call = vi.mocked(logger.info).mock.calls.find(([message]) => message === 'Wake word detected');
+    expect(call?.[1]).toEqual({ keyword: 'Hey Jarvis', confidence: 0.99, detectedAt: 1234 });
+  });
+
   it('filters wake events below confidence threshold', async () => {
     const { service, worker } = createService({ minConfidence: 0.8 });
     const listener = vi.fn();

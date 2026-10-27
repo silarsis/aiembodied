@@ -335,6 +335,18 @@ vi.mock('../src/avatar/vrma-generation-service.js', () => ({
   VrmaGenerationService: VrmaGenerationServiceMock,
 }));
 
+// Keep the bootstrap tests off the network: a real motion service on MOTION_SERVICE_URL would
+// otherwise answer /health and route animation generation through it.
+vi.mock('../src/avatar/motion/local-motion-client.js', () => ({
+  LocalMotionClient: vi.fn(function () {
+    return {
+      health: vi.fn().mockResolvedValue(null),
+      generateClip: vi.fn().mockRejectedValue(new Error('motion service unavailable in tests')),
+      stream: vi.fn(),
+    };
+  }),
+}));
+
 const autoLaunchSyncMock = vi.fn<() => Promise<boolean>>();
 const autoLaunchIsEnabledMock = vi.fn<() => Promise<boolean>>();
 

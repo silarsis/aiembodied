@@ -272,14 +272,16 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
 
   private handleWakeEvent(event: WakeWordDetectionEvent): void {
     if (!this.filter.shouldEmit(event)) {
-      this.logger.debug('Wake word event filtered', event);
+      const { timestamp: detectedAt, ...rest } = event;
+      this.logger.debug('Wake word event filtered', { ...rest, detectedAt });
       return;
     }
 
     this.logger.info('Wake word detected', {
       keyword: event.keywordLabel,
       confidence: event.confidence,
-      timestamp: event.timestamp,
+      // Not `timestamp`: that key would replace the logger's own ISO timestamp with epoch ms.
+      detectedAt: event.timestamp,
     });
     this.emit('wake', event);
   }
