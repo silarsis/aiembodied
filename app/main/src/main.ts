@@ -36,6 +36,8 @@ import { PoseEvaluationService } from './avatar/pose-evaluation-service.js';
 import { AvatarDescriptionService } from './avatar/avatar-description-service.js';
 import { AvatarGenerationService } from './avatar/generation/avatar-generation-service.js';
 import { ComfyUIClient } from './avatar/generation/comfyui-client.js';
+import { LocalMotionClient } from './avatar/motion/local-motion-client.js';
+import { LocalMotionGenerationService } from './avatar/motion/local-motion-generation-service.js';
 import type {
   AvatarModelSummary,
   AvatarModelUploadRequest,
@@ -44,6 +46,8 @@ import type {
   AvatarAnimationUploadRequest,
   AvatarAnimationUploadResult,
   AvatarAnimationGenerationRequest,
+  AvatarMotionStatus,
+  AvatarMotionStreamRequest,
   AvatarPoseSummary,
   AvatarPoseUploadRequest,
   AvatarPoseGenerationRequest,
@@ -134,6 +138,7 @@ let poseGenerationService: PoseGenerationService | null = null;
 let poseEvaluationService: PoseEvaluationService | null = null;
 let avatarDescriptionService: AvatarDescriptionService | null = null;
 let avatarGenerationService: AvatarGenerationService | null = null;
+let localMotionService: LocalMotionGenerationService | null = null;
 let currentVrmaApiKey: string | null = null;
 let currentDescriptionApiKey: string | null = null;
 
@@ -871,17 +876,44 @@ function registerIpcHandlers(
     return avatarAnimations.uploadAnimation(payload) as Promise<AvatarAnimationUploadResult>;
   });
   ipcMain.handle('avatar-animation:generate', async (_event, payload: AvatarAnimationGenerationRequest) => {
+    if (localMotionService && (await localMotionService.isReady())) {
+      return localMotionService.generateAnimation(payload);
+    }
+
     if (!vrmaGenerationService) {
       await refreshVrmaGenerationService(manager, 'secret-update');
     }
     if (!vrmaGenerationService) {
-      throw new Error('VRMA generation service is unavailable. Ensure REALTIME_API_KEY is set.');
+      throw new Error(
+        'Animation generation is unavailable. Start the local motion service or set REALTIME_API_KEY.',
+      );
     }
 
     const bones = avatarModels ? await avatarModels.listActiveModelBones() : [];
     const activeModel = avatarModels?.getActiveModel() ?? null;
     const modelDescription = activeModel?.description ?? undefined;
     return vrmaGenerationService.generateAnimation({ ...payload, bones, modelDescription });
+  });
+  ipcMain.handle('avatar-motion:status', async (): Promise<AvatarMotionStatus> => {
+    const health = localMotionService ? await localMotionService.health() : null;
+    return {
+      available: Boolean(health),
+      ready: health?.ready === true,
+      backend: health?.backend ?? null,
+      device: health?.device ?? null,
+    };
+  });
+  ipcMain.handle('avatar-motion:stream', async (event, payload: AvatarMotionStreamRequest) => {
+    if (!localMotionService) {
+      throw new Error('Local motion service is unavailable.');
+    }
+
+    const sender = event.sender;
+    return localMotionService.streamMotion(payload, (chunk) => {
+      if (!sender.isDestroyed()) {
+        sender.send('avatar-motion:chunk', chunk);
+      }
+    });
   });
   ipcMain.handle('avatar-animation:delete', async (_event, animationId: string) => {
     if (!avatarAnimations) {
@@ -1145,6 +1177,14 @@ app.whenReady().then(async () => {
   await refreshVrmaGenerationService(manager);
   await refreshPoseGenerationService(manager);
 
+  if (avatarAnimationService) {
+    localMotionService = new LocalMotionGenerationService({
+      client: new LocalMotionClient({ baseUrl: appConfig.motionServiceUrl }),
+      animationService: avatarAnimationService,
+      logger,
+    });
+  }
+
   if (avatarModelService) {
     avatarGenerationService = new AvatarGenerationService({
       comfy: new ComfyUIClient({ baseUrl: appConfig.comfyUiBaseUrl }),
@@ -1291,6 +1331,7 @@ app.whenReady().then(async () => {
     config: {
       hasRealtimeApiKey: Boolean(configSnapshot.realtimeApiKey),
       comfyUiBaseUrl: configSnapshot.comfyUiBaseUrl,
+      motionServiceUrl: configSnapshot.motionServiceUrl,
       hasWakeWordAccessKey: Boolean(configSnapshot.wakeWord.accessKey),
     },
     avatar: { enabled: Boolean(avatarModelService) },

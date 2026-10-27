@@ -17,6 +17,28 @@ export interface AvatarTag {
   slug: string;
 }
 
+export interface AvatarMoveTag {
+  type: 'move';
+  /** Free-text description of the movement, sent to the local motion model. */
+  text: string;
+}
+
+const MAX_MOVE_TEXT_LENGTH = 200;
+
+/**
+ * Extract free-text movement tags: {move:<description>}, e.g. {move:shrugs with both shoulders}.
+ */
+export function extractMoveTags(text: string): AvatarMoveTag[] {
+  const results: AvatarMoveTag[] = [];
+  for (const match of text.matchAll(/\{move:([^}]+)\}/gi)) {
+    const description = (match[1] ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_MOVE_TEXT_LENGTH);
+    if (description) {
+      results.push({ type: 'move', text: description });
+    }
+  }
+  return results;
+}
+
 /**
  * Extract avatar control tags from text.
  * Supports two formats:
@@ -34,10 +56,13 @@ export function extractAvatarTags(
   const allowedAnims = options.allowedAnimationSlugs ? new Set(options.allowedAnimationSlugs) : null;
   const allowedPoses = options.allowedPoseSlugs ? new Set(options.allowedPoseSlugs) : null;
   const results: AvatarTag[] = [];
-  // Match {anim:slug}, {pose:slug}, or {slug}
-  const regex = /\{((?:anim|pose):)?([^}]+)\}/gi;
+  // Match {anim:slug}, {pose:slug}, or {slug}; {move:...} is handled by extractMoveTags
+  const regex = /\{((?:anim|pose|move):)?([^}]+)\}/gi;
 
   for (const match of text.matchAll(regex)) {
+    if (match[1]?.toLowerCase() === 'move:') {
+      continue;
+    }
     const prefix = match[1]?.toLowerCase().replace(':', '') ?? '';
     const candidate = match[2]?.trim() ?? '';
 

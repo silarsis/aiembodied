@@ -11,6 +11,7 @@ export type FeatureFlags = Record<string, boolean>;
 export interface AppConfig {
   realtimeApiKey: string;
   comfyUiBaseUrl: string;
+  motionServiceUrl: string;
   audioInputDeviceId?: string;
   audioOutputDeviceId?: string;
   realtimeModel?: string;
@@ -47,7 +48,7 @@ export type RendererWakeWordConfig = Omit<WakeWordConfig, 'accessKey'> & {
   hasAccessKey: boolean;
 };
 
-export type RendererConfig = Omit<AppConfig, 'realtimeApiKey' | 'wakeWord' | 'comfyUiBaseUrl'> & {
+export type RendererConfig = Omit<AppConfig, 'realtimeApiKey' | 'wakeWord' | 'comfyUiBaseUrl' | 'motionServiceUrl'> & {
   hasRealtimeApiKey: boolean;
   wakeWord: RendererWakeWordConfig;
 };
@@ -108,6 +109,7 @@ const WakeWordAccessKeySchema = z.string().min(1, 'Porcupine access key is requi
 const DEFAULT_SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey', 'wakeWordAccessKey'];
 
 const DEFAULT_COMFYUI_BASE_URL = 'http://127.0.0.1:8188';
+const DEFAULT_MOTION_SERVICE_URL = 'http://127.0.0.1:8190';
 
 export class ConfigManager {
   private config: AppConfig | null = null;
@@ -159,6 +161,7 @@ export class ConfigManager {
     const config: AppConfig = {
       realtimeApiKey: realtimeApiKey ?? '',
       comfyUiBaseUrl: this.env.COMFYUI_BASE_URL?.trim() || DEFAULT_COMFYUI_BASE_URL,
+      motionServiceUrl: this.env.MOTION_SERVICE_URL?.trim() || DEFAULT_MOTION_SERVICE_URL,
       audioInputDeviceId,
       audioOutputDeviceId,
       realtimeModel: this.normalizeDeviceId(storedPreferences.realtimeModel),
@@ -241,9 +244,9 @@ export class ConfigManager {
 
   getRendererConfig(): RendererConfig {
     const config = this.getConfig();
-    // comfyUiBaseUrl is main-process only.
+    // comfyUiBaseUrl and motionServiceUrl are main-process only.
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { realtimeApiKey, wakeWord, comfyUiBaseUrl, ...rest } = config;
+    const { realtimeApiKey, wakeWord, comfyUiBaseUrl, motionServiceUrl, ...rest } = config;
 
     const { accessKey, ...rendererWakeWord } = wakeWord;
 

@@ -110,6 +110,8 @@ interface QueuedAnimation {
   intent: AnimationQueueIntent;
   source?: string;
   timing?: AvatarAnimationTiming;
+  /** Registered for a single playback (streamed clips); dropped from the registry once played. */
+  ephemeral?: boolean;
 }
 
 interface ActiveAnimation {
@@ -1405,6 +1407,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   const idleOptionsRef = useRef<IdleAnimationOptions | undefined>(idleOptions);
   const clipRegistryRef = useRef<Map<string, VrmaClipWithMetadata>>(new Map());
   const animationQueueRef = useRef<QueuedAnimation[]>([]);
+  const streamedClipLoadRef = useRef<Promise<void>>(Promise.resolve());
   const activeAnimationRef = useRef<ActiveAnimation | null>(null);
   const animationSuspensionRef = useRef<(() => void) | null>(null);
   const vrmaRegistryReadyRef = useRef(false);
@@ -1509,6 +1512,11 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         action.stop();
       } catch (error) {
         console.warn('[vrm-avatar-renderer] failed to stop animation after completion', error);
+      }
+
+      if (next.ephemeral) {
+        clipRegistryRef.current.delete(next.slug);
+        mixer.uncacheClip(clipData.clip);
       }
 
       activeAnimationRef.current = null;
@@ -1742,11 +1750,44 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         clearActiveAnimation();
       }
 
+      const request = event.request;
+      const binary = request.vrmaBinary;
+      if (binary) {
+        // Parse streamed clips one at a time so chunks are queued in the order they arrived.
+        streamedClipLoadRef.current = streamedClipLoadRef.current
+          .then(async () => {
+            const vrm = currentVrmRef.current;
+            if (!vrm) {
+              return;
+            }
+            const result = await loadVrmaAnimation(binary);
+            if (!result) {
+              console.warn('[vrm-avatar-renderer] streamed VRMA clip contained no animation', { slug });
+              return;
+            }
+            clipRegistryRef.current.set(slug, {
+              clip: createClipFromVrma(vrm, result.animation, slug),
+              vrmaData: result.gltf,
+            });
+            enqueueAnimation({
+              slug,
+              intent: request.intent,
+              source: request.source,
+              timing: request.timing,
+              ephemeral: true,
+            });
+          })
+          .catch((error: unknown) => {
+            console.warn('[vrm-avatar-renderer] failed to load streamed VRMA clip', { slug, error });
+          });
+        return;
+      }
+
       enqueueAnimation({
         slug,
-        intent: event.request.intent,
-        source: event.request.source,
-        timing: event.request.timing,
+        intent: request.intent,
+        source: request.source,
+        timing: request.timing,
       });
     },
     [clearActiveAnimation, enqueueAnimation, playNextQueuedAnimation, suspendIdleAnimations, releaseIdleSuspension],

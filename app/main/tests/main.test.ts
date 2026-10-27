@@ -513,6 +513,7 @@ describe('main process bootstrap', () => {
     const config = {
       realtimeApiKey: 'rt-key',
       comfyUiBaseUrl: 'http://127.0.0.1:8188',
+      motionServiceUrl: 'http://127.0.0.1:8190',
       featureFlags: {},
       wakeWord: {
         accessKey: 'access',
@@ -550,6 +551,7 @@ describe('main process bootstrap', () => {
     const baseConfig = {
       realtimeApiKey: 'rt-key',
       comfyUiBaseUrl: 'http://127.0.0.1:8188',
+      motionServiceUrl: 'http://127.0.0.1:8190',
       audioInputDeviceId: undefined,
       audioOutputDeviceId: undefined,
       featureFlags: {},
@@ -953,6 +955,7 @@ describe('main process bootstrap', () => {
     const baseConfig = {
       realtimeApiKey: 'rt-key',
       comfyUiBaseUrl: 'http://127.0.0.1:8188',
+      motionServiceUrl: 'http://127.0.0.1:8190',
       audioInputDeviceId: undefined,
       audioOutputDeviceId: undefined,
       featureFlags: {},
@@ -1016,6 +1019,7 @@ describe('main process bootstrap', () => {
     const config = {
       realtimeApiKey: 'rt-key',
       comfyUiBaseUrl: 'http://127.0.0.1:8188',
+      motionServiceUrl: 'http://127.0.0.1:8190',
       audioInputDeviceId: undefined,
       audioOutputDeviceId: undefined,
       featureFlags: {},

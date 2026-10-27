@@ -39,8 +39,42 @@ export interface AvatarAnimationUploadResult {
 
 export interface AvatarAnimationGenerationRequest {
   prompt: string;
+  /** Clip length in seconds; only the local motion service uses it. */
+  duration?: number;
   bones?: string[];
   modelDescription?: string;
+}
+
+export interface AvatarMotionStreamRequest {
+  /** Caller-chosen id echoed on every chunk so concurrent streams can be told apart. */
+  streamId: string;
+  prompt: string;
+  duration?: number;
+}
+
+export interface AvatarMotionChunkEvent {
+  streamId: string;
+  index: number;
+  /** Offset of this chunk in the whole movement, in seconds. */
+  start: number;
+  name: string;
+  duration: number | null;
+  /** Base64 .vrma binary. */
+  data: string;
+}
+
+export interface AvatarMotionStreamResult {
+  streamId: string;
+  chunks: number;
+  firstChunkMs: number | null;
+  totalMs: number;
+}
+
+export interface AvatarMotionStatus {
+  available: boolean;
+  ready: boolean;
+  backend: string | null;
+  device: string | null;
 }
 
 export interface AvatarPoseSummary {
