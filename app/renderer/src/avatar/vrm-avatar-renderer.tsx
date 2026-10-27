@@ -66,6 +66,9 @@ const VISEME_PRESETS: VRMExpressionPresetName[] = [
 ];
 
 const BLINK_HOLD_SECONDS = 0.12;
+/** Blend between queued clips and the idle pose so clips don't snap in or out. */
+const CLIP_FADE_IN_SECONDS = 0.25;
+const CLIP_FADE_OUT_SECONDS = 0.3;
 const CAMERA_DISTANCE = 1.45;
 const CAMERA_HEIGHT = 1.35;
 const CAMERA_FOV = 35;
@@ -1454,7 +1457,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     }
   }, [releaseIdleSuspension]);
 
-  const playNextQueuedAnimation = useCallback(() => {
+  const playNextQueuedAnimation = useCallback((continuation = false) => {
     if (activeAnimationRef.current) {
       return;
     }
@@ -1508,18 +1511,38 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         return;
       }
 
-      try {
-        action.stop();
-      } catch (error) {
-        console.warn('[vrm-avatar-renderer] failed to stop animation after completion', error);
-      }
-
-      if (next.ephemeral) {
-        clipRegistryRef.current.delete(next.slug);
-        mixer.uncacheClip(clipData.clip);
-      }
+      const finish = () => {
+        try {
+          action.stop();
+        } catch (error) {
+          console.warn('[vrm-avatar-renderer] failed to stop animation after completion', error);
+        }
+        if (next.ephemeral) {
+          clipRegistryRef.current.delete(next.slug);
+          mixer.uncacheClip(clipData.clip);
+        }
+      };
 
       activeAnimationRef.current = null;
+      if (animationQueueRef.current.length > 0) {
+        // The next clip (e.g. the following streamed chunk) starts where this one ended: hand over instantly.
+        finish();
+        playNextQueuedAnimation(true);
+        return;
+      }
+
+      // Nothing queued: hold the final frame and fade it out while idle animations resume, instead of
+      // snapping straight back to the rest pose.
+      if (typeof action.fadeOut === 'function') {
+        action.fadeOut(CLIP_FADE_OUT_SECONDS);
+        setTimeout(() => {
+          if (activeAnimationRef.current?.action !== action) {
+            finish();
+          }
+        }, CLIP_FADE_OUT_SECONDS * 1000);
+      } else {
+        finish();
+      }
       playNextQueuedAnimation();
     };
 
@@ -1537,6 +1560,10 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       action.setEffectiveWeight(1);
       action.setEffectiveTimeScale(1);
       action.clampWhenFinished = true;
+      if (!continuation && typeof action.fadeIn === 'function') {
+        // Blend in from the idle pose; continuation clips already start on the previous clip's last frame.
+        action.fadeIn(CLIP_FADE_IN_SECONDS);
+      }
       mixer.addEventListener('finished', handleFinished);
       action.play();
     } catch (error) {
