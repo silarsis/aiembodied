@@ -19,7 +19,7 @@ The longer-term vision keeps the core voice loop intact while swapping in richer
 | --- | --- |
 | **Electron main process** | Window lifecycle, crash guard, wake-word worker orchestration, secrets/config validation (`ConfigManager`), SQLite memory store. |
 | **Renderer process** | WebRTC session with the Realtime API, Web Audio capture/playback, viseme generation, 2D avatar rendering, transcript overlay. |
-| **Wake-word worker** | Picovoice Porcupine loop for low-latency keyword detection with cooldown and confidence filtering. |
+| **Wake-word worker** | openWakeWord models on onnxruntime-node, fed from the microphone in 80 ms frames, with cooldown and threshold filtering. Fully local: no account or key. |
 | **Future integrations** | Optional metrics exporter, Unity avatar client consuming the same viseme stream, packaging for appliance deployment. |
 
 ## Roadmap Snapshot
@@ -38,7 +38,6 @@ Check `AGENTS.md` for the authoritative status checklist that mirrors these mile
 
 - **Node.js 22.12+** (required by Electron 45 and better-sqlite3 13; CI uses Node 24).
 - **pnpm 10+** (the repo pins `pnpm@10.34.9`; enable via `corepack enable`).
-- Picovoice Porcupine access key (free tier available) for wake-word detection.
 - OpenAI Realtime API access with a corresponding key.
 
 #### Automated environment bootstrap
@@ -84,20 +83,23 @@ Create a `.env` file at the repository root (loaded automatically in development
 
 ```ini
 REALTIME_API_KEY=sk-...
-PORCUPINE_ACCESS_KEY=...
 # Optional overrides
 AUDIO_INPUT_DEVICE_ID=default
 AUDIO_OUTPUT_DEVICE_ID=default
-WAKE_WORD_BUILTIN=porcupine
-WAKE_WORD_SENSITIVITY=0.6
-WAKE_WORD_MIN_CONFIDENCE=0.5
+WAKE_WORD_MODEL=hey_jarvis
+WAKE_WORD_THRESHOLD=0.5
 WAKE_WORD_COOLDOWN_MS=1500
 COMFYUI_BASE_URL=http://127.0.0.1:8188
+MOTION_SERVICE_URL=http://127.0.0.1:8190
 ```
 
-Additional knobs include `WAKE_WORD_KEYWORD_PATH`/`WAKE_WORD_KEYWORD_LABEL` for custom models and `FEATURE_FLAGS` (JSON or comma syntax) for experimental toggles.
+**Wake word.** Detection uses [openWakeWord](https://github.com/dscripka/openWakeWord) and runs entirely on the machine. `WAKE_WORD_MODEL` picks a bundled model (`hey_jarvis`, `alexa`, `hey_mycroft`, `hey_rhasspy`) or takes a path to a custom `.onnx` model trained with openWakeWord's notebook. `WAKE_WORD_KEYWORD_LABEL` overrides the displayed name, and `WAKE_WORD_DEVICE_INDEX` picks the microphone.
+
+Additional knobs include `FEATURE_FLAGS` (JSON or comma syntax) for experimental toggles.
 
 **Local avatar generation.** The Avatar tab's "Generate an avatar" panel repaints the bundled VRoid avatar's outfit and hair textures from a text description, keeping its rig, expressions and lip-sync. It needs a local ComfyUI server (default `http://127.0.0.1:8188`, override with `COMFYUI_BASE_URL`) with the Qwen-Image 2.1 models installed (`qwen_image_2.1_int8_convrot`, `qwen3vl_8b_int8_convrot`, `qwen_image_2.1_vae_bf16`). Nothing is sent to a cloud service.
+
+**Local motion generation.** With the local motion service running (`services/motion/`, NVIDIA ARDY or Kimodo; default `http://127.0.0.1:8190`, override with `MOTION_SERVICE_URL`), "Generate animation" in the Avatar tab uses it instead of the OpenAI keyframe pipeline, and the assistant can perform any movement on the fly by writing `{move:<description>}`; ARDY streams it in 2-second chunks so the avatar starts moving in under a second. See `services/motion/API.md` for the protocol.
 
 ### Run the App in Development
 

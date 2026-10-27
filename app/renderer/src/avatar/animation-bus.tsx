@@ -51,6 +51,11 @@ export interface AvatarAnimationRequest {
   intent: AvatarAnimationIntent;
   source?: string;
   timing?: AvatarAnimationTiming;
+  /**
+   * A .vrma binary to play once instead of a library clip (e.g. a chunk streamed from the local
+   * motion service). It is registered under `slug` for this playback only.
+   */
+  vrmaBinary?: ArrayBuffer;
 }
 
 export type AvatarAnimationEvent =

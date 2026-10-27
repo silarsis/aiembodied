@@ -67,8 +67,8 @@ describe('preload bridge', () => {
 
     const response = { ok: true, message: 'verified' };
     invoke.mockResolvedValueOnce(response);
-    await expect(api.config.testSecret('wakeWordAccessKey')).resolves.toEqual(response);
-    expect(invoke).toHaveBeenCalledWith('config:test-secret', 'wakeWordAccessKey');
+    await expect(api.config.testSecret('realtimeApiKey')).resolves.toEqual(response);
+    expect(invoke).toHaveBeenCalledWith('config:test-secret', 'realtimeApiKey');
   });
 
   it('provides a wake word subscription bridge', async () => {

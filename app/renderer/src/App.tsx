@@ -24,7 +24,8 @@ import { RealtimeClient, type RealtimeClientState } from './realtime/realtime-cl
 import { LatencyTracker, type LatencySnapshot } from './metrics/latency-tracker.js';
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
 import type { AvatarModelSummary, AvatarPoseSummary } from './avatar/types.js';
-import { extractAvatarTags, toAnimationSlug } from './avatar/animation-tags.js';
+import { extractAvatarTags, extractMoveTags, toAnimationSlug } from './avatar/animation-tags.js';
+import { MoveRequestFilter, enqueueMotionChunk } from './avatar/live-motion.js';
 import { Vector3 } from 'three';
 
 const CURSOR_IDLE_TIMEOUT_MS = 3000;
@@ -60,7 +61,7 @@ interface TranscriptEntry {
 
 type SecretKeyState<T> = Record<ConfigSecretKey, T>;
 
-const SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey', 'wakeWordAccessKey'];
+const SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey'];
 const REQUIRED_BRIDGE_KEYS: (keyof PreloadApi)[] = ['config', 'wakeWord', 'ping'];
 
 interface SecretStatusState {
@@ -76,11 +77,6 @@ const SECRET_METADATA: Record<
     label: 'OpenAI Realtime API key',
     description: 'Required to negotiate realtime model sessions.',
     isConfigured: (config) => Boolean(config?.hasRealtimeApiKey),
-  },
-  wakeWordAccessKey: {
-    label: 'Porcupine access key',
-    description: 'Authorizes on-device wake word detection.',
-    isConfigured: (config) => Boolean(config?.wakeWord?.hasAccessKey),
   },
 };
 
@@ -114,15 +110,28 @@ function formatLatency(value?: number): string {
   return `${(value / 1000).toFixed(2)}s`;
 }
 
-function buildAnimationInstructions(availableAnimations: string[], availablePoses: string[]): string {
+const LIVE_MOTION_STATUS_INTERVAL_MS = 30_000;
+
+function buildAnimationInstructions(
+  availableAnimations: string[],
+  availablePoses: string[],
+  liveMotionAvailable = false,
+): string {
   const animList = availableAnimations.length > 0 ? availableAnimations.join(', ') : 'none';
   const poseList = availablePoses.length > 0 ? availablePoses.join(', ') : 'none';
+  const moveInstructions = liveMotionAvailable
+    ? [
+        'For any other body movement, include `{move:<short description of the movement>}`',
+        '(e.g. `{move:shrugs with both shoulders}`); it is generated on the fly and starts within about a second.',
+      ]
+    : [];
   return [
     `Available animations: ${animList}.`,
     `Available poses: ${poseList}.`,
     'You have a 3D body you can control through animations or poses.',
     'To trigger an animation, include `{anim:<slug>}` in your response (e.g. `{anim:happy-wave}`).',
     'To apply a pose, include `{pose:<slug>}` in your response (e.g. `{pose:power-stance}`).',
+    ...moveInstructions,
     'Multiple tags are allowed. Slug format: lowercase letters, numbers, and hyphens.',
   ].join(' ');
 }
@@ -139,10 +148,11 @@ function buildSessionInstructions(
   availableAnimations: string[],
   availablePoses: string[],
   activeVrmModel: AvatarModelSummary | null,
+  liveMotionAvailable = false,
 ): string {
   const trimmedBase = basePrompt.trim();
   const avatarDescription = buildAvatarDescription(activeVrmModel);
-  const animationInstructions = buildAnimationInstructions(availableAnimations, availablePoses);
+  const animationInstructions = buildAnimationInstructions(availableAnimations, availablePoses, liveMotionAvailable);
 
   const parts = [trimmedBase, avatarDescription, animationInstructions].filter((s) => s.length > 0);
   return parts.join('\n\n');
@@ -619,19 +629,15 @@ export default function App() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [secretInputs, setSecretInputs] = useState<SecretKeyState<string>>(() => ({
     realtimeApiKey: '',
-    wakeWordAccessKey: '',
   }));
   const [secretStatus, setSecretStatus] = useState<SecretKeyState<SecretStatusState>>(() => ({
     realtimeApiKey: { status: 'idle', message: null },
-    wakeWordAccessKey: { status: 'idle', message: null },
   }));
   const [secretSaving, setSecretSaving] = useState<SecretKeyState<boolean>>(() => ({
     realtimeApiKey: false,
-    wakeWordAccessKey: false,
   }));
   const [secretTesting, setSecretTesting] = useState<SecretKeyState<boolean>>(() => ({
     realtimeApiKey: false,
-    wakeWordAccessKey: false,
   }));
   const [realtimeToken, setRealtimeToken] = useState<string | null>(null);
   const [realtimeTokenError, setRealtimeTokenError] = useState<string | null>(null);
@@ -660,6 +666,48 @@ export default function App() {
   const [animationListVersion, setAnimationListVersion] = useState(0);
   const [poseListVersion, setPoseListVersion] = useState(0);
   const animationBus = useMemo(() => createAvatarAnimationBus(), []);
+  const [liveMotionReady, setLiveMotionReady] = useState(false);
+
+  useEffect(() => {
+    const avatar = resolveApi()?.avatar;
+    if (!avatar?.getMotionStatus) {
+      setLiveMotionReady(false);
+      return;
+    }
+
+    let cancelled = false;
+    const refresh = () => {
+      avatar
+        .getMotionStatus?.()
+        .then((status) => {
+          if (!cancelled) {
+            setLiveMotionReady(status.ready);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setLiveMotionReady(false);
+          }
+        });
+    };
+    refresh();
+    // The motion service can be started after the app, so keep checking.
+    const timer = setInterval(refresh, LIVE_MOTION_STATUS_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [resolveApi]);
+
+  useEffect(() => {
+    const avatar = resolveApi()?.avatar;
+    if (!avatar?.onMotionChunk) {
+      return;
+    }
+    return avatar.onMotionChunk((chunk) => {
+      enqueueMotionChunk(animationBus, chunk);
+    });
+  }, [animationBus, resolveApi]);
   const [isListeningEnabled, setListeningEnabled] = useState(false);
   const [bonePositions, setBonePositions] = useState<{
     leftShoulder: { x: number; y: number; z: number } | null;
@@ -1200,9 +1248,9 @@ export default function App() {
   const sessionInstructions = useMemo(
     () => {
       const poseSlugs = availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0);
-      return buildSessionInstructions(basePrompt, availableAnimationSlugs, poseSlugs, activeVrmModel);
+      return buildSessionInstructions(basePrompt, availableAnimationSlugs, poseSlugs, activeVrmModel, liveMotionReady);
     },
-    [basePrompt, availableAnimationSlugs, availablePoses, activeVrmModel],
+    [basePrompt, availableAnimationSlugs, availablePoses, activeVrmModel, liveMotionReady],
   );
   const availableAnimationSlugSet = useMemo(
     () => new Set(availableAnimationSlugs),
@@ -1213,10 +1261,23 @@ export default function App() {
     [availablePoses],
   );
   const animationTextHandlerRef = useRef<(text: string) => void>(() => undefined);
+  const moveRequestFilterRef = useRef(new MoveRequestFilter());
   const handleRealtimeTextContent = useCallback(
     (content: string) => {
       if (!content) {
         return;
+      }
+      const streamMotion = resolveApi()?.avatar?.streamMotion;
+      if (liveMotionReady && streamMotion) {
+        for (const move of extractMoveTags(content)) {
+          if (!moveRequestFilterRef.current.shouldStart(move.text)) {
+            continue;
+          }
+          const streamId = Math.random().toString(36).slice(2, 10);
+          streamMotion({ streamId, prompt: move.text }).catch((error: unknown) => {
+            console.error('[App] Live motion generation failed', { prompt: move.text, error });
+          });
+        }
       }
       const tags = extractAvatarTags(content, {
         allowedAnimationSlugs: availableAnimationSlugSet,
@@ -1244,7 +1305,7 @@ export default function App() {
         }
       }
     },
-    [animationBus, availableAnimationSlugSet, availablePoseSlugSet, availablePoses, resolveApi],
+    [animationBus, availableAnimationSlugSet, availablePoseSlugSet, availablePoses, liveMotionReady, resolveApi],
   );
 
   useEffect(() => {
@@ -1474,7 +1535,7 @@ export default function App() {
         setTranscriptVisible(overlayEnabled);
         logRendererBridge('info', 'Renderer configuration received from main process.', {
           hasRealtimeApiKey: value.hasRealtimeApiKey,
-          wakeWordHasAccessKey: value.wakeWord?.hasAccessKey ?? false,
+          wakeWordModel: value.wakeWord?.model ?? null,
           audioInputConfigured: Boolean(value.audioInputDeviceId),
           audioOutputConfigured: Boolean(value.audioOutputDeviceId),
           featureFlagKeys: Object.keys(value.featureFlags ?? {}),

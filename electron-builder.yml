@@ -1,6 +1,9 @@
 appId: com.aiembodied.assistant
 productName: AI Embodied Assistant
 asar: true
+asarUnpack:
+  # onnxruntime-node reads the wake-word models with native file I/O, which can't see into the asar.
+  - app/main/assets/wake-word/**
 files:
   - from: .
     filter:
@@ -8,6 +11,7 @@ files:
       - pnpm-lock.yaml
       - node_modules/**
       - app/main/dist/**
+      - app/main/assets/**
       - app/main/node_modules/**
       - app/main/package.json
       - app/renderer/dist/**

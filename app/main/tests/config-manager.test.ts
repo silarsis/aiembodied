@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { ConfigManager, ConfigValidationError } from '../src/config/config-manager.js';
 import { InMemoryPreferencesStore } from '../src/config/preferences-store.js';
@@ -9,13 +10,11 @@ describe('ConfigManager', () => {
       env: {
         REALTIME_API_KEY: 'test-api-key',
         COMFYUI_BASE_URL: 'http://comfy.local:8000',
-        PORCUPINE_ACCESS_KEY: 'porcupine-key',
         AUDIO_INPUT_DEVICE_ID: 'input-device',
         AUDIO_OUTPUT_DEVICE_ID: 'output-device',
         FEATURE_FLAGS: '{"transcriptOverlay": false}',
-        WAKE_WORD_BUILTIN: 'porcupine',
-        WAKE_WORD_SENSITIVITY: '0.55',
-        WAKE_WORD_MIN_CONFIDENCE: '0.75',
+        WAKE_WORD_MODEL: 'alexa',
+        WAKE_WORD_THRESHOLD: '0.55',
         WAKE_WORD_COOLDOWN_MS: '2500',
         WAKE_WORD_DEVICE_INDEX: '2',
       } as NodeJS.ProcessEnv,
@@ -26,6 +25,13 @@ describe('ConfigManager', () => {
     expect(config.audioInputDeviceId).toBe('input-device');
     expect(config.audioOutputDeviceId).toBe('output-device');
     expect(config.comfyUiBaseUrl).toBe('http://comfy.local:8000');
+    expect(config.wakeWord).toEqual({
+      model: 'alexa',
+      keywordLabel: 'Alexa',
+      threshold: 0.55,
+      cooldownMs: 2500,
+      deviceIndex: 2,
+    });
   });
 
   it('prefers stored preferences over environment configuration', async () => {
@@ -38,13 +44,11 @@ describe('ConfigManager', () => {
     const manager = new ConfigManager({
       env: {
         REALTIME_API_KEY: 'test-api-key',
-        PORCUPINE_ACCESS_KEY: 'porcupine-key',
         AUDIO_INPUT_DEVICE_ID: 'env-input',
         AUDIO_OUTPUT_DEVICE_ID: 'env-output',
         FEATURE_FLAGS: '{"transcriptOverlay": false}',
-        WAKE_WORD_BUILTIN: 'porcupine',
-        WAKE_WORD_SENSITIVITY: '0.55',
-        WAKE_WORD_MIN_CONFIDENCE: '0.75',
+        WAKE_WORD_MODEL: 'alexa',
+        WAKE_WORD_THRESHOLD: '0.55',
         WAKE_WORD_COOLDOWN_MS: '2500',
         WAKE_WORD_DEVICE_INDEX: '2',
       } as NodeJS.ProcessEnv,
@@ -61,32 +65,28 @@ describe('ConfigManager', () => {
     expect(rendererConfig.audioOutputDeviceId).toBe('preferred-output');
 
     await expect(manager.getSecret('realtimeApiKey')).resolves.toBe('test-api-key');
-    await expect(manager.getSecret('wakeWordAccessKey')).resolves.toBe('porcupine-key');
   });
 
   it('falls back to secret store when environment variable is missing', async () => {
     const secretStore = new InMemorySecretStore();
     await secretStore.setSecret('REALTIME_API_KEY', 'stored-key');
-    await secretStore.setSecret('PORCUPINE_ACCESS_KEY', 'porcupine-secret');
 
     const manager = new ConfigManager({
-      env: { WAKE_WORD_BUILTIN: 'bumblebee' } as NodeJS.ProcessEnv,
+      env: { WAKE_WORD_MODEL: 'Hey Mycroft' } as NodeJS.ProcessEnv,
       secretStore,
     });
 
     const config = await manager.load();
     expect(config.realtimeApiKey).toBe('stored-key');
     expect(config.comfyUiBaseUrl).toBe('http://127.0.0.1:8188');
-    expect(config.wakeWord.accessKey).toBe('porcupine-secret');
-    expect(config.wakeWord.keywordPath).toBe('bumblebee');
-    expect(config.wakeWord.keywordLabel).toBe('Bumblebee');
+    expect(config.wakeWord.model).toBe('hey_mycroft');
+    expect(config.wakeWord.keywordLabel).toBe('Hey Mycroft');
   });
 
   it('parses comma separated feature flags', async () => {
     const manager = new ConfigManager({
       env: {
         REALTIME_API_KEY: 'key',
-        PORCUPINE_ACCESS_KEY: 'wake-key',
         FEATURE_FLAGS: 'transcriptOverlay=false,avatarIdle=true,invalid',
       } as NodeJS.ProcessEnv,
     });
@@ -103,7 +103,6 @@ describe('ConfigManager', () => {
     const manager = new ConfigManager({
       env: {
         REALTIME_API_KEY: 'key',
-        PORCUPINE_ACCESS_KEY: 'wake-key',
         METRICS_ENABLED: 'true',
         METRICS_HOST: '0.0.0.0',
         METRICS_PORT: '9100',
@@ -120,9 +119,33 @@ describe('ConfigManager', () => {
     });
   });
 
-  it('throws a validation error when the wake word access key is missing', async () => {
+  it('defaults to the bundled hey_jarvis wake word model', async () => {
+    const manager = new ConfigManager({ env: {} as NodeJS.ProcessEnv });
+
+    const config = await manager.load();
+    expect(config.wakeWord).toEqual({
+      model: 'hey_jarvis',
+      keywordLabel: 'Hey Jarvis',
+      threshold: 0.5,
+      cooldownMs: 1500,
+      deviceIndex: undefined,
+    });
+    expect(manager.getRendererConfig().wakeWord.model).toBe('hey_jarvis');
+  });
+
+  it('accepts a custom openWakeWord model path and derives its label', async () => {
     const manager = new ConfigManager({
-      env: { REALTIME_API_KEY: 'key' } as NodeJS.ProcessEnv,
+      env: { WAKE_WORD_MODEL: 'models/hey_echo_v0.2.onnx' } as NodeJS.ProcessEnv,
+    });
+
+    const config = await manager.load();
+    expect(config.wakeWord.model).toBe(path.resolve('models/hey_echo_v0.2.onnx'));
+    expect(config.wakeWord.keywordLabel).toBe('Hey Echo');
+  });
+
+  it('throws a validation error for an unknown wake word model', async () => {
+    const manager = new ConfigManager({
+      env: { WAKE_WORD_MODEL: 'bumblebee' } as NodeJS.ProcessEnv,
     });
 
     await expect(manager.load()).rejects.toBeInstanceOf(ConfigValidationError);
@@ -130,7 +153,7 @@ describe('ConfigManager', () => {
 
   it('loads with an empty realtime api key and marks the renderer config as unconfigured', async () => {
     const manager = new ConfigManager({
-      env: { PORCUPINE_ACCESS_KEY: 'wake-key' } as NodeJS.ProcessEnv,
+      env: {} as NodeJS.ProcessEnv,
     });
 
     const config = await manager.load();
@@ -143,8 +166,6 @@ describe('ConfigManager', () => {
     const manager = new ConfigManager({
       env: {
         realtime_api_key: 'lower-key',
-        PORCUPINE_ACCESS_KEY: 'wake-key',
-        WAKE_WORD_BUILTIN: 'porcupine',
       } as NodeJS.ProcessEnv,
     });
 
@@ -158,17 +179,12 @@ describe('ConfigManager', () => {
     const manager = new ConfigManager({
       env: {
         realtime_api_key: ' \trealtime-key \n',
-        porcupine_access_key: '  porcupine-key  ',
-        WAKE_WORD_BUILTIN: 'porcupine',
       } as NodeJS.ProcessEnv,
     });
 
     const config = await manager.load();
 
     expect(config.realtimeApiKey).toBe('realtime-key');
-    expect(config.wakeWord.accessKey).toBe('porcupine-key');
-    expect(config.wakeWord.keywordPath).toBe('porcupine');
-    expect(config.wakeWord.keywordLabel).toBe('Porcupine');
   });
 
   it('logs secret resolution steps without leaking secret values', async () => {
@@ -181,8 +197,6 @@ describe('ConfigManager', () => {
 
     const env = {
       REALTIME_API_KEY: 'rt-secret-value',
-      PORCUPINE_ACCESS_KEY: 'wake-secret-value',
-      WAKE_WORD_BUILTIN: 'porcupine',
     } as NodeJS.ProcessEnv;
 
     const manager = new ConfigManager({ env, logger });
@@ -193,22 +207,17 @@ describe('ConfigManager', () => {
       'Realtime API key resolved from environment variables.',
       expect.objectContaining({ length: env.REALTIME_API_KEY.length }),
     );
-    expect(logger.debug).toHaveBeenCalledWith(
-      'Wake word access key resolved from environment variables.',
-      expect.objectContaining({ length: env.PORCUPINE_ACCESS_KEY.length }),
-    );
     expect(logger.info).toHaveBeenCalledWith(
       'Configuration loaded.',
       expect.objectContaining({
         hasRealtimeApiKey: true,
-        wakeWordHasAccessKey: true,
+        wakeWordModel: 'hey_jarvis',
       }),
     );
 
     for (const call of [...logger.debug.mock.calls, ...logger.info.mock.calls]) {
       const serialized = JSON.stringify(call);
       expect(serialized).not.toContain(env.REALTIME_API_KEY);
-      expect(serialized).not.toContain(env.PORCUPINE_ACCESS_KEY);
     }
   });
 
@@ -217,8 +226,6 @@ describe('ConfigManager', () => {
     const manager = new ConfigManager({
       env: {
         REALTIME_API_KEY: 'api',
-        PORCUPINE_ACCESS_KEY: 'wake',
-        WAKE_WORD_BUILTIN: 'porcupine',
       } as NodeJS.ProcessEnv,
       preferencesStore,
     });
@@ -245,8 +252,6 @@ describe('ConfigManager', () => {
     const manager = new ConfigManager({
       env: {
         REALTIME_API_KEY: 'initial-key',
-        PORCUPINE_ACCESS_KEY: 'initial-wake',
-        WAKE_WORD_BUILTIN: 'porcupine',
       } as NodeJS.ProcessEnv,
       secretStore,
     });
@@ -257,19 +262,12 @@ describe('ConfigManager', () => {
     expect(rendererConfig.hasRealtimeApiKey).toBe(true);
     await expect(secretStore.getSecret('REALTIME_API_KEY')).resolves.toBe('updated-key');
     await expect(manager.getSecret('realtimeApiKey')).resolves.toBe('updated-key');
-
-    const updatedConfig = await manager.setSecret('wakeWordAccessKey', '\tnew-porcupine-key\n');
-    expect(updatedConfig.wakeWord.hasAccessKey).toBe(true);
-    await expect(secretStore.getSecret('PORCUPINE_ACCESS_KEY')).resolves.toBe('new-porcupine-key');
-    await expect(manager.getSecret('wakeWordAccessKey')).resolves.toBe('new-porcupine-key');
   });
 
   it('throws when attempting to persist secrets without a configured store', async () => {
     const manager = new ConfigManager({
       env: {
         REALTIME_API_KEY: 'initial',
-        PORCUPINE_ACCESS_KEY: 'wake',
-        WAKE_WORD_BUILTIN: 'porcupine',
       } as NodeJS.ProcessEnv,
     });
 
@@ -289,8 +287,6 @@ describe('ConfigManager', () => {
     const manager = new ConfigManager({
       env: {
         REALTIME_API_KEY: 'live-key',
-        PORCUPINE_ACCESS_KEY: 'wake',
-        WAKE_WORD_BUILTIN: 'porcupine',
       } as NodeJS.ProcessEnv,
       secretStore,
       openAIClientFactory,
@@ -307,7 +303,7 @@ describe('ConfigManager', () => {
   it('returns a helpful error when testing an unconfigured realtime api key', async () => {
     const fetchMock = vi.fn();
     const manager = new ConfigManager({
-      env: { PORCUPINE_ACCESS_KEY: 'wake-key' } as NodeJS.ProcessEnv,
+      env: {} as NodeJS.ProcessEnv,
       fetchFn: fetchMock,
     });
 
@@ -322,8 +318,6 @@ describe('ConfigManager', () => {
     const manager = new ConfigManager({
       env: {
         REALTIME_API_KEY: 'configured-key',
-        PORCUPINE_ACCESS_KEY: 'wake-key',
-        WAKE_WORD_BUILTIN: 'porcupine',
       } as NodeJS.ProcessEnv,
     });
 
@@ -333,29 +327,4 @@ describe('ConfigManager', () => {
     expect(result).toEqual({ ok: false, message: 'Secret testing is unavailable: no OpenAI client configured.' });
   });
 
-  it('reports HTTP failures when validating wake word access keys', async () => {
-    const secretStore = new InMemorySecretStore();
-    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 401 });
-    const manager = new ConfigManager({
-      env: {
-        REALTIME_API_KEY: 'api',
-        PORCUPINE_ACCESS_KEY: 'wake',
-        WAKE_WORD_BUILTIN: 'porcupine',
-      } as NodeJS.ProcessEnv,
-      secretStore,
-      fetchFn: fetchMock,
-    });
-
-    await manager.load();
-
-    const result = await manager.testSecret('wakeWordAccessKey');
-    expect(fetchMock).toHaveBeenCalledWith(
-      'https://api.picovoice.ai/api/v1/porcupine/validate',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({ Authorization: 'Bearer wake' }),
-      }),
-    );
-    expect(result).toEqual({ ok: false, message: 'Wake word service responded with HTTP 401' });
-  });
 });

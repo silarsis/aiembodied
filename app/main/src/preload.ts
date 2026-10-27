@@ -9,6 +9,10 @@ import type {
   AvatarAnimationUploadRequest,
   AvatarAnimationUploadResult,
   AvatarAnimationGenerationRequest,
+  AvatarMotionChunkEvent,
+  AvatarMotionStatus,
+  AvatarMotionStreamRequest,
+  AvatarMotionStreamResult,
   AvatarPoseSummary,
   AvatarPoseUploadRequest,
   AvatarPoseUploadResult,
@@ -179,6 +183,9 @@ export interface AvatarBridge {
   listAnimations(): Promise<AvatarAnimationSummary[]>;
   uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult>;
   generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;
+  getMotionStatus(): Promise<AvatarMotionStatus>;
+  streamMotion(request: AvatarMotionStreamRequest): Promise<AvatarMotionStreamResult>;
+  onMotionChunk(listener: (chunk: AvatarMotionChunkEvent) => void): () => void;
   deleteAnimation(animationId: string): Promise<void>;
   renameAnimation(animationId: string, newName: string): Promise<AvatarAnimationSummary>;
   loadAnimationBinary(animationId: string): Promise<ArrayBuffer>;
@@ -333,6 +340,17 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       ipcRenderer.invoke('avatar-animation:upload', payload) as Promise<AvatarAnimationUploadResult>,
     generateAnimation: (payload: AvatarAnimationGenerationRequest) =>
       ipcRenderer.invoke('avatar-animation:generate', payload) as Promise<AvatarAnimationUploadResult>,
+    getMotionStatus: () => ipcRenderer.invoke('avatar-motion:status') as Promise<AvatarMotionStatus>,
+    streamMotion: (payload: AvatarMotionStreamRequest) =>
+      ipcRenderer.invoke('avatar-motion:stream', payload) as Promise<AvatarMotionStreamResult>,
+    onMotionChunk: (listener) => {
+      const channel = 'avatar-motion:chunk';
+      const handler = (_event: unknown, payload: AvatarMotionChunkEvent) => listener(payload);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
     deleteAnimation: async (animationId) => {
       await ipcRenderer.invoke('avatar-animation:delete', animationId);
     },

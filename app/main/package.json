@@ -16,7 +16,6 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
-    "@picovoice/porcupine-node": "^4.0.2",
     "@picovoice/pvrecorder-node": "^1.2.9",
     "@pixiv/three-vrm": "^3.5.5",
     "@pixiv/three-vrm-animation": "^3.5.5",
@@ -27,6 +26,7 @@
     "dotenv": "^18.0.9",
     "electron": "^45.0.0",
     "keytar": "^7.9.0",
+    "onnxruntime-node": "^1.31.1",
     "openai": "^7.43.0",
     "pngjs": "^7.0.0",
     "prom-client": "^15.1.3",

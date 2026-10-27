@@ -129,8 +129,6 @@ function main() {
   runTestGroup('tests/main.test.ts', 'Main', electronExe, vitestEntry);
   runTestGroup('tests/conversation*.test.ts', 'Conversation', electronExe, vitestEntry);
   runTestGroup('tests/wake-word*.test.ts', 'Wake Word', electronExe, vitestEntry);
-  // NOTE: Porcupine tests are skipped due to heap exhaustion from vi.resetModules()
-  // See AGENTS.md for manual execution instructions
   runTestGroup('tests/logger.test.ts', 'Logger', electronExe, vitestEntry);
   runTestGroup('tests/crash-guard.test.ts', 'Crash Guard', electronExe, vitestEntry);
   runTestGroup('tests/runtime-paths.test.ts', 'Runtime Paths', electronExe, vitestEntry);

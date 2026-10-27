@@ -254,14 +254,11 @@ describe('App component', () => {
         path: '/metrics',
       },
       wakeWord: {
-        keywordPath: '',
-        keywordLabel: '',
-        sensitivity: 0.5,
-        minConfidence: 0.5,
+        model: 'hey_jarvis',
+        keywordLabel: 'Hey Jarvis',
+        threshold: 0.5,
         cooldownMs: 1500,
         deviceIndex: undefined,
-        modelPath: undefined,
-        hasAccessKey: true,
       },
     };
 
@@ -632,14 +629,11 @@ describe('App component', () => {
           featureFlags: { transcriptOverlay: true },
           hasRealtimeApiKey: true,
               wakeWord: {
-            keywordPath: '',
-            keywordLabel: '',
-            sensitivity: 0.5,
-            minConfidence: 0.5,
+            model: 'hey_jarvis',
+            keywordLabel: 'Hey Jarvis',
+            threshold: 0.5,
             cooldownMs: 1500,
             deviceIndex: undefined,
-            modelPath: undefined,
-            hasAccessKey: true,
           },
         }),
         getSecret: vi.fn().mockResolvedValue('secret'),
@@ -737,14 +731,11 @@ describe('App component', () => {
           featureFlags: { transcriptOverlay: true },
           hasRealtimeApiKey: true,
               wakeWord: {
-            keywordPath: '',
-            keywordLabel: '',
-            sensitivity: 0.5,
-            minConfidence: 0.5,
+            model: 'hey_jarvis',
+            keywordLabel: 'Hey Jarvis',
+            threshold: 0.5,
             cooldownMs: 1500,
             deviceIndex: undefined,
-            modelPath: undefined,
-            hasAccessKey: true,
           },
         }),
         getSecret: vi.fn().mockResolvedValue('secret'),
@@ -928,14 +919,11 @@ describe('App component', () => {
           featureFlags: { transcriptOverlay: true },
           hasRealtimeApiKey: true,
               wakeWord: {
-            keywordPath: '',
-            keywordLabel: '',
-            sensitivity: 0.5,
-            minConfidence: 0.5,
+            model: 'hey_jarvis',
+            keywordLabel: 'Hey Jarvis',
+            threshold: 0.5,
             cooldownMs: 1500,
             deviceIndex: undefined,
-            modelPath: undefined,
-            hasAccessKey: true,
           },
         }),
         getSecret: vi.fn().mockResolvedValue('secret'),
@@ -1060,14 +1048,11 @@ describe('App component', () => {
           featureFlags: {},
           hasRealtimeApiKey: true,
               wakeWord: {
-            keywordPath: '',
-            keywordLabel: '',
-            sensitivity: 0.5,
-            minConfidence: 0.5,
+            model: 'hey_jarvis',
+            keywordLabel: 'Hey Jarvis',
+            threshold: 0.5,
             cooldownMs: 1500,
             deviceIndex: undefined,
-            modelPath: undefined,
-            hasAccessKey: true,
           },
         }),
         getSecret: vi.fn().mockResolvedValue('secret'),
@@ -1091,14 +1076,11 @@ describe('App component', () => {
       hasRealtimeApiKey: true,
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: {
-        keywordPath: '',
-        keywordLabel: '',
-        sensitivity: 0.5,
-        minConfidence: 0.5,
+        model: 'hey_jarvis',
+        keywordLabel: 'Hey Jarvis',
+        threshold: 0.5,
         cooldownMs: 1500,
         deviceIndex: undefined,
-        modelPath: undefined,
-        hasAccessKey: true,
       },
     });
 
@@ -1188,63 +1170,6 @@ describe('App component', () => {
     ).toBeInTheDocument();
   });
 
-  it('reports wake word access key test failures', async () => {
-    (window as PreloadWindow).aiembodied = {
-      ping: () => 'pong',
-      config: {
-        get: vi.fn().mockResolvedValue({
-          audioInputDeviceId: '',
-          audioOutputDeviceId: '',
-          featureFlags: {},
-          hasRealtimeApiKey: true,
-              wakeWord: {
-            keywordPath: '',
-            keywordLabel: '',
-            sensitivity: 0.5,
-            minConfidence: 0.5,
-            cooldownMs: 1500,
-            deviceIndex: undefined,
-            modelPath: undefined,
-            hasAccessKey: true,
-          },
-        }),
-        getSecret: vi.fn().mockResolvedValue('secret'),
-        setAudioDevicePreferences: setAudioDevicePreferencesMock,
-        setSecret: setSecretMock,
-        testSecret: testSecretMock,
-      },
-      realtime: { mintEphemeralToken: mintEphemeralTokenMock },
-      wakeWord: {
-        onWake: () => () => { },
-      },
-      avatar: createAvatarBridgeMock(),
-      __bridgeReady: true,
-      __bridgeVersion: '1.0.0',
-    } as unknown as PreloadWindow['aiembodied'];
-
-    testSecretMock.mockResolvedValueOnce({ ok: false, message: 'Invalid Porcupine access key' });
-
-    render(<App />);
-
-    await openTab(/Local/i);
-
-    const wakeHeading = await screen.findByRole('heading', { name: /Porcupine access key/i });
-    const wakePanel = wakeHeading.closest('article');
-    expect(wakePanel).not.toBeNull();
-    if (!wakePanel) {
-      throw new Error('Wake word secret panel missing');
-    }
-
-    const testButton = within(wakePanel).getByRole('button', { name: /test key/i });
-    fireEvent.click(testButton);
-
-    await waitFor(() => {
-      expect(testSecretMock).toHaveBeenCalledWith('wakeWordAccessKey');
-    });
-
-    expect(within(wakePanel).getByText(/Invalid Porcupine access key/i)).toBeInTheDocument();
-  });
-
   it('syncs the base prompt textarea with realtime session updates', async () => {
     const DEFAULT_PROMPT =
       "You are echo, an AI assistant. You are slightly sarcastic, very blunt, but helpful in your own way.\n\nYou question assumptions, and aren't afraid to ask questions or challenge me. You have a sharp wit.\n\nYou are here to help me be a better person, but you don't put up with bullshit. You also have an Australian sensibility when it comes to swearing and language overall.\n\nYou are good-natured and good-humoured.";
@@ -1260,14 +1185,11 @@ describe('App component', () => {
               realtimeVoice: 'shimmer',
           sessionInstructions: 'Persisted instructions from config',
           wakeWord: {
-            keywordPath: '',
-            keywordLabel: '',
-            sensitivity: 0.5,
-            minConfidence: 0.5,
+            model: 'hey_jarvis',
+            keywordLabel: 'Hey Jarvis',
+            threshold: 0.5,
             cooldownMs: 1500,
             deviceIndex: undefined,
-            modelPath: undefined,
-            hasAccessKey: true,
           },
         }),
         getSecret: vi.fn().mockResolvedValue('secret'),
@@ -1343,14 +1265,11 @@ describe('App component', () => {
           hasRealtimeApiKey: true,
               realtimeVoice: 'verse',
           wakeWord: {
-            keywordPath: '',
-            keywordLabel: '',
-            sensitivity: 0.5,
-            minConfidence: 0.5,
+            model: 'hey_jarvis',
+            keywordLabel: 'Hey Jarvis',
+            threshold: 0.5,
             cooldownMs: 1500,
             deviceIndex: undefined,
-            modelPath: undefined,
-            hasAccessKey: true,
           },
         }),
         getSecret: vi.fn().mockResolvedValue('secret'),

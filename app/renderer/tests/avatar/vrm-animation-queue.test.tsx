@@ -319,6 +319,81 @@ describe('VrmAvatarRenderer animation queue', () => {
     });
   });
 
+  it('fades a clip in from idle but hands over to a queued clip without fading', async () => {
+    let busRef: { enqueue: (request: AvatarAnimationRequest) => void } | null = null;
+    render(
+      <AnimationBusProvider>
+        <BusCapture onReady={(bus) => (busRef = bus)} />
+        <VrmAvatarRenderer frame={null} model={model} />
+      </AnimationBusProvider>,
+    );
+
+    await waitFor(() => {
+      expect(threeMockState.mixers.length).toBeGreaterThan(0);
+    });
+
+    const mixer = threeMockState.mixers[0];
+    const initialActions = mixer.actions.length;
+    const bus = busRef as unknown as { enqueue: (request: AvatarAnimationRequest) => void } | null;
+    bus?.enqueue({ slug: toAnimationSlug('First'), intent: 'play' });
+    bus?.enqueue({ slug: toAnimationSlug('Second'), intent: 'play' });
+
+    await waitFor(() => {
+      expect(mixer.actions.length).toBe(initialActions + 1);
+    });
+    const first = mixer.actions.at(-1);
+    if (!first) {
+      throw new Error('Expected animation action to be created.');
+    }
+    expect(first.fadeIn).toHaveBeenCalledWith(0.25);
+
+    mixer.emitFinished(first);
+
+    await waitFor(() => {
+      expect(mixer.actions.length).toBe(initialActions + 2);
+    });
+    const second = mixer.actions.at(-1);
+    expect(first.stop).toHaveBeenCalled();
+    expect(first.fadeOut).not.toHaveBeenCalled();
+    expect(second?.fadeIn).not.toHaveBeenCalled();
+    expect(second?.play).toHaveBeenCalled();
+  });
+
+  it('fades the last queued clip out instead of snapping back to idle', async () => {
+    let busRef: { enqueue: (request: AvatarAnimationRequest) => void } | null = null;
+    render(
+      <AnimationBusProvider>
+        <BusCapture onReady={(bus) => (busRef = bus)} />
+        <VrmAvatarRenderer frame={null} model={model} />
+      </AnimationBusProvider>,
+    );
+
+    await waitFor(() => {
+      expect(threeMockState.mixers.length).toBeGreaterThan(0);
+    });
+
+    const mixer = threeMockState.mixers[0];
+    const initialActions = mixer.actions.length;
+    const bus = busRef as unknown as { enqueue: (request: AvatarAnimationRequest) => void } | null;
+    bus?.enqueue({ slug: toAnimationSlug('First'), intent: 'play' });
+
+    await waitFor(() => {
+      expect(mixer.actions.length).toBe(initialActions + 1);
+    });
+    const action = mixer.actions.at(-1);
+    if (!action) {
+      throw new Error('Expected animation action to be created.');
+    }
+
+    mixer.emitFinished(action);
+
+    expect(action.fadeOut).toHaveBeenCalledWith(0.3);
+    expect(action.stop).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(action.stop).toHaveBeenCalled();
+    });
+  });
+
   it('invokes timing callbacks when starting playback', async () => {
     let busRef: { enqueue: (request: AvatarAnimationRequest) => void } | null = null;
     render(

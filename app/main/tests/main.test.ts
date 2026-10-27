@@ -335,6 +335,18 @@ vi.mock('../src/avatar/vrma-generation-service.js', () => ({
   VrmaGenerationService: VrmaGenerationServiceMock,
 }));
 
+// Keep the bootstrap tests off the network: a real motion service on MOTION_SERVICE_URL would
+// otherwise answer /health and route animation generation through it.
+vi.mock('../src/avatar/motion/local-motion-client.js', () => ({
+  LocalMotionClient: vi.fn(function () {
+    return {
+      health: vi.fn().mockResolvedValue(null),
+      generateClip: vi.fn().mockRejectedValue(new Error('motion service unavailable in tests')),
+      stream: vi.fn(),
+    };
+  }),
+}));
+
 const autoLaunchSyncMock = vi.fn<() => Promise<boolean>>();
 const autoLaunchIsEnabledMock = vi.fn<() => Promise<boolean>>();
 
@@ -513,13 +525,12 @@ describe('main process bootstrap', () => {
     const config = {
       realtimeApiKey: 'rt-key',
       comfyUiBaseUrl: 'http://127.0.0.1:8188',
+      motionServiceUrl: 'http://127.0.0.1:8190',
       featureFlags: {},
       wakeWord: {
-        accessKey: 'access',
-        keywordPath: 'keyword.ppn',
-        keywordLabel: 'Porcupine',
-        sensitivity: 0.6,
-        minConfidence: 0.4,
+        model: 'hey_jarvis',
+        keywordLabel: 'Hey Jarvis',
+        threshold: 0.6,
         cooldownMs: 750,
       },
       metrics: {
@@ -550,18 +561,16 @@ describe('main process bootstrap', () => {
     const baseConfig = {
       realtimeApiKey: 'rt-key',
       comfyUiBaseUrl: 'http://127.0.0.1:8188',
+      motionServiceUrl: 'http://127.0.0.1:8190',
       audioInputDeviceId: undefined,
       audioOutputDeviceId: undefined,
       featureFlags: {},
       wakeWord: {
-        accessKey: 'access',
-        keywordPath: 'keyword.ppn',
-        keywordLabel: 'Porcupine',
-        sensitivity: 0.5,
-        minConfidence: 0.6,
+        model: 'hey_jarvis',
+        keywordLabel: 'Hey Jarvis',
+        threshold: 0.5,
         cooldownMs: 900,
         deviceIndex: 1,
-        modelPath: '/path/to/model',
       },
       metrics: {
         enabled: false,
@@ -616,16 +625,18 @@ describe('main process bootstrap', () => {
     expect(WakeWordServiceMock.mock.calls[0][0]).toMatchObject({
       logger: mockLogger,
       cooldownMs: baseConfig.wakeWord.cooldownMs,
-      minConfidence: baseConfig.wakeWord.minConfidence,
+      minConfidence: baseConfig.wakeWord.threshold,
     });
 
     const wakeWordService = wakeWordServiceInstances[0];
     expect(wakeWordService.start).toHaveBeenCalledWith({
-      accessKey: baseConfig.wakeWord.accessKey,
-      keywordPath: baseConfig.wakeWord.keywordPath,
+      modelPaths: {
+        melspectrogram: expect.stringMatching(/assets[\\/]wake-word[\\/]melspectrogram\.onnx$/),
+        embedding: expect.stringMatching(/assets[\\/]wake-word[\\/]embedding_model\.onnx$/),
+        wakeWord: expect.stringMatching(/assets[\\/]wake-word[\\/]hey_jarvis_v0\.1\.onnx$/),
+      },
       keywordLabel: baseConfig.wakeWord.keywordLabel,
-      sensitivity: baseConfig.wakeWord.sensitivity,
-      modelPath: baseConfig.wakeWord.modelPath,
+      threshold: baseConfig.wakeWord.threshold,
       deviceIndex: baseConfig.wakeWord.deviceIndex,
     });
 
@@ -701,8 +712,8 @@ describe('main process bootstrap', () => {
 
     const testSecretHandler = handleEntries.get('config:test-secret');
     expect(typeof testSecretHandler).toBe('function');
-    await expect(testSecretHandler?.({}, 'wakeWordAccessKey')).resolves.toEqual({ ok: true });
-    expect(testSecretMock).toHaveBeenCalledWith('wakeWordAccessKey');
+    await expect(testSecretHandler?.({}, 'realtimeApiKey')).resolves.toEqual({ ok: true });
+    expect(testSecretMock).toHaveBeenCalledWith('realtimeApiKey');
 
     const deviceHandler = handleEntries.get('config:set-audio-devices');
     expect(typeof deviceHandler).toBe('function');
@@ -953,15 +964,14 @@ describe('main process bootstrap', () => {
     const baseConfig = {
       realtimeApiKey: 'rt-key',
       comfyUiBaseUrl: 'http://127.0.0.1:8188',
+      motionServiceUrl: 'http://127.0.0.1:8190',
       audioInputDeviceId: undefined,
       audioOutputDeviceId: undefined,
       featureFlags: {},
       wakeWord: {
-        accessKey: 'access',
-        keywordPath: 'keyword.ppn',
-        keywordLabel: 'Porcupine',
-        sensitivity: 0.5,
-        minConfidence: 0.6,
+        model: 'hey_jarvis',
+        keywordLabel: 'Hey Jarvis',
+        threshold: 0.5,
         cooldownMs: 900,
       },
       metrics: {
@@ -1016,18 +1026,16 @@ describe('main process bootstrap', () => {
     const config = {
       realtimeApiKey: 'rt-key',
       comfyUiBaseUrl: 'http://127.0.0.1:8188',
+      motionServiceUrl: 'http://127.0.0.1:8190',
       audioInputDeviceId: undefined,
       audioOutputDeviceId: undefined,
       featureFlags: {},
       wakeWord: {
-        accessKey: 'access',
-        keywordPath: 'keyword.ppn',
-        keywordLabel: 'Porcupine',
-        sensitivity: 0.5,
-        minConfidence: 0.6,
+        model: 'hey_jarvis',
+        keywordLabel: 'Hey Jarvis',
+        threshold: 0.5,
         cooldownMs: 900,
         deviceIndex: 1,
-        modelPath: '/path/to/model',
       },
       metrics: {
         enabled: false,

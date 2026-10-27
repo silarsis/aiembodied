@@ -249,22 +249,12 @@ async function main() {
   const repoRoot = resolve(process.cwd());
   const envPath = resolve(repoRoot, '.env');
   if (!existsSync(envPath)) {
-    console.warn('[warn] .env not found at repo root. Dev run expects REALTIME_API_KEY and PORCUPINE_ACCESS_KEY.');
+    console.warn('[warn] .env not found at repo root. Dev run expects REALTIME_API_KEY.');
   }
 
   // Parse environment variables
   const envFromFile = parseDotEnv(envPath);
   const hasRealtimeKey = process.env.REALTIME_API_KEY || envFromFile.REALTIME_API_KEY;
-  const hasPorcupineKey = process.env.PORCUPINE_ACCESS_KEY || envFromFile.PORCUPINE_ACCESS_KEY;
-
-  if (!hasPorcupineKey) {
-    console.error('Missing PORCUPINE_ACCESS_KEY. Add it to .env or export it in the environment.');
-    console.error('Example .env entries:');
-    console.error('  PORCUPINE_ACCESS_KEY=your_porcupine_key_here');
-    console.error('  REALTIME_API_KEY=your_openai_key_here');
-    process.exit(1);
-  }
-
   if (!hasRealtimeKey) {
     console.warn('[warn] REALTIME_API_KEY not found. Some features may not work properly.');
   }
