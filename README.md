@@ -60,13 +60,21 @@ The scripts verify existing installations of Node.js and pnpm, upgrading them wh
 necessary via the native package manager (`winget`/Chocolatey on Windows, Homebrew on
 macOS). When the checks pass you can continue with `pnpm install`.
 
+No C++ toolchain (Visual Studio Build Tools, Xcode, Python for node-gyp) is needed:
+better-sqlite3, keytar and the Picovoice packages all ship prebuilt N-API binaries that
+load in both Node and Electron.
+
 ### Clone & Install
 
 ```bash
 git clone <your-fork-url>
 cd aiembodied
 pnpm install
+pnpm --filter @aiembodied/main exec install-electron
 ```
+
+Electron 45 no longer downloads its binary during install, so the second command fetches
+it (`pnpm dev:run` also does this for you).
 
 > ℹ️ The monorepo hosts multiple workspaces (`app/main`, `app/renderer`). `pnpm install` bootstraps all of them.
 
@@ -102,15 +110,14 @@ Additional knobs include `WAKE_WORD_KEYWORD_PATH`/`WAKE_WORD_KEYWORD_LABEL` for 
      ```bash
      pnpm dev:run
      ```
-   - Or using platform scripts:
-     ```powershell
-     .\scripts\run-dev.ps1
-     ```
+   - Or, on macOS/Linux:
      ```bash
      ./scripts/run-dev.sh
      ```
 
-   The run scripts rebuild native deps for Electron automatically. Note: this can temporarily break Node-based unit tests that touch SQLite. Reinstall or rebuild for Node when you return to test runs.
+   `pnpm dev:run` installs dependencies into an isolated store under `.dev-home/`, builds both
+   bundles, downloads the Electron binary if needed and launches the app. It skips the install
+   and build on later runs until the lockfile or sources change; pass `--force-deps` to redo them.
 
 During renderer UI work you can also run the Vite dev server in parallel:
 
@@ -131,6 +138,8 @@ instrumentation to capture detailed lifecycle logs:
 ```bash
 AIEMBODIED_ENABLE_DIAGNOSTICS=1 pnpm dev:run
 ```
+
+`pnpm dev:run` already turns this on; set it yourself when launching another way.
 
 Setting the environment variable (or alternatively `AIEMBODIED_DEBUG=1`) causes the Electron main process to log every app,
 window, and renderer milestone — including renderer console output — to both the terminal and the rotating log files under the

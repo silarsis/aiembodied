@@ -26,7 +26,7 @@ The development script (`scripts/run-dev.mjs`) is cross-platform and handles:
 - API key validation (requires `PORCUPINE_ACCESS_KEY`, warns if `REALTIME_API_KEY` missing)
 - Launching Electron with diagnostics enabled
 
-Alternative platform-specific scripts exist (`run-dev.ps1`, `run-dev.sh`) but the `.mjs` version is preferred for consistency.
+An alternative shell script exists (`run-dev.sh`) but the `.mjs` version is preferred for consistency.
 
 ## Testing & Verification
 Run these commands from the repository root unless a task specifies otherwise:

@@ -7,9 +7,10 @@ overrides:
 onlyBuiltDependencies:
   - "@picovoice/porcupine-node"
   - "@picovoice/pvrecorder-node"
-  - better-sqlite3
   - esbuild
   - keytar
 
 ignoredBuiltDependencies:
+  # Ships N-API prebuilds; its implicit node-gyp build would need a C++ toolchain.
+  - better-sqlite3
   - electron-winstaller

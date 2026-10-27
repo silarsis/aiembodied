@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve, join, parse } from 'node:path';
-import { prepareDevHomeEnv, rebuildNativeDependenciesForElectron } from './run-dev.mjs';
+import { ensureElectronBinary, prepareDevHomeEnv } from './run-dev.mjs';
 
 function run(cmd, args, options = {}) {
   return new Promise((resolvePromise, reject) => {
@@ -97,8 +97,7 @@ async function main() {
   }
   console.log('[info] Renderer build verified at:', rendererIndexPath);
 
-  console.log('[info] Rebuilding native dependencies for Electron...');
-  await rebuildNativeDependenciesForElectron(repoRoot, { pnpmStorePath });
+  await ensureElectronBinary(repoRoot);
 
   console.log('[success] Dev build prepared. Electron launch skipped.');
 }
