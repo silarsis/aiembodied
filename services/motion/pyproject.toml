@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aiembodied-motion-service"
+version = "0.1.0"
+description = "Local text-to-motion HTTP service (NVIDIA ARDY / Kimodo) returning VRMA JSON for the aiembodied app"
+requires-python = ">=3.10"
+# torch, kimodo or ardy are installed separately per backend venv (see README.md).
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn>=0.29",
+  "pydantic>=2.0",
+  "numpy>=1.23",
+  "scipy>=1.10",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "httpx>=0.27"]
+
+[project.scripts]
+motion-service = "motion_service.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
