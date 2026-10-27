@@ -34,6 +34,12 @@ import type { WakeWordDetectionEvent } from './wake-word/types.js';
 import type { LatencyMetricName } from './metrics/types.js';
 import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from './realtime/types.js';
 import type {
+  LocalVoiceEvent,
+  LocalVoiceStatus,
+  LocalVoiceTurnRequest,
+  LocalVoiceTurnResult,
+} from './voice/types.js';
+import type {
   MCPServerConfig,
   MCPServerConfigInput,
   MCPToolSummary,
@@ -140,6 +146,7 @@ export interface ConfigBridge {
 export interface PreloadApi {
   config: ConfigBridge;
   realtime: RealtimeBridge;
+  voice?: LocalVoiceBridge;
   wakeWord: WakeWordBridge;
   conversation?: ConversationBridge;
   metrics?: MetricsBridge;
@@ -164,6 +171,14 @@ export interface ConversationBridge {
 
 export interface MetricsBridge {
   observeLatency(metric: LatencyMetricName, valueMs: number): Promise<void>;
+}
+
+export interface LocalVoiceBridge {
+  getStatus(): Promise<LocalVoiceStatus>;
+  runTurn(request: LocalVoiceTurnRequest): Promise<LocalVoiceTurnResult>;
+  cancelTurn(turnId: string): Promise<boolean>;
+  resetConversation(): Promise<void>;
+  onEvent(listener: (event: LocalVoiceEvent) => void): () => void;
 }
 
 export interface RealtimeBridge {
@@ -267,6 +282,22 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
   realtime: {
     mintEphemeralToken: (request) =>
       ipcRenderer.invoke('realtime:mint-ephemeral-token', request) as Promise<RealtimeEphemeralTokenResponse>,
+  },
+  voice: {
+    getStatus: () => ipcRenderer.invoke('voice:status') as Promise<LocalVoiceStatus>,
+    runTurn: (request) => ipcRenderer.invoke('voice:turn', request) as Promise<LocalVoiceTurnResult>,
+    cancelTurn: (turnId) => ipcRenderer.invoke('voice:cancel', turnId) as Promise<boolean>,
+    resetConversation: async () => {
+      await ipcRenderer.invoke('voice:reset');
+    },
+    onEvent: (listener) => {
+      const channel = 'voice:event';
+      const handler = (_event: unknown, payload: LocalVoiceEvent) => listener(payload);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
   },
   wakeWord: {
     onWake: (listener) => {

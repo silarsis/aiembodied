@@ -34,6 +34,51 @@ describe('ConfigManager', () => {
     });
   });
 
+  it('defaults to the local voice chain on Qwen Next Flash', async () => {
+    const manager = new ConfigManager({ env: {} as NodeJS.ProcessEnv });
+
+    const config = await manager.load();
+
+    expect(config.voiceBackend).toBe('local');
+    expect(config.localVoice).toEqual({
+      llmBaseUrl: 'http://localhost:1234/v1',
+      llmModel: 'qwen-next-flash',
+      llmApiKey: 'local',
+      voiceServiceUrl: 'http://127.0.0.1:8191',
+      ttsVoice: 'af_heart',
+    });
+    const rendererConfig = manager.getRendererConfig();
+    expect(rendererConfig.voiceBackend).toBe('local');
+    expect(rendererConfig).not.toHaveProperty('localVoice');
+  });
+
+  it('reads the voice backend and local LLM settings from the environment', async () => {
+    const manager = new ConfigManager({
+      env: {
+        VOICE_BACKEND: 'OpenAI',
+        LLM_BASE_URL: 'http://bija:8080/v1',
+        LLM_MODEL: 'qwen3.8',
+        VOICE_SERVICE_URL: 'http://bija:9000',
+        TTS_VOICE: 'bf_emma',
+      } as NodeJS.ProcessEnv,
+    });
+
+    const config = await manager.load();
+
+    expect(config.voiceBackend).toBe('openai');
+    expect(config.localVoice).toMatchObject({
+      llmBaseUrl: 'http://bija:8080/v1',
+      llmModel: 'qwen3.8',
+      voiceServiceUrl: 'http://bija:9000',
+      ttsVoice: 'bf_emma',
+    });
+  });
+
+  it('rejects an unknown voice backend', async () => {
+    const manager = new ConfigManager({ env: { VOICE_BACKEND: 'claude' } as NodeJS.ProcessEnv });
+    await expect(manager.load()).rejects.toBeInstanceOf(ConfigValidationError);
+  });
+
   it('prefers stored preferences over environment configuration', async () => {
     const preferencesStore = new InMemoryPreferencesStore();
     await preferencesStore.save({

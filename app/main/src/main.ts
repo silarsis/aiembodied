@@ -39,6 +39,10 @@ import { AvatarGenerationService } from './avatar/generation/avatar-generation-s
 import { ComfyUIClient } from './avatar/generation/comfyui-client.js';
 import { LocalMotionClient } from './avatar/motion/local-motion-client.js';
 import { LocalMotionGenerationService } from './avatar/motion/local-motion-generation-service.js';
+import { LocalConversationService } from './voice/local-conversation-service.js';
+import { LocalLlmClient } from './voice/local-llm-client.js';
+import { VoiceServiceClient } from './voice/voice-service-client.js';
+import type { LocalVoiceStatus, LocalVoiceTurnRequest } from './voice/types.js';
 import type {
   AvatarModelSummary,
   AvatarModelUploadRequest,
@@ -144,6 +148,7 @@ let poseEvaluationService: PoseEvaluationService | null = null;
 let avatarDescriptionService: AvatarDescriptionService | null = null;
 let avatarGenerationService: AvatarGenerationService | null = null;
 let localMotionService: LocalMotionGenerationService | null = null;
+let localConversationService: LocalConversationService | null = null;
 let currentVrmaApiKey: string | null = null;
 let currentDescriptionApiKey: string | null = null;
 
@@ -920,6 +925,29 @@ function registerIpcHandlers(
       }
     });
   });
+  ipcMain.handle('voice:status', async (): Promise<LocalVoiceStatus | null> => {
+    if (!localConversationService) {
+      return null;
+    }
+    const status = await localConversationService.status();
+    return { ...status, backend: manager.getConfig().voiceBackend };
+  });
+  ipcMain.handle('voice:turn', async (event, payload: LocalVoiceTurnRequest) => {
+    if (!localConversationService) {
+      throw new Error('Local voice chain is unavailable.');
+    }
+
+    const sender = event.sender;
+    return localConversationService.runTurn(payload, (voiceEvent) => {
+      if (!sender.isDestroyed()) {
+        sender.send('voice:event', voiceEvent);
+      }
+    });
+  });
+  ipcMain.handle('voice:cancel', (_event, turnId: string) => localConversationService?.cancel(turnId) ?? false);
+  ipcMain.handle('voice:reset', () => {
+    localConversationService?.reset();
+  });
   ipcMain.handle('avatar-animation:delete', async (_event, animationId: string) => {
     if (!avatarAnimations) {
       throw new Error('Avatar animation service is unavailable.');
@@ -1189,6 +1217,17 @@ app.whenReady().then(async () => {
       logger,
     });
   }
+
+  localConversationService = new LocalConversationService({
+    llm: new LocalLlmClient({
+      baseUrl: appConfig.localVoice.llmBaseUrl,
+      model: appConfig.localVoice.llmModel,
+      apiKey: appConfig.localVoice.llmApiKey,
+    }),
+    speech: new VoiceServiceClient({ baseUrl: appConfig.localVoice.voiceServiceUrl }),
+    ttsVoice: appConfig.localVoice.ttsVoice,
+    logger,
+  });
 
   if (avatarModelService) {
     avatarGenerationService = new AvatarGenerationService({
