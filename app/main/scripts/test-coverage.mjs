@@ -129,6 +129,7 @@ function main() {
   runTestGroup('tests/main.test.ts', 'Main', electronExe, vitestEntry);
   runTestGroup('tests/conversation*.test.ts', 'Conversation', electronExe, vitestEntry);
   runTestGroup('tests/wake-word*.test.ts', 'Wake Word', electronExe, vitestEntry);
+  runTestGroup('tests/local-voice*.test.ts', 'Local Voice', electronExe, vitestEntry);
   runTestGroup('tests/logger.test.ts', 'Logger', electronExe, vitestEntry);
   runTestGroup('tests/crash-guard.test.ts', 'Crash Guard', electronExe, vitestEntry);
   runTestGroup('tests/runtime-paths.test.ts', 'Runtime Paths', electronExe, vitestEntry);

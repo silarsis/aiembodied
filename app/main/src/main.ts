@@ -39,6 +39,10 @@ import { AvatarGenerationService } from './avatar/generation/avatar-generation-s
 import { ComfyUIClient } from './avatar/generation/comfyui-client.js';
 import { LocalMotionClient } from './avatar/motion/local-motion-client.js';
 import { LocalMotionGenerationService } from './avatar/motion/local-motion-generation-service.js';
+import { LocalLlmClient } from './local-voice/local-llm-client.js';
+import { SpeechServiceClient } from './local-voice/speech-service-client.js';
+import { LocalVoiceService } from './local-voice/local-voice-service.js';
+import type { LocalVoiceRespondRequest } from './local-voice/types.js';
 import type {
   AvatarModelSummary,
   AvatarModelUploadRequest,
@@ -144,6 +148,7 @@ let poseEvaluationService: PoseEvaluationService | null = null;
 let avatarDescriptionService: AvatarDescriptionService | null = null;
 let avatarGenerationService: AvatarGenerationService | null = null;
 let localMotionService: LocalMotionGenerationService | null = null;
+let localVoiceService: LocalVoiceService | null = null;
 let currentVrmaApiKey: string | null = null;
 let currentDescriptionApiKey: string | null = null;
 
@@ -920,6 +925,42 @@ function registerIpcHandlers(
       }
     });
   });
+  ipcMain.handle('local-voice:status', async () => {
+    if (!localVoiceService) {
+      throw new Error('Local voice service is unavailable.');
+    }
+    return localVoiceService.status();
+  });
+  ipcMain.handle('local-voice:transcribe', async (_event, audio: ArrayBuffer | Uint8Array) => {
+    if (!localVoiceService) {
+      throw new Error('Local voice service is unavailable.');
+    }
+    const wav = audio instanceof Uint8Array ? audio : new Uint8Array(audio);
+    return localVoiceService.transcribe(wav);
+  });
+  ipcMain.handle('local-voice:respond', async (event, payload: LocalVoiceRespondRequest) => {
+    if (!localVoiceService) {
+      throw new Error('Local voice service is unavailable.');
+    }
+    if (!payload || typeof payload.requestId !== 'string' || typeof payload.text !== 'string') {
+      throw new Error('Invalid local voice request payload received.');
+    }
+
+    const sender = event.sender;
+    return localVoiceService.respond(payload, (voiceEvent) => {
+      if (!sender.isDestroyed()) {
+        sender.send('local-voice:event', voiceEvent);
+      }
+    });
+  });
+  ipcMain.handle('local-voice:cancel', (_event, requestId?: string) => {
+    localVoiceService?.cancel(typeof requestId === 'string' ? requestId : undefined);
+    return true;
+  });
+  ipcMain.handle('local-voice:reset', () => {
+    localVoiceService?.resetHistory();
+    return true;
+  });
   ipcMain.handle('avatar-animation:delete', async (_event, animationId: string) => {
     if (!avatarAnimations) {
       throw new Error('Avatar animation service is unavailable.');
@@ -1190,6 +1231,16 @@ app.whenReady().then(async () => {
     });
   }
 
+  localVoiceService = new LocalVoiceService({
+    llm: new LocalLlmClient({
+      baseUrl: appConfig.localConversation.llmBaseUrl,
+      model: appConfig.localConversation.llmModel,
+    }),
+    speech: new SpeechServiceClient({ baseUrl: appConfig.localConversation.speechServiceUrl }),
+    voice: appConfig.localConversation.voice,
+    logger,
+  });
+
   if (avatarModelService) {
     avatarGenerationService = new AvatarGenerationService({
       comfy: new ComfyUIClient({ baseUrl: appConfig.comfyUiBaseUrl }),
@@ -1335,6 +1386,9 @@ app.whenReady().then(async () => {
       hasRealtimeApiKey: Boolean(configSnapshot.realtimeApiKey),
       comfyUiBaseUrl: configSnapshot.comfyUiBaseUrl,
       motionServiceUrl: configSnapshot.motionServiceUrl,
+      conversationBackend: configSnapshot.conversationBackend,
+      localLlmBaseUrl: configSnapshot.localConversation.llmBaseUrl,
+      speechServiceUrl: configSnapshot.localConversation.speechServiceUrl,
       wakeWordModel: configSnapshot.wakeWord.model,
     },
     avatar: { enabled: Boolean(avatarModelService) },

@@ -9,6 +9,13 @@ import type {
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
 import type { WakeWordDetectionEvent } from '../../main/src/wake-word/types.js';
 import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from '../../main/src/realtime/types.js';
+import type {
+  LocalVoiceEvent,
+  LocalVoiceRespondRequest,
+  LocalVoiceRespondResult,
+  LocalVoiceStatus,
+  LocalVoiceTranscribeResult,
+} from '../../main/src/local-voice/types.js';
 import type { AvatarBridge } from './avatar/types.js';
 import type { CameraDetectionEvent } from './avatar/behavior-cues.js';
 
@@ -39,9 +46,21 @@ export interface RealtimeBridge {
   mintEphemeralToken(request: RealtimeEphemeralTokenRequest): Promise<RealtimeEphemeralTokenResponse>;
 }
 
+export interface LocalVoiceBridge {
+  getStatus(): Promise<LocalVoiceStatus>;
+  /** Transcribe one utterance (16-bit PCM WAV). */
+  transcribe(wav: ArrayBuffer): Promise<LocalVoiceTranscribeResult>;
+  /** Generate and speak a reply; sentences arrive through onEvent before this resolves. */
+  respond(request: LocalVoiceRespondRequest): Promise<LocalVoiceRespondResult>;
+  cancel(requestId?: string): Promise<void>;
+  resetHistory(): Promise<void>;
+  onEvent(listener: (event: LocalVoiceEvent) => void): () => void;
+}
+
 export interface PreloadApi {
   config: ConfigBridge;
   realtime: RealtimeBridge;
+  localVoice?: LocalVoiceBridge;
   wakeWord: WakeWordBridge;
   conversation?: ConversationBridge;
   metrics?: MetricsBridge;

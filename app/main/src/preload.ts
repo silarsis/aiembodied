@@ -34,6 +34,13 @@ import type { WakeWordDetectionEvent } from './wake-word/types.js';
 import type { LatencyMetricName } from './metrics/types.js';
 import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from './realtime/types.js';
 import type {
+  LocalVoiceEvent,
+  LocalVoiceRespondRequest,
+  LocalVoiceRespondResult,
+  LocalVoiceStatus,
+  LocalVoiceTranscribeResult,
+} from './local-voice/types.js';
+import type {
   MCPServerConfig,
   MCPServerConfigInput,
   MCPToolSummary,
@@ -140,6 +147,7 @@ export interface ConfigBridge {
 export interface PreloadApi {
   config: ConfigBridge;
   realtime: RealtimeBridge;
+  localVoice?: LocalVoiceBridge;
   wakeWord: WakeWordBridge;
   conversation?: ConversationBridge;
   metrics?: MetricsBridge;
@@ -168,6 +176,17 @@ export interface MetricsBridge {
 
 export interface RealtimeBridge {
   mintEphemeralToken(request: RealtimeEphemeralTokenRequest): Promise<RealtimeEphemeralTokenResponse>;
+}
+
+export interface LocalVoiceBridge {
+  getStatus(): Promise<LocalVoiceStatus>;
+  /** Transcribe one utterance (16-bit PCM WAV). */
+  transcribe(wav: ArrayBuffer): Promise<LocalVoiceTranscribeResult>;
+  /** Generate and speak a reply; sentences arrive through onEvent before this resolves. */
+  respond(request: LocalVoiceRespondRequest): Promise<LocalVoiceRespondResult>;
+  cancel(requestId?: string): Promise<void>;
+  resetHistory(): Promise<void>;
+  onEvent(listener: (event: LocalVoiceEvent) => void): () => void;
 }
 
 export interface AvatarBridge {
@@ -267,6 +286,25 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
   realtime: {
     mintEphemeralToken: (request) =>
       ipcRenderer.invoke('realtime:mint-ephemeral-token', request) as Promise<RealtimeEphemeralTokenResponse>,
+  },
+  localVoice: {
+    getStatus: () => ipcRenderer.invoke('local-voice:status') as Promise<LocalVoiceStatus>,
+    transcribe: (wav) => ipcRenderer.invoke('local-voice:transcribe', wav) as Promise<LocalVoiceTranscribeResult>,
+    respond: (request) => ipcRenderer.invoke('local-voice:respond', request) as Promise<LocalVoiceRespondResult>,
+    cancel: async (requestId) => {
+      await ipcRenderer.invoke('local-voice:cancel', requestId);
+    },
+    resetHistory: async () => {
+      await ipcRenderer.invoke('local-voice:reset');
+    },
+    onEvent: (listener) => {
+      const channel = 'local-voice:event';
+      const handler = (_event: unknown, payload: LocalVoiceEvent) => listener(payload);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
   },
   wakeWord: {
     onWake: (listener) => {
