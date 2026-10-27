@@ -90,6 +90,9 @@ Other flags:
 - `--device cpu` runs the motion model on the CPU (slow).
 - `--no-postprocess` turns off Kimodo's foot-skate cleanup.
 - `--seed N` makes generation repeatable.
+- `--keep-warm SECONDS` (default 120; `0` turns it off): after that much idle time, the service
+  runs a tiny generation so the weights stay resident. Without it, the first request after hours
+  idle spent about 11 s re-loading the text encoder on bija, instead of about 0.15 s.
 - `--backend fake` runs a GPU-free stub that produces a synthetic wave, for wiring up the app
   without models.
 
@@ -112,7 +115,7 @@ The code is in `src/motion_service/retarget.py`.
   +X. That is the same convention as VRM 1.0 normalized bones, so each bone's local rotation is
   `G[vrm_parent]ᵀ · G[bone]`, computed from SOMA global rotations. No axis conversion is needed.
 - VRM 0.x avatars are handled by three-vrm-animation at load time.
-- Hips translation is divided by SOMA's rest hips height (1.005 m), relative to the floor and the
+- Hips translation is divided by SOMA's rest hips height above the toe joints (0.989 m), relative to the floor and the
   motion's start. The app's `.vrma` encoder writes hips rest at `[0, 1, 0]`, and three-vrm
   rescales to each avatar.
 - Stream chunks share one floor/origin, so they are continuous. Each chunk's keyframes restart at

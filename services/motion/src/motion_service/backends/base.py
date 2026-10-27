@@ -83,6 +83,10 @@ class Backend:
         """Generate a whole clip of `frames` frames."""
         raise NotImplementedError
 
+    def warm(self) -> None:
+        """Run a tiny generation so the text encoder and model weights stay resident on the GPU."""
+        self.generate(self.encode("A person stands still."), 30, 2)
+
     def stream(self, text, frames: int, steps: int) -> Iterator[Chunk]:
         """Yield continuous chunks covering `frames` frames. Default: one chunk."""
         import time

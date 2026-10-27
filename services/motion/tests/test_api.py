@@ -104,6 +104,35 @@ def test_stream_error_mid_way_is_reported_in_band():
     assert "fake backend failure" in lines[1]["message"]
 
 
+def test_keep_warm_runs_a_tiny_generation_when_idle():
+    class Counting(FakeBackend):
+        warmed = 0
+
+        def warm(self):
+            Counting.warmed += 1
+
+    app = create_app(Counting(), load_in_background=False, keep_warm_seconds=0.05)
+    with TestClient(app) as c:
+        for _ in range(100):
+            if Counting.warmed >= 2:
+                break
+            time.sleep(0.02)
+        assert Counting.warmed >= 2
+        assert c.post("/v1/motion/clip", json={"prompt": "x", "duration": 1}).status_code == 200
+
+
+def test_keep_warm_off_by_default():
+    class Counting(FakeBackend):
+        warmed = 0
+
+        def warm(self):
+            Counting.warmed += 1
+
+    with TestClient(create_app(Counting(), load_in_background=False)):
+        time.sleep(0.2)
+    assert Counting.warmed == 0
+
+
 def test_backend_load_failure_shows_in_health():
     class Broken(FakeBackend):
         def load(self):

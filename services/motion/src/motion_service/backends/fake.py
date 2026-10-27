@@ -16,8 +16,8 @@ _REST = {
     "Hips": (0, 0, 0), "Spine1": (0, 0.05, 0), "Spine2": (0, 0.12, 0), "Chest": (0, 0.2, 0),
     "Neck1": (0, 0.46, 0), "Head": (0, 0.6, 0.03),
     "LeftLeg": (0.1, -0.08, 0), "LeftShin": (0.1, -0.52, 0), "LeftFoot": (0.1, -0.94, 0),
-    "LeftToeBase": (0.1, -0.99, 0.12), "RightLeg": (-0.1, -0.08, 0), "RightShin": (-0.1, -0.52, 0),
-    "RightFoot": (-0.1, -0.94, 0), "RightToeBase": (-0.1, -0.99, 0.12),
+    "LeftToeBase": (0.1, -0.989, 0.12), "RightLeg": (-0.1, -0.08, 0), "RightShin": (-0.1, -0.52, 0),
+    "RightFoot": (-0.1, -0.94, 0), "RightToeBase": (-0.1, -0.989, 0.12),
 }
 HIPS_HEIGHT = 0.99
 

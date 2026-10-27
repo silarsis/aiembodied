@@ -82,8 +82,9 @@ for _side, _S in (("left", "Left"), ("right", "Right")):
             (f"{_side}{_vf}Distal", f"{_S}Hand{_sf}4", f"{_side}{_vf}Intermediate"),
         ]
 
-# SOMA rest-pose hips height above the toe-base joints (somaskel77 neutral joints), metres.
-SOMA_REST_HIPS_HEIGHT = 1.005
+# SOMA rest-pose hips height above the toe-base joints (somaskel77 neutral joints: LeftToeBase y = -0.989),
+# metres. The floor is estimated from the same joints, so a standing rest pose maps to exactly 1.
+SOMA_REST_HIPS_HEIGHT = 0.989
 
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 

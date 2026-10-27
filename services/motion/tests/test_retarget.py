@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
 
-from motion_service.backends.fake import HIPS_HEIGHT, synthetic_motion
+from motion_service.backends.fake import synthetic_motion
 from motion_service.retarget import SOMA_REST_HIPS_HEIGHT, RootFrame, SOMA77, slugify, to_vrma
 
 from vrma_check import assert_valid_vrma
@@ -43,7 +43,8 @@ def test_hips_translation_in_rest_height_units_from_origin():
     m = synthetic_motion(60)
     v = to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x")
     p = np.array([kf["p"] for kf in v["hips"]["position"]["keyframes"]])
-    np.testing.assert_allclose(p[:, 1], HIPS_HEIGHT / SOMA_REST_HIPS_HEIGHT, atol=1e-4)  # floor at toe height 0
+    # standing in the SOMA rest pose puts the hips exactly at the avatar's rest hips height (1.0)
+    np.testing.assert_allclose(p[:, 1], 1.0, atol=1e-4)
     assert p[0, 0] == pytest.approx(0) and p[0, 2] == pytest.approx(0)
     np.testing.assert_allclose(p[:, 0], m.root_positions[:, 0] / SOMA_REST_HIPS_HEIGHT, atol=1e-4)
 

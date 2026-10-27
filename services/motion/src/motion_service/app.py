@@ -49,9 +49,28 @@ def _ms(seconds: float) -> int:
     return int(round(seconds * 1000))
 
 
-def create_app(backend: Backend, load_in_background: bool = True) -> FastAPI:
-    state = {"ready": False, "error": None}
+def create_app(backend: Backend, load_in_background: bool = True, keep_warm_seconds: float = 0) -> FastAPI:
+    """keep_warm_seconds > 0: after that much idle time, run a tiny generation (and repeat) so the
+    first request after a long pause doesn't pay to page the 8B text encoder back in (measured ~11 s
+    after several idle hours on a Radeon 8060S, vs ~0.15 s warm)."""
+    state = {"ready": False, "error": None, "last_used": time.monotonic(), "warmups": 0}
     lock = threading.Lock()  # one generation at a time: the GPU is the bottleneck anyway
+    stop = threading.Event()
+
+    def _keep_warm():
+        while not stop.wait(min(keep_warm_seconds, 30.0)):
+            if not state["ready"] or time.monotonic() - state["last_used"] < keep_warm_seconds:
+                continue
+            if not lock.acquire(blocking=False):
+                continue
+            try:
+                backend.warm()
+                state["warmups"] += 1
+            except Exception:
+                log.exception("keep-warm generation failed")
+            finally:
+                state["last_used"] = time.monotonic()
+                lock.release()
 
     def _load():
         try:
@@ -69,7 +88,10 @@ def create_app(backend: Backend, load_in_background: bool = True) -> FastAPI:
             threading.Thread(target=_load, name="motion-load", daemon=True).start()
         else:
             _load()
+        if keep_warm_seconds > 0:
+            threading.Thread(target=_keep_warm, name="motion-keep-warm", daemon=True).start()
         yield
+        stop.set()
 
     app = FastAPI(title="aiembodied local motion service", lifespan=lifespan)
     app.state.motion = state
@@ -122,6 +144,7 @@ def create_app(backend: Backend, load_in_background: bool = True) -> FastAPI:
             vrma = to_vrma(motion.global_rot_mats, motion.posed_joints, motion.root_positions, name,
                            fps=backend.fps, kind=backend.name)
             t3 = time.perf_counter()
+            state["last_used"] = time.monotonic()
         return {"vrma": vrma, "timings": {"encodeMs": _ms(t1 - t0), "generateMs": _ms(t2 - t1),
                                           "retargetMs": _ms(t3 - t2), "totalMs": _ms(t3 - t0)}}
 
@@ -162,6 +185,8 @@ def create_app(backend: Backend, load_in_background: bool = True) -> FastAPI:
                 except Exception as e:  # headers are already sent: report in-band and end the stream
                     log.exception("stream failed")
                     yield (json.dumps({"type": "error", "message": f"{type(e).__name__}: {e}"}) + "\n").encode()
+                finally:
+                    state["last_used"] = time.monotonic()
 
         return StreamingResponse(lines(), media_type="application/x-ndjson")
 

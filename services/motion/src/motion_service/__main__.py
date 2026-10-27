@@ -23,6 +23,8 @@ def main(argv=None) -> None:
                     help="LLM2Vec encoder folder (TEXT_ENCODERS_DIR); default: Hugging Face cache (gated Llama)")
     ap.add_argument("--no-postprocess", action="store_true", help="Kimodo: skip foot-skate cleanup")
     ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument("--keep-warm", type=float, default=120.0, metavar="SECONDS",
+                    help="after this much idle time, run a tiny generation to keep weights resident (0 = off)")
     ap.add_argument("--log-level", default="info")
     a = ap.parse_args(argv)
 
@@ -35,7 +37,8 @@ def main(argv=None) -> None:
 
     from .app import create_app
 
-    uvicorn.run(create_app(backend), host=a.host, port=a.port, log_level=a.log_level.lower())
+    uvicorn.run(create_app(backend, keep_warm_seconds=a.keep_warm), host=a.host, port=a.port,
+                log_level=a.log_level.lower())
 
 
 if __name__ == "__main__":
