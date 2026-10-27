@@ -327,4 +327,34 @@ describe('ConfigManager', () => {
     expect(result).toEqual({ ok: false, message: 'Secret testing is unavailable: no OpenAI client configured.' });
   });
 
+  it('defaults the conversation to the local LLM and lets env or a saved choice override it', async () => {
+    const defaults = await new ConfigManager({ env: {} as NodeJS.ProcessEnv }).load();
+    expect(defaults.conversationBackend).toBe('local');
+    expect(defaults.localConversation).toEqual({
+      llmBaseUrl: 'http://127.0.0.1:1234/v1',
+      llmModel: 'qwen-next-flash',
+      speechServiceUrl: 'http://127.0.0.1:8192',
+      voice: undefined,
+    });
+
+    const fromEnv = await new ConfigManager({ env: { CONVERSATION_BACKEND: 'OpenAI' } as NodeJS.ProcessEnv }).load();
+    expect(fromEnv.conversationBackend).toBe('openai');
+
+    await expect(
+      new ConfigManager({ env: { CONVERSATION_BACKEND: 'cloud' } as NodeJS.ProcessEnv }).load(),
+    ).rejects.toBeInstanceOf(ConfigValidationError);
+  });
+
+  it('keeps a chosen conversation backend when other preferences are saved', async () => {
+    const preferencesStore = new InMemoryPreferencesStore();
+    const manager = new ConfigManager({ env: {} as NodeJS.ProcessEnv, preferencesStore });
+    await manager.load();
+
+    const chosen = await manager.setAudioDevicePreferences({ conversationBackend: 'openai' });
+    expect(chosen.conversationBackend).toBe('openai');
+    const later = await manager.setAudioDevicePreferences({ audioInputDeviceId: 'mic-2' });
+    expect(later.conversationBackend).toBe('openai');
+    expect((await preferencesStore.load()).conversationBackend).toBe('openai');
+    expect(later).not.toHaveProperty('localConversation');
+  });
 });

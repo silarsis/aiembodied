@@ -11,6 +11,7 @@ export interface AudioDevicePreferences {
   vadThreshold?: number;
   vadSilenceDurationMs?: number;
   vadMinSpeechDurationMs?: number;
+  conversationBackend?: 'local' | 'openai';
 }
 
 export interface PreferencesStore {
@@ -66,6 +67,8 @@ export class FilePreferencesStore implements PreferencesStore {
     const vadThreshold = this.normalizeNumber(input.vadThreshold, 0, 1);
     const vadSilenceDurationMs = this.normalizeInt(input.vadSilenceDurationMs, 0, 10000);
     const vadMinSpeechDurationMs = this.normalizeInt(input.vadMinSpeechDurationMs, 0, 10000);
+    const conversationBackend =
+      input.conversationBackend === 'local' || input.conversationBackend === 'openai' ? input.conversationBackend : undefined;
 
     const preferences: AudioDevicePreferences = {};
 
@@ -103,6 +106,10 @@ export class FilePreferencesStore implements PreferencesStore {
 
     if (typeof vadMinSpeechDurationMs === 'number') {
       preferences.vadMinSpeechDurationMs = vadMinSpeechDurationMs;
+    }
+
+    if (conversationBackend) {
+      preferences.conversationBackend = conversationBackend;
     }
 
     return preferences;

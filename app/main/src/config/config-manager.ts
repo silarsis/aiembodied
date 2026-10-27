@@ -8,10 +8,25 @@ type ConfigLogger = Pick<Console, 'debug' | 'info' | 'warn' | 'error'>;
 
 export type FeatureFlags = Record<string, boolean>;
 
+export type ConversationBackend = 'local' | 'openai';
+
+export interface LocalConversationConfig {
+  /** OpenAI-compatible chat endpoint (llama-server), e.g. http://127.0.0.1:1234/v1. */
+  llmBaseUrl: string;
+  llmModel: string;
+  /** services/speech: speech-to-text (Qwen3-ASR or faster-whisper) + Kokoro TTS. */
+  speechServiceUrl: string;
+  /** Kokoro voice; empty means the speech service's default. */
+  voice?: string;
+}
+
 export interface AppConfig {
   realtimeApiKey: string;
   comfyUiBaseUrl: string;
   motionServiceUrl: string;
+  /** Which engine runs the conversation: the local LLM pipeline or OpenAI Realtime. */
+  conversationBackend: ConversationBackend;
+  localConversation: LocalConversationConfig;
   audioInputDeviceId?: string;
   audioOutputDeviceId?: string;
   realtimeModel?: string;
@@ -45,7 +60,10 @@ export interface MetricsConfig {
 
 export type RendererWakeWordConfig = WakeWordConfig;
 
-export type RendererConfig = Omit<AppConfig, 'realtimeApiKey' | 'wakeWord' | 'comfyUiBaseUrl' | 'motionServiceUrl'> & {
+export type RendererConfig = Omit<
+  AppConfig,
+  'realtimeApiKey' | 'wakeWord' | 'comfyUiBaseUrl' | 'motionServiceUrl' | 'localConversation'
+> & {
   hasRealtimeApiKey: boolean;
   wakeWord: RendererWakeWordConfig;
 };
@@ -103,6 +121,11 @@ const DEFAULT_WAKE_WORD_MODEL = 'hey_jarvis';
 
 const DEFAULT_COMFYUI_BASE_URL = 'http://127.0.0.1:8188';
 const DEFAULT_MOTION_SERVICE_URL = 'http://127.0.0.1:8190';
+const DEFAULT_CONVERSATION_BACKEND: ConversationBackend = 'local';
+// The llama-server slopcore runs Qwen Flash-Next on (see scripts/start-local-llm.ps1).
+const DEFAULT_LOCAL_LLM_BASE_URL = 'http://127.0.0.1:1234/v1';
+const DEFAULT_LOCAL_LLM_MODEL = 'qwen-next-flash';
+const DEFAULT_SPEECH_SERVICE_URL = 'http://127.0.0.1:8192';
 
 export class ConfigManager {
   private config: AppConfig | null = null;
@@ -113,6 +136,8 @@ export class ConfigManager {
   private readonly secretTestTimeoutMs = 5000;
   private readonly logger: ConfigLogger;
   private readonly openAIClientFactory?: OpenAIClientFactory;
+  /** The backend the user picked in the UI, kept apart from the env default so it is only saved once chosen. */
+  private storedConversationBackend?: ConversationBackend;
 
   constructor(options: ConfigManagerOptions = {}) {
     this.secretStore = options.secretStore;
@@ -141,10 +166,19 @@ export class ConfigManager {
       this.normalizeDeviceId(storedPreferences.audioOutputDeviceId) ??
       this.normalizeDeviceId(this.env.AUDIO_OUTPUT_DEVICE_ID);
 
+    this.storedConversationBackend = storedPreferences.conversationBackend;
+
     const config: AppConfig = {
       realtimeApiKey: realtimeApiKey ?? '',
       comfyUiBaseUrl: this.env.COMFYUI_BASE_URL?.trim() || DEFAULT_COMFYUI_BASE_URL,
       motionServiceUrl: this.env.MOTION_SERVICE_URL?.trim() || DEFAULT_MOTION_SERVICE_URL,
+      conversationBackend: storedPreferences.conversationBackend ?? this.parseConversationBackend(),
+      localConversation: {
+        llmBaseUrl: this.env.LOCAL_LLM_BASE_URL?.trim() || DEFAULT_LOCAL_LLM_BASE_URL,
+        llmModel: this.env.LOCAL_LLM_MODEL?.trim() || DEFAULT_LOCAL_LLM_MODEL,
+        speechServiceUrl: this.env.SPEECH_SERVICE_URL?.trim() || DEFAULT_SPEECH_SERVICE_URL,
+        voice: this.env.LOCAL_TTS_VOICE?.trim() || undefined,
+      },
       audioInputDeviceId,
       audioOutputDeviceId,
       realtimeModel: this.normalizeDeviceId(storedPreferences.realtimeModel),
@@ -164,6 +198,7 @@ export class ConfigManager {
     this.config = config;
     this.logger.info('Configuration loaded.', {
       hasRealtimeApiKey: Boolean(config.realtimeApiKey),
+      conversationBackend: config.conversationBackend,
       wakeWordModel: config.wakeWord.model,
       audioInputConfigured: Boolean(config.audioInputDeviceId),
       audioOutputConfigured: Boolean(config.audioOutputDeviceId),
@@ -186,6 +221,10 @@ export class ConfigManager {
     const vadThreshold = typeof preferences.vadThreshold === 'number' ? preferences.vadThreshold : undefined;
     const vadSilenceDurationMs = typeof preferences.vadSilenceDurationMs === 'number' ? preferences.vadSilenceDurationMs : undefined;
     const vadMinSpeechDurationMs = typeof preferences.vadMinSpeechDurationMs === 'number' ? preferences.vadMinSpeechDurationMs : undefined;
+    if (preferences.conversationBackend === 'local' || preferences.conversationBackend === 'openai') {
+      this.storedConversationBackend = preferences.conversationBackend;
+    }
+    const conversationBackend = this.storedConversationBackend;
 
     this.config = {
       ...this.config,
@@ -200,6 +239,7 @@ export class ConfigManager {
       ...(typeof vadThreshold === 'number' ? { vadThreshold } : {}),
       ...(typeof vadSilenceDurationMs === 'number' ? { vadSilenceDurationMs } : {}),
       ...(typeof vadMinSpeechDurationMs === 'number' ? { vadMinSpeechDurationMs } : {}),
+      ...(conversationBackend ? { conversationBackend } : {}),
     };
 
     await this.preferencesStore?.save({
@@ -212,6 +252,7 @@ export class ConfigManager {
       vadThreshold,
       vadSilenceDurationMs,
       vadMinSpeechDurationMs,
+      conversationBackend,
     });
 
     return this.getRendererConfig();
@@ -227,9 +268,9 @@ export class ConfigManager {
 
   getRendererConfig(): RendererConfig {
     const config = this.getConfig();
-    // comfyUiBaseUrl and motionServiceUrl are main-process only.
+    // Service URLs are main-process only.
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { realtimeApiKey, wakeWord, comfyUiBaseUrl, motionServiceUrl, ...rest } = config;
+    const { realtimeApiKey, wakeWord, comfyUiBaseUrl, motionServiceUrl, localConversation, ...rest } = config;
 
     return {
       ...rest,
@@ -381,6 +422,17 @@ export class ConfigManager {
     }
   }
 
+
+  private parseConversationBackend(): ConversationBackend {
+    const raw = this.env.CONVERSATION_BACKEND?.trim().toLowerCase();
+    if (!raw) {
+      return DEFAULT_CONVERSATION_BACKEND;
+    }
+    if (raw === 'local' || raw === 'openai') {
+      return raw;
+    }
+    throw new ConfigValidationError(`CONVERSATION_BACKEND must be "local" or "openai", not "${raw}".`);
+  }
 
   private parseMetricsConfig(): MetricsConfig {
     const enabledValue = this.env.METRICS_ENABLED?.trim();

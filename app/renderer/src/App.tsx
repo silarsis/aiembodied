@@ -8,7 +8,7 @@ import {
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
-import type { ConfigSecretKey, RendererConfig } from '../../main/src/config/config-manager.js';
+import type { ConfigSecretKey, ConversationBackend, RendererConfig } from '../../main/src/config/config-manager.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
 import { VrmAvatarRenderer, type VrmRendererStatus } from './avatar/vrm-avatar-renderer.js';
 import { AnimationBusProvider, createAvatarAnimationBus } from './avatar/animation-bus.js';
@@ -20,7 +20,8 @@ import { VisemeDriver, type VisemeFrame } from './audio/viseme-driver.js';
 import type { ConversationSessionWithMessages } from '../../main/src/conversation/types.js';
 import { useAudioDevices } from './hooks/use-audio-devices.js';
 import { getPreloadApi, type PreloadApi } from './preload-api.js';
-import { RealtimeClient, type RealtimeClientState } from './realtime/realtime-client.js';
+import { RealtimeClient, type RealtimeClientCallbacks, type RealtimeClientState } from './realtime/realtime-client.js';
+import { LocalVoiceClient } from './realtime/local-voice-client.js';
 import { LatencyTracker, type LatencySnapshot } from './metrics/latency-tracker.js';
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
 import type { AvatarModelSummary, AvatarPoseSummary } from './avatar/types.js';
@@ -1245,6 +1246,11 @@ export default function App() {
   const configOutputDeviceId = config?.audioOutputDeviceId ?? '';
   const hasRealtimeSupport = typeof RTCPeerConnection === 'function';
   const hasRealtimeApiKey = config?.hasRealtimeApiKey ?? false;
+  const conversationBackend: ConversationBackend = config?.conversationBackend ?? 'local';
+  const isLocalBackend = conversationBackend === 'local';
+  // The local backend needs no API key; OpenAI Realtime does.
+  const canConnectConversation = isLocalBackend || hasRealtimeApiKey;
+  const wakePhrase = config?.wakeWord?.keywordLabel;
   const sessionInstructions = useMemo(
     () => {
       const poseSlugs = availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0);
@@ -1315,7 +1321,80 @@ export default function App() {
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const visemeDriverRef = useRef<VisemeDriver | null>(null);
   const [playbackIssue, setPlaybackIssue] = useState<string | null>(null);
-  const realtimeClient = useMemo(() => {
+  const recordTranscriptEntryRef = useRef(recordTranscriptEntry);
+  useEffect(() => {
+    recordTranscriptEntryRef.current = recordTranscriptEntry;
+  }, [recordTranscriptEntry]);
+
+  const realtimeClient = useMemo((): RealtimeClient | LocalVoiceClient | null => {
+    if (loadingConfig) {
+      return null;
+    }
+
+    const onLog: NonNullable<RealtimeClientCallbacks['onLog']> = (entry) => {
+      const prefix = isLocalBackend ? '[LocalVoiceClient]' : '[RealtimeClient]';
+      const details = entry.json ?? entry.data;
+      if (entry.level === 'error') {
+        console.error(prefix, entry.message, details);
+      } else if (entry.level === 'warn') {
+        console.warn(prefix, entry.message, details);
+      } else {
+        console.debug(prefix, entry.message, details);
+      }
+    };
+
+    const playRemoteStream = (stream: MediaStream) => {
+      setRemoteStream(stream);
+      const element = remoteAudioRef.current;
+      if (!element) {
+        return;
+      }
+
+      element.srcObject = stream;
+      const playPromise = element.play();
+      if (playPromise) {
+        playPromise
+          .then(() => {
+            setPlaybackIssue(null);
+          })
+          .catch((error) => {
+            const message = error instanceof Error ? error.message : String(error);
+            setPlaybackIssue(message || 'Audio autoplay blocked');
+            console.error('Failed to play realtime audio', error);
+          });
+      }
+    };
+
+    const recordFirstAudio = () => {
+      const snapshot = latencyTrackerRef.current.recordFirstAudio(Date.now(), activeSessionIdRef.current);
+      if (snapshot) {
+        setLatencySnapshot((previous) => ({ ...(previous ?? {}), ...snapshot }));
+        pushLatency(snapshot);
+      }
+    };
+
+    if (isLocalBackend) {
+      return new LocalVoiceClient({
+        getBridge: () => getPreloadApi()?.localVoice,
+        wakePhrase,
+        callbacks: {
+          onStateChange: setRealtimeState,
+          onTextContent: (content) => {
+            animationTextHandlerRef.current?.(content);
+          },
+          onRemoteStream: playRemoteStream,
+          onFirstAudioFrame: recordFirstAudio,
+          onUserTranscript: (text) => {
+            void recordTranscriptEntryRef.current({ speaker: 'user', text });
+          },
+          onAssistantTranscript: (text) => {
+            void recordTranscriptEntryRef.current({ speaker: 'assistant', text });
+          },
+          onLog,
+        },
+      });
+    }
+
     if (!hasRealtimeSupport) {
       return null;
     }
@@ -1337,48 +1416,12 @@ export default function App() {
         onTextContent: (content) => {
           animationTextHandlerRef.current?.(content);
         },
-        onRemoteStream: (stream) => {
-          setRemoteStream(stream);
-          const element = remoteAudioRef.current;
-          if (!element) {
-            return;
-          }
-
-          element.srcObject = stream;
-          const playPromise = element.play();
-          if (playPromise) {
-            playPromise
-              .then(() => {
-                setPlaybackIssue(null);
-              })
-              .catch((error) => {
-                const message = error instanceof Error ? error.message : String(error);
-                setPlaybackIssue(message || 'Audio autoplay blocked');
-                console.error('Failed to play realtime audio', error);
-              });
-          }
-        },
-        onFirstAudioFrame: () => {
-          const snapshot = latencyTrackerRef.current.recordFirstAudio(Date.now(), activeSessionIdRef.current);
-          if (snapshot) {
-            setLatencySnapshot((previous) => ({ ...(previous ?? {}), ...snapshot }));
-            pushLatency(snapshot);
-          }
-        },
-        onLog: (entry) => {
-          const prefix = '[RealtimeClient]';
-          const details = entry.json ?? entry.data;
-          if (entry.level === 'error') {
-            console.error(prefix, entry.message, details);
-          } else if (entry.level === 'warn') {
-            console.warn(prefix, entry.message, details);
-          } else {
-            console.debug(prefix, entry.message, details);
-          }
-        },
+        onRemoteStream: playRemoteStream,
+        onFirstAudioFrame: recordFirstAudio,
+        onLog,
       },
     });
-  }, [hasRealtimeSupport, pushLatency]);
+  }, [hasRealtimeSupport, pushLatency, loadingConfig, isLocalBackend, wakePhrase]);
 
   const mintEphemeralToken = useCallback(
     async (reason: string) => {
@@ -1703,7 +1746,7 @@ export default function App() {
       return;
     }
 
-    if (!isListeningEnabled || !audioGraph.upstreamStream || !hasRealtimeApiKey) {
+    if (!isListeningEnabled || !audioGraph.upstreamStream || !canConnectConversation) {
       void realtimeClient.disconnect();
       return;
     }
@@ -1722,6 +1765,17 @@ export default function App() {
 
       realtimeClient.bindRemoteAudioElement(remoteAudioRef.current);
       realtimeClient.setJitterBufferMs(100);
+
+      if (realtimeClient instanceof LocalVoiceClient) {
+        try {
+          await realtimeClient.connect({ inputStream });
+        } catch (error) {
+          if (!cancelled) {
+            console.error('Failed to start local conversation', error);
+          }
+        }
+        return;
+      }
 
       let token = realtimeToken;
       if (!token || realtimeTokenRefreshRef.current) {
@@ -1765,7 +1819,7 @@ export default function App() {
     isListeningEnabled,
     loadingConfig,
     isSessionConfigReady,
-    hasRealtimeApiKey,
+    canConnectConversation,
     mintEphemeralToken,
   ]);
 
@@ -1776,6 +1830,11 @@ export default function App() {
     // With server-side VAD enabled, do not drive turns from the client
     // If we add a toggle later, gate this based on config.
   }, [realtimeClient, hasRealtimeApiKey, audioGraph.isActive]);
+
+  const conversationClientRef = useRef<RealtimeClient | LocalVoiceClient | null>(null);
+  useEffect(() => {
+    conversationClientRef.current = realtimeClient;
+  }, [realtimeClient]);
 
   const previousRealtimeStatusRef = useRef<RealtimeClientState['status'] | null>(null);
   useEffect(() => {
@@ -1807,6 +1866,10 @@ export default function App() {
     }
 
     const unsubscribe = bridge.wakeWord.onWake((event) => {
+      const client = conversationClientRef.current;
+      if (client instanceof LocalVoiceClient) {
+        client.notifyWake(event.timestamp);
+      }
       if (event.sessionId && activeSessionIdRef.current !== event.sessionId) {
         activeSessionIdRef.current = event.sessionId;
         setActiveSessionId(event.sessionId);
@@ -1936,7 +1999,7 @@ export default function App() {
           `[RealtimeClient] Voice change reconnect initiated with ${JSON.stringify({ voice: nextVoice })}`,
         );
         console.info('Voice change reconnect initiated with');
-        if (realtimeClient && audioGraph.upstreamStream && hasRealtimeApiKey) {
+        if (realtimeClient instanceof RealtimeClient && audioGraph.upstreamStream && hasRealtimeApiKey) {
           await realtimeClient.disconnect();
           console.info(
             `[RealtimeClient] Voice change reconnect initiated with ${JSON.stringify({ voice: nextVoice })}`,
@@ -1969,6 +2032,22 @@ export default function App() {
       hasRealtimeApiKey,
       mintEphemeralToken,
     ],
+  );
+
+  const handleConversationBackendChange = useCallback(
+    async (event: ChangeEvent<HTMLSelectElement>) => {
+      const value: ConversationBackend = event.target.value === 'openai' ? 'openai' : 'local';
+      try {
+        await persistPreferences({
+          audioInputDeviceId: selectedInput || undefined,
+          audioOutputDeviceId: selectedOutput || undefined,
+          conversationBackend: value,
+        });
+      } catch (error) {
+        console.error('Failed to persist conversation backend preference', error);
+      }
+    },
+    [persistPreferences, selectedInput, selectedOutput],
   );
 
   const handlePromptBlur = useCallback(
@@ -2093,6 +2172,12 @@ export default function App() {
           // Swallow autoplay promise errors; we will attempt reconnect below.
           void err;
         }
+      }
+
+      if (realtimeClient instanceof LocalVoiceClient && audioGraph.upstreamStream) {
+        await realtimeClient.disconnect();
+        await realtimeClient.connect({ inputStream: audioGraph.upstreamStream });
+        return;
       }
 
       if (realtimeClient && audioGraph.upstreamStream && hasRealtimeApiKey) {
@@ -2283,11 +2368,11 @@ export default function App() {
   const isCursorHidden = useIdleCursor(true);
 
   const realtimeStatusLabel = useMemo(() => {
-    if (!hasRealtimeApiKey) {
+    if (!canConnectConversation) {
       return 'Disabled (API key unavailable)';
     }
 
-    if (!hasRealtimeSupport) {
+    if (!isLocalBackend && !hasRealtimeSupport) {
       return 'Unavailable (WebRTC unsupported)';
     }
 
@@ -2314,7 +2399,8 @@ export default function App() {
         return realtimeState.status;
     }
   }, [
-    hasRealtimeApiKey,
+    canConnectConversation,
+    isLocalBackend,
     hasRealtimeSupport,
     realtimeTokenError,
     realtimeState,
@@ -2637,12 +2723,31 @@ export default function App() {
                   <h2 id="kiosk-realtime-title">Voice & Personality</h2>
                   <p className="kiosk__helper">Configure how your assistant sounds and behaves.</p>
                   <div className="control">
+                    <label htmlFor="conversation-backend">Conversation engine</label>
+                    <select
+                      id="conversation-backend"
+                      value={conversationBackend}
+                      onChange={handleConversationBackendChange}
+                      disabled={isSaving || loadingConfig}
+                    >
+                      <option value="local">Local LLM (Qwen, offline)</option>
+                      <option value="openai">OpenAI Realtime</option>
+                    </select>
+                    <div className="kiosk__helper" aria-live="polite">
+                      {isLocalBackend
+                        ? 'Replies come from the local llama-server; speech runs through services/speech.'
+                        : hasRealtimeApiKey
+                          ? 'Replies come from the OpenAI Realtime API.'
+                          : 'OpenAI Realtime needs an API key (REALTIME_API_KEY).'}
+                    </div>
+                  </div>
+                  <div className="control">
                     <label htmlFor="realtime-voice">Voice</label>
                     <select
                       id="realtime-voice"
                       value={selectedVoice}
                       onChange={handleVoiceChange}
-                      disabled={isSaving || loadingConfig}
+                      disabled={isSaving || loadingConfig || isLocalBackend}
                     >
                       {availableVoices.map((v) => (
                         <option key={v} value={v}>
@@ -2651,7 +2756,9 @@ export default function App() {
                       ))}
                     </select>
                     <div className="kiosk__helper" aria-live="polite">
-                      Current voice (server): {serverVoice ?? 'unknown'}
+                      {isLocalBackend
+                        ? 'The local voice is a Kokoro preset, set with LOCAL_TTS_VOICE (default bf_lily).'
+                        : `Current voice (server): ${serverVoice ?? 'unknown'}`}
                     </div>
                     {playbackIssue ? (
                       <div className="kiosk__helper" role="alert" style={{ marginTop: 8 }}>
