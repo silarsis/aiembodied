@@ -9,12 +9,6 @@ import type {
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
 import type { WakeWordDetectionEvent } from '../../main/src/wake-word/types.js';
 import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from '../../main/src/realtime/types.js';
-import type {
-  LocalVoiceEvent,
-  LocalVoiceStatus,
-  LocalVoiceTurnRequest,
-  LocalVoiceTurnResult,
-} from '../../main/src/voice/types.js';
 import type { AvatarBridge } from './avatar/types.js';
 import type { CameraDetectionEvent } from './avatar/behavior-cues.js';
 
@@ -41,14 +35,6 @@ export interface MetricsBridge {
   observeLatency(metric: LatencyMetricName, valueMs: number): Promise<void>;
 }
 
-export interface LocalVoiceBridge {
-  getStatus(): Promise<LocalVoiceStatus>;
-  runTurn(request: LocalVoiceTurnRequest): Promise<LocalVoiceTurnResult>;
-  cancelTurn(turnId: string): Promise<boolean>;
-  resetConversation(): Promise<void>;
-  onEvent(listener: (event: LocalVoiceEvent) => void): () => void;
-}
-
 export interface RealtimeBridge {
   mintEphemeralToken(request: RealtimeEphemeralTokenRequest): Promise<RealtimeEphemeralTokenResponse>;
 }
@@ -56,7 +42,6 @@ export interface RealtimeBridge {
 export interface PreloadApi {
   config: ConfigBridge;
   realtime: RealtimeBridge;
-  voice?: LocalVoiceBridge;
   wakeWord: WakeWordBridge;
   conversation?: ConversationBridge;
   metrics?: MetricsBridge;

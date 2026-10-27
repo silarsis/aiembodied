@@ -43,7 +43,6 @@ runTests('tests/preload.test.ts', 'Preload');
 runTests('tests/main.test.ts', 'Main');
 runTests('tests/conversation*.test.ts', 'Conversation');
 runTests('tests/wake-word*.test.ts', 'Wake Word');
-runTests('tests/voice*.test.ts', 'Local Voice');
 runTests('tests/logger.test.ts', 'Logger');
 runTests('tests/crash-guard.test.ts', 'Crash Guard');
 runTests('tests/runtime-paths.test.ts', 'Runtime Paths');

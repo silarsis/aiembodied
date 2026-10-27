@@ -21,7 +21,6 @@ import type { ConversationSessionWithMessages } from '../../main/src/conversatio
 import { useAudioDevices } from './hooks/use-audio-devices.js';
 import { getPreloadApi, type PreloadApi } from './preload-api.js';
 import { RealtimeClient, type RealtimeClientState } from './realtime/realtime-client.js';
-import { LocalVoiceClient, type LocalVoiceClientCallbacks } from './realtime/local-voice-client.js';
 import { LatencyTracker, type LatencySnapshot } from './metrics/latency-tracker.js';
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
 import type { AvatarModelSummary, AvatarPoseSummary } from './avatar/types.js';
@@ -76,7 +75,7 @@ const SECRET_METADATA: Record<
 > = {
   realtimeApiKey: {
     label: 'OpenAI Realtime API key',
-    description: 'Needed for VOICE_BACKEND=openai (OpenAI Realtime) and the OpenAI avatar tools.',
+    description: 'Required to negotiate realtime model sessions.',
     isConfigured: (config) => Boolean(config?.hasRealtimeApiKey),
   },
 };
@@ -1316,89 +1315,70 @@ export default function App() {
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const visemeDriverRef = useRef<VisemeDriver | null>(null);
   const [playbackIssue, setPlaybackIssue] = useState<string | null>(null);
-  const voiceBackend = config?.voiceBackend ?? null;
-  const usesLocalVoice = voiceBackend === 'local';
-  const recordTranscriptEntryRef = useRef(recordTranscriptEntry);
-  const resolveApiRef = useRef(resolveApi);
-  useEffect(() => {
-    recordTranscriptEntryRef.current = recordTranscriptEntry;
-    resolveApiRef.current = resolveApi;
-  }, [recordTranscriptEntry, resolveApi]);
   const realtimeClient = useMemo(() => {
-    if (!voiceBackend) {
-      return null;
-    }
-
-    const callbacks: LocalVoiceClientCallbacks = {
-      onStateChange: setRealtimeState,
-      onSessionUpdated: (session) => {
-        if (typeof session.voice === 'string') {
-          setServerVoice(session.voice);
-        }
-
-        if (typeof session.instructions === 'string') {
-          const nextPrompt = stripAnimationInstructions(session.instructions);
-          setBasePrompt(nextPrompt.trim().length > 0 ? nextPrompt : DEFAULT_PROMPT);
-        }
-      },
-      onTextContent: (content) => {
-        animationTextHandlerRef.current?.(content);
-      },
-      onRemoteStream: (stream) => {
-        setRemoteStream(stream);
-        const element = remoteAudioRef.current;
-        if (!element) {
-          return;
-        }
-
-        element.srcObject = stream;
-        const playPromise = element.play();
-        if (playPromise) {
-          playPromise
-            .then(() => {
-              setPlaybackIssue(null);
-            })
-            .catch((error) => {
-              const message = error instanceof Error ? error.message : String(error);
-              setPlaybackIssue(message || 'Audio autoplay blocked');
-              console.error('Failed to play realtime audio', error);
-            });
-        }
-      },
-      onFirstAudioFrame: () => {
-        const snapshot = latencyTrackerRef.current.recordFirstAudio(Date.now(), activeSessionIdRef.current);
-        if (snapshot) {
-          setLatencySnapshot((previous) => ({ ...(previous ?? {}), ...snapshot }));
-          pushLatency(snapshot);
-        }
-      },
-      onLog: (entry) => {
-        const prefix = '[RealtimeClient]';
-        const details = entry.json ?? entry.data;
-        if (entry.level === 'error') {
-          console.error(prefix, entry.message, details);
-        } else if (entry.level === 'warn') {
-          console.warn(prefix, entry.message, details);
-        } else {
-          console.debug(prefix, entry.message, details);
-        }
-      },
-      onUserTranscript: (text) => {
-        void recordTranscriptEntryRef.current({ speaker: 'user', text });
-      },
-      onAssistantReply: (text) => {
-        void recordTranscriptEntryRef.current({ speaker: 'assistant', text });
-      },
-    };
-
-    if (voiceBackend === 'local') {
-      return new LocalVoiceClient({ getBridge: () => resolveApiRef.current()?.voice, callbacks });
-    }
     if (!hasRealtimeSupport) {
       return null;
     }
-    return new RealtimeClient({ handshakeMode: 'sdp', callbacks });
-  }, [voiceBackend, hasRealtimeSupport, pushLatency]);
+
+    return new RealtimeClient({
+      handshakeMode: 'sdp',
+      callbacks: {
+        onStateChange: setRealtimeState,
+        onSessionUpdated: (session) => {
+          if (typeof session.voice === 'string') {
+            setServerVoice(session.voice);
+          }
+
+          if (typeof session.instructions === 'string') {
+            const nextPrompt = stripAnimationInstructions(session.instructions);
+            setBasePrompt(nextPrompt.trim().length > 0 ? nextPrompt : DEFAULT_PROMPT);
+          }
+        },
+        onTextContent: (content) => {
+          animationTextHandlerRef.current?.(content);
+        },
+        onRemoteStream: (stream) => {
+          setRemoteStream(stream);
+          const element = remoteAudioRef.current;
+          if (!element) {
+            return;
+          }
+
+          element.srcObject = stream;
+          const playPromise = element.play();
+          if (playPromise) {
+            playPromise
+              .then(() => {
+                setPlaybackIssue(null);
+              })
+              .catch((error) => {
+                const message = error instanceof Error ? error.message : String(error);
+                setPlaybackIssue(message || 'Audio autoplay blocked');
+                console.error('Failed to play realtime audio', error);
+              });
+          }
+        },
+        onFirstAudioFrame: () => {
+          const snapshot = latencyTrackerRef.current.recordFirstAudio(Date.now(), activeSessionIdRef.current);
+          if (snapshot) {
+            setLatencySnapshot((previous) => ({ ...(previous ?? {}), ...snapshot }));
+            pushLatency(snapshot);
+          }
+        },
+        onLog: (entry) => {
+          const prefix = '[RealtimeClient]';
+          const details = entry.json ?? entry.data;
+          if (entry.level === 'error') {
+            console.error(prefix, entry.message, details);
+          } else if (entry.level === 'warn') {
+            console.warn(prefix, entry.message, details);
+          } else {
+            console.debug(prefix, entry.message, details);
+          }
+        },
+      },
+    });
+  }, [hasRealtimeSupport, pushLatency]);
 
   const mintEphemeralToken = useCallback(
     async (reason: string) => {
@@ -1723,7 +1703,7 @@ export default function App() {
       return;
     }
 
-    if (!isListeningEnabled || !audioGraph.upstreamStream || (!hasRealtimeApiKey && !usesLocalVoice)) {
+    if (!isListeningEnabled || !audioGraph.upstreamStream || !hasRealtimeApiKey) {
       void realtimeClient.disconnect();
       return;
     }
@@ -1743,9 +1723,8 @@ export default function App() {
       realtimeClient.bindRemoteAudioElement(remoteAudioRef.current);
       realtimeClient.setJitterBufferMs(100);
 
-      // The local voice chain needs no OpenAI token.
-      let token = usesLocalVoice ? 'local' : realtimeToken;
-      if (!usesLocalVoice && (!token || realtimeTokenRefreshRef.current)) {
+      let token = realtimeToken;
+      if (!token || realtimeTokenRefreshRef.current) {
         try {
           token = await mintEphemeralToken('connect');
         } catch (error) {
@@ -1787,7 +1766,6 @@ export default function App() {
     loadingConfig,
     isSessionConfigReady,
     hasRealtimeApiKey,
-    usesLocalVoice,
     mintEphemeralToken,
   ]);
 
@@ -1805,7 +1783,7 @@ export default function App() {
     if (realtimeState.status === 'connected' && previous !== 'connected') {
       void recordTranscriptEntry({
         speaker: 'system',
-        text: usesLocalVoice ? 'Local voice session connected.' : 'Realtime session connected.',
+        text: 'Realtime session connected.',
         timestamp: Date.now(),
       });
     }
@@ -1820,7 +1798,7 @@ export default function App() {
     }
 
     previousRealtimeStatusRef.current = realtimeState.status;
-  }, [realtimeState, recordTranscriptEntry, usesLocalVoice]);
+  }, [realtimeState, recordTranscriptEntry]);
 
   useEffect(() => {
     const bridge = resolveApi();
@@ -1844,8 +1822,6 @@ export default function App() {
       latencyTrackerRef.current.beginCycle(event.timestamp, event.sessionId ?? null);
       setLatencySnapshot(null);
       setWakeState('awake');
-      // The wake word opens the conversation: start listening if it was off.
-      setListeningEnabled(true);
       if (wakeResetTimeoutRef.current) {
         clearTimeout(wakeResetTimeoutRef.current);
       }

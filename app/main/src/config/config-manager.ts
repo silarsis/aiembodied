@@ -12,9 +12,6 @@ export interface AppConfig {
   realtimeApiKey: string;
   comfyUiBaseUrl: string;
   motionServiceUrl: string;
-  /** Which conversation backend the renderer uses: local STT + LLM + TTS, or OpenAI Realtime. */
-  voiceBackend: VoiceBackend;
-  localVoice: LocalVoiceConfig;
   audioInputDeviceId?: string;
   audioOutputDeviceId?: string;
   realtimeModel?: string;
@@ -27,18 +24,6 @@ export interface AppConfig {
   featureFlags: FeatureFlags;
   wakeWord: WakeWordConfig;
   metrics: MetricsConfig;
-}
-
-export type VoiceBackend = 'local' | 'openai';
-
-export interface LocalVoiceConfig {
-  /** OpenAI-compatible chat endpoint, e.g. llama-server running Qwen Next Flash. */
-  llmBaseUrl: string;
-  llmModel: string;
-  llmApiKey: string;
-  /** services/voice: speech-to-text and text-to-speech. */
-  voiceServiceUrl: string;
-  ttsVoice: string;
 }
 
 export interface WakeWordConfig {
@@ -60,10 +45,7 @@ export interface MetricsConfig {
 
 export type RendererWakeWordConfig = WakeWordConfig;
 
-export type RendererConfig = Omit<
-  AppConfig,
-  'realtimeApiKey' | 'wakeWord' | 'comfyUiBaseUrl' | 'motionServiceUrl' | 'localVoice'
-> & {
+export type RendererConfig = Omit<AppConfig, 'realtimeApiKey' | 'wakeWord' | 'comfyUiBaseUrl' | 'motionServiceUrl'> & {
   hasRealtimeApiKey: boolean;
   wakeWord: RendererWakeWordConfig;
 };
@@ -121,11 +103,6 @@ const DEFAULT_WAKE_WORD_MODEL = 'hey_jarvis';
 
 const DEFAULT_COMFYUI_BASE_URL = 'http://127.0.0.1:8188';
 const DEFAULT_MOTION_SERVICE_URL = 'http://127.0.0.1:8190';
-const DEFAULT_VOICE_SERVICE_URL = 'http://127.0.0.1:8191';
-// Same llama-server setup as slopcore: Qwen Next Flash on port 1234.
-const DEFAULT_LLM_BASE_URL = 'http://localhost:1234/v1';
-const DEFAULT_LLM_MODEL = 'qwen-next-flash';
-const DEFAULT_TTS_VOICE = 'af_heart';
 
 export class ConfigManager {
   private config: AppConfig | null = null;
@@ -168,14 +145,6 @@ export class ConfigManager {
       realtimeApiKey: realtimeApiKey ?? '',
       comfyUiBaseUrl: this.env.COMFYUI_BASE_URL?.trim() || DEFAULT_COMFYUI_BASE_URL,
       motionServiceUrl: this.env.MOTION_SERVICE_URL?.trim() || DEFAULT_MOTION_SERVICE_URL,
-      voiceBackend: this.parseVoiceBackend(this.env.VOICE_BACKEND),
-      localVoice: {
-        llmBaseUrl: this.env.LLM_BASE_URL?.trim() || DEFAULT_LLM_BASE_URL,
-        llmModel: this.env.LLM_MODEL?.trim() || DEFAULT_LLM_MODEL,
-        llmApiKey: this.env.LLM_API_KEY?.trim() || 'local',
-        voiceServiceUrl: this.env.VOICE_SERVICE_URL?.trim() || DEFAULT_VOICE_SERVICE_URL,
-        ttsVoice: this.env.TTS_VOICE?.trim() || DEFAULT_TTS_VOICE,
-      },
       audioInputDeviceId,
       audioOutputDeviceId,
       realtimeModel: this.normalizeDeviceId(storedPreferences.realtimeModel),
@@ -195,7 +164,6 @@ export class ConfigManager {
     this.config = config;
     this.logger.info('Configuration loaded.', {
       hasRealtimeApiKey: Boolean(config.realtimeApiKey),
-      voiceBackend: config.voiceBackend,
       wakeWordModel: config.wakeWord.model,
       audioInputConfigured: Boolean(config.audioInputDeviceId),
       audioOutputConfigured: Boolean(config.audioOutputDeviceId),
@@ -259,9 +227,9 @@ export class ConfigManager {
 
   getRendererConfig(): RendererConfig {
     const config = this.getConfig();
-    // comfyUiBaseUrl, motionServiceUrl and localVoice are main-process only.
+    // comfyUiBaseUrl and motionServiceUrl are main-process only.
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { realtimeApiKey, wakeWord, comfyUiBaseUrl, motionServiceUrl, localVoice, ...rest } = config;
+    const { realtimeApiKey, wakeWord, comfyUiBaseUrl, motionServiceUrl, ...rest } = config;
 
     return {
       ...rest,
@@ -320,17 +288,6 @@ export class ConfigManager {
 
 
     throw new Error(`Unhandled secret test requested: ${key}`);
-  }
-
-  private parseVoiceBackend(raw: string | undefined): VoiceBackend {
-    const value = raw?.trim().toLowerCase();
-    if (!value || value === 'local') {
-      return 'local';
-    }
-    if (value === 'openai' || value === 'realtime') {
-      return 'openai';
-    }
-    throw new ConfigValidationError(`VOICE_BACKEND must be "local" or "openai", got "${raw}".`);
   }
 
   private async resolveRealtimeApiKey(): Promise<string | undefined> {

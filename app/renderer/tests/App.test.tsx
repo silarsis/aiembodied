@@ -246,7 +246,6 @@ describe('App component', () => {
       audioOutputDeviceId: '',
       featureFlags: { transcriptOverlay: true },
       hasRealtimeApiKey: true,
-      voiceBackend: 'openai',
       realtimeVoice: 'shimmer',
       metrics: {
         enabled: false,
@@ -407,7 +406,6 @@ describe('App component', () => {
         ...rendererConfig,
         realtimeVoice: 'shimmer',
         hasRealtimeApiKey: true,
-        voiceBackend: 'openai',
       };
       setAudioDevicePreferencesMock.mockResolvedValue(rendererConfig);
 
@@ -460,7 +458,6 @@ describe('App component', () => {
         ...rendererConfig,
         realtimeVoice: 'config-custom',
         hasRealtimeApiKey: true,
-        voiceBackend: 'openai',
       };
       setAudioDevicePreferencesMock.mockResolvedValue(rendererConfig);
 
@@ -631,7 +628,6 @@ describe('App component', () => {
           audioOutputDeviceId: '',
           featureFlags: { transcriptOverlay: true },
           hasRealtimeApiKey: true,
-          voiceBackend: 'openai',
               wakeWord: {
             model: 'hey_jarvis',
             keywordLabel: 'Hey Jarvis',
@@ -734,7 +730,6 @@ describe('App component', () => {
           audioOutputDeviceId: '',
           featureFlags: { transcriptOverlay: true },
           hasRealtimeApiKey: true,
-          voiceBackend: 'openai',
               wakeWord: {
             model: 'hey_jarvis',
             keywordLabel: 'Hey Jarvis',
@@ -923,7 +918,6 @@ describe('App component', () => {
           audioOutputDeviceId: '',
           featureFlags: { transcriptOverlay: true },
           hasRealtimeApiKey: true,
-          voiceBackend: 'openai',
               wakeWord: {
             model: 'hey_jarvis',
             keywordLabel: 'Hey Jarvis',
@@ -1053,7 +1047,6 @@ describe('App component', () => {
           audioOutputDeviceId: '',
           featureFlags: {},
           hasRealtimeApiKey: true,
-          voiceBackend: 'openai',
               wakeWord: {
             model: 'hey_jarvis',
             keywordLabel: 'Hey Jarvis',
@@ -1081,7 +1074,6 @@ describe('App component', () => {
       audioOutputDeviceId: '',
       featureFlags: {},
       hasRealtimeApiKey: true,
-      voiceBackend: 'openai',
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: {
         model: 'hey_jarvis',
@@ -1129,7 +1121,6 @@ describe('App component', () => {
     setSecretMock.mockResolvedValueOnce({
       ...rendererConfig,
       hasRealtimeApiKey: true,
-      voiceBackend: 'openai',
     });
 
     render(<App />);
@@ -1191,7 +1182,6 @@ describe('App component', () => {
           audioOutputDeviceId: '',
           featureFlags: {},
           hasRealtimeApiKey: true,
-          voiceBackend: 'openai',
               realtimeVoice: 'shimmer',
           sessionInstructions: 'Persisted instructions from config',
           wakeWord: {
@@ -1273,7 +1263,6 @@ describe('App component', () => {
           audioOutputDeviceId: '',
           featureFlags: {},
           hasRealtimeApiKey: true,
-          voiceBackend: 'openai',
               realtimeVoice: 'verse',
           wakeWord: {
             model: 'hey_jarvis',

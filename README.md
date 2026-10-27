@@ -82,14 +82,8 @@ it (`pnpm dev:run` also does this for you).
 Create a `.env` file at the repository root (loaded automatically in development) or set the variables in your shell:
 
 ```ini
-# Optional: only needed for VOICE_BACKEND=openai and the OpenAI avatar tools
 REALTIME_API_KEY=sk-...
 # Optional overrides
-VOICE_BACKEND=local            # or openai
-LLM_BASE_URL=http://localhost:1234/v1
-LLM_MODEL=qwen-next-flash
-VOICE_SERVICE_URL=http://127.0.0.1:8191
-TTS_VOICE=af_heart
 AUDIO_INPUT_DEVICE_ID=default
 AUDIO_OUTPUT_DEVICE_ID=default
 WAKE_WORD_MODEL=hey_jarvis
@@ -99,9 +93,7 @@ COMFYUI_BASE_URL=http://127.0.0.1:8188
 MOTION_SERVICE_URL=http://127.0.0.1:8190
 ```
 
-**Conversation.** By default the conversation runs locally: the app cuts your speech into utterances, `services/voice/` transcribes them (faster-whisper) and speaks the reply (Kokoro), and the reply comes from a local LLM on any OpenAI-compatible server, by default Qwen Next Flash on llama-server at `http://localhost:1234/v1` (the same setup as slopcore, with thinking off). Replies are spoken sentence by sentence while the rest is still being generated. Start llama-server and `services\voice\scripts\start.ps1` before clicking **Enable listening** (or saying the wake word). It's half duplex: the microphone is ignored while the avatar talks. Set `VOICE_BACKEND=openai` to use the OpenAI Realtime API instead, which needs `REALTIME_API_KEY`.
-
-**Wake word.** Saying it turns listening on. Detection uses [openWakeWord](https://github.com/dscripka/openWakeWord) and runs entirely on the machine. `WAKE_WORD_MODEL` picks a bundled model (`hey_jarvis`, `alexa`, `hey_mycroft`, `hey_rhasspy`) or takes a path to a custom `.onnx` model trained with openWakeWord's notebook. `WAKE_WORD_KEYWORD_LABEL` overrides the displayed name, and `WAKE_WORD_DEVICE_INDEX` picks the microphone.
+**Wake word.** Detection uses [openWakeWord](https://github.com/dscripka/openWakeWord) and runs entirely on the machine. `WAKE_WORD_MODEL` picks a bundled model (`hey_jarvis`, `alexa`, `hey_mycroft`, `hey_rhasspy`) or takes a path to a custom `.onnx` model trained with openWakeWord's notebook. `WAKE_WORD_KEYWORD_LABEL` overrides the displayed name, and `WAKE_WORD_DEVICE_INDEX` picks the microphone.
 
 Additional knobs include `FEATURE_FLAGS` (JSON or comma syntax) for experimental toggles.
 
