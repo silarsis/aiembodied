@@ -70,3 +70,52 @@ def test_wav_round_trip():
     samples = np.linspace(-0.5, 0.5, 16000, dtype=np.float32)
     decoded = decode_wav(encode_wav(samples, 16000))
     assert np.allclose(decoded, samples, atol=1e-3)
+
+
+def test_chat_audio_transcriber_posts_wav_and_strips_language_prefix(monkeypatch):
+    import base64
+    import json
+
+    from speech_service import engines
+
+    sent = {}
+
+    class FakeResponse:
+        def __init__(self, body):
+            self.body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return self.body
+
+    def fake_urlopen(request, timeout):
+        sent["url"] = request.full_url
+        sent["body"] = json.loads(request.data)
+        reply = {"choices": [{"message": {"content": "language English<asr_text>What is the capital of Australia?"}}]}
+        return FakeResponse(json.dumps(reply).encode())
+
+    monkeypatch.setattr(engines.urllib.request, "urlopen", fake_urlopen)
+    transcriber = engines.ChatAudioTranscriber("http://asr:1235/v1/", "qwen3-asr")
+
+    text = transcriber.transcribe(np.zeros(8000, dtype=np.float32), "en")
+
+    assert text == "What is the capital of Australia?"
+    assert sent["url"] == "http://asr:1235/v1/chat/completions"
+    assert sent["body"]["model"] == "qwen3-asr"
+    part = sent["body"]["messages"][0]["content"][0]
+    assert part["type"] == "input_audio" and part["input_audio"]["format"] == "wav"
+    with wave.open(io.BytesIO(base64.b64decode(part["input_audio"]["data"])), "rb") as reader:
+        assert reader.getframerate() == 16000
+        assert reader.getnframes() == 8000
+
+
+def test_chat_audio_transcriber_leaves_plain_transcripts_alone():
+    from speech_service.engines import ChatAudioTranscriber
+
+    assert ChatAudioTranscriber.clean("  hello there ") == "hello there"
+    assert ChatAudioTranscriber.clean("language None<asr_text>") == ""

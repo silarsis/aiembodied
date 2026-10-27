@@ -1,12 +1,19 @@
-"""Speech engines: faster-whisper for speech-to-text, Kokoro (ONNX) for text-to-speech.
+"""Speech engines. Speech-to-text: an OpenAI-compatible server (Qwen3-ASR on llama-server by
+default) or faster-whisper in-process. Text-to-speech: Kokoro (ONNX).
 
-Both load lazily in `load()` so the HTTP server can come up first and report readiness.
+Engines load lazily in `load()` so the HTTP server can come up first and report readiness.
 The fake engines need no models and are used by the tests and `--engines fake`.
 """
 
 from __future__ import annotations
 
+import base64
+import io
+import json
 import math
+import re
+import urllib.request
+import wave
 from typing import Protocol
 
 import numpy as np
@@ -56,15 +63,75 @@ class WhisperTranscriber:
         return " ".join(segment.text.strip() for segment in segments).strip()
 
 
+class ChatAudioTranscriber:
+    """Speech-to-text through an OpenAI-compatible chat endpoint that takes `input_audio`, such as
+    llama-server running Qwen3-ASR-0.6B with its audio mmproj (scripts/start-local-asr.ps1).
+
+    On the Radeon 8060S it transcribes a 5 s utterance in ~0.15 s, against ~1 s for whisper
+    small.en on the CPU, and runs alongside the Qwen Flash-Next server without slowing it.
+    """
+
+    # Qwen3-ASR prefixes its transcript with the detected language: "language English<asr_text>…"
+    _PREFIX = re.compile(r"^\s*language\s+[^<]*<asr_text>\s*", re.IGNORECASE)
+
+    def __init__(self, base_url: str, model: str, timeout: float = 30.0):
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.timeout = timeout
+        self.description = {"engine": "openai-compatible", "model": model, "url": self.base_url}
+
+    def load(self) -> None:
+        # Nothing to load here; a server that is down shows up as a failed request instead, so the
+        # service still comes up if the ASR server is started after it.
+        pass
+
+    def transcribe(self, audio: np.ndarray, language: str | None) -> str:
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as writer:
+            writer.setnchannels(1)
+            writer.setsampwidth(2)
+            writer.setframerate(STT_SAMPLE_RATE)
+            writer.writeframes((np.clip(audio, -1.0, 1.0) * 32767.0).astype("<i2").tobytes())
+        body = {
+            "model": self.model,
+            "temperature": 0,
+            "max_tokens": 512,
+            "messages": [{"role": "user", "content": [{
+                "type": "input_audio",
+                "input_audio": {"data": base64.b64encode(buffer.getvalue()).decode("ascii"), "format": "wav"},
+            }]}],
+        }
+        request = urllib.request.Request(
+            f"{self.base_url}/chat/completions", data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            reply = json.loads(response.read())
+        return self.clean(reply["choices"][0]["message"].get("content") or "")
+
+    @classmethod
+    def clean(cls, text: str) -> str:
+        return cls._PREFIX.sub("", text).strip()
+
+
+# Kokoro voices hold one style vector per input length (510 rows, indexed by phoneme count), and
+# kokoro-onnx picks the row matching the text. Speaking a reply one sentence at a time then gives
+# every sentence a different style: short ones ("Sure.", "Anything else?") use rows far from long
+# ones, and af_heart sounded like a different person part-way through a reply. Rows settle above
+# ~80 phonemes, so every sentence uses this long-text row instead.
+FIXED_STYLE_ROW = 120
+
+
 class KokoroSynthesizer:
     """Kokoro 82M via kokoro-onnx; CPU is fast enough for sentence-at-a-time streaming."""
 
-    def __init__(self, model_path: str, voices_path: str):
+    def __init__(self, model_path: str, voices_path: str, style_row: int | None = FIXED_STYLE_ROW):
         self.model_path = model_path
         self.voices_path = voices_path
+        self.style_row = style_row
         self._kokoro = None
         self.voices: list[str] = []
-        self.description = {"engine": "kokoro", "model": model_path}
+        self.description = {"engine": "kokoro", "model": model_path, "style_row": style_row}
 
     def load(self) -> None:
         from kokoro_onnx import Kokoro
@@ -75,7 +142,11 @@ class KokoroSynthesizer:
     def synthesize(self, text: str, voice: str, speed: float) -> tuple[np.ndarray, int]:
         assert self._kokoro is not None, "load() first"
         lang = "en-gb" if voice.startswith("b") else "en-us"
-        samples, rate = self._kokoro.create(text, voice=voice, speed=speed, lang=lang)
+        style = voice
+        if self.style_row is not None:
+            row = min(self.style_row, 509)
+            style = self._kokoro.get_voice_style(voice)[row:row + 1]
+        samples, rate = self._kokoro.create(text, voice=style, speed=speed, lang=lang)
         return np.asarray(samples, dtype=np.float32), int(rate)
 
 

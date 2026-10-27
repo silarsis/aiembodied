@@ -2757,7 +2757,7 @@ export default function App() {
                     </select>
                     <div className="kiosk__helper" aria-live="polite">
                       {isLocalBackend
-                        ? 'The local voice is a Kokoro preset, set with LOCAL_TTS_VOICE (default bm_george).'
+                        ? 'The local voice is a Kokoro preset, set with LOCAL_TTS_VOICE (default bf_lily).'
                         : `Current voice (server): ${serverVoice ?? 'unknown'}`}
                     </div>
                     {playbackIssue ? (

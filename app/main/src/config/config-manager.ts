@@ -14,7 +14,7 @@ export interface LocalConversationConfig {
   /** OpenAI-compatible chat endpoint (llama-server), e.g. http://127.0.0.1:1234/v1. */
   llmBaseUrl: string;
   llmModel: string;
-  /** services/speech: faster-whisper STT + Kokoro TTS. */
+  /** services/speech: speech-to-text (Qwen3-ASR or faster-whisper) + Kokoro TTS. */
   speechServiceUrl: string;
   /** Kokoro voice; empty means the speech service's default. */
   voice?: string;

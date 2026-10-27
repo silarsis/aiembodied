@@ -10,8 +10,8 @@ with a 4xx/5xx status. Both POST endpoints return 503 until `/health` reports `r
   "status": "ok",            // "loading" | "ok" | "error"
   "ready": true,
   "error": null,
-  "stt": { "engine": "faster-whisper", "model": "small.en", "device": "cpu" },
-  "tts": { "engine": "kokoro", "model": "…/kokoro-v1.0.onnx", "voices": ["af_heart", "…"], "default_voice": "bm_george" }
+  "stt": { "engine": "openai-compatible", "model": "qwen3-asr", "url": "http://127.0.0.1:1235/v1" },
+  "tts": { "engine": "kokoro", "model": "…/kokoro-v1.0.onnx", "voices": ["af_heart", "…"], "default_voice": "bf_lily", "style_row": 120 }
 }
 ```
 
@@ -26,7 +26,7 @@ Body: a 16-bit PCM WAV file (any sample rate or channel count; it is downmixed a
 
 ## `POST /v1/tts`
 
-Body: `{ "text": "Hello.", "voice": "bm_george", "speed": 1.0 }` (`voice` and `speed` optional;
+Body: `{ "text": "Hello.", "voice": "bf_lily", "speed": 1.0 }` (`voice` and `speed` optional;
 `speed` 0.5–2.0; `text` up to 2000 characters).
 
 Returns `audio/wav` (16-bit PCM mono, 24 kHz for Kokoro) with headers `X-Audio-Ms` and
