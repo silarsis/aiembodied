@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, statSy
 import { resolve, join, parse } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { homedir } from 'node:os';
+import { ensureLocalServices, shouldStartServices } from './local-services.mjs';
 
 function getPnpmExecutable() {
   try {
@@ -278,15 +279,20 @@ export function startLocalStack(repoRoot, { env = process.env, envFromFile = {},
 async function main() {
   const repoRoot = resolve(process.cwd());
   const envPath = resolve(repoRoot, '.env');
-  if (!existsSync(envPath)) {
-    console.warn('[warn] .env not found at repo root. Dev run expects REALTIME_API_KEY.');
-  }
-
   // Parse environment variables
   const envFromFile = parseDotEnv(envPath);
-  const hasRealtimeKey = process.env.REALTIME_API_KEY || envFromFile.REALTIME_API_KEY;
-  if (!hasRealtimeKey) {
-    console.warn('[warn] REALTIME_API_KEY not found. Some features may not work properly.');
+  const userEnv = { ...envFromFile, ...process.env };
+  const backend = (userEnv.CONVERSATION_BACKEND ?? 'local').trim().toLowerCase();
+  if (backend === 'openai' && !userEnv.REALTIME_API_KEY) {
+    console.warn('[warn] CONVERSATION_BACKEND=openai but REALTIME_API_KEY is not set (.env or environment).');
+  }
+
+  // Start the local model servers that are down, with the user's real environment (they find
+  // their models through USERPROFILE), before the isolated dev HOME is set up below.
+  if (shouldStartServices(process.argv, userEnv)) {
+    await ensureLocalServices(repoRoot, userEnv);
+  } else {
+    console.log('[info] Not starting local services (--no-services / DEV_START_SERVICES=0).');
   }
 
   startLocalStack(repoRoot, { envFromFile });
