@@ -63,7 +63,10 @@ vi.mock('three', async () => {
     dispose() {}
   }
 
-  class MockClock {
+  class MockTimer {
+    connect = vi.fn();
+    update = vi.fn();
+    dispose = vi.fn();
     getDelta = vi.fn(() => 1 / 60);
   }
 
@@ -104,7 +107,7 @@ vi.mock('three', async () => {
   return {
     ...actual,
     WebGLRenderer: MockWebGLRenderer,
-    Clock: MockClock,
+    Timer: MockTimer,
     AnimationMixer: MockMixer,
   };
 });
