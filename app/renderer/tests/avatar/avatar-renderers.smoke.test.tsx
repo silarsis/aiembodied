@@ -110,7 +110,10 @@ vi.mock('three', () => {
   class DirectionalLight extends Object3D {
     position = { x: 0, y: 0, z: 0, set: noop };
   }
-  class Clock {
+  class Timer {
+    connect() {}
+    update() {}
+    dispose() {}
     getDelta() {
       return 1 / 60;
     }
@@ -253,7 +256,7 @@ vi.mock('three', () => {
     PerspectiveCamera,
     AmbientLight,
     DirectionalLight,
-    Clock,
+    Timer,
     WebGLRenderer,
     AnimationMixer,
     Mesh,
