@@ -7,6 +7,7 @@
   the other will find it on the same port. The app reaches it through LOCAL_LLM_BASE_URL
   (default http://127.0.0.1:1234/v1) and asks for LOCAL_LLM_MODEL (default qwen-next-flash,
   the --alias below). It needs ~92 GB, so stop ComfyUI first if it holds Qwen-Image.
+  The context size comes from -Context or LOCAL_LLM_CONTEXT (default 65536).
 
 .EXAMPLE
   .\scripts\start-local-llm.ps1 -LlamaServer C:\...\llama-server.exe -Model C:\...\model-00001-of-00002.gguf
@@ -17,7 +18,8 @@ param(
   [string]$Model = $env:LOCAL_LLM_GGUF,
   [string]$Alias = 'qwen-next-flash',
   [int]$Port = 1234,
-  [int]$Context = 65536,
+  # 64K costs only ~1.5 GB more commit than 16K: the ~86 GB is almost all weights.
+  [int]$Context = $(if ($env:LOCAL_LLM_CONTEXT) { [int]$env:LOCAL_LLM_CONTEXT } else { 65536 }),
   [string]$Device = 'Vulkan0'
 )
 $ErrorActionPreference = 'Stop'

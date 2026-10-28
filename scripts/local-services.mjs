@@ -9,7 +9,7 @@
  *
  * Settings come from the environment or .env: the same URLs the app uses (LOCAL_LLM_BASE_URL,
  * STT_URL, SPEECH_SERVICE_URL, MOTION_SERVICE_URL) plus the paths the start scripts need
- * (KOKORO_DIR, MOTION_VENV, TEXT_ENCODERS_DIR, ...). Skip it all with --no-services or
+ * (KOKORO_DIR, MOTION_VENV, TEXT_ENCODERS_DIR, LOCAL_LLM_CONTEXT, ...). Skip it all with --no-services or
  * DEV_START_SERVICES=0.
  */
 import { spawnSync } from 'node:child_process';
@@ -44,7 +44,7 @@ export function describeLocalServices(repoRoot, env) {
       url: llmUrl,
       probe: `${llmUrl}/models`,
       script: 'scripts/start-local-llm.ps1',
-      args: portArgs(llmUrl),
+      args: [...portArgs(llmUrl), ...(env.LOCAL_LLM_CONTEXT ? ['-Context', env.LOCAL_LLM_CONTEXT] : [])],
     },
     {
       id: 'asr',
