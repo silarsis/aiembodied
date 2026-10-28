@@ -246,36 +246,6 @@ export async function ensureElectronBinary(repoRoot, { runImpl = run, baseEnv = 
   await runImpl(process.execPath, [installer], { env: baseEnv, shell: false });
 }
 
-/**
- * On Windows, start any local model services that are down (Qwen, Qwen3-ASR, speech, motion)
- * before the app launches, so the local conversation works without starting each by hand.
- * Skipped for CONVERSATION_BACKEND=openai or LOCAL_STACK_AUTOSTART=0. Runs with the caller's
- * environment, not the isolated dev HOME, because the scripts find llama-server and the
- * Hugging Face cache under the real USERPROFILE.
- */
-export function startLocalStack(repoRoot, { env = process.env, envFromFile = {}, platform = process.platform, spawnImpl = spawnSync } = {}) {
-  if (platform !== 'win32') {
-    return false;
-  }
-  const setting = (key) => env[key] ?? envFromFile[key];
-  if (String(setting('CONVERSATION_BACKEND') ?? 'local').trim().toLowerCase() === 'openai') {
-    return false;
-  }
-  if (String(setting('LOCAL_STACK_AUTOSTART') ?? '1').trim() === '0') {
-    return false;
-  }
-  const script = resolve(repoRoot, 'scripts', 'start-local-stack.ps1');
-  if (!existsSync(script)) {
-    return false;
-  }
-  console.log('[info] Making sure the local model services are running (LOCAL_STACK_AUTOSTART=0 to skip).');
-  const result = spawnImpl('powershell.exe', ['-NoProfile', '-File', script, '-NoWait'], { stdio: 'inherit', env });
-  if (result?.status !== 0) {
-    console.warn('[warn] start-local-stack.ps1 failed; start the local services by hand (see scripts/).');
-  }
-  return true;
-}
-
 async function main() {
   const repoRoot = resolve(process.cwd());
   const envPath = resolve(repoRoot, '.env');
@@ -294,8 +264,6 @@ async function main() {
   } else {
     console.log('[info] Not starting local services (--no-services / DEV_START_SERVICES=0).');
   }
-
-  startLocalStack(repoRoot, { envFromFile });
 
   // Verify pnpm is available
   await run(pnpmExe, ['-v']).catch((e) => {

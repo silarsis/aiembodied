@@ -121,19 +121,6 @@ Additional knobs include `FEATURE_FLAGS` (JSON or comma syntax) for experimental
    bundles, downloads the Electron binary if needed and launches the app. It skips the install
    and build on later runs until the lockfile or sources change; pass `--force-deps` to redo them.
 
-   On Windows it first runs `scripts\start-local-stack.ps1 -NoWait`. That starts any local model
-   service that isn't already running, each in its own minimized window:
-   - Qwen Flash-Next on `:1234`
-   - Qwen3-ASR on `:1235`
-   - the speech service on `:8192`
-   - the motion service on `:8190`, with its text encoder on the CPU
-
-   Services that are already up, such as a llama-server slopcore started, are left alone. Run the
-   script on its own to wait until everything is ready (`-Skip motion` leaves a service out). Set
-   `LOCAL_STACK_AUTOSTART=0` or `CONVERSATION_BACKEND=openai` to skip it. It reads the same
-   settings as the individual start scripts (`LLAMA_SERVER_EXE`, `KOKORO_DIR`, `TEXT_ENCODERS_DIR`,
-   ...), from the environment or `.env`.
-
 During renderer UI work you can also run the Vite dev server in parallel:
 
 ```bash
