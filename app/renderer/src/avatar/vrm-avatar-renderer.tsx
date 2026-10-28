@@ -1406,7 +1406,6 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   const blinkStateRef = useRef<BlinkState>(createDefaultBlinkState());
   const frameRef = useRef<VisemeFrame | null>(frame);
   const animationFrameRef = useRef<number | null>(null);
-  const clockRef = useRef(new THREE.Clock());
   const idleOptionsRef = useRef<IdleAnimationOptions | undefined>(idleOptions);
   const clipRegistryRef = useRef<Map<string, VrmaClipWithMetadata>>(new Map());
   const animationQueueRef = useRef<QueuedAnimation[]>([]);
@@ -1889,7 +1888,8 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       camera.updateProjectionMatrix();
     }
 
-    clockRef.current = new THREE.Clock();
+    const timer = new THREE.Timer();
+    timer.connect(document);
 
     const renderFrame = () => {
       const rendererInstance = rendererRef.current;
@@ -1900,7 +1900,8 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         return;
       }
 
-      const delta = clockRef.current.getDelta();
+      timer.update();
+      const delta = timer.getDelta();
 
       if (manager) {
         const visemeState = visemeStateRef.current;
@@ -1967,6 +1968,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       vrmaRegistryReadyRef.current = false;
       releaseIdleSuspension();
       disposeVrm(currentVrmRef.current);
+      timer.dispose();
       renderer.dispose();
       rendererRef.current = null;
       sceneRef.current = null;
