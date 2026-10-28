@@ -59,6 +59,9 @@ describe('local services', () => {
     expect(byId.speech.args).toEqual(['-Port', '8192', '-KokoroDir', 'C:\\kokoro']);
     expect(byId.motion.args).toEqual(['-Port', '8190', '-TextEncodersDir', 'C:\\enc', '-Venv', 'C:\\venv']);
     expect(byId.llm.script).toBe(resolve('/repo', 'scripts/start-local-llm.ps1'));
+    expect(byId.llm.args).toEqual(['-Port', '1234']);
+    const smallContext = describeLocalServices('/repo', { LOCAL_LLM_CONTEXT: '32768' });
+    expect(smallContext[0].args).toEqual(['-Port', '1234', '-Context', '32768']);
 
     const onCpu = describeLocalServices('/repo', { MOTION_TEXT_ENCODER_DEVICE: 'cpu' });
     expect(onCpu.at(-1).args).toEqual(['-Port', '8190', '-TextEncoderDevice', 'cpu']);
