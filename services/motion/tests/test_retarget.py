@@ -87,3 +87,61 @@ def test_slugify():
     assert slugify("A person waves hello, with their RIGHT hand!") == "a-person-waves-hello-with-their-right-ha"
     assert slugify("!!!") == "motion"
     assert len(slugify("x" * 100)) == 40
+
+
+def _globals(vrma):
+    """Chain the VRMA local rotations into world rotations, per bone [T,3,3]."""
+    from motion_service.retarget import BODY_MAP
+
+    local = {t["bone"]: Rotation.from_quat([kf["q"] for kf in t["keyframes"]]).as_matrix() for t in vrma["tracks"]}
+    glob = {}
+    for vrm, _soma, parent in BODY_MAP:
+        glob[vrm] = local[vrm] if parent is None else glob[parent] @ local[vrm]
+    return glob
+
+
+def test_rest_pose_stays_at_rest_without_chest_lean():
+    from motion_service.backends.base import Motion
+
+    T = 5
+    rest = Motion(np.tile(np.eye(3), (T, 77, 1, 1)), np.zeros((T, 77, 3)), np.zeros((T, 3)))
+    v = to_vrma(rest.global_rot_mats, rest.posed_joints, rest.root_positions, "rest", chest_forward=0)
+    for track in v["tracks"]:
+        np.testing.assert_allclose(np.abs([kf["q"][3] for kf in track["keyframes"]]), 1.0, atol=1e-6, err_msg=track["bone"])
+
+
+def test_chest_lean_tilts_the_upper_body_forward_once():
+    m = synthetic_motion(20)
+    straight = _globals(to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x", chest_forward=0))
+    leaning = _globals(to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x", chest_forward=7))
+
+    # Below the chest nothing changes.
+    for bone in ("hips", "spine", "chest", "leftUpperLeg"):
+        np.testing.assert_allclose(leaning[bone], straight[bone], atol=1e-5)
+    # Head and arms lean with the chest by exactly 7 degrees, not compounded per joint.
+    for bone in ("upperChest", "neck", "head", "leftUpperArm", "rightLowerArm", "rightHand"):
+        delta = Rotation.from_matrix(leaning[bone] @ np.transpose(straight[bone], (0, 2, 1)))
+        np.testing.assert_allclose(delta.magnitude(), np.radians(7), atol=1e-4, err_msg=bone)
+    # Forward: the chest's up axis (+Y) gains a +Z component.
+    up = leaning["upperChest"][:, :, 1]
+    up_straight = straight["upperChest"][:, :, 1]
+    tilt = np.degrees(np.arcsin(up[:, 2])) - np.degrees(np.arcsin(up_straight[:, 2]))
+    np.testing.assert_allclose(tilt, 7, atol=0.5)
+
+
+def test_chest_lean_defaults_and_env_override(monkeypatch):
+    from motion_service.retarget import DEFAULT_CHEST_FORWARD_DEG, chest_forward_deg
+
+    monkeypatch.delenv("MOTION_CHEST_FORWARD_DEG", raising=False)
+    assert chest_forward_deg() == DEFAULT_CHEST_FORWARD_DEG
+    monkeypatch.setenv("MOTION_CHEST_FORWARD_DEG", "0")
+    assert chest_forward_deg() == 0
+    m = synthetic_motion(3)
+    v = to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x")
+    straight = to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x", chest_forward=0)
+    np.testing.assert_allclose(_track(v, "upperChest"), _track(straight, "upperChest"))
+    monkeypatch.setenv("MOTION_CHEST_FORWARD_DEG", "not a number")
+    assert chest_forward_deg() == DEFAULT_CHEST_FORWARD_DEG
+    for raw in ("nan", "inf", "1e309"):
+        monkeypatch.setenv("MOTION_CHEST_FORWARD_DEG", raw)
+        assert chest_forward_deg() == DEFAULT_CHEST_FORWARD_DEG
