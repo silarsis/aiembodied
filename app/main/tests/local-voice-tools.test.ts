@@ -3,7 +3,7 @@ import { LocalLlmClient } from '../src/local-voice/local-llm-client.js';
 import { SpeechServiceClient } from '../src/local-voice/speech-service-client.js';
 import { LocalVoiceService, TOOL_GUIDANCE } from '../src/local-voice/local-voice-service.js';
 import type { LocalVoiceEvent } from '../src/local-voice/types.js';
-import { ToolRegistry } from '../src/tools/tool-registry.js';
+import { ToolRegistry, type RegisteredTool } from '../src/tools/tool-registry.js';
 import {
   BraveSearchProvider,
   DEFAULT_WEB_SEARCH_PROVIDER,
@@ -56,7 +56,7 @@ class FakeSearch implements WebSearchProvider {
   }
 }
 
-function makeService(rounds: Delta[][], search = new FakeSearch()) {
+function makeService(rounds: Delta[][], search = new FakeSearch(), extraTools: RegisteredTool[] = []) {
   const chats: Array<Record<string, unknown>> = [];
   const tts: string[] = [];
   let round = 0;
@@ -75,6 +75,9 @@ function makeService(rounds: Delta[][], search = new FakeSearch()) {
   }) as unknown as typeof fetch;
   const tools = new ToolRegistry();
   tools.register(createWebSearchTool(search, { limit: 3 }));
+  for (const tool of extraTools) {
+    tools.register(tool);
+  }
   const service = new LocalVoiceService({
     llm: new LocalLlmClient({ baseUrl: 'http://llm/v1', model: 'qwen-next-flash', fetchFn }),
     speech: new SpeechServiceClient({ baseUrl: 'http://speech', fetchFn }),
@@ -180,6 +183,36 @@ describe('LocalVoiceService tools', () => {
     expect(result.text).toBe('I cannot do that.');
     const toolMessage = (chats[1]?.messages as Array<{ role: string; content: string }>).find((m) => m.role === 'tool');
     expect(toolMessage?.content).toContain('no tool called open_door');
+  });
+});
+
+describe('LocalVoiceService tool approval', () => {
+  it('never offers or runs tools that need approval or are blocked', async () => {
+    const unlock = vi.fn(async () => 'unlocked');
+    const guarded = (toolName: string, confirmationLevel: RegisteredTool['confirmationLevel']): RegisteredTool => ({
+      id: `test:${toolName}`,
+      serverId: 'test',
+      toolName,
+      description: toolName,
+      inputSchema: { type: 'object' },
+      enabled: true,
+      confirmationLevel,
+      execute: unlock,
+    });
+    const call: Delta[] = [{ tool_calls: [{ index: 0, id: 'c1', function: { name: 'unlock_door', arguments: '{}' } }] }];
+    const { service, chats } = makeService([call, [{ content: 'I cannot do that.' }]], new FakeSearch(), [
+      guarded('unlock_door', 'confirm'),
+      guarded('wipe_disk', 'block'),
+      guarded('lights_on', 'notify'),
+    ]);
+
+    await service.respond({ requestId: 'r1', text: 'Unlock the door.' }, () => undefined);
+
+    const offered = (chats[0]?.tools as Array<{ function: { name: string } }>).map((t) => t.function.name);
+    expect(offered).toEqual(['web_search', 'lights_on']);
+    expect(unlock).not.toHaveBeenCalled();
+    const toolMessage = (chats[1]?.messages as Array<{ role: string; content: string }>).find((m) => m.role === 'tool');
+    expect(toolMessage?.content).toContain('no tool called unlock_door');
   });
 });
 

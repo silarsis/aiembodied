@@ -155,7 +155,11 @@ export class LocalVoiceService {
       this.history = [];
     }
 
-    const tools = this.tools?.list() ?? [];
+    // Voice has no way to ask for approval yet, so tools that need it ("confirm") or are
+    // forbidden ("block") are never offered, and a call to one is refused as an unknown tool.
+    const tools = (this.tools?.list() ?? []).filter(
+      (tool) => tool.confirmationLevel === 'none' || tool.confirmationLevel === 'notify',
+    );
     const system = [request.instructions?.trim(), SPOKEN_REPLY_GUIDANCE, tools.length ? TOOL_GUIDANCE : null]
       .filter(Boolean)
       .join('\n\n');

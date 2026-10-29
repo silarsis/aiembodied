@@ -27,8 +27,8 @@ Check it with `curl "http://127.0.0.1:8888/search?q=test&format=json"`.
 ## Notes
 
 - `settings.yml` here is copied to `%LOCALAPPDATA%\aiembodied\searxng` on each start, because the
-  container writes into its config folder. With wslc the container is recreated on each start, so
-  changes apply next time; with Docker, run `start.ps1 -Recreate`.
+  container writes into its config folder. The container is recreated on each start, so a changed
+  port or settings file applies the next time it starts.
 - The first `wslc run` in a new WSL container session can take a minute or two while the image
   downloads and the VM boots; the app picks SearXNG up once it answers.
 - JSON output and a disabled limiter are the two settings the tool needs. Without JSON, SearXNG
