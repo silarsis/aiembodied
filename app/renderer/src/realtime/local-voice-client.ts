@@ -6,7 +6,8 @@
  * Turn-taking is half-duplex: while a reply is being transcribed, generated or played, the mic
  * is ignored, so the assistant never hears (and answers) its own voice through the speakers.
  * With `requireWakeWord`, an utterance is only answered if the wake word was heard during it,
- * or it began within `wakeWindowMs` of the wake word or of the end of the last reply.
+ * or it began within `wakeWindowMs` of the wake word or of the end of the last reply. Speech
+ * before the wake word is thrown away: an utterance that spans it is cut at the detection.
  */
 import type { LocalVoiceBridge } from '../preload-api.js';
 import type { LocalVoiceEvent } from '../../../main/src/local-voice/types.js';
@@ -46,11 +47,16 @@ const SPEECH_RMS = 0.004;
 const PROCESSOR_FRAME = 2048;
 const PLAYBACK_TAIL_MS = 300;
 const WAKE_GRACE_MS = 600;
+// Detection lands a little after the wake phrase ends, so the cut starts slightly before it to
+// keep a request said in the same breath; any tail of the phrase is stripped from the transcript.
+const WAKE_TRIM_LEAD_MS = 250;
 
 export class LocalVoiceClient {
   private readonly getBridge: () => LocalVoiceBridge | undefined;
   private readonly callbacks: LocalVoiceClientCallbacks;
   private readonly wakePattern: RegExp | null;
+  private readonly wakeSearchPattern: RegExp | null;
+  private readonly minSpeechMs: number;
   private readonly requireWakeWord: boolean;
   private readonly wakeWindowMs: number;
   private readonly statusPollMs: number;
@@ -81,6 +87,8 @@ export class LocalVoiceClient {
     this.getBridge = options.getBridge;
     this.callbacks = options.callbacks ?? {};
     this.wakePattern = options.wakePhrase ? buildWakePattern(options.wakePhrase) : null;
+    this.wakeSearchPattern = options.wakePhrase ? buildWakeSearchPattern(options.wakePhrase) : null;
+    this.minSpeechMs = options.minSpeechMs ?? 300;
     this.requireWakeWord = options.requireWakeWord ?? true;
     this.wakeWindowMs = options.wakeWindowMs ?? 8000;
     this.statusPollMs = options.statusPollMs ?? 5000;
@@ -88,7 +96,7 @@ export class LocalVoiceClient {
     this.now = options.now ?? Date.now;
     this.segmenter = new UtteranceSegmenter({
       silenceMs: options.silenceMs ?? 700,
-      minSpeechMs: options.minSpeechMs ?? 300,
+      minSpeechMs: this.minSpeechMs,
       maxUtteranceMs: options.maxUtteranceMs ?? 30_000,
     });
     this.activity = { phase: 'off', since: this.now() };
@@ -243,7 +251,7 @@ export class LocalVoiceClient {
     }
   }
 
-  private async handleUtterance(utterance: Utterance): Promise<void> {
+  private async handleUtterance(heard: Utterance): Promise<void> {
     const bridge = this.getBridge();
     if (!bridge || this.busy) {
       return;
@@ -251,15 +259,29 @@ export class LocalVoiceClient {
     this.busy = true;
     const connectionId = this.connectionId;
     try {
-      if (this.requireWakeWord && !this.isAwake(utterance)) {
-        // The wake event can land just after a short "hey jarvis" utterance ends.
-        await wait(WAKE_GRACE_MS);
-        if (!this.isAwake(utterance)) {
-          const durationMs = utterance.endAt - utterance.startAt;
+      let utterance = heard;
+      if (this.requireWakeWord) {
+        let admitted = this.admit(heard);
+        if (admitted === null) {
+          // The wake event can land just after a short "hey jarvis" utterance ends.
+          await wait(WAKE_GRACE_MS);
+          admitted = this.admit(heard);
+        }
+        if (admitted === null) {
+          const durationMs = heard.endAt - heard.startAt;
           this.log('info', 'Ignoring speech without the wake word', { durationMs });
           this.setActivity('waiting', `Ignored ${(durationMs / 1000).toFixed(1)} s of speech without the wake word`);
           return;
         }
+        if (admitted === 'wake-only') {
+          this.log('info', 'Dropped speech before the wake word', { durationMs: heard.endAt - heard.startAt });
+          this.listen('Wake word heard: say your request');
+          return;
+        }
+        if (admitted !== heard) {
+          this.log('info', 'Dropped speech before the wake word', { droppedMs: admitted.startAt - heard.startAt });
+        }
+        utterance = admitted;
       }
 
       this.setActivity('transcribing');
@@ -337,13 +359,33 @@ export class LocalVoiceClient {
     }
   }
 
-  private isAwake(utterance: Utterance): boolean {
-    const heardDuring = this.lastWakeAt >= utterance.startAt - 2000 && this.lastWakeAt <= this.now();
-    return heardDuring || utterance.startAt <= this.awakeUntil;
+  /**
+   * The part of an utterance to answer: from the wake word on when it was heard during the
+   * utterance (or just after it ended), all of it when it began after the wake word or within a
+   * follow-up window, 'wake-only' when nothing but the wake word and what came before it is left,
+   * and null when the wake word has not been heard.
+   */
+  private admit(utterance: Utterance): Utterance | 'wake-only' | null {
+    const wakeAt = this.lastWakeAt;
+    if (wakeAt > utterance.startAt && wakeAt <= utterance.endAt + WAKE_GRACE_MS) {
+      const rest = trimUtterance(utterance, wakeAt - WAKE_TRIM_LEAD_MS);
+      return voicedMs(rest.samples, rest.sampleRate) >= this.minSpeechMs ? rest : 'wake-only';
+    }
+    return utterance.startAt <= this.awakeUntil ? utterance : null;
   }
 
   private stripWakePhrase(text: string): string {
-    const trimmed = text.trim();
+    let trimmed = text.trim();
+    if (this.wakeSearchPattern) {
+      // Anything said before the full wake phrase was not meant for the assistant.
+      let end = -1;
+      for (const match of trimmed.matchAll(this.wakeSearchPattern)) {
+        end = (match.index ?? 0) + match[0].length;
+      }
+      if (end >= 0) {
+        trimmed = trimmed.slice(end).trim();
+      }
+    }
     const stripped = this.wakePattern ? trimmed.replace(this.wakePattern, '') : trimmed;
     return /[\p{L}\p{N}]/u.test(stripped) ? stripped.trim() : '';
   }
@@ -567,6 +609,31 @@ export class UtteranceSegmenter {
   }
 }
 
+/** The utterance from `fromMs` on. */
+export function trimUtterance(utterance: Utterance, fromMs: number): Utterance {
+  if (fromMs <= utterance.startAt) {
+    return utterance;
+  }
+  const offset = Math.round(((fromMs - utterance.startAt) / 1000) * utterance.sampleRate);
+  return {
+    ...utterance,
+    samples: utterance.samples.slice(Math.min(offset, utterance.samples.length)),
+    startAt: Math.min(fromMs, utterance.endAt),
+  };
+}
+
+/** How much of `samples` is speech, counted in processor-sized frames. */
+export function voicedMs(samples: Float32Array, sampleRate: number): number {
+  let voiced = 0;
+  for (let i = 0; i < samples.length; i += PROCESSOR_FRAME) {
+    const frame = samples.subarray(i, i + PROCESSOR_FRAME);
+    if (rms(frame) > SPEECH_RMS) {
+      voiced += frame.length;
+    }
+  }
+  return (voiced / sampleRate) * 1000;
+}
+
 /** 16-bit PCM mono WAV. */
 export function encodeWav(samples: Float32Array, sampleRate: number): ArrayBuffer {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
@@ -609,6 +676,19 @@ export function buildWakePattern(phrase: string): RegExp | null {
   const last = words.pop() as string;
   const leading = words.map((word) => `(?:${word}[\\s,.!?-]*)?`).join('');
   return new RegExp(`^\\s*(?:(?:hey|hi|okay|ok)[\\s,]+)?${leading}${last}\\b[\\s,.!?-]*`, 'i');
+}
+
+/** Matches the whole wake phrase anywhere in a transcript (every word, so "echo" alone does not). */
+export function buildWakeSearchPattern(phrase: string): RegExp | null {
+  const words = phrase
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length > 0)
+    .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (words.length === 0) {
+    return null;
+  }
+  return new RegExp(`\\b${words.join('[\\s,.!?-]+')}\\b[\\s,.!?-]*`, 'gi');
 }
 
 function rms(samples: Float32Array): number {
