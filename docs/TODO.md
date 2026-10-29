@@ -37,14 +37,17 @@ more depth and are linked where they apply.
 
 ### Push-to-talk
 
-- **Today:** none. Listening starts on the wake word, with a follow-up window
-  afterwards that needs no wake word.
+- **Today:** a global push-to-talk key (Ctrl+Shift+Space by default, set on the
+  Settings tab) and a tap on the conversation screen both start listening
+  without the wake word. The key toggles: press, speak, and press again to send
+  at once (or just pause). Pressing during a reply stops it. Electron's
+  `globalShortcut` has no key-up event, so true hold-to-talk would need a native
+  keyboard hook such as uiohook-napi.
 - **Akari:** global hotkey (Cmd+Shift+Space on macOS, Ctrl on Windows) as an
   alternative to the wake word, plus the follow-up window.
 - **Dipal:** touching the screen starts an interaction.
-- **To do:** configurable global hotkey (Electron `globalShortcut`), hold to
-  talk or tap to toggle. Also a talk button on the phone interface and a tap on
-  the avatar in kiosk mode.
+- **To do:** a talk button on the phone interface; hold-to-talk if the toggle
+  feels wrong.
 
 ## Voice output
 

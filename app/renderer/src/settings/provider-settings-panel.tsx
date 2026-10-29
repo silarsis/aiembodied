@@ -5,6 +5,7 @@ import type {
 } from '../../../main/src/config/provider-settings.js';
 import type { LocalVoiceStatus } from '../../../main/src/local-voice/types.js';
 import type { AvatarMotionStatus } from '../avatar/types.js';
+import type { PushToTalkStatus } from '../../../main/src/talk/types.js';
 
 /** Suggestions only: every model field also takes any other model name. */
 const OPENAI_LLM_MODELS = ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4.1-nano', 'gpt-4o-mini', 'gpt-4o'];
@@ -41,6 +42,8 @@ export interface ProviderSettingsPanelProps {
   voiceStatus: LocalVoiceStatus | null | undefined;
   motionStatus: AvatarMotionStatus | null;
   onSave(patch: ProviderSettingsPatch): Promise<void>;
+  /** Whether the saved push-to-talk key could be registered. */
+  pushToTalkStatus?: PushToTalkStatus | null;
   disabled?: boolean;
 }
 
@@ -50,6 +53,7 @@ export function ProviderSettingsPanel({
   voiceStatus,
   motionStatus,
   onSave,
+  pushToTalkStatus = null,
   disabled = false,
 }: ProviderSettingsPanelProps) {
   const [draft, setDraft] = useState<ProviderSettings | null>(settings);
@@ -117,6 +121,10 @@ export function ProviderSettingsPanel({
     : [draft.tts.openaiVoice, ...OPENAI_TTS_VOICES];
   const localSttModel = voiceStatus?.stt?.provider !== 'openai' ? (voiceStatus?.stt?.model ?? voiceStatus?.speech.sttModel) : null;
   const runningMotionBackend = motionStatus?.provider !== 'openai' ? motionStatus?.backend : null;
+  // The status is for the saved key, so it says nothing about an unsaved edit.
+  const savedShortcutStatus = pushToTalkStatus?.shortcut === settings.talk.shortcut ? pushToTalkStatus : null;
+  const shortcutActive = Boolean(savedShortcutStatus?.registered);
+  const shortcutError = savedShortcutStatus?.error;
 
   return (
     <div className="providerSettings">
@@ -337,6 +345,38 @@ export function ProviderSettingsPanel({
         </SettingsGroup>
       ) : null}
 
+      <SettingsGroup title="Talking without the wake word" id="talk">
+        <ShortcutField
+          id="settings-talk-shortcut"
+          label="Push-to-talk key"
+          value={draft.talk.shortcut}
+          onChange={(shortcut) => update('talk', { shortcut })}
+          disabled={busy}
+        />
+        <p className="kiosk__helper">
+          Works from any app. Press it and speak; press it again to send straight away instead of waiting for a pause.
+          During a reply it stops the reply and listens.
+          {shortcutActive ? ` Active: ${formatShortcut(settings.talk.shortcut)}.` : ''}
+        </p>
+        {shortcutError ? (
+          <p className="kiosk__error" role="alert">
+            {shortcutError}
+          </p>
+        ) : null}
+        <div className="control">
+          <label htmlFor="settings-talk-tap">
+            <input
+              id="settings-talk-tap"
+              type="checkbox"
+              checked={draft.talk.tapToTalk}
+              onChange={(event) => update('talk', { tapToTalk: event.target.checked })}
+              disabled={busy}
+            />{' '}
+            Tap the conversation screen to talk
+          </label>
+        </div>
+      </SettingsGroup>
+
       <div className="secretCard__actions providerSettings__actions">
         <button type="button" onClick={() => void save()} disabled={busy || !dirty}>
           {saving ? 'Saving…' : 'Save settings'}
@@ -424,6 +464,155 @@ function TextField({
           ))}
         </datalist>
       ) : null}
+    </div>
+  );
+}
+
+const KEY_NAMES: Record<string, string> = {
+  Space: 'Space',
+  Enter: 'Enter',
+  Tab: 'Tab',
+  Backspace: 'Backspace',
+  Delete: 'Delete',
+  Insert: 'Insert',
+  Home: 'Home',
+  End: 'End',
+  PageUp: 'PageUp',
+  PageDown: 'PageDown',
+  ArrowUp: 'Up',
+  ArrowDown: 'Down',
+  ArrowLeft: 'Left',
+  ArrowRight: 'Right',
+  Minus: '-',
+  Equal: '=',
+  BracketLeft: '[',
+  BracketRight: ']',
+  Backslash: '\\',
+  Semicolon: ';',
+  Quote: "'",
+  Comma: ',',
+  Period: '.',
+  Slash: '/',
+  Backquote: '`',
+  Pause: 'Pause',
+  ScrollLock: 'Scrolllock',
+  MediaPlayPause: 'MediaPlayPause',
+  MediaTrackNext: 'MediaNextTrack',
+  MediaTrackPrevious: 'MediaPreviousTrack',
+  MediaStop: 'MediaStop',
+};
+
+/** Keys that are fine as a global shortcut on their own, because nothing types them. */
+const STANDALONE_KEY = /^(F\d{1,2}|Pause|Scrolllock|Media\w+)$/;
+
+export type ShortcutCapture = { accelerator: string } | { error: string } | null;
+
+/**
+ * The Electron accelerator for a key press, e.g. Ctrl+Shift+Space. Null while only modifiers are
+ * down; an error for a key that would stop typing in every other app.
+ */
+export function acceleratorFromKeyEvent(event: {
+  code: string;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  metaKey: boolean;
+}): ShortcutCapture {
+  const { code } = event;
+  let key: string | undefined;
+  if (/^Key[A-Z]$/.test(code)) {
+    key = code.slice(3);
+  } else if (/^Digit\d$/.test(code)) {
+    key = code.slice(5);
+  } else if (/^Numpad\d$/.test(code)) {
+    key = `num${code.slice(6)}`;
+  } else if (/^F\d{1,2}$/.test(code)) {
+    key = code;
+  } else {
+    key = KEY_NAMES[code];
+  }
+  if (!key) {
+    return /^(Control|Shift|Alt|Meta|OS)(Left|Right)?$/.test(code) ? null : { error: `${code} can't be used as a shortcut.` };
+  }
+  const modifiers = [
+    event.ctrlKey ? 'Ctrl' : null,
+    event.altKey ? 'Alt' : null,
+    event.shiftKey ? 'Shift' : null,
+    event.metaKey ? 'Super' : null,
+  ].filter((modifier): modifier is string => modifier !== null);
+  const typesText = modifiers.length === 0 || (modifiers.length === 1 && modifiers[0] === 'Shift');
+  if (typesText && !STANDALONE_KEY.test(key)) {
+    return { error: 'Add Ctrl or Alt: on its own that key would stop working in every other app.' };
+  }
+  return { accelerator: [...modifiers, key].join('+') };
+}
+
+/** An accelerator as people read it: CommandOrControl is Ctrl on Windows. */
+export function formatShortcut(accelerator: string): string {
+  return accelerator.replace(/\b(CommandOrControl|CmdOrCtrl|Control)\b/g, 'Ctrl').replace(/\+/g, ' + ');
+}
+
+function ShortcutField({
+  id,
+  label,
+  value,
+  onChange,
+  disabled,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange(value: string): void;
+  disabled: boolean;
+}) {
+  const [hint, setHint] = useState<string | null>(null);
+  return (
+    <div className="control">
+      <label htmlFor={id}>{label}</label>
+      <div className="providerSettings__shortcut">
+        <input
+          id={id}
+          type="text"
+          readOnly
+          value={value ? formatShortcut(value) : ''}
+          placeholder="Off"
+          aria-describedby={`${id}-hint`}
+          onKeyDown={(event) => {
+            if (event.key === 'Tab') {
+              return;
+            }
+            event.preventDefault();
+            const plain = !event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey;
+            if (plain && event.key === 'Escape') {
+              event.currentTarget.blur();
+              return;
+            }
+            if (plain && (event.key === 'Backspace' || event.key === 'Delete')) {
+              setHint(null);
+              onChange('');
+              return;
+            }
+            const capture = acceleratorFromKeyEvent(event);
+            if (!capture) {
+              return;
+            }
+            if ('error' in capture) {
+              setHint(capture.error);
+              return;
+            }
+            setHint(null);
+            onChange(capture.accelerator);
+          }}
+          onBlur={() => setHint(null)}
+          disabled={disabled}
+        />
+        <button type="button" onClick={() => onChange('')} disabled={disabled || !value}>
+          Turn off
+        </button>
+      </div>
+      <p id={`${id}-hint`} className={hint ? 'kiosk__error' : 'kiosk__helper'}>
+        {hint ?? 'Click the box and press the keys you want. Backspace clears it.'}
+      </p>
     </div>
   );
 }

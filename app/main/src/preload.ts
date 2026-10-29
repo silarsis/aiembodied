@@ -32,6 +32,7 @@ import type {
   ConversationSession,
 } from './conversation/types.js';
 import type { WakeWordDetectionEvent } from './wake-word/types.js';
+import type { PushToTalkStatus, TalkTriggerEvent } from './talk/types.js';
 import type { LatencyMetricName } from './metrics/types.js';
 import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from './realtime/types.js';
 import type {
@@ -152,6 +153,7 @@ export interface PreloadApi {
   realtime: RealtimeBridge;
   localVoice?: LocalVoiceBridge;
   wakeWord: WakeWordBridge;
+  talk?: TalkBridge;
   conversation?: ConversationBridge;
   metrics?: MetricsBridge;
   avatar?: AvatarBridge;
@@ -166,6 +168,13 @@ export interface WakeWordBridge {
   onWake(listener: (event: WakeWordDetectionEvent) => void): () => void;
   /** Peak score of each burst of activity, including near misses below the threshold. */
   onPeak?(listener: (event: WakeWordDetectionEvent) => void): () => void;
+}
+
+export interface TalkBridge {
+  /** The global push-to-talk key was pressed. */
+  onTrigger(listener: (event: TalkTriggerEvent) => void): () => void;
+  getShortcutStatus(): Promise<PushToTalkStatus>;
+  onShortcutStatus(listener: (status: PushToTalkStatus) => void): () => void;
 }
 
 export interface ConversationBridge {
@@ -325,6 +334,25 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     onPeak: (listener) => {
       const channel = 'wake-word:peak';
       const handler = (_event: unknown, payload: WakeWordDetectionEvent) => listener(payload);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
+  },
+  talk: {
+    onTrigger: (listener) => {
+      const channel = 'talk:trigger';
+      const handler = (_event: unknown, payload: TalkTriggerEvent) => listener(payload);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
+    getShortcutStatus: () => ipcRenderer.invoke('talk:get-shortcut-status') as Promise<PushToTalkStatus>,
+    onShortcutStatus: (listener) => {
+      const channel = 'talk:shortcut-status';
+      const handler = (_event: unknown, payload: PushToTalkStatus) => listener(payload);
       ipcRenderer.on(channel, handler);
       return () => {
         ipcRenderer.removeListener(channel, handler);

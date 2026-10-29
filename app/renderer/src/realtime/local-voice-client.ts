@@ -7,6 +7,7 @@
  * is ignored, so the assistant never hears (and answers) its own voice through the speakers.
  * With `requireWakeWord`, an utterance is only answered if the wake word was heard during it,
  * or it began within `wakeWindowMs` of the wake word or of the end of the last reply.
+ * `talk()` (push-to-talk, or a tap on the screen) opens the same window without the wake word.
  */
 import type { LocalVoiceBridge } from '../preload-api.js';
 import type { LocalVoiceEvent, LocalVoiceStatus } from '../../../main/src/local-voice/types.js';
@@ -144,6 +145,37 @@ export class LocalVoiceClient {
     }
   }
 
+  /**
+   * Push-to-talk or a tap on the screen: answer what is said next, no wake word needed. Pressed
+   * again while speech is being captured, it sends that speech without waiting for a pause; pressed
+   * while a reply is being generated or spoken, it stops the reply and listens. Before the local
+   * services are up, listening starts as soon as they are.
+   */
+  talk(timestamp = this.now()): void {
+    this.awakeUntil = Math.max(this.awakeUntil, timestamp + this.wakeWindowMs);
+    if (this.state.status !== 'connected') {
+      return;
+    }
+    if (this.turn) {
+      this.log('info', 'Reply interrupted to talk');
+      void this.getBridge()?.cancel(this.turn.requestId);
+      // respond() then finishes the turn and listens for a follow-up.
+      this.turn.stop();
+      return;
+    }
+    if (this.busy) {
+      return;
+    }
+    if (this.activity.phase === 'listening') {
+      const utterance = this.segmenter.flush(this.now());
+      if (utterance) {
+        void this.handleUtterance(utterance);
+        return;
+      }
+    }
+    this.listen('Listening: no wake word needed');
+  }
+
   async connect(options: { apiKey?: string; inputStream: MediaStream }): Promise<void> {
     if (this.disposed) {
       throw new Error('Local voice client has been disposed.');
@@ -222,7 +254,12 @@ export class LocalVoiceClient {
     }
 
     this.updateState({ status: 'connected' });
-    this.setActivity(this.requireWakeWord ? 'waiting' : 'listening');
+    if (this.requireWakeWord && this.awakeUntil > this.now()) {
+      // talk() was pressed while connecting.
+      this.listen('Listening: no wake word needed');
+    } else {
+      this.setActivity(this.requireWakeWord ? 'waiting' : 'listening');
+    }
     if (this.output) {
       this.callbacks.onRemoteStream?.(this.output.stream);
     }
@@ -550,7 +587,14 @@ export class UtteranceSegmenter {
     if (!ended && !tooLong) {
       return null;
     }
+    return this.flush(nowMs);
+  }
 
+  /** End the utterance in progress now, without waiting for a pause; null if there is none. */
+  flush(nowMs: number): Utterance | null {
+    if (this.chunks.length === 0) {
+      return null;
+    }
     const utterance: Utterance = {
       samples: concat(this.chunks),
       sampleRate: this.sampleRate,
