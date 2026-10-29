@@ -32,7 +32,9 @@ import { RealtimeClient, type RealtimeClientCallbacks, type RealtimeClientState 
 import { LocalVoiceClient } from './realtime/local-voice-client.js';
 import { LatencyTracker, type LatencySnapshot } from './metrics/latency-tracker.js';
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
-import type { AvatarModelSummary, AvatarPoseSummary } from './avatar/types.js';
+import type { AvatarModelSummary, AvatarMotionStatus, AvatarPoseSummary } from './avatar/types.js';
+import type { LocalVoiceStatus } from '../../main/src/local-voice/types.js';
+import { describeModels } from './status/model-status.js';
 import { extractAvatarTags, extractMoveTags, toAnimationSlug } from './avatar/animation-tags.js';
 import { MoveRequestFilter, enqueueMotionChunk } from './avatar/live-motion.js';
 
@@ -133,7 +135,9 @@ function formatLatency(value?: number): string {
   return `${(value / 1000).toFixed(2)}s`;
 }
 
-const LIVE_MOTION_STATUS_INTERVAL_MS = 30_000;
+// Also feeds the model status panel, so it is checked often enough to show a model coming up.
+const LIVE_MOTION_STATUS_INTERVAL_MS = 5_000;
+const MODEL_STATUS_INTERVAL_MS = 5_000;
 
 function buildAnimationInstructions(
   availableAnimations: string[],
@@ -689,6 +693,37 @@ export default function App() {
   const [poseListVersion, setPoseListVersion] = useState(0);
   const animationBus = useMemo(() => createAvatarAnimationBus(), []);
   const [liveMotionReady, setLiveMotionReady] = useState(false);
+  const [motionStatus, setMotionStatus] = useState<AvatarMotionStatus | null>(null);
+  // undefined: not checked yet; null: the check itself failed.
+  const [voiceServiceStatus, setVoiceServiceStatus] = useState<LocalVoiceStatus | null | undefined>(undefined);
+
+  useEffect(() => {
+    const localVoice = resolveApi()?.localVoice;
+    if (!localVoice) {
+      return;
+    }
+    let cancelled = false;
+    const refresh = () => {
+      localVoice
+        .getStatus()
+        .then((status) => {
+          if (!cancelled) {
+            setVoiceServiceStatus(status);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setVoiceServiceStatus(null);
+          }
+        });
+    };
+    refresh();
+    const timer = setInterval(refresh, MODEL_STATUS_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [resolveApi]);
 
   useEffect(() => {
     const avatar = resolveApi()?.avatar;
@@ -704,11 +739,13 @@ export default function App() {
         .then((status) => {
           if (!cancelled) {
             setLiveMotionReady(status.ready);
+            setMotionStatus(status);
           }
         })
         .catch(() => {
           if (!cancelled) {
             setLiveMotionReady(false);
+            setMotionStatus(null);
           }
         });
     };
@@ -1078,6 +1115,16 @@ export default function App() {
   // The local backend needs no API key; OpenAI Realtime does.
   const canConnectConversation = isLocalBackend || hasRealtimeApiKey;
   const wakePhrase = config?.wakeWord?.keywordLabel;
+  // Only the local backend has models of its own to report on.
+  const modelStatuses = useMemo(
+    () =>
+      !isLocalBackend
+        ? undefined
+        : voiceServiceStatus === undefined
+          ? null
+          : describeModels(voiceServiceStatus, motionStatus),
+    [isLocalBackend, voiceServiceStatus, motionStatus],
+  );
   const wakeThresholdRef = useRef(0.5);
   wakeThresholdRef.current = config?.wakeWord?.threshold ?? 0.5;
   // The OpenAI Realtime backend reports no turn stages, only whether it is connected.
@@ -2453,6 +2500,7 @@ export default function App() {
                       wakeScore={wakeScore}
                       toolCalls={toolCalls}
                       wakePhrase={wakePhrase}
+                      models={modelStatuses}
                     />
                   </div>
                   <div className="kiosk__meter" aria-live="polite">

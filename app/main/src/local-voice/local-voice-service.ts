@@ -57,12 +57,17 @@ export class LocalVoiceService {
 
   async status(): Promise<LocalVoiceStatus> {
     const [llmAvailable, speech] = await Promise.all([this.llm.isAvailable(), this.speech.health()]);
+    // The speech service reports ready even when its separate STT server is down, so ask that too.
+    const sttUrl = speech?.sttUrl ?? null;
+    const sttAvailable = sttUrl ? await this.speech.isSttServerUp(sttUrl) : speech?.ready === true;
     return {
       llm: { available: llmAvailable, model: this.llm.model, baseUrl: this.llm.baseUrl },
+      stt: { available: sttAvailable, model: speech?.sttModel ?? null, url: sttUrl },
       speech: {
         available: Boolean(speech),
         ready: speech?.ready === true,
         sttModel: speech?.sttModel ?? null,
+        ttsModel: speech?.ttsModel ?? null,
         voices: speech?.voices ?? [],
         defaultVoice: speech?.defaultVoice ?? null,
         error: speech?.error ?? null,

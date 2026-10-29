@@ -4,6 +4,9 @@ export interface SpeechServiceHealth {
   ready: boolean;
   error: string | null;
   sttModel: string | null;
+  /** The separate STT server the service forwards to (engine "openai-compatible"), if any. */
+  sttUrl: string | null;
+  ttsModel: string | null;
   voices: string[];
   defaultVoice: string | null;
 }
@@ -37,18 +40,30 @@ export class SpeechServiceClient {
       const body = (await response.json()) as {
         ready?: unknown;
         error?: unknown;
-        stt?: { model?: unknown };
-        tts?: { voices?: unknown; default_voice?: unknown };
+        stt?: { model?: unknown; url?: unknown };
+        tts?: { engine?: unknown; voices?: unknown; default_voice?: unknown };
       };
       return {
         ready: body.ready === true,
         error: typeof body.error === 'string' ? body.error : null,
         sttModel: typeof body.stt?.model === 'string' ? body.stt.model : null,
+        sttUrl: typeof body.stt?.url === 'string' ? body.stt.url.replace(/\/+$/, '') : null,
+        ttsModel: typeof body.tts?.engine === 'string' ? body.tts.engine : null,
         voices: Array.isArray(body.tts?.voices) ? body.tts.voices.filter((v): v is string => typeof v === 'string') : [],
         defaultVoice: typeof body.tts?.default_voice === 'string' ? body.tts.default_voice : null,
       };
     } catch {
       return null;
+    }
+  }
+
+  /** True when the STT server at `url` answers /models (llama-server returns 503 while loading). */
+  async isSttServerUp(url: string): Promise<boolean> {
+    try {
+      const response = await this.fetchFn(`${url}/models`, { signal: AbortSignal.timeout(this.healthTimeoutMs) });
+      return response.ok;
+    } catch {
+      return false;
     }
   }
 

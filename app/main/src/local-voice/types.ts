@@ -2,10 +2,13 @@
 
 export interface LocalVoiceStatus {
   llm: { available: boolean; model: string; baseUrl: string };
+  /** Speech-to-text; `url` is set when it runs on its own server (Qwen3-ASR on llama-server). */
+  stt?: { available: boolean; model: string | null; url: string | null };
   speech: {
     available: boolean;
     ready: boolean;
     sttModel: string | null;
+    ttsModel?: string | null;
     voices: string[];
     defaultVoice: string | null;
     error: string | null;

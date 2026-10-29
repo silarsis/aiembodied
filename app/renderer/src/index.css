@@ -594,6 +594,54 @@ main {
   color: rgba(226, 232, 240, 0.8);
 }
 
+.assistantStatus__modelList {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.assistantStatus__model {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.15rem 0.55rem;
+  align-items: center;
+  font-size: 0.85rem;
+  color: #f8fafc;
+}
+
+.assistantStatus__model[data-state='ready'] .assistantStatus__dot {
+  background: #22c55e;
+}
+
+.assistantStatus__model[data-state='loading'] .assistantStatus__dot {
+  background: #f59e0b;
+  animation: assistantStatusPulse 1.4s ease-out infinite;
+}
+
+.assistantStatus__model[data-state='down'] .assistantStatus__dot,
+.assistantStatus__model[data-state='error'] .assistantStatus__dot {
+  background: #ef4444;
+}
+
+.assistantStatus__modelState {
+  color: rgba(226, 232, 240, 0.7);
+}
+
+.assistantStatus__model[data-state='down'] .assistantStatus__modelState,
+.assistantStatus__model[data-state='error'] .assistantStatus__modelState {
+  color: #fca5a5;
+  font-weight: 600;
+}
+
+.assistantStatus__modelDetail {
+  grid-column: 2 / -1;
+  color: rgba(226, 232, 240, 0.55);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
 .assistantStatus__empty {
   margin: 0;
   color: rgba(226, 232, 240, 0.55);

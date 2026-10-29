@@ -25,6 +25,25 @@ export interface WakeScore {
   detected: boolean;
 }
 
+export type ModelState = 'ready' | 'loading' | 'down' | 'error';
+
+/** One of the local models the assistant depends on. */
+export interface ModelStatus {
+  id: string;
+  label: string;
+  state: ModelState;
+  /** Model name, e.g. "qwen3-asr". */
+  model?: string | null;
+  detail?: string | null;
+}
+
+const MODEL_STATE_LABELS: Record<ModelState, string> = {
+  ready: 'loaded',
+  loading: 'loading',
+  down: 'not running',
+  error: 'failed',
+};
+
 export const MAX_TOOL_CALLS = 8;
 
 const PHASES: { phase: VoicePhase; label: string }[] = [
@@ -81,9 +100,11 @@ export interface AssistantStatusPanelProps {
   wakeScore: WakeScore | null;
   toolCalls: ToolCall[];
   wakePhrase?: string;
+  /** Null until the first check has come back. */
+  models?: ModelStatus[] | null;
 }
 
-export function AssistantStatusPanel({ activity, wakeScore, toolCalls, wakePhrase }: AssistantStatusPanelProps) {
+export function AssistantStatusPanel({ activity, wakeScore, toolCalls, wakePhrase, models }: AssistantStatusPanelProps) {
   const ticking = activity.phase !== 'off' || toolCalls.some((call) => call.status === 'pending');
   const now = useNow(ticking);
   const activeIndex = PHASES.findIndex((entry) => entry.phase === activity.phase);
@@ -120,6 +141,30 @@ export function AssistantStatusPanel({ activity, wakeScore, toolCalls, wakePhras
         >
           {activity.detail}
         </p>
+      ) : null}
+
+      {models !== undefined ? (
+        <div className="assistantStatus__models">
+          <span className="assistantStatus__label">Models</span>
+          {models === null ? (
+            <p className="assistantStatus__empty">Checking…</p>
+          ) : (
+            <ul className="assistantStatus__modelList" data-testid="model-status">
+              {models.map((entry) => (
+                <li key={entry.id} className="assistantStatus__model" data-state={entry.state}>
+                  <span className="assistantStatus__dot" aria-hidden="true" />
+                  <span className="assistantStatus__modelLabel">{entry.label}</span>
+                  <span className="assistantStatus__modelState">{MODEL_STATE_LABELS[entry.state]}</span>
+                  {entry.model || entry.detail ? (
+                    <span className="assistantStatus__modelDetail">
+                      {[entry.model, entry.detail].filter(Boolean).join(' · ')}
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       ) : null}
 
       <div className="assistantStatus__wake" data-testid="wake-score">
