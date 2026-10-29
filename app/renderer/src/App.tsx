@@ -17,6 +17,14 @@ import { flushSync } from 'react-dom';
 import { AvatarConfigurator } from './avatar/avatar-configurator.js';
 import { AudioGraph } from './audio/audio-graph.js';
 import { VisemeDriver, type VisemeFrame } from './audio/viseme-driver.js';
+import type { VoiceActivity } from './realtime/voice-activity.js';
+import {
+  AssistantStatusPanel,
+  addToolCall,
+  finishToolCall,
+  type ToolCall,
+  type WakeScore,
+} from './status/assistant-status.js';
 import type { ConversationSessionWithMessages } from '../../main/src/conversation/types.js';
 import { useAudioDevices } from './hooks/use-audio-devices.js';
 import { getPreloadApi, type PreloadApi } from './preload-api.js';
@@ -27,7 +35,6 @@ import type { LatencyMetricName } from '../../main/src/metrics/types.js';
 import type { AvatarModelSummary, AvatarPoseSummary } from './avatar/types.js';
 import { extractAvatarTags, extractMoveTags, toAnimationSlug } from './avatar/animation-tags.js';
 import { MoveRequestFilter, enqueueMotionChunk } from './avatar/live-motion.js';
-import { Vector3 } from 'three';
 
 const CURSOR_IDLE_TIMEOUT_MS = 3000;
 const WAKE_ACTIVE_DURATION_MS = 4000;
@@ -101,6 +108,21 @@ function toTranscriptSpeaker(role: string): TranscriptSpeaker | null {
   }
 
   return null;
+}
+
+/** JSON for log details, so they survive being forwarded as console text. */
+export function serializeLogData(data: unknown): string | undefined {
+  if (data === undefined) {
+    return undefined;
+  }
+  if (typeof data === 'string') {
+    return data;
+  }
+  try {
+    return JSON.stringify(data);
+  } catch {
+    return String(data);
+  }
 }
 
 function formatLatency(value?: number): string {
@@ -648,6 +670,9 @@ export default function App() {
   const [realtimeState, setRealtimeState] = useState<RealtimeClientState>({ status: 'idle' });
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [visemeFrame, setVisemeFrame] = useState<VisemeFrame | null>(null);
+  const [voiceActivity, setVoiceActivity] = useState<VoiceActivity>(() => ({ phase: 'off', since: Date.now() }));
+  const [wakeScore, setWakeScore] = useState<WakeScore | null>(null);
+  const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
   const [wakeState, setWakeState] = useState<'idle' | 'awake'>('idle');
   const wakeResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isTranscriptVisible, setTranscriptVisible] = useState(false);
@@ -659,11 +684,7 @@ export default function App() {
   const [latencySnapshot, setLatencySnapshot] = useState<LatencySnapshot | null>(null);
   const [activeVrmModel, setActiveVrmModel] = useState<AvatarModelSummary | null>(null);
   const [availableAnimationSlugs, setAvailableAnimationSlugs] = useState<string[]>([]);
-  const [selectedTestAnimation, setSelectedTestAnimation] = useState<string>('');
   const [availablePoses, setAvailablePoses] = useState<AvatarPoseSummary[]>([]);
-  const [selectedTestPose, setSelectedTestPose] = useState<string>('');
-  const [jsonPoseInput, setJsonPoseInput] = useState<string>('');
-  const [jsonPoseError, setJsonPoseError] = useState<string | null>(null);
   const [animationListVersion, setAnimationListVersion] = useState(0);
   const [poseListVersion, setPoseListVersion] = useState(0);
   const animationBus = useMemo(() => createAvatarAnimationBus(), []);
@@ -710,22 +731,6 @@ export default function App() {
     });
   }, [animationBus, resolveApi]);
   const [isListeningEnabled, setListeningEnabled] = useState(false);
-  const [bonePositions, setBonePositions] = useState<{
-    leftShoulder: { x: number; y: number; z: number } | null;
-    leftElbow: { x: number; y: number; z: number } | null;
-    leftHand: { x: number; y: number; z: number } | null;
-    rightShoulder: { x: number; y: number; z: number } | null;
-    rightElbow: { x: number; y: number; z: number } | null;
-    rightHand: { x: number; y: number; z: number } | null;
-  }>({
-    leftShoulder: null,
-    leftElbow: null,
-    leftHand: null,
-    rightShoulder: null,
-    rightElbow: null,
-    rightHand: null,
-  });
-  const animationFrameRef = useRef<number | null>(null);
   const tabs = useMemo<TabDefinition[]>(
     () => [
       { id: 'chatgpt', label: 'ChatGPT' },
@@ -816,90 +821,6 @@ export default function App() {
   const refreshPoseList = useCallback(() => {
     setPoseListVersion((v) => v + 1);
   }, []);
-
-  // Update bone positions from VRM in real-time
-  useEffect(() => {
-    const updateBonePositions = () => {
-      const canvas = document.querySelector('[data-renderer="vrm"]') as HTMLCanvasElement | null;
-      if (!canvas) {
-        animationFrameRef.current = requestAnimationFrame(updateBonePositions);
-        return;
-      }
-
-      // Access the VRM through the renderer's internals
-      // This is a workaround; ideally this would be exposed via the preload bridge
-      try {
-        const canvasWithThree = canvas as {
-          __THREE_RENDERER__?: Record<string, unknown>;
-          __THREE_SCENE__?: { traverse?: (fn: (obj: Record<string, unknown>) => void) => void };
-        };
-        const renderer = canvasWithThree.__THREE_RENDERER__;
-        const scene = canvasWithThree.__THREE_SCENE__;
-
-        if (!renderer || !scene) {
-          animationFrameRef.current = requestAnimationFrame(updateBonePositions);
-          return;
-        }
-
-        // Traverse the scene to find bone positions
-        let leftShoulder: { x: number; y: number; z: number } | null = null;
-        let leftElbow: { x: number; y: number; z: number } | null = null;
-        let leftHand: { x: number; y: number; z: number } | null = null;
-        let rightShoulder: { x: number; y: number; z: number } | null = null;
-        let rightElbow: { x: number; y: number; z: number } | null = null;
-        let rightHand: { x: number; y: number; z: number } | null = null;
-
-        const worldPos = new Vector3();
-        scene.traverse?.((object: Record<string, unknown>) => {
-          const name = object.name as string | undefined;
-          const pos =
-            typeof object.getWorldPosition === 'function'
-              ? (object.getWorldPosition as (target: Vector3) => Vector3)(worldPos)
-              : (object.position as { x: number; y: number; z: number } | undefined);
-
-          if (!pos) return;
-
-          if (name?.includes('LeftShoulder')) {
-            leftShoulder = { x: pos.x, y: pos.y, z: pos.z };
-          } else if (name?.includes('LeftUpperArm')) {
-            leftElbow = { x: pos.x, y: pos.y, z: pos.z };
-          } else if (name?.includes('LeftHand')) {
-            leftHand = { x: pos.x, y: pos.y, z: pos.z };
-          } else if (name?.includes('RightShoulder')) {
-            rightShoulder = { x: pos.x, y: pos.y, z: pos.z };
-          } else if (name?.includes('RightUpperArm')) {
-            rightElbow = { x: pos.x, y: pos.y, z: pos.z };
-          } else if (name?.includes('RightHand')) {
-            rightHand = { x: pos.x, y: pos.y, z: pos.z };
-          }
-        });
-
-        if (leftShoulder || leftElbow || leftHand || rightShoulder || rightElbow || rightHand) {
-          setBonePositions({
-            leftShoulder,
-            leftElbow,
-            leftHand,
-            rightShoulder,
-            rightElbow,
-            rightHand,
-          });
-        }
-      } catch {
-        // Silently fail - VRM not loaded yet
-      }
-
-      animationFrameRef.current = requestAnimationFrame(updateBonePositions);
-    };
-
-    animationFrameRef.current = requestAnimationFrame(updateBonePositions);
-
-    return () => {
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, []);
-
 
 
   const focusTab = useCallback(
@@ -1025,100 +946,6 @@ export default function App() {
     [],
   );
 
-  const handleTestAnimation = useCallback(() => {
-    if (!selectedTestAnimation) {
-      return;
-    }
-    animationBus.enqueue({ slug: selectedTestAnimation, intent: 'play', source: 'manual-test' });
-  }, [animationBus, selectedTestAnimation]);
-
-  const handleApplyPose = useCallback(async () => {
-    if (!selectedTestPose) {
-      return;
-    }
-    const bridge = resolveApi();
-    if (!bridge?.avatar?.loadPose) {
-      console.warn('[App] Pose loading is unavailable');
-      return;
-    }
-    try {
-      const poseData = await bridge.avatar.loadPose(selectedTestPose);
-      if (poseData && typeof poseData === 'object') {
-        animationBus.applyPose(poseData as Record<string, { rotation: number[]; position?: number[] }>, 'manual-test');
-      }
-    } catch (error) {
-      console.error('[App] Failed to load pose', error);
-    }
-  }, [animationBus, selectedTestPose, resolveApi]);
-
-  const handleCopyPose = useCallback(async () => {
-    if (!selectedTestPose) {
-      return;
-    }
-    const bridge = resolveApi();
-    if (!bridge?.avatar?.loadPose) {
-      console.warn('[App] Pose loading is unavailable');
-      return;
-    }
-    try {
-      const poseData = await bridge.avatar.loadPose(selectedTestPose);
-      if (poseData && typeof poseData === 'object') {
-        // Format with one bone per line, arrays inline
-        const lines = Object.entries(poseData).map(([bone, data]) => {
-          return `  "${bone}": ${JSON.stringify(data)}`;
-        });
-        const jsonString = `{\n${lines.join(',\n')}\n}`;
-        await navigator.clipboard.writeText(jsonString);
-        console.log('[App] Pose JSON copied to clipboard');
-      }
-    } catch (error) {
-      console.error('[App] Failed to copy pose', error);
-    }
-  }, [selectedTestPose, resolveApi]);
-
-  const handleApplyJsonPose = useCallback(() => {
-    const input = jsonPoseInput.trim();
-    if (!input) {
-      setJsonPoseError('Please enter JSON pose data.');
-      return;
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(input);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Invalid JSON';
-      setJsonPoseError(`JSON parse error: ${message}`);
-      return;
-    }
-
-    // Validate the parsed object has the expected VRMPoseData shape
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      setJsonPoseError('Invalid pose data: expected an object mapping bone names to transforms.');
-      return;
-    }
-
-    const poseData = parsed as Record<string, unknown>;
-    for (const [boneName, transform] of Object.entries(poseData)) {
-      if (typeof transform !== 'object' || transform === null) {
-        setJsonPoseError(`Invalid pose data: bone "${boneName}" must have an object value.`);
-        return;
-      }
-      const t = transform as Record<string, unknown>;
-      if (!Array.isArray(t.rotation) || t.rotation.length !== 4) {
-        setJsonPoseError(`Invalid pose data: bone "${boneName}" must have a 4-element rotation array.`);
-        return;
-      }
-      if (t.position !== undefined && (!Array.isArray(t.position) || t.position.length !== 3)) {
-        setJsonPoseError(`Invalid pose data: bone "${boneName}" position must be a 3-element array.`);
-        return;
-      }
-    }
-
-    // Apply the pose
-    animationBus.applyPose(poseData as Record<string, { rotation: number[]; position?: number[] }>, 'json-paste');
-    setJsonPoseError(null);
-  }, [animationBus, jsonPoseInput]);
 
   const applySessionHistory = useCallback((session: ConversationSessionWithMessages | null) => {
     if (!session) {
@@ -1251,6 +1078,16 @@ export default function App() {
   // The local backend needs no API key; OpenAI Realtime does.
   const canConnectConversation = isLocalBackend || hasRealtimeApiKey;
   const wakePhrase = config?.wakeWord?.keywordLabel;
+  const wakeThresholdRef = useRef(0.5);
+  wakeThresholdRef.current = config?.wakeWord?.threshold ?? 0.5;
+  // The OpenAI Realtime backend reports no turn stages, only whether it is connected.
+  const displayedActivity = useMemo<VoiceActivity>(() => {
+    if (isLocalBackend) {
+      return voiceActivity;
+    }
+    const phase = realtimeState.status === 'connected' ? 'listening' : realtimeState.status === 'error' ? 'error' : 'off';
+    return { phase, detail: realtimeState.error, since: voiceActivity.since };
+  }, [isLocalBackend, voiceActivity, realtimeState]);
   const sessionInstructions = useMemo(
     () => {
       const poseSlugs = availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0);
@@ -1280,9 +1117,21 @@ export default function App() {
             continue;
           }
           const streamId = Math.random().toString(36).slice(2, 10);
-          streamMotion({ streamId, prompt: move.text }).catch((error: unknown) => {
-            console.error('[App] Live motion generation failed', { prompt: move.text, error });
-          });
+          setToolCalls((calls) =>
+            addToolCall(calls, { id: streamId, kind: 'move', label: move.text, status: 'pending', startedAt: Date.now() }),
+          );
+          streamMotion({ streamId, prompt: move.text })
+            .then((result) => {
+              const firstChunk = result.firstChunkMs === null ? '' : `, first after ${(result.firstChunkMs / 1000).toFixed(1)} s`;
+              setToolCalls((calls) =>
+                finishToolCall(calls, streamId, 'done', Date.now(), `${result.chunks} chunk${result.chunks === 1 ? '' : 's'}${firstChunk}`),
+              );
+            })
+            .catch((error: unknown) => {
+              const message = error instanceof Error ? error.message : String(error);
+              console.error('[App] Live motion generation failed', { prompt: move.text, error: message });
+              setToolCalls((calls) => finishToolCall(calls, streamId, 'failed', Date.now(), message));
+            });
         }
       }
       const tags = extractAvatarTags(content, {
@@ -1293,21 +1142,40 @@ export default function App() {
         return;
       }
       for (const tag of tags) {
+        const callId = Math.random().toString(36).slice(2, 10);
+        const startedAt = Date.now();
         if (tag.type === 'pose') {
           // Find the pose by slug and load its data to apply
           const pose = availablePoses.find((p) => toAnimationSlug(p.name) === tag.slug);
           if (pose) {
+            setToolCalls((calls) =>
+              addToolCall(calls, { id: callId, kind: 'pose', label: tag.slug, status: 'pending', startedAt }),
+            );
             const bridge = resolveApi();
             bridge?.avatar?.loadPose(pose.id).then((poseData) => {
               if (poseData && typeof poseData === 'object') {
                 animationBus.applyPose(poseData as Record<string, { rotation: number[]; position?: number[] }>, 'realtime-text');
               }
+              setToolCalls((calls) => finishToolCall(calls, callId, 'done', Date.now()));
             }).catch((error) => {
               console.error('[App] Failed to load pose from LLM tag', error);
+              const message = error instanceof Error ? error.message : String(error);
+              setToolCalls((calls) => finishToolCall(calls, callId, 'failed', Date.now(), message));
             });
           }
         } else {
           animationBus.enqueue({ slug: tag.slug, intent: 'play', source: 'realtime-text' });
+          setToolCalls((calls) =>
+            addToolCall(calls, {
+              id: callId,
+              kind: 'animation',
+              label: tag.slug,
+              status: 'done',
+              startedAt,
+              finishedAt: startedAt,
+              detail: 'queued',
+            }),
+          );
         }
       }
     },
@@ -1333,7 +1201,8 @@ export default function App() {
 
     const onLog: NonNullable<RealtimeClientCallbacks['onLog']> = (entry) => {
       const prefix = isLocalBackend ? '[LocalVoiceClient]' : '[RealtimeClient]';
-      const details = entry.json ?? entry.data;
+      // Serialized, because the main-process console forwarder logs objects as "[object Object]".
+      const details = entry.json ?? serializeLogData(entry.data);
       if (entry.level === 'error') {
         console.error(prefix, entry.message, details);
       } else if (entry.level === 'warn') {
@@ -1390,6 +1259,7 @@ export default function App() {
           onAssistantTranscript: (text) => {
             void recordTranscriptEntryRef.current({ speaker: 'assistant', text });
           },
+          onActivity: setVoiceActivity,
           onLog,
         },
       });
@@ -1870,6 +1740,7 @@ export default function App() {
       if (client instanceof LocalVoiceClient) {
         client.notifyWake(event.timestamp);
       }
+      setWakeScore({ score: event.confidence, threshold: wakeThresholdRef.current, at: event.timestamp, detected: true });
       if (event.sessionId && activeSessionIdRef.current !== event.sessionId) {
         activeSessionIdRef.current = event.sessionId;
         setActiveSessionId(event.sessionId);
@@ -1893,7 +1764,18 @@ export default function App() {
       }, WAKE_ACTIVE_DURATION_MS);
     });
 
+    const unsubscribePeak = bridge.wakeWord.onPeak?.((event) => {
+      const threshold = wakeThresholdRef.current;
+      setWakeScore((previous) =>
+        // A detection already shows this burst; its peak would only repeat it.
+        previous?.detected && event.timestamp - previous.at < 2000
+          ? { ...previous, score: Math.max(previous.score, event.confidence) }
+          : { score: event.confidence, threshold, at: event.timestamp, detected: event.confidence >= threshold },
+      );
+    });
+
     return () => {
+      unsubscribePeak?.();
       if (wakeResetTimeoutRef.current) {
         clearTimeout(wakeResetTimeoutRef.current);
         wakeResetTimeoutRef.current = null;
@@ -2566,141 +2448,12 @@ export default function App() {
                   </div>
                   <div className="kiosk__avatarDetails">
                     <h1 id="avatar-preview-title">{activeAvatarName}</h1>
-                    <p className="kiosk__subtitle">Real-time viseme mapping derived from the decoded audio stream.</p>
-                    <dl className="kiosk__metrics">
-                      <div>
-                        <dt>Viseme</dt>
-                        <dd>
-                          v{visemeSummary.index} -+ {visemeSummary.label}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Intensity</dt>
-                        <dd>{visemeSummary.intensity}%</dd>
-                      </div>
-                      <div>
-                        <dt>Blink state</dt>
-                        <dd>{visemeSummary.blink ? 'Blink triggered' : 'Eyes open'}</dd>
-                      </div>
-                      <div>
-                        <dt>Driver status</dt>
-                        <dd>{visemeSummary.status}</dd>
-                      </div>
-                      <div>
-                        <dt>Test animation</dt>
-                        <dd className="kiosk__animationTest">
-                          <select
-                            id="test-animation-select"
-                            value={selectedTestAnimation}
-                            onChange={(e) => setSelectedTestAnimation(e.target.value)}
-                            disabled={availableAnimationSlugs.length === 0}
-                          >
-                            <option value="">Select animation…</option>
-                            {availableAnimationSlugs.map((slug) => (
-                              <option key={slug} value={slug}>
-                                {slug}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={handleTestAnimation}
-                            disabled={!selectedTestAnimation}
-                          >
-                            Play
-                          </button>
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Test pose</dt>
-                        <dd className="kiosk__animationTest">
-                          <select
-                            id="test-pose-select"
-                            value={selectedTestPose}
-                            onChange={(e) => setSelectedTestPose(e.target.value)}
-                            disabled={availablePoses.length === 0}
-                          >
-                            <option value="">Select pose…</option>
-                            {availablePoses.map((pose) => (
-                              <option key={pose.id} value={pose.id}>
-                                {pose.name}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={handleApplyPose}
-                            disabled={!selectedTestPose}
-                          >
-                            Apply
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleCopyPose}
-                            disabled={!selectedTestPose}
-                          >
-                            Copy
-                          </button>
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>JSON Pose</dt>
-                        <dd className="kiosk__animationTest" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-                          <textarea
-                            id="json-pose-input"
-                            placeholder='Paste VRM pose JSON, e.g. {"hips":{"rotation":[0,0,0,1]}}'
-                            rows={4}
-                            value={jsonPoseInput}
-                            onChange={(e) => {
-                              setJsonPoseInput(e.target.value);
-                              setJsonPoseError(null);
-                            }}
-                            style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.75rem', marginBottom: '0.5rem' }}
-                          />
-                          <button
-                            type="button"
-                            onClick={handleApplyJsonPose}
-                            disabled={!jsonPoseInput.trim()}
-                          >
-                            Apply JSON Pose
-                          </button>
-                          {jsonPoseError && (
-                            <div role="alert" style={{ color: '#e53e3e', fontSize: '0.75rem', marginTop: '0.5rem' }}>
-                              {jsonPoseError}
-                            </div>
-                          )}
-                        </dd>
-                      </div>
-                    </dl>
-                    <details className="kiosk__bonePositions" style={{ marginTop: 16 }}>
-                      <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Bone Positions</summary>
-                      <div style={{ fontSize: '0.875rem', marginTop: 8, fontFamily: 'monospace', color: '#666' }}>
-                        <div style={{ marginBottom: 8 }}>
-                          <strong>Left Side:</strong>
-                          {bonePositions.leftShoulder && (
-                            <div>Shoulder: ({bonePositions.leftShoulder.x.toFixed(4)}, {bonePositions.leftShoulder.y.toFixed(4)}, {bonePositions.leftShoulder.z.toFixed(4)})</div>
-                          )}
-                          {bonePositions.leftElbow && (
-                            <div>Elbow: ({bonePositions.leftElbow.x.toFixed(4)}, {bonePositions.leftElbow.y.toFixed(4)}, {bonePositions.leftElbow.z.toFixed(4)})</div>
-                          )}
-                          {bonePositions.leftHand && (
-                            <div>Hand: ({bonePositions.leftHand.x.toFixed(4)}, {bonePositions.leftHand.y.toFixed(4)}, {bonePositions.leftHand.z.toFixed(4)})</div>
-                          )}
-                        </div>
-                        <div>
-                          <strong>Right Side:</strong>
-                          {bonePositions.rightShoulder && (
-                            <div>Shoulder: ({bonePositions.rightShoulder.x.toFixed(4)}, {bonePositions.rightShoulder.y.toFixed(4)}, {bonePositions.rightShoulder.z.toFixed(4)})</div>
-                          )}
-                          {bonePositions.rightElbow && (
-                            <div>Elbow: ({bonePositions.rightElbow.x.toFixed(4)}, {bonePositions.rightElbow.y.toFixed(4)}, {bonePositions.rightElbow.z.toFixed(4)})</div>
-                          )}
-                          {bonePositions.rightHand && (
-                            <div>Hand: ({bonePositions.rightHand.x.toFixed(4)}, {bonePositions.rightHand.y.toFixed(4)}, {bonePositions.rightHand.z.toFixed(4)})</div>
-                          )}
-                        </div>
-                      </div>
-                    </details>
+                    <AssistantStatusPanel
+                      activity={displayedActivity}
+                      wakeScore={wakeScore}
+                      toolCalls={toolCalls}
+                      wakePhrase={wakePhrase}
+                    />
                   </div>
                   <div className="kiosk__meter" aria-live="polite">
                     <div className="meter">
