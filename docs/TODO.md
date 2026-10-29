@@ -35,20 +35,6 @@ more depth and are linked where they apply.
   and a short guide for training a custom word with openWakeWord's notebook.
   A model named after the avatar ("hey <name>") is the target.
 
-### Push-to-talk
-
-- **Today:** a global push-to-talk key (Ctrl+Shift+Space by default, set on the
-  Settings tab) and a tap on the conversation screen both start listening
-  without the wake word. The key toggles: press, speak, and press again to send
-  at once (or just pause). Pressing during a reply stops it. Electron's
-  `globalShortcut` has no key-up event, so true hold-to-talk would need a native
-  keyboard hook such as uiohook-napi.
-- **Akari:** global hotkey (Cmd+Shift+Space on macOS, Ctrl on Windows) as an
-  alternative to the wake word, plus the follow-up window.
-- **Dipal:** touching the screen starts an interaction.
-- **To do:** a talk button on the phone interface; hold-to-talk if the toggle
-  feels wrong.
-
 ## Voice output
 
 ### Voice cloning
