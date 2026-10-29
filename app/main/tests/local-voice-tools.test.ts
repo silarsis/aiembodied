@@ -256,6 +256,14 @@ describe('Brave provider', () => {
     expect(results).toEqual([{ title: 'Brave Search', url: 'https://brave.com', snippet: 'A private index' }]);
   });
 
+  it('leaves no markup behind, even nested or escaped', async () => {
+    const fetchFn = jsonFetch(200, {
+      web: { results: [{ title: 'a<scr<b>ipt>b', url: 'https://x.test', description: '&lt;b&gt;bold&lt;/b&gt; 1 &lt; 2' }] },
+    });
+    const [result] = await new BraveSearchProvider('k', fetchFn).search('q', { limit: 5 });
+    expect(result).toMatchObject({ title: 'ab', snippet: 'bold 1  2' });
+  });
+
   it('reports a bad key and an exhausted quota plainly', async () => {
     await expect(new BraveSearchProvider('bad', jsonFetch(401, {})).search('q', { limit: 5 })).rejects.toThrow(
       /BRAVE_SEARCH_API_KEY/,

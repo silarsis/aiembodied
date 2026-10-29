@@ -246,11 +246,19 @@ function toResults(
   return results;
 }
 
-/** Brave marks matches with <strong> and both escape entities; the model only needs the words. */
+/**
+ * Brave marks matches with <strong> and both escape entities; the model only needs the words.
+ * Entities are decoded first and tags removed until none are left, so no markup survives
+ * (e.g. "<scr<b>ipt>" or "&lt;b&gt;").
+ */
 function stripHtml(text: string): string {
-  return text
-    .replace(/<[^>]*>/g, '')
-    .replace(/&(amp|lt|gt|quot|#39|#x27|nbsp);/g, (_, entity: string) => HTML_ENTITIES[entity] ?? '');
+  let plain = text.replace(/&(amp|lt|gt|quot|#39|#x27|nbsp);/g, (_, entity: string) => HTML_ENTITIES[entity] ?? '');
+  let previous: string;
+  do {
+    previous = plain;
+    plain = plain.replace(/<[^<>]*>/g, '');
+  } while (plain !== previous);
+  return plain.replace(/[<>]/g, '');
 }
 
 function readQuery(params: unknown): string {
