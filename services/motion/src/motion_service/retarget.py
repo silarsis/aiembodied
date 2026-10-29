@@ -16,6 +16,7 @@ hips height.
 
 from __future__ import annotations
 
+import math
 import os
 import re
 from dataclasses import dataclass
@@ -128,9 +129,10 @@ def chest_forward_deg() -> float:
     """The upperChest forward lean from MOTION_CHEST_FORWARD_DEG, else the default."""
     raw = os.environ.get("MOTION_CHEST_FORWARD_DEG", "").strip()
     try:
-        return float(raw) if raw else DEFAULT_CHEST_FORWARD_DEG
+        value = float(raw) if raw else DEFAULT_CHEST_FORWARD_DEG
     except ValueError:
         return DEFAULT_CHEST_FORWARD_DEG
+    return value if math.isfinite(value) else DEFAULT_CHEST_FORWARD_DEG
 
 
 def _squeeze_batch(a: np.ndarray, ndim: int) -> np.ndarray:

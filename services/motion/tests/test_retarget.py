@@ -142,3 +142,6 @@ def test_chest_lean_defaults_and_env_override(monkeypatch):
     np.testing.assert_allclose(_track(v, "upperChest"), _track(straight, "upperChest"))
     monkeypatch.setenv("MOTION_CHEST_FORWARD_DEG", "not a number")
     assert chest_forward_deg() == DEFAULT_CHEST_FORWARD_DEG
+    for raw in ("nan", "inf", "1e309"):
+        monkeypatch.setenv("MOTION_CHEST_FORWARD_DEG", raw)
+        assert chest_forward_deg() == DEFAULT_CHEST_FORWARD_DEG
