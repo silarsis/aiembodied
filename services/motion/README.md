@@ -118,5 +118,10 @@ The code is in `src/motion_service/retarget.py`.
 - Hips translation is divided by SOMA's rest hips height above the toe joints (0.989 m), relative to the floor and the
   motion's start. The app's `.vrma` encoder writes hips rest at `[0, 1, 0]`, and three-vrm
   rescales to each avatar.
+- upperChest gets a constant forward lean, 7° by default (`MOTION_CHEST_FORWARD_DEG`; `0` turns it off).
+  ARDY's upper arms hang straight down from a torso that leans back a few degrees, and the bundled
+  avatar attaches its shoulders and neck further back on the chest than SOMA does, so without it the
+  arms look pulled back. Children keep their local rotations, so the neck, head and arms lean with
+  the chest once. Arm directions are otherwise retargeted exactly.
 - Stream chunks share one floor/origin, so they are continuous. Each chunk's keyframes restart at
   `t = 0`.

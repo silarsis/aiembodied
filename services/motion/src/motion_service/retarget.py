@@ -16,6 +16,7 @@ hips height.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from typing import Optional
@@ -86,6 +87,11 @@ for _side, _S in (("left", "Left"), ("right", "Right")):
 # metres. The floor is estimated from the same joints, so a standing rest pose maps to exactly 1.
 SOMA_REST_HIPS_HEIGHT = 0.989
 
+# Forward lean added at upperChest, degrees. ARDY's upper arms hang straight down from a torso that
+# leans back a few degrees, and VRoid-style avatars attach shoulders and neck further back on the
+# chest than SOMA does, so the arms read as pulled back. Override with MOTION_CHEST_FORWARD_DEG.
+DEFAULT_CHEST_FORWARD_DEG = 7.0
+
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
@@ -118,6 +124,15 @@ def joint_names(num_joints: int) -> list[str]:
     raise ValueError(f"unsupported SOMA joint count {num_joints} (expected 77 or 30)")
 
 
+def chest_forward_deg() -> float:
+    """The upperChest forward lean from MOTION_CHEST_FORWARD_DEG, else the default."""
+    raw = os.environ.get("MOTION_CHEST_FORWARD_DEG", "").strip()
+    try:
+        return float(raw) if raw else DEFAULT_CHEST_FORWARD_DEG
+    except ValueError:
+        return DEFAULT_CHEST_FORWARD_DEG
+
+
 def _squeeze_batch(a: np.ndarray, ndim: int) -> np.ndarray:
     a = np.asarray(a)
     return a[0] if a.ndim == ndim + 1 else a
@@ -134,6 +149,7 @@ def to_vrma(
     root_frame: Optional[RootFrame] = None,
     fingers: bool = True,
     in_place: bool = False,
+    chest_forward: Optional[float] = None,
 ) -> dict:
     """Build a VRMA JSON dict (app schema) from SOMA global rotations [T,J,3,3] and joints [T,J,3]."""
     G = _squeeze_batch(global_rot_mats, 4).astype(np.float64)
@@ -152,10 +168,15 @@ def to_vrma(
     mapping = BODY_MAP + (FINGER_MAP if fingers and J == 77 else [])
     glob = {vrm: G[:, idx[soma]] for vrm, soma, _ in mapping}
     times = [round(i / fps, 5) for i in range(T)]
+    # A constant pitch about upperChest's own +X (forward for a Y-up, +Z-facing rest). Children keep
+    # their local rotations, so neck, head and arms lean with the chest exactly once.
+    lean = Rotation.from_euler("x", chest_forward_deg() if chest_forward is None else chest_forward, degrees=True).as_matrix()
     tracks = []
     for vrm, _soma, parent in mapping:
         g = glob[vrm]
         local = g if parent is None else np.einsum("tji,tjk->tik", glob[parent], g)  # parent^T @ g
+        if vrm == "upperChest":
+            local = local @ lean
         q = Rotation.from_matrix(local).as_quat()  # x, y, z, w
         flip = np.cumsum(np.r_[False, np.einsum("ij,ij->i", q[1:], q[:-1]) < 0]) % 2 == 1
         q[flip] = -q[flip]  # sign continuity so LINEAR sampling never takes the long way round
