@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
-const { buildStartCommand, describeLocalServices, ensureLocalServices, shouldStartServices } = await import(
+const { buildStartCommand, describeLocalServices, ensureLocalServices, readSavedPreferences, savedPreferencesPath, shouldStartServices } = await import(
   '../../../scripts/local-services.mjs'
 );
 
@@ -175,6 +176,46 @@ describe('local services', () => {
     expect(command).toContain("-RedirectStandardOutput 'C:\\logs\\a.log' -RedirectStandardError 'C:\\logs\\a.err.log'");
     expect(command).toContain("Set-Content -LiteralPath 'C:\\logs\\a.pid' -Value $p.Id");
   });
+
+  it('follows the providers saved on the Settings page over the environment', () => {
+    const enabled = (saved: object, env: Record<string, string> = {}) =>
+      Object.fromEntries(
+        describeLocalServices('/repo', { KOKORO_DIR: 'C:\\k', ...env }, saved)
+          .filter((s: { id: string }) => s.id !== 'searxng')
+          .map((s: { id: string; enabled: boolean }) => [s.id, s.enabled]),
+      );
+
+    expect(enabled({})).toEqual({ llm: true, asr: true, speech: true, motion: true });
+    expect(enabled({ providers: { llm: { provider: 'openai' }, stt: { provider: 'openai' } } })).toEqual({
+      llm: false,
+      asr: false,
+      speech: true,
+      motion: true,
+    });
+    expect(
+      enabled({ providers: { stt: { provider: 'openai' }, tts: { provider: 'openai' }, motion: { provider: 'openai' } } }),
+    ).toEqual({ llm: true, asr: false, speech: false, motion: false });
+    // A saved choice wins over the env, as it does in the app.
+    expect(enabled({ providers: { llm: { provider: 'local' } } }, { LLM_PROVIDER: 'openai' }).llm).toBe(true);
+    expect(enabled({ conversationBackend: 'openai' })).toEqual({ llm: false, asr: false, speech: false, motion: true });
+
+    const motion = describeLocalServices('/repo', {}, { providers: { motion: { localBackend: 'kimodo' } } }).find(
+      (s: { id: string }) => s.id === 'motion',
+    );
+    expect(motion.args).toEqual(['-Port', '8190', '-Backend', 'kimodo']);
+    expect(motion.label).toBe('motion service (Kimodo)');
+  });
+
+  it(
+    'reads the dev app preferences file',
+    withTempRepo(async (repoRoot) => {
+      expect(readSavedPreferences(repoRoot)).toEqual({});
+      const file = savedPreferencesPath(repoRoot);
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, JSON.stringify({ providers: { tts: { provider: 'openai' } } }));
+      expect(readSavedPreferences(repoRoot)).toEqual({ providers: { tts: { provider: 'openai' } } });
+    }),
+  );
 
   it('can be switched off', () => {
     expect(shouldStartServices(['node', 'run-dev.mjs'], {})).toBe(true);

@@ -1,7 +1,8 @@
 /**
- * Streaming chat client for a local OpenAI-compatible server (llama-server running Qwen
- * Flash-Next, the same server slopcore uses). Thinking is switched off through the chat
- * template, as slopcore does: with it on, Qwen spends seconds reasoning before the first word.
+ * Streaming chat client for an OpenAI-compatible server: the local llama-server running Qwen
+ * Flash-Next (the same server slopcore uses), or OpenAI itself. On llama-server, thinking is
+ * switched off through the chat template, as slopcore does: with it on, Qwen spends seconds
+ * reasoning before the first word.
  * Tool calling needs llama-server's --jinja flag, which scripts/start-local-llm.ps1 passes.
  */
 
@@ -11,6 +12,8 @@ export interface LlmToolCall {
   /** JSON text, as the model wrote it. */
   arguments: string;
 }
+
+export const OPENAI_API_BASE_URL = 'https://api.openai.com/v1';
 
 export type ChatMessage =
   | { role: 'system' | 'user'; content: string }
@@ -29,6 +32,13 @@ export type LlmStreamPart = { type: 'text'; text: string } | { type: 'tool_calls
 export interface LocalLlmClientOptions {
   baseUrl: string;
   model: string;
+  /** Sent as a bearer token; set for OpenAI. */
+  apiKey?: string;
+  /**
+   * 'openai' sends only parameters the OpenAI API accepts (it rejects llama-server's
+   * chat_template_kwargs, and newer models reject max_tokens and a custom temperature).
+   */
+  flavor?: 'llama-server' | 'openai';
   fetchFn?: typeof fetch;
   temperature?: number;
   maxTokens?: number;
@@ -38,6 +48,8 @@ export interface LocalLlmClientOptions {
 export class LocalLlmClient {
   readonly baseUrl: string;
   readonly model: string;
+  readonly flavor: 'llama-server' | 'openai';
+  private readonly apiKey?: string;
   private readonly fetchFn: typeof fetch;
   private readonly temperature: number;
   private readonly maxTokens: number;
@@ -46,16 +58,22 @@ export class LocalLlmClient {
   constructor(options: LocalLlmClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
     this.model = options.model;
+    this.flavor = options.flavor ?? 'llama-server';
+    this.apiKey = options.apiKey?.trim() || undefined;
     this.fetchFn = options.fetchFn ?? fetch;
     this.temperature = options.temperature ?? 0.7;
     this.maxTokens = options.maxTokens ?? 1024;
     this.healthTimeoutMs = options.healthTimeoutMs ?? 2000;
   }
 
-  /** True when the server answers /models. */
+  /** True when the server answers /models. For OpenAI, true when there is a key (no request per poll). */
   async isAvailable(): Promise<boolean> {
+    if (this.flavor === 'openai') {
+      return Boolean(this.apiKey);
+    }
     try {
       const response = await this.fetchFn(`${this.baseUrl}/models`, {
+        headers: this.authHeaders(),
         signal: AbortSignal.timeout(this.healthTimeoutMs),
       });
       return response.ok;
@@ -72,24 +90,29 @@ export class LocalLlmClient {
     const tools = options.tools?.length ? { tools: options.tools } : {};
     const response = await this.fetchFn(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: this.model,
-        messages,
-        stream: true,
-        temperature: this.temperature,
-        max_tokens: this.maxTokens,
-        chat_template_kwargs: { enable_thinking: false },
-        ...tools,
-      }),
+      headers: { 'Content-Type': 'application/json', ...this.authHeaders() },
+      body: JSON.stringify(
+        this.flavor === 'openai'
+          ? { model: this.model, messages, stream: true, max_completion_tokens: this.maxTokens, ...tools }
+          : {
+              model: this.model,
+              messages,
+              stream: true,
+              temperature: this.temperature,
+              max_tokens: this.maxTokens,
+              chat_template_kwargs: { enable_thinking: false },
+              ...tools,
+            },
+      ),
       signal: options.signal,
     });
+    const label = this.flavor === 'openai' ? 'OpenAI' : 'Local LLM';
     if (!response.ok) {
       const body = await response.text().catch(() => '');
-      throw new Error(`Local LLM request failed: HTTP ${response.status} ${body.slice(0, 200)}`);
+      throw new Error(`${label} request failed: HTTP ${response.status} ${body.slice(0, 200)}`);
     }
     if (!response.body) {
-      throw new Error('Local LLM returned an empty stream.');
+      throw new Error(`${label} returned an empty stream.`);
     }
 
     // Tool calls stream in pieces keyed by index: the id and name first, the arguments after.
@@ -124,6 +147,10 @@ export class LocalLlmClient {
         calls: [...calls.values()].filter((call) => call.name).map((call, i) => ({ ...call, id: call.id || `call_${i}` })),
       };
     }
+  }
+
+  private authHeaders(): Record<string, string> {
+    return this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {};
   }
 }
 

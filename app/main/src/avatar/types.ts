@@ -71,10 +71,15 @@ export interface AvatarMotionStreamResult {
 }
 
 export interface AvatarMotionStatus {
+  /** local: services/motion streams motion live; openai: clips are generated, never streamed. */
+  provider?: 'local' | 'openai';
   available: boolean;
+  /** Live motion streaming is ready (always false for OpenAI). */
   ready: boolean;
   backend: string | null;
   device: string | null;
+  /** The OpenAI model, when the provider is OpenAI. */
+  model?: string | null;
 }
 
 export interface AvatarPoseSummary {
