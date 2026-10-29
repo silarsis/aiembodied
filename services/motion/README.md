@@ -121,7 +121,11 @@ The code is in `src/motion_service/retarget.py`.
 - upperChest gets a constant forward lean, 7° by default (`MOTION_CHEST_FORWARD_DEG`; `0` turns it off).
   ARDY's upper arms hang straight down from a torso that leans back a few degrees, and the bundled
   avatar attaches its shoulders and neck further back on the chest than SOMA does, so without it the
-  arms look pulled back. Children keep their local rotations, so the neck, head and arms lean with
-  the chest once. Arm directions are otherwise retargeted exactly.
+  arms look pulled back. The neck and head lean with the chest once. The shoulders cancel the lean,
+  because a chest pitch swings hanging arms backwards.
+- The whole arm then swings forward about the shoulder, 6° by default (`MOTION_ARM_FORWARD_DEG`; `0`
+  keeps ARDY's arm directions exactly). The bundled avatar's shoulders sit about 2.5 cm further back
+  on its chest than SOMA's, which leaves its hands about 4 cm behind ARDY's. The right value
+  depends on the avatar's build.
 - Stream chunks share one floor/origin, so they are continuous. Each chunk's keyframes restart at
   `t = 0`.
