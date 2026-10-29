@@ -100,33 +100,71 @@ def _globals(vrma):
     return glob
 
 
-def test_rest_pose_stays_at_rest_without_chest_lean():
+def test_rest_pose_stays_at_rest_without_lean_or_arm_swing():
     from motion_service.backends.base import Motion
 
     T = 5
     rest = Motion(np.tile(np.eye(3), (T, 77, 1, 1)), np.zeros((T, 77, 3)), np.zeros((T, 3)))
-    v = to_vrma(rest.global_rot_mats, rest.posed_joints, rest.root_positions, "rest", chest_forward=0)
+    v = to_vrma(rest.global_rot_mats, rest.posed_joints, rest.root_positions, "rest", chest_forward=0, arm_forward=0)
     for track in v["tracks"]:
         np.testing.assert_allclose(np.abs([kf["q"][3] for kf in track["keyframes"]]), 1.0, atol=1e-6, err_msg=track["bone"])
 
 
-def test_chest_lean_tilts_the_upper_body_forward_once():
+def test_chest_lean_tilts_the_head_forward_but_not_the_arms():
     m = synthetic_motion(20)
-    straight = _globals(to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x", chest_forward=0))
-    leaning = _globals(to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x", chest_forward=7))
+    straight = _globals(to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x", chest_forward=0, arm_forward=0))
+    leaning = _globals(to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x", chest_forward=7, arm_forward=0))
 
     # Below the chest nothing changes.
     for bone in ("hips", "spine", "chest", "leftUpperLeg"):
         np.testing.assert_allclose(leaning[bone], straight[bone], atol=1e-5)
-    # Head and arms lean with the chest by exactly 7 degrees, not compounded per joint.
-    for bone in ("upperChest", "neck", "head", "leftUpperArm", "rightLowerArm", "rightHand"):
+    # Head leans with the chest by exactly 7 degrees, not compounded per joint.
+    for bone in ("upperChest", "neck", "head"):
         delta = Rotation.from_matrix(leaning[bone] @ np.transpose(straight[bone], (0, 2, 1)))
         np.testing.assert_allclose(delta.magnitude(), np.radians(7), atol=1e-4, err_msg=bone)
+    # The arms keep ARDY's orientation: the same pitch would swing hanging arms backwards.
+    for bone in ("leftShoulder", "rightShoulder", "leftUpperArm", "rightLowerArm", "rightHand"):
+        np.testing.assert_allclose(leaning[bone], straight[bone], atol=1e-5, err_msg=bone)
     # Forward: the chest's up axis (+Y) gains a +Z component.
     up = leaning["upperChest"][:, :, 1]
     up_straight = straight["upperChest"][:, :, 1]
     tilt = np.degrees(np.arcsin(up[:, 2])) - np.degrees(np.arcsin(up_straight[:, 2]))
     np.testing.assert_allclose(tilt, 7, atol=0.5)
+
+
+def test_arm_forward_swings_hanging_arms_forward_about_the_shoulder():
+    from motion_service.backends.base import Motion
+
+    # Rest skeleton with the upper arms hanging straight down (a 90 degree roll about Z from the T-pose).
+    T = 3
+    G = np.tile(np.eye(3), (T, 77, 1, 1))
+    for side, sign in (("Left", -1), ("Right", 1)):
+        down = Rotation.from_euler("z", sign * 90, degrees=True).as_matrix()
+        for joint in (f"{side}Arm", f"{side}ForeArm", f"{side}Hand"):
+            G[:, SOMA77.index(joint)] = down
+    m = Motion(G, np.zeros((T, 77, 3)), np.zeros((T, 3)))
+    straight = _globals(to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x", chest_forward=7, arm_forward=0))
+    forward = _globals(to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x", chest_forward=7, arm_forward=6))
+
+    for side, out in (("left", 1), ("right", -1)):
+        for bone in (f"{side}UpperArm", f"{side}LowerArm", f"{side}Hand"):
+            # The bone's axis (+X outwards in rest) now hangs down; it gains a +Z (forward) component.
+            axis = forward[bone][:, :, 0] * out
+            np.testing.assert_allclose(np.degrees(np.arcsin(axis[:, 2])), 6, atol=1e-3, err_msg=bone)
+            np.testing.assert_allclose(straight[bone][:, :, 0] * out, [[0, -1, 0]] * T, atol=1e-6, err_msg=bone)
+    # The head is untouched by the arm swing.
+    np.testing.assert_allclose(forward["head"], straight["head"], atol=1e-6)
+
+
+def test_arm_forward_defaults_and_env_override(monkeypatch):
+    from motion_service.retarget import DEFAULT_ARM_FORWARD_DEG, arm_forward_deg
+
+    monkeypatch.delenv("MOTION_ARM_FORWARD_DEG", raising=False)
+    assert arm_forward_deg() == DEFAULT_ARM_FORWARD_DEG
+    monkeypatch.setenv("MOTION_ARM_FORWARD_DEG", "2.5")
+    assert arm_forward_deg() == 2.5
+    monkeypatch.setenv("MOTION_ARM_FORWARD_DEG", "nan")
+    assert arm_forward_deg() == DEFAULT_ARM_FORWARD_DEG
 
 
 def test_chest_lean_defaults_and_env_override(monkeypatch):

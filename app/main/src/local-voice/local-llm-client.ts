@@ -3,14 +3,31 @@
  * Flash-Next (the same server slopcore uses), or OpenAI itself. On llama-server, thinking is
  * switched off through the chat template, as slopcore does: with it on, Qwen spends seconds
  * reasoning before the first word.
+ * Tool calling needs llama-server's --jinja flag, which scripts/start-local-llm.ps1 passes.
  */
 
-export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
+export interface LlmToolCall {
+  id: string;
+  name: string;
+  /** JSON text, as the model wrote it. */
+  arguments: string;
 }
 
 export const OPENAI_API_BASE_URL = 'https://api.openai.com/v1';
+
+export type ChatMessage =
+  | { role: 'system' | 'user'; content: string }
+  | { role: 'assistant'; content: string; tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> }
+  | { role: 'tool'; tool_call_id: string; content: string };
+
+/** A function the model may call, in chat-completions form. */
+export interface LlmToolDefinition {
+  type: 'function';
+  function: { name: string; description: string; parameters: unknown };
+}
+
+/** Streamed reply text, then (when the model asks for tools) the calls it made. */
+export type LlmStreamPart = { type: 'text'; text: string } | { type: 'tool_calls'; calls: LlmToolCall[] };
 
 export interface LocalLlmClientOptions {
   baseUrl: string;
@@ -65,14 +82,18 @@ export class LocalLlmClient {
     }
   }
 
-  /** Yield the reply's text as it streams in. */
-  async *streamChat(messages: ChatMessage[], options: { signal?: AbortSignal } = {}): AsyncGenerator<string> {
+  /** Yield the reply's text as it streams in, and finally any tool calls it asked for. */
+  async *streamChat(
+    messages: ChatMessage[],
+    options: { signal?: AbortSignal; tools?: LlmToolDefinition[] } = {},
+  ): AsyncGenerator<LlmStreamPart> {
+    const tools = options.tools?.length ? { tools: options.tools } : {};
     const response = await this.fetchFn(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...this.authHeaders() },
       body: JSON.stringify(
         this.flavor === 'openai'
-          ? { model: this.model, messages, stream: true, max_completion_tokens: this.maxTokens }
+          ? { model: this.model, messages, stream: true, max_completion_tokens: this.maxTokens, ...tools }
           : {
               model: this.model,
               messages,
@@ -80,6 +101,7 @@ export class LocalLlmClient {
               temperature: this.temperature,
               max_tokens: this.maxTokens,
               chat_template_kwargs: { enable_thinking: false },
+              ...tools,
             },
       ),
       signal: options.signal,
@@ -93,26 +115,49 @@ export class LocalLlmClient {
       throw new Error(`${label} returned an empty stream.`);
     }
 
+    // Tool calls stream in pieces keyed by index: the id and name first, the arguments after.
+    const calls = new Map<number, LlmToolCall>();
     for await (const data of readServerSentEvents(response.body)) {
       if (data === '[DONE]') {
-        return;
+        break;
       }
-      let chunk: { choices?: Array<{ delta?: { content?: unknown } }> };
+      let chunk: { choices?: Array<{ delta?: { content?: unknown; tool_calls?: StreamedToolCall[] } }> };
       try {
         chunk = JSON.parse(data) as typeof chunk;
       } catch {
         continue;
       }
-      const content = chunk.choices?.[0]?.delta?.content;
+      const delta = chunk.choices?.[0]?.delta;
+      const content = delta?.content;
       if (typeof content === 'string' && content.length > 0) {
-        yield content;
+        yield { type: 'text', text: content };
       }
+      for (const piece of delta?.tool_calls ?? []) {
+        const index = typeof piece.index === 'number' ? piece.index : calls.size;
+        const call = calls.get(index) ?? { id: '', name: '', arguments: '' };
+        call.id ||= piece.id ?? '';
+        call.name += piece.function?.name ?? '';
+        call.arguments += piece.function?.arguments ?? '';
+        calls.set(index, call);
+      }
+    }
+    if (calls.size > 0) {
+      yield {
+        type: 'tool_calls',
+        calls: [...calls.values()].filter((call) => call.name).map((call, i) => ({ ...call, id: call.id || `call_${i}` })),
+      };
     }
   }
 
   private authHeaders(): Record<string, string> {
     return this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {};
   }
+}
+
+interface StreamedToolCall {
+  index?: number;
+  id?: string;
+  function?: { name?: string; arguments?: string };
 }
 
 async function* readServerSentEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {

@@ -336,6 +336,7 @@ describe('ConfigManager', () => {
       localModel: 'qwen-next-flash',
     });
     expect(defaults.providers.speechServiceUrl).toBe('http://127.0.0.1:8192');
+    expect(defaults.webSearch).toEqual({ provider: 'searxng', searxngUrl: undefined, braveApiKey: undefined });
     expect(defaults.providers.tts).toMatchObject({ provider: 'kokoro', kokoroVoice: '', openaiVoice: 'alloy' });
 
     const fromEnv = await new ConfigManager({ env: { CONVERSATION_BACKEND: 'OpenAI' } as NodeJS.ProcessEnv }).load();

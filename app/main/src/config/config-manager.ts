@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { z } from 'zod';
 import { BUILTIN_WAKE_WORD_MODELS } from '../wake-word/open-wake-word.js';
+import { DEFAULT_WEB_SEARCH_PROVIDER } from '../tools/web-search.js';
 import type { SecretStore } from './secret-store.js';
 import type { AudioDevicePreferences, PreferencesStore } from './preferences-store.js';
 import {
@@ -18,6 +19,16 @@ export type FeatureFlags = Record<string, boolean>;
 
 export type ConversationBackend = 'local' | 'openai';
 
+/** The web_search tool's backends. Main process only: it can hold an API key. */
+export interface WebSearchConfig {
+  /** WEB_SEARCH_PROVIDER: searxng (default), brave, both in fallback order, or "off". */
+  provider: string;
+  /** SEARXNG_URL: the SearXNG instance for the searxng provider. */
+  searxngUrl?: string;
+  /** BRAVE_SEARCH_API_KEY: the Brave Search API token for the brave provider. */
+  braveApiKey?: string;
+}
+
 export interface AppConfig {
   realtimeApiKey: string;
   comfyUiBaseUrl: string;
@@ -27,6 +38,7 @@ export interface AppConfig {
    */
   conversationBackend: ConversationBackend;
   providers: ProviderSettings;
+  webSearch: WebSearchConfig;
   audioInputDeviceId?: string;
   audioOutputDeviceId?: string;
   realtimeModel?: string;
@@ -60,7 +72,7 @@ export interface MetricsConfig {
 
 export type RendererWakeWordConfig = WakeWordConfig;
 
-export type RendererConfig = Omit<AppConfig, 'realtimeApiKey' | 'wakeWord' | 'comfyUiBaseUrl'> & {
+export type RendererConfig = Omit<AppConfig, 'realtimeApiKey' | 'wakeWord' | 'comfyUiBaseUrl' | 'webSearch'> & {
   hasRealtimeApiKey: boolean;
   /** True when the key comes from an environment variable, which the Settings page cannot change. */
   realtimeApiKeyFromEnv?: boolean;
@@ -173,6 +185,11 @@ export class ConfigManager {
       comfyUiBaseUrl: this.env.COMFYUI_BASE_URL?.trim() || DEFAULT_COMFYUI_BASE_URL,
       conversationBackend: storedPreferences.conversationBackend ?? this.parseConversationBackend(),
       providers: resolveProviderSettings(this.env, this.storedProviders),
+      webSearch: {
+        provider: this.env.WEB_SEARCH_PROVIDER?.trim() || DEFAULT_WEB_SEARCH_PROVIDER,
+        searxngUrl: this.env.SEARXNG_URL?.trim() || undefined,
+        braveApiKey: this.env.BRAVE_SEARCH_API_KEY?.trim() || undefined,
+      },
       audioInputDeviceId,
       audioOutputDeviceId,
       realtimeModel: this.normalizeDeviceId(storedPreferences.realtimeModel),
@@ -283,7 +300,7 @@ export class ConfigManager {
   getRendererConfig(): RendererConfig {
     const config = this.getConfig();
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { realtimeApiKey, wakeWord, comfyUiBaseUrl, ...rest } = config;
+    const { realtimeApiKey, wakeWord, comfyUiBaseUrl, webSearch, ...rest } = config;
 
     return {
       ...rest,
