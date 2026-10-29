@@ -1,3 +1,5 @@
+export const DEFAULT_REALTIME_MODEL = 'gpt-realtime-2.1';
+
 export type RealtimeClientStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
 
 export interface RealtimeClientState {
@@ -118,7 +120,8 @@ export class RealtimeClient {
   private reconnectApiKeyProvider: RealtimeClientOptions['reconnectApiKeyProvider'];
   constructor(options: RealtimeClientOptions = {}) {
     this.endpoint = options.endpoint ?? 'https://api.openai.com/v1/realtime/calls';
-    this.model = options.model ?? 'gpt-4o-realtime-preview-2024-12-17';
+    // The gpt-4o-realtime-preview snapshots are gone (model_not_found); gpt-realtime-2.1 is current.
+    this.model = options.model ?? DEFAULT_REALTIME_MODEL;
     this.fetchFn = options.fetchFn ?? window.fetch.bind(window);
     this.createPeerConnectionFn = options.createPeerConnection ?? ((config?: RTCConfiguration) => new RTCPeerConnection(config));
     this.reconnectDelays = options.reconnectDelaysMs ?? [750, 1500, 3000];

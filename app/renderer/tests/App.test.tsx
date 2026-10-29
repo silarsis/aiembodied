@@ -42,7 +42,7 @@ vi.mock('../src/realtime/realtime-client.js', () => {
     updateSessionConfig = vi.fn();
     getSessionConfigSnapshot = vi.fn().mockReturnValue({
       type: 'realtime',
-      model: 'gpt-4o-realtime-preview-2024-12-17',
+      model: 'gpt-realtime-2.1',
       output_modalities: ['audio'],
       audio: { output: { voice: 'shimmer' } },
     });
@@ -449,6 +449,8 @@ describe('App component', () => {
         'sage',
         'shimmer',
         'verse',
+        'marin',
+        'cedar',
       ]);
       expect(select.value).toBe('shimmer');
       expect(fetchMock).not.toHaveBeenCalled();
@@ -521,6 +523,8 @@ describe('App component', () => {
           'sage',
           'shimmer',
           'verse',
+          'marin',
+          'cedar',
           'config-custom',
           'server-special',
         ]);

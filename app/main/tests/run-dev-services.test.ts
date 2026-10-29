@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
-const { buildStartCommand, describeLocalServices, ensureLocalServices, readSavedPreferences, savedPreferencesPath, shouldStartServices } = await import(
+const { buildStartCommand, describeLocalServices, ensureLocalServices, readSavedPreferences, savedPreferencesPaths, shouldStartServices } = await import(
   '../../../scripts/local-services.mjs'
 );
 
@@ -210,7 +210,7 @@ describe('local services', () => {
     'reads the dev app preferences file',
     withTempRepo(async (repoRoot) => {
       expect(readSavedPreferences(repoRoot)).toEqual({});
-      const file = savedPreferencesPath(repoRoot);
+      const [file] = savedPreferencesPaths(repoRoot);
       mkdirSync(dirname(file), { recursive: true });
       writeFileSync(file, JSON.stringify({ providers: { tts: { provider: 'openai' } } }));
       expect(readSavedPreferences(repoRoot)).toEqual({ providers: { tts: { provider: 'openai' } } });
