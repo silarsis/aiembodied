@@ -3,7 +3,8 @@
  * replies from a local LLM. Replies stream sentence by sentence: each sentence is spoken as soon
  * as the LLM finishes it, so the first words play while the rest is still being written.
  */
-import type { ChatMessage, LocalLlmClient } from './local-llm-client.js';
+import type { ChatMessage, LlmToolCall, LlmToolDefinition, LocalLlmClient } from './local-llm-client.js';
+import type { RegisteredTool, ToolRegistry } from '../tools/tool-registry.js';
 import type { SpeechServiceClient } from './speech-service-client.js';
 import type {
   LocalVoiceEvent,
@@ -20,9 +21,20 @@ export const SPOKEN_REPLY_GUIDANCE =
   'Answer in one to three short sentences unless asked for more. Use plain spoken English, ' +
   'with no markdown, lists, headings, emoji or URLs.';
 
+export const TOOL_GUIDANCE =
+  'You can call tools. Use one when it would give a better answer than memory, such as web_search ' +
+  'for anything current. Then answer from its results in your own words, without reading out links.';
+
+/** Model rounds per turn; the last one is offered no tools, so it has to answer. */
+const MAX_TOOL_ROUNDS = 3;
+const MAX_TOOL_RESULT_CHARS = 4000;
+const DEFAULT_SPOKEN_NOTICE = 'One moment.';
+
 export interface LocalVoiceServiceOptions {
   llm: LocalLlmClient;
   speech: SpeechServiceClient;
+  /** Tools offered to the model (built-ins such as web_search, and MCP tools). */
+  tools?: Pick<ToolRegistry, 'list' | 'execute'>;
   /** Kokoro voice; the speech service's default when unset. */
   voice?: string;
   logger?: Logger;
@@ -36,6 +48,7 @@ export interface LocalVoiceServiceOptions {
 export class LocalVoiceService {
   private readonly llm: LocalLlmClient;
   private readonly speech: SpeechServiceClient;
+  private readonly tools?: Pick<ToolRegistry, 'list' | 'execute'>;
   private readonly voice?: string;
   private readonly logger?: Logger;
   private readonly maxHistoryMessages: number;
@@ -48,6 +61,7 @@ export class LocalVoiceService {
   constructor(options: LocalVoiceServiceOptions) {
     this.llm = options.llm;
     this.speech = options.speech;
+    this.tools = options.tools;
     this.voice = options.voice;
     this.logger = options.logger;
     this.maxHistoryMessages = options.maxHistoryMessages ?? 24;
@@ -105,19 +119,22 @@ export class LocalVoiceService {
       this.history = [];
     }
 
-    const system = [request.instructions?.trim(), SPOKEN_REPLY_GUIDANCE].filter(Boolean).join('\n\n');
+    const tools = this.tools?.list() ?? [];
+    const system = [request.instructions?.trim(), SPOKEN_REPLY_GUIDANCE, tools.length ? TOOL_GUIDANCE : null]
+      .filter(Boolean)
+      .join('\n\n');
     const messages: ChatMessage[] = [
       { role: 'system', content: system },
       ...this.history,
       { role: 'user', content: request.text },
     ];
 
-    const thinking = new ThinkFilter();
     const splitter = new SentenceSplitter();
     let index = 0;
     let speaking = Promise.resolve();
     const startedAt = this.now();
     let firstSentenceAt: number | null = null;
+    let reply = '';
 
     const speak = (sentence: string) => {
       const sentenceIndex = index++;
@@ -144,14 +161,48 @@ export class LocalVoiceService {
 
     let cancelled = false;
     try {
-      for await (const delta of this.llm.streamChat(messages, { signal })) {
-        for (const sentence of splitter.push(thinking.push(delta))) {
-          speak(sentence);
+      for (let round = 1; round <= MAX_TOOL_ROUNDS; round += 1) {
+        const offered = round < MAX_TOOL_ROUNDS ? tools : [];
+        const thinking = new ThinkFilter();
+        let calls: LlmToolCall[] = [];
+        for await (const part of this.llm.streamChat(messages, { signal, tools: toToolDefinitions(offered) })) {
+          if (part.type === 'tool_calls') {
+            calls = part.calls;
+          } else {
+            for (const sentence of splitter.push(thinking.push(part.text))) {
+              speak(sentence);
+            }
+          }
         }
-      }
-      const rest = splitter.flush();
-      if (rest) {
-        speak(rest);
+        const rest = splitter.flush();
+        if (rest) {
+          speak(rest);
+        }
+        const text = thinking.visible.trim();
+        reply = [reply, text].filter(Boolean).join(' ');
+        if (calls.length === 0) {
+          break;
+        }
+
+        // Say something while the tools run, unless the model already did.
+        if (!text) {
+          const notice = calls.map((call) => findTool(offered, call.name)?.spokenNotice).find(Boolean);
+          speak(notice ?? DEFAULT_SPOKEN_NOTICE);
+        }
+        messages.push({
+          role: 'assistant',
+          content: text,
+          tool_calls: calls.map((call) => ({
+            id: call.id,
+            type: 'function' as const,
+            function: { name: call.name, arguments: call.arguments },
+          })),
+        });
+        for (const call of calls) {
+          const content = await this.runTool(requestId, findTool(offered, call.name), call, emit);
+          signal.throwIfAborted();
+          messages.push({ role: 'tool', tool_call_id: call.id, content });
+        }
       }
       await speaking;
     } catch (error) {
@@ -170,7 +221,7 @@ export class LocalVoiceService {
     }
     cancelled ||= signal.aborted;
 
-    const reply = thinking.visible.trim();
+    // Tool exchanges stay out of the history: trimming it could split a call from its result.
     this.history.push({ role: 'user', content: request.text });
     if (reply) {
       this.history.push({ role: 'assistant', content: reply });
@@ -187,6 +238,58 @@ export class LocalVoiceService {
     });
     return { requestId, text: reply, cancelled };
   }
+
+  /** Run one tool call and return what the model sees as its result. */
+  private async runTool(
+    requestId: string,
+    tool: RegisteredTool | undefined,
+    call: LlmToolCall,
+    emit: (event: LocalVoiceEvent) => void,
+  ): Promise<string> {
+    let params: unknown;
+    try {
+      params = call.arguments.trim() ? (JSON.parse(call.arguments) as unknown) : {};
+    } catch {
+      params = undefined;
+    }
+    const label = (params !== undefined && tool?.describeCall?.(params)) || call.arguments.slice(0, 80);
+    const event = { requestId, type: 'tool' as const, callId: call.id, name: call.name, label };
+    emit({ ...event, status: 'started' });
+
+    let failure: string | null = null;
+    let content = '';
+    if (!tool || !this.tools) {
+      failure = `There is no tool called ${call.name}.`;
+    } else if (params === undefined) {
+      failure = 'The tool arguments were not valid JSON.';
+    } else {
+      const result = await this.tools.execute(tool.id, params);
+      if (result.success) {
+        content = typeof result.data === 'string' ? result.data : JSON.stringify(result.data ?? null);
+        this.logger?.info('Local voice: tool call finished', { name: call.name, label, durationMs: result.durationMs });
+        emit({ ...event, status: 'done', detail: `${result.durationMs} ms` });
+      } else {
+        failure = result.error ?? 'The tool failed.';
+      }
+    }
+    if (failure !== null) {
+      this.logger?.warn('Local voice: tool call failed', { name: call.name, label, message: failure });
+      emit({ ...event, status: 'failed', detail: failure });
+      return JSON.stringify({ error: failure });
+    }
+    return content.length > MAX_TOOL_RESULT_CHARS ? `${content.slice(0, MAX_TOOL_RESULT_CHARS)}…` : content;
+  }
+}
+
+function toToolDefinitions(tools: RegisteredTool[]): LlmToolDefinition[] {
+  return tools.map((tool) => ({
+    type: 'function',
+    function: { name: tool.toolName, description: tool.description, parameters: tool.inputSchema },
+  }));
+}
+
+function findTool(tools: RegisteredTool[], name: string): RegisteredTool | undefined {
+  return tools.find((tool) => tool.toolName === name);
 }
 
 /**

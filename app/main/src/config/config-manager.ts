@@ -18,6 +18,8 @@ export interface LocalConversationConfig {
   speechServiceUrl: string;
   /** Kokoro voice; empty means the speech service's default. */
   voice?: string;
+  /** WEB_SEARCH_PROVIDER: which search backs the web_search tool; unset disables it. */
+  webSearchProvider?: string;
 }
 
 export interface AppConfig {
@@ -178,6 +180,7 @@ export class ConfigManager {
         llmModel: this.env.LOCAL_LLM_MODEL?.trim() || DEFAULT_LOCAL_LLM_MODEL,
         speechServiceUrl: this.env.SPEECH_SERVICE_URL?.trim() || DEFAULT_SPEECH_SERVICE_URL,
         voice: this.env.LOCAL_TTS_VOICE?.trim() || undefined,
+        webSearchProvider: this.env.WEB_SEARCH_PROVIDER?.trim() || undefined,
       },
       audioInputDeviceId,
       audioOutputDeviceId,

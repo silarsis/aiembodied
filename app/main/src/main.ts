@@ -70,6 +70,7 @@ import {
 import { getOpenAIClient } from './openai/client.js';
 import { MCPManager } from './mcp/mcp-manager.js';
 import { ToolRegistry } from './tools/tool-registry.js';
+import { createWebSearchProvider, createWebSearchTool } from './tools/web-search.js';
 import { registerMCPHandlers } from './mcp/ipc-handlers.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1231,6 +1232,12 @@ app.whenReady().then(async () => {
     });
   }
 
+  const webSearch = createWebSearchProvider(appConfig.localConversation.webSearchProvider, logger);
+  if (webSearch && toolRegistry) {
+    toolRegistry.register(createWebSearchTool(webSearch));
+    logger.info('Web search tool registered', { provider: webSearch.name });
+  }
+
   localVoiceService = new LocalVoiceService({
     llm: new LocalLlmClient({
       baseUrl: appConfig.localConversation.llmBaseUrl,
@@ -1238,6 +1245,7 @@ app.whenReady().then(async () => {
     }),
     speech: new SpeechServiceClient({ baseUrl: appConfig.localConversation.speechServiceUrl }),
     voice: appConfig.localConversation.voice,
+    tools: toolRegistry ?? undefined,
     logger,
   });
 

@@ -18,7 +18,11 @@ export interface LocalVoiceClientCallbacks extends RealtimeClientCallbacks {
   onAssistantTranscript?: (text: string) => void;
   /** Turn progress: waiting → listening → transcribing → thinking → responding. */
   onActivity?: (activity: VoiceActivity) => void;
+  /** A tool the model called (web_search, MCP tools), as it starts and when it finishes. */
+  onToolCall?: (event: LocalVoiceToolEvent) => void;
 }
+
+export type LocalVoiceToolEvent = Extract<LocalVoiceEvent, { type: 'tool' }>;
 
 export interface LocalVoiceClientOptions {
   getBridge: () => LocalVoiceBridge | undefined;
@@ -334,6 +338,12 @@ export class LocalVoiceClient {
     } else if (event.type === 'error') {
       this.log('error', 'Local voice reply error', { message: event.message });
       this.setActivity('error', `Reply failed: ${event.message}`);
+    } else if (event.type === 'tool') {
+      this.log(event.status === 'failed' ? 'warn' : 'info', `Tool ${event.name} ${event.status}`, {
+        label: event.label,
+        detail: event.detail,
+      });
+      this.callbacks.onToolCall?.(event);
     }
   }
 
