@@ -23,6 +23,8 @@ export interface MotionRequest {
   duration?: number;
   steps?: number;
   name?: string;
+  /** The avatar's rest skeleton, for per-avatar arm calibration (see services/motion/API.md). */
+  avatar_rest?: Record<string, [number, number, number]>;
 }
 
 export type MotionTimings = Record<string, number>;

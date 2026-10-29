@@ -1,8 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import { LocalMotionClient } from '../src/avatar/motion/local-motion-client.js';
-import { LocalMotionGenerationService, toSlug } from '../src/avatar/motion/local-motion-generation-service.js';
+import {
+  LocalMotionGenerationService,
+  sanitizeRestSkeleton,
+  toSlug,
+} from '../src/avatar/motion/local-motion-generation-service.js';
 import type { VrmaSchema } from '../src/avatar/vrma-schema.js';
-import type { AvatarAnimationUploadRequest, AvatarMotionChunkEvent } from '../src/avatar/types.js';
+import type {
+  AvatarAnimationUploadRequest,
+  AvatarMotionChunkEvent,
+  AvatarRestSkeleton,
+} from '../src/avatar/types.js';
 
 function sampleVrma(name: string): VrmaSchema {
   return {
@@ -193,6 +201,27 @@ describe('LocalMotionGenerationService', () => {
     expect(result).toMatchObject({ streamId: 's1', chunks: 2 });
     expect(result.firstChunkMs).not.toBeNull();
     expect(uploads).toHaveLength(0);
+  });
+
+  it('sends the avatar rest skeleton with a stream, and drops a malformed one', async () => {
+    const done = () => ndjsonResponse([{ type: 'done', chunks: 0, timings: {} }]);
+    const fetchFn = vi.fn(async () => done());
+    const { service } = createService(fetchFn);
+    const bones = ['hips', 'spine', 'chest', 'upperChest'].concat(
+      ...['left', 'right'].map((side) => ['Shoulder', 'UpperArm', 'LowerArm', 'Hand'].map((b) => `${side}${b}`)),
+    );
+    const avatarRest = Object.fromEntries(bones.map((bone, i) => [bone, [0, 1 + i / 100, 0]])) as AvatarRestSkeleton;
+
+    await service.streamMotion({ streamId: 's1', prompt: 'shrug', avatarRest }, () => undefined);
+    await service.streamMotion(
+      { streamId: 's2', prompt: 'shrug', avatarRest: { ...avatarRest, leftHand: [0, Number.NaN, 0] } },
+      () => undefined,
+    );
+
+    const bodies = fetchFn.mock.calls.map((call) => JSON.parse((call[1] as RequestInit).body as string));
+    expect(bodies[0].avatar_rest).toEqual(avatarRest);
+    expect(bodies[1]).not.toHaveProperty('avatar_rest');
+    expect(sanitizeRestSkeleton({ hips: [0, 1, 0] })).toBeUndefined();
   });
 
   it('builds slugs that satisfy the VRMA name pattern', () => {

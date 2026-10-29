@@ -12,6 +12,7 @@ import type {
   AvatarMotionChunkEvent,
   AvatarMotionStreamRequest,
   AvatarMotionStreamResult,
+  AvatarRestSkeleton,
 } from '../types.js';
 import type { LocalMotionClient, MotionServiceHealth } from './local-motion-client.js';
 
@@ -93,6 +94,7 @@ export class LocalMotionGenerationService {
   ): Promise<AvatarMotionStreamResult> {
     const prompt = requirePrompt(request?.prompt);
     const streamId = request.streamId;
+    const avatarRest = sanitizeRestSkeleton(request.avatarRest);
     const startedAt = this.now();
     let firstChunkMs: number | null = null;
     let count = 0;
@@ -102,6 +104,7 @@ export class LocalMotionGenerationService {
         prompt,
         duration: clampDuration(request.duration, DEFAULT_STREAM_DURATION, MAX_STREAM_DURATION),
         name: toSlug(prompt),
+        ...(avatarRest ? { avatar_rest: avatarRest } : {}),
       },
       options,
     );
@@ -150,6 +153,37 @@ function clampDuration(value: unknown, fallback: number, max: number): number {
     return fallback;
   }
   return Math.min(Math.max(value, 0.5), max);
+}
+
+const REST_SKELETON_BONES = [
+  'hips',
+  'spine',
+  'chest',
+  'upperChest',
+  'leftShoulder',
+  'leftUpperArm',
+  'leftLowerArm',
+  'leftHand',
+  'rightShoulder',
+  'rightUpperArm',
+  'rightLowerArm',
+  'rightHand',
+] as const;
+
+/** The skeleton when every bone is three finite numbers; otherwise undefined, so the motion still plays. */
+export function sanitizeRestSkeleton(value: unknown): AvatarRestSkeleton | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+  const skeleton: Partial<AvatarRestSkeleton> = {};
+  for (const bone of REST_SKELETON_BONES) {
+    const p = (value as Record<string, unknown>)[bone];
+    if (!Array.isArray(p) || p.length !== 3 || !p.every((v) => typeof v === 'number' && Number.isFinite(v))) {
+      return undefined;
+    }
+    skeleton[bone] = [p[0], p[1], p[2]];
+  }
+  return skeleton as AvatarRestSkeleton;
 }
 
 export function toSlug(prompt: string): string {

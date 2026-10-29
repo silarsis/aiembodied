@@ -13,6 +13,7 @@ import { VRMAnimationLoaderPlugin, type VRMAnimation } from '@pixiv/three-vrm-an
 import type { VisemeFrame } from '../audio/viseme-driver.js';
 import type { AvatarModelSummary } from './types.js';
 import { getPreloadApi } from '../preload-api.js';
+import { measureRestSkeleton, setAvatarRestSkeleton } from './rest-skeleton.js';
 import {
   useAvatarAnimationQueue,
   type AvatarAnimationEvent,
@@ -1984,6 +1985,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       waveActionRef.current = null;
       expressionManagerRef.current = null;
       currentVrmRef.current = null;
+      setAvatarRestSkeleton(null);
       visemeStateRef.current = createDefaultVisemeState();
       blinkStateRef.current = createDefaultBlinkState();
     };
@@ -2011,6 +2013,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       }
       disposeVrm(currentVrmRef.current);
       currentVrmRef.current = null;
+      setAvatarRestSkeleton(null);
       try {
         mixerRef.current?.stopAllAction();
       } catch (error) {
@@ -2060,6 +2063,8 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         if (typeof VRMUtils.rotateVRM0 === 'function') {
           VRMUtils.rotateVRM0(vrm);
         }
+        // Before the relaxed pose bends the arms: the motion service calibrates the arm swing from it.
+        const restSkeleton = measureRestSkeleton(vrm);
 
         vrm.scene.traverse((object: THREE.Object3D) => {
           object.frustumCulled = false;
@@ -2123,6 +2128,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
 
         scene.add(vrm.scene);
         currentVrmRef.current = vrm;
+        setAvatarRestSkeleton(restSkeleton);
         expressionManagerRef.current = vrm.expressionManager ?? null;
         expressionManagerRef.current?.resetValues();
         const mixer = createMixerForVrm(vrm);
