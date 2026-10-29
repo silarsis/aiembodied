@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { IpcMainInvokeEvent } from 'electron';
 import type { ConfigSecretKey } from '../src/config/config-manager.js';
+import { DEFAULT_PROVIDER_SETTINGS } from '../src/config/provider-settings.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Deferred<T> = {
@@ -525,13 +526,8 @@ describe('main process bootstrap', () => {
     const config = {
       realtimeApiKey: 'rt-key',
       comfyUiBaseUrl: 'http://127.0.0.1:8188',
-      motionServiceUrl: 'http://127.0.0.1:8190',
       conversationBackend: 'local',
-      localConversation: {
-        llmBaseUrl: 'http://127.0.0.1:1234/v1',
-        llmModel: 'qwen-next-flash',
-        speechServiceUrl: 'http://127.0.0.1:8192',
-      },
+      providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
       featureFlags: {},
       wakeWord: {
         model: 'hey_jarvis',
@@ -567,13 +563,8 @@ describe('main process bootstrap', () => {
     const baseConfig = {
       realtimeApiKey: 'rt-key',
       comfyUiBaseUrl: 'http://127.0.0.1:8188',
-      motionServiceUrl: 'http://127.0.0.1:8190',
       conversationBackend: 'local',
-      localConversation: {
-        llmBaseUrl: 'http://127.0.0.1:1234/v1',
-        llmModel: 'qwen-next-flash',
-        speechServiceUrl: 'http://127.0.0.1:8192',
-      },
+      providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
       audioInputDeviceId: undefined,
       audioOutputDeviceId: undefined,
       featureFlags: {},
@@ -687,6 +678,8 @@ describe('main process bootstrap', () => {
       'config:set-secret',
       'config:test-secret',
       'config:set-audio-devices',
+      'config:clear-secret',
+      'config:set-providers',
     ];
     expect(mockLogger.info).toHaveBeenCalledWith(
       'Initializing configuration bridge IPC handlers.',
@@ -976,13 +969,8 @@ describe('main process bootstrap', () => {
     const baseConfig = {
       realtimeApiKey: 'rt-key',
       comfyUiBaseUrl: 'http://127.0.0.1:8188',
-      motionServiceUrl: 'http://127.0.0.1:8190',
       conversationBackend: 'local',
-      localConversation: {
-        llmBaseUrl: 'http://127.0.0.1:1234/v1',
-        llmModel: 'qwen-next-flash',
-        speechServiceUrl: 'http://127.0.0.1:8192',
-      },
+      providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
       audioInputDeviceId: undefined,
       audioOutputDeviceId: undefined,
       featureFlags: {},
@@ -1044,13 +1032,8 @@ describe('main process bootstrap', () => {
     const config = {
       realtimeApiKey: 'rt-key',
       comfyUiBaseUrl: 'http://127.0.0.1:8188',
-      motionServiceUrl: 'http://127.0.0.1:8190',
       conversationBackend: 'local',
-      localConversation: {
-        llmBaseUrl: 'http://127.0.0.1:1234/v1',
-        llmModel: 'qwen-next-flash',
-        speechServiceUrl: 'http://127.0.0.1:8192',
-      },
+      providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
       audioInputDeviceId: undefined,
       audioOutputDeviceId: undefined,
       featureFlags: {},
@@ -1085,6 +1068,8 @@ describe('main process bootstrap', () => {
       'config:set-secret',
       'config:test-secret',
       'config:set-audio-devices',
+      'config:clear-secret',
+      'config:set-providers',
     ];
 
     await waitForExpect(() => {

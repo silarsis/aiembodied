@@ -1,10 +1,17 @@
 /**
- * The local conversation backend: speech-to-text and text-to-speech through services/speech,
- * replies from a local LLM. Replies stream sentence by sentence: each sentence is spoken as soon
- * as the LLM finishes it, so the first words play while the rest is still being written.
+ * The conversation pipeline: speech-to-text, a language model, then text-to-speech. Each part is
+ * local (services/speech, llama-server) or OpenAI, as chosen on the Settings page. Replies stream
+ * sentence by sentence: each sentence is spoken as soon as the LLM finishes it, so the first words
+ * play while the rest is still being written.
  */
 import type { ChatMessage, LocalLlmClient } from './local-llm-client.js';
 import type { SpeechServiceClient } from './speech-service-client.js';
+import {
+  KokoroTts,
+  SpeechServiceStt,
+  type SpeechToTextEngine,
+  type TextToSpeechEngine,
+} from './speech-engines.js';
 import type {
   LocalVoiceEvent,
   LocalVoiceRespondRequest,
@@ -22,9 +29,12 @@ export const SPOKEN_REPLY_GUIDANCE =
 
 export interface LocalVoiceServiceOptions {
   llm: LocalLlmClient;
+  /** services/speech: checked for status, and the STT and TTS engine unless others are given. */
   speech: SpeechServiceClient;
-  /** Kokoro voice; the speech service's default when unset. */
+  /** Kokoro voice for the default TTS engine; the speech service's default when unset. */
   voice?: string;
+  stt?: SpeechToTextEngine;
+  tts?: TextToSpeechEngine;
   logger?: Logger;
   /** Older turns are dropped past this many messages. */
   maxHistoryMessages?: number;
@@ -34,9 +44,10 @@ export interface LocalVoiceServiceOptions {
 }
 
 export class LocalVoiceService {
-  private readonly llm: LocalLlmClient;
-  private readonly speech: SpeechServiceClient;
-  private readonly voice?: string;
+  private llm: LocalLlmClient;
+  private speech: SpeechServiceClient;
+  private stt: SpeechToTextEngine;
+  private tts: TextToSpeechEngine;
   private readonly logger?: Logger;
   private readonly maxHistoryMessages: number;
   private readonly historyIdleResetMs: number;
@@ -48,21 +59,42 @@ export class LocalVoiceService {
   constructor(options: LocalVoiceServiceOptions) {
     this.llm = options.llm;
     this.speech = options.speech;
-    this.voice = options.voice;
+    this.stt = options.stt ?? new SpeechServiceStt(options.speech);
+    this.tts = options.tts ?? new KokoroTts(options.speech, options.voice);
     this.logger = options.logger;
     this.maxHistoryMessages = options.maxHistoryMessages ?? 24;
     this.historyIdleResetMs = options.historyIdleResetMs ?? 10 * 60_000;
     this.now = options.now ?? Date.now;
   }
 
+  /**
+   * Swap engines after a settings change. The conversation so far is kept; a reply in progress
+   * finishes with the engines it started with.
+   */
+  configure(engines: {
+    llm?: LocalLlmClient;
+    speech?: SpeechServiceClient;
+    stt?: SpeechToTextEngine;
+    tts?: TextToSpeechEngine;
+  }): void {
+    this.llm = engines.llm ?? this.llm;
+    this.speech = engines.speech ?? this.speech;
+    this.stt = engines.stt ?? this.stt;
+    this.tts = engines.tts ?? this.tts;
+  }
+
   async status(): Promise<LocalVoiceStatus> {
     const [llmAvailable, speech] = await Promise.all([this.llm.isAvailable(), this.speech.health()]);
-    // The speech service reports ready even when its separate STT server is down, so ask that too.
-    const sttUrl = speech?.sttUrl ?? null;
-    const sttAvailable = sttUrl ? await this.speech.isSttServerUp(sttUrl) : speech?.ready === true;
+    const stt = await this.stt.status(speech);
     return {
-      llm: { available: llmAvailable, model: this.llm.model, baseUrl: this.llm.baseUrl },
-      stt: { available: sttAvailable, model: speech?.sttModel ?? null, url: sttUrl },
+      llm: {
+        available: llmAvailable,
+        model: this.llm.model,
+        baseUrl: this.llm.baseUrl,
+        provider: this.llm.flavor === 'openai' ? 'openai' : 'local',
+      },
+      stt,
+      tts: this.tts.status(speech),
       speech: {
         available: Boolean(speech),
         ready: speech?.ready === true,
@@ -76,7 +108,7 @@ export class LocalVoiceService {
   }
 
   transcribe(wav: Uint8Array): Promise<LocalVoiceTranscribeResult> {
-    return this.speech.transcribe(wav);
+    return this.stt.transcribe(wav);
   }
 
   /** Stop the reply in progress (or only `requestId`'s, when given). */
@@ -112,6 +144,7 @@ export class LocalVoiceService {
       { role: 'user', content: request.text },
     ];
 
+    const { llm, tts } = this;
     const thinking = new ThinkFilter();
     const splitter = new SentenceSplitter();
     let index = 0;
@@ -128,7 +161,7 @@ export class LocalVoiceService {
           return;
         }
         try {
-          const wav = spoken ? await this.speech.synthesize({ text: spoken, voice: this.voice }, { signal }) : new Uint8Array(0);
+          const wav = spoken ? await tts.synthesize(spoken, { signal }) : new Uint8Array(0);
           if (!signal.aborted) {
             emit({ requestId, type: 'sentence', index: sentenceIndex, text: sentence, wav });
           }
@@ -144,7 +177,7 @@ export class LocalVoiceService {
 
     let cancelled = false;
     try {
-      for await (const delta of this.llm.streamChat(messages, { signal })) {
+      for await (const delta of llm.streamChat(messages, { signal })) {
         for (const sentence of splitter.push(thinking.push(delta))) {
           speak(sentence);
         }

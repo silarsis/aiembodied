@@ -9,7 +9,7 @@
  * or it began within `wakeWindowMs` of the wake word or of the end of the last reply.
  */
 import type { LocalVoiceBridge } from '../preload-api.js';
-import type { LocalVoiceEvent } from '../../../main/src/local-voice/types.js';
+import type { LocalVoiceEvent, LocalVoiceStatus } from '../../../main/src/local-voice/types.js';
 import type { RealtimeClientCallbacks, RealtimeClientOptions, RealtimeClientState } from './realtime-client.js';
 import type { VoiceActivity, VoicePhase } from './voice-activity.js';
 
@@ -196,16 +196,7 @@ export class LocalVoiceClient {
   private async waitForServices(bridge: LocalVoiceBridge, connectionId: number): Promise<void> {
     let problem: string | null;
     try {
-      const status = await bridge.getStatus();
-      problem = !status.llm.available
-        ? `Local LLM is not reachable at ${status.llm.baseUrl} (start scripts/start-local-llm.ps1).`
-        : !status.speech.available
-          ? 'Speech service is not running (start services/speech/scripts/start.ps1).'
-          : status.speech.error
-            ? `Speech service failed: ${status.speech.error}`
-            : !status.speech.ready
-              ? 'Speech service is still loading its models.'
-              : null;
+      problem = describeServiceProblem(await bridge.getStatus());
     } catch (error) {
       problem = error instanceof Error ? error.message : String(error);
     }
@@ -643,4 +634,31 @@ function wait(ms: number): Promise<void> {
 
 function describe(error: unknown): { message: string } {
   return { message: error instanceof Error ? error.message : String(error) };
+}
+
+/** Why the pipeline cannot take a turn yet, or null when every part it uses is ready. */
+export function describeServiceProblem(status: LocalVoiceStatus): string | null {
+  if (!status.llm.available) {
+    return status.llm.provider === 'openai'
+      ? 'The OpenAI language model needs an OpenAI API key (Settings).'
+      : `Local LLM is not reachable at ${status.llm.baseUrl} (start scripts/start-local-llm.ps1).`;
+  }
+  const sttOnOpenAi = status.stt?.provider === 'openai';
+  const ttsOnOpenAi = status.tts?.provider === 'openai';
+  if (sttOnOpenAi && !status.stt?.available) {
+    return 'OpenAI speech-to-text needs an OpenAI API key (Settings).';
+  }
+  if (ttsOnOpenAi && !status.tts?.available) {
+    return 'OpenAI text-to-speech needs an OpenAI API key (Settings).';
+  }
+  if (sttOnOpenAi && ttsOnOpenAi) {
+    return null;
+  }
+  return !status.speech.available
+    ? 'Speech service is not running (start services/speech/scripts/start.ps1).'
+    : status.speech.error
+      ? `Speech service failed: ${status.speech.error}`
+      : !status.speech.ready
+        ? 'Speech service is still loading its models.'
+        : null;
 }

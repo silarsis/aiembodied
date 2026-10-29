@@ -9,8 +9,10 @@
  *
  * Settings come from the environment or .env: the same URLs the app uses (LOCAL_LLM_BASE_URL,
  * STT_URL, SPEECH_SERVICE_URL, MOTION_SERVICE_URL) plus the paths the start scripts need
- * (KOKORO_DIR, MOTION_VENV, TEXT_ENCODERS_DIR, LOCAL_LLM_CONTEXT, ...). Skip it all with --no-services or
- * DEV_START_SERVICES=0.
+ * (KOKORO_DIR, MOTION_VENV, TEXT_ENCODERS_DIR, LOCAL_LLM_CONTEXT, ...). What the user saved on the
+ * app's Settings page wins over the environment, as it does in the app: a part switched to OpenAI
+ * needs no local server, and the motion model picked there is the one services/motion starts with.
+ * Skip it all with --no-services or DEV_START_SERVICES=0.
  */
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync } from 'node:fs';
@@ -27,20 +29,45 @@ function trimSlash(url) {
   return url.replace(/\/+$/, '');
 }
 
+/** Where the dev app (run by run-dev.mjs with HOME in .dev-home) keeps its preferences.json. */
+export function savedPreferencesPath(repoRoot) {
+  return join(repoRoot, '.dev-home', 'AppData', 'Roaming', '@aiembodied', 'main', 'preferences.json');
+}
+
+/** The app's saved preferences ({} when there are none yet or the file is unreadable). */
+export function readSavedPreferences(repoRoot) {
+  try {
+    const parsed = JSON.parse(readFileSync(savedPreferencesPath(repoRoot), 'utf8'));
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function lower(value) {
+  return typeof value === 'string' && value.trim() ? value.trim().toLowerCase() : undefined;
+}
+
 /** The services to ensure, with how to tell each is up and how to start it. */
-export function describeLocalServices(repoRoot, env) {
-  const local = (env.CONVERSATION_BACKEND ?? 'local').trim().toLowerCase() !== 'openai';
+export function describeLocalServices(repoRoot, env, saved = readSavedPreferences(repoRoot)) {
+  const providers = saved.providers ?? {};
+  const pipeline = (lower(saved.conversationBackend) ?? lower(env.CONVERSATION_BACKEND) ?? 'local') !== 'openai';
+  const llmLocal = (lower(providers.llm?.provider) ?? lower(env.LLM_PROVIDER) ?? 'local') !== 'openai';
+  const sttLocal = (lower(providers.stt?.provider) ?? lower(env.STT_PROVIDER) ?? 'local') !== 'openai';
+  const ttsLocal = (lower(providers.tts?.provider) ?? lower(env.TTS_PROVIDER) ?? 'kokoro') !== 'openai';
+  const motionLocal = (lower(providers.motion?.provider) ?? lower(env.MOTION_PROVIDER) ?? 'local') !== 'openai';
+  const motionBackend = lower(providers.motion?.localBackend) ?? lower(env.MOTION_BACKEND) ?? 'ardy';
   const sttServer = (env.STT_ENGINE ?? 'server').trim().toLowerCase() === 'server';
-  const llmUrl = trimSlash(env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:1234/v1');
+  const llmUrl = trimSlash(providers.llm?.localBaseUrl || env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:1234/v1');
   const sttUrl = trimSlash(env.STT_URL || 'http://127.0.0.1:1235/v1');
-  const speechUrl = trimSlash(env.SPEECH_SERVICE_URL || 'http://127.0.0.1:8192');
-  const motionUrl = trimSlash(env.MOTION_SERVICE_URL || 'http://127.0.0.1:8190');
+  const speechUrl = trimSlash(providers.speechServiceUrl || env.SPEECH_SERVICE_URL || 'http://127.0.0.1:8192');
+  const motionUrl = trimSlash(providers.motion?.localServiceUrl || env.MOTION_SERVICE_URL || 'http://127.0.0.1:8190');
 
   const services = [
     {
       id: 'llm',
       label: 'Qwen LLM (llama-server)',
-      enabled: local,
+      enabled: pipeline && llmLocal,
       url: llmUrl,
       probe: `${llmUrl}/models`,
       script: 'scripts/start-local-llm.ps1',
@@ -49,7 +76,7 @@ export function describeLocalServices(repoRoot, env) {
     {
       id: 'asr',
       label: 'Qwen3-ASR speech-to-text (llama-server)',
-      enabled: local && sttServer,
+      enabled: pipeline && sttLocal && sttServer,
       url: sttUrl,
       probe: `${sttUrl}/models`,
       script: 'scripts/start-local-asr.ps1',
@@ -58,7 +85,7 @@ export function describeLocalServices(repoRoot, env) {
     {
       id: 'speech',
       label: 'speech service (Kokoro TTS)',
-      enabled: local,
+      enabled: pipeline && (sttLocal || ttsLocal),
       url: speechUrl,
       probe: `${speechUrl}/health`,
       script: 'services/speech/scripts/start.ps1',
@@ -67,8 +94,8 @@ export function describeLocalServices(repoRoot, env) {
     },
     {
       id: 'motion',
-      label: 'motion service (ARDY)',
-      enabled: isOn(env.DEV_START_MOTION, true),
+      label: `motion service (${motionBackend === 'kimodo' ? 'Kimodo' : 'ARDY'})`,
+      enabled: motionLocal && isOn(env.DEV_START_MOTION, true),
       url: motionUrl,
       probe: `${motionUrl}/health`,
       script: 'services/motion/scripts/start.ps1',
@@ -77,6 +104,7 @@ export function describeLocalServices(repoRoot, env) {
       // with most of its RAM carved out for the GPU (bija: 31.6 GB visible) may not have.
       args: [
         ...portArgs(motionUrl),
+        ...(motionBackend === 'kimodo' ? ['-Backend', 'kimodo'] : []),
         ...(env.MOTION_TEXT_ENCODER_DEVICE ? ['-TextEncoderDevice', env.MOTION_TEXT_ENCODER_DEVICE] : []),
         ...(env.TEXT_ENCODERS_DIR ? ['-TextEncodersDir', env.TEXT_ENCODERS_DIR] : []),
         ...(env.MOTION_VENV ? ['-Venv', env.MOTION_VENV] : []),
