@@ -101,6 +101,8 @@ const STATIC_VOICE_OPTIONS: readonly string[] = [
   'sage',
   'shimmer',
   'verse',
+  'marin',
+  'cedar',
 ] as const;
 
 const DEFAULT_VOICE = 'shimmer';
@@ -1119,6 +1121,7 @@ export default function App() {
   // The local backend needs no API key; OpenAI Realtime does.
   const canConnectConversation = isLocalBackend || hasRealtimeApiKey;
   const wakePhrase = config?.wakeWord?.keywordLabel;
+  const realtimeModel = config?.realtimeModel || undefined;
   // Only the local backend has models of its own to report on.
   const modelStatuses = useMemo(
     () =>
@@ -1322,6 +1325,7 @@ export default function App() {
 
     return new RealtimeClient({
       handshakeMode: 'sdp',
+      model: realtimeModel,
       callbacks: {
         onStateChange: setRealtimeState,
         onSessionUpdated: (session) => {
@@ -1342,7 +1346,7 @@ export default function App() {
         onLog,
       },
     });
-  }, [hasRealtimeSupport, pushLatency, loadingConfig, isLocalBackend, wakePhrase]);
+  }, [hasRealtimeSupport, pushLatency, loadingConfig, isLocalBackend, wakePhrase, realtimeModel]);
 
   const mintEphemeralToken = useCallback(
     async (reason: string) => {

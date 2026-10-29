@@ -29,19 +29,28 @@ function trimSlash(url) {
   return url.replace(/\/+$/, '');
 }
 
-/** Where the dev app (run by run-dev.mjs with HOME in .dev-home) keeps its preferences.json. */
-export function savedPreferencesPath(repoRoot) {
-  return join(repoRoot, '.dev-home', 'AppData', 'Roaming', '@aiembodied', 'main', 'preferences.json');
+/**
+ * Where the dev app (run by run-dev.mjs with HOME in .dev-home) keeps its preferences.json. On
+ * bija Electron names the userData folder "Electron"; the package name is the fallback.
+ */
+export function savedPreferencesPaths(repoRoot) {
+  const roaming = join(repoRoot, '.dev-home', 'AppData', 'Roaming');
+  return [join(roaming, 'Electron', 'preferences.json'), join(roaming, '@aiembodied', 'main', 'preferences.json')];
 }
 
 /** The app's saved preferences ({} when there are none yet or the file is unreadable). */
 export function readSavedPreferences(repoRoot) {
-  try {
-    const parsed = JSON.parse(readFileSync(savedPreferencesPath(repoRoot), 'utf8'));
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
+  for (const file of savedPreferencesPaths(repoRoot)) {
+    try {
+      const parsed = JSON.parse(readFileSync(file, 'utf8'));
+      if (parsed && typeof parsed === 'object') {
+        return parsed;
+      }
+    } catch {
+      // Missing or unreadable; try the next one.
+    }
   }
+  return {};
 }
 
 function lower(value) {
