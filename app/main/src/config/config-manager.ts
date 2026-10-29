@@ -3,6 +3,14 @@ import { z } from 'zod';
 import { BUILTIN_WAKE_WORD_MODELS } from '../wake-word/open-wake-word.js';
 import type { SecretStore } from './secret-store.js';
 import type { AudioDevicePreferences, PreferencesStore } from './preferences-store.js';
+import {
+  describeProviders,
+  mergeProviderPatch,
+  resolveProviderSettings,
+  sanitizeProviderPatch,
+  type ProviderSettings,
+  type ProviderSettingsPatch,
+} from './provider-settings.js';
 
 type ConfigLogger = Pick<Console, 'debug' | 'info' | 'warn' | 'error'>;
 
@@ -10,23 +18,15 @@ export type FeatureFlags = Record<string, boolean>;
 
 export type ConversationBackend = 'local' | 'openai';
 
-export interface LocalConversationConfig {
-  /** OpenAI-compatible chat endpoint (llama-server), e.g. http://127.0.0.1:1234/v1. */
-  llmBaseUrl: string;
-  llmModel: string;
-  /** services/speech: speech-to-text (Qwen3-ASR or faster-whisper) + Kokoro TTS. */
-  speechServiceUrl: string;
-  /** Kokoro voice; empty means the speech service's default. */
-  voice?: string;
-}
-
 export interface AppConfig {
   realtimeApiKey: string;
   comfyUiBaseUrl: string;
-  motionServiceUrl: string;
-  /** Which engine runs the conversation: the local LLM pipeline or OpenAI Realtime. */
+  /**
+   * Which engine runs the conversation: 'local' is the speech-to-text, language model and
+   * text-to-speech pipeline (each part local or OpenAI, see `providers`); 'openai' is OpenAI Realtime.
+   */
   conversationBackend: ConversationBackend;
-  localConversation: LocalConversationConfig;
+  providers: ProviderSettings;
   audioInputDeviceId?: string;
   audioOutputDeviceId?: string;
   realtimeModel?: string;
@@ -60,11 +60,10 @@ export interface MetricsConfig {
 
 export type RendererWakeWordConfig = WakeWordConfig;
 
-export type RendererConfig = Omit<
-  AppConfig,
-  'realtimeApiKey' | 'wakeWord' | 'comfyUiBaseUrl' | 'motionServiceUrl' | 'localConversation'
-> & {
+export type RendererConfig = Omit<AppConfig, 'realtimeApiKey' | 'wakeWord' | 'comfyUiBaseUrl'> & {
   hasRealtimeApiKey: boolean;
+  /** True when the key comes from an environment variable, which the Settings page cannot change. */
+  realtimeApiKeyFromEnv?: boolean;
   wakeWord: RendererWakeWordConfig;
 };
 
@@ -120,12 +119,9 @@ const DEFAULT_SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey'];
 const DEFAULT_WAKE_WORD_MODEL = 'hey_jarvis';
 
 const DEFAULT_COMFYUI_BASE_URL = 'http://127.0.0.1:8188';
-const DEFAULT_MOTION_SERVICE_URL = 'http://127.0.0.1:8190';
 const DEFAULT_CONVERSATION_BACKEND: ConversationBackend = 'local';
-// The llama-server slopcore runs Qwen Flash-Next on (see scripts/start-local-llm.ps1).
-const DEFAULT_LOCAL_LLM_BASE_URL = 'http://127.0.0.1:1234/v1';
-const DEFAULT_LOCAL_LLM_MODEL = 'qwen-next-flash';
-const DEFAULT_SPEECH_SERVICE_URL = 'http://127.0.0.1:8192';
+/** The OpenAI key is read from the first of these that is set, before the secret store. */
+const API_KEY_ENV_NAMES = ['REALTIME_API_KEY', 'realtime_api_key', 'OPENAI_API_KEY'];
 
 export class ConfigManager {
   private config: AppConfig | null = null;
@@ -138,6 +134,9 @@ export class ConfigManager {
   private readonly openAIClientFactory?: OpenAIClientFactory;
   /** The backend the user picked in the UI, kept apart from the env default so it is only saved once chosen. */
   private storedConversationBackend?: ConversationBackend;
+  /** Only the provider settings the user changed; env and defaults fill in the rest. */
+  private storedProviders: ProviderSettingsPatch = {};
+  private apiKeyFromEnv = false;
 
   constructor(options: ConfigManagerOptions = {}) {
     this.secretStore = options.secretStore;
@@ -167,18 +166,13 @@ export class ConfigManager {
       this.normalizeDeviceId(this.env.AUDIO_OUTPUT_DEVICE_ID);
 
     this.storedConversationBackend = storedPreferences.conversationBackend;
+    this.storedProviders = storedPreferences.providers ?? {};
 
     const config: AppConfig = {
       realtimeApiKey: realtimeApiKey ?? '',
       comfyUiBaseUrl: this.env.COMFYUI_BASE_URL?.trim() || DEFAULT_COMFYUI_BASE_URL,
-      motionServiceUrl: this.env.MOTION_SERVICE_URL?.trim() || DEFAULT_MOTION_SERVICE_URL,
       conversationBackend: storedPreferences.conversationBackend ?? this.parseConversationBackend(),
-      localConversation: {
-        llmBaseUrl: this.env.LOCAL_LLM_BASE_URL?.trim() || DEFAULT_LOCAL_LLM_BASE_URL,
-        llmModel: this.env.LOCAL_LLM_MODEL?.trim() || DEFAULT_LOCAL_LLM_MODEL,
-        speechServiceUrl: this.env.SPEECH_SERVICE_URL?.trim() || DEFAULT_SPEECH_SERVICE_URL,
-        voice: this.env.LOCAL_TTS_VOICE?.trim() || undefined,
-      },
+      providers: resolveProviderSettings(this.env, this.storedProviders),
       audioInputDeviceId,
       audioOutputDeviceId,
       realtimeModel: this.normalizeDeviceId(storedPreferences.realtimeModel),
@@ -199,6 +193,7 @@ export class ConfigManager {
     this.logger.info('Configuration loaded.', {
       hasRealtimeApiKey: Boolean(config.realtimeApiKey),
       conversationBackend: config.conversationBackend,
+      providers: describeProviders(config.providers),
       wakeWordModel: config.wakeWord.model,
       audioInputConfigured: Boolean(config.audioInputDeviceId),
       audioOutputConfigured: Boolean(config.audioOutputDeviceId),
@@ -253,8 +248,27 @@ export class ConfigManager {
       vadSilenceDurationMs,
       vadMinSpeechDurationMs,
       conversationBackend,
+      ...(Object.keys(this.storedProviders).length > 0 ? { providers: this.storedProviders } : {}),
     });
 
+    return this.getRendererConfig();
+  }
+
+  /** Apply and save a change from the Settings page; returns the new renderer config. */
+  async setProviderSettings(patch: ProviderSettingsPatch): Promise<RendererConfig> {
+    if (!this.config) {
+      throw new Error('ConfigManager.load() must be called before updating provider settings.');
+    }
+
+    this.storedProviders = mergeProviderPatch(this.storedProviders, sanitizeProviderPatch(patch));
+    const providers = resolveProviderSettings(this.env, this.storedProviders);
+    this.config = { ...this.config, providers };
+
+    if (this.preferencesStore) {
+      const saved = await this.preferencesStore.load();
+      await this.preferencesStore.save({ ...saved, providers: this.storedProviders });
+    }
+    this.logger.info('Provider settings updated.', describeProviders(providers));
     return this.getRendererConfig();
   }
 
@@ -268,13 +282,14 @@ export class ConfigManager {
 
   getRendererConfig(): RendererConfig {
     const config = this.getConfig();
-    // Service URLs are main-process only.
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { realtimeApiKey, wakeWord, comfyUiBaseUrl, motionServiceUrl, localConversation, ...rest } = config;
+    const { realtimeApiKey, wakeWord, comfyUiBaseUrl, ...rest } = config;
 
     return {
       ...rest,
+      providers: structuredClone(config.providers),
       hasRealtimeApiKey: Boolean(realtimeApiKey),
+      realtimeApiKeyFromEnv: this.apiKeyFromEnv,
       wakeWord: { ...wakeWord },
     };
   }
@@ -314,6 +329,26 @@ export class ConfigManager {
     throw new Error(`Unhandled secret key update requested: ${key}`);
   }
 
+  /** Remove a saved key from the secret store. A key set by an environment variable stays. */
+  async clearSecret(key: ConfigSecretKey): Promise<RendererConfig> {
+    if (!this.config) {
+      throw new Error('ConfigManager.load() must be called before updating secrets.');
+    }
+    if (key !== 'realtimeApiKey') {
+      throw new Error(`Unhandled secret key removal requested: ${key}`);
+    }
+    if (!this.secretStore) {
+      throw new Error('Secret store is not configured.');
+    }
+
+    await this.secretStore.deleteSecret('REALTIME_API_KEY');
+    if (!this.apiKeyFromEnv) {
+      this.config = { ...this.config, realtimeApiKey: '' };
+    }
+    this.logger.info('Saved OpenAI API key removed.', { stillSetByEnv: this.apiKeyFromEnv });
+    return this.getRendererConfig();
+  }
+
   async testSecret(key: ConfigSecretKey): Promise<{ ok: boolean; message?: string }> {
     if (!this.config) {
       throw new Error('ConfigManager.load() must be called before testing secrets.');
@@ -332,10 +367,9 @@ export class ConfigManager {
   }
 
   private async resolveRealtimeApiKey(): Promise<string | undefined> {
-    this.logger.debug('Resolving realtime API key from environment variables.', {
-      keys: ['REALTIME_API_KEY', 'realtime_api_key'],
-    });
-    const envValue = this.readSecretFromEnv(['REALTIME_API_KEY', 'realtime_api_key']);
+    this.logger.debug('Resolving realtime API key from environment variables.', { keys: API_KEY_ENV_NAMES });
+    const envValue = this.readSecretFromEnv(API_KEY_ENV_NAMES);
+    this.apiKeyFromEnv = Boolean(envValue);
     if (envValue) {
       this.logger.debug('Realtime API key resolved from environment variables.', {
         length: envValue.length,

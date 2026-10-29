@@ -1145,3 +1145,52 @@ main {
   margin: 0;
   color: #e2e8f0;
 }
+
+.providerSettings {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.providerSettings__group {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem 1rem;
+  margin: 0;
+  padding: 1rem 1.25rem 1.25rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 14px;
+}
+
+.providerSettings__group legend {
+  padding: 0 0.4rem;
+  font-weight: 700;
+  color: #e0f2fe;
+}
+
+.providerSettings__group > .kiosk__helper {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.control input[type='text'],
+.control textarea {
+  padding: 0.6rem 0.8rem;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.65);
+  color: #f8fafc;
+  font-size: 1rem;
+  font-family: inherit;
+}
+
+.control input[type='text']:focus,
+.control textarea:focus {
+  border-color: rgba(59, 130, 246, 0.75);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.35);
+  outline: none;
+}
+
+.control .kiosk__helper {
+  margin: 0;
+}

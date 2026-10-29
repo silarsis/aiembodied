@@ -1,9 +1,28 @@
 /** IPC contract for the local conversation backend (local LLM + services/speech). */
 
+export interface LocalVoiceSttStatus {
+  provider?: 'local' | 'openai';
+  available: boolean;
+  model: string | null;
+  /** Set when local STT runs on its own server (Qwen3-ASR on llama-server). */
+  url: string | null;
+}
+
+export interface LocalVoiceTtsStatus {
+  provider: 'kokoro' | 'openai';
+  available: boolean;
+  ready: boolean;
+  model: string | null;
+  voice: string | null;
+  error: string | null;
+}
+
 export interface LocalVoiceStatus {
-  llm: { available: boolean; model: string; baseUrl: string };
-  /** Speech-to-text; `url` is set when it runs on its own server (Qwen3-ASR on llama-server). */
-  stt?: { available: boolean; model: string | null; url: string | null };
+  llm: { available: boolean; model: string; baseUrl: string; provider?: 'local' | 'openai' };
+  stt?: LocalVoiceSttStatus;
+  /** The text-to-speech engine in use (Kokoro through services/speech, or OpenAI). */
+  tts?: LocalVoiceTtsStatus;
+  /** services/speech, reported even when OpenAI does the speech (its voice list feeds Settings). */
   speech: {
     available: boolean;
     ready: boolean;
