@@ -56,4 +56,14 @@ export interface LocalVoiceRespondResult {
 export type LocalVoiceEvent =
   /** One spoken sentence: its raw text (avatar tags included) and its audio as 16-bit WAV. */
   | { requestId: string; type: 'sentence'; index: number; text: string; wav: Uint8Array }
-  | { requestId: string; type: 'error'; message: string };
+  | { requestId: string; type: 'error'; message: string }
+  /** A tool call the model made: sent as it starts, and again when it finishes. */
+  | {
+      requestId: string;
+      type: 'tool';
+      callId: string;
+      name: string;
+      label: string;
+      status: 'started' | 'done' | 'failed';
+      detail?: string;
+    };

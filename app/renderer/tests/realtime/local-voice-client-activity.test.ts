@@ -136,6 +136,42 @@ describe('LocalVoiceClient activity', () => {
     expect(activity.at(-1)).toMatchObject({ phase: 'error', detail: 'Turn failed: connection refused' });
   });
 
+  it('passes tool calls made during a reply to onToolCall', async () => {
+    const toolEvent = { requestId: '', type: 'tool', callId: 'c1', name: 'web_search', label: 'noon', status: 'started' };
+    const bridge = createBridge();
+    let listener: ((event: LocalVoiceEvent) => void) | undefined;
+    bridge.onEvent = vi.fn((next: (event: LocalVoiceEvent) => void) => {
+      listener = next;
+      return () => undefined;
+    });
+    bridge.respond = vi.fn(async (request: { requestId: string }) => {
+      listener?.({ ...toolEvent, requestId: request.requestId } as LocalVoiceEvent);
+      listener?.({ ...toolEvent, requestId: 'another-turn' } as LocalVoiceEvent);
+      return { text: '', cancelled: false };
+    }) as unknown as LocalVoiceBridge['respond'];
+
+    const { context, processor } = createFakeContext();
+    const calls: unknown[] = [];
+    const client = new LocalVoiceClient({
+      getBridge: () => bridge,
+      createAudioContext: () => context,
+      now: () => now,
+      callbacks: { onToolCall: (call) => calls.push(call) },
+    });
+    await client.connect({ inputStream: {} as MediaStream });
+    client.notifyWake(now);
+    for (const loud of [true, false]) {
+      for (let i = 0; i < 8; i += 1) {
+        now += FRAME_MS;
+        const samples = new Float32Array(FRAME).fill(loud ? 0.2 : 0);
+        processor.onaudioprocess?.({ inputBuffer: { getChannelData: () => samples } });
+      }
+    }
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(calls).toEqual([expect.objectContaining({ type: 'tool', name: 'web_search', label: 'noon', status: 'started' })]);
+  });
+
   it('is off after disconnecting', async () => {
     const { client, phases } = await setup();
     await client.disconnect();

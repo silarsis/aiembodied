@@ -242,8 +242,8 @@ describe('LocalLlmClient with OpenAI', () => {
       fetchFn,
     });
     const chunks: string[] = [];
-    for await (const chunk of llm.streamChat([{ role: 'user', content: 'hi' }])) {
-      chunks.push(chunk);
+    for await (const part of llm.streamChat([{ role: 'user', content: 'hi' }])) {
+      if (part.type === 'text') chunks.push(part.text);
     }
     expect(chunks).toEqual(['Hi.']);
     const [, init] = vi.mocked(fetchFn).mock.calls[0] as unknown as [string, RequestInit];

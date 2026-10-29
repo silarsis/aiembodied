@@ -1311,6 +1311,16 @@ export default function App() {
             void recordTranscriptEntryRef.current({ speaker: 'assistant', text });
           },
           onActivity: setVoiceActivity,
+          onToolCall: (call) => {
+            const id = `${call.requestId}:${call.callId}`;
+            if (call.status === 'started') {
+              setToolCalls((calls) =>
+                addToolCall(calls, { id, kind: call.name, label: call.label, status: 'pending', startedAt: Date.now() }),
+              );
+            } else {
+              setToolCalls((calls) => finishToolCall(calls, id, call.status === 'done' ? 'done' : 'failed', Date.now(), call.detail));
+            }
+          },
           onLog,
         },
       });

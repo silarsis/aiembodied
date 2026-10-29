@@ -70,6 +70,7 @@ import {
 import { getOpenAIClient } from './openai/client.js';
 import { MCPManager } from './mcp/mcp-manager.js';
 import { ToolRegistry } from './tools/tool-registry.js';
+import { createWebSearchProvider, createWebSearchTool } from './tools/web-search.js';
 import { registerMCPHandlers } from './mcp/ipc-handlers.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -468,7 +469,7 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
   if (localVoiceService) {
     localVoiceService.configure(engines);
   } else {
-    localVoiceService = new LocalVoiceService({ ...engines, logger });
+    localVoiceService = new LocalVoiceService({ ...engines, tools: toolRegistry ?? undefined, logger });
   }
 
   if (avatarAnimationService && currentMotionServiceUrl !== providers.motion.localServiceUrl) {
@@ -1288,6 +1289,17 @@ app.whenReady().then(async () => {
 
   await refreshVrmaGenerationService(manager);
   await refreshPoseGenerationService(manager);
+
+  const webSearch = createWebSearchProvider(
+    appConfig.webSearch.provider,
+    { searxngUrl: appConfig.webSearch.searxngUrl, braveApiKey: appConfig.webSearch.braveApiKey },
+    logger,
+  );
+  if (webSearch && toolRegistry) {
+    toolRegistry.register(createWebSearchTool(webSearch));
+    logger.info('Web search tool registered', { provider: webSearch.name });
+  }
+
   await applyProviderSettings(manager);
 
   if (avatarModelService) {

@@ -1,14 +1,14 @@
 /**
  * Make sure the local model servers the app talks to are running before the dev app starts:
  * the LLM (llama-server, Qwen Flash-Next), speech-to-text (llama-server, Qwen3-ASR), the speech
- * service (Kokoro TTS) and the motion service (ARDY). A server that already answers is left
- * alone, so one slopcore or another terminal started is reused. A missing one is started with
+ * service (Kokoro TTS), the motion service (ARDY) and, when web search uses it, SearXNG (a container). A server that already
+ * answers is left alone, so one slopcore or another terminal started is reused. A missing one is started with
  * its own start script in a hidden console of its own, logging to .dev-home/logs/<id>.log
  * (and <id>.err.log), and keeps running after the app and the terminal close. Nothing waits for models to finish loading: the app polls each service and
  * picks it up once it reports ready.
  *
  * Settings come from the environment or .env: the same URLs the app uses (LOCAL_LLM_BASE_URL,
- * STT_URL, SPEECH_SERVICE_URL, MOTION_SERVICE_URL) plus the paths the start scripts need
+ * STT_URL, SPEECH_SERVICE_URL, MOTION_SERVICE_URL, SEARXNG_URL) plus the paths the start scripts need
  * (KOKORO_DIR, MOTION_VENV, TEXT_ENCODERS_DIR, LOCAL_LLM_CONTEXT, ...). What the user saved on the
  * app's Settings page wins over the environment, as it does in the app: a part switched to OpenAI
  * needs no local server, and the motion model picked there is the one services/motion starts with.
@@ -62,6 +62,8 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
   const sttUrl = trimSlash(env.STT_URL || 'http://127.0.0.1:1235/v1');
   const speechUrl = trimSlash(providers.speechServiceUrl || env.SPEECH_SERVICE_URL || 'http://127.0.0.1:8192');
   const motionUrl = trimSlash(providers.motion?.localServiceUrl || env.MOTION_SERVICE_URL || 'http://127.0.0.1:8190');
+  const searxngUrl = trimSlash(env.SEARXNG_URL || 'http://127.0.0.1:8888');
+  const searchProviders = (env.WEB_SEARCH_PROVIDER?.trim() || 'searxng').split(',').map((name) => name.trim().toLowerCase());
 
   const services = [
     {
@@ -109,6 +111,15 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
         ...(env.TEXT_ENCODERS_DIR ? ['-TextEncodersDir', env.TEXT_ENCODERS_DIR] : []),
         ...(env.MOTION_VENV ? ['-Venv', env.MOTION_VENV] : []),
       ],
+    },
+    {
+      id: 'searxng',
+      label: 'SearXNG web search (wslc or Docker container)',
+      enabled: searchProviders.includes('searxng'),
+      url: searxngUrl,
+      probe: `${searxngUrl}/healthz`,
+      script: 'services/searxng/scripts/start.ps1',
+      args: portArgs(searxngUrl),
     },
   ];
 
