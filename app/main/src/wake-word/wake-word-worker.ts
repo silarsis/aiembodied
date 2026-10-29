@@ -1,6 +1,7 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { PvRecorder } from '@picovoice/pvrecorder-node';
 import { OWW_FRAME_LENGTH, OWW_SAMPLE_RATE, OpenWakeWordDetector } from './open-wake-word.js';
+import { PeakTracker } from './peak-tracker.js';
 import type {
   SerializedError,
   WakeWordDetectionEvent,
@@ -21,6 +22,7 @@ const config = workerData as WakeWordWorkerConfig;
 let recorder: PvRecorder | null = null;
 let detector: OpenWakeWordDetector | null = null;
 let isRunning = false;
+const peaks = new PeakTracker();
 
 async function start(): Promise<void> {
   detector = await OpenWakeWordDetector.create(config.modelPaths);
@@ -50,6 +52,13 @@ async function start(): Promise<void> {
           timestamp: Date.now(),
         };
         port.postMessage({ type: 'wake', event } satisfies WakeWordWorkerMessage);
+      }
+      const peak = peaks.push(score, Date.now());
+      if (peak) {
+        port.postMessage({
+          type: 'peak',
+          event: { keywordLabel: config.keywordLabel, confidence: peak.score, timestamp: peak.timestamp },
+        } satisfies WakeWordWorkerMessage);
       }
     } catch (error) {
       const isFatalAudioError =

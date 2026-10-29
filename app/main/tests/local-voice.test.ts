@@ -185,8 +185,39 @@ describe('LocalVoiceService', () => {
 
     await expect(service.status()).resolves.toEqual({
       llm: { available: true, model: 'qwen-next-flash', baseUrl: 'http://llm/v1' },
-      speech: { available: false, ready: false, sttModel: null, voices: [], defaultVoice: null, error: null },
+      stt: { available: false, model: null, url: null },
+      speech: { available: false, ready: false, sttModel: null, ttsModel: null, voices: [], defaultVoice: null, error: null },
     });
+  });
+
+  it('checks a separate STT server itself, since the speech service reports ready without it', async () => {
+    const fetchFn = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === 'http://speech/health') {
+        return new Response(
+          JSON.stringify({
+            ready: true,
+            error: null,
+            stt: { engine: 'openai-compatible', model: 'qwen3-asr', url: 'http://asr/v1/' },
+            tts: { engine: 'kokoro', voices: ['bf_lily'], default_voice: 'bf_lily' },
+          }),
+        );
+      }
+      if (url === 'http://llm/v1/models') {
+        return new Response('{}', { status: 200 });
+      }
+      // The ASR llama-server is down.
+      throw new Error('ECONNREFUSED');
+    }) as unknown as typeof fetch;
+    const service = new LocalVoiceService({
+      llm: new LocalLlmClient({ baseUrl: 'http://llm/v1', model: 'qwen-next-flash', fetchFn }),
+      speech: new SpeechServiceClient({ baseUrl: 'http://speech', fetchFn }),
+    });
+
+    const status = await service.status();
+    expect(status.stt).toEqual({ available: false, model: 'qwen3-asr', url: 'http://asr/v1' });
+    expect(status.speech).toMatchObject({ available: true, ready: true, ttsModel: 'kokoro' });
+    expect(fetchFn).toHaveBeenCalledWith('http://asr/v1/models', expect.anything());
   });
 });
 
@@ -212,6 +243,8 @@ describe('SpeechServiceClient', () => {
       ready: true,
       error: null,
       sttModel: 'small.en',
+      sttUrl: null,
+      ttsModel: null,
       voices: ['bm_george', 'af_heart'],
       defaultVoice: 'bm_george',
     });
