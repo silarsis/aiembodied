@@ -36,7 +36,7 @@ export function describeLocalServices(repoRoot, env) {
   const speechUrl = trimSlash(env.SPEECH_SERVICE_URL || 'http://127.0.0.1:8192');
   const motionUrl = trimSlash(env.MOTION_SERVICE_URL || 'http://127.0.0.1:8190');
   const searxngUrl = trimSlash(env.SEARXNG_URL || 'http://127.0.0.1:8888');
-  const searchProviders = (env.WEB_SEARCH_PROVIDER ?? '').split(',').map((name) => name.trim().toLowerCase());
+  const searchProviders = (env.WEB_SEARCH_PROVIDER?.trim() || 'searxng').split(',').map((name) => name.trim().toLowerCase());
 
   const services = [
     {

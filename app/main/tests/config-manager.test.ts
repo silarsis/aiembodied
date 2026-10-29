@@ -335,7 +335,7 @@ describe('ConfigManager', () => {
       llmModel: 'qwen-next-flash',
       speechServiceUrl: 'http://127.0.0.1:8192',
       voice: undefined,
-      webSearchProvider: undefined,
+      webSearchProvider: 'searxng',
       searxngUrl: undefined,
       braveSearchApiKey: undefined,
     });

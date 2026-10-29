@@ -23,7 +23,8 @@ export const SPOKEN_REPLY_GUIDANCE =
 
 export const TOOL_GUIDANCE =
   'You can call tools. Use one when it would give a better answer than memory, such as web_search ' +
-  'for anything current. Then answer from its results in your own words, without reading out links.';
+  'for anything current. Then answer from its results in your own words, without reading out links. ' +
+  'If a tool returns an error, say briefly that you could not look it up, rather than guessing.';
 
 /** Model rounds per turn; the last one is offered no tools, so it has to answer. */
 const MAX_TOOL_ROUNDS = 3;

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { z } from 'zod';
 import { BUILTIN_WAKE_WORD_MODELS } from '../wake-word/open-wake-word.js';
+import { DEFAULT_WEB_SEARCH_PROVIDER } from '../tools/web-search.js';
 import type { SecretStore } from './secret-store.js';
 import type { AudioDevicePreferences, PreferencesStore } from './preferences-store.js';
 
@@ -18,7 +19,7 @@ export interface LocalConversationConfig {
   speechServiceUrl: string;
   /** Kokoro voice; empty means the speech service's default. */
   voice?: string;
-  /** WEB_SEARCH_PROVIDER: which search backs the web_search tool; unset disables it. */
+  /** WEB_SEARCH_PROVIDER: which search backs the web_search tool (default searxng; "off" disables it). */
   webSearchProvider?: string;
   /** SEARXNG_URL: the SearXNG instance for the searxng provider. */
   searxngUrl?: string;
@@ -184,7 +185,7 @@ export class ConfigManager {
         llmModel: this.env.LOCAL_LLM_MODEL?.trim() || DEFAULT_LOCAL_LLM_MODEL,
         speechServiceUrl: this.env.SPEECH_SERVICE_URL?.trim() || DEFAULT_SPEECH_SERVICE_URL,
         voice: this.env.LOCAL_TTS_VOICE?.trim() || undefined,
-        webSearchProvider: this.env.WEB_SEARCH_PROVIDER?.trim() || undefined,
+        webSearchProvider: this.env.WEB_SEARCH_PROVIDER?.trim() || DEFAULT_WEB_SEARCH_PROVIDER,
         searxngUrl: this.env.SEARXNG_URL?.trim() || undefined,
         braveSearchApiKey: this.env.BRAVE_SEARCH_API_KEY?.trim() || undefined,
       },

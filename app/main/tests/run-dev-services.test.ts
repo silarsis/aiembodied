@@ -68,10 +68,11 @@ describe('local services', () => {
     expect(motionOnCpu.args).toEqual(['-Port', '8190', '-TextEncoderDevice', 'cpu']);
   });
 
-  it('starts SearXNG only when web search uses it', () => {
+  it('starts SearXNG unless web search is off or uses only other providers', () => {
     const searxngOf = (env: Record<string, string>) =>
       describeLocalServices('/repo', env).find((s: { id: string }) => s.id === 'searxng');
-    expect(searxngOf({}).enabled).toBe(false);
+    expect(searxngOf({}).enabled).toBe(true);
+    expect(searxngOf({ WEB_SEARCH_PROVIDER: 'off' }).enabled).toBe(false);
     expect(searxngOf({ WEB_SEARCH_PROVIDER: 'brave' }).enabled).toBe(false);
     const searxng = searxngOf({ WEB_SEARCH_PROVIDER: 'SearXNG, brave', SEARXNG_URL: 'http://127.0.0.1:8890/' });
     expect(searxng.enabled).toBe(true);
@@ -86,7 +87,7 @@ describe('local services', () => {
       const launcher = fakeLauncher();
       const results = await ensureLocalServices(
         repoRoot,
-        { KOKORO_DIR: 'C:\\kokoro' },
+        { KOKORO_DIR: 'C:\\kokoro', WEB_SEARCH_PROVIDER: 'off' },
         {
           fetchFn: fakeFetch(['http://127.0.0.1:1234', 'http://127.0.0.1:8192']),
           spawnSyncFn: launcher,
@@ -118,7 +119,7 @@ describe('local services', () => {
     const launcher = fakeLauncher();
     const results = await ensureLocalServices(
       '/repo',
-      { CONVERSATION_BACKEND: 'openai', MOTION_SERVICE_URL: 'http://gpu-box:8190' },
+      { CONVERSATION_BACKEND: 'openai', MOTION_SERVICE_URL: 'http://gpu-box:8190', WEB_SEARCH_PROVIDER: 'off' },
       { fetchFn: fakeFetch([]), spawnSyncFn: launcher, platform: 'win32', log: quiet },
     );
     expect(results.map((r: { id: string; status: string }) => [r.id, r.status])).toEqual([
@@ -136,7 +137,7 @@ describe('local services', () => {
     const launcher = fakeLauncher();
     const results = await ensureLocalServices(
       '/repo',
-      { STT_ENGINE: 'whisper', DEV_START_MOTION: '0' },
+      { STT_ENGINE: 'whisper', DEV_START_MOTION: '0', WEB_SEARCH_PROVIDER: 'off' },
       { fetchFn: fakeFetch(['http://127.0.0.1:1234']), spawnSyncFn: launcher, platform: 'win32', log: quiet },
     );
     const byId = Object.fromEntries(results.map((r: { id: string }) => [r.id, r]));

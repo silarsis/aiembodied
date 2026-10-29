@@ -6,6 +6,7 @@ import type { LocalVoiceEvent } from '../src/local-voice/types.js';
 import { ToolRegistry } from '../src/tools/tool-registry.js';
 import {
   BraveSearchProvider,
+  DEFAULT_WEB_SEARCH_PROVIDER,
   DEFAULT_SEARXNG_URL,
   FallbackSearchProvider,
   SearxngSearchProvider,
@@ -301,5 +302,27 @@ describe('fallback search', () => {
       }),
     ]);
     await expect(chain.search('q', { limit: 5 })).rejects.toThrow('second');
+  });
+});
+
+describe('web search defaults and failures', () => {
+  it('uses SearXNG unless WEB_SEARCH_PROVIDER is off', () => {
+    expect(DEFAULT_WEB_SEARCH_PROVIDER).toBe('searxng');
+    expect(createWebSearchProvider('off')).toBeNull();
+    expect(createWebSearchProvider(' None ')).toBeNull();
+  });
+
+  it('tells the model plainly when SearXNG cannot be reached or is too slow', async () => {
+    const refused = new SearxngSearchProvider('http://127.0.0.1:8888', vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    }));
+    await expect(refused.search('q', { limit: 5 })).rejects.toThrow(
+      'Web search is unavailable: could not reach SearXNG at http://127.0.0.1:8888 (fetch failed).',
+    );
+
+    const slow = new SearxngSearchProvider('http://127.0.0.1:8888', (_input, init) =>
+      new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(init.signal?.reason))),
+    );
+    await expect(slow.search('q', { limit: 5, signal: AbortSignal.timeout(10) })).rejects.toThrow(/did not answer in time/);
   });
 });

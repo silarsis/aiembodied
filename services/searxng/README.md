@@ -8,16 +8,17 @@ own index and a $5 monthly free credit (about 1,000 searches), so it makes a goo
 ## Setup
 
 1. Install Docker Desktop. SearXNG does not run natively on Windows.
-2. Add to `.env` in the repo root:
+2. Nothing else is needed for SearXNG alone: `WEB_SEARCH_PROVIDER` defaults to `searxng`, and
+   `pnpm dev:run` starts the container when nothing answers at `SEARXNG_URL`. To start it by
+   hand: `services\searxng\scripts\start.ps1`. If SearXNG is down, the tool reports that search
+   is unavailable and the assistant says it could not look it up.
+3. Optional settings in `.env` in the repo root:
 
    ```ini
-   WEB_SEARCH_PROVIDER=searxng,brave   # tried in order; use just one if you like
+   WEB_SEARCH_PROVIDER=searxng,brave   # tried in order; "off" disables web search
    SEARXNG_URL=http://127.0.0.1:8888   # the default
    BRAVE_SEARCH_API_KEY=...            # from https://api-dashboard.search.brave.com
    ```
-
-3. `pnpm dev:run` starts the container when `WEB_SEARCH_PROVIDER` includes `searxng` and nothing
-   answers at `SEARXNG_URL`. To start it by hand: `services\searxng\scripts\start.ps1`.
 
 Check it with `curl "http://127.0.0.1:8888/search?q=test&format=json"`.
 

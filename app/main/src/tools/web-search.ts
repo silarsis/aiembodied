@@ -78,8 +78,11 @@ const BRAVE_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search';
 const FALLBACK_ATTEMPT_MS = 4000;
 const HTML_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", '#x27': "'", nbsp: ' ' };
 
+/** WEB_SEARCH_PROVIDER when it is not set. "off" (or "none") disables web search. */
+export const DEFAULT_WEB_SEARCH_PROVIDER = 'searxng';
+
 /**
- * The provider WEB_SEARCH_PROVIDER names, or null when it is unset. A comma-separated list
+ * The provider WEB_SEARCH_PROVIDER names, or null when it is unset or "off". A comma-separated list
  * (e.g. "searxng,brave") tries each in order, moving on when one fails or finds nothing.
  * Unknown names and a brave entry with no API key are reported and left out, so a typo does
  * not look like search silently working.
@@ -93,6 +96,9 @@ export function createWebSearchProvider(
     .split(',')
     .map((entry) => entry.trim().toLowerCase())
     .filter(Boolean);
+  if (names.length === 1 && (names[0] === 'off' || names[0] === 'none')) {
+    return null;
+  }
   const providers: WebSearchProvider[] = [];
   for (const provider of names) {
     if (provider === 'searxng') {
@@ -129,12 +135,22 @@ export class SearxngSearchProvider implements WebSearchProvider {
     const url = new URL(`${this.baseUrl}/search`);
     url.searchParams.set('q', query);
     url.searchParams.set('format', 'json');
-    const response = await this.fetchFn(url, { headers: { Accept: 'application/json' }, signal: options.signal });
+    let response: Response;
+    try {
+      response = await this.fetchFn(url, { headers: { Accept: 'application/json' }, signal: options.signal });
+    } catch (error) {
+      // The model reads this as the tool's error, so say plainly that search itself is unavailable.
+      if (options.signal?.aborted) {
+        throw new Error(`Web search is unavailable: SearXNG at ${this.baseUrl} did not answer in time.`);
+      }
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(`Web search is unavailable: could not reach SearXNG at ${this.baseUrl} (${reason}).`);
+    }
     if (response.status === 403) {
-      throw new Error('SearXNG refused JSON output (403): add json to search.formats in its settings.yml.');
+      throw new Error('Web search is unavailable: SearXNG refused JSON output (403); add json to search.formats in its settings.yml.');
     }
     if (!response.ok) {
-      throw new Error(`SearXNG search failed with HTTP ${response.status}.`);
+      throw new Error(`Web search is unavailable: SearXNG answered HTTP ${response.status}.`);
     }
     const body = (await response.json()) as { results?: Array<{ title?: unknown; url?: unknown; content?: unknown }> };
     return toResults(body.results, 'content', options.limit);
