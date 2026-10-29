@@ -1333,6 +1333,12 @@ app.whenReady().then(async () => {
     }
   });
 
+  wakeWordService.on('peak', (event) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('wake-word:peak', event);
+    }
+  });
+
   wakeWordService.on('error', (serviceError) => {
     logger.error('Wake word service error', {
       message: serviceError.message,

@@ -11,10 +11,13 @@
 import type { LocalVoiceBridge } from '../preload-api.js';
 import type { LocalVoiceEvent } from '../../../main/src/local-voice/types.js';
 import type { RealtimeClientCallbacks, RealtimeClientOptions, RealtimeClientState } from './realtime-client.js';
+import type { VoiceActivity, VoicePhase } from './voice-activity.js';
 
 export interface LocalVoiceClientCallbacks extends RealtimeClientCallbacks {
   onUserTranscript?: (text: string) => void;
   onAssistantTranscript?: (text: string) => void;
+  /** Turn progress: waiting → listening → transcribing → thinking → responding. */
+  onActivity?: (activity: VoiceActivity) => void;
 }
 
 export interface LocalVoiceClientOptions {
@@ -71,6 +74,8 @@ export class LocalVoiceClient {
   private awakeUntil = Number.NEGATIVE_INFINITY;
   private turn: Turn | null = null;
   private disposed = false;
+  private activity: VoiceActivity;
+  private awakeTimer: number | null = null;
 
   constructor(options: LocalVoiceClientOptions) {
     this.getBridge = options.getBridge;
@@ -86,10 +91,15 @@ export class LocalVoiceClient {
       minSpeechMs: options.minSpeechMs ?? 300,
       maxUtteranceMs: options.maxUtteranceMs ?? 30_000,
     });
+    this.activity = { phase: 'off', since: this.now() };
   }
 
   getState(): RealtimeClientState {
     return this.state;
+  }
+
+  getActivity(): VoiceActivity {
+    return this.activity;
   }
 
   getRemoteStream(): MediaStream | null {
@@ -125,6 +135,9 @@ export class LocalVoiceClient {
   notifyWake(timestamp = this.now()): void {
     this.lastWakeAt = timestamp;
     this.awakeUntil = Math.max(this.awakeUntil, timestamp + this.wakeWindowMs);
+    if (this.state.status === 'connected' && !this.busy) {
+      this.listen('Wake word heard');
+    }
   }
 
   async connect(options: { apiKey?: string; inputStream: MediaStream }): Promise<void> {
@@ -169,6 +182,7 @@ export class LocalVoiceClient {
     this.connectionId += 1;
     this.teardown();
     this.updateState({ status: 'idle' });
+    this.setActivity('off');
   }
 
   async destroy(): Promise<void> {
@@ -204,6 +218,7 @@ export class LocalVoiceClient {
         this.log('warn', 'Local voice services unavailable', { problem });
       }
       this.updateState({ status: 'error', error: problem });
+      this.setActivity('error', problem);
       this.statusTimer = window.setTimeout(() => {
         this.statusTimer = null;
         void this.waitForServices(bridge, connectionId);
@@ -212,6 +227,7 @@ export class LocalVoiceClient {
     }
 
     this.updateState({ status: 'connected' });
+    this.setActivity(this.requireWakeWord ? 'waiting' : 'listening');
     if (this.output) {
       this.callbacks.onRemoteStream?.(this.output.stream);
     }
@@ -239,11 +255,14 @@ export class LocalVoiceClient {
         // The wake event can land just after a short "hey jarvis" utterance ends.
         await wait(WAKE_GRACE_MS);
         if (!this.isAwake(utterance)) {
-          this.log('info', 'Ignoring speech without the wake word', { durationMs: utterance.endAt - utterance.startAt });
+          const durationMs = utterance.endAt - utterance.startAt;
+          this.log('info', 'Ignoring speech without the wake word', { durationMs });
+          this.setActivity('waiting', `Ignored ${(durationMs / 1000).toFixed(1)} s of speech without the wake word`);
           return;
         }
       }
 
+      this.setActivity('transcribing');
       const transcript = await bridge.transcribe(encodeWav(utterance.samples, utterance.sampleRate));
       if (connectionId !== this.connectionId) {
         return;
@@ -252,12 +271,21 @@ export class LocalVoiceClient {
       this.log('info', 'Local voice transcript', { text: transcript.text, timings: transcript.timings });
       if (!text) {
         // Only the wake word was said: keep listening for the request.
+        this.listen('Wake word heard: say your request');
         return;
       }
       this.callbacks.onUserTranscript?.(text);
+      this.setActivity('thinking', `“${text}”`);
       await this.respond(bridge, text, connectionId);
+      if (connectionId === this.connectionId) {
+        this.listen('Follow-up: no wake word needed');
+      }
     } catch (error) {
-      this.log('error', 'Local voice turn failed', describe(error));
+      const failure = describe(error);
+      this.log('error', 'Local voice turn failed', failure);
+      if (connectionId === this.connectionId) {
+        this.setActivity('error', `Turn failed: ${failure.message}`);
+      }
     } finally {
       if (connectionId === this.connectionId) {
         this.busy = false;
@@ -276,6 +304,7 @@ export class LocalVoiceClient {
     turn.onSentenceStart = (sentence, first) => {
       if (first) {
         this.callbacks.onFirstAudioFrame?.();
+        this.setActivity('responding');
       }
       this.callbacks.onTextContent?.(sentence);
     };
@@ -304,6 +333,7 @@ export class LocalVoiceClient {
       turn.enqueue(event.text, event.wav, (error) => this.log('warn', 'Failed to decode reply audio', describe(error)));
     } else if (event.type === 'error') {
       this.log('error', 'Local voice reply error', { message: event.message });
+      this.setActivity('error', `Reply failed: ${event.message}`);
     }
   }
 
@@ -318,10 +348,41 @@ export class LocalVoiceClient {
     return /[\p{L}\p{N}]/u.test(stripped) ? stripped.trim() : '';
   }
 
+  /** Answering without the wake word until `awakeUntil`, then back to waiting for it. */
+  private listen(detail: string): void {
+    this.setActivity('listening', detail);
+    if (this.awakeTimer !== null) {
+      window.clearTimeout(this.awakeTimer);
+      this.awakeTimer = null;
+    }
+    if (!this.requireWakeWord) {
+      return;
+    }
+    const remainingMs = this.awakeUntil - this.now();
+    this.awakeTimer = window.setTimeout(() => {
+      this.awakeTimer = null;
+      if (!this.busy && this.activity.phase === 'listening') {
+        this.setActivity('waiting');
+      }
+    }, Math.max(0, remainingMs));
+  }
+
+  private setActivity(phase: VoicePhase, detail?: string): void {
+    if (this.activity.phase === phase && this.activity.detail === detail) {
+      return;
+    }
+    this.activity = { phase, detail, since: this.now() };
+    this.callbacks.onActivity?.(this.activity);
+  }
+
   private teardown(): void {
     if (this.statusTimer !== null) {
       window.clearTimeout(this.statusTimer);
       this.statusTimer = null;
+    }
+    if (this.awakeTimer !== null) {
+      window.clearTimeout(this.awakeTimer);
+      this.awakeTimer = null;
     }
     if (this.turn) {
       void this.getBridge()?.cancel(this.turn.requestId);

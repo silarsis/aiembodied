@@ -23,6 +23,8 @@ export interface WakeWordWorkerConfig {
 
 export type WakeWordWorkerMessage =
   | { type: 'wake'; event: WakeWordDetectionEvent }
+  /** The highest score of a burst that rose above the noise floor, reported once it dies down. */
+  | { type: 'peak'; event: WakeWordDetectionEvent }
   | { type: 'error'; error: SerializedError; fatal?: boolean }
   | { type: 'ready'; info: WakeWordReadyEvent };
 

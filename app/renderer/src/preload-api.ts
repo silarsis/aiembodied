@@ -29,6 +29,8 @@ export interface ConfigBridge {
 
 export interface WakeWordBridge {
   onWake(listener: (event: WakeWordDetectionEvent) => void): () => void;
+  /** Peak score of each burst of activity, including near misses below the threshold. */
+  onPeak?(listener: (event: WakeWordDetectionEvent) => void): () => void;
 }
 
 export interface ConversationBridge {

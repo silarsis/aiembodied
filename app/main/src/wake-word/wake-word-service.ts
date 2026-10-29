@@ -40,6 +40,8 @@ export type WakeWordStartOptions = WakeWordWorkerConfig;
 
 export interface WakeWordServiceEvents {
   wake: [WakeWordDetectionEvent];
+  /** Peak score of a burst of activity, whether or not it reached the threshold. */
+  peak: [WakeWordDetectionEvent];
   error: [Error];
   ready: [WakeWordReadyEvent];
 }
@@ -135,6 +137,16 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
     const handleMessage = (message: WakeWordWorkerMessage) => {
       if (message.type === 'wake') {
         this.handleWakeEvent(message.event);
+        return;
+      }
+
+      if (message.type === 'peak') {
+        this.logger.debug('Wake word peak score', {
+          keyword: message.event.keywordLabel,
+          confidence: Number(message.event.confidence.toFixed(3)),
+          detectedAt: message.event.timestamp,
+        });
+        this.emit('peak', message.event);
         return;
       }
 
