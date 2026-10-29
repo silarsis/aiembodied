@@ -110,7 +110,7 @@ def test_rest_pose_stays_at_rest_without_chest_lean():
         np.testing.assert_allclose(np.abs([kf["q"][3] for kf in track["keyframes"]]), 1.0, atol=1e-6, err_msg=track["bone"])
 
 
-def test_chest_lean_tilts_the_upper_body_forward_once():
+def test_chest_lean_tilts_the_head_forward_but_not_the_arms():
     m = synthetic_motion(20)
     straight = _globals(to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x", chest_forward=0))
     leaning = _globals(to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x", chest_forward=7))
@@ -118,10 +118,13 @@ def test_chest_lean_tilts_the_upper_body_forward_once():
     # Below the chest nothing changes.
     for bone in ("hips", "spine", "chest", "leftUpperLeg"):
         np.testing.assert_allclose(leaning[bone], straight[bone], atol=1e-5)
-    # Head and arms lean with the chest by exactly 7 degrees, not compounded per joint.
-    for bone in ("upperChest", "neck", "head", "leftUpperArm", "rightLowerArm", "rightHand"):
+    # Head leans with the chest by exactly 7 degrees, not compounded per joint.
+    for bone in ("upperChest", "neck", "head"):
         delta = Rotation.from_matrix(leaning[bone] @ np.transpose(straight[bone], (0, 2, 1)))
         np.testing.assert_allclose(delta.magnitude(), np.radians(7), atol=1e-4, err_msg=bone)
+    # The arms keep ARDY's orientation: the same pitch would swing hanging arms backwards.
+    for bone in ("leftShoulder", "rightShoulder", "leftUpperArm", "rightLowerArm", "rightHand"):
+        np.testing.assert_allclose(leaning[bone], straight[bone], atol=1e-5, err_msg=bone)
     # Forward: the chest's up axis (+Y) gains a +Z component.
     up = leaning["upperChest"][:, :, 1]
     up_straight = straight["upperChest"][:, :, 1]

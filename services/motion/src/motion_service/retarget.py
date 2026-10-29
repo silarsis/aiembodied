@@ -88,9 +88,10 @@ for _side, _S in (("left", "Left"), ("right", "Right")):
 # metres. The floor is estimated from the same joints, so a standing rest pose maps to exactly 1.
 SOMA_REST_HIPS_HEIGHT = 0.989
 
-# Forward lean added at upperChest, degrees. ARDY's upper arms hang straight down from a torso that
-# leans back a few degrees, and VRoid-style avatars attach shoulders and neck further back on the
-# chest than SOMA does, so the arms read as pulled back. Override with MOTION_CHEST_FORWARD_DEG.
+# Forward lean added at upperChest, degrees: ARDY's torso leans back a few degrees, and VRoid-style
+# avatars attach shoulders and neck further back on the chest than SOMA does. The neck and head lean
+# with the chest; the shoulders are turned back by the same amount, so the arms keep ARDY's world
+# orientation (a chest pitch alone swings hanging arms backwards). Override with MOTION_CHEST_FORWARD_DEG.
 DEFAULT_CHEST_FORWARD_DEG = 7.0
 
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -170,8 +171,9 @@ def to_vrma(
     mapping = BODY_MAP + (FINGER_MAP if fingers and J == 77 else [])
     glob = {vrm: G[:, idx[soma]] for vrm, soma, _ in mapping}
     times = [round(i / fps, 5) for i in range(T)]
-    # A constant pitch about upperChest's own +X (forward for a Y-up, +Z-facing rest). Children keep
-    # their local rotations, so neck, head and arms lean with the chest exactly once.
+    # A constant pitch about upperChest's own +X (forward for a Y-up, +Z-facing rest). The neck keeps
+    # its local rotation, so neck and head lean with the chest exactly once. The shoulders undo it:
+    # the pitch moves the hanging arms' hands backwards, which is what made them look pulled back.
     lean = Rotation.from_euler("x", chest_forward_deg() if chest_forward is None else chest_forward, degrees=True).as_matrix()
     tracks = []
     for vrm, _soma, parent in mapping:
@@ -179,6 +181,8 @@ def to_vrma(
         local = g if parent is None else np.einsum("tji,tjk->tik", glob[parent], g)  # parent^T @ g
         if vrm == "upperChest":
             local = local @ lean
+        elif parent == "upperChest" and vrm != "neck":
+            local = lean.T @ local
         q = Rotation.from_matrix(local).as_quat()  # x, y, z, w
         flip = np.cumsum(np.r_[False, np.einsum("ij,ij->i", q[1:], q[:-1]) < 0]) % 2 == 1
         q[flip] = -q[flip]  # sign continuity so LINEAR sampling never takes the long way round
