@@ -1232,7 +1232,14 @@ app.whenReady().then(async () => {
     });
   }
 
-  const webSearch = createWebSearchProvider(appConfig.localConversation.webSearchProvider, logger);
+  const webSearch = createWebSearchProvider(
+    appConfig.localConversation.webSearchProvider,
+    {
+      searxngUrl: appConfig.localConversation.searxngUrl,
+      braveApiKey: appConfig.localConversation.braveSearchApiKey,
+    },
+    logger,
+  );
   if (webSearch && toolRegistry) {
     toolRegistry.register(createWebSearchTool(webSearch));
     logger.info('Web search tool registered', { provider: webSearch.name });

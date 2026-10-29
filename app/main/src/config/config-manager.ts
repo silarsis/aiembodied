@@ -20,6 +20,10 @@ export interface LocalConversationConfig {
   voice?: string;
   /** WEB_SEARCH_PROVIDER: which search backs the web_search tool; unset disables it. */
   webSearchProvider?: string;
+  /** SEARXNG_URL: the SearXNG instance for the searxng provider. */
+  searxngUrl?: string;
+  /** BRAVE_SEARCH_API_KEY: the Brave Search API token for the brave provider. */
+  braveSearchApiKey?: string;
 }
 
 export interface AppConfig {
@@ -181,6 +185,8 @@ export class ConfigManager {
         speechServiceUrl: this.env.SPEECH_SERVICE_URL?.trim() || DEFAULT_SPEECH_SERVICE_URL,
         voice: this.env.LOCAL_TTS_VOICE?.trim() || undefined,
         webSearchProvider: this.env.WEB_SEARCH_PROVIDER?.trim() || undefined,
+        searxngUrl: this.env.SEARXNG_URL?.trim() || undefined,
+        braveSearchApiKey: this.env.BRAVE_SEARCH_API_KEY?.trim() || undefined,
       },
       audioInputDeviceId,
       audioOutputDeviceId,

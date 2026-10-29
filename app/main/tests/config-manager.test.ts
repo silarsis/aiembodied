@@ -336,6 +336,8 @@ describe('ConfigManager', () => {
       speechServiceUrl: 'http://127.0.0.1:8192',
       voice: undefined,
       webSearchProvider: undefined,
+      searxngUrl: undefined,
+      braveSearchApiKey: undefined,
     });
 
     const fromEnv = await new ConfigManager({ env: { CONVERSATION_BACKEND: 'OpenAI' } as NodeJS.ProcessEnv }).load();

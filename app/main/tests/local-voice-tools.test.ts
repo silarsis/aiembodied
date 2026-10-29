@@ -5,6 +5,10 @@ import { LocalVoiceService, TOOL_GUIDANCE } from '../src/local-voice/local-voice
 import type { LocalVoiceEvent } from '../src/local-voice/types.js';
 import { ToolRegistry } from '../src/tools/tool-registry.js';
 import {
+  BraveSearchProvider,
+  DEFAULT_SEARXNG_URL,
+  FallbackSearchProvider,
+  SearxngSearchProvider,
   WEB_SEARCH_TOOL_ID,
   createWebSearchProvider,
   createWebSearchTool,
@@ -186,10 +190,116 @@ describe('web search tool', () => {
     expect(await registry.execute(WEB_SEARCH_TOOL_ID, { query: '  ' })).toMatchObject({ success: false });
   });
 
-  it('has no provider until WEB_SEARCH_PROVIDER names one it knows', () => {
+  it('has no provider until WEB_SEARCH_PROVIDER names one it can use', () => {
     const warn = vi.fn();
-    expect(createWebSearchProvider(undefined, { warn })).toBeNull();
-    expect(createWebSearchProvider('bogus', { warn })).toBeNull();
-    expect(warn).toHaveBeenCalledTimes(1);
+    expect(createWebSearchProvider(undefined, {}, { warn })).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+    expect(createWebSearchProvider('bogus', {}, { warn })).toBeNull();
+    // brave without a key is skipped rather than failing on every search.
+    expect(createWebSearchProvider('brave', {}, { warn })).toBeNull();
+    expect(createWebSearchProvider('searxng', {})?.name).toBe('searxng');
+    expect(createWebSearchProvider('brave', { braveApiKey: 'k' })?.name).toBe('brave');
+    expect(createWebSearchProvider(' SearXNG , brave ', { braveApiKey: 'k' })?.name).toBe('searxng,brave');
+    expect(createWebSearchProvider('searxng,brave', {}, { warn })?.name).toBe('searxng');
+  });
+});
+
+function jsonFetch(status: number, body: unknown) {
+  return vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify(body), { status }));
+}
+
+describe('SearXNG provider', () => {
+  it('queries the JSON API and maps results', async () => {
+    const fetchFn = jsonFetch(200, {
+      results: [
+        { title: 'Canberra weather', url: 'https://bom.gov.au/act', content: 'Sunny, 24 &amp; clear' },
+        { title: 'No url' },
+        { title: 'Two', url: 'https://example.com/2' },
+        { title: 'Three', url: 'https://example.com/3', content: 'x' },
+      ],
+    });
+    const provider = new SearxngSearchProvider('http://127.0.0.1:8888/', fetchFn);
+
+    const results = await provider.search('canberra weather', { limit: 2 });
+
+    const url = new URL(String(fetchFn.mock.calls[0]?.[0]));
+    expect(url.origin + url.pathname).toBe('http://127.0.0.1:8888/search');
+    expect(url.searchParams.get('q')).toBe('canberra weather');
+    expect(url.searchParams.get('format')).toBe('json');
+    expect(results).toEqual([
+      { title: 'Canberra weather', url: 'https://bom.gov.au/act', snippet: 'Sunny, 24 & clear' },
+      { title: 'Two', url: 'https://example.com/2', snippet: '' },
+    ]);
+  });
+
+  it('explains a 403 as JSON output being switched off', async () => {
+    const provider = new SearxngSearchProvider(DEFAULT_SEARXNG_URL, jsonFetch(403, {}));
+    await expect(provider.search('q', { limit: 5 })).rejects.toThrow(/search\.formats/);
+  });
+});
+
+describe('Brave provider', () => {
+  it('sends the token, asks for the limit and strips highlight markup', async () => {
+    const fetchFn = jsonFetch(200, {
+      web: { results: [{ title: 'Brave <strong>Search</strong>', url: 'https://brave.com', description: 'A <strong>private</strong> index' }] },
+    });
+    const provider = new BraveSearchProvider('token-1', fetchFn);
+
+    const results = await provider.search('brave', { limit: 5 });
+
+    const [input, init] = fetchFn.mock.calls[0] ?? [];
+    const url = new URL(String(input));
+    expect(url.origin + url.pathname).toBe('https://api.search.brave.com/res/v1/web/search');
+    expect(url.searchParams.get('count')).toBe('5');
+    expect((init?.headers as Record<string, string>)['X-Subscription-Token']).toBe('token-1');
+    expect(results).toEqual([{ title: 'Brave Search', url: 'https://brave.com', snippet: 'A private index' }]);
+  });
+
+  it('reports a bad key and an exhausted quota plainly', async () => {
+    await expect(new BraveSearchProvider('bad', jsonFetch(401, {})).search('q', { limit: 5 })).rejects.toThrow(
+      /BRAVE_SEARCH_API_KEY/,
+    );
+    await expect(new BraveSearchProvider('k', jsonFetch(429, {})).search('q', { limit: 5 })).rejects.toThrow(/quota/);
+  });
+});
+
+describe('fallback search', () => {
+  const hit = { title: 'T', url: 'https://example.com', snippet: 's' };
+  const provider = (name: string, search: WebSearchProvider['search']): WebSearchProvider => ({ name, search });
+
+  it('moves on when a provider fails or finds nothing, and stops at the first with results', async () => {
+    const third = vi.fn(async () => [hit]);
+    const chain = new FallbackSearchProvider([
+      provider('down', async () => {
+        throw new Error('down');
+      }),
+      provider('empty', async () => []),
+      provider('brave', async () => [hit]),
+      provider('never', third),
+    ]);
+    expect(await chain.search('q', { limit: 5 })).toEqual([hit]);
+    expect(third).not.toHaveBeenCalled();
+  });
+
+  it('gives a hung provider only its slice of time before trying the next', async () => {
+    const hung = provider(
+      'hung',
+      (_query, options) =>
+        new Promise((_resolve, reject) => options.signal?.addEventListener('abort', () => reject(options.signal?.reason))),
+    );
+    const chain = new FallbackSearchProvider([hung, provider('brave', async () => [hit])], 20);
+    expect(await chain.search('q', { limit: 5 })).toEqual([hit]);
+  });
+
+  it('reports the last error when every provider fails', async () => {
+    const chain = new FallbackSearchProvider([
+      provider('a', async () => {
+        throw new Error('first');
+      }),
+      provider('b', async () => {
+        throw new Error('second');
+      }),
+    ]);
+    await expect(chain.search('q', { limit: 5 })).rejects.toThrow('second');
   });
 });

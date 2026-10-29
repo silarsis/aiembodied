@@ -52,7 +52,7 @@ describe('local services', () => {
       MOTION_VENV: 'C:\\venv',
       STT_URL: 'http://127.0.0.1:1240/v1/',
     });
-    expect(services.map((s: { id: string }) => s.id)).toEqual(['llm', 'asr', 'speech', 'motion']);
+    expect(services.map((s: { id: string }) => s.id)).toEqual(['llm', 'asr', 'speech', 'motion', 'searxng']);
     const byId = Object.fromEntries(services.map((s: { id: string }) => [s.id, s]));
     expect(byId.asr.probe).toBe('http://127.0.0.1:1240/v1/models');
     expect(byId.asr.args).toEqual(['-Port', '1240']);
@@ -64,7 +64,20 @@ describe('local services', () => {
     expect(smallContext[0].args).toEqual(['-Port', '1234', '-Context', '32768']);
 
     const onCpu = describeLocalServices('/repo', { MOTION_TEXT_ENCODER_DEVICE: 'cpu' });
-    expect(onCpu.at(-1).args).toEqual(['-Port', '8190', '-TextEncoderDevice', 'cpu']);
+    const motionOnCpu = onCpu.find((s: { id: string }) => s.id === 'motion');
+    expect(motionOnCpu.args).toEqual(['-Port', '8190', '-TextEncoderDevice', 'cpu']);
+  });
+
+  it('starts SearXNG only when web search uses it', () => {
+    const searxngOf = (env: Record<string, string>) =>
+      describeLocalServices('/repo', env).find((s: { id: string }) => s.id === 'searxng');
+    expect(searxngOf({}).enabled).toBe(false);
+    expect(searxngOf({ WEB_SEARCH_PROVIDER: 'brave' }).enabled).toBe(false);
+    const searxng = searxngOf({ WEB_SEARCH_PROVIDER: 'SearXNG, brave', SEARXNG_URL: 'http://127.0.0.1:8890/' });
+    expect(searxng.enabled).toBe(true);
+    expect(searxng.probe).toBe('http://127.0.0.1:8890/healthz');
+    expect(searxng.args).toEqual(['-Port', '8890']);
+    expect(searxng.script).toBe(resolve('/repo', 'services/searxng/scripts/start.ps1'));
   });
 
   it(
@@ -87,6 +100,7 @@ describe('local services', () => {
         ['asr', 'started'],
         ['speech', 'running'],
         ['motion', 'started'],
+        ['searxng', 'skipped'],
       ]);
       expect(launcher).toHaveBeenCalledTimes(2);
       const [command, args, options] = launcher.mock.calls[0] as unknown as [string, string[], Record<string, unknown>];
@@ -112,6 +126,7 @@ describe('local services', () => {
       ['asr', 'skipped'],
       ['speech', 'skipped'],
       ['motion', 'skipped'],
+      ['searxng', 'skipped'],
     ]);
     expect(results[3].reason).toContain('not on this machine');
     expect(launcher).not.toHaveBeenCalled();
@@ -140,8 +155,9 @@ describe('local services', () => {
         { CONVERSATION_BACKEND: 'openai' },
         { fetchFn: fakeFetch([]), spawnSyncFn: vi.fn(() => ({ status: 1 })), platform: 'win32', log: quiet },
       );
-      expect(results.at(-1)).toMatchObject({ id: 'motion', status: 'failed' });
-      expect(results.at(-1).reason).toContain('launcher exited with code 1');
+      const motion = results.find((r: { id: string }) => r.id === 'motion');
+      expect(motion).toMatchObject({ status: 'failed' });
+      expect(motion.reason).toContain('launcher exited with code 1');
     }),
   );
 

@@ -1,14 +1,14 @@
 /**
  * Make sure the local model servers the app talks to are running before the dev app starts:
  * the LLM (llama-server, Qwen Flash-Next), speech-to-text (llama-server, Qwen3-ASR), the speech
- * service (Kokoro TTS) and the motion service (ARDY). A server that already answers is left
+ * service (Kokoro TTS), the motion service (ARDY) and, when web search uses it, SearXNG (Docker). A server that already answers is left
  * alone, so one slopcore or another terminal started is reused. A missing one is started with
  * its own start script in a hidden console of its own, logging to .dev-home/logs/<id>.log
  * (and <id>.err.log), and keeps running after the app and the terminal close. Nothing waits for models to finish loading: the app polls each service and
  * picks it up once it reports ready.
  *
  * Settings come from the environment or .env: the same URLs the app uses (LOCAL_LLM_BASE_URL,
- * STT_URL, SPEECH_SERVICE_URL, MOTION_SERVICE_URL) plus the paths the start scripts need
+ * STT_URL, SPEECH_SERVICE_URL, MOTION_SERVICE_URL, SEARXNG_URL) plus the paths the start scripts need
  * (KOKORO_DIR, MOTION_VENV, TEXT_ENCODERS_DIR, LOCAL_LLM_CONTEXT, ...). Skip it all with --no-services or
  * DEV_START_SERVICES=0.
  */
@@ -35,6 +35,8 @@ export function describeLocalServices(repoRoot, env) {
   const sttUrl = trimSlash(env.STT_URL || 'http://127.0.0.1:1235/v1');
   const speechUrl = trimSlash(env.SPEECH_SERVICE_URL || 'http://127.0.0.1:8192');
   const motionUrl = trimSlash(env.MOTION_SERVICE_URL || 'http://127.0.0.1:8190');
+  const searxngUrl = trimSlash(env.SEARXNG_URL || 'http://127.0.0.1:8888');
+  const searchProviders = (env.WEB_SEARCH_PROVIDER ?? '').split(',').map((name) => name.trim().toLowerCase());
 
   const services = [
     {
@@ -81,6 +83,15 @@ export function describeLocalServices(repoRoot, env) {
         ...(env.TEXT_ENCODERS_DIR ? ['-TextEncodersDir', env.TEXT_ENCODERS_DIR] : []),
         ...(env.MOTION_VENV ? ['-Venv', env.MOTION_VENV] : []),
       ],
+    },
+    {
+      id: 'searxng',
+      label: 'SearXNG web search (Docker)',
+      enabled: searchProviders.includes('searxng'),
+      url: searxngUrl,
+      probe: `${searxngUrl}/healthz`,
+      script: 'services/searxng/scripts/start.ps1',
+      args: portArgs(searxngUrl),
     },
   ];
 
