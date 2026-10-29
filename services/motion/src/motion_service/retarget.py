@@ -94,6 +94,12 @@ SOMA_REST_HIPS_HEIGHT = 0.989
 # orientation (a chest pitch alone swings hanging arms backwards). Override with MOTION_CHEST_FORWARD_DEG.
 DEFAULT_CHEST_FORWARD_DEG = 7.0
 
+# Forward swing of the whole arm about the shoulder, degrees. The bundled avatar's shoulders sit about
+# 2.5 cm further back on its chest than SOMA's, which leaves the hands ~4 cm behind ARDY's (~5 deg of
+# its 48 cm arm); 6 cancels that with a little to spare. It depends on the avatar's build. Override
+# with MOTION_ARM_FORWARD_DEG.
+DEFAULT_ARM_FORWARD_DEG = 6.0
+
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
@@ -126,14 +132,23 @@ def joint_names(num_joints: int) -> list[str]:
     raise ValueError(f"unsupported SOMA joint count {num_joints} (expected 77 or 30)")
 
 
+def _env_degrees(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    try:
+        value = float(raw) if raw else default
+    except ValueError:
+        return default
+    return value if math.isfinite(value) else default
+
+
 def chest_forward_deg() -> float:
     """The upperChest forward lean from MOTION_CHEST_FORWARD_DEG, else the default."""
-    raw = os.environ.get("MOTION_CHEST_FORWARD_DEG", "").strip()
-    try:
-        value = float(raw) if raw else DEFAULT_CHEST_FORWARD_DEG
-    except ValueError:
-        return DEFAULT_CHEST_FORWARD_DEG
-    return value if math.isfinite(value) else DEFAULT_CHEST_FORWARD_DEG
+    return _env_degrees("MOTION_CHEST_FORWARD_DEG", DEFAULT_CHEST_FORWARD_DEG)
+
+
+def arm_forward_deg() -> float:
+    """The forward arm swing from MOTION_ARM_FORWARD_DEG, else the default."""
+    return _env_degrees("MOTION_ARM_FORWARD_DEG", DEFAULT_ARM_FORWARD_DEG)
 
 
 def _squeeze_batch(a: np.ndarray, ndim: int) -> np.ndarray:
@@ -153,6 +168,7 @@ def to_vrma(
     fingers: bool = True,
     in_place: bool = False,
     chest_forward: Optional[float] = None,
+    arm_forward: Optional[float] = None,
 ) -> dict:
     """Build a VRMA JSON dict (app schema) from SOMA global rotations [T,J,3,3] and joints [T,J,3]."""
     G = _squeeze_batch(global_rot_mats, 4).astype(np.float64)
@@ -172,9 +188,13 @@ def to_vrma(
     glob = {vrm: G[:, idx[soma]] for vrm, soma, _ in mapping}
     times = [round(i / fps, 5) for i in range(T)]
     # A constant pitch about upperChest's own +X (forward for a Y-up, +Z-facing rest). The neck keeps
-    # its local rotation, so neck and head lean with the chest exactly once. The shoulders undo it:
-    # the pitch moves the hanging arms' hands backwards, which is what made them look pulled back.
-    lean = Rotation.from_euler("x", chest_forward_deg() if chest_forward is None else chest_forward, degrees=True).as_matrix()
+    # its local rotation, so neck and head lean with the chest exactly once. The shoulders undo it,
+    # since the pitch carries hanging arms backwards, then swing the whole arm forward by arm_forward
+    # (about -X: that takes a hanging hand towards +Z).
+    chest = chest_forward_deg() if chest_forward is None else chest_forward
+    arm = arm_forward_deg() if arm_forward is None else arm_forward
+    lean = Rotation.from_euler("x", chest, degrees=True).as_matrix()
+    shoulder = Rotation.from_euler("x", -(chest + arm), degrees=True).as_matrix()
     tracks = []
     for vrm, _soma, parent in mapping:
         g = glob[vrm]
@@ -182,7 +202,7 @@ def to_vrma(
         if vrm == "upperChest":
             local = local @ lean
         elif parent == "upperChest" and vrm != "neck":
-            local = lean.T @ local
+            local = shoulder @ local
         q = Rotation.from_matrix(local).as_quat()  # x, y, z, w
         flip = np.cumsum(np.r_[False, np.einsum("ij,ij->i", q[1:], q[:-1]) < 0]) % 2 == 1
         q[flip] = -q[flip]  # sign continuity so LINEAR sampling never takes the long way round
