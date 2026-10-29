@@ -330,12 +330,14 @@ describe('ConfigManager', () => {
   it('defaults the conversation to the local LLM and lets env or a saved choice override it', async () => {
     const defaults = await new ConfigManager({ env: {} as NodeJS.ProcessEnv }).load();
     expect(defaults.conversationBackend).toBe('local');
-    expect(defaults.localConversation).toEqual({
-      llmBaseUrl: 'http://127.0.0.1:1234/v1',
-      llmModel: 'qwen-next-flash',
-      speechServiceUrl: 'http://127.0.0.1:8192',
-      voice: undefined,
+    expect(defaults.providers.llm).toMatchObject({
+      provider: 'local',
+      localBaseUrl: 'http://127.0.0.1:1234/v1',
+      localModel: 'qwen-next-flash',
     });
+    expect(defaults.providers.speechServiceUrl).toBe('http://127.0.0.1:8192');
+    expect(defaults.webSearch).toEqual({ provider: 'searxng', searxngUrl: undefined, braveApiKey: undefined });
+    expect(defaults.providers.tts).toMatchObject({ provider: 'kokoro', kokoroVoice: '', openaiVoice: 'alloy' });
 
     const fromEnv = await new ConfigManager({ env: { CONVERSATION_BACKEND: 'OpenAI' } as NodeJS.ProcessEnv }).load();
     expect(fromEnv.conversationBackend).toBe('openai');
@@ -355,6 +357,54 @@ describe('ConfigManager', () => {
     const later = await manager.setAudioDevicePreferences({ audioInputDeviceId: 'mic-2' });
     expect(later.conversationBackend).toBe('openai');
     expect((await preferencesStore.load()).conversationBackend).toBe('openai');
-    expect(later).not.toHaveProperty('localConversation');
+    expect(later).not.toHaveProperty('realtimeApiKey');
+  });
+
+  it('layers saved provider settings over env over defaults, saving only what changed', async () => {
+    const preferencesStore = new InMemoryPreferencesStore();
+    await preferencesStore.save({ audioInputDeviceId: 'mic-1' });
+    const manager = new ConfigManager({
+      env: { LOCAL_LLM_MODEL: 'env-model', OPENAI_TTS_VOICE: 'nova', MOTION_BACKEND: 'kimodo' } as NodeJS.ProcessEnv,
+      preferencesStore,
+    });
+    const loaded = await manager.load();
+    expect(loaded.providers.llm.localModel).toBe('env-model');
+    expect(loaded.providers.tts.openaiVoice).toBe('nova');
+    expect(loaded.providers.motion.localBackend).toBe('kimodo');
+
+    const next = await manager.setProviderSettings({
+      tts: { provider: 'openai', openaiVoice: 'coral' },
+      llm: { provider: 'bogus' as never },
+    });
+    expect(next.providers.tts).toMatchObject({ provider: 'openai', openaiVoice: 'coral', openaiModel: 'gpt-realtime-2.1-mini' });
+    expect(next.providers.llm.provider).toBe('local');
+    expect(next.providers.llm.localModel).toBe('env-model');
+
+    const saved = await preferencesStore.load();
+    expect(saved.audioInputDeviceId).toBe('mic-1');
+    expect(saved.providers).toEqual({ tts: { provider: 'openai', openaiVoice: 'coral' } });
+
+    // Saving device preferences keeps the provider settings.
+    await manager.setAudioDevicePreferences({ audioInputDeviceId: 'mic-2' });
+    expect((await preferencesStore.load()).providers).toEqual({ tts: { provider: 'openai', openaiVoice: 'coral' } });
+
+    const reloaded = await new ConfigManager({ env: {} as NodeJS.ProcessEnv, preferencesStore }).load();
+    expect(reloaded.providers.tts.provider).toBe('openai');
+    expect(reloaded.providers.tts.openaiVoice).toBe('coral');
+  });
+
+  it('reads the key from OPENAI_API_KEY and removes a saved key on request', async () => {
+    const fromEnv = new ConfigManager({ env: { OPENAI_API_KEY: 'sk-env' } as NodeJS.ProcessEnv });
+    await fromEnv.load();
+    expect(fromEnv.getRendererConfig()).toMatchObject({ hasRealtimeApiKey: true, realtimeApiKeyFromEnv: true });
+
+    const secretStore = new InMemorySecretStore();
+    await secretStore.setSecret('REALTIME_API_KEY', 'sk-saved');
+    const manager = new ConfigManager({ env: {} as NodeJS.ProcessEnv, secretStore });
+    await manager.load();
+    expect(manager.getRendererConfig().hasRealtimeApiKey).toBe(true);
+    const cleared = await manager.clearSecret('realtimeApiKey');
+    expect(cleared.hasRealtimeApiKey).toBe(false);
+    expect(await secretStore.getSecret('REALTIME_API_KEY')).toBeNull();
   });
 });

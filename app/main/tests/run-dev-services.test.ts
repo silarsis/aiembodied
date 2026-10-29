@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
-const { buildStartCommand, describeLocalServices, ensureLocalServices, shouldStartServices } = await import(
+const { buildStartCommand, describeLocalServices, ensureLocalServices, readSavedPreferences, savedPreferencesPath, shouldStartServices } = await import(
   '../../../scripts/local-services.mjs'
 );
 
@@ -52,7 +53,7 @@ describe('local services', () => {
       MOTION_VENV: 'C:\\venv',
       STT_URL: 'http://127.0.0.1:1240/v1/',
     });
-    expect(services.map((s: { id: string }) => s.id)).toEqual(['llm', 'asr', 'speech', 'motion']);
+    expect(services.map((s: { id: string }) => s.id)).toEqual(['llm', 'asr', 'speech', 'motion', 'searxng']);
     const byId = Object.fromEntries(services.map((s: { id: string }) => [s.id, s]));
     expect(byId.asr.probe).toBe('http://127.0.0.1:1240/v1/models');
     expect(byId.asr.args).toEqual(['-Port', '1240']);
@@ -64,7 +65,21 @@ describe('local services', () => {
     expect(smallContext[0].args).toEqual(['-Port', '1234', '-Context', '32768']);
 
     const onCpu = describeLocalServices('/repo', { MOTION_TEXT_ENCODER_DEVICE: 'cpu' });
-    expect(onCpu.at(-1).args).toEqual(['-Port', '8190', '-TextEncoderDevice', 'cpu']);
+    const motionOnCpu = onCpu.find((s: { id: string }) => s.id === 'motion');
+    expect(motionOnCpu.args).toEqual(['-Port', '8190', '-TextEncoderDevice', 'cpu']);
+  });
+
+  it('starts SearXNG unless web search is off or uses only other providers', () => {
+    const searxngOf = (env: Record<string, string>) =>
+      describeLocalServices('/repo', env).find((s: { id: string }) => s.id === 'searxng');
+    expect(searxngOf({}).enabled).toBe(true);
+    expect(searxngOf({ WEB_SEARCH_PROVIDER: 'off' }).enabled).toBe(false);
+    expect(searxngOf({ WEB_SEARCH_PROVIDER: 'brave' }).enabled).toBe(false);
+    const searxng = searxngOf({ WEB_SEARCH_PROVIDER: 'SearXNG, brave', SEARXNG_URL: 'http://127.0.0.1:8890/' });
+    expect(searxng.enabled).toBe(true);
+    expect(searxng.probe).toBe('http://127.0.0.1:8890/healthz');
+    expect(searxng.args).toEqual(['-Port', '8890']);
+    expect(searxng.script).toBe(resolve('/repo', 'services/searxng/scripts/start.ps1'));
   });
 
   it(
@@ -73,7 +88,7 @@ describe('local services', () => {
       const launcher = fakeLauncher();
       const results = await ensureLocalServices(
         repoRoot,
-        { KOKORO_DIR: 'C:\\kokoro' },
+        { KOKORO_DIR: 'C:\\kokoro', WEB_SEARCH_PROVIDER: 'off' },
         {
           fetchFn: fakeFetch(['http://127.0.0.1:1234', 'http://127.0.0.1:8192']),
           spawnSyncFn: launcher,
@@ -87,6 +102,7 @@ describe('local services', () => {
         ['asr', 'started'],
         ['speech', 'running'],
         ['motion', 'started'],
+        ['searxng', 'skipped'],
       ]);
       expect(launcher).toHaveBeenCalledTimes(2);
       const [command, args, options] = launcher.mock.calls[0] as unknown as [string, string[], Record<string, unknown>];
@@ -104,7 +120,7 @@ describe('local services', () => {
     const launcher = fakeLauncher();
     const results = await ensureLocalServices(
       '/repo',
-      { CONVERSATION_BACKEND: 'openai', MOTION_SERVICE_URL: 'http://gpu-box:8190' },
+      { CONVERSATION_BACKEND: 'openai', MOTION_SERVICE_URL: 'http://gpu-box:8190', WEB_SEARCH_PROVIDER: 'off' },
       { fetchFn: fakeFetch([]), spawnSyncFn: launcher, platform: 'win32', log: quiet },
     );
     expect(results.map((r: { id: string; status: string }) => [r.id, r.status])).toEqual([
@@ -112,6 +128,7 @@ describe('local services', () => {
       ['asr', 'skipped'],
       ['speech', 'skipped'],
       ['motion', 'skipped'],
+      ['searxng', 'skipped'],
     ]);
     expect(results[3].reason).toContain('not on this machine');
     expect(launcher).not.toHaveBeenCalled();
@@ -121,7 +138,7 @@ describe('local services', () => {
     const launcher = fakeLauncher();
     const results = await ensureLocalServices(
       '/repo',
-      { STT_ENGINE: 'whisper', DEV_START_MOTION: '0' },
+      { STT_ENGINE: 'whisper', DEV_START_MOTION: '0', WEB_SEARCH_PROVIDER: 'off' },
       { fetchFn: fakeFetch(['http://127.0.0.1:1234']), spawnSyncFn: launcher, platform: 'win32', log: quiet },
     );
     const byId = Object.fromEntries(results.map((r: { id: string }) => [r.id, r]));
@@ -140,8 +157,9 @@ describe('local services', () => {
         { CONVERSATION_BACKEND: 'openai' },
         { fetchFn: fakeFetch([]), spawnSyncFn: vi.fn(() => ({ status: 1 })), platform: 'win32', log: quiet },
       );
-      expect(results.at(-1)).toMatchObject({ id: 'motion', status: 'failed' });
-      expect(results.at(-1).reason).toContain('launcher exited with code 1');
+      const motion = results.find((r: { id: string }) => r.id === 'motion');
+      expect(motion).toMatchObject({ status: 'failed' });
+      expect(motion.reason).toContain('launcher exited with code 1');
     }),
   );
 
@@ -158,6 +176,46 @@ describe('local services', () => {
     expect(command).toContain("-RedirectStandardOutput 'C:\\logs\\a.log' -RedirectStandardError 'C:\\logs\\a.err.log'");
     expect(command).toContain("Set-Content -LiteralPath 'C:\\logs\\a.pid' -Value $p.Id");
   });
+
+  it('follows the providers saved on the Settings page over the environment', () => {
+    const enabled = (saved: object, env: Record<string, string> = {}) =>
+      Object.fromEntries(
+        describeLocalServices('/repo', { KOKORO_DIR: 'C:\\k', ...env }, saved)
+          .filter((s: { id: string }) => s.id !== 'searxng')
+          .map((s: { id: string; enabled: boolean }) => [s.id, s.enabled]),
+      );
+
+    expect(enabled({})).toEqual({ llm: true, asr: true, speech: true, motion: true });
+    expect(enabled({ providers: { llm: { provider: 'openai' }, stt: { provider: 'openai' } } })).toEqual({
+      llm: false,
+      asr: false,
+      speech: true,
+      motion: true,
+    });
+    expect(
+      enabled({ providers: { stt: { provider: 'openai' }, tts: { provider: 'openai' }, motion: { provider: 'openai' } } }),
+    ).toEqual({ llm: true, asr: false, speech: false, motion: false });
+    // A saved choice wins over the env, as it does in the app.
+    expect(enabled({ providers: { llm: { provider: 'local' } } }, { LLM_PROVIDER: 'openai' }).llm).toBe(true);
+    expect(enabled({ conversationBackend: 'openai' })).toEqual({ llm: false, asr: false, speech: false, motion: true });
+
+    const motion = describeLocalServices('/repo', {}, { providers: { motion: { localBackend: 'kimodo' } } }).find(
+      (s: { id: string }) => s.id === 'motion',
+    );
+    expect(motion.args).toEqual(['-Port', '8190', '-Backend', 'kimodo']);
+    expect(motion.label).toBe('motion service (Kimodo)');
+  });
+
+  it(
+    'reads the dev app preferences file',
+    withTempRepo(async (repoRoot) => {
+      expect(readSavedPreferences(repoRoot)).toEqual({});
+      const file = savedPreferencesPath(repoRoot);
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, JSON.stringify({ providers: { tts: { provider: 'openai' } } }));
+      expect(readSavedPreferences(repoRoot)).toEqual({ providers: { tts: { provider: 'openai' } } });
+    }),
+  );
 
   it('can be switched off', () => {
     expect(shouldStartServices(['node', 'run-dev.mjs'], {})).toBe(true);

@@ -1,5 +1,6 @@
 import type { ConfigSecretKey, RendererConfig } from '../../main/src/config/config-manager.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
+import type { ProviderSettingsPatch } from '../../main/src/config/provider-settings.js';
 import type {
   ConversationAppendMessagePayload,
   ConversationHistory,
@@ -25,6 +26,8 @@ export interface ConfigBridge {
   setAudioDevicePreferences(preferences: AudioDevicePreferences): Promise<RendererConfig>;
   setSecret(key: ConfigSecretKey, value: string): Promise<RendererConfig>;
   testSecret(key: ConfigSecretKey): Promise<{ ok: boolean; message?: string }>;
+  clearSecret?(key: ConfigSecretKey): Promise<RendererConfig>;
+  setProviderSettings?(patch: ProviderSettingsPatch): Promise<RendererConfig>;
 }
 
 export interface WakeWordBridge {

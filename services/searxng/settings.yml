@@ -1,0 +1,17 @@
+# SearXNG settings for the web_search tool. Everything not listed keeps SearXNG's defaults.
+use_default_settings: true
+
+general:
+  instance_name: aiembodied search
+
+server:
+  # The secret comes from SEARXNG_SECRET, which scripts/start.ps1 generates once.
+  limiter: false          # one local user; the limiter would throttle the assistant
+  public_instance: false
+  image_proxy: false
+
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json                # the app reads JSON; without this SearXNG answers 403

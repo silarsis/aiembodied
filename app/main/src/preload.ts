@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { ConfigSecretKey, RendererConfig } from './config/config-manager.js';
 import type { AudioDevicePreferences } from './config/preferences-store.js';
+import type { ProviderSettingsPatch } from './config/provider-settings.js';
 import type {
   AvatarModelSummary,
   AvatarModelUploadRequest,
@@ -142,6 +143,8 @@ export interface ConfigBridge {
   setAudioDevicePreferences(preferences: AudioDevicePreferences): Promise<RendererConfig>;
   setSecret(key: ConfigSecretKey, value: string): Promise<RendererConfig>;
   testSecret(key: ConfigSecretKey): Promise<{ ok: boolean; message?: string }>;
+  clearSecret(key: ConfigSecretKey): Promise<RendererConfig>;
+  setProviderSettings(patch: ProviderSettingsPatch): Promise<RendererConfig>;
 }
 
 export interface PreloadApi {
@@ -282,6 +285,8 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       ipcRenderer.invoke('config:set-secret', { key, value }) as Promise<RendererConfig>,
     testSecret: (key) =>
       ipcRenderer.invoke('config:test-secret', key) as Promise<{ ok: boolean; message?: string }>,
+    clearSecret: (key) => ipcRenderer.invoke('config:clear-secret', key) as Promise<RendererConfig>,
+    setProviderSettings: (patch) => ipcRenderer.invoke('config:set-providers', patch) as Promise<RendererConfig>,
     setAudioDevicePreferences: (preferences) =>
       ipcRenderer.invoke('config:set-audio-devices', preferences) as Promise<RendererConfig>,
   },

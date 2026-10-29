@@ -1,9 +1,28 @@
 /** IPC contract for the local conversation backend (local LLM + services/speech). */
 
+export interface LocalVoiceSttStatus {
+  provider?: 'local' | 'openai';
+  available: boolean;
+  model: string | null;
+  /** Set when local STT runs on its own server (Qwen3-ASR on llama-server). */
+  url: string | null;
+}
+
+export interface LocalVoiceTtsStatus {
+  provider: 'kokoro' | 'openai';
+  available: boolean;
+  ready: boolean;
+  model: string | null;
+  voice: string | null;
+  error: string | null;
+}
+
 export interface LocalVoiceStatus {
-  llm: { available: boolean; model: string; baseUrl: string };
-  /** Speech-to-text; `url` is set when it runs on its own server (Qwen3-ASR on llama-server). */
-  stt?: { available: boolean; model: string | null; url: string | null };
+  llm: { available: boolean; model: string; baseUrl: string; provider?: 'local' | 'openai' };
+  stt?: LocalVoiceSttStatus;
+  /** The text-to-speech engine in use (Kokoro through services/speech, or OpenAI). */
+  tts?: LocalVoiceTtsStatus;
+  /** services/speech, reported even when OpenAI does the speech (its voice list feeds Settings). */
   speech: {
     available: boolean;
     ready: boolean;
@@ -37,4 +56,14 @@ export interface LocalVoiceRespondResult {
 export type LocalVoiceEvent =
   /** One spoken sentence: its raw text (avatar tags included) and its audio as 16-bit WAV. */
   | { requestId: string; type: 'sentence'; index: number; text: string; wav: Uint8Array }
-  | { requestId: string; type: 'error'; message: string };
+  | { requestId: string; type: 'error'; message: string }
+  /** A tool call the model made: sent as it starts, and again when it finishes. */
+  | {
+      requestId: string;
+      type: 'tool';
+      callId: string;
+      name: string;
+      label: string;
+      status: 'started' | 'done' | 'failed';
+      detail?: string;
+    };

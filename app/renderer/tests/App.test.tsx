@@ -6,6 +6,7 @@ import type {
   ConversationSession,
 } from '../../main/src/conversation/types.js';
 import type { RendererConfig } from '../../main/src/config/config-manager.js';
+import { DEFAULT_PROVIDER_SETTINGS } from '../../main/src/config/provider-settings.js';
 import type { WakeWordDetectionEvent } from '../../main/src/wake-word/types.js';
 import type { AvatarBridge } from '../src/avatar/types.js';
 
@@ -247,6 +248,7 @@ describe('App component', () => {
       featureFlags: { transcriptOverlay: true },
       hasRealtimeApiKey: true,
       conversationBackend: 'openai',
+      providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
       realtimeVoice: 'shimmer',
       metrics: {
         enabled: false,
@@ -339,6 +341,7 @@ describe('App component', () => {
       'ChatGPT',
       'Character',
       'Local',
+      'Settings',
       'MCP Servers',
     ]);
 
@@ -349,7 +352,11 @@ describe('App component', () => {
 
     await openTab(/Character/i);
     const characterPanel = screen.getByRole('tabpanel', { name: /Character/i });
-    expect(within(characterPanel).getByLabelText('Voice')).toBeInTheDocument();
+    expect(within(characterPanel).getByLabelText(/Base prompt/i)).toBeInTheDocument();
+
+    await openTab(/Settings/i);
+    const settingsPanel = screen.getByRole('tabpanel', { name: /Settings/i });
+    expect(within(settingsPanel).getByLabelText('Realtime voice')).toBeInTheDocument();
 
     await openTab(/Local/i);
     const localPanel = await screen.findByRole('tabpanel', { name: /Local/i });
@@ -428,9 +435,9 @@ describe('App component', () => {
 
       render(<App />);
 
-      await openTab(/Character/i);
+      await openTab(/Settings/i);
 
-      const select = (await screen.findByLabelText('Voice')) as HTMLSelectElement;
+      const select = (await screen.findByLabelText('Realtime voice')) as HTMLSelectElement;
       const optionValues = Array.from(select.options).map((option) => option.value);
 
       expect(optionValues).toEqual([
@@ -489,9 +496,9 @@ describe('App component', () => {
 
       render(<App />);
 
-      await openTab(/Character/i);
+      await openTab(/Settings/i);
 
-      const select = (await screen.findByLabelText('Voice')) as HTMLSelectElement;
+      const select = (await screen.findByLabelText('Realtime voice')) as HTMLSelectElement;
 
       await waitFor(() => {
         expect(select.value).toBe('config-custom');
@@ -700,9 +707,10 @@ describe('App component', () => {
       });
     });
 
+    await openTab(/Settings/i);
     expect(screen.getByRole('heading', { level: 2, name: /API keys/i })).toBeInTheDocument();
     const realtimeCard = screen
-      .getByRole('heading', { name: /OpenAI Realtime API key/i })
+      .getByRole('heading', { name: /OpenAI API key/i })
       .closest('article');
     expect(realtimeCard).not.toBeNull();
     if (realtimeCard) {
@@ -1094,10 +1102,10 @@ describe('App component', () => {
 
     render(<App />);
 
-    await openTab(/Local/i);
+    await openTab(/Settings/i);
 
     const realtimeHeading = await screen.findByRole('heading', {
-      name: /OpenAI Realtime API key/i,
+      name: /OpenAI API key/i,
     });
     const realtimePanel = realtimeHeading.closest('article');
     expect(realtimePanel).not.toBeNull();
@@ -1106,7 +1114,7 @@ describe('App component', () => {
     }
 
     const input = within(realtimePanel).getByLabelText(
-      /New OpenAI Realtime API key/i,
+      /New OpenAI API key/i,
     ) as HTMLInputElement;
     fireEvent.change(input, { target: { value: ' new-secret ' } });
 
@@ -1151,10 +1159,10 @@ describe('App component', () => {
       __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
 
-    await openTab(/Local/i);
+    await openTab(/Settings/i);
 
     const realtimeHeading = await screen.findByRole('heading', {
-      name: /OpenAI Realtime API key/i,
+      name: /OpenAI API key/i,
     });
     const realtimePanel = realtimeHeading.closest('article');
     expect(realtimePanel).not.toBeNull();
@@ -1163,7 +1171,7 @@ describe('App component', () => {
     }
 
     const input = within(realtimePanel).getByLabelText(
-      /New OpenAI Realtime API key/i,
+      /New OpenAI API key/i,
     ) as HTMLInputElement;
     fireEvent.change(input, { target: { value: ' late-secret ' } });
 
@@ -1322,9 +1330,9 @@ describe('App component', () => {
       const initialConnectCalls = instance.connect.mock.calls.length;
       const initialDisconnectCalls = instance.disconnect.mock.calls.length;
 
-      await openTab(/Character/i);
+      await openTab(/Settings/i);
 
-      const voiceSelect = (await screen.findByLabelText('Voice')) as HTMLSelectElement;
+      const voiceSelect = (await screen.findByLabelText('Realtime voice')) as HTMLSelectElement;
       fireEvent.change(voiceSelect, { target: { value: 'ash' } });
 
       await waitFor(() => {
