@@ -1121,7 +1121,9 @@ export default function App() {
   // The local backend needs no API key; OpenAI Realtime does.
   const canConnectConversation = isLocalBackend || hasRealtimeApiKey;
   const wakePhrase = config?.wakeWord?.keywordLabel;
-  const realtimeModel = config?.realtimeModel || undefined;
+  // A saved gpt-4o-realtime-preview model is retired (model_not_found); fall back to the default.
+  const realtimeModel =
+    config?.realtimeModel && !config.realtimeModel.startsWith('gpt-4o-realtime-preview') ? config.realtimeModel : undefined;
   // Only the local backend has models of its own to report on.
   const modelStatuses = useMemo(
     () =>
