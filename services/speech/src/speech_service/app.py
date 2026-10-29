@@ -26,6 +26,8 @@ class TtsRequest(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
     voice: Optional[str] = None
     speed: float = Field(default=1.0, ge=0.5, le=2.0)
+    # Chatterbox (original) emotion dial: 0.5 neutral, 0.7+ animated. Ignored by other engines.
+    exaggeration: Optional[float] = Field(default=None, ge=0.0, le=2.0)
 
 
 class ApiError(Exception):
@@ -143,7 +145,7 @@ def create_app(transcriber: Transcriber, synthesizer: Synthesizer, default_voice
             raise ApiError(400, f"unknown voice {voice!r}")
         started = time.perf_counter()
         with tts_lock:
-            samples, rate = synthesizer.synthesize(body.text.strip(), voice, body.speed)
+            samples, rate = synthesizer.synthesize(body.text.strip(), voice, body.speed, body.exaggeration)
         elapsed = time.perf_counter() - started
         log.info("tts %d chars -> %.2f s audio in %d ms", len(body.text), len(samples) / rate, _ms(elapsed))
         return Response(

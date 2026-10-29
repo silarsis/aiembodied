@@ -57,7 +57,7 @@ export function describeLocalServices(repoRoot, env) {
     },
     {
       id: 'speech',
-      label: 'speech service (Kokoro TTS)',
+      label: 'speech service (Kokoro or Chatterbox TTS)',
       enabled: local,
       url: speechUrl,
       probe: `${speechUrl}/health`,

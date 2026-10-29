@@ -6,6 +6,7 @@
   .\scripts\start.ps1 -KokoroDir C:\Users\kevin\repos\github\silarsis\slopcore\experiments\kokoro
   .\scripts\start.ps1 -KokoroDir <dir> -Stt whisper -WhisperModel large-v3-turbo
   .\scripts\start.ps1 -KokoroDir <dir> -SttUrl http://127.0.0.1:1240/v1 -SttModel my-asr
+  .\scripts\start.ps1 -KokoroDir <dir> -Tts chatterbox     # expressive voice, voices\isabella.wav
   .\scripts\start.ps1 -Fake          # no models: canned transcript + a tone
 #>
 param(
@@ -20,6 +21,10 @@ param(
   [string]$SttModel = $(if ($env:STT_MODEL) { $env:STT_MODEL } else { 'qwen3-asr' }),
   [string]$WhisperModel = $(if ($env:WHISPER_MODEL) { $env:WHISPER_MODEL } else { 'small.en' }),
   [string]$Voice = $(if ($env:KOKORO_VOICE) { $env:KOKORO_VOICE } else { 'bf_lily' }),
+  # chatterbox: an expressive voice cloned from voices\<ChatterboxVoice>.wav; Kokoro stays loaded
+  # for its presets and as the fallback. Model, dtype etc. come from CHATTERBOX_* (see README).
+  [ValidateSet('kokoro', 'chatterbox')] [string]$Tts = $(if ($env:TTS_ENGINE) { $env:TTS_ENGINE } else { 'kokoro' }),
+  [string]$ChatterboxVoice = $(if ($env:CHATTERBOX_VOICE) { $env:CHATTERBOX_VOICE } else { 'isabella' }),
   [switch]$Fake,
   [string]$Venv = $env:SPEECH_VENV
 )
@@ -37,11 +42,18 @@ if ($Fake) {
   $cliArgs += @('--kokoro-model', (Join-Path $KokoroDir 'kokoro-v1.0.onnx'),
                 '--kokoro-voices', (Join-Path $KokoroDir 'voices-v1.0.bin'),
                 '--voice', $Voice, '--stt', $Stt, '--stt-url', $SttUrl, '--stt-model', $SttModel,
-                '--whisper-model', $WhisperModel)
+                '--whisper-model', $WhisperModel, '--tts', $Tts, '--chatterbox-voice', $ChatterboxVoice)
+  $voicesDir = if ($env:CHATTERBOX_VOICES) { $env:CHATTERBOX_VOICES } else { Join-Path $root 'voices' }
+  $reference = Join-Path $voicesDir "$ChatterboxVoice.wav"
+  if ($Tts -eq 'chatterbox' -and $ChatterboxVoice -eq 'isabella' -and -not (Test-Path $reference)) {
+    # First run: make the default reference clip from Kokoro's bf_isabella (British).
+    & $python -m speech_service.make_voice --kokoro-dir $KokoroDir --voice bf_isabella --out $reference
+    if ($LASTEXITCODE -ne 0) { throw "Could not make $reference" }
+  }
 }
 
 $env:HF_HUB_DISABLE_SYMLINKS_WARNING = '1'
-Write-Host "Starting speech service on http://${HostName}:$Port (stt: $Stt, python: $python)"
+Write-Host "Starting speech service on http://${HostName}:$Port (stt: $Stt, tts: $Tts, python: $python)"
 # Native stderr (llama.cpp/uvicorn logs) must not become terminating errors under 'Stop'.
 $ErrorActionPreference = 'Continue'
 & $python @cliArgs

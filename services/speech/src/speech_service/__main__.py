@@ -1,10 +1,13 @@
-"""python -m speech_service [--host 127.0.0.1] [--port 8192] [--stt server|whisper] [--voice bf_lily] ..."""
+"""python -m speech_service [--host 127.0.0.1] [--port 8192] [--stt server|whisper] [--tts kokoro|chatterbox] ..."""
 
 from __future__ import annotations
 
 import argparse
 import logging
 import os
+from pathlib import Path
+
+DEFAULT_VOICES_DIR = Path(__file__).resolve().parents[2] / "voices"
 
 
 def main(argv=None) -> None:
@@ -31,13 +34,30 @@ def main(argv=None) -> None:
     ap.add_argument("--style-row", type=int, default=int(os.environ.get("KOKORO_STYLE_ROW", "120")),
                     help="Kokoro style row used for every sentence, so the voice stays consistent "
                          "(-1: let kokoro-onnx pick by text length)")
+    ap.add_argument("--tts", choices=["kokoro", "chatterbox"], default=os.environ.get("TTS_ENGINE", "kokoro"),
+                    help="chatterbox: an expressive voice cloned from a reference clip, with Kokoro "
+                         "still serving its presets and standing in if Chatterbox fails to load")
+    ap.add_argument("--chatterbox-model", default=os.environ.get("CHATTERBOX_MODEL", "onnx-community/chatterbox-ONNX"),
+                    help="Hugging Face repo or local folder: onnx-community/chatterbox-ONNX (emotion dial) "
+                         "or ResembleAI/chatterbox-turbo-ONNX (faster, [laugh]/[sigh] tags)")
+    ap.add_argument("--chatterbox-voices", default=os.environ.get("CHATTERBOX_VOICES", str(DEFAULT_VOICES_DIR)),
+                    help="folder of reference WAV clips; each file is a voice named by its stem")
+    ap.add_argument("--chatterbox-voice", default=os.environ.get("CHATTERBOX_VOICE", "isabella"),
+                    help="default Chatterbox voice (a file stem in --chatterbox-voices)")
+    ap.add_argument("--chatterbox-dtype", default=os.environ.get("CHATTERBOX_DTYPE", "fp32"),
+                    choices=["fp32", "fp16", "q8", "q4", "q4f16"])
+    ap.add_argument("--chatterbox-providers", default=os.environ.get("CHATTERBOX_PROVIDERS", "cpu"),
+                    help="ONNX Runtime providers in order: cpu, dml (DirectML, needs onnxruntime-directml)")
+    ap.add_argument("--chatterbox-threads", type=int, default=int(os.environ.get("CHATTERBOX_THREADS", "0")))
+    ap.add_argument("--exaggeration", type=float, default=float(os.environ.get("CHATTERBOX_EXAGGERATION", "0.6")),
+                    help="default Chatterbox emotion dial: 0.5 neutral, 0.7+ animated")
     ap.add_argument("--log-level", default="info")
     a = ap.parse_args(argv)
 
     logging.basicConfig(level=a.log_level.upper(), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-    from .engines import (ChatAudioTranscriber, FakeSynthesizer, FakeTranscriber, KokoroSynthesizer,
-                          WhisperTranscriber)
+    from .engines import (ChatAudioTranscriber, ChatterboxSynthesizer, FakeSynthesizer, FakeTranscriber,
+                          KokoroSynthesizer, RoutingSynthesizer, WhisperTranscriber)
 
     if a.engines == "fake":
         transcriber, synthesizer, voice = FakeTranscriber(), FakeSynthesizer(), "fake_voice"
@@ -51,6 +71,12 @@ def main(argv=None) -> None:
         synthesizer = KokoroSynthesizer(a.kokoro_model, a.kokoro_voices,
                                         style_row=None if a.style_row < 0 else a.style_row)
         voice = a.voice
+        if a.tts == "chatterbox":
+            chatterbox = ChatterboxSynthesizer(
+                a.chatterbox_model, a.chatterbox_voices, dtype=a.chatterbox_dtype, exaggeration=a.exaggeration,
+                providers=a.chatterbox_providers, threads=a.chatterbox_threads)
+            synthesizer = RoutingSynthesizer(chatterbox, synthesizer, fallback_voice=a.voice)
+            voice = a.chatterbox_voice
 
     import uvicorn
 

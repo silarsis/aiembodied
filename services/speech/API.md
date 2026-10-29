@@ -26,8 +26,13 @@ Body: a 16-bit PCM WAV file (any sample rate or channel count; it is downmixed a
 
 ## `POST /v1/tts`
 
-Body: `{ "text": "Hello.", "voice": "bf_lily", "speed": 1.0 }` (`voice` and `speed` optional;
-`speed` 0.5–2.0; `text` up to 2000 characters).
+Body: `{ "text": "Hello.", "voice": "bf_lily", "speed": 1.0, "exaggeration": 0.7 }` (all but `text`
+optional; `speed` 0.5–2.0, ignored by Chatterbox; `exaggeration` 0–2, Chatterbox's emotion dial,
+ignored by Turbo and Kokoro; `text` up to 2000 characters).
+
+With `--tts chatterbox`, `voices` lists Kokoro presets and Chatterbox reference voices together,
+and `voice` picks the engine. `tts` in `/health` then also carries `variant`, `exaggeration`,
+`fallback` (the Kokoro settings) and `chatterbox_error`.
 
 Returns `audio/wav` (16-bit PCM mono, 24 kHz for Kokoro) with headers `X-Audio-Ms` and
 `X-Synthesize-Ms`.
