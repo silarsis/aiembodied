@@ -265,6 +265,7 @@ vi.mock('electron', () => ({
   dialog: dialogMock,
   ipcMain: ipcMainMock,
   Tray: TrayMock,
+  globalShortcut: { register: vi.fn(() => true), unregister: vi.fn() },
   Menu: { buildFromTemplate: menuBuildFromTemplateMock },
   nativeImage: nativeImageMock,
 }));
