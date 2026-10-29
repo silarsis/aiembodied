@@ -464,7 +464,7 @@ async function refreshAvatarDescriptionService(
 async function applyProviderSettings(manager: ConfigManager): Promise<void> {
   const config = manager.getConfig();
   const { providers } = config;
-  const engines = buildVoiceEngines(providers, config.realtimeApiKey ?? '');
+  const engines = buildVoiceEngines(providers, config.realtimeApiKey ?? '', { logger });
   if (localVoiceService) {
     localVoiceService.configure(engines);
   } else {

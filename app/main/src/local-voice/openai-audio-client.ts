@@ -1,11 +1,8 @@
 /**
- * OpenAI speech-to-text (/v1/audio/transcriptions) and text-to-speech (/v1/audio/speech), the
- * optional cloud stand-ins for services/speech. Both need the OpenAI API key.
+ * OpenAI speech-to-text (/v1/audio/transcriptions), the optional cloud stand-in for services/speech
+ * STT. Text-to-speech goes through the Realtime API instead (openai-realtime-tts.ts).
  */
 import { OPENAI_API_BASE_URL } from './local-llm-client.js';
-
-/** OpenAI's raw `pcm` output: 24 kHz, 16-bit signed little-endian, mono. */
-const OPENAI_PCM_SAMPLE_RATE = 24_000;
 
 export interface OpenAiAudioClientOptions {
   apiKey: string;
@@ -56,32 +53,6 @@ export class OpenAiAudioClient {
       text: typeof body.text === 'string' ? body.text : '',
       timings: { total: (performance.now() - startedAt) / 1000 },
     };
-  }
-
-  /** Speak `text`; returns a 16-bit PCM WAV, the same format services/speech returns. */
-  async synthesize(
-    request: { text: string; model: string; voice: string; instructions?: string },
-    options: { signal?: AbortSignal } = {},
-  ): Promise<Uint8Array> {
-    // Only gpt-4o-mini-tts takes a style prompt; tts-1 and tts-1-hd reject it.
-    const instructions = request.model.startsWith('tts-1') ? undefined : request.instructions?.trim() || undefined;
-    const response = await this.fetchFn(`${this.baseUrl}/audio/speech`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...this.authHeaders() },
-      body: JSON.stringify({
-        model: request.model,
-        voice: request.voice,
-        input: request.text,
-        // Raw PCM rather than wav: a streamed wav carries placeholder sizes in its header.
-        response_format: 'pcm',
-        ...(instructions ? { instructions } : {}),
-      }),
-      signal: options.signal,
-    });
-    if (!response.ok) {
-      throw new Error(`OpenAI text-to-speech failed: HTTP ${response.status} ${await errorText(response)}`);
-    }
-    return pcm16ToWav(new Uint8Array(await response.arrayBuffer()), OPENAI_PCM_SAMPLE_RATE);
   }
 
   private authHeaders(): Record<string, string> {

@@ -5,7 +5,6 @@ import type { LocalVoiceStatus } from '../../../main/src/local-voice/types.js';
 import {
   ProviderSettingsPanel,
   diffProviderSettings,
-  openAiVoicesFor,
 } from '../../src/settings/provider-settings-panel.js';
 import { describeServiceProblem } from '../../src/realtime/local-voice-client.js';
 
@@ -58,7 +57,12 @@ describe('ProviderSettingsPanel', () => {
 
     const voice = screen.getByLabelText('Voice') as HTMLSelectElement;
     expect(voice.value).toBe('alloy');
-    expect(Array.from(voice.options).map((o) => o.value)).toContain('marin');
+    expect(Array.from(voice.options).map((o) => o.value)).toEqual([
+      'alloy', 'ash', 'ballad', 'cedar', 'coral', 'echo', 'marin', 'sage', 'shimmer', 'verse',
+    ]);
+    expect((screen.getByLabelText('Model', { selector: '#settings-tts-openai-model' }) as HTMLInputElement).value).toBe(
+      'gpt-realtime-2.1-mini',
+    );
     expect(screen.getByLabelText('Voice style')).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent(/no OpenAI API key/i);
 
@@ -95,11 +99,6 @@ describe('provider settings helpers', () => {
     expect(diffProviderSettings(saved, defaults())).toEqual({});
   });
 
-  it('limits tts-1 to its own voices', () => {
-    expect(openAiVoicesFor('tts-1')).not.toContain('marin');
-    expect(openAiVoicesFor('gpt-4o-mini-tts')).toContain('marin');
-  });
-
   it('only needs the speech service for the parts that use it', () => {
     const down = { ...voiceStatus.speech, available: false, ready: false };
     expect(describeServiceProblem({ ...voiceStatus, speech: down })).toMatch(/Speech service is not running/);
@@ -108,7 +107,7 @@ describe('provider settings helpers', () => {
         ...voiceStatus,
         speech: down,
         stt: { provider: 'openai', available: true, model: 'gpt-4o-mini-transcribe', url: null },
-        tts: { provider: 'openai', available: true, ready: true, model: 'gpt-4o-mini-tts', voice: 'alloy', error: null },
+        tts: { provider: 'openai', available: true, ready: true, model: 'gpt-realtime-2.1-mini', voice: 'alloy', error: null },
       }),
     ).toBeNull();
     expect(

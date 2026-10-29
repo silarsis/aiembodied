@@ -80,7 +80,10 @@ export class LocalVoiceService {
     this.llm = engines.llm ?? this.llm;
     this.speech = engines.speech ?? this.speech;
     this.stt = engines.stt ?? this.stt;
-    this.tts = engines.tts ?? this.tts;
+    if (engines.tts && engines.tts !== this.tts) {
+      this.tts.close?.();
+      this.tts = engines.tts;
+    }
   }
 
   async status(): Promise<LocalVoiceStatus> {

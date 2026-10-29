@@ -26,14 +26,14 @@ describe('describeModels', () => {
     const models = describeModels(
       voice({
         llm: { available: true, model: 'gpt-4.1-mini', baseUrl: 'https://api.openai.com/v1', provider: 'openai' },
-        tts: { provider: 'openai', available: true, ready: true, model: 'gpt-4o-mini-tts', voice: 'alloy', error: null },
+        tts: { provider: 'openai', available: true, ready: true, model: 'gpt-realtime-2.1-mini', voice: 'alloy', error: null },
         speech: { ...voice().speech, available: false, ready: false },
       }),
       { provider: 'openai', available: true, ready: false, backend: null, device: null, model: 'gpt-4.1-mini' },
     );
     const byId = Object.fromEntries(models.map((m) => [m.id, m]));
     expect(byId.llm).toMatchObject({ state: 'ready', model: 'OpenAI gpt-4.1-mini' });
-    expect(byId.tts).toMatchObject({ state: 'ready', model: 'OpenAI gpt-4o-mini-tts alloy' });
+    expect(byId.tts).toMatchObject({ state: 'ready', model: 'OpenAI gpt-realtime-2.1-mini alloy' });
     expect(byId.motion).toMatchObject({ state: 'ready', model: 'OpenAI gpt-4.1-mini' });
   });
 

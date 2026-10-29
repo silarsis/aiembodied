@@ -375,7 +375,7 @@ describe('ConfigManager', () => {
       tts: { provider: 'openai', openaiVoice: 'coral' },
       llm: { provider: 'bogus' as never },
     });
-    expect(next.providers.tts).toMatchObject({ provider: 'openai', openaiVoice: 'coral', openaiModel: 'gpt-4o-mini-tts' });
+    expect(next.providers.tts).toMatchObject({ provider: 'openai', openaiVoice: 'coral', openaiModel: 'gpt-realtime-2.1-mini' });
     expect(next.providers.llm.provider).toBe('local');
     expect(next.providers.llm.localModel).toBe('env-model');
 

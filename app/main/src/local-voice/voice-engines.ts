@@ -2,7 +2,8 @@
 import type { ProviderSettings } from '../config/provider-settings.js';
 import { LocalLlmClient, OPENAI_API_BASE_URL } from './local-llm-client.js';
 import { OpenAiAudioClient } from './openai-audio-client.js';
-import { KokoroTts, OpenAiStt, OpenAiTts, SpeechServiceStt } from './speech-engines.js';
+import { OpenAiRealtimeTts, type RealtimeSocketFactory } from './openai-realtime-tts.js';
+import { KokoroTts, OpenAiStt, SpeechServiceStt } from './speech-engines.js';
 import type { SpeechToTextEngine, TextToSpeechEngine } from './speech-engines.js';
 import { SpeechServiceClient } from './speech-service-client.js';
 
@@ -13,7 +14,12 @@ export interface VoiceEngines {
   tts: TextToSpeechEngine;
 }
 
-export function buildVoiceEngines(providers: ProviderSettings, apiKey: string, fetchFn?: typeof fetch): VoiceEngines {
+export function buildVoiceEngines(
+  providers: ProviderSettings,
+  apiKey: string,
+  options: { fetchFn?: typeof fetch; createSocket?: RealtimeSocketFactory; logger?: Pick<Console, 'warn'> } = {},
+): VoiceEngines {
+  const { fetchFn } = options;
   const speech = new SpeechServiceClient({ baseUrl: providers.speechServiceUrl, fetchFn });
   const openai = new OpenAiAudioClient({ apiKey, fetchFn });
 
@@ -33,10 +39,13 @@ export function buildVoiceEngines(providers: ProviderSettings, apiKey: string, f
 
   const tts: TextToSpeechEngine =
     providers.tts.provider === 'openai'
-      ? new OpenAiTts(openai, {
+      ? new OpenAiRealtimeTts({
+          apiKey,
           model: providers.tts.openaiModel,
           voice: providers.tts.openaiVoice,
-          instructions: providers.tts.openaiInstructions,
+          style: providers.tts.openaiInstructions,
+          createSocket: options.createSocket,
+          logger: options.logger,
         })
       : new KokoroTts(speech, providers.tts.kokoroVoice);
 

@@ -9,29 +9,11 @@ import type { AvatarMotionStatus } from '../avatar/types.js';
 /** Suggestions only: every model field also takes any other model name. */
 const OPENAI_LLM_MODELS = ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4.1-nano', 'gpt-4o-mini', 'gpt-4o'];
 const OPENAI_STT_MODELS = ['gpt-4o-mini-transcribe', 'gpt-4o-transcribe', 'whisper-1'];
-const OPENAI_TTS_MODELS = ['gpt-4o-mini-tts', 'tts-1', 'tts-1-hd'];
+/** Realtime API models; OpenAI is retiring the /v1/audio/speech ones (tts-1, gpt-4o-mini-tts). */
+const OPENAI_TTS_MODELS = ['gpt-realtime-2.1-mini', 'gpt-realtime-2.1', 'gpt-realtime-2'];
 const OPENAI_MOTION_MODELS = ['gpt-4.1-mini', 'gpt-4.1'];
-export const OPENAI_TTS_VOICES = [
-  'alloy',
-  'ash',
-  'ballad',
-  'cedar',
-  'coral',
-  'echo',
-  'fable',
-  'marin',
-  'nova',
-  'onyx',
-  'sage',
-  'shimmer',
-  'verse',
-];
-/** tts-1 and tts-1-hd only have these; the others are gpt-4o-mini-tts voices. */
-const OPENAI_TTS_LEGACY_VOICES = new Set(['alloy', 'ash', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer']);
-
-export function openAiVoicesFor(model: string): string[] {
-  return model.startsWith('tts-1') ? OPENAI_TTS_VOICES.filter((voice) => OPENAI_TTS_LEGACY_VOICES.has(voice)) : OPENAI_TTS_VOICES;
-}
+/** The Realtime API's voices. */
+export const OPENAI_TTS_VOICES = ['alloy', 'ash', 'ballad', 'cedar', 'coral', 'echo', 'marin', 'sage', 'shimmer', 'verse'];
 
 /** The fields of `draft` that differ from `saved`, so only real changes are stored. */
 export function diffProviderSettings(saved: ProviderSettings, draft: ProviderSettings): ProviderSettingsPatch {
@@ -130,10 +112,9 @@ export function ProviderSettingsPanel({
     draft.tts.kokoroVoice && !kokoroVoices.includes(draft.tts.kokoroVoice)
       ? [draft.tts.kokoroVoice, ...kokoroVoices]
       : kokoroVoices;
-  const openAiVoices = openAiVoicesFor(draft.tts.openaiModel);
-  const openAiVoiceOptions = openAiVoices.includes(draft.tts.openaiVoice)
-    ? openAiVoices
-    : [draft.tts.openaiVoice, ...openAiVoices];
+  const openAiVoiceOptions = OPENAI_TTS_VOICES.includes(draft.tts.openaiVoice)
+    ? OPENAI_TTS_VOICES
+    : [draft.tts.openaiVoice, ...OPENAI_TTS_VOICES];
   const localSttModel = voiceStatus?.stt?.provider !== 'openai' ? (voiceStatus?.stt?.model ?? voiceStatus?.speech.sttModel) : null;
   const runningMotionBackend = motionStatus?.provider !== 'openai' ? motionStatus?.backend : null;
 
@@ -269,19 +250,20 @@ export function ProviderSettingsPanel({
                 ))}
               </select>
             </div>
-            {draft.tts.openaiModel.startsWith('tts-1') ? null : (
-              <div className="control">
-                <label htmlFor="settings-tts-openai-instructions">Voice style</label>
-                <textarea
-                  id="settings-tts-openai-instructions"
-                  rows={2}
-                  placeholder="e.g. Warm and upbeat, with a light British accent."
-                  value={draft.tts.openaiInstructions}
-                  onChange={(event) => update('tts', { openaiInstructions: event.target.value })}
-                  disabled={busy}
-                />
-              </div>
-            )}
+            <div className="control">
+              <label htmlFor="settings-tts-openai-instructions">Voice style</label>
+              <textarea
+                id="settings-tts-openai-instructions"
+                rows={2}
+                placeholder="e.g. Warm and upbeat, with a light British accent."
+                value={draft.tts.openaiInstructions}
+                onChange={(event) => update('tts', { openaiInstructions: event.target.value })}
+                disabled={busy}
+              />
+            </div>
+            <p className="kiosk__helper">
+              Speaks through the OpenAI Realtime API, which reads each sentence aloud as written.
+            </p>
           </>
         )}
       </SettingsGroup>

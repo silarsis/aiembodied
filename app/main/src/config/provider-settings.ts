@@ -31,9 +31,10 @@ export interface ProviderSettings {
     provider: TtsProvider;
     /** Kokoro voice; empty means the speech service's default. */
     kokoroVoice: string;
+    /** A Realtime API model: the /v1/audio/speech models shut down on 2027-01-06. */
     openaiModel: string;
     openaiVoice: string;
-    /** Style prompt for gpt-4o-mini-tts (tone, accent, pace). Ignored by tts-1 and tts-1-hd. */
+    /** Speaking style (tone, accent, pace), added to the Realtime model's instructions. */
     openaiInstructions: string;
   };
   motion: {
@@ -69,7 +70,7 @@ export const DEFAULT_PROVIDER_SETTINGS: ProviderSettings = {
   tts: {
     provider: 'kokoro',
     kokoroVoice: '',
-    openaiModel: 'gpt-4o-mini-tts',
+    openaiModel: 'gpt-realtime-2.1-mini',
     openaiVoice: 'alloy',
     openaiInstructions: '',
   },

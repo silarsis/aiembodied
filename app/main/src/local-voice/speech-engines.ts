@@ -1,6 +1,7 @@
 /**
  * The speech-to-text and text-to-speech engines the conversation pipeline can use: services/speech
- * (Qwen3-ASR or faster-whisper, and Kokoro) or OpenAI's audio API.
+ * (Qwen3-ASR or faster-whisper, and Kokoro) or OpenAI (transcriptions API for STT; the Realtime
+ * API for TTS, in openai-realtime-tts.ts).
  */
 import type { OpenAiAudioClient } from './openai-audio-client.js';
 import type { SpeechServiceClient, SpeechServiceHealth } from './speech-service-client.js';
@@ -18,6 +19,8 @@ export interface TextToSpeechEngine {
   /** Speak `text`; returns a 16-bit PCM WAV. */
   synthesize(text: string, options?: CallOptions): Promise<Uint8Array>;
   status(speech: SpeechServiceHealth | null): LocalVoiceTtsStatus;
+  /** Release a held connection; called when settings swap the engine out. */
+  close?(): void;
 }
 
 export class SpeechServiceStt implements SpeechToTextEngine {
@@ -70,28 +73,5 @@ export class OpenAiStt implements SpeechToTextEngine {
 
   async status(): Promise<LocalVoiceSttStatus> {
     return { provider: 'openai', available: this.client.hasApiKey, model: this.model, url: null };
-  }
-}
-
-export class OpenAiTts implements TextToSpeechEngine {
-  constructor(
-    private readonly client: OpenAiAudioClient,
-    private readonly options: { model: string; voice: string; instructions?: string },
-  ) {}
-
-  synthesize(text: string, options?: CallOptions): Promise<Uint8Array> {
-    return this.client.synthesize({ text, ...this.options }, options);
-  }
-
-  status(): LocalVoiceTtsStatus {
-    const ready = this.client.hasApiKey;
-    return {
-      provider: 'openai',
-      available: ready,
-      ready,
-      model: this.options.model,
-      voice: this.options.voice,
-      error: ready ? null : 'OpenAI API key is not set.',
-    };
   }
 }
