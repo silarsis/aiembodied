@@ -114,7 +114,7 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
     },
     {
       id: 'searxng',
-      label: 'SearXNG web search (Docker)',
+      label: 'SearXNG web search (wslc or Docker container)',
       enabled: searchProviders.includes('searxng'),
       url: searxngUrl,
       probe: `${searxngUrl}/healthz`,
