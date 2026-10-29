@@ -7,7 +7,6 @@
  * is ignored, so the assistant never hears (and answers) its own voice through the speakers.
  * With `requireWakeWord`, an utterance is only answered if the wake word was heard during it,
  * or it began within `wakeWindowMs` of the wake word or of the end of the last reply.
- * `talk()` (push-to-talk, or a tap on the screen) opens the same window without the wake word.
  */
 import type { LocalVoiceBridge } from '../preload-api.js';
 import type { LocalVoiceEvent, LocalVoiceStatus } from '../../../main/src/local-voice/types.js';
