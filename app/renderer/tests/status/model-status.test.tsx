@@ -22,6 +22,21 @@ const voice = (overrides: Partial<LocalVoiceStatus> = {}): LocalVoiceStatus => (
 const motion = { available: true, ready: true, backend: 'ardy', device: 'cuda:0' };
 
 describe('describeModels', () => {
+  it('labels OpenAI parts and needs only the key for them', () => {
+    const models = describeModels(
+      voice({
+        llm: { available: true, model: 'gpt-4.1-mini', baseUrl: 'https://api.openai.com/v1', provider: 'openai' },
+        tts: { provider: 'openai', available: true, ready: true, model: 'gpt-realtime-2.1-mini', voice: 'alloy', error: null },
+        speech: { ...voice().speech, available: false, ready: false },
+      }),
+      { provider: 'openai', available: true, ready: false, backend: null, device: null, model: 'gpt-4.1-mini' },
+    );
+    const byId = Object.fromEntries(models.map((m) => [m.id, m]));
+    expect(byId.llm).toMatchObject({ state: 'ready', model: 'OpenAI gpt-4.1-mini' });
+    expect(byId.tts).toMatchObject({ state: 'ready', model: 'OpenAI gpt-realtime-2.1-mini alloy' });
+    expect(byId.motion).toMatchObject({ state: 'ready', model: 'OpenAI gpt-4.1-mini' });
+  });
+
   it('reports every model loaded when all checks pass', () => {
     const models = describeModels(voice(), motion);
     expect(models.map((m) => [m.id, m.state])).toEqual([

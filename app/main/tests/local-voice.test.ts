@@ -184,8 +184,9 @@ describe('LocalVoiceService', () => {
     });
 
     await expect(service.status()).resolves.toEqual({
-      llm: { available: true, model: 'qwen-next-flash', baseUrl: 'http://llm/v1' },
-      stt: { available: false, model: null, url: null },
+      llm: { available: true, model: 'qwen-next-flash', baseUrl: 'http://llm/v1', provider: 'local' },
+      stt: { provider: 'local', available: false, model: null, url: null },
+      tts: { provider: 'kokoro', available: false, ready: false, model: null, voice: null, error: null },
       speech: { available: false, ready: false, sttModel: null, ttsModel: null, voices: [], defaultVoice: null, error: null },
     });
   });
@@ -215,7 +216,8 @@ describe('LocalVoiceService', () => {
     });
 
     const status = await service.status();
-    expect(status.stt).toEqual({ available: false, model: 'qwen3-asr', url: 'http://asr/v1' });
+    expect(status.stt).toEqual({ provider: 'local', available: false, model: 'qwen3-asr', url: 'http://asr/v1' });
+    expect(status.tts).toMatchObject({ provider: 'kokoro', ready: true, voice: 'bf_lily' });
     expect(status.speech).toMatchObject({ available: true, ready: true, ttsModel: 'kokoro' });
     expect(fetchFn).toHaveBeenCalledWith('http://asr/v1/models', expect.anything());
   });

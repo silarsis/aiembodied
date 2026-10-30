@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain } from 'electron';
 import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,9 +39,9 @@ import { AvatarGenerationService } from './avatar/generation/avatar-generation-s
 import { ComfyUIClient } from './avatar/generation/comfyui-client.js';
 import { LocalMotionClient } from './avatar/motion/local-motion-client.js';
 import { LocalMotionGenerationService } from './avatar/motion/local-motion-generation-service.js';
-import { LocalLlmClient } from './local-voice/local-llm-client.js';
-import { SpeechServiceClient } from './local-voice/speech-service-client.js';
 import { LocalVoiceService } from './local-voice/local-voice-service.js';
+import { buildVoiceEngines } from './local-voice/voice-engines.js';
+import { describeProviders, type ProviderSettingsPatch } from './config/provider-settings.js';
 import type { LocalVoiceRespondRequest } from './local-voice/types.js';
 import type {
   AvatarModelSummary,
@@ -70,7 +70,10 @@ import {
 import { getOpenAIClient } from './openai/client.js';
 import { MCPManager } from './mcp/mcp-manager.js';
 import { ToolRegistry } from './tools/tool-registry.js';
+import { createWebSearchProvider, createWebSearchTool } from './tools/web-search.js';
 import { registerMCPHandlers } from './mcp/ipc-handlers.js';
+import { PushToTalkShortcut } from './talk/push-to-talk.js';
+import type { TalkTriggerEvent } from './talk/types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -133,6 +136,20 @@ try {
 const diagnostics = createAppDiagnostics({ logger });
 let mainWindow: BrowserWindow | null = null;
 let wakeWordService: WakeWordService | null = null;
+const pushToTalk = new PushToTalkShortcut({
+  globalShortcut,
+  onPress: () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('talk:trigger', { source: 'shortcut', timestamp: Date.now() } satisfies TalkTriggerEvent);
+    }
+  },
+  onStatus: (status) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('talk:shortcut-status', status);
+    }
+  },
+  logger: { info: (...args) => logger.info(...args), warn: (...args) => logger.warn(...args) },
+});
 let memoryStore: MemoryStore | null = null;
 let conversationManager: ConversationManager | null = null;
 let removeConversationListeners: (() => void) | null = null;
@@ -150,6 +167,8 @@ let avatarGenerationService: AvatarGenerationService | null = null;
 let localMotionService: LocalMotionGenerationService | null = null;
 let localVoiceService: LocalVoiceService | null = null;
 let currentVrmaApiKey: string | null = null;
+let currentVrmaModel: string | null = null;
+let currentMotionServiceUrl: string | null = null;
 let currentDescriptionApiKey: string | null = null;
 
 let toolRegistry: ToolRegistry | null = null;
@@ -321,7 +340,8 @@ async function refreshVrmaGenerationService(
     return;
   }
 
-  if (vrmaGenerationService && currentVrmaApiKey === nextKey) {
+  const model = config.providers.motion.openaiModel;
+  if (vrmaGenerationService && currentVrmaApiKey === nextKey && currentVrmaModel === model) {
     return;
   }
 
@@ -329,9 +349,11 @@ async function refreshVrmaGenerationService(
     vrmaGenerationService = new VrmaGenerationService({
       client: getOpenAIClient(nextKey),
       animationService: avatarAnimationService,
+      model,
       logger,
     });
     currentVrmaApiKey = nextKey;
+    currentVrmaModel = model;
     logger.info('VRMA generation service initialized.', { reason });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -451,6 +473,35 @@ async function refreshAvatarDescriptionService(
   }
 }
 
+/**
+ * Point the conversation pipeline and motion at the current provider settings and API key. Runs
+ * at startup and after every change on the Settings page, so a change applies without a restart
+ * (except the local motion model, which the launcher picks when it starts services/motion).
+ */
+async function applyProviderSettings(manager: ConfigManager): Promise<void> {
+  const config = manager.getConfig();
+  const { providers } = config;
+  const engines = buildVoiceEngines(providers, config.realtimeApiKey ?? '', { logger });
+  if (localVoiceService) {
+    localVoiceService.configure(engines);
+  } else {
+    localVoiceService = new LocalVoiceService({ ...engines, tools: toolRegistry ?? undefined, logger });
+  }
+
+  if (avatarAnimationService && currentMotionServiceUrl !== providers.motion.localServiceUrl) {
+    localMotionService = new LocalMotionGenerationService({
+      client: new LocalMotionClient({ baseUrl: providers.motion.localServiceUrl }),
+      animationService: avatarAnimationService,
+      logger,
+    });
+    currentMotionServiceUrl = providers.motion.localServiceUrl;
+  }
+
+  pushToTalk.apply(providers.talk?.shortcut ?? '');
+
+  await refreshVrmaGenerationService(manager, 'secret-update');
+}
+
 function registerIpcHandlers(
   manager: ConfigManager,
   conversation: ConversationManager | null,
@@ -486,6 +537,8 @@ function registerIpcHandlers(
     'config:set-secret',
     'config:test-secret',
     'config:set-audio-devices',
+    'config:clear-secret',
+    'config:set-providers',
   ] as const;
 
   logger.info('Initializing configuration bridge IPC handlers.', {
@@ -521,7 +574,7 @@ function registerIpcHandlers(
       };
     }
 
-    if (channel === 'config:get-secret' || channel === 'config:test-secret') {
+    if (channel === 'config:get-secret' || channel === 'config:test-secret' || channel === 'config:clear-secret') {
       const [key] = args as [ConfigSecretKey | undefined];
       return { key };
     }
@@ -553,7 +606,13 @@ function registerIpcHandlers(
     result: unknown,
     args: unknown[],
   ): Record<string, unknown> | undefined => {
-    if (channel === 'config:get' || channel === 'config:set-secret' || channel === 'config:set-audio-devices') {
+    if (
+      channel === 'config:get' ||
+      channel === 'config:set-secret' ||
+      channel === 'config:set-audio-devices' ||
+      channel === 'config:clear-secret' ||
+      channel === 'config:set-providers'
+    ) {
       if (result && typeof result === 'object') {
         return summarizeRendererConfig(result as RendererConfig);
       }
@@ -632,12 +691,24 @@ function registerIpcHandlers(
     const nextConfig = await manager.setSecret(payload.key, payload.value);
 
     if (payload.key === 'realtimeApiKey') {
-      await refreshVrmaGenerationService(manager, 'secret-update');
+      await applyProviderSettings(manager);
       await refreshPoseGenerationService(manager, 'secret-update');
     }
 
     return nextConfig;
   });
+  registerConfigHandler('config:clear-secret', async (_event, key: ConfigSecretKey) => {
+    const nextConfig = await manager.clearSecret(key);
+    await applyProviderSettings(manager);
+    await refreshPoseGenerationService(manager, 'secret-update');
+    return nextConfig;
+  });
+  registerConfigHandler('config:set-providers', async (_event, patch: ProviderSettingsPatch) => {
+    const nextConfig = await manager.setProviderSettings(patch ?? {});
+    await applyProviderSettings(manager);
+    return nextConfig;
+  });
+  ipcMain.handle('talk:get-shortcut-status', () => pushToTalk.getStatus());
   registerConfigHandler('config:test-secret', (_event, key: ConfigSecretKey) => manager.testSecret(key));
   registerConfigHandler('config:set-audio-devices', (_event, preferences) =>
     manager.setAudioDevicePreferences(preferences),
@@ -886,7 +957,8 @@ function registerIpcHandlers(
     return avatarAnimations.uploadAnimation(payload) as Promise<AvatarAnimationUploadResult>;
   });
   ipcMain.handle('avatar-animation:generate', async (_event, payload: AvatarAnimationGenerationRequest) => {
-    if (localMotionService && (await localMotionService.isReady())) {
+    const useLocalMotion = manager.getConfig().providers.motion.provider === 'local';
+    if (useLocalMotion && localMotionService && (await localMotionService.isReady())) {
       return localMotionService.generateAnimation(payload);
     }
 
@@ -895,7 +967,9 @@ function registerIpcHandlers(
     }
     if (!vrmaGenerationService) {
       throw new Error(
-        'Animation generation is unavailable. Start the local motion service or set REALTIME_API_KEY.',
+        useLocalMotion
+          ? 'Animation generation is unavailable. Start the local motion service or add an OpenAI API key in Settings.'
+          : 'OpenAI motion needs an OpenAI API key (Settings).',
       );
     }
 
@@ -905,8 +979,20 @@ function registerIpcHandlers(
     return vrmaGenerationService.generateAnimation({ ...payload, bones, modelDescription });
   });
   ipcMain.handle('avatar-motion:status', async (): Promise<AvatarMotionStatus> => {
+    const { providers, realtimeApiKey } = manager.getConfig();
+    if (providers.motion.provider === 'openai') {
+      return {
+        provider: 'openai',
+        available: Boolean(realtimeApiKey),
+        ready: false,
+        backend: null,
+        device: null,
+        model: providers.motion.openaiModel,
+      };
+    }
     const health = localMotionService ? await localMotionService.health() : null;
     return {
+      provider: 'local',
       available: Boolean(health),
       ready: health?.ready === true,
       backend: health?.backend ?? null,
@@ -914,7 +1000,7 @@ function registerIpcHandlers(
     };
   });
   ipcMain.handle('avatar-motion:stream', async (event, payload: AvatarMotionStreamRequest) => {
-    if (!localMotionService) {
+    if (!localMotionService || manager.getConfig().providers.motion.provider !== 'local') {
       throw new Error('Local motion service is unavailable.');
     }
 
@@ -1223,23 +1309,17 @@ app.whenReady().then(async () => {
   await refreshVrmaGenerationService(manager);
   await refreshPoseGenerationService(manager);
 
-  if (avatarAnimationService) {
-    localMotionService = new LocalMotionGenerationService({
-      client: new LocalMotionClient({ baseUrl: appConfig.motionServiceUrl }),
-      animationService: avatarAnimationService,
-      logger,
-    });
+  const webSearch = createWebSearchProvider(
+    appConfig.webSearch.provider,
+    { searxngUrl: appConfig.webSearch.searxngUrl, braveApiKey: appConfig.webSearch.braveApiKey },
+    logger,
+  );
+  if (webSearch && toolRegistry) {
+    toolRegistry.register(createWebSearchTool(webSearch));
+    logger.info('Web search tool registered', { provider: webSearch.name });
   }
 
-  localVoiceService = new LocalVoiceService({
-    llm: new LocalLlmClient({
-      baseUrl: appConfig.localConversation.llmBaseUrl,
-      model: appConfig.localConversation.llmModel,
-    }),
-    speech: new SpeechServiceClient({ baseUrl: appConfig.localConversation.speechServiceUrl }),
-    voice: appConfig.localConversation.voice,
-    logger,
-  });
+  await applyProviderSettings(manager);
 
   if (avatarModelService) {
     avatarGenerationService = new AvatarGenerationService({
@@ -1391,10 +1471,11 @@ app.whenReady().then(async () => {
     config: {
       hasRealtimeApiKey: Boolean(configSnapshot.realtimeApiKey),
       comfyUiBaseUrl: configSnapshot.comfyUiBaseUrl,
-      motionServiceUrl: configSnapshot.motionServiceUrl,
       conversationBackend: configSnapshot.conversationBackend,
-      localLlmBaseUrl: configSnapshot.localConversation.llmBaseUrl,
-      speechServiceUrl: configSnapshot.localConversation.speechServiceUrl,
+      providers: describeProviders(configSnapshot.providers),
+      motionServiceUrl: configSnapshot.providers.motion.localServiceUrl,
+      localLlmBaseUrl: configSnapshot.providers.llm.localBaseUrl,
+      speechServiceUrl: configSnapshot.providers.speechServiceUrl,
       wakeWordModel: configSnapshot.wakeWord.model,
     },
     avatar: { enabled: Boolean(avatarModelService) },
@@ -1465,6 +1546,7 @@ app.on('before-quit', async (event) => {
 
   diagnostics.dispose();
   crashGuard.notifyAppQuitting();
+  pushToTalk.dispose();
 
   // Async cleanup tasks
   const cleanupTasks: Promise<void>[] = [];

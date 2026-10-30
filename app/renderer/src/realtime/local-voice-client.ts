@@ -10,7 +10,7 @@
  * before the wake word is thrown away: an utterance that spans it is cut at the detection.
  */
 import type { LocalVoiceBridge } from '../preload-api.js';
-import type { LocalVoiceEvent } from '../../../main/src/local-voice/types.js';
+import type { LocalVoiceEvent, LocalVoiceStatus } from '../../../main/src/local-voice/types.js';
 import type { RealtimeClientCallbacks, RealtimeClientOptions, RealtimeClientState } from './realtime-client.js';
 import type { VoiceActivity, VoicePhase } from './voice-activity.js';
 
@@ -19,7 +19,11 @@ export interface LocalVoiceClientCallbacks extends RealtimeClientCallbacks {
   onAssistantTranscript?: (text: string) => void;
   /** Turn progress: waiting → listening → transcribing → thinking → responding. */
   onActivity?: (activity: VoiceActivity) => void;
+  /** A tool the model called (web_search, MCP tools), as it starts and when it finishes. */
+  onToolCall?: (event: LocalVoiceToolEvent) => void;
 }
+
+export type LocalVoiceToolEvent = Extract<LocalVoiceEvent, { type: 'tool' }>;
 
 export interface LocalVoiceClientOptions {
   getBridge: () => LocalVoiceBridge | undefined;
@@ -148,6 +152,37 @@ export class LocalVoiceClient {
     }
   }
 
+  /**
+   * Push-to-talk or a tap on the screen: answer what is said next, no wake word needed. Pressed
+   * again while speech is being captured, it sends that speech without waiting for a pause; pressed
+   * while a reply is being generated or spoken, it stops the reply and listens. Before the local
+   * services are up, listening starts as soon as they are.
+   */
+  talk(timestamp = this.now()): void {
+    this.awakeUntil = Math.max(this.awakeUntil, timestamp + this.wakeWindowMs);
+    if (this.state.status !== 'connected') {
+      return;
+    }
+    if (this.turn) {
+      this.log('info', 'Reply interrupted to talk');
+      void this.getBridge()?.cancel(this.turn.requestId);
+      // respond() then finishes the turn and listens for a follow-up.
+      this.turn.stop();
+      return;
+    }
+    if (this.busy) {
+      return;
+    }
+    if (this.activity.phase === 'listening') {
+      const utterance = this.segmenter.flush(this.now());
+      if (utterance) {
+        void this.handleUtterance(utterance);
+        return;
+      }
+    }
+    this.listen('Listening: no wake word needed');
+  }
+
   async connect(options: { apiKey?: string; inputStream: MediaStream }): Promise<void> {
     if (this.disposed) {
       throw new Error('Local voice client has been disposed.');
@@ -204,16 +239,7 @@ export class LocalVoiceClient {
   private async waitForServices(bridge: LocalVoiceBridge, connectionId: number): Promise<void> {
     let problem: string | null;
     try {
-      const status = await bridge.getStatus();
-      problem = !status.llm.available
-        ? `Local LLM is not reachable at ${status.llm.baseUrl} (start scripts/start-local-llm.ps1).`
-        : !status.speech.available
-          ? 'Speech service is not running (start services/speech/scripts/start.ps1).'
-          : status.speech.error
-            ? `Speech service failed: ${status.speech.error}`
-            : !status.speech.ready
-              ? 'Speech service is still loading its models.'
-              : null;
+      problem = describeServiceProblem(await bridge.getStatus());
     } catch (error) {
       problem = error instanceof Error ? error.message : String(error);
     }
@@ -235,7 +261,12 @@ export class LocalVoiceClient {
     }
 
     this.updateState({ status: 'connected' });
-    this.setActivity(this.requireWakeWord ? 'waiting' : 'listening');
+    if (this.requireWakeWord && this.awakeUntil > this.now()) {
+      // talk() was pressed while connecting.
+      this.listen('Listening: no wake word needed');
+    } else {
+      this.setActivity(this.requireWakeWord ? 'waiting' : 'listening');
+    }
     if (this.output) {
       this.callbacks.onRemoteStream?.(this.output.stream);
     }
@@ -356,6 +387,12 @@ export class LocalVoiceClient {
     } else if (event.type === 'error') {
       this.log('error', 'Local voice reply error', { message: event.message });
       this.setActivity('error', `Reply failed: ${event.message}`);
+    } else if (event.type === 'tool') {
+      this.log(event.status === 'failed' ? 'warn' : 'info', `Tool ${event.name} ${event.status}`, {
+        label: event.label,
+        detail: event.detail,
+      });
+      this.callbacks.onToolCall?.(event);
     }
   }
 
@@ -591,7 +628,14 @@ export class UtteranceSegmenter {
     if (!ended && !tooLong) {
       return null;
     }
+    return this.flush(nowMs);
+  }
 
+  /** End the utterance in progress now, without waiting for a pause; null if there is none. */
+  flush(nowMs: number): Utterance | null {
+    if (this.chunks.length === 0) {
+      return null;
+    }
     const utterance: Utterance = {
       samples: concat(this.chunks),
       sampleRate: this.sampleRate,
@@ -723,4 +767,31 @@ function wait(ms: number): Promise<void> {
 
 function describe(error: unknown): { message: string } {
   return { message: error instanceof Error ? error.message : String(error) };
+}
+
+/** Why the pipeline cannot take a turn yet, or null when every part it uses is ready. */
+export function describeServiceProblem(status: LocalVoiceStatus): string | null {
+  if (!status.llm.available) {
+    return status.llm.provider === 'openai'
+      ? 'The OpenAI language model needs an OpenAI API key (Settings).'
+      : `Local LLM is not reachable at ${status.llm.baseUrl} (start scripts/start-local-llm.ps1).`;
+  }
+  const sttOnOpenAi = status.stt?.provider === 'openai';
+  const ttsOnOpenAi = status.tts?.provider === 'openai';
+  if (sttOnOpenAi && !status.stt?.available) {
+    return 'OpenAI speech-to-text needs an OpenAI API key (Settings).';
+  }
+  if (ttsOnOpenAi && !status.tts?.available) {
+    return 'OpenAI text-to-speech needs an OpenAI API key (Settings).';
+  }
+  if (sttOnOpenAi && ttsOnOpenAi) {
+    return null;
+  }
+  return !status.speech.available
+    ? 'Speech service is not running (start services/speech/scripts/start.ps1).'
+    : status.speech.error
+      ? `Speech service failed: ${status.speech.error}`
+      : !status.speech.ready
+        ? 'Speech service is still loading its models.'
+        : null;
 }
