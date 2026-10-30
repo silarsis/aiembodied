@@ -6,6 +6,9 @@ import type {
 import type { LocalVoiceStatus } from '../../../main/src/local-voice/types.js';
 import type { AvatarMotionStatus } from '../avatar/types.js';
 import type { PushToTalkStatus } from '../../../main/src/talk/types.js';
+import type { WakeWordOption } from '../../../main/src/wake-word/types.js';
+import type { WakeWordBridge } from '../preload-api.js';
+import { WakeWordTraining, describeWakeWordOption, useWakeWordLibrary } from './wake-word-training.js';
 
 /** Suggestions only: every model field also takes any other model name. */
 const OPENAI_LLM_MODELS = ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4.1-nano', 'gpt-4o-mini', 'gpt-4o'];
@@ -44,6 +47,8 @@ export interface ProviderSettingsPanelProps {
   onSave(patch: ProviderSettingsPatch): Promise<void>;
   /** Whether the saved push-to-talk key could be registered. */
   pushToTalkStatus?: PushToTalkStatus | null;
+  /** Lists the wake words and trains new ones; without it only the current wake word shows. */
+  wakeWordBridge?: WakeWordBridge;
   disabled?: boolean;
 }
 
@@ -54,8 +59,10 @@ export function ProviderSettingsPanel({
   motionStatus,
   onSave,
   pushToTalkStatus = null,
+  wakeWordBridge,
   disabled = false,
 }: ProviderSettingsPanelProps) {
+  const wakeWords = useWakeWordLibrary(wakeWordBridge);
   const [draft, setDraft] = useState<ProviderSettings | null>(settings);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
@@ -125,6 +132,14 @@ export function ProviderSettingsPanel({
   const savedShortcutStatus = pushToTalkStatus?.shortcut === settings.talk.shortcut ? pushToTalkStatus : null;
   const shortcutActive = Boolean(savedShortcutStatus?.registered);
   const shortcutError = savedShortcutStatus?.error;
+  const wakeWordOptions: WakeWordOption[] = wakeWords.options ?? [];
+  if (!wakeWordOptions.some((option) => option.model === draft.wakeWord.model)) {
+    wakeWordOptions.unshift({
+      model: draft.wakeWord.model,
+      label: draft.wakeWord.model.split(/[\\/]/).pop()?.replace(/\.onnx$/i, '') ?? draft.wakeWord.model,
+      source: 'trained',
+    });
+  }
 
   return (
     <div className="providerSettings">
@@ -344,6 +359,49 @@ export function ProviderSettingsPanel({
           />
         </SettingsGroup>
       ) : null}
+
+      <SettingsGroup title="Wake word" id="wake">
+        <div className="control">
+          <label htmlFor="settings-wake-model">Listen for</label>
+          <select
+            id="settings-wake-model"
+            value={draft.wakeWord.model}
+            onChange={(event) => update('wakeWord', { model: event.target.value })}
+            disabled={busy}
+          >
+            {wakeWordOptions.map((option) => (
+              <option key={option.model} value={option.model}>
+                {describeWakeWordOption(option)}
+                {option.source === 'trained' ? ' (trained here)' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="control">
+          <label htmlFor="settings-wake-threshold">Detection threshold</label>
+          <input
+            id="settings-wake-threshold"
+            type="number"
+            min={0.1}
+            max={0.95}
+            step={0.05}
+            value={draft.wakeWord.threshold}
+            onChange={(event) => {
+              const threshold = Number(event.target.value);
+              if (Number.isFinite(threshold) && threshold > 0 && threshold < 1) {
+                update('wakeWord', { threshold });
+              }
+            }}
+            disabled={busy}
+          />
+        </div>
+        <p className="kiosk__helper">
+          Higher means fewer false wakes but more missed ones. 0.5 suits most models; try 0.7 if she wakes on her own.
+        </p>
+        {wakeWordBridge ? (
+          <WakeWordTraining training={wakeWords.training} onTrain={wakeWords.train} onCancel={wakeWords.cancel} disabled={disabled} />
+        ) : null}
+      </SettingsGroup>
 
       <SettingsGroup title="Talking without the wake word" id="talk">
         <ShortcutField

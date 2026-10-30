@@ -8,7 +8,11 @@ import type {
   ConversationSession,
 } from '../../main/src/conversation/types.js';
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
-import type { WakeWordDetectionEvent } from '../../main/src/wake-word/types.js';
+import type {
+  WakeWordDetectionEvent,
+  WakeWordOption,
+  WakeWordTrainingStatus,
+} from '../../main/src/wake-word/types.js';
 import type { PushToTalkStatus, TalkTriggerEvent } from '../../main/src/talk/types.js';
 import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from '../../main/src/realtime/types.js';
 import type {
@@ -35,6 +39,13 @@ export interface WakeWordBridge {
   onWake(listener: (event: WakeWordDetectionEvent) => void): () => void;
   /** Peak score of each burst of activity, including near misses below the threshold. */
   onPeak?(listener: (event: WakeWordDetectionEvent) => void): () => void;
+  /** The bundled wake words and the ones trained in the app. */
+  list?(): Promise<WakeWordOption[]>;
+  getTrainingStatus?(): Promise<WakeWordTrainingStatus>;
+  /** Start training a new wake word in WSL; it takes a few hours and carries on if the app closes. */
+  train?(phrase: string, options?: { quick?: boolean }): Promise<WakeWordTrainingStatus>;
+  cancelTraining?(): Promise<WakeWordTrainingStatus>;
+  onTrainingStatus?(listener: (status: WakeWordTrainingStatus) => void): () => void;
 }
 
 export interface TalkBridge {

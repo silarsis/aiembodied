@@ -11,4 +11,4 @@ test-results
 *.pid
 app/main/*.png
 app/images/*
-.dev-home/
+.dev-home/__pycache__/

@@ -3,9 +3,9 @@
 # Each stage skips work already on disk, so it can be re-run after an interruption.
 # Run: bash run_training.sh   (log in ~/wakeword/train.log)
 set -euo pipefail
+CONFIG="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/hey_echo.yml"
 cd ~/wakeword
 source .venv/bin/activate
-CONFIG=/mnt/c/Users/kevin/repos/github/silarsis/aiembodied/experiments/wakeword/hey_echo.yml
 stage() { echo "== $(date '+%H:%M:%S') $1"; }
 
 stage "generate clips"

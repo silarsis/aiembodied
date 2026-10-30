@@ -1,8 +1,8 @@
 /**
  * Which provider runs each part of the assistant: the language model, speech-to-text,
  * text-to-speech and motion. Every part has a local option (the services that run on this
- * machine) and an OpenAI one, which needs the OpenAI API key. Also how a conversation can be
- * started without the wake word (`talk`), since that lives on the same Settings page.
+ * machine) and an OpenAI one, which needs the OpenAI API key. Also the wake word, and how a
+ * conversation can be started without it (`talk`), since those live on the same Settings page.
  *
  * Settings resolve in three layers: built-in defaults, then environment variables, then what
  * the user saved on the Settings page. Only the fields the user changed are saved, so an env var
@@ -48,6 +48,12 @@ export interface ProviderSettings {
   };
   /** services/speech, used by local STT and Kokoro TTS. */
   speechServiceUrl: string;
+  wakeWord: {
+    /** A bundled model name (hey_echo) or the path to an .onnx model, such as one trained in the app. */
+    model: string;
+    /** Score (0..1) the detector must reach. */
+    threshold: number;
+  };
   /** Starting to talk without the wake word. */
   talk: {
     /** Electron accelerator for the global push-to-talk key, e.g. CommandOrControl+Shift+Space; empty turns it off. */
@@ -89,6 +95,10 @@ export const DEFAULT_PROVIDER_SETTINGS: ProviderSettings = {
     openaiModel: 'gpt-4.1-mini',
   },
   speechServiceUrl: 'http://127.0.0.1:8192',
+  wakeWord: {
+    model: 'hey_echo',
+    threshold: 0.5,
+  },
   talk: {
     // Akari's choice on Windows.
     shortcut: 'CommandOrControl+Shift+Space',
@@ -130,6 +140,11 @@ function flag(value: unknown): boolean | undefined {
   return undefined;
 }
 
+function unitNumber(value: unknown): number | undefined {
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN;
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : undefined;
+}
+
 function compact<T extends object>(value: T): Partial<T> | undefined {
   const entries = Object.entries(value).filter(([, v]) => v !== undefined);
   return entries.length > 0 ? (Object.fromEntries(entries) as Partial<T>) : undefined;
@@ -150,6 +165,7 @@ export function sanitizeProviderPatch(input: unknown): ProviderSettingsPatch {
   const tts = section('tts');
   const motion = section('motion');
   const talk = section('talk');
+  const wakeWord = section('wakeWord');
 
   const patch: ProviderSettingsPatch = {
     llm: compact({
@@ -176,6 +192,10 @@ export function sanitizeProviderPatch(input: unknown): ProviderSettingsPatch {
       openaiModel: text(motion.openaiModel),
     }),
     speechServiceUrl: text(raw.speechServiceUrl),
+    wakeWord: compact({
+      model: text(wakeWord.model),
+      threshold: unitNumber(wakeWord.threshold),
+    }),
     talk: compact({
       shortcut: optionalText(talk.shortcut),
       tapToTalk: flag(talk.tapToTalk),
@@ -222,6 +242,8 @@ export function providerPatchFromEnv(env: Env): ProviderSettingsPatch {
       openaiModel: env.OPENAI_MOTION_MODEL,
     },
     speechServiceUrl: env.SPEECH_SERVICE_URL,
+    // ConfigManager validates WAKE_WORD_MODEL and WAKE_WORD_THRESHOLD and reports bad values.
+    wakeWord: { model: env.WAKE_WORD_MODEL, threshold: env.WAKE_WORD_THRESHOLD },
     talk: { shortcut: env.PUSH_TO_TALK_SHORTCUT, tapToTalk: env.TAP_TO_TALK },
   });
 }

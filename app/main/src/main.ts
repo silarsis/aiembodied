@@ -1,12 +1,14 @@
 import { app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain } from 'electron';
 import dotenv from 'dotenv';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   ConfigManager,
   ConfigValidationError,
   type ConfigSecretKey,
   type RendererConfig,
+  type WakeWordConfig,
 } from './config/config-manager.js';
 import { KeytarSecretStore } from './config/keytar-secret-store.js';
 import { InMemorySecretStore } from './config/secret-store.js';
@@ -15,6 +17,8 @@ import { initializeLogger } from './logging/logger.js';
 import { createAppDiagnostics } from './logging/app-diagnostics.js';
 import { CrashGuard } from './crash-guard.js';
 import { WakeWordService } from './wake-word/wake-word-service.js';
+import { WakeWordTrainer } from './wake-word/wake-word-trainer.js';
+import { listWakeWords } from './wake-word/wake-word-library.js';
 import { resolveOpenWakeWordModelPaths } from './wake-word/open-wake-word.js';
 import { ConversationManager } from './conversation/conversation-manager.js';
 import type {
@@ -136,6 +140,9 @@ try {
 const diagnostics = createAppDiagnostics({ logger });
 let mainWindow: BrowserWindow | null = null;
 let wakeWordService: WakeWordService | null = null;
+/** The wake word the running detector listens for, to tell when the Settings page changed it. */
+let runningWakeWord: { model: string; threshold: number } | null = null;
+let wakeWordTrainer: WakeWordTrainer | null = null;
 const pushToTalk = new PushToTalkShortcut({
   globalShortcut,
   onPress: () => {
@@ -473,6 +480,101 @@ async function refreshAvatarDescriptionService(
   }
 }
 
+/** Where wake words trained in the app are kept. */
+function trainedWakeWordDirectory(): string {
+  return path.join(app.getPath('userData'), 'wake-words');
+}
+
+/** services/wakeword-trainer in the repo checkout the app runs from; absent in packaged builds. */
+function resolveWakeWordTrainerDirectory(): string | null {
+  const candidate = process.env.WAKE_WORD_TRAINER_DIR?.trim() || path.resolve(__dirname, '../../../services/wakeword-trainer');
+  return existsSync(path.join(candidate, 'train_wake_word.py')) ? candidate : null;
+}
+
+/**
+ * Listen for `wakeWord` in place of the detector already running (the Settings page can pick
+ * another wake word or threshold at any time).
+ */
+async function restartWakeWordService(wakeWord: WakeWordConfig): Promise<void> {
+  if (wakeWordService) {
+    const previous = wakeWordService;
+    wakeWordService = null;
+    // The old detector must let go of the microphone before the new one opens it.
+    await previous.dispose().catch((error: unknown) => {
+      logger.warn('Failed to stop the previous wake word service', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
+  startWakeWordService(wakeWord);
+}
+
+function startWakeWordService(wakeWord: WakeWordConfig): void {
+  const service = new WakeWordService({
+    logger,
+    cooldownMs: wakeWord.cooldownMs,
+    minConfidence: wakeWord.threshold,
+  });
+
+  service.on('wake', (event) => {
+    logger.info('Wake word detected in main process', {
+      keyword: event.keywordLabel,
+      confidence: event.confidence,
+    });
+
+    let sessionId: string | null = null;
+    if (conversationManager) {
+      try {
+        const session = conversationManager.startSession({ startedAt: event.timestamp });
+        sessionId = session.id;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error('Failed to start new conversation session', { message });
+      }
+    }
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('wake-word:event', {
+        ...event,
+        sessionId: sessionId ?? event.sessionId,
+      });
+    }
+  });
+
+  service.on('peak', (event) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('wake-word:peak', event);
+    }
+  });
+
+  service.on('error', (serviceError) => {
+    logger.error('Wake word service error', {
+      message: serviceError.message,
+      stack: serviceError.stack,
+    });
+  });
+
+  service.on('ready', (info) => {
+    logger.info('Wake word service ready', info);
+  });
+
+  try {
+    service.start({
+      modelPaths: resolveOpenWakeWordModelPaths(WAKE_WORD_ASSETS_DIRECTORY, wakeWord.model),
+      keywordLabel: wakeWord.keywordLabel,
+      threshold: wakeWord.threshold,
+      deviceIndex: wakeWord.deviceIndex,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('Failed to start wake word service', {
+      message,
+    });
+  }
+  wakeWordService = service;
+  runningWakeWord = { model: wakeWord.model, threshold: wakeWord.threshold };
+}
+
 /**
  * Point the conversation pipeline and motion at the current provider settings and API key. Runs
  * at startup and after every change on the Settings page, so a change applies without a restart
@@ -498,6 +600,14 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
   }
 
   pushToTalk.apply(providers.talk?.shortcut ?? '');
+
+  if (runningWakeWord && (runningWakeWord.model !== config.wakeWord.model || runningWakeWord.threshold !== config.wakeWord.threshold)) {
+    logger.info('Wake word changed in Settings; restarting the detector', {
+      model: config.wakeWord.model,
+      threshold: config.wakeWord.threshold,
+    });
+    await restartWakeWordService(config.wakeWord);
+  }
 
   await refreshVrmaGenerationService(manager, 'secret-update');
 }
@@ -709,6 +819,19 @@ function registerIpcHandlers(
     return nextConfig;
   });
   ipcMain.handle('talk:get-shortcut-status', () => pushToTalk.getStatus());
+  ipcMain.handle('wake-word:list', () => listWakeWords(trainedWakeWordDirectory()));
+  ipcMain.handle('wake-word:get-training-status', () =>
+    wakeWordTrainer ? wakeWordTrainer.getStatus() : { available: false, reason: 'Training is not set up.', job: null },
+  );
+  ipcMain.handle('wake-word:train', (_event, payload: { phrase?: unknown; quick?: unknown }) => {
+    if (!wakeWordTrainer) {
+      throw new Error('Wake word training is not set up.');
+    }
+    return wakeWordTrainer.start(typeof payload?.phrase === 'string' ? payload.phrase : '', { quick: payload?.quick === true });
+  });
+  ipcMain.handle('wake-word:cancel-training', () =>
+    wakeWordTrainer ? wakeWordTrainer.cancel() : { available: false, reason: 'Training is not set up.', job: null },
+  );
   registerConfigHandler('config:test-secret', (_event, key: ConfigSecretKey) => manager.testSecret(key));
   registerConfigHandler('config:set-audio-devices', (_event, preferences) =>
     manager.setAudioDevicePreferences(preferences),
@@ -1382,67 +1505,24 @@ app.whenReady().then(async () => {
     }
   }
 
-  wakeWordService = new WakeWordService({
+  startWakeWordService(appConfig.wakeWord);
+
+  wakeWordTrainer = new WakeWordTrainer({
+    trainedDirectory: trainedWakeWordDirectory(),
+    scriptsDirectory: resolveWakeWordTrainerDirectory(),
+    distro: process.env.WAKE_WORD_TRAINER_DISTRO,
     logger,
-    cooldownMs: appConfig.wakeWord.cooldownMs,
-    minConfidence: appConfig.wakeWord.threshold,
-  });
-
-  wakeWordService.on('wake', (event) => {
-    logger.info('Wake word detected in main process', {
-      keyword: event.keywordLabel,
-      confidence: event.confidence,
-    });
-
-    let sessionId: string | null = null;
-    if (conversationManager) {
-      try {
-        const session = conversationManager.startSession({ startedAt: event.timestamp });
-        sessionId = session.id;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger.error('Failed to start new conversation session', { message });
+    onStatus: (status) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('wake-word:training-status', status);
       }
-    }
-
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('wake-word:event', {
-        ...event,
-        sessionId: sessionId ?? event.sessionId,
-      });
-    }
+    },
   });
-
-  wakeWordService.on('peak', (event) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('wake-word:peak', event);
-    }
-  });
-
-  wakeWordService.on('error', (serviceError) => {
-    logger.error('Wake word service error', {
-      message: serviceError.message,
-      stack: serviceError.stack,
+  void wakeWordTrainer.resume().catch((error: unknown) => {
+    logger.warn('Failed to check for a wake word training run', {
+      message: error instanceof Error ? error.message : String(error),
     });
   });
-
-  wakeWordService.on('ready', (info) => {
-    logger.info('Wake word service ready', info);
-  });
-
-  try {
-    wakeWordService.start({
-      modelPaths: resolveOpenWakeWordModelPaths(WAKE_WORD_ASSETS_DIRECTORY, appConfig.wakeWord.model),
-      keywordLabel: appConfig.wakeWord.keywordLabel,
-      threshold: appConfig.wakeWord.threshold,
-      deviceIndex: appConfig.wakeWord.deviceIndex,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.error('Failed to start wake word service', {
-      message,
-    });
-  }
 
   try {
     registerIpcHandlers(
@@ -1547,6 +1627,8 @@ app.on('before-quit', async (event) => {
   diagnostics.dispose();
   crashGuard.notifyAppQuitting();
   pushToTalk.dispose();
+  // Training carries on in WSL without the app; this only stops watching it.
+  wakeWordTrainer?.dispose();
 
   // Async cleanup tasks
   const cleanupTasks: Promise<void>[] = [];
