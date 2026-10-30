@@ -54,7 +54,7 @@ export interface AppConfig {
 }
 
 export interface WakeWordConfig {
-  /** openWakeWord builtin model name (e.g. hey_jarvis) or an absolute path to a custom .onnx model. */
+  /** openWakeWord builtin model name (e.g. hey_echo) or an absolute path to a custom .onnx model. */
   model: string;
   keywordLabel: string;
   /** Score (0..1) a frame must reach to count as a detection. */
@@ -128,7 +128,7 @@ const MetricsSchema = z.object({
 const RealtimeApiKeySchema = z.string().min(1, 'Realtime API key is required');
 
 const DEFAULT_SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey'];
-const DEFAULT_WAKE_WORD_MODEL = 'hey_jarvis';
+const DEFAULT_WAKE_WORD_MODEL = 'hey_echo';
 
 const DEFAULT_COMFYUI_BASE_URL = 'http://127.0.0.1:8188';
 const DEFAULT_CONVERSATION_BACKEND: ConversationBackend = 'local';

@@ -86,14 +86,14 @@ REALTIME_API_KEY=sk-...
 # Optional overrides
 AUDIO_INPUT_DEVICE_ID=default
 AUDIO_OUTPUT_DEVICE_ID=default
-WAKE_WORD_MODEL=hey_jarvis
+WAKE_WORD_MODEL=hey_echo
 WAKE_WORD_THRESHOLD=0.5
 WAKE_WORD_COOLDOWN_MS=1500
 COMFYUI_BASE_URL=http://127.0.0.1:8188
 MOTION_SERVICE_URL=http://127.0.0.1:8190
 ```
 
-**Wake word.** Detection uses [openWakeWord](https://github.com/dscripka/openWakeWord) and runs entirely on the machine. `WAKE_WORD_MODEL` picks a bundled model (`hey_jarvis`, `alexa`, `hey_mycroft`, `hey_rhasspy`) or takes a path to a custom `.onnx` model trained with openWakeWord's notebook. `WAKE_WORD_KEYWORD_LABEL` overrides the displayed name, and `WAKE_WORD_DEVICE_INDEX` picks the microphone.
+**Wake word.** Detection uses [openWakeWord](https://github.com/dscripka/openWakeWord) and runs entirely on the machine. `WAKE_WORD_MODEL` picks a bundled model or takes a path to a custom `.onnx` model trained with openWakeWord. The default is `hey_echo` ("Hey Echo"), trained for this project with the scripts in `experiments/wakeword/`. openWakeWord's pre-trained `hey_jarvis`, `alexa`, `hey_mycroft` and `hey_rhasspy` are bundled too. `WAKE_WORD_KEYWORD_LABEL` overrides the displayed name, and `WAKE_WORD_DEVICE_INDEX` picks the microphone.
 
 Additional knobs include `FEATURE_FLAGS` (JSON or comma syntax) for experimental toggles.
 

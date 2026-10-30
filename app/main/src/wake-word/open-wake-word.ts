@@ -24,7 +24,8 @@ const MAX_EMBEDDINGS = 120;
 /** Scores are forced to 0 for the first few frames while the buffers fill with real audio. */
 const WARMUP_FRAMES = 5;
 
-export const BUILTIN_WAKE_WORD_MODELS = ['hey_jarvis', 'alexa', 'hey_mycroft', 'hey_rhasspy'] as const;
+// hey_echo is trained for this project (experiments/wakeword/); the rest are openWakeWord's pre-trained models.
+export const BUILTIN_WAKE_WORD_MODELS = ['hey_echo', 'hey_jarvis', 'alexa', 'hey_mycroft', 'hey_rhasspy'] as const;
 export type BuiltinWakeWordModel = (typeof BUILTIN_WAKE_WORD_MODELS)[number];
 
 export interface OpenWakeWordModelPaths {

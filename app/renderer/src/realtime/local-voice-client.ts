@@ -27,7 +27,7 @@ export type LocalVoiceToolEvent = Extract<LocalVoiceEvent, { type: 'tool' }>;
 export interface LocalVoiceClientOptions {
   getBridge: () => LocalVoiceBridge | undefined;
   callbacks?: LocalVoiceClientCallbacks;
-  /** Wake phrase to strip from the start of transcripts, e.g. "Hey Jarvis". */
+  /** Wake phrase to strip from the start of transcripts, e.g. "Hey Echo". */
   wakePhrase?: string;
   requireWakeWord?: boolean;
   wakeWindowMs?: number;
@@ -247,7 +247,7 @@ export class LocalVoiceClient {
     const connectionId = this.connectionId;
     try {
       if (this.requireWakeWord && !this.isAwake(utterance)) {
-        // The wake event can land just after a short "hey jarvis" utterance ends.
+        // The wake event can land just after a short "hey echo" utterance ends.
         await wait(WAKE_GRACE_MS);
         if (!this.isAwake(utterance)) {
           const durationMs = utterance.endAt - utterance.startAt;
