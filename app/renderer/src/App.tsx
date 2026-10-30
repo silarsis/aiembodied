@@ -17,6 +17,7 @@ import { isTalkTapTarget } from './talk/tap-to-talk.js';
 import { VrmAvatarRenderer, type VrmRendererStatus } from './avatar/vrm-avatar-renderer.js';
 import { AnimationBusProvider, createAvatarAnimationBus } from './avatar/animation-bus.js';
 import { BehaviorCueProvider } from './avatar/behavior-cues.js';
+import { getAvatarRestSkeleton } from './avatar/rest-skeleton.js';
 import { flushSync } from 'react-dom';
 import { AvatarConfigurator } from './avatar/avatar-configurator.js';
 import { AudioGraph } from './audio/audio-graph.js';
@@ -1178,7 +1179,7 @@ export default function App() {
           setToolCalls((calls) =>
             addToolCall(calls, { id: streamId, kind: 'move', label: move.text, status: 'pending', startedAt: Date.now() }),
           );
-          streamMotion({ streamId, prompt: move.text })
+          streamMotion({ streamId, prompt: move.text, avatarRest: getAvatarRestSkeleton() ?? undefined })
             .then((result) => {
               const firstChunk = result.firstChunkMs === null ? '' : `, first after ${(result.firstChunkMs / 1000).toFixed(1)} s`;
               setToolCalls((calls) =>

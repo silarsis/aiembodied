@@ -45,11 +45,33 @@ export interface AvatarAnimationGenerationRequest {
   modelDescription?: string;
 }
 
+/**
+ * An avatar's rest skeleton: normalized humanoid bone positions in metres, Y up, facing +Z with
+ * the character's left on +X. The motion service calibrates the arm swing to it.
+ */
+export type AvatarRestSkeleton = Record<
+  | 'hips'
+  | 'spine'
+  | 'chest'
+  | 'upperChest'
+  | 'leftShoulder'
+  | 'leftUpperArm'
+  | 'leftLowerArm'
+  | 'leftHand'
+  | 'rightShoulder'
+  | 'rightUpperArm'
+  | 'rightLowerArm'
+  | 'rightHand',
+  [number, number, number]
+>;
+
 export interface AvatarMotionStreamRequest {
   /** Caller-chosen id echoed on every chunk so concurrent streams can be told apart. */
   streamId: string;
   prompt: string;
   duration?: number;
+  /** The avatar on screen, so the motion is calibrated to its build. */
+  avatarRest?: AvatarRestSkeleton;
 }
 
 export interface AvatarMotionChunkEvent {

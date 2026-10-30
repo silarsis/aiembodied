@@ -123,9 +123,15 @@ The code is in `src/motion_service/retarget.py`.
   avatar attaches its shoulders and neck further back on the chest than SOMA does, so without it the
   arms look pulled back. The neck and head lean with the chest once. The shoulders cancel the lean,
   because a chest pitch swings hanging arms backwards.
-- The whole arm then swings forward about the shoulder, 6° by default (`MOTION_ARM_FORWARD_DEG`; `0`
-  keeps ARDY's arm directions exactly). The bundled avatar's shoulders sit about 2.5 cm further back
-  on its chest than SOMA's, which leaves its hands about 4 cm behind ARDY's. The right value
-  depends on the avatar's build.
+- The whole arm then swings forward about the shoulder, by an angle calibrated to the avatar
+  (`calibration.py`). Avatars attach their shoulders and proportion their spines differently from
+  SOMA, so the same rotations leave the hands somewhere else; the bundled avatar's sit 3–4 cm behind
+  ARDY's. When a request carries `avatar_rest`, the service poses that skeleton in a reference ARDY
+  standing frame (`reference_stand.json`, with the chest lean), measures how far behind ARDY's its
+  hands fall, scaled to its hips height, and swings the arms by the angle that closes the gap at its
+  arm length. On top of that it adds `MOTION_ARM_FORWARD_BIAS_DEG` (1.5° by default) so the hands sit
+  a touch forward. The bundled avatar comes out at 4.25° + 1.5° = 5.75°.
+- Without `avatar_rest` the swing is 6°. `MOTION_ARM_FORWARD_DEG` is a manual override: when it is
+  set, it is used for every request and the calibration is skipped (`0` keeps ARDY's arm directions exactly).
 - Stream chunks share one floor/origin, so they are continuous. Each chunk's keyframes restart at
   `t = 0`.
