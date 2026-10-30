@@ -294,7 +294,7 @@ export class LocalVoiceClient {
       if (this.requireWakeWord) {
         let admitted = this.admit(heard);
         if (admitted === null) {
-          // The wake event can land just after a short "hey jarvis" utterance ends.
+          // The wake event can land just after a short "hey echo" utterance ends.
           await wait(WAKE_GRACE_MS);
           admitted = this.admit(heard);
         }

@@ -119,18 +119,18 @@ describe('ConfigManager', () => {
     });
   });
 
-  it('defaults to the bundled hey_jarvis wake word model', async () => {
+  it('defaults to the bundled hey_echo wake word model', async () => {
     const manager = new ConfigManager({ env: {} as NodeJS.ProcessEnv });
 
     const config = await manager.load();
     expect(config.wakeWord).toEqual({
-      model: 'hey_jarvis',
-      keywordLabel: 'Hey Jarvis',
+      model: 'hey_echo',
+      keywordLabel: 'Hey Echo',
       threshold: 0.5,
       cooldownMs: 1500,
       deviceIndex: undefined,
     });
-    expect(manager.getRendererConfig().wakeWord.model).toBe('hey_jarvis');
+    expect(manager.getRendererConfig().wakeWord.model).toBe('hey_echo');
   });
 
   it('accepts a custom openWakeWord model path and derives its label', async () => {
@@ -211,7 +211,7 @@ describe('ConfigManager', () => {
       'Configuration loaded.',
       expect.objectContaining({
         hasRealtimeApiKey: true,
-        wakeWordModel: 'hey_jarvis',
+        wakeWordModel: 'hey_echo',
       }),
     );
 

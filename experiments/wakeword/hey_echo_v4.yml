@@ -1,0 +1,52 @@
+# openWakeWord training config for "hey echo" (paths are inside WSL, relative to ~/wakeword).
+model_name: hey_echo
+target_phrase:
+  - "hey echo"
+# "echo" on its own and near-misses should not wake her; openWakeWord adds phoneme-based
+# adversarial phrases on top of these.
+custom_negative_phrases:
+  - "echo"
+  - "hey"
+  - "hey eco"
+  - "hey ego"
+  - "hey jacko"
+  - "hey jerico"
+  - "hey ecko"
+  - "head echo"
+  - "a echo"
+  - "they echo"
+  - "the echo"
+  - "hey alexa"
+  - "hey jarvis"
+  - "hey hello"
+  - "eh go"
+
+n_samples: 30000
+n_samples_val: 2000
+tts_batch_size: 50
+augmentation_batch_size: 16
+piper_sample_generator_path: "./piper-sample-generator"
+output_dir: "./hey_echo_model"
+
+rir_paths:
+  - "./data/mit_rirs"
+background_paths:
+  - "./data/audioset_16k"
+  - "./data/fma"
+background_paths_duplication_rate:
+  - 1
+  - 1
+false_positive_validation_data_path: "./data/validation_set_features.npy"
+augmentation_rounds: 1
+feature_data_files:
+  "ACAV100M_sample": "./data/openwakeword_features_ACAV100M_2000_hrs_16bit.npy"
+batch_n_per_class:
+  "ACAV100M_sample": 1024
+  "adversarial_negative": 50
+  "positive": 50
+
+model_type: "dnn"
+layer_size: 64
+steps: 100000
+max_negative_weight: 500
+target_false_positives_per_hour: 1.0

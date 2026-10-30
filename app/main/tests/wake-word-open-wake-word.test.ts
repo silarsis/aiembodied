@@ -13,7 +13,12 @@ const assetsDirectory = path.resolve(here, '../assets/wake-word');
 
 /** 16 kHz mono int16 PCM from openWakeWord's own test clip (Apache-2.0). */
 function loadAlexaClip(): Int16Array {
-  const wav = readFileSync(path.join(here, 'fixtures/wake-word/alexa_test.wav'));
+  return loadClip('alexa_test.wav');
+}
+
+/** 16 kHz mono 16-bit WAV with a plain 44-byte header. */
+function loadClip(name: string): Int16Array {
+  const wav = readFileSync(path.join(here, 'fixtures/wake-word', name));
   const dataBytes = wav.length - 44;
   return new Int16Array(wav.buffer.slice(wav.byteOffset + 44, wav.byteOffset + 44 + dataBytes - (dataBytes % 2)));
 }
@@ -79,6 +84,18 @@ describe('OpenWakeWordDetector', () => {
     const scores = await scoreAudio(detector, withSilence(loadAlexaClip(), 1));
 
     expect(Math.max(...scores)).toBeLessThan(0.5);
+  });
+
+  it('detects "hey echo" with the bundled default model, and not "alexa"', async () => {
+    detector = await OpenWakeWordDetector.create(resolveOpenWakeWordModelPaths(assetsDirectory, 'hey_echo'));
+    const heyEcho = await scoreAudio(detector, withSilence(loadClip('hey_echo_test.wav'), 1));
+    expect(Math.max(...heyEcho)).toBeGreaterThan(0.9);
+    expect(Math.max(...heyEcho.slice(0, 10))).toBeLessThan(0.1);
+
+    await detector.release();
+    detector = await OpenWakeWordDetector.create(resolveOpenWakeWordModelPaths(assetsDirectory, 'hey_echo'));
+    const alexa = await scoreAudio(detector, withSilence(loadAlexaClip(), 1));
+    expect(Math.max(...alexa)).toBeLessThan(0.5);
   });
 
   it('rejects frames of the wrong length', async () => {
