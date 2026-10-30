@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+import os
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -15,7 +17,8 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
 from .backends.base import Backend
-from .retarget import RootFrame, joint_names, slugify, to_vrma
+from .calibration import REST_BONES, arm_forward_for_avatar
+from .retarget import RootFrame, chest_forward_deg, joint_names, slugify, to_vrma
 
 log = logging.getLogger("motion_service")
 
@@ -25,6 +28,23 @@ class ClipRequest(BaseModel):
     duration: float = Field(default=3.0, ge=0.5, le=10.0)
     steps: Optional[int] = Field(default=None, ge=1)
     name: Optional[str] = Field(default=None, max_length=80)
+    # The avatar's rest skeleton (bone -> [x, y, z] metres, facing +Z), for per-avatar arm calibration.
+    avatar_rest: Optional[dict[str, list[float]]] = None
+
+    @field_validator("avatar_rest")
+    @classmethod
+    def _rest(cls, v: Optional[dict[str, list[float]]]) -> Optional[dict[str, list[float]]]:
+        if v is None:
+            return None
+        missing = [bone for bone in REST_BONES if bone not in v]
+        if missing:
+            raise ValueError(f"avatar_rest is missing {', '.join(missing)}")
+        for bone in REST_BONES:
+            if len(v[bone]) != 3 or not all(math.isfinite(x) for x in v[bone]):
+                raise ValueError(f"avatar_rest.{bone} must be three finite numbers")
+        if v["hips"][1] <= 0:
+            raise ValueError("avatar_rest.hips must be above the floor")
+        return {bone: v[bone] for bone in REST_BONES}
 
     @field_validator("prompt")
     @classmethod
@@ -47,6 +67,18 @@ class ApiError(Exception):
 
 def _ms(seconds: float) -> int:
     return int(round(seconds * 1000))
+
+
+def _arm_forward(req: ClipRequest) -> Optional[float]:
+    """The calibrated arm swing for the request's avatar; None (env or default) when MOTION_ARM_FORWARD_DEG
+    is set as a manual override or the request carries no skeleton."""
+    if req.avatar_rest is None or os.environ.get("MOTION_ARM_FORWARD_DEG", "").strip():
+        return None
+    try:
+        return arm_forward_for_avatar(req.avatar_rest, chest_forward_deg())
+    except Exception:  # a malformed skeleton should not cost the motion
+        log.warning("arm calibration failed; using the default arm swing", exc_info=True)
+        return None
 
 
 def create_app(backend: Backend, load_in_background: bool = True, keep_warm_seconds: float = 0) -> FastAPI:
@@ -135,6 +167,7 @@ def create_app(backend: Backend, load_in_background: bool = True, keep_warm_seco
     @app.post("/v1/motion/clip")
     def clip(req: ClipRequest):
         frames, steps, name = _check(req)
+        arm_forward = _arm_forward(req)
         with lock:
             t0 = time.perf_counter()
             text = backend.encode(req.prompt)
@@ -142,7 +175,7 @@ def create_app(backend: Backend, load_in_background: bool = True, keep_warm_seco
             motion = backend.generate(text, frames, steps)
             t2 = time.perf_counter()
             vrma = to_vrma(motion.global_rot_mats, motion.posed_joints, motion.root_positions, name,
-                           fps=backend.fps, kind=backend.name)
+                           fps=backend.fps, kind=backend.name, arm_forward=arm_forward)
             t3 = time.perf_counter()
             state["last_used"] = time.monotonic()
         return {"vrma": vrma, "timings": {"encodeMs": _ms(t1 - t0), "generateMs": _ms(t2 - t1),
@@ -151,6 +184,7 @@ def create_app(backend: Backend, load_in_background: bool = True, keep_warm_seco
     @app.post("/v1/motion/stream")
     def stream(req: StreamRequest):
         frames, steps, name = _check(req)
+        arm_forward = _arm_forward(req)
 
         def lines() -> Iterator[bytes]:
             with lock:
@@ -169,7 +203,8 @@ def create_app(backend: Backend, load_in_background: bool = True, keep_warm_seco
                             root_frame = RootFrame.from_motion(m.posed_joints, m.root_positions,
                                                                joint_names(m.global_rot_mats.shape[1]))
                         vrma = to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, f"{name}-{count}",
-                                       fps=backend.fps, kind=backend.name, root_frame=root_frame)
+                                       fps=backend.fps, kind=backend.name, root_frame=root_frame,
+                                       arm_forward=arm_forward)
                         t_done = time.perf_counter()
                         timings = {"generateMs": _ms(t_gen - t_prev), "retargetMs": _ms(t_done - t_gen),
                                    "totalMs": _ms(t_done - t_prev + (encode_s if count == 0 else 0))}

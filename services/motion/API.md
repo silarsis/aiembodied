@@ -39,6 +39,10 @@ Request:
 - `duration`: seconds, 0.5 to 10, default 3.
 - `steps`: diffusion steps; backend default when omitted.
 - `name`: slug for `meta.name`; defaults to a slug of the prompt (max 40 chars).
+- `avatar_rest` (optional): the avatar's rest skeleton, used to calibrate the arm swing to its
+  build. An object mapping each of `hips`, `spine`, `chest`, `upperChest`, and `left`/`right` +
+  `Shoulder`, `UpperArm`, `LowerArm`, `Hand` to `[x, y, z]`: normalized-bone positions in metres,
+  Y up from the floor, facing +Z with the character's left on +X. A missing bone or a non-finite value is a 400.
 
 Response 200:
 

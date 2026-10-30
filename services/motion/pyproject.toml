@@ -25,5 +25,8 @@ motion-service = "motion_service.__main__:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+motion_service = ["*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
