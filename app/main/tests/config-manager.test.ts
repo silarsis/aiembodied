@@ -393,6 +393,23 @@ describe('ConfigManager', () => {
     expect(reloaded.providers.tts.openaiVoice).toBe('coral');
   });
 
+  it('defaults push-to-talk to Ctrl+Shift+Space with tap-to-talk on, overridable by env and Settings', async () => {
+    const defaults = await new ConfigManager({ env: {} as NodeJS.ProcessEnv }).load();
+    expect(defaults.providers.talk).toEqual({ shortcut: 'CommandOrControl+Shift+Space', tapToTalk: true });
+
+    const fromEnv = await new ConfigManager({
+      env: { PUSH_TO_TALK_SHORTCUT: '', TAP_TO_TALK: 'off' } as NodeJS.ProcessEnv,
+    }).load();
+    expect(fromEnv.providers.talk).toEqual({ shortcut: '', tapToTalk: false });
+
+    const preferencesStore = new InMemoryPreferencesStore();
+    const manager = new ConfigManager({ env: {} as NodeJS.ProcessEnv, preferencesStore });
+    await manager.load();
+    const next = await manager.setProviderSettings({ talk: { shortcut: ' Alt+F9 ', tapToTalk: false } });
+    expect(next.providers.talk).toEqual({ shortcut: 'Alt+F9', tapToTalk: false });
+    expect((await preferencesStore.load()).providers).toEqual({ talk: { shortcut: 'Alt+F9', tapToTalk: false } });
+  });
+
   it('reads the key from OPENAI_API_KEY and removes a saved key on request', async () => {
     const fromEnv = new ConfigManager({ env: { OPENAI_API_KEY: 'sk-env' } as NodeJS.ProcessEnv });
     await fromEnv.load();

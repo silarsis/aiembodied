@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain } from 'electron';
 import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -72,6 +72,8 @@ import { MCPManager } from './mcp/mcp-manager.js';
 import { ToolRegistry } from './tools/tool-registry.js';
 import { createWebSearchProvider, createWebSearchTool } from './tools/web-search.js';
 import { registerMCPHandlers } from './mcp/ipc-handlers.js';
+import { PushToTalkShortcut } from './talk/push-to-talk.js';
+import type { TalkTriggerEvent } from './talk/types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -134,6 +136,20 @@ try {
 const diagnostics = createAppDiagnostics({ logger });
 let mainWindow: BrowserWindow | null = null;
 let wakeWordService: WakeWordService | null = null;
+const pushToTalk = new PushToTalkShortcut({
+  globalShortcut,
+  onPress: () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('talk:trigger', { source: 'shortcut', timestamp: Date.now() } satisfies TalkTriggerEvent);
+    }
+  },
+  onStatus: (status) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('talk:shortcut-status', status);
+    }
+  },
+  logger: { info: (...args) => logger.info(...args), warn: (...args) => logger.warn(...args) },
+});
 let memoryStore: MemoryStore | null = null;
 let conversationManager: ConversationManager | null = null;
 let removeConversationListeners: (() => void) | null = null;
@@ -481,6 +497,8 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
     currentMotionServiceUrl = providers.motion.localServiceUrl;
   }
 
+  pushToTalk.apply(providers.talk?.shortcut ?? '');
+
   await refreshVrmaGenerationService(manager, 'secret-update');
 }
 
@@ -690,6 +708,7 @@ function registerIpcHandlers(
     await applyProviderSettings(manager);
     return nextConfig;
   });
+  ipcMain.handle('talk:get-shortcut-status', () => pushToTalk.getStatus());
   registerConfigHandler('config:test-secret', (_event, key: ConfigSecretKey) => manager.testSecret(key));
   registerConfigHandler('config:set-audio-devices', (_event, preferences) =>
     manager.setAudioDevicePreferences(preferences),
@@ -1527,6 +1546,7 @@ app.on('before-quit', async (event) => {
 
   diagnostics.dispose();
   crashGuard.notifyAppQuitting();
+  pushToTalk.dispose();
 
   // Async cleanup tasks
   const cleanupTasks: Promise<void>[] = [];

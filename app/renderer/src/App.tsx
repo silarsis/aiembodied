@@ -12,6 +12,8 @@ import type { ConfigSecretKey, ConversationBackend, RendererConfig } from '../..
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
 import type { ProviderSettingsPatch } from '../../main/src/config/provider-settings.js';
 import { ProviderSettingsPanel } from './settings/provider-settings-panel.js';
+import type { PushToTalkStatus } from '../../main/src/talk/types.js';
+import { isTalkTapTarget } from './talk/tap-to-talk.js';
 import { VrmAvatarRenderer, type VrmRendererStatus } from './avatar/vrm-avatar-renderer.js';
 import { AnimationBusProvider, createAvatarAnimationBus } from './avatar/animation-bus.js';
 import { BehaviorCueProvider } from './avatar/behavior-cues.js';
@@ -1852,6 +1854,63 @@ export default function App() {
     };
   }, [api, resolveApi, recordTranscriptEntry]);
 
+  // Push-to-talk and tap-to-talk skip the wake word. With listening off they turn it on, and the
+  // local client starts listening once it has connected.
+  const startTalking = useCallback(
+    (source: 'shortcut' | 'tap') => {
+      setListeningEnabled(true);
+      const client = conversationClientRef.current;
+      if (client instanceof LocalVoiceClient) {
+        client.talk();
+      }
+      console.info(`[talk] ${source === 'shortcut' ? 'Push-to-talk key' : 'Screen tap'}`);
+    },
+    [setListeningEnabled],
+  );
+
+  const [pushToTalkStatus, setPushToTalkStatus] = useState<PushToTalkStatus | null>(null);
+  useEffect(() => {
+    const talk = resolveApi()?.talk;
+    if (!talk) {
+      return;
+    }
+    let cancelled = false;
+    void talk
+      .getShortcutStatus()
+      .then((status) => {
+        if (!cancelled) {
+          setPushToTalkStatus(status);
+        }
+      })
+      .catch(() => undefined);
+    const unsubscribeStatus = talk.onShortcutStatus(setPushToTalkStatus);
+    const unsubscribeTrigger = talk.onTrigger(() => startTalking('shortcut'));
+    return () => {
+      cancelled = true;
+      unsubscribeStatus();
+      unsubscribeTrigger();
+    };
+  }, [api, resolveApi, startTalking]);
+
+  const tapToTalk = config?.providers?.talk?.tapToTalk ?? true;
+  const conversationPanelRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const panel = conversationPanelRef.current;
+    if (!panel || !tapToTalk) {
+      return;
+    }
+    const handleTap = (event: MouseEvent) => {
+      if (event.button !== 0 || !isTalkTapTarget(event.target)) {
+        return;
+      }
+      startTalking('tap');
+    };
+    panel.addEventListener('click', handleTap);
+    return () => {
+      panel.removeEventListener('click', handleTap);
+    };
+  }, [tapToTalk, startTalking]);
+
   useEffect(() => {
     if (audioGraph.status === 'ready') {
       void refreshDevices();
@@ -2532,11 +2591,13 @@ export default function App() {
             </div>
             <div className="kiosk__tabPanels">
               <section
+                ref={conversationPanelRef}
                 role="tabpanel"
                 id="panel-chatgpt"
                 aria-labelledby="tab-chatgpt"
                 className="kiosk__tabPanel"
                 data-state={activeTab === 'chatgpt' ? 'active' : 'inactive'}
+                data-tap-to-talk={tapToTalk ? 'true' : 'false'}
               >
                 <section className="kiosk__stage" aria-labelledby="avatar-preview-title">
                   <div
@@ -2772,6 +2833,7 @@ export default function App() {
                     voiceStatus={voiceServiceStatus}
                     motionStatus={motionStatus}
                     onSave={handleProviderSettingsSave}
+                    pushToTalkStatus={pushToTalkStatus}
                     disabled={loadingConfig}
                   />
                 </section>
