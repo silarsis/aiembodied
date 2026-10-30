@@ -9,6 +9,8 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ComfyUIClient } from './comfyui-client.js';
+import type { ComfyUILauncher } from './comfyui-launcher.js';
+import { pickQwenImageModels } from './comfyui-models.js';
 import { buildConceptPrompt, conceptGraph, retextureGraph } from './graphs.js';
 import { workerRetextureRunner, type RetextureRunner } from './retexture-tasks.js';
 import { regionPrompt } from './vrm-retexture.js';
@@ -28,6 +30,8 @@ export interface AvatarGenerationModelStore {
 
 export interface AvatarGenerationServiceOptions {
   comfy: ComfyUIClient;
+  /** Starts ComfyUI when it's down and stops it once the job is over; without it ComfyUI must already be running. */
+  launcher?: Pick<ComfyUILauncher, 'canStart' | 'ensureRunning' | 'stop'>;
   models: AvatarGenerationModelStore;
   /** VRoid VRM whose textures get repainted. */
   baseModelPath: string;
@@ -78,7 +82,7 @@ export class AvatarGenerationService {
     if ([...this.jobs.values()].some((job) => isActive(job.status.status))) {
       throw new Error('An avatar is already being generated. Wait for it to finish or discard it.');
     }
-    if (!(await this.options.comfy.isAvailable())) {
+    if (!this.options.launcher?.canStart && !(await this.options.comfy.isAvailable())) {
       throw new Error(
         `ComfyUI isn't reachable at ${this.options.comfy.baseUrl}. Start ComfyUI (or set COMFYUI_BASE_URL) and try again.`,
       );
@@ -157,8 +161,15 @@ export class AvatarGenerationService {
     try {
       await mkdir(job.directory, { recursive: true });
 
+      if (this.options.launcher) {
+        this.update(job, { message: 'Starting ComfyUI' });
+        await this.options.launcher.ensureRunning(signal);
+      }
+      const models = await pickQwenImageModels(comfy);
+      this.options.logger?.info?.('Avatar generation models.', { jobId: job.status.jobId, ...models });
+
       this.update(job, { status: 'concept', progress: 0.02, message: 'Drawing a concept image' });
-      const concept = await comfy.run(conceptGraph(buildConceptPrompt(job.prompt), seed), { signal });
+      const concept = await comfy.run(conceptGraph(buildConceptPrompt(job.prompt), seed, { models }), { signal });
       await writeFile(path.join(job.directory, 'concept.png'), concept);
       this.update(job, {
         progress: 0.15,
@@ -187,6 +198,7 @@ export class AvatarGenerationService {
               cropHeight: region.box.height,
               prompt: regionPrompt(region.prompt, job.prompt),
               seed: seed + attempt,
+              models,
             }),
             { signal },
           );
@@ -238,6 +250,9 @@ export class AvatarGenerationService {
       const message = error instanceof Error ? error.message : String(error);
       this.options.logger?.error?.('Avatar generation failed.', { jobId: job.status.jobId, message });
       this.update(job, { status: 'failed', message: 'Generation failed', errorMessage: message });
+    } finally {
+      // Qwen-Image holds tens of GB next to the local LLM, so don't keep ComfyUI around between jobs.
+      this.options.launcher?.stop();
     }
   }
 }

@@ -41,6 +41,7 @@ import { PoseEvaluationService } from './avatar/pose-evaluation-service.js';
 import { AvatarDescriptionService } from './avatar/avatar-description-service.js';
 import { AvatarGenerationService } from './avatar/generation/avatar-generation-service.js';
 import { ComfyUIClient } from './avatar/generation/comfyui-client.js';
+import { ComfyUILauncher, resolveComfyStartCommand } from './avatar/generation/comfyui-launcher.js';
 import { LocalMotionClient } from './avatar/motion/local-motion-client.js';
 import { LocalMotionGenerationService } from './avatar/motion/local-motion-generation-service.js';
 import { LocalVoiceService } from './local-voice/local-voice-service.js';
@@ -171,6 +172,7 @@ let poseGenerationService: PoseGenerationService | null = null;
 let poseEvaluationService: PoseEvaluationService | null = null;
 let avatarDescriptionService: AvatarDescriptionService | null = null;
 let avatarGenerationService: AvatarGenerationService | null = null;
+let comfyLauncher: ComfyUILauncher | null = null;
 let localMotionService: LocalMotionGenerationService | null = null;
 let localVoiceService: LocalVoiceService | null = null;
 let currentVrmaApiKey: string | null = null;
@@ -1445,8 +1447,17 @@ app.whenReady().then(async () => {
   await applyProviderSettings(manager);
 
   if (avatarModelService) {
+    const comfy = new ComfyUIClient({ baseUrl: appConfig.comfyUiBaseUrl });
+    comfyLauncher = new ComfyUILauncher({
+      baseUrl: comfy.baseUrl,
+      isAvailable: () => comfy.isAvailable(),
+      command: resolveComfyStartCommand(process.env, comfy.baseUrl),
+      logPath: path.join(app.getPath('userData'), 'logs', 'comfyui.log'),
+      logger,
+    });
     avatarGenerationService = new AvatarGenerationService({
-      comfy: new ComfyUIClient({ baseUrl: appConfig.comfyUiBaseUrl }),
+      comfy,
+      launcher: comfyLauncher,
       models: avatarModelService,
       baseModelPath: DEFAULT_MODEL_ASSET_PATH,
       workDirectory: path.join(app.getPath('userData'), 'avatar-generation'),
@@ -1629,6 +1640,7 @@ app.on('before-quit', async (event) => {
   pushToTalk.dispose();
   // Training carries on in WSL without the app; this only stops watching it.
   wakeWordTrainer?.dispose();
+  comfyLauncher?.stop();
 
   // Async cleanup tasks
   const cleanupTasks: Promise<void>[] = [];
