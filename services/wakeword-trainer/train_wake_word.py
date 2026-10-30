@@ -238,8 +238,8 @@ max_negative_weight: 500
 target_false_positives_per_hour: 1.0
 """)
 
-    def train_py(self, flag: str, progress=None) -> int:
-        return self.run([str(VENV_PYTHON), str(TRAIN_PY), "--training_config", str(self.config_path), flag], progress)
+    def train_py(self, *flags: str, progress=None) -> int:
+        return self.run([str(VENV_PYTHON), str(TRAIN_PY), "--training_config", str(self.config_path), *flags], progress)
 
     def generate(self) -> None:
         self.enter("generate", f"{self.n_samples * 2 + self.n_val * 2:,} clips")
@@ -282,7 +282,8 @@ target_false_positives_per_hour: 1.0
         def progress(_line: str) -> None:
             self.write_status(stageProgress=sum(path.exists() for path in features) / len(features))
 
-        if self.train_py("--augment_clips", progress) != 0 or not all(path.exists() for path in features):
+        # --overwrite: a feature file left by an interrupted run would otherwise make train.py skip the whole stage.
+        if self.train_py("--augment_clips", "--overwrite", progress=progress) != 0 or not all(path.exists() for path in features):
             raise RuntimeError("Augmenting clips failed; see train.log.")
 
     def train(self) -> dict:
@@ -298,7 +299,8 @@ target_false_positives_per_hour: 1.0
                 match = re.search(rf"Final Model {name}:\s*([0-9.]+)", line)
                 if match:
                     metrics[key] = float(match[1])
-            match = re.search(r"(\d+)/(\d+) \[", line)
+            # The refinement passes print their totals as floats ("497/500.0 [").
+            match = re.search(r"(\d+)/(\d+)(?:\.\d+)? \[", line)
             if match:
                 step, steps = int(match[1]), int(match[2])
                 if step < phase["last"]:
@@ -307,7 +309,7 @@ target_false_positives_per_hour: 1.0
                 self.write_status(stageProgress=min(0.99, (phase["done"] + step) / total), message=f"step {step:,} of {steps:,}")
 
         started = time.time()
-        code = self.train_py("--train_model", progress)
+        code = self.train_py("--train_model", progress=progress)
         model = self.model_root / f"{self.slug}.onnx"
         # The TFLite export at the very end fails on a protobuf mismatch; the ONNX file is written first.
         if not model.exists() or model.stat().st_mtime < started:

@@ -6,8 +6,9 @@ Same sources as openWakeWord's automatic_model_training notebook:
   - one hour of FMA music (background)                     ~0.2 GB
   - ACAV100M precomputed features (negative training data) ~17 GB
   - validation set features (false-wake measurement)       ~0.2 GB
-Each step (and each AudioSet shard) leaves a .done marker when it finishes and is skipped next
-time, so the script can be re-run after a failure without keeping a partial download.
+Each step (and each AudioSet shard) leaves a .done marker beside its folder when it finishes and
+is skipped next time, so the script can be re-run after a failure without keeping a partial
+download. The markers stay out of the audio folders, because train.py loads every file in them.
 """
 import os
 import subprocess
@@ -46,12 +47,17 @@ def save16k(path: Path, audio: np.ndarray, rate: int) -> None:
     scipy.io.wavfile.write(path, 16000, (t.clamp(-1, 1).numpy() * 32767).astype(np.int16))
 
 
+def marker(path: Path) -> Path:
+    """data/mit_rirs -> data/.mit_rirs.done."""
+    return path.parent / f".{path.name}.done"
+
+
 def finished(path: Path) -> bool:
-    return (path / ".done").exists()
+    return marker(path).exists()
 
 
 def mark_finished(path: Path) -> None:
-    (path / ".done").touch()
+    marker(path).touch()
 
 
 def rirs() -> None:
@@ -78,7 +84,7 @@ def audioset(shards: int = 2) -> None:
     import pyarrow.parquet as pq
     import soundfile
     for i in range(shards):
-        shard_done = out / f".shard_{i:02d}.done"
+        shard_done = DATA / f".audioset_shard_{i:02d}.done"
         if shard_done.exists():
             continue
         shard = DATA / f"audioset_{i:02d}.parquet"
@@ -97,7 +103,7 @@ def audioset(shards: int = 2) -> None:
                 print(f"skip clip {row} of shard {i:02d}: {error}", file=sys.stderr)
         shard.unlink()
         shard_done.touch()
-    if all((out / f".shard_{i:02d}.done").exists() for i in range(shards)):
+    if all((DATA / f".audioset_shard_{i:02d}.done").exists() for i in range(shards)):
         mark_finished(out)
 
 
