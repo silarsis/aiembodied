@@ -7,6 +7,12 @@ import { AvatarGenerationService } from '../src/avatar/generation/avatar-generat
 import type { ComfyUIClient } from '../src/avatar/generation/comfyui-client.js';
 import type { RetextureRunner } from '../src/avatar/generation/retexture-tasks.js';
 
+const installedModels: Record<string, string[]> = {
+  diffusion_models: ['qwen_image_2.1_bf16.safetensors', 'qwen_image_2.1_fp8_e4m3fn.safetensors', 'flux1-dev.safetensors'],
+  text_encoders: ['qwen3vl_8b_bf16.safetensors', 'umt5_xxl_fp8_e4m3fn_scaled.safetensors'],
+  vae: ['qwen_image_2.1_vae_bf16.safetensors', 'wan2.2_vae.safetensors'],
+};
+
 function fakeComfy(overrides: Partial<Record<keyof ComfyUIClient, unknown>> = {}) {
   return {
     baseUrl: 'http://comfy.test',
@@ -14,6 +20,7 @@ function fakeComfy(overrides: Partial<Record<keyof ComfyUIClient, unknown>> = {}
     uploadImage: vi.fn(async (name: string) => `aiembodied/${name}`),
     run: vi.fn().mockResolvedValue(Buffer.from('png-bytes')),
     interrupt: vi.fn().mockResolvedValue(undefined),
+    listModels: vi.fn(async (folder: string) => installedModels[folder] ?? []),
     ...overrides,
   } as unknown as ComfyUIClient & Record<string, ReturnType<typeof vi.fn>>;
 }
@@ -56,10 +63,11 @@ describe('AvatarGenerationService', () => {
     await rm(workDirectory, { recursive: true, force: true });
   });
 
-  const create = (comfy = fakeComfy()) => ({
+  const create = (comfy = fakeComfy(), launcher?: ConstructorParameters<typeof AvatarGenerationService>[0]['launcher']) => ({
     comfy,
     service: new AvatarGenerationService({
       comfy,
+      launcher,
       models,
       baseModelPath,
       workDirectory: path.join(workDirectory, 'jobs'),
@@ -148,6 +156,46 @@ describe('AvatarGenerationService', () => {
   it('refuses to start when ComfyUI is not running', async () => {
     const { service } = create(fakeComfy({ isAvailable: vi.fn().mockResolvedValue(false) }));
     await expect(service.startJob({ prompt: 'A robot' })).rejects.toThrow(/ComfyUI isn't reachable at http:\/\/comfy.test/);
+  });
+
+  it('starts ComfyUI for the job, uses the installed models, and stops it afterwards', async () => {
+    const order: string[] = [];
+    const launcher = {
+      canStart: true,
+      ensureRunning: vi.fn(async () => {
+        order.push('start');
+      }),
+      stop: vi.fn(() => {
+        order.push('stop');
+      }),
+    };
+    const comfy = fakeComfy({
+      isAvailable: vi.fn().mockResolvedValue(false),
+      run: vi.fn(async () => {
+        order.push('run');
+        return Buffer.from('png-bytes');
+      }),
+    });
+    const { service } = create(comfy, launcher);
+    const { jobId } = await service.startJob({ prompt: 'A robot' });
+    await waitFor(service, jobId, 'completed');
+
+    expect(order).toEqual(['start', 'run', 'run', 'run', 'stop']);
+    const graph = comfy.run.mock.calls[0][0] as Record<string, { inputs: Record<string, unknown> }>;
+    expect(graph.unet.inputs.unet_name).toBe('qwen_image_2.1_fp8_e4m3fn.safetensors');
+    expect(graph.clip.inputs.clip_name).toBe('qwen3vl_8b_bf16.safetensors');
+    expect(graph.vae.inputs.vae_name).toBe('qwen_image_2.1_vae_bf16.safetensors');
+  });
+
+  it('fails the job and stops ComfyUI when the Qwen-Image models are missing', async () => {
+    const launcher = { canStart: true, ensureRunning: vi.fn().mockResolvedValue(undefined), stop: vi.fn() };
+    const comfy = fakeComfy({ listModels: vi.fn().mockResolvedValue([]) });
+    const { service } = create(comfy, launcher);
+    const { jobId } = await service.startJob({ prompt: 'A robot' });
+    const status = await waitFor(service, jobId, 'failed');
+    expect(status.errorMessage).toMatch(/no Qwen-Image 2.1 diffusion model/);
+    expect(comfy.run).not.toHaveBeenCalled();
+    expect(launcher.stop).toHaveBeenCalled();
   });
 
   it('validates the description and allows one job at a time', async () => {

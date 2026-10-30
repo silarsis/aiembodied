@@ -97,7 +97,9 @@ MOTION_SERVICE_URL=http://127.0.0.1:8190
 
 Additional knobs include `FEATURE_FLAGS` (JSON or comma syntax) for experimental toggles.
 
-**Local avatar generation.** The Avatar tab's "Generate an avatar" panel repaints the bundled VRoid avatar's outfit and hair textures from a text description, keeping its rig, expressions and lip-sync. It needs a local ComfyUI server (default `http://127.0.0.1:8188`, override with `COMFYUI_BASE_URL`) with the Qwen-Image 2.1 models installed (`qwen_image_2.1_int8_convrot`, `qwen3vl_8b_int8_convrot`, `qwen_image_2.1_vae_bf16`). Nothing is sent to a cloud service.
+**Local avatar generation.** The Avatar tab's "Generate an avatar" panel repaints the bundled VRoid avatar's outfit and hair textures from a text description, keeping its rig, expressions and lip-sync. It needs a local ComfyUI server (default `http://127.0.0.1:8188`, override with `COMFYUI_BASE_URL`) with the Qwen-Image 2.1 models installed (`qwen_image_2.1_int8_convrot`, `qwen3vl_8b_int8_convrot`, `qwen_image_2.1_vae_bf16` by default; otherwise the lightest Qwen-Image 2.1 files ComfyUI lists are used). Nothing is sent to a cloud service.
+
+If ComfyUI isn't running when a generation starts, the app starts Comfy Desktop's own install headless (found under `%LOCALAPPDATA%\Comfy-Desktop`, the same way slopcore does) and stops it again when the job ends, so its models don't sit in memory next to the local LLM. A ComfyUI that was already running is used and left running. Set `COMFYUI_START_COMMAND` (and optionally `COMFYUI_START_CWD`) to start ComfyUI some other way, or `COMFYUI_AUTOSTART=0` to never start it. Its output goes to `logs/comfyui.log` in the app's data folder.
 
 **Local motion generation.** With the local motion service running (`services/motion/`, NVIDIA ARDY or Kimodo; default `http://127.0.0.1:8190`, override with `MOTION_SERVICE_URL`), "Generate animation" in the Avatar tab uses it instead of the OpenAI keyframe pipeline, and the assistant can perform any movement on the fly by writing `{move:<description>}`; ARDY streams it in 2-second chunks so the avatar starts moving in under a second. See `services/motion/API.md` for the protocol.
 

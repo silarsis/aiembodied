@@ -59,6 +59,16 @@ export class ComfyUIClient {
     }
   }
 
+  /** File names ComfyUI has in one of its model folders (diffusion_models, text_encoders, vae, ...). */
+  async listModels(folder: string): Promise<string[]> {
+    const response = await this.fetchFn(`${this.baseUrl}/models/${encodeURIComponent(folder)}`);
+    if (!response.ok) {
+      return [];
+    }
+    const body = (await response.json()) as unknown;
+    return Array.isArray(body) ? body.filter((name): name is string => typeof name === 'string') : [];
+  }
+
   /** Upload a PNG into ComfyUI's input folder; returns the name LoadImage nodes should use. */
   async uploadImage(fileName: string, png: Buffer, subfolder = 'aiembodied'): Promise<string> {
     const form = new FormData();
