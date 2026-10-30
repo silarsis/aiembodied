@@ -35,17 +35,6 @@ more depth and are linked where they apply.
   and a short guide for training a custom word with openWakeWord's notebook.
   A model named after the avatar ("hey <name>") is the target.
 
-### Push-to-talk
-
-- **Today:** none. Listening starts on the wake word, with a follow-up window
-  afterwards that needs no wake word.
-- **Akari:** global hotkey (Cmd+Shift+Space on macOS, Ctrl on Windows) as an
-  alternative to the wake word, plus the follow-up window.
-- **Dipal:** touching the screen starts an interaction.
-- **To do:** configurable global hotkey (Electron `globalShortcut`), hold to
-  talk or tap to toggle. Also a talk button on the phone interface and a tap on
-  the avatar in kiosk mode.
-
 ## Voice output
 
 ### Voice cloning

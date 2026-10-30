@@ -4,8 +4,11 @@ import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '../../../main/
 import type { LocalVoiceStatus } from '../../../main/src/local-voice/types.js';
 import {
   ProviderSettingsPanel,
+  acceleratorFromKeyEvent,
   diffProviderSettings,
+  formatShortcut,
 } from '../../src/settings/provider-settings-panel.js';
+import { isTalkTapTarget } from '../../src/talk/tap-to-talk.js';
 import { describeServiceProblem } from '../../src/realtime/local-voice-client.js';
 
 const voiceStatus: LocalVoiceStatus = {
@@ -113,5 +116,68 @@ describe('provider settings helpers', () => {
     expect(
       describeServiceProblem({ ...voiceStatus, llm: { ...voiceStatus.llm, provider: 'openai', available: false } }),
     ).toMatch(/OpenAI API key/);
+  });
+
+  it('records a push-to-talk key and the tap-to-talk switch, and shows a key that could not be registered', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ProviderSettingsPanel
+        settings={defaults()}
+        hasApiKey={false}
+        voiceStatus={voiceStatus}
+        motionStatus={null}
+        onSave={onSave}
+        pushToTalkStatus={{ shortcut: 'CommandOrControl+Shift+Space', registered: false, error: 'Taken by another app.' }}
+      />,
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Taken by another app.');
+    const field = screen.getByLabelText('Push-to-talk key') as HTMLInputElement;
+    expect(field.value).toBe('Ctrl + Shift + Space');
+
+    fireEvent.keyDown(field, { key: 'k', code: 'KeyK' });
+    expect(screen.getByText(/Add Ctrl or Alt/)).toBeInTheDocument();
+    fireEvent.keyDown(field, { key: 'F9', code: 'F9', altKey: true });
+    expect(field.value).toBe('Alt + F9');
+    fireEvent.click(screen.getByLabelText('Tap the conversation screen to talk'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ talk: { shortcut: 'Alt+F9', tapToTalk: false } }));
+  });
+});
+
+describe('push-to-talk keys', () => {
+  const press = (code: string, modifiers: Partial<Record<'ctrlKey' | 'altKey' | 'shiftKey' | 'metaKey', boolean>> = {}) =>
+    acceleratorFromKeyEvent({ code, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...modifiers });
+
+  it('turns key presses into Electron accelerators', () => {
+    expect(press('Space', { ctrlKey: true, shiftKey: true })).toEqual({ accelerator: 'Ctrl+Shift+Space' });
+    expect(press('KeyT', { altKey: true })).toEqual({ accelerator: 'Alt+T' });
+    expect(press('Digit1', { metaKey: true })).toEqual({ accelerator: 'Super+1' });
+    expect(press('ArrowUp', { ctrlKey: true })).toEqual({ accelerator: 'Ctrl+Up' });
+    expect(press('F13')).toEqual({ accelerator: 'F13' });
+    expect(press('Pause')).toEqual({ accelerator: 'Pause' });
+  });
+
+  it('waits while only modifiers are down and refuses keys that would break typing', () => {
+    expect(press('ShiftLeft', { shiftKey: true })).toBeNull();
+    expect(press('ControlRight', { ctrlKey: true })).toBeNull();
+    expect(press('KeyA')).toMatchObject({ error: expect.stringMatching(/Add Ctrl or Alt/) });
+    expect(press('KeyA', { shiftKey: true })).toMatchObject({ error: expect.any(String) });
+    expect(press('IntlRo', { ctrlKey: true })).toMatchObject({ error: expect.any(String) });
+  });
+
+  it('shows CommandOrControl as Ctrl', () => {
+    expect(formatShortcut('CommandOrControl+Shift+Space')).toBe('Ctrl + Shift + Space');
+  });
+
+  it('starts talking on a tap anywhere except on a control', () => {
+    const panel = document.createElement('section');
+    panel.innerHTML = '<div id="stage"><canvas></canvas><button><span id="inner">Go</span></button><select></select></div>';
+    expect(isTalkTapTarget(panel.querySelector('canvas'))).toBe(true);
+    expect(isTalkTapTarget(panel.querySelector('#stage'))).toBe(true);
+    expect(isTalkTapTarget(panel.querySelector('#inner'))).toBe(false);
+    expect(isTalkTapTarget(panel.querySelector('select'))).toBe(false);
+    expect(isTalkTapTarget(null)).toBe(false);
   });
 });

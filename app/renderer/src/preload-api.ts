@@ -9,6 +9,7 @@ import type {
 } from '../../main/src/conversation/types.js';
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
 import type { WakeWordDetectionEvent } from '../../main/src/wake-word/types.js';
+import type { PushToTalkStatus, TalkTriggerEvent } from '../../main/src/talk/types.js';
 import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from '../../main/src/realtime/types.js';
 import type {
   LocalVoiceEvent,
@@ -34,6 +35,13 @@ export interface WakeWordBridge {
   onWake(listener: (event: WakeWordDetectionEvent) => void): () => void;
   /** Peak score of each burst of activity, including near misses below the threshold. */
   onPeak?(listener: (event: WakeWordDetectionEvent) => void): () => void;
+}
+
+export interface TalkBridge {
+  /** The global push-to-talk key was pressed. */
+  onTrigger(listener: (event: TalkTriggerEvent) => void): () => void;
+  getShortcutStatus(): Promise<PushToTalkStatus>;
+  onShortcutStatus(listener: (status: PushToTalkStatus) => void): () => void;
 }
 
 export interface ConversationBridge {
@@ -67,6 +75,7 @@ export interface PreloadApi {
   realtime: RealtimeBridge;
   localVoice?: LocalVoiceBridge;
   wakeWord: WakeWordBridge;
+  talk?: TalkBridge;
   conversation?: ConversationBridge;
   metrics?: MetricsBridge;
   avatar?: AvatarBridge;

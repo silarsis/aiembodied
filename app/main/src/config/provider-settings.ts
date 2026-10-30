@@ -1,7 +1,8 @@
 /**
  * Which provider runs each part of the assistant: the language model, speech-to-text,
  * text-to-speech and motion. Every part has a local option (the services that run on this
- * machine) and an OpenAI one, which needs the OpenAI API key.
+ * machine) and an OpenAI one, which needs the OpenAI API key. Also how a conversation can be
+ * started without the wake word (`talk`), since that lives on the same Settings page.
  *
  * Settings resolve in three layers: built-in defaults, then environment variables, then what
  * the user saved on the Settings page. Only the fields the user changed are saved, so an env var
@@ -47,6 +48,13 @@ export interface ProviderSettings {
   };
   /** services/speech, used by local STT and Kokoro TTS. */
   speechServiceUrl: string;
+  /** Starting to talk without the wake word. */
+  talk: {
+    /** Electron accelerator for the global push-to-talk key, e.g. CommandOrControl+Shift+Space; empty turns it off. */
+    shortcut: string;
+    /** A tap or click on the conversation screen starts listening. */
+    tapToTalk: boolean;
+  };
 }
 
 export type ProviderSettingsPatch = {
@@ -81,6 +89,11 @@ export const DEFAULT_PROVIDER_SETTINGS: ProviderSettings = {
     openaiModel: 'gpt-4.1-mini',
   },
   speechServiceUrl: 'http://127.0.0.1:8192',
+  talk: {
+    // Akari's choice on Windows.
+    shortcut: 'CommandOrControl+Shift+Space',
+    tapToTalk: true,
+  },
 };
 
 type Env = Record<string, string | undefined>;
@@ -103,6 +116,20 @@ function oneOf<T extends string>(value: unknown, options: readonly T[]): T | und
   return options.find((option) => option === raw);
 }
 
+function flag(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  const raw = typeof value === 'string' ? value.trim().toLowerCase() : undefined;
+  if (raw === '1' || raw === 'true' || raw === 'on' || raw === 'yes') {
+    return true;
+  }
+  if (raw === '0' || raw === 'false' || raw === 'off' || raw === 'no') {
+    return false;
+  }
+  return undefined;
+}
+
 function compact<T extends object>(value: T): Partial<T> | undefined {
   const entries = Object.entries(value).filter(([, v]) => v !== undefined);
   return entries.length > 0 ? (Object.fromEntries(entries) as Partial<T>) : undefined;
@@ -122,6 +149,7 @@ export function sanitizeProviderPatch(input: unknown): ProviderSettingsPatch {
   const stt = section('stt');
   const tts = section('tts');
   const motion = section('motion');
+  const talk = section('talk');
 
   const patch: ProviderSettingsPatch = {
     llm: compact({
@@ -148,6 +176,10 @@ export function sanitizeProviderPatch(input: unknown): ProviderSettingsPatch {
       openaiModel: text(motion.openaiModel),
     }),
     speechServiceUrl: text(raw.speechServiceUrl),
+    talk: compact({
+      shortcut: optionalText(talk.shortcut),
+      tapToTalk: flag(talk.tapToTalk),
+    }),
   };
   return compact(patch) ?? {};
 }
@@ -190,6 +222,7 @@ export function providerPatchFromEnv(env: Env): ProviderSettingsPatch {
       openaiModel: env.OPENAI_MOTION_MODEL,
     },
     speechServiceUrl: env.SPEECH_SERVICE_URL,
+    talk: { shortcut: env.PUSH_TO_TALK_SHORTCUT, tapToTalk: env.TAP_TO_TALK },
   });
 }
 
