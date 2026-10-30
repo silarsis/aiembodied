@@ -12,6 +12,8 @@ import type { AvatarAnimationService } from './avatar-animation-service.js';
 export interface VrmaGenerationServiceOptions {
   client: OpenAI;
   animationService: AvatarAnimationService;
+  /** The OpenAI model that writes the keyframes. */
+  model?: string;
   logger?: {
     info?: (message: string, meta?: Record<string, unknown>) => void;
     warn?: (message: string, meta?: Record<string, unknown>) => void;
@@ -280,11 +282,13 @@ export class VrmaGenerationService {
   private readonly client: OpenAI;
   private readonly animationService: AvatarAnimationService;
   private readonly logger?: VrmaGenerationServiceOptions['logger'];
+  private readonly model: string;
 
   constructor(options: VrmaGenerationServiceOptions) {
     this.client = options.client;
     this.animationService = options.animationService;
     this.logger = options.logger;
+    this.model = options.model?.trim() || 'gpt-4.1-mini';
   }
 
   async generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult> {
@@ -435,7 +439,7 @@ export class VrmaGenerationService {
         responses: { create: (args: unknown) => Promise<{ output_text: string }> };
       }
     ).responses.create({
-      model: 'gpt-4.1-mini',
+      model: this.model,
       input,
       ...(textConfig ? { text: textConfig } : {}),
     });

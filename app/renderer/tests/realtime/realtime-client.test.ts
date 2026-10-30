@@ -175,7 +175,7 @@ describe('RealtimeClient', () => {
     expect(parsedBody.sdp).toBe('fake-offer');
     expect(parsedBody.session).toMatchObject({
       type: 'realtime',
-      model: 'gpt-4o-realtime-preview-2024-12-17',
+      model: 'gpt-realtime-2.1',
     });
     expect(parsedBody.session.output_modalities).toEqual(['audio']);
 

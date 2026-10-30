@@ -10,6 +10,10 @@ import {
 } from 'react';
 import type { ConfigSecretKey, ConversationBackend, RendererConfig } from '../../main/src/config/config-manager.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
+import type { ProviderSettingsPatch } from '../../main/src/config/provider-settings.js';
+import { ProviderSettingsPanel } from './settings/provider-settings-panel.js';
+import type { PushToTalkStatus } from '../../main/src/talk/types.js';
+import { isTalkTapTarget } from './talk/tap-to-talk.js';
 import { VrmAvatarRenderer, type VrmRendererStatus } from './avatar/vrm-avatar-renderer.js';
 import { AnimationBusProvider, createAvatarAnimationBus } from './avatar/animation-bus.js';
 import { BehaviorCueProvider } from './avatar/behavior-cues.js';
@@ -53,7 +57,7 @@ interface AudioGraphState {
   error: string | null;
 }
 
-type TabId = 'chatgpt' | 'character' | 'local' | 'mcp';
+type TabId = 'chatgpt' | 'character' | 'local' | 'settings' | 'mcp';
 
 interface TabDefinition {
   id: TabId;
@@ -84,8 +88,8 @@ const SECRET_METADATA: Record<
   { label: string; description: string; isConfigured: (config: RendererConfig | null) => boolean }
 > = {
   realtimeApiKey: {
-    label: 'OpenAI Realtime API key',
-    description: 'Required to negotiate realtime model sessions.',
+    label: 'OpenAI API key',
+    description: 'Used by OpenAI Realtime and by every part set to OpenAI above. Stored in the system credential store.',
     isConfigured: (config) => Boolean(config?.hasRealtimeApiKey),
   },
 };
@@ -99,6 +103,8 @@ const STATIC_VOICE_OPTIONS: readonly string[] = [
   'sage',
   'shimmer',
   'verse',
+  'marin',
+  'cedar',
 ] as const;
 
 const DEFAULT_VOICE = 'shimmer';
@@ -773,6 +779,7 @@ export default function App() {
       { id: 'chatgpt', label: 'ChatGPT' },
       { id: 'character', label: 'Character' },
       { id: 'local', label: 'Local' },
+      { id: 'settings', label: 'Settings' },
       { id: 'mcp', label: 'MCP Servers' },
     ],
     [],
@@ -782,6 +789,7 @@ export default function App() {
     chatgpt: null,
     character: null,
     local: null,
+    settings: null,
     mcp: null,
   });
   const activeBridge = resolveApi();
@@ -1115,6 +1123,9 @@ export default function App() {
   // The local backend needs no API key; OpenAI Realtime does.
   const canConnectConversation = isLocalBackend || hasRealtimeApiKey;
   const wakePhrase = config?.wakeWord?.keywordLabel;
+  // A saved gpt-4o-realtime-preview model is retired (model_not_found); fall back to the default.
+  const realtimeModel =
+    config?.realtimeModel && !config.realtimeModel.startsWith('gpt-4o-realtime-preview') ? config.realtimeModel : undefined;
   // Only the local backend has models of its own to report on.
   const modelStatuses = useMemo(
     () =>
@@ -1307,6 +1318,16 @@ export default function App() {
             void recordTranscriptEntryRef.current({ speaker: 'assistant', text });
           },
           onActivity: setVoiceActivity,
+          onToolCall: (call) => {
+            const id = `${call.requestId}:${call.callId}`;
+            if (call.status === 'started') {
+              setToolCalls((calls) =>
+                addToolCall(calls, { id, kind: call.name, label: call.label, status: 'pending', startedAt: Date.now() }),
+              );
+            } else {
+              setToolCalls((calls) => finishToolCall(calls, id, call.status === 'done' ? 'done' : 'failed', Date.now(), call.detail));
+            }
+          },
           onLog,
         },
       });
@@ -1318,6 +1339,7 @@ export default function App() {
 
     return new RealtimeClient({
       handshakeMode: 'sdp',
+      model: realtimeModel,
       callbacks: {
         onStateChange: setRealtimeState,
         onSessionUpdated: (session) => {
@@ -1338,7 +1360,7 @@ export default function App() {
         onLog,
       },
     });
-  }, [hasRealtimeSupport, pushLatency, loadingConfig, isLocalBackend, wakePhrase]);
+  }, [hasRealtimeSupport, pushLatency, loadingConfig, isLocalBackend, wakePhrase, realtimeModel]);
 
   const mintEphemeralToken = useCallback(
     async (reason: string) => {
@@ -1831,6 +1853,63 @@ export default function App() {
     };
   }, [api, resolveApi, recordTranscriptEntry]);
 
+  // Push-to-talk and tap-to-talk skip the wake word. With listening off they turn it on, and the
+  // local client starts listening once it has connected.
+  const startTalking = useCallback(
+    (source: 'shortcut' | 'tap') => {
+      setListeningEnabled(true);
+      const client = conversationClientRef.current;
+      if (client instanceof LocalVoiceClient) {
+        client.talk();
+      }
+      console.info(`[talk] ${source === 'shortcut' ? 'Push-to-talk key' : 'Screen tap'}`);
+    },
+    [setListeningEnabled],
+  );
+
+  const [pushToTalkStatus, setPushToTalkStatus] = useState<PushToTalkStatus | null>(null);
+  useEffect(() => {
+    const talk = resolveApi()?.talk;
+    if (!talk) {
+      return;
+    }
+    let cancelled = false;
+    void talk
+      .getShortcutStatus()
+      .then((status) => {
+        if (!cancelled) {
+          setPushToTalkStatus(status);
+        }
+      })
+      .catch(() => undefined);
+    const unsubscribeStatus = talk.onShortcutStatus(setPushToTalkStatus);
+    const unsubscribeTrigger = talk.onTrigger(() => startTalking('shortcut'));
+    return () => {
+      cancelled = true;
+      unsubscribeStatus();
+      unsubscribeTrigger();
+    };
+  }, [api, resolveApi, startTalking]);
+
+  const tapToTalk = config?.providers?.talk?.tapToTalk ?? true;
+  const conversationPanelRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const panel = conversationPanelRef.current;
+    if (!panel || !tapToTalk) {
+      return;
+    }
+    const handleTap = (event: MouseEvent) => {
+      if (event.button !== 0 || !isTalkTapTarget(event.target)) {
+        return;
+      }
+      startTalking('tap');
+    };
+    panel.addEventListener('click', handleTap);
+    return () => {
+      panel.removeEventListener('click', handleTap);
+    };
+  }, [tapToTalk, startTalking]);
+
   useEffect(() => {
     if (audioGraph.status === 'ready') {
       void refreshDevices();
@@ -1977,6 +2056,17 @@ export default function App() {
       }
     },
     [persistPreferences, selectedInput, selectedOutput],
+  );
+
+  const handleProviderSettingsSave = useCallback(
+    async (patch: ProviderSettingsPatch) => {
+      const bridge = resolveApi();
+      if (!bridge?.config.setProviderSettings) {
+        throw new Error('Configuration bridge is unavailable.');
+      }
+      setConfig(await bridge.config.setProviderSettings(patch));
+    },
+    [resolveApi],
   );
 
   const handlePromptBlur = useCallback(
@@ -2265,6 +2355,33 @@ export default function App() {
     [resolveApi],
   );
 
+  const handleSecretClear = useCallback(
+    (key: ConfigSecretKey) =>
+      async () => {
+        const bridge = resolveApi();
+        if (!bridge?.config.clearSecret) {
+          return;
+        }
+        setSecretSaving((previous) => ({ ...previous, [key]: true }));
+        try {
+          const nextConfig = await bridge.config.clearSecret(key);
+          setConfig(nextConfig);
+          setSecretStatus((previous) => ({
+            ...previous,
+            [key]: nextConfig.realtimeApiKeyFromEnv
+              ? { status: 'error', message: 'Saved key removed, but an environment variable still sets one.' }
+              : { status: 'success', message: 'API key removed.' },
+          }));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Failed to remove API key.';
+          setSecretStatus((previous) => ({ ...previous, [key]: { status: 'error', message } }));
+        } finally {
+          setSecretSaving((previous) => ({ ...previous, [key]: false }));
+        }
+      },
+    [resolveApi],
+  );
+
   const levelPercentage = useMemo(() => Math.min(100, Math.round(audioGraph.level * 100)), [audioGraph.level]);
 
   const audioGraphStatusLabel = useMemo(() => {
@@ -2473,11 +2590,13 @@ export default function App() {
             </div>
             <div className="kiosk__tabPanels">
               <section
+                ref={conversationPanelRef}
                 role="tabpanel"
                 id="panel-chatgpt"
                 aria-labelledby="tab-chatgpt"
                 className="kiosk__tabPanel"
                 data-state={activeTab === 'chatgpt' ? 'active' : 'inactive'}
+                data-tap-to-talk={tapToTalk ? 'true' : 'false'}
               >
                 <section className="kiosk__stage" aria-labelledby="avatar-preview-title">
                   <div
@@ -2521,57 +2640,10 @@ export default function App() {
                 data-state={activeTab === 'character' ? 'active' : 'inactive'}
               >
                 <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
-                  <h2 id="kiosk-realtime-title">Voice & Personality</h2>
-                  <p className="kiosk__helper">Configure how your assistant sounds and behaves.</p>
-                  <div className="control">
-                    <label htmlFor="conversation-backend">Conversation engine</label>
-                    <select
-                      id="conversation-backend"
-                      value={conversationBackend}
-                      onChange={handleConversationBackendChange}
-                      disabled={isSaving || loadingConfig}
-                    >
-                      <option value="local">Local LLM (Qwen, offline)</option>
-                      <option value="openai">OpenAI Realtime</option>
-                    </select>
-                    <div className="kiosk__helper" aria-live="polite">
-                      {isLocalBackend
-                        ? 'Replies come from the local llama-server; speech runs through services/speech.'
-                        : hasRealtimeApiKey
-                          ? 'Replies come from the OpenAI Realtime API.'
-                          : 'OpenAI Realtime needs an API key (REALTIME_API_KEY).'}
-                    </div>
-                  </div>
-                  <div className="control">
-                    <label htmlFor="realtime-voice">Voice</label>
-                    <select
-                      id="realtime-voice"
-                      value={selectedVoice}
-                      onChange={handleVoiceChange}
-                      disabled={isSaving || loadingConfig || isLocalBackend}
-                    >
-                      {availableVoices.map((v) => (
-                        <option key={v} value={v}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="kiosk__helper" aria-live="polite">
-                      {isLocalBackend
-                        ? 'The local voice is a Kokoro preset, set with LOCAL_TTS_VOICE (default bf_lily).'
-                        : `Current voice (server): ${serverVoice ?? 'unknown'}`}
-                    </div>
-                    {playbackIssue ? (
-                      <div className="kiosk__helper" role="alert" style={{ marginTop: 8 }}>
-                        <span style={{ display: 'block', marginBottom: 4 }}>
-                          Audio playback is blocked ({playbackIssue}).
-                        </span>
-                        <button type="button" onClick={reconnectAndResume}>
-                          Reconnect & Resume Audio
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
+                  <h2 id="kiosk-realtime-title">Personality</h2>
+                  <p className="kiosk__helper">
+                    Configure how your assistant behaves. Models, voices and the conversation engine are on the Settings tab.
+                  </p>
                   <div className="control">
                     <label htmlFor="base-prompt">Base prompt</label>
                     <textarea
@@ -2686,6 +2758,85 @@ export default function App() {
                   </div>
                 </section>
 
+              </section>
+
+              <section
+                role="tabpanel"
+                id="panel-settings"
+                aria-labelledby="tab-settings"
+                className="kiosk__tabPanel"
+                data-state={activeTab === 'settings' ? 'active' : 'inactive'}
+              >
+                <section className="kiosk__realtime" aria-labelledby="settings-conversation-title">
+                  <h2 id="settings-conversation-title">Conversation</h2>
+                  <div className="control">
+                    <label htmlFor="conversation-backend">Conversation engine</label>
+                    <select
+                      id="conversation-backend"
+                      value={conversationBackend}
+                      onChange={handleConversationBackendChange}
+                      disabled={isSaving || loadingConfig}
+                    >
+                      <option value="local">Pipeline (speech-to-text, language model, text-to-speech)</option>
+                      <option value="openai">OpenAI Realtime (speech to speech)</option>
+                    </select>
+                    <div className="kiosk__helper" aria-live="polite">
+                      {isLocalBackend
+                        ? 'Each part of the pipeline uses the provider chosen below.'
+                        : hasRealtimeApiKey
+                          ? 'Replies come from the OpenAI Realtime API.'
+                          : 'OpenAI Realtime needs an OpenAI API key (below).'}
+                    </div>
+                  </div>
+                  <div className="control">
+                    <label htmlFor="realtime-voice">Realtime voice</label>
+                    <select
+                      id="realtime-voice"
+                      value={selectedVoice}
+                      onChange={handleVoiceChange}
+                      disabled={isSaving || loadingConfig || isLocalBackend}
+                    >
+                      {availableVoices.map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="kiosk__helper" aria-live="polite">
+                      {isLocalBackend
+                        ? 'Only OpenAI Realtime uses this. The pipeline voice is under Text-to-speech below.'
+                        : `Current voice (server): ${serverVoice ?? 'unknown'}`}
+                    </div>
+                    {playbackIssue ? (
+                      <div className="kiosk__helper" role="alert" style={{ marginTop: 8 }}>
+                        <span style={{ display: 'block', marginBottom: 4 }}>
+                          Audio playback is blocked ({playbackIssue}).
+                        </span>
+                        <button type="button" onClick={reconnectAndResume}>
+                          Reconnect & Resume Audio
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </section>
+
+                <section className="kiosk__realtime" aria-labelledby="settings-providers-title">
+                  <h2 id="settings-providers-title">Models and providers</h2>
+                  <p className="kiosk__helper">
+                    The language model, speech-to-text and text-to-speech run the pipeline engine; OpenAI Realtime does
+                    all three itself. Motion applies to both.
+                  </p>
+                  <ProviderSettingsPanel
+                    settings={config?.providers ?? null}
+                    hasApiKey={hasRealtimeApiKey}
+                    voiceStatus={voiceServiceStatus}
+                    motionStatus={motionStatus}
+                    onSave={handleProviderSettingsSave}
+                    pushToTalkStatus={pushToTalkStatus}
+                    disabled={loadingConfig}
+                  />
+                </section>
+
                 <section className="kiosk__secrets" aria-labelledby="kiosk-secret-title">
                   <h2 id="kiosk-secret-title">API keys</h2>
                   <p className="kiosk__helper">
@@ -2706,7 +2857,10 @@ export default function App() {
                           <header className="secretCard__header">
                             <h3>{metadata.label}</h3>
                             <p className="secretCard__description">{metadata.description}</p>
-                            <p className="secretCard__status">Status: {configured ? 'Configured' : 'Not configured'}</p>
+                            <p className="secretCard__status">
+                              Status: {configured ? 'Configured' : 'Not configured'}
+                              {configured && config?.realtimeApiKeyFromEnv ? ' (from an environment variable)' : ''}
+                            </p>
                           </header>
                           <form className="secretCard__form" onSubmit={handleSecretSubmit(key)}>
                             <input
@@ -2739,6 +2893,15 @@ export default function App() {
                               >
                                 Test key
                               </button>
+                              {configured && activeBridge?.config.clearSecret ? (
+                                <button
+                                  type="button"
+                                  onClick={handleSecretClear(key)}
+                                  disabled={secretSaving[key] || secretTesting[key]}
+                                >
+                                  Remove key
+                                </button>
+                              ) : null}
                             </div>
                           </form>
                           {busy ? (
