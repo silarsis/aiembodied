@@ -31,7 +31,11 @@ import type {
   ConversationMessage,
   ConversationSession,
 } from './conversation/types.js';
-import type { WakeWordDetectionEvent } from './wake-word/types.js';
+import type {
+  WakeWordDetectionEvent,
+  WakeWordOption,
+  WakeWordTrainingStatus,
+} from './wake-word/types.js';
 import type { PushToTalkStatus, TalkTriggerEvent } from './talk/types.js';
 import type { LatencyMetricName } from './metrics/types.js';
 import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from './realtime/types.js';
@@ -168,6 +172,13 @@ export interface WakeWordBridge {
   onWake(listener: (event: WakeWordDetectionEvent) => void): () => void;
   /** Peak score of each burst of activity, including near misses below the threshold. */
   onPeak?(listener: (event: WakeWordDetectionEvent) => void): () => void;
+  /** The bundled wake words and the ones trained in the app. */
+  list?(): Promise<WakeWordOption[]>;
+  getTrainingStatus?(): Promise<WakeWordTrainingStatus>;
+  /** Start training a new wake word in WSL; it takes a few hours and carries on if the app closes. */
+  train?(phrase: string, options?: { quick?: boolean }): Promise<WakeWordTrainingStatus>;
+  cancelTraining?(): Promise<WakeWordTrainingStatus>;
+  onTrainingStatus?(listener: (status: WakeWordTrainingStatus) => void): () => void;
 }
 
 export interface TalkBridge {
@@ -334,6 +345,19 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     onPeak: (listener) => {
       const channel = 'wake-word:peak';
       const handler = (_event: unknown, payload: WakeWordDetectionEvent) => listener(payload);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
+    list: () => ipcRenderer.invoke('wake-word:list') as Promise<WakeWordOption[]>,
+    getTrainingStatus: () => ipcRenderer.invoke('wake-word:get-training-status') as Promise<WakeWordTrainingStatus>,
+    train: (phrase, options) =>
+      ipcRenderer.invoke('wake-word:train', { phrase, quick: options?.quick === true }) as Promise<WakeWordTrainingStatus>,
+    cancelTraining: () => ipcRenderer.invoke('wake-word:cancel-training') as Promise<WakeWordTrainingStatus>,
+    onTrainingStatus: (listener) => {
+      const channel = 'wake-word:training-status';
+      const handler = (_event: unknown, payload: WakeWordTrainingStatus) => listener(payload);
       ipcRenderer.on(channel, handler);
       return () => {
         ipcRenderer.removeListener(channel, handler);

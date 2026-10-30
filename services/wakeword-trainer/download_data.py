@@ -6,7 +6,9 @@ Same sources as openWakeWord's automatic_model_training notebook:
   - one hour of FMA music (background)                     ~0.2 GB
   - ACAV100M precomputed features (negative training data) ~17 GB
   - validation set features (false-wake measurement)       ~0.2 GB
-Each step is skipped when its output already exists, so the script can be re-run after a failure.
+Each step (and each AudioSet shard) leaves a .done marker beside its folder when it finishes and
+is skipped next time, so the script can be re-run after a failure without keeping a partial
+download. The markers stay out of the audio folders, because train.py loads every file in them.
 """
 import os
 import subprocess
@@ -45,9 +47,22 @@ def save16k(path: Path, audio: np.ndarray, rate: int) -> None:
     scipy.io.wavfile.write(path, 16000, (t.clamp(-1, 1).numpy() * 32767).astype(np.int16))
 
 
+def marker(path: Path) -> Path:
+    """data/mit_rirs -> data/.mit_rirs.done."""
+    return path.parent / f".{path.name}.done"
+
+
+def finished(path: Path) -> bool:
+    return marker(path).exists()
+
+
+def mark_finished(path: Path) -> None:
+    marker(path).touch()
+
+
 def rirs() -> None:
     out = DATA / "mit_rirs"
-    if out.exists() and any(out.iterdir()):
+    if finished(out):
         return
     out.mkdir(exist_ok=True)
     import datasets
@@ -55,19 +70,23 @@ def rirs() -> None:
     for row in tqdm(ds, desc="MIT RIRs"):
         a = row["audio"]
         save16k(out / Path(a["path"]).name, a["array"], a["sampling_rate"])
+    mark_finished(out)
 
 
 def audioset(shards: int = 2) -> None:
     """AudioSet balanced-train clips as background noise. The HF dataset now ships Parquet shards
     (~700 MB, ~1000 ten-second clips each) with the audio bytes inline."""
     out = DATA / "audioset_16k"
-    if out.exists() and any(out.iterdir()):
+    if finished(out):
         return
     out.mkdir(exist_ok=True)
     import io
     import pyarrow.parquet as pq
     import soundfile
     for i in range(shards):
+        shard_done = DATA / f".audioset_shard_{i:02d}.done"
+        if shard_done.exists():
+            continue
         shard = DATA / f"audioset_{i:02d}.parquet"
         if not wget(f"{HF}/agkphysics/AudioSet/resolve/main/data/bal_train/{i:02d}.parquet", shard):
             print(f"AudioSet shard {i:02d} unavailable; continuing without it", file=sys.stderr)
@@ -83,11 +102,14 @@ def audioset(shards: int = 2) -> None:
             except Exception as error:  # a few clips are corrupt or in a format soundfile cannot read
                 print(f"skip clip {row} of shard {i:02d}: {error}", file=sys.stderr)
         shard.unlink()
+        shard_done.touch()
+    if all((DATA / f".audioset_shard_{i:02d}.done").exists() for i in range(shards)):
+        mark_finished(out)
 
 
 def fma(hours: float = 1.0) -> None:
     out = DATA / "fma"
-    if out.exists() and any(out.iterdir()):
+    if finished(out):
         return
     out.mkdir(exist_ok=True)
     try:
@@ -97,6 +119,7 @@ def fma(hours: float = 1.0) -> None:
         for i in tqdm(range(int(hours * 3600 // 30)), desc="FMA"):
             a = next(ds)["audio"]
             save16k(out / f"fma_{i:04d}.wav", a["array"], a["sampling_rate"])
+        mark_finished(out)
     except Exception as error:
         print(f"FMA unavailable ({error}); continuing without it", file=sys.stderr)
 

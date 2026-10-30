@@ -2834,6 +2834,7 @@ export default function App() {
                     motionStatus={motionStatus}
                     onSave={handleProviderSettingsSave}
                     pushToTalkStatus={pushToTalkStatus}
+                    wakeWordBridge={resolveApi()?.wakeWord}
                     disabled={loadingConfig}
                   />
                 </section>

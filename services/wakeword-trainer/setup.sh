@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Set up openWakeWord training in WSL (CPU only). Run: bash setup.sh
+# Safe to re-run: every step skips what is already there.
 set -euo pipefail
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 W=~/wakeword
 mkdir -p $W && cd $W
 command -v uv >/dev/null || [ -x ~/.local/bin/uv ] || { curl -LsSf https://astral.sh/uv/install.sh | sh; }
@@ -11,7 +13,7 @@ export PATH="$HOME/.local/bin:$PATH"
 git -C piper-sample-generator checkout -q v2.0.0
 mkdir -p openWakeWord/openwakeword/resources/models
 # The feature models are not in the git checkout; the app bundles the same v0.5.1 files.
-cp /mnt/c/Users/kevin/repos/github/silarsis/aiembodied/app/main/assets/wake-word/{melspectrogram,embedding_model}.onnx openWakeWord/openwakeword/resources/models/
+cp "$HERE"/../../app/main/assets/wake-word/{melspectrogram,embedding_model}.onnx openWakeWord/openwakeword/resources/models/
 [ -d .venv ] || uv venv -q --python 3.10 .venv
 source .venv/bin/activate
 uv pip install -q --index-url https://download.pytorch.org/whl/cpu torch==2.1.2 torchaudio==2.1.2

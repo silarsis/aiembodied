@@ -1,13 +1,16 @@
 # "Hey Echo" wake-word training
 
+To train a new wake word, use Settings → Wake word in the app, or `services/wakeword-trainer/`
+directly. This folder is the record of how "Hey Echo" was made and tuned.
+
 openWakeWord has no pre-trained "hey echo", so `app/main/assets/wake-word/hey_echo_v0.1.onnx` was
 trained here with openWakeWord's own training pipeline (`openwakeword/train.py`). Everything runs on
 the CPU inside WSL (Ubuntu 24.04) on bija; no GPU is needed.
 
 | File | What it does |
 | --- | --- |
-| `setup.sh` | Installs uv, clones openWakeWord and piper-sample-generator (pinned to v2.0.0, the layout openWakeWord expects) into `~/wakeword`, makes a Python 3.10 venv with CPU torch, and downloads the Piper LibriTTS-R voice used to synthesize clips. |
-| `download_data.py` | Fetches the training data into `~/wakeword/data`: MIT impulse responses (reverb), two AudioSet balanced-train shards and an hour of FMA music (background noise), openWakeWord's ACAV100M negative features (17 GB) and its validation features. |
+| `setup.sh` (now in `services/wakeword-trainer/`) | Installs uv, clones openWakeWord and piper-sample-generator (pinned to v2.0.0, the layout openWakeWord expects) into `~/wakeword`, makes a Python 3.10 venv with CPU torch, and downloads the Piper LibriTTS-R voice used to synthesize clips. |
+| `download_data.py` (now in `services/wakeword-trainer/`) | Fetches the training data into `~/wakeword/data`: MIT impulse responses (reverb), two AudioSet balanced-train shards and an hour of FMA music (background noise), openWakeWord's ACAV100M negative features (17 GB) and its validation features. |
 | `hey_echo.yml` | The training config: 30,000 synthetic "hey echo" clips, 30,000 adversarial clips (near-misses such as "echo", "hey ego", "the echo", "hey jarvis", plus openWakeWord's phoneme-based ones), 50,000 training steps, a target of 0.2 false wakes per hour. |
 | `run_training.sh` | Runs the three stages: generate clips, augment them into features, then train and export ONNX. Each stage skips work already on disk. |
 | `extra_clips.py` | Adds 8,600 targeted near-miss clips ("the echo", "they echo", "echoes"…) and 5,300 paused "Hey, Echo." clips to the generated set. train.py mixes `custom_negative_phrases` into ~30,000 auto-generated phrases, so on their own they get almost no clips. |
@@ -17,8 +20,8 @@ the CPU inside WSL (Ubuntu 24.04) on bija; no GPU is needed.
 To retrain (from Windows):
 
 ```bash
-wsl -d Ubuntu-24.04 -- bash /mnt/c/Users/kevin/repos/github/silarsis/aiembodied/experiments/wakeword/setup.sh
-wsl -d Ubuntu-24.04 -- bash -lc "cd ~/wakeword && .venv/bin/python /mnt/c/Users/kevin/repos/github/silarsis/aiembodied/experiments/wakeword/download_data.py"
+wsl -d Ubuntu-24.04 -- bash /mnt/c/Users/kevin/repos/github/silarsis/aiembodied/services/wakeword-trainer/setup.sh
+wsl -d Ubuntu-24.04 -- bash -lc "cd ~/wakeword && .venv/bin/python /mnt/c/Users/kevin/repos/github/silarsis/aiembodied/services/wakeword-trainer/download_data.py"
 wsl -d Ubuntu-24.04 -- bash /mnt/c/Users/kevin/repos/github/silarsis/aiembodied/experiments/wakeword/run_training.sh
 ```
 

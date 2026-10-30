@@ -1194,3 +1194,19 @@ main {
 .control .kiosk__helper {
   margin: 0;
 }
+
+.wakeWordTraining {
+  margin-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding-top: 0.75rem;
+}
+
+.wakeWordTraining h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+}
+
+.wakeWordTraining__progress {
+  width: 100%;
+  height: 0.6rem;
+}

@@ -424,4 +424,27 @@ describe('ConfigManager', () => {
     expect(cleared.hasRealtimeApiKey).toBe(false);
     expect(await secretStore.getSecret('REALTIME_API_KEY')).toBeNull();
   });
+  it('lets the Settings page pick the wake word and threshold over the env, falling back from bad values', async () => {
+    const preferencesStore = new InMemoryPreferencesStore();
+    const manager = new ConfigManager({
+      env: { WAKE_WORD_MODEL: 'alexa', WAKE_WORD_THRESHOLD: '0.6' } as NodeJS.ProcessEnv,
+      preferencesStore,
+    });
+    const loaded = await manager.load();
+    expect(loaded.wakeWord).toMatchObject({ model: 'alexa', keywordLabel: 'Alexa', threshold: 0.6 });
+    expect(loaded.providers.wakeWord).toEqual({ model: 'alexa', threshold: 0.6 });
+
+    const trained = path.resolve('wake-words/hey_computer.onnx');
+    const next = await manager.setProviderSettings({ wakeWord: { model: trained, threshold: 0.7 } });
+    expect(next.wakeWord).toMatchObject({ model: trained, keywordLabel: 'Hey Computer', threshold: 0.7 });
+    expect(manager.getConfig().wakeWord.model).toBe(trained);
+    expect((await preferencesStore.load()).providers).toEqual({ wakeWord: { model: trained, threshold: 0.7 } });
+
+    await manager.setProviderSettings({ wakeWord: { model: 'Hey Mycroft' } });
+    expect(manager.getConfig().wakeWord).toMatchObject({ model: 'hey_mycroft', keywordLabel: 'Hey Mycroft' });
+
+    await manager.setProviderSettings({ wakeWord: { model: 'bumblebee', threshold: 3 } });
+    expect(manager.getConfig().wakeWord).toMatchObject({ model: 'alexa', keywordLabel: 'Alexa', threshold: 0.7 });
+    expect(manager.getConfig().providers.wakeWord.model).toBe('alexa');
+  });
 });

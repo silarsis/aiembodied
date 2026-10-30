@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { z } from 'zod';
 import { BUILTIN_WAKE_WORD_MODELS } from '../wake-word/open-wake-word.js';
+import { wakeWordLabel } from '../wake-word/wake-word-library.js';
 import { DEFAULT_WEB_SEARCH_PROVIDER } from '../tools/web-search.js';
 import type { SecretStore } from './secret-store.js';
 import type { AudioDevicePreferences, PreferencesStore } from './preferences-store.js';
@@ -130,6 +131,16 @@ const RealtimeApiKeySchema = z.string().min(1, 'Realtime API key is required');
 const DEFAULT_SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey'];
 const DEFAULT_WAKE_WORD_MODEL = 'hey_echo';
 
+/** A builtin model name ("Hey Mycroft" -> hey_mycroft) or an absolute .onnx path; undefined otherwise. */
+export function normalizeWakeWordModel(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  const builtin = BUILTIN_WAKE_WORD_MODELS.find((name) => name === trimmed.toLowerCase().replace(/[\s-]+/g, '_'));
+  if (builtin) {
+    return builtin;
+  }
+  return trimmed.toLowerCase().endsWith('.onnx') ? path.resolve(trimmed) : undefined;
+}
+
 const DEFAULT_COMFYUI_BASE_URL = 'http://127.0.0.1:8188';
 const DEFAULT_CONVERSATION_BACKEND: ConversationBackend = 'local';
 /** The OpenAI key is read from the first of these that is set, before the secret store. */
@@ -148,6 +159,8 @@ export class ConfigManager {
   private storedConversationBackend?: ConversationBackend;
   /** Only the provider settings the user changed; env and defaults fill in the rest. */
   private storedProviders: ProviderSettingsPatch = {};
+  /** The wake word from the environment, before the Settings page's choice is applied. */
+  private envWakeWord: WakeWordConfig | null = null;
   private apiKeyFromEnv = false;
 
   constructor(options: ConfigManagerOptions = {}) {
@@ -179,12 +192,15 @@ export class ConfigManager {
 
     this.storedConversationBackend = storedPreferences.conversationBackend;
     this.storedProviders = storedPreferences.providers ?? {};
+    this.envWakeWord = this.parseWakeWordConfig();
+    const providers = resolveProviderSettings(this.env, this.storedProviders);
+    const wakeWord = this.applyWakeWordSettings(this.envWakeWord, providers);
 
     const config: AppConfig = {
       realtimeApiKey: realtimeApiKey ?? '',
       comfyUiBaseUrl: this.env.COMFYUI_BASE_URL?.trim() || DEFAULT_COMFYUI_BASE_URL,
       conversationBackend: storedPreferences.conversationBackend ?? this.parseConversationBackend(),
-      providers: resolveProviderSettings(this.env, this.storedProviders),
+      providers,
       webSearch: {
         provider: this.env.WEB_SEARCH_PROVIDER?.trim() || DEFAULT_WEB_SEARCH_PROVIDER,
         searxngUrl: this.env.SEARXNG_URL?.trim() || undefined,
@@ -202,7 +218,7 @@ export class ConfigManager {
       vadSilenceDurationMs: typeof storedPreferences.vadSilenceDurationMs === 'number' ? storedPreferences.vadSilenceDurationMs : undefined,
       vadMinSpeechDurationMs: typeof storedPreferences.vadMinSpeechDurationMs === 'number' ? storedPreferences.vadMinSpeechDurationMs : undefined,
       featureFlags: this.parseFeatureFlags(this.env.FEATURE_FLAGS),
-      wakeWord: this.parseWakeWordConfig(),
+      wakeWord,
       metrics: this.parseMetricsConfig(),
     };
 
@@ -279,7 +295,8 @@ export class ConfigManager {
 
     this.storedProviders = mergeProviderPatch(this.storedProviders, sanitizeProviderPatch(patch));
     const providers = resolveProviderSettings(this.env, this.storedProviders);
-    this.config = { ...this.config, providers };
+    const wakeWord = this.applyWakeWordSettings(this.envWakeWord ?? this.config.wakeWord, providers);
+    this.config = { ...this.config, providers, wakeWord };
 
     if (this.preferencesStore) {
       const saved = await this.preferencesStore.load();
@@ -580,13 +597,9 @@ export class ConfigManager {
       return DEFAULT_WAKE_WORD_MODEL;
     }
 
-    const builtin = BUILTIN_WAKE_WORD_MODELS.find((name) => name === raw.toLowerCase().replace(/[\s-]+/g, '_'));
-    if (builtin) {
-      return builtin;
-    }
-
-    if (raw.toLowerCase().endsWith('.onnx')) {
-      return path.resolve(raw);
+    const model = normalizeWakeWordModel(raw);
+    if (model) {
+      return model;
     }
 
     throw new ConfigValidationError(
@@ -594,13 +607,28 @@ export class ConfigManager {
     );
   }
 
+  /**
+   * The wake word the Settings page chose (`providers.wakeWord`, which starts from the env), over
+   * the env config. A saved model that is no longer valid falls back to the env one. Also writes
+   * the model in use back into `providers`, so the page shows what is running.
+   */
+  private applyWakeWordSettings(base: WakeWordConfig, providers: ProviderSettings): WakeWordConfig {
+    const requested = normalizeWakeWordModel(providers.wakeWord.model);
+    if (!requested) {
+      this.logger.warn('Saved wake word model is not valid; using the default.', { model: providers.wakeWord.model });
+    }
+    const model = requested ?? base.model;
+    providers.wakeWord = { ...providers.wakeWord, model };
+    return {
+      ...base,
+      model,
+      keywordLabel: model === base.model ? base.keywordLabel : this.formatKeywordLabel(model),
+      threshold: providers.wakeWord.threshold,
+    };
+  }
+
   private formatKeywordLabel(model: string): string {
-    const base = path.basename(model).replace(/\.onnx$/i, '').replace(/_v\d+(\.\d+)*$/, '');
-    return base
-      .split(/[_\s-]+/)
-      .filter((segment) => segment.length > 0)
-      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-      .join(' ');
+    return wakeWordLabel(model);
   }
 
   private parseNumberInRange({
