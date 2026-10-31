@@ -99,7 +99,7 @@ function setupFullBodyCamera(vrm: VRM, scene: THREE.Scene, aspectRatio: number):
     return camera;
 }
 
-function setupLighting(scene: THREE.Scene): void {
+export function setupLighting(scene: THREE.Scene): void {
     const ambient = new THREE.AmbientLight(0xffffff, 0.7);
     scene.add(ambient);
 
@@ -116,7 +116,7 @@ function setupLighting(scene: THREE.Scene): void {
     scene.add(rimLight);
 }
 
-function applyPoseToVrm(
+export function applyPoseToVrm(
     vrm: VRM,
     rawPoseData: PoseSnapshotOptions['poseData']
 ): void {

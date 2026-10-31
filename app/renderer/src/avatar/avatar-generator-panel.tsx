@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } fr
 import type { AvatarBridge, AvatarGenerationStatus } from './types.js';
 import { generatePoseSnapshot } from './pose-snapshot-generator.js';
 import { AvatarImagePreview } from './avatar-image-preview.js';
+import { AvatarModelPreview } from './avatar-model-preview.js';
 import { readAvatarReference, type AvatarReferenceImage } from './reference-image-upload.js';
 import { useImageModels } from './use-image-models.js';
 import { useControlsVisible } from '../settings/controls-drawer.js';
@@ -40,9 +41,12 @@ export function AvatarGeneratorPanel({
   const [status, setStatus] = useState<AvatarGenerationStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [preview, setPreview] = useState<{ key: string; image?: string; error?: string } | null>(
-    null,
-  );
+  const [preview, setPreview] = useState<{
+    key: string;
+    image?: string;
+    modelData?: ArrayBuffer;
+    error?: string;
+  } | null>(null);
   const [previewAttempt, setPreviewAttempt] = useState(0);
 
   const available = Boolean(avatarApi?.generateAvatar && avatarApi.getAvatarGenerationStatus);
@@ -50,6 +54,7 @@ export function AvatarGeneratorPanel({
   const completed = status?.status === 'completed';
   const previewKey = `${jobId}:${previewAttempt}`;
   const resultPreview = preview?.key === previewKey ? preview.image : undefined;
+  const resultModel = preview?.key === previewKey ? preview.modelData : undefined;
   const previewError = preview?.key === previewKey ? preview.error : undefined;
   const usingUpload = mode === 'new-character' && imageSource === 'upload';
   const canRegenerate = Boolean(
@@ -69,7 +74,7 @@ export function AvatarGeneratorPanel({
         const modelData = await avatarApi.loadGeneratedAvatarPreview(jobId);
         if (cancelled) return;
         const snapshot = await generatePoseSnapshot({ modelData, poseData: baseNeutralPose });
-        if (!cancelled) setPreview({ key: previewKey, image: snapshot.dataUrl });
+        if (!cancelled) setPreview({ key: previewKey, image: snapshot.dataUrl, modelData });
       } catch (err) {
         if (!cancelled)
           setPreview({
@@ -460,12 +465,8 @@ export function AvatarGeneratorPanel({
           ) : null}
           {completed ? (
             <>
-              {resultPreview ? (
-                <AvatarImagePreview
-                  src={resultPreview}
-                  alt="Finished avatar model"
-                  caption="Finished model — this is the avatar that Keep applies. Click to enlarge."
-                />
+              {resultPreview && resultModel ? (
+                <AvatarModelPreview thumbnail={resultPreview} modelData={resultModel} />
               ) : previewError ? (
                 <>
                   <p className="kiosk__error" role="alert">

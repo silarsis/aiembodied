@@ -265,6 +265,7 @@ describe('AvatarGeneratorPanel', () => {
       'data:image/png;base64,FINISHED',
     );
     expect(mocks.loadGeneratedAvatarPreview).toHaveBeenCalledWith('job-1');
+    expect(screen.getByRole('button', { name: 'Inspect finished avatar model' })).toBeEnabled();
     await act(async () => {
       fireEvent.click(keep);
     });
