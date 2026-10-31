@@ -42,6 +42,86 @@ async function poll() {
 }
 
 describe('AvatarGeneratorPanel', () => {
+  it('discards the reviewed concept before regenerating from an edited prompt', async () => {
+    const { api, mocks, state } = createApi({
+      jobId: 'job-1',
+      status: 'awaiting_confirmation',
+      progress: 0.15,
+      previewDataUrl: 'data:image/png;base64,OLD',
+    });
+    render(<AvatarGeneratorPanel avatarApi={api} pollIntervalMs={5} />);
+    await generate('An explorer');
+    await poll();
+    const prompt = screen.getByLabelText('Avatar description');
+    expect(prompt).toBeEnabled();
+    fireEvent.change(prompt, { target: { value: 'An explorer with blue hair' } });
+    let finishDiscard!: () => void;
+    mocks.rejectGeneratedAvatar.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDiscard = resolve;
+        }),
+    );
+    let finishGeneration!: (job: { jobId: string }) => void;
+    mocks.generateAvatar.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishGeneration = resolve;
+        }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate image' }));
+    expect(mocks.rejectGeneratedAvatar).toHaveBeenCalledWith('job-1');
+    expect(mocks.generateAvatar).toHaveBeenCalledTimes(1);
+    expect(prompt).toBeDisabled();
+    state.current = {
+      jobId: 'job-2',
+      status: 'awaiting_confirmation',
+      progress: 0.15,
+      previewDataUrl: 'data:image/png;base64,NEW',
+    };
+    await act(async () => {
+      finishDiscard();
+    });
+    expect(mocks.generateAvatar).toHaveBeenLastCalledWith({
+      prompt: 'An explorer with blue hair',
+      mode: 'new-character',
+    });
+    expect(screen.queryByAltText('Generated concept')).not.toBeInTheDocument();
+    await act(async () => {
+      finishGeneration({ jobId: 'job-2' });
+    });
+    await poll();
+    expect(await screen.findByAltText('Generated concept')).toHaveAttribute(
+      'src',
+      'data:image/png;base64,NEW',
+    );
+    expect(screen.getByRole('button', { name: 'Regenerate image' })).toBeEnabled();
+    expect(mocks.confirmAvatarConcept).not.toHaveBeenCalled();
+  });
+
+  it('keeps the revised prompt editable if replacement generation fails after discarding', async () => {
+    const { api, mocks } = createApi({
+      jobId: 'job-1',
+      status: 'awaiting_confirmation',
+      progress: 0.15,
+      previewDataUrl: 'data:image/png;base64,OLD',
+    });
+    render(<AvatarGeneratorPanel avatarApi={api} pollIntervalMs={5} />);
+    await generate('An explorer');
+    await poll();
+    fireEvent.change(screen.getByLabelText('Avatar description'), {
+      target: { value: 'A blue-haired explorer' },
+    });
+    mocks.generateAvatar.mockRejectedValueOnce(new Error('Generation unavailable'));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Regenerate image' }));
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Generation unavailable');
+    expect(screen.getByLabelText('Avatar description')).toHaveValue('A blue-haired explorer');
+    expect(screen.getByLabelText('Avatar description')).toBeEnabled();
+    expect(screen.queryByAltText('Generated concept')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Generate' })).toBeEnabled();
+  });
   it('uploads an image without requiring a text description and still waits for approval', async () => {
     const { api, mocks } = createApi({
       jobId: 'job-1',

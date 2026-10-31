@@ -50,6 +50,9 @@ export function AvatarGeneratorPanel({
   const resultPreview = preview?.key === previewKey ? preview.image : undefined;
   const previewError = preview?.key === previewKey ? preview.error : undefined;
   const usingUpload = mode === 'new-character' && imageSource === 'upload';
+  const canRegenerate = Boolean(
+    jobId && status?.status === 'awaiting_confirmation' && !usingUpload,
+  );
 
   useEffect(() => {
     if (!completed || !jobId) return;
@@ -112,12 +115,23 @@ export function AvatarGeneratorPanel({
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      if (!avatarApi?.generateAvatar || (usingUpload ? !referenceImage : !prompt.trim())) {
+      if (
+        !avatarApi?.generateAvatar ||
+        (jobId && !canRegenerate) ||
+        (usingUpload ? !referenceImage : !prompt.trim())
+      ) {
         return;
       }
       setBusy(true);
       setError(null);
       try {
+        if (jobId) {
+          if (!avatarApi.rejectGeneratedAvatar)
+            throw new Error('Restart the app to replace this concept image.');
+          await avatarApi.rejectGeneratedAvatar(jobId);
+          setJobId(null);
+          setStatus(null);
+        }
         const job = await avatarApi.generateAvatar({
           prompt: prompt.trim(),
           mode,
@@ -131,7 +145,7 @@ export function AvatarGeneratorPanel({
         setBusy(false);
       }
     },
-    [avatarApi, prompt, mode, usingUpload, referenceImage],
+    [avatarApi, prompt, mode, usingUpload, referenceImage, jobId, canRegenerate],
   );
 
   const handleAccept = useCallback(async () => {
@@ -299,15 +313,19 @@ export function AvatarGeneratorPanel({
                 ? 'Name this avatar'
                 : 'Swept-back auburn hair, rounded face, sage green explorer jumpsuit, tan boots'
             }
-            disabled={busy || Boolean(jobId)}
+            disabled={busy || Boolean(jobId && !canRegenerate)}
           />
         </label>
         <button
           type="submit"
           className="faces__submit"
-          disabled={busy || Boolean(jobId) || (usingUpload ? !referenceImage : !prompt.trim())}
+          disabled={
+            busy ||
+            Boolean(jobId && !canRegenerate) ||
+            (usingUpload ? !referenceImage : !prompt.trim())
+          }
         >
-          {usingUpload ? 'Review uploaded image' : 'Generate'}
+          {usingUpload ? 'Review uploaded image' : canRegenerate ? 'Regenerate image' : 'Generate'}
         </button>
       </form>
 
