@@ -5,7 +5,7 @@ Executed inside Blender by rig-character.py. Coordinates: +Z up, -Y face forward
 import json
 from pathlib import Path
 import bpy
-import bmesh
+import runpy
 import numpy as np
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
@@ -65,6 +65,20 @@ def build_fitted_face(body, rig, height, landmarks_path, reference_path):
     face_width = float(np.ptp(p[:,0]))
     if not .06*height < face_width < .22*height:
         raise RuntimeError('Face proportions are outside the supported adult range.')
+    seams=runpy.run_path(str(Path(__file__).with_name('face-seams.py')))
+    appearance=seams['SurfaceAppearance'](body)
+    distances=seams['boundary_distance'](faces,len(p))
+    cut_positions=p.copy()
+    # Leave a real annular space for the stitch. The old cut follows the detected
+    # oval; placing the replacement on that same jagged outline folds the bridge
+    # back over itself and causes a serrated, mask-like overlap.
+    center=p[seams['OVAL']].mean(axis=0)
+    inset=np.interp(distances,[0,1,2,3],[.90,.96,.99,1])
+    p[:,[0,2]]=center[[0,2]]+(p[:,[0,2]]-center[[0,2]])*inset[:,None]
+    for i in np.flatnonzero(distances<3):
+        hit,_,_,_=surface.ray_cast(Vector((p[i,0],-height,p[i,2])),Vector((0,1,0)),2*height)
+        if hit:p[i,1]=hit.y-.0008*height
+    fitted_uv=np.array([[(co[0]/scale+(left+right)/2)/width,1-(bottom-co[2]/scale)/image_height] for co in p])
     mesh=bpy.data.meshes.new('FittedFaceTopology')
     mesh.from_pydata(p.tolist(),[],faces)
     mesh.update()
@@ -75,7 +89,7 @@ def build_fitted_face(body, rig, height, landmarks_path, reference_path):
         poly.use_smooth=True
         for index in poly.loop_indices:
             vertex=mesh.loops[index].vertex_index
-            uv.data[index].uv=(lm[vertex,0],1-lm[vertex,1])
+            uv.data[index].uv=fitted_uv[vertex]
     material=bpy.data.materials.new('ReferenceFaceAppearance')
     material.use_nodes=True
     nodes=material.node_tree.nodes
@@ -87,18 +101,8 @@ def build_fitted_face(body, rig, height, landmarks_path, reference_path):
     shader.inputs['Roughness'].default_value=.8
     face.data.materials.append(material)
     # Cut away only the front face underneath the replacement; retain back, ears and hair.
-    patch_bvh=BVHTree.FromPolygons([Vector(v) for v in p],capped_faces)
-    bm=bmesh.new();bm.from_mesh(body.data)
-    remove=[]
-    for polygon in bm.faces:
-        c=polygon.calc_center_median()
-        hit,_,_,_=patch_bvh.ray_cast(Vector((c.x,-height,c.z)),Vector((0,1,0)),2*height)
-        if hit and abs(c.y-hit.y) < face_width*.28:
-            remove.append(polygon)
-    bmesh.ops.delete(bm,geom=remove,context='FACES')
-    bm.to_mesh(body.data);bm.free();body.data.update()
-    if len(remove)<10:
-        raise RuntimeError('Could not replace the original front head surface safely.')
+    patch_bvh=BVHTree.FromPolygons([Vector(v) for v in cut_positions],capped_faces)
+    body_loop_ids,removed_count=seams['cut_head'](body,patch_bvh,face_width)
     parts=[face]
     def bind(obj):
         group=obj.vertex_groups.new(name='head')
@@ -167,6 +171,9 @@ def build_fitted_face(body, rig, height, landmarks_path, reference_path):
                 nose=gaussian(p[1],face_width*.14,face_width*.15)
                 q[:,2]+=nose*face_width*.035
                 q[:,2]+=mw*mouth_width*.04*np.clip((p[:,0]-mouth_center[0])/mouth_width,0,1)
+        # Keep the sewn perimeter fixed. The interior expression controls and
+        # eyelid/lip boundaries retain their approved deformations.
+        q[seams['OVAL']]=p[seams['OVAL']]
         key=face.shape_key_add(name=name,from_mix=False)
         for vertex,co in zip(key.data,q): vertex.co=co
     def solid(name,center,radii,color):
@@ -226,38 +233,44 @@ def build_fitted_face(body, rig, height, landmarks_path, reference_path):
         q=np.array([v.co[:] for v in face.data.shape_keys.key_blocks[name].data])
         key=cavity.shape_key_add(name=name,from_mix=False)
         for v,co in zip(key.data,cavity_coords(q)):v.co=co
-    # Cover the sub-triangle mismatch between TRELLIS's irregular cut boundary
-    # and the known oval. The outer ring follows the unchanged original head.
-    oval=[10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109]
-    inner=p[oval].copy();outer=inner.copy();center=inner.mean(axis=0)
-    outer[:,[0,2]]=center[[0,2]]+(outer[:,[0,2]]-center[[0,2]])*1.04
-    for v in outer:
-        hit,_,_,_=surface.ray_cast(Vector((v[0],-height,v[2])),Vector((0,1,0)),2*height)
-        if hit:v[1]=hit.y-.0005*height
-    count=len(oval);seam_mesh=bpy.data.meshes.new('FaceBoundaryBlend')
-    seam_mesh.from_pydata(np.vstack([inner,outer]).tolist(),[],[(i,(i+1)%count,(i+1)%count+count,i+count) for i in range(count)])
-    seam_mesh.update();seam=bpy.data.objects.new('FaceBoundaryBlend',seam_mesh);bpy.context.scene.collection.objects.link(seam)
+    # Stitch to the actual cut loop, not to a guessed enlarged oval floating
+    # over the generated head. Both edges use matching positions and head weights.
+    oval=seams['OVAL'];inner=p[oval].copy()
+    original_outer=np.array([body.data.vertices[i].co[:] for i in body_loop_ids])
+    outer,order,bridge_triangles=seams['stitch_faces'](inner,original_outer)
+    outer_ids=[body_loop_ids[i] for i in order]
+    count=len(inner);bridge_points=np.vstack([inner,outer])
+    seam_mesh=bpy.data.meshes.new('StitchedHeadBoundary')
+    seam_mesh.from_pydata(bridge_points.tolist(),[],bridge_triangles);seam_mesh.update()
+    seam=bpy.data.objects.new('FaceBoundaryBlend',seam_mesh);bpy.context.scene.collection.objects.link(seam)
     seam.data.materials.append(material);bind(seam);parts.append(seam)
+    bridge_uv=np.array([[(co[0]/scale+(left+right)/2)/width,1-(bottom-co[2]/scale)/image_height] for co in bridge_points])
+    # Inner UVs match the fitted face exactly, including sub-pixel landmark position.
+    bridge_uv[:count]=fitted_uv[oval]
     uv=seam_mesh.uv_layers.new(name='ReferenceProjection')
     for poly in seam_mesh.polygons:
         poly.use_smooth=True
-        for li in poly.loop_indices:
-            vi=oval[seam_mesh.loops[li].vertex_index % count]
-            # Outside the face oval the reference may be pure white background.
-            # Extend the boundary's skin/hair colour instead of projecting that white.
-            face_uv=lm[:468,:2].mean(axis=0)
-            point=face_uv+(lm[vi,:2]-face_uv)*.975
-            uv.data[li].uv=(point[0],1-point[1])
-    seam.shape_key_add(name='Basis')
-    for name in PRESETS:
-        key=seam.shape_key_add(name=name,from_mix=False)
-        target=face.data.shape_keys.key_blocks[name]
-        for i,vi in enumerate(oval):key.data[i].co=target.data[vi].co
+        for li in poly.loop_indices:uv.data[li].uv=bridge_uv[seam_mesh.loops[li].vertex_index]
+    # Matching edge coordinates stay fixed for every shape, including combined
+    # speech and emotion, so the bridge needs no independent expression weights.
+    painted_pixels=appearance.match_head(body,source,cut_positions,lm,scale,(left+right)/2,bottom,image_height,body_loop_ids)
+    colors=np.array([appearance.seam_color(co) for co in p])
+    fade=np.interp(distances,[0,1,2,3],[1,.65,.2,0])
+    all_uv=np.vstack([fitted_uv,bridge_uv])
+    all_colors=np.vstack([colors,np.array([appearance.seam_color(co) for co in bridge_points])])
+    all_fade=np.concatenate([fade,np.ones(len(bridge_points))])
+    bake_triangles=list(faces)+[tuple(i+len(p) for i in tri) for tri in bridge_triangles]
+    image.image=seams['bake_boundary'](source,all_uv,bake_triangles,all_colors,all_fade,len(faces))
+    boundary_gaps=[float(np.linalg.norm(np.array(face.data.vertices[vi].co)-bridge_points[i])) for i,vi in enumerate(oval)]
+    boundary_gaps += [float(np.linalg.norm(np.array(body.data.vertices[vi].co)-bridge_points[count+i])) for i,vi in enumerate(outer_ids)]
+    max_boundary_gap=max(boundary_gaps)
+    if max_boundary_gap>1e-6:raise RuntimeError('The fitted face boundary is not sealed.')
     # Gaze is separate from emotion and lip-sync; no rigid eye squashing for blink.
-    report={'pipeline':'landmark-fitted-face-v1','landmarkCount':len(lm),
-        'surfaceHitRatio':sum(y is not None for y in hits)/len(p),'replacedTriangles':len(remove),
+    report={'pipeline':'landmark-fitted-face-sealed-v2','landmarkCount':len(lm),
+        'surfaceHitRatio':sum(y is not None for y in hits)/len(p),'replacedTriangles':removed_count,
         'faceWidthMeters':face_width,'topologyVertices':len(p),'expressions':PRESETS,
         'irisColorsLinearRGB':eye_colors,
+        'seam':{'bodyBoundaryVertices':len(outer_ids),'bridgeTriangles':len(bridge_triangles),'maxJoinGapMeters':max_boundary_gap,'fixedExpressionBoundary':True,'matchedHeadSkin':True,'skinColorOffset':appearance.offset.tolist(),'matchedSkinPixels':painted_pixels,'appearance':'skin calibration and shared boundary texture'},
         'openingTrianglesRemoved':len(capped_faces)-len(faces),
         'neutralEyeApertureMeters':[float(np.max(p[upper,2]-p[lower,2])) for upper,lower in EYES],
         'blinkClosureGapMeters':[max(float((face.data.shape_keys.key_blocks['blink'].data[a].co-face.data.shape_keys.key_blocks['blink'].data[b].co).length) for a,b in zip(upper,lower)) for upper,lower in EYES],

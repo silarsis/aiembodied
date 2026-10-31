@@ -39,7 +39,19 @@ async function review() {
     if (!face) throw new Error('No fitted face: ' + id);
     const box = new THREE.Box3().setFromObject(face);
     const center = box.getCenter(new THREE.Vector3());
-    const scale = box.getSize(new THREE.Vector3()).y * 1.65;
+    // Frame from the unchanged reference, not the replacement mesh's perimeter.
+    // Before/after comparisons therefore keep identical scale and placement.
+    const frame = await window.faceReview.frame(id);
+    const [width, height] = frame.imageSize;
+    const [left, , right, bottom] = frame.bodyBounds;
+    const factor = 1.6 / (bottom - frame.bodyBounds[1]);
+    const xs = frame.landmarks
+      .slice(0, 468)
+      .map((p) => (p[0] * width - (left + right) / 2) * factor);
+    const ys = frame.landmarks.slice(0, 468).map((p) => (bottom - p[1] * height) * factor);
+    center.x = (Math.min(...xs) + Math.max(...xs)) / 2;
+    center.y = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const scale = (Math.max(...ys) - Math.min(...ys)) * 1.65;
     const camera = new THREE.OrthographicCamera(
       -scale / 2,
       scale / 2,
@@ -110,6 +122,36 @@ async function review() {
         png: renderer.domElement.toDataURL('image/png'),
       });
     }
+    vrm.expressionManager.resetValues();
+    for (const [name, angle] of [
+      ['quarter-left', -0.45],
+      ['quarter-right', 0.45],
+    ]) {
+      camera.position
+        .copy(center)
+        .add(new THREE.Vector3(3 * Math.sin(angle), 0, 3 * Math.cos(angle)));
+      camera.lookAt(center);
+      vrm.update(0);
+      renderer.render(scene, camera);
+      await window.faceReview.save({ id, name, png: renderer.domElement.toDataURL('image/png') });
+    }
+    camera.position.set(center.x, center.y, center.z + 3);
+    camera.lookAt(center);
+    const head = vrm.humanoid.getNormalizedBoneNode('head');
+    for (const [name, angle] of [
+      ['head-turn-left', -0.4],
+      ['head-turn-right', 0.4],
+    ]) {
+      head.rotation.set(0, angle, 0);
+      vrm.expressionManager.setValue('happy', 0.5);
+      vrm.expressionManager.setValue('aa', 0.3);
+      vrm.update(0);
+      renderer.render(scene, camera);
+      await window.faceReview.save({ id, name, png: renderer.domElement.toDataURL('image/png') });
+    }
+    head.rotation.set(0, 0, 0);
+    vrm.expressionManager.resetValues();
+    vrm.update(0);
     // Intermediate frames demonstrate actual interpolation on the exported VRM.
     for (let frame = 0; frame < 48; frame++) {
       vrm.expressionManager.resetValues();

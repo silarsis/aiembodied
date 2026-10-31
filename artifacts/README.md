@@ -13,3 +13,5 @@
 These are development review outputs. Runtime defaults are shipped separately under `app/main/assets/` and `app/main/src/avatar/base-poses/`.
 
 - `local-face-mvp-2026-10-31`: five distinct locally generated characters with fitted facial topology, exported VRMs, actual three-vrm emotion/speech/blink/gaze renders, animated previews, detection/fitting diagnostics and `comparison.html`. Large intermediate body meshes and Blender scenes remain local and are reproducible using `scripts/avatar-face-demo/`.
+
+- `face-seam-review-2026-10-31`: the same five references/source meshes rebuilt with stitched head boundaries and matched appearance; `seam-comparison.html` provides fixed-framing before/after, smile, three-quarter and head-turn views. New VRMs and exported-geometry regression evidence are included. Intermediate meshes, Blender scenes and duplicate baseline VRMs remain local.
