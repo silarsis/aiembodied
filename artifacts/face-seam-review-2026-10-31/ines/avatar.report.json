@@ -1,0 +1,107 @@
+{
+  "pipeline": "generated-mesh-and-landmark-fitted-face-v1",
+  "source": "C:\\Users\\kevin\\repos\\github\\silarsis\\aiembodied\\artifacts\\face-seam-review-2026-10-31\\ines\\source.glb",
+  "vertices": 29193,
+  "triangles": 58353,
+  "bones": 22,
+  "unweightedVertices": 0,
+  "expressions": [
+    "aa",
+    "ih",
+    "ou",
+    "ee",
+    "oh",
+    "blink",
+    "blinkLeft",
+    "blinkRight",
+    "happy",
+    "sad",
+    "angry",
+    "relaxed",
+    "surprised",
+    "fear",
+    "disgust",
+    "lookLeft",
+    "lookRight",
+    "lookUp",
+    "lookDown"
+  ],
+  "facialParts": 9,
+  "faceFit": {
+    "pipeline": "landmark-fitted-face-sealed-v2",
+    "landmarkCount": 478,
+    "surfaceHitRatio": 1.0,
+    "replacedTriangles": 1643,
+    "faceWidthMeters": 0.14650330284367435,
+    "topologyVertices": 468,
+    "expressions": [
+      "aa",
+      "ih",
+      "ou",
+      "ee",
+      "oh",
+      "blink",
+      "blinkLeft",
+      "blinkRight",
+      "happy",
+      "sad",
+      "angry",
+      "relaxed",
+      "surprised",
+      "fear",
+      "disgust",
+      "lookLeft",
+      "lookRight",
+      "lookUp",
+      "lookDown"
+    ],
+    "irisColorsLinearRGB": [
+      [
+        0.39411766827106476,
+        0.2980392277240753,
+        0.17647060006856918
+      ],
+      [
+        0.30000001192092896,
+        0.2647058963775635,
+        0.06470588594675064
+      ]
+    ],
+    "seam": {
+      "bodyBoundaryVertices": 119,
+      "bridgeTriangles": 155,
+      "maxJoinGapMeters": 5.941552852731303e-08,
+      "fixedExpressionBoundary": true,
+      "matchedHeadSkin": true,
+      "skinColorOffset": [
+        0.03598013259033905,
+        0.1719016812981522,
+        0.06141851236733231
+      ],
+      "matchedSkinPixels": 461010,
+      "appearance": "skin calibration and shared boundary texture"
+    },
+    "openingTrianglesRemoved": 46,
+    "neutralEyeApertureMeters": [
+      0.014596848727568279,
+      0.014385546892233592
+    ],
+    "blinkClosureGapMeters": [
+      0.0,
+      0.0
+    ],
+    "limits": [
+      "Single frontal adult humanoid on white background",
+      "Source-projected appearance; no unseen detail reconstruction",
+      "No teeth or tongue yet",
+      "Stylised detection/fitting requires visual review"
+    ]
+  },
+  "mergedDuplicateVertices": 13140,
+  "limits": [
+    "Adult stylised humanoids only",
+    "Close clothing and short/swept-back hair",
+    "Frontal source-projected face, visual review required",
+    "No articulated fingers or hair physics"
+  ]
+}

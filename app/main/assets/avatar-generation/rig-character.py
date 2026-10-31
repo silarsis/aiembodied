@@ -64,6 +64,16 @@ if len(body.data.polygons) > 80000:
     bpy.ops.object.modifier_apply(modifier=dec.name)
     points = np.array([v.co[:] for v in body.data.vertices])
 
+# GLB atlas charts duplicate vertex positions along UV seams. Weld only coincident
+# geometry before weighting; BMesh retains each face corner's original UVs.
+import bmesh
+weld=bmesh.new();weld.from_mesh(body.data)
+source_vertex_count=len(weld.verts)
+bmesh.ops.remove_doubles(weld,verts=list(weld.verts),dist=H*1e-6)
+weld.to_mesh(body.data);weld.free();body.data.update()
+merged_duplicate_vertices=source_vertex_count-len(body.data.vertices)
+points=np.array([v.co[:] for v in body.data.vertices])
+
 # TRELLIS often paints high metallic values. These are matte stylised characters.
 for material in body.data.materials:
     if material and material.use_nodes:
@@ -246,7 +256,7 @@ unweighted = sum(1 for v in body.data.vertices if not v.groups)
 report = {"pipeline": "generated-mesh-and-landmark-fitted-face-v1", "source": str(Path(args.input).resolve()),
           "vertices": len(body.data.vertices), "triangles": sum(len(p.vertices) - 2 for p in body.data.polygons),
           "bones": len(human), "unweightedVertices": unweighted,
-          "expressions": list(expressions), "facialParts": len(face_parts), "faceFit": face_report,
+          "expressions": list(expressions), "facialParts": len(face_parts), "faceFit": face_report, "mergedDuplicateVertices": merged_duplicate_vertices,
           "limits": ["Adult stylised humanoids only", "Close clothing and short/swept-back hair", "Frontal source-projected face, visual review required", "No articulated fingers or hair physics"]}
 output.with_suffix(".report.json").write_text(json.dumps(report, indent=2))
 if unweighted:

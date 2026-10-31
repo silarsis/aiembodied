@@ -38,6 +38,38 @@ supported. The detector can fail on stylised faces. An exported expression is
 checked structurally and in the demonstration, but visual acceptance is still
 required. Existing avatars and shoulder/motion calibration are unchanged.
 
+## Stitched face boundary follow-up
+
+New exports weld coincident input vertices before weighting (UVs remain per face
+corner), then cut one connected front-head region. `face-seams.py` cleans branched
+cut edges and disconnected fragments while preserving independent input parts.
+It connects the fitted perimeter to the actual ordered head boundary instead of
+covering the cut with an overlapping enlarged oval. Both sides have the same
+head-only weights; the outer facial shape-key displacements are pinned to zero.
+The exported geometry is checked for coincident joins, matching skin weights and
+two triangles at each join edge across the five controlled examples.
+
+The replacement is inset slightly to leave space for that bridge and its depth is
+resampled onto the head. A skin-colour correction is fitted from corresponding
+forehead/cheek/nose samples. Visible texture around the seam shares reference
+coordinates; boundary baking preserves the reference's pixel detail instead of
+replacing it with interpolated flat vertex colours. Hair and ears remain
+approximate, especially in side views. This is positional continuity across
+separate skinned mesh primitives, not a claim of one indexed watertight mesh.
+
+`artifacts/face-seam-review-2026-10-31/seam-comparison.html` compares the same five
+references and source meshes before/after, with fixed camera framing, smiles,
+three-quarter views and head turns during speech. Existing saved models are not
+rewritten. Regenerate a character or upload a rebuilt review VRM to use the result.
+
+Reproduce by copying each original demo's `source.glb`, `concept.png`,
+`face-landmarks.json` and `request.json`, plus `characters.json`, to a new output
+directory. Set `FACE_DEMO_OUTPUT` to that directory and use the fit/review/report
+commands below. For the baseline views, copy the previous exported VRMs and
+landmarks into `before/<id>/`, set `FACE_DEMO_OUTPUT` to `before/`, and run the
+review command. Then reset the output directory and run
+`python scripts/avatar-face-demo/seam-report.py` in the face environment.
+
 ## Reproduce the five-character demonstration
 
 From the root, after `pnpm build` and setup:

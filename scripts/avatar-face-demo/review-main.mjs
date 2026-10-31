@@ -19,6 +19,10 @@ ipcMain.handle('face:model', async (_, id) => {
   if (!/^[a-z]+$/.test(id)) throw new Error('Invalid character');
   return new Uint8Array(await readFile(path.join(output, id, 'avatar.vrm')));
 });
+ipcMain.handle('face:frame', async (_, id) => {
+  if (!/^[a-z]+$/.test(id)) throw new Error('Invalid character');
+  return JSON.parse(await readFile(path.join(output, id, 'face-landmarks.json'), 'utf8'));
+});
 ipcMain.handle('face:save', async (_, { id, name, png, meta }) => {
   if (!/^[a-z]+$/.test(id) || !/^[a-z-]+$/.test(name)) throw new Error('Invalid review output');
   const directory = path.join(output, id, 'runtime');

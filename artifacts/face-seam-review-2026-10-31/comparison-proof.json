@@ -1,0 +1,117 @@
+[
+  {
+    "id": "ada",
+    "sameReference": true,
+    "sameSourceMesh": true,
+    "seam": {
+      "bodyBoundaryVertices": 155,
+      "bridgeTriangles": 191,
+      "maxJoinGapMeters": 5.457143297702619e-08,
+      "fixedExpressionBoundary": true,
+      "matchedHeadSkin": true,
+      "skinColorOffset": [
+        0.13876464626719098,
+        0.16909759111968015,
+        0.07540821299153322
+      ],
+      "matchedSkinPixels": 275491,
+      "appearance": "skin calibration and shared boundary texture"
+    },
+    "blinkClosureGapMeters": [
+      0.0,
+      0.0
+    ]
+  },
+  {
+    "id": "malik",
+    "sameReference": true,
+    "sameSourceMesh": true,
+    "seam": {
+      "bodyBoundaryVertices": 83,
+      "bridgeTriangles": 119,
+      "maxJoinGapMeters": 5.941186154919245e-08,
+      "fixedExpressionBoundary": true,
+      "matchedHeadSkin": true,
+      "skinColorOffset": [
+        0.25854498365107126,
+        0.1716060994280202,
+        0.12118157816837805
+      ],
+      "matchedSkinPixels": 233204,
+      "appearance": "skin calibration and shared boundary texture"
+    },
+    "blinkClosureGapMeters": [
+      0.0,
+      0.0
+    ]
+  },
+  {
+    "id": "mei",
+    "sameReference": true,
+    "sameSourceMesh": true,
+    "seam": {
+      "bodyBoundaryVertices": 90,
+      "bridgeTriangles": 126,
+      "maxJoinGapMeters": 5.930940956298476e-08,
+      "fixedExpressionBoundary": true,
+      "matchedHeadSkin": true,
+      "skinColorOffset": [
+        0.10196080803871155,
+        0.11678254675233046,
+        0.10690570268889132
+      ],
+      "matchedSkinPixels": 299010,
+      "appearance": "skin calibration and shared boundary texture"
+    },
+    "blinkClosureGapMeters": [
+      0.0,
+      0.0
+    ]
+  },
+  {
+    "id": "oscar",
+    "sameReference": true,
+    "sameSourceMesh": true,
+    "seam": {
+      "bodyBoundaryVertices": 138,
+      "bridgeTriangles": 174,
+      "maxJoinGapMeters": 5.6358700333396905e-08,
+      "fixedExpressionBoundary": true,
+      "matchedHeadSkin": true,
+      "skinColorOffset": [
+        0.0897524610718392,
+        0.17602693593107688,
+        0.1940267398131077
+      ],
+      "matchedSkinPixels": 307117,
+      "appearance": "skin calibration and shared boundary texture"
+    },
+    "blinkClosureGapMeters": [
+      0.0,
+      0.0
+    ]
+  },
+  {
+    "id": "ines",
+    "sameReference": true,
+    "sameSourceMesh": true,
+    "seam": {
+      "bodyBoundaryVertices": 119,
+      "bridgeTriangles": 155,
+      "maxJoinGapMeters": 5.941552852731303e-08,
+      "fixedExpressionBoundary": true,
+      "matchedHeadSkin": true,
+      "skinColorOffset": [
+        0.03598013259033905,
+        0.1719016812981522,
+        0.06141851236733231
+      ],
+      "matchedSkinPixels": 461010,
+      "appearance": "skin calibration and shared boundary texture"
+    },
+    "blinkClosureGapMeters": [
+      0.0,
+      0.0
+    ]
+  }
+]

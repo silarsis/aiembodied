@@ -1,0 +1,6 @@
+source.glb
+*.blend
+*.blend1
+*/expressions/
+**/runtime/frame-*.png
+before/*/avatar.vrm
