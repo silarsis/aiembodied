@@ -50,6 +50,7 @@ export interface ProviderSettingsPanelProps {
   /** Lists the wake words and trains new ones; without it only the current wake word shows. */
   wakeWordBridge?: WakeWordBridge;
   disabled?: boolean;
+  renderLayout?: (sections: { voice: ReactNode; devices: ReactNode; actions: ReactNode }) => ReactNode;
 }
 
 export function ProviderSettingsPanel({
@@ -61,6 +62,7 @@ export function ProviderSettingsPanel({
   pushToTalkStatus = null,
   wakeWordBridge,
   disabled = false,
+  renderLayout,
 }: ProviderSettingsPanelProps) {
   const wakeWords = useWakeWordLibrary(wakeWordBridge);
   const [draft, setDraft] = useState<ProviderSettings | null>(settings);
@@ -81,7 +83,8 @@ export function ProviderSettingsPanel({
   const dirty = Object.keys(patch).length > 0;
 
   if (!draft || !settings) {
-    return <p className="kiosk__helper">Loading settings…</p>;
+    const loading = <p className="kiosk__helper">Loading settings…</p>;
+    return renderLayout ? renderLayout({ voice: loading, devices: null, actions: null }) : loading;
   }
 
   const update = <K extends keyof ProviderSettings>(section: K, value: Partial<ProviderSettings[K]> | ProviderSettings[K]) => {
@@ -141,7 +144,7 @@ export function ProviderSettingsPanel({
     });
   }
 
-  return (
+  const voice = (
     <div className="providerSettings">
       {usesOpenAi && !hasApiKey ? (
         <p className="kiosk__error" role="alert">
@@ -360,6 +363,11 @@ export function ProviderSettingsPanel({
         </SettingsGroup>
       ) : null}
 
+
+    </div>
+  );
+  const devices = (
+    <div className="providerSettings">
       <SettingsGroup title="Wake word" id="wake">
         <div className="control">
           <label htmlFor="settings-wake-model">Listen for</label>
@@ -435,6 +443,11 @@ export function ProviderSettingsPanel({
         </div>
       </SettingsGroup>
 
+
+    </div>
+  );
+  const actions = (
+    <>
       <div className="secretCard__actions providerSettings__actions">
         <button type="button" onClick={() => void save()} disabled={busy || !dirty}>
           {saving ? 'Saving…' : 'Save settings'}
@@ -448,8 +461,9 @@ export function ProviderSettingsPanel({
           {message.text}
         </p>
       ) : null}
-    </div>
+    </>
   );
+  return renderLayout ? renderLayout({ voice, devices, actions }) : <div className="providerSettings">{voice}{devices}{actions}</div>;
 }
 
 function SettingsGroup({ title, id, children }: { title: string; id: string; children: ReactNode }) {

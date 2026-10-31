@@ -1,3 +1,4 @@
+import type { BackgroundBridge } from './backgrounds/types.js';
 import { contextBridge, ipcRenderer } from 'electron';
 import type { ConfigSecretKey, RendererConfig } from './config/config-manager.js';
 import type { AudioDevicePreferences } from './config/preferences-store.js';
@@ -153,6 +154,7 @@ export interface ConfigBridge {
 }
 
 export interface PreloadApi {
+  backgrounds?: BackgroundBridge;
   config: ConfigBridge;
   realtime: RealtimeBridge;
   localVoice?: LocalVoiceBridge;
@@ -243,6 +245,7 @@ export interface AvatarBridge {
   refinePose(request: PoseEvaluationRequest): Promise<AvatarPoseUploadResult>;
   generateAvatar(request: AvatarGenerationRequest): Promise<AvatarGenerationJob>;
   getAvatarGenerationStatus(jobId: string): Promise<AvatarGenerationStatus>;
+  loadGeneratedAvatarPreview(jobId: string): Promise<ArrayBuffer>;
   acceptGeneratedAvatar(jobId: string): Promise<AvatarGenerationAcceptance>;
   rejectGeneratedAvatar(jobId: string): Promise<void>;
 }
@@ -409,6 +412,14 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       await ipcRenderer.invoke('metrics:observe-latency', { metric, valueMs });
     },
   },
+  backgrounds: {
+    list: () => ipcRenderer.invoke('background:list'),
+    getActive: () => ipcRenderer.invoke('background:get-active'),
+    setActive: (id) => ipcRenderer.invoke('background:set-active', id),
+    load: (id) => ipcRenderer.invoke('background:load', id),
+    generate: (prompt) => ipcRenderer.invoke('background:generate', prompt),
+    delete: (id) => ipcRenderer.invoke('background:delete', id),
+  },
   avatar: {
     listModels: () => ipcRenderer.invoke('avatar-model:list') as Promise<AvatarModelSummary[]>,
     getActiveModel: () => ipcRenderer.invoke('avatar-model:get-active') as Promise<AvatarModelSummary | null>,
@@ -490,6 +501,13 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       ipcRenderer.invoke('avatar:generation-start', payload) as Promise<AvatarGenerationJob>,
     getAvatarGenerationStatus: (jobId: string) =>
       ipcRenderer.invoke('avatar:generation-status', jobId) as Promise<AvatarGenerationStatus>,
+    loadGeneratedAvatarPreview: async (jobId: string) => {
+      const payload: unknown = await ipcRenderer.invoke('avatar:generation-preview', jobId);
+      return cloneBinaryPayload(payload, {
+        id: jobId,
+        errorMessage: 'Unexpected generated VRM preview payload received from main process.',
+      });
+    },
     acceptGeneratedAvatar: (jobId: string) =>
       ipcRenderer.invoke('avatar:generation-accept', jobId) as Promise<AvatarGenerationAcceptance>,
     rejectGeneratedAvatar: async (jobId: string) => {

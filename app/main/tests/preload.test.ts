@@ -157,6 +157,11 @@ describe('preload bridge', () => {
     await expect(api.avatar?.getAvatarGenerationStatus('job-1')).resolves.toEqual({ jobId: 'job-1', status: 'queued' });
     expect(invoke).toHaveBeenCalledWith('avatar:generation-status', 'job-1');
 
+    invoke.mockResolvedValueOnce(new Uint8Array([1, 2, 3]));
+    const preview = await api.avatar?.loadGeneratedAvatarPreview('job-1');
+    expect(new Uint8Array(preview as ArrayBuffer)).toEqual(new Uint8Array([1, 2, 3]));
+    expect(invoke).toHaveBeenCalledWith('avatar:generation-preview', 'job-1');
+
     invoke.mockResolvedValueOnce({ vrmId: 'vrm-99' });
     await expect(api.avatar?.acceptGeneratedAvatar('job-1')).resolves.toEqual({ vrmId: 'vrm-99' });
     expect(invoke).toHaveBeenCalledWith('avatar:generation-accept', 'job-1');
@@ -195,4 +200,25 @@ describe('preload bridge', () => {
     expect(new Uint8Array(cloned as ArrayBuffer)).toEqual(new Uint8Array(buffer));
     expect(invoke).toHaveBeenCalledWith('avatar-animation:load', 'vrma-3');
   });
+});
+
+
+it('exposes only named background operations through the preload bridge', async () => {
+  vi.resetModules();
+  await import('../src/preload.js');
+  const api = exposeInMainWorld.mock.calls.at(-1)![1];
+  await api.backgrounds.list();
+  expect(invoke).toHaveBeenCalledWith('background:list');
+  await api.backgrounds.getActive();
+  expect(invoke).toHaveBeenCalledWith('background:get-active');
+  await api.backgrounds.setActive('builtin:beach');
+  expect(invoke).toHaveBeenCalledWith('background:set-active', 'builtin:beach');
+  await api.backgrounds.setActive(null);
+  expect(invoke).toHaveBeenCalledWith('background:set-active', null);
+  await api.backgrounds.load('builtin:city');
+  expect(invoke).toHaveBeenCalledWith('background:load', 'builtin:city');
+  await api.backgrounds.generate('A forest clearing');
+  expect(invoke).toHaveBeenCalledWith('background:generate', 'A forest clearing');
+  await api.backgrounds.delete('generated-id');
+  expect(invoke).toHaveBeenCalledWith('background:delete', 'generated-id');
 });

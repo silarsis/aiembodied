@@ -12,10 +12,18 @@ describe('prepareDevHomeEnv', () => {
     const devHome = resolve(repoRoot, '.dev-home');
 
     const pnpmStorePath = 'C:/Users/test/AppData/Local/pnpm/store/v3';
-    const env = prepareDevHomeEnv(repoRoot, {}, 'win32', { pnpmStorePath });
+    const env = prepareDevHomeEnv(
+      repoRoot,
+      { LOCALAPPDATA: 'host-local', APPDATA: 'host-roaming', USERPROFILE: 'host-user' },
+      'win32',
+      { pnpmStorePath },
+    );
 
     try {
       expect(env.HOME).toBe(devHome);
+      expect(env.AIEMBODIED_HOST_LOCALAPPDATA).toBe('host-local');
+      expect(env.AIEMBODIED_HOST_APPDATA).toBe('host-roaming');
+      expect(env.AIEMBODIED_HOST_USERPROFILE).toBe('host-user');
       expect(env.USERPROFILE).toBe(devHome);
       expect(env.APPDATA).toBe(join(devHome, 'AppData', 'Roaming'));
       expect(env.LOCALAPPDATA).toBe(join(devHome, 'AppData', 'Local'));

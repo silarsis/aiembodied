@@ -1,0 +1,65 @@
+[
+  {
+    "name": "garden",
+    "stageHeight": 802,
+    "canvasTop": 121.364990234375,
+    "canvasHeight": 625.53125,
+    "footFraction": 0.90859375,
+    "footY": 689.7187744140625,
+    "groundY": 689.72
+  },
+  {
+    "name": "lounge",
+    "stageHeight": 802,
+    "canvasTop": 121.364990234375,
+    "canvasHeight": 625.53125,
+    "footFraction": 0.90859375,
+    "footY": 689.7187744140625,
+    "groundY": 689.72
+  },
+  {
+    "name": "beach",
+    "stageHeight": 802,
+    "canvasTop": 122.34234619140625,
+    "canvasHeight": 625.53125,
+    "footFraction": 0.90703125,
+    "footY": 689.7187377929687,
+    "groundY": 689.72
+  },
+  {
+    "name": "city",
+    "stageHeight": 802,
+    "canvasTop": 121.364990234375,
+    "canvasHeight": 625.53125,
+    "footFraction": 0.90859375,
+    "footY": 689.7187744140625,
+    "groundY": 689.72
+  },
+  {
+    "name": "mountain",
+    "stageHeight": 802,
+    "canvasTop": 121.364990234375,
+    "canvasHeight": 625.53125,
+    "footFraction": 0.90859375,
+    "footY": 689.7187744140625,
+    "groundY": 689.72
+  },
+  {
+    "name": "garden-drawer",
+    "stageHeight": 802,
+    "canvasTop": 178.20037841796875,
+    "canvasHeight": 562.9780883789062,
+    "footFraction": 0.90859375,
+    "footY": 689.7187509059906,
+    "groundY": 689.72
+  },
+  {
+    "name": "garden-portrait",
+    "stageHeight": 902,
+    "canvasTop": 136.49462890625,
+    "canvasHeight": 703.53125,
+    "footFraction": 0.90859375,
+    "footY": 775.7187255859375,
+    "groundY": 775.72
+  }
+]

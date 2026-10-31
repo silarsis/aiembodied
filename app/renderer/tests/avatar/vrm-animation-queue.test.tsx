@@ -211,6 +211,7 @@ describe('VrmAvatarRenderer animation queue', () => {
       return {
         scene,
         humanoid: {
+          setNormalizedPose: vi.fn(),
           getNormalizedBoneNode: () => null,
           normalizedRestPose: {
             hips: { position: [0, 1, 0] as [number, number, number] },

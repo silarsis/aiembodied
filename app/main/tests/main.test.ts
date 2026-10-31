@@ -831,7 +831,7 @@ describe('main process bootstrap', () => {
 
     const listPosesHandler = handleEntries.get('avatar-pose:list');
     expect(typeof listPosesHandler).toBe('function');
-    await expect(listPosesHandler?.({})).resolves.toEqual([]);
+    await expect(listPosesHandler?.({})).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ id: 'builtin:relaxed-neutral', builtIn: true })]));
 
     const generatePoseHandler = handleEntries.get('avatar-pose:generate');
     expect(typeof generatePoseHandler).toBe('function');

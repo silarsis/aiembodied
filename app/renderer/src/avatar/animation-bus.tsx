@@ -20,7 +20,10 @@ export interface VRMPoseExpressions {
 
 export interface VRMPoseData {
   // Can be either flat bone format (legacy) or nested with expressions
-  [boneName: string]: { rotation: number[]; position?: number[] } | VRMPoseExpressions | undefined;
+  [boneName: string]: { rotation: number[]; position?: number[] | null }
+    | Record<string, { rotation: number[]; position?: number[] | null }>
+    | VRMPoseExpressions | string | undefined;
+  sourceVrmVersion?: '0' | '1';
   bones?: Record<string, { rotation: number[]; position?: number[] | null }>;
   expressions?: VRMPoseExpressions;
 }

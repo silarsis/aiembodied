@@ -105,6 +105,8 @@ export interface AvatarMotionStatus {
 }
 
 export interface AvatarPoseSummary {
+  /** Shipped with the app and available without a saved library. */
+  builtIn?: boolean;
   id: string;
   name: string;
   createdAt: number;
@@ -132,12 +134,15 @@ export type AvatarGenerationStage =
   | 'queued'
   | 'concept'
   | 'texturing'
+  | 'meshing'
+  | 'rigging'
   | 'packaging'
   | 'completed'
   | 'failed'
   | 'cancelled';
 
 export interface AvatarGenerationRequest {
+  mode?: 'new-character' | 'restyle';
   /** Plain-English description of the character's look. */
   prompt: string;
 }

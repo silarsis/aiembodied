@@ -132,6 +132,7 @@ function createAvatarBridgeStub(overrides: Partial<AvatarBridge> = {}): AvatarBr
     generateAvatar: vi.fn().mockResolvedValue({ jobId: 'gen-job-1' }),
     getAvatarGenerationStatus: vi.fn().mockResolvedValue({ jobId: 'gen-job-1', status: 'queued', progress: 0 }),
     acceptGeneratedAvatar: vi.fn().mockResolvedValue({ vrmId: 'gen-vrm-1' }),
+    loadGeneratedAvatarPreview: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
     rejectGeneratedAvatar: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -337,4 +338,15 @@ describe('AvatarConfigurator', () => {
       infoSpy.mockRestore();
     }
   });
+});
+
+
+it('keeps included base poses available without offering deletion', async () => {
+  const bridge = createAvatarBridgeStub();
+  vi.mocked(bridge.listPoses).mockResolvedValue([{ id: 'builtin:happiness', name: 'Happiness', createdAt: 0, fileSha: 'base', builtIn: true }]);
+  render(<AvatarConfigurator avatarApi={bridge} />);
+  const heading = await screen.findByRole('heading', { name: 'Happiness' });
+  const card = heading.closest('article')!;
+  expect(within(card).getByText('Included base pose')).toBeInTheDocument();
+  expect(within(card).queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
 });

@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRM, VRMLoaderPlugin, VRMUtils, VRMHumanBoneName } from '@pixiv/three-vrm';
-import { normalizePoseData } from './vrm-avatar-renderer.js';
+import { poseBonesForVrm } from './vrm-avatar-renderer.js';
+import type { VRMPoseData } from './animation-bus.js';
 
 const SNAPSHOT_WIDTH = 512;
 const SNAPSHOT_HEIGHT = 768;
@@ -124,7 +125,7 @@ function applyPoseToVrm(
     }
 
     // Normalize pose data to handle both legacy flat format and new nested format
-    const { bones, expressions } = normalizePoseData(rawPoseData as Parameters<typeof normalizePoseData>[0]);
+    const { bones, expressions } = poseBonesForVrm(vrm, rawPoseData as VRMPoseData);
     const humanoid = vrm.humanoid;
 
     // Apply bone rotations

@@ -130,3 +130,17 @@ The following phased plan covers the MVP described in the PRD and architecture s
   - Contract tests ensuring Unity stub receives consistent data stream.
   - Manual demo showing swap from Canvas to Unity without altering voice pipeline.
 
+
+## 17. New 3D character generation - experimental MVP (2026-10-31)
+- [x] Keep the existing atlas recolour explicitly separate from new character generation.
+- [x] Generate a separated-limb blank-face reference with Qwen and a textured mesh with TRELLIS.2.
+- [x] Run Blender outside Electron main for body weighting, T-pose conversion, facial geometry and VRM export.
+- [x] Provide the five speech mouth shapes, blink and emotional expression presets.
+- [x] Review the finished VRM without switching the active character; Keep imports that exact result.
+- [x] Handle VRM 0/1 facing and tag/convert the built-in poses without changing the original VRM 0 stance.
+- [x] Validate on a live local image/mesh generation and an isolated app review/import flow.
+- [ ] Improve shoulder/elbow deformation and hands; broaden beyond close-fitting clothing and short hair.
+- [ ] Add controllable facial design, better eyelids, lips, teeth and mouth interior rather than simple cartoon facial parts.
+- [ ] Investigate reliable semantic segmentation/retopology and rig/face transfer for arbitrary generated characters.
+- [ ] Add finger articulation, gaze and hair/clothing physics.
+Evidence and supported limits: docs/features/new-avatar-generation.md.

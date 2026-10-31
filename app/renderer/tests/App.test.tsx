@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   ConversationAppendMessagePayload,
@@ -6,12 +6,14 @@ import type {
   ConversationSession,
 } from '../../main/src/conversation/types.js';
 import type { RendererConfig } from '../../main/src/config/config-manager.js';
+import { BASE_POSES } from '../../main/src/avatar/base-poses.js';
 import { DEFAULT_PROVIDER_SETTINGS } from '../../main/src/config/provider-settings.js';
 import type { WakeWordDetectionEvent } from '../../main/src/wake-word/types.js';
 import type { AvatarBridge } from '../src/avatar/types.js';
 
 type MockRealtimeInstance = {
   callbacks: {
+    onTextContent?: (content: string) => void;
     onSessionUpdated?: (session: {
       voice?: string;
       instructions?: string;
@@ -201,6 +203,7 @@ function createAvatarBridgeMock(overrides: Partial<AvatarBridge> = {}): AvatarBr
     generateAvatar: vi.fn().mockResolvedValue({ jobId: 'gen-job-1' }),
     getAvatarGenerationStatus: vi.fn().mockResolvedValue({ jobId: 'gen-job-1', status: 'queued', progress: 0 }),
     acceptGeneratedAvatar: vi.fn().mockResolvedValue({ vrmId: 'gen-vrm-1' }),
+    loadGeneratedAvatarPreview: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
     rejectGeneratedAvatar: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -307,16 +310,20 @@ describe('App component', () => {
     }
   });
 
-  const getMainTablist = () => screen.findByRole('tablist', { name: /Kiosk sections/i });
-
-  const openTab = async (name: RegExp | string) => {
-    const tablist = await getMainTablist();
-    const tab = await within(tablist).findByRole('tab', { name });
-    fireEvent.click(tab);
-    return tab;
+  const closeControls = () => {
+    const close = screen.queryByRole('button', { name: 'Close controls' });
+    if (close) fireEvent.click(close);
   };
 
-  it('renders tab navigation and toggles panels', async () => {
+  const openGroup = async (name: RegExp | string) => {
+    const handle = screen.queryByRole('button', { name: 'Controls' });
+    if (handle) fireEvent.click(handle);
+    const button = await screen.findByRole('button', { name });
+    if (button.getAttribute('aria-expanded') !== 'true') fireEvent.click(button);
+    return button;
+  };
+
+  it('keeps the avatar on stage while controls open and close', async () => {
     (window as PreloadWindow).aiembodied = {
       ping: () => 'pong',
       config: {
@@ -335,38 +342,22 @@ describe('App component', () => {
 
     render(<App />);
 
-    const mainTablist = await getMainTablist();
-    const tabs = within(mainTablist).getAllByRole('tab');
-    expect(tabs.map((tab) => tab.textContent)).toEqual([
-      'ChatGPT',
-      'Character',
-      'Local',
-      'Settings',
-      'MCP Servers',
-    ]);
-
-    const chatPanel = await screen.findByRole('tabpanel', { name: /ChatGPT/i });
-    expect(
-      within(chatPanel).getByRole('heading', { name: /Embodied Assistant/i }),
-    ).toBeInTheDocument();
-
-    await openTab(/Character/i);
-    const characterPanel = screen.getByRole('tabpanel', { name: /Character/i });
-    expect(within(characterPanel).getByLabelText(/Base prompt/i)).toBeInTheDocument();
-
-    await openTab(/Settings/i);
-    const settingsPanel = screen.getByRole('tabpanel', { name: /Settings/i });
-    expect(within(settingsPanel).getByLabelText('Realtime voice')).toBeInTheDocument();
-
-    await openTab(/Local/i);
-    const localPanel = await screen.findByRole('tabpanel', { name: /Local/i });
-    expect(within(localPanel).getByLabelText('Microphone')).toBeInTheDocument();
-
-    await openTab(/ChatGPT/i);
-    expect(await screen.findByText(/Speech gate:/i)).toBeInTheDocument();
+    const stage = screen.getByRole('region', { name: 'Avatar stage' });
+    const renderer = stage.querySelector('[data-renderer]');
+    expect(screen.queryByRole('complementary', { name: 'Controls' })).not.toBeInTheDocument();
+    await openGroup(/Character/i);
+    expect(screen.getByLabelText(/Base prompt/i)).toBeInTheDocument();
+    await openGroup(/Voice & engine/i);
+    expect(screen.getByLabelText('Realtime voice')).toBeInTheDocument();
+    await openGroup(/Devices & wake word/i);
+    expect(screen.getByLabelText('Microphone')).toBeInTheDocument();
+    expect(stage.querySelector('[data-renderer]')).toBe(renderer);
+    closeControls();
+    expect(screen.queryByRole('complementary', { name: 'Controls' })).not.toBeInTheDocument();
+    expect(stage).toBeInTheDocument();
   }, 15000);
 
-  it('character tab loads the avatar configurator when active', async () => {
+  it('mounts character controls before the drawer opens', async () => {
     (window as PreloadWindow).aiembodied = {
       ping: () => 'pong',
       config: {
@@ -385,23 +376,12 @@ describe('App component', () => {
 
     render(<App />);
 
-    const characterPanel = await waitFor(() => {
-      const panel = document.getElementById('panel-character');
-      if (!panel) {
-        throw new Error('Character panel not mounted');
-      }
-      return panel;
-    });
-
-    expect(characterPanel.getAttribute('data-state')).toBe('inactive');
-
-    await openTab(/Character/i);
-
-    await waitFor(() => expect(characterPanel.getAttribute('data-state')).toBe('active'));
-
-    const localPanel = document.getElementById('panel-local');
-    expect(localPanel).not.toBeNull();
-    expect(localPanel?.getAttribute('data-state')).toBe('inactive');
+    const characterBody = document.getElementById('controls-character-body');
+    expect(characterBody).not.toBeNull();
+    expect(document.getElementById('controls-drawer')).toHaveAttribute('inert');
+    await openGroup(/Character/i);
+    expect(document.getElementById('controls-character-body')).toBe(characterBody);
+    expect(document.getElementById('controls-devices-body')).toHaveAttribute('hidden');
   });
 
   it('renders the static realtime voice list without querying the API', async () => {
@@ -435,7 +415,7 @@ describe('App component', () => {
 
       render(<App />);
 
-      await openTab(/Settings/i);
+      await openGroup(/Voice & engine/i);
 
       const select = (await screen.findByLabelText('Realtime voice')) as HTMLSelectElement;
       const optionValues = Array.from(select.options).map((option) => option.value);
@@ -498,7 +478,7 @@ describe('App component', () => {
 
       render(<App />);
 
-      await openTab(/Settings/i);
+      await openGroup(/Voice & engine/i);
 
       const select = (await screen.findByLabelText('Realtime voice')) as HTMLSelectElement;
 
@@ -552,6 +532,10 @@ describe('App component', () => {
       vadMinSpeechDurationMs: 280,
     };
 
+    const avatarBridge = createAvatarBridgeMock();
+    vi.mocked(avatarBridge.listPoses).mockResolvedValue(BASE_POSES.map((pose) => ({
+      id: pose.id, name: pose.name, createdAt: 0, fileSha: 'base', builtIn: true,
+    })));
     (window as PreloadWindow).aiembodied = {
       ping: () => 'pong',
       config: {
@@ -563,7 +547,7 @@ describe('App component', () => {
       },
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: { onWake: () => () => { } },
-      avatar: createAvatarBridgeMock(),
+      avatar: avatarBridge,
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
@@ -631,6 +615,13 @@ describe('App component', () => {
     const stagedOrder = client.updateSessionConfig.mock.invocationCallOrder[matchingCallIndex];
     const connectOrder = client.connect.mock.invocationCallOrder[0];
     expect(stagedOrder).toBeLessThan(connectOrder);
+    const latestInstructions = client.updateSessionConfig.mock.calls.at(-1)?.[0]?.instructions;
+    for (const name of ['relaxed-neutral', 'happiness', 'sadness', 'anger', 'fear', 'disgust', 'surprise']) {
+      expect(latestInstructions).toContain(name);
+    }
+    expect(latestInstructions).toContain('{pose:relaxed-neutral}');
+    await act(async () => client.callbacks.onTextContent?.('Feeling cheerful. {pose:happiness}'));
+    await waitFor(() => expect(avatarBridge.loadPose).toHaveBeenCalledWith('builtin:happiness'));
   });
 
   it('renders kiosk UI, toggles transcript overlay, and persists device preferences', async () => {
@@ -689,7 +680,7 @@ describe('App component', () => {
     fireEvent.keyDown(window, { key: 'T', code: 'KeyT', ctrlKey: true, shiftKey: true });
     expect(screen.getByTestId('transcript-overlay')).toBeInTheDocument();
 
-    await openTab(/Local/i);
+    await openGroup(/Devices & wake word/i);
 
     const inputSelect = await screen.findByLabelText('Microphone');
     fireEvent.change(inputSelect, { target: { value: 'mic-1' } });
@@ -711,7 +702,7 @@ describe('App component', () => {
       });
     });
 
-    await openTab(/Settings/i);
+    await openGroup(/Voice & engine/i);
     expect(screen.getByRole('heading', { level: 2, name: /API keys/i })).toBeInTheDocument();
     const realtimeCard = screen
       .getByRole('heading', { name: /OpenAI API key/i })
@@ -723,10 +714,10 @@ describe('App component', () => {
 
     expect(screen.queryByRole('heading', { name: /Meshy API key/i })).not.toBeInTheDocument();
 
-    await openTab(/ChatGPT/i);
+    closeControls();
 
     expect(await screen.findByText(/Speech gate:/i)).toBeInTheDocument();
-    expect(await screen.findByRole('heading', { name: /Embodied Assistant/i })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Avatar stage' })).toBeInTheDocument();
   });
 
   it('allows pausing and resuming listening while disconnecting realtime sessions', async () => {
@@ -777,13 +768,13 @@ describe('App component', () => {
     render(<App />);
 
     const listeningToggle = await screen.findByTestId('listening-toggle');
-    expect(listeningToggle).toHaveTextContent(/Enable listening/i);
+    expect(listeningToggle).toHaveAccessibleName(/Enable listening/i);
     expect(listeningToggle).toHaveAttribute('aria-pressed', 'false');
 
     fireEvent.click(listeningToggle);
 
     await waitFor(() => {
-      expect(listeningToggle).toHaveTextContent(/Disable listening/i);
+      expect(listeningToggle).toHaveAccessibleName(/Disable listening/i);
       expect(listeningToggle).toHaveAttribute('aria-pressed', 'true');
     });
 
@@ -799,7 +790,7 @@ describe('App component', () => {
 
     await waitFor(() => {
       expect(listeningToggle).toHaveAttribute('aria-pressed', 'false');
-      expect(listeningToggle).toHaveTextContent(/Enable listening/i);
+      expect(listeningToggle).toHaveAccessibleName(/Enable listening/i);
     });
 
     await waitFor(() => {
@@ -822,7 +813,7 @@ describe('App component', () => {
 
     await waitFor(() => {
       expect(listeningToggle).toHaveAttribute('aria-pressed', 'true');
-      expect(listeningToggle).toHaveTextContent(/Disable listening/i);
+      expect(listeningToggle).toHaveAccessibleName(/Disable listening/i);
     });
   });
 
@@ -1106,7 +1097,7 @@ describe('App component', () => {
 
     render(<App />);
 
-    await openTab(/Settings/i);
+    await openGroup(/Voice & engine/i);
 
     const realtimeHeading = await screen.findByRole('heading', {
       name: /OpenAI API key/i,
@@ -1163,7 +1154,7 @@ describe('App component', () => {
       __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
 
-    await openTab(/Settings/i);
+    await openGroup(/Voice & engine/i);
 
     const realtimeHeading = await screen.findByRole('heading', {
       name: /OpenAI API key/i,
@@ -1236,7 +1227,7 @@ describe('App component', () => {
 
     render(<App />);
 
-    await openTab(/Character/i);
+    await openGroup(/Character/i);
 
     const textarea = (await screen.findByLabelText(/Base prompt/i)) as HTMLTextAreaElement;
 
@@ -1334,7 +1325,7 @@ describe('App component', () => {
       const initialConnectCalls = instance.connect.mock.calls.length;
       const initialDisconnectCalls = instance.disconnect.mock.calls.length;
 
-      await openTab(/Settings/i);
+      await openGroup(/Voice & engine/i);
 
       const voiceSelect = (await screen.findByLabelText('Realtime voice')) as HTMLSelectElement;
       fireEvent.change(voiceSelect, { target: { value: 'ash' } });

@@ -1,3 +1,4 @@
+import type { BackgroundBridge } from '../../main/src/backgrounds/types.js';
 import type { ConfigSecretKey, RendererConfig } from '../../main/src/config/config-manager.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
 import type { ProviderSettingsPatch } from '../../main/src/config/provider-settings.js';
@@ -82,6 +83,7 @@ export interface LocalVoiceBridge {
 }
 
 export interface PreloadApi {
+  backgrounds?: BackgroundBridge;
   config: ConfigBridge;
   realtime: RealtimeBridge;
   localVoice?: LocalVoiceBridge;

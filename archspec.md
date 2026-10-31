@@ -258,3 +258,7 @@ Table kv(key TEXT PK, value TEXT);
 - Multi‑voice switching; per‑persona memories
 - OTA updates
 
+
+
+## Local new-character generation (experimental extension, 2026-10-31)
+Electron main owns the job and files in `avatar/generation/`; the renderer requests generation/review/acceptance through named preload IPC channels. Qwen and TRELLIS.2 use the shared ComfyUI client and on-demand runtime. A finite headless Blender subprocess runs the bundled `assets/avatar-generation/rig-character.py`, generating a humanoid skin and explicit facial meshes/morphs and exporting VRM 1.0. Blender is an external dependency (`BLENDER_EXE` overrides discovery); its script is unpacked from the Electron archive when packaged. Heavy model and mesh work stays outside the main/renderer event loops. Generation does not replace the active avatar until acceptance. Texture-only restyling remains a separate mode and is never a fallback for failed geometry generation. See `docs/features/new-avatar-generation.md` for the deliberately constrained MVP.

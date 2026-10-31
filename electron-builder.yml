@@ -4,6 +4,7 @@ asar: true
 asarUnpack:
   # onnxruntime-node reads the wake-word models with native file I/O, which can't see into the asar.
   - app/main/assets/wake-word/**
+  - app/main/assets/avatar-generation/**
 files:
   - from: .
     filter:

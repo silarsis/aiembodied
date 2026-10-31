@@ -5,6 +5,49 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
 describe('ComfyUIClient', () => {
+  it('cancels only its own prompt when an avatar is discarded', async () => {
+    const abort = new AbortController();
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(json({ prompt_id: 'our-job' }))
+      .mockResolvedValueOnce(json({}))
+      .mockResolvedValueOnce(json({ cancelled: true }));
+    const client = new ComfyUIClient({
+      baseUrl: 'http://comfy.test',
+      fetchFn,
+      sleep: async () => {
+        abort.abort();
+      },
+    });
+    await expect(client.run({}, { signal: abort.signal })).rejects.toThrow('cancelled');
+    expect(fetchFn.mock.calls[2][0]).toBe('http://comfy.test/api/jobs/our-job/cancel');
+    expect(
+      fetchFn.mock.calls.some(
+        ([url]) => String(url).endsWith('/interrupt') || String(url).endsWith('/free'),
+      ),
+    ).toBe(false);
+  });
+  it('downloads a saved mesh through the same job client', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(json({ prompt_id: 'mesh' }))
+      .mockResolvedValueOnce(
+        json({
+          mesh: {
+            status: { completed: true },
+            outputs: {
+              save: {
+                '3d': [{ filename: 'character.glb', type: 'output', subfolder: 'aiembodied' }],
+              },
+            },
+          },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3])));
+    const client = new ComfyUIClient({ baseUrl: 'http://comfy.test', fetchFn });
+    expect([...(await client.run({}, { output: 'mesh' }))]).toEqual([1, 2, 3]);
+    expect(fetchFn.mock.calls[2][0]).toContain('character.glb');
+  });
   it('queues a graph, polls history, and downloads the saved image', async () => {
     const fetchFn = vi
       .fn()
@@ -14,12 +57,18 @@ describe('ComfyUIClient', () => {
         json({
           p1: {
             status: { completed: true },
-            outputs: { save: { images: [{ filename: 'a.png', subfolder: 'aiembodied', type: 'output' }] } },
+            outputs: {
+              save: { images: [{ filename: 'a.png', subfolder: 'aiembodied', type: 'output' }] },
+            },
           },
         }),
       )
       .mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3])));
-    const client = new ComfyUIClient({ baseUrl: 'http://comfy.test/', fetchFn, sleep: async () => undefined });
+    const client = new ComfyUIClient({
+      baseUrl: 'http://comfy.test/',
+      fetchFn,
+      sleep: async () => undefined,
+    });
 
     const bytes = await client.run({ save: { class_type: 'SaveImage', inputs: {} } });
 
@@ -27,15 +76,23 @@ describe('ComfyUIClient', () => {
     expect(fetchFn.mock.calls[0][0]).toBe('http://comfy.test/prompt');
     expect(JSON.parse(fetchFn.mock.calls[0][1].body as string).prompt).toHaveProperty('save');
     expect(fetchFn.mock.calls[1][0]).toBe('http://comfy.test/history/p1');
-    expect(fetchFn.mock.calls[3][0]).toBe('http://comfy.test/view?filename=a.png&subfolder=aiembodied&type=output');
+    expect(fetchFn.mock.calls[3][0]).toBe(
+      'http://comfy.test/view?filename=a.png&subfolder=aiembodied&type=output',
+    );
   });
 
   it('surfaces workflow errors', async () => {
     const fetchFn = vi
       .fn()
       .mockResolvedValueOnce(json({ prompt_id: 'p1' }))
-      .mockResolvedValueOnce(json({ p1: { status: { status_str: 'error', messages: ['out of memory'] } } }));
-    const client = new ComfyUIClient({ baseUrl: 'http://comfy.test', fetchFn, sleep: async () => undefined });
+      .mockResolvedValueOnce(
+        json({ p1: { status: { status_str: 'error', messages: ['out of memory'] } } }),
+      );
+    const client = new ComfyUIClient({
+      baseUrl: 'http://comfy.test',
+      fetchFn,
+      sleep: async () => undefined,
+    });
 
     await expect(client.run({})).rejects.toThrow(/out of memory/);
   });
@@ -48,10 +105,14 @@ describe('ComfyUIClient', () => {
   });
 
   it('uploads images and returns the LoadImage name', async () => {
-    const fetchFn = vi.fn().mockResolvedValueOnce(json({ name: 'crop.png', subfolder: 'aiembodied' }));
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(json({ name: 'crop.png', subfolder: 'aiembodied' }));
     const client = new ComfyUIClient({ baseUrl: 'http://comfy.test', fetchFn });
 
-    await expect(client.uploadImage('crop.png', Buffer.from('png'))).resolves.toBe('aiembodied/crop.png');
+    await expect(client.uploadImage('crop.png', Buffer.from('png'))).resolves.toBe(
+      'aiembodied/crop.png',
+    );
     const form = fetchFn.mock.calls[0][1].body as FormData;
     expect(form.get('type')).toBe('input');
     expect((form.get('image') as File).name).toBe('crop.png');

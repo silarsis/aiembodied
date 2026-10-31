@@ -1,0 +1,19 @@
+{
+  "pipeline": "Qwen-Image 2.1 -> TRELLIS.2 -> Blender generated rig and cartoon facial meshes -> VRM 1.0",
+  "sha256": {
+    "concept.png": "296b4d94a5793051f99f8275bc695035ceabe3465421b3818185ea45c09f19bc",
+    "source.glb": "c1055d1f0c1915b25c0916d58d3f01d0d2ebf06c9038111a8ae9e7dfd3eb8fd1",
+    "explorer.vrm": "77c7a22955396f22a6e0a6b08ddf8b5e02f97e410ca0ea49ccf7ba3d985478e2"
+  },
+  "approvedOriginalPoseBonesUnchanged": {
+    "anger.pose": true,
+    "disgust.pose": true,
+    "fear.pose": true,
+    "happiness.pose": true,
+    "relaxed-neutral.pose": true,
+    "sadness.pose": true,
+    "surprise.pose": true
+  },
+  "appVerification": "app-verification.json",
+  "runtimeVerification": "runtime-verification.json"
+}

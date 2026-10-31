@@ -1,0 +1,30 @@
+{
+  "pipeline": "generated-mesh-and-procedural-face-v1",
+  "source": "C:\\Users\\kevin\\repos\\github\\silarsis\\aiembodied\\artifacts\\new-avatar-mvp-2026-10-31\\source.glb",
+  "vertices": 41658,
+  "triangles": 59998,
+  "bones": 22,
+  "unweightedVertices": 0,
+  "expressions": [
+    "aa",
+    "ih",
+    "ou",
+    "ee",
+    "oh",
+    "blink",
+    "blinkLeft",
+    "blinkRight",
+    "happy",
+    "sad",
+    "angry",
+    "relaxed",
+    "surprised"
+  ],
+  "facialParts": 9,
+  "limits": [
+    "Adult stylised humanoids only",
+    "Close clothing and short/swept-back hair",
+    "Procedural facial features",
+    "No articulated fingers or hair physics"
+  ]
+}

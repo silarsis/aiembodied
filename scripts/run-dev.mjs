@@ -97,6 +97,10 @@ export function prepareDevHomeEnv(
 
   const envIsolated = {
     ...baseEnv,
+    // External Comfy Desktop is installed outside the app's isolated preferences home.
+    AIEMBODIED_HOST_LOCALAPPDATA: baseEnv.LOCALAPPDATA,
+    AIEMBODIED_HOST_APPDATA: baseEnv.APPDATA,
+    AIEMBODIED_HOST_USERPROFILE: baseEnv.USERPROFILE,
     HOME: devHome,
     USERPROFILE: devHome,
     APPDATA: roamingAppData,
