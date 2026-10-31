@@ -214,7 +214,7 @@ def cut_head(body,patch,face_width,minimum_height=1.1):
         if following==start:break
         if following in loop:raise RuntimeError('Head boundary is not a simple loop.')
         loop.append(following);previous,current=current,following
-    if len(loop)!=len(adjacency):raise RuntimeError('Head cut produced more than one boundary.')
+    if len(loop)!=len(adjacency):raise RuntimeError('Head cut produced more than one boundary. Try regenerating with hair clear of the cheeks and jaw, fully closed lips and an unobstructed face. The generated mesh may need repair if this persists.')
     if any(v.co.z<minimum_height for v in loop):raise RuntimeError('Head cut extends below the detected head region.')
     # The bridge and face use the head bone exclusively. Give the matching body
     # edge the same weights so a neck/head turn cannot pull the surfaces apart.
