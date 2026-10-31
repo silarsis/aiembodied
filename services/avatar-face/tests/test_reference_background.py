@@ -33,7 +33,7 @@ class ReferenceBackgroundTests(unittest.TestCase):
             bounds(np.full((120, 100, 3), 240, dtype=np.uint8))
 
     def test_dark_or_coloured_background_is_rejected(self):
-        for color in (100, [180, 220, 255]):
+        for color in (100, [180, 220, 255], [210, 210, 234], [210, 234, 210], [225, 240, 249]):
             with self.subTest(color=color), self.assertRaisesRegex(ValueError, 'background'):
                 bounds(self.figure(color))
 

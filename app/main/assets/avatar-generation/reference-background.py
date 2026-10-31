@@ -10,7 +10,7 @@ import numpy as np
 def reference_body_bounds(rgb):
     pixels = np.asarray(rgb, dtype=np.float32)
     border = np.concatenate((pixels[0], pixels[-1], pixels[:, 0], pixels[:, -1]))
-    neutral = (border.max(axis=1) - border.min(axis=1)) <= 24
+    neutral = (border.max(axis=1) - border.min(axis=1)) <= 12
     light = border.min(axis=1) >= 210
     if np.mean(neutral & light) < .98:
         raise ValueError(
