@@ -20,6 +20,10 @@ After that work finishes, review the **finished model**, rather than the concept
 - The existing named avatar-generation IPC bridge; completed candidates are read through `avatar:generation-preview` without importing them.
 - Main owns job files and persistence. Blender runs in a finite subprocess with a five-minute timeout and an abort signal. Comfy cancellation targets the individual prompt; older servers can remove the queued job without globally interrupting other work. The pipeline never calls `/free`.
 
+Windows ComfyUI startup uses asynchronous PowerShell with ignored launcher stdio, matching the local-service launcher. Piped stdio can remain inherited by the background server and falsely time out even after it starts. `Start-Process` still provides the hidden console needed by the Python environment; do not use Node's detached mode as a substitute. Server output is redirected to `comfyui.log`/`comfyui.err.log`; launcher failures go to `comfyui-startup.err.log`. The app polls server health separately and shows a concise launch failure rather than an encoded command.
+
+Each rigging attempt saves Blender stdout/stderr to `blender.log` in its job directory. Python exceptions are treated as failures even when Blender returns exit code zero, and the actual exception is shown in the app. A missing model without a specific exception points to that log instead of guessing that limbs were fused. The current face-width guard accepts only 6%-22% of normalized character height; detected faces outside that range report the measured percentage. Passing face landmark detection alone does not guarantee that the fixed human body/head template supports a stylised character's proportions.
+
 ## Stages
 
 1. Qwen generates an animation-friendly reference from the description, or the renderer converts a selected PNG/JPEG/WebP to PNG and main validates it.

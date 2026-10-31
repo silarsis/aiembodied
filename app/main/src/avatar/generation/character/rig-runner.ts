@@ -1,8 +1,19 @@
 import { execFile } from 'node:child_process';
-import { access, readFile, readdir, rm } from 'node:fs/promises';
+import { access, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { readGlb } from '../vrm-retexture.js';
+
+/** Blender can report a Python exception while still returning process exit code zero. */
+function pythonFailure(output: string): string | undefined {
+  return output
+    .split(/\r?\n/)
+    .reverse()
+    .map((line) => line.trim())
+    .find((line) => /^[\w.]*(?:Error|Exception):\s/.test(line))
+    ?.replace(/^[\w.]*(?:Error|Exception):\s*/, '')
+    .slice(0, 500);
+}
 
 export interface CharacterRigRunner {
   assertAvailable(): Promise<void>;
@@ -125,9 +136,11 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
     // A Python exception can leave Blender's process exit code at zero. Never
     // accept a candidate left over from an earlier attempt at the same path.
     await rm(input.outputPath, { force: true });
+    const logPath = path.join(path.dirname(input.outputPath), 'blender.log');
+    let blenderOutput = '';
     try {
       const landmarks = input.landmarksPath ?? (await this.prepareReference(input));
-      await promisify(execFile)(
+      const result = await promisify(execFile)(
         executable,
         [
           '-b',
@@ -155,19 +168,33 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
           maxBuffer: 2 * 1024 * 1024,
           env: this.env,
         },
-      );
+      ).catch(async (error: unknown) => {
+        if (error && typeof error === 'object') {
+          blenderOutput = [
+            'stdout' in error ? String(error.stdout) : '',
+            'stderr' in error ? String(error.stderr) : '',
+          ].join('\n');
+          await writeFile(logPath, blenderOutput, 'utf8').catch(() => undefined);
+        }
+        throw error;
+      });
+      blenderOutput = [result.stdout ?? '', result.stderr ?? ''].join('\n');
+      await writeFile(logPath, blenderOutput, 'utf8');
+      const failure = pythonFailure(blenderOutput);
+      if (failure) throw new Error(failure);
     } catch (error) {
       if (input.signal.aborted) throw new Error('Cancelled.');
       const detail =
-        error && typeof error === 'object' && 'stderr' in error
+        pythonFailure(blenderOutput) ??
+        (error && typeof error === 'object' && 'stderr' in error
           ? String(error.stderr).slice(-1500)
-          : String(error);
+          : String(error));
       throw new Error(`The generated model could not be rigged: ${detail}`);
     }
     // Blender can exit successfully after a Python error. A validated output is the success signal.
     const bytes = await readFile(input.outputPath).catch(() => {
       throw new Error(
-        'Blender did not produce a character. Try a simple adult humanoid with separated limbs.',
+        `Blender did not produce a character. Check ${logPath} for the actual rigging error.`,
       );
     });
     const doc = readGlb(bytes).json;

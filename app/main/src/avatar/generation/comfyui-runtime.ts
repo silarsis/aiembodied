@@ -1,9 +1,8 @@
 /** Shared, on-demand server lifecycle for avatar and scenery generation. Never unloads models. */
-import { execFile } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readdir } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { promisify } from 'node:util';
 import type { ComfyUIClient } from './comfyui-client.js';
 
 export interface ComfyInstallation {
@@ -118,22 +117,55 @@ export class ComfyUIRuntime {
       ...(modelPaths ? ['--extra-model-paths-config', modelPaths] : []),
     ];
     const quote = (value: string) => `'${value.replace(/'/g, "''")}'`;
+    const startupErrorPath = path.join(this.options.logDirectory, 'comfyui-startup.err.log');
+    await writeFile(startupErrorPath, '', 'utf8');
     const command = [
+      "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; try {",
       `Start-Process -FilePath ${quote(python)}`,
       `-ArgumentList @(${args.map((arg) => quote(`"${arg}"`)).join(',')})`,
       `-WorkingDirectory ${quote(directory)} -WindowStyle Hidden`,
       `-RedirectStandardOutput ${quote(path.join(this.options.logDirectory, 'comfyui.log'))}`,
-      `-RedirectStandardError ${quote(path.join(this.options.logDirectory, 'comfyui.err.log'))} | Out-Null`,
+      `-RedirectStandardError ${quote(path.join(this.options.logDirectory, 'comfyui.err.log'))} | Out-Null;`,
+      `} catch { $_.Exception.Message | Out-File -LiteralPath ${quote(startupErrorPath)} -Encoding utf8; exit 1 }`,
     ].join(' ');
-    await promisify(execFile)(
-      'powershell.exe',
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-EncodedCommand',
-        Buffer.from(command, 'utf16le').toString('base64'),
-      ],
-      { windowsHide: true, timeout: 30_000, env },
-    );
+    // Match scripts/local-services.mjs: a background service can retain inherited
+    // pipes after PowerShell exits. execFile waits for those pipes and times out
+    // even though the server has launched. Ignore launcher stdio and let the
+    // server's redirected files carry its diagnostics. Do not detach PowerShell:
+    // a venv launcher needs the hidden console created by Start-Process.
+    await new Promise<void>((resolve, reject) => {
+      const launcher = spawn(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-EncodedCommand',
+          Buffer.from(command, 'utf16le').toString('base64'),
+        ],
+        { windowsHide: true, stdio: 'ignore', env, timeout: 30_000 },
+      );
+      launcher.once('error', () =>
+        reject(
+          new Error(
+            `Windows could not launch ComfyUI. Check ${startupErrorPath} and your ComfyUI installation, then try again.`,
+          ),
+        ),
+      );
+      launcher.once('close', async (code) => {
+        if (code === 0) {
+          resolve();
+          return;
+        }
+        const detail = (await readFile(startupErrorPath, 'utf8').catch(() => ''))
+          .replace(/^\uFEFF/, '')
+          .trim()
+          .slice(0, 500);
+        reject(
+          new Error(
+            `ComfyUI could not be started${detail ? `: ${detail}` : '.'} Check ${startupErrorPath}, then try again.`,
+          ),
+        );
+      });
+    });
   }
 }
