@@ -15,7 +15,7 @@ Blender when automatic Windows discovery is unsuitable.
 
 After image approval, the finite detector checks the reference before any mesh
 generation. It requires one front-facing adult humanoid in full-body view on a
-white background, open eyes, closed lips, and an uncovered face. Failure stops the
+white or off-white neutral background, open eyes, closed lips, and an uncovered face. Light background shading is accepted; the estimated background is excluded from body measurements. This is not general scene segmentation. Failure stops the
 job; it does not substitute the old generic eyes/mouth. A successful check writes
 478 landmarks and an annotated reference to the job directory. Blender then fits
 known face topology to those landmarks and the generated front head surface,
@@ -43,7 +43,10 @@ exceptions even if Blender returns zero. The human template's face-width guard
 is 6%-22% of normalized character height; its error includes the measured value.
 A large-headed stylised character can pass landmark detection but fail that
 template check. Relaxing the cap alone does not calibrate the fixed neck/shoulder
-positions: supporting those shapes requires proportion-aware body/head fitting.
+positions: supporting those shapes requires proportion-aware body/head fitting. These template limits now appear as advisory warnings before geometry, with a separate explicit best-effort override; structural fitting failures still stop generation.
+
+Background regression checks (using this service's Python environment):
+`python -m unittest discover -s services/avatar-face/tests -v` from the repository root.
 
 ## Stitched face boundary follow-up
 

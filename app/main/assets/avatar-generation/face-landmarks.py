@@ -1,6 +1,7 @@
 """Local, finite MediaPipe inference. No network access or fallback landmarks."""
 import argparse
 import json
+import runpy
 import sys
 from pathlib import Path
 
@@ -12,15 +13,8 @@ from PIL import Image, ImageDraw
 def detect(image_path, model_path):
     image = Image.open(image_path).convert("RGB")
     rgb = np.asarray(image)
-    # The reference contract is an isolated figure on a plain white background.
-    corners = np.array([rgb[0,0],rgb[0,-1],rgb[-1,0],rgb[-1,-1]])
-    if np.any(corners < 225):
-        raise ValueError('Face fitting currently needs a full-body character on a plain white background.')
-    foreground = np.min(rgb, axis=2) < 225
-    ys, xs = np.where(foreground)
-    if len(xs) < 100:
-        raise ValueError("No character found on the reference background.")
-    left, top, right, bottom = map(float, (xs.min(), ys.min(), xs.max(), ys.max()))
+    background = runpy.run_path(str(Path(__file__).with_name('reference-background.py')))
+    left, top, right, bottom = background['reference_body_bounds'](rgb)
     options = mp.tasks.vision.FaceLandmarkerOptions(
         base_options=mp.tasks.BaseOptions(model_asset_path=str(model_path)),
         running_mode=mp.tasks.vision.RunningMode.IMAGE,

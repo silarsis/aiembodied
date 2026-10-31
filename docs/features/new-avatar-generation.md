@@ -16,6 +16,8 @@ Image workflows for every supported model family request moderate humanoid propo
 
 The main-process preflight and Python fitter share `app/main/assets/avatar-generation/template-policy.json`. Warning acceptance is recorded in job-local `review.json` and the exported VRM's `extras.aiembodiedGeneration` metadata.
 
+The local detector accepts white and mildly shaded off-white neutral backgrounds. It samples the border rather than rejecting a single grey corner, and excludes the estimated background when measuring the figure. Dark or coloured scene backgrounds and blank references remain unsupported; this check does not segment arbitrary scenes.
+
 ## Dependencies and ownership
 
 - Shared local ComfyUI server with Qwen-Image 2.1 and the TRELLIS.2/BiRefNet/DINO models used by `character/trellis2.graph.json`.
