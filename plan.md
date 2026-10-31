@@ -27,6 +27,7 @@ The following phased plan covers the MVP described in the PRD and architecture s
   - Manual smoke: force renderer crash in dev mode and confirm auto relaunch + log entry.
 
 ## 3. Wake Word Service (Porcupine Worker)
+- Listening-off must release both wake-worker and renderer microphone capture, stop inference/restarts and ignore late wake/peak events. Start disabled; show stopping/error until main acknowledges release. Settings updates and renderer resets must not silently enable capture.
 - Integrate Porcupine Node bindings in a dedicated worker process.
 - Wire IPC from worker to main/renderer using typed `WakeEvent` contract; include configuration for model path and sensitivity.
 - Implement cooldown and confidence threshold logic.

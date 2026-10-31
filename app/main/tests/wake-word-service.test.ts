@@ -59,6 +59,31 @@ function createService({
 }
 
 describe('WakeWordService', () => {
+  it('stops restarts and ignores all late worker events after shutdown begins', async () => {
+    vi.useFakeTimers();
+    try {
+      const spawn = vi.fn();
+      const { service, worker } = createService({ onSpawn: spawn });
+      service.on('error', () => {});
+      const wake = vi.fn(), peak = vi.fn();
+      service.on('wake', wake); service.on('peak', peak);
+      service.start({ modelPaths: { melspectrogram: 'mel', embedding: 'embedding', wakeWord: 'wake' }, keywordLabel: 'Test', threshold: .5 });
+      worker.emit('message', { type: 'error', error: { message: 'device error' }, fatal: true });
+      vi.mocked(logger.info).mockClear(); vi.mocked(logger.debug).mockClear();
+      worker.postMessage = () => {
+        const event = { confidence: .99, timestamp: Date.now(), keywordLabel: 'Test' };
+        worker.emit('message', { type: 'wake', event });
+        worker.emit('message', { type: 'peak', event });
+        worker.emit('exit', 0);
+      };
+      await service.dispose();
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(wake).not.toHaveBeenCalled(); expect(peak).not.toHaveBeenCalled();
+      expect(logger.debug).not.toHaveBeenCalled();
+      expect(logger.info).not.toHaveBeenCalledWith('Wake word detected', expect.anything());
+      expect(spawn).toHaveBeenCalledOnce();
+    } finally { vi.useRealTimers(); }
+  });
   it('emits wake events that meet confidence threshold', async () => {
     const { service, worker } = createService();
     const listener = vi.fn();

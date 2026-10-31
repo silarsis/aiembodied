@@ -86,6 +86,10 @@ describe('preload bridge', () => {
 
     unsubscribe();
     expect(removeListener).toHaveBeenCalledWith('wake-word:event', handler);
+    await api.wakeWord.setListeningEnabled(false);
+    expect(invoke).toHaveBeenCalledWith('wake-word:set-listening', false);
+    await api.wakeWord.setListeningEnabled(true);
+    expect(invoke).toHaveBeenCalledWith('wake-word:set-listening', true);
   });
 
   it('exposes camera detection helpers through the bridge', async () => {

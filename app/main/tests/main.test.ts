@@ -617,6 +617,12 @@ describe('main process bootstrap', () => {
     whenReadyDeferred.resolve();
     await whenReadyDeferred.promise;
     await flushPromises();
+    await waitForExpect(() => expect(createdWindows).toHaveLength(1));
+    expect(WakeWordServiceMock).not.toHaveBeenCalled();
+    const listeningHandler = new Map(ipcMainMock.handle.mock.calls).get('wake-word:set-listening');
+    expect(typeof listeningHandler).toBe('function');
+    expect(() => listeningHandler?.({}, 'false')).toThrow('enabled or disabled');
+    await listeningHandler?.({}, true);
     await serviceReady.promise;
 
     expect(loadMock).toHaveBeenCalledTimes(1);
@@ -899,6 +905,11 @@ describe('main process bootstrap', () => {
     mainWindow.emit('ready-to-show');
     expect(mockLogger.info).toHaveBeenCalledWith('Main window ready to show.');
 
+    await listeningHandler?.({}, false);
+    const sessionCount = createSessionMock.mock.calls.length;
+    wakeWordService.emit('wake', wakePayload);
+    expect(createSessionMock).toHaveBeenCalledTimes(sessionCount);
+
     mainWindow.emit('closed');
     expect(createdWindows[0].isDestroyed()).toBe(false);
 
@@ -933,11 +944,11 @@ describe('main process bootstrap', () => {
     expect(diagnosticsDisposeMock).toHaveBeenCalledTimes(1);
     expect(wakeWordService.dispose).toHaveBeenCalledTimes(1);
     await expect(wakeWordService.dispose.mock.results[0].value).resolves.toBeUndefined();
-    expect(memoryStoreDisposeMock).toHaveBeenCalledTimes(1);
+    await waitForExpect(() => expect(memoryStoreDisposeMock).toHaveBeenCalledTimes(1));
     expect(createDevTrayDestroyMock).toHaveBeenCalledTimes(1);
 
     appEmitter.emit('window-all-closed');
-    expect(appEmitter.quit).toHaveBeenCalledTimes(1);
+    await waitForExpect(() => expect(appEmitter.quit).toHaveBeenCalledTimes(1));
   });
 
   it('surfaces configuration validation failures to the user', async () => {

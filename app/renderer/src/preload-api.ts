@@ -37,6 +37,7 @@ export interface ConfigBridge {
 }
 
 export interface WakeWordBridge {
+  setListeningEnabled?(enabled: boolean): Promise<void>;
   onWake(listener: (event: WakeWordDetectionEvent) => void): () => void;
   /** Peak score of each burst of activity, including near misses below the threshold. */
   onPeak?(listener: (event: WakeWordDetectionEvent) => void): () => void;

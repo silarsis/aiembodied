@@ -18,6 +18,7 @@ import { initializeLogger } from './logging/logger.js';
 import { createAppDiagnostics } from './logging/app-diagnostics.js';
 import { CrashGuard } from './crash-guard.js';
 import { WakeWordService } from './wake-word/wake-word-service.js';
+import { WakeWordListeningController } from './wake-word/listening-controller.js';
 import { WakeWordTrainer } from './wake-word/wake-word-trainer.js';
 import { listWakeWords } from './wake-word/wake-word-library.js';
 import { resolveOpenWakeWordModelPaths } from './wake-word/open-wake-word.js';
@@ -144,9 +145,7 @@ try {
 
 const diagnostics = createAppDiagnostics({ logger });
 let mainWindow: BrowserWindow | null = null;
-let wakeWordService: WakeWordService | null = null;
-/** The wake word the running detector listens for, to tell when the Settings page changed it. */
-let runningWakeWord: { model: string; threshold: number } | null = null;
+const wakeWordListening = new WakeWordListeningController(startWakeWordService);
 let wakeWordTrainer: WakeWordTrainer | null = null;
 const pushToTalk = new PushToTalkShortcut({
   globalShortcut,
@@ -317,8 +316,15 @@ const createWindow = () => {
   });
 
   window.on('closed', () => {
+    void wakeWordListening.setEnabled(false).catch((error: unknown) => logger.error('Failed to stop listening after window close', { message: String(error) }));
     mainWindow = null;
   });
+
+  const stopWindowListening = () => {
+    void wakeWordListening.setEnabled(false).catch((error: unknown) => logger.error('Failed to stop listening after renderer reset', { message: String(error) }));
+  };
+  window.webContents.on('did-start-loading', stopWindowListening);
+  window.webContents.on('render-process-gone', stopWindowListening);
 
   mainWindow = window;
   return window;
@@ -499,24 +505,9 @@ function resolveWakeWordTrainerDirectory(): string | null {
 }
 
 /**
- * Listen for `wakeWord` in place of the detector already running (the Settings page can pick
- * another wake word or threshold at any time).
+ * Create capture only after explicit enable; the listening controller serializes replacements.
  */
-async function restartWakeWordService(wakeWord: WakeWordConfig): Promise<void> {
-  if (wakeWordService) {
-    const previous = wakeWordService;
-    wakeWordService = null;
-    // The old detector must let go of the microphone before the new one opens it.
-    await previous.dispose().catch((error: unknown) => {
-      logger.warn('Failed to stop the previous wake word service', {
-        message: error instanceof Error ? error.message : String(error),
-      });
-    });
-  }
-  startWakeWordService(wakeWord);
-}
-
-function startWakeWordService(wakeWord: WakeWordConfig): void {
+function startWakeWordService(wakeWord: WakeWordConfig): WakeWordService {
   const service = new WakeWordService({
     logger,
     cooldownMs: wakeWord.cooldownMs,
@@ -524,6 +515,7 @@ function startWakeWordService(wakeWord: WakeWordConfig): void {
   });
 
   service.on('wake', (event) => {
+    if (!wakeWordListening.enabled) return;
     logger.info('Wake word detected in main process', {
       keyword: event.keywordLabel,
       confidence: event.confidence,
@@ -549,6 +541,7 @@ function startWakeWordService(wakeWord: WakeWordConfig): void {
   });
 
   service.on('peak', (event) => {
+    if (!wakeWordListening.enabled) return;
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('wake-word:peak', event);
     }
@@ -577,9 +570,9 @@ function startWakeWordService(wakeWord: WakeWordConfig): void {
     logger.error('Failed to start wake word service', {
       message,
     });
+    throw error;
   }
-  wakeWordService = service;
-  runningWakeWord = { model: wakeWord.model, threshold: wakeWord.threshold };
+  return service;
 }
 
 /**
@@ -608,13 +601,7 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
 
   pushToTalk.apply(providers.talk?.shortcut ?? '');
 
-  if (runningWakeWord && (runningWakeWord.model !== config.wakeWord.model || runningWakeWord.threshold !== config.wakeWord.threshold)) {
-    logger.info('Wake word changed in Settings; restarting the detector', {
-      model: config.wakeWord.model,
-      threshold: config.wakeWord.threshold,
-    });
-    await restartWakeWordService(config.wakeWord);
-  }
+  await wakeWordListening.configure(config.wakeWord);
 
   await refreshVrmaGenerationService(manager, 'secret-update');
 }
@@ -827,6 +814,10 @@ function registerIpcHandlers(
   });
   ipcMain.handle('talk:get-shortcut-status', () => pushToTalk.getStatus());
   ipcMain.handle('wake-word:list', () => listWakeWords(trainedWakeWordDirectory()));
+  ipcMain.handle('wake-word:set-listening', (_event, enabled: unknown) => {
+    if (typeof enabled !== 'boolean') throw new Error('Listening must be enabled or disabled.');
+    return wakeWordListening.setEnabled(enabled);
+  });
   ipcMain.handle('wake-word:get-training-status', () =>
     wakeWordTrainer ? wakeWordTrainer.getStatus() : { available: false, reason: 'Training is not set up.', job: null },
   );
@@ -1546,7 +1537,7 @@ app.whenReady().then(async () => {
     }
   }
 
-  startWakeWordService(appConfig.wakeWord);
+  await wakeWordListening.configure(appConfig.wakeWord);
 
   wakeWordTrainer = new WakeWordTrainer({
     trainedDirectory: trainedWakeWordDirectory(),
@@ -1674,14 +1665,12 @@ app.on('before-quit', async (event) => {
   // Async cleanup tasks
   const cleanupTasks: Promise<void>[] = [];
 
-  if (wakeWordService) {
-    cleanupTasks.push(
-      wakeWordService.dispose().catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
-        logger.warn('Failed to dispose wake word service during shutdown', { message });
-      }),
-    );
-  }
+  cleanupTasks.push(
+    wakeWordListening.dispose().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('Failed to dispose wake word service during shutdown', { message });
+    }),
+  );
 
   if (metricsCollector) {
     cleanupTasks.push(
