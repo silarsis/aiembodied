@@ -1,3 +1,4 @@
+import { BackgroundService } from './backgrounds/background-service.js';
 import { app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain } from 'electron';
 import dotenv from 'dotenv';
 import path from 'node:path';
@@ -41,6 +42,8 @@ import { PoseEvaluationService } from './avatar/pose-evaluation-service.js';
 import { AvatarDescriptionService } from './avatar/avatar-description-service.js';
 import { AvatarGenerationService } from './avatar/generation/avatar-generation-service.js';
 import { ComfyUIClient } from './avatar/generation/comfyui-client.js';
+import { BlenderCharacterRunner } from './avatar/generation/character/rig-runner.js';
+import { ComfyUIRuntime } from './avatar/generation/comfyui-runtime.js';
 import { LocalMotionClient } from './avatar/motion/local-motion-client.js';
 import { LocalMotionGenerationService } from './avatar/motion/local-motion-generation-service.js';
 import { LocalVoiceService } from './local-voice/local-voice-service.js';
@@ -166,6 +169,7 @@ let developmentTray: Tray | null = null;
 let avatarModelService: AvatarModelService | null = null;
 let avatarAnimationService: AvatarAnimationService | null = null;
 let avatarPoseService: AvatarPoseService | null = null;
+let backgroundService: BackgroundService | null = null;
 let vrmaGenerationService: VrmaGenerationService | null = null;
 let poseGenerationService: PoseGenerationService | null = null;
 let poseEvaluationService: PoseEvaluationService | null = null;
@@ -1010,6 +1014,16 @@ function registerIpcHandlers(
 
     return avatarModels.loadModelBinary(modelId);
   });
+  const requireBackgrounds = (): BackgroundService => {
+    if (!backgroundService) throw new Error('Backgrounds are unavailable.');
+    return backgroundService;
+  };
+  ipcMain.handle('background:list', () => requireBackgrounds().list());
+  ipcMain.handle('background:get-active', () => requireBackgrounds().getActive());
+  ipcMain.handle('background:set-active', (_event, id: string | null) => requireBackgrounds().setActive(id));
+  ipcMain.handle('background:load', (_event, id: string) => requireBackgrounds().load(id));
+  ipcMain.handle('background:generate', (_event, prompt: string) => requireBackgrounds().generate(prompt));
+  ipcMain.handle('background:delete', (_event, id: string) => requireBackgrounds().delete(id));
   const requireAvatarGeneration = (): AvatarGenerationService => {
     if (!avatarGenerationService) {
       throw new Error('Avatar generation is unavailable.');
@@ -1024,6 +1038,10 @@ function registerIpcHandlers(
   ipcMain.handle(
     'avatar:generation-status',
     async (_event, jobId: string): Promise<AvatarGenerationStatus> => requireAvatarGeneration().getStatus(jobId),
+  );
+  ipcMain.handle(
+    'avatar:generation-preview',
+    async (_event, jobId: string): Promise<Buffer> => requireAvatarGeneration().loadPreview(jobId),
   );
   ipcMain.handle(
     'avatar:generation-accept',
@@ -1428,6 +1446,19 @@ app.whenReady().then(async () => {
   }
 
   const appConfig = manager.getConfig();
+  const comfy = new ComfyUIClient({ baseUrl: appConfig.comfyUiBaseUrl });
+  const comfyRuntime = new ComfyUIRuntime({ client: comfy, logDirectory: path.join(app.getPath('userData'), 'logs') });
+  const ensureComfyReady = () => comfyRuntime.ensureReady();
+  if (memoryStore) {
+    backgroundService = new BackgroundService({
+      store: memoryStore,
+      assetsDirectory: path.join(__dirname, '../assets/backgrounds'),
+      backgroundsDirectory: path.join(app.getPath('userData'), 'backgrounds'),
+      comfy,
+      ensureComfyReady,
+    });
+  }
+
 
   await refreshVrmaGenerationService(manager);
   await refreshPoseGenerationService(manager);
@@ -1446,10 +1477,12 @@ app.whenReady().then(async () => {
 
   if (avatarModelService) {
     avatarGenerationService = new AvatarGenerationService({
-      comfy: new ComfyUIClient({ baseUrl: appConfig.comfyUiBaseUrl }),
+      comfy,
+      ensureComfyReady,
       models: avatarModelService,
       baseModelPath: DEFAULT_MODEL_ASSET_PATH,
       workDirectory: path.join(app.getPath('userData'), 'avatar-generation'),
+      characterRunner: new BlenderCharacterRunner(path.join(__dirname, '../assets/avatar-generation/rig-character.py').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')),
       logger,
     });
   }

@@ -1,0 +1,22 @@
+[
+  {
+    "name": "garden",
+    "stageHeight": 802,
+    "canvasTop": 123.31976318359375,
+    "canvasHeight": 625.53125,
+    "footFraction": 0.90546875,
+    "footY": 689.7187622070313,
+    "groundY": 689.72,
+    "previewLeftOriginalActive": true,
+    "keepActivatedGeneratedModel": true,
+    "model": {
+      "id": "bf31c548-bccb-492e-b351-906f0bf8f31a",
+      "name": "An auburn-haired explorer in a green jumpsuit",
+      "createdAt": 1793406314887,
+      "version": "0.1",
+      "fileSha": "39432d0765181a22f3cea3ac08c09a88f4db85bfa5d1ec88da234c8b2be2876e",
+      "description": null
+    },
+    "source": "Replayed live Qwen/TRELLIS outputs through production generation service, Blender runner and model importer"
+  }
+]

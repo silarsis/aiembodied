@@ -1,0 +1,174 @@
+{
+  "kind": "Original static pose candidates rendered on current AvatarSample_A VRM; not downloaded animation assets.",
+  "candidates": [
+    {
+      "name": "current-default",
+      "title": "Current default",
+      "description": "Existing pose \u00b7 comparison",
+      "faces": {},
+      "leftWrist": [
+        0.1969380366913983,
+        0.7870045833433751,
+        0.08060079473544529
+      ],
+      "rightWrist": [
+        -0.19693803669139834,
+        0.7870045833433751,
+        0.08060079473544524
+      ]
+    },
+    {
+      "name": "relaxed-neutral",
+      "title": "Relaxed neutral",
+      "description": "Hands hang close \u00b7 soft elbows",
+      "faces": {
+        "relaxed": 0.16
+      },
+      "leftWrist": [
+        0.15999999999999998,
+        0.7999999999999998,
+        0.04500000000000007
+      ],
+      "rightWrist": [
+        -0.15999999999999995,
+        0.7999999999999998,
+        0.045000000000000075
+      ]
+    },
+    {
+      "name": "happiness",
+      "title": "Happiness",
+      "description": "Easy smile \u00b7 hands loosely gathered",
+      "faces": {
+        "happy": 0.62
+      },
+      "leftWrist": [
+        0.035000000000000045,
+        0.915,
+        0.19000000000000006
+      ],
+      "rightWrist": [
+        -0.03499999999999997,
+        0.8749999999999999,
+        0.20000000000000012
+      ]
+    },
+    {
+      "name": "sadness",
+      "title": "Sadness",
+      "description": "Lowered gaze \u00b7 softened posture",
+      "faces": {
+        "sad": 0.62
+      },
+      "leftWrist": [
+        0.14,
+        0.7999999999999999,
+        0.075
+      ],
+      "rightWrist": [
+        -0.14000000000000004,
+        0.7999999999999999,
+        0.075
+      ]
+    },
+    {
+      "name": "anger",
+      "title": "Anger",
+      "description": "Hands at hips \u00b7 steady gaze",
+      "faces": {
+        "angry": 0.65
+      },
+      "leftWrist": [
+        0.17,
+        0.9799999999999999,
+        0.02500000000000005
+      ],
+      "rightWrist": [
+        -0.16999999999999996,
+        0.9799999999999999,
+        0.025000000000000078
+      ]
+    },
+    {
+      "name": "fear",
+      "title": "Fear",
+      "description": "Hands close to chest \u00b7 guarded stance",
+      "faces": {
+        "sad": 0.36,
+        "Surprised": 0.28
+      },
+      "leftWrist": [
+        0.10499999999999998,
+        1.115,
+        0.2000000000000001
+      ],
+      "rightWrist": [
+        -0.10500000000000001,
+        1.1150000000000002,
+        0.2000000000000001
+      ]
+    },
+    {
+      "name": "disgust",
+      "title": "Disgust",
+      "description": "Turned-away head \u00b7 gentle warding hand",
+      "faces": {
+        "angry": 0.28,
+        "sad": 0.2
+      },
+      "leftWrist": [
+        0.24,
+        1.04,
+        0.25999999999999995
+      ],
+      "rightWrist": [
+        -0.09999999999999998,
+        1.0749999999999997,
+        0.15999999999999998
+      ]
+    },
+    {
+      "name": "surprise",
+      "title": "Surprise",
+      "description": "Raised hands \u00b7 open, curious reaction",
+      "faces": {
+        "Surprised": 0.75
+      },
+      "leftWrist": [
+        0.22,
+        1.13,
+        0.2200000000000001
+      ],
+      "rightWrist": [
+        -0.22000000000000003,
+        1.1299999999999997,
+        0.21999999999999997
+      ]
+    }
+  ],
+  "default_changed": false,
+  "recommendation": "Use relaxed-neutral as the everyday default; blend emotional variants at lower intensity for conversation.",
+  "facial_limitations": "Fear and disgust use approximations built from the expressions available on AvatarSample_A. Surprised is a case-sensitive custom expression on this VRM.",
+  "sources": [
+    {
+      "title": "Postural Communication of Emotion: Perception of Distinct Poses of Five Discrete Emotions",
+      "url": "https://www.frontiersin.org/journals/psychology/articles/10.3389/fpsyg.2017.00710/full",
+      "use": "Reference for differentiated emotional body language; candidates are original adaptations, not study stimuli or downloaded mocap."
+    },
+    {
+      "title": "VRM preset expression specification",
+      "url": "https://github.com/vrm-c/vrm-specification/blob/master/specification/VRMC_vrm-1.0/expressions.md",
+      "use": "Standard emotions include happy, angry, sad, relaxed and surprised; fear and disgust are not standard presets."
+    },
+    {
+      "title": "Adobe Mixamo FAQ",
+      "url": "https://helpx.adobe.com/creative-cloud/faq/mixamo-faq.html",
+      "use": "Potential future source of motion capture animation; no Mixamo files downloaded for these previews."
+    },
+    {
+      "title": "Kinematic dataset of actors expressing emotions",
+      "url": "https://physionet.org/content/kinematic-actors-emotions/2.1.0/",
+      "use": "Relevant six-emotion BVH dataset; restricted-access data not used."
+    }
+  ]
+}

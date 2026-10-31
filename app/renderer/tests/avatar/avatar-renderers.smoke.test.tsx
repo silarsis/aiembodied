@@ -348,6 +348,7 @@ vi.mock('three/examples/jsm/loaders/GLTFLoader.js', () => {
           getExpressionTrackName: (name: string) => name,
         },
         humanoid: {
+          setNormalizedPose: vi.fn(),
           getNormalizedBoneNode: (name: string) => {
             const node = new MockScene();
             (node as unknown as { name?: string }).name = name;

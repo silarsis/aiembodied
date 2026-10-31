@@ -166,3 +166,20 @@ export function retextureGraph(input: RetextureGraphInput): ComfyGraph {
     save: { class_type: 'SaveImage', inputs: { images: ['resize', 0], filename_prefix: 'aiembodied/retexture' } },
   };
 }
+
+
+/** Backgrounds use the same local Qwen models with scenery-specific framing and negatives. */
+export function buildBackgroundPrompt(description: string): string {
+  return `A polished wide environment background for a standing anime-style 3D companion. ${description.trim()}.
+Semi-realistic hand-painted 3D game environment, coherent soft lighting. Level eye-height camera, wide 16:9 landscape.
+Keep the central 45 percent open. A flat, unobstructed walkable floor or ground fills the lower 40 percent and extends below the frame.
+A full-body character will stand at horizontal center with feet 86 percent down the image. Place furniture, plants and structures behind or beside that spot.
+Empty place, no people, no characters, no animals, no foreground obstruction, no text, no logos, no prepainted character shadow.`;
+}
+
+export function backgroundGraph(prompt: string, seed: number): ComfyGraph {
+  const graph = conceptGraph(prompt, seed, { width: 1536, height: 864 });
+  graph.encode.inputs.negative_prompt = 'person, character, human, animal, text, watermark, logo, collage, tilted horizon, foreground obstacle, floating ground, blurry';
+  graph.save.inputs.filename_prefix = 'aiembodied/background';
+  return graph;
+}

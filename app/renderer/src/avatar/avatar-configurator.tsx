@@ -6,6 +6,7 @@ import {
   useState,
   type ChangeEvent,
   type FormEvent,
+  type ReactNode,
 } from 'react';
 import type {
   AvatarAnimationSummary,
@@ -24,6 +25,8 @@ type PoseGenerationStatus = 'idle' | 'pending' | 'success' | 'error';
 type PoseEditStatus = 'idle' | 'evaluating' | 'refining' | 'success' | 'error';
 
 interface AvatarConfiguratorProps {
+  compact?: boolean;
+  children?: ReactNode;
   avatarApi?: AvatarBridge;
   onActiveModelChange?: (detail: AvatarModelSummary | null) => void;
   onAnimationChange?: () => void;
@@ -83,6 +86,8 @@ export function AvatarConfigurator({
   onActiveModelChange,
   onAnimationChange,
   onPoseChange,
+  compact = false,
+  children,
 }: AvatarConfiguratorProps) {
   const [models, setModels] = useState<AvatarModelSummary[]>([]);
   const [activeModelId, setActiveModelId] = useState<string | null>(null);
@@ -753,7 +758,7 @@ export function AvatarConfigurator({
   const poseEditPending = poseEditStatus === 'evaluating' || poseEditStatus === 'refining';
 
   return (
-    <section className="kiosk__faces" aria-labelledby="kiosk-faces-title">
+    <section className="kiosk__faces" aria-label="Avatar library">
       {generalError ? (
         <p className="kiosk__error" role="alert">
           {generalError}
@@ -804,342 +809,351 @@ export function AvatarConfigurator({
           <p className="kiosk__info">No VRM models uploaded yet. Add a .vrm file to enable the 3D renderer.</p>
         ) : null}
 
-        <form className="faces__form" onSubmit={handleModelUpload} aria-label="Upload new VRM model">
-          <label className="faces__field">
-            <span>VRM file</span>
-            <input
-              ref={modelFileInputRef}
-              type="file"
-              accept=".vrm"
-              onChange={handleModelFileChange}
-              disabled={!isModelBridgeAvailable || modelUploadDisabled}
-              required
-            />
-          </label>
-          <label className="faces__field">
-            <span>Display name</span>
-            <input
-              type="text"
-              value={modelNameInput}
-              onChange={handleModelNameChange}
-              placeholder="3D assistant"
-              disabled={!isModelBridgeAvailable || modelUploadDisabled}
-            />
-          </label>
-          <button type="submit" disabled={modelUploadDisabled || !modelFile} className="faces__submit">
-            {modelUploadStatus === 'reading' ? 'Processing…' : modelUploadStatus === 'uploading' ? 'Uploading…' : 'Upload VRM'}
-          </button>
-        </form>
-
-        {modelUploadError ? (
-          <p className="kiosk__error" role="alert">
-            {modelUploadError}
-          </p>
-        ) : null}
-        {modelUploadStatus === 'uploading' ? <p className="kiosk__info">Uploading VRM model…</p> : null}
-        {modelUploadStatus === 'reading' ? <p className="kiosk__info">Preparing VRM payload…</p> : null}
-
-        {lastUploadedModel ? (
-          <div className="faces__uploadResult" role="status">
-            <h4>Upload complete</h4>
-            <p>
-              {lastUploadedModel.name} · v{lastUploadedModel.version}
-            </p>
-            {lastUploadedModel.thumbnailDataUrl ? (
-              <img
-                src={lastUploadedModel.thumbnailDataUrl}
-                alt={`${lastUploadedModel.name} thumbnail`}
-                className="faces__uploadThumbnail"
-              />
-            ) : (
-              <div className="faceCard__placeholder">No thumbnail</div>
-            )}
-          </div>
-        ) : null}
-      </div>
-
-      <AvatarGeneratorPanel avatarApi={avatarApi} onAccepted={refreshModels} />
-
-      {/* Animations Section */}
-      <div className="faces__section">
-        <h3 className="faces__heading">Animations</h3>
-
-        {animationError ? (
-          <p role="alert" className="kiosk__error">
-            {animationError}
-          </p>
-        ) : null}
-        {animationsLoading ? <p className="kiosk__info">Loading stored animations…</p> : null}
-
-        <div className="faces__grid faces__grid--compact" role="list">
-          {animations.map((animation) => {
-            const busy = animationBusyId === animation.id;
-            const isRenaming = renamingAnimationId === animation.id;
-
-            return (
-              <article key={animation.id} className="faceCard faceCard--compact" role="listitem">
-                <div className="faceCard__info">
-                  {isRenaming ? (
-                    <div className="faceCard__renameForm">
-                      <input
-                        type="text"
-                        value={renamingAnimationName}
-                        onChange={(e) => setRenamingAnimationName(e.target.value)}
-                        placeholder="Animation name"
-                        disabled={busy}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            handleRenameAnimation(animation.id);
-                          } else if (e.key === 'Escape') {
-                            handleCancelRenameAnimation();
-                          }
-                        }}
-                      />
-                    </div>
-                  ) : (
-                    <h4>{animation.name}</h4>
-                  )}
-                  <dl className="faceCard__metaList faceCard__metaList--compact">
-                    <div>
-                      <dt>Duration</dt>
-                      <dd>{animation.duration !== null ? `${(animation.duration).toFixed(1)}s` : '—'}</dd>
-                    </div>
-                  </dl>
-                </div>
-                <div className="faceCard__actions">
-                  {isRenaming ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => handleRenameAnimation(animation.id)}
-                        disabled={busy || !renamingAnimationName.trim()}
-                      >
-                        Save
-                      </button>
-                      <button type="button" onClick={handleCancelRenameAnimation} disabled={busy}>
-                        Cancel
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => handleStartRenameAnimation(animation.id, animation.name)}
-                        disabled={busy}
-                      >
-                        Rename
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteAnimation(animation.id)}
-                        disabled={busy}
-                      >
-                        Delete
-                      </button>
-                    </>
-                  )}
-                </div>
-              </article>
-            );
-          })}
-        </div>
-
-        {!animationsLoading && animations.length === 0 ? (
-          <p className="kiosk__info">No VRMA animations stored yet. Generate or upload an animation to get started.</p>
-        ) : null}
-
-        <form className="faces__form" onSubmit={handleGenerateAnimation} aria-label="Generate VRMA animation">
-          <label className="faces__field">
-            <span>Animation prompt</span>
-            <textarea
-              value={vrmaPrompt}
-              onChange={handleVrmaPromptChange}
-              placeholder="Wave hello, then return to idle stance."
-              disabled={!isAnimationBridgeAvailable || vrmaPending}
-              rows={2}
-            />
-          </label>
-          <button type="submit" disabled={!isAnimationBridgeAvailable || vrmaPending || vrmaPrompt.trim().length === 0} className="faces__submit">
-            {vrmaPending ? 'Generating…' : 'Generate Animation'}
-          </button>
-        </form>
-
-        {vrmaMessage ? (
-          <p className={vrmaStatus === 'error' ? 'kiosk__error' : 'kiosk__info'} role={vrmaStatus === 'error' ? 'alert' : 'status'}>
-            {vrmaMessage}
-          </p>
-        ) : null}
-        {vrmaStatus === 'success' && vrmaResultName ? (
-          <p className="kiosk__info" role="status">
-            Generated animation saved as {vrmaResultName}.
-          </p>
-        ) : null}
-      </div>
-
-      {/* Poses Section */}
-      <div className="faces__section">
-        <h3 className="faces__heading">Poses</h3>
-
-        {poseError ? (
-          <p role="alert" className="kiosk__error">
-            {poseError}
-          </p>
-        ) : null}
-        {posesLoading ? <p className="kiosk__info">Loading stored poses…</p> : null}
-
-        <div className="faces__grid faces__grid--compact" role="list">
-          {poses.map((pose) => {
-            const busy = poseBusyId === pose.id;
-            return (
-              <article key={pose.id} className="faceCard faceCard--compact" role="listitem">
-                <div className="faceCard__info">
-                  <h4>{pose.name}</h4>
-                </div>
-                <div className="faceCard__actions">
-                  <button
-                    type="button"
-                    onClick={() => handleDeletePose(pose.id)}
-                    disabled={busy || !isPoseBridgeAvailable}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-
-        {!posesLoading && poses.length === 0 ? (
-          <p className="kiosk__info">No VRM poses stored yet. Generate a pose to get started.</p>
-        ) : null}
-
-        <form className="faces__form" onSubmit={handleGeneratePose} aria-label="Generate VRM pose">
-          <label className="faces__field">
-            <span>Pose prompt</span>
-            <textarea
-              value={posePrompt}
-              onChange={handlePosePromptChange}
-              placeholder="Confident power stance with arms crossed."
-              disabled={!isPoseBridgeAvailable || posePending}
-              rows={2}
-            />
-          </label>
-          <button type="submit" disabled={!isPoseBridgeAvailable || posePending || posePrompt.trim().length === 0} className="faces__submit">
-            {posePending ? 'Generating…' : 'Generate Pose'}
-          </button>
-        </form>
-
-        {poseMessage ? (
-          <p className={poseStatus === 'error' ? 'kiosk__error' : 'kiosk__info'} role={poseStatus === 'error' ? 'alert' : 'status'}>
-            {poseMessage}
-          </p>
-        ) : null}
-      </div>
-
-      {/* Pose Editor Section */}
-      <div className="faces__section">
-        <h3 className="faces__heading">Pose Editor</h3>
-
-        {poseEditError ? (
-          <p role="alert" className="kiosk__error">
-            {poseEditError}
-          </p>
-        ) : null}
-
-        {poses.length === 0 ? (
-          <p className="kiosk__info">Generate a pose first, then you can refine it here.</p>
-        ) : (
-          <>
+        <details className="avatarUpload" open={compact ? undefined : true}>
+          <summary>+ Upload .vrm</summary>
+          <form className="faces__form" onSubmit={handleModelUpload} aria-label="Upload new VRM model">
             <label className="faces__field">
-              <span>Select pose to edit</span>
-              <select
-                value={selectedPoseForEdit ?? ''}
-                onChange={(e) => handleSelectPoseForEdit(e.target.value || null)}
-                disabled={poseEditPending}
-              >
-                <option value="">-- Select a pose --</option>
-                {poses.map((pose) => (
-                  <option key={pose.id} value={pose.id}>
-                    {pose.name}
-                  </option>
-                ))}
-              </select>
+              <span>VRM file</span>
+              <input
+                ref={modelFileInputRef}
+                type="file"
+                accept=".vrm"
+                onChange={handleModelFileChange}
+                disabled={!isModelBridgeAvailable || modelUploadDisabled}
+                required
+              />
             </label>
+            <label className="faces__field">
+              <span>Display name</span>
+              <input
+                type="text"
+                value={modelNameInput}
+                onChange={handleModelNameChange}
+                placeholder="3D assistant"
+                disabled={!isModelBridgeAvailable || modelUploadDisabled}
+              />
+            </label>
+            <button type="submit" disabled={modelUploadDisabled || !modelFile} className="faces__submit">
+              {modelUploadStatus === 'reading' ? 'Processing…' : modelUploadStatus === 'uploading' ? 'Uploading…' : 'Upload VRM'}
+            </button>
+          </form>
 
-            {selectedPoseForEdit ? (
-              <div className="faces__form" aria-label="Pose editing controls">
-                <label className="faces__field">
-                  <span>Feedback / improvement suggestions</span>
-                  <textarea
-                    value={poseEditFeedback}
-                    onChange={handlePoseEditFeedbackChange}
-                    placeholder="Click 'Evaluate with LLM' to get AI feedback, or enter your own suggestions."
-                    disabled={poseEditPending}
-                    rows={4}
-                  />
-                </label>
+          {modelUploadError ? (
+            <p className="kiosk__error" role="alert">
+              {modelUploadError}
+            </p>
+          ) : null}
+          {modelUploadStatus === 'uploading' ? <p className="kiosk__info">Uploading VRM model…</p> : null}
+          {modelUploadStatus === 'reading' ? <p className="kiosk__info">Preparing VRM payload…</p> : null}
 
-                <div className="faces__actions" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    onClick={handleEvaluatePose}
-                    disabled={!isPoseEditBridgeAvailable || !activeModelId || poseEditPending}
-                    className="faces__submit"
-                  >
-                    {poseEditStatus === 'evaluating' ? 'Evaluating…' : 'Evaluate with LLM'}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleRefinePose}
-                    disabled={!isPoseEditBridgeAvailable || !activeModelId || poseEditPending || !poseEditFeedback.trim()}
-                    className="faces__submit"
-                  >
-                    {poseEditStatus === 'refining' ? 'Refining…' : 'Apply Feedback & Refine'}
-                  </button>
-                </div>
-
-                {poseEditResult && !refinedPoseId ? (
-                  <div className="kiosk__info" style={{ marginTop: '0.75rem' }}>
-                    <strong>Evaluation Result:</strong>{' '}
-                    {poseEditResult.meetsRequirement ? '✅ Pose meets requirements' : '⚠️ Pose needs improvement'}
-                    {poseEditResult.suggestedImprovements && poseEditResult.suggestedImprovements.length > 0 ? (
-                      <ul style={{ margin: '0.5rem 0 0 1rem', paddingLeft: '0.5rem' }}>
-                        {poseEditResult.suggestedImprovements.map((suggestion, idx) => (
-                          <li key={idx}>{suggestion}</li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {refinedPoseId ? (
-                  <div className="kiosk__info" style={{ marginTop: '0.75rem' }}>
-                    <strong>🎉 Refined pose created!</strong>
-                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-                      <button
-                        type="button"
-                        onClick={handleAcceptRefinement}
-                        className="faces__submit"
-                        style={{ backgroundColor: '#059669' }}
-                      >
-                        ✓ Accept
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleRejectRefinement}
-                        style={{ backgroundColor: '#dc2626' }}
-                      >
-                        ✕ Reject
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </>
-        )}
+          {lastUploadedModel ? (
+            <div className="faces__uploadResult" role="status">
+              <h4>Upload complete</h4>
+              <p>
+                {lastUploadedModel.name} · v{lastUploadedModel.version}
+              </p>
+              {lastUploadedModel.thumbnailDataUrl ? (
+                <img
+                  src={lastUploadedModel.thumbnailDataUrl}
+                  alt={`${lastUploadedModel.name} thumbnail`}
+                  className="faces__uploadThumbnail"
+                />
+              ) : (
+                <div className="faceCard__placeholder">No thumbnail</div>
+              )}
+            </div>
+          ) : null}
+        </details>
       </div>
+
+      {children}
+      <AvatarGeneratorPanel avatarApi={avatarApi} onAccepted={refreshModels} />
+      <details className="avatarLibrary" open={compact ? undefined : true}>
+        <summary>Manage animations and poses</summary>
+
+        {/* Animations Section */}
+        <div className="faces__section">
+          <h3 className="faces__heading">Animations</h3>
+
+          {animationError ? (
+            <p role="alert" className="kiosk__error">
+              {animationError}
+            </p>
+          ) : null}
+          {animationsLoading ? <p className="kiosk__info">Loading stored animations…</p> : null}
+
+          <div className="faces__grid faces__grid--compact" role="list">
+            {animations.map((animation) => {
+              const busy = animationBusyId === animation.id;
+              const isRenaming = renamingAnimationId === animation.id;
+
+              return (
+                <article key={animation.id} className="faceCard faceCard--compact" role="listitem">
+                  <div className="faceCard__info">
+                    {isRenaming ? (
+                      <div className="faceCard__renameForm">
+                        <input
+                          type="text"
+                          value={renamingAnimationName}
+                          onChange={(e) => setRenamingAnimationName(e.target.value)}
+                          placeholder="Animation name"
+                          disabled={busy}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleRenameAnimation(animation.id);
+                            } else if (e.key === 'Escape') {
+                              handleCancelRenameAnimation();
+                            }
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <h4>{animation.name}</h4>
+                    )}
+                    <dl className="faceCard__metaList faceCard__metaList--compact">
+                      <div>
+                        <dt>Duration</dt>
+                        <dd>{animation.duration !== null ? `${(animation.duration).toFixed(1)}s` : '—'}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                  <div className="faceCard__actions">
+                    {isRenaming ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleRenameAnimation(animation.id)}
+                          disabled={busy || !renamingAnimationName.trim()}
+                        >
+                          Save
+                        </button>
+                        <button type="button" onClick={handleCancelRenameAnimation} disabled={busy}>
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleStartRenameAnimation(animation.id, animation.name)}
+                          disabled={busy}
+                        >
+                          Rename
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAnimation(animation.id)}
+                          disabled={busy}
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          {!animationsLoading && animations.length === 0 ? (
+            <p className="kiosk__info">No VRMA animations stored yet. Generate or upload an animation to get started.</p>
+          ) : null}
+
+          <form className="faces__form" onSubmit={handleGenerateAnimation} aria-label="Generate VRMA animation">
+            <label className="faces__field">
+              <span>Animation prompt</span>
+              <textarea
+                value={vrmaPrompt}
+                onChange={handleVrmaPromptChange}
+                placeholder="Wave hello, then return to idle stance."
+                disabled={!isAnimationBridgeAvailable || vrmaPending}
+                rows={2}
+              />
+            </label>
+            <button type="submit" disabled={!isAnimationBridgeAvailable || vrmaPending || vrmaPrompt.trim().length === 0} className="faces__submit">
+              {vrmaPending ? 'Generating…' : 'Generate Animation'}
+            </button>
+          </form>
+
+          {vrmaMessage ? (
+            <p className={vrmaStatus === 'error' ? 'kiosk__error' : 'kiosk__info'} role={vrmaStatus === 'error' ? 'alert' : 'status'}>
+              {vrmaMessage}
+            </p>
+          ) : null}
+          {vrmaStatus === 'success' && vrmaResultName ? (
+            <p className="kiosk__info" role="status">
+              Generated animation saved as {vrmaResultName}.
+            </p>
+          ) : null}
+        </div>
+
+        {/* Poses Section */}
+        <div className="faces__section">
+          <h3 className="faces__heading">Poses</h3>
+
+          {poseError ? (
+            <p role="alert" className="kiosk__error">
+              {poseError}
+            </p>
+          ) : null}
+          {posesLoading ? <p className="kiosk__info">Loading stored poses…</p> : null}
+
+          <div className="faces__grid faces__grid--compact" role="list">
+            {poses.map((pose) => {
+              const busy = poseBusyId === pose.id;
+              return (
+                <article key={pose.id} className="faceCard faceCard--compact" role="listitem">
+                  <div className="faceCard__info">
+                    <h4>{pose.name}</h4>
+                  </div>
+                  <div className="faceCard__actions">
+                    {pose.builtIn ? <span className="faceCard__meta">Included base pose</span> : (
+                    <button
+                      type="button"
+                      onClick={() => handleDeletePose(pose.id)}
+                      disabled={busy || !isPoseBridgeAvailable}
+                    >
+                      Delete
+                    </button>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          {!posesLoading && poses.length === 0 ? (
+            <p className="kiosk__info">No VRM poses stored yet. Generate a pose to get started.</p>
+          ) : null}
+
+          <form className="faces__form" onSubmit={handleGeneratePose} aria-label="Generate VRM pose">
+            <label className="faces__field">
+              <span>Pose prompt</span>
+              <textarea
+                value={posePrompt}
+                onChange={handlePosePromptChange}
+                placeholder="Confident power stance with arms crossed."
+                disabled={!isPoseBridgeAvailable || posePending}
+                rows={2}
+              />
+            </label>
+            <button type="submit" disabled={!isPoseBridgeAvailable || posePending || posePrompt.trim().length === 0} className="faces__submit">
+              {posePending ? 'Generating…' : 'Generate Pose'}
+            </button>
+          </form>
+
+          {poseMessage ? (
+            <p className={poseStatus === 'error' ? 'kiosk__error' : 'kiosk__info'} role={poseStatus === 'error' ? 'alert' : 'status'}>
+              {poseMessage}
+            </p>
+          ) : null}
+        </div>
+
+        {/* Pose Editor Section */}
+        <div className="faces__section">
+          <h3 className="faces__heading">Pose Editor</h3>
+
+          {poseEditError ? (
+            <p role="alert" className="kiosk__error">
+              {poseEditError}
+            </p>
+          ) : null}
+
+          {poses.length === 0 ? (
+            <p className="kiosk__info">Generate a pose first, then you can refine it here.</p>
+          ) : (
+            <>
+              <label className="faces__field">
+                <span>Select pose to edit</span>
+                <select
+                  value={selectedPoseForEdit ?? ''}
+                  onChange={(e) => handleSelectPoseForEdit(e.target.value || null)}
+                  disabled={poseEditPending}
+                >
+                  <option value="">-- Select a pose --</option>
+                  {poses.map((pose) => (
+                    <option key={pose.id} value={pose.id}>
+                      {pose.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {selectedPoseForEdit ? (
+                <div className="faces__form" aria-label="Pose editing controls">
+                  <label className="faces__field">
+                    <span>Feedback / improvement suggestions</span>
+                    <textarea
+                      value={poseEditFeedback}
+                      onChange={handlePoseEditFeedbackChange}
+                      placeholder="Click 'Evaluate with LLM' to get AI feedback, or enter your own suggestions."
+                      disabled={poseEditPending}
+                      rows={4}
+                    />
+                  </label>
+
+                  <div className="faces__actions" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={handleEvaluatePose}
+                      disabled={!isPoseEditBridgeAvailable || !activeModelId || poseEditPending}
+                      className="faces__submit"
+                    >
+                      {poseEditStatus === 'evaluating' ? 'Evaluating…' : 'Evaluate with LLM'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleRefinePose}
+                      disabled={!isPoseEditBridgeAvailable || !activeModelId || poseEditPending || !poseEditFeedback.trim()}
+                      className="faces__submit"
+                    >
+                      {poseEditStatus === 'refining' ? 'Refining…' : 'Apply Feedback & Refine'}
+                    </button>
+                  </div>
+
+                  {poseEditResult && !refinedPoseId ? (
+                    <div className="kiosk__info" style={{ marginTop: '0.75rem' }}>
+                      <strong>Evaluation Result:</strong>{' '}
+                      {poseEditResult.meetsRequirement ? '✅ Pose meets requirements' : '⚠️ Pose needs improvement'}
+                      {poseEditResult.suggestedImprovements && poseEditResult.suggestedImprovements.length > 0 ? (
+                        <ul style={{ margin: '0.5rem 0 0 1rem', paddingLeft: '0.5rem' }}>
+                          {poseEditResult.suggestedImprovements.map((suggestion, idx) => (
+                            <li key={idx}>{suggestion}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {refinedPoseId ? (
+                    <div className="kiosk__info" style={{ marginTop: '0.75rem' }}>
+                      <strong>🎉 Refined pose created!</strong>
+                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                        <button
+                          type="button"
+                          onClick={handleAcceptRefinement}
+                          className="faces__submit"
+                          style={{ backgroundColor: '#059669' }}
+                        >
+                          ✓ Accept
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRejectRefinement}
+                          style={{ backgroundColor: '#dc2626' }}
+                        >
+                          ✕ Reject
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+      </details>
     </section>
   );
 }

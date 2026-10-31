@@ -20,8 +20,18 @@ function fakeComfy(overrides: Partial<Record<keyof ComfyUIClient, unknown>> = {}
 
 const runner: RetextureRunner = {
   prepare: vi.fn(async () => [
-    { name: 'outfit', prompt: 'Recolour the outfit: "{description}"', box: { x: 0, y: 0, width: 64, height: 32 }, png: Buffer.from('a') },
-    { name: 'hair', prompt: 'Recolour the hair: "{description}"', box: { x: 64, y: 0, width: 64, height: 64 }, png: Buffer.from('b') },
+    {
+      name: 'outfit',
+      prompt: 'Recolour the outfit: "{description}"',
+      box: { x: 0, y: 0, width: 64, height: 32 },
+      png: Buffer.from('a'),
+    },
+    {
+      name: 'hair',
+      prompt: 'Recolour the hair: "{description}"',
+      box: { x: 64, y: 0, width: 64, height: 64 },
+      png: Buffer.from('b'),
+    },
   ]),
   assemble: vi.fn(async () => Buffer.from('vrm-bytes')),
   score: vi.fn(async () => 0.9),
@@ -67,21 +77,58 @@ describe('AvatarGenerationService', () => {
     }),
   });
 
+  it('waits for shared startup and admits only one simultaneous avatar request', async () => {
+    const comfy = fakeComfy({ run: vi.fn().mockReturnValue(new Promise(() => {})) });
+    const ensureComfyReady = vi.fn().mockResolvedValue(undefined);
+    const service = new AvatarGenerationService({
+      comfy,
+      ensureComfyReady,
+      models,
+      baseModelPath,
+      workDirectory: path.join(workDirectory, 'jobs'),
+      runner,
+    });
+    const results = await Promise.allSettled([
+      service.startJob({ mode: 'restyle', prompt: 'A robot' }),
+      service.startJob({ mode: 'restyle', prompt: 'Another robot' }),
+    ]);
+    expect(ensureComfyReady).toHaveBeenCalled();
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+  });
+
   it('generates a concept, repaints each region, and builds a VRM', async () => {
     const { comfy, service } = create();
-    const { jobId } = await service.startJob({ prompt: 'A cheerful pirate with red hair' });
+    const { jobId } = await service.startJob({
+      mode: 'restyle',
+      prompt: 'A cheerful pirate with red hair',
+    });
 
     const status = await waitFor(service, jobId, 'completed');
     expect(status.progress).toBe(1);
-    expect(status.previewDataUrl).toBe(`data:image/png;base64,${Buffer.from('png-bytes').toString('base64')}`);
+    const candidate = await service.loadPreview(jobId);
+    expect(candidate).toEqual(Buffer.from('vrm-bytes'));
+    expect(models.uploadModel).not.toHaveBeenCalled();
+    expect(models.setActiveModel).not.toHaveBeenCalled();
+    expect(status.previewDataUrl).toBe(
+      `data:image/png;base64,${Buffer.from('png-bytes').toString('base64')}`,
+    );
 
     // concept + one run per region
     expect(comfy.run).toHaveBeenCalledTimes(3);
-    const conceptGraph = comfy.run.mock.calls[0][0] as Record<string, { inputs: Record<string, unknown> }>;
+    const conceptGraph = comfy.run.mock.calls[0][0] as Record<
+      string,
+      { inputs: Record<string, unknown> }
+    >;
     expect(conceptGraph.encode.inputs.prompt).toContain('A cheerful pirate with red hair.');
-    const hairGraph = comfy.run.mock.calls[2][0] as Record<string, { inputs: Record<string, unknown> }>;
+    const hairGraph = comfy.run.mock.calls[2][0] as Record<
+      string,
+      { inputs: Record<string, unknown> }
+    >;
     expect(hairGraph.cropImage.inputs.image).toBe(`aiembodied/${jobId}-hair.png`);
-    expect(hairGraph.encode.inputs.prompt).toBe('Recolour the hair: "A cheerful pirate with red hair"');
+    expect(hairGraph.encode.inputs.prompt).toBe(
+      'Recolour the hair: "A cheerful pirate with red hair"',
+    );
     // the concept is only a preview; the texture edit sees just the crop
     expect(hairGraph.encode.inputs).not.toHaveProperty(['images.image_2']);
     expect(hairGraph.resize.inputs).toMatchObject({ width: 64, height: 64 });
@@ -106,12 +153,14 @@ describe('AvatarGenerationService', () => {
       .mockResolvedValueOnce(0.85)
       .mockResolvedValueOnce(0.1)
       .mockResolvedValueOnce(0.3);
-    const { jobId } = await service.startJob({ prompt: 'A robot' });
+    const { jobId } = await service.startJob({ mode: 'restyle', prompt: 'A robot' });
     await waitFor(service, jobId, 'completed');
 
     // concept + 2 outfit attempts + 2 hair attempts
     expect(comfy.run).toHaveBeenCalledTimes(5);
-    const seeds = run.mock.calls.slice(1, 3).map((call) => (call[0] as { sample: { inputs: { seed: number } } }).sample.inputs.seed);
+    const seeds = run.mock.calls
+      .slice(1, 3)
+      .map((call) => (call[0] as { sample: { inputs: { seed: number } } }).sample.inputs.seed);
     expect(seeds[1]).toBe(seeds[0] + 1);
     expect(runner.assemble).toHaveBeenCalledWith(
       Buffer.from('base-vrm'),
@@ -123,7 +172,7 @@ describe('AvatarGenerationService', () => {
   it('fails when no region repaints cleanly', async () => {
     const { service } = create();
     vi.mocked(runner.score).mockResolvedValue(0.1);
-    const { jobId } = await service.startJob({ prompt: 'A robot' });
+    const { jobId } = await service.startJob({ mode: 'restyle', prompt: 'A robot' });
     const status = await waitFor(service, jobId, 'failed');
     expect(status.errorMessage).toMatch(/didn't keep the model's layout/);
     vi.mocked(runner.score).mockResolvedValue(0.9);
@@ -131,7 +180,7 @@ describe('AvatarGenerationService', () => {
 
   it('accepts a finished avatar into the model library and cleans up', async () => {
     const { service } = create();
-    const { jobId } = await service.startJob({ prompt: 'A robot' });
+    const { jobId } = await service.startJob({ mode: 'restyle', prompt: 'A robot' });
     await waitFor(service, jobId, 'completed');
 
     await expect(service.accept(jobId)).resolves.toEqual({ vrmId: 'vrm-new' });
@@ -147,21 +196,29 @@ describe('AvatarGenerationService', () => {
 
   it('refuses to start when ComfyUI is not running', async () => {
     const { service } = create(fakeComfy({ isAvailable: vi.fn().mockResolvedValue(false) }));
-    await expect(service.startJob({ prompt: 'A robot' })).rejects.toThrow(/ComfyUI isn't reachable at http:\/\/comfy.test/);
+    await expect(service.startJob({ mode: 'restyle', prompt: 'A robot' })).rejects.toThrow(
+      /ComfyUI isn't reachable at http:\/\/comfy.test/,
+    );
   });
 
   it('validates the description and allows one job at a time', async () => {
     const never = new Promise<Buffer>(() => undefined);
     const { service } = create(fakeComfy({ run: vi.fn().mockReturnValue(never) }));
-    await expect(service.startJob({ prompt: '   ' })).rejects.toThrow(/Describe the avatar/);
+    await expect(service.startJob({ mode: 'restyle', prompt: '   ' })).rejects.toThrow(
+      /Describe the avatar/,
+    );
 
-    await service.startJob({ prompt: 'First' });
-    await expect(service.startJob({ prompt: 'Second' })).rejects.toThrow(/already being generated/);
+    await service.startJob({ mode: 'restyle', prompt: 'First' });
+    await expect(service.startJob({ mode: 'restyle', prompt: 'Second' })).rejects.toThrow(
+      /already being generated/,
+    );
   });
 
   it('reports failures with the error message', async () => {
-    const { service } = create(fakeComfy({ run: vi.fn().mockRejectedValue(new Error('model missing')) }));
-    const { jobId } = await service.startJob({ prompt: 'A robot' });
+    const { service } = create(
+      fakeComfy({ run: vi.fn().mockRejectedValue(new Error('model missing')) }),
+    );
+    const { jobId } = await service.startJob({ mode: 'restyle', prompt: 'A robot' });
     const status = await waitFor(service, jobId, 'failed');
     expect(status.errorMessage).toBe('model missing');
     await expect(service.accept(jobId)).rejects.toThrow(/not finished/);
@@ -170,11 +227,15 @@ describe('AvatarGenerationService', () => {
   it('cancels a running job when rejected', async () => {
     const never = new Promise<Buffer>(() => undefined);
     const { comfy, service } = create(fakeComfy({ run: vi.fn().mockReturnValue(never) }));
-    const { jobId } = await service.startJob({ prompt: 'A robot' });
+    const { jobId } = await service.startJob({ mode: 'restyle', prompt: 'A robot' });
+    await vi.waitFor(() => expect(comfy.run).toHaveBeenCalled());
     await service.reject(jobId);
-    expect(comfy.interrupt).toHaveBeenCalled();
+    expect(comfy.interrupt).not.toHaveBeenCalled();
+    expect((comfy.run.mock.calls[0][1] as { signal: AbortSignal }).signal.aborted).toBe(true);
     expect(() => service.getStatus(jobId)).toThrow(/Unknown/);
     // a new job can start straight away
-    await expect(service.startJob({ prompt: 'Another' })).resolves.toHaveProperty('jobId');
+    await expect(service.startJob({ mode: 'restyle', prompt: 'Another' })).resolves.toHaveProperty(
+      'jobId',
+    );
   });
 });

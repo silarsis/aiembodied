@@ -119,7 +119,23 @@ import {
   smoothWeight,
   createRightArmWaveClip,
   suppressOutlierMeshes,
+  applyBaseNeutralPose,
+  applyPoseExpressions,
+  renderedFootFraction,
+    poseBonesForVrm,
 } from '../../src/avatar/vrm-avatar-renderer.js';
+
+describe('base pose coordinate conventions', () => {
+  it('converts tagged legacy stances for VRM 1 without modifying the original pose or other avatars', () => {
+    const pose = { sourceVrmVersion: '0' as const, bones: { leftUpperArm: { rotation: [0.1, 0.2, 0.3, 0.9] } } };
+    const v1 = { meta: { metaVersion: '1' } } as unknown as import('@pixiv/three-vrm').VRM;
+    const v0 = { meta: { metaVersion: '0' } } as unknown as import('@pixiv/three-vrm').VRM;
+    expect(poseBonesForVrm(v1, pose).bones.leftUpperArm.rotation).toEqual([-0.1, 0.2, -0.3, 0.9]);
+    expect(poseBonesForVrm(v0, pose).bones.leftUpperArm.rotation).toEqual([0.1, 0.2, 0.3, 0.9]);
+    expect(poseBonesForVrm(v1, { bones: pose.bones }).bones.leftUpperArm.rotation).toEqual([0.1, 0.2, 0.3, 0.9]);
+    expect(pose.bones.leftUpperArm.rotation).toEqual([0.1, 0.2, 0.3, 0.9]);
+  });
+});
 
 
 import type { AvatarModelSummary } from '../../src/avatar/types.js';
@@ -220,6 +236,7 @@ describe('VrmAvatarRenderer behavior cues', () => {
       return {
         scene,
         humanoid: {
+          setNormalizedPose: vi.fn(),
           getNormalizedBoneNode: (bone: string) => {
             if (bone === 'rightUpperArm') {
               return upperArm;
@@ -327,3 +344,33 @@ describe('VrmAvatarRenderer behavior cues', () => {
 });
 
 
+
+
+describe('approved base poses', () => {
+  it('anchors to solid rendered shoe pixels while ignoring stray antialiasing pixels', () => {
+    const renderer = { getContext: () => ({
+      drawingBufferWidth: 8, drawingBufferHeight: 8, RGBA: 1, UNSIGNED_BYTE: 2,
+      readPixels: (_x: number, _y: number, _w: number, _h: number, _format: number, _type: number, pixels: Uint8Array) => {
+        pixels[3] = 255;
+        for (const column of [2, 3, 4]) pixels[(2 * 8 + column) * 4 + 3] = 255;
+      },
+    }) } as unknown as THREE.WebGLRenderer;
+    expect(renderedFootFraction(renderer)).toBe(1 - 2.5 / 8);
+  });
+
+  it('starts with the calibrated neutral and resets the previous emotional expression', () => {
+    const setNormalizedPose = vi.fn();
+    const setValue = vi.fn();
+    const vrm = { humanoid: { setNormalizedPose }, expressionManager: {
+      expressions: ['happy', 'sad', 'angry', 'relaxed', 'Surprised'].map((expressionName) => ({ expressionName })), setValue,
+    }} as unknown as import('@pixiv/three-vrm').VRM;
+    applyBaseNeutralPose(vrm);
+    expect(setNormalizedPose).toHaveBeenCalledOnce();
+    expect(setNormalizedPose.mock.calls[0][0]).toHaveProperty('leftShoulder.rotation');
+    expect(setValue).toHaveBeenCalledWith('happy', 0);
+    expect(setValue).toHaveBeenCalledWith('relaxed', 0.16);
+    expect(setValue).toHaveBeenCalledWith('Surprised', 0);
+    applyPoseExpressions(vrm, { presets: { surprised: 0.75 } });
+    expect(setValue).toHaveBeenLastCalledWith('Surprised', 0.75);
+  });
+});

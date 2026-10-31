@@ -19,6 +19,7 @@ export interface ComfyUIClientOptions {
 export interface ComfyRunOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
+  output?: 'image' | 'mesh';
 }
 
 interface HistorySavedFile {
@@ -29,7 +30,15 @@ interface HistorySavedFile {
 
 interface HistoryEntry {
   status?: { completed?: boolean; status_str?: string; messages?: unknown };
-  outputs?: Record<string, { images?: HistorySavedFile[] }>;
+  outputs?: Record<
+    string,
+    {
+      images?: HistorySavedFile[];
+      '3d'?: HistorySavedFile[];
+      mesh?: HistorySavedFile[];
+      result?: HistorySavedFile[];
+    }
+  >;
 }
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
@@ -67,7 +76,10 @@ export class ComfyUIClient {
     form.append('type', 'input');
     form.append('overwrite', 'true');
 
-    const response = await this.fetchFn(`${this.baseUrl}/upload/image`, { method: 'POST', body: form });
+    const response = await this.fetchFn(`${this.baseUrl}/upload/image`, {
+      method: 'POST',
+      body: form,
+    });
     if (!response.ok) {
       throw new Error(`ComfyUI upload failed: HTTP ${response.status} ${await safeText(response)}`);
     }
@@ -80,34 +92,66 @@ export class ComfyUIClient {
 
   /** Queue `graph`, wait for it, and return the bytes of the first image it saved. */
   async run(graph: ComfyGraph, options: ComfyRunOptions = {}): Promise<Buffer> {
+    if (options.signal?.aborted) throw new Error('ComfyUI job cancelled.');
     const promptId = await this.queue(graph);
     const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 
     while (Date.now() < deadline) {
       if (options.signal?.aborted) {
-        await this.interrupt();
+        await this.cancelPrompt(promptId);
         throw new Error('ComfyUI job cancelled.');
       }
 
       const entry = await this.history(promptId);
       if (entry?.status?.status_str === 'error') {
-        throw new Error(`ComfyUI failed: ${JSON.stringify(entry.status.messages ?? null).slice(0, 500)}`);
+        throw new Error(
+          `ComfyUI failed: ${JSON.stringify(entry.status.messages ?? null).slice(0, 500)}`,
+        );
       }
       if (entry?.status?.completed) {
         for (const output of Object.values(entry.outputs ?? {})) {
-          for (const saved of output.images ?? []) {
+          const files =
+            options.output === 'mesh'
+              ? (output['3d'] ?? output.mesh ?? output.result ?? [])
+              : (output.images ?? []);
+          for (const saved of files) {
             if (saved.type === 'output' && saved.filename) {
               return this.view(saved);
             }
           }
         }
-        throw new Error('ComfyUI finished without saving an image.');
+        throw new Error(
+          `ComfyUI finished without saving an ${options.output === 'mesh' ? 'output mesh' : 'image'}.`,
+        );
       }
 
       await this.sleep(this.pollIntervalMs);
     }
 
     throw new Error(`ComfyUI prompt ${promptId} did not finish in time.`);
+  }
+
+  /** Cancel this request only; background and avatar generation share the server. */
+  private async cancelPrompt(promptId: string): Promise<void> {
+    try {
+      const response = await this.fetchFn(
+        `${this.baseUrl}/api/jobs/${encodeURIComponent(promptId)}/cancel`,
+        {
+          method: 'POST',
+          signal: AbortSignal.timeout(5000),
+        },
+      );
+      if (response.ok) return;
+      // Older servers can at least remove this queued prompt. Never interrupt unrelated work.
+      await this.fetchFn(`${this.baseUrl}/queue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ delete: [promptId] }),
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch {
+      /* Best effort if the server went away. */
+    }
   }
 
   /** Stop whatever ComfyUI is running now. */

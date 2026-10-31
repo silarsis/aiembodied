@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import { mkdir, readFile as fsReadFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { BASE_POSES, LEGACY_DEFAULT_POSE_SHA } from './base-poses.js';
 import type { MemoryStore, VrmPoseRecord } from '../memory/memory-store.js';
 import type {
     AvatarPoseSummary,
@@ -74,10 +75,22 @@ export class AvatarPoseService {
     }
 
     listPoses(): AvatarPoseSummary[] {
-        return this.store.listVrmPoses().map((record) => this.toSummary(record));
+        const included = BASE_POSES.map((pose) => ({
+            id: pose.id,
+            name: pose.name,
+            createdAt: 0,
+            fileSha: createHash('sha256').update(JSON.stringify(pose.data)).digest('hex'),
+            builtIn: true,
+        }));
+        const saved = this.store.listVrmPoses()
+            .filter((record) => !(record.name.trim().toLowerCase() === 'default' && record.fileSha === LEGACY_DEFAULT_POSE_SHA))
+            .map((record) => this.toSummary(record));
+        return [...included, ...saved];
     }
 
     async loadPose(poseId: string): Promise<unknown> {
+        const included = BASE_POSES.find((pose) => pose.id === poseId);
+        if (included) return structuredClone(included.data);
         const record = this.store.getVrmPose(poseId);
         if (!record) {
             throw new Error('Requested VRM pose is not available.');
@@ -163,6 +176,9 @@ export class AvatarPoseService {
     }
 
     async deletePose(poseId: string): Promise<void> {
+        if (BASE_POSES.some((pose) => pose.id === poseId)) {
+            throw new Error('Included base poses cannot be deleted.');
+        }
         const record = this.store.getVrmPose(poseId);
         if (!record) {
             this.logger?.warn?.('Attempted to delete missing VRM pose.', { poseId });

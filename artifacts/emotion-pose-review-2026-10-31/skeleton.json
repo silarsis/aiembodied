@@ -1,0 +1,94 @@
+{
+  "coords": {
+    "hips": [
+      -5.348943243729273e-19,
+      0.8953759,
+      0.00436774362
+    ],
+    "chest": [
+      1.7036702737704188e-17,
+      1.0585642980999999,
+      0.02032420502
+    ],
+    "upperChest": [
+      -9.462434380450862e-18,
+      1.1600364370999998,
+      0.00657145212
+    ],
+    "head": [
+      -2.2938426394750795e-8,
+      1.3510844621,
+      -0.01923933488
+    ],
+    "leftShoulder": [
+      0.020164091099999993,
+      1.2557597070999997,
+      -0.020572322480000002
+    ],
+    "rightShoulder": [
+      -0.020164091100000007,
+      1.2557597070999997,
+      -0.02057232248000001
+    ],
+    "leftUpperArm": [
+      0.0804317611,
+      1.2471327690999998,
+      -0.020572322479999995
+    ],
+    "rightUpperArm": [
+      -0.08043176110000001,
+      1.2471327690999998,
+      -0.020572322480000016
+    ],
+    "leftLowerArm": [
+      0.3340325371,
+      1.2471327690999998,
+      -0.020572322479999964
+    ],
+    "rightLowerArm": [
+      -0.3340325371,
+      1.2471327690999998,
+      -0.020572322480000047
+    ],
+    "leftHand": [
+      0.5606689171,
+      1.2471324114721307,
+      -0.020174573234999937
+    ],
+    "rightHand": [
+      -0.5606689171,
+      1.2471324114721307,
+      -0.020174573235000076
+    ]
+  },
+  "expressions": [
+    "neutral",
+    "aa",
+    "ih",
+    "ou",
+    "ee",
+    "oh",
+    "blink",
+    "blinkLeft",
+    "blinkRight",
+    "angry",
+    "relaxed",
+    "happy",
+    "sad",
+    "Surprised"
+  ],
+  "spec": {
+    "metaVersion": "0",
+    "allowedUserName": "Everyone",
+    "author": "VRoid Project",
+    "commercialUssageName": "Allow",
+    "contactInformation": "https://www.pixiv.net/support.php?mode=select_vroid",
+    "licenseName": "Other",
+    "otherLicenseUrl": "https://hub.vroid.com/license?allowed_to_use_user=everyone&characterization_allowed_user=everyone&corporate_commercial_use=allow&credit=unnecessary&modification=allow&personal_commercial_use=profit&redistribution=allow&sexual_expression=allow&version=1&violent_expression=allow",
+    "otherPermissionUrl": "https://hub.vroid.com/license?allowed_to_use_user=everyone&characterization_allowed_user=everyone&corporate_commercial_use=allow&credit=unnecessary&modification=allow&personal_commercial_use=profit&redistribution=allow&sexual_expression=allow&version=1&violent_expression=allow",
+    "sexualUssageName": "Allow",
+    "title": "AvatarSample_A",
+    "version": "1.0",
+    "violentUssageName": "Allow"
+  }
+}

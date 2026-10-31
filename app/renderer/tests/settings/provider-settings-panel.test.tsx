@@ -31,6 +31,16 @@ function defaults(): ProviderSettings {
 }
 
 describe('ProviderSettingsPanel', () => {
+  it('shares one draft across voice and device drawer sections', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<ProviderSettingsPanel settings={defaults()} hasApiKey voiceStatus={voiceStatus} motionStatus={null} onSave={onSave}
+      renderLayout={({ voice, devices, actions }) => <><section aria-label="Voice controls">{voice}</section><section aria-label="Device controls">{devices}</section>{actions}</>} />);
+    fireEvent.change(screen.getByLabelText('Voice'), { target: { value: 'bf_emma' } });
+    fireEvent.change(screen.getByLabelText('Detection threshold'), { target: { value: '0.7' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ tts: { kokoroVoice: 'bf_emma' }, wakeWord: { threshold: 0.7 } }));
+  });
+
   it('offers the Kokoro voices the speech service reports and saves only the change', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
 import { AvatarPoseService } from '../src/avatar/avatar-pose-service.js';
+import { BASE_POSES, LEGACY_DEFAULT_POSE_SHA } from '../src/avatar/base-poses.js';
 import { MemoryStore } from '../src/memory/memory-store.js';
 
 const tempDirs: string[] = [];
@@ -34,6 +35,32 @@ afterEach(async () => {
 });
 
 describe('AvatarPoseService', () => {
+  it('always offers the approved base set without creating database rows', async () => {
+    const { store, directory } = await createStore();
+    const service = new AvatarPoseService({ store, posesDirectory: directory });
+    const first = service.listPoses();
+    expect(first.map((pose) => pose.name)).toEqual(['Relaxed neutral', 'Happiness', 'Sadness', 'Anger', 'Fear', 'Disgust', 'Surprise']);
+    expect(first.every((pose) => pose.builtIn)).toBe(true);
+    expect(new AvatarPoseService({ store, posesDirectory: directory }).listPoses()).toEqual(first);
+    expect(store.listVrmPoses()).toEqual([]);
+    for (const base of BASE_POSES) {
+      const loaded = await service.loadPose(base.id);
+      expect(loaded).toEqual(base.data);
+      expect(loaded).not.toBe(base.data);
+      await expect(service.deletePose(base.id)).rejects.toThrow('cannot be deleted');
+    }
+  });
+
+  it('hides only the exact obsolete automatic default and retains customized poses', async () => {
+    const { store, directory } = await createStore();
+    const service = new AvatarPoseService({ store, posesDirectory: directory });
+    store.createVrmPose({ id: 'old-default', name: 'default', createdAt: 0, filePath: 'old.pose.json', fileSha: LEGACY_DEFAULT_POSE_SHA });
+    const custom = await service.uploadPose({ name: 'default', fileName: 'custom.pose.json', data: '{}' });
+    expect(service.listPoses().map((pose) => pose.id)).not.toContain('old-default');
+    expect(service.listPoses().map((pose) => pose.id)).toContain(custom.pose.id);
+    expect(store.getVrmPose('old-default')).not.toBeNull();
+  });
+
   it('should upload and persist a pose', async () => {
     const { store, directory } = await createStore();
     const service = new AvatarPoseService({ store, posesDirectory: directory });
@@ -72,7 +99,7 @@ describe('AvatarPoseService', () => {
       name: 'Pose 2',
     });
 
-    const list = service.listPoses();
+    const list = service.listPoses().filter((pose) => !pose.builtIn);
     expect(list).toHaveLength(2);
     const names = list.map((p) => p.name).sort();
     expect(names).toEqual(['Pose 1', 'Pose 2']);
@@ -146,12 +173,12 @@ describe('AvatarPoseService', () => {
     });
 
     const poseId = result.pose.id;
-    let list = service.listPoses();
+    let list = service.listPoses().filter((pose) => !pose.builtIn);
     expect(list).toHaveLength(1);
 
     await service.deletePose(poseId);
 
-    list = service.listPoses();
+    list = service.listPoses().filter((pose) => !pose.builtIn);
     expect(list).toHaveLength(0);
   });
 
