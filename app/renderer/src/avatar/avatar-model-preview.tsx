@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { ModelReviewScene } from './model-review-scene.js';
+import { createModelReviewScene, type ModelReviewScene } from './model-review-scene.js';
 
 const expressionLabels: Record<string, string> = {
   happy: 'Happiness',
@@ -34,11 +34,12 @@ function ModelDialog({ modelData, onDismiss }: { modelData: ArrayBuffer; onDismi
     const element = dialog.current;
     element?.showModal();
     let cancelled = false;
-    void import('./model-review-scene.js')
-      .then(({ createModelReviewScene }) => {
-        if (cancelled || !host.current) return null;
-        return createModelReviewScene(host.current, modelData);
-      })
+    // Bundle the code eagerly: rebuilding dist can remove a lazy chunk expected by an open app.
+    // The scene, model and WebGL context are still created only when this dialog opens.
+    const loading = host.current
+      ? createModelReviewScene(host.current, modelData)
+      : Promise.resolve(null);
+    void loading
       .then((scene) => {
         if (!scene) return;
         if (cancelled) scene.dispose();
