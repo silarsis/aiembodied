@@ -25,6 +25,7 @@ parser.add_argument("--render", action="store_true")
 parser.add_argument("--reference", required=True)
 parser.add_argument("--landmarks", required=True)
 parser.add_argument("--emotion-renders", action="store_true")
+parser.add_argument("--allow-template-warnings", action="store_true")
 args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:])
 args.reference = str(Path(args.reference).resolve())
 args.landmarks = str(Path(args.landmarks).resolve())
@@ -170,7 +171,7 @@ body.parent = rig
 # Fit known open-eye/open-mouth topology to the detected reference and generated head.
 face_module = runpy.run_path(str(Path(__file__).with_name("fitted-face.py")))
 face_parts, face_report = face_module["build_fitted_face"](
-    body, rig, H, args.landmarks, args.reference)
+    body, rig, H, args.landmarks, args.reference, allow_template_warnings=args.allow_template_warnings)
 for part in face_parts:
     if part.data.shape_keys:
         for key in part.data.shape_keys.key_blocks:
@@ -209,6 +210,11 @@ bpy.ops.export_scene.gltf(filepath=str(glb_path), export_format="GLB", use_selec
 raw = glb_path.read_bytes()
 json_size = struct.unpack_from("<I", raw, 12)[0]
 doc = json.loads(raw[20:20 + json_size])
+doc.setdefault('extras', {})['aiembodiedGeneration'] = {
+    'templatePolicyVersion': face_report['templatePolicyVersion'],
+    'templateWarnings': face_report['templateWarnings'],
+    'warningsAccepted': face_report['templateWarningsAccepted'],
+}
 for mesh in doc.get("meshes", []):
     if "weights" in mesh and any(abs(w) > 1e-8 for w in mesh["weights"]):
         raise RuntimeError("Exported face is not neutral: nonzero default expression weights")

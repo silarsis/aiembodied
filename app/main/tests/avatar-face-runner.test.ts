@@ -85,6 +85,16 @@ function complete(input: { outputPath: string }, bytes?: Buffer, output = '') {
   });
 }
 describe('local fitted face runner', () => {
+  it('passes the template override to Blender only when explicitly requested', async () => {
+    const { runner, input } = await setup();
+    complete(input, candidate());
+    await runner.build({ ...input, allowTemplateWarnings: true });
+    expect(exec.mock.calls[1][1]).toContain('--allow-template-warnings');
+    exec.mockClear();
+    complete(input, candidate());
+    await runner.build(input);
+    expect(exec.mock.calls[1][1]).not.toContain('--allow-template-warnings');
+  });
   it('preserves the actual Python exception when Blender exits zero without a model', async () => {
     const { runner, input } = await setup();
     const output =

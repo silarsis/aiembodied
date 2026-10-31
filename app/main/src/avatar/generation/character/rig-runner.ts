@@ -3,6 +3,8 @@ import { access, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { readGlb } from '../vrm-retexture.js';
+import { inspectTemplateCompatibility } from '../template-compatibility.js';
+import type { AvatarGenerationWarning } from '../../types.js';
 
 /** Blender can report a Python exception while still returning process exit code zero. */
 function pythonFailure(output: string): string | undefined {
@@ -17,6 +19,7 @@ function pythonFailure(output: string): string | undefined {
 
 export interface CharacterRigRunner {
   assertAvailable(): Promise<void>;
+  inspectReference?(landmarksPath: string): Promise<AvatarGenerationWarning[]>;
   prepareReference?(input: {
     referencePath: string;
     outputPath: string;
@@ -24,6 +27,7 @@ export interface CharacterRigRunner {
   }): Promise<string>;
   build(input: {
     landmarksPath?: string;
+    allowTemplateWarnings?: boolean;
     meshPath: string;
     referencePath: string;
     outputPath: string;
@@ -36,6 +40,9 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
   private executable: string | null = null;
   private facePython = '';
   private faceModel = '';
+  inspectReference(landmarksPath: string): Promise<AvatarGenerationWarning[]> {
+    return inspectTemplateCompatibility(landmarksPath);
+  }
   constructor(
     private readonly scriptPath: string,
     private readonly env: NodeJS.ProcessEnv = process.env,
@@ -124,6 +131,7 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
 
   async build(input: {
     landmarksPath?: string;
+    allowTemplateWarnings?: boolean;
     meshPath: string;
     referencePath: string;
     outputPath: string;
@@ -160,6 +168,7 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
           input.referencePath,
           '--landmarks',
           landmarks,
+          ...(input.allowTemplateWarnings === true ? ['--allow-template-warnings'] : []),
         ],
         {
           windowsHide: true,

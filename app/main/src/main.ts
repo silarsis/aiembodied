@@ -68,6 +68,7 @@ import type {
   AvatarGenerationRequest,
   AvatarGenerationJob,
   AvatarGenerationStatus,
+  AvatarGenerationConfirmation,
   AvatarGenerationAcceptance,
 } from './avatar/types.js';
 import {
@@ -1039,7 +1040,7 @@ function registerIpcHandlers(
     async (_event, payload: AvatarGenerationRequest): Promise<AvatarGenerationJob> =>
       requireAvatarGeneration().startJob(payload),
   );
-  ipcMain.handle('avatar:generation-confirm-concept', async (_event, jobId: string): Promise<void> => requireAvatarGeneration().confirmConcept(jobId));
+  ipcMain.handle('avatar:generation-confirm-concept', async (_event, jobId: string, confirmation?: AvatarGenerationConfirmation): Promise<void> => requireAvatarGeneration().confirmConcept(jobId, confirmation));
   ipcMain.handle(
     'avatar:generation-status',
     async (_event, jobId: string): Promise<AvatarGenerationStatus> => requireAvatarGeneration().getStatus(jobId),

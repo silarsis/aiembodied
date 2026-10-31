@@ -1582,3 +1582,7 @@ body {
 .avatarImageModel { display: grid; gap: 8px; min-width: 0; }
 .avatarImageModel select { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid #33445d; border-radius: 8px; background: #0c1525; color: #e2e8f0; }
 .avatarImageModel > button { justify-self: end; padding: 5px 10px; border: 1px solid #33445d; border-radius: 8px; background: #18253a; color: #e2e8f0; cursor: pointer; }
+
+.avatarCompatibilityWarning { padding: 12px; border: 1px solid #ad853f; border-radius: 10px; background: #342b1c; color: #f8dfb3; }
+.avatarCompatibilityWarning p { margin-bottom: 0; }
+.avatarCompatibilityWarning ul { padding-left: 20px; }

@@ -38,6 +38,7 @@ async function setup(
   };
   const characterRunner = {
     assertAvailable: vi.fn().mockResolvedValue(undefined),
+    inspectReference: vi.fn().mockResolvedValue([]),
     prepareReference: vi.fn().mockResolvedValue(path.join(directory, 'face-landmarks.json')),
     build: vi.fn(async (input: { meshPath: string; outputPath: string }) => {
       expect(await readFile(input.meshPath, 'utf8')).toBe('NEW-GEOMETRY');
@@ -61,15 +62,47 @@ async function setup(
 }
 
 describe('new character generation', () => {
+  it('requires a separate warning acknowledgement before meshing', async () => {
+    const { service, comfy, characterRunner } = await setup();
+    characterRunner.inspectReference.mockResolvedValue([
+      { code: 'face-width', message: 'Face width is 23.3%; tested maximum is 22%.' },
+    ]);
+    const { jobId } = await service.startJob({ prompt: 'A stylised character' });
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+    await service.confirmConcept(jobId, { acceptWarnings: true });
+    expect(service.getStatus(jobId).status).toBe('awaiting_confirmation');
+    expect(service.getStatus(jobId).warnings?.[0].code).toBe('face-width');
+    expect(comfy.run).toHaveBeenCalledTimes(1);
+    expect(characterRunner.build).not.toHaveBeenCalled();
+    await service.confirmConcept(jobId);
+    expect(comfy.run).toHaveBeenCalledTimes(1);
+    await expect(service.startJob({ prompt: 'Another' })).rejects.toThrow('already');
+    await service.confirmConcept(jobId, { acceptWarnings: true });
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('completed'));
+    expect(characterRunner.prepareReference).toHaveBeenCalledTimes(1);
+    expect(characterRunner.build).toHaveBeenCalledWith(
+      expect.objectContaining({ allowTemplateWarnings: true }),
+    );
+    expect(service.getStatus(jobId).warningsAccepted).toBe(true);
+  });
+  it('does not grant an override for an ordinary confirmed reference', async () => {
+    const { service, characterRunner } = await setup();
+    const { jobId } = await service.startJob({ prompt: 'A proportional character' });
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+    await service.confirmConcept(jobId);
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('completed'));
+    expect(characterRunner.build).toHaveBeenCalledWith(
+      expect.objectContaining({ allowTemplateWarnings: false }),
+    );
+  });
   it('checks the approved face before requesting expensive geometry and stops on detection failure', async () => {
     const { service, comfy, characterRunner } = await setup();
     const { jobId } = await service.startJob({ prompt: 'A botanist' });
     await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
     expect(characterRunner.prepareReference).not.toHaveBeenCalled();
     characterRunner.prepareReference.mockRejectedValue(new Error('Face is obscured'));
-    await service.confirmConcept(jobId);
-    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('failed'));
-    expect(service.getStatus(jobId).errorMessage).toBe('Face is obscured');
+    await expect(service.confirmConcept(jobId)).rejects.toThrow('Face is obscured');
+    expect(service.getStatus(jobId).status).toBe('awaiting_confirmation');
     expect(comfy.run).toHaveBeenCalledTimes(1);
     expect(characterRunner.build).not.toHaveBeenCalled();
   });

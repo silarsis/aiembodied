@@ -187,21 +187,25 @@ export function AvatarGeneratorPanel({
     }
   }, [avatarApi, jobId, onAccepted]);
 
-  const handleConfirmConcept = useCallback(async () => {
-    if (!jobId) return;
-    setBusy(true);
-    setError(null);
-    try {
-      if (!avatarApi?.confirmAvatarConcept)
-        throw new Error('Restart the app to continue from the concept review.');
-      await avatarApi.confirmAvatarConcept(jobId);
-      setStatus(await avatarApi.getAvatarGenerationStatus(jobId));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not continue avatar generation.');
-    } finally {
-      setBusy(false);
-    }
-  }, [avatarApi, jobId]);
+  const handleConfirmConcept = useCallback(
+    async (acceptWarnings = false) => {
+      if (!jobId) return;
+      setBusy(true);
+      setError(null);
+      try {
+        if (!avatarApi?.confirmAvatarConcept)
+          throw new Error('Restart the app to continue from the concept review.');
+        if (acceptWarnings) await avatarApi.confirmAvatarConcept(jobId, { acceptWarnings: true });
+        else await avatarApi.confirmAvatarConcept(jobId);
+        setStatus(await avatarApi.getAvatarGenerationStatus(jobId));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not continue avatar generation.');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [avatarApi, jobId],
+  );
 
   const handleDiscard = useCallback(async () => {
     if (!avatarApi?.rejectGeneratedAvatar || !jobId) {
@@ -252,7 +256,7 @@ export function AvatarGeneratorPanel({
       </h3>
       <p className="kiosk__info">
         {mode === 'new-character'
-          ? 'Experimental: generate a new stylised 3D humanoid, then fit an animated face and body rig locally. Use a clear front-facing human face, adult proportions, short or swept-back hair and close-fitting clothes. Loose garments, long hair, articulated fingers and hair physics are not supported yet. Review the finished face carefully.'
+          ? 'Experimental: generate a new stylised 3D humanoid, then fit an animated face and body rig locally. Images are guided toward the tested humanoid proportions. Detected compatibility warnings are reviewed before 3D work, with an option to continue anyway. Use a clear front-facing humanoid face, short or swept-back hair and close-fitting clothes. Loose garments, long hair, articulated fingers and hair physics are not supported yet. Review the finished face carefully.'
           : 'Repaint the bundled avatar’s hair and clothing textures. Face shape, hairstyle, body and outfit shape stay the same.'}{' '}
         Generation can take several minutes; you can keep using the app while it runs. We’ll pause
         after the concept image so you can approve it before continuing.
@@ -421,15 +425,36 @@ export function AvatarGeneratorPanel({
           {status.status === 'awaiting_confirmation' ? (
             <>
               <p>Review the image. Generation is paused until you confirm.</p>
+              {status.warnings?.length ? (
+                <section
+                  className="avatarCompatibilityWarning"
+                  role="alert"
+                  aria-label="Avatar compatibility warnings"
+                >
+                  <strong>This image is outside the tested animation template.</strong>
+                  <ul>
+                    {status.warnings.map((warning) => (
+                      <li key={warning.code}>{warning.message}</li>
+                    ))}
+                  </ul>
+                  <p>
+                    You can edit the prompt and regenerate, upload another image, or continue
+                    anyway. Joint placement and animation may be distorted, and creation can still
+                    fail. You will review the finished avatar before keeping it.
+                  </p>
+                </section>
+              ) : null}
               <button
                 type="button"
                 className="faces__submit"
-                onClick={() => void handleConfirmConcept()}
+                onClick={() => void handleConfirmConcept(Boolean(status.warnings?.length))}
                 disabled={busy}
               >
-                {mode === 'new-character'
-                  ? 'Use this image — create 3D avatar'
-                  : 'Use this image — continue recolouring'}
+                {status.warnings?.length
+                  ? 'Accept warnings — continue anyway'
+                  : mode === 'new-character'
+                    ? 'Use this image — create 3D avatar'
+                    : 'Use this image — continue recolouring'}
               </button>
             </>
           ) : null}
