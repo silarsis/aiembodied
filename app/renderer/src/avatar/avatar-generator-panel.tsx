@@ -3,6 +3,8 @@ import type { AvatarBridge, AvatarGenerationStatus } from './types.js';
 import { generatePoseSnapshot } from './pose-snapshot-generator.js';
 import { AvatarImagePreview } from './avatar-image-preview.js';
 import { readAvatarReference, type AvatarReferenceImage } from './reference-image-upload.js';
+import { useImageModels } from './use-image-models.js';
+import { useControlsVisible } from '../settings/controls-drawer.js';
 import baseNeutralPose from '../../../main/src/avatar/base-poses/relaxed-neutral.pose.json';
 
 interface AvatarGeneratorPanelProps {
@@ -53,6 +55,9 @@ export function AvatarGeneratorPanel({
   const canRegenerate = Boolean(
     jobId && status?.status === 'awaiting_confirmation' && !usingUpload,
   );
+  const models = useImageModels(avatarApi, useControlsVisible() && !usingUpload);
+  const modelUnavailable =
+    !usingUpload && models.supported && (models.loading || !models.selectedModelId);
 
   useEffect(() => {
     if (!completed || !jobId) return;
@@ -117,6 +122,7 @@ export function AvatarGeneratorPanel({
       event.preventDefault();
       if (
         !avatarApi?.generateAvatar ||
+        modelUnavailable ||
         (jobId && !canRegenerate) ||
         (usingUpload ? !referenceImage : !prompt.trim())
       ) {
@@ -136,6 +142,9 @@ export function AvatarGeneratorPanel({
           prompt: prompt.trim(),
           mode,
           ...(usingUpload && referenceImage ? { referenceImage } : {}),
+          ...(!usingUpload && models.selectedModelId
+            ? { imageModelId: models.selectedModelId }
+            : {}),
         });
         setJobId(job.jobId);
         setStatus({ jobId: job.jobId, status: 'queued', progress: 0, message: 'Queued' });
@@ -145,7 +154,17 @@ export function AvatarGeneratorPanel({
         setBusy(false);
       }
     },
-    [avatarApi, prompt, mode, usingUpload, referenceImage, jobId, canRegenerate],
+    [
+      avatarApi,
+      prompt,
+      mode,
+      usingUpload,
+      referenceImage,
+      jobId,
+      canRegenerate,
+      modelUnavailable,
+      models.selectedModelId,
+    ],
   );
 
   const handleAccept = useCallback(async () => {
@@ -301,6 +320,47 @@ export function AvatarGeneratorPanel({
             ) : null}
           </>
         ) : null}
+        {!usingUpload && models.supported ? (
+          <div className="faces__field avatarImageModel">
+            <label htmlFor="avatar-image-model">Image model</label>
+            <select
+              id="avatar-image-model"
+              value={models.selectedModelId ?? ''}
+              disabled={busy || models.loading || Boolean(jobId && !canRegenerate)}
+              onChange={(event) => void models.select(event.target.value)}
+            >
+              {!models.selectedModelId ? (
+                <option value="">
+                  {models.loading ? 'Finding installed models…' : 'No available image models'}
+                </option>
+              ) : null}
+              {models.models.map((model) => (
+                <option key={model.id} value={model.id} disabled={!model.available}>
+                  {model.name}
+                  {model.available ? '' : ' (unavailable)'}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={busy || models.loading || Boolean(jobId && !canRegenerate)}
+              onClick={() => void models.refresh()}
+            >
+              Refresh models
+            </button>
+            {models.error ? (
+              <p className="kiosk__error" role="alert">
+                {models.error}
+              </p>
+            ) : null}
+            {!models.loading && !models.error && !models.selectedModelId ? (
+              <p className="kiosk__info">
+                No supported image models are ready. Install the required models in ComfyUI and
+                refresh, or upload an image.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <label className="faces__field">
           <span>{usingUpload ? 'Avatar name (optional)' : 'Avatar description'}</span>
           <textarea
@@ -321,6 +381,7 @@ export function AvatarGeneratorPanel({
           className="faces__submit"
           disabled={
             busy ||
+            modelUnavailable ||
             Boolean(jobId && !canRegenerate) ||
             (usingUpload ? !referenceImage : !prompt.trim())
           }

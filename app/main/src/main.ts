@@ -43,6 +43,7 @@ import { AvatarDescriptionService } from './avatar/avatar-description-service.js
 import { AvatarGenerationService } from './avatar/generation/avatar-generation-service.js';
 import { ComfyUIClient } from './avatar/generation/comfyui-client.js';
 import { BlenderCharacterRunner } from './avatar/generation/character/rig-runner.js';
+import { AvatarImageModelService, createImageModelScanner } from './avatar/generation/image-model-service.js';
 import { ComfyUIRuntime } from './avatar/generation/comfyui-runtime.js';
 import { LocalMotionClient } from './avatar/motion/local-motion-client.js';
 import { LocalMotionGenerationService } from './avatar/motion/local-motion-generation-service.js';
@@ -174,6 +175,7 @@ let vrmaGenerationService: VrmaGenerationService | null = null;
 let poseGenerationService: PoseGenerationService | null = null;
 let poseEvaluationService: PoseEvaluationService | null = null;
 let avatarDescriptionService: AvatarDescriptionService | null = null;
+let avatarImageModels: AvatarImageModelService | undefined;
 let avatarGenerationService: AvatarGenerationService | null = null;
 let localMotionService: LocalMotionGenerationService | null = null;
 let localVoiceService: LocalVoiceService | null = null;
@@ -1030,6 +1032,8 @@ function registerIpcHandlers(
     }
     return avatarGenerationService;
   };
+  ipcMain.handle('avatar:image-models', async () => { if (!avatarImageModels) throw new Error('Image models are unavailable.'); return avatarImageModels.list(); });
+  ipcMain.handle('avatar:image-model-select', async (_event, id: string) => { if (!avatarImageModels) throw new Error('Image models are unavailable.'); await avatarImageModels.select(id); });
   ipcMain.handle(
     'avatar:generation-start',
     async (_event, payload: AvatarGenerationRequest): Promise<AvatarGenerationJob> =>
@@ -1450,6 +1454,7 @@ app.whenReady().then(async () => {
   const comfy = new ComfyUIClient({ baseUrl: appConfig.comfyUiBaseUrl });
   const comfyRuntime = new ComfyUIRuntime({ client: comfy, logDirectory: path.join(app.getPath('userData'), 'logs') });
   const ensureComfyReady = () => comfyRuntime.ensureReady();
+  avatarImageModels = new AvatarImageModelService(createImageModelScanner(path.join(__dirname, '../assets/avatar-generation/image-models.py').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1'), appConfig.comfyUiBaseUrl), memoryStore ?? undefined);
   if (memoryStore) {
     backgroundService = new BackgroundService({
       store: memoryStore,
@@ -1483,6 +1488,7 @@ app.whenReady().then(async () => {
       models: avatarModelService,
       baseModelPath: DEFAULT_MODEL_ASSET_PATH,
       workDirectory: path.join(app.getPath('userData'), 'avatar-generation'),
+      imageModels: avatarImageModels,
       characterRunner: new BlenderCharacterRunner(path.join(__dirname, '../assets/avatar-generation/rig-character.py').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')),
       logger,
     });

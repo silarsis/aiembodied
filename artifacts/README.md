@@ -8,4 +8,6 @@
 
 - `avatar-image-review-2026-10-31`: compact image thumbnails, full-size popup, uploaded-reference validation and explicit approval before 3D generation.
 
+- `image-model-review-2026-10-31`: detected picture models, per-family API graphs and live generated images, plus model-selector persistence and regeneration checks.
+
 These are development review outputs. Runtime defaults are shipped separately under `app/main/assets/` and `app/main/src/avatar/base-poses/`.

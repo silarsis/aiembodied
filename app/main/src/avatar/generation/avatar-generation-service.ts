@@ -10,6 +10,8 @@ import { buildConceptPrompt, conceptGraph, retextureGraph } from './graphs.js';
 import { workerRetextureRunner, type RetextureRunner } from './retexture-tasks.js';
 import { characterConceptPrompt, characterMeshGraph } from './character/graphs.js';
 import type { CharacterRigRunner } from './character/rig-runner.js';
+import type { AvatarImageModelService } from './image-model-service.js';
+import { buildAvatarImageWorkflow, type ImageWorkflowModel } from './image-workflows.js';
 import { decodeReferenceImage } from './reference-image.js';
 import { regionPrompt } from './vrm-retexture.js';
 import type {
@@ -36,6 +38,7 @@ export interface AvatarGenerationServiceOptions {
   workDirectory: string;
   runner?: RetextureRunner;
   characterRunner?: CharacterRigRunner;
+  imageModels?: Pick<AvatarImageModelService, 'resolve'>;
   logger?: {
     info?: (message: string, meta?: Record<string, unknown>) => void;
     warn?: (message: string, meta?: Record<string, unknown>) => void;
@@ -44,6 +47,7 @@ export interface AvatarGenerationServiceOptions {
 }
 
 interface JobState {
+  imageModel?: ImageWorkflowModel;
   referenceImage: Buffer | null;
   seed: number;
   mode: 'new-character' | 'restyle';
@@ -108,8 +112,14 @@ export class AvatarGenerationService {
       throw new Error('An avatar is already being generated. Wait for it to finish or discard it.');
     }
 
+    const imageModel = !referenceImage
+      ? await this.options.imageModels?.resolve(request.imageModelId)
+      : undefined;
+    if ([...this.jobs.values()].some((job) => isActive(job.status.status)))
+      throw new Error('An avatar is already being generated. Wait for it to finish or discard it.');
     const jobId = randomUUID();
     const job: JobState = {
+      imageModel,
       referenceImage,
       seed: randomInt(0, 2 ** 47),
       mode,
@@ -231,7 +241,11 @@ export class AvatarGenerationService {
         await mkdir(job.directory, { recursive: true });
         await writeFile(
           path.join(job.directory, 'request.json'),
-          JSON.stringify({ prompt: job.prompt, mode: job.mode, seed }, null, 2),
+          JSON.stringify(
+            { prompt: job.prompt, mode: job.mode, imageModel: job.imageModel, seed },
+            null,
+            2,
+          ),
         );
 
         this.update(job, {
@@ -239,15 +253,16 @@ export class AvatarGenerationService {
           progress: 0.02,
           message: job.referenceImage ? 'Preparing uploaded image' : 'Drawing a concept image',
         });
+        const prompt =
+          job.mode === 'new-character'
+            ? characterConceptPrompt(job.prompt)
+            : buildConceptPrompt(job.prompt);
         const concept =
           job.referenceImage ??
           (await comfy.run(
-            conceptGraph(
-              job.mode === 'new-character'
-                ? characterConceptPrompt(job.prompt)
-                : buildConceptPrompt(job.prompt),
-              seed,
-            ),
+            job.imageModel
+              ? buildAvatarImageWorkflow(job.imageModel, job.prompt, job.mode, seed)
+              : conceptGraph(prompt, seed),
             { signal },
           ));
         throwIfAborted(signal);

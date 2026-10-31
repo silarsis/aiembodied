@@ -1,0 +1,44 @@
+[
+  {
+    "detected": [
+      {
+        "name": "Identitycrisis erodemonmix03ws",
+        "id": "checkpoints:identitycrisis_erodemonmix03ws.safetensors",
+        "disabled": false
+      },
+      {
+        "name": "IllustriousXL v01",
+        "id": "checkpoints:illustriousXL_v01.safetensors",
+        "disabled": false
+      },
+      {
+        "name": "NovaFurryXL ilV180A",
+        "id": "checkpoints:novaFurryXL_ilV180A.safetensors",
+        "disabled": false
+      },
+      {
+        "name": "Qwen image 2.1 int8 convrot",
+        "id": "diffusion_models:qwen_image_2.1_int8_convrot.safetensors",
+        "disabled": false
+      },
+      {
+        "name": "Z image turbo bf16",
+        "id": "diffusion_models:z_image_turbo_bf16.safetensors",
+        "disabled": false
+      }
+    ],
+    "selectionPersists": true,
+    "regenerateUsesNewModel": true,
+    "workflows": [
+      {
+        "isZ": true
+      },
+      {
+        "isZ": false,
+        "checkpoint": "novaFurryXL_ilV180A.safetensors"
+      }
+    ],
+    "no3DWithoutApproval": true,
+    "source": "Actual installed-model scanner and production job service with replayed live generated pictures; no live user preferences changed."
+  }
+]

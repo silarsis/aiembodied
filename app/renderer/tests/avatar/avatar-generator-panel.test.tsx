@@ -42,6 +42,34 @@ async function poll() {
 }
 
 describe('AvatarGeneratorPanel', () => {
+  it('shows detected models, saves a choice and sends just that model ID with the prompt', async () => {
+    const { api, mocks } = createApi();
+    const setAvatarImageModel = vi.fn().mockResolvedValue(undefined);
+    Object.assign(mocks, {
+      setAvatarImageModel,
+      listAvatarImageModels: vi.fn().mockResolvedValue({
+        selectedModelId: 'qwen',
+        models: [
+          { id: 'qwen', name: 'Qwen-Image 2.1', available: true },
+          { id: 'z', name: 'Z-Image Turbo', available: true },
+          { id: 'missing', name: 'Incomplete model', available: false },
+        ],
+      }),
+    });
+    render(<AvatarGeneratorPanel avatarApi={api} pollIntervalMs={5} />);
+    expect(await screen.findByRole('option', { name: 'Z-Image Turbo' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Incomplete model (unavailable)' })).toBeDisabled();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Image model'), { target: { value: 'z' } });
+    });
+    expect(setAvatarImageModel).toHaveBeenCalledWith('z');
+    await generate('An explorer');
+    expect(mocks.generateAvatar).toHaveBeenCalledWith({
+      prompt: 'An explorer',
+      mode: 'new-character',
+      imageModelId: 'z',
+    });
+  });
   it('discards the reviewed concept before regenerating from an edited prompt', async () => {
     const { api, mocks, state } = createApi({
       jobId: 'job-1',

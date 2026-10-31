@@ -9,13 +9,17 @@ import {
 } from '../src/avatar/generation/character/graphs.js';
 import type { ComfyUIClient } from '../src/avatar/generation/comfyui-client.js';
 import { PNG } from 'pngjs';
+import type { ImageWorkflowModel } from '../src/avatar/generation/image-workflows.js';
 
 const directories: string[] = [];
 afterEach(async () => {
   for (const dir of directories.splice(0)) await rm(dir, { recursive: true, force: true });
 });
 
-async function setup(failRig = false) {
+async function setup(
+  failRig = false,
+  imageModels?: { resolve(id?: string): Promise<ImageWorkflowModel> },
+) {
   const directory = await mkdtemp(path.join(tmpdir(), 'new-character-'));
   directories.push(directory);
   const comfy = {
@@ -46,6 +50,7 @@ async function setup(failRig = false) {
   const service = new AvatarGenerationService({
     comfy: comfy as unknown as ComfyUIClient,
     characterRunner,
+    imageModels,
     models,
     runner,
     baseModelPath: path.join(directory, 'DOES-NOT-EXIST.vrm'),
@@ -55,6 +60,24 @@ async function setup(failRig = false) {
 }
 
 describe('new character generation', () => {
+  it('uses the detected model workflow for the picture and freezes that choice across approval', async () => {
+    const resolve = vi
+      .fn()
+      .mockResolvedValue({
+        id: 'variant',
+        name: 'Custom XL',
+        family: 'sdxl',
+        model: 'custom-xl.safetensors',
+      });
+    const { service, comfy } = await setup(false, { resolve });
+    const { jobId } = await service.startJob({ prompt: 'An explorer', imageModelId: 'variant' });
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+    expect(resolve).toHaveBeenCalledWith('variant');
+    expect(comfy.run.mock.calls[0][0].checkpoint.inputs.ckpt_name).toBe('custom-xl.safetensors');
+    await service.confirmConcept(jobId);
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('completed'));
+    expect(resolve).toHaveBeenCalledTimes(1);
+  });
   it('reviews an uploaded image offline and uses those exact bytes for geometry only after approval', async () => {
     const { service, comfy, characterRunner } = await setup();
     const png = PNG.sync.write(new PNG({ width: 2, height: 2 }));

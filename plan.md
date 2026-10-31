@@ -146,3 +146,5 @@ The following phased plan covers the MVP described in the PRD and architecture s
 Evidence and supported limits: docs/features/new-avatar-generation.md.
 
 - 2026-10-31 follow-up: compact avatar concept/result thumbnails with full-size modal previews; explicit concept approval before geometry or recolouring; upload a PNG/JPEG/WebP reference to skip text-to-image and use the same approval and 3D pipeline.
+
+- 2026-10-31 follow-up: detect installed image models and their compatible components; expose one persistent model selector; automatically route Qwen, Z-Image Turbo, SDXL and SD 1.x through family-specific workflows. Header detection, model persistence/removal and family switching are tested, with live image generation for all installed choices.

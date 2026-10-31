@@ -132,6 +132,8 @@ function createAvatarBridgeStub(overrides: Partial<AvatarBridge> = {}): AvatarBr
     generateAvatar: vi.fn().mockResolvedValue({ jobId: 'gen-job-1' }),
     getAvatarGenerationStatus: vi.fn().mockResolvedValue({ jobId: 'gen-job-1', status: 'queued', progress: 0 }),
     acceptGeneratedAvatar: vi.fn().mockResolvedValue({ vrmId: 'gen-vrm-1' }),
+    listAvatarImageModels: vi.fn().mockResolvedValue({ models: [], selectedModelId: null }),
+    setAvatarImageModel: vi.fn().mockResolvedValue(undefined),
     confirmAvatarConcept: vi.fn().mockResolvedValue(undefined),
     loadGeneratedAvatarPreview: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
     rejectGeneratedAvatar: vi.fn().mockResolvedValue(undefined),

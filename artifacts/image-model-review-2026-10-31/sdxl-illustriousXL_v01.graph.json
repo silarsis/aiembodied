@@ -1,0 +1,86 @@
+{
+  "checkpoint": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "illustriousXL_v01.safetensors"
+    }
+  },
+  "positive": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "checkpoint",
+        1
+      ],
+      "text": "solo, one adult humanoid, full body, front view, symmetrical A-pose, arms straight and spread, legs apart, plain white background, A fully clothed adult human woman explorer with swept-back auburn hair, a rounded face, a fitted sage-green jumpsuit with orange shoulder panels and tan ankle boots. Sculpted matte 3D animation style, close-fitting clothes, short hair, smooth featureless face, matte 3D character render"
+    }
+  },
+  "negative": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "checkpoint",
+        1
+      ],
+      "text": "cropped, cut off feet, cut off head, partial body, close-up, multiple views, multiple characters, background scenery, floor shadow, text, watermark, dynamic pose, crossed arms, hands in pockets, blurry, multiple characters, character sheet, turnaround, back view, side view, cape, skirt, long coat, long hair, eyes, eyebrows, mouth, props, scenery, ground shadow"
+    }
+  },
+  "latent": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    }
+  },
+  "sample": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "checkpoint",
+        0
+      ],
+      "positive": [
+        "positive",
+        0
+      ],
+      "negative": [
+        "negative",
+        0
+      ],
+      "latent_image": [
+        "latent",
+        0
+      ],
+      "seed": 671031,
+      "steps": 25,
+      "cfg": 6,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 1
+    }
+  },
+  "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "sample",
+        0
+      ],
+      "vae": [
+        "checkpoint",
+        2
+      ]
+    }
+  },
+  "save": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "decode",
+        0
+      ],
+      "filename_prefix": "aiembodied/concept"
+    }
+  }
+}

@@ -152,6 +152,12 @@ describe('preload bridge', () => {
       jobId: 'job-1',
     });
     expect(invoke).toHaveBeenCalledWith('avatar:generation-start', { prompt: 'A friendly assistant' });
+    invoke.mockResolvedValueOnce({ models: [], selectedModelId: null });
+    await expect(api.avatar?.listAvatarImageModels()).resolves.toEqual({ models: [], selectedModelId: null });
+    expect(invoke).toHaveBeenCalledWith('avatar:image-models');
+    invoke.mockResolvedValueOnce(undefined);
+    await api.avatar?.setAvatarImageModel('checkpoints:variant.safetensors');
+    expect(invoke).toHaveBeenCalledWith('avatar:image-model-select', 'checkpoints:variant.safetensors');
 
     invoke.mockResolvedValueOnce({ jobId: 'job-1', status: 'queued' });
     await expect(api.avatar?.getAvatarGenerationStatus('job-1')).resolves.toEqual({ jobId: 'job-1', status: 'queued' });
