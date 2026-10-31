@@ -61,6 +61,7 @@ describe('avatar template compatibility', () => {
       expect(JSON.stringify(graph)).toContain('Smooth continuous forehead, cheeks, jaw and chin');
       expect(JSON.stringify(graph)).toContain('Hair swept behind the ears');
       expect(JSON.stringify(graph)).toContain('lips fully closed');
+      expect(JSON.stringify(graph)).not.toMatch(/\b(?:clothing|clothes|garments|sleeves|trousers|cape|skirt|coat)\b/i);
       expect(JSON.stringify(graph)).not.toMatch(
         /close-fitting cloth|separate sleeves and trouser legs/,
       );
