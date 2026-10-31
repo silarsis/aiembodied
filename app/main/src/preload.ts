@@ -21,6 +21,7 @@ import type {
   AvatarPoseGenerationRequest,
   PoseEvaluationRequest,
   PoseEvaluationResult,
+  AvatarImageModelSelection,
   AvatarGenerationRequest,
   AvatarGenerationJob,
   AvatarGenerationStatus,
@@ -243,6 +244,8 @@ export interface AvatarBridge {
   loadPose(poseId: string): Promise<unknown>;
   evaluatePose(request: PoseEvaluationRequest): Promise<PoseEvaluationResult>;
   refinePose(request: PoseEvaluationRequest): Promise<AvatarPoseUploadResult>;
+  listAvatarImageModels(): Promise<AvatarImageModelSelection>;
+  setAvatarImageModel(id: string): Promise<void>;
   generateAvatar(request: AvatarGenerationRequest): Promise<AvatarGenerationJob>;
   getAvatarGenerationStatus(jobId: string): Promise<AvatarGenerationStatus>;
   confirmAvatarConcept(jobId: string): Promise<void>;
@@ -498,6 +501,8 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       ipcRenderer.invoke('avatar-pose:evaluate', payload) as Promise<PoseEvaluationResult>,
     refinePose: (payload: PoseEvaluationRequest) =>
       ipcRenderer.invoke('avatar-pose:refine', payload) as Promise<AvatarPoseUploadResult>,
+    listAvatarImageModels: () => ipcRenderer.invoke('avatar:image-models') as Promise<AvatarImageModelSelection>,
+    setAvatarImageModel: async (id: string) => { await ipcRenderer.invoke('avatar:image-model-select', id); },
     generateAvatar: (payload: AvatarGenerationRequest) =>
       ipcRenderer.invoke('avatar:generation-start', payload) as Promise<AvatarGenerationJob>,
     confirmAvatarConcept: async (jobId: string) => { await ipcRenderer.invoke('avatar:generation-confirm-concept', jobId); },

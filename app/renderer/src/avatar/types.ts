@@ -140,7 +140,19 @@ export type AvatarGenerationStage =
   | 'failed'
   | 'cancelled';
 
+export interface AvatarImageModelSummary {
+  id: string;
+  name: string;
+  available: boolean;
+  unavailableReason?: string;
+}
+export interface AvatarImageModelSelection {
+  models: AvatarImageModelSummary[];
+  selectedModelId: string | null;
+}
+
 export interface AvatarGenerationRequest {
+  imageModelId?: string;
   mode?: 'new-character' | 'restyle';
   /** Plain-English description of the character's look. */
   prompt?: string;
@@ -213,6 +225,8 @@ export interface AvatarBridge {
   loadPose(poseId: string): Promise<unknown>;
   evaluatePose(request: PoseEvaluationRequest): Promise<PoseEvaluationResult>;
   refinePose(request: PoseEvaluationRequest): Promise<AvatarPoseUploadResult>;
+  listAvatarImageModels(): Promise<AvatarImageModelSelection>;
+  setAvatarImageModel(id: string): Promise<void>;
   generateAvatar(request: AvatarGenerationRequest): Promise<AvatarGenerationJob>;
   getAvatarGenerationStatus(jobId: string): Promise<AvatarGenerationStatus>;
   confirmAvatarConcept(jobId: string): Promise<void>;

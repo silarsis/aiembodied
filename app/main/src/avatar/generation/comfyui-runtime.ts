@@ -6,6 +6,53 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import type { ComfyUIClient } from './comfyui-client.js';
 
+export interface ComfyInstallation {
+  directory: string;
+  python: string;
+  modelPaths?: string;
+  env: NodeJS.ProcessEnv;
+}
+
+/** Resolve the same external installation and model paths for launching and model discovery. */
+export async function resolveComfyInstallation(
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<ComfyInstallation> {
+  const sourceEnv = environment;
+  const env: NodeJS.ProcessEnv = {
+    ...sourceEnv,
+    LOCALAPPDATA: sourceEnv.AIEMBODIED_HOST_LOCALAPPDATA || sourceEnv.LOCALAPPDATA,
+    APPDATA: sourceEnv.AIEMBODIED_HOST_APPDATA || sourceEnv.APPDATA,
+    USERPROFILE: sourceEnv.AIEMBODIED_HOST_USERPROFILE || sourceEnv.USERPROFILE,
+    HOME: sourceEnv.AIEMBODIED_HOST_USERPROFILE || sourceEnv.HOME,
+  };
+  const local = env.LOCALAPPDATA ?? path.join(env.USERPROFILE ?? '', 'AppData', 'Local');
+  const install = path.join(local, 'Comfy-Desktop', 'ComfyUI-Installs', 'ComfyUI');
+  const directory = env.COMFYUI_DIR || path.join(install, 'ComfyUI');
+  const python = env.COMFYUI_PYTHON || path.join(directory, '.venv', 'Scripts', 'python.exe');
+  if (!existsSync(path.join(directory, 'main.py')) || !existsSync(python)) {
+    throw new Error(
+      'ComfyUI installation not found. Install Comfy Desktop or set COMFYUI_DIR and COMFYUI_PYTHON.',
+    );
+  }
+  let modelPaths = env.COMFYUI_MODEL_PATHS;
+  if (!modelPaths && !env.COMFYUI_DIR) {
+    const roaming = env.APPDATA ?? path.join(env.USERPROFILE ?? '', 'AppData', 'Roaming');
+    const configs = path.join(roaming, 'Comfy Desktop', 'instance-model-paths');
+    const names = await readdir(configs).catch(() => [] as string[]);
+    // Avoid guessing between multiple Desktop instances with different model libraries.
+    const candidates = names.filter((name) => name.endsWith('.yaml'));
+    const candidate = candidates.length === 1 ? candidates[0] : undefined;
+    if (candidate) modelPaths = path.join(configs, candidate);
+    else
+      throw new Error(
+        'Set COMFYUI_MODEL_PATHS to your Comfy Desktop instance model-paths YAML file.',
+      );
+  }
+  if (modelPaths && !existsSync(modelPaths))
+    throw new Error('COMFYUI_MODEL_PATHS does not point to an existing file.');
+  return { directory, python, modelPaths, env };
+}
+
 interface RuntimeOptions {
   client: Pick<ComfyUIClient, 'baseUrl' | 'isAvailable'>;
   logDirectory: string;
@@ -54,44 +101,12 @@ export class ComfyUIRuntime {
   }
 
   private async launch(url: URL): Promise<void> {
-    const sourceEnv = this.options.env ?? process.env;
-    const env: NodeJS.ProcessEnv = {
-      ...sourceEnv,
-      LOCALAPPDATA: sourceEnv.AIEMBODIED_HOST_LOCALAPPDATA || sourceEnv.LOCALAPPDATA,
-      APPDATA: sourceEnv.AIEMBODIED_HOST_APPDATA || sourceEnv.APPDATA,
-      USERPROFILE: sourceEnv.AIEMBODIED_HOST_USERPROFILE || sourceEnv.USERPROFILE,
-      HOME: sourceEnv.AIEMBODIED_HOST_USERPROFILE || sourceEnv.HOME,
-    };
     if ((this.options.platform ?? process.platform) !== 'win32') {
       throw new Error(
         'Start ComfyUI before generating images on this platform, or point COMFYUI_BASE_URL at a running server.',
       );
     }
-    const local = env.LOCALAPPDATA ?? path.join(env.USERPROFILE ?? '', 'AppData', 'Local');
-    const install = path.join(local, 'Comfy-Desktop', 'ComfyUI-Installs', 'ComfyUI');
-    const directory = env.COMFYUI_DIR || path.join(install, 'ComfyUI');
-    const python = env.COMFYUI_PYTHON || path.join(directory, '.venv', 'Scripts', 'python.exe');
-    if (!existsSync(path.join(directory, 'main.py')) || !existsSync(python)) {
-      throw new Error(
-        'ComfyUI installation not found. Install Comfy Desktop or set COMFYUI_DIR and COMFYUI_PYTHON.',
-      );
-    }
-    let modelPaths = env.COMFYUI_MODEL_PATHS;
-    if (!modelPaths && !env.COMFYUI_DIR) {
-      const roaming = env.APPDATA ?? path.join(env.USERPROFILE ?? '', 'AppData', 'Roaming');
-      const configs = path.join(roaming, 'Comfy Desktop', 'instance-model-paths');
-      const names = await readdir(configs).catch(() => [] as string[]);
-      // Avoid guessing between multiple Desktop instances with different model libraries.
-      const candidates = names.filter((name) => name.endsWith('.yaml'));
-      const candidate = candidates.length === 1 ? candidates[0] : undefined;
-      if (candidate) modelPaths = path.join(configs, candidate);
-      else
-        throw new Error(
-          'Set COMFYUI_MODEL_PATHS to your Comfy Desktop instance model-paths YAML file.',
-        );
-    }
-    if (modelPaths && !existsSync(modelPaths))
-      throw new Error('COMFYUI_MODEL_PATHS does not point to an existing file.');
+    const { directory, python, modelPaths, env } = await resolveComfyInstallation(this.options.env);
     await mkdir(this.options.logDirectory, { recursive: true });
     const args = [
       path.join(directory, 'main.py'),

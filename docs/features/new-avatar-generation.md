@@ -38,3 +38,24 @@ The first rig uses geometric landmarks, not an ML rigging model. It can still pr
 The isolated Electron review fixture replayed those live image/mesh outputs through the production generation service, the real Blender runner and the real model importer. It verified that preview left the original active, Keep activated the new model, and the rendered soles matched the scene ground anchor. `app-verification.json` records that distinction; this fixture does not modify live app preferences or the user's avatar library.
 
 Renderer checks load the actual VRM, apply the base stance, speech shapes, blinking, emotions and a raised-arm gesture. Unit tests cover the new-geometry route, failed rigging without a recolour fallback, mesh download, targeted cancellation and VRM 0/1 pose conversion. The original VRM 0 base stance remains unchanged apart from a coordinate-convention tag.
+
+## Image model selection
+
+For text-to-image, the **Image model** selector lists supported installed weights and remembers the chosen model. Refresh models rescans the configured local ComfyUI folders, including the Desktop shared library and instance-local checkpoints. While reviewing an image, another model can be selected before Regenerate image. Each job captures the model and workflow it started with; changing the preference cannot alter an existing concept or its later geometry job. Uploads bypass the picture-model selector entirely.
+
+Main discovers models through `assets/avatar-generation/image-models.py` using the same Python environment, ComfyUI root and extra-model-paths YAML as the shared server launcher. Discovery reads bounded safetensors JSON headers, not tensor data, and does not load GPU models or start the server. It recognises supported architectures and supporting encoder/VAE weights; unreadable files, unsupported architectures, LoRAs and 3D/audio models are excluded. A known image model missing required supporting components is shown as unavailable. The current Z-Image profile requires a Turbo identifier in its filename or training metadata; ambiguous non-Turbo variants are not guessed. Discovery currently requires a local ComfyUI installation; a remote-only server has no local weight headers to inspect.
+
+`image-workflows.ts` is the family registry. The UI chooses a model ID and main selects the workflow:
+
+| Family | Workflow |
+| --- | --- |
+| Qwen-Image 2.1 | Qwen conditioning/cache, compatible Qwen3-VL encoder and RGBA VAE, 25-step sampling. |
+| Z-Image Turbo | Lumina conditioning, Qwen3-4B encoder and Flux AE, shifted sampling with the installed template's eight-step settings. |
+| SDXL | Bundled checkpoint/dual text encoders/VAE, 1024-pixel image workflow. |
+| SD 1.x | Bundled checkpoint/text encoder/VAE, 512 x 768 image workflow. |
+
+Compatible checkpoints use the same family implementation with different filenames. CLIP-based families receive shorter positive framing and explicit negative conditioning; Qwen/Z-Image retain the instruction-style prompt. New architectures need a detector and workflow adapter, without adding controls for encoders, VAEs or samplers. The same ComfyUI process executes all families; no additional permanent GPU server or model copy is started per choice. Texture repainting still uses its specialised Qwen editing graph, and the picture selector does not change TRELLIS or the facial rig.
+
+The preference is stored under MemoryStore key `avatar.imageModel`. Its default is the previously selected available model, otherwise an available Qwen model, otherwise the first compatible choice. An explicitly requested missing model fails rather than silently generating with a different one. The named bridges are `avatar:image-models` and `avatar:image-model-select`.
+
+Verification in `artifacts/image-model-review-2026-10-31/` includes live output and API graphs from all five installed model choices, plus an isolated Electron check of detection, selection persistence and regeneration using a different family. Output style and instruction adherence vary; producing an image is not evidence it is suitable for automatic rigging, so image approval remains mandatory. Architecture signature tests execute a small stdlib-only Python script (`python` on Windows, `python3` elsewhere); app discovery uses ComfyUI's own Python environment.

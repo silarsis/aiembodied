@@ -1,0 +1,30 @@
+{
+  "models": [
+    {
+      "id": "checkpoints:identitycrisis_erodemonmix03ws.safetensors",
+      "name": "Identitycrisis erodemonmix03ws",
+      "available": true
+    },
+    {
+      "id": "checkpoints:illustriousXL_v01.safetensors",
+      "name": "IllustriousXL v01",
+      "available": true
+    },
+    {
+      "id": "checkpoints:novaFurryXL_ilV180A.safetensors",
+      "name": "NovaFurryXL ilV180A",
+      "available": true
+    },
+    {
+      "id": "diffusion_models:qwen_image_2.1_int8_convrot.safetensors",
+      "name": "Qwen image 2.1 int8 convrot",
+      "available": true
+    },
+    {
+      "id": "diffusion_models:z_image_turbo_bf16.safetensors",
+      "name": "Z image turbo bf16",
+      "available": true
+    }
+  ],
+  "selectedModelId": "diffusion_models:qwen_image_2.1_int8_convrot.safetensors"
+}

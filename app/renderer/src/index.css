@@ -1578,3 +1578,7 @@ body {
 
 .avatarImageSource { display: flex; flex-wrap: wrap; gap: 10px 18px; min-width: 0; padding: 10px; border: 1px solid #33445d; border-radius: 10px; }
 .avatarImageSource label { display: inline-flex; align-items: center; gap: 6px; }
+
+.avatarImageModel { display: grid; gap: 8px; min-width: 0; }
+.avatarImageModel select { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid #33445d; border-radius: 8px; background: #0c1525; color: #e2e8f0; }
+.avatarImageModel > button { justify-self: end; padding: 5px 10px; border: 1px solid #33445d; border-radius: 8px; background: #18253a; color: #e2e8f0; cursor: pointer; }
