@@ -144,7 +144,8 @@ The following phased plan covers the MVP described in the PRD and architecture s
 - [x] Stitch fitted-face boundaries to the real head cut, match skin/boundary appearance, and verify joins remain closed under expressions and head motion on the five controlled characters.
 - [ ] Improve side-view hair/ear/neck texture fitting, likeness and lip/eyelid topology; add teeth and tongue.
 - [ ] Investigate reliable semantic segmentation/retopology and rig/face transfer for arbitrary generated characters.
-- [ ] Calibrate the body/head template to stylised character proportions and validate template compatibility before expensive geometry generation.
+- [x] Guide image generation toward supported proportions and check reference compatibility before expensive geometry; show advisory warnings with a separate explicit best-effort override.
+- [ ] Calibrate body/head joints to stylised character proportions; accepting a warning does not perform this calibration.
 - [ ] Add finger articulation, gaze and hair/clothing physics.
 Evidence and supported limits: docs/features/new-avatar-generation.md.
 

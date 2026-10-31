@@ -1,10 +1,11 @@
 import template from './trellis2.graph.json' with { type: 'json' };
 import type { ComfyGraph } from '../comfyui-client.js';
+import { templatePromptGuidance } from '../template-compatibility.js';
 
 /** A neutral, separated-limb reference makes this constrained automatic rig possible. */
 export function characterConceptPrompt(description: string): string {
   return `Full-body front-view 3D stylised humanoid character design: ${description.trim()}.
-One character, adult proportions, head occupies about one sixth of total height. Short or swept-back hair leaving the entire face uncovered.
+One character. ${templatePromptGuidance}. Short or swept-back hair leaving the entire face uncovered.
 Clearly visible front-facing human face, neutral expression, open eyes and closed lips. Defined eyelids, eyebrows, nose and lips. Preserve the described facial identity; the face will be fitted for animation locally.
 Standing straight in a symmetric A-pose, arms straight at 45 degrees away from the body, hands open and separated from hips, legs straight slightly apart with a clear gap.
 Close-fitting clothing with separate sleeves and trouser legs, no skirt, cape, long coat, props or accessories bridging limbs.

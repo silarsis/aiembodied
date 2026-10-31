@@ -165,6 +165,8 @@ describe('preload bridge', () => {
     invoke.mockResolvedValueOnce(undefined);
     await api.avatar?.confirmAvatarConcept('job-1');
     expect(invoke).toHaveBeenCalledWith('avatar:generation-confirm-concept', 'job-1');
+    await api.avatar?.confirmAvatarConcept('job-1', { acceptWarnings: true });
+    expect(invoke).toHaveBeenCalledWith('avatar:generation-confirm-concept', 'job-1', { acceptWarnings: true });
 
     invoke.mockResolvedValueOnce(new Uint8Array([1, 2, 3]));
     const preview = await api.avatar?.loadGeneratedAvatarPreview('job-1');

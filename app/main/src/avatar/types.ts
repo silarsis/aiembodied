@@ -166,9 +166,19 @@ export interface AvatarGenerationJob {
   jobId: string;
 }
 
+export interface AvatarGenerationWarning {
+  code: 'face-width' | 'face-height' | 'face-position';
+  message: string;
+}
+export interface AvatarGenerationConfirmation {
+  acceptWarnings?: boolean;
+}
+
 export interface AvatarGenerationStatus {
   jobId: string;
   status: AvatarGenerationStage;
+  warnings?: AvatarGenerationWarning[];
+  warningsAccepted?: boolean;
   /** 0..1 */
   progress: number;
   message?: string | null;

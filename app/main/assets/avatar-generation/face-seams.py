@@ -173,7 +173,7 @@ def largest_component(faces):
     return largest
 
 
-def cut_head(body,patch,face_width):
+def cut_head(body,patch,face_width,minimum_height=1.1):
     """Create one simple boundary; don't leave pinholes or floating cut fragments."""
     bm=bmesh.new();bm.from_mesh(body.data)
     marker=bm.verts.layers.int.new('face_cut_boundary')
@@ -215,7 +215,7 @@ def cut_head(body,patch,face_width):
         if following in loop:raise RuntimeError('Head boundary is not a simple loop.')
         loop.append(following);previous,current=current,following
     if len(loop)!=len(adjacency):raise RuntimeError('Head cut produced more than one boundary.')
-    if any(v.co.z<1.1 for v in loop):raise RuntimeError('Head cut extends below the head.')
+    if any(v.co.z<minimum_height for v in loop):raise RuntimeError('Head cut extends below the detected head region.')
     # The bridge and face use the head bone exclusively. Give the matching body
     # edge the same weights so a neck/head turn cannot pull the surfaces apart.
     deform=bm.verts.layers.deform.active

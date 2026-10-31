@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "faceWidthMin": 0.06,
+  "faceWidthMax": 0.22,
+  "faceHeightMax": 0.30,
+  "faceBaseMinHeight": 0.72,
+  "minimumCutHeight": 0.6875,
+  "headHeightParts": 6
+}

@@ -26,7 +26,7 @@ PRESETS = ['aa','ih','ou','ee','oh','blink','blinkLeft','blinkRight',
            'lookLeft','lookRight','lookUp','lookDown']
 
 
-def build_fitted_face(body, rig, height, landmarks_path, reference_path):
+def build_fitted_face(body, rig, height, landmarks_path, reference_path, allow_template_warnings=False):
     data = json.loads(Path(landmarks_path).read_text())
     lm = np.asarray(data['landmarks'], dtype=float)
     if lm.shape != (478,3) or not np.isfinite(lm).all():
@@ -63,8 +63,17 @@ def build_fitted_face(body, rig, height, landmarks_path, reference_path):
         p[:,1] = [.65*p[i,1]+.35*np.mean(p[list(ns),1]) for i,ns in enumerate(neighbors)]
     p[:,1] -= .0008*height
     face_width = float(np.ptp(p[:,0]))
-    if not .06*height < face_width < .22*height:
-        raise RuntimeError(f'Detected face width is {face_width / height:.1%} of character height; this humanoid template supports 6%-22%. This character needs proportion-aware head fitting.')
+    policy=json.loads(Path(__file__).with_name('template-policy.json').read_text(encoding='utf-8'))
+    template_warnings=[]
+    if not policy['faceWidthMin']*height < face_width < policy['faceWidthMax']*height:
+        template_warnings.append(f"Detected face width is {face_width / height:.1%} of character height; tested range is {policy['faceWidthMin']:.0%}-{policy['faceWidthMax']:.0%}.")
+    face_height=float(np.ptp(p[:,2]))/height
+    if face_height>policy['faceHeightMax']:
+        template_warnings.append(f"Detected face height is {face_height:.1%} of character height; tested maximum is {policy['faceHeightMax']:.0%}.")
+    if float(p[:,2].min())/height<policy['faceBaseMinHeight']:
+        template_warnings.append('The face sits lower on the body than the tested template expects. Neck and shoulder joints may be misplaced.')
+    if template_warnings and not allow_template_warnings:
+        raise RuntimeError(' '.join(template_warnings)+' Review and explicitly accept template warnings to try this character anyway.')
     seams=runpy.run_path(str(Path(__file__).with_name('face-seams.py')))
     appearance=seams['SurfaceAppearance'](body)
     distances=seams['boundary_distance'](faces,len(p))
@@ -102,7 +111,8 @@ def build_fitted_face(body, rig, height, landmarks_path, reference_path):
     face.data.materials.append(material)
     # Cut away only the front face underneath the replacement; retain back, ears and hair.
     patch_bvh=BVHTree.FromPolygons([Vector(v) for v in cut_positions],capped_faces)
-    body_loop_ids,removed_count=seams['cut_head'](body,patch_bvh,face_width)
+    minimum_cut_height=float(cut_positions[:,2].min())-.05*height if allow_template_warnings else policy['minimumCutHeight']*height
+    body_loop_ids,removed_count=seams['cut_head'](body,patch_bvh,face_width,minimum_cut_height)
     parts=[face]
     def bind(obj):
         group=obj.vertex_groups.new(name='head')
@@ -267,6 +277,7 @@ def build_fitted_face(body, rig, height, landmarks_path, reference_path):
     if max_boundary_gap>1e-6:raise RuntimeError('The fitted face boundary is not sealed.')
     # Gaze is separate from emotion and lip-sync; no rigid eye squashing for blink.
     report={'pipeline':'landmark-fitted-face-sealed-v2','landmarkCount':len(lm),
+        'templatePolicyVersion':policy['version'],'templateWarnings':template_warnings,'templateWarningsAccepted':bool(template_warnings and allow_template_warnings),
         'surfaceHitRatio':sum(y is not None for y in hits)/len(p),'replacedTriangles':removed_count,
         'faceWidthMeters':face_width,'topologyVertices':len(p),'expressions':PRESETS,
         'irisColorsLinearRGB':eye_colors,

@@ -25,6 +25,7 @@ import type {
   AvatarGenerationRequest,
   AvatarGenerationJob,
   AvatarGenerationStatus,
+  AvatarGenerationConfirmation,
   AvatarGenerationAcceptance,
 } from './avatar/types.js';
 import type {
@@ -248,7 +249,7 @@ export interface AvatarBridge {
   setAvatarImageModel(id: string): Promise<void>;
   generateAvatar(request: AvatarGenerationRequest): Promise<AvatarGenerationJob>;
   getAvatarGenerationStatus(jobId: string): Promise<AvatarGenerationStatus>;
-  confirmAvatarConcept(jobId: string): Promise<void>;
+  confirmAvatarConcept(jobId: string, confirmation?: AvatarGenerationConfirmation): Promise<void>;
   loadGeneratedAvatarPreview(jobId: string): Promise<ArrayBuffer>;
   acceptGeneratedAvatar(jobId: string): Promise<AvatarGenerationAcceptance>;
   rejectGeneratedAvatar(jobId: string): Promise<void>;
@@ -505,7 +506,7 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     setAvatarImageModel: async (id: string) => { await ipcRenderer.invoke('avatar:image-model-select', id); },
     generateAvatar: (payload: AvatarGenerationRequest) =>
       ipcRenderer.invoke('avatar:generation-start', payload) as Promise<AvatarGenerationJob>,
-    confirmAvatarConcept: async (jobId: string) => { await ipcRenderer.invoke('avatar:generation-confirm-concept', jobId); },
+    confirmAvatarConcept: async (jobId: string, confirmation?: AvatarGenerationConfirmation) => { await ipcRenderer.invoke('avatar:generation-confirm-concept', jobId, ...(confirmation ? [confirmation] : [])); },
     getAvatarGenerationStatus: (jobId: string) =>
       ipcRenderer.invoke('avatar:generation-status', jobId) as Promise<AvatarGenerationStatus>,
     loadGeneratedAvatarPreview: async (jobId: string) => {

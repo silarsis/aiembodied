@@ -42,6 +42,29 @@ async function poll() {
 }
 
 describe('AvatarGeneratorPanel', () => {
+  it('shows detected warnings and sends acknowledgement only after Continue anyway is clicked', async () => {
+    const { api, mocks } = createApi({
+      jobId: 'job-1',
+      status: 'awaiting_confirmation',
+      progress: 0.15,
+      warnings: [
+        { code: 'face-width', message: 'Detected face width is 23.3%; tested maximum is 22%.' },
+      ],
+    });
+    render(<AvatarGeneratorPanel avatarApi={api} pollIntervalMs={5} />);
+    await generate('A stylised character');
+    await poll();
+    expect(screen.getByRole('alert', { name: 'Avatar compatibility warnings' })).toHaveTextContent(
+      '23.3%',
+    );
+    expect(screen.getByText(/Joint placement and animation may be distorted/)).toBeInTheDocument();
+    expect(mocks.confirmAvatarConcept).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Regenerate image' })).toBeEnabled();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Accept warnings — continue anyway' }));
+    });
+    expect(mocks.confirmAvatarConcept).toHaveBeenCalledWith('job-1', { acceptWarnings: true });
+  });
   it('shows detected models, saves a choice and sends just that model ID with the prompt', async () => {
     const { api, mocks } = createApi();
     const setAvatarImageModel = vi.fn().mockResolvedValue(undefined);

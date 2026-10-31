@@ -12,6 +12,7 @@ import { characterConceptPrompt, characterMeshGraph } from './character/graphs.j
 import type { CharacterRigRunner } from './character/rig-runner.js';
 import type { AvatarImageModelService } from './image-model-service.js';
 import { buildAvatarImageWorkflow, type ImageWorkflowModel } from './image-workflows.js';
+import { templatePolicy } from './template-compatibility.js';
 import { decodeReferenceImage } from './reference-image.js';
 import { regionPrompt } from './vrm-retexture.js';
 import type {
@@ -19,6 +20,7 @@ import type {
   AvatarGenerationJob,
   AvatarGenerationRequest,
   AvatarGenerationStatus,
+  AvatarGenerationConfirmation,
   AvatarModelUploadRequest,
   AvatarModelUploadResult,
 } from '../types.js';
@@ -48,6 +50,7 @@ export interface AvatarGenerationServiceOptions {
 
 interface JobState {
   imageModel?: ImageWorkflowModel;
+  landmarksPath?: string;
   referenceImage: Buffer | null;
   seed: number;
   mode: 'new-character' | 'restyle';
@@ -147,34 +150,77 @@ export class AvatarGenerationService {
   }
 
   /** Explicit approval is the only entry to geometry, rigging or texture work. */
-  async confirmConcept(jobId: string): Promise<void> {
+  async confirmConcept(jobId: string, confirmation?: AvatarGenerationConfirmation): Promise<void> {
     const job = this.getJob(jobId);
-    if (job.status.status !== 'awaiting_confirmation') {
+    if (job.status.status !== 'awaiting_confirmation')
       throw new Error('This concept is not awaiting confirmation.');
-    }
-    this.update(job, { status: 'queued', message: 'Preparing to continue', errorMessage: null });
+    const warningsAlreadyShown = Boolean(job.status.warnings?.length);
+    this.update(job, { status: 'queued', message: 'Checking the reference', errorMessage: null });
     try {
-      if (job.mode === 'new-character') await this.options.characterRunner?.assertAvailable();
+      if (job.mode === 'new-character') {
+        const runner = this.options.characterRunner;
+        await runner?.assertAvailable();
+        if (!job.landmarksPath)
+          job.landmarksPath = await runner?.prepareReference?.({
+            referencePath: path.join(job.directory, 'concept.png'),
+            outputPath: path.join(job.directory, 'avatar.vrm'),
+            signal: job.abort.signal,
+          });
+        const warnings = job.landmarksPath
+          ? ((await runner?.inspectReference?.(job.landmarksPath)) ?? [])
+          : [];
+        throwIfAborted(job.abort.signal);
+        if (this.jobs.get(jobId) !== job)
+          throw new Error('This avatar generation job was discarded.');
+        this.update(job, { warnings });
+        if (warnings.length && !(warningsAlreadyShown && confirmation?.acceptWarnings === true)) {
+          this.update(job, {
+            status: 'awaiting_confirmation',
+            message: 'Review the compatibility warnings before continuing',
+          });
+          return;
+        }
+      }
       await this.options.ensureComfyReady?.();
       if (!(await this.options.comfy.isAvailable()))
         throw new Error('ComfyUI is unavailable. Start it and try continuing again.');
       throwIfAborted(job.abort.signal);
       if (this.jobs.get(jobId) !== job)
         throw new Error('This avatar generation job was discarded.');
+      const warningsAccepted =
+        Boolean(job.status.warnings?.length) &&
+        confirmation?.acceptWarnings === true &&
+        warningsAlreadyShown;
+      this.update(job, { warningsAccepted });
+      await writeFile(
+        path.join(job.directory, 'review.json'),
+        JSON.stringify(
+          {
+            templatePolicyVersion: templatePolicy.version,
+            warnings: job.status.warnings ?? [],
+            warningsAccepted,
+          },
+          null,
+          2,
+        ),
+      );
     } catch (error) {
-      if (!job.abort.signal.aborted && this.jobs.get(jobId) === job) {
+      if (!job.abort.signal.aborted && this.jobs.get(jobId) === job)
         this.update(job, {
           status: 'awaiting_confirmation',
           message: 'Review the concept image before continuing',
         });
-      }
       throw error;
     }
     void this.run(job, 'build');
   }
 
   getStatus(jobId: string): AvatarGenerationStatus {
-    return { ...this.getJob(jobId).status };
+    const status = this.getJob(jobId).status;
+    return {
+      ...status,
+      ...(status.warnings ? { warnings: status.warnings.map((w) => ({ ...w })) } : {}),
+    };
   }
 
   /** Read the completed candidate for review without saving it or changing the active model. */
@@ -283,13 +329,6 @@ export class AvatarGenerationService {
         const runner = this.options.characterRunner;
         if (!runner) throw new Error('New character rigging is unavailable.');
         job.vrmPath = path.join(job.directory, 'avatar.vrm');
-        this.update(job, { message: 'Checking the reference face locally', progress: 0.16 });
-        const landmarksPath = await runner.prepareReference?.({
-          referencePath: path.join(job.directory, 'concept.png'),
-          outputPath: job.vrmPath,
-          signal,
-        });
-        throwIfAborted(signal);
         this.update(job, {
           status: 'meshing',
           progress: 0.2,
@@ -310,7 +349,8 @@ export class AvatarGenerationService {
           message: 'Fitting the face, body skeleton and animated expressions',
         });
         await runner.build({
-          landmarksPath,
+          landmarksPath: job.landmarksPath,
+          allowTemplateWarnings: job.status.warningsAccepted === true,
           meshPath,
           referencePath: path.join(job.directory, 'concept.png'),
           outputPath: job.vrmPath,

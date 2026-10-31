@@ -164,9 +164,19 @@ export interface AvatarGenerationJob {
   jobId: string;
 }
 
+export interface AvatarGenerationWarning {
+  code: 'face-width' | 'face-height' | 'face-position';
+  message: string;
+}
+export interface AvatarGenerationConfirmation {
+  acceptWarnings?: boolean;
+}
+
 export interface AvatarGenerationStatus {
   jobId: string;
   status: AvatarGenerationStage;
+  warnings?: AvatarGenerationWarning[];
+  warningsAccepted?: boolean;
   /** 0..1 */
   progress: number;
   message?: string | null;
@@ -229,7 +239,7 @@ export interface AvatarBridge {
   setAvatarImageModel(id: string): Promise<void>;
   generateAvatar(request: AvatarGenerationRequest): Promise<AvatarGenerationJob>;
   getAvatarGenerationStatus(jobId: string): Promise<AvatarGenerationStatus>;
-  confirmAvatarConcept(jobId: string): Promise<void>;
+  confirmAvatarConcept(jobId: string, confirmation?: AvatarGenerationConfirmation): Promise<void>;
   loadGeneratedAvatarPreview(jobId: string): Promise<ArrayBuffer>;
   acceptGeneratedAvatar(jobId: string): Promise<AvatarGenerationAcceptance>;
   rejectGeneratedAvatar(jobId: string): Promise<void>;

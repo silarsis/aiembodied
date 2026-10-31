@@ -12,6 +12,10 @@ The concept or uploaded reference appears as a small thumbnail; click it to open
 
 After that work finishes, review the **finished model**, rather than the concept illustration. Keep imports that candidate and activates it. Discard leaves the previous avatar selected. A failed generation is reported as a failure; it never falls back to a recoloured original avatar.
 
+Image workflows for every supported model family request moderate humanoid proportions, a head around one sixth of full height, a visible neck and separated limbs. On image confirmation, local landmark measurements check face width, height and vertical placement before geometry starts. References outside the tested template show their compatibility warnings in the Character controls. Edit and regenerate the image, discard and upload another, or explicitly select **Accept warnings — continue anyway** to attempt the rig. The first image approval cannot also accept unseen warnings. This choice applies only to that job; it does not calibrate body joints. Missing faces, invalid geometry, failed face cuts and invalid exports still stop generation. Keep remains a separate final review decision.
+
+The main-process preflight and Python fitter share `app/main/assets/avatar-generation/template-policy.json`. Warning acceptance is recorded in job-local `review.json` and the exported VRM's `extras.aiembodiedGeneration` metadata.
+
 ## Dependencies and ownership
 
 - Shared local ComfyUI server with Qwen-Image 2.1 and the TRELLIS.2/BiRefNet/DINO models used by `character/trellis2.graph.json`.
@@ -22,7 +26,7 @@ After that work finishes, review the **finished model**, rather than the concept
 
 Windows ComfyUI startup uses asynchronous PowerShell with ignored launcher stdio, matching the local-service launcher. Piped stdio can remain inherited by the background server and falsely time out even after it starts. `Start-Process` still provides the hidden console needed by the Python environment; do not use Node's detached mode as a substitute. Server output is redirected to `comfyui.log`/`comfyui.err.log`; launcher failures go to `comfyui-startup.err.log`. The app polls server health separately and shows a concise launch failure rather than an encoded command.
 
-Each rigging attempt saves Blender stdout/stderr to `blender.log` in its job directory. Python exceptions are treated as failures even when Blender returns exit code zero, and the actual exception is shown in the app. A missing model without a specific exception points to that log instead of guessing that limbs were fused. The current face-width guard accepts only 6%-22% of normalized character height; detected faces outside that range report the measured percentage. Passing face landmark detection alone does not guarantee that the fixed human body/head template supports a stylised character's proportions.
+Each rigging attempt saves Blender stdout/stderr to `blender.log` in its job directory. Python exceptions are treated as failures even when Blender returns exit code zero, and the actual exception is shown in the app. A missing model without a specific exception points to that log instead of guessing that limbs were fused. The tested face-width range is 6%-22% of normalized character height; detected faces outside that range report the measured percentage as an advisory warning with explicit override. Passing face landmark detection alone does not guarantee that the fixed human body/head template supports a stylised character's proportions.
 
 ## Stages
 

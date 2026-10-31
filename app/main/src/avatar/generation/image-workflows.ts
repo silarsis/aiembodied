@@ -1,3 +1,4 @@
+import { templatePromptGuidance } from './template-compatibility.js';
 /** Each supported family owns a workflow; model variants supply filenames, not custom UI. */
 import type { ComfyGraph } from './comfyui-client.js';
 import { buildConceptPrompt, conceptGraph, CONCEPT_NEGATIVE } from './graphs.js';
@@ -125,9 +126,9 @@ export function buildAvatarImageWorkflow(
   seed: number,
 ): ComfyGraph {
   if (model.family === 'sdxl' || model.family === 'sd1') {
-    const compact = `solo, one adult humanoid, full body, front view, symmetrical A-pose, arms straight and spread, legs apart, plain white background, ${description}, ${mode === 'new-character' ? 'close-fitting clothes, short hair, clearly visible neutral human face, open eyes, closed lips, defined eyelids and eyebrows, matte 3D character render' : 'clean cel shading, character reference'}`;
+    const compact = `solo, one adult humanoid, full body, front view, symmetrical A-pose, arms straight and spread, legs apart, plain white background, ${description}, ${mode === 'new-character' ? `${templatePromptGuidance}, close-fitting clothes, short hair, clearly visible neutral humanoid face, open eyes, closed lips, defined eyelids and eyebrows, matte 3D character render` : 'clean cel shading, character reference'}`;
     const graph = buildImageWorkflow(model, compact, seed);
-    graph.negative.inputs.text = `${CONCEPT_NEGATIVE}, multiple characters, character sheet, turnaround, back view, side view, ${mode === 'new-character' ? 'cape, skirt, long coat, long hair, eyes, eyebrows, mouth, ' : ''}props, scenery, ground shadow`;
+    graph.negative.inputs.text = `${CONCEPT_NEGATIVE}, multiple characters, character sheet, turnaround, back view, side view, ${mode === 'new-character' ? 'cape, skirt, long coat, long hair, oversized head, chibi proportions, featureless face, ' : ''}props, scenery, ground shadow`;
     return graph;
   }
   return buildImageWorkflow(

@@ -42,8 +42,6 @@ def detect(image_path, model_path):
     eye_width = abs(points[263, 0]-points[33, 0])
     if eye_width < .015 or abs(points[33, 1]-points[263, 1]) > .25*eye_width:
         raise ValueError("Face is too small or tilted to fit reliably. Use a larger front-facing reference.")
-    if abs(points[152,1]-points[10,1])*image.height > .30*(bottom-top):
-        raise ValueError('Use a full-body adult reference, rather than a face-only portrait.')
     nose = points[1, 0]
     eye_mid = (points[33, 0]+points[263, 0])/2
     if abs(nose-eye_mid) > eye_width*.25:
