@@ -58,6 +58,7 @@ describe('avatar template compatibility', () => {
       );
       expect(JSON.stringify(graph)).toContain('1/6');
       expect(JSON.stringify(graph)).toContain('22%');
+      expect(JSON.stringify(graph)).not.toMatch(/close-fitting cloth|separate sleeves and trouser legs/);
       if (family === 'sdxl' || family === 'sd1') {
         expect(graph.negative.inputs.text).not.toMatch(/\beyes\b|\beyebrows\b|\bmouth\b/);
         expect(graph.negative.inputs.text).toContain('oversized head');
