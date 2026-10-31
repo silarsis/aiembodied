@@ -64,7 +64,7 @@ def build_fitted_face(body, rig, height, landmarks_path, reference_path):
     p[:,1] -= .0008*height
     face_width = float(np.ptp(p[:,0]))
     if not .06*height < face_width < .22*height:
-        raise RuntimeError('Face proportions are outside the supported adult range.')
+        raise RuntimeError(f'Detected face width is {face_width / height:.1%} of character height; this humanoid template supports 6%-22%. This character needs proportion-aware head fitting.')
     seams=runpy.run_path(str(Path(__file__).with_name('face-seams.py')))
     appearance=seams['SurfaceAppearance'](body)
     distances=seams['boundary_distance'](faces,len(p))

@@ -7,7 +7,17 @@ import { writeGlb } from '../src/avatar/generation/vrm-retexture.js';
 import { characterConceptPrompt } from '../src/avatar/generation/character/graphs.js';
 
 const { exec } = vi.hoisted(() => ({ exec: vi.fn() }));
-vi.mock('node:child_process', () => ({ execFile: exec }));
+vi.mock('node:child_process', () => {
+  Object.defineProperty(exec, Symbol.for('nodejs.util.promisify.custom'), {
+    value: (...args: unknown[]) =>
+      new Promise((resolve, reject) => {
+        exec(...args, (error: Error | null, stdout: string, stderr: string) =>
+          error ? reject(error) : resolve({ stdout, stderr }),
+        );
+      }),
+  });
+  return { execFile: exec };
+});
 let directory: string;
 beforeEach(async () => {
   directory = await mkdtemp(path.join(tmpdir(), 'face-runner-'));
@@ -65,16 +75,29 @@ function candidate(missing?: string, defaultWeight = 0) {
     bin: Buffer.alloc(0),
   });
 }
-function complete(input: { outputPath: string }, bytes?: Buffer) {
+function complete(input: { outputPath: string }, bytes?: Buffer, output = '') {
   exec.mockImplementation((...args: unknown[]) => {
     const callback = args.at(-1) as (error: Error | null, stdout: string, stderr: string) => void;
     void (async () => {
       if (String(args[0]).endsWith('blender') && bytes) await writeFile(input.outputPath, bytes);
-      callback(null, '', '');
+      callback(null, String(args[0]).endsWith('blender') ? output : '', '');
     })();
   });
 }
 describe('local fitted face runner', () => {
+  it('preserves the actual Python exception when Blender exits zero without a model', async () => {
+    const { runner, input } = await setup();
+    const output =
+      'Traceback (most recent call last):\n  File "rig-character.py", line 67\nRuntimeError: Detected face width is 23.3%; this template supports 6%-22%.\nBlender quit';
+    complete(input, undefined, output);
+    await expect(runner.build(input)).rejects.toThrow('Detected face width is 23.3%');
+    expect(await readFile(path.join(directory, 'blender.log'), 'utf8')).toContain(output);
+  });
+  it('rejects a Python failure even if Blender left a partial candidate file', async () => {
+    const { runner, input } = await setup();
+    complete(input, candidate(), 'RuntimeError: Export validation failed');
+    await expect(runner.build(input)).rejects.toThrow('Export validation failed');
+  });
   it('uses the approved reference in a finite local detector before Blender, then validates expressions', async () => {
     const { runner, input } = await setup();
     const bytes = candidate();

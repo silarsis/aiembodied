@@ -38,6 +38,13 @@ supported. The detector can fail on stylised faces. An exported expression is
 checked structurally and in the demonstration, but visual acceptance is still
 required. Existing avatars and shoulder/motion calibration are unchanged.
 
+Rigging attempts now keep `blender.log` beside the job files and surface Python
+exceptions even if Blender returns zero. The human template's face-width guard
+is 6%-22% of normalized character height; its error includes the measured value.
+A large-headed stylised character can pass landmark detection but fail that
+template check. Relaxing the cap alone does not calibrate the fixed neck/shoulder
+positions: supporting those shapes requires proportion-aware body/head fitting.
+
 ## Stitched face boundary follow-up
 
 New exports weld coincident input vertices before weighting (UVs remain per face
