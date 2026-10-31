@@ -2,7 +2,7 @@ import { templatePromptGuidance } from './template-compatibility.js';
 /** Each supported family owns a workflow; model variants supply filenames, not custom UI. */
 import type { ComfyGraph } from './comfyui-client.js';
 import { buildConceptPrompt, conceptGraph, CONCEPT_NEGATIVE } from './graphs.js';
-import { characterConceptPrompt } from './character/graphs.js';
+import { characterConceptPrompt, faceSurfaceGuidance } from './character/graphs.js';
 
 export type ImageFamily = 'qwen-image-2.1' | 'z-image-turbo' | 'sdxl' | 'sd1';
 export interface ImageWorkflowModel {
@@ -126,7 +126,7 @@ export function buildAvatarImageWorkflow(
   seed: number,
 ): ComfyGraph {
   if (model.family === 'sdxl' || model.family === 'sd1') {
-    const compact = `solo, one adult humanoid, full body, front view, symmetrical A-pose, arms straight and spread, legs apart, plain white background, ${description}, ${mode === 'new-character' ? `${templatePromptGuidance}, follow description for clothing or lack of clothing, no garments or accessories bridging limbs, short hair, clearly visible neutral humanoid face, open eyes, closed lips, defined eyelids and eyebrows, matte 3D character render` : 'clean cel shading, character reference'}`;
+    const compact = `solo, one adult humanoid, full body, front view, symmetrical A-pose, arms straight and spread, legs apart, plain white background, ${description}, ${mode === 'new-character' ? `${templatePromptGuidance}, ${faceSurfaceGuidance}, follow description for clothing or lack of clothing, no garments or accessories bridging limbs, short hair, clearly visible neutral humanoid face, open eyes, closed lips, defined eyelids and eyebrows, matte 3D character render` : 'clean cel shading, character reference'}`;
     const graph = buildImageWorkflow(model, compact, seed);
     graph.negative.inputs.text = `${CONCEPT_NEGATIVE}, multiple characters, character sheet, turnaround, back view, side view, ${mode === 'new-character' ? 'cape, skirt, long coat, long hair, oversized head, chibi proportions, featureless face, ' : ''}props, scenery, ground shadow`;
     return graph;
