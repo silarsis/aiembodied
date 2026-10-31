@@ -12,6 +12,7 @@
     "setup:windows": "powershell -ExecutionPolicy Bypass -File scripts/setup-windows.ps1",
     "dev:prepare": "node scripts/prepare-dev.mjs",
     "dev:run": "node scripts/run-dev.mjs",
+    "avatar:face:setup": "node scripts/setup-avatar-face.mjs",
     "dist": "pnpm build && electron-builder --config electron-builder.yml"
   },
   "dependencies": {

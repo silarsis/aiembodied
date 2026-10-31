@@ -125,7 +125,7 @@ export function buildAvatarImageWorkflow(
   seed: number,
 ): ComfyGraph {
   if (model.family === 'sdxl' || model.family === 'sd1') {
-    const compact = `solo, one adult humanoid, full body, front view, symmetrical A-pose, arms straight and spread, legs apart, plain white background, ${description}, ${mode === 'new-character' ? 'close-fitting clothes, short hair, smooth featureless face, matte 3D character render' : 'clean cel shading, character reference'}`;
+    const compact = `solo, one adult humanoid, full body, front view, symmetrical A-pose, arms straight and spread, legs apart, plain white background, ${description}, ${mode === 'new-character' ? 'close-fitting clothes, short hair, clearly visible neutral human face, open eyes, closed lips, defined eyelids and eyebrows, matte 3D character render' : 'clean cel shading, character reference'}`;
     const graph = buildImageWorkflow(model, compact, seed);
     graph.negative.inputs.text = `${CONCEPT_NEGATIVE}, multiple characters, character sheet, turnaround, back view, side view, ${mode === 'new-character' ? 'cape, skirt, long coat, long hair, eyes, eyebrows, mouth, ' : ''}props, scenery, ground shadow`;
     return graph;

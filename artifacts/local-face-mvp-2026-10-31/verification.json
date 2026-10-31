@@ -1,0 +1,1197 @@
+[
+  {
+    "id": "ada",
+    "name": "Ada \u2014 explorer",
+    "faceFit": {
+      "pipeline": "landmark-fitted-face-v1",
+      "landmarkCount": 478,
+      "surfaceHitRatio": 1.0,
+      "replacedTriangles": 1793,
+      "faceWidthMeters": 0.15856358825845063,
+      "topologyVertices": 468,
+      "expressions": [
+        "aa",
+        "ih",
+        "ou",
+        "ee",
+        "oh",
+        "blink",
+        "blinkLeft",
+        "blinkRight",
+        "happy",
+        "sad",
+        "angry",
+        "relaxed",
+        "surprised",
+        "fear",
+        "disgust",
+        "lookLeft",
+        "lookRight",
+        "lookUp",
+        "lookDown"
+      ],
+      "irisColorsLinearRGB": [
+        [
+          0.35294120013713837,
+          0.3274510055780411,
+          0.08627451583743095
+        ],
+        [
+          0.3078431487083435,
+          0.28431373834609985,
+          0.052941178902983665
+        ]
+      ],
+      "openingTrianglesRemoved": 46,
+      "neutralEyeApertureMeters": [
+        0.017742360035578386,
+        0.017675041840190087
+      ],
+      "blinkClosureGapMeters": [
+        0.0,
+        0.0
+      ],
+      "limits": [
+        "Single frontal adult humanoid on white background",
+        "Source-projected appearance; no unseen detail reconstruction",
+        "No teeth or tongue yet",
+        "Stylised detection/fitting requires visual review"
+      ]
+    },
+    "runtime": {
+      "expressions": [
+        "aa",
+        "ih",
+        "ou",
+        "ee",
+        "oh",
+        "blink",
+        "blinkLeft",
+        "blinkRight",
+        "happy",
+        "sad",
+        "angry",
+        "relaxed",
+        "surprised",
+        "lookLeft",
+        "lookRight",
+        "lookUp",
+        "lookDown",
+        "fear",
+        "disgust"
+      ],
+      "maxVertexDisplacementMeters": {
+        "neutral": 0,
+        "happy": 0.00706171989440918,
+        "sad": 0.006618380546569824,
+        "angry": 0.00951528549194336,
+        "fear": 0.009337902069091797,
+        "disgust": 0.006264090538024902,
+        "surprised": 0.014623403549194336,
+        "blink": 0.00998755544424057,
+        "aa": 0.013809680938720703,
+        "ih": 0.004873991012573242,
+        "ou": 0.00915028527379036,
+        "ee": 0.005751609802246094,
+        "oh": 0.011778831481933594,
+        "lookLeft": 0.006657777354121208,
+        "lookRight": 0.006657777354121208
+      },
+      "frameCount": 48,
+      "renderer": "three-vrm actual exported VRM; no user configuration changed",
+      "diagnostic": {
+        "influences": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "targets": {
+          "aa": 0,
+          "ih": 1,
+          "ou": 2,
+          "ee": 3,
+          "oh": 4,
+          "blink": 5,
+          "blinkLeft": 6,
+          "blinkRight": 7,
+          "happy": 8,
+          "sad": 9,
+          "angry": 10,
+          "relaxed": 11,
+          "surprised": 12,
+          "fear": 13,
+          "disgust": 14,
+          "lookLeft": 15,
+          "lookRight": 16,
+          "lookUp": 17,
+          "lookDown": 18
+        },
+        "meshes": [
+          {
+            "name": "Eyeball0",
+            "min": [
+              -0.049127183854579926,
+              1.4348108768463135,
+              0.002848256379365921
+            ],
+            "max": [
+              -0.00622154027223587,
+              1.4710588455200195,
+              0.03613712638616562
+            ]
+          },
+          {
+            "name": "Eyeball1",
+            "min": [
+              0.03247816860675812,
+              1.433773159980774,
+              0.0003366321325302124
+            ],
+            "max": [
+              0.07518592476844788,
+              1.4698537588119507,
+              0.0334719717502594
+            ]
+          },
+          {
+            "name": "FittedFace",
+            "min": [
+              -0.06669209897518158,
+              1.336234450340271,
+              0.0030148285441100597
+            ],
+            "max": [
+              0.09187149256467819,
+              1.5140714645385742,
+              0.08147010952234268
+            ]
+          },
+          {
+            "name": "Iris0",
+            "min": [
+              -0.035441767424345016,
+              1.444427728652954,
+              0.03569328784942627
+            ],
+            "max": [
+              -0.019906964153051376,
+              1.461441993713379,
+              0.03732074052095413
+            ]
+          },
+          {
+            "name": "Iris1",
+            "min": [
+              0.04610046371817589,
+              1.443345546722412,
+              0.033030178397893906
+            ],
+            "max": [
+              0.06156361848115921,
+              1.4602813720703125,
+              0.034650128334760666
+            ]
+          },
+          {
+            "name": "Pupil0",
+            "min": [
+              -0.030818315222859383,
+              1.4484963417053223,
+              0.03687689080834389
+            ],
+            "max": [
+              -0.02453041821718216,
+              1.4573733806610107,
+              0.03761664405465126
+            ]
+          },
+          {
+            "name": "Pupil1",
+            "min": [
+              0.050702594220638275,
+              1.4473954439163208,
+              0.03420832380652428
+            ],
+            "max": [
+              0.05696148797869682,
+              1.4562314748764038,
+              0.03494466468691826
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "malik",
+    "name": "Malik \u2014 engineer",
+    "faceFit": {
+      "pipeline": "landmark-fitted-face-v1",
+      "landmarkCount": 478,
+      "surfaceHitRatio": 1.0,
+      "replacedTriangles": 1465,
+      "faceWidthMeters": 0.138314359012403,
+      "topologyVertices": 468,
+      "expressions": [
+        "aa",
+        "ih",
+        "ou",
+        "ee",
+        "oh",
+        "blink",
+        "blinkLeft",
+        "blinkRight",
+        "happy",
+        "sad",
+        "angry",
+        "relaxed",
+        "surprised",
+        "fear",
+        "disgust",
+        "lookLeft",
+        "lookRight",
+        "lookUp",
+        "lookDown"
+      ],
+      "irisColorsLinearRGB": [
+        [
+          0.16274511069059372,
+          0.09803922474384308,
+          0.03333333507180214
+        ],
+        [
+          0.21568629145622253,
+          0.06666667014360428,
+          0.025
+        ]
+      ],
+      "openingTrianglesRemoved": 46,
+      "neutralEyeApertureMeters": [
+        0.014492240716846183,
+        0.013767217209590399
+      ],
+      "blinkClosureGapMeters": [
+        0.0,
+        0.0
+      ],
+      "limits": [
+        "Single frontal adult humanoid on white background",
+        "Source-projected appearance; no unseen detail reconstruction",
+        "No teeth or tongue yet",
+        "Stylised detection/fitting requires visual review"
+      ]
+    },
+    "runtime": {
+      "expressions": [
+        "aa",
+        "ih",
+        "ou",
+        "ee",
+        "oh",
+        "blink",
+        "blinkLeft",
+        "blinkRight",
+        "happy",
+        "sad",
+        "angry",
+        "relaxed",
+        "surprised",
+        "lookLeft",
+        "lookRight",
+        "lookUp",
+        "lookDown",
+        "fear",
+        "disgust"
+      ],
+      "maxVertexDisplacementMeters": {
+        "neutral": 0,
+        "happy": 0.008375883102416992,
+        "sad": 0.00785219669342041,
+        "angry": 0.008648276329040527,
+        "fear": 0.009578347206115723,
+        "disgust": 0.0057430267333984375,
+        "surprised": 0.01724100112915039,
+        "blink": 0.014589861035346985,
+        "aa": 0.016283154487609863,
+        "ih": 0.005746960639953613,
+        "ou": 0.010817982256412506,
+        "ee": 0.006799876689910889,
+        "oh": 0.01388859748840332,
+        "lookLeft": 0.005768109112977982,
+        "lookRight": 0.005768109112977982
+      },
+      "frameCount": 48,
+      "renderer": "three-vrm actual exported VRM; no user configuration changed",
+      "diagnostic": {
+        "influences": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "targets": {
+          "aa": 0,
+          "ih": 1,
+          "ou": 2,
+          "ee": 3,
+          "oh": 4,
+          "blink": 5,
+          "blinkLeft": 6,
+          "blinkRight": 7,
+          "happy": 8,
+          "sad": 9,
+          "angry": 10,
+          "relaxed": 11,
+          "surprised": 12,
+          "fear": 13,
+          "disgust": 14,
+          "lookLeft": 15,
+          "lookRight": 16,
+          "lookUp": 17,
+          "lookDown": 18
+        },
+        "meshes": [
+          {
+            "name": "Eyeball0",
+            "min": [
+              -0.044418297708034515,
+              1.4660102128982544,
+              0.05677436664700508
+            ],
+            "max": [
+              -0.007246058434247971,
+              1.497414469718933,
+              0.08561490476131439
+            ]
+          },
+          {
+            "name": "Eyeball1",
+            "min": [
+              0.023082436993718147,
+              1.4658448696136475,
+              0.05217116326093674
+            ],
+            "max": [
+              0.059538841247558594,
+              1.4966442584991455,
+              0.08045631647109985
+            ]
+          },
+          {
+            "name": "FittedFace",
+            "min": [
+              -0.06259920448064804,
+              1.3592978715896606,
+              0.03043408878147602
+            ],
+            "max": [
+              0.07571515440940857,
+              1.5327258110046387,
+              0.11836151778697968
+            ]
+          },
+          {
+            "name": "Iris0",
+            "min": [
+              -0.032561637461185455,
+              1.4743419885635376,
+              0.08523038029670715
+            ],
+            "max": [
+              -0.01910272426903248,
+              1.48908269405365,
+              0.0866403579711914
+            ]
+          },
+          {
+            "name": "Iris1",
+            "min": [
+              0.03471076861023903,
+              1.4740161895751953,
+              0.08007919043302536
+            ],
+            "max": [
+              0.047910504043102264,
+              1.4884729385375977,
+              0.08146201819181442
+            ]
+          },
+          {
+            "name": "Pupil0",
+            "min": [
+              -0.028556009754538536,
+              1.4778668880462646,
+              0.08625581860542297
+            ],
+            "max": [
+              -0.023108355700969696,
+              1.4855577945709229,
+              0.08689671754837036
+            ]
+          },
+          {
+            "name": "Pupil1",
+            "min": [
+              0.038639262318611145,
+              1.477473258972168,
+              0.08108487725257874
+            ],
+            "max": [
+              0.04398201033473015,
+              1.485015869140625,
+              0.08171343803405762
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "mei",
+    "name": "Mei \u2014 botanist",
+    "faceFit": {
+      "pipeline": "landmark-fitted-face-v1",
+      "landmarkCount": 478,
+      "surfaceHitRatio": 1.0,
+      "replacedTriangles": 1512,
+      "faceWidthMeters": 0.13520069481171285,
+      "topologyVertices": 468,
+      "expressions": [
+        "aa",
+        "ih",
+        "ou",
+        "ee",
+        "oh",
+        "blink",
+        "blinkLeft",
+        "blinkRight",
+        "happy",
+        "sad",
+        "angry",
+        "relaxed",
+        "surprised",
+        "fear",
+        "disgust",
+        "lookLeft",
+        "lookRight",
+        "lookUp",
+        "lookDown"
+      ],
+      "irisColorsLinearRGB": [
+        [
+          0.19215687364339828,
+          0.10000000521540642,
+          0.05882353335618973
+        ],
+        [
+          0.10784314572811127,
+          0.062745101749897,
+          0.04705882631242275
+        ]
+      ],
+      "openingTrianglesRemoved": 46,
+      "neutralEyeApertureMeters": [
+        0.01179033506955074,
+        0.011725112355001288
+      ],
+      "blinkClosureGapMeters": [
+        0.0,
+        0.0
+      ],
+      "limits": [
+        "Single frontal adult humanoid on white background",
+        "Source-projected appearance; no unseen detail reconstruction",
+        "No teeth or tongue yet",
+        "Stylised detection/fitting requires visual review"
+      ]
+    },
+    "runtime": {
+      "expressions": [
+        "aa",
+        "ih",
+        "ou",
+        "ee",
+        "oh",
+        "blink",
+        "blinkLeft",
+        "blinkRight",
+        "happy",
+        "sad",
+        "angry",
+        "relaxed",
+        "surprised",
+        "lookLeft",
+        "lookRight",
+        "lookUp",
+        "lookDown",
+        "fear",
+        "disgust"
+      ],
+      "maxVertexDisplacementMeters": {
+        "neutral": 0,
+        "happy": 0.005247950553894043,
+        "sad": 0.00507509708404541,
+        "angry": 0.006986021995544434,
+        "fear": 0.006878852844238281,
+        "disgust": 0.005046963691711426,
+        "surprised": 0.011239767074584961,
+        "blink": 0.005896210670471191,
+        "aa": 0.010615348815917969,
+        "ih": 0.003746628761291504,
+        "ou": 0.0070182811468839645,
+        "ee": 0.004411488771438599,
+        "oh": 0.009054183959960938,
+        "lookLeft": 0.00493607297539711,
+        "lookRight": 0.004936071112751961
+      },
+      "frameCount": 48,
+      "renderer": "three-vrm actual exported VRM; no user configuration changed",
+      "diagnostic": {
+        "influences": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "targets": {
+          "aa": 0,
+          "ih": 1,
+          "ou": 2,
+          "ee": 3,
+          "oh": 4,
+          "blink": 5,
+          "blinkLeft": 6,
+          "blinkRight": 7,
+          "happy": 8,
+          "sad": 9,
+          "angry": 10,
+          "relaxed": 11,
+          "surprised": 12,
+          "fear": 13,
+          "disgust": 14,
+          "lookLeft": 15,
+          "lookRight": 16,
+          "lookUp": 17,
+          "lookDown": 18
+        },
+        "meshes": [
+          {
+            "name": "Eyeball0",
+            "min": [
+              -0.04492756351828575,
+              1.4562819004058838,
+              0.03731805086135864
+            ],
+            "max": [
+              -0.013117339462041855,
+              1.4831559658050537,
+              0.0619984045624733
+            ]
+          },
+          {
+            "name": "Eyeball1",
+            "min": [
+              0.019076509401202202,
+              1.457462191581726,
+              0.036216579377651215
+            ],
+            "max": [
+              0.04984007403254509,
+              1.4834522008895874,
+              0.06008487194776535
+            ]
+          },
+          {
+            "name": "FittedFace",
+            "min": [
+              -0.06537778675556183,
+              1.3673378229141235,
+              0.0135614313185215
+            ],
+            "max": [
+              0.06982290744781494,
+              1.5159978866577148,
+              0.0975506603717804
+            ]
+          },
+          {
+            "name": "Iris0",
+            "min": [
+              -0.03478120267391205,
+              1.4634116888046265,
+              0.06166934221982956
+            ],
+            "max": [
+              -0.023263707756996155,
+              1.476026177406311,
+              0.06287593394517899
+            ]
+          },
+          {
+            "name": "Iris1",
+            "min": [
+              0.028889022767543793,
+              1.4643574953079224,
+              0.05976663529872894
+            ],
+            "max": [
+              0.04002755507826805,
+              1.4765568971633911,
+              0.06093353033065796
+            ]
+          },
+          {
+            "name": "Pupil0",
+            "min": [
+              -0.03135337680578232,
+              1.4664281606674194,
+              0.06254686415195465
+            ],
+            "max": [
+              -0.026691533625125885,
+              1.473009705543518,
+              0.06309531629085541
+            ]
+          },
+          {
+            "name": "Pupil1",
+            "min": [
+              0.03220406174659729,
+              1.467274785041809,
+              0.060615286231040955
+            ],
+            "max": [
+              0.036712516099214554,
+              1.4736396074295044,
+              0.06114569306373596
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "oscar",
+    "name": "Oscar \u2014 pilot",
+    "faceFit": {
+      "pipeline": "landmark-fitted-face-v1",
+      "landmarkCount": 478,
+      "surfaceHitRatio": 0.9978632478632479,
+      "replacedTriangles": 2483,
+      "faceWidthMeters": 0.15990321360512516,
+      "topologyVertices": 468,
+      "expressions": [
+        "aa",
+        "ih",
+        "ou",
+        "ee",
+        "oh",
+        "blink",
+        "blinkLeft",
+        "blinkRight",
+        "happy",
+        "sad",
+        "angry",
+        "relaxed",
+        "surprised",
+        "fear",
+        "disgust",
+        "lookLeft",
+        "lookRight",
+        "lookUp",
+        "lookDown"
+      ],
+      "irisColorsLinearRGB": [
+        [
+          0.30980394780635834,
+          0.42549021542072296,
+          0.4862745404243469
+        ],
+        [
+          0.32156863808631897,
+          0.44705885648727417,
+          0.529411792755127
+        ]
+      ],
+      "openingTrianglesRemoved": 46,
+      "neutralEyeApertureMeters": [
+        0.016397748025377634,
+        0.01627880900460066
+      ],
+      "blinkClosureGapMeters": [
+        0.0,
+        0.0
+      ],
+      "limits": [
+        "Single frontal adult humanoid on white background",
+        "Source-projected appearance; no unseen detail reconstruction",
+        "No teeth or tongue yet",
+        "Stylised detection/fitting requires visual review"
+      ]
+    },
+    "runtime": {
+      "expressions": [
+        "aa",
+        "ih",
+        "ou",
+        "ee",
+        "oh",
+        "blink",
+        "blinkLeft",
+        "blinkRight",
+        "happy",
+        "sad",
+        "angry",
+        "relaxed",
+        "surprised",
+        "lookLeft",
+        "lookRight",
+        "lookUp",
+        "lookDown",
+        "fear",
+        "disgust"
+      ],
+      "maxVertexDisplacementMeters": {
+        "neutral": 0,
+        "happy": 0.008312821388244629,
+        "sad": 0.0080491304397583,
+        "angry": 0.00927126407623291,
+        "fear": 0.009883642196655273,
+        "disgust": 0.005976438522338867,
+        "surprised": 0.017790555953979492,
+        "blink": 0.010442256927490234,
+        "aa": 0.016802191734313965,
+        "ih": 0.005930185317993164,
+        "ou": 0.01109231635928154,
+        "ee": 0.006972309201955795,
+        "oh": 0.014331221580505371,
+        "lookLeft": 0.0061609745025634766,
+        "lookRight": 0.0061609745025634766
+      },
+      "frameCount": 48,
+      "renderer": "three-vrm actual exported VRM; no user configuration changed",
+      "diagnostic": {
+        "influences": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "targets": {
+          "aa": 0,
+          "ih": 1,
+          "ou": 2,
+          "ee": 3,
+          "oh": 4,
+          "blink": 5,
+          "blinkLeft": 6,
+          "blinkRight": 7,
+          "happy": 8,
+          "sad": 9,
+          "angry": 10,
+          "relaxed": 11,
+          "surprised": 12,
+          "fear": 13,
+          "disgust": 14,
+          "lookLeft": 15,
+          "lookRight": 16,
+          "lookUp": 17,
+          "lookDown": 18
+        },
+        "meshes": [
+          {
+            "name": "Eyeball0",
+            "min": [
+              -0.05149833858013153,
+              1.4273838996887207,
+              0.04339594393968582
+            ],
+            "max": [
+              -0.011794302612543106,
+              1.4609270095825195,
+              0.07420080900192261
+            ]
+          },
+          {
+            "name": "Eyeball1",
+            "min": [
+              0.023192131891846657,
+              1.4266611337661743,
+              0.03549639880657196
+            ],
+            "max": [
+              0.0637136697769165,
+              1.4608949422836304,
+              0.06693553179502487
+            ]
+          },
+          {
+            "name": "FittedFace",
+            "min": [
+              -0.07327358424663544,
+              1.3019630908966064,
+              0.009938161820173264
+            ],
+            "max": [
+              0.08662962913513184,
+              1.5068730115890503,
+              0.14137794077396393
+            ]
+          },
+          {
+            "name": "Iris0",
+            "min": [
+              -0.03883412480354309,
+              1.4362831115722656,
+              0.07379008829593658
+            ],
+            "max": [
+              -0.024458523839712143,
+              1.4520277976989746,
+              0.07529610395431519
+            ]
+          },
+          {
+            "name": "Iris1",
+            "min": [
+              0.03611709922552109,
+              1.4357435703277588,
+              0.06651634722948074
+            ],
+            "max": [
+              0.05078868940472603,
+              1.451812505722046,
+              0.06805337220430374
+            ]
+          },
+          {
+            "name": "Pupil0",
+            "min": [
+              -0.034555673599243164,
+              1.440048098564148,
+              0.07488536834716797
+            ],
+            "max": [
+              -0.028736978769302368,
+              1.4482628107070923,
+              0.07556992769241333
+            ]
+          },
+          {
+            "name": "Pupil1",
+            "min": [
+              0.04048364236950874,
+              1.4395861625671387,
+              0.06763418763875961
+            ],
+            "max": [
+              0.046422142535448074,
+              1.447969913482666,
+              0.06833282858133316
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "ines",
+    "name": "Ines \u2014 artist",
+    "faceFit": {
+      "pipeline": "landmark-fitted-face-v1",
+      "landmarkCount": 478,
+      "surfaceHitRatio": 1.0,
+      "replacedTriangles": 1653,
+      "faceWidthMeters": 0.14650330284367435,
+      "topologyVertices": 468,
+      "expressions": [
+        "aa",
+        "ih",
+        "ou",
+        "ee",
+        "oh",
+        "blink",
+        "blinkLeft",
+        "blinkRight",
+        "happy",
+        "sad",
+        "angry",
+        "relaxed",
+        "surprised",
+        "fear",
+        "disgust",
+        "lookLeft",
+        "lookRight",
+        "lookUp",
+        "lookDown"
+      ],
+      "irisColorsLinearRGB": [
+        [
+          0.39411766827106476,
+          0.2980392277240753,
+          0.17647060006856918
+        ],
+        [
+          0.30000001192092896,
+          0.2647058963775635,
+          0.06470588594675064
+        ]
+      ],
+      "openingTrianglesRemoved": 46,
+      "neutralEyeApertureMeters": [
+        0.014596848727568279,
+        0.014385546892233592
+      ],
+      "blinkClosureGapMeters": [
+        0.0,
+        0.0
+      ],
+      "limits": [
+        "Single frontal adult humanoid on white background",
+        "Source-projected appearance; no unseen detail reconstruction",
+        "No teeth or tongue yet",
+        "Stylised detection/fitting requires visual review"
+      ]
+    },
+    "runtime": {
+      "expressions": [
+        "aa",
+        "ih",
+        "ou",
+        "ee",
+        "oh",
+        "blink",
+        "blinkLeft",
+        "blinkRight",
+        "happy",
+        "sad",
+        "angry",
+        "relaxed",
+        "surprised",
+        "lookLeft",
+        "lookRight",
+        "lookUp",
+        "lookDown",
+        "fear",
+        "disgust"
+      ],
+      "maxVertexDisplacementMeters": {
+        "neutral": 0,
+        "happy": 0.00614166259765625,
+        "sad": 0.006000518798828125,
+        "angry": 0.008342266082763672,
+        "fear": 0.008205652236938477,
+        "disgust": 0.005576014518737793,
+        "surprised": 0.013294339179992676,
+        "blink": 0.016546912491321564,
+        "aa": 0.012555360794067383,
+        "ih": 0.004431366920471191,
+        "ou": 0.008243979886174202,
+        "ee": 0.005181930959224701,
+        "oh": 0.010708928108215332,
+        "lookLeft": 0.005805177614092827,
+        "lookRight": 0.005805179476737976
+      },
+      "frameCount": 48,
+      "renderer": "three-vrm actual exported VRM; no user configuration changed",
+      "diagnostic": {
+        "influences": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "targets": {
+          "aa": 0,
+          "ih": 1,
+          "ou": 2,
+          "ee": 3,
+          "oh": 4,
+          "blink": 5,
+          "blinkLeft": 6,
+          "blinkRight": 7,
+          "happy": 8,
+          "sad": 9,
+          "angry": 10,
+          "relaxed": 11,
+          "surprised": 12,
+          "fear": 13,
+          "disgust": 14,
+          "lookLeft": 15,
+          "lookRight": 16,
+          "lookUp": 17,
+          "lookDown": 18
+        },
+        "meshes": [
+          {
+            "name": "Eyeball0",
+            "min": [
+              -0.05431092530488968,
+              1.4339185953140259,
+              0.04592599347233772
+            ],
+            "max": [
+              -0.016899799928069115,
+              1.4655245542526245,
+              0.07495187222957611
+            ]
+          },
+          {
+            "name": "Eyeball1",
+            "min": [
+              0.017713060602545738,
+              1.4346002340316772,
+              0.04512997344136238
+            ],
+            "max": [
+              0.055108100175857544,
+              1.466192603111267,
+              0.07414337247610092
+            ]
+          },
+          {
+            "name": "FittedFace",
+            "min": [
+              -0.07320795208215714,
+              1.3387556076049805,
+              0.04172150790691376
+            ],
+            "max": [
+              0.07329535484313965,
+              1.50774347782135,
+              0.11793477088212967
+            ]
+          },
+          {
+            "name": "Iris0",
+            "min": [
+              -0.04237806797027588,
+              1.4423038959503174,
+              0.0745648741722107
+            ],
+            "max": [
+              -0.028832660987973213,
+              1.457139253616333,
+              0.0759839117527008
+            ]
+          },
+          {
+            "name": "Iris1",
+            "min": [
+              0.029640784487128258,
+              1.4429818391799927,
+              0.07375653833150864
+            ],
+            "max": [
+              0.04318036884069443,
+              1.4578109979629517,
+              0.0751749649643898
+            ]
+          },
+          {
+            "name": "Pupil0",
+            "min": [
+              -0.03834670037031174,
+              1.445851445198059,
+              0.0755968987941742
+            ],
+            "max": [
+              -0.0328640341758728,
+              1.4535917043685913,
+              0.07624192535877228
+            ]
+          },
+          {
+            "name": "Pupil1",
+            "min": [
+              0.033670421689748764,
+              1.4465279579162598,
+              0.07478812336921692
+            ],
+            "max": [
+              0.03915072977542877,
+              1.4542648792266846,
+              0.07543286681175232
+            ]
+          }
+        ]
+      }
+    }
+  }
+]

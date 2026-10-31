@@ -1,7 +1,7 @@
 """Headless Blender: generated A-pose textured GLB -> expressive, skinned VRM 1 humanoid.
 
-Experimental MVP: adult proportions, short hair, close clothing, separated limbs, blank face.
-The generated body/hair/outfit geometry is preserved; facial meshes are constructed here.
+Experimental MVP: adult proportions, short hair, close clothing, separated limbs, visible neutral face.
+The generated body/hair/outfit geometry is preserved; a landmark-fitted facial surface replaces the front head.
 No bundled avatar geometry or textures are used. No third-party Blender add-on is required.
 """
 import argparse
@@ -9,6 +9,7 @@ import json
 import math
 import struct
 import sys
+import runpy
 from pathlib import Path
 
 import bpy
@@ -21,7 +22,12 @@ parser.add_argument("--input", required=True)
 parser.add_argument("--output", required=True)
 parser.add_argument("--name", default="Generated character")
 parser.add_argument("--render", action="store_true")
+parser.add_argument("--reference", required=True)
+parser.add_argument("--landmarks", required=True)
+parser.add_argument("--emotion-renders", action="store_true")
 args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:])
+args.reference = str(Path(args.reference).resolve())
+args.landmarks = str(Path(args.landmarks).resolve())
 output = Path(args.output).resolve()
 output.parent.mkdir(parents=True, exist_ok=True)
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -151,76 +157,14 @@ mod = body.modifiers.new("GeneratedRig", "ARMATURE")
 mod.object = rig
 body.parent = rig
 
-# Add real facial parts on the generated head surface. The reference deliberately has no painted face.
-bpy.context.view_layer.update()
-bvh = BVHTree.FromObject(body, bpy.context.evaluated_depsgraph_get())
-def face_y(x, z):
-    location, normal, _, _ = bvh.ray_cast(Vector((x, -H, z)), Vector((0, 1, 0)), 2 * H)
-    if location is None:
-        raise RuntimeError("Could not locate an uncovered front-facing head. Use adult proportions and swept-back hair.")
-    return location.y - .003 * H
-
-def material(name, color):
-    m = bpy.data.materials.new(name)
-    m.diffuse_color = (*color, 1)
-    m.use_nodes = True
-    m.node_tree.nodes.get("Principled BSDF").inputs["Base Color"].default_value = (*color, 1)
-    return m
-white = material("EyeWhite", (.94, .96, 1))
-iris = material("Iris", (.08, .22, .19))
-dark = material("MouthAndBrows", (.045, .015, .025))
-highlight = material("EyeHighlight", (1, 1, 1))
-face_parts = []
-def ellipsoid(name, center, radii, mat):
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=12, location=center)
-    o = bpy.context.object
-    o.name = name
-    for v in o.data.vertices:
-        v.co.x *= radii[0]
-        v.co.y *= radii[1]
-        v.co.z *= radii[2]
-    o.data.materials.append(mat)
-    for polygon in o.data.polygons:
-        polygon.use_smooth = True
-    group = o.vertex_groups.new(name="head")
-    group.add(list(range(len(o.data.vertices))), 1, "REPLACE")
-    o.parent = rig
-    modifier = o.modifiers.new("FaceRig", "ARMATURE")
-    modifier.object = rig
-    o.shape_key_add(name="Basis")
-    face_parts.append(o)
-    return o
-
-def blink_key(o, name):
-    key = o.shape_key_add(name=name, from_mix=False)
-    key.value = 0
-    for v in key.data:
-        v.co.z *= .035
-
-for side, sign in (("Left", 1), ("Right", -1)):
-    x, z = sign * .032 * H, .912 * H
-    y = face_y(x, z)
-    eye = ellipsoid("Eye" + side, (x, y, z), (.022 * H, .009 * H, .025 * H), white)
-    pupil = ellipsoid("Iris" + side, (x, y - .008 * H, z), (.012 * H, .004 * H, .018 * H), iris)
-    glint = ellipsoid("Glint" + side, (x - .004 * H, y - .012 * H, z + .008 * H), (.004 * H, .0015 * H, .005 * H), highlight)
-    for o in (eye, pupil, glint):
-        blink_key(o, "blink" + side)
-    brow_z = z + .034 * H
-    brow = ellipsoid("Brow" + side, (x, face_y(x, brow_z) - .006 * H, brow_z), (.024 * H, .003 * H, .003 * H), dark)
-    for expression, tilt, lift in (("angry", sign * .32, -.003), ("sad", -sign * .28, 0), ("surprised", 0, .012), ("happy", 0, .004), ("relaxed", 0, -.002)):
-        key = brow.shape_key_add(name=expression, from_mix=False)
-        key.value = 0
-        for v in key.data:
-            v.co.z += v.co.x * tilt + lift * H
-
-mouth_z = .867 * H
-mouth = ellipsoid("Mouth", (0, face_y(0, mouth_z) - .004 * H, mouth_z), (.026 * H, .004 * H, .002 * H), dark)
-for expression, sx, sz, curve in (("aa", 1, 10, 0), ("ih", 1.25, 4, 0), ("ou", .5, 7, 0), ("ee", 1.4, 3, 0), ("oh", .75, 9, 0), ("happy", 1.1, 2, 10), ("sad", 1, 1.5, -10), ("angry", 1.1, 2, -3), ("surprised", .6, 12, 0), ("relaxed", 1, 1, 3)):
-    key = mouth.shape_key_add(name=expression, from_mix=False)
-    key.value = 0
-    for v in key.data:
-        v.co.x *= sx
-        v.co.z = v.co.z * sz + curve * v.co.x ** 2
+# Fit known open-eye/open-mouth topology to the detected reference and generated head.
+face_module = runpy.run_path(str(Path(__file__).with_name("fitted-face.py")))
+face_parts, face_report = face_module["build_fitted_face"](
+    body, rig, H, args.landmarks, args.reference)
+for part in face_parts:
+    if part.data.shape_keys:
+        for key in part.data.shape_keys.key_blocks:
+            key.value = 0
 
 # Bake just the generated body into T-pose. Face parts stay bound rigidly to the head.
 bpy.context.view_layer.objects.active = rig
@@ -255,11 +199,14 @@ bpy.ops.export_scene.gltf(filepath=str(glb_path), export_format="GLB", use_selec
 raw = glb_path.read_bytes()
 json_size = struct.unpack_from("<I", raw, 12)[0]
 doc = json.loads(raw[20:20 + json_size])
+for mesh in doc.get("meshes", []):
+    if "weights" in mesh and any(abs(w) > 1e-8 for w in mesh["weights"]):
+        raise RuntimeError("Exported face is not neutral: nonzero default expression weights")
 remaining = raw[20 + json_size:]
 node_ids = {n.get("name"): i for i, n in enumerate(doc["nodes"])}
 human = {name: {"node": node_ids[name]} for name in bones}
 expressions = {}
-for preset in ("aa", "ih", "ou", "ee", "oh", "blink", "blinkLeft", "blinkRight", "happy", "sad", "angry", "relaxed", "surprised"):
+for preset in face_module["PRESETS"]:
     binds = []
     for node_index, node in enumerate(doc["nodes"]):
         if "mesh" not in node:
@@ -276,9 +223,13 @@ doc.setdefault("extensionsUsed", []).append("VRMC_vrm")
 doc.setdefault("extensions", {})["VRMC_vrm"] = {
     "specVersion": "1.0",
     "meta": {"name": args.name, "version": "0.1", "authors": ["AI Embodied local generator"],
-             "licenseUrl": "https://vrm.dev/licenses/1.0/"},
+             "licenseUrl": "https://vrm.dev/licenses/1.0/",
+             "thirdPartyLicenses": "Face topology derived from Google MediaPipe canonical_face_model.obj. Copyright Google LLC.\n" + (Path(__file__).parent / 'face-template' / 'LICENSE').read_text(encoding='utf-8')},
     "humanoid": {"humanBones": human},
-    "expressions": {"preset": expressions},
+    "expressions": {"preset": {k: v for k, v in expressions.items() if k not in ("fear", "disgust")},
+                    "custom": {k: expressions[k] for k in ("fear", "disgust")}},
+    "lookAt": {"type": "expression", "offsetFromHeadBone": [0, .06, 0],
+               **{key: {"inputMaxValue": 90, "outputScale": 1} for key in ("rangeMapHorizontalInner", "rangeMapHorizontalOuter", "rangeMapVerticalDown", "rangeMapVerticalUp")}},
 }
 doc.setdefault("extensionsUsed", []).append("KHR_materials_unlit")
 for mat in doc.get("materials", []):
@@ -292,11 +243,11 @@ output.write_bytes(struct.pack("<III", 0x46546C67, 2, 20 + len(encoded) + len(re
                    + struct.pack("<II", len(encoded), 0x4E4F534A) + encoded + remaining)
 glb_path.unlink()
 unweighted = sum(1 for v in body.data.vertices if not v.groups)
-report = {"pipeline": "generated-mesh-and-procedural-face-v1", "source": str(Path(args.input).resolve()),
+report = {"pipeline": "generated-mesh-and-landmark-fitted-face-v1", "source": str(Path(args.input).resolve()),
           "vertices": len(body.data.vertices), "triangles": sum(len(p.vertices) - 2 for p in body.data.polygons),
           "bones": len(human), "unweightedVertices": unweighted,
-          "expressions": list(expressions), "facialParts": len(face_parts),
-          "limits": ["Adult stylised humanoids only", "Close clothing and short/swept-back hair", "Procedural facial features", "No articulated fingers or hair physics"]}
+          "expressions": list(expressions), "facialParts": len(face_parts), "faceFit": face_report,
+          "limits": ["Adult stylised humanoids only", "Close clothing and short/swept-back hair", "Frontal source-projected face, visual review required", "No articulated fingers or hair physics"]}
 output.with_suffix(".report.json").write_text(json.dumps(report, indent=2))
 if unweighted:
     output.unlink()
@@ -325,3 +276,49 @@ if args.render:
     camera.data.type, camera.data.ortho_scale = "ORTHO", 1.95
     scene.render.filepath = str(output.with_suffix(".png"))
     bpy.ops.render.render(write_still=True)
+
+if args.emotion_renders:
+    scene = bpy.context.scene
+    # Match the exported VRM's unlit materials, including its baked reference shading.
+    for mat in bpy.data.materials:
+        if mat.use_nodes:
+            shader=mat.node_tree.nodes.get('Principled BSDF')
+            if shader:
+                color=shader.inputs['Base Color']
+                emission=shader.inputs['Emission Color']
+                if color.is_linked:
+                    mat.node_tree.links.new(color.links[0].from_socket,emission)
+                else:emission.default_value=color.default_value
+                shader.inputs['Emission Strength'].default_value=1
+                shader.inputs['Base Color'].default_value=(0,0,0,1)
+    scene.render.engine = "BLENDER_EEVEE"
+    scene.render.resolution_x = scene.render.resolution_y = 320
+    scene.render.resolution_percentage = 100
+    scene.render.image_settings.file_format = 'PNG'
+    scene.world = bpy.data.worlds.new("FaceReviewWorld")
+    scene.world.use_nodes = True
+    scene.world.node_tree.nodes["Background"].inputs[0].default_value = (.07,.09,.13,1)
+    scene.world.node_tree.nodes["Background"].inputs[1].default_value = .7
+    camera = bpy.data.objects.new("FaceReviewCamera",bpy.data.cameras.new("FaceReviewCamera"))
+    scene.collection.objects.link(camera);scene.camera=camera
+    face = next(o for o in face_parts if o.name == "FittedFace")
+    coords = np.array([v.co[:] for v in face.data.vertices])
+    center = Vector(coords.mean(axis=0));center.z = float((coords[:,2].min()+coords[:,2].max())/2)
+    camera.location=(center.x,-3,center.z)
+    camera.rotation_euler=(center-camera.location).to_track_quat('-Z','Y').to_euler()
+    camera.data.type='ORTHO';camera.data.ortho_scale=float(np.ptp(coords[:,2]))*1.65
+    scene.view_settings.view_transform='Standard'
+    renders=output.parent/'expressions';renders.mkdir(exist_ok=True)
+    for expression in ('neutral','happy','sad','angry','fear','disgust','surprised','blink','aa','ih','ou','ee','oh','lookLeft','lookRight'):
+        for obj in face_parts:
+            if obj.data.shape_keys:
+                for key in obj.data.shape_keys.key_blocks:
+                    if key.name != 'Basis':key.value=1 if key.name==expression else 0
+        bpy.context.view_layer.update()
+        scene.render.filepath=str(renders/(expression+'.png'))
+        bpy.ops.render.render(write_still=True)
+    # Store an inspectable source scene with the actual fitted mesh and shape keys.
+    for obj in face_parts:
+        if obj.data.shape_keys:
+            for key in obj.data.shape_keys.key_blocks:key.value=0
+    bpy.ops.wm.save_as_mainfile(filepath=str(output.with_suffix('.blend')))

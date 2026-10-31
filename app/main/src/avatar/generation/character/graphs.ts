@@ -5,7 +5,7 @@ import type { ComfyGraph } from '../comfyui-client.js';
 export function characterConceptPrompt(description: string): string {
   return `Full-body front-view 3D stylised humanoid character design: ${description.trim()}.
 One character, adult proportions, head occupies about one sixth of total height. Short or swept-back hair leaving the entire face uncovered.
-Smooth blank featureless face with a small nose, NO eyes, eyebrows or mouth: animated facial parts will be added in 3D later.
+Clearly visible front-facing human face, neutral expression, open eyes and closed lips. Defined eyelids, eyebrows, nose and lips. Preserve the described facial identity; the face will be fitted for animation locally.
 Standing straight in a symmetric A-pose, arms straight at 45 degrees away from the body, hands open and separated from hips, legs straight slightly apart with a clear gap.
 Close-fitting clothing with separate sleeves and trouser legs, no skirt, cape, long coat, props or accessories bridging limbs.
 Clean matte toy-like surfaces. Entire character including feet in frame with margin, pure white background, no shadow, no scenery, no lettering, no turnaround or second view.`;

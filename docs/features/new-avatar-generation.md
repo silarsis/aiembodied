@@ -6,7 +6,7 @@ The new-character option generates a new mesh instead of repainting the bundled 
 
 Restart the rebuilt app. In Controls > Character > Create an avatar, choose **New 3D character (experimental)**. Choose **Text description** or **Upload an image**. Uploads accept PNG, JPEG or WebP up to 4096 x 4096 pixels and 25 MB, and skip image generation. For text input, describe an adult stylised humanoid with short or swept-back hair and close-fitting clothes. For example: “A friendly woman explorer with swept-back auburn hair, a rounded face, a sage-green jumpsuit with orange shoulder panels, and tan boots.”
 
-The pipeline deliberately generates an A-pose reference with an uncovered blank face so separate animated facial parts can be added. Eyes and mouth currently have a simple cartoon style; fine facial design and eye colour are not controlled by the prompt. Clothing and hair shapes come from the generated mesh, rather than the old avatar. Long hair, skirts, capes and similar surfaces that bridge body parts are outside the first version. Fingers do not articulate. Gaze and spring-bone physics are not implemented. Shoulder and elbow deformation still need improvement.
+The pipeline now generates a visible neutral face in the A-pose reference, then fits it for animation locally. Use one full-body adult human character on a plain white background, with open eyes, closed lips and an uncovered front-facing face. Local MediaPipe landmarks fit a known facial surface to the reference and generated head; its skin appearance and iris colours come from that reference. Face/hair and jaw seams, approximate lips, coarse surfaces and imperfect likeness remain visible. Teeth and tongue are not implemented. Clothing and hair shapes come from the generated mesh. Long hair, skirts, capes and similar surfaces bridging body parts remain unsupported. Fingers do not articulate; hair physics and shoulder/elbow deformation still need work. The generated face has iris gaze morphs; automatic conversational gaze targeting is separate future work.
 
 The concept or uploaded reference appears as a small thumbnail; click it to open a full-size modal popup. Escape or Close dismisses the popup without closing the drawer. Generation stops at image review, including for recolouring: only **Use this image** starts geometry/rigging or texture work. While a text-generated image is awaiting approval, edit the prompt and select **Regenerate image** to discard the pending job and generate a replacement. The replacement requires its own approval. If replacement generation fails, the edited prompt remains available to retry. Discard deletes the pending reference job. If a dependency is unavailable when continuing, the reference remains available to retry. Uploads can be reviewed while ComfyUI is offline.
 
@@ -16,6 +16,7 @@ After that work finishes, review the **finished model**, rather than the concept
 
 - Shared local ComfyUI server with Qwen-Image 2.1 and the TRELLIS.2/BiRefNet/DINO models used by `character/trellis2.graph.json`.
 - Blender, found under Program Files/Blender Foundation on Windows or selected with `BLENDER_EXE`. No Blender extension is installed or required.
+- Run `pnpm avatar:face:setup` once for the separate local CPU detector environment and checksum-verified model. `AVATAR_FACE_DIR`, or `AVATAR_FACE_PYTHON` and `AVATAR_FACE_MODEL`, override discovery. See [local face setup and reproduction](../../services/avatar-face/README.md). The environment is installed on the development machine; packaged installs must provision it separately with absolute paths.
 - The existing named avatar-generation IPC bridge; completed candidates are read through `avatar:generation-preview` without importing them.
 - Main owns job files and persistence. Blender runs in a finite subprocess with a five-minute timeout and an abort signal. Comfy cancellation targets the individual prompt; older servers can remove the queued job without globally interrupting other work. The pipeline never calls `/free`.
 
@@ -23,13 +24,17 @@ After that work finishes, review the **finished model**, rather than the concept
 
 1. Qwen generates an animation-friendly reference from the description, or the renderer converts a selected PNG/JPEG/WebP to PNG and main validates it.
 2. The job stops in `awaiting_confirmation`. `avatar:generation-confirm-concept` is the only entry to subsequent generation; the UI cannot accidentally advance by polling or opening the preview.
-3. TRELLIS.2 generates new geometry, UVs and texture maps; the shared Comfy client downloads its saved GLB.
+3. A finite local detector checks the approved reference before expensive geometry generation. A missing/obscured/unsupported face fails clearly; no generic face is substituted. TRELLIS.2 then generates geometry, UVs and textures; the shared Comfy client downloads the GLB.
 4. Blender normalises the model, fits an anatomical skeleton, creates region-constrained movement weights and bakes the generated A-pose to T-pose.
-5. Blender locates the front head surface and adds separate eyes, irises, highlights, eyebrows and mouth meshes. Shape keys implement speech and emotion controls.
+5. Blender fits the known facial topology to the detected landmarks and sampled head depth, replaces the underlying front face, removes eye/mouth caps, projects reference appearance, and adds recessed eyeballs/irises and a lip-following mouth interior. Shape keys implement speech, real eyelid closure, gaze, and six emotions. Fear/disgust are custom VRM expressions. The generated rear head, ears and hair remain.
 6. The exporter writes the humanoid mapping and expression bindings into VRM 1.0, preserving the generated skin and textures. It rejects empty or implausibly proportioned meshes, missing facial placement and unweighted vertices.
 7. The renderer loads the VRM to create its review image. Keep is disabled until that succeeds. Acceptance passes those exact VRM bytes through the model service.
 
-The first rig uses geometric landmarks, not an ML rigging model. It can still produce poor deformation even when structural checks pass. Visual review is necessary. The next development work is better joint fitting/weights and semantic topology repair, followed by a richer face rig and prompt-driven facial parameters.
+The body still uses geometric joint fitting. The face now uses ML landmarks and known topology, with an approximate orthographic image-to-mesh alignment. Fitting checks surface coverage, open neutral eyes, closed blink boundaries, expression bindings and zero exported default morph weights. These checks do not guarantee good likeness or deformation. Visual review remains necessary. Next work: seam repair, richer lip/eyelid topology, teeth/tongue, improved head fitting, better body joints/weights and semantic segmentation.
+
+## Local face MVP evidence
+
+`artifacts/local-face-mvp-2026-10-31/comparison.html` contains five distinct ComfyUI characters, their references, six emotions per exported avatar, and animated speech/blink/smile previews. These are actual three-vrm renders from the generated VRMs, not separately generated expression pictures. The same runtime check exercises five speech shapes and gaze, verifies movement, and records fitting diagnostics. The five VRMs are included for optional model upload. The review never changes the user's active model or saved preferences. Reproduction commands and limits: `services/avatar-face/README.md`.
 
 ## Verified sample
 

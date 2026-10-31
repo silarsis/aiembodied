@@ -38,6 +38,7 @@ async function setup(
   };
   const characterRunner = {
     assertAvailable: vi.fn().mockResolvedValue(undefined),
+    prepareReference: vi.fn().mockResolvedValue(path.join(directory, 'face-landmarks.json')),
     build: vi.fn(async (input: { meshPath: string; outputPath: string }) => {
       expect(await readFile(input.meshPath, 'utf8')).toBe('NEW-GEOMETRY');
       if (failRig) throw new Error('Limbs are fused');
@@ -60,15 +61,25 @@ async function setup(
 }
 
 describe('new character generation', () => {
+  it('checks the approved face before requesting expensive geometry and stops on detection failure', async () => {
+    const { service, comfy, characterRunner } = await setup();
+    const { jobId } = await service.startJob({ prompt: 'A botanist' });
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+    expect(characterRunner.prepareReference).not.toHaveBeenCalled();
+    characterRunner.prepareReference.mockRejectedValue(new Error('Face is obscured'));
+    await service.confirmConcept(jobId);
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('failed'));
+    expect(service.getStatus(jobId).errorMessage).toBe('Face is obscured');
+    expect(comfy.run).toHaveBeenCalledTimes(1);
+    expect(characterRunner.build).not.toHaveBeenCalled();
+  });
   it('uses the detected model workflow for the picture and freezes that choice across approval', async () => {
-    const resolve = vi
-      .fn()
-      .mockResolvedValue({
-        id: 'variant',
-        name: 'Custom XL',
-        family: 'sdxl',
-        model: 'custom-xl.safetensors',
-      });
+    const resolve = vi.fn().mockResolvedValue({
+      id: 'variant',
+      name: 'Custom XL',
+      family: 'sdxl',
+      model: 'custom-xl.safetensors',
+    });
     const { service, comfy } = await setup(false, { resolve });
     const { jobId } = await service.startJob({ prompt: 'An explorer', imageModelId: 'variant' });
     await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
@@ -172,6 +183,6 @@ describe('new character generation', () => {
     expect(first.s_struct.inputs.seed).toBe(123);
     expect(second.s_tex.inputs.seed).toBe(456);
     expect(first.save.class_type).toBe('SaveGLB');
-    expect(characterConceptPrompt('An explorer')).toContain('NO eyes, eyebrows or mouth');
+    expect(characterConceptPrompt('An explorer')).toContain('open eyes and closed lips');
   });
 });

@@ -252,7 +252,7 @@ export function AvatarGeneratorPanel({
       </h3>
       <p className="kiosk__info">
         {mode === 'new-character'
-          ? 'Experimental: generate a new stylised 3D humanoid, then add a body rig and animated eyes and mouth. Use adult proportions, short or swept-back hair and close-fitting clothes. Loose garments, long hair, articulated fingers and hair physics are not supported yet. The facial features use a simple cartoon style.'
+          ? 'Experimental: generate a new stylised 3D humanoid, then fit an animated face and body rig locally. Use a clear front-facing human face, adult proportions, short or swept-back hair and close-fitting clothes. Loose garments, long hair, articulated fingers and hair physics are not supported yet. Review the finished face carefully.'
           : 'Repaint the bundled avatar’s hair and clothing textures. Face shape, hairstyle, body and outfit shape stay the same.'}{' '}
         Generation can take several minutes; you can keep using the app while it runs. We’ll pause
         after the concept image so you can approve it before continuing.
@@ -309,7 +309,8 @@ export function AvatarGeneratorPanel({
             <p className="kiosk__info">
               Use a front-facing, full-body character with arms and legs separated. PNG, JPEG or
               WebP, up to 4096 × 4096 pixels and 25 MB. Uploads skip image generation; the current
-              3D pipeline adds simple cartoon facial features.
+              3D pipeline fits the visible face for animation locally. Use one front-facing
+              character on a plain white background, with open eyes and closed lips.
             </p>
             {referenceImage && !jobId ? (
               <AvatarImagePreview

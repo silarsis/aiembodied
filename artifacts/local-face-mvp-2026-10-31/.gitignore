@@ -1,0 +1,8 @@
+# Intermediate geometry/source scenes can be reproduced with scripts/avatar-face-demo.
+source.glb
+*.blend
+*.blend1
+# Intermediate animation frames are assembled into the committed GIF previews.
+*/runtime/frame-*.png
+# Blender diagnostic renders are intermediate; the report uses exported VRM renders.
+*/expressions/

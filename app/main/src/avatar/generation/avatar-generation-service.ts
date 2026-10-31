@@ -280,6 +280,16 @@ export class AvatarGenerationService {
       throwIfAborted(signal);
 
       if (job.mode === 'new-character') {
+        const runner = this.options.characterRunner;
+        if (!runner) throw new Error('New character rigging is unavailable.');
+        job.vrmPath = path.join(job.directory, 'avatar.vrm');
+        this.update(job, { message: 'Checking the reference face locally', progress: 0.16 });
+        const landmarksPath = await runner.prepareReference?.({
+          referencePath: path.join(job.directory, 'concept.png'),
+          outputPath: job.vrmPath,
+          signal,
+        });
+        throwIfAborted(signal);
         this.update(job, {
           status: 'meshing',
           progress: 0.2,
@@ -297,13 +307,12 @@ export class AvatarGenerationService {
         this.update(job, {
           status: 'rigging',
           progress: 0.8,
-          message: 'Building the body skeleton, eyes, mouth and expressions',
+          message: 'Fitting the face, body skeleton and animated expressions',
         });
-        const runner = this.options.characterRunner;
-        if (!runner) throw new Error('New character rigging is unavailable.');
-        job.vrmPath = path.join(job.directory, 'avatar.vrm');
         await runner.build({
+          landmarksPath,
           meshPath,
+          referencePath: path.join(job.directory, 'concept.png'),
           outputPath: job.vrmPath,
           name: summarise(job.prompt),
           signal,
