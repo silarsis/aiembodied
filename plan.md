@@ -144,3 +144,5 @@ The following phased plan covers the MVP described in the PRD and architecture s
 - [ ] Investigate reliable semantic segmentation/retopology and rig/face transfer for arbitrary generated characters.
 - [ ] Add finger articulation, gaze and hair/clothing physics.
 Evidence and supported limits: docs/features/new-avatar-generation.md.
+
+- 2026-10-31 follow-up: compact avatar concept/result thumbnails with full-size modal previews; explicit concept approval before geometry or recolouring; upload a PNG/JPEG/WebP reference to skip text-to-image and use the same approval and 3D pipeline.

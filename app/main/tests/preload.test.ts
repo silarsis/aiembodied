@@ -156,6 +156,9 @@ describe('preload bridge', () => {
     invoke.mockResolvedValueOnce({ jobId: 'job-1', status: 'queued' });
     await expect(api.avatar?.getAvatarGenerationStatus('job-1')).resolves.toEqual({ jobId: 'job-1', status: 'queued' });
     expect(invoke).toHaveBeenCalledWith('avatar:generation-status', 'job-1');
+    invoke.mockResolvedValueOnce(undefined);
+    await api.avatar?.confirmAvatarConcept('job-1');
+    expect(invoke).toHaveBeenCalledWith('avatar:generation-confirm-concept', 'job-1');
 
     invoke.mockResolvedValueOnce(new Uint8Array([1, 2, 3]));
     const preview = await api.avatar?.loadGeneratedAvatarPreview('job-1');

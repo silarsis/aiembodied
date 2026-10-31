@@ -10,6 +10,7 @@ import { buildConceptPrompt, conceptGraph, retextureGraph } from './graphs.js';
 import { workerRetextureRunner, type RetextureRunner } from './retexture-tasks.js';
 import { characterConceptPrompt, characterMeshGraph } from './character/graphs.js';
 import type { CharacterRigRunner } from './character/rig-runner.js';
+import { decodeReferenceImage } from './reference-image.js';
 import { regionPrompt } from './vrm-retexture.js';
 import type {
   AvatarGenerationAcceptance,
@@ -43,6 +44,8 @@ export interface AvatarGenerationServiceOptions {
 }
 
 interface JobState {
+  referenceImage: Buffer | null;
+  seed: number;
   mode: 'new-character' | 'restyle';
   status: AvatarGenerationStatus;
   prompt: string;
@@ -73,7 +76,12 @@ export class AvatarGenerationService {
     const mode = request?.mode ?? 'new-character';
     if (mode !== 'new-character' && mode !== 'restyle')
       throw new Error('Unknown avatar generation mode.');
-    const prompt = typeof request?.prompt === 'string' ? request.prompt.trim() : '';
+    const referenceImage = decodeReferenceImage(request?.referenceImage);
+    if (referenceImage && mode !== 'new-character')
+      throw new Error('Image upload is available for new 3D characters.');
+    const prompt =
+      (typeof request?.prompt === 'string' ? request.prompt.trim() : '') ||
+      (referenceImage ? 'Uploaded character reference' : '');
     if (!prompt) {
       throw new Error('Describe the avatar you want to generate.');
     }
@@ -86,13 +94,14 @@ export class AvatarGenerationService {
     if (mode === 'new-character') {
       if (!this.options.characterRunner)
         throw new Error('New 3D character generation is not configured.');
-      await this.options.characterRunner.assertAvailable();
     }
-    await this.options.ensureComfyReady?.();
-    if (!(await this.options.comfy.isAvailable())) {
-      throw new Error(
-        `ComfyUI isn't reachable at ${this.options.comfy.baseUrl}. Start ComfyUI (or set COMFYUI_BASE_URL) and try again.`,
-      );
+    if (!referenceImage) {
+      await this.options.ensureComfyReady?.();
+      if (!(await this.options.comfy.isAvailable())) {
+        throw new Error(
+          `ComfyUI isn't reachable at ${this.options.comfy.baseUrl}. Start ComfyUI (or set COMFYUI_BASE_URL) and try again.`,
+        );
+      }
     }
     // Another request may have finished the shared server-start wait just ahead of this one.
     if ([...this.jobs.values()].some((job) => isActive(job.status.status))) {
@@ -101,6 +110,8 @@ export class AvatarGenerationService {
 
     const jobId = randomUUID();
     const job: JobState = {
+      referenceImage,
+      seed: randomInt(0, 2 ** 47),
       mode,
       status: {
         jobId,
@@ -123,6 +134,33 @@ export class AvatarGenerationService {
 
     void this.run(job);
     return { jobId };
+  }
+
+  /** Explicit approval is the only entry to geometry, rigging or texture work. */
+  async confirmConcept(jobId: string): Promise<void> {
+    const job = this.getJob(jobId);
+    if (job.status.status !== 'awaiting_confirmation') {
+      throw new Error('This concept is not awaiting confirmation.');
+    }
+    this.update(job, { status: 'queued', message: 'Preparing to continue', errorMessage: null });
+    try {
+      if (job.mode === 'new-character') await this.options.characterRunner?.assertAvailable();
+      await this.options.ensureComfyReady?.();
+      if (!(await this.options.comfy.isAvailable()))
+        throw new Error('ComfyUI is unavailable. Start it and try continuing again.');
+      throwIfAborted(job.abort.signal);
+      if (this.jobs.get(jobId) !== job)
+        throw new Error('This avatar generation job was discarded.');
+    } catch (error) {
+      if (!job.abort.signal.aborted && this.jobs.get(jobId) === job) {
+        this.update(job, {
+          status: 'awaiting_confirmation',
+          message: 'Review the concept image before continuing',
+        });
+      }
+      throw error;
+    }
+    void this.run(job, 'build');
   }
 
   getStatus(jobId: string): AvatarGenerationStatus {
@@ -182,35 +220,49 @@ export class AvatarGenerationService {
     job.status = { ...job.status, ...patch };
   }
 
-  private async run(job: JobState): Promise<void> {
+  private async run(job: JobState, phase: 'concept' | 'build' = 'concept'): Promise<void> {
     const { comfy } = this.options;
     const signal = job.abort.signal;
-    const seed = randomInt(0, 2 ** 47);
+    const seed = job.seed;
     const started = Date.now();
 
     try {
-      await mkdir(job.directory, { recursive: true });
-      await writeFile(
-        path.join(job.directory, 'request.json'),
-        JSON.stringify({ prompt: job.prompt, mode: job.mode, seed }, null, 2),
-      );
+      if (phase === 'concept') {
+        await mkdir(job.directory, { recursive: true });
+        await writeFile(
+          path.join(job.directory, 'request.json'),
+          JSON.stringify({ prompt: job.prompt, mode: job.mode, seed }, null, 2),
+        );
 
-      this.update(job, { status: 'concept', progress: 0.02, message: 'Drawing a concept image' });
-      const concept = await comfy.run(
-        conceptGraph(
-          job.mode === 'new-character'
-            ? characterConceptPrompt(job.prompt)
-            : buildConceptPrompt(job.prompt),
-          seed,
-        ),
-        { signal },
-      );
+        this.update(job, {
+          status: 'concept',
+          progress: 0.02,
+          message: job.referenceImage ? 'Preparing uploaded image' : 'Drawing a concept image',
+        });
+        const concept =
+          job.referenceImage ??
+          (await comfy.run(
+            conceptGraph(
+              job.mode === 'new-character'
+                ? characterConceptPrompt(job.prompt)
+                : buildConceptPrompt(job.prompt),
+              seed,
+            ),
+            { signal },
+          ));
+        throwIfAborted(signal);
+        await writeFile(path.join(job.directory, 'concept.png'), concept);
+        this.update(job, {
+          status: 'awaiting_confirmation',
+          message: 'Review the concept image before continuing',
+          progress: 0.15,
+          previewDataUrl: `data:image/png;base64,${concept.toString('base64')}`,
+        });
+
+        return;
+      }
+      const concept = await readFile(path.join(job.directory, 'concept.png'));
       throwIfAborted(signal);
-      await writeFile(path.join(job.directory, 'concept.png'), concept);
-      this.update(job, {
-        progress: 0.15,
-        previewDataUrl: `data:image/png;base64,${concept.toString('base64')}`,
-      });
 
       if (job.mode === 'new-character') {
         this.update(job, {
@@ -342,7 +394,15 @@ export class AvatarGenerationService {
 }
 
 function isActive(status: AvatarGenerationStatus['status']): boolean {
-  return ['queued', 'concept', 'meshing', 'rigging', 'texturing', 'packaging'].includes(status);
+  return [
+    'queued',
+    'concept',
+    'awaiting_confirmation',
+    'meshing',
+    'rigging',
+    'texturing',
+    'packaging',
+  ].includes(status);
 }
 
 function throwIfAborted(signal: AbortSignal): void {

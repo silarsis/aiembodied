@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import type { AvatarBridge, AvatarGenerationStatus } from './types.js';
 import { generatePoseSnapshot } from './pose-snapshot-generator.js';
+import { AvatarImagePreview } from './avatar-image-preview.js';
+import { readAvatarReference, type AvatarReferenceImage } from './reference-image-upload.js';
 import baseNeutralPose from '../../../main/src/avatar/base-poses/relaxed-neutral.pose.json';
 
 interface AvatarGeneratorPanelProps {
@@ -29,6 +31,8 @@ export function AvatarGeneratorPanel({
   pollIntervalMs = 2000,
 }: AvatarGeneratorPanelProps) {
   const [prompt, setPrompt] = useState('');
+  const [imageSource, setImageSource] = useState<'text' | 'upload'>('text');
+  const [referenceImage, setReferenceImage] = useState<AvatarReferenceImage | null>(null);
   const [mode, setMode] = useState<'new-character' | 'restyle'>('new-character');
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<AvatarGenerationStatus | null>(null);
@@ -45,6 +49,7 @@ export function AvatarGeneratorPanel({
   const previewKey = `${jobId}:${previewAttempt}`;
   const resultPreview = preview?.key === previewKey ? preview.image : undefined;
   const previewError = preview?.key === previewKey ? preview.error : undefined;
+  const usingUpload = mode === 'new-character' && imageSource === 'upload';
 
   useEffect(() => {
     if (!completed || !jobId) return;
@@ -107,13 +112,17 @@ export function AvatarGeneratorPanel({
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      if (!avatarApi?.generateAvatar || !prompt.trim()) {
+      if (!avatarApi?.generateAvatar || (usingUpload ? !referenceImage : !prompt.trim())) {
         return;
       }
       setBusy(true);
       setError(null);
       try {
-        const job = await avatarApi.generateAvatar({ prompt: prompt.trim(), mode });
+        const job = await avatarApi.generateAvatar({
+          prompt: prompt.trim(),
+          mode,
+          ...(usingUpload && referenceImage ? { referenceImage } : {}),
+        });
         setJobId(job.jobId);
         setStatus({ jobId: job.jobId, status: 'queued', progress: 0, message: 'Queued' });
       } catch (err) {
@@ -122,7 +131,7 @@ export function AvatarGeneratorPanel({
         setBusy(false);
       }
     },
-    [avatarApi, prompt, mode],
+    [avatarApi, prompt, mode, usingUpload, referenceImage],
   );
 
   const handleAccept = useCallback(async () => {
@@ -136,6 +145,7 @@ export function AvatarGeneratorPanel({
       setJobId(null);
       setStatus(null);
       setPrompt('');
+      setReferenceImage(null);
       await onAccepted?.(vrmId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save the generated avatar.');
@@ -143,6 +153,22 @@ export function AvatarGeneratorPanel({
       setBusy(false);
     }
   }, [avatarApi, jobId, onAccepted]);
+
+  const handleConfirmConcept = useCallback(async () => {
+    if (!jobId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (!avatarApi?.confirmAvatarConcept)
+        throw new Error('Restart the app to continue from the concept review.');
+      await avatarApi.confirmAvatarConcept(jobId);
+      setStatus(await avatarApi.getAvatarGenerationStatus(jobId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not continue avatar generation.');
+    } finally {
+      setBusy(false);
+    }
+  }, [avatarApi, jobId]);
 
   const handleDiscard = useCallback(async () => {
     if (!avatarApi?.rejectGeneratedAvatar || !jobId) {
@@ -165,6 +191,21 @@ export function AvatarGeneratorPanel({
     setPrompt(event.target.value);
   }, []);
 
+  const handleReferenceUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    setReferenceImage(null);
+    setError(null);
+    if (!file) return;
+    setBusy(true);
+    try {
+      setReferenceImage(await readAvatarReference(file));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not read the image.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (!available) {
     return null;
   }
@@ -180,7 +221,8 @@ export function AvatarGeneratorPanel({
         {mode === 'new-character'
           ? 'Experimental: generate a new stylised 3D humanoid, then add a body rig and animated eyes and mouth. Use adult proportions, short or swept-back hair and close-fitting clothes. Loose garments, long hair, articulated fingers and hair physics are not supported yet. The facial features use a simple cartoon style.'
           : 'Repaint the bundled avatar’s hair and clothing textures. Face shape, hairstyle, body and outfit shape stay the same.'}{' '}
-        Generation can take several minutes; you can keep using the app while it runs.
+        Generation can take several minutes; you can keep using the app while it runs. We’ll pause
+        after the concept image so you can approve it before continuing.
       </p>
 
       <form className="faces__form" onSubmit={handleSubmit} aria-label="Generate avatar">
@@ -195,23 +237,77 @@ export function AvatarGeneratorPanel({
             <option value="restyle">Recolour the base avatar</option>
           </select>
         </label>
+        {mode === 'new-character' ? (
+          <fieldset className="avatarImageSource" disabled={busy || Boolean(jobId)}>
+            <legend>Start from</legend>
+            <label>
+              <input
+                type="radio"
+                name="avatar-image-source"
+                value="text"
+                checked={imageSource === 'text'}
+                onChange={() => setImageSource('text')}
+              />{' '}
+              Text description
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="avatar-image-source"
+                value="upload"
+                checked={imageSource === 'upload'}
+                onChange={() => setImageSource('upload')}
+              />{' '}
+              Upload an image
+            </label>
+          </fieldset>
+        ) : null}
+        {usingUpload ? (
+          <>
+            <label className="faces__field">
+              <span>Character reference image</span>
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                disabled={busy || Boolean(jobId)}
+                onChange={(event) => void handleReferenceUpload(event)}
+              />
+            </label>
+            <p className="kiosk__info">
+              Use a front-facing, full-body character with arms and legs separated. PNG, JPEG or
+              WebP, up to 4096 × 4096 pixels and 25 MB. Uploads skip image generation; the current
+              3D pipeline adds simple cartoon facial features.
+            </p>
+            {referenceImage && !jobId ? (
+              <AvatarImagePreview
+                src={`data:image/png;base64,${referenceImage.data}`}
+                alt="Uploaded reference"
+                caption="Your reference image. Click to enlarge."
+              />
+            ) : null}
+          </>
+        ) : null}
         <label className="faces__field">
-          <span>Avatar description</span>
+          <span>{usingUpload ? 'Avatar name (optional)' : 'Avatar description'}</span>
           <textarea
             value={prompt}
             onChange={handlePromptChange}
             rows={3}
             maxLength={1000}
-            placeholder="Swept-back auburn hair, rounded face, sage green explorer jumpsuit, tan boots"
+            placeholder={
+              usingUpload
+                ? 'Name this avatar'
+                : 'Swept-back auburn hair, rounded face, sage green explorer jumpsuit, tan boots'
+            }
             disabled={busy || Boolean(jobId)}
           />
         </label>
         <button
           type="submit"
           className="faces__submit"
-          disabled={busy || Boolean(jobId) || !prompt.trim()}
+          disabled={busy || Boolean(jobId) || (usingUpload ? !referenceImage : !prompt.trim())}
         >
-          Generate
+          {usingUpload ? 'Review uploaded image' : 'Generate'}
         </button>
       </form>
 
@@ -224,14 +320,15 @@ export function AvatarGeneratorPanel({
       {status ? (
         <div className="faces__uploadResult" role="status">
           {status.previewDataUrl ? (
-            <figure>
-              <img
-                src={status.previewDataUrl}
-                alt="Generated concept"
-                className="faces__uploadThumbnail"
-              />
-              <figcaption>Concept illustration — the finished model may differ.</figcaption>
-            </figure>
+            <AvatarImagePreview
+              src={status.previewDataUrl}
+              alt={usingUpload ? 'Uploaded reference' : 'Generated concept'}
+              caption={
+                usingUpload
+                  ? 'Your reference image — the finished model may differ. Click to enlarge.'
+                  : 'Concept illustration — the finished model may differ. Click to enlarge.'
+              }
+            />
           ) : null}
           {running ? (
             <>
@@ -241,17 +338,29 @@ export function AvatarGeneratorPanel({
               </progress>
             </>
           ) : null}
+          {status.status === 'awaiting_confirmation' ? (
+            <>
+              <p>Review the image. Generation is paused until you confirm.</p>
+              <button
+                type="button"
+                className="faces__submit"
+                onClick={() => void handleConfirmConcept()}
+                disabled={busy}
+              >
+                {mode === 'new-character'
+                  ? 'Use this image — create 3D avatar'
+                  : 'Use this image — continue recolouring'}
+              </button>
+            </>
+          ) : null}
           {completed ? (
             <>
               {resultPreview ? (
-                <figure>
-                  <img
-                    src={resultPreview}
-                    alt="Finished avatar model"
-                    className="faces__resultPreview"
-                  />
-                  <figcaption>Finished model — this is the avatar that Keep applies.</figcaption>
-                </figure>
+                <AvatarImagePreview
+                  src={resultPreview}
+                  alt="Finished avatar model"
+                  caption="Finished model — this is the avatar that Keep applies. Click to enlarge."
+                />
               ) : previewError ? (
                 <>
                   <p className="kiosk__error" role="alert">

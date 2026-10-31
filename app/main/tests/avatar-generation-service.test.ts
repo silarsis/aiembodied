@@ -39,6 +39,12 @@ const runner: RetextureRunner = {
 
 async function waitFor(service: AvatarGenerationService, jobId: string, status: string) {
   for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (
+      service.getStatus(jobId).status === 'awaiting_confirmation' &&
+      status !== 'awaiting_confirmation'
+    ) {
+      await service.confirmConcept(jobId);
+    }
     if (service.getStatus(jobId).status === status) {
       return service.getStatus(jobId);
     }
@@ -95,6 +101,7 @@ describe('AvatarGenerationService', () => {
     expect(ensureComfyReady).toHaveBeenCalled();
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    await vi.waitFor(() => expect(comfy.run).toHaveBeenCalled());
   });
 
   it('generates a concept, repaints each region, and builds a VRM', async () => {
@@ -203,12 +210,13 @@ describe('AvatarGenerationService', () => {
 
   it('validates the description and allows one job at a time', async () => {
     const never = new Promise<Buffer>(() => undefined);
-    const { service } = create(fakeComfy({ run: vi.fn().mockReturnValue(never) }));
+    const { comfy, service } = create(fakeComfy({ run: vi.fn().mockReturnValue(never) }));
     await expect(service.startJob({ mode: 'restyle', prompt: '   ' })).rejects.toThrow(
       /Describe the avatar/,
     );
 
     await service.startJob({ mode: 'restyle', prompt: 'First' });
+    await vi.waitFor(() => expect(comfy.run).toHaveBeenCalled());
     await expect(service.startJob({ mode: 'restyle', prompt: 'Second' })).rejects.toThrow(
       /already being generated/,
     );
@@ -237,5 +245,6 @@ describe('AvatarGenerationService', () => {
     await expect(service.startJob({ mode: 'restyle', prompt: 'Another' })).resolves.toHaveProperty(
       'jobId',
     );
+    await vi.waitFor(() => expect(comfy.run).toHaveBeenCalledTimes(2));
   });
 });
