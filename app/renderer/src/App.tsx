@@ -25,6 +25,7 @@ import { flushSync } from 'react-dom';
 import { PosePicker } from './avatar/pose-picker.js';
 import { AvatarConfigurator } from './avatar/avatar-configurator.js';
 import { AudioGraph } from './audio/audio-graph.js';
+import { useWakeWordListening } from './audio/use-wake-word-listening.js';
 import { VisemeDriver, type VisemeFrame } from './audio/viseme-driver.js';
 import type { VoiceActivity } from './realtime/voice-activity.js';
 import {
@@ -777,6 +778,9 @@ export default function App() {
   const [isListeningEnabled, setListeningEnabled] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const activeBridge = resolveApi();
+  const wakeListening = useWakeWordListening(activeBridge?.wakeWord, isListeningEnabled && !loadingConfig);
+  const acceptsWakeRef = useRef(false);
+  useEffect(() => { acceptsWakeRef.current = isListeningEnabled && !loadingConfig; }, [isListeningEnabled, loadingConfig]);
   const backgrounds = useBackgrounds(activeBridge?.backgrounds);
   const [avatarFootY, setAvatarFootY] = useState(0.9);
 
@@ -1548,7 +1552,7 @@ export default function App() {
     setSelectedOutput((previous) => (previous === configOutputDeviceId ? previous : configOutputDeviceId));
   }, [configInputDeviceId, configOutputDeviceId]);
 
-  const audioGraph = useAudioGraphState(selectedInput || undefined, isListeningEnabled && !loadingConfig);
+  const audioGraph = useAudioGraphState(selectedInput || undefined, isListeningEnabled && !loadingConfig && !wakeListening.error);
   const previousSpeechActiveRef = useRef(audioGraph.isActive);
 
   useEffect(() => {
@@ -1737,6 +1741,7 @@ export default function App() {
     }
 
     const unsubscribe = bridge.wakeWord.onWake((event) => {
+      if (!acceptsWakeRef.current) return;
       const client = conversationClientRef.current;
       if (client instanceof LocalVoiceClient) {
         client.notifyWake(event.timestamp);
@@ -1766,6 +1771,7 @@ export default function App() {
     });
 
     const unsubscribePeak = bridge.wakeWord.onPeak?.((event) => {
+      if (!acceptsWakeRef.current) return;
       const threshold = wakeThresholdRef.current;
       setWakeScore((previous) =>
         // A detection already shows this burst; its peak would only repeat it.
@@ -2387,7 +2393,10 @@ export default function App() {
   ]);
 
   const toggleListening = useCallback(() => {
-    setListeningEnabled((previous) => !previous);
+    setListeningEnabled((previous) => {
+      acceptsWakeRef.current = !previous;
+      return !previous;
+    });
   }, []);
 
   const listeningToggleLabel = useMemo(
@@ -2478,6 +2487,7 @@ export default function App() {
             </section>
           </section>
           <div className="stageToolbar">
+            {wakeListening.error ? <p className="kiosk__error" role="alert">{wakeListening.error}</p> : null}
             <button
               type="button"
               className="stageStatus"
@@ -2489,8 +2499,10 @@ export default function App() {
             >
               <span className="stageStatus__dot" aria-hidden="true" />
               <span>
-                {!isListeningEnabled
-                  ? 'Listening is off'
+                {wakeListening.error
+                  ? 'Listening error'
+                  : !isListeningEnabled
+                  ? wakeListening.phase === 'off' ? 'Listening is off' : 'Stopping listening…'
                   : displayedActivity.phase === 'waiting'
                     ? `Listening · say “${wakePhrase}”`
                     : displayedActivity.phase === 'off'

@@ -672,6 +672,9 @@ describe('App component', () => {
 
     expect(screen.getByTestId('wake-value')).toHaveTextContent(/Idle/i);
     wakeListener?.({ keywordLabel: 'Picovoice', confidence: 0.88, timestamp: Date.now() });
+    expect(screen.getByTestId('wake-value')).toHaveTextContent(/Idle/i);
+    fireEvent.click(screen.getByTestId('listening-toggle'));
+    wakeListener?.({ keywordLabel: 'Picovoice', confidence: 0.88, timestamp: Date.now() });
     await waitFor(() => {
       expect(screen.getByTestId('wake-value')).toHaveTextContent(/Awake/i);
     });
@@ -1007,6 +1010,7 @@ describe('App component', () => {
     });
 
     expect(wakeListener).toBeDefined();
+    fireEvent.click(screen.getByTestId('listening-toggle'));
     wakeListener?.({
       keywordLabel: 'Picovoice',
       confidence: 0.94,

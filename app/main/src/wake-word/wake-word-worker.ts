@@ -22,10 +22,13 @@ const config = workerData as WakeWordWorkerConfig;
 let recorder: PvRecorder | null = null;
 let detector: OpenWakeWordDetector | null = null;
 let isRunning = false;
+let stopping = false;
+let processing: Promise<number> | null = null;
 const peaks = new PeakTracker();
 
 async function start(): Promise<void> {
   detector = await OpenWakeWordDetector.create(config.modelPaths);
+  if (stopping) { await detector.release(); return; }
   // PvRecorder (open source, no access key) always captures 16 kHz mono int16, which is what
   // openWakeWord expects.
   recorder = new PvRecorder(OWW_FRAME_LENGTH, config.deviceIndex ?? -1, 50);
@@ -44,7 +47,11 @@ async function start(): Promise<void> {
   while (isRunning) {
     try {
       const frame = await recorder.read();
-      const score = await detector.process(frame);
+      if (stopping) break;
+      processing = detector.process(frame);
+      const score = await processing;
+      processing = null;
+      if (stopping) break;
       if (score >= config.threshold) {
         const event: WakeWordDetectionEvent = {
           keywordLabel: config.keywordLabel,
@@ -61,6 +68,7 @@ async function start(): Promise<void> {
         } satisfies WakeWordWorkerMessage);
       }
     } catch (error) {
+      if (stopping) break;
       const isFatalAudioError =
         error instanceof Error && error.message.includes('PvRecorder failed to read audio data frame');
       port.postMessage({
@@ -86,6 +94,7 @@ port.on('message', (message: WakeWordWorkerCommand) => {
 });
 
 void start().catch((error) => {
+  if (stopping) return;
   port.postMessage({ type: 'error', error: serializeError(error) } satisfies WakeWordWorkerMessage);
   shutdown().catch(() => {
     // ignore errors during shutdown
@@ -93,6 +102,7 @@ void start().catch((error) => {
 });
 
 async function shutdown(): Promise<void> {
+  stopping = true;
   isRunning = false;
   if (recorder) {
     try {
@@ -107,6 +117,8 @@ async function shutdown(): Promise<void> {
     }
   }
 
+  // Let any native inference finish before releasing its sessions; its result is discarded.
+  await processing?.catch(() => undefined);
   if (detector) {
     try {
       await detector.release();

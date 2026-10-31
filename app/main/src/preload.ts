@@ -173,6 +173,7 @@ export interface PreloadApi {
 }
 
 export interface WakeWordBridge {
+  setListeningEnabled?(enabled: boolean): Promise<void>;
   onWake(listener: (event: WakeWordDetectionEvent) => void): () => void;
   /** Peak score of each burst of activity, including near misses below the threshold. */
   onPeak?(listener: (event: WakeWordDetectionEvent) => void): () => void;
@@ -342,6 +343,7 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     },
   },
   wakeWord: {
+    setListeningEnabled: async (enabled: boolean) => { await ipcRenderer.invoke('wake-word:set-listening', enabled); },
     onWake: (listener) => {
       const channel = 'wake-word:event';
       const handler = (_event: unknown, payload: WakeWordDetectionEvent) => listener(payload);

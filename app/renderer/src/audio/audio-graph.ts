@@ -20,15 +20,20 @@ export class AudioGraph {
   private visemeAnalyser: AnalyserNode | null = null;
   private levelBuffer: (Float32Array & { buffer: ArrayBuffer }) | null = null;
   private levelInterval: number | null = null;
+  private generation = 0;
   private readonly vad = new VadController({ activationThreshold: 0.08, releaseMs: 250 });
 
   constructor(private readonly callbacks: AudioGraphCallbacks = {}) {}
 
   async start(options: AudioGraphStartOptions = {}): Promise<void> {
-    await this.stop();
+    const stopped = this.stop();
+    const generation = this.generation;
+    await stopped;
+    if (generation !== this.generation) return;
 
-    const audioContextCtor = (window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext })
-      .webkitAudioContext) as typeof AudioContext | undefined;
+    const audioContextCtor = (window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext) as
+      typeof AudioContext | undefined;
 
     if (!audioContextCtor) {
       throw new Error('Web Audio API is not available in this environment.');
@@ -49,8 +54,22 @@ export class AudioGraph {
     };
 
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    const context = new audioContextCtor();
-    await context.resume();
+    if (generation !== this.generation) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+    this.inputStream = stream;
+    let context: AudioContext;
+    try {
+      context = new audioContextCtor();
+      this.audioContext = context;
+      await context.resume();
+    } catch (error) {
+      if (generation !== this.generation) return;
+      await this.stop();
+      throw error;
+    }
+    if (generation !== this.generation) return;
 
     const source = context.createMediaStreamSource(stream);
     const gateNode = context.createGain();
@@ -85,6 +104,7 @@ export class AudioGraph {
   }
 
   async stop(): Promise<void> {
+    this.generation++;
     if (this.levelInterval !== null) {
       window.clearInterval(this.levelInterval);
       this.levelInterval = null;
@@ -124,12 +144,12 @@ export class AudioGraph {
       this.inputStream = null;
     }
 
-    if (this.audioContext) {
-      await this.audioContext.close();
-      this.audioContext = null;
-    }
-
     this.levelBuffer = null;
+    if (this.audioContext) {
+      const context = this.audioContext;
+      this.audioContext = null;
+      await context.close();
+    }
   }
 
   getUpstreamStream(): MediaStream | null {

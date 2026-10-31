@@ -116,6 +116,7 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
   }
 
   start(config: WakeWordStartOptions): void {
+    if (this.disposed) throw new Error('Wake word service has been disposed.');
     if (this.started) {
       this.logger.warn('WakeWordService.start() called more than once. Ignoring subsequent call.');
       return;
@@ -135,6 +136,7 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
     this.started = true;
 
     const handleMessage = (message: WakeWordWorkerMessage) => {
+      if (this.disposed || this.worker !== worker) return;
       if (message.type === 'wake') {
         this.handleWakeEvent(message.event);
         return;
@@ -176,6 +178,7 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
     };
 
     const handleError = (error: Error) => {
+      if (this.disposed || this.worker !== worker) return;
       this.logger.error('Wake word worker crashed', {
         message: error.message,
         stack: error.stack,
@@ -185,6 +188,7 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
     };
 
     const handleExit = (code: number) => {
+      if (this.disposed || this.worker !== worker) return;
       this.logger.warn('Wake word worker exited', { code });
       this.filter.reset();
       this.worker = null;
@@ -241,7 +245,6 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
     }
 
     const worker = this.worker;
-    this.worker = null; // Detach immediately so we don't try to use it again
 
     // Negotiate graceful shutdown
     const gracefulExit = new Promise<void>((resolve) => {
@@ -259,14 +262,17 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
         message: error instanceof Error ? error.message : String(error),
       });
       // If we can't communicate, we have to force terminate
-      void worker.terminate();
+      await worker.terminate();
+      this.worker = null;
+      this.started = false;
       return;
     }
 
     // Wait for exit or timeout
-    const timeout = new Promise<void>((_, reject) =>
-      setTimeout(() => reject(new Error('Wake word worker shutdown timeout')), 3000),
-    );
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<void>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error('Wake word worker shutdown timeout')), 3000);
+    });
 
     try {
       await Promise.race([gracefulExit, timeout]);
@@ -276,8 +282,11 @@ export class WakeWordService extends EventEmitter<WakeWordServiceEvents> {
         reason: error instanceof Error ? error.message : String(error),
       });
       await worker.terminate();
+    } finally {
+      clearTimeout(timeoutId);
     }
 
+    this.worker = null;
     this.filter.reset();
     this.started = false;
   }
