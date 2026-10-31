@@ -1,0 +1,92 @@
+{
+  "pipeline": "generated-mesh-and-landmark-fitted-face-v1",
+  "source": "C:\\Users\\kevin\\repos\\github\\silarsis\\aiembodied\\artifacts\\local-face-mvp-2026-10-31\\mei\\source.glb",
+  "vertices": 38631,
+  "triangles": 58486,
+  "bones": 22,
+  "unweightedVertices": 0,
+  "expressions": [
+    "aa",
+    "ih",
+    "ou",
+    "ee",
+    "oh",
+    "blink",
+    "blinkLeft",
+    "blinkRight",
+    "happy",
+    "sad",
+    "angry",
+    "relaxed",
+    "surprised",
+    "fear",
+    "disgust",
+    "lookLeft",
+    "lookRight",
+    "lookUp",
+    "lookDown"
+  ],
+  "facialParts": 9,
+  "faceFit": {
+    "pipeline": "landmark-fitted-face-v1",
+    "landmarkCount": 478,
+    "surfaceHitRatio": 1.0,
+    "replacedTriangles": 1512,
+    "faceWidthMeters": 0.13520069481171285,
+    "topologyVertices": 468,
+    "expressions": [
+      "aa",
+      "ih",
+      "ou",
+      "ee",
+      "oh",
+      "blink",
+      "blinkLeft",
+      "blinkRight",
+      "happy",
+      "sad",
+      "angry",
+      "relaxed",
+      "surprised",
+      "fear",
+      "disgust",
+      "lookLeft",
+      "lookRight",
+      "lookUp",
+      "lookDown"
+    ],
+    "irisColorsLinearRGB": [
+      [
+        0.19215687364339828,
+        0.10000000521540642,
+        0.05882353335618973
+      ],
+      [
+        0.10784314572811127,
+        0.062745101749897,
+        0.04705882631242275
+      ]
+    ],
+    "openingTrianglesRemoved": 46,
+    "neutralEyeApertureMeters": [
+      0.01179033506955074,
+      0.011725112355001288
+    ],
+    "blinkClosureGapMeters": [
+      0.0,
+      0.0
+    ],
+    "limits": [
+      "Single frontal adult humanoid on white background",
+      "Source-projected appearance; no unseen detail reconstruction",
+      "No teeth or tongue yet",
+      "Stylised detection/fitting requires visual review"
+    ]
+  },
+  "limits": [
+    "Adult stylised humanoids only",
+    "Close clothing and short/swept-back hair",
+    "Frontal source-projected face, visual review required",
+    "No articulated fingers or hair physics"
+  ]
+}

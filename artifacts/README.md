@@ -11,3 +11,5 @@
 - `image-model-review-2026-10-31`: detected picture models, per-family API graphs and live generated images, plus model-selector persistence and regeneration checks.
 
 These are development review outputs. Runtime defaults are shipped separately under `app/main/assets/` and `app/main/src/avatar/base-poses/`.
+
+- `local-face-mvp-2026-10-31`: five distinct locally generated characters with fitted facial topology, exported VRMs, actual three-vrm emotion/speech/blink/gaze renders, animated previews, detection/fitting diagnostics and `comparison.html`. Large intermediate body meshes and Blender scenes remain local and are reproducible using `scripts/avatar-face-demo/`.

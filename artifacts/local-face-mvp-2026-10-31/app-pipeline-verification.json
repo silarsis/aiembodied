@@ -1,0 +1,66 @@
+{
+  "approvalGate": true,
+  "referencePreserved": true,
+  "geometryCalls": 1,
+  "localDetector": true,
+  "realBlenderRunner": true,
+  "cachedGeometryUsed": true,
+  "previewSha256": "7a2dfbaf177083264df6c22a54eab5b2318ed32c8567bbbfd813634d36666618",
+  "noUserLibraryOrConfigWrites": true,
+  "faceFit": {
+    "pipeline": "landmark-fitted-face-v1",
+    "landmarkCount": 478,
+    "surfaceHitRatio": 1,
+    "replacedTriangles": 1793,
+    "faceWidthMeters": 0.15856358825845063,
+    "topologyVertices": 468,
+    "expressions": [
+      "aa",
+      "ih",
+      "ou",
+      "ee",
+      "oh",
+      "blink",
+      "blinkLeft",
+      "blinkRight",
+      "happy",
+      "sad",
+      "angry",
+      "relaxed",
+      "surprised",
+      "fear",
+      "disgust",
+      "lookLeft",
+      "lookRight",
+      "lookUp",
+      "lookDown"
+    ],
+    "irisColorsLinearRGB": [
+      [
+        0.35294120013713837,
+        0.3274510055780411,
+        0.08627451583743095
+      ],
+      [
+        0.3078431487083435,
+        0.28431373834609985,
+        0.052941178902983665
+      ]
+    ],
+    "openingTrianglesRemoved": 46,
+    "neutralEyeApertureMeters": [
+      0.017742360035578386,
+      0.017675041840190087
+    ],
+    "blinkClosureGapMeters": [
+      0,
+      0
+    ],
+    "limits": [
+      "Single frontal adult humanoid on white background",
+      "Source-projected appearance; no unseen detail reconstruction",
+      "No teeth or tongue yet",
+      "Stylised detection/fitting requires visual review"
+    ]
+  }
+}

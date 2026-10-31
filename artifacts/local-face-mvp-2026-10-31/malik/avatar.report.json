@@ -1,0 +1,92 @@
+{
+  "pipeline": "generated-mesh-and-landmark-fitted-face-v1",
+  "source": "C:\\Users\\kevin\\repos\\github\\silarsis\\aiembodied\\artifacts\\local-face-mvp-2026-10-31\\malik\\source.glb",
+  "vertices": 39597,
+  "triangles": 58533,
+  "bones": 22,
+  "unweightedVertices": 0,
+  "expressions": [
+    "aa",
+    "ih",
+    "ou",
+    "ee",
+    "oh",
+    "blink",
+    "blinkLeft",
+    "blinkRight",
+    "happy",
+    "sad",
+    "angry",
+    "relaxed",
+    "surprised",
+    "fear",
+    "disgust",
+    "lookLeft",
+    "lookRight",
+    "lookUp",
+    "lookDown"
+  ],
+  "facialParts": 9,
+  "faceFit": {
+    "pipeline": "landmark-fitted-face-v1",
+    "landmarkCount": 478,
+    "surfaceHitRatio": 1.0,
+    "replacedTriangles": 1465,
+    "faceWidthMeters": 0.138314359012403,
+    "topologyVertices": 468,
+    "expressions": [
+      "aa",
+      "ih",
+      "ou",
+      "ee",
+      "oh",
+      "blink",
+      "blinkLeft",
+      "blinkRight",
+      "happy",
+      "sad",
+      "angry",
+      "relaxed",
+      "surprised",
+      "fear",
+      "disgust",
+      "lookLeft",
+      "lookRight",
+      "lookUp",
+      "lookDown"
+    ],
+    "irisColorsLinearRGB": [
+      [
+        0.16274511069059372,
+        0.09803922474384308,
+        0.03333333507180214
+      ],
+      [
+        0.21568629145622253,
+        0.06666667014360428,
+        0.025
+      ]
+    ],
+    "openingTrianglesRemoved": 46,
+    "neutralEyeApertureMeters": [
+      0.014492240716846183,
+      0.013767217209590399
+    ],
+    "blinkClosureGapMeters": [
+      0.0,
+      0.0
+    ],
+    "limits": [
+      "Single frontal adult humanoid on white background",
+      "Source-projected appearance; no unseen detail reconstruction",
+      "No teeth or tongue yet",
+      "Stylised detection/fitting requires visual review"
+    ]
+  },
+  "limits": [
+    "Adult stylised humanoids only",
+    "Close clothing and short/swept-back hair",
+    "Frontal source-projected face, visual review required",
+    "No articulated fingers or hair physics"
+  ]
+}

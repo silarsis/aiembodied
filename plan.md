@@ -140,7 +140,8 @@ The following phased plan covers the MVP described in the PRD and architecture s
 - [x] Handle VRM 0/1 facing and tag/convert the built-in poses without changing the original VRM 0 stance.
 - [x] Validate on a live local image/mesh generation and an isolated app review/import flow.
 - [ ] Improve shoulder/elbow deformation and hands; broaden beyond close-fitting clothing and short hair.
-- [ ] Add controllable facial design, better eyelids, lips, teeth and mouth interior rather than simple cartoon facial parts.
+- [x] Fit visible reference faces locally using ML landmarks and known face topology, with open eye/mouth boundaries, reference appearance, lip-following mouth interior and speech/blink/gaze/six-emotion controls. Demonstrate five distinct exported VRMs in the actual renderer.
+- [ ] Improve face/hair and jaw seams, likeness, lip/eyelid topology; add teeth and tongue.
 - [ ] Investigate reliable semantic segmentation/retopology and rig/face transfer for arbitrary generated characters.
 - [ ] Add finger articulation, gaze and hair/clothing physics.
 Evidence and supported limits: docs/features/new-avatar-generation.md.
