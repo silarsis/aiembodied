@@ -137,6 +137,7 @@ The following phased plan covers the MVP described in the PRD and architecture s
 - [x] Run Blender outside Electron main for body weighting, T-pose conversion, facial geometry and VRM export.
 - [x] Provide the five speech mouth shapes, blink and emotional expression presets.
 - [x] Review the finished VRM without switching the active character; Keep imports that exact result.
+- [x] Open the finished candidate thumbnail in an isolated interactive 3D inspector with orbit/zoom/pan, front/side/back views and expression controls before Keep.
 - [x] Handle VRM 0/1 facing and tag/convert the built-in poses without changing the original VRM 0 stance.
 - [x] Validate on a live local image/mesh generation and an isolated app review/import flow.
 - [ ] Improve shoulder/elbow deformation and hands; broaden beyond close-fitting clothing and short hair.
