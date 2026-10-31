@@ -245,6 +245,7 @@ export interface AvatarBridge {
   refinePose(request: PoseEvaluationRequest): Promise<AvatarPoseUploadResult>;
   generateAvatar(request: AvatarGenerationRequest): Promise<AvatarGenerationJob>;
   getAvatarGenerationStatus(jobId: string): Promise<AvatarGenerationStatus>;
+  confirmAvatarConcept(jobId: string): Promise<void>;
   loadGeneratedAvatarPreview(jobId: string): Promise<ArrayBuffer>;
   acceptGeneratedAvatar(jobId: string): Promise<AvatarGenerationAcceptance>;
   rejectGeneratedAvatar(jobId: string): Promise<void>;
@@ -499,6 +500,7 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       ipcRenderer.invoke('avatar-pose:refine', payload) as Promise<AvatarPoseUploadResult>,
     generateAvatar: (payload: AvatarGenerationRequest) =>
       ipcRenderer.invoke('avatar:generation-start', payload) as Promise<AvatarGenerationJob>,
+    confirmAvatarConcept: async (jobId: string) => { await ipcRenderer.invoke('avatar:generation-confirm-concept', jobId); },
     getAvatarGenerationStatus: (jobId: string) =>
       ipcRenderer.invoke('avatar:generation-status', jobId) as Promise<AvatarGenerationStatus>,
     loadGeneratedAvatarPreview: async (jobId: string) => {

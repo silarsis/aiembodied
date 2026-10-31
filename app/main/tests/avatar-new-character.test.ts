@@ -8,6 +8,7 @@ import {
   characterConceptPrompt,
 } from '../src/avatar/generation/character/graphs.js';
 import type { ComfyUIClient } from '../src/avatar/generation/comfyui-client.js';
+import { PNG } from 'pngjs';
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -54,9 +55,65 @@ async function setup(failRig = false) {
 }
 
 describe('new character generation', () => {
+  it('reviews an uploaded image offline and uses those exact bytes for geometry only after approval', async () => {
+    const { service, comfy, characterRunner } = await setup();
+    const png = PNG.sync.write(new PNG({ width: 2, height: 2 }));
+    comfy.isAvailable.mockResolvedValue(false);
+    const { jobId } = await service.startJob({
+      referenceImage: { mimeType: 'image/png', data: png.toString('base64') },
+    });
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+    expect(service.getStatus(jobId).previewDataUrl).toBe(
+      `data:image/png;base64,${png.toString('base64')}`,
+    );
+    expect(comfy.isAvailable).not.toHaveBeenCalled();
+    expect(comfy.run).not.toHaveBeenCalled();
+    expect(characterRunner.build).not.toHaveBeenCalled();
+    comfy.isAvailable.mockResolvedValue(true);
+    comfy.run.mockReset().mockResolvedValue(Buffer.from('NEW-GEOMETRY'));
+    await service.confirmConcept(jobId);
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('completed'));
+    expect(comfy.uploadImage).toHaveBeenCalledWith(`${jobId}-concept.png`, png);
+    expect(comfy.run).toHaveBeenCalledTimes(1);
+    expect(comfy.run.mock.calls[0][1]).toMatchObject({ output: 'mesh' });
+  });
+
+  it('rejects invalid uploaded image bytes without queuing work', async () => {
+    const { service, comfy } = await setup();
+    await expect(
+      service.startJob({
+        referenceImage: {
+          mimeType: 'image/png',
+          data: Buffer.from('not an image').toString('base64'),
+        },
+      }),
+    ).rejects.toThrow('reference image');
+    expect(comfy.run).not.toHaveBeenCalled();
+  });
+  it('can discard the concept without generating geometry or requiring Blender', async () => {
+    const { service, comfy, characterRunner, models } = await setup();
+    characterRunner.assertAvailable.mockRejectedValue(new Error('Blender not installed'));
+    const { jobId } = await service.startJob({ prompt: 'An explorer' });
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+    await expect(service.confirmConcept(jobId)).rejects.toThrow('Blender not installed');
+    expect(service.getStatus(jobId).status).toBe('awaiting_confirmation');
+    expect(comfy.run).toHaveBeenCalledTimes(1);
+    await service.reject(jobId);
+    await expect(service.confirmConcept(jobId)).rejects.toThrow('Unknown avatar');
+    expect(characterRunner.build).not.toHaveBeenCalled();
+    expect(models.uploadModel).not.toHaveBeenCalled();
+  });
   it('defaults to new geometry and rigs that output, never the bundled avatar', async () => {
     const { service, comfy, characterRunner, runner, models } = await setup();
     const { jobId } = await service.startJob({ prompt: 'An auburn-haired explorer' });
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+    expect(comfy.run).toHaveBeenCalledTimes(1);
+    expect(comfy.uploadImage).not.toHaveBeenCalled();
+    expect(characterRunner.assertAvailable).not.toHaveBeenCalled();
+    expect(characterRunner.build).not.toHaveBeenCalled();
+    await expect(service.accept(jobId)).rejects.toThrow('not finished');
+    await service.confirmConcept(jobId);
+    await expect(service.confirmConcept(jobId)).rejects.toThrow('not awaiting confirmation');
     await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('completed'));
     expect(characterRunner.assertAvailable).toHaveBeenCalledOnce();
     expect(comfy.run.mock.calls[1][1]).toMatchObject({ output: 'mesh' });
@@ -74,6 +131,8 @@ describe('new character generation', () => {
   it('does not replace the current avatar or fall back to recolouring if rigging fails', async () => {
     const { service, models, runner } = await setup(true);
     const { jobId } = await service.startJob({ prompt: 'An explorer' });
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+    await service.confirmConcept(jobId);
     await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('failed'));
     expect(service.getStatus(jobId).errorMessage).toBe('Limbs are fused');
     await expect(service.accept(jobId)).rejects.toThrow('not finished');

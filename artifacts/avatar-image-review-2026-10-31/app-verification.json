@@ -1,0 +1,34 @@
+[
+  {
+    "thumbnail": {
+      "width": 96,
+      "height": 112
+    },
+    "expanded": {
+      "modal": true,
+      "width": 690,
+      "height": 690
+    },
+    "escapeKeptDrawerOpen": true,
+    "noModelWorkBeforeApproval": true,
+    "uploadedSkippedImageGeneration": true,
+    "name": "garden",
+    "stageHeight": 802,
+    "canvasTop": 124.297119140625,
+    "canvasHeight": 625.53125,
+    "footFraction": 0.90390625,
+    "footY": 689.7187255859375,
+    "groundY": 689.72,
+    "previewLeftOriginalActive": true,
+    "keepActivatedGeneratedModel": true,
+    "model": {
+      "id": "1c1ad801-5fa4-4614-8bd1-8f3e4f28e756",
+      "name": "Uploaded character reference",
+      "createdAt": 1793424835536,
+      "version": "0.1",
+      "fileSha": "05b41df6a529312481a434fde7f16bf5530dccb702b09dc5c7bb1bda5978a235",
+      "description": null
+    },
+    "source": "Replayed live Qwen/TRELLIS outputs through production generation service, Blender runner and model importer"
+  }
+]

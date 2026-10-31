@@ -4,11 +4,13 @@ The new-character option generates a new mesh instead of repainting the bundled 
 
 ## Use
 
-Restart the rebuilt app. In Controls > Character > Create an avatar, choose **New 3D character (experimental)**. Describe an adult stylised humanoid with short or swept-back hair and close-fitting clothes. For example: “A friendly woman explorer with swept-back auburn hair, a rounded face, a sage-green jumpsuit with orange shoulder panels, and tan boots.”
+Restart the rebuilt app. In Controls > Character > Create an avatar, choose **New 3D character (experimental)**. Choose **Text description** or **Upload an image**. Uploads accept PNG, JPEG or WebP up to 4096 x 4096 pixels and 25 MB, and skip image generation. For text input, describe an adult stylised humanoid with short or swept-back hair and close-fitting clothes. For example: “A friendly woman explorer with swept-back auburn hair, a rounded face, a sage-green jumpsuit with orange shoulder panels, and tan boots.”
 
 The pipeline deliberately generates an A-pose reference with an uncovered blank face so separate animated facial parts can be added. Eyes and mouth currently have a simple cartoon style; fine facial design and eye colour are not controlled by the prompt. Clothing and hair shapes come from the generated mesh, rather than the old avatar. Long hair, skirts, capes and similar surfaces that bridge body parts are outside the first version. Fingers do not articulate. Gaze and spring-bone physics are not implemented. Shoulder and elbow deformation still need improvement.
 
-Review the **finished model**, rather than the concept illustration. Keep imports that candidate and activates it. Discard leaves the previous avatar selected. A failed generation is reported as a failure; it never falls back to a recoloured original avatar.
+The concept or uploaded reference appears as a small thumbnail; click it to open a full-size modal popup. Escape or Close dismisses the popup without closing the drawer. Generation stops at image review, including for recolouring: only **Use this image** starts geometry/rigging or texture work. Discard deletes the pending reference job. If a dependency is unavailable when continuing, the reference remains available to retry. Uploads can be reviewed while ComfyUI is offline.
+
+After that work finishes, review the **finished model**, rather than the concept illustration. Keep imports that candidate and activates it. Discard leaves the previous avatar selected. A failed generation is reported as a failure; it never falls back to a recoloured original avatar.
 
 ## Dependencies and ownership
 
@@ -19,12 +21,13 @@ Review the **finished model**, rather than the concept illustration. Keep import
 
 ## Stages
 
-1. Qwen generates an animation-friendly reference from the description.
-2. TRELLIS.2 generates new geometry, UVs and texture maps; the shared Comfy client downloads its saved GLB.
-3. Blender normalises the model, fits an anatomical skeleton, creates region-constrained movement weights and bakes the generated A-pose to T-pose.
-4. Blender locates the front head surface and adds separate eyes, irises, highlights, eyebrows and mouth meshes. Shape keys implement speech and emotion controls.
-5. The exporter writes the humanoid mapping and expression bindings into VRM 1.0, preserving the generated skin and textures. It rejects empty or implausibly proportioned meshes, missing facial placement and unweighted vertices.
-6. The renderer loads the VRM to create its review image. Keep is disabled until that succeeds. Acceptance passes those exact VRM bytes through the model service.
+1. Qwen generates an animation-friendly reference from the description, or the renderer converts a selected PNG/JPEG/WebP to PNG and main validates it.
+2. The job stops in `awaiting_confirmation`. `avatar:generation-confirm-concept` is the only entry to subsequent generation; the UI cannot accidentally advance by polling or opening the preview.
+3. TRELLIS.2 generates new geometry, UVs and texture maps; the shared Comfy client downloads its saved GLB.
+4. Blender normalises the model, fits an anatomical skeleton, creates region-constrained movement weights and bakes the generated A-pose to T-pose.
+5. Blender locates the front head surface and adds separate eyes, irises, highlights, eyebrows and mouth meshes. Shape keys implement speech and emotion controls.
+6. The exporter writes the humanoid mapping and expression bindings into VRM 1.0, preserving the generated skin and textures. It rejects empty or implausibly proportioned meshes, missing facial placement and unweighted vertices.
+7. The renderer loads the VRM to create its review image. Keep is disabled until that succeeds. Acceptance passes those exact VRM bytes through the model service.
 
 The first rig uses geometric landmarks, not an ML rigging model. It can still produce poor deformation even when structural checks pass. Visual review is necessary. The next development work is better joint fitting/weights and semantic topology repair, followed by a richer face rig and prompt-driven facial parameters.
 

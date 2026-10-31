@@ -133,6 +133,7 @@ export interface AvatarPoseGenerationRequest {
 export type AvatarGenerationStage =
   | 'queued'
   | 'concept'
+  | 'awaiting_confirmation'
   | 'texturing'
   | 'meshing'
   | 'rigging'
@@ -144,7 +145,9 @@ export type AvatarGenerationStage =
 export interface AvatarGenerationRequest {
   mode?: 'new-character' | 'restyle';
   /** Plain-English description of the character's look. */
-  prompt: string;
+  prompt?: string;
+  /** PNG base64; uploads skip text-to-image and still require concept confirmation. */
+  referenceImage?: { mimeType: 'image/png'; data: string };
 }
 
 export interface AvatarGenerationJob {
