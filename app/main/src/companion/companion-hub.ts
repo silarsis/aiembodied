@@ -306,11 +306,14 @@ export class CompanionHub implements CompanionHubApi {
       if (status >= 500) {
         this.logger?.error('Companion request failed', { path: url.pathname, message: errorMessage(error) });
       }
+      // Only our own HttpError messages go to the client; anything else stays in the desktop log.
+      const message =
+        error instanceof HttpError ? error.message : 'The desktop hit an error handling that. Details are in its log.';
       if (!response.headersSent) {
         response.writeHead(status, { 'Content-Type': 'application/json' });
-        response.end(JSON.stringify({ error: errorMessage(error) }));
+        response.end(JSON.stringify({ error: message }));
       } else if (!response.writableEnded) {
-        writeLine(response, { type: 'error', requestId: '', message: errorMessage(error) });
+        writeLine(response, { type: 'error', requestId: '', message });
         response.end();
       }
     }

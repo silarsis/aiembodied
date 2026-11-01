@@ -188,6 +188,15 @@ describe('CompanionHub', () => {
     expect(locked.status).toBe(429);
   });
 
+  it('keeps internal error details out of responses', async () => {
+    voice.transcribe = vi.fn(async () => {
+      throw new Error('ENOENT C:\\Users\\kevin\\secret path');
+    });
+    const events = await readLines(await fetch(`${base}/api/turn`, { method: 'POST', headers, body: wav(2000) }));
+    expect(JSON.stringify(events)).not.toContain('secret path');
+    expect(events.at(-1)).toMatchObject({ type: 'error', message: expect.stringContaining('log') });
+  });
+
   it('needs a device id', async () => {
     const response = await fetch(`${base}/api/scene`, { headers: { Authorization: headers.Authorization } });
     expect(response.status).toBe(400);
