@@ -1,0 +1,42 @@
+name: Android companion
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android-companion/**'
+      - '.github/workflows/android-companion.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'android-companion/**'
+      - '.github/workflows/android-companion.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android-companion
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+      - name: Build debug APK
+        run: ./gradlew --no-daemon assembleDebug
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: aiembodied-companion-debug-apk
+          path: android-companion/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

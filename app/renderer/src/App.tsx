@@ -1089,6 +1089,10 @@ export default function App() {
     },
     [basePrompt, availableAnimationSlugs, availablePoses, activeVrmModel, liveMotionReady],
   );
+  // Phone turns run in the main process and use the same prompt as this window.
+  useEffect(() => {
+    void resolveApi()?.companion?.setInstructions(sessionInstructions).catch(() => undefined);
+  }, [resolveApi, sessionInstructions]);
   const availableAnimationSlugSet = useMemo(
     () => new Set(availableAnimationSlugs),
     [availableAnimationSlugs],
@@ -2533,6 +2537,7 @@ export default function App() {
               onSave={handleProviderSettingsSave}
               pushToTalkStatus={pushToTalkStatus}
               wakeWordBridge={resolveApi()?.wakeWord}
+              companionBridge={resolveApi()?.companion}
               disabled={loadingConfig}
 
               renderLayout={({ voice, devices, actions }) => (
@@ -2581,7 +2586,7 @@ export default function App() {
                     id="voice"
                     title="Voice & engine"
                     summary={isLocalBackend ? 'Pipeline' : `OpenAI Realtime · ${selectedVoice}`}
-                    keywords="language model speech text voice provider kokoro motion server url conversation api keys"
+                    keywords="language model speech text voice provider kokoro motion server url conversation api keys phone companion android pairing tailscale"
                   >
                     <section
                       className="kiosk__realtime"

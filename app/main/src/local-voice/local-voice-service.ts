@@ -280,6 +280,41 @@ export class LocalVoiceService {
     return { requestId, text: reply, cancelled };
   }
 
+  /**
+   * Speak `text` as the assistant without asking the model: for messages the desktop pushes to a
+   * phone companion. It joins the conversation history, so a reply to it has context.
+   */
+  async speak(
+    requestId: string,
+    text: string,
+    emit: (event: LocalVoiceEvent) => void,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<void> {
+    const splitter = new SentenceSplitter();
+    const sentences = splitter.push(`${text.trim()} `);
+    const rest = splitter.flush();
+    if (rest) {
+      sentences.push(rest);
+    }
+    const { tts } = this;
+    for (const [index, sentence] of sentences.entries()) {
+      if (options.signal?.aborted) {
+        return;
+      }
+      const spoken = toSpeakableText(sentence);
+      const wav = spoken ? await tts.synthesize(spoken, { signal: options.signal }) : new Uint8Array(0);
+      emit({ requestId, type: 'sentence', index, text: sentence, wav });
+    }
+    if (sentences.length > 0) {
+      if (this.now() - this.lastTurnAt > this.historyIdleResetMs) {
+        this.history = [];
+      }
+      this.history.push({ role: 'assistant', content: text.trim() });
+      this.history = this.history.slice(-this.maxHistoryMessages);
+      this.lastTurnAt = this.now();
+    }
+  }
+
   /** Run one tool call and return what the model sees as its result. */
   private async runTool(
     requestId: string,

@@ -7,7 +7,8 @@ import type { LocalVoiceStatus } from '../../../main/src/local-voice/types.js';
 import type { AvatarMotionStatus } from '../avatar/types.js';
 import type { PushToTalkStatus } from '../../../main/src/talk/types.js';
 import type { WakeWordOption } from '../../../main/src/wake-word/types.js';
-import type { WakeWordBridge } from '../preload-api.js';
+import type { CompanionBridge, WakeWordBridge } from '../preload-api.js';
+import { CompanionSettings } from './companion-settings.js';
 import { WakeWordTraining, describeWakeWordOption, useWakeWordLibrary } from './wake-word-training.js';
 
 /** Suggestions only: every model field also takes any other model name. */
@@ -49,6 +50,8 @@ export interface ProviderSettingsPanelProps {
   pushToTalkStatus?: PushToTalkStatus | null;
   /** Lists the wake words and trains new ones; without it only the current wake word shows. */
   wakeWordBridge?: WakeWordBridge;
+  /** The phone companion's live status (addresses, pairing code, phones). */
+  companionBridge?: CompanionBridge;
   disabled?: boolean;
   renderLayout?: (sections: { voice: ReactNode; devices: ReactNode; actions: ReactNode }) => ReactNode;
 }
@@ -61,6 +64,7 @@ export function ProviderSettingsPanel({
   onSave,
   pushToTalkStatus = null,
   wakeWordBridge,
+  companionBridge,
   disabled = false,
   renderLayout,
 }: ProviderSettingsPanelProps) {
@@ -443,7 +447,16 @@ export function ProviderSettingsPanel({
         </div>
       </SettingsGroup>
 
-
+      {draft.companion ? (
+        <SettingsGroup title="Phone companion" id="companion">
+          <CompanionSettings
+            draft={draft.companion}
+            onChange={(value) => update('companion', value)}
+            bridge={companionBridge}
+            disabled={busy}
+          />
+        </SettingsGroup>
+      ) : null}
     </div>
   );
   const actions = (

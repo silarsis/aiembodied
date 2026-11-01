@@ -10,6 +10,12 @@ const plugins: PluginOption[] = Array.isArray(reactPlugin)
 export default defineConfig(({ mode }) => ({
   base: mode === 'development' ? '/' : './',
   plugins,
+  build: {
+    rollupOptions: {
+      // The desktop window, and the phone companion page the desktop serves on the LAN.
+      input: { main: 'index.html', companion: 'companion.html' },
+    },
+  },
   test: {
     environment: 'jsdom',
     globals: true,
