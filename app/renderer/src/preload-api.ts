@@ -24,6 +24,7 @@ import type {
   LocalVoiceTranscribeResult,
 } from '../../main/src/local-voice/types.js';
 import type { AvatarBridge } from './avatar/types.js';
+import type { CompanionSayRequest, CompanionSayResult, CompanionStatus } from '../../main/src/companion/types.js';
 import type { CameraDetectionEvent } from './avatar/behavior-cues.js';
 
 export interface ConfigBridge {
@@ -55,6 +56,16 @@ export interface TalkBridge {
   onTrigger(listener: (event: TalkTriggerEvent) => void): () => void;
   getShortcutStatus(): Promise<PushToTalkStatus>;
   onShortcutStatus(listener: (status: PushToTalkStatus) => void): () => void;
+}
+
+export interface CompanionBridge {
+  getStatus(): Promise<CompanionStatus>;
+  onStatus(listener: (status: CompanionStatus) => void): () => void;
+  rotatePairingCode(): Promise<CompanionStatus>;
+  forgetDevice(deviceId: string): Promise<CompanionStatus>;
+  say(request: CompanionSayRequest): Promise<CompanionSayResult>;
+  /** The system prompt the desktop uses, so phone turns get the same persona and avatar tags. */
+  setInstructions(instructions: string): Promise<void>;
 }
 
 export interface ConversationBridge {
@@ -90,6 +101,7 @@ export interface PreloadApi {
   localVoice?: LocalVoiceBridge;
   wakeWord: WakeWordBridge;
   talk?: TalkBridge;
+  companion?: CompanionBridge;
   conversation?: ConversationBridge;
   metrics?: MetricsBridge;
   avatar?: AvatarBridge;

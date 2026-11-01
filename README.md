@@ -22,6 +22,12 @@ The longer-term vision keeps the core voice loop intact while swapping in richer
 | **Wake-word worker** | openWakeWord models on onnxruntime-node, fed from the microphone in 80 ms frames, with cooldown and threshold filtering. Fully local: no account or key. |
 | **Future integrations** | Optional metrics exporter, Unity avatar client consuming the same viseme stream, packaging for appliance deployment. |
 
+### Phone companion
+
+[`android-companion/`](./android-companion/README.md) is an Android app that makes a phone the
+avatar when you're away from the desk: it shows the active avatar and background, and talks
+through the desktop app, which stays the brain. Turn it on under Settings → Phone companion.
+
 ## Roadmap Snapshot
 
 The implementation plan progresses through the major subsystems required for the MVP and eventual appliance delivery.

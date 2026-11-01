@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The desktop serves the companion over plain HTTP on the home network (or over Tailscale,
+  which encrypts it anyway). Android blocks cleartext by default, so allow it. Every API call
+  still needs the pairing code.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

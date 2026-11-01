@@ -61,6 +61,11 @@ export interface ProviderSettings {
     /** A tap or click on the conversation screen starts listening. */
     tapToTalk: boolean;
   };
+  /** The phone companion (android-companion/): a LAN server the phone talks to. */
+  companion: {
+    enabled: boolean;
+    port: number;
+  };
 }
 
 export type ProviderSettingsPatch = {
@@ -104,6 +109,11 @@ export const DEFAULT_PROVIDER_SETTINGS: ProviderSettings = {
     shortcut: 'CommandOrControl+Shift+Space',
     tapToTalk: true,
   },
+  companion: {
+    // Off until asked for: it opens a port on the LAN.
+    enabled: false,
+    port: 8790,
+  },
 };
 
 type Env = Record<string, string | undefined>;
@@ -145,6 +155,11 @@ function unitNumber(value: unknown): number | undefined {
   return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : undefined;
 }
 
+function port(value: unknown): number | undefined {
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN;
+  return Number.isInteger(parsed) && parsed >= 1024 && parsed <= 65535 ? parsed : undefined;
+}
+
 function compact<T extends object>(value: T): Partial<T> | undefined {
   const entries = Object.entries(value).filter(([, v]) => v !== undefined);
   return entries.length > 0 ? (Object.fromEntries(entries) as Partial<T>) : undefined;
@@ -166,6 +181,7 @@ export function sanitizeProviderPatch(input: unknown): ProviderSettingsPatch {
   const motion = section('motion');
   const talk = section('talk');
   const wakeWord = section('wakeWord');
+  const companion = section('companion');
 
   const patch: ProviderSettingsPatch = {
     llm: compact({
@@ -199,6 +215,10 @@ export function sanitizeProviderPatch(input: unknown): ProviderSettingsPatch {
     talk: compact({
       shortcut: optionalText(talk.shortcut),
       tapToTalk: flag(talk.tapToTalk),
+    }),
+    companion: compact({
+      enabled: flag(companion.enabled),
+      port: port(companion.port),
     }),
   };
   return compact(patch) ?? {};
@@ -245,6 +265,7 @@ export function providerPatchFromEnv(env: Env): ProviderSettingsPatch {
     // ConfigManager validates WAKE_WORD_MODEL and WAKE_WORD_THRESHOLD and reports bad values.
     wakeWord: { model: env.WAKE_WORD_MODEL, threshold: env.WAKE_WORD_THRESHOLD },
     talk: { shortcut: env.PUSH_TO_TALK_SHORTCUT, tapToTalk: env.TAP_TO_TALK },
+    companion: { enabled: env.COMPANION_ENABLED, port: env.COMPANION_PORT },
   });
 }
 

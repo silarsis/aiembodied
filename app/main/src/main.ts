@@ -49,6 +49,9 @@ import { ComfyUIRuntime } from './avatar/generation/comfyui-runtime.js';
 import { LocalMotionClient } from './avatar/motion/local-motion-client.js';
 import { LocalMotionGenerationService } from './avatar/motion/local-motion-generation-service.js';
 import { LocalVoiceService } from './local-voice/local-voice-service.js';
+import { CompanionHub } from './companion/companion-hub.js';
+import { CompanionRegistry } from './companion/companion-registry.js';
+import type { CompanionScene, CompanionSayRequest } from './companion/types.js';
 import { buildVoiceEngines } from './local-voice/voice-engines.js';
 import { describeProviders, type ProviderSettingsPatch } from './config/provider-settings.js';
 import type { LocalVoiceRespondRequest } from './local-voice/types.js';
@@ -179,6 +182,9 @@ let avatarImageModels: AvatarImageModelService | undefined;
 let avatarGenerationService: AvatarGenerationService | null = null;
 let localMotionService: LocalMotionGenerationService | null = null;
 let localVoiceService: LocalVoiceService | null = null;
+let companionHub: CompanionHub | null = null;
+/** The desktop renderer's system prompt, reused for phone turns. */
+let companionInstructions: string | undefined;
 let currentVrmaApiKey: string | null = null;
 let currentVrmaModel: string | null = null;
 let currentMotionServiceUrl: string | null = null;
@@ -603,7 +609,76 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
 
   await wakeWordListening.configure(config.wakeWord);
 
+  await companionHub?.apply(providers.companion);
+
   await refreshVrmaGenerationService(manager, 'secret-update');
+}
+
+/** What the phone shows: the desktop's active avatar, background and animation library. */
+async function getCompanionScene(manager: ConfigManager): Promise<CompanionScene> {
+  const model = avatarModelService?.getActiveModel() ?? null;
+  const backgroundId = backgroundService?.getActive() ?? null;
+  const backgrounds = backgroundId && backgroundService ? await backgroundService.list() : [];
+  const background = backgrounds.find((entry) => entry.id === backgroundId) ?? null;
+  const motionReady =
+    localMotionService !== null && manager.getConfig().providers.motion.provider === 'local'
+      ? await localMotionService.isReady().catch(() => false)
+      : false;
+  return {
+    avatar: model ? { id: model.id, name: model.name, fileSha: model.fileSha } : null,
+    background: background ? { id: background.id, groundY: background.groundY } : null,
+    animations: (avatarAnimationService?.listAnimations() ?? []).map(({ id, name }) => ({ id, name })),
+    poses: (avatarPoseService?.listPoses() ?? []).map(({ id, name }) => ({ id, name })),
+    motionReady,
+  };
+}
+
+function createCompanionHub(manager: ConfigManager): CompanionHub {
+  let staticDirectory: string | null = null;
+  try {
+    staticDirectory = path.dirname(resolveRendererEntryPoint(__dirname).path);
+  } catch (error) {
+    logger.warn('Phone companion: renderer bundle not found, so the phone page cannot be served', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+  const require = <T>(service: T | null | undefined, name: string): T => {
+    if (!service) throw new Error(`${name} is unavailable.`);
+    return service;
+  };
+  const registry = new CompanionRegistry(path.join(app.getPath('userData'), 'companion-devices.json'));
+  return new CompanionHub({
+    registry,
+    staticDirectory,
+    getScene: () => getCompanionScene(manager),
+    loadAvatar: (id) => require(avatarModelService, 'The avatar library').loadModelBinary(id),
+    loadBackground: (id) => require(backgroundService, 'Backgrounds').load(id),
+    loadAnimation: (id) => require(avatarAnimationService, 'The animation library').loadAnimationBinary(id),
+    loadPose: (id) => require(avatarPoseService, 'The pose library').loadPose(id),
+    getVoice: () => localVoiceService,
+    getInstructions: () => companionInstructions,
+    getMotion: () => {
+      const motion = localMotionService;
+      return motion && manager.getConfig().providers.motion.provider === 'local'
+        ? (request, onChunk) => motion.streamMotion(request, onChunk)
+        : null;
+    },
+    onTranscript: ({ role, text }) => {
+      try {
+        conversationManager?.appendMessage({ role, content: text });
+      } catch (error) {
+        logger.warn('Phone companion: could not save the transcript', {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+    onStatusChange: (status) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('companion:status', status);
+      }
+    },
+    logger,
+  });
 }
 
 function registerIpcHandlers(
@@ -984,7 +1059,9 @@ function registerIpcHandlers(
       throw new Error('Avatar model service is unavailable.');
     }
 
-    return avatarModels.setActiveModel(modelId);
+    const active = avatarModels.setActiveModel(modelId);
+    companionHub?.notifySceneChanged();
+    return active;
   });
   ipcMain.handle('avatar-model:upload', async (_event, payload: AvatarModelUploadRequest) => {
     if (!avatarModels) {
@@ -1014,7 +1091,10 @@ function registerIpcHandlers(
   };
   ipcMain.handle('background:list', () => requireBackgrounds().list());
   ipcMain.handle('background:get-active', () => requireBackgrounds().getActive());
-  ipcMain.handle('background:set-active', (_event, id: string | null) => requireBackgrounds().setActive(id));
+  ipcMain.handle('background:set-active', (_event, id: string | null) => {
+    requireBackgrounds().setActive(id);
+    companionHub?.notifySceneChanged();
+  });
   ipcMain.handle('background:load', (_event, id: string) => requireBackgrounds().load(id));
   ipcMain.handle('background:generate', (_event, prompt: string) => requireBackgrounds().generate(prompt));
   ipcMain.handle('background:delete', (_event, id: string) => requireBackgrounds().delete(id));
@@ -1092,7 +1172,9 @@ function registerIpcHandlers(
       throw new Error('Avatar animation service is unavailable.');
     }
 
-    return avatarAnimations.uploadAnimation(payload) as Promise<AvatarAnimationUploadResult>;
+    const uploaded = (await avatarAnimations.uploadAnimation(payload)) as AvatarAnimationUploadResult;
+    companionHub?.notifySceneChanged();
+    return uploaded;
   });
   ipcMain.handle('avatar-animation:generate', async (_event, payload: AvatarAnimationGenerationRequest) => {
     const useLocalMotion = manager.getConfig().providers.motion.provider === 'local';
@@ -1149,6 +1231,17 @@ function registerIpcHandlers(
       }
     });
   });
+  const requireCompanion = (): CompanionHub => {
+    if (!companionHub) throw new Error('The phone companion is unavailable.');
+    return companionHub;
+  };
+  ipcMain.handle('companion:get-status', () => requireCompanion().getStatus());
+  ipcMain.handle('companion:rotate-code', () => requireCompanion().rotatePairingCode());
+  ipcMain.handle('companion:forget-device', (_event, deviceId: string) => requireCompanion().forgetDevice(String(deviceId)));
+  ipcMain.handle('companion:say', (_event, request: CompanionSayRequest) => requireCompanion().say(request ?? { text: '' }));
+  ipcMain.handle('companion:set-instructions', (_event, instructions: unknown) => {
+    companionInstructions = typeof instructions === 'string' && instructions.trim() ? instructions : undefined;
+  });
   ipcMain.handle('local-voice:status', async () => {
     if (!localVoiceService) {
       throw new Error('Local voice service is unavailable.');
@@ -1191,6 +1284,7 @@ function registerIpcHandlers(
     }
 
     await avatarAnimations.deleteAnimation(animationId);
+    companionHub?.notifySceneChanged();
     return true;
   });
   ipcMain.handle('avatar-animation:rename', async (_event, animationId: string, newName: string) => {
@@ -1471,6 +1565,8 @@ app.whenReady().then(async () => {
     logger.info('Web search tool registered', { provider: webSearch.name });
   }
 
+  companionHub = createCompanionHub(manager);
+
   await applyProviderSettings(manager);
 
   if (avatarModelService) {
@@ -1659,6 +1755,7 @@ app.on('before-quit', async (event) => {
   diagnostics.dispose();
   crashGuard.notifyAppQuitting();
   pushToTalk.dispose();
+  void companionHub?.stop();
   // Training carries on in WSL without the app; this only stops watching it.
   wakeWordTrainer?.dispose();
 

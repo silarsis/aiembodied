@@ -1,0 +1,151 @@
+:root {
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 35%, #1b2440 0%, #0b1020 70%);
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.companion {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  touch-action: manipulation;
+}
+.companion__background {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+/* Same anchoring as the desktop stage: the avatar's feet sit on the background's ground line. */
+.companion__avatar {
+  position: absolute;
+  top: var(--stage-ground-y, 86%);
+  left: 50%;
+  width: min(100vw, 75vh);
+  transform: translate(-50%, calc(-100% * var(--avatar-foot-y, 0.9)));
+  pointer-events: none;
+}
+.companion__avatar canvas {
+  display: block;
+  width: 100% !important;
+  height: auto !important;
+  aspect-ratio: 3 / 4;
+}
+.companion__status {
+  position: absolute;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 28px);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: rgba(8, 12, 26, 0.6);
+  backdrop-filter: blur(8px);
+  color: #e2e8f0;
+  font-size: 15px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.companion__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #64748b;
+  transition: transform 0.08s linear;
+}
+.companion[data-phase='listening'] .companion__dot {
+  background: #22c55e;
+  transform: scale(calc(1 + var(--mic-level, 0) * 1.6));
+}
+.companion[data-phase='thinking'] .companion__dot {
+  background: #f59e0b;
+  animation: companion-pulse 1s ease-in-out infinite;
+}
+.companion[data-phase='speaking'] .companion__dot {
+  background: #38bdf8;
+}
+.companion[data-connection='offline'] .companion__dot,
+.companion[data-connection='unauthorized'] .companion__dot {
+  background: #ef4444;
+  animation: none;
+}
+@keyframes companion-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.companion__caption {
+  position: absolute;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 84px);
+  transform: translateX(-50%);
+  width: min(88vw, 640px);
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(8, 12, 26, 0.55);
+  color: #f8fafc;
+  font-size: 16px;
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: none;
+}
+.companion__caption[data-speaker='user'] {
+  color: #bae6fd;
+  font-style: italic;
+}
+.companion__caption[data-speaker='notice'] {
+  color: #fde68a;
+}
+.companion__settings {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  right: 12px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(8, 12, 26, 0.35);
+  color: rgba(226, 232, 240, 0.7);
+  font-size: 20px;
+}
+.companion--pairing {
+  display: grid;
+  place-items: center;
+  color: #e2e8f0;
+}
+.companion__pairing {
+  display: grid;
+  gap: 12px;
+  width: min(88vw, 380px);
+  padding: 20px;
+  text-align: center;
+}
+.companion__pairing input,
+.companion__pairing button {
+  font: inherit;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: inherit;
+  text-align: center;
+  letter-spacing: 0.08em;
+}
+.companion__pairing button {
+  background: #2563eb;
+  border-color: #2563eb;
+}

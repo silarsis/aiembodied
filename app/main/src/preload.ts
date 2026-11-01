@@ -57,6 +57,7 @@ import type {
   MCPToolResult,
 } from './mcp/types.js';
 import type { OpenAIFunction } from './tools/tool-registry.js';
+import type { CompanionSayRequest, CompanionSayResult, CompanionStatus } from './companion/types.js';
 
 function logPreloadMessage(
   level: 'info' | 'warn' | 'error',
@@ -162,6 +163,7 @@ export interface PreloadApi {
   localVoice?: LocalVoiceBridge;
   wakeWord: WakeWordBridge;
   talk?: TalkBridge;
+  companion?: CompanionBridge;
   conversation?: ConversationBridge;
   metrics?: MetricsBridge;
   avatar?: AvatarBridge;
@@ -184,6 +186,17 @@ export interface WakeWordBridge {
   train?(phrase: string, options?: { quick?: boolean }): Promise<WakeWordTrainingStatus>;
   cancelTraining?(): Promise<WakeWordTrainingStatus>;
   onTrainingStatus?(listener: (status: WakeWordTrainingStatus) => void): () => void;
+}
+
+/** The phone companion: pairing, connected phones, and messages pushed to them. */
+export interface CompanionBridge {
+  getStatus(): Promise<CompanionStatus>;
+  onStatus(listener: (status: CompanionStatus) => void): () => void;
+  rotatePairingCode(): Promise<CompanionStatus>;
+  forgetDevice(deviceId: string): Promise<CompanionStatus>;
+  say(request: CompanionSayRequest): Promise<CompanionSayResult>;
+  /** The system prompt the desktop uses, so phone turns get the same persona and avatar tags. */
+  setInstructions(instructions: string): Promise<void>;
 }
 
 export interface TalkBridge {
@@ -392,6 +405,21 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
         ipcRenderer.removeListener(channel, handler);
       };
     },
+  },
+  companion: {
+    getStatus: () => ipcRenderer.invoke('companion:get-status') as Promise<CompanionStatus>,
+    onStatus: (listener) => {
+      const channel = 'companion:status';
+      const handler = (_event: unknown, payload: CompanionStatus) => listener(payload);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
+    rotatePairingCode: () => ipcRenderer.invoke('companion:rotate-code') as Promise<CompanionStatus>,
+    forgetDevice: (deviceId) => ipcRenderer.invoke('companion:forget-device', deviceId) as Promise<CompanionStatus>,
+    say: (request) => ipcRenderer.invoke('companion:say', request) as Promise<CompanionSayResult>,
+    setInstructions: (instructions) => ipcRenderer.invoke('companion:set-instructions', instructions) as Promise<void>,
   },
   conversation: {
     getHistory: () => ipcRenderer.invoke('conversation:get-history') as Promise<ConversationHistory>,
