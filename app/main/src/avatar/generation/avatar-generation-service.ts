@@ -82,6 +82,8 @@ const MIN_LAYOUT_SIMILARITY = 0.6;
 
 export class AvatarGenerationService {
   private readonly jobs = new Map<string, JobState>();
+  /** Take numbers stay fixed when other takes are kept or discarded. */
+  private nextTakeNumber = 1;
   private readonly runner: RetextureRunner;
 
   constructor(private readonly options: AvatarGenerationServiceOptions) {
@@ -141,6 +143,7 @@ export class AvatarGenerationService {
         mode,
         source: referenceImage ? 'upload' : 'text',
         createdAt: Date.now(),
+        takeNumber: this.nextTakeNumber++,
         imageModelName: imageModel?.name ?? null,
         geometryModelName: null,
         rigModelName: null,

@@ -116,6 +116,11 @@ export function AvatarStudio({
   const dialog = useRef<HTMLDialogElement>(null);
   const [jobs, setJobs] = useState<AvatarGenerationStatus[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedRef = useRef<string | null>(null);
+  const jobsRef = useRef<AvatarGenerationStatus[]>([]);
+  useEffect(() => {
+    selectedRef.current = selectedId;
+  }, [selectedId]);
   const [panel, setPanel] = useState<Panel>('describe');
   const [view, setView] = useState<StageView>('image');
   const [mode, setMode] = useState<Mode>('new-character');
@@ -137,7 +142,8 @@ export function AvatarStudio({
 
   const takes = jobs;
   const selected = takes.find((job) => job.jobId === selectedId) ?? null;
-  const selectedNumber = selected ? takes.indexOf(selected) + 1 : 0;
+  const numberOf = (job: AvatarGenerationStatus) => job.takeNumber ?? takes.indexOf(job) + 1;
+  const selectedNumber = selected ? numberOf(selected) : 0;
   const anyRunning = takes.some((job) => RUNNING.has(job.status));
 
   useEffect(() => {
@@ -149,6 +155,15 @@ export function AvatarStudio({
   const refresh = useCallback(async () => {
     if (!avatarApi.listAvatarGenerationJobs) return [];
     const next = await avatarApi.listAvatarGenerationJobs();
+    // When the take being viewed finishes building, show it beside its image.
+    const id = selectedRef.current;
+    const before = jobsRef.current.find((job) => job.jobId === id);
+    const after = next.find((job) => job.jobId === id);
+    if (before && after && before.status !== 'completed' && after.status === 'completed') {
+      setPanel('model');
+      setView('compare');
+    }
+    jobsRef.current = next;
     setJobs(next);
     return next;
   }, [avatarApi]);
@@ -788,7 +803,7 @@ export function AvatarStudio({
                 : 'done'
               : 'idle';
         const built = job.status === 'completed' ? 'done' : isBuilding(job) ? 'running' : 'idle';
-        return { job, number: index + 1, image, built };
+        return { job, number: job.takeNumber ?? index + 1, image, built };
       }),
     [takes],
   );

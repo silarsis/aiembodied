@@ -286,4 +286,32 @@ describe('avatar studio', () => {
     });
     expect(screen.getByText(/Head cut produced more than one boundary/)).toBeInTheDocument();
   });
+
+  it('switches to side by side when the viewed take finishes building', async () => {
+    const { api, jobs } = createApi([take('job-1', { status: 'meshing', progress: 0.4 })]);
+    render(<AvatarStudio avatarApi={api} onClose={vi.fn()} pollIntervalMs={5} />);
+    await settle();
+    expect(screen.getByRole('button', { name: 'Image' })).toHaveAttribute('aria-pressed', 'true');
+    jobs.current = [take('job-1', { status: 'completed', progress: 1 })];
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    expect(screen.getByRole('button', { name: 'Side by side' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('heading', { name: '3D avatar · take 1' })).toBeInTheDocument();
+  });
+
+  it('keeps take numbers when an earlier take is removed', async () => {
+    const { api } = createApi([take('job-1', { takeNumber: 1 }), take('job-2', { takeNumber: 2 })]);
+    render(<AvatarStudio avatarApi={api} onClose={vi.fn()} pollIntervalMs={5} />);
+    await settle();
+    fireEvent.click(screen.getByRole('button', { name: 'Take 1' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Discard take 1' }));
+    });
+    expect(screen.getByRole('button', { name: 'Take 2' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Image · take 2' })).toBeInTheDocument();
+  });
 });

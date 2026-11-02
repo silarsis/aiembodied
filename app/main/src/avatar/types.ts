@@ -211,6 +211,8 @@ export interface AvatarGenerationStatus {
   source?: 'text' | 'upload';
   /** Milliseconds since the epoch; orders the takes in the studio history. */
   createdAt?: number;
+  /** Stable number shown as "Take N"; not reused when other takes are removed. */
+  takeNumber?: number;
   imageModelName?: string | null;
   /** Names of the 3D models used for the current or last build of this take. */
   geometryModelName?: string | null;

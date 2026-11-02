@@ -71,6 +71,9 @@ describe('avatar studio takes', () => {
     expect(jobs.map((job) => job.prompt)).toEqual(['Auburn explorer', 'Silver-haired pilot']);
     expect(jobs[0]).toMatchObject({ source: 'text', mode: 'new-character' });
     expect(typeof jobs[0].createdAt).toBe('number');
+    expect(jobs.map((job) => job.takeNumber)).toEqual([1, 2]);
+    await service.reject(first.jobId);
+    expect(service.listJobs().map((job) => job.takeNumber)).toEqual([2]);
   });
 
   it('allows only one running job across takes', async () => {
