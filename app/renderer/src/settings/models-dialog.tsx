@@ -52,7 +52,7 @@ export const SERVER_TYPE_LABELS: Record<ServerType, string> = {
 };
 
 const SERVER_TYPE_HINTS: Partial<Record<ServerType, { hint: string; example: string }>> = {
-  chat: { hint: 'Any OpenAI-compatible /v1 server: llama-server, LM Studio, vLLM, Ollama.', example: 'http://192.168.1.20:1234/v1' },
+  chat: { hint: 'Any OpenAI-compatible server: llama-server, LM Studio, vLLM, Ollama. An address with no path gets /v1 added.', example: 'http://192.168.1.20:1234/v1' },
   transcribe: { hint: 'An OpenAI-compatible /v1/audio/transcriptions server, such as speaches or whisper.cpp.', example: 'http://192.168.1.20:8000/v1' },
   speech: { hint: 'services/speech from this repo: Kokoro voices, and its speech recognition.', example: 'http://192.168.1.20:8192' },
   motion: { hint: 'services/motion from this repo, running ARDY or Kimodo.', example: 'http://192.168.1.20:8190' },
@@ -525,16 +525,33 @@ function UsePage({ use, view, probes, busy, onProbe, onRoute, onOpenServer, onAd
     setModel(route.model ?? '');
   }
   const [style, setStyle] = useState(route.style ?? '');
+  const [typing, setTyping] = useState(false);
+  // Only the picked server's own list: this PC's motion service offers its two backends.
+  const choices = server?.managed && use === 'motion' ? ['ardy', 'kimodo'] : found;
+
+  // The image and 3D lists come from the step's first ComfyUI server, so read them again when it changes.
+  const refreshImage = imageModels.refresh;
+  const refreshMesh = characterModels.refresh;
+  const firstServer = route.server;
+  const listedFor = useRef(firstServer);
+  useEffect(() => {
+    if (listedFor.current === firstServer) return;
+    listedFor.current = firstServer;
+    if (use === 'image') void refreshImage();
+    if (use === 'mesh') void refreshMesh();
+  }, [use, firstServer, refreshImage, refreshMesh]);
 
   const pickServer = (id: string) => {
     if (id === '__add') {
       if (addable) onAddServer(addable);
       return;
     }
+    setTyping(false);
     onRoute({ ...route, server: id, model: undefined, backups: backups.filter((backup) => backup.server !== id) });
   };
 
   const saveModel = (value: string) => {
+    setModel(value);
     if (value === (route.model ?? '')) return;
     onRoute({ ...route, model: value || undefined });
   };
@@ -565,9 +582,9 @@ function UsePage({ use, view, probes, busy, onProbe, onRoute, onOpenServer, onAd
         </select>
 
         {server && use === 'image' ? (
-          <ImageModelSelect models={imageModels} busy={busy} />
+          <ImageModelSelect models={imageModels} busy={busy} serverName={server.name} />
         ) : server && use === 'mesh' ? (
-          <MeshModelSelect models={characterModels} busy={busy} />
+          <MeshModelSelect models={characterModels} busy={busy} serverName={server.name} />
         ) : server && use === 'motion' && server.type === 'openai' ? (
           <>
             <span />
@@ -577,23 +594,54 @@ function UsePage({ use, view, probes, busy, onProbe, onRoute, onOpenServer, onAd
           <>
             <label htmlFor={`models-${use}-model`}>{label}</label>
             <span className="modelsDialog__model">
-              <input
-                id={`models-${use}-model`}
-                list={`models-${use}-found`}
-                value={model}
-                placeholder={found[0] ? `Default (${found[0]})` : 'Server default'}
-                onChange={(event) => setModel(event.target.value)}
-                onBlur={() => saveModel(model.trim())}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') saveModel(model.trim());
-                }}
-                disabled={busy}
-              />
-              <datalist id={`models-${use}-found`}>
-                {(server.managed && use === 'motion' ? ['ardy', 'kimodo'] : found).map((name) => (
-                  <option key={name} value={name} />
-                ))}
-              </datalist>
+              {choices.length && !typing ? (
+                <select
+                  id={`models-${use}-model`}
+                  value={route.model ?? ''}
+                  onChange={(event) => {
+                    if (event.target.value === '__other') {
+                      setTyping(true);
+                      return;
+                    }
+                    saveModel(event.target.value);
+                  }}
+                  disabled={busy}
+                >
+                  <option value="">Server default{choices[0] ? ` (${choices[0]})` : ''}</option>
+                  {route.model && !choices.includes(route.model) ? <option value={route.model}>{route.model} (not on this server)</option> : null}
+                  {choices.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                  <option value="__other">Type a name…</option>
+                </select>
+              ) : (
+                <input
+                  id={`models-${use}-model`}
+                  value={model}
+                  placeholder={probe === 'checking' ? 'Reading the server’s models…' : 'Server default'}
+                  onChange={(event) => setModel(event.target.value)}
+                  onBlur={() => saveModel(model.trim())}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') saveModel(model.trim());
+                  }}
+                  disabled={busy}
+                />
+              )}
+              <span className="modelsDialog__modelActions">
+                {choices.length && typing ? (
+                  <button type="button" onClick={() => setTyping(false)}>
+                    Pick from the list
+                  </button>
+                ) : null}
+                {!(server.managed && use === 'motion') ? (
+                  <button type="button" onClick={() => onProbe(server.id)} disabled={probe === 'checking'}>
+                    {probe === 'checking' ? 'Refreshing…' : 'Refresh list'}
+                  </button>
+                ) : null}
+                {probe && probe !== 'checking' && probe.status !== 'up' ? <small className="kiosk__error">{statusText(probe)}</small> : null}
+              </span>
             </span>
           </>
         ) : server && use === 'stt' && server.type === 'speech' ? (
@@ -692,7 +740,7 @@ function UsePage({ use, view, probes, busy, onProbe, onRoute, onOpenServer, onAd
   );
 }
 
-function ImageModelSelect({ models, busy }: { models: ReturnType<typeof useImageModels>; busy: boolean }) {
+function ImageModelSelect({ models, busy, serverName }: { models: ReturnType<typeof useImageModels>; busy: boolean; serverName: string }) {
   return (
     <>
       <label htmlFor="models-image-model">Model</label>
@@ -706,13 +754,19 @@ function ImageModelSelect({ models, busy }: { models: ReturnType<typeof useImage
             </option>
           ))}
         </select>
+        <span className="modelsDialog__modelActions">
+          <button type="button" onClick={() => void models.refresh()} disabled={models.loading}>
+            {models.loading ? 'Refreshing…' : 'Refresh list'}
+          </button>
+          <small>From {serverName}</small>
+        </span>
         {models.error ? <small className="kiosk__error">{models.error}</small> : null}
       </span>
     </>
   );
 }
 
-function MeshModelSelect({ models, busy }: { models: ReturnType<typeof useCharacterModels>; busy: boolean }) {
+function MeshModelSelect({ models, busy, serverName }: { models: ReturnType<typeof useCharacterModels>; busy: boolean; serverName: string }) {
   return (
     <>
       <label htmlFor="models-mesh-model">Model</label>
@@ -731,6 +785,12 @@ function MeshModelSelect({ models, busy }: { models: ReturnType<typeof useCharac
             </option>
           ))}
         </select>
+        <span className="modelsDialog__modelActions">
+          <button type="button" onClick={() => void models.refresh()} disabled={models.loading}>
+            {models.loading ? 'Refreshing…' : 'Refresh list'}
+          </button>
+          <small>From {serverName}</small>
+        </span>
         {models.error ? <small className="kiosk__error">{models.error}</small> : null}
       </span>
     </>
@@ -906,7 +966,12 @@ function ServerPage({
         </form>
       ) : null}
       <div className="modelsDialog__list">
-        <span className="modelsDialog__group">Models it offers</span>
+        <span className="modelsDialog__group">
+          Models it offers{' '}
+          <button type="button" onClick={onProbe} disabled={probe === 'checking'}>
+            {probe === 'checking' ? 'Refreshing…' : 'Refresh list'}
+          </button>
+        </span>
         {models.length ? (
           <div className="modelsDialog__found">
             {models.map((model) => (
@@ -914,7 +979,9 @@ function ServerPage({
             ))}
           </div>
         ) : (
-          <p className="kiosk__helper">{probe === 'checking' ? 'Checking…' : 'None reported. Test the server to read its list.'}</p>
+          <p className="kiosk__helper">
+            {probe === 'checking' ? 'Reading the list…' : probe && probe.status !== 'up' ? statusText(probe) : 'None reported. Refresh the list to read it again.'}
+          </p>
         )}
       </div>
       <div className="modelsDialog__list">

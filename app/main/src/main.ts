@@ -80,7 +80,7 @@ import {
 import { getOpenAIClient } from './openai/client.js';
 import type OpenAI from 'openai';
 import { createChatCompletionsResponsesClient } from './openai/chat-completions-responses.js';
-import { routeTargets, USE_SERVER_TYPES, type ModelRoute, type ServerType, type UseId } from './config/model-routing.js';
+import { routeTargets, serverUrl, USE_SERVER_TYPES, type ModelRoute, type ServerType, type UseId } from './config/model-routing.js';
 import { probeModelServer } from './config/model-server-probe.js';
 import { ComfyUIPool } from './avatar/generation/comfyui-pool.js';
 import { MCPManager } from './mcp/mcp-manager.js';
@@ -814,7 +814,8 @@ function registerIpcHandlers(
     } catch {
       throw new Error('Enter the server address as a URL, such as http://192.168.1.20:8188.');
     }
-    return probeModelServer({ type: draft.type as ServerType, url }, typeof draft.key === 'string' ? draft.key : undefined);
+    const type = draft.type as ServerType;
+    return probeModelServer({ type, url: serverUrl(type, url) }, typeof draft.key === 'string' ? draft.key : undefined);
   });
   ipcMain.handle(
     'models:save-server',

@@ -6,6 +6,7 @@ import {
   resolveModelRouting,
   routeTargets,
   sanitizeStoredModels,
+  serverUrl,
 } from '../src/config/model-routing.js';
 import { comfyQueueLength, openAiRoles, probeModelServer } from '../src/config/model-server-probe.js';
 import { InMemoryPreferencesStore } from '../src/config/preferences-store.js';
@@ -59,6 +60,17 @@ describe('model routing', () => {
       ['gpu', 'qwen'],
       ['openai', undefined],
     ]);
+  });
+
+  it('adds /v1 to a chat or transcription server given with no path', () => {
+    expect(serverUrl('chat', 'http://gpu:1234/')).toBe('http://gpu:1234/v1');
+    expect(serverUrl('transcribe', 'http://gpu:8000')).toBe('http://gpu:8000/v1');
+    expect(serverUrl('chat', 'http://gpu:11434/v1/')).toBe('http://gpu:11434/v1');
+    expect(serverUrl('comfy', 'http://rack:8188/')).toBe('http://rack:8188');
+    const routing = resolveModelRouting(builtIns(), defaultRoutes(DEFAULT_PROVIDER_SETTINGS), {
+      servers: [{ id: 'lm', type: 'chat', url: 'http://lm-studio:1234' }],
+    });
+    expect(routing.servers.find((server) => server.id === 'lm')?.url).toBe('http://lm-studio:1234/v1');
   });
 
   it('drops malformed saved data', () => {

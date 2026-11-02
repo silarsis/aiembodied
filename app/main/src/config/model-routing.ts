@@ -183,13 +183,13 @@ export function resolveModelRouting(
   const servers = builtIns.map((server) => {
     const override = stored.servers?.find((entry) => entry.id === server.id);
     if (!override) return { ...server };
-    const url = override.url && server.type !== 'openai' && server.type !== 'brave' ? trimUrl(override.url) : server.url;
+    const url = override.url && server.type !== 'openai' && server.type !== 'brave' ? serverUrl(server.type, override.url) : server.url;
     return { ...server, name: override.name || server.name, url, managed: server.managed && isLocalUrl(url) };
   });
   for (const entry of stored.servers ?? []) {
     if (servers.some((server) => server.id === entry.id)) continue;
     if (!entry.type || !ADDABLE_SERVER_TYPES.includes(entry.type) || !entry.url) continue;
-    servers.push({ id: entry.id, name: entry.name || entry.url, type: entry.type, url: trimUrl(entry.url), builtIn: false, managed: false });
+    servers.push({ id: entry.id, name: entry.name || entry.url, type: entry.type, url: serverUrl(entry.type, entry.url), builtIn: false, managed: false });
   }
 
   const routes: Partial<Record<UseId, ModelRoute>> = {};
@@ -287,6 +287,22 @@ export function isLocalUrl(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * A server's address as the app uses it. OpenAI-compatible servers (llama-server, LM Studio,
+ * vLLM, Ollama) serve their API under /v1, so an address with no path gets /v1 added.
+ */
+export function serverUrl(type: ServerType, url: string): string {
+  const trimmed = trimUrl(url);
+  if (type !== 'chat' && type !== 'transcribe') return trimmed;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.pathname === '/' || parsed.pathname === '') return `${trimmed}/v1`;
+  } catch {
+    // Left as typed; saving checks the address.
+  }
+  return trimmed;
 }
 
 function trimUrl(url: string): string {
