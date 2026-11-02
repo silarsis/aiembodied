@@ -146,36 +146,24 @@ describe('AvatarConfigurator', () => {
     vi.restoreAllMocks();
   });
 
-  it('submits a VRMA prompt and reports success', async () => {
-    const listModels = vi.fn().mockResolvedValue([]);
-    const getActiveModel = vi.fn().mockResolvedValue(null);
-    const generateAnimation = vi.fn().mockResolvedValue({
-      animation: {
-        id: 'vrma-1',
-        name: 'friendly-wave',
-        createdAt: Date.now(),
-        fileSha: 'sha',
-        duration: 1.2,
-        fps: 30,
-      },
-    });
-
+  it('no longer offers animation or pose management', async () => {
+    const listAnimations = vi.fn().mockResolvedValue([]);
+    const listPoses = vi.fn().mockResolvedValue([]);
     const avatarApi = createAvatarBridgeStub({
-      listModels,
-      getActiveModel,
-      generateAnimation,
+      listModels: vi.fn().mockResolvedValue([]),
+      getActiveModel: vi.fn().mockResolvedValue(null),
+      listAnimations,
+      listPoses,
     });
 
     render(<AvatarConfigurator avatarApi={avatarApi} />);
 
-    const promptInput = await screen.findByLabelText('Animation prompt');
-    fireEvent.change(promptInput, { target: { value: 'Wave hello' } });
-
-    const form = screen.getByRole('form', { name: 'Generate VRMA animation' });
-    fireEvent.submit(form);
-
-    await waitFor(() => expect(generateAnimation).toHaveBeenCalledWith({ prompt: 'Wave hello' }));
-    expect(await screen.findByText('Generated animation saved as friendly-wave.')).toBeInTheDocument();
+    expect(await screen.findByText('VRM Avatars')).toBeInTheDocument();
+    expect(screen.queryByText('Manage animations and poses')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Animation prompt')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Pose prompt')).not.toBeInTheDocument();
+    expect(listAnimations).not.toHaveBeenCalled();
+    expect(listPoses).not.toHaveBeenCalled();
   });
 
   it('renders VRM models with metadata and handles activation and deletion', async () => {
@@ -341,15 +329,4 @@ describe('AvatarConfigurator', () => {
       infoSpy.mockRestore();
     }
   });
-});
-
-
-it('keeps included base poses available without offering deletion', async () => {
-  const bridge = createAvatarBridgeStub();
-  vi.mocked(bridge.listPoses).mockResolvedValue([{ id: 'builtin:happiness', name: 'Happiness', createdAt: 0, fileSha: 'base', builtIn: true }]);
-  render(<AvatarConfigurator avatarApi={bridge} />);
-  const heading = await screen.findByRole('heading', { name: 'Happiness' });
-  const card = heading.closest('article')!;
-  expect(within(card).getByText('Included base pose')).toBeInTheDocument();
-  expect(within(card).queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
 });
