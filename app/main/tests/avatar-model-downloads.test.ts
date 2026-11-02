@@ -28,7 +28,7 @@ const civitaiModel = {
       name: 'v2',
       baseModel: 'Pony',
       files: [
-        { name: 'pony_realism_v2.ckpt', sizeKB: 100, downloadUrl: 'https://civitai.com/api/download/models/900?format=PickleTensor', primary: false },
+        { id: 11, name: 'pony_realism_v2.ckpt', sizeKB: 100, downloadUrl: 'https://civitai.com/api/download/models/900?format=PickleTensor', primary: false },
         { name: 'pony_realism_v2.safetensors', sizeKB: 6_000_000, downloadUrl: 'https://civitai.com/api/download/models/900', primary: true, hashes: { SHA256: 'ABC' } },
       ],
     },
@@ -43,6 +43,9 @@ describe('Civitai references', () => {
     expect(parseCivitaiRef('https://civitai.com/api/download/models/900')).toEqual({ versionId: 900 });
     expect(parseCivitaiRef('urn:air:sdxl:checkpoint:civitai:4201@900')).toEqual({ modelId: 4201, versionId: 900 });
     expect(parseCivitaiRef(' 4201@900 ')).toEqual({ modelId: 4201, versionId: 900 });
+    expect(parseCivitaiRef('https://civitai.red/api/download/models/79913?fileId=54825')).toEqual({ versionId: 79913, fileId: 54825 });
+    expect(parseCivitaiRef('https://civitai.green/models/4201')).toEqual({ modelId: 4201 });
+    expect(parseCivitaiRef('https://civitai.evil.example/models/1')).toBeNull();
     expect(parseCivitaiRef('https://example.com/models/1')).toBeNull();
     expect(parseCivitaiRef('hello')).toBeNull();
   });
@@ -59,6 +62,9 @@ describe('Civitai references', () => {
     expect(plan.file).toMatchObject({ name: 'pony_realism_v2.safetensors', sha256: 'abc' });
     expect(plan.note).toBeUndefined();
     expect(planCivitaiDownload(model, 800)).toMatchObject({ kind: 'sd1', file: { name: 'v1.safetensors' } });
+    // A download link's fileId picks that file; one from another version is ignored.
+    expect(planCivitaiDownload(model, 900, 11).file.name).toBe('pony_realism_v2.ckpt');
+    expect(planCivitaiDownload(model, 900, 999).file.name).toBe('pony_realism_v2.safetensors');
   });
 
   it('says when a download is not an image model the app can use', () => {

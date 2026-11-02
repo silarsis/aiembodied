@@ -61,7 +61,7 @@ def with_civitai_token(url, token):
     if not token:
         return url
     parsed = urllib.parse.urlparse(url)
-    if not re.search(r"(^|\.)civitai\.(com|green)$", parsed.hostname or ""):
+    if not re.search(r"(^|\.)civitai\.(com|green|red)$", parsed.hostname or ""):
         return url
     query = urllib.parse.parse_qsl(parsed.query)
     query = [(k, v) for k, v in query if k != "token"] + [("token", token)]
