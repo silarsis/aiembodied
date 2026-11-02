@@ -5,6 +5,13 @@ import { buildConceptPrompt, conceptGraph, CONCEPT_NEGATIVE } from './graphs.js'
 import { characterConceptPrompt, faceSurfaceGuidance, faceSurfaceExclusions } from './character/graphs.js';
 
 export type ImageFamily = 'qwen-image-2.1' | 'z-image-turbo' | 'sdxl' | 'sd1';
+export interface ImageWorkflowLora {
+  /** File name in ComfyUI's loras folder. */
+  name: string;
+  /** 0–2; 1 is the LoRA as trained. */
+  strength: number;
+  triggerWords?: string[];
+}
 export interface ImageWorkflowModel {
   id: string;
   name: string;
@@ -12,6 +19,8 @@ export interface ImageWorkflowModel {
   model: string;
   clip?: string;
   vae?: string;
+  /** LoRAs of the same family, applied in order right after the model loads. */
+  loras?: ImageWorkflowLora[];
 }
 
 function checkpointWorkflow(model: ImageWorkflowModel, prompt: string, seed: number): ComfyGraph {
@@ -115,7 +124,42 @@ export function buildImageWorkflow(
   prompt: string,
   seed: number,
 ): ComfyGraph {
-  return workflows[model.family](model, prompt, seed);
+  const loras = model.loras ?? [];
+  // LoRAs answer to the words they were trained on, so those lead the prompt.
+  const triggers = [...new Set(loras.flatMap((lora) => lora.triggerWords ?? []))].join(', ');
+  const graph = workflows[model.family](model, triggers ? `${triggers}, ${prompt}` : prompt, seed);
+  return loras.length ? applyLoras(graph, loras) : graph;
+}
+
+/**
+ * Put a chain of LoRA loaders between the model loader and everything that used it. A checkpoint's
+ * LoRAs patch both the model and its text encoder (LoraLoader); a diffusion model's patch the model
+ * only (LoraLoaderModelOnly), as its text encoder is a separate file.
+ */
+export function applyLoras(graph: ComfyGraph, loras: ImageWorkflowLora[]): ComfyGraph {
+  const loaderId = Object.keys(graph).find((id) => ['CheckpointLoaderSimple', 'UNETLoader'].includes(graph[id].class_type));
+  if (!loaderId) return graph;
+  const withClip = graph[loaderId].class_type === 'CheckpointLoaderSimple';
+  let model: [string, number] = [loaderId, 0];
+  let clip: [string, number] = [loaderId, 1];
+  const added: ComfyGraph = {};
+  loras.forEach((lora, index) => {
+    const id = `lora${index}`;
+    const strength = Math.min(2, Math.max(0, lora.strength));
+    added[id] = withClip
+      ? { class_type: 'LoraLoader', inputs: { model, clip, lora_name: lora.name, strength_model: strength, strength_clip: strength } }
+      : { class_type: 'LoraLoaderModelOnly', inputs: { model, lora_name: lora.name, strength_model: strength } };
+    model = [id, 0];
+    if (withClip) clip = [id, 1];
+  });
+  for (const node of Object.values(graph)) {
+    for (const [key, value] of Object.entries(node.inputs)) {
+      if (!Array.isArray(value) || value[0] !== loaderId) continue;
+      if (value[1] === 0) node.inputs[key] = model;
+      else if (withClip && value[1] === 1) node.inputs[key] = clip;
+    }
+  }
+  return { ...graph, ...added };
 }
 
 /** CLIP models need positive framing and explicit negatives instead of prose negations. */

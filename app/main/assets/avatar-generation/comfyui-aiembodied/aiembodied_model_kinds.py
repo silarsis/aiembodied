@@ -3,7 +3,12 @@
 Shared by image-models.py (this PC) and the aiembodied ComfyUI add-on (other machines).
 """
 import json
+import os
 import struct
+
+# Saved beside a downloaded model: what Civitai said about it (family, trigger words, name).
+INFO_SUFFIX = ".aiembodied.json"
+INFO_KEYS = ("modelId", "versionId", "name", "type", "baseModel", "family", "triggerWords")
 
 
 def signature(header, filename=""):
@@ -47,6 +52,71 @@ def signature(header, filename=""):
     }
 
 
+def lora_family(header):
+    """sd1 or sdxl for a LoRA, from its cross-attention width or its trainer's metadata."""
+    tensors = {k: v for k, v in header.items() if k != "__metadata__" and isinstance(v, dict)}
+    for key, value in tensors.items():
+        lower = key.lower()
+        if "attn2" in lower and "to_k" in lower and ("lora_down" in lower or "lora_a" in lower):
+            shape = value.get("shape", [])
+            if len(shape) == 2 and shape[1] == 768:
+                return "sd1"
+            if len(shape) == 2 and shape[1] == 2048:
+                return "sdxl"
+    meta = header.get("__metadata__", {})
+    version = str(meta.get("ss_base_model_version", "") if isinstance(meta, dict) else "").lower()
+    if "sdxl" in version:
+        return "sdxl"
+    if version.startswith("sd_v1") or version.startswith("sd_1"):
+        return "sd1"
+    if any(k.startswith(("lora_te1_", "lora_te2_")) for k in tensors):
+        return "sdxl"
+    if any(k.startswith("lora_te_") for k in tensors):
+        return "sd1"
+    return None
+
+
+def info_path(full_path):
+    return os.path.splitext(full_path)[0] + INFO_SUFFIX
+
+
+def clean_info(info):
+    """Only the fields the app uses, with sane sizes; None when there is nothing usable."""
+    if not isinstance(info, dict):
+        return None
+    result = {}
+    for key in INFO_KEYS:
+        value = info.get(key)
+        if key == "triggerWords":
+            if isinstance(value, list):
+                words = [str(word).strip()[:200] for word in value if isinstance(word, str) and word.strip()]
+                if words:
+                    result[key] = words[:20]
+        elif isinstance(value, bool):
+            continue
+        elif isinstance(value, int):
+            result[key] = value
+        elif isinstance(value, str) and value.strip():
+            result[key] = value.strip()[:200]
+    return result or None
+
+
+def read_info(full_path):
+    try:
+        with open(info_path(full_path), encoding="utf-8") as stream:
+            return clean_info(json.load(stream)) or {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_info(full_path, info):
+    info = clean_info(info)
+    if not info:
+        return
+    with open(info_path(full_path), "w", encoding="utf-8") as stream:
+        json.dump(info, stream, indent=2)
+
+
 def trellis_kind(folder, name):
     """TRELLIS.2 weights are recognised by their published file names."""
     lower = name.lower().replace("-", "_")
@@ -73,11 +143,29 @@ def describe(folder, name, full_path):
             header = json.loads(stream.read(size))
         if not isinstance(header, dict):
             return None
+        if folder == "loras":
+            saved = read_info(full_path)
+            entry = {"folder": folder, "name": name.replace("\\", "/"), "kind": "lora"}
+            family = saved.get("family") or lora_family(header)
+            if family:
+                entry["family"] = family
+            for key in ("baseModel", "triggerWords", "modelId", "versionId"):
+                if key in saved:
+                    entry[key] = saved[key]
+            if saved.get("name"):
+                entry["title"] = saved["name"]
+            return entry
         info = signature(header, name)
         if not info["kind"]:
             info["kind"] = trellis_kind(folder, name)
         if not info["kind"]:
             return None
+        saved = read_info(full_path)
+        if saved.get("name"):
+            # A model downloaded through the app keeps Civitai's name for the picker.
+            info["title"] = saved["name"]
+        if saved.get("baseModel"):
+            info["baseModel"] = saved["baseModel"]
         return {"folder": folder, "name": name.replace("\\", "/"), **info}
     except (OSError, ValueError, struct.error):
         # Incomplete downloads are not selectable models.
@@ -86,8 +174,12 @@ def describe(folder, name, full_path):
 
 def scan(folder_paths):
     result = []
-    for folder in ("diffusion_models", "checkpoints", "text_encoders", "vae"):
-        for name in sorted(folder_paths.get_filename_list(folder)):
+    for folder in ("diffusion_models", "checkpoints", "text_encoders", "vae", "loras"):
+        try:
+            names = folder_paths.get_filename_list(folder)
+        except KeyError:
+            continue
+        for name in sorted(names):
             entry = describe(folder, name, folder_paths.get_full_path(folder, name))
             if entry:
                 result.append(entry)

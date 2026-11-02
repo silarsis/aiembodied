@@ -146,9 +146,48 @@ export interface AvatarImageModelSummary {
   available: boolean;
   unavailableReason?: string;
 }
+export interface AvatarLoraSummary {
+  name: string;
+  title?: string;
+  family?: string;
+  baseModel?: string;
+  triggerWords?: string[];
+}
+export interface AvatarLoraChoice {
+  name: string;
+  strength: number;
+}
 export interface AvatarImageModelSelection {
   models: AvatarImageModelSummary[];
   selectedModelId: string | null;
+  modelFamilies?: Record<string, string>;
+  loras?: AvatarLoraSummary[];
+  selectedLoras?: AvatarLoraChoice[];
+}
+export interface BaseModelSuggestion {
+  ref: string;
+  modelId: number;
+  versionId: number;
+  name: string;
+  baseModel: string;
+  sizeKB: number;
+  downloads: number;
+  fits: boolean | null;
+}
+export interface BaseModelSuggestions {
+  serverId: string;
+  serverName: string;
+  baseModel: string;
+  vramBytes: number | null;
+  suggestions: BaseModelSuggestion[];
+}
+export interface ModelDownloadProgress {
+  id: string;
+  filename: string;
+  state: 'queued' | 'downloading' | 'verifying' | 'done' | 'failed' | 'cancelled';
+  received: number;
+  total: number | null;
+  error?: string;
 }
 
 export interface AvatarGenerationRequest {
@@ -271,6 +310,10 @@ export interface AvatarBridge {
   refinePose(request: PoseEvaluationRequest): Promise<AvatarPoseUploadResult>;
   listAvatarImageModels(): Promise<AvatarImageModelSelection>;
   setAvatarImageModel(id: string): Promise<void>;
+  setAvatarImageLoras?(choices: AvatarLoraChoice[]): Promise<void>;
+  suggestBaseModels?(request: { baseModel?: string; family?: string }): Promise<BaseModelSuggestions>;
+  downloadBaseModel?(serverId: string, ref: string): Promise<ModelDownloadProgress>;
+  listModelDownloads?(): Promise<ModelDownloadProgress[]>;
   generateAvatar(request: AvatarGenerationRequest): Promise<AvatarGenerationJob>;
   getAvatarGenerationStatus(jobId: string): Promise<AvatarGenerationStatus>;
   confirmAvatarConcept(jobId: string, confirmation?: AvatarGenerationConfirmation): Promise<void>;

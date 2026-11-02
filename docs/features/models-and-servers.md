@@ -46,6 +46,16 @@ Files are written as `<name>.part` and renamed once complete and, when Civitai l
 - **Another machine:** install the aiembodied ComfyUI add-on there once. Copy `app/main/assets/avatar-generation/comfyui-aiembodied` (the server page shows the full path) into that machine's `ComfyUI/custom_nodes/` and restart its ComfyUI. It adds no nodes, only `/aiembodied/*` routes: ping, model descriptions, and start, follow and cancel a download. The Civitai key is sent with each download request and not stored there. Like ComfyUI itself, anyone who can reach that ComfyUI can use the routes, so keep it on your own network or Tailscale; `AIEMBODIED_DOWNLOADS=0` in its environment turns downloads off.
 - With the add-on installed, the app also gets that machine's model kinds from the file contents, as it does on this PC, instead of guessing from file names (Pony and Illustrious checkpoints are SDXL but their names often don't say so).
 
+### LoRAs
+
+A download from Civitai also saves what Civitai says about the file beside it, as `<name>.aiembodied.json`: its name, base model ("SD 1.5", "Pony"…), family (`sd1`, `sdxl`, `z-image-turbo`) and trigger words. The add-on and this PC's scan list LoRAs with that family; for a LoRA without the file the family is read from its tensors (the cross-attention width, or kohya's `ss_base_model_version`), and its trigger words are unknown.
+
+In the avatar studio, **LoRAs** under the image model lists them. Only a LoRA of the chosen model's family can be ticked; a ticked LoRA has a strength (0–2, default 0.8) and its trigger words lead the prompt. The choice is kept across restarts (`avatar.imageLoras`), and a ticked LoRA of another family is skipped rather than applied. Checkpoints get `LoraLoader` (model and text encoder); diffusion models get `LoraLoaderModelOnly`.
+
+A LoRA whose family has no model on the image step's server offers **Suggest a model**: the most downloaded Civitai checkpoints for its base model, with the ones that fit the server's GPU (file size under 85% of `vram_total` from ComfyUI's `/system_stats`) first and the rest marked "too big for the GPU". **Download** sends one to that server the same way as the server page. Free disk space isn't reported by ComfyUI, so only the file size is shown.
+
+Without the add-on (version 2 or later) a remote server's LoRAs are listed by name only, with no family, and can't be ticked.
+
 ComfyUI-Manager's install-model call isn't used: it only accepts models already on Manager's own curated list, and it reads the whole file into memory before writing it.
 
 ## Keys

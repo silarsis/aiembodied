@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { AvatarBridge, AvatarImageModelSelection } from './types.js';
+import type { AvatarBridge, AvatarImageModelSelection, AvatarLoraChoice } from './types.js';
 
 export function useImageModels(api: AvatarBridge | undefined, visible: boolean) {
   const [selection, setSelection] = useState<AvatarImageModelSelection>({
@@ -44,5 +44,14 @@ export function useImageModels(api: AvatarBridge | undefined, visible: boolean) 
       setLoading(false);
     }
   };
-  return { ...selection, loading, error, supported, refresh, select };
+  const setLoras = async (choices: AvatarLoraChoice[]) => {
+    if (!api?.setAvatarImageLoras) return;
+    setSelection((current) => ({ ...current, selectedLoras: choices }));
+    try {
+      await api.setAvatarImageLoras(choices);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the LoRA choice.');
+    }
+  };
+  return { ...selection, loading, error, supported, refresh, select, setLoras };
 }

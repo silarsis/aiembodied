@@ -3,10 +3,10 @@
 Install on a ComfyUI machine by copying this folder into ComfyUI/custom_nodes/ (the folder name
 doesn't matter) and restarting ComfyUI. It adds no nodes, only these routes:
 
-  GET    /aiembodied/ping                 -> {"ok": true, "version": 1}
+  GET    /aiembodied/ping                 -> {"ok": true, "version": 2}
   GET    /aiembodied/models               -> the image/3D model files with their kinds, as the app's
                                              own scan on this PC reports them
-  POST   /aiembodied/download             {url, folder, filename, sha256?, civitai_token?}
+  POST   /aiembodied/download             {url, folder, filename, sha256?, civitai_token?, info?}
   GET    /aiembodied/download/{id}        -> {id, state, received, total, error}
   DELETE /aiembodied/download/{id}        -> cancels it
 
@@ -40,7 +40,7 @@ def _register():
 
     @routes.get("/aiembodied/ping")
     async def ping(_request):
-        return web.json_response({"ok": True, "version": 1, "downloads": os.environ.get("AIEMBODIED_DOWNLOADS") != "0"})
+        return web.json_response({"ok": True, "version": 2, "downloads": os.environ.get("AIEMBODIED_DOWNLOADS") != "0"})
 
     @routes.get("/aiembodied/models")
     async def models(_request):
@@ -54,7 +54,8 @@ def _register():
             body = await request.json()
             directory = downloader.target_folder(str(body.get("folder", "")), folder_paths)
             job = downloader.Download(
-                body.get("url", ""), directory, body.get("filename", ""), body.get("sha256"), body.get("civitai_token") or None
+                body.get("url", ""), directory, body.get("filename", ""), body.get("sha256"), body.get("civitai_token") or None,
+                info=body.get("info"),
             )
         except downloader.DownloadError as error:
             return web.json_response({"error": str(error)}, status=400)

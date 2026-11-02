@@ -5,11 +5,13 @@ import { promisify } from 'node:util';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  baseModelForFamily,
   comfyFolderFor,
   kindForBaseModel,
   lookupCivitai,
   parseCivitaiRef,
   planCivitaiDownload,
+  suggestBaseModels,
   type CivitaiModel,
 } from '../src/avatar/generation/civitai.js';
 import { createRemoteComfyModelScanner } from '../src/avatar/generation/image-model-service.js';
@@ -67,14 +69,41 @@ describe('Civitai references', () => {
     expect(planCivitaiDownload(model, 900, 999).file.name).toBe('pony_realism_v2.safetensors');
   });
 
-  it('says when a download is not an image model the app can use', () => {
-    const lora: CivitaiModel = { modelId: 1, name: 'Style', type: 'LORA', versionId: 2, versions: [{ id: 2, name: 'v1', baseModel: 'SDXL 1.0', files: [{ name: 's.safetensors', sizeKB: 1, downloadUrl: 'https://civitai.com/x', primary: true }] }] };
-    expect(planCivitaiDownload(lora)).toMatchObject({ folder: 'loras', note: expect.stringContaining("isn't an image model") });
+  it('says how a LoRA gets used, and saves its family and trigger words with it', () => {
+    const lora: CivitaiModel = { modelId: 1, name: 'Style', type: 'LORA', versionId: 2, versions: [{ id: 2, name: 'v1', baseModel: 'SDXL 1.0', trainedWords: ['neon city'], files: [{ name: 's.safetensors', sizeKB: 1, downloadUrl: 'https://civitai.com/x', primary: true }] }] };
+    expect(planCivitaiDownload(lora)).toMatchObject({
+      folder: 'loras',
+      note: expect.stringContaining('pick it under the image model'),
+      info: { modelId: 1, versionId: 2, name: 'Style', type: 'LORA', baseModel: 'SDXL 1.0', family: 'sdxl', triggerWords: ['neon city'] },
+    });
+    expect(baseModelForFamily('sd1')).toBe('SD 1.5');
     const flux = { ...lora, type: 'Checkpoint', versions: [{ ...lora.versions[0], baseModel: 'Flux.1 D' }] };
     expect(planCivitaiDownload(flux).note).toContain('no workflow for Flux.1 D');
     expect(comfyFolderFor('Workflows')).toBeNull();
     expect(kindForBaseModel('Illustrious')).toBe('sdxl');
     expect(kindForBaseModel('SD 1.5 LCM')).toBe('sd1');
+  });
+
+  it('suggests popular base models, the ones that fit the GPU first', async () => {
+    const item = (id: number, sizeKB: number, baseModel = 'SD 1.5') => ({
+      id,
+      name: `Model ${id}`,
+      stats: { downloadCount: 1000 - id },
+      modelVersions: [{ id: id * 10, name: 'v1', baseModel, files: [{ name: `m${id}.safetensors`, sizeKB, downloadUrl: 'https://civitai.com/x', primary: true }] }],
+    });
+    const fetchFn = vi.fn(async (url: string | URL | Request) => {
+      const query = new URL(String(url)).searchParams;
+      expect(query.get('types')).toBe('Checkpoint');
+      expect(query.get('baseModels')).toBe('SD 1.5');
+      return json({ items: [item(1, 7_500_000), item(2, 2_000_000), item(3, 2_000_000, 'SDXL 1.0')] });
+    }) as unknown as typeof fetch;
+    const eightGB = 8 * 1024 ** 3;
+    const suggestions = await suggestBaseModels('SD 1.5', eightGB, undefined, fetchFn);
+    expect(suggestions.map((entry) => [entry.ref, entry.fits])).toEqual([
+      ['2@20', true],
+      ['1@10', false],
+    ]);
+    expect((await suggestBaseModels('SD 1.5', null, undefined, fetchFn))[0].fits).toBeNull();
   });
 
   it('explains a refused or missing model', async () => {
@@ -124,6 +153,7 @@ describe('model downloads', () => {
     expect(args).toEqual(expect.arrayContaining(['--comfy-dir', '/comfy', '--model-paths', '/x.yaml', '--folder', 'checkpoints', '--sha256', 'abc']));
     expect(args.join(' ')).not.toContain('civitai-key');
     expect(options.env.CIVITAI_TOKEN).toBe('civitai-key');
+    expect(JSON.parse(args[args.indexOf('--info') + 1])).toMatchObject({ modelId: 4201, versionId: 900, family: 'sdxl' });
     expect(onFinished).toHaveBeenCalledWith(expect.objectContaining({ state: 'done' }), plan, here);
   });
 
@@ -133,7 +163,7 @@ describe('model downloads', () => {
       const target = String(url);
       if (target.endsWith('/aiembodied/ping')) return json({ ok: true });
       if (target.endsWith('/aiembodied/download')) {
-        expect(JSON.parse(String(init?.body))).toMatchObject({ folder: 'checkpoints', filename: 'p.safetensors', civitai_token: 'k', sha256: 'abc' });
+        expect(JSON.parse(String(init?.body))).toMatchObject({ folder: 'checkpoints', filename: 'p.safetensors', civitai_token: 'k', sha256: 'abc', info: { baseModel: 'Pony' } });
         return json({ id: 'r1', state: 'downloading', received: 0, total: 100 });
       }
       polls += 1;

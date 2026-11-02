@@ -3,7 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { ConfigSecretKey, ModelRoutingView, RendererConfig } from './config/config-manager.js';
 import type { ModelRoute, ServerType, UseId } from './config/model-routing.js';
 import type { ServerProbe } from './config/model-server-probe.js';
-import type { CivitaiLookup } from './avatar/generation/civitai.js';
+import type { BaseModelSuggestions, CivitaiLookup } from './avatar/generation/civitai.js';
 import type { ModelDownload } from './avatar/generation/model-downloads.js';
 import type { AudioDevicePreferences } from './config/preferences-store.js';
 import type { ProviderSettingsPatch } from './config/provider-settings.js';
@@ -26,6 +26,7 @@ import type {
   PoseEvaluationRequest,
   PoseEvaluationResult,
   AvatarImageModelSelection,
+  AvatarLoraChoice,
   AvatarCharacterModelSelection,
   AvatarGenerationRequest,
   AvatarGenerationJob,
@@ -269,6 +270,10 @@ export interface AvatarBridge {
   refinePose(request: PoseEvaluationRequest): Promise<AvatarPoseUploadResult>;
   listAvatarImageModels(): Promise<AvatarImageModelSelection>;
   setAvatarImageModel(id: string): Promise<void>;
+  setAvatarImageLoras(choices: AvatarLoraChoice[]): Promise<void>;
+  suggestBaseModels(request: { baseModel?: string; family?: string }): Promise<BaseModelSuggestions>;
+  downloadBaseModel(serverId: string, ref: string): Promise<ModelDownload>;
+  listModelDownloads(): Promise<ModelDownload[]>;
   generateAvatar(request: AvatarGenerationRequest): Promise<AvatarGenerationJob>;
   getAvatarGenerationStatus(jobId: string): Promise<AvatarGenerationStatus>;
   confirmAvatarConcept(jobId: string, confirmation?: AvatarGenerationConfirmation): Promise<void>;
@@ -544,6 +549,11 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       ipcRenderer.invoke('avatar-pose:refine', payload) as Promise<AvatarPoseUploadResult>,
     listAvatarImageModels: () => ipcRenderer.invoke('avatar:image-models') as Promise<AvatarImageModelSelection>,
     setAvatarImageModel: async (id: string) => { await ipcRenderer.invoke('avatar:image-model-select', id); },
+    setAvatarImageLoras: async (choices: AvatarLoraChoice[]) => { await ipcRenderer.invoke('avatar:image-loras-select', choices); },
+    suggestBaseModels: (request: { baseModel?: string; family?: string }) =>
+      ipcRenderer.invoke('avatar:base-model-suggestions', request) as Promise<BaseModelSuggestions>,
+    downloadBaseModel: (serverId: string, ref: string) => ipcRenderer.invoke('models:download', { serverId, ref }) as Promise<ModelDownload>,
+    listModelDownloads: () => ipcRenderer.invoke('models:downloads') as Promise<ModelDownload[]>,
     generateAvatar: (payload: AvatarGenerationRequest) =>
       ipcRenderer.invoke('avatar:generation-start', payload) as Promise<AvatarGenerationJob>,
     confirmAvatarConcept: async (jobId: string, confirmation?: AvatarGenerationConfirmation) => { await ipcRenderer.invoke('avatar:generation-confirm-concept', jobId, ...(confirmation ? [confirmation] : [])); },

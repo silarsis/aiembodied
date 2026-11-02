@@ -135,6 +135,8 @@ export class ModelDownloadService {
       '--url',
       plan.file.downloadUrl,
       ...(plan.file.sha256 ? ['--sha256', plan.file.sha256] : []),
+      '--info',
+      JSON.stringify(plan.info),
     ];
     const child = (this.options.spawnFn ?? spawn)(install.python, args, {
       // The key goes through the environment, never the command line.
@@ -185,6 +187,8 @@ export class ModelDownloadService {
           folder: plan.folder,
           filename: plan.file.name,
           sha256: plan.file.sha256,
+          // Saved beside the file (family, trigger words); older add-ons ignore it.
+          info: plan.info,
           // Sent to your own server so it can fetch from Civitai; it is not stored there.
           civitai_token: civitaiKey,
         }),

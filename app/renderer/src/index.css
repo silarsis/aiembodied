@@ -1610,6 +1610,13 @@ body {
 .avatarStudio__field textarea { resize: vertical; line-height: 1.45; }
 .avatarStudio__field small { color: #94a3b8; font-size: .78rem; }
 .avatarStudio__warnText { color: #fcd34d !important; }
+.avatarStudio__loras { margin: 0; padding: 8px 12px 10px; border: 1px solid #33445d; border-radius: 10px; }
+.avatarStudio__loras legend { color: #94a3b8; padding: 0 4px; }
+.avatarStudio__lora { display: grid; gap: 3px; padding: 4px 0; }
+.avatarStudio__lora input[type="checkbox"] { width: auto; padding: 0; }
+.avatarStudio__loraStrength input { width: 5.5em !important; padding: 4px 6px !important; }
+.avatarStudio__suggestions { display: grid; gap: 4px; padding: 6px 8px; border-left: 2px solid #33445d; }
+.avatarStudio__suggestion { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .avatarStudio__models { display: grid; gap: 10px; margin: 0; padding: 10px 12px 12px; border: 1px solid #33445d; border-radius: 10px; }
 .avatarStudio__models legend { padding: 0 4px; color: #cbd5e1; font-size: .85rem; }
 .avatarStudio__history { grid-column: 2; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: center; padding: 10px 14px; border-top: 1px solid #22324a; color: #94a3b8; font-size: .78rem; }

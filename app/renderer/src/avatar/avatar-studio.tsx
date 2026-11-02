@@ -10,6 +10,7 @@ import { ExpandedImage } from './avatar-image-preview.js';
 import { AvatarModelViewer } from './avatar-model-preview.js';
 import { readAvatarReference, type AvatarReferenceImage } from './reference-image-upload.js';
 import { useImageModels } from './use-image-models.js';
+import { LoraPicker } from './lora-picker.js';
 import { useCharacterModels } from './use-character-models.js';
 
 type Panel = 'describe' | 'image' | 'model';
@@ -563,6 +564,15 @@ export function AvatarStudio({
             <small className="avatarStudio__warnText">{imageModels.error}</small>
           ) : null}
         </div>
+      ) : null}
+      {!usingUpload && imageModels.supported ? (
+        <LoraPicker
+          api={avatarApi}
+          selection={imageModels}
+          disabled={busy || imageModels.loading}
+          onChange={(choices) => void imageModels.setLoras(choices)}
+          onRefresh={imageModels.refresh}
+        />
       ) : null}
       <div className="avatarStudio__field">
         <label htmlFor="avatar-studio-prompt">
