@@ -49,6 +49,16 @@ class DownloaderTests(unittest.TestCase):
         self.assertIn("token=secret", seen["url"])
         self.assertIn("type=Model", seen["url"])
 
+    def test_saves_civitai_details_beside_the_file(self):
+        job = downloader.Download(
+            "https://civitai.com/x", self.dir, "style.safetensors", None, None, lambda r, timeout: FakeResponse(b"x"),
+            info={"name": "Style", "baseModel": "SDXL 1.0", "family": "sdxl", "triggerWords": ["neon"]},
+        )
+        self.assertEqual(job.run()["state"], "done")
+        import json
+        with open(os.path.join(self.dir, "style.aiembodied.json")) as stream:
+            self.assertEqual(json.load(stream)["triggerWords"], ["neon"])
+
     def test_bad_hash_short_file_and_login_page_fail_and_leave_nothing(self):
         cases = [
             (lambda r, timeout: FakeResponse(b"abc"), "0" * 64, "SHA-256"),

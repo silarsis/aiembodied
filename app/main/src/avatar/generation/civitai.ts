@@ -33,6 +33,19 @@ export interface CivitaiVersion {
   name: string;
   baseModel: string;
   files: CivitaiFile[];
+  /** Words the model was trained to respond to (LoRAs usually need them in the prompt). */
+  trainedWords?: string[];
+}
+
+/** What is saved beside a downloaded model (<name>.aiembodied.json) for the app to read back. */
+export interface ModelInfo {
+  modelId: number;
+  versionId: number;
+  name: string;
+  type: string;
+  baseModel: string;
+  family?: string;
+  triggerWords?: string[];
 }
 
 export interface CivitaiModel {
@@ -64,6 +77,30 @@ export interface CivitaiDownloadPlan {
   kind?: string;
   /** Why the app's image step can't use it, when it can't (it still downloads). */
   note?: string;
+  /** Saved beside the file so the app knows its family and trigger words later. */
+  info: ModelInfo;
+}
+
+/** What the studio shows when a LoRA has no model of its family to run on. */
+export interface BaseModelSuggestions {
+  serverId: string;
+  serverName: string;
+  baseModel: string;
+  vramBytes: number | null;
+  suggestions: BaseModelSuggestion[];
+}
+
+/** A base model Civitai suggests for a LoRA's family, and whether it fits the server's GPU. */
+export interface BaseModelSuggestion {
+  ref: string;
+  modelId: number;
+  versionId: number;
+  name: string;
+  baseModel: string;
+  sizeKB: number;
+  downloads: number;
+  /** null when the server didn't say how much GPU memory it has. */
+  fits: boolean | null;
 }
 
 const API = 'https://civitai.com/api/v1';
@@ -122,12 +159,18 @@ export function comfyFolderFor(type: string): string | null {
   }
 }
 
-/** The image kind the app's workflows know, from Civitai's base model name. */
+/** The image family the app's workflows know, from Civitai's base model name. */
 export function kindForBaseModel(baseModel: string): string | undefined {
   const base = baseModel.toLowerCase();
   if (/sdxl|pony|illustrious|noobai|playground/.test(base)) return 'sdxl';
   if (/^sd 1\.[45]|sd 1\.5|sd 1\.4/.test(base)) return 'sd1';
+  if (/z ?image ?turbo|zimageturbo/.test(base)) return 'z-image-turbo';
   return undefined;
+}
+
+/** Civitai's base model name for a family, for suggestions when a LoRA has no saved details. */
+export function baseModelForFamily(family: string): string | undefined {
+  return { sd1: 'SD 1.5', sdxl: 'SDXL 1.0', 'z-image-turbo': 'ZImageTurbo' }[family];
 }
 
 export async function lookupCivitai(ref: CivitaiRef, apiKey: string | undefined, fetchFn: typeof fetch = fetch): Promise<CivitaiModel> {
@@ -175,11 +218,27 @@ export function planCivitaiDownload(model: CivitaiModel, versionId = model.versi
   if (!file) throw new Error('That version has no model file to download.');
   const folder = comfyFolderFor(model.type);
   if (!folder) throw new Error(`Civitai ${model.type} models don't have a ComfyUI folder the app knows.`);
-  const kind = model.type.toLowerCase() === 'checkpoint' ? kindForBaseModel(version.baseModel) : undefined;
+  const type = model.type.toLowerCase();
+  const isLora = folder === 'loras';
+  const family = kindForBaseModel(version.baseModel);
+  const kind = type === 'checkpoint' ? family : undefined;
   let note: string | undefined;
-  if (model.type.toLowerCase() !== 'checkpoint') note = `A ${model.type} isn't an image model on its own; the image step won't list it.`;
+  if (isLora) {
+    note = family
+      ? `A LoRA for ${version.baseModel}: pick it under the image model once a ${version.baseModel} model is on this server.`
+      : `A LoRA for ${version.baseModel || 'an unknown base model'}; the image step has no workflow for that yet.`;
+  } else if (type !== 'checkpoint') note = `A ${model.type} isn't an image model on its own; the image step won't list it.`;
   else if (!kind) note = `The image step has no workflow for ${version.baseModel || 'this base model'} yet.`;
   else if (!/\.safetensors$/i.test(file.name)) note = 'Only .safetensors files can be listed as image models.';
+  const info: ModelInfo = {
+    modelId: model.modelId,
+    versionId: version.id,
+    name: model.name,
+    type: model.type,
+    baseModel: version.baseModel,
+    ...(family ? { family } : {}),
+    ...(version.trainedWords?.length ? { triggerWords: version.trainedWords } : {}),
+  };
   return {
     modelId: model.modelId,
     versionId: version.id,
@@ -190,7 +249,53 @@ export function planCivitaiDownload(model: CivitaiModel, versionId = model.versi
     file,
     ...(kind ? { kind } : {}),
     ...(note ? { note } : {}),
+    info,
   };
+}
+
+/**
+ * Popular checkpoints for a base model, best first, with the ones that fit the server's GPU memory
+ * ahead of the ones that don't. A checkpoint needs roughly its file size in GPU memory, plus room
+ * to work, so it "fits" when the file is under 85% of the card.
+ */
+export async function suggestBaseModels(
+  baseModel: string,
+  vramBytes: number | null,
+  apiKey: string | undefined,
+  fetchFn: typeof fetch = fetch,
+): Promise<BaseModelSuggestion[]> {
+  const query = new URLSearchParams({ types: 'Checkpoint', baseModels: baseModel, sort: 'Most Downloaded', limit: '12' });
+  const response = await fetchFn(`${API}/models?${query.toString()}`, {
+    headers: { Accept: 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) throw new Error(`Civitai answered ${response.status} when asked for ${baseModel} models.`);
+  const body = (await response.json()) as { items?: unknown[] };
+  const suggestions: BaseModelSuggestion[] = [];
+  for (const raw of Array.isArray(body.items) ? body.items : []) {
+    if (!raw || typeof raw !== 'object') continue;
+    const item = raw as Record<string, unknown>;
+    if (typeof item.id !== 'number' || typeof item.name !== 'string') continue;
+    const versions = (Array.isArray(item.modelVersions) ? item.modelVersions : []).map(toVersion).filter((v): v is CivitaiVersion => v !== null);
+    const version = versions.find((entry) => entry.baseModel === baseModel);
+    if (!version) continue;
+    const file =
+      version.files.find((entry) => entry.primary && /\.safetensors$/i.test(entry.name)) ?? version.files.find((entry) => /\.safetensors$/i.test(entry.name));
+    if (!file) continue;
+    const stats = item.stats && typeof item.stats === 'object' ? (item.stats as Record<string, unknown>) : {};
+    suggestions.push({
+      ref: `${item.id}@${version.id}`,
+      modelId: item.id,
+      versionId: version.id,
+      name: `${item.name} · ${version.name}`,
+      baseModel,
+      sizeKB: file.sizeKB,
+      downloads: typeof stats.downloadCount === 'number' ? stats.downloadCount : 0,
+      fits: vramBytes ? file.sizeKB * 1024 <= vramBytes * 0.85 : null,
+    });
+  }
+  // Civitai's order (most downloaded) within each group; fitting models first.
+  return [...suggestions.filter((entry) => entry.fits !== false), ...suggestions.filter((entry) => entry.fits === false)].slice(0, 5);
 }
 
 function toVersion(raw: unknown): CivitaiVersion | null {
@@ -215,10 +320,14 @@ function toVersion(raw: unknown): CivitaiVersion | null {
       };
     })
     .filter((file): file is CivitaiFile => file !== null);
+  const trainedWords = (Array.isArray(entry.trainedWords) ? entry.trainedWords : [])
+    .filter((word): word is string => typeof word === 'string' && word.trim() !== '')
+    .map((word) => word.trim());
   return {
     id: entry.id,
     name: typeof entry.name === 'string' ? entry.name : String(entry.id),
     baseModel: typeof entry.baseModel === 'string' ? entry.baseModel : '',
     files,
+    ...(trainedWords.length ? { trainedWords } : {}),
   };
 }

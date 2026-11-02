@@ -51,6 +51,29 @@ class ModelKindTests(unittest.TestCase):
         self.assertEqual([(entry["name"], entry["kind"]) for entry in result], [("ponyRealism.safetensors", "sdxl")])
         self.assertTrue(result[0]["embeddedClip2"])
 
+    def test_lists_loras_with_their_family_and_saved_details(self):
+        root = tempfile.mkdtemp()
+        write_safetensors(os.path.join(root, "cyberpunk.safetensors"), {
+            "lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight": {"shape": [32, 768]},
+        })
+        model_kinds.write_info(os.path.join(root, "cyberpunk.safetensors"), {
+            "name": "Cyberpunk style", "baseModel": "SD 1.5", "triggerWords": ["cyberpunk", "  ", 7], "modelId": 1, "junk": "x",
+        })
+        write_safetensors(os.path.join(root, "xl_style.safetensors"), {
+            "__metadata__": {"ss_base_model_version": "sdxl_base_v1-0"}, "lora_unet_x.lora_down.weight": {"shape": [4, 4]},
+        })
+        write_safetensors(os.path.join(root, "mystery.safetensors"), {"x": {"shape": [1]}})
+        paths = FakeFolderPaths(root, {"loras": ["cyberpunk.safetensors", "mystery.safetensors", "xl_style.safetensors"]})
+        result = {entry["name"]: entry for entry in model_kinds.scan(paths)}
+        self.assertEqual(result["cyberpunk.safetensors"], {
+            "folder": "loras", "name": "cyberpunk.safetensors", "kind": "lora", "family": "sd1",
+            "baseModel": "SD 1.5", "triggerWords": ["cyberpunk"], "modelId": 1, "title": "Cyberpunk style",
+        })
+        self.assertEqual(result["xl_style.safetensors"]["family"], "sdxl")
+        self.assertNotIn("family", result["mystery.safetensors"])
+        with open(os.path.join(root, "cyberpunk.aiembodied.json")) as stream:
+            self.assertNotIn("junk", json.load(stream))
+
 
 if __name__ == "__main__":
     unittest.main()

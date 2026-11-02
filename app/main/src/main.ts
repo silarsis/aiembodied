@@ -45,7 +45,7 @@ import { AvatarGenerationService } from './avatar/generation/avatar-generation-s
 import { ComfyUIClient } from './avatar/generation/comfyui-client.js';
 import { BlenderCharacterRunner } from './avatar/generation/character/rig-runner.js';
 import { AvatarImageModelService, createImageModelScanner, createRemoteComfyModelScanner } from './avatar/generation/image-model-service.js';
-import { lookupCivitai, parseCivitaiRef, planCivitaiDownload } from './avatar/generation/civitai.js';
+import { baseModelForFamily, type BaseModelSuggestions, lookupCivitai, parseCivitaiRef, planCivitaiDownload, suggestBaseModels } from './avatar/generation/civitai.js';
 import { resolveComfyInstallation } from './avatar/generation/comfyui-runtime.js';
 import { ModelDownloadService } from './avatar/generation/model-downloads.js';
 import { AvatarCharacterModelService } from './avatar/generation/character-model-service.js';
@@ -184,6 +184,7 @@ let poseGenerationService: PoseGenerationService | null = null;
 let poseEvaluationService: PoseEvaluationService | null = null;
 let avatarDescriptionService: AvatarDescriptionService | null = null;
 let avatarImageModels: AvatarImageModelService | undefined;
+let avatarComfyPool: ComfyUIPool | undefined;
 /** The ComfyUI add-on folder: its downloader runs for this PC, and other machines install the folder. */
 const comfyAddonDirectory = path.join(__dirname, '../assets/avatar-generation/comfyui-aiembodied').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
 const modelDownloads = new ModelDownloadService({
@@ -1110,6 +1111,32 @@ function registerIpcHandlers(
   };
   ipcMain.handle('avatar:image-models', async () => { if (!avatarImageModels) throw new Error('Image models are unavailable.'); return avatarImageModels.list(); });
   ipcMain.handle('avatar:image-model-select', async (_event, id: string) => { if (!avatarImageModels) throw new Error('Image models are unavailable.'); await avatarImageModels.select(id); });
+  ipcMain.handle('avatar:image-loras-select', async (_event, choices: unknown) => {
+    if (!avatarImageModels) throw new Error('Image models are unavailable.');
+    avatarImageModels.selectLoras(Array.isArray(choices) ? choices : []);
+  });
+  // Popular Civitai checkpoints for a LoRA's base model, sized against the image server's GPU.
+  ipcMain.handle('avatar:base-model-suggestions', async (_event, payload: { baseModel?: unknown; family?: unknown }) => {
+    const server = avatarComfyPool?.primary('image');
+    if (!server) throw new Error('No ComfyUI server is set for the image step.');
+    const baseModel =
+      typeof payload?.baseModel === 'string' && payload.baseModel.trim()
+        ? payload.baseModel.trim()
+        : typeof payload?.family === 'string'
+          ? baseModelForFamily(payload.family)
+          : undefined;
+    if (!baseModel) throw new Error("That LoRA's base model isn't known, so there is nothing to suggest.");
+    const vramBytes = await fetch(`${server.url}/system_stats`, { signal: AbortSignal.timeout(5000) })
+      .then(async (response) => (response.ok ? ((await response.json()) as { devices?: Array<{ vram_total?: unknown }> }) : null))
+      .then((stats) => {
+        const total = stats?.devices?.[0]?.vram_total;
+        return typeof total === 'number' && total > 0 ? total : null;
+      })
+      .catch(() => null);
+    const suggestions = await suggestBaseModels(baseModel, vramBytes, manager.getServerKey(BUILT_IN_SERVER_IDS.civitai));
+    const result: BaseModelSuggestions = { serverId: server.id, serverName: server.name, baseModel, vramBytes, suggestions };
+    return result;
+  });
   ipcMain.handle('avatar:character-models', async () => { if (!avatarCharacterModels) throw new Error('3D avatar models are unavailable.'); return avatarCharacterModels.list(); });
   ipcMain.handle('avatar:character-model-select', async (_event, stage: 'geometry' | 'rig', id: string) => { if (!avatarCharacterModels) throw new Error('3D avatar models are unavailable.'); await avatarCharacterModels.select(stage, id); });
   ipcMain.handle('avatar:generation-list', async (): Promise<AvatarGenerationStatus[]> => requireAvatarGeneration().listJobs());
@@ -1536,6 +1563,7 @@ app.whenReady().then(async () => {
     logDirectory: path.join(app.getPath('userData'), 'logs'),
     logger,
   });
+  avatarComfyPool = comfyPool;
   const imageModelScript = path.join(__dirname, '../assets/avatar-generation/image-models.py').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
   // Model lists come from the first ComfyUI server of each step: this PC's files are read
   // directly, another machine's are listed over its HTTP API.

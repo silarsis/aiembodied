@@ -9,6 +9,8 @@ Used two ways:
         --folder checkpoints --filename model.safetensors --url https://... [--sha256 HEX]
 
   A Civitai key comes from the CIVITAI_TOKEN environment variable, never the command line.
+  --info '{...}' saves Civitai's details (family, trigger words) beside the file as
+  <name>.aiembodied.json.
 
 Files are written to "<name>.part" and renamed only once complete (and, when a SHA-256 is given,
 verified), so ComfyUI never lists a half-downloaded model.
@@ -24,6 +26,12 @@ import time
 import urllib.parse
 import urllib.request
 import uuid
+
+try:
+    from aiembodied_model_kinds import write_info
+except ImportError:  # run from another folder without this one on the path
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from aiembodied_model_kinds import write_info
 
 # Folders the app may write to: ComfyUI's model folder names.
 ALLOWED_FOLDERS = {
@@ -83,7 +91,7 @@ def target_folder(folder, folder_paths=None):
 class Download:
     """One download's state. `run` does the work; the add-on runs it on a thread."""
 
-    def __init__(self, url, directory, filename, sha256=None, token=None, opener=None):
+    def __init__(self, url, directory, filename, sha256=None, token=None, opener=None, info=None):
         self.id = uuid.uuid4().hex
         self.url = check_url(url)
         self.directory = directory
@@ -91,6 +99,7 @@ class Download:
         self.sha256 = (sha256 or "").lower() or None
         self.token = token
         self.opener = opener or urllib.request.urlopen
+        self.info = info if isinstance(info, dict) else None
         self.state = "queued"  # queued, downloading, verifying, done, failed, cancelled
         self.received = 0
         self.total = None
@@ -156,6 +165,11 @@ class Download:
                 if digest.hexdigest() != self.sha256:
                     raise DownloadError("The file's SHA-256 doesn't match what Civitai lists.")
             os.replace(part, self.path)
+            if self.info:
+                try:
+                    write_info(self.path, self.info)
+                except OSError:
+                    pass  # the model itself is fine; it just has no saved details
             self.state = "done"
         except Exception as error:  # reported to the app, never raised into ComfyUI
             self.state = "cancelled" if self._cancel.is_set() else "failed"
@@ -177,6 +191,7 @@ def main(argv=None):
     parser.add_argument("--filename", required=True)
     parser.add_argument("--url", required=True)
     parser.add_argument("--sha256")
+    parser.add_argument("--info", help="JSON: what Civitai said about the model, saved beside it")
     args = parser.parse_args(argv)
     try:
         sys.path.insert(0, os.path.abspath(args.comfy_dir))
@@ -185,7 +200,8 @@ def main(argv=None):
             from utils.extra_config import load_extra_path_config
             load_extra_path_config(args.model_paths)
         directory = target_folder(args.folder, folder_paths)
-        job = Download(args.url, directory, args.filename, args.sha256, os.environ.get("CIVITAI_TOKEN"))
+        info = json.loads(args.info) if args.info else None
+        job = Download(args.url, directory, args.filename, args.sha256, os.environ.get("CIVITAI_TOKEN"), info=info)
     except Exception as error:
         print(json.dumps({"state": "failed", "error": str(error)}), flush=True)
         return 1

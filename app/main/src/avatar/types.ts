@@ -148,9 +148,28 @@ export interface AvatarImageModelSummary {
   available: boolean;
   unavailableReason?: string;
 }
+export interface AvatarLoraSummary {
+  /** File name in ComfyUI's loras folder. */
+  name: string;
+  /** Civitai's name for it, when it was downloaded through the app. */
+  title?: string;
+  /** sd1, sdxl… read from the file or from Civitai; absent when unknown. */
+  family?: string;
+  /** Civitai's base model ("SD 1.5", "Pony"…), when known. */
+  baseModel?: string;
+  triggerWords?: string[];
+}
+export interface AvatarLoraChoice {
+  name: string;
+  strength: number;
+}
 export interface AvatarImageModelSelection {
   models: AvatarImageModelSummary[];
   selectedModelId: string | null;
+  /** Family of each model, keyed by id, so the LoRA list can match them. */
+  modelFamilies?: Record<string, string>;
+  loras?: AvatarLoraSummary[];
+  selectedLoras?: AvatarLoraChoice[];
 }
 
 export interface AvatarGenerationRequest {

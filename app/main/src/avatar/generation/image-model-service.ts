@@ -3,13 +3,17 @@ import { promisify } from 'node:util';
 import type { MemoryStore } from '../../memory/index.js';
 import { resolveComfyInstallation } from './comfyui-runtime.js';
 import type { ImageFamily, ImageWorkflowModel } from './image-workflows.js';
-import type { AvatarImageModelSelection, AvatarImageModelSummary } from '../types.js';
+import type { AvatarImageModelSelection, AvatarImageModelSummary, AvatarLoraChoice, AvatarLoraSummary } from '../types.js';
 
 export interface ImageModelFile {
   folder: string;
   name: string;
   kind: string;
   title?: string;
+  /** LoRAs: the family they were trained for, and what Civitai said about them. */
+  family?: string;
+  baseModel?: string;
+  triggerWords?: string[];
   embeddedVae?: boolean;
   embeddedClip?: boolean;
   embeddedClip2?: boolean;
@@ -62,8 +66,12 @@ interface Entry {
 }
 
 /** Installed files determine the choices; only a known compatible family can execute a job. */
+const LORAS_KEY = 'avatar.imageLoras';
+
 export class AvatarImageModelService {
   private entries: Entry[] = [];
+  private loras: AvatarLoraSummary[] = [];
+  private chosenLoras: AvatarLoraChoice[] = [];
   private pending: Promise<void> | null = null;
   private selected: string | null = null;
   constructor(
@@ -125,6 +133,16 @@ export class AvatarImageModelService {
             };
           })
           .sort((a, b) => a.model.name.localeCompare(b.model.name));
+        this.loras = files
+          .filter((file) => file.folder === 'loras' && file.kind === 'lora')
+          .map((file): AvatarLoraSummary => ({
+            name: file.name,
+            ...(file.title ? { title: file.title } : {}),
+            ...(typeof file.family === 'string' ? { family: file.family } : {}),
+            ...(typeof file.baseModel === 'string' ? { baseModel: file.baseModel } : {}),
+            ...(Array.isArray(file.triggerWords) ? { triggerWords: file.triggerWords.filter((word) => typeof word === 'string') } : {}),
+          }))
+          .sort((a, b) => (a.title ?? a.name).localeCompare(b.title ?? b.name));
       })
       .finally(() => {
         this.pending = null;
@@ -143,12 +161,40 @@ export class AvatarImageModelService {
       null
     );
   }
+  private savedLoras(): AvatarLoraChoice[] {
+    const raw = this.store?.getValue(LORAS_KEY);
+    if (raw === undefined || raw === null) return this.chosenLoras;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return Array.isArray(parsed)
+        ? parsed.filter((entry: unknown): entry is AvatarLoraChoice => {
+            const choice = entry as Partial<AvatarLoraChoice> | null;
+            return typeof choice?.name === 'string' && typeof choice.strength === 'number';
+          })
+        : [];
+    } catch {
+      return [];
+    }
+  }
   async list(): Promise<AvatarImageModelSelection> {
     await this.refresh();
+    const installed = new Set(this.loras.map((lora) => lora.name));
     return {
       models: this.entries.map((entry) => ({ ...entry.summary })),
       selectedModelId: this.current(),
+      modelFamilies: Object.fromEntries(this.entries.map((entry) => [entry.model.id, entry.model.family])),
+      loras: this.loras.map((lora) => ({ ...lora })),
+      selectedLoras: this.savedLoras().filter((choice) => installed.has(choice.name)),
     };
+  }
+  /** The LoRAs to apply (in order), kept across restarts; each only applies to a model of its family. */
+  selectLoras(choices: AvatarLoraChoice[]): void {
+    const clean = choices
+      .filter((choice) => choice && typeof choice.name === 'string' && Number.isFinite(choice.strength))
+      .slice(0, 8)
+      .map((choice) => ({ name: choice.name, strength: Math.min(2, Math.max(0, choice.strength)) }));
+    this.chosenLoras = clean;
+    this.store?.setValue(LORAS_KEY, JSON.stringify(clean));
   }
   async select(id: string): Promise<void> {
     await this.resolve(id);
@@ -164,7 +210,13 @@ export class AvatarImageModelService {
         entry?.summary.unavailableReason ??
           'The selected image model is no longer available. Refresh the model list and choose another.',
       );
-    return { ...entry.model };
+    const loras = this.savedLoras().flatMap((choice) => {
+      const lora = this.loras.find((entry) => entry.name === choice.name);
+      // A LoRA of another family (or an unknown one) would fail or wreck the image; leave it out.
+      if (!lora || lora.family !== entry.model.family || choice.strength <= 0) return [];
+      return [{ name: lora.name, strength: choice.strength, ...(lora.triggerWords?.length ? { triggerWords: lora.triggerWords } : {}) }];
+    });
+    return { ...entry.model, ...(loras.length ? { loras } : {}) };
   }
 }
 
@@ -183,7 +235,7 @@ export function createRemoteComfyModelScanner(
       .then(async (response) => (response.ok ? ((await response.json()) as unknown) : null))
       .catch(() => null);
     if (Array.isArray(described) && described.every(isModelFile)) return described;
-    const folders = ['diffusion_models', 'text_encoders', 'vae', 'checkpoints'] as const;
+    const folders = ['diffusion_models', 'text_encoders', 'vae', 'checkpoints', 'loras'] as const;
     const listed = await Promise.all(
       folders.map(async (folder) => {
         const response = await fetchFn(`${root}/models/${folder}`, { signal: AbortSignal.timeout(10_000) });
@@ -237,6 +289,8 @@ export function remoteModelKind(folder: string, name: string): string | null {
     return null;
   }
   if (folder === 'checkpoints') return /xl/.test(lower) ? 'sdxl' : 'sd1';
+  // Without the add-on a LoRA's family can't be read, so it is listed but never applied.
+  if (folder === 'loras') return /\.safetensors$/.test(lower) ? 'lora' : null;
   return null;
 }
 
