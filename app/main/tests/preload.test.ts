@@ -107,6 +107,16 @@ describe('preload bridge', () => {
     expect(invoke).toHaveBeenCalledWith('models:set-route', { use: 'image', route: { server: 'server-a', spread: true } });
     await api.models.setKey('openai', 'sk');
     expect(invoke).toHaveBeenCalledWith('models:set-key', { serverId: 'openai', key: 'sk' });
+    await api.models.civitaiLookup('4201@900', 900);
+    expect(invoke).toHaveBeenCalledWith('models:civitai-lookup', { ref: '4201@900', versionId: 900 });
+    await api.models.download('rack', '4201@900', 900);
+    expect(invoke).toHaveBeenCalledWith('models:download', { serverId: 'rack', ref: '4201@900', versionId: 900 });
+    await api.models.downloads();
+    expect(invoke).toHaveBeenCalledWith('models:downloads');
+    await api.models.cancelDownload('d1');
+    expect(invoke).toHaveBeenCalledWith('models:cancel-download', 'd1');
+    await api.models.comfyAddon('rack');
+    expect(invoke).toHaveBeenCalledWith('models:comfy-addon', 'rack');
   });
 
   it('exposes camera detection helpers through the bridge', async () => {

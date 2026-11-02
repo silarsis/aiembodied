@@ -142,6 +142,12 @@ describe('ConfigManager model servers', () => {
     await stored.config.setServerKey('brave', 'saved-brave');
     expect(stored.config.getConfig().webSearch.braveApiKey).toBe('saved-brave');
     expect(await stored.secretStore.getSecret('BRAVE_SEARCH_API_KEY')).toBe('saved-brave');
+
+    const civitai = await manager({ CIVITAI_API_KEY: 'env-civitai' });
+    expect(civitai.config.getServerKey('civitai')).toBe('env-civitai');
+    expect(civitai.config.getModelRoutingView().servers.find((server) => server.id === 'civitai')).toMatchObject({ type: 'civitai', hasKey: true, keyFromEnv: true });
+    await stored.config.setServerKey('civitai', 'saved-civitai');
+    expect(await stored.secretStore.getSecret('CIVITAI_API_KEY')).toBe('saved-civitai');
   });
 });
 

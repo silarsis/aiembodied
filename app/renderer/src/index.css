@@ -1704,3 +1704,11 @@ body {
 }
 .modelsDialog__modelActions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .modelsDialog__modelActions small { opacity: .75; }
+.modelsDialog__downloads { gap: 8px; }
+.modelsDialog__addon { border: 1px solid #3a4a6a; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.modelsDialog__path { display: block; word-break: break-all; font-size: .78rem; background: #17223a; border-radius: 6px; padding: 4px 8px; user-select: all; }
+.modelsDialog__plan { display: flex; flex-direction: column; gap: 6px; border: 1px solid #2a3654; border-radius: 8px; padding: 10px 12px; }
+.modelsDialog__plan span { font-size: .85rem; }
+.modelsDialog__inline { display: flex; align-items: center; gap: 8px; font-size: .85rem; }
+.modelsDialog__download { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 8px; }
+.modelsDialog__download progress { width: 140px; }

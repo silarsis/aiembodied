@@ -45,6 +45,9 @@ import { AvatarGenerationService } from './avatar/generation/avatar-generation-s
 import { ComfyUIClient } from './avatar/generation/comfyui-client.js';
 import { BlenderCharacterRunner } from './avatar/generation/character/rig-runner.js';
 import { AvatarImageModelService, createImageModelScanner, createRemoteComfyModelScanner } from './avatar/generation/image-model-service.js';
+import { lookupCivitai, parseCivitaiRef, planCivitaiDownload } from './avatar/generation/civitai.js';
+import { resolveComfyInstallation } from './avatar/generation/comfyui-runtime.js';
+import { ModelDownloadService } from './avatar/generation/model-downloads.js';
 import { AvatarCharacterModelService } from './avatar/generation/character-model-service.js';
 import { LocalMotionClient } from './avatar/motion/local-motion-client.js';
 import { LocalMotionGenerationService } from './avatar/motion/local-motion-generation-service.js';
@@ -80,7 +83,7 @@ import {
 import { getOpenAIClient } from './openai/client.js';
 import type OpenAI from 'openai';
 import { createChatCompletionsResponsesClient } from './openai/chat-completions-responses.js';
-import { routeTargets, serverUrl, USE_SERVER_TYPES, type ModelRoute, type ServerType, type UseId } from './config/model-routing.js';
+import { BUILT_IN_SERVER_IDS, routeTargets, serverUrl, USE_SERVER_TYPES, type ModelRoute, type ServerType, type UseId } from './config/model-routing.js';
 import { probeModelServer } from './config/model-server-probe.js';
 import { ComfyUIPool } from './avatar/generation/comfyui-pool.js';
 import { MCPManager } from './mcp/mcp-manager.js';
@@ -181,6 +184,13 @@ let poseGenerationService: PoseGenerationService | null = null;
 let poseEvaluationService: PoseEvaluationService | null = null;
 let avatarDescriptionService: AvatarDescriptionService | null = null;
 let avatarImageModels: AvatarImageModelService | undefined;
+/** The ComfyUI add-on folder: its downloader runs for this PC, and other machines install the folder. */
+const comfyAddonDirectory = path.join(__dirname, '../assets/avatar-generation/comfyui-aiembodied').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
+const modelDownloads = new ModelDownloadService({
+  script: path.join(comfyAddonDirectory, 'aiembodied_downloader.py'),
+  resolveInstallation: () => resolveComfyInstallation(),
+  logger,
+});
 let avatarCharacterModels: AvatarCharacterModelService | undefined;
 let avatarGenerationService: AvatarGenerationService | null = null;
 let localMotionService: LocalMotionGenerationService | null = null;
@@ -843,6 +853,42 @@ function registerIpcHandlers(
     await manager.setModelRoute(use, (payload?.route ?? {}) as ModelRoute);
     await applyProviderSettings(manager);
     return manager.getModelRoutingView();
+  });
+  const comfyServer = (serverId: unknown) => {
+    const server = manager.getConfig().models.servers.find((entry) => entry.id === serverId);
+    if (!server || server.type !== 'comfy') throw new Error('Choose a ComfyUI server.');
+    return server;
+  };
+  ipcMain.handle('models:civitai-lookup', async (_event, payload: { ref?: unknown; versionId?: unknown }) => {
+    const ref = parseCivitaiRef(typeof payload?.ref === 'string' ? payload.ref : '');
+    if (!ref) throw new Error('Paste a Civitai model link (civitai.com/models/…) or an AIR (urn:air:…:civitai:123@456).');
+    const model = await lookupCivitai(ref, manager.getServerKey(BUILT_IN_SERVER_IDS.civitai));
+    const versionId = typeof payload?.versionId === 'number' ? payload.versionId : undefined;
+    return {
+      versions: model.versions.map((version) => ({ id: version.id, name: version.name, baseModel: version.baseModel })),
+      plan: planCivitaiDownload(model, versionId),
+    };
+  });
+  ipcMain.handle('models:download', async (_event, payload: { serverId?: unknown; ref?: unknown; versionId?: unknown }) => {
+    const server = comfyServer(payload?.serverId);
+    const ref = parseCivitaiRef(typeof payload?.ref === 'string' ? payload.ref : '');
+    if (!ref) throw new Error('Paste a Civitai model link or AIR.');
+    const key = manager.getServerKey(BUILT_IN_SERVER_IDS.civitai);
+    const model = await lookupCivitai(ref, key);
+    const plan = planCivitaiDownload(model, typeof payload?.versionId === 'number' ? payload.versionId : undefined);
+    if (!server.managed && !(await modelDownloads.hasAddon(server))) {
+      throw new Error(`${server.name} needs the aiembodied ComfyUI add-on before it can download models. See "Add-on" on this page.`);
+    }
+    return modelDownloads.start(server, plan, key);
+  });
+  ipcMain.handle('models:downloads', () => modelDownloads.list());
+  ipcMain.handle('models:cancel-download', (_event, id: unknown) => {
+    if (typeof id === 'string') modelDownloads.cancel(id);
+    return modelDownloads.list();
+  });
+  ipcMain.handle('models:comfy-addon', async (_event, serverId: unknown) => {
+    const server = comfyServer(serverId);
+    return { installed: await modelDownloads.hasAddon(server), folder: comfyAddonDirectory };
   });
   ipcMain.handle('models:set-key', async (_event, payload: { serverId?: unknown; key?: unknown }) => {
     if (typeof payload?.serverId !== 'string') throw new Error('Choose a server.');

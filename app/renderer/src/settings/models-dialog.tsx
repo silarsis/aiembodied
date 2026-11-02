@@ -12,6 +12,7 @@ import {
 } from '../../../main/src/config/model-routing.js';
 import type { ModelRole, ServerProbe } from '../../../main/src/config/model-server-probe.js';
 import type { ModelsBridge } from '../preload-api.js';
+import { ModelDownloads } from './model-downloads.js';
 import type { AvatarBridge } from '../avatar/types.js';
 import { useCharacterModels } from '../avatar/use-character-models.js';
 import { useImageModels } from '../avatar/use-image-models.js';
@@ -49,6 +50,7 @@ export const SERVER_TYPE_LABELS: Record<ServerType, string> = {
   search: 'SearXNG',
   openai: 'OpenAI',
   brave: 'Brave Search',
+  civitai: 'Civitai',
 };
 
 const SERVER_TYPE_HINTS: Partial<Record<ServerType, { hint: string; example: string }>> = {
@@ -106,7 +108,8 @@ export interface ModelsDialogProps {
   initialUse?: UseId;
 }
 
-const where = (server: ModelServerView) => (server.managed ? 'local' : server.type === 'openai' || server.type === 'brave' ? 'online' : 'remote');
+const ONLINE_TYPES: readonly ServerType[] = ['openai', 'brave', 'civitai'];
+const where = (server: ModelServerView) => (server.managed ? 'local' : ONLINE_TYPES.includes(server.type) ? 'online' : 'remote');
 const WHERE_LABEL = { local: 'This PC', remote: 'Your server', online: 'Online' } as const;
 
 export function ModelsDialog({ api, avatarApi, engine, onClose, onChanged, initialUse = 'llm' }: ModelsDialogProps) {
@@ -354,6 +357,7 @@ export function ModelsDialog({ api, avatarApi, engine, onClose, onChanged, initi
     main = server ? (
       <ServerPage
         key={server.id}
+        api={api}
         server={server}
         view={view}
         probe={probes[server.id]}
@@ -868,6 +872,7 @@ function AddServerForm({
 }
 
 function ServerPage({
+  api,
   server,
   view,
   probe,
@@ -878,6 +883,7 @@ function ServerPage({
   onRemove,
   onOpenUse,
 }: {
+  api: ModelsBridge;
   server: ModelServerView;
   view: ModelRoutingView;
   probe?: ServerProbe | 'checking';
@@ -892,7 +898,7 @@ function ServerPage({
   const [url, setUrl] = useState(server.url);
   const [key, setKey] = useState('');
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const fixedUrl = server.type === 'openai' || server.type === 'brave';
+  const fixedUrl = ONLINE_TYPES.includes(server.type);
   const usedBy = MODEL_USES.filter((use) => {
     const route = view.routes[use.id];
     return route.server === server.id || (route.backups ?? []).some((backup) => backup.server === server.id);
@@ -943,7 +949,15 @@ function ServerPage({
             type="password"
             autoComplete="off"
             value={key}
-            placeholder={server.hasKey ? 'Saved. Enter a new one to replace it.' : server.type === 'openai' || server.type === 'brave' ? 'Needed' : 'Only if the server asks for one'}
+            placeholder={
+              server.hasKey
+                ? 'Saved. Enter a new one to replace it.'
+                : server.type === 'civitai'
+                  ? 'Needed for many downloads'
+                  : server.type === 'openai' || server.type === 'brave'
+                    ? 'Needed'
+                    : 'Only if the server asks for one'
+            }
             onChange={(event) => setKey(event.target.value)}
           />
           <span />
@@ -965,7 +979,11 @@ function ServerPage({
           ) : null}
         </form>
       ) : null}
-      <div className="modelsDialog__list">
+      {server.type === 'comfy' && api.download ? <ModelDownloads api={api} server={server} onFinished={onProbe} /> : null}
+      {server.type === 'civitai' ? (
+        <p className="kiosk__helper">Civitai runs no job itself. Its key lets ComfyUI servers download models from a pasted Civitai link (open a ComfyUI server, then Download a model).</p>
+      ) : null}
+      <div className="modelsDialog__list" hidden={server.type === 'civitai'}>
         <span className="modelsDialog__group">
           Models it offers{' '}
           <button type="button" onClick={onProbe} disabled={probe === 'checking'}>
@@ -984,7 +1002,7 @@ function ServerPage({
           </p>
         )}
       </div>
-      <div className="modelsDialog__list">
+      <div className="modelsDialog__list" hidden={server.type === 'civitai'}>
         <span className="modelsDialog__group">Used by</span>
         {usedBy.length ? (
           <div className="modelsDialog__chips">

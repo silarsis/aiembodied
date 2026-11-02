@@ -161,8 +161,12 @@ const DEFAULT_CONVERSATION_BACKEND: ConversationBackend = 'local';
 /** The OpenAI key is read from the first of these that is set, before the secret store. */
 const API_KEY_ENV_NAMES = ['REALTIME_API_KEY', 'realtime_api_key', 'OPENAI_API_KEY'];
 /** Where a server's API key is kept in the secret store. */
-const BRAVE_SECRET_NAME = 'BRAVE_SEARCH_API_KEY';
 const serverSecretName = (id: string) => `MODEL_SERVER_KEY:${id}`;
+/** Online accounts whose key can also come from an environment variable, which wins. */
+const ACCOUNT_KEYS: Record<string, { env: string; secret: string }> = {
+  [BUILT_IN_SERVER_IDS.brave]: { env: 'BRAVE_SEARCH_API_KEY', secret: 'BRAVE_SEARCH_API_KEY' },
+  [BUILT_IN_SERVER_IDS.civitai]: { env: 'CIVITAI_API_KEY', secret: 'CIVITAI_API_KEY' },
+};
 
 /** A server as the Models and servers pop-up sees it: no keys, only whether one is set. */
 export interface ModelServerView {
@@ -202,7 +206,7 @@ export class ConfigManager {
   private storedModels: StoredModels = {};
   /** API keys of added servers and Brave, by server id. OpenAI's is `realtimeApiKey`. */
   private serverKeys = new Map<string, string>();
-  private braveKeyFromEnv = false;
+  private readonly keysFromEnv = new Set<string>();
 
   constructor(options: ConfigManagerOptions = {}) {
     this.secretStore = options.secretStore;
@@ -360,7 +364,7 @@ export class ConfigManager {
         ...server,
         hasKey: Boolean(this.getServerKey(server.id)),
         ...(server.id === BUILT_IN_SERVER_IDS.openai && this.apiKeyFromEnv ? { keyFromEnv: true } : {}),
-        ...(server.id === BUILT_IN_SERVER_IDS.brave && this.braveKeyFromEnv ? { keyFromEnv: true } : {}),
+        ...(this.keysFromEnv.has(server.id) ? { keyFromEnv: true } : {}),
       })),
       routes: structuredClone(models.routes),
     };
@@ -441,13 +445,13 @@ export class ConfigManager {
     const server = this.getConfig().models.servers.find((entry) => entry.id === id);
     if (!server) throw new Error('That server no longer exists.');
     if (!this.secretStore) throw new Error('Secret store is not configured. Unable to persist secrets securely.');
-    const name = id === BUILT_IN_SERVER_IDS.brave ? BRAVE_SECRET_NAME : serverSecretName(id);
+    const name = ACCOUNT_KEYS[id]?.secret ?? serverSecretName(id);
     if (key) {
       await this.secretStore.setSecret(name, key);
       this.serverKeys.set(id, key);
     } else {
       await this.secretStore.deleteSecret(name);
-      if (!(id === BUILT_IN_SERVER_IDS.brave && this.braveKeyFromEnv)) this.serverKeys.delete(id);
+      if (!this.keysFromEnv.has(id)) this.serverKeys.delete(id);
     }
     if (id === BUILT_IN_SERVER_IDS.brave && this.config) {
       this.config = { ...this.config, webSearch: { ...this.config.webSearch, braveApiKey: this.serverKeys.get(id) } };
@@ -476,12 +480,15 @@ export class ConfigManager {
 
   private async loadServerKeys(): Promise<void> {
     this.serverKeys.clear();
-    const envBrave = this.env.BRAVE_SEARCH_API_KEY?.trim();
-    this.braveKeyFromEnv = Boolean(envBrave);
+    this.keysFromEnv.clear();
     const store = this.secretStore;
     const read = async (name: string) => (store ? await store.getSecret(name).catch(() => null) : null);
-    const brave = envBrave || (await read(BRAVE_SECRET_NAME));
-    if (brave) this.serverKeys.set(BUILT_IN_SERVER_IDS.brave, brave);
+    for (const [id, names] of Object.entries(ACCOUNT_KEYS)) {
+      const fromEnv = this.env[names.env]?.trim();
+      if (fromEnv) this.keysFromEnv.add(id);
+      const key = fromEnv || (await read(names.secret));
+      if (key) this.serverKeys.set(id, key);
+    }
     for (const server of this.storedModels.servers ?? []) {
       if (Object.values(BUILT_IN_SERVER_IDS).includes(server.id as never)) continue;
       const key = await read(serverSecretName(server.id));
