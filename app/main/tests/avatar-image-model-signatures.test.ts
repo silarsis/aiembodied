@@ -33,4 +33,24 @@ print(json.dumps([m.signature(h,'renamed-turbo.safetensors')['kind'] for h in he
       null,
     ]);
   });
+
+  it('recognises TRELLIS.2 weights by their published names', async () => {
+    const script = path.resolve('assets/avatar-generation/image-models.py');
+    const code = `import importlib.util,json,sys
+spec=importlib.util.spec_from_file_location('image_models',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+cases=[('diffusion_models','trellis_2_int8_convrot.safetensors'),('vae','trellis_2_shape_vae_bf16.safetensors'),('vae','trellis_2_texture_vae_bf16.safetensors'),('vae','other_vae.safetensors'),('checkpoints','trellis_2.safetensors')]
+print(json.dumps([m.trellis_kind(f,n) for f,n in cases]))`;
+    const { stdout } = await promisify(execFile)(
+      process.platform === 'win32' ? 'python' : 'python3',
+      ['-c', code, script],
+      { windowsHide: true, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } },
+    );
+    expect(JSON.parse(stdout)).toEqual([
+      'trellis2',
+      'trellis2-shape-vae',
+      'trellis2-texture-vae',
+      null,
+      null,
+    ]);
+  });
 });

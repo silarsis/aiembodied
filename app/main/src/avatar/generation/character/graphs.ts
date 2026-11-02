@@ -24,9 +24,18 @@ Follow the description for the character's appearance. Keep arms and legs clearl
 Clean matte toy-like surfaces. Entire character including feet in frame with margin, pure white background, no shadow, no scenery, no lettering, no turnaround or second view.`;
 }
 
-export function characterMeshGraph(image: string, seed: number): ComfyGraph {
+export function characterMeshGraph(
+  image: string,
+  seed: number,
+  weights?: { unet: string; shapeVae: string; textureVae: string },
+): ComfyGraph {
   const graph: ComfyGraph = structuredClone(template);
   graph.image.inputs.image = image;
+  if (weights) {
+    graph.unet.inputs.unet_name = weights.unet;
+    graph.shape_vae.inputs.vae_name = weights.shapeVae;
+    graph.tex_vae.inputs.vae_name = weights.textureVae;
+  }
   for (const node of Object.values(graph)) {
     if (node.class_type === 'KSampler') node.inputs.seed = seed;
   }

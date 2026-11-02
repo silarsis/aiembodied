@@ -172,6 +172,26 @@ export interface AvatarGenerationWarning {
 }
 export interface AvatarGenerationConfirmation {
   acceptWarnings?: boolean;
+  /** 3D geometry model from listAvatarCharacterModels; the saved choice when omitted. */
+  geometryModelId?: string;
+  /** Rig and face-animation method from listAvatarCharacterModels; the saved choice when omitted. */
+  rigModelId?: string;
+}
+
+export interface AvatarCharacterModelSummary {
+  id: string;
+  name: string;
+  /** One line on what the option does, shown under the selector. */
+  description?: string;
+  available: boolean;
+  unavailableReason?: string;
+}
+/** Models that turn an approved image into a rigged, animated 3D avatar. */
+export interface AvatarCharacterModelSelection {
+  geometry: AvatarCharacterModelSummary[];
+  rig: AvatarCharacterModelSummary[];
+  selectedGeometryId: string | null;
+  selectedRigId: string | null;
 }
 
 export interface AvatarGenerationStatus {
@@ -185,6 +205,20 @@ export interface AvatarGenerationStatus {
   /** Concept image as a PNG data URL, once it exists. */
   previewDataUrl?: string | null;
   errorMessage?: string | null;
+  /** The description, or the name given to an upload. */
+  prompt?: string;
+  mode?: 'new-character' | 'restyle';
+  source?: 'text' | 'upload';
+  /** Milliseconds since the epoch; orders the takes in the studio history. */
+  createdAt?: number;
+  /** Stable number shown as "Take N"; not reused when other takes are removed. */
+  takeNumber?: number;
+  imageModelName?: string | null;
+  /** Names of the 3D models used for the current or last build of this take. */
+  geometryModelName?: string | null;
+  rigModelName?: string | null;
+  /** Seconds the last finished build took. */
+  buildSeconds?: number | null;
 }
 
 export interface AvatarGenerationAcceptance {

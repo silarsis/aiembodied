@@ -1,4 +1,4 @@
-"""List ComfyUI's configured weights and classify supported image architectures without loading them."""
+"""List ComfyUI's configured weights and classify supported image and 3D architectures without loading them."""
 import argparse
 import json
 import struct
@@ -47,6 +47,20 @@ def signature(header, filename=""):
     }
 
 
+def trellis_kind(folder, name):
+    """TRELLIS.2 weights are recognised by their published file names."""
+    lower = name.lower().replace("-", "_")
+    if "trellis" not in lower:
+        return None
+    if folder == "vae" and "shape" in lower:
+        return "trellis2-shape-vae"
+    if folder == "vae" and "tex" in lower:
+        return "trellis2-texture-vae"
+    if folder == "diffusion_models":
+        return "trellis2"
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--comfy-dir", required=True)
@@ -72,6 +86,8 @@ def main():
                 if not isinstance(header, dict):
                     continue
                 info = signature(header, name)
+                if not info["kind"]:
+                    info["kind"] = trellis_kind(folder, name)
                 if info["kind"]:
                     result.append({"folder": folder, "name": name.replace("\\", "/"), **info})
             except (OSError, ValueError, struct.error):

@@ -22,6 +22,7 @@ import type {
   PoseEvaluationRequest,
   PoseEvaluationResult,
   AvatarImageModelSelection,
+  AvatarCharacterModelSelection,
   AvatarGenerationRequest,
   AvatarGenerationJob,
   AvatarGenerationStatus,
@@ -254,6 +255,10 @@ export interface AvatarBridge {
   loadGeneratedAvatarPreview(jobId: string): Promise<ArrayBuffer>;
   acceptGeneratedAvatar(jobId: string): Promise<AvatarGenerationAcceptance>;
   rejectGeneratedAvatar(jobId: string): Promise<void>;
+  listAvatarGenerationJobs(): Promise<AvatarGenerationStatus[]>;
+  cancelAvatarGeneration(jobId: string): Promise<void>;
+  listAvatarCharacterModels(): Promise<AvatarCharacterModelSelection>;
+  setAvatarCharacterModel(stage: 'geometry' | 'rig', id: string): Promise<void>;
 }
 
 export interface CameraDetectionEvent {
@@ -522,6 +527,16 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       ipcRenderer.invoke('avatar:generation-accept', jobId) as Promise<AvatarGenerationAcceptance>,
     rejectGeneratedAvatar: async (jobId: string) => {
       await ipcRenderer.invoke('avatar:generation-reject', jobId);
+    },
+    listAvatarGenerationJobs: () =>
+      ipcRenderer.invoke('avatar:generation-list') as Promise<AvatarGenerationStatus[]>,
+    cancelAvatarGeneration: async (jobId: string) => {
+      await ipcRenderer.invoke('avatar:generation-cancel', jobId);
+    },
+    listAvatarCharacterModels: () =>
+      ipcRenderer.invoke('avatar:character-models') as Promise<AvatarCharacterModelSelection>,
+    setAvatarCharacterModel: async (stage: 'geometry' | 'rig', id: string) => {
+      await ipcRenderer.invoke('avatar:character-model-select', stage, id);
     },
   },
   camera: {

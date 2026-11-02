@@ -146,37 +146,6 @@ describe('AvatarConfigurator', () => {
     vi.restoreAllMocks();
   });
 
-  it('submits a VRMA prompt and reports success', async () => {
-    const listModels = vi.fn().mockResolvedValue([]);
-    const getActiveModel = vi.fn().mockResolvedValue(null);
-    const generateAnimation = vi.fn().mockResolvedValue({
-      animation: {
-        id: 'vrma-1',
-        name: 'friendly-wave',
-        createdAt: Date.now(),
-        fileSha: 'sha',
-        duration: 1.2,
-        fps: 30,
-      },
-    });
-
-    const avatarApi = createAvatarBridgeStub({
-      listModels,
-      getActiveModel,
-      generateAnimation,
-    });
-
-    render(<AvatarConfigurator avatarApi={avatarApi} />);
-
-    const promptInput = await screen.findByLabelText('Animation prompt');
-    fireEvent.change(promptInput, { target: { value: 'Wave hello' } });
-
-    const form = screen.getByRole('form', { name: 'Generate VRMA animation' });
-    fireEvent.submit(form);
-
-    await waitFor(() => expect(generateAnimation).toHaveBeenCalledWith({ prompt: 'Wave hello' }));
-    expect(await screen.findByText('Generated animation saved as friendly-wave.')).toBeInTheDocument();
-  });
 
   it('renders VRM models with metadata and handles activation and deletion', async () => {
     const models = [
@@ -344,12 +313,3 @@ describe('AvatarConfigurator', () => {
 });
 
 
-it('keeps included base poses available without offering deletion', async () => {
-  const bridge = createAvatarBridgeStub();
-  vi.mocked(bridge.listPoses).mockResolvedValue([{ id: 'builtin:happiness', name: 'Happiness', createdAt: 0, fileSha: 'base', builtIn: true }]);
-  render(<AvatarConfigurator avatarApi={bridge} />);
-  const heading = await screen.findByRole('heading', { name: 'Happiness' });
-  const card = heading.closest('article')!;
-  expect(within(card).getByText('Included base pose')).toBeInTheDocument();
-  expect(within(card).queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
-});

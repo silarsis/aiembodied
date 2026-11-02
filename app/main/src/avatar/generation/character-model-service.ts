@@ -1,0 +1,224 @@
+import type { MemoryStore } from '../../memory/index.js';
+import type { ImageModelFile } from './image-model-service.js';
+import type { AvatarCharacterModelSelection, AvatarCharacterModelSummary } from '../types.js';
+
+/** The weights a TRELLIS.2 geometry run loads; the workflow defaults are used when not detected. */
+export interface GeometryModel {
+  id: string;
+  name: string;
+  unet: string;
+  shapeVae: string;
+  textureVae: string;
+}
+export interface RigModel {
+  id: string;
+  name: string;
+}
+
+export const DEFAULT_TRELLIS_UNET = 'trellis_2_int8_convrot.safetensors';
+const DEFAULT_SHAPE_VAE = 'trellis_2_shape_vae_bf16.safetensors';
+const DEFAULT_TEXTURE_VAE = 'trellis_2_texture_vae_bf16.safetensors';
+export const BLENDER_FACE_FIT_RIG = 'blender-face-fit';
+
+const GEOMETRY_KEY = 'avatar.geometryModel';
+const RIG_KEY = 'avatar.rigModel';
+
+interface Entry<T> {
+  model: T;
+  summary: AvatarCharacterModelSummary;
+}
+
+function displayName(file: string): string {
+  const stem = file.replace(/\.safetensors$/i, '').replace(/^trellis_?2_?/i, '');
+  const variant = stem.replaceAll('_', ' ').trim();
+  return variant ? `TRELLIS.2 (${variant})` : 'TRELLIS.2';
+}
+
+/**
+ * Lists the models that turn an approved image into an animated avatar: the 3D geometry model
+ * (TRELLIS.2 variants found in ComfyUI) and the rig and face-animation method.
+ */
+export class AvatarCharacterModelService {
+  private geometry: Entry<GeometryModel>[] = [];
+  private rig: Entry<RigModel>[] = [];
+  private pending: Promise<void> | null = null;
+  private selected: { geometry: string | null; rig: string | null } = { geometry: null, rig: null };
+
+  constructor(
+    private readonly scan: () => Promise<ImageModelFile[]>,
+    private readonly checkRig: () => Promise<void>,
+    private readonly store?: Pick<MemoryStore, 'getValue' | 'setValue'>,
+  ) {}
+
+  private async refresh(): Promise<void> {
+    if (this.pending) return this.pending;
+    this.pending = (async () => {
+      let files: ImageModelFile[] | null;
+      try {
+        files = await this.scan();
+      } catch {
+        // Discovery needs a local ComfyUI install; the workflow defaults still run on a remote one.
+        files = null;
+      }
+      this.geometry = this.geometryEntries(files);
+      let rigReason: string | undefined;
+      try {
+        await this.checkRig();
+      } catch (error) {
+        rigReason = error instanceof Error ? error.message : String(error);
+      }
+      this.rig = [
+        {
+          model: { id: BLENDER_FACE_FIT_RIG, name: 'Blender auto-rig with fitted face' },
+          summary: {
+            id: BLENDER_FACE_FIT_RIG,
+            name: 'Blender auto-rig with fitted face',
+            description:
+              'Fits a humanoid skeleton in Blender, then a local MediaPipe face with speech, blink, gaze and six emotions.',
+            available: !rigReason,
+            ...(rigReason ? { unavailableReason: rigReason } : {}),
+          },
+        },
+      ];
+    })().finally(() => {
+      this.pending = null;
+    });
+    return this.pending;
+  }
+
+  private geometryEntries(files: ImageModelFile[] | null): Entry<GeometryModel>[] {
+    const pick = (kind: string, preferred: string) =>
+      files?.find((file) => file.kind === kind && file.name === preferred)?.name ??
+      files?.filter((file) => file.kind === kind).sort((a, b) => a.name.localeCompare(b.name))[0]
+        ?.name;
+    const shapeVae = files ? pick('trellis2-shape-vae', DEFAULT_SHAPE_VAE) : DEFAULT_SHAPE_VAE;
+    const textureVae = files
+      ? pick('trellis2-texture-vae', DEFAULT_TEXTURE_VAE)
+      : DEFAULT_TEXTURE_VAE;
+    const unets = files
+      ? files
+          .filter((file) => file.kind === 'trellis2' && file.folder === 'diffusion_models')
+          .map((file) => file.name)
+      : [DEFAULT_TRELLIS_UNET];
+    if (!unets.length) {
+      return [
+        {
+          model: {
+            id: DEFAULT_TRELLIS_UNET,
+            name: displayName(DEFAULT_TRELLIS_UNET),
+            unet: DEFAULT_TRELLIS_UNET,
+            shapeVae: DEFAULT_SHAPE_VAE,
+            textureVae: DEFAULT_TEXTURE_VAE,
+          },
+          summary: {
+            id: DEFAULT_TRELLIS_UNET,
+            name: displayName(DEFAULT_TRELLIS_UNET),
+            available: false,
+            unavailableReason:
+              'TRELLIS.2 weights were not found in ComfyUI. Install them and refresh.',
+          },
+        },
+      ];
+    }
+    const reason =
+      !shapeVae || !textureVae
+        ? 'The TRELLIS.2 shape and texture VAEs are not both installed.'
+        : undefined;
+    return unets
+      .map((unet): Entry<GeometryModel> => {
+        const name = displayName(unet);
+        return {
+          model: {
+            id: unet,
+            name,
+            unet,
+            shapeVae: shapeVae ?? DEFAULT_SHAPE_VAE,
+            textureVae: textureVae ?? DEFAULT_TEXTURE_VAE,
+          },
+          summary: {
+            id: unet,
+            name,
+            description: 'Textured mesh from one front image, generated in ComfyUI.',
+            available: !reason,
+            ...(reason ? { unavailableReason: reason } : {}),
+          },
+        };
+      })
+      .sort((a, b) =>
+        a.model.unet === DEFAULT_TRELLIS_UNET
+          ? -1
+          : b.model.unet === DEFAULT_TRELLIS_UNET
+            ? 1
+            : a.model.name.localeCompare(b.model.name),
+      );
+  }
+
+  private current<T extends { id: string }>(
+    entries: Entry<T>[],
+    saved: string | null,
+  ): string | null {
+    return (
+      entries.find((entry) => entry.model.id === saved && entry.summary.available)?.model.id ??
+      entries.find((entry) => entry.summary.available)?.model.id ??
+      null
+    );
+  }
+
+  async list(): Promise<AvatarCharacterModelSelection> {
+    await this.refresh();
+    return {
+      geometry: this.geometry.map((entry) => ({ ...entry.summary })),
+      rig: this.rig.map((entry) => ({ ...entry.summary })),
+      selectedGeometryId: this.current(
+        this.geometry,
+        this.store?.getValue(GEOMETRY_KEY) ?? this.selected.geometry,
+      ),
+      selectedRigId: this.current(this.rig, this.store?.getValue(RIG_KEY) ?? this.selected.rig),
+    };
+  }
+
+  async select(stage: 'geometry' | 'rig', id: string): Promise<void> {
+    if (stage === 'geometry') {
+      await this.resolveGeometry(id);
+      this.store?.setValue(GEOMETRY_KEY, id);
+      this.selected.geometry = id;
+    } else if (stage === 'rig') {
+      await this.resolveRig(id);
+      this.store?.setValue(RIG_KEY, id);
+      this.selected.rig = id;
+    } else {
+      throw new Error('Unknown avatar model stage.');
+    }
+  }
+
+  async resolveGeometry(id?: string): Promise<GeometryModel> {
+    await this.refresh();
+    const wanted =
+      id ??
+      this.current(this.geometry, this.store?.getValue(GEOMETRY_KEY) ?? this.selected.geometry);
+    // With nothing usable, explain why the first (default) option can't run.
+    const entry =
+      this.geometry.find((candidate) => candidate.model.id === wanted) ??
+      (id === undefined ? this.geometry[0] : undefined);
+    if (!entry?.summary.available)
+      throw new Error(
+        entry?.summary.unavailableReason ??
+          'The selected 3D model is no longer available. Refresh the model list and choose another.',
+      );
+    return { ...entry.model };
+  }
+
+  async resolveRig(id?: string): Promise<RigModel> {
+    await this.refresh();
+    const wanted = id ?? this.current(this.rig, this.store?.getValue(RIG_KEY) ?? this.selected.rig);
+    const entry =
+      this.rig.find((candidate) => candidate.model.id === wanted) ??
+      (id === undefined ? this.rig[0] : undefined);
+    if (!entry?.summary.available)
+      throw new Error(
+        entry?.summary.unavailableReason ??
+          'The selected rig method is no longer available. Refresh the model list and choose another.',
+      );
+    return { ...entry.model };
+  }
+}

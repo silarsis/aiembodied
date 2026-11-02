@@ -184,6 +184,20 @@ describe('preload bridge', () => {
     invoke.mockResolvedValueOnce(true);
     await api.avatar?.rejectGeneratedAvatar('job-1');
     expect(invoke).toHaveBeenCalledWith('avatar:generation-reject', 'job-1');
+
+    invoke.mockResolvedValueOnce([]);
+    await expect(api.avatar?.listAvatarGenerationJobs()).resolves.toEqual([]);
+    expect(invoke).toHaveBeenCalledWith('avatar:generation-list');
+    invoke.mockResolvedValueOnce(undefined);
+    await api.avatar?.cancelAvatarGeneration('job-1');
+    expect(invoke).toHaveBeenCalledWith('avatar:generation-cancel', 'job-1');
+    const selection = { geometry: [], rig: [], selectedGeometryId: null, selectedRigId: null };
+    invoke.mockResolvedValueOnce(selection);
+    await expect(api.avatar?.listAvatarCharacterModels()).resolves.toEqual(selection);
+    expect(invoke).toHaveBeenCalledWith('avatar:character-models');
+    invoke.mockResolvedValueOnce(undefined);
+    await api.avatar?.setAvatarCharacterModel('geometry', 'trellis_2_bf16.safetensors');
+    expect(invoke).toHaveBeenCalledWith('avatar:character-model-select', 'geometry', 'trellis_2_bf16.safetensors');
   });
 
   it('exposes avatar animation helpers through the bridge', async () => {
