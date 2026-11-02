@@ -3,6 +3,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { ConfigSecretKey, ModelRoutingView, RendererConfig } from './config/config-manager.js';
 import type { ModelRoute, ServerType, UseId } from './config/model-routing.js';
 import type { ServerProbe } from './config/model-server-probe.js';
+import type { CivitaiLookup } from './avatar/generation/civitai.js';
+import type { ModelDownload } from './avatar/generation/model-downloads.js';
 import type { AudioDevicePreferences } from './config/preferences-store.js';
 import type { ProviderSettingsPatch } from './config/provider-settings.js';
 import type {
@@ -166,6 +168,11 @@ export interface ModelsBridge {
   removeServer(id: string): Promise<ModelRoutingView>;
   setRoute(use: UseId, route: ModelRoute): Promise<ModelRoutingView>;
   setKey(serverId: string, key: string): Promise<ModelRoutingView>;
+  civitaiLookup?(ref: string, versionId?: number): Promise<CivitaiLookup>;
+  download?(serverId: string, ref: string, versionId?: number): Promise<ModelDownload>;
+  downloads?(): Promise<ModelDownload[]>;
+  cancelDownload?(id: string): Promise<ModelDownload[]>;
+  comfyAddon?(serverId: string): Promise<{ installed: boolean; folder: string }>;
 }
 
 export interface PreloadApi {
@@ -344,6 +351,11 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     removeServer: (id) => ipcRenderer.invoke('models:remove-server', id) as Promise<ModelRoutingView>,
     setRoute: (use, route) => ipcRenderer.invoke('models:set-route', { use, route }) as Promise<ModelRoutingView>,
     setKey: (serverId, key) => ipcRenderer.invoke('models:set-key', { serverId, key }) as Promise<ModelRoutingView>,
+    civitaiLookup: (ref, versionId) => ipcRenderer.invoke('models:civitai-lookup', { ref, versionId }) as Promise<CivitaiLookup>,
+    download: (serverId, ref, versionId) => ipcRenderer.invoke('models:download', { serverId, ref, versionId }) as Promise<ModelDownload>,
+    downloads: () => ipcRenderer.invoke('models:downloads') as Promise<ModelDownload[]>,
+    cancelDownload: (id) => ipcRenderer.invoke('models:cancel-download', id) as Promise<ModelDownload[]>,
+    comfyAddon: (serverId) => ipcRenderer.invoke('models:comfy-addon', serverId) as Promise<{ installed: boolean; folder: string }>,
   },
   realtime: {
     mintEphemeralToken: (request) =>

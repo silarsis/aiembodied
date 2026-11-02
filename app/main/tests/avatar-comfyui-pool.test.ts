@@ -78,7 +78,10 @@ describe('model discovery on another machine', () => {
       checkpoints: ['juggernautXL.safetensors'],
     };
     const fetchFn = vi.fn(async (input: string | URL | Request) =>
-      new Response(JSON.stringify(lists[String(input).split('/models/')[1]] ?? [])),
+      // No aiembodied add-on there: ComfyUI answers 404, so file names decide the kind.
+      String(input).includes('/aiembodied/')
+        ? new Response('Not Found', { status: 404 })
+        : new Response(JSON.stringify(lists[String(input).split('/models/')[1]] ?? [])),
     ) as unknown as typeof fetch;
     const files = await createRemoteComfyModelScanner('http://rack:8188/', fetchFn)();
     expect(files.map((file) => [file.name, file.kind])).toEqual([

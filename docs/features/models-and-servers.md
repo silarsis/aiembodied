@@ -24,7 +24,7 @@ The Conversation engine item (step by step or OpenAI Realtime, and the Realtime 
 
 ## Servers
 
-Built in: Language model on this PC (`local-llm`), Speech service on this PC (`local-speech`), Motion service on this PC (`local-motion`), ComfyUI on this PC (`local-comfy`), SearXNG on this PC (`local-searxng`), OpenAI (`openai`) and Brave Search (`brave`). A built-in server's name and address can be changed; one pointed away from 127.0.0.1/localhost is no longer started by the app or `pnpm dev:run`.
+Built in: Language model on this PC (`local-llm`), Speech service on this PC (`local-speech`), Motion service on this PC (`local-motion`), ComfyUI on this PC (`local-comfy`), SearXNG on this PC (`local-searxng`), OpenAI (`openai`), Brave Search (`brave`) and Civitai (`civitai`, only a key for model downloads). A built-in server's name and address can be changed; one pointed away from 127.0.0.1/localhost is no longer started by the app or `pnpm dev:run`.
 
 Setup → Servers → **Add a server** adds a machine of your own: a chat model server (any OpenAI-compatible `/v1`: llama-server, LM Studio, vLLM, Ollama), a transcription server, a speech service or motion service from this repo, ComfyUI, or SearXNG. **Test** (and **Refresh list** on the server or job page) reads the server's model list (`/v1/models`, ComfyUI's `/models/{folder}`, the speech service's `/health`) so the model fields can suggest names. Adding from a job's "Runs on" list picks the new server for that job. A job's Model list only shows what its picked server reports (image and 3D lists come from the step's first ComfyUI), with "Type a name…" for anything else. A chat or transcription address with no path gets /v1 added.
 
@@ -34,10 +34,25 @@ Backups are tried in the order they were picked. A backup of the same kind as th
 
 For ComfyUI jobs, each stage picks its server when it starts: the first that answers, or with **Send each job to whichever of these has the shortest queue** the one with the shortest `/queue`. Every ComfyUI server in the list needs the same models and custom nodes installed. This PC's ComfyUI is started on demand as before; remote ones must already be running.
 
+## Downloading models from Civitai
+
+Open a ComfyUI server (Setup → Servers → the server), paste a Civitai link or AIR under **Download a model**, and press **Look up**. The app asks Civitai's API for the model and shows the file, its type, base model, size and the ComfyUI folder it goes in (checkpoints, loras, vae, embeddings, controlnet, upscale_models). Pick a version if there are several, then **Download to <server>**. Progress shows on the page; when it finishes the server's model list is read again.
+
+Accepted: `https://civitai.com/models/4201/name?modelVersionId=130072`, `https://civitai.com/models/4201` (newest version), `https://civitai.com/api/download/models/130072`, `urn:air:sdxl:checkpoint:civitai:4201@130072`, or `4201@130072`. Many models need a Civitai API key: add it on Setup → Servers → Civitai (or set `CIVITAI_API_KEY`).
+
+Files are written as `<name>.part` and renamed once complete and, when Civitai lists one, once the SHA-256 matches, so ComfyUI never lists a half-downloaded file. Only an image checkpoint whose base model the app has a workflow for (SDXL, Pony, Illustrious, NoobAI, SD 1.x) shows up under Concept image; LoRAs and other types still download, with a note saying the image step won't use them.
+
+- **This PC:** the app runs `aiembodied_downloader.py` with ComfyUI's own Python, so files land in the folders ComfyUI reads (including Comfy Desktop's extra model paths).
+- **Another machine:** install the aiembodied ComfyUI add-on there once. Copy `app/main/assets/avatar-generation/comfyui-aiembodied` (the server page shows the full path) into that machine's `ComfyUI/custom_nodes/` and restart its ComfyUI. It adds no nodes, only `/aiembodied/*` routes: ping, model descriptions, and start, follow and cancel a download. The Civitai key is sent with each download request and not stored there. Like ComfyUI itself, anyone who can reach that ComfyUI can use the routes, so keep it on your own network or Tailscale; `AIEMBODIED_DOWNLOADS=0` in its environment turns downloads off.
+- With the add-on installed, the app also gets that machine's model kinds from the file contents, as it does on this PC, instead of guessing from file names (Pony and Illustrious checkpoints are SDXL but their names often don't say so).
+
+ComfyUI-Manager's install-model call isn't used: it only accepts models already on Manager's own curated list, and it reads the whole file into memory before writing it.
+
 ## Keys
 
 - OpenAI: the existing `REALTIME_API_KEY` secret (environment variable first, then the system credential store).
 - Brave Search: `BRAVE_SEARCH_API_KEY` from the environment, else the credential store.
+- Civitai: `CIVITAI_API_KEY` from the environment, else the credential store. Used only for model lookups and downloads.
 - Added servers: credential store entry `MODEL_SERVER_KEY:<server id>`, sent as `Authorization: Bearer`.
 
 Keys never reach the renderer; the pop-up only sees whether one is set and whether it comes from the environment. ComfyUI keys are not supported yet.

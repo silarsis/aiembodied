@@ -178,6 +178,11 @@ export function createRemoteComfyModelScanner(
 ): () => Promise<ImageModelFile[]> {
   const root = baseUrl.replace(/\/+$/, '');
   return async () => {
+    // With the aiembodied add-on installed, that machine reads the files' tensors like the scan on this PC.
+    const described = await fetchFn(`${root}/aiembodied/models`, { signal: AbortSignal.timeout(30_000) })
+      .then(async (response) => (response.ok ? ((await response.json()) as unknown) : null))
+      .catch(() => null);
+    if (Array.isArray(described) && described.every(isModelFile)) return described;
     const folders = ['diffusion_models', 'text_encoders', 'vae', 'checkpoints'] as const;
     const listed = await Promise.all(
       folders.map(async (folder) => {
@@ -233,4 +238,10 @@ export function remoteModelKind(folder: string, name: string): string | null {
   }
   if (folder === 'checkpoints') return /xl/.test(lower) ? 'sdxl' : 'sd1';
   return null;
+}
+
+function isModelFile(value: unknown): value is ImageModelFile {
+  if (!value || typeof value !== 'object') return false;
+  const file = value as Record<string, unknown>;
+  return typeof file.name === 'string' && typeof file.kind === 'string' && typeof file.folder === 'string';
 }

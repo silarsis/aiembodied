@@ -1,3 +1,5 @@
+import type { CivitaiLookup } from '../../main/src/avatar/generation/civitai.js';
+import type { ModelDownload } from '../../main/src/avatar/generation/model-downloads.js';
 import type { BackgroundBridge } from '../../main/src/backgrounds/types.js';
 import type { ConfigSecretKey, ModelRoutingView, RendererConfig } from '../../main/src/config/config-manager.js';
 import type { ModelRoute, ServerType, UseId } from '../../main/src/config/model-routing.js';
@@ -46,6 +48,11 @@ export interface ModelsBridge {
   removeServer(id: string): Promise<ModelRoutingView>;
   setRoute(use: UseId, route: ModelRoute): Promise<ModelRoutingView>;
   setKey(serverId: string, key: string): Promise<ModelRoutingView>;
+  civitaiLookup?(ref: string, versionId?: number): Promise<CivitaiLookup>;
+  download?(serverId: string, ref: string, versionId?: number): Promise<ModelDownload>;
+  downloads?(): Promise<ModelDownload[]>;
+  cancelDownload?(id: string): Promise<ModelDownload[]>;
+  comfyAddon?(serverId: string): Promise<{ installed: boolean; folder: string }>;
 }
 
 export interface WakeWordBridge {
