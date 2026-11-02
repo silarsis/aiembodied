@@ -26,7 +26,7 @@ The Conversation engine item (step by step or OpenAI Realtime, and the Realtime 
 
 Built in: Language model on this PC (`local-llm`), Speech service on this PC (`local-speech`), Motion service on this PC (`local-motion`), ComfyUI on this PC (`local-comfy`), SearXNG on this PC (`local-searxng`), OpenAI (`openai`) and Brave Search (`brave`). A built-in server's name and address can be changed; one pointed away from 127.0.0.1/localhost is no longer started by the app or `pnpm dev:run`.
 
-Setup → Servers → **Add a server** adds a machine of your own: a chat model server (any OpenAI-compatible `/v1`: llama-server, LM Studio, vLLM, Ollama), a transcription server, a speech service or motion service from this repo, ComfyUI, or SearXNG. **Test** reads the server's model list (`/v1/models`, ComfyUI's `/models/{folder}`, the speech service's `/health`) so the model fields can suggest names. Adding from a job's "Runs on" list picks the new server for that job.
+Setup → Servers → **Add a server** adds a machine of your own: a chat model server (any OpenAI-compatible `/v1`: llama-server, LM Studio, vLLM, Ollama), a transcription server, a speech service or motion service from this repo, ComfyUI, or SearXNG. **Test** (and **Refresh list** on the server or job page) reads the server's model list (`/v1/models`, ComfyUI's `/models/{folder}`, the speech service's `/health`) so the model fields can suggest names. Adding from a job's "Runs on" list picks the new server for that job. A job's Model list only shows what its picked server reports (image and 3D lists come from the step's first ComfyUI), with "Type a name…" for anything else. A chat or transcription address with no path gets /v1 added.
 
 ## Backups and spreading
 

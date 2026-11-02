@@ -1702,3 +1702,5 @@ body {
   .modelsDialog__rail { max-height: 220px; border-right: 0; border-bottom: 1px solid #22324a; }
   .modelsDialog__fields { grid-template-columns: minmax(0, 1fr); }
 }
+.modelsDialog__modelActions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.modelsDialog__modelActions small { opacity: .75; }

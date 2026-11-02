@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ModelRoutingView, ModelServerView } from '../../../main/src/config/config-manager.js';
 import { builtInServers, defaultRoutes } from '../../../main/src/config/model-routing.js';
 import { DEFAULT_PROVIDER_SETTINGS } from '../../../main/src/config/provider-settings.js';
+import type { ServerProbe } from '../../../main/src/config/model-server-probe.js';
 import type { ModelsBridge } from '../../src/preload-api.js';
 import { ModelsDialog } from '../../src/settings/models-dialog.js';
 
@@ -43,7 +44,11 @@ function bridge(initial = baseView()) {
   let view = initial;
   const api = {
     get: vi.fn(async () => view),
-    probe: vi.fn(async () => ({ status: 'up' as const, models: { chat: ['qwen-next-flash', 'gemma'] }, checkedAt: 1 })),
+    probe: vi.fn(async (_target: { serverId?: string } | { draft: unknown }): Promise<ServerProbe> => ({
+      status: 'up',
+      models: { chat: ['qwen-next-flash', 'gemma'] },
+      checkedAt: 1,
+    })),
     saveServer: vi.fn(async (server: { id?: string; name?: string; type?: string; url?: string }) => {
       const id = server.id ?? 'server-new';
       const added: ModelServerView = {
@@ -72,28 +77,66 @@ function bridge(initial = baseView()) {
 }
 
 describe('ModelsDialog', () => {
-  it('shows where each job runs and lists the models the server reports', async () => {
+  it('lists only the picked server’s models, and reads them again on Refresh list', async () => {
     const api = bridge();
+    const lists: Record<string, string[]> = { 'local-llm': ['qwen-next-flash', 'gemma'], openai: ['gpt-4.1', 'gpt-4.1-mini'] };
+    api.probe.mockImplementation(async (target) => ({
+      status: 'up',
+      models: { chat: lists['serverId' in target ? (target.serverId ?? '') : ''] ?? [] },
+      checkedAt: 1,
+    }));
     render(<ModelsDialog api={api} onClose={vi.fn()} />);
     const runsOn = (await screen.findByLabelText('Runs on')) as HTMLSelectElement;
     expect(runsOn.value).toBe('local-llm');
-    await waitFor(() => expect(api.probe).toHaveBeenCalledWith({ serverId: 'local-llm' }));
-    const options = document.querySelectorAll('#models-llm-found option');
-    await waitFor(() => expect([...options].map((option) => option.getAttribute('value'))).toEqual(['qwen-next-flash', 'gemma']));
+    const options = async () =>
+      [...((await screen.findByLabelText('Model')) as HTMLSelectElement).options].map((option) => option.value);
+    await waitFor(async () => expect(await options()).toEqual(['', 'qwen-next-flash', 'gemma', '__other']));
+
+    fireEvent.change(runsOn, { target: { value: 'openai' } });
+    await waitFor(async () => expect(await options()).toEqual(['', 'gpt-4.1', 'gpt-4.1-mini', '__other']));
+
+    lists.openai = ['gpt-5'];
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh list' }));
+    await waitFor(async () => expect(await options()).toEqual(['', 'gpt-5', '__other']));
     expect(screen.getByRole('button', { name: /Concept image/ })).toBeTruthy();
   });
 
-  it('moves a job to another server and saves a model name', async () => {
+  it('moves a job to another server and saves a model picked or typed', async () => {
     const api = bridge();
     const onChanged = vi.fn();
     render(<ModelsDialog api={api} onClose={vi.fn()} onChanged={onChanged} />);
     fireEvent.change(await screen.findByLabelText('Runs on'), { target: { value: 'openai' } });
     await waitFor(() => expect(api.setRoute).toHaveBeenCalledWith('llm', expect.objectContaining({ server: 'openai', model: undefined })));
-    const model = screen.getByLabelText('Model');
-    fireEvent.change(model, { target: { value: 'gpt-4.1' } });
-    fireEvent.blur(model);
+    await waitFor(() => expect(screen.getByLabelText('Model').tagName).toBe('SELECT'));
+    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'gemma' } });
+    await waitFor(() => expect(api.setRoute).toHaveBeenLastCalledWith('llm', expect.objectContaining({ server: 'openai', model: 'gemma' })));
+
+    fireEvent.change(screen.getByLabelText('Model'), { target: { value: '__other' } });
+    const typed = screen.getByLabelText('Model');
+    expect(typed.tagName).toBe('INPUT');
+    fireEvent.change(typed, { target: { value: 'gpt-4.1' } });
+    fireEvent.blur(typed);
     await waitFor(() => expect(api.setRoute).toHaveBeenLastCalledWith('llm', expect.objectContaining({ server: 'openai', model: 'gpt-4.1' })));
     expect(onChanged).toHaveBeenCalled();
+  });
+
+  it('reads the image model list again when the step moves to another ComfyUI', async () => {
+    const view = baseView();
+    view.servers.push({ id: 'rack', name: 'ComfyUI on rack-1', type: 'comfy', url: 'http://rack-1:8188', builtIn: false, managed: false, hasKey: false });
+    const api = bridge(view);
+    const avatarApi = {
+      listAvatarImageModels: vi
+        .fn()
+        .mockResolvedValueOnce({ models: [{ id: 'local', name: 'Local model', available: true }], selectedModelId: 'local' })
+        .mockResolvedValue({ models: [{ id: 'remote', name: 'Rack model', available: true }], selectedModelId: 'remote' }),
+      setAvatarImageModel: vi.fn(),
+    };
+    render(<ModelsDialog api={api} avatarApi={avatarApi as never} onClose={vi.fn()} initialUse="image" />);
+    expect(await screen.findByRole('option', { name: 'Local model' })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Runs on'), { target: { value: 'rack' } });
+    expect(await screen.findByRole('option', { name: 'Rack model' })).toBeTruthy();
+    expect(screen.getByText('From ComfyUI on rack-1')).toBeTruthy();
+    expect(avatarApi.listAvatarImageModels).toHaveBeenCalledTimes(2);
   });
 
   it('adds a server from a job and picks it, then sets backups', async () => {
@@ -135,6 +178,11 @@ describe('ModelsDialog', () => {
     expect(api.setKey).toHaveBeenCalledWith('openai', 'sk-test');
     expect((key as HTMLInputElement).value).toBe('');
     expect(screen.getByRole('button', { name: 'Remove key' })).toBeTruthy();
+    const before = api.probe.mock.calls.filter(([target]) => 'serverId' in target && target.serverId === 'openai').length;
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh list' }));
+    await waitFor(() =>
+      expect(api.probe.mock.calls.filter(([target]) => 'serverId' in target && target.serverId === 'openai').length).toBeGreaterThan(before),
+    );
   });
 
   it('lets web search be turned off', async () => {
