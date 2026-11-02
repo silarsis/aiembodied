@@ -25,6 +25,8 @@ export interface CharacterRigRunner {
     outputPath: string;
     signal: AbortSignal;
   }): Promise<string>;
+  /** Cut the character out of the image onto plain white (only when the user asks). */
+  removeBackground?(input: { imagePath: string; outputPath: string; signal: AbortSignal }): Promise<void>;
   build(input: {
     landmarksPath?: string;
     allowTemplateWarnings?: boolean;
@@ -90,6 +92,29 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
       }
     }
     throw new Error('Install Blender or set BLENDER_EXE to create a new 3D avatar.');
+  }
+
+  async removeBackground(input: { imagePath: string; outputPath: string; signal: AbortSignal }): Promise<void> {
+    if (!this.facePython) await this.assertAvailable();
+    const faceRoot = path.resolve(this.env.AVATAR_FACE_DIR || 'services/avatar-face');
+    await promisify(execFile)(
+      this.facePython,
+      [path.join(path.dirname(this.scriptPath), 'remove-background.py'), '--image', input.imagePath, '--output', input.outputPath],
+      {
+        windowsHide: true,
+        signal: input.signal,
+        timeout: 5 * 60_000,
+        maxBuffer: 2 * 1024 * 1024,
+        // rembg keeps its model here; setup downloads it so this runs offline.
+        env: { ...this.env, U2NET_HOME: this.env.U2NET_HOME || path.join(faceRoot, 'models', 'rembg') },
+      },
+    ).catch((error: unknown) => {
+      if (input.signal.aborted) throw new Error('Cancelled.');
+      const stderr = error && typeof error === 'object' && 'stderr' in error ? String(error.stderr) : '';
+      const reason =
+        stderr.match(/BACKGROUND_ERROR: ([^\r\n]+)/)?.[1] ?? (error instanceof Error ? error.message : 'Background removal failed.');
+      throw new Error(`The background could not be removed: ${reason}`);
+    });
   }
 
   async prepareReference(input: {

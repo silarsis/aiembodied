@@ -1146,6 +1146,8 @@ function registerIpcHandlers(
     async (_event, payload: AvatarGenerationRequest): Promise<AvatarGenerationJob> =>
       requireAvatarGeneration().startJob(payload),
   );
+  ipcMain.handle('avatar:generation-remove-background', async (_event, jobId: string) => requireAvatarGeneration().removeConceptBackground(jobId));
+  ipcMain.handle('avatar:generation-restore-background', async (_event, jobId: string) => requireAvatarGeneration().restoreConceptBackground(jobId));
   ipcMain.handle('avatar:generation-confirm-concept', async (_event, jobId: string, confirmation?: AvatarGenerationConfirmation): Promise<void> => requireAvatarGeneration().confirmConcept(jobId, confirmation));
   ipcMain.handle(
     'avatar:generation-status',

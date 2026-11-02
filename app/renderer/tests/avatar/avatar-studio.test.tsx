@@ -196,6 +196,32 @@ describe('avatar studio', () => {
     expect(mocks.cancelAvatarGeneration).toHaveBeenCalledWith('job-1');
   });
 
+  it('removes the background only when asked, and can restore the original', async () => {
+    const { api, mocks, jobs } = createApi([take('job-1')]);
+    const extra = mocks as unknown as Record<string, unknown>;
+    extra.removeAvatarBackground = vi.fn(async (id: string) => {
+      jobs.current = jobs.current.map((job) =>
+        job.jobId === id ? { ...job, backgroundRemoved: true, previewDataUrl: 'data:image/png;base64,CUT' } : job,
+      );
+    });
+    extra.restoreAvatarBackground = vi.fn(async (id: string) => {
+      jobs.current = jobs.current.map((job) => (job.jobId === id ? { ...job, backgroundRemoved: false } : job));
+    });
+    render(<AvatarStudio avatarApi={api} onClose={vi.fn()} pollIntervalMs={5} />);
+    await settle();
+    expect(extra.removeAvatarBackground).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Remove background' }));
+    });
+    expect(extra.removeAvatarBackground).toHaveBeenCalledWith('job-1');
+    expect(screen.getByText('The character was cut out onto plain white.')).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Restore original image' }));
+    });
+    expect(extra.restoreAvatarBackground).toHaveBeenCalledWith('job-1');
+    expect(screen.getByRole('button', { name: 'Remove background' })).toBeInTheDocument();
+  });
+
   it('sends warning acceptance only from the explicit build-anyway button', async () => {
     const { api, mocks } = createApi([
       take('job-1', {

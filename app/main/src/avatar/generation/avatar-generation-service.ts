@@ -3,7 +3,7 @@
  * restyle the bundled VRM. Candidates stay separate from the active model until accepted.
  */
 import { randomInt, randomUUID } from 'node:crypto';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ComfyUIClient } from './comfyui-client.js';
 import { buildConceptPrompt, conceptGraph, retextureGraph } from './graphs.js';
@@ -164,6 +164,58 @@ export class AvatarGenerationService {
 
     void this.run(job);
     return { jobId };
+  }
+
+  /**
+   * On request, cut the character out of this take's image onto plain white, for face fitting
+   * and the 3D step. The original is kept beside it and can be restored.
+   */
+  async removeConceptBackground(jobId: string): Promise<void> {
+    const job = this.getJob(jobId);
+    if (isRunning(job.status.status)) throw new Error('Wait for this take to finish first.');
+    if (!job.status.previewDataUrl) throw new Error('This take has no image yet.');
+    const runner = this.options.characterRunner;
+    if (!runner?.removeBackground) throw new Error('Background removal is unavailable.');
+    const concept = path.join(job.directory, 'concept.png');
+    const original = path.join(job.directory, 'concept-original.png');
+    const cutout = path.join(job.directory, 'concept-cutout.png');
+    if (!(await access(original).then(() => true, () => false))) await copyFile(concept, original);
+    const message = job.status.message;
+    this.update(job, { message: 'Removing the background', errorMessage: null });
+    try {
+      await runner.removeBackground({ imagePath: original, outputPath: cutout, signal: AbortSignal.timeout(5 * 60_000) });
+    } catch (error) {
+      this.update(job, { message });
+      throw error;
+    }
+    const image = await readFile(cutout);
+    await writeFile(concept, image);
+    this.useConceptImage(job, image, true, 'Background removed. Check the image, then build.');
+  }
+
+  /** Put back the image as it was generated or uploaded. */
+  async restoreConceptBackground(jobId: string): Promise<void> {
+    const job = this.getJob(jobId);
+    if (isRunning(job.status.status)) throw new Error('Wait for this take to finish first.');
+    const original = path.join(job.directory, 'concept-original.png');
+    const image = await readFile(original).catch(() => {
+      throw new Error('There is no original image to restore.');
+    });
+    await writeFile(path.join(job.directory, 'concept.png'), image);
+    this.useConceptImage(job, image, false, 'Original image restored');
+  }
+
+  private useConceptImage(job: JobState, image: Buffer, backgroundRemoved: boolean, message: string): void {
+    // A changed image needs its face found again before the next build.
+    job.landmarksPath = undefined;
+    this.update(job, {
+      previewDataUrl: `data:image/png;base64,${image.toString('base64')}`,
+      backgroundRemoved,
+      warnings: [],
+      warningsAccepted: false,
+      message,
+      errorMessage: null,
+    });
   }
 
   /** Explicit approval is the only entry to geometry, rigging or texture work. */
