@@ -19,6 +19,7 @@ This directory contains design documents for potential future features of the Em
 | 01 | [Plugin/Tool System](./01-plugin-tool-system.md) | High | Draft | External tool integration with Home Assistant MCP |
 | 02 | [Custom Voice Personas](./02-custom-voice-personas.md) | Medium | Draft | Multiple personalities with unique voices and memories |
 | 03 | [Scheduled Actions](./03-scheduled-actions.md) | Medium | Draft | Reminders, routines, and time-based triggers |
+| — | [Models and servers](./models-and-servers.md) | High | Shipped | One pop-up for every model job: server, model, backups and keys |
 
 ## Feature Dependencies
 

@@ -1,5 +1,7 @@
 import type { BackgroundBridge } from '../../main/src/backgrounds/types.js';
-import type { ConfigSecretKey, RendererConfig } from '../../main/src/config/config-manager.js';
+import type { ConfigSecretKey, ModelRoutingView, RendererConfig } from '../../main/src/config/config-manager.js';
+import type { ModelRoute, ServerType, UseId } from '../../main/src/config/model-routing.js';
+import type { ServerProbe } from '../../main/src/config/model-server-probe.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
 import type { ProviderSettingsPatch } from '../../main/src/config/provider-settings.js';
 import type {
@@ -34,6 +36,16 @@ export interface ConfigBridge {
   testSecret(key: ConfigSecretKey): Promise<{ ok: boolean; message?: string }>;
   clearSecret?(key: ConfigSecretKey): Promise<RendererConfig>;
   setProviderSettings?(patch: ProviderSettingsPatch): Promise<RendererConfig>;
+}
+
+/** The Models and servers pop-up. Keys are sent in, never read back. */
+export interface ModelsBridge {
+  get(): Promise<ModelRoutingView>;
+  probe(target: { serverId: string } | { draft: { type: ServerType; url: string; key?: string } }): Promise<ServerProbe>;
+  saveServer(server: { id?: string; name?: string; type?: ServerType; url?: string; key?: string }): Promise<{ id: string; models: ModelRoutingView }>;
+  removeServer(id: string): Promise<ModelRoutingView>;
+  setRoute(use: UseId, route: ModelRoute): Promise<ModelRoutingView>;
+  setKey(serverId: string, key: string): Promise<ModelRoutingView>;
 }
 
 export interface WakeWordBridge {
@@ -86,6 +98,7 @@ export interface LocalVoiceBridge {
 export interface PreloadApi {
   backgrounds?: BackgroundBridge;
   config: ConfigBridge;
+  models?: ModelsBridge;
   realtime: RealtimeBridge;
   localVoice?: LocalVoiceBridge;
   wakeWord: WakeWordBridge;

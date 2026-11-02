@@ -1,0 +1,956 @@
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import type { ModelRoutingView, ModelServerView } from '../../../main/src/config/config-manager.js';
+import {
+  ADDABLE_SERVER_TYPES,
+  USE_SERVER_TYPES,
+  USES_WITH_BACKUPS,
+  USES_WITH_SPREAD,
+  type ModelRoute,
+  type ServerType,
+  type UseId,
+} from '../../../main/src/config/model-routing.js';
+import type { ModelRole, ServerProbe } from '../../../main/src/config/model-server-probe.js';
+import type { ModelsBridge } from '../preload-api.js';
+import type { AvatarBridge } from '../avatar/types.js';
+import { useCharacterModels } from '../avatar/use-character-models.js';
+import { useImageModels } from '../avatar/use-image-models.js';
+
+/** The Realtime API's voices, for OpenAI speaking and the Realtime engine. */
+export const OPENAI_VOICES = ['alloy', 'ash', 'ballad', 'cedar', 'coral', 'echo', 'marin', 'sage', 'shimmer', 'verse'];
+
+interface UseInfo {
+  id: UseId;
+  group: 'Talking' | 'Creating an avatar' | 'Helpers';
+  name: string;
+  what: string;
+}
+
+export const MODEL_USES: UseInfo[] = [
+  { id: 'stt', group: 'Talking', name: 'Hearing', what: 'Turns what you say into text.' },
+  { id: 'llm', group: 'Talking', name: 'Thinking', what: 'Writes the replies and decides on tool calls.' },
+  { id: 'tts', group: 'Talking', name: 'Speaking', what: 'Reads the replies aloud.' },
+  { id: 'motion', group: 'Talking', name: 'Moving', what: 'Body movement while the avatar talks.' },
+  { id: 'search', group: 'Talking', name: 'Web search', what: 'The web_search tool the assistant can call.' },
+  { id: 'image', group: 'Creating an avatar', name: 'Concept image', what: 'Draws the character from the description, repaints textures and makes backgrounds.' },
+  { id: 'mesh', group: 'Creating an avatar', name: '3D model', what: 'Turns the approved image into a textured mesh. Rigging runs in Blender on this PC.' },
+  { id: 'describe', group: 'Helpers', name: 'Describe the avatar', what: 'Looks at a screenshot of the avatar and writes a short character description that guides animation. Needs a model that reads images.' },
+  { id: 'posegen', group: 'Helpers', name: 'Make poses', what: 'Writes bone rotations for a pose from a text prompt.' },
+  { id: 'posecheck', group: 'Helpers', name: 'Check poses', what: 'Looks at a rendered pose and says whether it matches the prompt. Needs a model that reads images.' },
+  { id: 'clips', group: 'Helpers', name: 'Animation clips', what: 'Writes keyframe animation clips from a prompt. Moving uses it when no motion service is picked.' },
+];
+
+export const SERVER_TYPE_LABELS: Record<ServerType, string> = {
+  chat: 'Chat model server',
+  transcribe: 'Transcription server',
+  speech: 'Speech service',
+  motion: 'Motion service',
+  comfy: 'ComfyUI',
+  search: 'SearXNG',
+  openai: 'OpenAI',
+  brave: 'Brave Search',
+};
+
+const SERVER_TYPE_HINTS: Partial<Record<ServerType, { hint: string; example: string }>> = {
+  chat: { hint: 'Any OpenAI-compatible /v1 server: llama-server, LM Studio, vLLM, Ollama.', example: 'http://192.168.1.20:1234/v1' },
+  transcribe: { hint: 'An OpenAI-compatible /v1/audio/transcriptions server, such as speaches or whisper.cpp.', example: 'http://192.168.1.20:8000/v1' },
+  speech: { hint: 'services/speech from this repo: Kokoro voices, and its speech recognition.', example: 'http://192.168.1.20:8192' },
+  motion: { hint: 'services/motion from this repo, running ARDY or Kimodo.', example: 'http://192.168.1.20:8190' },
+  comfy: { hint: 'Image, texture and 3D jobs. Needs the same models installed as this PC’s ComfyUI.', example: 'http://192.168.1.20:8188' },
+  search: { hint: 'A SearXNG instance with JSON output turned on.', example: 'http://192.168.1.20:8888' },
+};
+
+/** Which of a server's model lists a use picks from. */
+function roleFor(use: UseId, type: ServerType): ModelRole | null {
+  if (use === 'llm' || use === 'describe' || use === 'posegen' || use === 'posecheck' || use === 'clips') return 'chat';
+  if (use === 'stt') return 'transcribe';
+  if (use === 'tts') return type === 'speech' ? 'voices' : 'realtime';
+  if (use === 'motion') return type === 'motion' ? 'motion' : null;
+  return null;
+}
+
+function modelLabel(use: UseId, type: ServerType): string {
+  if (use === 'tts' && type === 'speech') return 'Voice';
+  if (use === 'stt' && type === 'speech') return '';
+  return 'Model';
+}
+
+type Page = { kind: 'use'; use: UseId } | { kind: 'engine' } | { kind: 'servers' } | { kind: 'server'; id: string };
+
+interface AddDraft {
+  type: ServerType;
+  name: string;
+  url: string;
+  key: string;
+  probe?: ServerProbe;
+  /** The use to send back to, with the new server picked, once it is added. */
+  returnTo?: UseId;
+}
+
+export interface EngineControls {
+  backend: 'local' | 'openai';
+  onBackendChange(backend: 'local' | 'openai'): void;
+  voice: string;
+  voices: string[];
+  onVoiceChange(voice: string): void;
+  disabled?: boolean;
+}
+
+export interface ModelsDialogProps {
+  api: ModelsBridge;
+  avatarApi?: AvatarBridge;
+  engine?: EngineControls;
+  onClose(): void;
+  /** Called after any change, so the app can reload what depends on it (such as the OpenAI key). */
+  onChanged?(change: { openAiKey: boolean }): void;
+  initialUse?: UseId;
+}
+
+const where = (server: ModelServerView) => (server.managed ? 'local' : server.type === 'openai' || server.type === 'brave' ? 'online' : 'remote');
+const WHERE_LABEL = { local: 'This PC', remote: 'Your server', online: 'Online' } as const;
+
+export function ModelsDialog({ api, avatarApi, engine, onClose, onChanged, initialUse = 'llm' }: ModelsDialogProps) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [view, setView] = useState<ModelRoutingView | null>(null);
+  const [page, setPage] = useState<Page>({ kind: 'use', use: initialUse });
+  const [probes, setProbes] = useState<Record<string, ServerProbe | 'checking'>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState<AddDraft | null>(null);
+  const imageModels = useImageModels(avatarApi, page.kind === 'use' && page.use === 'image');
+  const characterModels = useCharacterModels(avatarApi, page.kind === 'use' && page.use === 'mesh');
+
+  useEffect(() => {
+    const element = dialog.current;
+    element?.showModal?.();
+    return () => element?.close?.();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.resolve()
+      .then(() => api.get())
+      .then((next) => {
+        if (!cancelled) setView(next);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load the model servers.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  const probe = useCallback(
+    async (serverId: string) => {
+      setProbes((current) => ({ ...current, [serverId]: 'checking' }));
+      try {
+        const result = await api.probe({ serverId });
+        setProbes((current) => ({ ...current, [serverId]: result }));
+      } catch (err) {
+        setProbes((current) => ({
+          ...current,
+          [serverId]: { status: 'error', message: err instanceof Error ? err.message : 'Check failed.', models: {}, checkedAt: Date.now() },
+        }));
+      }
+    },
+    [api],
+  );
+
+  // Check the servers the open page shows, once each.
+  const probesRef = useRef(probes);
+  useEffect(() => {
+    probesRef.current = probes;
+  }, [probes]);
+  useEffect(() => {
+    if (!view) return;
+    const ids =
+      page.kind === 'use'
+        ? [view.routes[page.use].server, ...(view.routes[page.use].backups ?? []).map((backup) => backup.server)]
+        : page.kind === 'server'
+          ? [page.id]
+          : page.kind === 'servers'
+            ? view.servers.map((server) => server.id)
+            : [];
+    const pending = ids.filter((id) => id && !probesRef.current[id]);
+    if (!pending.length) return;
+    void Promise.resolve().then(() => Promise.all(pending.map((id) => probe(id))));
+  }, [page, view, probe]);
+
+  const run = async (action: () => Promise<ModelRoutingView | void>, done?: string, openAiKey = false) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const next = await action();
+      if (next) setView(next);
+      if (done) setNotice(done);
+      onChanged?.({ openAiKey });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'That change could not be saved.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setRoute = (use: UseId, route: ModelRoute) => run(() => api.setRoute(use, route));
+
+  const serverById = (id: string) => view?.servers.find((server) => server.id === id);
+
+  const rail = (
+    <nav className="modelsDialog__rail" aria-label="Model uses">
+      {engine ? (
+        <>
+          <span className="modelsDialog__group">Talking</span>
+          <RailItem current={page.kind === 'engine'} onClick={() => setPage({ kind: 'engine' })} label="Conversation engine" chip={engine.backend === 'openai' ? 'Online' : 'Step by step'} />
+        </>
+      ) : null}
+      {(['Talking', 'Creating an avatar', 'Helpers'] as const).map((group) => (
+        <div key={group} className="modelsDialog__railGroup">
+          {group !== 'Talking' || !engine ? <span className="modelsDialog__group">{group}</span> : null}
+          {MODEL_USES.filter((use) => use.group === group).map((use) => {
+            const server = view ? serverById(view.routes[use.id].server) : undefined;
+            const status = server ? probes[server.id] : undefined;
+            return (
+              <RailItem
+                key={use.id}
+                current={page.kind === 'use' && page.use === use.id}
+                onClick={() => {
+                  setNotice(null);
+                  setPage({ kind: 'use', use: use.id });
+                }}
+                label={use.name}
+                chip={server ? WHERE_LABEL[where(server)] : 'Off'}
+                status={status}
+              />
+            );
+          })}
+        </div>
+      ))}
+      <span className="modelsDialog__group">Setup</span>
+      <RailItem current={page.kind === 'servers' || page.kind === 'server'} onClick={() => setPage({ kind: 'servers' })} label="Servers" chip={view ? String(view.servers.length) : ''} />
+    </nav>
+  );
+
+  let main: ReactNode = <p className="kiosk__helper">Loading…</p>;
+  if (view && page.kind === 'engine' && engine) {
+    main = (
+      <section className="modelsDialog__page" aria-labelledby="models-engine-title">
+        <Heading id="models-engine-title" group="Talking" title="Conversation engine">
+          Step by step uses Hearing, Thinking and Speaking. OpenAI Realtime hands the whole turn to one OpenAI model, using the OpenAI key.
+        </Heading>
+        <div className="modelsDialog__fields">
+          <label htmlFor="models-engine">Engine</label>
+          <select id="models-engine" value={engine.backend} disabled={engine.disabled} onChange={(event) => engine.onBackendChange(event.target.value === 'openai' ? 'openai' : 'local')}>
+            <option value="local">Step by step</option>
+            <option value="openai">OpenAI Realtime</option>
+          </select>
+          {engine.backend === 'openai' ? (
+            <>
+              <label htmlFor="models-engine-voice">Voice</label>
+              <select id="models-engine-voice" value={engine.voice} disabled={engine.disabled} onChange={(event) => engine.onVoiceChange(event.target.value)}>
+                {engine.voices.map((voice) => (
+                  <option key={voice} value={voice}>
+                    {voice}
+                  </option>
+                ))}
+              </select>
+            </>
+          ) : null}
+        </div>
+      </section>
+    );
+  } else if (view && page.kind === 'use') {
+    main = (
+      <UsePage
+        key={page.use}
+        use={page.use}
+        view={view}
+        probes={probes}
+        busy={busy}
+        onProbe={probe}
+        onRoute={(route) => void setRoute(page.use, route)}
+        onOpenServer={(id) => setPage({ kind: 'server', id })}
+        onAddServer={(type) => {
+          setAdding({ type, name: '', url: '', key: '', returnTo: page.use });
+          setPage({ kind: 'servers' });
+        }}
+        imageModels={imageModels}
+        characterModels={characterModels}
+      />
+    );
+  } else if (view && page.kind === 'servers') {
+    main = (
+      <section className="modelsDialog__page" aria-labelledby="models-servers-title">
+        <Heading id="models-servers-title" group="Setup" title="Servers">
+          Everything that runs a model. Add your own machines here, then pick them for any job. This PC’s servers are started
+          by the app when a job needs them.
+        </Heading>
+        {adding ? (
+          <AddServerForm
+            draft={adding}
+            busy={busy}
+            onChange={setAdding}
+            onTest={async () => {
+              const draft = adding;
+              setBusy(true);
+              try {
+                const result = await api.probe({ draft: { type: draft.type, url: draft.url, key: draft.key || undefined } });
+                setAdding((current) => (current ? { ...current, probe: result } : current));
+              } catch (err) {
+                setAdding((current) =>
+                  current
+                    ? { ...current, probe: { status: 'error', message: err instanceof Error ? err.message : 'Check failed.', models: {}, checkedAt: Date.now() } }
+                    : current,
+                );
+              } finally {
+                setBusy(false);
+              }
+            }}
+            onCancel={() => setAdding(null)}
+            onSave={() =>
+              run(async () => {
+                const draft = adding;
+                const result = await api.saveServer({ name: draft.name || undefined, type: draft.type, url: draft.url, key: draft.key || undefined });
+                setAdding(null);
+                const tested = draft.probe;
+                if (tested) setProbes((current) => ({ ...current, [result.id]: tested }));
+                const name = result.models.servers.find((server) => server.id === result.id)?.name ?? 'the server';
+                if (draft.returnTo && USE_SERVER_TYPES[draft.returnTo].includes(draft.type)) {
+                  const current = result.models.routes[draft.returnTo];
+                  const routed = await api.setRoute(draft.returnTo, { ...current, server: result.id, model: undefined, backups: (current.backups ?? []).filter((b) => b.server !== result.id) });
+                  setPage({ kind: 'use', use: draft.returnTo });
+                  setNotice(`Added ${name} and picked it.`);
+                  return routed;
+                }
+                setNotice(`Added ${name}. Pick it for any job it can do.`);
+                return result.models;
+              })
+            }
+          />
+        ) : (
+          <div>
+            <button type="button" className="modelsDialog__primary" onClick={() => setAdding({ type: 'chat', name: '', url: '', key: '' })} disabled={busy}>
+              Add a server
+            </button>
+          </div>
+        )}
+        {(['local', 'remote', 'online'] as const).map((group) => {
+          const list = view.servers.filter((server) => where(server) === group);
+          return list.length ? (
+            <div key={group} className="modelsDialog__list">
+              <span className="modelsDialog__group">{group === 'local' ? 'This PC' : group === 'remote' ? 'Your servers' : 'Online services'}</span>
+              {list.map((server) => (
+                <ServerRow key={server.id} server={server} probe={probes[server.id]} onOpen={() => setPage({ kind: 'server', id: server.id })} />
+              ))}
+            </div>
+          ) : null;
+        })}
+      </section>
+    );
+  } else if (view && page.kind === 'server') {
+    const server = serverById(page.id);
+    main = server ? (
+      <ServerPage
+        key={server.id}
+        server={server}
+        view={view}
+        probe={probes[server.id]}
+        busy={busy}
+        onProbe={() => void probe(server.id)}
+        onSave={(changes) =>
+          run(async () => {
+            const result = await api.saveServer({ id: server.id, ...changes });
+            setProbes((current) => {
+              const next = { ...current };
+              delete next[server.id];
+              return next;
+            });
+            return result.models;
+          }, 'Saved.')
+        }
+        onKey={(key) =>
+          run(async () => {
+            const next = await api.setKey(server.id, key);
+            setProbes((current) => {
+              const copy = { ...current };
+              delete copy[server.id];
+              return copy;
+            });
+            return next;
+          }, key ? 'Key saved.' : 'Key removed.', server.type === 'openai')
+        }
+        onRemove={() =>
+          run(async () => {
+            const next = await api.removeServer(server.id);
+            setPage({ kind: 'servers' });
+            return next;
+          }, `Removed ${server.name}. Jobs that used it are back on their defaults.`)
+        }
+        onOpenUse={(use) => setPage({ kind: 'use', use })}
+      />
+    ) : (
+      <p className="kiosk__helper">That server was removed.</p>
+    );
+  }
+
+  return createPortal(
+    <dialog
+      ref={dialog}
+      className="modelsDialog"
+      aria-label="Models and servers"
+      onClose={(event) => {
+        if (event.target === dialog.current) onClose();
+      }}
+      onCancel={(event) => {
+        if (event.target !== dialog.current) return;
+        event.preventDefault();
+        onClose();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') event.stopPropagation();
+      }}
+    >
+      <header className="modelsDialog__header">
+        <h2>Models and servers</h2>
+        <span>Changes apply straight away.</span>
+        <button type="button" onClick={onClose} aria-label="Close models and servers">
+          ✕ Close
+        </button>
+      </header>
+      {error ? (
+        <p role="alert" className="kiosk__error modelsDialog__banner">
+          {error}
+        </p>
+      ) : null}
+      {notice ? (
+        <p role="status" className="modelsDialog__banner modelsDialog__notice">
+          {notice}
+        </p>
+      ) : null}
+      <div className="modelsDialog__body">
+        {rail}
+        <div className="modelsDialog__main">{main}</div>
+      </div>
+    </dialog>,
+    document.body,
+  );
+}
+
+function Heading({ id, group, title, children }: { id: string; group: string; title: string; children?: ReactNode }) {
+  return (
+    <div className="modelsDialog__heading">
+      <span className="modelsDialog__group">{group}</span>
+      <h3 id={id}>{title}</h3>
+      {children ? <p className="kiosk__helper">{children}</p> : null}
+    </div>
+  );
+}
+
+function StatusDot({ probe }: { probe?: ServerProbe | 'checking' }) {
+  const state = !probe ? 'unknown' : probe === 'checking' ? 'checking' : probe.status;
+  const label =
+    state === 'up' ? 'Running' : state === 'down' ? 'Not reachable' : state === 'needs-key' ? 'Needs a key' : state === 'error' ? 'Not ready' : state === 'checking' ? 'Checking' : 'Not checked';
+  return <span className={`modelsDialog__dot is-${state}`} title={label} aria-label={label} role="img" />;
+}
+
+function statusText(probe?: ServerProbe | 'checking'): string {
+  if (!probe) return 'Not checked yet';
+  if (probe === 'checking') return 'Checking…';
+  if (probe.status === 'up') return probe.queue ? `Running · ${probe.queue} in queue` : 'Running';
+  return probe.message ?? (probe.status === 'down' ? 'Not reachable' : 'Not ready');
+}
+
+function RailItem({ current, onClick, label, chip, status }: { current: boolean; onClick(): void; label: string; chip?: string; status?: ServerProbe | 'checking' }) {
+  return (
+    <button type="button" className="modelsDialog__item" aria-current={current} onClick={onClick}>
+      <StatusDot probe={status} />
+      <span>{label}</span>
+      {chip ? <small>{chip}</small> : null}
+    </button>
+  );
+}
+
+function ServerRow({ server, probe, onOpen, children }: { server: ModelServerView; probe?: ServerProbe | 'checking'; onOpen?(): void; children?: ReactNode }) {
+  return (
+    <div className="modelsDialog__server">
+      <StatusDot probe={probe} />
+      <div className="modelsDialog__serverText">
+        <b>{server.name}</b>
+        <code>{server.url}</code>
+      </div>
+      <small className={`modelsDialog__where is-${where(server)}`}>{WHERE_LABEL[where(server)]}</small>
+      <span className="modelsDialog__state">{statusText(probe)}</span>
+      {children}
+      {onOpen ? (
+        <button type="button" onClick={onOpen} aria-label={`Open ${server.name}`}>
+          Open
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+interface UsePageProps {
+  use: UseId;
+  view: ModelRoutingView;
+  probes: Record<string, ServerProbe | 'checking'>;
+  busy: boolean;
+  onProbe(id: string): void;
+  onRoute(route: ModelRoute): void;
+  onOpenServer(id: string): void;
+  onAddServer(type: ServerType): void;
+  imageModels: ReturnType<typeof useImageModels>;
+  characterModels: ReturnType<typeof useCharacterModels>;
+}
+
+function UsePage({ use, view, probes, busy, onProbe, onRoute, onOpenServer, onAddServer, imageModels, characterModels }: UsePageProps) {
+  const info = MODEL_USES.find((entry) => entry.id === use) ?? MODEL_USES[0];
+  const route = view.routes[use];
+  const fitting = view.servers.filter((server) => USE_SERVER_TYPES[use].includes(server.type));
+  const server = fitting.find((entry) => entry.id === route.server);
+  const probe = server ? probes[server.id] : undefined;
+  const role = server ? roleFor(use, server.type) : null;
+  const found = role && probe && probe !== 'checking' ? (probe.models[role] ?? []) : [];
+  const addable = USE_SERVER_TYPES[use].find((type) => ADDABLE_SERVER_TYPES.includes(type));
+  const label = server ? modelLabel(use, server.type) : 'Model';
+  const backups = route.backups ?? [];
+  const others = fitting.filter((entry) => entry.id !== route.server);
+
+  const [model, setModel] = useState(route.model ?? '');
+  const [syncedModel, setSyncedModel] = useState(route.model ?? '');
+  if ((route.model ?? '') !== syncedModel) {
+    setSyncedModel(route.model ?? '');
+    setModel(route.model ?? '');
+  }
+  const [style, setStyle] = useState(route.style ?? '');
+
+  const pickServer = (id: string) => {
+    if (id === '__add') {
+      if (addable) onAddServer(addable);
+      return;
+    }
+    onRoute({ ...route, server: id, model: undefined, backups: backups.filter((backup) => backup.server !== id) });
+  };
+
+  const saveModel = (value: string) => {
+    if (value === (route.model ?? '')) return;
+    onRoute({ ...route, model: value || undefined });
+  };
+
+  const groups = (['local', 'remote', 'online'] as const).map((group) => ({ group, servers: fitting.filter((entry) => where(entry) === group) }));
+
+  return (
+    <section className="modelsDialog__page" aria-labelledby={`models-${use}-title`}>
+      <Heading id={`models-${use}-title`} group={info.group} title={info.name}>
+        {info.what}
+      </Heading>
+      <div className="modelsDialog__fields">
+        <label htmlFor={`models-${use}-server`}>Runs on</label>
+        <select id={`models-${use}-server`} value={route.server} onChange={(event) => pickServer(event.target.value)} disabled={busy}>
+          {use === 'search' ? <option value="">Off</option> : null}
+          {groups.map(({ group, servers }) =>
+            servers.length ? (
+              <optgroup key={group} label={WHERE_LABEL[group]}>
+                {servers.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.name}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null,
+          )}
+          {addable ? <option value="__add">Add a server…</option> : null}
+        </select>
+
+        {server && use === 'image' ? (
+          <ImageModelSelect models={imageModels} busy={busy} />
+        ) : server && use === 'mesh' ? (
+          <MeshModelSelect models={characterModels} busy={busy} />
+        ) : server && use === 'motion' && server.type === 'openai' ? (
+          <>
+            <span />
+            <p className="kiosk__helper">Moving writes keyframe clips with the Animation clips server and model.</p>
+          </>
+        ) : server && label ? (
+          <>
+            <label htmlFor={`models-${use}-model`}>{label}</label>
+            <span className="modelsDialog__model">
+              <input
+                id={`models-${use}-model`}
+                list={`models-${use}-found`}
+                value={model}
+                placeholder={found[0] ? `Default (${found[0]})` : 'Server default'}
+                onChange={(event) => setModel(event.target.value)}
+                onBlur={() => saveModel(model.trim())}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') saveModel(model.trim());
+                }}
+                disabled={busy}
+              />
+              <datalist id={`models-${use}-found`}>
+                {(server.managed && use === 'motion' ? ['ardy', 'kimodo'] : found).map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
+            </span>
+          </>
+        ) : server && use === 'stt' && server.type === 'speech' ? (
+          <>
+            <span />
+            <p className="kiosk__helper">
+              The speech service uses the recogniser it was started with{found[0] ? ` (now ${found[0]})` : ''}.
+            </p>
+          </>
+        ) : null}
+
+        {server && use === 'tts' && server.type === 'openai' ? (
+          <>
+            <label htmlFor="models-tts-voice">Voice</label>
+            <select id="models-tts-voice" value={route.voice ?? 'alloy'} onChange={(event) => onRoute({ ...route, voice: event.target.value })} disabled={busy}>
+              {OPENAI_VOICES.map((voice) => (
+                <option key={voice} value={voice}>
+                  {voice}
+                </option>
+              ))}
+            </select>
+            <label htmlFor="models-tts-style">Speaking style</label>
+            <input
+              id="models-tts-style"
+              value={style}
+              placeholder="e.g. Warm and upbeat, with a light British accent."
+              onChange={(event) => setStyle(event.target.value)}
+              onBlur={() => {
+                if (style.trim() !== (route.style ?? '')) onRoute({ ...route, style: style.trim() || undefined });
+              }}
+              disabled={busy}
+            />
+          </>
+        ) : null}
+        {server?.managed && use === 'motion' ? (
+          <>
+            <span />
+            <p className="kiosk__helper">pnpm dev:run starts the motion service with this model; restart it for a change to apply.</p>
+          </>
+        ) : null}
+      </div>
+
+      {server ? (
+        <ServerRow server={server} probe={probe}>
+          <button type="button" onClick={() => onProbe(server.id)} disabled={probe === 'checking'}>
+            Test
+          </button>
+          <button type="button" onClick={() => onOpenServer(server.id)}>
+            Open
+          </button>
+        </ServerRow>
+      ) : use === 'search' ? (
+        <p className="kiosk__helper">Web search is off: the assistant can’t look things up.</p>
+      ) : null}
+
+      {USES_WITH_BACKUPS.includes(use) && server ? (
+        <div className="modelsDialog__backups">
+          <span className="modelsDialog__group">If it’s busy or down, try</span>
+          {others.length ? (
+            <div className="modelsDialog__chips" role="group" aria-label="Backup servers">
+              {others.map((entry) => {
+                const index = backups.findIndex((backup) => backup.server === entry.id);
+                return (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    aria-pressed={index >= 0}
+                    disabled={busy}
+                    onClick={() =>
+                      onRoute({
+                        ...route,
+                        backups: index >= 0 ? backups.filter((backup) => backup.server !== entry.id) : [...backups, { server: entry.id }],
+                      })
+                    }
+                  >
+                    {index >= 0 ? <b>{index + 1}</b> : null}
+                    {entry.name}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="kiosk__helper">No other server can do this yet. Add one under Servers.</p>
+          )}
+          {USES_WITH_SPREAD.includes(use) && backups.length ? (
+            <label className="modelsDialog__check">
+              <input type="checkbox" checked={route.spread === true} onChange={(event) => onRoute({ ...route, spread: event.target.checked || undefined })} disabled={busy} />
+              Send each job to whichever of these has the shortest queue
+            </label>
+          ) : backups.length ? (
+            <p className="kiosk__helper">Tried in the order you picked them. A backup of the same kind asks for the same model.</p>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ImageModelSelect({ models, busy }: { models: ReturnType<typeof useImageModels>; busy: boolean }) {
+  return (
+    <>
+      <label htmlFor="models-image-model">Model</label>
+      <span className="modelsDialog__model">
+        <select id="models-image-model" value={models.selectedModelId ?? ''} onChange={(event) => void models.select(event.target.value)} disabled={busy || models.loading || !models.models.length}>
+          {!models.models.length ? <option value="">{models.loading ? 'Finding models…' : 'No image models found'}</option> : null}
+          {models.models.map((entry) => (
+            <option key={entry.id} value={entry.id} disabled={!entry.available}>
+              {entry.name}
+              {entry.available ? '' : ' (missing parts)'}
+            </option>
+          ))}
+        </select>
+        {models.error ? <small className="kiosk__error">{models.error}</small> : null}
+      </span>
+    </>
+  );
+}
+
+function MeshModelSelect({ models, busy }: { models: ReturnType<typeof useCharacterModels>; busy: boolean }) {
+  return (
+    <>
+      <label htmlFor="models-mesh-model">Model</label>
+      <span className="modelsDialog__model">
+        <select
+          id="models-mesh-model"
+          value={models.selectedGeometryId ?? ''}
+          onChange={(event) => void models.select('geometry', event.target.value)}
+          disabled={busy || models.loading || !models.geometry.length}
+        >
+          {!models.geometry.length ? <option value="">{models.loading ? 'Finding models…' : 'No 3D models found'}</option> : null}
+          {models.geometry.map((entry) => (
+            <option key={entry.id} value={entry.id} disabled={!entry.available}>
+              {entry.name}
+              {entry.available ? '' : ` (${entry.unavailableReason ?? 'unavailable'})`}
+            </option>
+          ))}
+        </select>
+        {models.error ? <small className="kiosk__error">{models.error}</small> : null}
+      </span>
+    </>
+  );
+}
+
+function AddServerForm({
+  draft,
+  busy,
+  onChange,
+  onTest,
+  onCancel,
+  onSave,
+}: {
+  draft: AddDraft;
+  busy: boolean;
+  onChange(next: AddDraft): void;
+  onTest(): void;
+  onCancel(): void;
+  onSave(): void;
+}) {
+  const hint = SERVER_TYPE_HINTS[draft.type];
+  const found = draft.probe ? [...new Set(Object.values(draft.probe.models).flat())] : [];
+  return (
+    <form
+      className="modelsDialog__add"
+      aria-label="New server"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSave();
+      }}
+    >
+      <b>New server</b>
+      <div className="modelsDialog__fields">
+        <label htmlFor="models-add-type">Type</label>
+        <select id="models-add-type" value={draft.type} onChange={(event) => onChange({ ...draft, type: event.target.value as ServerType, probe: undefined })}>
+          {ADDABLE_SERVER_TYPES.map((type) => (
+            <option key={type} value={type}>
+              {SERVER_TYPE_LABELS[type]}
+            </option>
+          ))}
+        </select>
+        {hint ? (
+          <>
+            <span />
+            <p className="kiosk__helper">{hint.hint}</p>
+          </>
+        ) : null}
+        <label htmlFor="models-add-name">Name</label>
+        <input id="models-add-name" value={draft.name} placeholder={`${SERVER_TYPE_LABELS[draft.type]} on …`} onChange={(event) => onChange({ ...draft, name: event.target.value })} />
+        <label htmlFor="models-add-url">Address</label>
+        <input id="models-add-url" value={draft.url} placeholder={hint?.example} onChange={(event) => onChange({ ...draft, url: event.target.value, probe: undefined })} />
+        <label htmlFor="models-add-key">API key</label>
+        <input id="models-add-key" type="password" autoComplete="off" value={draft.key} placeholder="Only if the server asks for one" onChange={(event) => onChange({ ...draft, key: event.target.value, probe: undefined })} />
+      </div>
+      {draft.probe ? (
+        <p role="status" className={draft.probe.status === 'up' ? 'kiosk__info' : 'kiosk__error'}>
+          {draft.probe.status === 'up' ? `It answered.${found.length ? ` Models: ${found.slice(0, 8).join(', ')}${found.length > 8 ? '…' : ''}` : ''}` : statusText(draft.probe)}
+        </p>
+      ) : null}
+      <div className="modelsDialog__actions">
+        <button type="button" onClick={onTest} disabled={busy || !draft.url.trim()}>
+          Test
+        </button>
+        <button type="submit" className="modelsDialog__primary" disabled={busy || !draft.url.trim()}>
+          Add server
+        </button>
+        <button type="button" onClick={onCancel} disabled={busy}>
+          Cancel
+        </button>
+      </div>
+      {!draft.probe ? <p className="kiosk__helper">You can add a server that isn’t running yet; Test checks it first.</p> : null}
+    </form>
+  );
+}
+
+function ServerPage({
+  server,
+  view,
+  probe,
+  busy,
+  onProbe,
+  onSave,
+  onKey,
+  onRemove,
+  onOpenUse,
+}: {
+  server: ModelServerView;
+  view: ModelRoutingView;
+  probe?: ServerProbe | 'checking';
+  busy: boolean;
+  onProbe(): void;
+  onSave(changes: { name?: string; url?: string }): void;
+  onKey(key: string): void;
+  onRemove(): void;
+  onOpenUse(use: UseId): void;
+}) {
+  const [name, setName] = useState(server.name);
+  const [url, setUrl] = useState(server.url);
+  const [key, setKey] = useState('');
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const fixedUrl = server.type === 'openai' || server.type === 'brave';
+  const usedBy = MODEL_USES.filter((use) => {
+    const route = view.routes[use.id];
+    return route.server === server.id || (route.backups ?? []).some((backup) => backup.server === server.id);
+  });
+  const models = probe && probe !== 'checking' ? [...new Set(Object.values(probe.models).flat())] : [];
+  const dirty = name.trim() !== server.name || (!fixedUrl && url.trim() !== server.url);
+  return (
+    <section className="modelsDialog__page" aria-labelledby="models-server-title">
+      <Heading id="models-server-title" group={`Server · ${SERVER_TYPE_LABELS[server.type]}`} title={server.name} />
+      <ServerRow server={server} probe={probe}>
+        <button type="button" onClick={onProbe} disabled={probe === 'checking'}>
+          Test
+        </button>
+      </ServerRow>
+      <form
+        className="modelsDialog__fields"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (dirty) onSave({ name: name.trim(), ...(fixedUrl ? {} : { url: url.trim() }) });
+        }}
+      >
+        <label htmlFor="models-server-name">Name</label>
+        <input id="models-server-name" value={name} onChange={(event) => setName(event.target.value)} />
+        <label htmlFor="models-server-url">Address</label>
+        <input id="models-server-url" value={url} onChange={(event) => setUrl(event.target.value)} disabled={fixedUrl} />
+        <span />
+        <span>
+          <button type="submit" disabled={busy || !dirty}>
+            Save
+          </button>
+        </span>
+      </form>
+      {server.managed ? <p className="kiosk__helper">On this PC: the app (or pnpm dev:run) starts it when a job needs it.</p> : null}
+      {server.type !== 'speech' && server.type !== 'motion' && server.type !== 'comfy' ? (
+        <form
+          className="modelsDialog__fields"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (key.trim()) {
+              onKey(key.trim());
+              setKey('');
+            }
+          }}
+        >
+          <label htmlFor="models-server-key">API key</label>
+          <input
+            id="models-server-key"
+            type="password"
+            autoComplete="off"
+            value={key}
+            placeholder={server.hasKey ? 'Saved. Enter a new one to replace it.' : server.type === 'openai' || server.type === 'brave' ? 'Needed' : 'Only if the server asks for one'}
+            onChange={(event) => setKey(event.target.value)}
+          />
+          <span />
+          <span className="modelsDialog__actions">
+            <button type="submit" disabled={busy || !key.trim()}>
+              Save key
+            </button>
+            {server.hasKey && !server.keyFromEnv ? (
+              <button type="button" onClick={() => onKey('')} disabled={busy}>
+                Remove key
+              </button>
+            ) : null}
+          </span>
+          {server.keyFromEnv ? (
+            <>
+              <span />
+              <p className="kiosk__helper">The key comes from an environment variable, which wins over a saved one.</p>
+            </>
+          ) : null}
+        </form>
+      ) : null}
+      <div className="modelsDialog__list">
+        <span className="modelsDialog__group">Models it offers</span>
+        {models.length ? (
+          <div className="modelsDialog__found">
+            {models.map((model) => (
+              <code key={model}>{model}</code>
+            ))}
+          </div>
+        ) : (
+          <p className="kiosk__helper">{probe === 'checking' ? 'Checking…' : 'None reported. Test the server to read its list.'}</p>
+        )}
+      </div>
+      <div className="modelsDialog__list">
+        <span className="modelsDialog__group">Used by</span>
+        {usedBy.length ? (
+          <div className="modelsDialog__chips">
+            {usedBy.map((use) => (
+              <button key={use.id} type="button" onClick={() => onOpenUse(use.id)}>
+                {use.name}
+                {view.routes[use.id].server === server.id ? '' : ' (backup)'}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="kiosk__helper">Nothing yet. Pick it for a job to send work here.</p>
+        )}
+      </div>
+      {!server.builtIn ? (
+        confirmRemove ? (
+          <div className="modelsDialog__actions" role="group" aria-label="Confirm removal">
+            <span>Remove {server.name}? Jobs that use it go back to their defaults.</span>
+            <button type="button" onClick={onRemove} disabled={busy}>
+              Remove
+            </button>
+            <button type="button" onClick={() => setConfirmRemove(false)}>
+              Keep it
+            </button>
+          </div>
+        ) : (
+          <div>
+            <button type="button" onClick={() => setConfirmRemove(true)} disabled={busy}>
+              Remove server
+            </button>
+          </div>
+        )
+      ) : null}
+    </section>
+  );
+}

@@ -122,6 +122,29 @@ export function createWebSearchProvider(
   return providers.length === 1 ? providers[0] : new FallbackSearchProvider(providers);
 }
 
+/**
+ * The provider for the servers Models and servers picks for Web search, tried in order. A Brave
+ * entry without a key is left out (and reported). Null when nothing usable is picked: search off.
+ */
+export function createRoutedSearchProvider(
+  targets: Array<{ type: 'search' | 'brave'; url: string; key?: string }>,
+  logger?: Pick<Console, 'warn'>,
+  fetchFn?: typeof fetch,
+): WebSearchProvider | null {
+  const providers: WebSearchProvider[] = [];
+  for (const target of targets) {
+    if (target.type === 'search') {
+      providers.push(new SearxngSearchProvider(target.url, fetchFn));
+    } else if (target.key) {
+      providers.push(new BraveSearchProvider(target.key, fetchFn));
+    } else {
+      logger?.warn('Web search lists Brave, but no Brave Search API key is set; skipping it.');
+    }
+  }
+  if (!providers.length) return null;
+  return providers.length === 1 ? providers[0] : new FallbackSearchProvider(providers);
+}
+
 /** SearXNG's JSON API. The instance must list json under search.formats, or it answers 403. */
 export class SearxngSearchProvider implements WebSearchProvider {
   readonly name = 'searxng';

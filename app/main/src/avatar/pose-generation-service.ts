@@ -6,6 +6,8 @@ import type { AvatarPoseService } from './avatar-pose-service.js';
 
 export interface PoseGenerationServiceOptions {
     client: OpenAI;
+    /** Defaults to gpt-4.1-mini. */
+    model?: string;
     poseService: AvatarPoseService;
     logger?: {
         info?: (message: string, meta?: Record<string, unknown>) => void;
@@ -244,8 +246,11 @@ export class PoseGenerationService {
     private readonly poseService: AvatarPoseService;
     private readonly logger?: PoseGenerationServiceOptions['logger'];
 
+    private readonly model: string;
+
     constructor(options: PoseGenerationServiceOptions) {
         this.client = options.client;
+        this.model = options.model?.trim() || 'gpt-4.1-mini';
         this.poseService = options.poseService;
         this.logger = options.logger;
     }
@@ -325,7 +330,7 @@ export class PoseGenerationService {
                 responses: { create: (args: unknown) => Promise<{ output_text: string }> };
             }
         ).responses.create({
-            model: 'gpt-4.1-mini',
+            model: this.model,
             input: messages,
             text: {},
         });
@@ -456,7 +461,7 @@ export class PoseGenerationService {
                 responses: { create: (args: unknown) => Promise<{ output_text: string }> };
             }
         ).responses.create({
-            model: 'gpt-4.1-mini',
+            model: this.model,
             input: messages,
             text: {
                 format: {

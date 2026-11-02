@@ -38,6 +38,11 @@ export interface AvatarGenerationModelStore {
 export interface AvatarGenerationServiceOptions {
   comfy: ComfyUIClient;
   ensureComfyReady?: () => Promise<void>;
+  /**
+   * Picks the ComfyUI server for a job's image or 3D stage (Models and servers), starting this
+   * PC's one if needed. Without it every stage uses `comfy`.
+   */
+  pickComfy?: (stage: 'image' | 'mesh') => Promise<ComfyUIClient>;
   models: AvatarGenerationModelStore;
   /** VRoid VRM whose textures get repainted. */
   baseModelPath: string;
@@ -56,6 +61,9 @@ export interface AvatarGenerationServiceOptions {
 }
 
 interface JobState {
+  /** The ComfyUI server that drew the concept, and the one the build stage runs on. */
+  imageComfy?: ComfyUIClient;
+  buildComfy?: ComfyUIClient;
   imageModel?: ImageWorkflowModel;
   geometry?: GeometryModel;
   rig?: RigModel;
@@ -111,14 +119,7 @@ export class AvatarGenerationService {
       if (!this.options.characterRunner)
         throw new Error('New 3D character generation is not configured.');
     }
-    if (!referenceImage) {
-      await this.options.ensureComfyReady?.();
-      if (!(await this.options.comfy.isAvailable())) {
-        throw new Error(
-          `ComfyUI isn't reachable at ${this.options.comfy.baseUrl}. Start ComfyUI (or set COMFYUI_BASE_URL) and try again.`,
-        );
-      }
-    }
+    const imageComfy = referenceImage ? undefined : await this.comfyFor('image');
     // Another request may have finished the shared server-start wait just ahead of this one.
     this.assertIdle();
 
@@ -128,6 +129,7 @@ export class AvatarGenerationService {
     this.assertIdle();
     const jobId = randomUUID();
     const job: JobState = {
+      imageComfy,
       imageModel,
       referenceImage,
       seed: randomInt(0, 2 ** 47),
@@ -217,9 +219,7 @@ export class AvatarGenerationService {
           return;
         }
       }
-      await this.options.ensureComfyReady?.();
-      if (!(await this.options.comfy.isAvailable()))
-        throw new Error('ComfyUI is unavailable. Start it and try continuing again.');
+      job.buildComfy = await this.comfyFor(job.mode === 'new-character' ? 'mesh' : 'image');
       throwIfAborted(job.abort.signal);
       if (this.jobs.get(jobId) !== job)
         throw new Error('This avatar generation job was discarded.');
@@ -333,8 +333,20 @@ export class AvatarGenerationService {
     job.status = { ...job.status, ...patch };
   }
 
+  /** The ComfyUI server for a stage, started and checked. */
+  private async comfyFor(stage: 'image' | 'mesh'): Promise<ComfyUIClient> {
+    if (this.options.pickComfy) return this.options.pickComfy(stage);
+    await this.options.ensureComfyReady?.();
+    if (!(await this.options.comfy.isAvailable())) {
+      throw new Error(
+        `ComfyUI isn't reachable at ${this.options.comfy.baseUrl}. Start ComfyUI (or choose another server in Models and servers) and try again.`,
+      );
+    }
+    return this.options.comfy;
+  }
+
   private async run(job: JobState, phase: 'concept' | 'build' = 'concept'): Promise<void> {
-    const { comfy } = this.options;
+    const comfy = (phase === 'concept' ? job.imageComfy : job.buildComfy) ?? this.options.comfy;
     const signal = job.abort.signal;
     const seed = job.seed;
     const started = Date.now();

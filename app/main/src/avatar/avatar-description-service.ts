@@ -3,6 +3,8 @@ import type { ResponseInput } from 'openai/resources/responses/responses';
 
 export interface AvatarDescriptionServiceOptions {
   client: OpenAI;
+  /** Defaults to gpt-4.1-mini. */
+  model?: string;
   logger?: {
     info?: (message: string, meta?: Record<string, unknown>) => void;
     warn?: (message: string, meta?: Record<string, unknown>) => void;
@@ -32,8 +34,11 @@ export class AvatarDescriptionService {
   private readonly client: OpenAI;
   private readonly logger?: AvatarDescriptionServiceOptions['logger'];
 
+  private readonly model: string;
+
   constructor(options: AvatarDescriptionServiceOptions) {
     this.client = options.client;
+    this.model = options.model?.trim() || 'gpt-4.1-mini';
     this.logger = options.logger;
   }
 
@@ -70,7 +75,7 @@ export class AvatarDescriptionService {
           responses: { create: (args: unknown) => Promise<{ output_text: string }> };
         }
       ).responses.create({
-        model: 'gpt-4.1-mini',
+        model: this.model,
         input,
       });
 

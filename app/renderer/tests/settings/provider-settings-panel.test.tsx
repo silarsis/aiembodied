@@ -31,74 +31,17 @@ function defaults(): ProviderSettings {
 }
 
 describe('ProviderSettingsPanel', () => {
-  it('shares one draft across voice and device drawer sections', async () => {
+  it('keeps the wake word and talk settings, saving only what changed', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
-    render(<ProviderSettingsPanel settings={defaults()} hasApiKey voiceStatus={voiceStatus} motionStatus={null} onSave={onSave}
-      renderLayout={({ voice, devices, actions }) => <><section aria-label="Voice controls">{voice}</section><section aria-label="Device controls">{devices}</section>{actions}</>} />);
-    fireEvent.change(screen.getByLabelText('Voice'), { target: { value: 'bf_emma' } });
+    render(<ProviderSettingsPanel settings={defaults()} onSave={onSave}
+      renderLayout={({ devices, actions }) => <><section aria-label="Device controls">{devices}</section>{actions}</>} />);
+    // Models, voices and keys moved to the Models and servers pop-up.
+    expect(screen.queryByLabelText('Voice')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Server URL')).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Detection threshold'), { target: { value: '0.7' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ tts: { kokoroVoice: 'bf_emma' }, wakeWord: { threshold: 0.7 } }));
-  });
-
-  it('offers the Kokoro voices the speech service reports and saves only the change', async () => {
-    const onSave = vi.fn().mockResolvedValue(undefined);
-    render(
-      <ProviderSettingsPanel settings={defaults()} hasApiKey={false} voiceStatus={voiceStatus} motionStatus={null} onSave={onSave} />,
-    );
-
-    const voice = screen.getByLabelText('Voice') as HTMLSelectElement;
-    expect(Array.from(voice.options).map((o) => o.value)).toEqual(['', 'bf_emma', 'bf_lily', 'bm_george']);
-    expect(voice.options[0]?.textContent).toBe('Service default (bf_lily)');
-
-    const save = screen.getByRole('button', { name: 'Save settings' });
-    expect(save).toBeDisabled();
-    fireEvent.change(voice, { target: { value: 'bf_emma' } });
-    fireEvent.click(save);
-
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ tts: { kokoroVoice: 'bf_emma' } }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ wakeWord: { threshold: 0.7 } }));
     expect(await screen.findByRole('status')).toHaveTextContent('Settings saved and applied.');
-  });
-
-  it('shows an OpenAI voice dropdown defaulting to alloy, and warns when there is no key', async () => {
-    const onSave = vi.fn().mockResolvedValue(undefined);
-    render(
-      <ProviderSettingsPanel settings={defaults()} hasApiKey={false} voiceStatus={voiceStatus} motionStatus={null} onSave={onSave} />,
-    );
-
-    fireEvent.change(screen.getByLabelText('Provider', { selector: '#settings-tts-provider' }), { target: { value: 'openai' } });
-
-    const voice = screen.getByLabelText('Voice') as HTMLSelectElement;
-    expect(voice.value).toBe('alloy');
-    expect(Array.from(voice.options).map((o) => o.value)).toEqual([
-      'alloy', 'ash', 'ballad', 'cedar', 'coral', 'echo', 'marin', 'sage', 'shimmer', 'verse',
-    ]);
-    expect((screen.getByLabelText('Model', { selector: '#settings-tts-openai-model' }) as HTMLInputElement).value).toBe(
-      'gpt-realtime-2.1-mini',
-    );
-    expect(screen.getByLabelText('Voice style')).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent(/no OpenAI API key/i);
-
-    fireEvent.change(voice, { target: { value: 'coral' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ tts: { provider: 'openai', openaiVoice: 'coral' } }));
-  });
-
-  it('shows the fields for the chosen provider of each part', () => {
-    const settings = defaults();
-    settings.llm.provider = 'openai';
-    settings.motion.provider = 'openai';
-    render(
-      <ProviderSettingsPanel settings={settings} hasApiKey voiceStatus={voiceStatus} motionStatus={null} onSave={vi.fn()} />,
-    );
-
-    expect((screen.getByLabelText('Model', { selector: '#settings-llm-openai-model' }) as HTMLInputElement).value).toBe(
-      'gpt-4.1-mini',
-    );
-    expect(screen.queryByLabelText('Server URL')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Model', { selector: '#settings-motion-openai-model' })).toBeInTheDocument();
-    expect(screen.queryByLabelText('Model', { selector: '#settings-motion-backend' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
 
@@ -133,9 +76,6 @@ describe('provider settings helpers', () => {
     render(
       <ProviderSettingsPanel
         settings={defaults()}
-        hasApiKey={false}
-        voiceStatus={voiceStatus}
-        motionStatus={null}
         onSave={onSave}
         pushToTalkStatus={{ shortcut: 'CommandOrControl+Shift+Space', registered: false, error: 'Taken by another app.' }}
       />,

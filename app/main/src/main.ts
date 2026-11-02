@@ -44,9 +44,8 @@ import { AvatarDescriptionService } from './avatar/avatar-description-service.js
 import { AvatarGenerationService } from './avatar/generation/avatar-generation-service.js';
 import { ComfyUIClient } from './avatar/generation/comfyui-client.js';
 import { BlenderCharacterRunner } from './avatar/generation/character/rig-runner.js';
-import { AvatarImageModelService, createImageModelScanner } from './avatar/generation/image-model-service.js';
+import { AvatarImageModelService, createImageModelScanner, createRemoteComfyModelScanner } from './avatar/generation/image-model-service.js';
 import { AvatarCharacterModelService } from './avatar/generation/character-model-service.js';
-import { ComfyUIRuntime } from './avatar/generation/comfyui-runtime.js';
 import { LocalMotionClient } from './avatar/motion/local-motion-client.js';
 import { LocalMotionGenerationService } from './avatar/motion/local-motion-generation-service.js';
 import { LocalVoiceService } from './local-voice/local-voice-service.js';
@@ -79,9 +78,14 @@ import {
   RuntimeResourceNotFoundError,
 } from './runtime-paths.js';
 import { getOpenAIClient } from './openai/client.js';
+import type OpenAI from 'openai';
+import { createChatCompletionsResponsesClient } from './openai/chat-completions-responses.js';
+import { routeTargets, USE_SERVER_TYPES, type ModelRoute, type ServerType, type UseId } from './config/model-routing.js';
+import { probeModelServer } from './config/model-server-probe.js';
+import { ComfyUIPool } from './avatar/generation/comfyui-pool.js';
 import { MCPManager } from './mcp/mcp-manager.js';
 import { ToolRegistry } from './tools/tool-registry.js';
-import { createWebSearchProvider, createWebSearchTool } from './tools/web-search.js';
+import { createRoutedSearchProvider, createWebSearchTool, WEB_SEARCH_TOOL_ID } from './tools/web-search.js';
 import { registerMCPHandlers } from './mcp/ipc-handlers.js';
 import { PushToTalkShortcut } from './talk/push-to-talk.js';
 import type { TalkTriggerEvent } from './talk/types.js';
@@ -181,10 +185,7 @@ let avatarCharacterModels: AvatarCharacterModelService | undefined;
 let avatarGenerationService: AvatarGenerationService | null = null;
 let localMotionService: LocalMotionGenerationService | null = null;
 let localVoiceService: LocalVoiceService | null = null;
-let currentVrmaApiKey: string | null = null;
-let currentVrmaModel: string | null = null;
 let currentMotionServiceUrl: string | null = null;
-let currentDescriptionApiKey: string | null = null;
 
 let toolRegistry: ToolRegistry | null = null;
 let mcpManager: MCPManager | null = null;
@@ -337,162 +338,107 @@ const crashGuard = new CrashGuard({
   logger,
 });
 
-async function refreshVrmaGenerationService(
+/**
+ * The OpenAI-compatible client and model for a helper job (animation clips, poses, pose checks,
+ * avatar description), from the server Models and servers picks for it. Null when that server
+ * is OpenAI and no key is set, or nothing is picked.
+ */
+function helperTarget(manager: ConfigManager, use: 'clips' | 'posegen' | 'posecheck' | 'describe'): { client: OpenAI; model?: string; signature: string } | null {
+  const target = routeTargets(manager.getConfig().models, use)[0];
+  if (!target) return null;
+  const key = manager.getServerKey(target.server.id)?.trim() ?? '';
+  if (target.server.type === 'openai' && !key) return null;
+  const signature = `${target.server.url}|${key}|${target.model ?? ''}`;
+  // OpenAI gets the SDK; any other chat server gets the same calls over /chat/completions.
+  const client =
+    target.server.type === 'openai'
+      ? getOpenAIClient(key)
+      : (createChatCompletionsResponsesClient({ baseUrl: target.server.url, apiKey: key || undefined, model: target.model }) as unknown as OpenAI);
+  return { client, model: target.model, signature };
+}
+
+const helperSignatures = new Map<string, string>();
+
+/** Rebuild a helper service when its server, key or model changed; null when it has none. */
+function refreshHelper<T>(
   manager: ConfigManager,
-  reason: 'startup' | 'secret-update' = 'startup',
-): Promise<void> {
-  const config = manager.getConfig();
-  const nextKey = typeof config.realtimeApiKey === 'string' ? config.realtimeApiKey.trim() : '';
-
-  if (!nextKey) {
-    if (reason === 'startup') {
-      logger.warn('Realtime API key unavailable; VRMA generation disabled.');
-    } else if (vrmaGenerationService || currentVrmaApiKey) {
-      logger.warn('Realtime API key removed; VRMA generation disabled.');
-    }
-    vrmaGenerationService = null;
-    currentVrmaApiKey = null;
-    return;
+  use: 'clips' | 'posegen' | 'posecheck' | 'describe',
+  current: T | null,
+  create: (client: OpenAI, model: string | undefined) => T,
+  label: string,
+): T | null {
+  const target = helperTarget(manager, use);
+  if (!target) {
+    if (current) logger.warn(`${label} disabled: choose a server for it in Models and servers, or add the OpenAI API key.`);
+    helperSignatures.delete(use);
+    return null;
   }
-
-  if (!avatarAnimationService) {
-    logger.warn('Avatar animation service unavailable; VRMA generation cannot be initialized.');
-    vrmaGenerationService = null;
-    currentVrmaApiKey = null;
-    return;
-  }
-
-  const model = config.providers.motion.openaiModel;
-  if (vrmaGenerationService && currentVrmaApiKey === nextKey && currentVrmaModel === model) {
-    return;
-  }
-
+  if (current && helperSignatures.get(use) === target.signature) return current;
   try {
-    vrmaGenerationService = new VrmaGenerationService({
-      client: getOpenAIClient(nextKey),
-      animationService: avatarAnimationService,
-      model,
-      logger,
-    });
-    currentVrmaApiKey = nextKey;
-    currentVrmaModel = model;
-    logger.info('VRMA generation service initialized.', { reason });
+    const service = create(target.client, target.model);
+    helperSignatures.set(use, target.signature);
+    logger.info(`${label} ready.`, { model: target.model });
+    return service;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.warn('Failed to initialize VRMA generation service', { message });
-    vrmaGenerationService = null;
-    currentVrmaApiKey = null;
+    logger.warn(`Failed to initialize ${label.toLowerCase()}`, { message: error instanceof Error ? error.message : String(error) });
+    helperSignatures.delete(use);
+    return null;
   }
 }
 
-async function refreshPoseGenerationService(
-  manager: ConfigManager,
-  reason: 'startup' | 'secret-update' = 'startup',
-): Promise<void> {
-  const config = manager.getConfig();
-  const nextKey = typeof config.realtimeApiKey === 'string' ? config.realtimeApiKey.trim() : '';
-
-  if (!nextKey) {
-    poseGenerationService = null;
+async function refreshVrmaGenerationService(manager: ConfigManager): Promise<void> {
+  const animationService = avatarAnimationService;
+  if (!animationService) {
+    vrmaGenerationService = null;
     return;
   }
-
-  if (!avatarPoseService) {
-    poseGenerationService = null;
-    return;
-  }
-
-  if (poseGenerationService && currentVrmaApiKey === nextKey) {
-    return;
-  }
-
-  try {
-    poseGenerationService = new PoseGenerationService({
-      client: getOpenAIClient(nextKey),
-      poseService: avatarPoseService,
-      logger,
-    });
-    // Reuse currentVrmaApiKey as it tracks the same key
-    if (!currentVrmaApiKey) currentVrmaApiKey = nextKey;
-    logger.info('Pose generation service initialized.', { reason });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.warn('Failed to initialize pose generation service', { message });
-    poseGenerationService = null;
-  }
+  vrmaGenerationService = refreshHelper(
+    manager,
+    'clips',
+    vrmaGenerationService,
+    (client, model) => new VrmaGenerationService({ client, animationService, model, logger }),
+    'Animation clip generation',
+  );
 }
 
-async function refreshPoseEvaluationService(
-  manager: ConfigManager,
-  reason: 'startup' | 'secret-update' = 'startup',
-): Promise<void> {
-  const config = manager.getConfig();
-  const nextKey = typeof config.realtimeApiKey === 'string' ? config.realtimeApiKey.trim() : '';
-
-  if (!nextKey) {
-    poseEvaluationService = null;
+async function refreshPoseGenerationService(manager: ConfigManager): Promise<void> {
+  const poseService = avatarPoseService;
+  if (!poseService) {
+    poseGenerationService = null;
     return;
   }
-
-  if (!avatarPoseService) {
-    poseEvaluationService = null;
-    return;
-  }
-
-  if (poseEvaluationService && currentVrmaApiKey === nextKey) {
-    return;
-  }
-
-  try {
-    poseEvaluationService = new PoseEvaluationService({
-      client: getOpenAIClient(nextKey),
-      poseService: avatarPoseService,
-      logger,
-    });
-    if (!currentVrmaApiKey) currentVrmaApiKey = nextKey;
-    logger.info('Pose evaluation service initialized.', { reason });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.warn('Failed to initialize pose evaluation service', { message });
-    poseEvaluationService = null;
-  }
+  poseGenerationService = refreshHelper(
+    manager,
+    'posegen',
+    poseGenerationService,
+    (client, model) => new PoseGenerationService({ client, poseService, model, logger }),
+    'Pose generation',
+  );
 }
 
-async function refreshAvatarDescriptionService(
-  manager: ConfigManager,
-  reason: 'startup' | 'secret-update' = 'startup',
-): Promise<void> {
-  const config = manager.getConfig();
-  const nextKey = typeof config.realtimeApiKey === 'string' ? config.realtimeApiKey.trim() : '';
-
-  if (!nextKey) {
-    if (reason === 'startup') {
-      logger.warn('Realtime API key unavailable; avatar description generation disabled.');
-    } else if (avatarDescriptionService || currentDescriptionApiKey) {
-      logger.warn('Realtime API key removed; avatar description generation disabled.');
-    }
-    avatarDescriptionService = null;
-    currentDescriptionApiKey = null;
+async function refreshPoseEvaluationService(manager: ConfigManager): Promise<void> {
+  const poseService = avatarPoseService;
+  if (!poseService) {
+    poseEvaluationService = null;
     return;
   }
+  poseEvaluationService = refreshHelper(
+    manager,
+    'posecheck',
+    poseEvaluationService,
+    (client, model) => new PoseEvaluationService({ client, poseService, model, logger }),
+    'Pose checking',
+  );
+}
 
-  if (avatarDescriptionService && currentDescriptionApiKey === nextKey) {
-    return;
-  }
-
-  try {
-    avatarDescriptionService = new AvatarDescriptionService({
-      client: getOpenAIClient(nextKey),
-      logger,
-    });
-    currentDescriptionApiKey = nextKey;
-    logger.info('Avatar description service initialized.', { reason });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.warn('Failed to initialize avatar description service', { message });
-    avatarDescriptionService = null;
-    currentDescriptionApiKey = null;
-  }
+async function refreshAvatarDescriptionService(manager: ConfigManager): Promise<void> {
+  avatarDescriptionService = refreshHelper(
+    manager,
+    'describe',
+    avatarDescriptionService,
+    (client, model) => new AvatarDescriptionService({ client, model, logger }),
+    'Avatar description',
+  );
 }
 
 /** Where wake words trained in the app are kept. */
@@ -584,28 +530,64 @@ function startWakeWordService(wakeWord: WakeWordConfig): WakeWordService {
  */
 async function applyProviderSettings(manager: ConfigManager): Promise<void> {
   const config = manager.getConfig();
-  const { providers } = config;
-  const engines = buildVoiceEngines(providers, config.realtimeApiKey ?? '', { logger });
+  const { providers, models } = config;
+  const engines = buildVoiceEngines(models, (id) => manager.getServerKey(id), { logger });
   if (localVoiceService) {
     localVoiceService.configure(engines);
   } else {
     localVoiceService = new LocalVoiceService({ ...engines, tools: toolRegistry ?? undefined, logger });
   }
 
-  if (avatarAnimationService && currentMotionServiceUrl !== providers.motion.localServiceUrl) {
+  const motionServer = localMotionServer(manager);
+  const motionUrl = motionServer?.url ?? providers.motion.localServiceUrl;
+  if (avatarAnimationService && currentMotionServiceUrl !== motionUrl) {
     localMotionService = new LocalMotionGenerationService({
-      client: new LocalMotionClient({ baseUrl: providers.motion.localServiceUrl }),
+      client: new LocalMotionClient({ baseUrl: motionUrl }),
       animationService: avatarAnimationService,
       logger,
     });
-    currentMotionServiceUrl = providers.motion.localServiceUrl;
+    currentMotionServiceUrl = motionUrl;
   }
+
+  applyWebSearch(manager);
 
   pushToTalk.apply(providers.talk?.shortcut ?? '');
 
   await wakeWordListening.configure(config.wakeWord);
 
-  await refreshVrmaGenerationService(manager, 'secret-update');
+  await refreshVrmaGenerationService(manager);
+  await refreshPoseGenerationService(manager);
+  await refreshPoseEvaluationService(manager);
+  await refreshAvatarDescriptionService(manager);
+}
+
+/** The motion service Moving uses, or null when Moving runs on OpenAI keyframes. */
+function localMotionServer(manager: ConfigManager) {
+  const target = routeTargets(manager.getConfig().models, 'motion')[0];
+  return target?.server.type === 'motion' ? target.server : null;
+}
+
+let webSearchSignature: string | null = null;
+
+/** Register (or swap, or remove) the web_search tool for the servers Web search uses. */
+function applyWebSearch(manager: ConfigManager): void {
+  if (!toolRegistry) return;
+  const targets = routeTargets(manager.getConfig().models, 'search').map(({ server }) => ({
+    type: server.type as 'search' | 'brave',
+    url: server.url,
+    key: manager.getServerKey(server.id),
+  }));
+  const signature = JSON.stringify(targets);
+  if (signature === webSearchSignature) return;
+  webSearchSignature = signature;
+  const provider = createRoutedSearchProvider(targets, logger);
+  if (provider) {
+    toolRegistry.register(createWebSearchTool(provider));
+    logger.info('Web search tool registered', { provider: provider.name });
+  } else {
+    toolRegistry.unregister(WEB_SEARCH_TOOL_ID);
+    logger.info('Web search is off.');
+  }
 }
 
 function registerIpcHandlers(
@@ -798,7 +780,7 @@ function registerIpcHandlers(
 
     if (payload.key === 'realtimeApiKey') {
       await applyProviderSettings(manager);
-      await refreshPoseGenerationService(manager, 'secret-update');
+      await refreshPoseGenerationService(manager);
     }
 
     return nextConfig;
@@ -806,13 +788,66 @@ function registerIpcHandlers(
   registerConfigHandler('config:clear-secret', async (_event, key: ConfigSecretKey) => {
     const nextConfig = await manager.clearSecret(key);
     await applyProviderSettings(manager);
-    await refreshPoseGenerationService(manager, 'secret-update');
+    await refreshPoseGenerationService(manager);
     return nextConfig;
   });
   registerConfigHandler('config:set-providers', async (_event, patch: ProviderSettingsPatch) => {
     const nextConfig = await manager.setProviderSettings(patch ?? {});
     await applyProviderSettings(manager);
     return nextConfig;
+  });
+  // Models and servers pop-up. Keys go in, never out: the view only says whether one is set.
+  ipcMain.handle('models:get', () => manager.getModelRoutingView());
+  ipcMain.handle('models:probe', async (_event, payload: { serverId?: unknown; draft?: { type?: unknown; url?: unknown; key?: unknown } }) => {
+    if (typeof payload?.serverId === 'string') {
+      const server = manager.getConfig().models.servers.find((entry) => entry.id === payload.serverId);
+      if (!server) throw new Error('That server no longer exists.');
+      return probeModelServer(server, manager.getServerKey(server.id));
+    }
+    const draft = payload?.draft;
+    if (!draft || typeof draft.type !== 'string' || typeof draft.url !== 'string') {
+      throw new Error('Choose a server type and address first.');
+    }
+    let url: string;
+    try {
+      url = new URL(draft.url.trim()).toString().replace(/\/+$/, '');
+    } catch {
+      throw new Error('Enter the server address as a URL, such as http://192.168.1.20:8188.');
+    }
+    return probeModelServer({ type: draft.type as ServerType, url }, typeof draft.key === 'string' ? draft.key : undefined);
+  });
+  ipcMain.handle(
+    'models:save-server',
+    async (_event, payload: { id?: unknown; name?: unknown; type?: unknown; url?: unknown; key?: unknown }) => {
+      const id = await manager.saveModelServer({
+        id: typeof payload?.id === 'string' ? payload.id : undefined,
+        name: typeof payload?.name === 'string' ? payload.name : undefined,
+        type: typeof payload?.type === 'string' ? (payload.type as ServerType) : undefined,
+        url: typeof payload?.url === 'string' ? payload.url : undefined,
+      });
+      if (typeof payload?.key === 'string' && payload.key.trim()) await manager.setServerKey(id, payload.key);
+      await applyProviderSettings(manager);
+      return { id, models: manager.getModelRoutingView() };
+    },
+  );
+  ipcMain.handle('models:remove-server', async (_event, id: unknown) => {
+    if (typeof id !== 'string') throw new Error('Choose a server to remove.');
+    await manager.removeModelServer(id);
+    await applyProviderSettings(manager);
+    return manager.getModelRoutingView();
+  });
+  ipcMain.handle('models:set-route', async (_event, payload: { use?: unknown; route?: unknown }) => {
+    const use = payload?.use as UseId;
+    if (typeof use !== 'string' || !(use in USE_SERVER_TYPES)) throw new Error('Unknown model use.');
+    await manager.setModelRoute(use, (payload?.route ?? {}) as ModelRoute);
+    await applyProviderSettings(manager);
+    return manager.getModelRoutingView();
+  });
+  ipcMain.handle('models:set-key', async (_event, payload: { serverId?: unknown; key?: unknown }) => {
+    if (typeof payload?.serverId !== 'string') throw new Error('Choose a server.');
+    await manager.setServerKey(payload.serverId, typeof payload.key === 'string' ? payload.key : '');
+    await applyProviderSettings(manager);
+    return manager.getModelRoutingView();
   });
   ipcMain.handle('talk:get-shortcut-status', () => pushToTalk.getStatus());
   ipcMain.handle('wake-word:list', () => listWakeWords(trainedWakeWordDirectory()));
@@ -1077,7 +1112,7 @@ function registerIpcHandlers(
     'avatar-model:generate-description',
     async (_event, payload: { thumbnailDataUrl: string }) => {
       if (!avatarDescriptionService) {
-        await refreshAvatarDescriptionService(manager, 'secret-update');
+        await refreshAvatarDescriptionService(manager);
       }
       if (!avatarDescriptionService) {
         throw new Error('Avatar description service is unavailable. Ensure REALTIME_API_KEY is set.');
@@ -1101,19 +1136,19 @@ function registerIpcHandlers(
     return avatarAnimations.uploadAnimation(payload) as Promise<AvatarAnimationUploadResult>;
   });
   ipcMain.handle('avatar-animation:generate', async (_event, payload: AvatarAnimationGenerationRequest) => {
-    const useLocalMotion = manager.getConfig().providers.motion.provider === 'local';
+    const useLocalMotion = localMotionServer(manager) !== null;
     if (useLocalMotion && localMotionService && (await localMotionService.isReady())) {
       return localMotionService.generateAnimation(payload);
     }
 
     if (!vrmaGenerationService) {
-      await refreshVrmaGenerationService(manager, 'secret-update');
+      await refreshVrmaGenerationService(manager);
     }
     if (!vrmaGenerationService) {
       throw new Error(
         useLocalMotion
-          ? 'Animation generation is unavailable. Start the local motion service or add an OpenAI API key in Settings.'
-          : 'OpenAI motion needs an OpenAI API key (Settings).',
+          ? 'Animation generation is unavailable. Start the motion service, or set up Animation clips in Models and servers.'
+          : 'Animation clips need a server: choose one in Models and servers (OpenAI needs its API key).',
       );
     }
 
@@ -1123,15 +1158,15 @@ function registerIpcHandlers(
     return vrmaGenerationService.generateAnimation({ ...payload, bones, modelDescription });
   });
   ipcMain.handle('avatar-motion:status', async (): Promise<AvatarMotionStatus> => {
-    const { providers, realtimeApiKey } = manager.getConfig();
-    if (providers.motion.provider === 'openai') {
+    if (!localMotionServer(manager)) {
+      const clips = routeTargets(manager.getConfig().models, 'clips')[0];
       return {
         provider: 'openai',
-        available: Boolean(realtimeApiKey),
+        available: Boolean(clips && (clips.server.type !== 'openai' || manager.getServerKey(clips.server.id))),
         ready: false,
         backend: null,
         device: null,
-        model: providers.motion.openaiModel,
+        model: clips?.model ?? null,
       };
     }
     const health = localMotionService ? await localMotionService.health() : null;
@@ -1144,7 +1179,7 @@ function registerIpcHandlers(
     };
   });
   ipcMain.handle('avatar-motion:stream', async (event, payload: AvatarMotionStreamRequest) => {
-    if (!localMotionService || manager.getConfig().providers.motion.provider !== 'local') {
+    if (!localMotionService || !localMotionServer(manager)) {
       throw new Error('Local motion service is unavailable.');
     }
 
@@ -1229,7 +1264,7 @@ function registerIpcHandlers(
   });
   ipcMain.handle('avatar-pose:generate', async (_event, payload: AvatarPoseGenerationRequest) => {
     if (!poseGenerationService) {
-      await refreshPoseGenerationService(manager, 'secret-update');
+      await refreshPoseGenerationService(manager);
     }
     if (!poseGenerationService) {
       throw new Error('Pose generation service is unavailable. Ensure REALTIME_API_KEY is set.');
@@ -1258,7 +1293,7 @@ function registerIpcHandlers(
   });
   ipcMain.handle('avatar-pose:evaluate', async (_event, payload: PoseEvaluationRequest) => {
     if (!poseEvaluationService) {
-      await refreshPoseEvaluationService(manager, 'secret-update');
+      await refreshPoseEvaluationService(manager);
     }
     if (!poseEvaluationService) {
       throw new Error('Pose evaluation service is unavailable. Ensure REALTIME_API_KEY is set.');
@@ -1288,7 +1323,7 @@ function registerIpcHandlers(
   });
   ipcMain.handle('avatar-pose:refine', async (_event, payload: PoseEvaluationRequest) => {
     if (!poseEvaluationService) {
-      await refreshPoseEvaluationService(manager, 'secret-update');
+      await refreshPoseEvaluationService(manager);
     }
     if (!poseEvaluationService) {
       throw new Error('Pose evaluation service is unavailable. Ensure REALTIME_API_KEY is set.');
@@ -1449,43 +1484,48 @@ app.whenReady().then(async () => {
   }
 
   const appConfig = manager.getConfig();
-  const comfy = new ComfyUIClient({ baseUrl: appConfig.comfyUiBaseUrl });
-  const comfyRuntime = new ComfyUIRuntime({ client: comfy, logDirectory: path.join(app.getPath('userData'), 'logs') });
-  const ensureComfyReady = () => comfyRuntime.ensureReady();
-  const scanComfyModels = createImageModelScanner(path.join(__dirname, '../assets/avatar-generation/image-models.py').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1'), appConfig.comfyUiBaseUrl);
-  avatarImageModels = new AvatarImageModelService(scanComfyModels, memoryStore ?? undefined);
+  const comfyPool = new ComfyUIPool({
+    routing: () => manager.getConfig().models,
+    logDirectory: path.join(app.getPath('userData'), 'logs'),
+    logger,
+  });
+  const imageModelScript = path.join(__dirname, '../assets/avatar-generation/image-models.py').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
+  // Model lists come from the first ComfyUI server of each step: this PC's files are read
+  // directly, another machine's are listed over its HTTP API.
+  const scanComfyModels = (stage: 'image' | 'mesh') => async () => {
+    const server = comfyPool.primary(stage);
+    if (!server) throw new Error('No ComfyUI server is set for this step. Choose one in Models and servers.');
+    return server.managed
+      ? createImageModelScanner(imageModelScript, server.url)()
+      : createRemoteComfyModelScanner(server.url)();
+  };
+  avatarImageModels = new AvatarImageModelService(scanComfyModels('image'), memoryStore ?? undefined);
   const characterRunner = new BlenderCharacterRunner(path.join(__dirname, '../assets/avatar-generation/rig-character.py').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1'));
-  avatarCharacterModels = new AvatarCharacterModelService(scanComfyModels, () => characterRunner.assertAvailable(), memoryStore ?? undefined);
+  avatarCharacterModels = new AvatarCharacterModelService(scanComfyModels('mesh'), () => characterRunner.assertAvailable(), memoryStore ?? undefined);
+  // Backgrounds draw on the image step's server; the pick and the run share one server.
+  let backgroundComfy: ComfyUIClient | null = null;
+  const fallbackComfy = new ComfyUIClient({ baseUrl: appConfig.comfyUiBaseUrl });
   if (memoryStore) {
     backgroundService = new BackgroundService({
       store: memoryStore,
       assetsDirectory: path.join(__dirname, '../assets/backgrounds'),
       backgroundsDirectory: path.join(app.getPath('userData'), 'backgrounds'),
-      comfy,
-      ensureComfyReady,
+      comfy: {
+        isAvailable: () => (backgroundComfy ?? fallbackComfy).isAvailable(),
+        run: (graph, options) => (backgroundComfy ?? fallbackComfy).run(graph, options),
+      },
+      ensureComfyReady: async () => {
+        backgroundComfy = await comfyPool.pick('image');
+      },
     });
-  }
-
-
-  await refreshVrmaGenerationService(manager);
-  await refreshPoseGenerationService(manager);
-
-  const webSearch = createWebSearchProvider(
-    appConfig.webSearch.provider,
-    { searxngUrl: appConfig.webSearch.searxngUrl, braveApiKey: appConfig.webSearch.braveApiKey },
-    logger,
-  );
-  if (webSearch && toolRegistry) {
-    toolRegistry.register(createWebSearchTool(webSearch));
-    logger.info('Web search tool registered', { provider: webSearch.name });
   }
 
   await applyProviderSettings(manager);
 
   if (avatarModelService) {
     avatarGenerationService = new AvatarGenerationService({
-      comfy,
-      ensureComfyReady,
+      comfy: fallbackComfy,
+      pickComfy: (stage) => comfyPool.pick(stage),
       models: avatarModelService,
       baseModelPath: DEFAULT_MODEL_ASSET_PATH,
       workDirectory: path.join(app.getPath('userData'), 'avatar-generation'),

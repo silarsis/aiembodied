@@ -65,20 +65,53 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
   const sttLocal = (lower(providers.stt?.provider) ?? lower(env.STT_PROVIDER) ?? 'local') !== 'openai';
   const ttsLocal = (lower(providers.tts?.provider) ?? lower(env.TTS_PROVIDER) ?? 'kokoro') !== 'openai';
   const motionLocal = (lower(providers.motion?.provider) ?? lower(env.MOTION_PROVIDER) ?? 'local') !== 'openai';
-  const motionBackend = lower(providers.motion?.localBackend) ?? lower(env.MOTION_BACKEND) ?? 'ardy';
   const sttServer = (env.STT_ENGINE ?? 'server').trim().toLowerCase() === 'server';
-  const llmUrl = trimSlash(providers.llm?.localBaseUrl || env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:1234/v1');
-  const sttUrl = trimSlash(env.STT_URL || 'http://127.0.0.1:1235/v1');
-  const speechUrl = trimSlash(providers.speechServiceUrl || env.SPEECH_SERVICE_URL || 'http://127.0.0.1:8192');
-  const motionUrl = trimSlash(providers.motion?.localServiceUrl || env.MOTION_SERVICE_URL || 'http://127.0.0.1:8190');
-  const searxngUrl = trimSlash(env.SEARXNG_URL || 'http://127.0.0.1:8888');
   const searchProviders = (env.WEB_SEARCH_PROVIDER?.trim() || 'searxng').split(',').map((name) => name.trim().toLowerCase());
+
+  // Models and servers (saved.models) says which server each use runs on; a use it doesn't
+  // mention keeps the default the provider settings give. Mirrors app/main/src/config/model-routing.ts.
+  const routes = saved.models?.routes ?? {};
+  const defaults = {
+    llm: [llmLocal ? 'local-llm' : 'openai'],
+    stt: [sttLocal ? 'local-speech' : 'openai'],
+    tts: [ttsLocal ? 'local-speech' : 'openai'],
+    motion: [motionLocal ? 'local-motion' : 'openai'],
+    search: searchProviders.map((name) => (name === 'searxng' ? 'local-searxng' : name)),
+    describe: ['openai'],
+    posegen: ['openai'],
+    posecheck: ['openai'],
+    clips: ['openai'],
+  };
+  const serversFor = (use) => {
+    const route = routes[use];
+    return route && typeof route.server === 'string'
+      ? [route.server, ...(Array.isArray(route.backups) ? route.backups.map((backup) => backup?.server) : [])]
+      : defaults[use];
+  };
+  const usedBy = (id, uses) => uses.some((use) => serversFor(use).includes(id));
+  const voiceUses = pipeline ? ['llm', 'stt', 'tts'] : [];
+  const builtInUrl = (id) => {
+    const entry = (saved.models?.servers ?? []).find((server) => server?.id === id);
+    return typeof entry?.url === 'string' && entry.url.trim() ? entry.url.trim() : undefined;
+  };
+  const motionRoute = routes.motion;
+  const motionBackend =
+    (motionRoute?.server === 'local-motion' ? lower(motionRoute.model) : undefined) ??
+    lower(providers.motion?.localBackend) ??
+    lower(env.MOTION_BACKEND) ??
+    'ardy';
+  const llmUrl = trimSlash(builtInUrl('local-llm') || providers.llm?.localBaseUrl || env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:1234/v1');
+  const sttUrl = trimSlash(env.STT_URL || 'http://127.0.0.1:1235/v1');
+  const speechUrl = trimSlash(builtInUrl('local-speech') || providers.speechServiceUrl || env.SPEECH_SERVICE_URL || 'http://127.0.0.1:8192');
+  const motionUrl = trimSlash(builtInUrl('local-motion') || providers.motion?.localServiceUrl || env.MOTION_SERVICE_URL || 'http://127.0.0.1:8190');
+  const searxngUrl = trimSlash(builtInUrl('local-searxng') || env.SEARXNG_URL || 'http://127.0.0.1:8888');
+  const speechForStt = pipeline && usedBy('local-speech', ['stt']);
 
   const services = [
     {
       id: 'llm',
       label: 'Qwen LLM (llama-server)',
-      enabled: pipeline && llmLocal,
+      enabled: usedBy('local-llm', [...voiceUses, 'describe', 'posegen', 'posecheck', 'clips']),
       url: llmUrl,
       probe: `${llmUrl}/models`,
       script: 'scripts/start-local-llm.ps1',
@@ -87,7 +120,7 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
     {
       id: 'asr',
       label: 'Qwen3-ASR speech-to-text (llama-server)',
-      enabled: pipeline && sttLocal && sttServer,
+      enabled: speechForStt && sttServer,
       url: sttUrl,
       probe: `${sttUrl}/models`,
       script: 'scripts/start-local-asr.ps1',
@@ -96,7 +129,7 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
     {
       id: 'speech',
       label: 'speech service (Kokoro TTS)',
-      enabled: pipeline && (sttLocal || ttsLocal),
+      enabled: pipeline && usedBy('local-speech', ['stt', 'tts']),
       url: speechUrl,
       probe: `${speechUrl}/health`,
       script: 'services/speech/scripts/start.ps1',
@@ -106,7 +139,7 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
     {
       id: 'motion',
       label: `motion service (${motionBackend === 'kimodo' ? 'Kimodo' : 'ARDY'})`,
-      enabled: motionLocal && isOn(env.DEV_START_MOTION, true),
+      enabled: usedBy('local-motion', ['motion']) && isOn(env.DEV_START_MOTION, true),
       url: motionUrl,
       probe: `${motionUrl}/health`,
       script: 'services/motion/scripts/start.ps1',
@@ -124,7 +157,7 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
     {
       id: 'searxng',
       label: 'SearXNG web search (wslc or Docker container)',
-      enabled: searchProviders.includes('searxng'),
+      enabled: usedBy('local-searxng', ['search']),
       url: searxngUrl,
       probe: `${searxngUrl}/healthz`,
       script: 'services/searxng/scripts/start.ps1',

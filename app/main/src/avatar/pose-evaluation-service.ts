@@ -10,6 +10,8 @@ import type { AvatarPoseService } from './avatar-pose-service.js';
 
 export interface PoseEvaluationServiceOptions {
     client: OpenAI;
+    /** Defaults to gpt-4o. */
+    model?: string;
     poseService: AvatarPoseService;
     logger?: {
         info?: (message: string, meta?: Record<string, unknown>) => void;
@@ -178,8 +180,11 @@ export class PoseEvaluationService {
     private readonly poseService: AvatarPoseService;
     private readonly logger?: PoseEvaluationServiceOptions['logger'];
 
+    private readonly model: string;
+
     constructor(options: PoseEvaluationServiceOptions) {
         this.client = options.client;
+        this.model = options.model?.trim() || 'gpt-4o';
         this.poseService = options.poseService;
         this.logger = options.logger;
     }
@@ -247,7 +252,7 @@ export class PoseEvaluationService {
                 responses: { create: (args: unknown) => Promise<{ output_text: string }> };
             }
         ).responses.create({
-            model: 'gpt-4o',
+            model: this.model,
             input: messages,
             text: {
                 format: {
@@ -448,7 +453,7 @@ export class PoseEvaluationService {
                 responses: { create: (args: unknown) => Promise<{ output_text: string }> };
             }
         ).responses.create({
-            model: 'gpt-4o',
+            model: this.model,
             input: messages,
             text: {
                 format: {

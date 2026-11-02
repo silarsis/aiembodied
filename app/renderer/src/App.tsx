@@ -8,20 +8,19 @@ import {
   useState,
   type ChangeEvent,
   type CSSProperties,
-  type FormEvent,
 } from 'react';
-import type { ConfigSecretKey, ConversationBackend, RendererConfig } from '../../main/src/config/config-manager.js';
+import type { ConversationBackend, RendererConfig } from '../../main/src/config/config-manager.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
 import type { ProviderSettingsPatch } from '../../main/src/config/provider-settings.js';
 import { ControlsDrawer, ControlGroup } from './settings/controls-drawer.js';
 import { ProviderSettingsPanel } from './settings/provider-settings-panel.js';
+import { ModelsDialog } from './settings/models-dialog.js';
 import type { PushToTalkStatus } from '../../main/src/talk/types.js';
 import { isTalkTapTarget } from './talk/tap-to-talk.js';
 import { VrmAvatarRenderer, type VrmRendererStatus } from './avatar/vrm-avatar-renderer.js';
 import { AnimationBusProvider, createAvatarAnimationBus } from './avatar/animation-bus.js';
 import { BehaviorCueProvider } from './avatar/behavior-cues.js';
 import { getAvatarRestSkeleton } from './avatar/rest-skeleton.js';
-import { flushSync } from 'react-dom';
 import { AvatarConfigurator } from './avatar/avatar-configurator.js';
 import { AudioGraph } from './audio/audio-graph.js';
 import { useWakeWordListening } from './audio/use-wake-word-listening.js';
@@ -71,26 +70,7 @@ interface TranscriptEntry {
   timestamp: number;
 }
 
-type SecretKeyState<T> = Record<ConfigSecretKey, T>;
-
-const SECRET_KEYS: ConfigSecretKey[] = ['realtimeApiKey'];
 const REQUIRED_BRIDGE_KEYS: (keyof PreloadApi)[] = ['config', 'wakeWord', 'ping'];
-
-interface SecretStatusState {
-  status: 'idle' | 'success' | 'error';
-  message: string | null;
-}
-
-const SECRET_METADATA: Record<
-  ConfigSecretKey,
-  { label: string; description: string; isConfigured: (config: RendererConfig | null) => boolean }
-> = {
-  realtimeApiKey: {
-    label: 'OpenAI API key',
-    description: 'Used by OpenAI Realtime and by every part set to OpenAI above. Stored in the system credential store.',
-    isConfigured: (config) => Boolean(config?.hasRealtimeApiKey),
-  },
-};
 
 const STATIC_VOICE_OPTIONS: readonly string[] = [
   'alloy',
@@ -661,18 +641,6 @@ export default function App() {
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [secretInputs, setSecretInputs] = useState<SecretKeyState<string>>(() => ({
-    realtimeApiKey: '',
-  }));
-  const [secretStatus, setSecretStatus] = useState<SecretKeyState<SecretStatusState>>(() => ({
-    realtimeApiKey: { status: 'idle', message: null },
-  }));
-  const [secretSaving, setSecretSaving] = useState<SecretKeyState<boolean>>(() => ({
-    realtimeApiKey: false,
-  }));
-  const [secretTesting, setSecretTesting] = useState<SecretKeyState<boolean>>(() => ({
-    realtimeApiKey: false,
-  }));
   const [realtimeToken, setRealtimeToken] = useState<string | null>(null);
   const [realtimeTokenError, setRealtimeTokenError] = useState<string | null>(null);
   const realtimeTokenExpiresAtRef = useRef<number | null>(null);
@@ -774,6 +742,7 @@ export default function App() {
   }, [animationBus, resolveApi]);
   const [isListeningEnabled, setListeningEnabled] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [modelsOpen, setModelsOpen] = useState(false);
   const activeBridge = resolveApi();
   const wakeListening = useWakeWordListening(activeBridge?.wakeWord, isListeningEnabled && !loadingConfig);
   const acceptsWakeRef = useRef(false);
@@ -1912,8 +1881,7 @@ export default function App() {
   );
 
   const handleVoiceChange = useCallback(
-    async (event: ChangeEvent<HTMLSelectElement>) => {
-      const value = event.target.value;
+    async (value: string) => {
       const nextVoice = value || DEFAULT_VOICE;
       setSelectedVoice(nextVoice);
       // Optimistically reflect server voice in UI; server may not emit session.updated immediately
@@ -1972,8 +1940,8 @@ export default function App() {
   );
 
   const handleConversationBackendChange = useCallback(
-    async (event: ChangeEvent<HTMLSelectElement>) => {
-      const value: ConversationBackend = event.target.value === 'openai' ? 'openai' : 'local';
+    async (backend: string) => {
+      const value: ConversationBackend = backend === 'openai' ? 'openai' : 'local';
       try {
         await persistPreferences({
           audioInputDeviceId: selectedInput || undefined,
@@ -2159,157 +2127,6 @@ export default function App() {
       setSelectedVoice(availableVoices[0] ?? DEFAULT_VOICE);
     }
   }, [availableVoices, selectedVoice]);
-
-  const handleSecretInputChange = useCallback(
-    (key: ConfigSecretKey) => (event: ChangeEvent<HTMLInputElement>) => {
-      const value = event.target.value;
-      setSecretInputs((previous) => ({ ...previous, [key]: value }));
-      setSecretStatus((previous) => ({
-        ...previous,
-        [key]: previous[key].status === 'idle' && previous[key].message === null
-          ? previous[key]
-          : { status: 'idle', message: null },
-      }));
-    },
-    [],
-  );
-
-  const handleSecretSubmit = useCallback(
-    (key: ConfigSecretKey) =>
-      async (event: FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
-        const nextValue = secretInputs[key]?.trim() ?? '';
-
-        if (!nextValue) {
-          setSecretStatus((previous) => ({
-            ...previous,
-            [key]: { status: 'error', message: 'Enter a value to update this key.' },
-          }));
-          return;
-        }
-
-        const bridge = resolveApi();
-        if (!bridge) {
-          logRendererBridge('error', 'Configuration bridge unavailable while submitting a secret update.', {
-            ...collectBridgeDiagnostics(undefined, { action: 'set-secret', key }),
-          });
-          setSecretStatus((previous) => ({
-            ...previous,
-            [key]: { status: 'error', message: 'Configuration bridge is unavailable.' },
-          }));
-          return;
-        }
-
-        setSecretSaving((previous) => ({ ...previous, [key]: true }));
-        setSecretStatus((previous) => ({ ...previous, [key]: { status: 'idle', message: null } }));
-
-        try {
-          const nextConfig = await bridge.config.setSecret(key, nextValue);
-          setConfig(nextConfig);
-          // Clear the input synchronously so tests and UI reflect the update immediately
-          flushSync(() => {
-            setSecretInputs((previous) => ({ ...previous, [key]: '' }));
-          });
-
-          if (key === 'realtimeApiKey') {
-            setRealtimeToken(null);
-            setRealtimeTokenError(null);
-            realtimeTokenExpiresAtRef.current = null;
-            realtimeTokenRefreshRef.current = true;
-            realtimeTokenRequestRef.current += 1;
-          }
-
-          flushSync(() => {
-            setSecretStatus((previous) => ({
-              ...previous,
-              [key]: { status: 'success', message: 'API key updated successfully.' },
-            }));
-          });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'Failed to update API key.';
-          flushSync(() => {
-            setSecretStatus((previous) => ({
-              ...previous,
-              [key]: { status: 'error', message },
-            }));
-          });
-        } finally {
-          setSecretSaving((previous) => ({ ...previous, [key]: false }));
-        }
-      },
-    [resolveApi, secretInputs],
-  );
-
-  const handleSecretTest = useCallback(
-    (key: ConfigSecretKey) =>
-      async () => {
-        const bridge = resolveApi();
-        if (!bridge) {
-          logRendererBridge('error', 'Configuration bridge unavailable while testing a secret.', {
-            ...collectBridgeDiagnostics(undefined, { action: 'test-secret', key }),
-          });
-          setSecretStatus((previous) => ({
-            ...previous,
-            [key]: { status: 'error', message: 'Configuration bridge is unavailable.' },
-          }));
-          return;
-        }
-
-        setSecretTesting((previous) => ({ ...previous, [key]: true }));
-        setSecretStatus((previous) => ({ ...previous, [key]: { status: 'idle', message: null } }));
-
-        try {
-          const result = await bridge.config.testSecret(key);
-          flushSync(() => {
-            setSecretStatus((previous) => ({
-              ...previous,
-              [key]: {
-                status: result.ok ? 'success' : 'error',
-                message: result.message ?? (result.ok ? 'API key is valid.' : 'API key validation failed.'),
-              },
-            }));
-          });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'Failed to test API key.';
-          flushSync(() => {
-            setSecretStatus((previous) => ({
-              ...previous,
-              [key]: { status: 'error', message },
-            }));
-          });
-        } finally {
-          setSecretTesting((previous) => ({ ...previous, [key]: false }));
-        }
-      },
-    [resolveApi],
-  );
-
-  const handleSecretClear = useCallback(
-    (key: ConfigSecretKey) =>
-      async () => {
-        const bridge = resolveApi();
-        if (!bridge?.config.clearSecret) {
-          return;
-        }
-        setSecretSaving((previous) => ({ ...previous, [key]: true }));
-        try {
-          const nextConfig = await bridge.config.clearSecret(key);
-          setConfig(nextConfig);
-          setSecretStatus((previous) => ({
-            ...previous,
-            [key]: nextConfig.realtimeApiKeyFromEnv
-              ? { status: 'error', message: 'Saved key removed, but an environment variable still sets one.' }
-              : { status: 'success', message: 'API key removed.' },
-          }));
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'Failed to remove API key.';
-          setSecretStatus((previous) => ({ ...previous, [key]: { status: 'error', message } }));
-        } finally {
-          setSecretSaving((previous) => ({ ...previous, [key]: false }));
-        }
-      },
-    [resolveApi],
-  );
 
   const levelPercentage = useMemo(() => Math.min(100, Math.round(audioGraph.level * 100)), [audioGraph.level]);
 
@@ -2518,15 +2335,12 @@ export default function App() {
           <ControlsDrawer open={drawerOpen} onOpenChange={setDrawerOpen}>
             <ProviderSettingsPanel
               settings={config?.providers ?? null}
-              hasApiKey={hasRealtimeApiKey}
-              voiceStatus={voiceServiceStatus}
-              motionStatus={motionStatus}
               onSave={handleProviderSettingsSave}
               pushToTalkStatus={pushToTalkStatus}
               wakeWordBridge={resolveApi()?.wakeWord}
               disabled={loadingConfig}
 
-              renderLayout={({ voice, devices, actions }) => (
+              renderLayout={({ devices, actions }) => (
                 <>
                   <ControlGroup
                     id="character"
@@ -2571,159 +2385,62 @@ export default function App() {
                     summary={isLocalBackend ? 'Pipeline' : `OpenAI Realtime · ${selectedVoice}`}
                     keywords="language model speech text voice provider kokoro motion server url conversation api keys"
                   >
-                    <section
-                      className="kiosk__realtime"
-                      aria-labelledby="settings-conversation-title"
-                    >
-                      <h2 id="settings-conversation-title">Conversation</h2>
-                      <div className="control">
-                        <label htmlFor="conversation-backend">Conversation engine</label>
-                        <select
-                          id="conversation-backend"
-                          value={conversationBackend}
-                          onChange={handleConversationBackendChange}
-                          disabled={isSaving || loadingConfig}
-                        >
-                          <option value="local">
-                            Pipeline (speech-to-text, language model, text-to-speech)
-                          </option>
-                          <option value="openai">OpenAI Realtime (speech to speech)</option>
-                        </select>
-                        <div className="kiosk__helper" aria-live="polite">
-                          {isLocalBackend
-                            ? 'Each part of the pipeline uses the provider chosen below.'
-                            : hasRealtimeApiKey
-                              ? 'Replies come from the OpenAI Realtime API.'
-                              : 'OpenAI Realtime needs an OpenAI API key (below).'}
-                        </div>
-                      </div>
-                      <div className="control">
-                        <label htmlFor="realtime-voice">Realtime voice</label>
-                        <select
-                          id="realtime-voice"
-                          value={selectedVoice}
-                          onChange={handleVoiceChange}
-                          disabled={isSaving || loadingConfig || isLocalBackend}
-                        >
-                          {availableVoices.map((v) => (
-                            <option key={v} value={v}>
-                              {v}
-                            </option>
-                          ))}
-                        </select>
-                        <div className="kiosk__helper" aria-live="polite">
-                          {isLocalBackend
-                            ? 'Only OpenAI Realtime uses this. The pipeline voice is under Text-to-speech below.'
-                            : `Current voice (server): ${serverVoice ?? 'unknown'}`}
-                        </div>
-                        {playbackIssue ? (
-                          <div className="kiosk__helper" role="alert" style={{ marginTop: 8 }}>
-                            <span style={{ display: 'block', marginBottom: 4 }}>
-                              Audio playback is blocked ({playbackIssue}).
-                            </span>
-                            <button type="button" onClick={reconnectAndResume}>
-                              Reconnect & Resume Audio
-                            </button>
-                          </div>
-                        ) : null}
-                      </div>
-                    </section>
-
-                    {voice}
-                    <section className="kiosk__secrets" aria-labelledby="kiosk-secret-title">
-                      <h2 id="kiosk-secret-title">API keys</h2>
+                    <section className="kiosk__realtime" aria-labelledby="settings-models-title">
+                      <h2 id="settings-models-title">Models and servers</h2>
                       <p className="kiosk__helper">
-                        Keys are stored securely via the system secret store. Provide a new value to
-                        update or test an existing key.
+                        {isLocalBackend
+                          ? 'Hearing, thinking and speaking each run on the server picked for them.'
+                          : 'Replies come from OpenAI Realtime.'}{' '}
+                        Pick a server and model for every job, add your own servers, and set API keys.
                       </p>
-                      <div className="kiosk__secretList">
-                        {SECRET_KEYS.map((key) => {
-                          const metadata = SECRET_METADATA[key];
-                          const configured = metadata.isConfigured(config);
-                          const status = secretStatus[key];
-                          const busy = secretSaving[key] || secretTesting[key];
-                          const message = status.message;
-                          const messageRole = status.status === 'error' ? 'alert' : 'status';
-                          const messageClass =
-                            status.status === 'error' ? 'kiosk__error' : 'kiosk__info';
-
-                          return (
-                            <article
-                              key={key}
-                              className="secretCard"
-                              data-configured={configured ? 'true' : 'false'}
-                            >
-                              <header className="secretCard__header">
-                                <h3>{metadata.label}</h3>
-                                <p className="secretCard__description">{metadata.description}</p>
-                                <p className="secretCard__status">
-                                  Status: {configured ? 'Configured' : 'Not configured'}
-                                  {configured && config?.realtimeApiKeyFromEnv
-                                    ? ' (from an environment variable)'
-                                    : ''}
-                                </p>
-                              </header>
-                              <form className="secretCard__form" onSubmit={handleSecretSubmit(key)}>
-                                <input
-                                  id={`${key}-input`}
-                                  type="password"
-                                  aria-label={`New ${metadata.label}`}
-                                  placeholder="Enter new key"
-                                  autoComplete="off"
-                                  spellCheck={false}
-                                  value={secretInputs[key]}
-                                  onChange={handleSecretInputChange(key)}
-                                  disabled={
-                                    loadingConfig ||
-                                    isSaving ||
-                                    secretSaving[key] ||
-                                    secretTesting[key]
-                                  }
-                                />
-                                <div className="secretCard__actions">
-                                  <button
-                                    type="submit"
-                                    disabled={
-                                      loadingConfig ||
-                                      secretSaving[key] ||
-                                      secretTesting[key] ||
-                                      secretInputs[key].trim().length === 0
-                                    }
-                                  >
-                                    Update key
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={handleSecretTest(key)}
-                                    disabled={secretSaving[key] || secretTesting[key]}
-                                  >
-                                    Test key
-                                  </button>
-                                  {configured && activeBridge?.config.clearSecret ? (
-                                    <button
-                                      type="button"
-                                      onClick={handleSecretClear(key)}
-                                      disabled={secretSaving[key] || secretTesting[key]}
-                                    >
-                                      Remove key
-                                    </button>
-                                  ) : null}
-                                </div>
-                              </form>
-                              {busy ? (
-                                <p className="kiosk__info" aria-live="polite">
-                                  {secretSaving[key] ? 'Updating secret…' : 'Testing secret…'}
-                                </p>
-                              ) : null}
-                              {message ? (
-                                <p role={messageRole} className={messageClass} aria-live="polite">
-                                  {message}
-                                </p>
-                              ) : null}
-                            </article>
-                          );
-                        })}
-                      </div>
+                      {activeBridge?.models ? (
+                        <button type="button" className="faces__submit" onClick={() => setModelsOpen(true)}>
+                          Open models and servers
+                        </button>
+                      ) : (
+                        <p className="kiosk__helper">Model settings need a newer app build.</p>
+                      )}
+                      {modelsOpen && activeBridge?.models ? (
+                        <ModelsDialog
+                          api={activeBridge.models}
+                          avatarApi={activeBridge.avatar}
+                          engine={{
+                            backend: conversationBackend,
+                            onBackendChange: (value) => void handleConversationBackendChange(value),
+                            voice: selectedVoice,
+                            voices: availableVoices,
+                            onVoiceChange: (value) => void handleVoiceChange(value),
+                            disabled: isSaving || loadingConfig,
+                          }}
+                          onChanged={({ openAiKey }) => {
+                            void activeBridge.config
+                              .get()
+                              .then((next) => {
+                                // A new OpenAI key needs a fresh Realtime token.
+                                if (openAiKey) {
+                                  setRealtimeToken(null);
+                                  setRealtimeTokenError(null);
+                                  realtimeTokenExpiresAtRef.current = null;
+                                  realtimeTokenRefreshRef.current = true;
+                                  realtimeTokenRequestRef.current += 1;
+                                }
+                                setConfig(next);
+                              })
+                              .catch(() => undefined);
+                          }}
+                          onClose={() => setModelsOpen(false)}
+                        />
+                      ) : null}
+                      {playbackIssue ? (
+                        <div className="kiosk__helper" role="alert" style={{ marginTop: 8 }}>
+                          <span style={{ display: 'block', marginBottom: 4 }}>
+                            Audio playback is blocked ({playbackIssue}).
+                          </span>
+                          <button type="button" onClick={reconnectAndResume}>
+                            Reconnect & Resume Audio
+                          </button>
+                        </div>
+                      ) : null}
                     </section>
                   </ControlGroup>
                   <ControlGroup

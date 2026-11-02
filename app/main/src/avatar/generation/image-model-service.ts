@@ -167,3 +167,70 @@ export class AvatarImageModelService {
     return { ...entry.model };
   }
 }
+
+/**
+ * Model discovery for a ComfyUI on another machine, where the files can't be opened: ComfyUI lists
+ * each model folder over HTTP, and the kind is read from the published file names.
+ */
+export function createRemoteComfyModelScanner(
+  baseUrl: string,
+  fetchFn: typeof fetch = fetch,
+): () => Promise<ImageModelFile[]> {
+  const root = baseUrl.replace(/\/+$/, '');
+  return async () => {
+    const folders = ['diffusion_models', 'text_encoders', 'vae', 'checkpoints'] as const;
+    const listed = await Promise.all(
+      folders.map(async (folder) => {
+        const response = await fetchFn(`${root}/models/${folder}`, { signal: AbortSignal.timeout(10_000) });
+        if (!response.ok) {
+          if (folder === 'diffusion_models')
+            throw new Error(`ComfyUI at ${root} did not list its models (${response.status}).`);
+          return [] as string[];
+        }
+        const names: unknown = await response.json();
+        return Array.isArray(names) ? names.filter((name): name is string => typeof name === 'string') : [];
+      }),
+    );
+    const files: ImageModelFile[] = [];
+    folders.forEach((folder, index) => {
+      for (const name of listed[index]) {
+        const kind = remoteModelKind(folder, name);
+        if (!kind) continue;
+        files.push({
+          folder,
+          name,
+          kind,
+          ...(folder === 'checkpoints' ? { embeddedVae: true, embeddedClip: true, embeddedClip2: kind === 'sdxl' } : {}),
+        });
+      }
+    });
+    return files;
+  };
+}
+
+/** The kind image-models.py would report, guessed from a file's folder and name. */
+export function remoteModelKind(folder: string, name: string): string | null {
+  const lower = name.toLowerCase().replace(/-/g, '_');
+  if (lower.includes('trellis')) {
+    if (folder === 'vae' && lower.includes('shape')) return 'trellis2-shape-vae';
+    if (folder === 'vae' && lower.includes('tex')) return 'trellis2-texture-vae';
+    return folder === 'diffusion_models' ? 'trellis2' : null;
+  }
+  if (folder === 'diffusion_models') {
+    if (/qwen_?image/.test(lower)) return 'qwen-image-2.1';
+    if (/z_?image/.test(lower)) return lower.includes('turbo') ? 'z-image-turbo' : null;
+    return null;
+  }
+  if (folder === 'text_encoders') {
+    if (/qwen_?3_?vl|qwen3vl/.test(lower)) return 'qwen3-vl';
+    if (/qwen_?3_?4b/.test(lower)) return 'qwen3-4b';
+    return null;
+  }
+  if (folder === 'vae') {
+    if (/qwen_?image/.test(lower)) return 'qwen-image-vae';
+    if (lower === 'ae.safetensors' || /flux.*ae/.test(lower)) return 'flux-ae';
+    return null;
+  }
+  if (folder === 'checkpoints') return /xl/.test(lower) ? 'sdxl' : 'sd1';
+  return null;
+}
