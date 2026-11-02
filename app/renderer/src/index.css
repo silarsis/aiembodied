@@ -1420,19 +1420,6 @@ body {
 .controlsDrawer .kiosk__secretList {
   grid-template-columns: minmax(0, 1fr);
 }
-.controlsDrawer .avatarLibrary {
-  font-size: 13px;
-}
-.controlsDrawer .avatarLibrary summary {
-  cursor: pointer;
-  color: #94a3b8;
-  padding: 10px 0;
-}
-.controlsDrawer .avatarLibrary[open] {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
 .controlsDrawer .providerSettings__shortcut {
   flex-wrap: wrap;
 }
@@ -1447,43 +1434,6 @@ body {
 .controlsDrawer .avatarUpload[open] summary {
   margin-bottom: 14px;
 }
-.posePicker__label {
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #94a3b8;
-  font-weight: 700;
-}
-.posePicker__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.posePicker__chips button {
-  padding: 8px 14px;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  color: #e2e8f0;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.posePicker__chips button[aria-pressed='true'],
-.posePicker__chips button:hover:not(:disabled) {
-  border-color: rgba(59, 130, 246, 0.7);
-  background: rgba(59, 130, 246, 0.18);
-}
-.posePicker__chips button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.posePicker__preview {
-  color: #7dd3fc;
-  font-size: 12px;
-}
-
 .stageBackground {
   position: absolute;
   inset: 0;
