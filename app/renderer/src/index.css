@@ -1594,7 +1594,8 @@ body {
 .avatarStudio__progress { display: grid; gap: 6px; }
 .avatarStudio__progress p { margin: 0; }
 .avatarStudio__progress progress { width: 100%; }
-.avatarStudio__inspector { grid-column: 3; grid-row: 1 / span 2; display: grid; align-content: start; gap: 12px; padding: 14px; border-left: 1px solid #22324a; overflow: auto; }
+.avatarStudio__inspector { grid-column: 3; grid-row: 1 / span 2; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 12px; padding: 14px; border-left: 1px solid #22324a; overflow-x: hidden; overflow-y: auto; min-width: 0; }
+.avatarStudio__inspector > * { min-width: 0; }
 .avatarStudio__inspector h3 { margin: 0; font-size: 1rem; }
 .avatarStudio__inspector > button, .avatarStudio__row button, .avatarModelViewer__views button { padding: 7px 12px; border: 1px solid #475569; border-radius: 8px; background: #18253a; cursor: pointer; }
 .avatarStudio__inspector button:disabled { opacity: .5; cursor: not-allowed; }
@@ -1610,9 +1611,10 @@ body {
 .avatarStudio__field textarea { resize: vertical; line-height: 1.45; }
 .avatarStudio__field small { color: #94a3b8; font-size: .78rem; }
 .avatarStudio__warnText { color: #fcd34d !important; }
-.avatarStudio__loras { margin: 0; padding: 8px 12px 10px; border: 1px solid #33445d; border-radius: 10px; }
+.avatarStudio__loras { min-width: 0; margin: 0; padding: 8px 12px 10px; border: 1px solid #33445d; border-radius: 10px; }
 .avatarStudio__loras legend { color: #94a3b8; padding: 0 4px; }
-.avatarStudio__lora { display: grid; gap: 3px; padding: 4px 0; }
+.avatarStudio__lora { display: grid; gap: 3px; padding: 4px 0; min-width: 0; overflow-wrap: anywhere; }
+.avatarStudio__loraMore { justify-self: start; padding: 0; border: 0; background: none; color: #7dd3fc; font-size: .78rem; cursor: pointer; text-decoration: underline; }
 .avatarStudio__lora input[type="checkbox"] { width: auto; padding: 0; }
 .avatarStudio__loraStrength input { width: 5.5em !important; padding: 4px 6px !important; }
 .avatarStudio__suggestions { display: grid; gap: 4px; padding: 6px 8px; border-left: 2px solid #33445d; }

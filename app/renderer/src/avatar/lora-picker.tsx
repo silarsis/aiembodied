@@ -41,6 +41,7 @@ export function LoraPicker({ api, selection, disabled, onChange, onRefresh }: Pr
   const [suggestions, setSuggestions] = useState<BaseModelSuggestions | null>(null);
   const [suggestError, setSuggestError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<{ id: string; name: string; state: string; error?: string } | null>(null);
+  const [showOthers, setShowOthers] = useState(false);
 
   useEffect(() => {
     if (!downloading || !['queued', 'downloading', 'verifying'].includes(downloading.state) || !api.listModelDownloads) return;
@@ -56,6 +57,10 @@ export function LoraPicker({ api, selection, disabled, onChange, onRefresh }: Pr
   }, [api, downloading, onRefresh]);
 
   if (!loras.length) return null;
+  // Only LoRAs for the chosen model are listed; the rest stay one click away (for suggestions).
+  const usableLoras = loras.filter((lora) => lora.family && lora.family === modelFamily);
+  const otherLoras = loras.filter((lora) => !usableLoras.includes(lora));
+  const shown = showOthers ? [...usableLoras, ...otherLoras] : usableLoras;
 
   const toggle = (lora: AvatarLoraSummary, on: boolean) =>
     onChange(on ? [...chosen.filter((c) => c.name !== lora.name), { name: lora.name, strength: 0.8 }] : chosen.filter((c) => c.name !== lora.name));
@@ -87,7 +92,8 @@ export function LoraPicker({ api, selection, disabled, onChange, onRefresh }: Pr
   return (
     <fieldset className="avatarStudio__field avatarStudio__loras">
       <legend>LoRAs</legend>
-      {loras.map((lora) => {
+      {!usableLoras.length ? <small>No LoRAs for this model on this server.</small> : null}
+      {shown.map((lora) => {
         const choice = chosen.find((c) => c.name === lora.name);
         const usable = Boolean(lora.family && lora.family === modelFamily);
         const hasModel = Boolean(lora.family && availableFamilies.has(lora.family));
@@ -163,6 +169,13 @@ export function LoraPicker({ api, selection, disabled, onChange, onRefresh }: Pr
           </div>
         );
       })}
+      {otherLoras.length ? (
+        <button type="button" className="avatarStudio__loraMore" onClick={() => setShowOthers(!showOthers)}>
+          {showOthers
+            ? 'Hide LoRAs for other models'
+            : `${otherLoras.length} more for other models`}
+        </button>
+      ) : null}
       {downloading ? (
         <small className={downloading.state === 'failed' ? 'avatarStudio__warnText' : undefined} role="status">
           {downloading.state === 'done'

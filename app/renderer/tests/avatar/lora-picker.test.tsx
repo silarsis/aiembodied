@@ -16,12 +16,32 @@ const selection: AvatarImageModelSelection = {
 };
 
 describe('LoRA picker', () => {
+  it('says when no LoRA fits the chosen model', () => {
+    render(
+      <LoraPicker
+        api={{} as AvatarBridge}
+        selection={{ ...selection, loras: [selection.loras![1]] }}
+        disabled={false}
+        onChange={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('No LoRAs for this model on this server.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '1 more for other models' })).toBeTruthy();
+  });
+
   it('turns on a LoRA of the model’s family and sets its strength', () => {
     const onChange = vi.fn();
     const { rerender } = render(<LoraPicker api={{} as AvatarBridge} selection={selection} disabled={false} onChange={onChange} onRefresh={vi.fn()} />);
     expect(screen.getByText('Adds to the prompt: neon')).toBeTruthy();
+    // Only LoRAs for the chosen (SDXL) model are listed; the others are behind a link.
+    expect(screen.queryByLabelText(/Cyberpunk/)).toBeNull();
+    expect(screen.queryByText(/mystery/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '2 more for other models' }));
     expect((screen.getByLabelText(/Cyberpunk/) as HTMLInputElement).disabled).toBe(true);
     expect(screen.getByText(/base model isn't known/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Hide LoRAs for other models' }));
+    expect(screen.queryByLabelText(/Cyberpunk/)).toBeNull();
     fireEvent.click(screen.getByLabelText(/Neon/));
     expect(onChange).toHaveBeenCalledWith([{ name: 'neon.safetensors', strength: 0.8 }]);
     rerender(
@@ -55,6 +75,7 @@ describe('LoRA picker', () => {
     } as unknown as AvatarBridge;
     const onRefresh = vi.fn(async () => undefined);
     render(<LoraPicker api={api} selection={selection} disabled={false} onChange={vi.fn()} onRefresh={onRefresh} />);
+    fireEvent.click(screen.getByRole('button', { name: '2 more for other models' }));
     fireEvent.click(screen.getByRole('button', { name: 'Suggest a model' }));
     expect(await screen.findByText(/Popular SD 1.5 models on Civitai, for Mutiara's 8.0 GB GPU/)).toBeTruthy();
     expect(screen.getByText('too big for the GPU')).toBeTruthy();
