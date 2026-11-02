@@ -861,12 +861,12 @@ function registerIpcHandlers(
   };
   ipcMain.handle('models:civitai-lookup', async (_event, payload: { ref?: unknown; versionId?: unknown }) => {
     const ref = parseCivitaiRef(typeof payload?.ref === 'string' ? payload.ref : '');
-    if (!ref) throw new Error('Paste a Civitai model link (civitai.com/models/…) or an AIR (urn:air:…:civitai:123@456).');
+    if (!ref) throw new Error('Paste a Civitai link (civitai.com, .green or .red: a model page or download link) or an AIR (urn:air:…:civitai:123@456).');
     const model = await lookupCivitai(ref, manager.getServerKey(BUILT_IN_SERVER_IDS.civitai));
     const versionId = typeof payload?.versionId === 'number' ? payload.versionId : undefined;
     return {
       versions: model.versions.map((version) => ({ id: version.id, name: version.name, baseModel: version.baseModel })),
-      plan: planCivitaiDownload(model, versionId),
+      plan: planCivitaiDownload(model, versionId, ref.fileId),
     };
   });
   ipcMain.handle('models:download', async (_event, payload: { serverId?: unknown; ref?: unknown; versionId?: unknown }) => {
@@ -875,7 +875,7 @@ function registerIpcHandlers(
     if (!ref) throw new Error('Paste a Civitai model link or AIR.');
     const key = manager.getServerKey(BUILT_IN_SERVER_IDS.civitai);
     const model = await lookupCivitai(ref, key);
-    const plan = planCivitaiDownload(model, typeof payload?.versionId === 'number' ? payload.versionId : undefined);
+    const plan = planCivitaiDownload(model, typeof payload?.versionId === 'number' ? payload.versionId : undefined, ref.fileId);
     if (!server.managed && !(await modelDownloads.hasAddon(server))) {
       throw new Error(`${server.name} needs the aiembodied ComfyUI add-on before it can download models. See "Add-on" on this page.`);
     }

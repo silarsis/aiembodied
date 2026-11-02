@@ -5,7 +5,8 @@
  * Accepted references:
  *   https://civitai.com/models/4201/realistic-vision?modelVersionId=130072
  *   https://civitai.com/models/4201            (latest version)
- *   https://civitai.com/api/download/models/130072
+ *   https://civitai.com/api/download/models/130072?fileId=54825   (that file of that version)
+ *   the same on civitai.green or civitai.red
  *   urn:air:sdxl:checkpoint:civitai:4201@130072   (or civitai:4201@130072)
  *   4201@130072, or a bare model id
  */
@@ -13,9 +14,12 @@
 export interface CivitaiRef {
   modelId?: number;
   versionId?: number;
+  /** A download link's fileId: that file rather than the version's primary one. */
+  fileId?: number;
 }
 
 export interface CivitaiFile {
+  id?: number;
   name: string;
   sizeKB: number;
   downloadUrl: string;
@@ -63,6 +67,8 @@ export interface CivitaiDownloadPlan {
 }
 
 const API = 'https://civitai.com/api/v1';
+/** civitai.com and its sister sites (green for SFW-only, red); they share one API. */
+const CIVITAI_HOST = /(^|\.)civitai\.(com|green|red)$/i;
 
 export function parseCivitaiRef(text: string): CivitaiRef | null {
   const value = text.trim();
@@ -77,9 +83,12 @@ export function parseCivitaiRef(text: string): CivitaiRef | null {
   } catch {
     return null;
   }
-  if (!/(^|\.)civitai\.(com|green)$/i.test(url.hostname)) return null;
+  if (!CIVITAI_HOST.test(url.hostname)) return null;
   const download = /\/api\/download\/models\/(\d+)/.exec(url.pathname);
-  if (download) return { versionId: Number(download[1]) };
+  if (download) {
+    const fileId = url.searchParams.get('fileId');
+    return { versionId: Number(download[1]), ...(fileId && /^\d+$/.test(fileId) ? { fileId: Number(fileId) } : {}) };
+  }
   const model = /\/models\/(\d+)/.exec(url.pathname);
   const version = url.searchParams.get('modelVersionId');
   if (!model && !version) return null;
@@ -153,11 +162,12 @@ export async function lookupCivitai(ref: CivitaiRef, apiKey: string | undefined,
 }
 
 /** Pick the file to fetch from a looked-up model and say where it goes. */
-export function planCivitaiDownload(model: CivitaiModel, versionId = model.versionId): CivitaiDownloadPlan {
+export function planCivitaiDownload(model: CivitaiModel, versionId = model.versionId, fileId?: number): CivitaiDownloadPlan {
   const version = model.versions.find((entry) => entry.id === versionId) ?? model.versions[0];
   const files = version.files.filter((file) => /\.(safetensors|gguf|ckpt|pt|pth|bin)$/i.test(file.name));
-  // Prefer the primary file, and SafeTensors over pickled formats.
+  // The file a download link named, else the primary file, SafeTensors over pickled formats.
   const file =
+    (fileId !== undefined ? files.find((entry) => entry.id === fileId) : undefined) ??
     files.find((entry) => entry.primary && /\.safetensors$/i.test(entry.name)) ??
     files.find((entry) => /\.safetensors$/i.test(entry.name)) ??
     files.find((entry) => entry.primary) ??
@@ -195,6 +205,7 @@ function toVersion(raw: unknown): CivitaiVersion | null {
       const hashes = file.hashes && typeof file.hashes === 'object' ? (file.hashes as Record<string, unknown>) : {};
       const metadata = file.metadata && typeof file.metadata === 'object' ? (file.metadata as Record<string, unknown>) : {};
       return {
+        ...(typeof file.id === 'number' ? { id: file.id } : {}),
         name: file.name,
         sizeKB: typeof file.sizeKB === 'number' ? file.sizeKB : 0,
         downloadUrl: file.downloadUrl,

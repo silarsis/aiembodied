@@ -38,7 +38,7 @@ For ComfyUI jobs, each stage picks its server when it starts: the first that ans
 
 Open a ComfyUI server (Setup → Servers → the server), paste a Civitai link or AIR under **Download a model**, and press **Look up**. The app asks Civitai's API for the model and shows the file, its type, base model, size and the ComfyUI folder it goes in (checkpoints, loras, vae, embeddings, controlnet, upscale_models). Pick a version if there are several, then **Download to <server>**. Progress shows on the page; when it finishes the server's model list is read again.
 
-Accepted: `https://civitai.com/models/4201/name?modelVersionId=130072`, `https://civitai.com/models/4201` (newest version), `https://civitai.com/api/download/models/130072`, `urn:air:sdxl:checkpoint:civitai:4201@130072`, or `4201@130072`. Many models need a Civitai API key: add it on Setup → Servers → Civitai (or set `CIVITAI_API_KEY`).
+Accepted: `https://civitai.com/models/4201/name?modelVersionId=130072`, `https://civitai.com/models/4201` (newest version), `https://civitai.com/api/download/models/130072` (with `?fileId=` it takes that file), `urn:air:sdxl:checkpoint:civitai:4201@130072`, or `4201@130072`. civitai.green and civitai.red links work the same. Many models need a Civitai API key: add it on Setup → Servers → Civitai (or set `CIVITAI_API_KEY`).
 
 Files are written as `<name>.part` and renamed once complete and, when Civitai lists one, once the SHA-256 matches, so ComfyUI never lists a half-downloaded file. Only an image checkpoint whose base model the app has a workflow for (SDXL, Pony, Illustrious, NoobAI, SD 1.x) shows up under Concept image; LoRAs and other types still download, with a note saying the image step won't use them.
 

@@ -87,6 +87,7 @@ class DownloaderTests(unittest.TestCase):
     def test_token_only_goes_to_civitai(self):
         self.assertEqual(downloader.with_civitai_token("https://huggingface.co/a", "k"), "https://huggingface.co/a")
         self.assertIn("token=k", downloader.with_civitai_token("https://civitai.com/api/download/models/5", "k"))
+        self.assertIn("token=k", downloader.with_civitai_token("https://civitai.red/api/download/models/5", "k"))
 
 
 if __name__ == "__main__":
