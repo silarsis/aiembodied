@@ -8,6 +8,8 @@ import baseNeutralPose from '../../../main/src/avatar/base-poses/relaxed-neutral
 export interface ModelReviewScene {
   view(direction: 'front' | 'side' | 'back'): void;
   expression(name: string): void;
+  /** Apply a saved pose (bones and its expression blend) to the candidate only. */
+  pose(data: unknown): void;
   expressions: string[];
   dispose(): void;
 }
@@ -119,6 +121,13 @@ export async function createModelReviewScene(
       expression: (name) => {
         for (const expression of expressions)
           avatar.expressionManager?.setValue(expression, expression === name ? 1 : 0);
+        avatar.update(0);
+        render();
+      },
+      pose: (data) => {
+        avatar.humanoid?.resetNormalizedPose();
+        for (const expression of expressions) avatar.expressionManager?.setValue(expression, 0);
+        applyPoseToVrm(avatar, data as Parameters<typeof applyPoseToVrm>[1]);
         avatar.update(0);
         render();
       },

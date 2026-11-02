@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-function ExpandedImage({ src, alt, onDismiss }: { src: string; alt: string; onDismiss(): void }) {
+export function ExpandedImage({ src, alt, onDismiss }: { src: string; alt: string; onDismiss(): void }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {

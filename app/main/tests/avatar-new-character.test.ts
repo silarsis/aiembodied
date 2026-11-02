@@ -76,7 +76,6 @@ describe('new character generation', () => {
     expect(characterRunner.build).not.toHaveBeenCalled();
     await service.confirmConcept(jobId);
     expect(comfy.run).toHaveBeenCalledTimes(1);
-    await expect(service.startJob({ prompt: 'Another' })).rejects.toThrow('already');
     await service.confirmConcept(jobId, { acceptWarnings: true });
     await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('completed'));
     expect(characterRunner.prepareReference).toHaveBeenCalledTimes(1);

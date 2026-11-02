@@ -11,6 +11,11 @@ import { workerRetextureRunner, type RetextureRunner } from './retexture-tasks.j
 import { characterConceptPrompt, characterMeshGraph } from './character/graphs.js';
 import type { CharacterRigRunner } from './character/rig-runner.js';
 import type { AvatarImageModelService } from './image-model-service.js';
+import type {
+  AvatarCharacterModelService,
+  GeometryModel,
+  RigModel,
+} from './character-model-service.js';
 import { buildAvatarImageWorkflow, type ImageWorkflowModel } from './image-workflows.js';
 import { templatePolicy } from './template-compatibility.js';
 import { decodeReferenceImage } from './reference-image.js';
@@ -41,6 +46,8 @@ export interface AvatarGenerationServiceOptions {
   runner?: RetextureRunner;
   characterRunner?: CharacterRigRunner;
   imageModels?: Pick<AvatarImageModelService, 'resolve'>;
+  /** Chooses the 3D geometry and rig models; the workflow defaults run without it. */
+  characterModels?: Pick<AvatarCharacterModelService, 'resolveGeometry' | 'resolveRig'>;
   logger?: {
     info?: (message: string, meta?: Record<string, unknown>) => void;
     warn?: (message: string, meta?: Record<string, unknown>) => void;
@@ -50,6 +57,8 @@ export interface AvatarGenerationServiceOptions {
 
 interface JobState {
   imageModel?: ImageWorkflowModel;
+  geometry?: GeometryModel;
+  rig?: RigModel;
   landmarksPath?: string;
   referenceImage: Buffer | null;
   seed: number;
@@ -95,9 +104,7 @@ export class AvatarGenerationService {
     if (prompt.length > MAX_PROMPT_LENGTH) {
       throw new Error(`Avatar description must be ${MAX_PROMPT_LENGTH} characters or fewer.`);
     }
-    if ([...this.jobs.values()].some((job) => isActive(job.status.status))) {
-      throw new Error('An avatar is already being generated. Wait for it to finish or discard it.');
-    }
+    this.assertIdle();
     if (mode === 'new-character') {
       if (!this.options.characterRunner)
         throw new Error('New 3D character generation is not configured.');
@@ -111,15 +118,12 @@ export class AvatarGenerationService {
       }
     }
     // Another request may have finished the shared server-start wait just ahead of this one.
-    if ([...this.jobs.values()].some((job) => isActive(job.status.status))) {
-      throw new Error('An avatar is already being generated. Wait for it to finish or discard it.');
-    }
+    this.assertIdle();
 
     const imageModel = !referenceImage
       ? await this.options.imageModels?.resolve(request.imageModelId)
       : undefined;
-    if ([...this.jobs.values()].some((job) => isActive(job.status.status)))
-      throw new Error('An avatar is already being generated. Wait for it to finish or discard it.');
+    this.assertIdle();
     const jobId = randomUUID();
     const job: JobState = {
       imageModel,
@@ -133,6 +137,14 @@ export class AvatarGenerationService {
         message: 'Queued',
         previewDataUrl: null,
         errorMessage: null,
+        prompt,
+        mode,
+        source: referenceImage ? 'upload' : 'text',
+        createdAt: Date.now(),
+        imageModelName: imageModel?.name ?? null,
+        geometryModelName: null,
+        rigModelName: null,
+        buildSeconds: null,
       },
       prompt,
       directory: path.join(this.options.workDirectory, jobId),
@@ -152,13 +164,34 @@ export class AvatarGenerationService {
   /** Explicit approval is the only entry to geometry, rigging or texture work. */
   async confirmConcept(jobId: string, confirmation?: AvatarGenerationConfirmation): Promise<void> {
     const job = this.getJob(jobId);
-    if (job.status.status !== 'awaiting_confirmation')
+    const rebuild = ['completed', 'failed', 'cancelled'].includes(job.status.status);
+    if (job.status.status !== 'awaiting_confirmation' && !rebuild)
       throw new Error('This concept is not awaiting confirmation.');
+    if (rebuild && !job.status.previewDataUrl)
+      throw new Error('This take has no image to build from. Generate a new one.');
+    if ([...this.jobs.values()].some((other) => other !== job && isRunning(other.status.status)))
+      throw new Error('Another avatar is being generated. Wait for it to finish or cancel it.');
+    const previous = job.status.status;
+    const previousMessage = job.status.message;
+    if (rebuild) {
+      job.abort = new AbortController();
+      job.vrmPath = null;
+    }
     const warningsAlreadyShown = Boolean(job.status.warnings?.length);
     this.update(job, { status: 'queued', message: 'Checking the reference', errorMessage: null });
     try {
       if (job.mode === 'new-character') {
         const runner = this.options.characterRunner;
+        if (this.options.characterModels) {
+          job.geometry = await this.options.characterModels.resolveGeometry(
+            confirmation?.geometryModelId,
+          );
+          job.rig = await this.options.characterModels.resolveRig(confirmation?.rigModelId);
+        }
+        this.update(job, {
+          geometryModelName: job.geometry?.name ?? 'TRELLIS.2',
+          rigModelName: job.rig?.name ?? 'Blender auto-rig with fitted face',
+        });
         await runner?.assertAvailable();
         if (!job.landmarksPath)
           job.landmarksPath = await runner?.prepareReference?.({
@@ -175,7 +208,7 @@ export class AvatarGenerationService {
         this.update(job, { warnings });
         if (warnings.length && !(warningsAlreadyShown && confirmation?.acceptWarnings === true)) {
           this.update(job, {
-            status: 'awaiting_confirmation',
+            status: rebuild ? previous : 'awaiting_confirmation',
             message: 'Review the compatibility warnings before continuing',
           });
           return;
@@ -207,8 +240,8 @@ export class AvatarGenerationService {
     } catch (error) {
       if (!job.abort.signal.aborted && this.jobs.get(jobId) === job)
         this.update(job, {
-          status: 'awaiting_confirmation',
-          message: 'Review the concept image before continuing',
+          status: rebuild ? previous : 'awaiting_confirmation',
+          message: rebuild ? previousMessage : 'Review the concept image before continuing',
         });
       throw error;
     }
@@ -221,6 +254,22 @@ export class AvatarGenerationService {
       ...status,
       ...(status.warnings ? { warnings: status.warnings.map((w) => ({ ...w })) } : {}),
     };
+  }
+
+  /** Every take in this session, oldest first, for the studio history. */
+  listJobs(): AvatarGenerationStatus[] {
+    return [...this.jobs.values()]
+      .sort((a, b) => (a.status.createdAt ?? 0) - (b.status.createdAt ?? 0))
+      .map((job) => this.getStatus(job.status.jobId));
+  }
+
+  /** Stop a running job but keep its image, so it can be rebuilt or discarded later. */
+  cancel(jobId: string): void {
+    const job = this.getJob(jobId);
+    if (!isRunning(job.status.status)) throw new Error('This avatar is not being generated.');
+    job.abort.abort();
+    this.update(job, { status: 'cancelled', message: 'Cancelled' });
+    this.options.logger?.info?.('Avatar generation cancelled.', { jobId });
   }
 
   /** Read the completed candidate for review without saving it or changing the active model. */
@@ -252,11 +301,16 @@ export class AvatarGenerationService {
 
   async reject(jobId: string): Promise<void> {
     const job = this.getJob(jobId);
-    if (isActive(job.status.status)) {
+    if (isRunning(job.status.status)) {
       job.abort.abort();
     }
     await this.discard(job);
     this.options.logger?.info?.('Generated avatar discarded.', { jobId });
+  }
+
+  private assertIdle(): void {
+    if ([...this.jobs.values()].some((job) => isRunning(job.status.status)))
+      throw new Error('An avatar is already being generated. Wait for it to finish or cancel it.');
   }
 
   private getJob(jobId: string): JobState {
@@ -335,7 +389,7 @@ export class AvatarGenerationService {
           message: 'Generating new textured 3D geometry',
         });
         const reference = await comfy.uploadImage(`${job.status.jobId}-concept.png`, concept);
-        const mesh = await comfy.run(characterMeshGraph(reference, seed), {
+        const mesh = await comfy.run(characterMeshGraph(reference, seed, job.geometry), {
           signal,
           output: 'mesh',
         });
@@ -362,6 +416,7 @@ export class AvatarGenerationService {
           status: 'completed',
           progress: 1,
           message: 'New 3D character ready for review',
+          buildSeconds: Math.round((Date.now() - started) / 1000),
         });
         this.options.logger?.info?.('New 3D character generated.', {
           jobId: job.status.jobId,
@@ -437,7 +492,12 @@ export class AvatarGenerationService {
       job.vrmPath = path.join(job.directory, 'avatar.vrm');
       await writeFile(job.vrmPath, vrm);
 
-      this.update(job, { status: 'completed', progress: 1, message: 'Ready to review' });
+      this.update(job, {
+        status: 'completed',
+        progress: 1,
+        message: 'Ready to review',
+        buildSeconds: Math.round((Date.now() - started) / 1000),
+      });
       this.options.logger?.info?.('Avatar generation finished.', {
         jobId: job.status.jobId,
         seconds: Math.round((Date.now() - started) / 1000),
@@ -457,16 +517,9 @@ export class AvatarGenerationService {
   }
 }
 
-function isActive(status: AvatarGenerationStatus['status']): boolean {
-  return [
-    'queued',
-    'concept',
-    'awaiting_confirmation',
-    'meshing',
-    'rigging',
-    'texturing',
-    'packaging',
-  ].includes(status);
+/** Work in progress that uses ComfyUI or Blender; only one job runs at a time. */
+function isRunning(status: AvatarGenerationStatus['status']): boolean {
+  return ['queued', 'concept', 'meshing', 'rigging', 'texturing', 'packaging'].includes(status);
 }
 
 function throwIfAborted(signal: AbortSignal): void {

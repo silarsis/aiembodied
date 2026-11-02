@@ -45,6 +45,7 @@ import { AvatarGenerationService } from './avatar/generation/avatar-generation-s
 import { ComfyUIClient } from './avatar/generation/comfyui-client.js';
 import { BlenderCharacterRunner } from './avatar/generation/character/rig-runner.js';
 import { AvatarImageModelService, createImageModelScanner } from './avatar/generation/image-model-service.js';
+import { AvatarCharacterModelService } from './avatar/generation/character-model-service.js';
 import { ComfyUIRuntime } from './avatar/generation/comfyui-runtime.js';
 import { LocalMotionClient } from './avatar/motion/local-motion-client.js';
 import { LocalMotionGenerationService } from './avatar/motion/local-motion-generation-service.js';
@@ -176,6 +177,7 @@ let poseGenerationService: PoseGenerationService | null = null;
 let poseEvaluationService: PoseEvaluationService | null = null;
 let avatarDescriptionService: AvatarDescriptionService | null = null;
 let avatarImageModels: AvatarImageModelService | undefined;
+let avatarCharacterModels: AvatarCharacterModelService | undefined;
 let avatarGenerationService: AvatarGenerationService | null = null;
 let localMotionService: LocalMotionGenerationService | null = null;
 let localVoiceService: LocalVoiceService | null = null;
@@ -1026,6 +1028,10 @@ function registerIpcHandlers(
   };
   ipcMain.handle('avatar:image-models', async () => { if (!avatarImageModels) throw new Error('Image models are unavailable.'); return avatarImageModels.list(); });
   ipcMain.handle('avatar:image-model-select', async (_event, id: string) => { if (!avatarImageModels) throw new Error('Image models are unavailable.'); await avatarImageModels.select(id); });
+  ipcMain.handle('avatar:character-models', async () => { if (!avatarCharacterModels) throw new Error('3D avatar models are unavailable.'); return avatarCharacterModels.list(); });
+  ipcMain.handle('avatar:character-model-select', async (_event, stage: 'geometry' | 'rig', id: string) => { if (!avatarCharacterModels) throw new Error('3D avatar models are unavailable.'); await avatarCharacterModels.select(stage, id); });
+  ipcMain.handle('avatar:generation-list', async (): Promise<AvatarGenerationStatus[]> => requireAvatarGeneration().listJobs());
+  ipcMain.handle('avatar:generation-cancel', async (_event, jobId: string): Promise<void> => requireAvatarGeneration().cancel(jobId));
   ipcMain.handle(
     'avatar:generation-start',
     async (_event, payload: AvatarGenerationRequest): Promise<AvatarGenerationJob> =>
@@ -1446,7 +1452,10 @@ app.whenReady().then(async () => {
   const comfy = new ComfyUIClient({ baseUrl: appConfig.comfyUiBaseUrl });
   const comfyRuntime = new ComfyUIRuntime({ client: comfy, logDirectory: path.join(app.getPath('userData'), 'logs') });
   const ensureComfyReady = () => comfyRuntime.ensureReady();
-  avatarImageModels = new AvatarImageModelService(createImageModelScanner(path.join(__dirname, '../assets/avatar-generation/image-models.py').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1'), appConfig.comfyUiBaseUrl), memoryStore ?? undefined);
+  const scanComfyModels = createImageModelScanner(path.join(__dirname, '../assets/avatar-generation/image-models.py').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1'), appConfig.comfyUiBaseUrl);
+  avatarImageModels = new AvatarImageModelService(scanComfyModels, memoryStore ?? undefined);
+  const characterRunner = new BlenderCharacterRunner(path.join(__dirname, '../assets/avatar-generation/rig-character.py').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1'));
+  avatarCharacterModels = new AvatarCharacterModelService(scanComfyModels, () => characterRunner.assertAvailable(), memoryStore ?? undefined);
   if (memoryStore) {
     backgroundService = new BackgroundService({
       store: memoryStore,
@@ -1481,7 +1490,8 @@ app.whenReady().then(async () => {
       baseModelPath: DEFAULT_MODEL_ASSET_PATH,
       workDirectory: path.join(app.getPath('userData'), 'avatar-generation'),
       imageModels: avatarImageModels,
-      characterRunner: new BlenderCharacterRunner(path.join(__dirname, '../assets/avatar-generation/rig-character.py').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')),
+      characterModels: avatarCharacterModels,
+      characterRunner,
       logger,
     });
   }

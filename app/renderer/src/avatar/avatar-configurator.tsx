@@ -16,7 +16,7 @@ import type {
   PoseEvaluationResult,
 } from './types.js';
 import { generateVrmThumbnail } from './thumbnail-generator.js';
-import { AvatarGeneratorPanel } from './avatar-generator-panel.js';
+import { AvatarStudioLauncher } from './avatar-studio.js';
 import { generatePoseSnapshot } from './pose-snapshot-generator.js';
 
 type ModelUploadStatus = 'idle' | 'reading' | 'uploading' | 'success';
@@ -867,7 +867,7 @@ export function AvatarConfigurator({
       </div>
 
       {children}
-      <AvatarGeneratorPanel avatarApi={avatarApi} onAccepted={refreshModels} />
+      <AvatarStudioLauncher avatarApi={avatarApi} onAccepted={refreshModels} />
       <details className="avatarLibrary" open={compact ? undefined : true}>
         <summary>Manage animations and poses</summary>
 
