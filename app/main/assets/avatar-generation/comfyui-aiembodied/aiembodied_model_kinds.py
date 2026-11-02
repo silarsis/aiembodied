@@ -160,6 +160,12 @@ def describe(folder, name, full_path):
             info["kind"] = trellis_kind(folder, name)
         if not info["kind"]:
             return None
+        saved = read_info(full_path)
+        if saved.get("name"):
+            # A model downloaded through the app keeps Civitai's name for the picker.
+            info["title"] = saved["name"]
+        if saved.get("baseModel"):
+            info["baseModel"] = saved["baseModel"]
         return {"folder": folder, "name": name.replace("\\", "/"), **info}
     except (OSError, ValueError, struct.error):
         # Incomplete downloads are not selectable models.

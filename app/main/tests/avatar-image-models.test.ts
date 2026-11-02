@@ -116,6 +116,7 @@ describe('LoRAs', () => {
     { folder: 'loras', name: 'cyberpunk.safetensors', kind: 'lora', family: 'sd1', title: 'Cyberpunk', baseModel: 'SD 1.5', triggerWords: ['cyberpunk', 'neon'] },
     { folder: 'loras', name: 'xl-style.safetensors', kind: 'lora', family: 'sdxl' },
     { folder: 'loras', name: 'mystery.safetensors', kind: 'lora' },
+    { folder: 'checkpoints', name: 'dreamshaper_8.safetensors', kind: 'sd1', title: 'DreamShaper', embeddedClip: true, embeddedVae: true },
   ];
 
   it('lists LoRAs, keeps the choice, and applies only those of the model’s family with their trigger words', async () => {
@@ -125,6 +126,7 @@ describe('LoRAs', () => {
     const state = await service.list();
     expect(state.loras?.map((lora) => lora.name)).toEqual(['cyberpunk.safetensors', 'mystery.safetensors', 'xl-style.safetensors']);
     expect(state.modelFamilies?.['checkpoints:legacy.safetensors']).toBe('sd1');
+    expect(state.models.find((model) => model.id === 'checkpoints:dreamshaper_8.safetensors')?.name).toBe('DreamShaper');
     service.selectLoras([
       { name: 'cyberpunk.safetensors', strength: 0.7 },
       { name: 'xl-style.safetensors', strength: 5 },

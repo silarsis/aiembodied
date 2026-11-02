@@ -49,6 +49,10 @@ class ModelKindTests(unittest.TestCase):
         })
         result = model_kinds.scan(paths)
         self.assertEqual([(entry["name"], entry["kind"]) for entry in result], [("ponyRealism.safetensors", "sdxl")])
+        self.assertEqual(result[0]["title"], "")
+        model_kinds.write_info(os.path.join(root, "ponyRealism.safetensors"), {"name": "Pony Realism", "baseModel": "Pony"})
+        described = model_kinds.scan(paths)[0]
+        self.assertEqual((described["title"], described["baseModel"]), ("Pony Realism", "Pony"))
         self.assertTrue(result[0]["embeddedClip2"])
 
     def test_lists_loras_with_their_family_and_saved_details(self):

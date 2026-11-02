@@ -97,7 +97,8 @@ export class AvatarImageModelService {
           .map((file): Entry => {
             const family = file.kind as ImageFamily;
             const stem = file.name.replace(/\.safetensors$/i, '').replaceAll('_', ' ');
-            const name = stem[0].toUpperCase() + stem.slice(1);
+            // Civitai's name when the model was downloaded through the app, else the file name.
+            const name = file.title?.trim() || stem[0].toUpperCase() + stem.slice(1);
             const model: ImageWorkflowModel = {
               id: `${file.folder}:${file.name}`,
               name,
