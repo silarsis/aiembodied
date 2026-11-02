@@ -22,7 +22,6 @@ import { AnimationBusProvider, createAvatarAnimationBus } from './avatar/animati
 import { BehaviorCueProvider } from './avatar/behavior-cues.js';
 import { getAvatarRestSkeleton } from './avatar/rest-skeleton.js';
 import { flushSync } from 'react-dom';
-import { PosePicker } from './avatar/pose-picker.js';
 import { AvatarConfigurator } from './avatar/avatar-configurator.js';
 import { AudioGraph } from './audio/audio-graph.js';
 import { useWakeWordListening } from './audio/use-wake-word-listening.js';
@@ -697,8 +696,6 @@ export default function App() {
   const [activeVrmModel, setActiveVrmModel] = useState<AvatarModelSummary | null>(null);
   const [availableAnimationSlugs, setAvailableAnimationSlugs] = useState<string[]>([]);
   const [availablePoses, setAvailablePoses] = useState<AvatarPoseSummary[]>([]);
-  const [animationListVersion, setAnimationListVersion] = useState(0);
-  const [poseListVersion, setPoseListVersion] = useState(0);
   const animationBus = useMemo(() => createAvatarAnimationBus(), []);
   const [liveMotionReady, setLiveMotionReady] = useState(false);
   const [motionStatus, setMotionStatus] = useState<AvatarMotionStatus | null>(null);
@@ -816,13 +813,10 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [resolveApi, animationListVersion]);
+  }, [resolveApi]);
 
-  const refreshAnimationList = useCallback(() => {
-    setAnimationListVersion((v) => v + 1);
-  }, []);
 
-  // Load available poses for the test pose dropdown
+  // Load available poses so the assistant can name them in replies
   useEffect(() => {
     const bridge = resolveApi();
     const avatar = bridge?.avatar;
@@ -851,11 +845,8 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [resolveApi, poseListVersion]);
+  }, [resolveApi]);
 
-  const refreshPoseList = useCallback(() => {
-    setPoseListVersion((v) => v + 1);
-  }, []);
 
 
   const pushLatency = useCallback(
@@ -2481,7 +2472,7 @@ export default function App() {
                   model={activeVrmModel}
                   onStatusChange={handleVrmStatusChange}
                   onGroundPositionChange={setAvatarFootY}
-                  animationVersion={animationListVersion}
+                  animationVersion={0}
                 />
               </div>
             </section>
@@ -2541,14 +2532,12 @@ export default function App() {
                     id="character"
                     title="Character"
                     summary={`${activeAvatarName} · ${availableAnimationSlugs.length} animations`}
-                    keywords="avatar model vrm upload generation personality base prompt animation pose"
+                    keywords="avatar model vrm upload generation studio personality base prompt"
                     defaultOpen
                   >
                     <AvatarConfigurator
                       avatarApi={activeBridge?.avatar}
                       onActiveModelChange={setActiveVrmModel}
-                      onAnimationChange={refreshAnimationList}
-                      onPoseChange={refreshPoseList}
                       compact
                     >
                       <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
@@ -2571,7 +2560,6 @@ export default function App() {
                           />
                         </div>
                       </section>
-                      <PosePicker poses={availablePoses} avatarApi={activeBridge?.avatar} bus={animationBus} enabled={drawerOpen} modelId={activeVrmModel?.id ?? null} />
                     </AvatarConfigurator>
                   </ControlGroup>
                   <ControlGroup id="backgrounds" title="Backgrounds" summary={backgrounds.active?.name ?? 'Plain background'} keywords="scene background place environment scenery generate creation description garden lounge beach city mountain">
