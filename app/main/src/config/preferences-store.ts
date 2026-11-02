@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { sanitizeProviderPatch, type ProviderSettingsPatch } from './provider-settings.js';
+import { sanitizeStoredModels, type StoredModels } from './model-routing.js';
 
 export interface AudioDevicePreferences {
   audioInputDeviceId?: string;
@@ -15,6 +16,8 @@ export interface AudioDevicePreferences {
   conversationBackend?: 'local' | 'openai';
   /** The provider settings the user changed on the Settings page (see provider-settings.ts). */
   providers?: ProviderSettingsPatch;
+  /** Added model servers and which server runs each use (see model-routing.ts). */
+  models?: StoredModels;
 }
 
 export interface PreferencesStore {
@@ -118,6 +121,11 @@ export class FilePreferencesStore implements PreferencesStore {
     const providers = sanitizeProviderPatch(input.providers);
     if (Object.keys(providers).length > 0) {
       preferences.providers = providers;
+    }
+
+    const models = sanitizeStoredModels(input.models);
+    if (Object.keys(models).length > 0) {
+      preferences.models = models;
     }
 
     return preferences;

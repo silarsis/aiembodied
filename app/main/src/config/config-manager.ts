@@ -13,6 +13,19 @@ import {
   type ProviderSettings,
   type ProviderSettingsPatch,
 } from './provider-settings.js';
+import {
+  ADDABLE_SERVER_TYPES,
+  BUILT_IN_SERVER_IDS,
+  builtInServers,
+  defaultRoutes,
+  resolveModelRouting,
+  sanitizeStoredModels,
+  type ModelRoute,
+  type ModelRouting,
+  type ServerType,
+  type StoredModels,
+  type UseId,
+} from './model-routing.js';
 
 type ConfigLogger = Pick<Console, 'debug' | 'info' | 'warn' | 'error'>;
 
@@ -39,6 +52,8 @@ export interface AppConfig {
    */
   conversationBackend: ConversationBackend;
   providers: ProviderSettings;
+  /** Which server runs each use (see model-routing.ts). */
+  models: ModelRouting;
   webSearch: WebSearchConfig;
   audioInputDeviceId?: string;
   audioOutputDeviceId?: string;
@@ -73,7 +88,7 @@ export interface MetricsConfig {
 
 export type RendererWakeWordConfig = WakeWordConfig;
 
-export type RendererConfig = Omit<AppConfig, 'realtimeApiKey' | 'wakeWord' | 'comfyUiBaseUrl' | 'webSearch'> & {
+export type RendererConfig = Omit<AppConfig, 'realtimeApiKey' | 'wakeWord' | 'comfyUiBaseUrl' | 'webSearch' | 'models'> & {
   hasRealtimeApiKey: boolean;
   /** True when the key comes from an environment variable, which the Settings page cannot change. */
   realtimeApiKeyFromEnv?: boolean;
@@ -145,6 +160,27 @@ const DEFAULT_COMFYUI_BASE_URL = 'http://127.0.0.1:8188';
 const DEFAULT_CONVERSATION_BACKEND: ConversationBackend = 'local';
 /** The OpenAI key is read from the first of these that is set, before the secret store. */
 const API_KEY_ENV_NAMES = ['REALTIME_API_KEY', 'realtime_api_key', 'OPENAI_API_KEY'];
+/** Where a server's API key is kept in the secret store. */
+const BRAVE_SECRET_NAME = 'BRAVE_SEARCH_API_KEY';
+const serverSecretName = (id: string) => `MODEL_SERVER_KEY:${id}`;
+
+/** A server as the Models and servers pop-up sees it: no keys, only whether one is set. */
+export interface ModelServerView {
+  id: string;
+  name: string;
+  type: ServerType;
+  url: string;
+  builtIn: boolean;
+  managed: boolean;
+  hasKey: boolean;
+  /** The key comes from an environment variable, so the app cannot change it. */
+  keyFromEnv?: boolean;
+}
+
+export interface ModelRoutingView {
+  servers: ModelServerView[];
+  routes: Record<UseId, ModelRoute>;
+}
 
 export class ConfigManager {
   private config: AppConfig | null = null;
@@ -162,6 +198,11 @@ export class ConfigManager {
   /** The wake word from the environment, before the Settings page's choice is applied. */
   private envWakeWord: WakeWordConfig | null = null;
   private apiKeyFromEnv = false;
+  /** Saved servers and routes; built-in defaults fill in the rest. */
+  private storedModels: StoredModels = {};
+  /** API keys of added servers and Brave, by server id. OpenAI's is `realtimeApiKey`. */
+  private serverKeys = new Map<string, string>();
+  private braveKeyFromEnv = false;
 
   constructor(options: ConfigManagerOptions = {}) {
     this.secretStore = options.secretStore;
@@ -195,16 +236,20 @@ export class ConfigManager {
     this.envWakeWord = this.parseWakeWordConfig();
     const providers = resolveProviderSettings(this.env, this.storedProviders);
     const wakeWord = this.applyWakeWordSettings(this.envWakeWord, providers);
+    this.storedModels = sanitizeStoredModels(storedPreferences.models);
+    const comfyUiBaseUrl = this.env.COMFYUI_BASE_URL?.trim() || DEFAULT_COMFYUI_BASE_URL;
+    await this.loadServerKeys();
 
     const config: AppConfig = {
       realtimeApiKey: realtimeApiKey ?? '',
-      comfyUiBaseUrl: this.env.COMFYUI_BASE_URL?.trim() || DEFAULT_COMFYUI_BASE_URL,
+      comfyUiBaseUrl,
       conversationBackend: storedPreferences.conversationBackend ?? this.parseConversationBackend(),
       providers,
+      models: this.resolveModels(providers, comfyUiBaseUrl),
       webSearch: {
         provider: this.env.WEB_SEARCH_PROVIDER?.trim() || DEFAULT_WEB_SEARCH_PROVIDER,
         searxngUrl: this.env.SEARXNG_URL?.trim() || undefined,
-        braveApiKey: this.env.BRAVE_SEARCH_API_KEY?.trim() || undefined,
+        braveApiKey: this.serverKeys.get(BUILT_IN_SERVER_IDS.brave),
       },
       audioInputDeviceId,
       audioOutputDeviceId,
@@ -282,6 +327,7 @@ export class ConfigManager {
       vadMinSpeechDurationMs,
       conversationBackend,
       ...(Object.keys(this.storedProviders).length > 0 ? { providers: this.storedProviders } : {}),
+      ...(Object.keys(this.storedModels).length > 0 ? { models: this.storedModels } : {}),
     });
 
     return this.getRendererConfig();
@@ -296,7 +342,7 @@ export class ConfigManager {
     this.storedProviders = mergeProviderPatch(this.storedProviders, sanitizeProviderPatch(patch));
     const providers = resolveProviderSettings(this.env, this.storedProviders);
     const wakeWord = this.applyWakeWordSettings(this.envWakeWord ?? this.config.wakeWord, providers);
-    this.config = { ...this.config, providers, wakeWord };
+    this.config = { ...this.config, providers, wakeWord, models: this.resolveModels(providers, this.config.comfyUiBaseUrl) };
 
     if (this.preferencesStore) {
       const saved = await this.preferencesStore.load();
@@ -304,6 +350,143 @@ export class ConfigManager {
     }
     this.logger.info('Provider settings updated.', describeProviders(providers));
     return this.getRendererConfig();
+  }
+
+  /** Servers and routes for the Models and servers pop-up. */
+  getModelRoutingView(): ModelRoutingView {
+    const { models } = this.getConfig();
+    return {
+      servers: models.servers.map((server) => ({
+        ...server,
+        hasKey: Boolean(this.getServerKey(server.id)),
+        ...(server.id === BUILT_IN_SERVER_IDS.openai && this.apiKeyFromEnv ? { keyFromEnv: true } : {}),
+        ...(server.id === BUILT_IN_SERVER_IDS.brave && this.braveKeyFromEnv ? { keyFromEnv: true } : {}),
+      })),
+      routes: structuredClone(models.routes),
+    };
+  }
+
+  /** The API key to send to a server, if it has one. */
+  getServerKey(id: string): string | undefined {
+    if (id === BUILT_IN_SERVER_IDS.openai) return this.config?.realtimeApiKey || undefined;
+    return this.serverKeys.get(id);
+  }
+
+  /** Add a server (no id) or change one; returns its id. A built-in server keeps its type. */
+  async saveModelServer(entry: { id?: string; name?: string; type?: ServerType; url?: string }): Promise<string> {
+    const config = this.getConfig();
+    const existing = entry.id ? config.models.servers.find((server) => server.id === entry.id) : undefined;
+    if (entry.id && !existing) throw new Error('That server no longer exists.');
+    const name = entry.name?.trim();
+    const url = entry.url?.trim();
+    if (url) {
+      let parsed: URL;
+      try {
+        parsed = new URL(url);
+      } catch {
+        throw new Error('Enter the server address as a URL, such as http://192.168.1.20:8188.');
+      }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('Server addresses start with http:// or https://.');
+    }
+    if (!existing) {
+      if (!entry.type || !ADDABLE_SERVER_TYPES.includes(entry.type)) throw new Error('Choose what kind of server this is.');
+      if (!url) throw new Error('Enter the server address.');
+    }
+    const id = existing?.id ?? `server-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    const servers = (this.storedModels.servers ?? []).filter((server) => server.id !== id);
+    const previous = this.storedModels.servers?.find((server) => server.id === id);
+    servers.push({
+      id,
+      ...(name ? { name } : previous?.name ? { name: previous.name } : {}),
+      ...(existing?.builtIn ? {} : { type: existing?.type ?? entry.type }),
+      ...(url ? { url } : previous?.url ? { url: previous.url } : {}),
+    });
+    this.storedModels = { ...this.storedModels, servers };
+    await this.applyModelChange();
+    return id;
+  }
+
+  /** Remove an added server. Uses that pointed at it go back to their defaults. */
+  async removeModelServer(id: string): Promise<void> {
+    const server = this.getConfig().models.servers.find((entry) => entry.id === id);
+    if (!server) return;
+    if (server.builtIn) throw new Error('Built-in servers can be changed but not removed.');
+    this.storedModels = { ...this.storedModels, servers: (this.storedModels.servers ?? []).filter((entry) => entry.id !== id) };
+    if (this.serverKeys.has(id)) {
+      this.serverKeys.delete(id);
+      await this.secretStore?.deleteSecret(serverSecretName(id)).catch(() => undefined);
+    }
+    await this.applyModelChange();
+  }
+
+  /** Point a use at a server (and model, backups). An unusable choice is refused. */
+  async setModelRoute(use: UseId, route: ModelRoute): Promise<void> {
+    const stored = sanitizeStoredModels({ routes: { [use]: route } }).routes?.[use];
+    if (!stored) throw new Error('That choice could not be saved.');
+    const before = this.getConfig().models;
+    const trial = resolveModelRouting(before.servers, before.routes, { routes: { [use]: stored } });
+    if (trial.routes[use].server !== stored.server) throw new Error("That server can't do this job.");
+    this.storedModels = { ...this.storedModels, routes: { ...this.storedModels.routes, [use]: stored } };
+    await this.applyModelChange();
+  }
+
+  /** Save or (with an empty value) remove a server's API key. OpenAI's is the realtime API key. */
+  async setServerKey(id: string, value: string): Promise<void> {
+    const key = value.trim();
+    if (id === BUILT_IN_SERVER_IDS.openai) {
+      if (key) await this.setSecret('realtimeApiKey', key);
+      else await this.clearSecret('realtimeApiKey');
+      return;
+    }
+    const server = this.getConfig().models.servers.find((entry) => entry.id === id);
+    if (!server) throw new Error('That server no longer exists.');
+    if (!this.secretStore) throw new Error('Secret store is not configured. Unable to persist secrets securely.');
+    const name = id === BUILT_IN_SERVER_IDS.brave ? BRAVE_SECRET_NAME : serverSecretName(id);
+    if (key) {
+      await this.secretStore.setSecret(name, key);
+      this.serverKeys.set(id, key);
+    } else {
+      await this.secretStore.deleteSecret(name);
+      if (!(id === BUILT_IN_SERVER_IDS.brave && this.braveKeyFromEnv)) this.serverKeys.delete(id);
+    }
+    if (id === BUILT_IN_SERVER_IDS.brave && this.config) {
+      this.config = { ...this.config, webSearch: { ...this.config.webSearch, braveApiKey: this.serverKeys.get(id) } };
+    }
+    this.logger.info('Model server key updated.', { server: id, set: Boolean(key) });
+  }
+
+  private resolveModels(providers: ProviderSettings, comfyUiBaseUrl: string): ModelRouting {
+    const builtIns = builtInServers({ providers, comfyUiBaseUrl, searxngUrl: this.env.SEARXNG_URL?.trim() || undefined });
+    const defaults = defaultRoutes(providers, this.env.WEB_SEARCH_PROVIDER?.trim() || DEFAULT_WEB_SEARCH_PROVIDER);
+    return resolveModelRouting(builtIns, defaults, this.storedModels);
+  }
+
+  private async applyModelChange(): Promise<void> {
+    const config = this.getConfig();
+    this.config = { ...config, models: this.resolveModels(config.providers, config.comfyUiBaseUrl) };
+    if (this.preferencesStore) {
+      const saved = await this.preferencesStore.load();
+      await this.preferencesStore.save({ ...saved, models: this.storedModels });
+    }
+    this.logger.info('Model servers updated.', {
+      servers: this.config.models.servers.length,
+      routes: Object.fromEntries(Object.entries(this.config.models.routes).map(([use, route]) => [use, route.server])),
+    });
+  }
+
+  private async loadServerKeys(): Promise<void> {
+    this.serverKeys.clear();
+    const envBrave = this.env.BRAVE_SEARCH_API_KEY?.trim();
+    this.braveKeyFromEnv = Boolean(envBrave);
+    const store = this.secretStore;
+    const read = async (name: string) => (store ? await store.getSecret(name).catch(() => null) : null);
+    const brave = envBrave || (await read(BRAVE_SECRET_NAME));
+    if (brave) this.serverKeys.set(BUILT_IN_SERVER_IDS.brave, brave);
+    for (const server of this.storedModels.servers ?? []) {
+      if (Object.values(BUILT_IN_SERVER_IDS).includes(server.id as never)) continue;
+      const key = await read(serverSecretName(server.id));
+      if (key) this.serverKeys.set(server.id, key);
+    }
   }
 
   getConfig(): AppConfig {
@@ -317,7 +500,7 @@ export class ConfigManager {
   getRendererConfig(): RendererConfig {
     const config = this.getConfig();
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { realtimeApiKey, wakeWord, comfyUiBaseUrl, webSearch, ...rest } = config;
+    const { realtimeApiKey, wakeWord, comfyUiBaseUrl, webSearch, models, ...rest } = config;
 
     return {
       ...rest,

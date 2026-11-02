@@ -67,7 +67,7 @@ describe('wake word settings', () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     const { bridge } = createBridge({ available: true, job: null });
     render(
-      <ProviderSettingsPanel settings={defaults()} hasApiKey={false} voiceStatus={null} motionStatus={null} onSave={onSave} wakeWordBridge={bridge} />,
+      <ProviderSettingsPanel settings={defaults()} onSave={onSave} wakeWordBridge={bridge} />,
     );
 
     const select = (await screen.findByLabelText('Listen for')) as HTMLSelectElement;
@@ -85,7 +85,7 @@ describe('wake word settings', () => {
   it('starts training, shows progress, and offers cancel', async () => {
     const { bridge, push } = createBridge({ available: true, job: null });
     render(
-      <ProviderSettingsPanel settings={defaults()} hasApiKey={false} voiceStatus={null} motionStatus={null} onSave={vi.fn()} wakeWordBridge={bridge} />,
+      <ProviderSettingsPanel settings={defaults()} onSave={vi.fn()} wakeWordBridge={bridge} />,
     );
 
     const phrase = await screen.findByLabelText('Phrase');
@@ -105,7 +105,7 @@ describe('wake word settings', () => {
     const status = running(0.8);
     const { bridge, push } = createBridge({ ...status, job: { ...status.job!, state: 'interrupted', stageLabel: 'Training the model' } });
     render(
-      <ProviderSettingsPanel settings={defaults()} hasApiKey={false} voiceStatus={null} motionStatus={null} onSave={vi.fn()} wakeWordBridge={bridge} />,
+      <ProviderSettingsPanel settings={defaults()} onSave={vi.fn()} wakeWordBridge={bridge} />,
     );
 
     expect(await screen.findByText(/stopped while training the model/)).toBeInTheDocument();
@@ -121,7 +121,7 @@ describe('wake word settings', () => {
   it('explains when training is unavailable', async () => {
     const { bridge } = createBridge({ available: false, reason: 'Training a wake word needs Windows with WSL.', job: null });
     render(
-      <ProviderSettingsPanel settings={defaults()} hasApiKey={false} voiceStatus={null} motionStatus={null} onSave={vi.fn()} wakeWordBridge={bridge} />,
+      <ProviderSettingsPanel settings={defaults()} onSave={vi.fn()} wakeWordBridge={bridge} />,
     );
     expect(await screen.findByText('Training a wake word needs Windows with WSL.')).toBeInTheDocument();
     expect(screen.queryByLabelText('Phrase')).not.toBeInTheDocument();

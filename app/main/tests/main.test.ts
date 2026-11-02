@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import type { IpcMainInvokeEvent } from 'electron';
 import type { ConfigSecretKey } from '../src/config/config-manager.js';
 import { DEFAULT_PROVIDER_SETTINGS } from '../src/config/provider-settings.js';
+import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/config/model-routing.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Deferred<T> = {
@@ -66,8 +67,20 @@ const ConfigManagerMock = vi.fn(function () {
     setSecret: setSecretMock,
     testSecret: testSecretMock,
     setAudioDevicePreferences: setAudioDevicePreferencesMock,
+    getServerKey: (id: string) => (id === 'openai' ? (getConfigMock() as { realtimeApiKey?: string } | undefined)?.realtimeApiKey : undefined),
+    getModelRoutingView: () => {
+      const models = (getConfigMock() as { models: ReturnType<typeof testRouting> }).models;
+      return { servers: models.servers.map((server) => ({ ...server, hasKey: false })), routes: models.routes };
+    },
   };
 });
+
+function testRouting() {
+  return resolveModelRouting(
+    builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }),
+    defaultRoutes(DEFAULT_PROVIDER_SETTINGS, 'off'),
+  );
+}
 
 class ConfigValidationErrorMock extends Error {
   constructor(message: string) {
@@ -530,6 +543,7 @@ describe('main process bootstrap', () => {
       conversationBackend: 'local',
       providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
       webSearch: { provider: 'off' },
+      models: testRouting(),
       featureFlags: {},
       wakeWord: {
         model: 'hey_jarvis',
@@ -568,6 +582,7 @@ describe('main process bootstrap', () => {
       conversationBackend: 'local',
       providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
       webSearch: { provider: 'off' },
+      models: testRouting(),
       audioInputDeviceId: undefined,
       audioOutputDeviceId: undefined,
       featureFlags: {},
@@ -677,9 +692,7 @@ describe('main process bootstrap', () => {
 
     const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
 
-    expect(mockLogger.info).toHaveBeenCalledWith('VRMA generation service initialized.', {
-      reason: 'startup',
-    });
+    expect(mockLogger.info).toHaveBeenCalledWith('Animation clip generation ready.', { model: 'gpt-4.1-mini' });
 
     const expectedConfigChannels = [
       'config:get',
@@ -718,9 +731,8 @@ describe('main process bootstrap', () => {
     });
     expect(setSecretMock).toHaveBeenCalledWith('realtimeApiKey', 'next-key');
 
-    expect(mockLogger.info).toHaveBeenCalledWith('VRMA generation service initialized.', {
-      reason: 'secret-update',
-    });
+    // A new key rebuilds the helpers that use it.
+    expect(mockLogger.info.mock.calls.filter(([message]) => message === 'Animation clip generation ready.')).toHaveLength(2);
 
     expect(vrmaGenerationServiceInstances).toHaveLength(2);
 
@@ -986,6 +998,7 @@ describe('main process bootstrap', () => {
       conversationBackend: 'local',
       providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
       webSearch: { provider: 'off' },
+      models: testRouting(),
       audioInputDeviceId: undefined,
       audioOutputDeviceId: undefined,
       featureFlags: {},
@@ -1050,6 +1063,7 @@ describe('main process bootstrap', () => {
       conversationBackend: 'local',
       providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
       webSearch: { provider: 'off' },
+      models: testRouting(),
       audioInputDeviceId: undefined,
       audioOutputDeviceId: undefined,
       featureFlags: {},

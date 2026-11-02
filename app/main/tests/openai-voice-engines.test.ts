@@ -10,6 +10,13 @@ import {
   type RealtimeSocketFactory,
 } from '../src/local-voice/openai-realtime-tts.js';
 import { buildVoiceEngines } from '../src/local-voice/voice-engines.js';
+import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/config/model-routing.js';
+
+/** The routing provider settings give before anything is saved in Models and servers. */
+function routed(providers: ProviderSettings) {
+  return resolveModelRouting(builtInServers({ providers, comfyUiBaseUrl: 'http://127.0.0.1:8188' }), defaultRoutes(providers));
+}
+const openAiKey = (key: string) => (id: string) => (id === 'openai' && key ? key : undefined);
 import type { LocalVoiceEvent } from '../src/local-voice/types.js';
 
 function sse(deltas: string[]): Response {
@@ -267,9 +274,7 @@ describe('buildVoiceEngines', () => {
       throw new Error('ECONNREFUSED');
     }) as unknown as typeof fetch;
     const server = new FakeRealtime();
-    const engines = buildVoiceEngines(
-      settings({ llm: { provider: 'openai' }, stt: { provider: 'openai' }, tts: { provider: 'openai', openaiVoice: 'coral' } }),
-      'sk',
+    const engines = buildVoiceEngines(routed(settings({ llm: { provider: 'openai' }, stt: { provider: 'openai' }, tts: { provider: 'openai', openaiVoice: 'coral' } })), openAiKey('sk'),
       { fetchFn, createSocket: server.factory },
     );
     const service = new LocalVoiceService(engines);
@@ -292,10 +297,10 @@ describe('buildVoiceEngines', () => {
     const fetchFn = vi.fn(async () => {
       throw new Error('ECONNREFUSED');
     }) as unknown as typeof fetch;
-    const service = new LocalVoiceService(buildVoiceEngines(settings({ tts: { provider: 'openai' } }), '', { fetchFn }));
+    const service = new LocalVoiceService(buildVoiceEngines(routed(settings({ tts: { provider: 'openai' } })), openAiKey(''), { fetchFn }));
     expect((await service.status()).tts).toMatchObject({ provider: 'openai', available: false });
 
-    service.configure(buildVoiceEngines(settings({ tts: { kokoroVoice: 'bf_emma' } }), '', { fetchFn }));
+    service.configure(buildVoiceEngines(routed(settings({ tts: { kokoroVoice: 'bf_emma' } })), openAiKey(''), { fetchFn }));
     expect((await service.status()).tts).toMatchObject({ provider: 'kokoro', voice: 'bf_emma' });
   });
 });

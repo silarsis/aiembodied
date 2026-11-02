@@ -1,6 +1,8 @@
 import type { BackgroundBridge } from './backgrounds/types.js';
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ConfigSecretKey, RendererConfig } from './config/config-manager.js';
+import type { ConfigSecretKey, ModelRoutingView, RendererConfig } from './config/config-manager.js';
+import type { ModelRoute, ServerType, UseId } from './config/model-routing.js';
+import type { ServerProbe } from './config/model-server-probe.js';
 import type { AudioDevicePreferences } from './config/preferences-store.js';
 import type { ProviderSettingsPatch } from './config/provider-settings.js';
 import type {
@@ -156,8 +158,19 @@ export interface ConfigBridge {
   setProviderSettings(patch: ProviderSettingsPatch): Promise<RendererConfig>;
 }
 
+/** The Models and servers pop-up. Keys are sent in, never read back. */
+export interface ModelsBridge {
+  get(): Promise<ModelRoutingView>;
+  probe(target: { serverId: string } | { draft: { type: ServerType; url: string; key?: string } }): Promise<ServerProbe>;
+  saveServer(server: { id?: string; name?: string; type?: ServerType; url?: string; key?: string }): Promise<{ id: string; models: ModelRoutingView }>;
+  removeServer(id: string): Promise<ModelRoutingView>;
+  setRoute(use: UseId, route: ModelRoute): Promise<ModelRoutingView>;
+  setKey(serverId: string, key: string): Promise<ModelRoutingView>;
+}
+
 export interface PreloadApi {
   backgrounds?: BackgroundBridge;
+  models?: ModelsBridge;
   config: ConfigBridge;
   realtime: RealtimeBridge;
   localVoice?: LocalVoiceBridge;
@@ -323,6 +336,14 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     setProviderSettings: (patch) => ipcRenderer.invoke('config:set-providers', patch) as Promise<RendererConfig>,
     setAudioDevicePreferences: (preferences) =>
       ipcRenderer.invoke('config:set-audio-devices', preferences) as Promise<RendererConfig>,
+  },
+  models: {
+    get: () => ipcRenderer.invoke('models:get') as Promise<ModelRoutingView>,
+    probe: (target) => ipcRenderer.invoke('models:probe', target) as Promise<ServerProbe>,
+    saveServer: (server) => ipcRenderer.invoke('models:save-server', server) as Promise<{ id: string; models: ModelRoutingView }>,
+    removeServer: (id) => ipcRenderer.invoke('models:remove-server', id) as Promise<ModelRoutingView>,
+    setRoute: (use, route) => ipcRenderer.invoke('models:set-route', { use, route }) as Promise<ModelRoutingView>,
+    setKey: (serverId, key) => ipcRenderer.invoke('models:set-key', { serverId, key }) as Promise<ModelRoutingView>,
   },
   realtime: {
     mintEphemeralToken: (request) =>

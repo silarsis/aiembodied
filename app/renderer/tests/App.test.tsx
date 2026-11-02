@@ -1,15 +1,17 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   ConversationAppendMessagePayload,
   ConversationMessage,
   ConversationSession,
 } from '../../main/src/conversation/types.js';
-import type { RendererConfig } from '../../main/src/config/config-manager.js';
+import type { ModelRoutingView, RendererConfig } from '../../main/src/config/config-manager.js';
+import { builtInServers, defaultRoutes } from '../../main/src/config/model-routing.js';
 import { BASE_POSES } from '../../main/src/avatar/base-poses.js';
 import { DEFAULT_PROVIDER_SETTINGS } from '../../main/src/config/provider-settings.js';
 import type { WakeWordDetectionEvent } from '../../main/src/wake-word/types.js';
 import type { AvatarBridge } from '../src/avatar/types.js';
+import type { ModelsBridge } from '../src/preload-api.js';
 
 type MockRealtimeInstance = {
   callbacks: {
@@ -212,6 +214,57 @@ function createAvatarBridgeMock(overrides: Partial<AvatarBridge> = {}): AvatarBr
   };
 }
 
+const originalShowModal = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal');
+const originalDialogClose = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'close');
+beforeAll(() => {
+  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+    configurable: true,
+    value() {
+      this.open = true;
+    },
+  });
+  Object.defineProperty(HTMLDialogElement.prototype, 'close', {
+    configurable: true,
+    value() {
+      this.open = false;
+    },
+  });
+});
+afterAll(() => {
+  for (const [name, descriptor] of [
+    ['showModal', originalShowModal],
+    ['close', originalDialogClose],
+  ] as const) {
+    if (descriptor) Object.defineProperty(HTMLDialogElement.prototype, name, descriptor);
+    else Reflect.deleteProperty(HTMLDialogElement.prototype, name);
+  }
+});
+
+function createModelsBridgeMock(overrides: Partial<ModelsBridge> = {}): ModelsBridge {
+  let view: ModelRoutingView = {
+    servers: builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }).map((server) => ({
+      ...server,
+      hasKey: server.id === 'openai',
+    })),
+    routes: defaultRoutes(DEFAULT_PROVIDER_SETTINGS),
+  };
+  return {
+    get: vi.fn(async () => view),
+    probe: vi.fn(async () => ({ status: 'up' as const, models: {}, checkedAt: 0 })),
+    saveServer: vi.fn(async () => ({ id: 'server-x', models: view })),
+    removeServer: vi.fn(async () => view),
+    setRoute: vi.fn(async (use, route) => {
+      view = { ...view, routes: { ...view.routes, [use]: route } };
+      return view;
+    }),
+    setKey: vi.fn(async (serverId, key) => {
+      view = { ...view, servers: view.servers.map((server) => (server.id === serverId ? { ...server, hasKey: Boolean(key) } : server)) };
+      return view;
+    }),
+    ...overrides,
+  };
+}
+
 describe('App component', () => {
   const originalAudioContext = window.AudioContext;
   const originalMediaDevices = navigator.mediaDevices;
@@ -326,6 +379,18 @@ describe('App component', () => {
     return button;
   };
 
+  const openModels = async () => {
+    await openGroup(/Voice & engine/i);
+    fireEvent.click(await screen.findByRole('button', { name: 'Open models and servers' }));
+    return screen.findByRole('dialog', { name: 'Models and servers' });
+  };
+
+  const openVoiceSelect = async () => {
+    const dialog = await openModels();
+    fireEvent.click(await within(dialog).findByRole('button', { name: /Conversation engine/ }));
+    return (await within(dialog).findByLabelText('Voice')) as HTMLSelectElement;
+  };
+
   it('keeps the avatar on stage while controls open and close', async () => {
     (window as PreloadWindow).aiembodied = {
       ping: () => 'pong',
@@ -339,6 +404,7 @@ describe('App component', () => {
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: { onWake: () => () => { } },
       avatar: createAvatarBridgeMock(),
+      models: createModelsBridgeMock(),
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
@@ -351,7 +417,7 @@ describe('App component', () => {
     await openGroup(/Character/i);
     expect(screen.getByLabelText(/Base prompt/i)).toBeInTheDocument();
     await openGroup(/Voice & engine/i);
-    expect(screen.getByLabelText('Realtime voice')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open models and servers' })).toBeInTheDocument();
     await openGroup(/Devices & wake word/i);
     expect(screen.getByLabelText('Microphone')).toBeInTheDocument();
     expect(stage.querySelector('[data-renderer]')).toBe(renderer);
@@ -373,6 +439,7 @@ describe('App component', () => {
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: { onWake: () => () => { } },
       avatar: createAvatarBridgeMock(),
+      models: createModelsBridgeMock(),
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
@@ -412,15 +479,14 @@ describe('App component', () => {
         },
         wakeWord: { onWake: () => () => { } },
         avatar: createAvatarBridgeMock(),
+        models: createModelsBridgeMock(),
         __bridgeReady: true,
         __bridgeVersion: '1.0.0',
       } as unknown as PreloadWindow['aiembodied'];
 
       render(<App />);
 
-      await openGroup(/Voice & engine/i);
-
-      const select = (await screen.findByLabelText('Realtime voice')) as HTMLSelectElement;
+      const select = await openVoiceSelect();
       const optionValues = Array.from(select.options).map((option) => option.value);
 
       expect(optionValues).toEqual([
@@ -475,15 +541,14 @@ describe('App component', () => {
         },
         wakeWord: { onWake: () => () => { } },
         avatar: createAvatarBridgeMock(),
+        models: createModelsBridgeMock(),
         __bridgeReady: true,
         __bridgeVersion: '1.0.0',
       } as unknown as PreloadWindow['aiembodied'];
 
       render(<App />);
 
-      await openGroup(/Voice & engine/i);
-
-      const select = (await screen.findByLabelText('Realtime voice')) as HTMLSelectElement;
+      const select = await openVoiceSelect();
 
       await waitFor(() => {
         expect(select.value).toBe('config-custom');
@@ -660,6 +725,7 @@ describe('App component', () => {
         },
       },
       avatar: createAvatarBridgeMock(),
+      models: createModelsBridgeMock(),
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
@@ -709,16 +775,7 @@ describe('App component', () => {
     });
 
     await openGroup(/Voice & engine/i);
-    expect(screen.getByRole('heading', { level: 2, name: /API keys/i })).toBeInTheDocument();
-    const realtimeCard = screen
-      .getByRole('heading', { name: /OpenAI API key/i })
-      .closest('article');
-    expect(realtimeCard).not.toBeNull();
-    if (realtimeCard) {
-      expect(within(realtimeCard).getByText(/Status: Configured/i)).toBeInTheDocument();
-    }
-
-    expect(screen.queryByRole('heading', { name: /Meshy API key/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open models and servers' })).toBeInTheDocument();
 
     closeControls();
 
@@ -767,6 +824,7 @@ describe('App component', () => {
         },
       },
       avatar: createAvatarBridgeMock(),
+      models: createModelsBridgeMock(),
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
@@ -956,6 +1014,7 @@ describe('App component', () => {
         },
       },
       avatar: createAvatarBridgeMock(),
+      models: createModelsBridgeMock(),
       conversation: {
         getHistory: vi.fn().mockResolvedValue({
           currentSessionId: 'session-1',
@@ -1054,102 +1113,14 @@ describe('App component', () => {
     });
   });
 
-  it('updates realtime api key via configuration form', async () => {
+  it('saves the OpenAI key from the models and servers pop-up', async () => {
+    const models = createModelsBridgeMock();
+    const getConfig = vi.fn().mockResolvedValue(rendererConfig);
     (window as PreloadWindow).aiembodied = {
       ping: () => 'pong',
       config: {
-        get: vi.fn().mockResolvedValue({
-          audioInputDeviceId: '',
-          audioOutputDeviceId: '',
-          featureFlags: {},
-          hasRealtimeApiKey: true,
-          conversationBackend: 'openai',
-              wakeWord: {
-            model: 'hey_jarvis',
-            keywordLabel: 'Hey Jarvis',
-            threshold: 0.5,
-            cooldownMs: 1500,
-            deviceIndex: undefined,
-          },
-        }),
+        get: getConfig,
         getSecret: vi.fn().mockResolvedValue('secret'),
-        setAudioDevicePreferences: setAudioDevicePreferencesMock,
-        setSecret: setSecretMock,
-        testSecret: testSecretMock,
-      },
-      realtime: { mintEphemeralToken: mintEphemeralTokenMock },
-      wakeWord: {
-        onWake: () => () => { },
-      },
-      avatar: createAvatarBridgeMock(),
-      __bridgeReady: true,
-      __bridgeVersion: '1.0.0',
-    } as unknown as PreloadWindow['aiembodied'];
-
-    setSecretMock.mockResolvedValueOnce({
-      audioInputDeviceId: '',
-      audioOutputDeviceId: '',
-      featureFlags: {},
-      hasRealtimeApiKey: true,
-      conversationBackend: 'openai',
-      realtime: { mintEphemeralToken: mintEphemeralTokenMock },
-      wakeWord: {
-        model: 'hey_jarvis',
-        keywordLabel: 'Hey Jarvis',
-        threshold: 0.5,
-        cooldownMs: 1500,
-        deviceIndex: undefined,
-      },
-    });
-
-    render(<App />);
-
-    await openGroup(/Voice & engine/i);
-
-    const realtimeHeading = await screen.findByRole('heading', {
-      name: /OpenAI API key/i,
-    });
-    const realtimePanel = realtimeHeading.closest('article');
-    expect(realtimePanel).not.toBeNull();
-    if (!realtimePanel) {
-      throw new Error('Realtime secret panel missing');
-    }
-
-    const input = within(realtimePanel).getByLabelText(
-      /New OpenAI API key/i,
-    ) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: ' new-secret ' } });
-
-    const updateButton = within(realtimePanel).getByRole('button', { name: /update key/i });
-    fireEvent.click(updateButton);
-
-    await waitFor(() => {
-      expect(setSecretMock).toHaveBeenCalledWith('realtimeApiKey', 'new-secret');
-    });
-
-    expect(input.value).toBe('');
-    expect(
-      await within(realtimePanel).findByText(/API key updated successfully/i),
-    ).toBeInTheDocument();
-  });
-
-  it('uses the latest preload bridge when submitting a secret before the hook state updates', async () => {
-    Reflect.deleteProperty(window as PreloadWindow, 'aiembodied');
-
-    setSecretMock.mockResolvedValueOnce({
-      ...rendererConfig,
-      hasRealtimeApiKey: true,
-      conversationBackend: 'openai',
-    });
-
-    render(<App />);
-
-    const getSecretSpy = vi.fn().mockResolvedValue('late-secret');
-    (window as PreloadWindow).aiembodied = {
-      ping: () => 'pong',
-      config: {
-        get: vi.fn().mockResolvedValue(rendererConfig),
-        getSecret: getSecretSpy,
         setAudioDevicePreferences: setAudioDevicePreferencesMock,
         setSecret: setSecretMock,
         testSecret: testSecretMock,
@@ -1157,36 +1128,26 @@ describe('App component', () => {
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: { onWake: () => () => { } },
       avatar: createAvatarBridgeMock(),
+      models,
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
 
-    await openGroup(/Voice & engine/i);
+    render(<App />);
+    const dialog = await openModels();
+    fireEvent.click(await within(dialog).findByRole('button', { name: /Servers\d/ }));
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Open OpenAI' }));
+    const input = (await within(dialog).findByLabelText('API key')) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: ' new-secret ' } });
+    const callsBefore = getConfig.mock.calls.length;
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save key' }));
 
-    const realtimeHeading = await screen.findByRole('heading', {
-      name: /OpenAI API key/i,
-    });
-    const realtimePanel = realtimeHeading.closest('article');
-    expect(realtimePanel).not.toBeNull();
-    if (!realtimePanel) {
-      throw new Error('Realtime secret panel missing');
-    }
-
-    const input = within(realtimePanel).getByLabelText(
-      /New OpenAI API key/i,
-    ) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: ' late-secret ' } });
-
-    const updateButton = within(realtimePanel).getByRole('button', { name: /update key/i });
-    fireEvent.click(updateButton);
-
-    await waitFor(() => {
-      expect(setSecretMock).toHaveBeenCalledWith('realtimeApiKey', 'late-secret');
-    });
-
-    expect(
-      await within(realtimePanel).findByText(/API key updated successfully/i),
-    ).toBeInTheDocument();
+    await waitFor(() => expect(models.setKey).toHaveBeenCalledWith('openai', 'new-secret'));
+    expect(await within(dialog).findByText('Key saved.')).toBeInTheDocument();
+    expect(input.value).toBe('');
+    // The app reloads its config so the new key is used straight away.
+    await waitFor(() => expect(getConfig.mock.calls.length).toBeGreaterThan(callsBefore));
+    expect(setSecretMock).not.toHaveBeenCalled();
   });
 
   it('syncs the base prompt textarea with realtime session updates', async () => {
@@ -1220,6 +1181,7 @@ describe('App component', () => {
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: { onWake: () => () => { } },
       avatar: createAvatarBridgeMock(),
+      models: createModelsBridgeMock(),
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
@@ -1301,6 +1263,7 @@ describe('App component', () => {
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: { onWake: () => () => { } },
       avatar: createAvatarBridgeMock(),
+      models: createModelsBridgeMock(),
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
@@ -1332,9 +1295,7 @@ describe('App component', () => {
       const initialConnectCalls = instance.connect.mock.calls.length;
       const initialDisconnectCalls = instance.disconnect.mock.calls.length;
 
-      await openGroup(/Voice & engine/i);
-
-      const voiceSelect = (await screen.findByLabelText('Realtime voice')) as HTMLSelectElement;
+      const voiceSelect = await openVoiceSelect();
       fireEvent.change(voiceSelect, { target: { value: 'ash' } });
 
       await waitFor(() => {

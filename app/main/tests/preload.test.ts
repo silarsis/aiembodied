@@ -92,6 +92,23 @@ describe('preload bridge', () => {
     expect(invoke).toHaveBeenCalledWith('wake-word:set-listening', true);
   });
 
+  it('exposes the models and servers helpers through the bridge', async () => {
+    const [, api] = exposeInMainWorld.mock.calls[0];
+    invoke.mockResolvedValue({});
+    await api.models.get();
+    expect(invoke).toHaveBeenCalledWith('models:get');
+    await api.models.probe({ serverId: 'local-comfy' });
+    expect(invoke).toHaveBeenCalledWith('models:probe', { serverId: 'local-comfy' });
+    await api.models.saveServer({ type: 'comfy', url: 'http://rack:8188' });
+    expect(invoke).toHaveBeenCalledWith('models:save-server', { type: 'comfy', url: 'http://rack:8188' });
+    await api.models.removeServer('server-a');
+    expect(invoke).toHaveBeenCalledWith('models:remove-server', 'server-a');
+    await api.models.setRoute('image', { server: 'server-a', spread: true });
+    expect(invoke).toHaveBeenCalledWith('models:set-route', { use: 'image', route: { server: 'server-a', spread: true } });
+    await api.models.setKey('openai', 'sk');
+    expect(invoke).toHaveBeenCalledWith('models:set-key', { serverId: 'openai', key: 'sk' });
+  });
+
   it('exposes camera detection helpers through the bridge', async () => {
     const [, api] = exposeInMainWorld.mock.calls[0];
     const listener = vi.fn();

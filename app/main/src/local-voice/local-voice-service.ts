@@ -4,7 +4,8 @@
  * sentence by sentence: each sentence is spoken as soon as the LLM finishes it, so the first words
  * play while the rest is still being written.
  */
-import type { ChatMessage, LlmToolCall, LlmToolDefinition, LocalLlmClient } from './local-llm-client.js';
+import type { ChatMessage, LlmToolCall, LlmToolDefinition } from './local-llm-client.js';
+import type { ChatClient } from './voice-engines.js';
 import type { RegisteredTool, ToolRegistry } from '../tools/tool-registry.js';
 import type { SpeechServiceClient } from './speech-service-client.js';
 import {
@@ -39,7 +40,7 @@ const MAX_TOOL_RESULT_CHARS = 4000;
 const DEFAULT_SPOKEN_NOTICE = 'One moment.';
 
 export interface LocalVoiceServiceOptions {
-  llm: LocalLlmClient;
+  llm: ChatClient;
   /** services/speech: checked for status, and the STT and TTS engine unless others are given. */
   speech: SpeechServiceClient;
   /** Tools offered to the model (built-ins such as web_search, and MCP tools). */
@@ -57,7 +58,7 @@ export interface LocalVoiceServiceOptions {
 }
 
 export class LocalVoiceService {
-  private llm: LocalLlmClient;
+  private llm: ChatClient;
   private speech: SpeechServiceClient;
   private stt: SpeechToTextEngine;
   private tts: TextToSpeechEngine;
@@ -87,7 +88,7 @@ export class LocalVoiceService {
    * finishes with the engines it started with.
    */
   configure(engines: {
-    llm?: LocalLlmClient;
+    llm?: ChatClient;
     speech?: SpeechServiceClient;
     stt?: SpeechToTextEngine;
     tts?: TextToSpeechEngine;
