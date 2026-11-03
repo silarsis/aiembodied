@@ -87,6 +87,35 @@ export interface MemoryEngineMemoryDetail {
   messages?: Array<{ id: string; role: string; speaker: string | null; content: string; tool: { name?: string } | null; created_at: string }>;
 }
 
+export interface MemoryEngineBrief {
+  agent: string | null;
+  facts: Array<{ id: string; text: string; subject: string | null; pinned: boolean; created_at: string }>;
+  last_session: {
+    session_id: string;
+    agent: string | null;
+    channel: string | null;
+    title: string | null;
+    started_at: string;
+    last_at: string;
+    turns: string[];
+  } | null;
+}
+
+export interface MemoryEngineRecallRequest {
+  text: string;
+  session_id?: string | null;
+  exclude?: string[];
+  limit?: number;
+  max_chars?: number;
+  min_similarity?: number;
+}
+
+export interface MemoryEngineRecall {
+  items: MemoryEngineSearchResult[];
+  /** Why nothing came back: "short", "no embedder" or "no strong match". */
+  reason: string | null;
+}
+
 export interface MemoryEngineFact {
   text: string;
   subject?: string | null;
@@ -179,6 +208,18 @@ export class MemoryEngineClient {
 
   putFact(id: string, fact: MemoryEngineFact): Promise<{ id: string; created: boolean }> {
     return this.request('PUT', `/v1/facts/${encodeURIComponent(id)}`, fact);
+  }
+
+  brief(options: { sessionId?: string | null; agent?: string; timeoutMs?: number } = {}): Promise<MemoryEngineBrief> {
+    const params = new URLSearchParams();
+    if (options.sessionId) params.set('session_id', options.sessionId);
+    if (options.agent) params.set('agent', options.agent);
+    const query = params.toString();
+    return this.request('GET', `/v1/brief${query ? `?${query}` : ''}`, undefined, options.timeoutMs);
+  }
+
+  recall(body: MemoryEngineRecallRequest, timeoutMs?: number): Promise<MemoryEngineRecall> {
+    return this.request('POST', '/v1/recall', body, timeoutMs);
   }
 
   private async request<T>(method: string, path: string, body?: unknown, timeoutMs = this.timeoutMs): Promise<T> {

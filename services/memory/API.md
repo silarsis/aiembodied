@@ -61,6 +61,28 @@ is a comma-separated list of result ids to leave out. Each result has `id`, `kin
 `session_id`, `agent`, `period_start`, `period_end`, `text`, `score`, `similarity` (cosine, when
 both sides are embedded) and `matched` (`["text", "vector"]`).
 
+## `GET /v1/brief?session_id=&agent=`
+
+For the start of a conversation: active, non-private `facts` (pinned first, then newest, up to
+about 1,200 characters) and `last_session`, the most recent conversation other than
+`session_id`, with its last three turns. The client adds the date and time and formats it.
+
+## `POST /v1/recall`
+
+```json
+{"text": "how are the tomatoes going", "session_id": "...", "exclude": ["<ids recalled earlier>"],
+ "limit": 3, "max_chars": 1600, "min_similarity": 0.6}
+```
+
+Returns `{"items": [...search results...], "reason": null}`, or no items with a `reason`:
+`short` (under four words), `no embedder`, or `no strong match`. Results from `session_id` and
+private items are left out. Each call is logged.
+
+## `GET /v1/recall-log?session_id=&limit=50`
+
+What auto-recall was asked and returned, newest first. Forgetting a session or a message removes
+its entries.
+
 ## `GET /v1/timeline?from=&to=&agent=&include_private=true&turns=6&limit=50`
 
 Conversations that took place in `[from, to)`, oldest first, each with `title`, `agent`,

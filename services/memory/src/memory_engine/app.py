@@ -20,7 +20,7 @@ from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import __version__, db, facts, recall, store
+from . import __version__, context, db, facts, recall, store
 from .embed import Embedder
 
 log = logging.getLogger("memory_engine")
@@ -63,6 +63,15 @@ class FactBody(BaseModel):
     supersedes: Optional[UUID] = None
     pinned: bool = False
     private: bool = False
+
+
+class RecallBody(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+    session_id: Optional[UUID] = None
+    exclude: list[UUID] = Field(default_factory=list, max_length=500)
+    limit: int = Field(default=context.RECALL_LIMIT, ge=1, le=10)
+    max_chars: int = Field(default=context.RECALL_MAX_CHARS, ge=100, le=10000)
+    min_similarity: float = Field(default=context.RECALL_MIN_SIMILARITY, ge=0.0, le=1.0)
 
 
 class FactPatch(BaseModel):
@@ -332,6 +341,30 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
                     limit=limit,
                 )
         return {"results": results}
+
+    @app.get("/v1/brief", dependencies=guarded)
+    def get_brief(session_id: Optional[UUID] = None, agent: Optional[str] = None):
+        with engine.connection() as conn:
+            return context.brief(conn, session_id=session_id, agent=agent)
+
+    @app.post("/v1/recall", dependencies=guarded)
+    def post_recall(body: RecallBody):
+        with engine.connection() as conn:
+            return context.auto_recall(
+                conn,
+                body.text,
+                embedder=engine.embedder,
+                session_id=body.session_id,
+                exclude_ids=body.exclude,
+                limit=body.limit,
+                max_chars=body.max_chars,
+                min_similarity=body.min_similarity,
+            )
+
+    @app.get("/v1/recall-log", dependencies=guarded)
+    def get_recall_log(session_id: Optional[UUID] = None, limit: int = Query(default=50, ge=1, le=500)):
+        with engine.connection() as conn:
+            return {"entries": context.recall_log(conn, session_id=session_id, limit=limit)}
 
     @app.get("/v1/timeline", dependencies=guarded)
     def get_timeline(

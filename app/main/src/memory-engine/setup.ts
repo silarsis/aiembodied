@@ -9,6 +9,7 @@ import { MemoryCapture, type CaptureAgent } from './capture.js';
 import { MemoryEngineClient } from './client.js';
 import { MemoryOutbox } from './outbox.js';
 import type { MemoryEngineSettings } from './settings.js';
+import { createVoiceMemory, type VoiceMemory } from './voice-memory.js';
 
 type Logger = {
   info: (message: string, data?: Record<string, unknown>) => void;
@@ -19,6 +20,8 @@ export interface MemoryEngineRuntime {
   client: MemoryEngineClient;
   outbox: MemoryOutbox;
   capture: MemoryCapture;
+  /** The session brief and auto-recall, for the voice pipeline. */
+  voice: VoiceMemory;
   /** Record a local-voice tool call against the current conversation. */
   recordToolCall(call: { name: string; arguments: unknown; result: string; ok: boolean; at: number }): void;
   stop(): void;
@@ -72,10 +75,20 @@ export function setupMemoryEngine(options: SetupMemoryEngineOptions): MemoryEngi
   outbox.start();
   logger?.info('Long-term memory writes go to the memory engine', { url: settings.url, pending: outbox.status().pending });
 
+  const voice = createVoiceMemory({
+    client,
+    currentSessionId: () => conversations.getCurrentSessionId(),
+    agentName: () => activeAgent(store).name,
+    brief: settings.brief,
+    autoRecall: settings.autoRecall,
+    logger,
+  });
+
   return {
     client,
     outbox,
     capture,
+    voice,
     recordToolCall(call) {
       const sessionId = conversations.getCurrentSessionId();
       if (sessionId) {

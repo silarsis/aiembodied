@@ -559,6 +559,11 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
       tools: toolRegistry ?? undefined,
       logger,
       onToolResult: (record) => memoryEngine?.recordToolCall(record),
+      // Through memoryEngine at call time: it is set up after this service.
+      memory: {
+        brief: () => memoryEngine?.voice.brief() ?? Promise.resolve(null),
+        recall: (text, recalled) => memoryEngine?.voice.recall(text, recalled) ?? Promise.resolve(null),
+      },
     });
   }
 
