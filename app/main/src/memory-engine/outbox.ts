@@ -4,11 +4,18 @@
  * is down: the queue drains when it comes back.
  */
 import type { MemoryOutboxEntry } from '../memory/memory-store.js';
-import { MemoryEngineError, type MemoryEngineClient, type MemoryEngineMessage, type MemoryEngineSession } from './client.js';
+import {
+  MemoryEngineError,
+  type MemoryEngineClient,
+  type MemoryEngineFact,
+  type MemoryEngineMessage,
+  type MemoryEngineSession,
+} from './client.js';
 
 export type OutboxItem =
   | { kind: 'session'; id: string; session: MemoryEngineSession }
-  | { kind: 'message'; message: MemoryEngineMessage };
+  | { kind: 'message'; message: MemoryEngineMessage }
+  | { kind: 'fact'; id: string; fact: MemoryEngineFact };
 
 export interface OutboxStore {
   enqueueMemoryOutbox(kind: string, payload: unknown, createdAt?: number): number;
@@ -25,7 +32,7 @@ type Logger = {
 
 export interface MemoryOutboxOptions {
   store: OutboxStore;
-  client: Pick<MemoryEngineClient, 'putSession' | 'postMessages'>;
+  client: Pick<MemoryEngineClient, 'putSession' | 'postMessages' | 'putFact'>;
   logger?: Logger;
   /** How many queued entries one flush sends at most. */
   batchSize?: number;
@@ -76,6 +83,8 @@ export class MemoryOutbox {
   enqueue(item: OutboxItem): void {
     if (item.kind === 'session') {
       this.store.enqueueMemoryOutbox('session', { id: item.id, session: item.session });
+    } else if (item.kind === 'fact') {
+      this.store.enqueueMemoryOutbox('fact', { id: item.id, fact: item.fact });
     } else {
       this.store.enqueueMemoryOutbox('message', item.message);
     }
@@ -165,6 +174,10 @@ export class MemoryOutbox {
       } else if (entry.kind === 'session') {
         const { id, session } = entry.payload as { id: string; session: MemoryEngineSession };
         await this.attempt([entry], () => this.client.putSession(id, session));
+        index += 1;
+      } else if (entry.kind === 'fact') {
+        const { id, fact } = entry.payload as { id: string; fact: MemoryEngineFact };
+        await this.attempt([entry], () => this.client.putFact(id, fact));
         index += 1;
       } else {
         this.logger?.warn('Dropping unknown memory outbox entry', { kind: entry.kind });

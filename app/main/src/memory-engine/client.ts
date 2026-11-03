@@ -47,6 +47,56 @@ export interface MemoryEngineSearchResult {
   text: string;
   score: number;
   private: boolean;
+  /** Cosine similarity to the query, when the item and query were embedded. */
+  similarity?: number | null;
+  matched?: string[];
+}
+
+export interface MemoryEngineSearchOptions {
+  from?: string;
+  to?: string;
+  agent?: string;
+  limit?: number;
+  includePrivate?: boolean;
+  kinds?: string[];
+  exclude?: string[];
+  mode?: 'hybrid' | 'text';
+  timeoutMs?: number;
+}
+
+export interface MemoryEngineTimelineSession {
+  session_id: string;
+  agent: string | null;
+  channel: string | null;
+  title: string | null;
+  started_at: string;
+  last_at: string;
+  message_count: number;
+  turns: Array<{ id: string; at: string; text: string }>;
+}
+
+export interface MemoryEngineMemoryDetail {
+  id: string;
+  kind: string;
+  period_start: string;
+  session_id?: string;
+  agent?: string | null;
+  text?: string;
+  subject?: string | null;
+  status?: string;
+  messages?: Array<{ id: string; role: string; speaker: string | null; content: string; tool: { name?: string } | null; created_at: string }>;
+}
+
+export interface MemoryEngineFact {
+  text: string;
+  subject?: string | null;
+  author?: 'agent' | 'user' | 'extractor';
+  agent?: string | null;
+  session_id?: string | null;
+  source_message_ids?: string[];
+  supersedes?: string | null;
+  pinned?: boolean;
+  private?: boolean;
 }
 
 /** A failed call. `retryable` is false when the engine rejected the request itself. */
@@ -96,18 +146,39 @@ export class MemoryEngineClient {
     return this.request('POST', '/v1/messages', { messages });
   }
 
-  async search(
-    query: string,
-    options: { from?: string; to?: string; agent?: string; limit?: number; includePrivate?: boolean } = {},
-  ): Promise<MemoryEngineSearchResult[]> {
+  async search(query: string, options: MemoryEngineSearchOptions = {}): Promise<MemoryEngineSearchResult[]> {
     const params = new URLSearchParams({ q: query });
     if (options.from) params.set('from', options.from);
     if (options.to) params.set('to', options.to);
     if (options.agent) params.set('agent', options.agent);
     if (options.limit) params.set('limit', String(options.limit));
     if (options.includePrivate === false) params.set('include_private', 'false');
-    const body = await this.request<{ results: MemoryEngineSearchResult[] }>('GET', `/v1/search?${params.toString()}`);
+    if (options.mode) params.set('mode', options.mode);
+    for (const kind of options.kinds ?? []) params.append('kind', kind);
+    for (const id of options.exclude ?? []) params.append('exclude', id);
+    const body = await this.request<{ results: MemoryEngineSearchResult[] }>(
+      'GET',
+      `/v1/search?${params.toString()}`,
+      undefined,
+      options.timeoutMs,
+    );
     return body.results;
+  }
+
+  async timeline(from: string, to: string, options: { turns?: number; includePrivate?: boolean } = {}): Promise<MemoryEngineTimelineSession[]> {
+    const params = new URLSearchParams({ from, to });
+    if (options.turns !== undefined) params.set('turns', String(options.turns));
+    if (options.includePrivate === false) params.set('include_private', 'false');
+    const body = await this.request<{ sessions: MemoryEngineTimelineSession[] }>('GET', `/v1/timeline?${params.toString()}`);
+    return body.sessions;
+  }
+
+  memory(id: string, around = 1): Promise<MemoryEngineMemoryDetail> {
+    return this.request('GET', `/v1/memories/${encodeURIComponent(id)}?around=${around}`);
+  }
+
+  putFact(id: string, fact: MemoryEngineFact): Promise<{ id: string; created: boolean }> {
+    return this.request('PUT', `/v1/facts/${encodeURIComponent(id)}`, fact);
   }
 
   private async request<T>(method: string, path: string, body?: unknown, timeoutMs = this.timeoutMs): Promise<T> {

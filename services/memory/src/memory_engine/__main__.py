@@ -20,6 +20,12 @@ def main(argv=None) -> None:
                     help="schema that holds the engine's tables (MEMORY_SCHEMA)")
     ap.add_argument("--host", default=os.environ.get("MEMORY_HOST", "127.0.0.1"))
     ap.add_argument("--port", type=int, default=int(os.environ.get("MEMORY_PORT", "8194")))
+    ap.add_argument("--embedder", choices=["fastembed", "fake", "off"],
+                    default=os.environ.get("MEMORY_EMBEDDER", "fastembed"),
+                    help="fastembed: a local model on the CPU (default); fake: hashed words, for wiring; "
+                         "off: full-text search only (MEMORY_EMBEDDER)")
+    ap.add_argument("--embed-model", default=os.environ.get("MEMORY_EMBED_MODEL", "BAAI/bge-small-en-v1.5"),
+                    help="fastembed model; must make 384-dimension vectors (MEMORY_EMBED_MODEL)")
     ap.add_argument("--log-level", default="info")
     a = ap.parse_args(argv)
 
@@ -46,7 +52,9 @@ def main(argv=None) -> None:
         logging.getLogger("memory_engine").warning(
             "Listening on %s without MEMORY_API_TOKEN: anyone who can reach this port can read memory.", a.host
         )
-    engine = Engine(a.database_url, a.schema)
+    from .embed import make_embedder
+
+    engine = Engine(a.database_url, a.schema, embedder=make_embedder(a.embedder, a.embed_model))
     uvicorn.run(create_app(engine, api_token=api_token), host=a.host, port=a.port, log_level=a.log_level.lower())
 
 

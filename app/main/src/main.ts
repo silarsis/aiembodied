@@ -52,7 +52,13 @@ import { AvatarCharacterModelService } from './avatar/generation/character-model
 import { LocalMotionClient } from './avatar/motion/local-motion-client.js';
 import { LocalMotionGenerationService } from './avatar/motion/local-motion-generation-service.js';
 import { LocalVoiceService } from './local-voice/local-voice-service.js';
-import { memoryEngineSettings, setupMemoryEngine, type MemoryEngineRuntime } from './memory-engine/index.js';
+import {
+  activeAgent,
+  createMemoryTools,
+  memoryEngineSettings,
+  setupMemoryEngine,
+  type MemoryEngineRuntime,
+} from './memory-engine/index.js';
 import { buildVoiceEngines } from './local-voice/voice-engines.js';
 import { describeProviders, type ProviderSettingsPatch } from './config/provider-settings.js';
 import type { LocalVoiceRespondRequest } from './local-voice/types.js';
@@ -1544,6 +1550,19 @@ app.whenReady().then(async () => {
 
     // Initialize MCP tool registry and manager
     toolRegistry = new ToolRegistry();
+    if (memoryEngine) {
+      const store = memoryStore;
+      const conversations = conversationManager;
+      for (const tool of createMemoryTools({
+        client: memoryEngine.client,
+        outbox: memoryEngine.outbox,
+        currentSessionId: () => conversations.getCurrentSessionId(),
+        agentName: () => activeAgent(store).name,
+      })) {
+        toolRegistry.register(tool);
+      }
+      logger.info('Memory tools registered');
+    }
     mcpManager = new MCPManager(memoryStore.database, toolRegistry);
     await mcpManager.initialize();
     logger.info('MCP Manager initialized', {

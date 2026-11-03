@@ -166,6 +166,8 @@ vi.mock('../src/memory/index.js', () => ({
 vi.mock('../src/memory-engine/index.js', () => ({
   memoryEngineSettings: () => ({ enabled: false, url: 'http://127.0.0.1:8194' }),
   setupMemoryEngine: () => null,
+  activeAgent: () => ({ name: 'assistant', id: null }),
+  createMemoryTools: () => [],
 }));
 
 const resolvePreloadScriptPathMock = vi.fn();

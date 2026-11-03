@@ -34,7 +34,8 @@ def client(database_url, schema):
     from fastapi.testclient import TestClient
 
     from memory_engine.app import Engine, create_app
+    from memory_engine.embed import FakeEmbedder
 
-    engine = Engine(database_url, schema)
+    engine = Engine(database_url, schema, embedder=FakeEmbedder(), embed_inline=True)
     with TestClient(create_app(engine, connect_in_background=False)) as test_client:
         yield test_client
