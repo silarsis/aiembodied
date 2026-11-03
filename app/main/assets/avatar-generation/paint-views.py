@@ -312,7 +312,10 @@ body.select_set(True)
 bpy.context.view_layer.objects.active = body
 bpy.ops.object.mode_set(mode="EDIT")
 bpy.ops.mesh.select_all(action="SELECT")
-bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.002)
+# Room between islands for the bake margin: seen at an angle, mipmapped texture lookups
+# reach well past an island's edge, and with islands packed tight they picked up their
+# neighbours (pale crescents beside the eyes).
+bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.008)
 bpy.ops.object.mode_set(mode="OBJECT")
 
 # Projection material: texture coordinates from the mesh position, one image per view.
