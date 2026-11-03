@@ -182,3 +182,17 @@ def test_a_timeline_for_one_character_leaves_out_shared_period_summaries(summary
     span = {"from": at(-3600), "to": at(86400 * 3)}
     assert summary_client.get("/v1/timeline", params=span).json()["summaries"]
     assert summary_client.get("/v1/timeline", params={**span, "agent": "Echo"}).json()["summaries"] == []
+
+
+def test_naming_a_session_marks_it_changed_for_the_mirror(summary_client, llm, database_url, schema):
+    import psycopg
+
+    session = uuid4()
+    post(summary_client, message(session, "user", "planning the trip to Hobart", 0))
+    with psycopg.connect(database_url) as conn:
+        before = conn.execute(f"SELECT updated_at FROM {schema}.sessions WHERE id = %s", (session,)).fetchone()[0]
+    run(summary_client, T0 + timedelta(minutes=11))
+    with psycopg.connect(database_url) as conn:
+        title, after = conn.execute(f"SELECT title, updated_at FROM {schema}.sessions WHERE id = %s", (session,)).fetchone()
+    assert title == "A chat" and after > before
+

@@ -283,7 +283,9 @@ def apply_session(conn: psycopg.Connection, job: SessionJob, result: dict[str, A
     _index(conn, summary_id, "session", job.session_id, job.agent, job.started_at, job.last_at, title, summary, topics,
            SESSION_IMPORTANCE)
     if title:
-        conn.execute("UPDATE sessions SET title = %s WHERE id = %s AND title IS NULL", (title, job.session_id))
+        conn.execute(
+            "UPDATE sessions SET title = %s, updated_at = now() WHERE id = %s AND title IS NULL", (title, job.session_id)
+        )
 
     known_ids = {fid for fid, _ in job.facts}
     known_texts = {text.strip().lower() for _, text in job.facts}

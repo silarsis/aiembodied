@@ -40,6 +40,8 @@ export interface MemoryEngineStorage {
   database: { local: boolean; where: string };
   mirror: { where: string; pushed_at: string | null; error: string | null } | null;
   moving: boolean;
+  /** Why the last move didn't happen, if it didn't. */
+  move_error?: string | null;
 }
 
 export interface MemoryEngineSearchResult {

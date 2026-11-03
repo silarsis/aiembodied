@@ -151,11 +151,12 @@ passwords:
 
 ```json
 {"database": {"local": false, "where": "db.example.com:5432/postgres"},
- "mirror": null, "moving": true}
+ "mirror": null, "moving": true, "move_error": null}
 ```
 
 A switch to an empty database copies everything there first; while `moving` is true the other
-routes answer 503. The setting is saved to the settings file and used on the next start. 400 if
+routes answer 503, and so does another switch. If the current database can't be read or the
+copy fails, nothing moves and `move_error` says why. The setting is saved to the settings file and used on the next start. 400 if
 an address isn't `postgres://` or `postgresql://` with a host. `/health` includes the same view
 under `storage`.
 

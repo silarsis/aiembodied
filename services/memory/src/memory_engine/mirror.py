@@ -29,21 +29,24 @@ RESEND = 100
 # Rows committed late can carry an updated_at a little before the mark; look back this far.
 LOOKBACK = timedelta(minutes=2)
 
-# (table, columns, changes in place). Order matters: parents before children.
-TABLES: list[tuple[str, list[str], bool]] = [
+# (table, columns, changes in place, numbering column). Order matters: parents before children.
+TABLES: list[tuple[str, list[str], bool, str]] = [
     ("sessions", ["id", "seq", "agent", "channel", "title", "location", "started_at", "ended_at", "meta",
-                  "created_at", "updated_at"], True),
+                  "created_at", "updated_at"], True, "seq"),
     ("messages", ["id", "seq", "session_id", "role", "speaker", "location", "content", "tool", "created_at",
-                  "received_at", "content_hash", "private", "meta"], False),
+                  "received_at", "content_hash", "private", "meta"], False, "seq"),
     ("facts", ["id", "seq", "text", "subject", "status", "pinned", "author", "agent", "session_id",
-               "source_message_ids", "supersedes", "private", "reviewed_at", "created_at", "updated_at"], True),
+               "source_message_ids", "supersedes", "private", "reviewed_at", "created_at", "updated_at"], True, "seq"),
     ("summaries", ["id", "seq", "kind", "session_id", "period_start", "period_end", "title", "text", "topics",
-                   "covered_seq", "model", "created_at"], False),
+                   "covered_seq", "model", "created_at"], False, "seq"),
     ("recall_index", ["id", "seq", "kind", "source_id", "session_id", "agent", "period_start", "period_end", "text",
-                      "message_ids", "importance", "private", "embedding", "embed_model", "updated_at"], True),
+                      "message_ids", "importance", "private", "embedding", "embed_model", "updated_at"], True, "seq"),
+    # Numbered by its own id. Forgetting a session tombstones ('recall_log', session id): the
+    # mirror then drops that session's entries.
+    ("recall_log", ["id", "at", "session_id", "query", "items", "reason"], False, "id"),
 ]
-JSON_COLUMNS = {"meta", "tool"}
-TOMBSTONE_TABLES = {name for name, _, _ in TABLES}
+JSON_COLUMNS = {"meta", "tool", "items"}
+TOMBSTONE_TABLES = {name for name, _, _, _ in TABLES}
 
 
 def target_name(url: str) -> str:
@@ -72,9 +75,9 @@ def _select(table: str, columns: list[str]) -> str:
     return ", ".join("embedding::text" if c == "embedding" else c for c in columns)
 
 
-def _upsert_sql(table: str, columns: list[str]) -> str:
+def _upsert_sql(table: str, columns: list[str], seq_col: str = "seq") -> str:
     values = ", ".join("%s::vector" if c == "embedding" else "%s" for c in columns)
-    updates = ", ".join(f"{c} = excluded.{c}" for c in columns if c not in ("id", "seq"))
+    updates = ", ".join(f"{c} = excluded.{c}" for c in columns if c not in ("id", seq_col))
     return (
         f"INSERT INTO {table} ({', '.join(columns)}) OVERRIDING SYSTEM VALUE VALUES ({values}) "  # noqa: S608 - fixed names
         f"ON CONFLICT (id) DO UPDATE SET {updates}"
@@ -90,20 +93,20 @@ def push(source: psycopg.Connection, target: psycopg.Connection, marks: dict[str
     many rows (and tombstones) were sent. The target's changes are committed per table."""
     marks = dict(marks)
     sent = 0
-    for table, columns, changes in TABLES:
+    for table, columns, changes, seq_col in TABLES:
         seq_key, time_key = f"{table}.seq", f"{table}.updated_at"
         after = max(0, marks.get(seq_key, 0) - RESEND)
         while True:
             rows = source.execute(
-                f"SELECT {_select(table, columns)} FROM {table} WHERE seq > %s ORDER BY seq LIMIT %s",  # noqa: S608
+                f"SELECT {_select(table, columns)} FROM {table} WHERE {seq_col} > %s ORDER BY {seq_col} LIMIT %s",  # noqa: S608
                 (after, BATCH),
             ).fetchall()
             if not rows:
                 break
-            target.cursor().executemany(_upsert_sql(table, columns), [_row(columns, r) for r in rows])
-            after = rows[-1][columns.index("seq")]
+            target.cursor().executemany(_upsert_sql(table, columns, seq_col), [_row(columns, r) for r in rows])
+            after = rows[-1][columns.index(seq_col)]
             if after > marks.get(seq_key, 0):
-                sent += sum(1 for r in rows if r[columns.index("seq")] > marks.get(seq_key, 0))
+                sent += sum(1 for r in rows if r[columns.index(seq_col)] > marks.get(seq_key, 0))
                 marks[seq_key] = after
         if changes:
             since = marks.get(time_key)
@@ -122,7 +125,7 @@ def push(source: psycopg.Connection, target: psycopg.Connection, marks: dict[str
                 marks[time_key] = newest.isoformat()
         # Keep the target's own counter past the copied numbers, should it ever take over.
         target.execute(
-            f"SELECT setval(pg_get_serial_sequence('{table}', 'seq'), greatest((SELECT max(seq) FROM {table}), 1))"  # noqa: S608
+            f"SELECT setval(pg_get_serial_sequence('{table}', '{seq_col}'), greatest((SELECT max({seq_col}) FROM {table}), 1))"  # noqa: S608
         )
         target.commit()
 
@@ -134,7 +137,18 @@ def push(source: psycopg.Connection, target: psycopg.Connection, marks: dict[str
         if not rows:
             break
         for _, table, row_id in rows:
-            if table in TOMBSTONE_TABLES:
+            if table == "recall_log":
+                target.execute("DELETE FROM recall_log WHERE session_id = %s", (row_id,))
+            elif table == "messages":
+                # Forgetting a message also forgets it as an auto-recall query (store.delete_message);
+                # the mirror's copy of the message says which entries those were.
+                target.execute(
+                    "DELETE FROM recall_log r USING messages m"
+                    " WHERE m.id = %s AND r.session_id = m.session_id AND r.query = m.content",
+                    (row_id,),
+                )
+                target.execute("DELETE FROM messages WHERE id = %s", (row_id,))
+            elif table in TOMBSTONE_TABLES:
                 target.execute(f"DELETE FROM {table} WHERE id = %s", (row_id,))  # noqa: S608 - checked name
         target.execute(
             "INSERT INTO tombstones (table_name, row_id) VALUES " + ", ".join(["(%s, %s)"] * len(rows)),
