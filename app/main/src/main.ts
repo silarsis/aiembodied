@@ -563,6 +563,7 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
       memory: {
         brief: () => memoryEngine?.voice.brief() ?? Promise.resolve(null),
         recall: (text, recalled) => memoryEngine?.voice.recall(text, recalled) ?? Promise.resolve(null),
+        activity: (busy) => memoryEngine?.voice.activity?.(busy),
       },
     });
   }

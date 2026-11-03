@@ -10,7 +10,7 @@ import type {
   MemoryEngineClient,
   MemoryEngineMemoryDetail,
   MemoryEngineSearchResult,
-  MemoryEngineTimelineSession,
+  MemoryEngineTimeline,
 } from './client.js';
 import type { OutboxItem } from './outbox.js';
 import { describeAgo, parsePeriod, type Period } from './period.js';
@@ -86,6 +86,15 @@ function resolvePeriod(params: unknown, now: Date): Period | null | 'invalid' {
   return parsePeriod(raw, now) ?? 'invalid';
 }
 
+/** How a search result is introduced, by kind; turns name the character instead. */
+const KIND_LABELS: Record<string, string> = {
+  fact: 'fact',
+  session: 'conversation summary',
+  day: 'summary of the day',
+  week: 'summary of the week',
+  month: 'summary of the month',
+};
+
 export function formatSearchResults(results: MemoryEngineSearchResult[], now: Date): string {
   if (results.length === 0) {
     return 'No memories found.';
@@ -93,24 +102,40 @@ export function formatSearchResults(results: MemoryEngineSearchResult[], now: Da
   return fitTo(
     results.map((result) => {
       const when = new Date(result.period_start);
-      const who = result.kind === 'fact' ? 'fact' : result.agent ? `with ${result.agent}` : 'conversation';
+      const who = KIND_LABELS[result.kind] ?? (result.agent ? `with ${result.agent}` : 'conversation');
       return `[${result.id}] ${formatDay(when)} (${describeAgo(when, now)}), ${who}:\n${clip(result.text, SNIPPET_CHARS)}\n`;
     }),
   );
 }
 
-export function formatTimeline(sessions: MemoryEngineTimelineSession[], period: Period, now: Date): string {
-  if (sessions.length === 0) {
+export function formatTimeline(timeline: MemoryEngineTimeline, period: Period, now: Date): string {
+  const { sessions, summaries } = timeline;
+  if (sessions.length === 0 && summaries.length === 0) {
     return `No conversations between ${formatDay(period.from)} and ${formatDay(new Date(period.to.getTime() - 1))}.`;
   }
   const lines: string[] = [];
+  if (summaries.length) {
+    // A long period: the day, week or month summaries carry it; conversations follow in brief.
+    for (const summary of summaries) {
+      const start = new Date(summary.period_start);
+      const label = summary.kind === 'day' ? formatDay(start) : `${summary.kind} of ${formatDay(start)}`;
+      lines.push(`[${summary.id}] ${label}: ${summary.title ? `${summary.title}. ` : ''}${clip(summary.text, 400)}`);
+    }
+    if (sessions.length) lines.push('', 'Conversations:');
+  }
+  const brief = summaries.length > 0;
   for (const session of sessions) {
     const start = new Date(session.started_at);
-    const title = session.title ? ` "${session.title}"` : '';
+    const title = session.summary?.title ?? session.title;
+    const named = title ? ` "${title}"` : '';
     lines.push(
-      `${formatDay(start)} ${formatTime(start)} (${describeAgo(start, now)}), ${session.agent ?? 'conversation'}${title}, ${session.message_count} messages:`,
+      `${formatDay(start)} ${formatTime(start)} (${describeAgo(start, now)}), ${session.agent ?? 'conversation'}${named}, ${session.message_count} messages:`,
     );
-    for (const turn of session.turns) {
+    if (session.summary) {
+      lines.push(`  [${session.summary.id}] ${clip(session.summary.text, brief ? 240 : 500)}`);
+      continue;
+    }
+    for (const turn of brief ? session.turns.slice(0, 2) : session.turns) {
       lines.push(`  [${turn.id}] ${clip(turn.text.replace(/\n/g, ' / '), 240)}`);
     }
   }
@@ -123,6 +148,11 @@ export function formatMemory(detail: MemoryEngineMemoryDetail, now: Date): strin
   if (detail.kind === 'fact') {
     const source = (detail.messages ?? []).map((m) => `${m.role}: ${m.content}`).join('\n');
     return fitTo([`Fact noted ${header}: ${detail.text ?? ''}`, ...(source ? ['From:', source] : [])]);
+  }
+  if (detail.kind !== 'turn') {
+    const what = KIND_LABELS[detail.kind] ?? detail.kind;
+    const more = detail.kind === 'session' ? ' Open one of its exchanges from recall_timeline for the exact words.' : '';
+    return fitTo([`${what[0].toUpperCase()}${what.slice(1)}, ${header}: ${detail.text ?? ''}${more}`]);
   }
   const agent = detail.agent ?? 'Assistant';
   const lines = (detail.messages ?? []).map((m) => {
@@ -192,8 +222,8 @@ export function createMemoryTools(options: MemoryToolsOptions): RegisteredTool[]
       const period = resolvePeriod(params, now());
       if (!period) throw new Error('recall_timeline needs a "period".');
       if (period === 'invalid') return `I could not read that period. ${PERIOD_HELP}`;
-      const sessions = await options.client.timeline(period.from.toISOString(), period.to.toISOString());
-      return formatTimeline(sessions, period, now());
+      const timeline = await options.client.timeline(period.from.toISOString(), period.to.toISOString());
+      return formatTimeline(timeline, period, now());
     },
   };
 

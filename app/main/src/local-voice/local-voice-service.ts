@@ -181,12 +181,14 @@ export class LocalVoiceService {
       this.resetHistory();
     }
 
+    this.memory?.activity?.(true);
     // Both run at once and have their own time limits; neither throws.
     const [brief, recalled] = await Promise.all([
       this.brief === null && this.memory ? this.memory.brief() : Promise.resolve(this.brief),
       this.memory?.recall(request.text, this.recalledIds) ?? Promise.resolve(null),
     ]);
     if (signal.aborted) {
+      this.memory?.activity?.(false);
       return { requestId, text: '', cancelled: true };
     }
     this.brief = brief;
@@ -302,6 +304,7 @@ export class LocalVoiceService {
       if (this.active?.requestId === requestId) {
         this.active = null;
       }
+      this.memory?.activity?.(false);
     }
     cancelled ||= signal.aborted;
 

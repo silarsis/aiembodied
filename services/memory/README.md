@@ -5,7 +5,7 @@ it, and can be found again by time, by subject and by relevance. It is a stand-a
 an HTTP API: aiembodied is one client, and nothing here depends on it. The design is in the
 [eternal memory design doc](https://claude.ai/artifact/VKbfzVfg91QQjFexz8eDr1).
 
-What exists so far (phases 1 and 2):
+What exists so far (phases 1 to 4):
 
 - **The record.** Sessions and every message verbatim (user, assistant, tool calls with their
   results), with client-made IDs so retried writes are harmless.
@@ -29,11 +29,23 @@ What exists so far (phases 1 and 2):
   in it), or nothing, which is the usual answer. Short turns ("thanks") are skipped. Every call
   is kept in `recall_log` so the thresholds can be tuned. Private items never appear in either;
   only the search tools reach them.
+- **Summaries.** In the background, an LLM (any OpenAI-compatible endpoint; the local Qwen by
+  default) summarises each conversation once it has been quiet for ten minutes, with a title,
+  topic tags and any durable facts it finds. Facts go live at once (author `extractor`) and can
+  replace a fact they contradict. Each closed day is then summarised from its conversations, and
+  each week (from Monday) and month from its days. All of it is searchable, and the timeline
+  and the brief use it. The work only runs while the client is idle (it says when a turn starts
+  and ends through `/v1/activity`), so it never competes with a live conversation for the model.
+  A late message or a deletion makes the summaries above it due again.
 - **Forget.** Delete a session, a message or a fact, with everything indexed from it. Deletes are
   recorded as tombstones so a future mirror can follow them.
 
-Still to come: background summaries by day, week and month
-with fact extraction, a Memory panel in the app, and Supabase as a server option.
+Still to come: a Memory panel in the app, and Supabase as a server option.
+
+Summary settings: `MEMORY_LLM_URL` (default `http://127.0.0.1:1234/v1`; `off` disables
+summaries), `MEMORY_LLM_MODEL` (default `qwen-next-flash`), `MEMORY_LLM_API_KEY`,
+`MEMORY_TIMEZONE` (an IANA name such as `Australia/Melbourne`; default this machine's current
+offset), `MEMORY_SESSION_QUIET_MINUTES` (10) and `MEMORY_IDLE_SECONDS` (120).
 
 Settings: `MEMORY_EMBEDDER` is `fastembed` (default), `fake` (hashed words, for wiring tests) or
 `off` (full text only); `MEMORY_EMBED_MODEL` picks another fastembed model, which must make

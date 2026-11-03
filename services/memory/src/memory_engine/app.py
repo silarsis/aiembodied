@@ -20,8 +20,9 @@ from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import __version__, context, db, facts, recall, store
+from . import __version__, context, db, facts, recall, store, summaries
 from .embed import Embedder
+from .summaries import Summariser
 
 log = logging.getLogger("memory_engine")
 
@@ -74,6 +75,15 @@ class RecallBody(BaseModel):
     min_similarity: float = Field(default=context.RECALL_MIN_SIMILARITY, ge=0.0, le=1.0)
 
 
+class ActivityBody(BaseModel):
+    busy: bool
+
+
+class SummaryRunBody(BaseModel):
+    now: Optional[datetime] = None
+    limit: int = Field(default=10, ge=1, le=200)
+
+
 class FactPatch(BaseModel):
     text: Optional[str] = Field(default=None, min_length=1, max_length=1000)
     subject: Optional[str] = Field(default=None, max_length=200)
@@ -103,6 +113,7 @@ class Engine:
         retry_seconds: float = 5.0,
         embedder: Optional[Embedder] = None,
         embed_inline: bool = False,
+        summariser: Optional[Summariser] = None,
     ):
         self.database_url = database_url
         self.schema = schema
@@ -114,6 +125,9 @@ class Engine:
         self.embed_error: Optional[str] = None
         self._wake_embedder = threading.Event()
         self._embed_thread: Optional[threading.Thread] = None
+        # None: no background summaries or fact extraction (no LLM configured).
+        self.summariser = summariser
+        self._summary_thread: Optional[threading.Thread] = None
         self.pool = db.open_pool(database_url, schema)
         self.ready = False
         self.error: Optional[str] = None
@@ -122,6 +136,9 @@ class Engine:
         self._thread: Optional[threading.Thread] = None
 
     def start(self, in_background: bool = True) -> None:
+        if self.summariser is not None and in_background:
+            self._summary_thread = threading.Thread(target=self._summary_loop, name="memory-summaries", daemon=True)
+            self._summary_thread.start()
         if self.embedder is not None and not self.embed_inline:
             self._embed_thread = threading.Thread(target=self._embed_loop, name="memory-embed", daemon=True)
             self._embed_thread.start()
@@ -140,6 +157,8 @@ class Engine:
 
     def written(self, conn) -> None:
         """Call after a write that may have added or changed index rows."""
+        if self.summariser is not None:
+            self.summariser.activity()
         if self.embedder is None:
             return
         if self.embed_inline:
@@ -169,6 +188,22 @@ class Engine:
             if not done:
                 self._wake_embedder.wait(10)
                 self._wake_embedder.clear()
+
+    def _summary_loop(self) -> None:
+        """While the client is idle, work through due summaries one at a time."""
+        assert self.summariser is not None
+        while not self._stop.wait(15):
+            while self.ready and self.summariser.idle() and not self._stop.is_set():
+                try:
+                    outcome = self.summariser.run_once(lambda: self.pool.connection(timeout=10))
+                except Exception:  # noqa: BLE001 - keep the worker alive
+                    log.exception("Summary pass failed")
+                    break
+                if outcome is None:
+                    break
+                log.info("Summary: %s", outcome)
+                if self.embedder is not None:
+                    self._wake_embedder.set()
 
     def _connect_loop(self) -> None:
         while not self._stop.is_set() and not self.ready:
@@ -242,6 +277,16 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
             "schema_version": engine.schema_version,
             "embedder": engine.embedder.name if engine.embedder else None,
         }
+        if engine.summariser is not None:
+            body["summariser"] = {
+                "model": engine.summariser.llm.name,
+                "idle": engine.summariser.idle(),
+                "done": engine.summariser.done,
+            }
+            if engine.summariser.error:
+                body["summariser"]["error"] = "summaries are failing; see the engine's log"
+        else:
+            body["summariser"] = None
         if engine.embed_error:
             body["embedder_error"] = "embedding is failing; see the engine's log"
         if engine.error:
@@ -342,6 +387,42 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
                 )
         return {"results": results}
 
+    @app.post("/v1/activity", dependencies=guarded)
+    def post_activity(body: ActivityBody):
+        """The client says a turn started (busy) or finished, so background work stays out of
+        the model's way."""
+        if engine.summariser is not None:
+            engine.summariser.activity(body.busy)
+        return {"idle": engine.summariser.idle() if engine.summariser else None}
+
+    @app.post("/v1/summaries/run", dependencies=guarded)
+    def run_summaries(body: SummaryRunBody):
+        """Do due summaries now, idle or not (for a manual catch-up, and tests)."""
+        if engine.summariser is None:
+            raise ApiError(409, "no summary model is configured (MEMORY_LLM_URL)")
+        if not engine.ready:
+            raise ApiError(503, "memory database is not ready yet")
+        done = []
+        for _ in range(body.limit):
+            outcome = engine.summariser.run_once(engine.connection, now=body.now)
+            if outcome is None:
+                break
+            done.append(outcome)
+        if engine.embedder is not None:
+            with engine.connection() as conn:
+                engine.written(conn)
+        return {"done": done}
+
+    @app.get("/v1/summaries", dependencies=guarded)
+    def get_summaries(
+        kind: Optional[Literal["session", "day", "week", "month"]] = None,
+        start: Optional[datetime] = Query(default=None, alias="from"),
+        end: Optional[datetime] = Query(default=None, alias="to"),
+        limit: int = Query(default=100, ge=1, le=1000),
+    ):
+        with engine.connection() as conn:
+            return {"summaries": summaries.list_summaries(conn, kind=kind, start=start, end=end, limit=limit)}
+
     @app.get("/v1/brief", dependencies=guarded)
     def get_brief(session_id: Optional[UUID] = None, agent: Optional[str] = None):
         with engine.connection() as conn:
@@ -381,7 +462,8 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
             sessions = recall.timeline(
                 conn, start, end, agent=agent, include_private=include_private, turns_per_session=turns, limit=limit
             )
-        return {"from": start.isoformat(), "to": end.isoformat(), "sessions": sessions}
+            periods = recall.period_summaries(conn, start, end)
+        return {"from": start.isoformat(), "to": end.isoformat(), "summaries": periods, "sessions": sessions}
 
     @app.get("/v1/memories/{memory_id}", dependencies=guarded)
     def get_memory(memory_id: UUID, around: int = Query(default=1, ge=0, le=10)):

@@ -314,7 +314,17 @@ def search_text(
 
 
 def delete_session(conn: psycopg.Connection, session_id: UUID) -> bool:
-    """Forget a session: its messages and everything indexed from them."""
+    """Forget a session: its messages and everything indexed or summarised from them, and the
+    facts the background extractor took from it (facts the agent or user saved are kept)."""
+    from .summaries import invalidate_for_session
+
+    invalidate_for_session(conn, session_id)
+    extracted = conn.execute(
+        "DELETE FROM facts WHERE author = 'extractor' AND session_id = %s RETURNING id", (session_id,)
+    ).fetchall()
+    for (fact_id,) in extracted:
+        conn.execute("DELETE FROM recall_index WHERE kind = 'fact' AND source_id = %s", (fact_id,))
+    _tombstone(conn, [("facts", r[0]) for r in extracted])
     index_ids = conn.execute(
         "DELETE FROM recall_index WHERE session_id = %s RETURNING id", (session_id,)
     ).fetchall()
@@ -329,9 +339,13 @@ def delete_session(conn: psycopg.Connection, session_id: UUID) -> bool:
 
 
 def delete_message(conn: psycopg.Connection, message_id: UUID) -> bool:
-    row = conn.execute("DELETE FROM messages WHERE id = %s RETURNING session_id, content", (message_id,)).fetchone()
-    if not row:
+    session = conn.execute("SELECT session_id FROM messages WHERE id = %s", (message_id,)).fetchone()
+    if not session:
         return False
+    from .summaries import invalidate_for_session
+
+    invalidate_for_session(conn, session[0])  # before the delete, so the span still covers it
+    row = conn.execute("DELETE FROM messages WHERE id = %s RETURNING session_id, content", (message_id,)).fetchone()
     # Auto-recall logged the words as its query; forgetting them means there too.
     conn.execute("DELETE FROM recall_log WHERE session_id = %s AND query = %s", (row[0], row[1]))
     _tombstone(conn, [("messages", message_id)])

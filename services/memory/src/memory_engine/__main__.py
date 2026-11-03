@@ -26,6 +26,19 @@ def main(argv=None) -> None:
                          "off: full-text search only (MEMORY_EMBEDDER)")
     ap.add_argument("--embed-model", default=os.environ.get("MEMORY_EMBED_MODEL", "BAAI/bge-small-en-v1.5"),
                     help="fastembed model; must make 384-dimension vectors (MEMORY_EMBED_MODEL)")
+    ap.add_argument("--llm-url", default=os.environ.get("MEMORY_LLM_URL", "http://127.0.0.1:1234/v1"),
+                    help="OpenAI-compatible endpoint for background summaries and fact extraction; "
+                         "'off' disables them (MEMORY_LLM_URL)")
+    ap.add_argument("--llm-model", default=os.environ.get("MEMORY_LLM_MODEL", "qwen-next-flash"),
+                    help="model name to ask for (MEMORY_LLM_MODEL)")
+    ap.add_argument("--timezone", default=os.environ.get("MEMORY_TIMEZONE") or None,
+                    help="IANA time zone for day/week/month summaries, e.g. Australia/Melbourne; "
+                         "default: this machine's current offset (MEMORY_TIMEZONE)")
+    ap.add_argument("--session-quiet-minutes", type=float,
+                    default=float(os.environ.get("MEMORY_SESSION_QUIET_MINUTES", "10")),
+                    help="a conversation is summarised once it has been quiet this long")
+    ap.add_argument("--idle-seconds", type=float, default=float(os.environ.get("MEMORY_IDLE_SECONDS", "120")),
+                    help="background LLM work waits until the client has been idle this long")
     ap.add_argument("--log-level", default="info")
     a = ap.parse_args(argv)
 
@@ -54,7 +67,25 @@ def main(argv=None) -> None:
         )
     from .embed import make_embedder
 
-    engine = Engine(a.database_url, a.schema, embedder=make_embedder(a.embedder, a.embed_model))
+    from datetime import timedelta
+
+    from .llm import make_llm
+    from .summaries import Summariser, resolve_timezone
+
+    llm = make_llm(a.llm_url, a.llm_model, os.environ.get("MEMORY_LLM_API_KEY") or None)
+    summariser = (
+        Summariser(
+            llm,
+            resolve_timezone(a.timezone),
+            session_quiet=timedelta(minutes=a.session_quiet_minutes),
+            idle_seconds=a.idle_seconds,
+        )
+        if llm
+        else None
+    )
+    engine = Engine(
+        a.database_url, a.schema, embedder=make_embedder(a.embedder, a.embed_model), summariser=summariser
+    )
     uvicorn.run(create_app(engine, api_token=api_token), host=a.host, port=a.port, log_level=a.log_level.lower())
 
 

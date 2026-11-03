@@ -61,11 +61,29 @@ is a comma-separated list of result ids to leave out. Each result has `id`, `kin
 `session_id`, `agent`, `period_start`, `period_end`, `text`, `score`, `similarity` (cosine, when
 both sides are embedded) and `matched` (`["text", "vector"]`).
 
+## `POST /v1/activity`
+
+`{"busy": true}` when a turn starts and `{"busy": false}` when it ends. Background summaries
+only run once the client has been idle (not busy, nothing written) for `MEMORY_IDLE_SECONDS`.
+A busy flag that is never cleared expires after ten minutes.
+
+## `POST /v1/summaries/run`
+
+`{"now": "<optional ISO time>", "limit": 10}`: do due summaries now, idle or not, and return
+what was done. 409 when no summary model is configured.
+
+## `GET /v1/summaries?kind=&from=&to=&limit=100`
+
+Summaries newest first. `kind` is `session`, `day`, `week` or `month`. Each has `title`,
+`text`, `topics`, `period_start`, `period_end` and `model`. Search results, `/v1/memories/{id}`
+and the timeline carry them too, as kinds `session`, `day`, `week` and `month`.
+
 ## `GET /v1/brief?session_id=&agent=`
 
 For the start of a conversation: active, non-private `facts` (pinned first, then newest, up to
 about 1,200 characters) and `last_session`, the most recent conversation other than
-`session_id`, with its last three turns. The client adds the date and time and formats it.
+`session_id`, with its `summary` (once made) and last three turns, and `recent_days`, up to two
+day summaries from the past week. The client adds the date and time and formats it.
 
 ## `POST /v1/recall`
 
@@ -86,7 +104,10 @@ its entries.
 ## `GET /v1/timeline?from=&to=&agent=&include_private=true&turns=6&limit=50`
 
 Conversations that took place in `[from, to)`, oldest first, each with `title`, `agent`,
-`channel`, `started_at`, `last_at`, `message_count` and up to `turns` turns (`id`, `at`, `text`).
+`channel`, `started_at`, `last_at`, `message_count`, its `summary` (or null) and up to `turns`
+turns (`id`, `at`, `text`). `summaries` holds the period summaries inside the range: days for
+spans up to about a month, weeks up to about four months, months beyond (none for two days or
+less).
 400 if `to` is not after `from`.
 
 ## `GET /v1/memories/{id}?around=1`

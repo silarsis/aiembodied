@@ -13,6 +13,8 @@ dependencies = [
   "pydantic>=2.0",
   "psycopg[binary,pool]>=3.2",
   "fastembed>=0.4",
+  # Time zone names for day/week/month summaries; Windows has no system database.
+  "tzdata; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
