@@ -171,6 +171,54 @@ describe('avatar studio', () => {
     expect(screen.getByRole('heading', { name: 'Image · take 1' })).toBeInTheDocument();
   });
 
+  it('pairs a multi-view 3D model with Qwen-Image only', async () => {
+    const { api, mocks } = createApi();
+    const hunyuan = {
+      geometry: [
+        { id: 'hy', name: 'Hunyuan3D 2mv', available: true, views: true },
+        { id: 'int8', name: 'TRELLIS.2 (int8 convrot)', available: true },
+      ],
+      rig: [{ id: 'blender-face-fit', name: 'Blender auto-rig with fitted face', available: true }],
+      selectedGeometryId: 'hy',
+      selectedRigId: 'blender-face-fit',
+    };
+    mocks.listAvatarCharacterModels.mockResolvedValue(hunyuan);
+    mocks.listAvatarImageModels.mockResolvedValue({
+      selectedModelId: 'xl',
+      models: [
+        { id: 'qwen', name: 'Qwen-Image 2.1', available: true },
+        { id: 'xl', name: 'Custom XL', available: true },
+      ],
+      modelFamilies: { qwen: 'qwen-image-2.1', xl: 'sdxl' },
+    });
+    render(<AvatarStudio avatarApi={api} onClose={vi.fn()} pollIntervalMs={5} />);
+    await settle();
+    await settle();
+    expect(mocks.setAvatarImageModel).toHaveBeenCalledWith('qwen');
+    expect(screen.getByRole('option', { name: 'Custom XL (not for this 3D model)' })).toBeDisabled();
+    expect(screen.getByText(/only Qwen-Image draws/)).toBeInTheDocument();
+  });
+
+  it('blocks generating for a multi-view 3D model when no Qwen-Image is installed', async () => {
+    const { api, mocks } = createApi();
+    mocks.listAvatarCharacterModels.mockResolvedValue({
+      geometry: [{ id: 'hy', name: 'Hunyuan3D 2mv', available: true, views: true }],
+      rig: [{ id: 'blender-face-fit', name: 'Blender auto-rig with fitted face', available: true }],
+      selectedGeometryId: 'hy',
+      selectedRigId: 'blender-face-fit',
+    });
+    mocks.listAvatarImageModels.mockResolvedValue({
+      selectedModelId: 'xl',
+      models: [{ id: 'xl', name: 'Custom XL', available: true }],
+      modelFamilies: { xl: 'sdxl' },
+    });
+    render(<AvatarStudio avatarApi={api} onClose={vi.fn()} pollIntervalMs={5} />);
+    await settle();
+    fireEvent.change(screen.getByLabelText('Avatar description'), { target: { value: 'An explorer' } });
+    expect(screen.getByText(/needs Qwen-Image 2.1 on the image server/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Generate image' })).toBeDisabled();
+  });
+
   it('offers 3D and rig model selectors on the image step and builds with them', async () => {
     const { api, mocks } = createApi([take('job-1')]);
     render(<AvatarStudio avatarApi={api} onClose={vi.fn()} pollIntervalMs={5} />);

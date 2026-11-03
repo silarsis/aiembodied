@@ -202,6 +202,8 @@ export interface AvatarCharacterModelSummary {
   name: string;
   /** One line on what the option does, shown under the selector. */
   description?: string;
+  /** A 3D model that is given side and back views too; those are drawn only by Qwen-Image. */
+  views?: boolean;
   available: boolean;
   unavailableReason?: string;
 }

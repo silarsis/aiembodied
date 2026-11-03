@@ -19,7 +19,9 @@ After the front image, a new character also gets a **side** view (the character'
 - **Hunyuan3D 2mv** (`hunyuan3d-dit-v2-mv.safetensors` in ComfyUI's `checkpoints` folder; the `-turbo`/`-fast` variants are listed too) builds the shape from all three views with ComfyUI's core Hunyuan3D nodes. The shape has no texture, so `paint-views.py` (Blender) turns it to face forward by matching its outline against the front and side images, projects each view onto the parts that face it and can see it, and bakes one 2048 texture. The right side is painted from the side view, which assumes a roughly symmetric character. The views are cut out first when the face environment has background removal.
 - **TRELLIS.2** is only ever given the front image, as before.
 
-Without the side and back views (no Qwen-Image, or drawing failed), Hunyuan3D builds and paints from the front alone, and the take says why.
+While a multi-view 3D model is selected (the Description step shows the 3D model picker too), the image model is limited to Qwen-Image: other models are disabled, a Qwen-Image model is picked if another was selected, and generating is blocked with an explanation when the image server has none. Uploads are not restricted.
+
+If the views still can't be drawn (drawing failed), Hunyuan3D builds and paints from the front alone, and the take says why.
 
 After that work finishes, review the **finished model**, rather than the concept illustration. Keep imports that candidate and activates it. Discard leaves the previous avatar selected. A failed generation is reported as a failure; it never falls back to a recoloured original avatar.
 

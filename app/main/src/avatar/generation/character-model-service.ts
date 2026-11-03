@@ -133,6 +133,7 @@ export class AvatarCharacterModelService {
             id: DEFAULT_HUNYUAN_MV,
             name: 'Hunyuan3D 2mv',
             description,
+            views: true,
             available: false,
             unavailableReason: `Hunyuan3D 2mv was not found in ComfyUI. Put ${DEFAULT_HUNYUAN_MV} in its checkpoints folder and refresh.`,
           },
@@ -142,7 +143,7 @@ export class AvatarCharacterModelService {
       const name = hunyuanName(checkpoint);
       return {
         model: { kind: 'hunyuan3d-2mv', id: checkpoint, name, checkpoint },
-        summary: { id: checkpoint, name, description, available: true },
+        summary: { id: checkpoint, name, description, views: true, available: true },
       };
     });
   }
