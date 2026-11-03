@@ -162,6 +162,12 @@ vi.mock('../src/memory/index.js', () => ({
   MemoryStore: MemoryStoreMock,
 }));
 
+// Long-term memory talks to services/memory over HTTP; the bootstrap tests don't need it.
+vi.mock('../src/memory-engine/index.js', () => ({
+  memoryEngineSettings: () => ({ enabled: false, url: 'http://127.0.0.1:8194' }),
+  setupMemoryEngine: () => null,
+}));
+
 const resolvePreloadScriptPathMock = vi.fn();
 const resolveRendererEntryPointMock = vi.fn();
 

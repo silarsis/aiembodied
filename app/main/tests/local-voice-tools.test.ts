@@ -56,7 +56,12 @@ class FakeSearch implements WebSearchProvider {
   }
 }
 
-function makeService(rounds: Delta[][], search = new FakeSearch(), extraTools: RegisteredTool[] = []) {
+function makeService(
+  rounds: Delta[][],
+  search = new FakeSearch(),
+  extraTools: RegisteredTool[] = [],
+  onToolResult?: ConstructorParameters<typeof LocalVoiceService>[0]['onToolResult'],
+) {
   const chats: Array<Record<string, unknown>> = [];
   const tts: string[] = [];
   let round = 0;
@@ -82,6 +87,7 @@ function makeService(rounds: Delta[][], search = new FakeSearch(), extraTools: R
     llm: new LocalLlmClient({ baseUrl: 'http://llm/v1', model: 'qwen-next-flash', fetchFn }),
     speech: new SpeechServiceClient({ baseUrl: 'http://speech', fetchFn }),
     tools,
+    onToolResult,
   });
   return { service, chats, tts, search };
 }
@@ -110,6 +116,22 @@ describe('LocalLlmClient tool calls', () => {
 });
 
 describe('LocalVoiceService tools', () => {
+  it('reports each finished tool call, with its full result, for long-term memory', async () => {
+    const records: Array<Record<string, unknown>> = [];
+    const failing = makeService([searchCall, [{ content: 'Sorry.' }]], new FakeSearch(true), [], (r) => records.push(r));
+    await failing.service.respond({ requestId: 'r1', text: 'Weather?' }, () => {});
+    expect(records).toEqual([
+      expect.objectContaining({ name: 'web_search', arguments: { query: 'Canberra weather' }, ok: false }),
+    ]);
+
+    records.length = 0;
+    const working = makeService([searchCall, [{ content: 'Sunny.' }]], new FakeSearch(), [], (r) => records.push(r));
+    await working.service.respond({ requestId: 'r2', text: 'Weather?' }, () => {});
+    expect(records[0]).toMatchObject({ name: 'web_search', ok: true });
+    expect(JSON.parse(records[0].result as string).results).toHaveLength(3);
+    expect(typeof records[0].at).toBe('number');
+  });
+
   it('runs web_search, says something while it does, and answers from the results', async () => {
     const { service, chats, tts, search } = makeService([searchCall, [{ content: 'It is sunny in Canberra.' }]]);
     const events: LocalVoiceEvent[] = [];

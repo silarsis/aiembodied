@@ -53,7 +53,7 @@ describe('local services', () => {
       MOTION_VENV: 'C:\\venv',
       STT_URL: 'http://127.0.0.1:1240/v1/',
     });
-    expect(services.map((s: { id: string }) => s.id)).toEqual(['llm', 'asr', 'speech', 'motion', 'searxng']);
+    expect(services.map((s: { id: string }) => s.id)).toEqual(['llm', 'asr', 'speech', 'motion', 'memory', 'searxng']);
     const byId = Object.fromEntries(services.map((s: { id: string }) => [s.id, s]));
     expect(byId.asr.probe).toBe('http://127.0.0.1:1240/v1/models');
     expect(byId.asr.args).toEqual(['-Port', '1240']);
@@ -88,7 +88,7 @@ describe('local services', () => {
       const launcher = fakeLauncher();
       const results = await ensureLocalServices(
         repoRoot,
-        { KOKORO_DIR: 'C:\\kokoro', WEB_SEARCH_PROVIDER: 'off' },
+        { KOKORO_DIR: 'C:\\kokoro', WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0' },
         {
           fetchFn: fakeFetch(['http://127.0.0.1:1234', 'http://127.0.0.1:8192']),
           spawnSyncFn: launcher,
@@ -102,6 +102,7 @@ describe('local services', () => {
         ['asr', 'started'],
         ['speech', 'running'],
         ['motion', 'started'],
+        ['memory', 'skipped'],
         ['searxng', 'skipped'],
       ]);
       expect(launcher).toHaveBeenCalledTimes(2);
@@ -120,7 +121,7 @@ describe('local services', () => {
     const launcher = fakeLauncher();
     const results = await ensureLocalServices(
       '/repo',
-      { CONVERSATION_BACKEND: 'openai', MOTION_SERVICE_URL: 'http://gpu-box:8190', WEB_SEARCH_PROVIDER: 'off' },
+      { CONVERSATION_BACKEND: 'openai', MOTION_SERVICE_URL: 'http://gpu-box:8190', WEB_SEARCH_PROVIDER: 'off', MEMORY_ENABLED: '0' },
       { fetchFn: fakeFetch([]), spawnSyncFn: launcher, platform: 'win32', log: quiet },
     );
     expect(results.map((r: { id: string; status: string }) => [r.id, r.status])).toEqual([
@@ -128,6 +129,7 @@ describe('local services', () => {
       ['asr', 'skipped'],
       ['speech', 'skipped'],
       ['motion', 'skipped'],
+      ['memory', 'skipped'],
       ['searxng', 'skipped'],
     ]);
     expect(results[3].reason).toContain('not on this machine');
@@ -138,7 +140,7 @@ describe('local services', () => {
     const launcher = fakeLauncher();
     const results = await ensureLocalServices(
       '/repo',
-      { STT_ENGINE: 'whisper', DEV_START_MOTION: '0', WEB_SEARCH_PROVIDER: 'off' },
+      { STT_ENGINE: 'whisper', DEV_START_MOTION: '0', WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0' },
       { fetchFn: fakeFetch(['http://127.0.0.1:1234']), spawnSyncFn: launcher, platform: 'win32', log: quiet },
     );
     const byId = Object.fromEntries(results.map((r: { id: string }) => [r.id, r]));
@@ -163,6 +165,16 @@ describe('local services', () => {
     }),
   );
 
+  it('starts the memory engine unless memory or its autostart is off', () => {
+    const memoryOf = (env: Record<string, string>) =>
+      describeLocalServices('/repo', env).find((s: { id: string }) => s.id === 'memory');
+    expect(memoryOf({})).toMatchObject({ enabled: true, probe: 'http://127.0.0.1:8194/health', args: ['-Port', '8194'] });
+    expect(memoryOf({}).script).toBe(resolve('/repo', 'services/memory/scripts/start.ps1'));
+    expect(memoryOf({ MEMORY_AUTOSTART: '0' }).enabled).toBe(false);
+    expect(memoryOf({ MEMORY_ENABLED: 'off' }).enabled).toBe(false);
+    expect(memoryOf({ MEMORY_SERVICE_URL: 'http://127.0.0.1:9000/' }).args).toEqual(['-Port', '9000']);
+  });
+
   it('quotes paths and arguments for Start-Process', () => {
     const command = buildStartCommand({
       script: "C:\\My Repos\\o'brien\\start.ps1",
@@ -181,7 +193,7 @@ describe('local services', () => {
     const enabled = (saved: object, env: Record<string, string> = {}) =>
       Object.fromEntries(
         describeLocalServices('/repo', { KOKORO_DIR: 'C:\\k', ...env }, saved)
-          .filter((s: { id: string }) => s.id !== 'searxng')
+          .filter((s: { id: string }) => s.id !== 'searxng' && s.id !== 'memory')
           .map((s: { id: string; enabled: boolean }) => [s.id, s.enabled]),
       );
 

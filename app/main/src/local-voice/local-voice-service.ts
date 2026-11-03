@@ -50,11 +50,22 @@ export interface LocalVoiceServiceOptions {
   stt?: SpeechToTextEngine;
   tts?: TextToSpeechEngine;
   logger?: Logger;
+  /** Told about every tool call once it has finished, for long-term memory. */
+  onToolResult?: (record: LocalVoiceToolRecord) => void;
   /** Older turns are dropped past this many messages. */
   maxHistoryMessages?: number;
   /** After this long without a turn, the next one starts a fresh conversation. */
   historyIdleResetMs?: number;
   now?: () => number;
+}
+
+export interface LocalVoiceToolRecord {
+  name: string;
+  arguments: unknown;
+  /** What the tool returned (in full), or why it failed. */
+  result: string;
+  ok: boolean;
+  at: number;
 }
 
 export class LocalVoiceService {
@@ -65,6 +76,8 @@ export class LocalVoiceService {
   private readonly tools?: Pick<ToolRegistry, 'list' | 'execute'>;
   private readonly logger?: Logger;
   private readonly maxHistoryMessages: number;
+
+  private readonly onToolResult?: (record: LocalVoiceToolRecord) => void;
   private readonly historyIdleResetMs: number;
   private readonly now: () => number;
   private history: ChatMessage[] = [];
@@ -79,6 +92,7 @@ export class LocalVoiceService {
     this.tts = options.tts ?? new KokoroTts(options.speech, options.voice);
     this.logger = options.logger;
     this.maxHistoryMessages = options.maxHistoryMessages ?? 24;
+    this.onToolResult = options.onToolResult;
     this.historyIdleResetMs = options.historyIdleResetMs ?? 10 * 60_000;
     this.now = options.now ?? Date.now;
   }
@@ -314,12 +328,27 @@ export class LocalVoiceService {
         failure = result.error ?? 'The tool failed.';
       }
     }
+    this.reportToolResult(call.name, params ?? call.arguments, failure ?? content, failure === null);
     if (failure !== null) {
       this.logger?.warn('Local voice: tool call failed', { name: call.name, label, message: failure });
       emit({ ...event, status: 'failed', detail: failure });
       return JSON.stringify({ error: failure });
     }
     return content.length > MAX_TOOL_RESULT_CHARS ? `${content.slice(0, MAX_TOOL_RESULT_CHARS)}…` : content;
+  }
+
+  private reportToolResult(name: string, args: unknown, result: string, ok: boolean): void {
+    if (!this.onToolResult) {
+      return;
+    }
+    try {
+      this.onToolResult({ name, arguments: args, result, ok, at: this.now() });
+    } catch (error) {
+      this.logger?.warn('Local voice: recording a tool call failed', {
+        name,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }
 

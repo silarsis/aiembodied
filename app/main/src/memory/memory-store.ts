@@ -273,6 +273,20 @@ const MIGRATIONS: readonly Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_executions_executed_at ON mcp_tool_executions(executed_at);`,
     ],
   },
+  {
+    // Writes waiting for the memory engine (services/memory), so none is lost while it is down.
+    version: 8,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS memory_outbox (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT NULL
+      );`,
+    ],
+  },
 ];
 
 function runMigrations(db: SqliteDatabase) {
@@ -310,6 +324,15 @@ function normalizeAudioPath(audioPath: string | null | undefined): string | null
 
   const trimmed = audioPath.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+export interface MemoryOutboxEntry {
+  id: number;
+  kind: string;
+  payload: unknown;
+  createdAt: number;
+  attempts: number;
+  lastError: string | null;
 }
 
 const ACTIVE_VRM_KEY = 'avatar.activeVrmId';
@@ -756,6 +779,60 @@ export class MemoryStore {
     }
 
     this.setValue(ACTIVE_VRM_KEY, modelId);
+  }
+
+  /** Queue a write for the memory engine. Returns the entry's id. */
+  enqueueMemoryOutbox(kind: string, payload: unknown, createdAt = Date.now()): number {
+    this.ensureOpen();
+    const result = this.db
+      .prepare('INSERT INTO memory_outbox (kind, payload, created_at) VALUES (?, ?, ?)')
+      .run(kind, JSON.stringify(payload), createdAt);
+    return Number(result.lastInsertRowid);
+  }
+
+  /** The oldest queued memory-engine writes, in the order they were queued. */
+  listMemoryOutbox(limit = 100): MemoryOutboxEntry[] {
+    this.ensureOpen();
+    const rows = this.db
+      .prepare('SELECT id, kind, payload, created_at, attempts, last_error FROM memory_outbox ORDER BY id LIMIT ?')
+      .all(limit) as Array<{ id: number; kind: string; payload: string; created_at: number; attempts: number; last_error: string | null }>;
+    return rows.map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      payload: JSON.parse(row.payload) as unknown,
+      createdAt: row.created_at,
+      attempts: row.attempts,
+      lastError: row.last_error,
+    }));
+  }
+
+  countMemoryOutbox(): number {
+    this.ensureOpen();
+    const row = this.db.prepare('SELECT count(*) AS count FROM memory_outbox').get() as { count: number };
+    return row.count;
+  }
+
+  deleteMemoryOutbox(ids: readonly number[]): void {
+    this.ensureOpen();
+    if (ids.length === 0) {
+      return;
+    }
+    const remove = this.db.prepare('DELETE FROM memory_outbox WHERE id = ?');
+    this.db.transaction((list: readonly number[]) => {
+      for (const id of list) {
+        remove.run(id);
+      }
+    })(ids);
+  }
+
+  markMemoryOutboxFailed(ids: readonly number[], error: string): void {
+    this.ensureOpen();
+    const mark = this.db.prepare('UPDATE memory_outbox SET attempts = attempts + 1, last_error = ? WHERE id = ?');
+    this.db.transaction((list: readonly number[]) => {
+      for (const id of list) {
+        mark.run(error.slice(0, 500), id);
+      }
+    })(ids);
   }
 
   setValue(key: string, value: string): void {
