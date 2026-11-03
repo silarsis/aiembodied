@@ -1,11 +1,11 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 
 const SearchContext = createContext('');
-const VisibilityContext = createContext(true);
-export function useControlsVisible() {
-  return useContext(VisibilityContext);
-}
 
+/**
+ * The side drawer: a search box and one button per area. Each button opens that area's
+ * pop-up; the pop-ups themselves are rendered outside the drawer.
+ */
 export function ControlsDrawer({
   open,
   onOpenChange,
@@ -16,7 +16,6 @@ export function ControlsDrawer({
   children: ReactNode;
 }) {
   const [query, setQuery] = useState('');
-  const drawerRef = useRef<HTMLElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const handleRef = useRef<HTMLButtonElement>(null);
   const wasOpen = useRef(false);
@@ -59,7 +58,6 @@ export function ControlsDrawer({
         Controls
       </button>
       <aside
-        ref={drawerRef}
         id="controls-drawer"
         className="controlsDrawer"
         aria-label="Controls"
@@ -84,16 +82,14 @@ export function ControlsDrawer({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
-        <VisibilityContext.Provider value={open}>
-          <SearchContext.Provider value={query.trim().toLowerCase()}>
-            <div className="controlsDrawer__groups">
-              {children}
-              <p className="controlsDrawer__empty" role="status">
-                No settings match “{query}”.
-              </p>
-            </div>
-          </SearchContext.Provider>
-        </VisibilityContext.Provider>
+        <SearchContext.Provider value={query.trim().toLowerCase()}>
+          <nav className="controlsDrawer__groups" aria-label="Settings">
+            {children}
+            <p className="controlsDrawer__empty" role="status">
+              No settings match “{query}”.
+            </p>
+          </nav>
+        </SearchContext.Provider>
       </aside>
       <div className="controlsHint" aria-hidden="true">
         Ctrl / Cmd + / · controls
@@ -102,71 +98,40 @@ export function ControlsDrawer({
   );
 }
 
-export function ControlGroup({
+/** One area of the drawer: a button that opens its pop-up. Hidden when the search doesn't match. */
+export function ControlButton({
   id,
   title,
   summary,
   keywords = '',
-  defaultOpen = false,
-  children,
+  disabled = false,
+  onOpen,
 }: {
   id: string;
   title: string;
   summary?: string;
   keywords?: string;
-  defaultOpen?: boolean;
-  children: ReactNode;
+  disabled?: boolean;
+  onOpen(): void;
 }) {
   const query = useContext(SearchContext);
-  const parentVisible = useControlsVisible();
-  const [expanded, setExpanded] = useState(defaultOpen);
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const [matches, setMatches] = useState(true);
-  useEffect(() => {
-    const text = [title, summary, keywords, bodyRef.current?.textContent].join(' ').toLowerCase();
-    setMatches(!query || text.includes(query));
-  }, [query, title, summary, keywords, children]);
-  useEffect(() => {
-    if (!query) return;
-    const details = Array.from(bodyRef.current?.querySelectorAll('details') ?? []);
-    const original = details.map((element) => element.open);
-    details.forEach((element) => {
-      element.open = true;
-    });
-    return () =>
-      details.forEach((element, index) => {
-        element.open = original[index];
-      });
-  }, [query]);
-  const isOpen = expanded || Boolean(query);
+  const text = [title, summary, keywords].join(' ').toLowerCase();
+  const matches = !query || query.split(/\s+/).every((word) => text.includes(word));
   return (
-    <section className="controlGroup" hidden={!matches}>
-      <h3 className="controlGroup__heading">
-        <button
-          type="button"
-          id={`controls-${id}-heading`}
-          aria-expanded={isOpen}
-          aria-controls={`controls-${id}-body`}
-          onClick={() => setExpanded(!expanded)}
-        >
-          <span>{title}</span>
-          <span className="controlGroup__summary">{summary}</span>
-          <span className="controlGroup__chevron" aria-hidden="true">
-            ⌄
-          </span>
-        </button>
-      </h3>
-      <div
-        ref={bodyRef}
-        id={`controls-${id}-body`}
-        className="controlGroup__body"
-        hidden={!isOpen}
-        aria-labelledby={`controls-${id}-heading`}
-      >
-        <VisibilityContext.Provider value={parentVisible && matches && isOpen}>
-          {children}
-        </VisibilityContext.Provider>
-      </div>
-    </section>
+    <button
+      type="button"
+      id={`controls-${id}`}
+      className="controlButton"
+      hidden={!matches}
+      disabled={disabled}
+      aria-haspopup="dialog"
+      onClick={onOpen}
+    >
+      <span className="controlButton__title">{title}</span>
+      {summary ? <span className="controlButton__summary">{summary}</span> : null}
+      <span className="controlButton__chevron" aria-hidden="true">
+        ›
+      </span>
+    </button>
   );
 }
