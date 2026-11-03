@@ -371,17 +371,18 @@ describe('App component', () => {
     if (close) fireEvent.click(close);
   };
 
+  /** Opens the drawer and clicks the button for a settings pop-up. */
   const openGroup = async (name: RegExp | string) => {
     const handle = screen.queryByRole('button', { name: 'Controls' });
     if (handle) fireEvent.click(handle);
-    const button = await screen.findByRole('button', { name });
-    if (button.getAttribute('aria-expanded') !== 'true') fireEvent.click(button);
+    const drawer = await screen.findByRole('complementary', { name: 'Controls' });
+    const button = await within(drawer).findByRole('button', { name });
+    fireEvent.click(button);
     return button;
   };
 
   const openModels = async () => {
-    await openGroup(/Voice & engine/i);
-    fireEvent.click(await screen.findByRole('button', { name: 'Open models and servers' }));
+    await openGroup(/Models and servers/i);
     return screen.findByRole('dialog', { name: 'Models and servers' });
   };
 
@@ -415,18 +416,23 @@ describe('App component', () => {
     const renderer = stage.querySelector('[data-renderer]');
     expect(screen.queryByRole('complementary', { name: 'Controls' })).not.toBeInTheDocument();
     await openGroup(/Character/i);
+    expect(document.getElementById('panel-character')).toHaveAttribute('open');
     expect(screen.getByLabelText(/Base prompt/i)).toBeInTheDocument();
-    await openGroup(/Voice & engine/i);
-    expect(screen.getByRole('button', { name: 'Open models and servers' })).toBeInTheDocument();
-    await openGroup(/Devices & wake word/i);
+    fireEvent.click(screen.getByRole('button', { name: 'Close character' }));
+    expect(document.getElementById('panel-character')).not.toHaveAttribute('open');
+    expect(await openModels()).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close models and servers' }));
+    await openGroup(/Devices and wake words/i);
+    expect(document.getElementById('panel-devices')).toHaveAttribute('open');
     expect(screen.getByLabelText('Microphone')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close devices and wake words' }));
     expect(stage.querySelector('[data-renderer]')).toBe(renderer);
     closeControls();
     expect(screen.queryByRole('complementary', { name: 'Controls' })).not.toBeInTheDocument();
     expect(stage).toBeInTheDocument();
   }, 15000);
 
-  it('mounts character controls before the drawer opens', async () => {
+  it('mounts character controls before their pop-up opens', async () => {
     (window as PreloadWindow).aiembodied = {
       ping: () => 'pong',
       config: {
@@ -446,12 +452,13 @@ describe('App component', () => {
 
     render(<App />);
 
-    const characterBody = document.getElementById('controls-character-body');
-    expect(characterBody).not.toBeNull();
+    const prompt = screen.getByLabelText(/Base prompt/i);
+    expect(document.getElementById('panel-character')).not.toHaveAttribute('open');
     expect(document.getElementById('controls-drawer')).toHaveAttribute('inert');
     await openGroup(/Character/i);
-    expect(document.getElementById('controls-character-body')).toBe(characterBody);
-    expect(document.getElementById('controls-devices-body')).toHaveAttribute('hidden');
+    expect(document.getElementById('panel-character')).toHaveAttribute('open');
+    expect(screen.getByLabelText(/Base prompt/i)).toBe(prompt);
+    expect(document.getElementById('panel-devices')).not.toHaveAttribute('open');
   });
 
   it('renders the static realtime voice list without querying the API', async () => {
@@ -752,7 +759,7 @@ describe('App component', () => {
     fireEvent.keyDown(window, { key: 'T', code: 'KeyT', ctrlKey: true, shiftKey: true });
     expect(screen.getByTestId('transcript-overlay')).toBeInTheDocument();
 
-    await openGroup(/Devices & wake word/i);
+    await openGroup(/Devices and wake words/i);
 
     const inputSelect = await screen.findByLabelText('Microphone');
     fireEvent.change(inputSelect, { target: { value: 'mic-1' } });
@@ -774,8 +781,8 @@ describe('App component', () => {
       });
     });
 
-    await openGroup(/Voice & engine/i);
-    expect(screen.getByRole('button', { name: 'Open models and servers' })).toBeInTheDocument();
+    expect(await openModels()).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close models and servers' }));
 
     closeControls();
 

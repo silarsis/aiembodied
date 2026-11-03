@@ -12,9 +12,12 @@ import {
 import type { ConversationBackend, RendererConfig } from '../../main/src/config/config-manager.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
 import type { ProviderSettingsPatch } from '../../main/src/config/provider-settings.js';
-import { ControlsDrawer, ControlGroup } from './settings/controls-drawer.js';
+import { ControlButton, ControlsDrawer } from './settings/controls-drawer.js';
+import { PanelDialog } from './settings/panel-dialog.js';
+import { ToolsSettings } from './settings/tools-settings.js';
 import { ProviderSettingsPanel } from './settings/provider-settings-panel.js';
 import { ModelsDialog } from './settings/models-dialog.js';
+import type { UseId } from '../../main/src/config/model-routing.js';
 import type { PushToTalkStatus } from '../../main/src/talk/types.js';
 import { isTalkTapTarget } from './talk/tap-to-talk.js';
 import { VrmAvatarRenderer, type VrmRendererStatus } from './avatar/vrm-avatar-renderer.js';
@@ -113,7 +116,7 @@ export function serializeLogData(data: unknown): string | undefined {
 
 function formatLatency(value?: number): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return 'G��';
+    return '—';
   }
 
   return `${(value / 1000).toFixed(2)}s`;
@@ -743,6 +746,15 @@ export default function App() {
   const [isListeningEnabled, setListeningEnabled] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
+  const [modelsInitialUse, setModelsInitialUse] = useState<UseId | undefined>(undefined);
+  /** Which settings pop-up is open (the avatar studio and models pop-ups have their own state). */
+  const [panel, setPanel] = useState<'character' | 'backgrounds' | 'devices' | 'tools' | 'status' | null>(null);
+  const [studioOpen, setStudioOpen] = useState(false);
+  const closePanel = useCallback(() => setPanel(null), []);
+  const openModels = useCallback((use?: UseId) => {
+    setModelsInitialUse(use);
+    setModelsOpen(true);
+  }, []);
   const activeBridge = resolveApi();
   const wakeListening = useWakeWordListening(activeBridge?.wakeWord, isListeningEnabled && !loadingConfig);
   const acceptsWakeRef = useRef(false);
@@ -1683,7 +1695,7 @@ export default function App() {
     }
 
     if (realtimeState.status === 'error' && previousRealtimeStatusRef.current !== 'error') {
-      const errorMessage = realtimeState.error ? `Realtime error G�� ${realtimeState.error}` : 'Realtime session error';
+      const errorMessage = realtimeState.error ? `Realtime error — ${realtimeState.error}` : 'Realtime session error';
       void recordTranscriptEntry({
         speaker: 'system',
         text: errorMessage,
@@ -1716,7 +1728,7 @@ export default function App() {
 
       void recordTranscriptEntry({
         speaker: 'system',
-        text: `Wake word detected (${event.keywordLabel}) G�� confidence ${(event.confidence * 100).toFixed(0)}%`,
+        text: `Wake word detected (${event.keywordLabel}) — confidence ${(event.confidence * 100).toFixed(0)}%`,
         timestamp: event.timestamp,
       });
       latencyTrackerRef.current.beginCycle(event.timestamp, event.sessionId ?? null);
@@ -2169,7 +2181,7 @@ export default function App() {
     }
 
     if (realtimeTokenError) {
-      return `Error G�� ${realtimeTokenError}`;
+      return `Error — ${realtimeTokenError}`;
     }
 
     if (!isListeningEnabled) {
@@ -2186,7 +2198,7 @@ export default function App() {
       case 'reconnecting':
         return `Reconnecting (attempt ${realtimeState.attempt ?? 0})`;
       case 'error':
-        return `Error G�� ${realtimeState.error ?? 'unknown'}`;
+        return `Error — ${realtimeState.error ?? 'unknown'}`;
       default:
         return realtimeState.status;
     }
@@ -2247,7 +2259,7 @@ export default function App() {
           ? 'active'
           : 'idle';
   const deviceVariant = deviceError ? 'error' : inputs.length > 0 ? 'active' : 'idle';
-  const deviceStatusLabel = deviceError ? `Error G�� ${deviceError}` : inputs.length > 0 ? 'Devices ready' : 'ScanningGǪ';
+  const deviceStatusLabel = deviceError ? `Error — ${deviceError}` : inputs.length > 0 ? 'Devices ready' : 'Scanning…';
   const showDeveloperHud = Boolean(config?.featureFlags?.metricsHud);
   const hudSnapshot = latencySnapshot ?? latencyTrackerRef.current.getLastSnapshot();
   const stageStyle: CSSProperties & Record<string, string | number> = {
@@ -2255,6 +2267,9 @@ export default function App() {
     '--avatar-foot-y': avatarFootY,
   };
   const activeAvatarName = activeVrmModel?.name ?? 'Embodied Assistant';
+  const canOpenStudio = Boolean(
+    activeBridge?.avatar?.generateAvatar && activeBridge.avatar.listAvatarGenerationJobs,
+  );
 
 
   return (
@@ -2333,306 +2348,329 @@ export default function App() {
             </button>
           </div>
           <ControlsDrawer open={drawerOpen} onOpenChange={setDrawerOpen}>
-            <ProviderSettingsPanel
-              settings={config?.providers ?? null}
-              onSave={handleProviderSettingsSave}
-              pushToTalkStatus={pushToTalkStatus}
-              wakeWordBridge={resolveApi()?.wakeWord}
-              disabled={loadingConfig}
-
-              renderLayout={({ devices, actions }) => (
-                <>
-                  <ControlGroup
-                    id="character"
-                    title="Character"
-                    summary={`${activeAvatarName} · ${availableAnimationSlugs.length} animations`}
-                    keywords="avatar model vrm upload generation studio personality base prompt"
-                    defaultOpen
-                  >
-                    <AvatarConfigurator
-                      avatarApi={activeBridge?.avatar}
-                      onActiveModelChange={setActiveVrmModel}
-                      compact
-                    >
-                      <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
-                        <h2 id="kiosk-realtime-title">Personality</h2>
-                        <p className="kiosk__helper">
-                          Configure how your assistant behaves. Models, voices and the conversation
-                          engine are under Voice & engine.
-                        </p>
-                        <div className="control">
-                          <label htmlFor="base-prompt">Base prompt</label>
-                          <textarea
-                            id="base-prompt"
-                            placeholder="Stay in English and be concise. Add personality here…"
-                            rows={4}
-                            value={basePrompt}
-                            onChange={(e) => setBasePrompt(e.target.value)}
-                            onBlur={handlePromptBlur}
-                            disabled={loadingConfig}
-                            style={{ width: '100%' }}
-                          />
-                        </div>
-                      </section>
-                    </AvatarConfigurator>
-                  </ControlGroup>
-                  <ControlGroup id="backgrounds" title="Backgrounds" summary={backgrounds.active?.name ?? 'Plain background'} keywords="scene background place environment scenery generate creation description garden lounge beach city mountain">
-                    <BackgroundControls backgrounds={backgrounds} />
-                  </ControlGroup>
-                  <ControlGroup
-                    id="voice"
-                    title="Voice & engine"
-                    summary={isLocalBackend ? 'Pipeline' : `OpenAI Realtime · ${selectedVoice}`}
-                    keywords="language model speech text voice provider kokoro motion server url conversation api keys"
-                  >
-                    <section className="kiosk__realtime" aria-labelledby="settings-models-title">
-                      <h2 id="settings-models-title">Models and servers</h2>
-                      <p className="kiosk__helper">
-                        {isLocalBackend
-                          ? 'Hearing, thinking and speaking each run on the server picked for them.'
-                          : 'Replies come from OpenAI Realtime.'}{' '}
-                        Pick a server and model for every job, add your own servers, and set API keys.
-                      </p>
-                      {activeBridge?.models ? (
-                        <button type="button" className="faces__submit" onClick={() => setModelsOpen(true)}>
-                          Open models and servers
-                        </button>
-                      ) : (
-                        <p className="kiosk__helper">Model settings need a newer app build.</p>
-                      )}
-                      {modelsOpen && activeBridge?.models ? (
-                        <ModelsDialog
-                          api={activeBridge.models}
-                          avatarApi={activeBridge.avatar}
-                          engine={{
-                            backend: conversationBackend,
-                            onBackendChange: (value) => void handleConversationBackendChange(value),
-                            voice: selectedVoice,
-                            voices: availableVoices,
-                            onVoiceChange: (value) => void handleVoiceChange(value),
-                            disabled: isSaving || loadingConfig,
-                          }}
-                          onChanged={({ openAiKey }) => {
-                            void activeBridge.config
-                              .get()
-                              .then((next) => {
-                                // A new OpenAI key needs a fresh Realtime token.
-                                if (openAiKey) {
-                                  setRealtimeToken(null);
-                                  setRealtimeTokenError(null);
-                                  realtimeTokenExpiresAtRef.current = null;
-                                  realtimeTokenRefreshRef.current = true;
-                                  realtimeTokenRequestRef.current += 1;
-                                }
-                                setConfig(next);
-                              })
-                              .catch(() => undefined);
-                          }}
-                          onClose={() => setModelsOpen(false)}
-                        />
-                      ) : null}
-                      {playbackIssue ? (
-                        <div className="kiosk__helper" role="alert" style={{ marginTop: 8 }}>
-                          <span style={{ display: 'block', marginBottom: 4 }}>
-                            Audio playback is blocked ({playbackIssue}).
-                          </span>
-                          <button type="button" onClick={reconnectAndResume}>
-                            Reconnect & Resume Audio
-                          </button>
-                        </div>
-                      ) : null}
-                    </section>
-                  </ControlGroup>
-                  <ControlGroup
-                    id="devices"
-                    title="Devices & wake word"
-                    summary={wakePhrase}
-                    keywords="microphone speakers audio input output vad threshold wake word train push to talk shortcut tap"
-                  >
-                    <section className="kiosk__controls">
-                      <div className="control">
-                        <label htmlFor="input-device">Microphone</label>
-                        <select
-                          id="input-device"
-                          value={selectedInput}
-                          onChange={handleInputChange}
-                          disabled={isSaving || loadingConfig}
-                        >
-                          <option value="">System default</option>
-                          {inputs.map((device) => (
-                            <option key={device.deviceId} value={device.deviceId}>
-                              {device.label || 'Microphone'}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="control">
-                        <label htmlFor="output-device">Speakers</label>
-                        <select
-                          id="output-device"
-                          value={selectedOutput}
-                          onChange={handleOutputChange}
-                          disabled={isSaving || loadingConfig}
-                        >
-                          <option value="">System default</option>
-                          {outputs.map((device) => (
-                            <option key={device.deviceId} value={device.deviceId}>
-                              {device.label || 'Speaker'}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="control">
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={useServerVad}
-                            onChange={(e) => applyVadPrefs({ useServer: e.target.checked })}
-                            disabled={loadingConfig}
-                          />
-                          Use server VAD
-                        </label>
-                        {useServerVad ? (
-                          <div className="vadControls">
-                            <label>
-                              Threshold
-                              <input
-                                type="range"
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                value={vadThreshold}
-                                onChange={(e) =>
-                                  applyVadPrefs({ threshold: Number(e.target.value) })
-                                }
-                              />
-                              <span>{vadThreshold.toFixed(2)}</span>
-                            </label>
-                            <label>
-                              Min speech (ms)
-                              <input
-                                type="number"
-                                min={0}
-                                max={10000}
-                                step={50}
-                                value={vadMinSpeechMs}
-                                onChange={(e) =>
-                                  applyVadPrefs({ minSpeechMs: Number(e.target.value) })
-                                }
-                              />
-                            </label>
-                            <label>
-                              Silence (ms)
-                              <input
-                                type="number"
-                                min={0}
-                                max={10000}
-                                step={50}
-                                value={vadSilenceMs}
-                                onChange={(e) =>
-                                  applyVadPrefs({ silenceMs: Number(e.target.value) })
-                                }
-                              />
-                            </label>
-                          </div>
-                        ) : null}
-                      </div>
-                    </section>
-
-                    {devices}
-                  </ControlGroup>
-                  <ControlGroup
-                    id="tools"
-                    title="Tools / MCP"
-                    summary="Connections"
-                    keywords="tools mcp servers search web"
-                  >
-                    <p className="kiosk__helper">
-                      Connected tools are offered to the assistant automatically. MCP server
-                      configuration is not yet available in the app.
-                    </p>
-                  </ControlGroup>
-                  <ControlGroup
-                    id="status"
-                    title="Status & diagnostics"
-                    summary={isOnline ? 'Online' : 'Offline'}
-                    keywords="status diagnostics network audio preload wake score tool calls models latency listening transcript"
-                  >
-                    <div className="kiosk__statusBar">
-                      <div
-                        className={`statusChip statusChip--${wakeStatusVariant}`}
-                        data-testid="wake-indicator"
-                      >
-                        <span className="statusChip__label">Wake</span>
-                        <span className="statusChip__value" data-testid="wake-value">
-                          {wakeState === 'awake' ? 'Awake' : 'Idle'}
-                        </span>
-                      </div>
-                      <div
-                        className={`statusChip statusChip--${realtimeVariant}`}
-                        data-testid="realtime-indicator"
-                      >
-                        <span className="statusChip__label">Realtime</span>
-                        <span className="statusChip__value">{realtimeStatusLabel}</span>
-                      </div>
-                      <div
-                        className={`statusChip statusChip--${audioVariant}`}
-                        data-testid="audio-indicator"
-                      >
-                        <span className="statusChip__label">Audio</span>
-                        <span className="statusChip__value">{audioGraphStatusLabel}</span>
-                      </div>
-                      <div
-                        className={`statusChip statusChip--${deviceVariant}`}
-                        data-testid="device-indicator"
-                      >
-                        <span className="statusChip__label">Devices</span>
-                        <span className="statusChip__value">{deviceStatusLabel}</span>
-                      </div>
-                      <div
-                        className={`statusChip statusChip--${networkVariant}`}
-                        data-testid="network-indicator"
-                      >
-                        <span className="statusChip__label">Network</span>
-                        <span className="statusChip__value">{isOnline ? 'Online' : 'Offline'}</span>
-                      </div>
-                      <div
-                        className={`statusChip statusChip--${ping === 'available' ? 'active' : 'error'}`}
-                      >
-                        <span className="statusChip__label">Preload</span>
-                        <span className="statusChip__value">
-                          {ping === 'available' ? 'Connected' : 'Unavailable'}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="kiosk__avatarDetails">
-                      <h1 id="avatar-preview-title">{activeAvatarName}</h1>
-                      <AssistantStatusPanel
-                        activity={displayedActivity}
-                        wakeScore={wakeScore}
-                        toolCalls={toolCalls}
-                        wakePhrase={wakePhrase}
-                        models={modelStatuses}
-                      />
-                    </div>
-                    <div className="kiosk__meter" aria-live="polite">
-                      <div className="meter">
-                        <div className="meter__fill" style={{ width: `${levelPercentage}%` }} />
-                      </div>
-                      <p className="meter__label">Input level: {levelPercentage}%</p>
-                      <p className="meter__status">
-                        Speech gate: {audioGraph.isActive ? 'open' : 'closed'}
-                      </p>
-                    </div>
-                  </ControlGroup>
-                  <div className="controlsDrawer__save">{actions}</div>
-                </>
-              )}
+            <ControlButton
+              id="character"
+              title="Character"
+              summary={activeAvatarName}
+              keywords="avatar model vrm upload choose select personality base prompt"
+              onOpen={() => setPanel('character')}
+            />
+            <ControlButton
+              id="avatar"
+              title="Avatar"
+              summary="Create and edit avatars"
+              keywords="avatar studio generate create edit 3d image rig takes"
+              disabled={!canOpenStudio}
+              onOpen={() => setStudioOpen(true)}
+            />
+            <ControlButton
+              id="backgrounds"
+              title="Backgrounds"
+              summary={backgrounds.active?.name ?? 'Plain background'}
+              keywords="scene background place environment scenery generate creation description garden lounge beach city mountain"
+              onOpen={() => setPanel('backgrounds')}
+            />
+            <ControlButton
+              id="models"
+              title="Models and servers"
+              summary={isLocalBackend ? 'Pipeline' : `OpenAI Realtime · ${selectedVoice}`}
+              keywords="language model speech text voice provider kokoro motion server url conversation api keys engine comfyui"
+              disabled={!activeBridge?.models}
+              onOpen={() => openModels()}
+            />
+            <ControlButton
+              id="devices"
+              title="Devices and wake words"
+              summary={wakePhrase}
+              keywords="microphone speakers audio input output vad threshold wake word train push to talk shortcut tap"
+              onOpen={() => setPanel('devices')}
+            />
+            <ControlButton
+              id="tools"
+              title="Tools / MCP"
+              summary="Web search · MCP"
+              keywords="tools mcp servers search web home assistant"
+              onOpen={() => setPanel('tools')}
+            />
+            <ControlButton
+              id="status"
+              title="Status and diagnostics"
+              summary={isOnline ? 'Online' : 'Offline'}
+              keywords="status diagnostics network audio preload wake score tool calls models latency listening transcript meter"
+              onOpen={() => setPanel('status')}
             />
           </ControlsDrawer>
 
-          {isSaving ? <p className="kiosk__info">Saving audio preferencesGǪ</p> : null}
+          <ProviderSettingsPanel
+            settings={config?.providers ?? null}
+            onSave={handleProviderSettingsSave}
+            pushToTalkStatus={pushToTalkStatus}
+            wakeWordBridge={resolveApi()?.wakeWord}
+            disabled={loadingConfig}
+            renderLayout={({ devices, actions }) => (
+              <PanelDialog
+                id="devices"
+                title="Devices and wake words"
+                open={panel === 'devices'}
+                onClose={closePanel}
+              >
+                <section className="kiosk__controls">
+                  <div className="control">
+                    <label htmlFor="input-device">Microphone</label>
+                    <select
+                      id="input-device"
+                      value={selectedInput}
+                      onChange={handleInputChange}
+                      disabled={isSaving || loadingConfig}
+                    >
+                      <option value="">System default</option>
+                      {inputs.map((device) => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                          {device.label || 'Microphone'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="control">
+                    <label htmlFor="output-device">Speakers</label>
+                    <select
+                      id="output-device"
+                      value={selectedOutput}
+                      onChange={handleOutputChange}
+                      disabled={isSaving || loadingConfig}
+                    >
+                      <option value="">System default</option>
+                      {outputs.map((device) => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                          {device.label || 'Speaker'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="control">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={useServerVad}
+                        onChange={(e) => applyVadPrefs({ useServer: e.target.checked })}
+                        disabled={loadingConfig}
+                      />
+                      Use server VAD
+                    </label>
+                    {useServerVad ? (
+                      <div className="vadControls">
+                        <label>
+                          Threshold
+                          <input
+                            type="range"
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            value={vadThreshold}
+                            onChange={(e) =>
+                              applyVadPrefs({ threshold: Number(e.target.value) })
+                            }
+                          />
+                          <span>{vadThreshold.toFixed(2)}</span>
+                        </label>
+                        <label>
+                          Min speech (ms)
+                          <input
+                            type="number"
+                            min={0}
+                            max={10000}
+                            step={50}
+                            value={vadMinSpeechMs}
+                            onChange={(e) =>
+                              applyVadPrefs({ minSpeechMs: Number(e.target.value) })
+                            }
+                          />
+                        </label>
+                        <label>
+                          Silence (ms)
+                          <input
+                            type="number"
+                            min={0}
+                            max={10000}
+                            step={50}
+                            value={vadSilenceMs}
+                            onChange={(e) =>
+                              applyVadPrefs({ silenceMs: Number(e.target.value) })
+                            }
+                          />
+                        </label>
+                      </div>
+                    ) : null}
+                  </div>
+                </section>
+                {devices}
+                <div className="panelDialog__save">{actions}</div>
+              </PanelDialog>
+            )}
+          />
+
+          <PanelDialog id="character" title="Character" subtitle="Pick an avatar and set its personality." open={panel === 'character'} onClose={closePanel}>
+            <AvatarConfigurator
+              avatarApi={activeBridge?.avatar}
+              onActiveModelChange={setActiveVrmModel}
+              studio={{ open: studioOpen, onClose: () => setStudioOpen(false) }}
+              compact
+            >
+              <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
+                <h2 id="kiosk-realtime-title">Personality</h2>
+                <p className="kiosk__helper">
+                  Configure how your assistant behaves. Models, voices and the conversation
+                  engine are under Models and servers.
+                </p>
+                <div className="control">
+                  <label htmlFor="base-prompt">Base prompt</label>
+                  <textarea
+                    id="base-prompt"
+                    placeholder="Stay in English and be concise. Add personality here…"
+                    rows={4}
+                    value={basePrompt}
+                    onChange={(e) => setBasePrompt(e.target.value)}
+                    onBlur={handlePromptBlur}
+                    disabled={loadingConfig}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              </section>
+            </AvatarConfigurator>
+            {canOpenStudio ? (
+              <button type="button" className="faces__submit" onClick={() => setStudioOpen(true)}>
+                Open avatar studio
+              </button>
+            ) : null}
+          </PanelDialog>
+
+          <PanelDialog id="backgrounds" title="Backgrounds" subtitle="Pick a scene or describe a new one." open={panel === 'backgrounds'} onClose={closePanel}>
+            <BackgroundControls backgrounds={backgrounds} />
+          </PanelDialog>
+
+          <PanelDialog id="tools" title="Tools / MCP" subtitle="What the assistant can do besides talk." open={panel === 'tools'} onClose={closePanel}>
+            <ToolsSettings
+              mcp={activeBridge?.mcp}
+              models={activeBridge?.models}
+              active={panel === 'tools'}
+              onOpenWebSearch={activeBridge?.models ? () => openModels('search') : undefined}
+            />
+          </PanelDialog>
+
+          <PanelDialog id="status" title="Status and diagnostics" open={panel === 'status'} onClose={closePanel}>
+            {playbackIssue ? (
+              <div className="kiosk__helper" role="alert" style={{ marginTop: 8 }}>
+                <span style={{ display: 'block', marginBottom: 4 }}>
+                  Audio playback is blocked ({playbackIssue}).
+                </span>
+                <button type="button" onClick={reconnectAndResume}>
+                  Reconnect & Resume Audio
+                </button>
+              </div>
+            ) : null}
+            <div className="kiosk__statusBar">
+              <div
+                className={`statusChip statusChip--${wakeStatusVariant}`}
+                data-testid="wake-indicator"
+              >
+                <span className="statusChip__label">Wake</span>
+                <span className="statusChip__value" data-testid="wake-value">
+                  {wakeState === 'awake' ? 'Awake' : 'Idle'}
+                </span>
+              </div>
+              <div
+                className={`statusChip statusChip--${realtimeVariant}`}
+                data-testid="realtime-indicator"
+              >
+                <span className="statusChip__label">Realtime</span>
+                <span className="statusChip__value">{realtimeStatusLabel}</span>
+              </div>
+              <div
+                className={`statusChip statusChip--${audioVariant}`}
+                data-testid="audio-indicator"
+              >
+                <span className="statusChip__label">Audio</span>
+                <span className="statusChip__value">{audioGraphStatusLabel}</span>
+              </div>
+              <div
+                className={`statusChip statusChip--${deviceVariant}`}
+                data-testid="device-indicator"
+              >
+                <span className="statusChip__label">Devices</span>
+                <span className="statusChip__value">{deviceStatusLabel}</span>
+              </div>
+              <div
+                className={`statusChip statusChip--${networkVariant}`}
+                data-testid="network-indicator"
+              >
+                <span className="statusChip__label">Network</span>
+                <span className="statusChip__value">{isOnline ? 'Online' : 'Offline'}</span>
+              </div>
+              <div
+                className={`statusChip statusChip--${ping === 'available' ? 'active' : 'error'}`}
+              >
+                <span className="statusChip__label">Preload</span>
+                <span className="statusChip__value">
+                  {ping === 'available' ? 'Connected' : 'Unavailable'}
+                </span>
+              </div>
+            </div>
+
+            <div className="kiosk__avatarDetails">
+              <h1 id="avatar-preview-title">{activeAvatarName}</h1>
+              <AssistantStatusPanel
+                activity={displayedActivity}
+                wakeScore={wakeScore}
+                toolCalls={toolCalls}
+                wakePhrase={wakePhrase}
+                models={modelStatuses}
+              />
+            </div>
+            <div className="kiosk__meter" aria-live="polite">
+              <div className="meter">
+                <div className="meter__fill" style={{ width: `${levelPercentage}%` }} />
+              </div>
+              <p className="meter__label">Input level: {levelPercentage}%</p>
+              <p className="meter__status">
+                Speech gate: {audioGraph.isActive ? 'open' : 'closed'}
+              </p>
+            </div>
+          </PanelDialog>
+
+          {modelsOpen && activeBridge?.models ? (
+            <ModelsDialog
+              api={activeBridge.models}
+              avatarApi={activeBridge.avatar}
+              initialUse={modelsInitialUse}
+              engine={{
+                backend: conversationBackend,
+                onBackendChange: (value) => void handleConversationBackendChange(value),
+                voice: selectedVoice,
+                voices: availableVoices,
+                onVoiceChange: (value) => void handleVoiceChange(value),
+                disabled: isSaving || loadingConfig,
+              }}
+              onChanged={({ openAiKey }) => {
+                void activeBridge.config
+                  .get()
+                  .then((next) => {
+                    // A new OpenAI key needs a fresh Realtime token.
+                    if (openAiKey) {
+                      setRealtimeToken(null);
+                      setRealtimeTokenError(null);
+                      realtimeTokenExpiresAtRef.current = null;
+                      realtimeTokenRefreshRef.current = true;
+                      realtimeTokenRequestRef.current += 1;
+                    }
+                    setConfig(next);
+                  })
+                  .catch(() => undefined);
+              }}
+              onClose={() => setModelsOpen(false)}
+            />
+          ) : null}
+
+          {isSaving ? <p className="kiosk__info">Saving audio preferences…</p> : null}
           {saveError ? (
             <p role="alert" className="kiosk__error">
               {saveError}
@@ -2665,15 +2703,15 @@ export default function App() {
               <h2 className="kiosk__hudTitle">Latency</h2>
               <dl className="kiosk__hudMetrics">
                 <div>
-                  <dt>Wake G�� Capture</dt>
+                  <dt>Wake → Capture</dt>
                   <dd>{formatLatency(hudSnapshot?.wakeToCaptureMs)}</dd>
                 </div>
                 <div>
-                  <dt>Capture G�� First audio</dt>
+                  <dt>Capture → First audio</dt>
                   <dd>{formatLatency(hudSnapshot?.captureToFirstAudioMs)}</dd>
                 </div>
                 <div>
-                  <dt>Wake G�� First audio</dt>
+                  <dt>Wake → First audio</dt>
                   <dd>{formatLatency(hudSnapshot?.wakeToFirstAudioMs)}</dd>
                 </div>
               </dl>

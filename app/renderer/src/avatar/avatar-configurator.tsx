@@ -13,7 +13,7 @@ import type {
   AvatarModelSummary,
 } from './types.js';
 import { generateVrmThumbnail } from './thumbnail-generator.js';
-import { AvatarStudioLauncher } from './avatar-studio.js';
+import { AvatarStudio, AvatarStudioLauncher } from './avatar-studio.js';
 
 type ModelUploadStatus = 'idle' | 'reading' | 'uploading' | 'success';
 
@@ -22,6 +22,11 @@ interface AvatarConfiguratorProps {
   children?: ReactNode;
   avatarApi?: AvatarBridge;
   onActiveModelChange?: (detail: AvatarModelSummary | null) => void;
+  /**
+   * When set, the avatar studio is opened from outside (the app's Avatar button) instead
+   * of by the launcher section at the bottom of the library.
+   */
+  studio?: { open: boolean; onClose(): void };
 }
 
 function deriveName(file: File | null): string {
@@ -77,6 +82,7 @@ export function AvatarConfigurator({
   onActiveModelChange,
   compact = false,
   children,
+  studio,
 }: AvatarConfiguratorProps) {
   const [models, setModels] = useState<AvatarModelSummary[]>([]);
   const [activeModelId, setActiveModelId] = useState<string | null>(null);
@@ -451,7 +457,13 @@ export function AvatarConfigurator({
       </div>
 
       {children}
-      <AvatarStudioLauncher avatarApi={avatarApi} onAccepted={refreshModels} />
+      {studio ? (
+        studio.open && avatarApi ? (
+          <AvatarStudio avatarApi={avatarApi} onClose={studio.onClose} onAccepted={refreshModels} />
+        ) : null
+      ) : (
+        <AvatarStudioLauncher avatarApi={avatarApi} onAccepted={refreshModels} />
+      )}
     </section>
   );
 }

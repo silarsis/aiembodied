@@ -1,21 +1,15 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { useState } from 'react';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { useEffect, useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { ControlGroup, ControlsDrawer } from '../../src/settings/controls-drawer.js';
+import { ControlButton, ControlsDrawer } from '../../src/settings/controls-drawer.js';
+import { PanelDialog } from '../../src/settings/panel-dialog.js';
 
-function Fixture() {
+function Fixture({ onOpenCharacter = () => undefined }: { onOpenCharacter?: () => void }) {
   const [open, setOpen] = useState(false);
   return (
     <ControlsDrawer open={open} onOpenChange={setOpen}>
-      <ControlGroup id="character" title="Character" keywords="avatar model" defaultOpen>
-        <input aria-label="Base prompt" defaultValue="Hello" />
-      </ControlGroup>
-      <ControlGroup id="devices" title="Devices & wake word" keywords="microphone threshold">
-        <label>
-          Detection threshold
-          <input defaultValue="0.5" />
-        </label>
-      </ControlGroup>
+      <ControlButton id="character" title="Character" keywords="avatar model" onOpen={onOpenCharacter} />
+      <ControlButton id="devices" title="Devices and wake words" keywords="microphone threshold" onOpen={() => undefined} />
     </ControlsDrawer>
   );
 }
@@ -35,46 +29,50 @@ describe('stage controls drawer', () => {
     expect(screen.getByRole('searchbox')).toHaveFocus();
   });
 
-  it('searches collapsed groups and preserves edits and expansion when cleared', () => {
-    render(<Fixture />);
+  it('filters the buttons by search and opens a pop-up on click', () => {
+    const onOpenCharacter = vi.fn();
+    render(<Fixture onOpenCharacter={onOpenCharacter} />);
     fireEvent.click(screen.getByRole('button', { name: 'Controls' }));
-    const prompt = screen.getByLabelText('Base prompt');
-    fireEvent.change(prompt, { target: { value: 'A new personality' } });
     const search = screen.getByRole('searchbox');
     fireEvent.change(search, { target: { value: 'threshold' } });
     expect(screen.queryByRole('button', { name: /Character/ })).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Detection threshold')).toBeVisible();
+    expect(screen.getByRole('button', { name: /Devices/ })).toBeVisible();
     fireEvent.change(search, { target: { value: '' } });
-    expect(screen.getByLabelText('Base prompt')).toBe(prompt);
-    expect(prompt).toHaveValue('A new personality');
-    expect(screen.getByRole('button', { name: /Devices/ })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Close controls' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Controls' }));
-    expect(screen.getByLabelText('Base prompt')).toBe(prompt);
+    fireEvent.click(screen.getByRole('button', { name: /Character/ }));
+    expect(onOpenCharacter).toHaveBeenCalledTimes(1);
   });
+});
 
-  it('keeps collapsed children mounted and out of keyboard navigation', () => {
+describe('settings pop-up', () => {
+  it('keeps its contents mounted while closed, and closes from its button', () => {
     const mounted = vi.fn();
     function Child() {
-      mounted();
-      return <button type="button">Choose microphone</button>;
+      useEffect(() => mounted(), []);
+      return <input aria-label="Base prompt" defaultValue="Hello" />;
     }
-    render(
-      <ControlsDrawer open onOpenChange={() => undefined}>
-        <ControlGroup id="test" title="Devices">
-          <Child />
-        </ControlGroup>
-      </ControlsDrawer>,
-    );
-    expect(mounted).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole('button', { name: 'Choose microphone' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Devices/ }));
-    expect(
-      within(screen.getByRole('complementary')).getByRole('button', { name: 'Choose microphone' }),
-    ).toBeVisible();
+    function Host() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            Open character
+          </button>
+          <PanelDialog id="character" title="Character" open={open} onClose={() => setOpen(false)}>
+            <Child />
+          </PanelDialog>
+        </>
+      );
+    }
+    render(<Host />);
+    const prompt = screen.getByLabelText('Base prompt');
+    fireEvent.change(prompt, { target: { value: 'A new personality' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open character' }));
+    const dialog = document.getElementById('panel-character');
+    expect(dialog).toHaveAttribute('open');
+    fireEvent.click(screen.getByRole('button', { name: 'Close character' }));
+    expect(dialog).not.toHaveAttribute('open');
+    expect(screen.getByLabelText('Base prompt')).toBe(prompt);
+    expect(prompt).toHaveValue('A new personality');
     expect(mounted).toHaveBeenCalledTimes(1);
   });
 });

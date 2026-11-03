@@ -27,6 +27,12 @@ import type {
   LocalVoiceStatus,
   LocalVoiceTranscribeResult,
 } from '../../main/src/local-voice/types.js';
+import type {
+  MCPConnectionResult,
+  MCPServerConfig,
+  MCPServerConfigInput,
+  MCPToolSummary,
+} from '../../main/src/mcp/types.js';
 import type { AvatarBridge } from './avatar/types.js';
 import type { CameraDetectionEvent } from './avatar/behavior-cues.js';
 
@@ -114,9 +120,25 @@ export interface PreloadApi {
   metrics?: MetricsBridge;
   avatar?: AvatarBridge;
   camera?: CameraBridge;
+  mcp?: McpBridge;
   ping(): string;
   __bridgeReady?: boolean;
   __bridgeVersion?: string;
+}
+
+/** MCP servers and the tools the assistant can call (the parts the settings use). */
+export interface McpBridge {
+  listServers(): Promise<MCPServerConfig[]>;
+  addServer(config: MCPServerConfigInput): Promise<MCPServerConfig>;
+  updateServer(id: string, updates: Partial<MCPServerConfigInput>): Promise<MCPServerConfig>;
+  deleteServer(id: string): Promise<void>;
+  connectServer(id: string): Promise<MCPConnectionResult>;
+  disconnectServer(id: string): Promise<void>;
+  listTools(serverId?: string): Promise<MCPToolSummary[]>;
+  updateToolPreferences(toolId: string, prefs: { enabled?: boolean; confirmationLevel?: string }): Promise<void>;
+  onServerStatusChanged?(callback: (event: unknown) => void): () => void;
+  onToolsDiscovered?(callback: (serverId: string, count: number) => void): () => void;
+  getToolDefinitionsForLLM?(): Promise<{ name: string; description: string }[]>;
 }
 
 export interface CameraBridge {

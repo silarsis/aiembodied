@@ -1213,20 +1213,19 @@ body {
   font-size: 13px;
   margin-bottom: 20px;
 }
-.controlGroup {
-  margin-bottom: 12px;
+.controlsDrawer__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
-.controlGroup__heading {
-  margin: 0;
-}
-.controlGroup__heading button {
+.controlButton {
   width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
   text-align: left;
   cursor: pointer;
-  min-height: 46px;
+  min-height: 52px;
   padding: 12px 16px;
   border-radius: 12px;
   background: rgba(15, 23, 42, 0.55);
@@ -1236,7 +1235,18 @@ body {
   font-weight: 600;
   font-size: 14px;
 }
-.controlGroup__summary {
+.controlButton:hover:not(:disabled) {
+  border-color: rgba(56, 189, 248, 0.6);
+  background: rgba(30, 41, 59, 0.7);
+}
+.controlButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.controlButton[hidden] {
+  display: none;
+}
+.controlButton__summary {
   margin-left: auto;
   min-width: 0;
   max-width: 48%;
@@ -1247,28 +1257,23 @@ body {
   font-size: 12px;
   font-weight: 500;
 }
-.controlGroup__chevron {
+.controlButton__chevron {
   color: #94a3b8;
-  transition: transform 0.2s;
+  font-size: 18px;
+  line-height: 1;
 }
-.controlGroup__heading button[aria-expanded='true'] .controlGroup__chevron {
-  transform: rotate(180deg);
-}
-.controlGroup__body {
-  padding: 14px 4px 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+.controlButton__title + .controlButton__chevron {
+  margin-left: auto;
 }
 .controlsDrawer__empty {
   display: none;
   color: #94a3b8;
   font-size: 13px;
 }
-.controlsDrawer__groups:not(:has(.controlGroup:not([hidden]))) .controlsDrawer__empty {
+.controlsDrawer__groups:not(:has(.controlButton:not([hidden]))) .controlsDrawer__empty {
   display: block;
 }
-.controlsDrawer :is(.kiosk__realtime, .kiosk__faces, .kiosk__secrets, .kiosk__controls) {
+.panelDialog :is(.kiosk__realtime, .kiosk__faces, .kiosk__secrets, .kiosk__controls) {
   padding: 0;
   margin: 0;
   border: 0;
@@ -1277,45 +1282,45 @@ body {
   border-radius: 0;
   backdrop-filter: none;
 }
-.controlsDrawer :is(h2, h3, h4, p) {
+.panelDialog :is(h2, h3, h4, p) {
   overflow-wrap: anywhere;
 }
-.controlsDrawer :is(.kiosk__realtime, .kiosk__faces, .kiosk__secrets) h2 {
+.panelDialog :is(.kiosk__realtime, .kiosk__faces, .kiosk__secrets) h2 {
   font-size: 15px;
 }
-.controlsDrawer .faces__heading {
+.panelDialog .faces__heading {
   font-size: 14px;
 }
-.controlsDrawer .kiosk__helper {
+.panelDialog .kiosk__helper {
   font-size: 12px;
 }
-.controlsDrawer :is(.faces__form, .kiosk__controls, .providerSettings__group) {
+.panelDialog :is(.faces__form, .kiosk__controls, .providerSettings__group) {
   grid-template-columns: minmax(0, 1fr);
 }
-.controlsDrawer .faces__grid {
+.panelDialog .faces__grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
-.controlsDrawer .faceCard {
+.panelDialog .faceCard {
   min-width: 0;
   padding: 12px;
   border-radius: 14px;
 }
-.controlsDrawer .faceCard__preview {
+.panelDialog .faceCard__preview {
   max-height: 110px;
 }
-.controlsDrawer .faceCard__actions {
+.panelDialog .faceCard__actions {
   flex-wrap: wrap;
 }
-.controlsDrawer .faceCard__actions button {
+.panelDialog .faceCard__actions button {
   font-size: 12px;
   padding: 8px;
 }
-.controlsDrawer :is(input, select, textarea) {
+.panelDialog :is(input, select, textarea) {
   min-width: 0;
   max-width: 100%;
 }
-.controlsDrawer textarea {
+.panelDialog textarea {
   width: 100%;
   border-radius: 12px;
   background: rgba(15, 23, 42, 0.55);
@@ -1327,27 +1332,27 @@ body {
   padding: 14px;
   resize: vertical;
 }
-.controlsDrawer .providerSettings__group {
+.panelDialog .providerSettings__group {
   min-width: 0;
 }
-.controlsDrawer .kiosk__statusBar {
+.panelDialog .kiosk__statusBar {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
-.controlsDrawer .statusChip {
+.panelDialog .statusChip {
   min-width: 0;
   padding: 10px;
   border-radius: 12px;
   box-shadow: none;
 }
-.controlsDrawer .statusChip__value {
+.panelDialog .statusChip__value {
   font-size: 12px;
 }
-.controlsDrawer .kiosk__avatarDetails h1 {
+.panelDialog .kiosk__avatarDetails h1 {
   font-size: 18px;
 }
-.controlsDrawer__save:empty {
+.panelDialog__save:empty {
   display: none;
 }
 .kiosk__transcript {
@@ -1409,21 +1414,20 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .kiosk__conversation,
   .kiosk__avatar canvas,
-  .controlsDrawer,
-  .controlGroup__chevron {
+  .controlsDrawer {
     transition: none;
   }
 }
-.controlsDrawer .control {
+.panelDialog .control {
   min-width: 0;
 }
-.controlsDrawer .kiosk__secretList {
+.panelDialog .kiosk__secretList {
   grid-template-columns: minmax(0, 1fr);
 }
-.controlsDrawer .providerSettings__shortcut {
+.panelDialog .providerSettings__shortcut {
   flex-wrap: wrap;
 }
-.controlsDrawer .avatarUpload summary {
+.panelDialog .avatarUpload summary {
   cursor: pointer;
   padding: 10px 14px;
   border-radius: 12px;
@@ -1431,7 +1435,7 @@ body {
   color: #94a3b8;
   font-size: 13px;
 }
-.controlsDrawer .avatarUpload[open] summary {
+.panelDialog .avatarUpload[open] summary {
   margin-bottom: 14px;
 }
 .stageBackground {
@@ -1724,3 +1728,43 @@ body {
 .modelsDialog__inline { display: flex; align-items: center; gap: 8px; font-size: .85rem; }
 .modelsDialog__download { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 8px; }
 .modelsDialog__download progress { width: 140px; }
+
+/* Settings pop-ups opened from the controls drawer. */
+.panelDialog { width: min(760px, calc(100vw - 32px)); max-height: min(860px, calc(100dvh - 32px)); max-width: none; padding: 0; border: 1px solid #2c4a6b; border-radius: 16px; background: #0a1121; color: #e2e8f0; box-shadow: 0 30px 90px #000a; overflow: hidden; }
+.panelDialog[open] { display: flex; flex-direction: column; }
+.panelDialog::backdrop { background: #020617cc; }
+.panelDialog__header { display: flex; align-items: center; gap: 14px; padding: 14px 20px; border-bottom: 1px solid #22324a; }
+.panelDialog__header h2 { margin: 0; font-size: 1.1rem; }
+.panelDialog__header span { color: #94a3b8; font-size: .85rem; }
+.panelDialog__header button { margin-left: auto; padding: 5px 11px; border: 1px solid #334155; border-radius: 8px; background: #18253a; color: inherit; font: inherit; cursor: pointer; }
+.panelDialog__body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; scrollbar-width: thin; scrollbar-color: #334155 transparent; }
+.panelDialog .faces__grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.toolsSettings { display: flex; flex-direction: column; gap: 22px; }
+.toolsSettings__section { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.toolsSettings__section h3 { margin: 0; font-size: 15px; }
+.toolsSettings__section p { margin: 0; }
+.toolsSettings__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.toolsSettings__list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.toolsSettings__list code { color: #7dd3fc; }
+.toolsSettings__tool label { display: flex; align-items: center; gap: 6px; }
+.toolsSettings__tool select { width: auto; }
+.toolsSettings__tool .kiosk__helper { flex-basis: 100%; }
+.toolsSettings__server { width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid #22324a; border-radius: 12px; background: #111a2e; }
+.toolsSettings__serverHeader { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.toolsSettings__serverHeader code { color: #94a3b8; font-size: .8rem; overflow-wrap: anywhere; }
+.toolsSettings__status { margin-left: auto; font-size: .8rem; color: #94a3b8; }
+.toolsSettings__status[data-status='connected'] { color: #4ade80; }
+.toolsSettings__status[data-status='error'] { color: #f87171; }
+.toolsSettings__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.toolsSettings__add { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.toolsSettings__add label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #94a3b8; }
+.panelDialog :where(button, select, input, textarea) { font: inherit; color: inherit; }
+.panelDialog :where(button) { padding: 5px 11px; border: 1px solid #334155; border-radius: 8px; background: #18253a; cursor: pointer; }
+.panelDialog :where(button:disabled) { opacity: .55; cursor: not-allowed; }
+.panelDialog :where(select, input:not([type='checkbox'], [type='range'], [type='file'])) { box-sizing: border-box; padding: 6px 9px; border: 1px solid #334155; border-radius: 8px; background: #111a2e; min-width: 0; }
+.panelDialog :is(button, input, select, textarea):focus-visible { outline: 2px solid #7dd3fc; outline-offset: 3px; }
+.panelDialog .kiosk__controls { display: flex; flex-direction: column; flex-wrap: nowrap; gap: 16px; }
+.panelDialog .kiosk__controls .control { display: flex; flex-direction: column; gap: 6px; }
+.panelDialog .vadControls { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 6px; }
+.panelDialog .vadControls label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #94a3b8; }
+.panelDialog .kiosk__controls .control > label:has(input[type='checkbox']) { display: flex; flex-direction: row; align-items: center; gap: 8px; }
