@@ -7,6 +7,7 @@
 import type { ChatMessage, LlmToolCall, LlmToolDefinition } from './local-llm-client.js';
 import type { ChatClient } from './voice-engines.js';
 import type { RegisteredTool, ToolRegistry } from '../tools/tool-registry.js';
+import type { VoiceMemory } from '../memory-engine/voice-memory.js';
 import type { SpeechServiceClient } from './speech-service-client.js';
 import {
   KokoroTts,
@@ -50,6 +51,8 @@ export interface LocalVoiceServiceOptions {
   stt?: SpeechToTextEngine;
   tts?: TextToSpeechEngine;
   logger?: Logger;
+  /** Long-term memory: a brief for each new conversation, and auto-recall before each turn. */
+  memory?: VoiceMemory;
   /** Told about every tool call once it has finished, for long-term memory. */
   onToolResult?: (record: LocalVoiceToolRecord) => void;
   /** Older turns are dropped past this many messages. */
@@ -81,6 +84,11 @@ export class LocalVoiceService {
   private readonly historyIdleResetMs: number;
   private readonly now: () => number;
   private history: ChatMessage[] = [];
+  private readonly memory?: VoiceMemory;
+  /** This conversation's brief, fixed at its first turn so the prompt prefix never changes. */
+  private brief: string | null = null;
+  /** Memories already put in front of the model in this conversation. */
+  private recalledIds: string[] = [];
   private lastTurnAt = 0;
   private active: { requestId: string; controller: AbortController } | null = null;
 
@@ -93,6 +101,7 @@ export class LocalVoiceService {
     this.logger = options.logger;
     this.maxHistoryMessages = options.maxHistoryMessages ?? 24;
     this.onToolResult = options.onToolResult;
+    this.memory = options.memory;
     this.historyIdleResetMs = options.historyIdleResetMs ?? 10 * 60_000;
     this.now = options.now ?? Date.now;
   }
@@ -154,6 +163,8 @@ export class LocalVoiceService {
 
   resetHistory(): void {
     this.history = [];
+    this.brief = null;
+    this.recalledIds = [];
   }
 
   async respond(
@@ -167,21 +178,38 @@ export class LocalVoiceService {
     const { signal } = controller;
 
     if (this.now() - this.lastTurnAt > this.historyIdleResetMs) {
-      this.history = [];
+      this.resetHistory();
     }
+
+    // Both run at once and have their own time limits; neither throws.
+    const [brief, recalled] = await Promise.all([
+      this.brief === null && this.memory ? this.memory.brief() : Promise.resolve(this.brief),
+      this.memory?.recall(request.text, this.recalledIds) ?? Promise.resolve(null),
+    ]);
+    if (signal.aborted) {
+      return { requestId, text: '', cancelled: true };
+    }
+    this.brief = brief;
+    if (recalled) {
+      this.recalledIds.push(...recalled.ids);
+      this.logger?.info('Local voice: recalled memories', { requestId, count: recalled.ids.length });
+    }
+    // The recalled block rides in the user message (Qwen's template wants one system message,
+    // first) and stays in the history as sent, so later turns keep the same prefix.
+    const userContent = recalled ? `${recalled.block}\n\n${request.text}` : request.text;
 
     // Voice has no way to ask for approval yet, so tools that need it ("confirm") or are
     // forbidden ("block") are never offered, and a call to one is refused as an unknown tool.
     const tools = (this.tools?.list() ?? []).filter(
       (tool) => tool.confirmationLevel === 'none' || tool.confirmationLevel === 'notify',
     );
-    const system = [request.instructions?.trim(), SPOKEN_REPLY_GUIDANCE, tools.length ? TOOL_GUIDANCE : null]
+    const system = [request.instructions?.trim(), SPOKEN_REPLY_GUIDANCE, tools.length ? TOOL_GUIDANCE : null, brief]
       .filter(Boolean)
       .join('\n\n');
     const messages: ChatMessage[] = [
       { role: 'system', content: system },
       ...this.history,
-      { role: 'user', content: request.text },
+      { role: 'user', content: userContent },
     ];
 
     const { llm, tts } = this;
@@ -278,7 +306,7 @@ export class LocalVoiceService {
     cancelled ||= signal.aborted;
 
     // Tool exchanges stay out of the history: trimming it could split a call from its result.
-    this.history.push({ role: 'user', content: request.text });
+    this.history.push({ role: 'user', content: userContent });
     if (reply) {
       this.history.push({ role: 'assistant', content: reply });
     }

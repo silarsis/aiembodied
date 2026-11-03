@@ -5,3 +5,4 @@ export * from './settings.js';
 export * from './setup.js';
 export * from './period.js';
 export * from './tools.js';
+export * from './voice-memory.js';

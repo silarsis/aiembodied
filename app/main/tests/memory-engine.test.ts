@@ -72,8 +72,18 @@ const quiet = { info: () => {}, warn: () => {} };
 
 describe('memory engine settings', () => {
   it('is on by default at 127.0.0.1:8194 and can be turned off', () => {
-    expect(memoryEngineSettings({})).toEqual({ enabled: true, url: 'http://127.0.0.1:8194', apiToken: undefined });
+    expect(memoryEngineSettings({})).toEqual({
+      enabled: true,
+      brief: true,
+      autoRecall: true,
+      url: 'http://127.0.0.1:8194',
+      apiToken: undefined,
+    });
     expect(memoryEngineSettings({ MEMORY_ENABLED: '0' }).enabled).toBe(false);
+    expect(memoryEngineSettings({ MEMORY_BRIEF: 'off', MEMORY_AUTO_RECALL: 'false' })).toMatchObject({
+      brief: false,
+      autoRecall: false,
+    });
     expect(memoryEngineSettings({ MEMORY_SERVICE_URL: 'http://x:1', MEMORY_API_TOKEN: 't' })).toMatchObject({
       url: 'http://x:1',
       apiToken: 't',

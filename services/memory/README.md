@@ -22,10 +22,17 @@ What exists so far (phases 1 and 2):
   Until an item is embedded it is still found by full text.
 - **Timeline and detail.** What was talked about over a period, conversation by conversation, and
   any one memory in full with the exchanges around it.
+- **Session brief.** `GET /v1/brief`: the saved facts (pinned first) and how the last
+  conversation ended, for the client to put in a new conversation's system prompt once.
+- **Auto-recall.** `POST /v1/recall`: up to three memories that clearly bear on what was just
+  said (cosine similarity 0.6 or more, never from the current conversation or recalled earlier
+  in it), or nothing, which is the usual answer. Short turns ("thanks") are skipped. Every call
+  is kept in `recall_log` so the thresholds can be tuned. Private items never appear in either;
+  only the search tools reach them.
 - **Forget.** Delete a session, a message or a fact, with everything indexed from it. Deletes are
   recorded as tombstones so a future mirror can follow them.
 
-Still to come: the session brief and auto-recall, background summaries by day, week and month
+Still to come: background summaries by day, week and month
 with fact extraction, a Memory panel in the app, and Supabase as a server option.
 
 Settings: `MEMORY_EMBEDDER` is `fastembed` (default), `fake` (hashed words, for wiring tests) or
@@ -73,7 +80,8 @@ $env:MEMORY_DATABASE_URL = 'postgresql://memory:<password>@127.0.0.1:5433/memory
 
 `pnpm dev:run` at the repo root starts it with the other local services unless
 `MEMORY_AUTOSTART=0`. The app finds it through `MEMORY_SERVICE_URL` (default
-`http://127.0.0.1:8194`) and turns it off with `MEMORY_ENABLED=0`.
+`http://127.0.0.1:8194`) and turns it off with `MEMORY_ENABLED=0`; `MEMORY_BRIEF=0` and
+`MEMORY_AUTO_RECALL=0` turn off just the brief or auto-recall.
 
 Settings: `MEMORY_DATABASE_URL`, `MEMORY_SCHEMA`, `MEMORY_HOST` / `MEMORY_PORT`, and
 `MEMORY_API_TOKEN`, which, when set, makes every `/v1` call need `Authorization: Bearer <token>`.

@@ -320,6 +320,7 @@ def delete_session(conn: psycopg.Connection, session_id: UUID) -> bool:
     ).fetchall()
     message_ids = conn.execute("DELETE FROM messages WHERE session_id = %s RETURNING id", (session_id,)).fetchall()
     session = conn.execute("DELETE FROM sessions WHERE id = %s RETURNING id", (session_id,)).fetchone()
+    conn.execute("DELETE FROM recall_log WHERE session_id = %s", (session_id,))
     tombstones = [("recall_index", r[0]) for r in index_ids] + [("messages", r[0]) for r in message_ids]
     if session:
         tombstones.append(("sessions", session[0]))
@@ -328,9 +329,11 @@ def delete_session(conn: psycopg.Connection, session_id: UUID) -> bool:
 
 
 def delete_message(conn: psycopg.Connection, message_id: UUID) -> bool:
-    row = conn.execute("DELETE FROM messages WHERE id = %s RETURNING session_id", (message_id,)).fetchone()
+    row = conn.execute("DELETE FROM messages WHERE id = %s RETURNING session_id, content", (message_id,)).fetchone()
     if not row:
         return False
+    # Auto-recall logged the words as its query; forgetting them means there too.
+    conn.execute("DELETE FROM recall_log WHERE session_id = %s AND query = %s", (row[0], row[1]))
     _tombstone(conn, [("messages", message_id)])
     rebuild_turns(conn, row[0])
     return True
