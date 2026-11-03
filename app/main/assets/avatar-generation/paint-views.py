@@ -56,10 +56,19 @@ def load_view(path):
     return {"rgb": rgb.copy(), "mask": mask, "w": w, "h": h, "box": (float(left), float(top), float(right), float(bottom))}
 
 
+def erode(mask, pixels):
+    for _ in range(pixels):
+        mask = mask & np.roll(mask, 1, 0) & np.roll(mask, -1, 0) & np.roll(mask, 1, 1) & np.roll(mask, -1, 1)
+    return mask
+
+
 def bleed(rgb, mask, passes=24):
-    """Spread the character's edge colours over the background so edges never pick up white."""
+    """Spread the character's edge colours over the background so edges never pick up white.
+
+    The outermost pixels are blended with the white background, so they are replaced too.
+    """
     rgb = rgb.copy()
-    filled = mask.copy()
+    filled = erode(mask, 2)
     for _ in range(passes):
         total = np.zeros_like(rgb)
         count = np.zeros(mask.shape, dtype=np.float32)
@@ -108,6 +117,49 @@ def iou(a, b):
     return np.count_nonzero(a & b) / union if union else 0.0
 
 
+def register(view, horizontal, vertical, scale, lo_z):
+    """Fit where the mesh's outline lands on the drawing, row by row: u = A * horizontal + B.
+
+    Centring on bounding boxes is thrown off by parts that stick out in only one of them (a boot
+    toe, a profile drawn thinner than the shape). Matching each row's left and right edges with a
+    trimmed least-squares fit lines the bulk of the body up instead. Returns (A, B, rows used), or
+    None when the fit is not believable.
+    """
+    left, top, right, bottom = view["box"]
+    mask = view["mask"]
+    # Bands about 1/80 of the height: thin rows would catch only some of the mesh's vertices.
+    band = max(2.0, (bottom - top) / 80)
+    bands = int((bottom - top) // band) + 1
+    k = np.floor(((bottom - (vertical - lo_z) * scale) - top) / band).astype(int)
+    inside = (k >= 0) & (k < bands)
+    lo_edge = np.full(bands, np.inf)
+    hi_edge = np.full(bands, -np.inf)
+    np.minimum.at(lo_edge, k[inside], horizontal[inside])
+    np.maximum.at(hi_edge, k[inside], horizontal[inside])
+    ys, xs = np.nonzero(mask)
+    j = np.floor((ys - top) / band).astype(int)
+    ok = (j >= 0) & (j < bands)
+    img_lo = np.full(bands, np.inf)
+    img_hi = np.full(bands, -np.inf)
+    np.minimum.at(img_lo, j[ok], xs[ok].astype(np.float64))
+    np.maximum.at(img_hi, j[ok], xs[ok].astype(np.float64))
+    # The top and bottom bands are only partly covered by both; leave them out.
+    use = np.isfinite(lo_edge) & np.isfinite(img_lo)
+    use[[0, -1]] = False
+    mesh_x = np.concatenate([lo_edge[use], hi_edge[use]])
+    image_x = np.concatenate([img_lo[use], img_hi[use]])
+    if len(mesh_x) < 40:
+        return None
+    keep = np.ones(len(mesh_x), dtype=bool)
+    for _ in range(3):
+        A, B = np.polyfit(mesh_x[keep], image_x[keep], 1)
+        residual = np.abs(A * mesh_x + B - image_x)
+        keep = residual <= max(2.5 * np.median(residual[keep]), 2.0)
+    if not 0.8 * scale <= A <= 1.25 * scale:
+        return None
+    return float(A), float(B), int(keep.sum() // 2)
+
+
 # Horizontal image axis for each view, as a function of mesh x and y once the mesh faces -Y.
 AXES = {"front": lambda p: p[:, 0], "left": lambda p: p[:, 1], "back": lambda p: -p[:, 0]}
 # The direction from the mesh towards each view's camera.
@@ -151,6 +203,11 @@ if args.turn is not None:
     turn = args.turn
 elif "left" in views:
     turn = max(scores, key=scores.get)
+    # Hunyuan3D's output faces a fixed way. Front and back outlines are near mirror images (a
+    # test character scored 2.09 against 2.02), so only overrule that way on a clear difference.
+    opposite = (DEFAULT_TURN + 180) % 360
+    if turn == opposite and scores[opposite] - scores[DEFAULT_TURN] < 0.25:
+        turn = DEFAULT_TURN
 else:
     # Front and back outlines mirror each other; only a sideways mistake can be ruled out.
     turn = max((DEFAULT_TURN, (DEFAULT_TURN + 90) % 360, (DEFAULT_TURN + 180) % 360, (DEFAULT_TURN + 270) % 360),
@@ -178,12 +235,15 @@ for index, name in enumerate(("front", "left", "back", "right")):
         continue
     d = np.array(DIRECTIONS[name], dtype=np.float64)
     cos = normals @ d
-    facing[:, index] = np.clip(cos, 0, None) ** 2
-    for i in np.nonzero(cos > 0.05)[0]:
+    # A view seen at a grazing angle is smeared and misplaced, so weight sharply towards the
+    # view a point faces most.
+    sharp = np.clip((cos - 0.15) / 0.85, 0, None) ** 4
+    facing[:, index] = np.clip(cos, 0, None) ** 4
+    for i in np.nonzero(sharp > 0)[0]:
         origin = points[i] + d * eps + normals[i] * eps
         hit = tree.ray_cast(origin, d)
         if hit[0] is None:
-            weights[i, index] = cos[i] ** 2
+            weights[i, index] = sharp[i]
 # Hidden everywhere (between the legs, under the arms): use the views it faces anyway.
 hidden = weights.sum(axis=1) < 1e-6
 weights[hidden] = facing[hidden]
@@ -236,10 +296,19 @@ for name, channel in (("front", "Red"), ("left", "Green"), ("back", "Blue")):
     horizontal = AXES[name](points)
     centre = (horizontal.min() + horizontal.max()) / 2
     w, h = view["w"], view["h"]
-    # u = (cx + (coord - centre) * scale) / w, with coord = sign * axis; v counts up from the bottom.
-    a, b = sign * scale / w, ((left + right) / 2 - centre * scale) / w
+    fit = register(view, horizontal, points[:, 2], scale, lo[2])
+    # Without a believable fit, centre the bounding boxes.
+    A, B = fit[:2] if fit else (scale, (left + right) / 2 - centre * scale)
+    # u = (A * horizontal + B) / w, with horizontal = sign * axis; v counts up from the bottom.
+    a, b = sign * A / w, B / w
     c, d = scale / h, (h - bottom - lo[2] * scale) / h
-    mapping[name] = {"box": [round(v, 1) for v in view["box"]], "pixelsPerMetre": round(scale, 1)}
+    mapping[name] = {
+        "box": [round(v, 1) for v in view["box"]],
+        "pixelsPerMetre": round(scale, 1),
+        "widthFactor": round(A / scale, 3),
+        "shiftPixels": round(B - ((left + right) / 2 - centre * A), 1),
+        "fittedRows": fit[2] if fit else 0,
+    }
     u = nodes.new("ShaderNodeMath")
     u.operation = "MULTIPLY_ADD"
     links.new(xyz.outputs[axis], u.inputs[0])
