@@ -4,11 +4,18 @@ Shared by image-models.py (this PC) and the aiembodied ComfyUI add-on (other mac
 """
 import json
 import os
+import re
 import struct
 
 # Saved beside a downloaded model: what Civitai said about it (family, trigger words, name).
 INFO_SUFFIX = ".aiembodied.json"
 INFO_KEYS = ("modelId", "versionId", "name", "type", "baseModel", "family", "triggerWords")
+
+
+def is_multiview_name(filename):
+    """hunyuan3d-dit-v2-mv(.fp16/-turbo/-fast).safetensors, or a renamed copy that keeps "2mv"."""
+    stem = os.path.basename(filename.replace("\\", "/")).lower()
+    return re.search(r"(^|[^a-z])(2_?)?mv([^a-z]|$)", stem.replace("-", "_")) is not None
 
 
 def signature(header, filename=""):
@@ -35,6 +42,10 @@ def signature(header, filename=""):
             kind = "sdxl"
         elif len(attention) == 2 and attention[1] == 768:
             kind = "sd1"
+    elif any(k.endswith("latent_in.weight") for k in keys) and any(k.endswith("cond_in.weight") for k in keys):
+        # Hunyuan3D 2 shape models share one architecture; only the multi-view one (2mv) is used,
+        # and it is told apart by its published name (hunyuan3d-dit-v2-mv).
+        kind = "hunyuan3d-2mv" if is_multiview_name(filename) else "hunyuan3d-2"
     elif any(k.endswith("visual.patch_embed.proj.weight") for k in keys) and shape("model.norm.weight") == [4096]:
         kind = "qwen3-vl"
     elif shape("model.embed_tokens.weight") == [151936, 2560]:

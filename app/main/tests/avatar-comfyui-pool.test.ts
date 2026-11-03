@@ -95,5 +95,7 @@ describe('model discovery on another machine', () => {
     ]);
     expect(files.at(-1)).toMatchObject({ embeddedVae: true, embeddedClip: true, embeddedClip2: true });
     expect(remoteModelKind('vae', 'ae.safetensors')).toBe('flux-ae');
+    expect(remoteModelKind('checkpoints', 'hunyuan3d-dit-v2-mv.safetensors')).toBe('hunyuan3d-2mv');
+    expect(remoteModelKind('checkpoints', 'hunyuan3d-dit-v2.safetensors')).toBeNull();
   });
 });

@@ -202,6 +202,8 @@ export interface AvatarCharacterModelSummary {
   name: string;
   /** One line on what the option does, shown under the selector. */
   description?: string;
+  /** A 3D model that is given side and back views too; those are drawn only by Qwen-Image. */
+  views?: boolean;
   available: boolean;
   unavailableReason?: string;
 }
@@ -225,6 +227,12 @@ export interface AvatarGenerationStatus {
   previewDataUrl?: string | null;
   /** The image is the cut-out version (the original is kept and can be restored). */
   backgroundRemoved?: boolean;
+  /**
+   * The character's left side and back, drawn from the front image for 3D models that take
+   * several views (PNG data URLs). Missing when they couldn't be drawn; viewsMessage says why.
+   */
+  views?: { left?: string | null; back?: string | null };
+  viewsMessage?: string | null;
   errorMessage?: string | null;
   /** The description, or the name given to an upload. */
   prompt?: string;

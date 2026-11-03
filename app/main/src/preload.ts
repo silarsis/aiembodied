@@ -284,6 +284,7 @@ export interface AvatarBridge {
   cancelAvatarGeneration(jobId: string): Promise<void>;
   removeAvatarBackground(jobId: string): Promise<void>;
   restoreAvatarBackground(jobId: string): Promise<void>;
+  redrawAvatarViews(jobId: string): Promise<void>;
   listAvatarCharacterModels(): Promise<AvatarCharacterModelSelection>;
   setAvatarCharacterModel(stage: 'geometry' | 'rig', id: string): Promise<void>;
 }
@@ -577,6 +578,7 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       ipcRenderer.invoke('avatar:generation-list') as Promise<AvatarGenerationStatus[]>,
     removeAvatarBackground: async (jobId: string) => { await ipcRenderer.invoke('avatar:generation-remove-background', jobId); },
     restoreAvatarBackground: async (jobId: string) => { await ipcRenderer.invoke('avatar:generation-restore-background', jobId); },
+    redrawAvatarViews: async (jobId: string) => { await ipcRenderer.invoke('avatar:generation-redraw-views', jobId); },
     cancelAvatarGeneration: async (jobId: string) => {
       await ipcRenderer.invoke('avatar:generation-cancel', jobId);
     },

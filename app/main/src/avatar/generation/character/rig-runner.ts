@@ -27,6 +27,18 @@ export interface CharacterRigRunner {
   }): Promise<string>;
   /** Cut the character out of the image onto plain white (only when the user asks). */
   removeBackground?(input: { imagePath: string; outputPath: string; signal: AbortSignal }): Promise<void>;
+  /**
+   * Paint the front, left-side and back images onto an untextured mesh (Hunyuan3D), writing a
+   * textured GLB for build(). Views that are missing are left out.
+   */
+  paintViews?(input: {
+    meshPath: string;
+    outputPath: string;
+    front: string;
+    left?: string;
+    back?: string;
+    signal: AbortSignal;
+  }): Promise<void>;
   build(input: {
     landmarksPath?: string;
     allowTemplateWarnings?: boolean;
@@ -114,6 +126,58 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
       const reason =
         stderr.match(/BACKGROUND_ERROR: ([^\r\n]+)/)?.[1] ?? (error instanceof Error ? error.message : 'Background removal failed.');
       throw new Error(`The background could not be removed: ${reason}`);
+    });
+  }
+
+  async paintViews(input: {
+    meshPath: string;
+    outputPath: string;
+    front: string;
+    left?: string;
+    back?: string;
+    signal: AbortSignal;
+  }): Promise<void> {
+    if (!this.executable) await this.assertAvailable();
+    const executable = this.executable;
+    if (!executable) throw new Error('Blender is unavailable.');
+    await rm(input.outputPath, { force: true });
+    const logPath = path.join(path.dirname(input.outputPath), 'paint-views.log');
+    let output = '';
+    try {
+      const result = await promisify(execFile)(
+        executable,
+        [
+          '-b',
+          '--factory-startup',
+          '-t',
+          '4',
+          '-P',
+          path.join(path.dirname(this.scriptPath), 'paint-views.py'),
+          '--',
+          '--input',
+          input.meshPath,
+          '--output',
+          input.outputPath,
+          '--front',
+          input.front,
+          ...(input.left ? ['--left', input.left] : []),
+          ...(input.back ? ['--back', input.back] : []),
+        ],
+        { windowsHide: true, signal: input.signal, timeout: 5 * 60_000, maxBuffer: 4 * 1024 * 1024, env: this.env },
+      );
+      output = [result.stdout ?? '', result.stderr ?? ''].join('\n');
+    } catch (error) {
+      if (input.signal.aborted) throw new Error('Cancelled.');
+      if (error && typeof error === 'object')
+        output = ['stdout' in error ? String(error.stdout) : '', 'stderr' in error ? String(error.stderr) : ''].join('\n');
+      await writeFile(logPath, output, 'utf8').catch(() => undefined);
+      throw new Error(`The views could not be painted onto the model: ${pythonFailure(output) ?? (error instanceof Error ? error.message : String(error))}`);
+    }
+    await writeFile(logPath, output, 'utf8').catch(() => undefined);
+    const failure = pythonFailure(output);
+    if (failure) throw new Error(`The views could not be painted onto the model: ${failure}`);
+    await access(input.outputPath).catch(() => {
+      throw new Error(`Blender did not write the painted model. Check ${logPath}.`);
     });
   }
 

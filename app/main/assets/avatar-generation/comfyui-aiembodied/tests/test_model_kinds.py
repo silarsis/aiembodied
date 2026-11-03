@@ -31,6 +31,13 @@ class FakeFolderPaths:
 
 
 class ModelKindTests(unittest.TestCase):
+    def test_tells_the_multi_view_hunyuan3d_model_by_its_name(self):
+        header = {"model.latent_in.weight": {"shape": [1024, 64]}, "model.cond_in.weight": {"shape": [1024, 1024]}}
+        self.assertEqual(model_kinds.signature(header, "hunyuan3d-dit-v2-mv.safetensors")["kind"], "hunyuan3d-2mv")
+        self.assertEqual(model_kinds.signature(header, "hunyuan3d-dit-v2-mv-turbo.safetensors")["kind"], "hunyuan3d-2mv")
+        self.assertEqual(model_kinds.signature(header, "hunyuan3d-dit-v2.safetensors")["kind"], "hunyuan3d-2")
+        self.assertEqual(model_kinds.signature(header, "hunyuan3d-dit-v2-mini.safetensors")["kind"], "hunyuan3d-2")
+
     def test_reads_the_kind_from_tensors_not_the_name(self):
         root = tempfile.mkdtemp()
         # An SDXL checkpoint (like Pony) whose name doesn't say "xl".

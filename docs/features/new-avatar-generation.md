@@ -10,7 +10,18 @@ The pipeline now generates a visible neutral face in the A-pose reference, then 
 
 Each image becomes a numbered take. Click the image to open it full size; Escape or Close dismisses it without closing the studio. Generation stops at image review, including for recolouring: only **Use this image** starts geometry/rigging or texture work. **Regenerate** makes a new take from the current description and keeps the earlier ones, so you can go back to any take in the history. Selecting a take restores its description. Discard deletes that take only. If a dependency is unavailable when continuing, the image remains available to retry. Uploads can be reviewed while ComfyUI is offline. Only one job runs at a time; other takes wait in review. Takes live in memory, so restarting the app clears them.
 
-The Image step also chooses how the take is turned into an animated avatar. **3D model** lists the TRELLIS.2 variants found in ComfyUI's diffusion_models folder (recognised by name, with the shape and texture VAEs), with the workflow's int8 weights first. **Rig and animation** is currently the Blender auto-rig with the fitted MediaPipe face; it shows why it can't run when Blender or the face environment is missing. Both choices are remembered. A finished, failed or cancelled take can be rebuilt from its image with different models; **Cancel build** keeps the image.
+The Image step also chooses how the take is turned into an animated avatar. **3D model** lists Hunyuan3D 2mv first (the default when installed), then the TRELLIS.2 variants found in ComfyUI's diffusion_models folder (recognised by name, with the shape and texture VAEs), with the workflow's int8 weights first. **Rig and animation** is currently the Blender auto-rig with the fitted MediaPipe face; it shows why it can't run when Blender or the face environment is missing. Both choices are remembered. A finished, failed or cancelled take can be rebuilt from its image with different models; **Cancel build** keeps the image.
+
+### Side and back views (Hunyuan3D 2mv)
+
+After the front image, a new character also gets a **side** view (the character's left side, facing the left edge of the image) and a **back** view. Both are Qwen-Image 2.1 edits of the front image, so they need Qwen-Image installed in ComfyUI; the take's own model and LoRAs are used when it is Qwen-Image. The studio shows the three together, and **Redraw side and back views** draws them again with a new seed (for example after **Remove background** or when a view came out wrong).
+
+- **Hunyuan3D 2mv** (`hunyuan3d-dit-v2-mv.safetensors` in ComfyUI's `checkpoints` folder; the `-turbo`/`-fast` variants are listed too) builds the shape from all three views with ComfyUI's core Hunyuan3D nodes. The shape has no texture, so `paint-views.py` (Blender) turns it to face forward by matching its outline against the front and side images, projects each view onto the parts that face it and can see it, and bakes one 2048 texture. The right side is painted from the side view, which assumes a roughly symmetric character. The views are cut out first when the face environment has background removal.
+- **TRELLIS.2** is only ever given the front image, as before.
+
+While a multi-view 3D model is selected (the Description step shows the 3D model picker too), the image model is limited to Qwen-Image: other models are disabled, a Qwen-Image model is picked if another was selected, and generating is blocked with an explanation when the image server has none. Uploads are not restricted.
+
+If the views still can't be drawn (drawing failed), Hunyuan3D builds and paints from the front alone, and the take says why.
 
 After that work finishes, review the **finished model**, rather than the concept illustration. Keep imports that candidate and activates it. Discard leaves the previous avatar selected. A failed generation is reported as a failure; it never falls back to a recoloured original avatar.
 
@@ -32,7 +43,7 @@ The local detector accepts white and mildly shaded off-white neutral backgrounds
 
 ## Dependencies and ownership
 
-- Shared local ComfyUI server with Qwen-Image 2.1 and the TRELLIS.2/BiRefNet/DINO models used by `character/trellis2.graph.json`.
+- Shared local ComfyUI server with Qwen-Image 2.1, Hunyuan3D 2mv (`checkpoints/hunyuan3d-dit-v2-mv.safetensors`, from Hugging Face `tencent/Hunyuan3D-2mv`, `hunyuan3d-dit-v2-mv/model.fp16.safetensors` renamed) and BiRefNet, and optionally the TRELLIS.2/DINO models used by `character/trellis2.graph.json`.
 - Blender, found under Program Files/Blender Foundation on Windows or selected with `BLENDER_EXE`. No Blender extension is installed or required.
 - Run `pnpm avatar:face:setup` once for the separate local CPU detector environment and checksum-verified model. `AVATAR_FACE_DIR`, or `AVATAR_FACE_PYTHON` and `AVATAR_FACE_MODEL`, override discovery. See [local face setup and reproduction](../../services/avatar-face/README.md). The environment is installed on the development machine; packaged installs must provision it separately with absolute paths.
 - The existing named avatar-generation IPC bridge; completed candidates are read through `avatar:generation-preview` without importing them.

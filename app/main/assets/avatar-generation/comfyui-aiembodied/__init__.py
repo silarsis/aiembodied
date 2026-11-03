@@ -3,7 +3,7 @@
 Install on a ComfyUI machine by copying this folder into ComfyUI/custom_nodes/ (the folder name
 doesn't matter) and restarting ComfyUI. It adds no nodes, only these routes:
 
-  GET    /aiembodied/ping                 -> {"ok": true, "version": 2}
+  GET    /aiembodied/ping                 -> {"ok": true, "version": 3}
   GET    /aiembodied/models               -> the image/3D model files with their kinds, as the app's
                                              own scan on this PC reports them
   POST   /aiembodied/download             {url, folder, filename, sha256?, civitai_token?, info?}
@@ -40,7 +40,7 @@ def _register():
 
     @routes.get("/aiembodied/ping")
     async def ping(_request):
-        return web.json_response({"ok": True, "version": 2, "downloads": os.environ.get("AIEMBODIED_DOWNLOADS") != "0"})
+        return web.json_response({"ok": True, "version": 3, "downloads": os.environ.get("AIEMBODIED_DOWNLOADS") != "0"})
 
     @routes.get("/aiembodied/models")
     async def models(_request):

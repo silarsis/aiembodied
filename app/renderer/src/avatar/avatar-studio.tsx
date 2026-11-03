@@ -305,6 +305,12 @@ export function AvatarStudio({
       await refresh();
     });
 
+  const redrawViews = (job: AvatarGenerationStatus) =>
+    run('Could not draw the side and back views.', async () => {
+      await avatarApi.redrawAvatarViews?.(job.jobId);
+      await refresh();
+    });
+
   const cancel = (job: AvatarGenerationStatus) =>
     run('Could not cancel.', async () => {
       if (!avatarApi.cancelAvatarGeneration)
@@ -346,7 +352,25 @@ export function AvatarStudio({
     }
   };
 
+  // A multi-view 3D model is paired with Qwen-Image, the only model that draws the side and back views.
+  const geometryChoice = characterModels.geometry.find(
+    (model) => model.id === characterModels.selectedGeometryId,
+  );
+  const sealed = mode === 'new-character' && !usingUpload && geometryChoice?.views === true;
+  const isQwen = (id: string | null | undefined) =>
+    Boolean(id) && imageModels.modelFamilies?.[id ?? ''] === 'qwen-image-2.1';
+  const qwenModels = imageModels.models.filter((item) => item.available && isQwen(item.id));
+  const sealedBlocked =
+    sealed && imageModels.supported && !imageModels.loading && !qwenModels.length;
+  useEffect(() => {
+    // Move to a Qwen-Image model when the 3D model needs one and another is selected.
+    if (!sealed || imageModels.loading || isQwen(imageModels.selectedModelId)) return;
+    const first = qwenModels[0];
+    if (first) void imageModels.select(first.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sealed, imageModels.loading, imageModels.selectedModelId, qwenModels[0]?.id]);
   const canGenerate =
+    !sealedBlocked &&
     !busy &&
     !anyRunning &&
     (usingUpload
@@ -417,7 +441,7 @@ export function AvatarStudio({
     </section>
   ) : null;
 
-  const imageElement = selected?.previewDataUrl ? (
+  const front = selected?.previewDataUrl ? (
     <button
       type="button"
       className="avatarStudio__image"
@@ -428,6 +452,43 @@ export function AvatarStudio({
       <img src={selected.previewDataUrl} alt={`Take ${selectedNumber} concept`} />
     </button>
   ) : null;
+  const sideViews = selected
+    ? (
+        [
+          ['left', 'side'],
+          ['back', 'back'],
+        ] as const
+      ).flatMap(([key, label]) => {
+        const url = selected.views?.[key];
+        return url ? [{ key, label, url }] : [];
+      })
+    : [];
+  // With side and back views, the three are shown together: they are what a multi-view 3D model gets.
+  const imageElement =
+    front && sideViews.length ? (
+      <div className="avatarStudio__views">
+        <figure>
+          {front}
+          <figcaption>Front</figcaption>
+        </figure>
+        {sideViews.map((view) => (
+          <figure key={view.key}>
+            <button
+              type="button"
+              className="avatarStudio__image"
+              aria-label={`Enlarge take ${selectedNumber} ${view.label} view`}
+              aria-haspopup="dialog"
+              onClick={() => setEnlarged(view.url)}
+            >
+              <img src={view.url} alt={`Take ${selectedNumber} ${view.label} view`} />
+            </button>
+            <figcaption>{view.label === 'side' ? 'Side' : 'Back'}</figcaption>
+          </figure>
+        ))}
+      </div>
+    ) : (
+      front
+    );
 
   const viewer = modelReady?.data ? (
     <AvatarModelViewer
@@ -552,30 +613,54 @@ export function AvatarStudio({
           </small>
         </div>
       ) : imageModels.supported ? (
-        <div className="avatarStudio__field">
-          <label htmlFor="avatar-studio-image-model">Image model</label>
-          <select
-            id="avatar-studio-image-model"
-            value={imageModels.selectedModelId ?? ''}
-            disabled={busy || imageModels.loading}
-            onChange={(event) => void imageModels.select(event.target.value)}
-          >
-            {!imageModels.selectedModelId ? (
-              <option value="">
-                {imageModels.loading ? 'Finding installed models…' : 'No available image models'}
-              </option>
-            ) : null}
-            {imageModels.models.map((item) => (
-              <option key={item.id} value={item.id} disabled={!item.available}>
-                {item.name}
-                {item.available ? '' : ' (unavailable)'}
-              </option>
-            ))}
-          </select>
-          {imageModels.error ? (
-            <small className="avatarStudio__warnText">{imageModels.error}</small>
+        <>
+          {mode === 'new-character' && characterModels.supported ? (
+            <ModelSelect
+              id="avatar-studio-describe-geometry"
+              label="3D model"
+              models={characterModels.geometry}
+              selectedId={characterModels.selectedGeometryId}
+              disabled={busy || characterModels.loading}
+              onSelect={(id) => void characterModels.select('geometry', id)}
+            />
           ) : null}
-        </div>
+          <div className="avatarStudio__field">
+            <label htmlFor="avatar-studio-image-model">Image model</label>
+            <select
+              id="avatar-studio-image-model"
+              value={imageModels.selectedModelId ?? ''}
+              disabled={busy || imageModels.loading}
+              onChange={(event) => void imageModels.select(event.target.value)}
+            >
+              {!imageModels.selectedModelId ? (
+                <option value="">
+                  {imageModels.loading ? 'Finding installed models…' : 'No available image models'}
+                </option>
+              ) : null}
+              {imageModels.models.map((item) => {
+                const locked = sealed && !isQwen(item.id);
+                return (
+                  <option key={item.id} value={item.id} disabled={!item.available || locked}>
+                    {item.name}
+                    {!item.available ? ' (unavailable)' : locked ? ' (not for this 3D model)' : ''}
+                  </option>
+                );
+              })}
+            </select>
+            {sealedBlocked ? (
+              <small className="avatarStudio__warnText">
+                {`${geometryChoice?.name ?? 'This 3D model'} needs Qwen-Image 2.1 on the image server to draw the side and back views. Install it there, or pick TRELLIS.2 as the 3D model.`}
+              </small>
+            ) : sealed ? (
+              <small>
+                {`${geometryChoice?.name ?? 'This 3D model'} builds from front, side and back views, which only Qwen-Image draws.`}
+              </small>
+            ) : null}
+            {imageModels.error ? (
+              <small className="avatarStudio__warnText">{imageModels.error}</small>
+            ) : null}
+          </div>
+        </>
       ) : null}
       {!usingUpload && imageModels.supported ? (
         <LoraPicker
@@ -707,6 +792,7 @@ export function AvatarStudio({
         {selected.status === 'failed' && !hasImage(selected) ? (
           <p className="kiosk__error">Image generation failed: {selected.errorMessage}</p>
         ) : null}
+        {hasImage(selected) && !isBuilding(selected) ? progress : null}
         {warnings}
         {selected.source !== 'upload' ? (
           <div className="avatarStudio__row">
@@ -724,7 +810,11 @@ export function AvatarStudio({
         avatarApi.removeAvatarBackground ? (
           <div className="avatarStudio__field">
             {selected.backgroundRemoved ? (
-              <button type="button" disabled={busy} onClick={() => void restoreBackground(selected)}>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void restoreBackground(selected)}
+              >
                 Restore original image
               </button>
             ) : (
@@ -740,6 +830,26 @@ export function AvatarStudio({
               {selected.backgroundRemoved
                 ? 'The character was cut out onto plain white.'
                 : 'Cuts the character out onto plain white. Try it if the build says the background isn’t light and plain.'}
+            </small>
+          </div>
+        ) : null}
+        {modeOf(selected) === 'new-character' &&
+        hasImage(selected) &&
+        !RUNNING.has(selected.status) &&
+        avatarApi.redrawAvatarViews ? (
+          <div className="avatarStudio__field">
+            <button
+              type="button"
+              disabled={busy || anyRunning}
+              onClick={() => void redrawViews(selected)}
+            >
+              {selected.views?.left || selected.views?.back
+                ? 'Redraw side and back views'
+                : 'Draw side and back views'}
+            </button>
+            <small className={selected.viewsMessage ? 'avatarStudio__warnText' : undefined}>
+              {selected.viewsMessage ??
+                'Drawn from the front image. Hunyuan3D 2mv builds from all three; TRELLIS.2 uses only the front.'}
             </small>
           </div>
         ) : null}

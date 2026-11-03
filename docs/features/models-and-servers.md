@@ -14,7 +14,7 @@ Controls → Voice & engine → **Open models and servers** opens one pop-up tha
 | Talking | Moving (`motion`) | Motion service, OpenAI | No | OpenAI here means keyframe clips from the Animation clips job. `pnpm dev:run` starts this PC's motion service with the picked model (ardy or kimodo). |
 | Talking | Web search (`search`) | SearXNG, Brave Search | Yes | "Off" removes the `web_search` tool. |
 | Creating an avatar | Concept image (`image`) | ComfyUI | Yes, plus spread | Also texture repaints and backgrounds. Model is the image model picker from the studio. |
-| Creating an avatar | 3D model (`mesh`) | ComfyUI | Yes, plus spread | TRELLIS.2 picker. Rigging always runs in Blender on this PC. |
+| Creating an avatar | 3D model (`mesh`) | ComfyUI | Yes, plus spread | Hunyuan3D 2mv (default) or TRELLIS.2 picker. Painting and rigging always run in Blender on this PC. |
 | Helpers | Describe the avatar (`describe`) | Chat model server, OpenAI | No | Needs a model that reads images. |
 | Helpers | Make poses (`posegen`) | Chat model server, OpenAI | No | |
 | Helpers | Check poses (`posecheck`) | Chat model server, OpenAI | No | Needs a model that reads images. |
