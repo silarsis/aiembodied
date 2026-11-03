@@ -6,17 +6,34 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { access, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ComfyUIClient } from './comfyui-client.js';
-import { buildConceptPrompt, conceptGraph, retextureGraph } from './graphs.js';
+import {
+  buildConceptPrompt,
+  characterViewGraph,
+  conceptGraph,
+  retextureGraph,
+  type QwenImageModels,
+} from './graphs.js';
 import { workerRetextureRunner, type RetextureRunner } from './retexture-tasks.js';
-import { characterConceptPrompt, characterMeshGraph } from './character/graphs.js';
+import {
+  CHARACTER_VIEW_PROMPTS,
+  characterConceptPrompt,
+  characterMeshGraph,
+  type CharacterViewImages,
+} from './character/graphs.js';
 import type { CharacterRigRunner } from './character/rig-runner.js';
 import type { AvatarImageModelService } from './image-model-service.js';
-import type {
-  AvatarCharacterModelService,
-  GeometryModel,
-  RigModel,
+import {
+  usesViews,
+  type AvatarCharacterModelService,
+  type GeometryModel,
+  type RigModel,
 } from './character-model-service.js';
-import { buildAvatarImageWorkflow, type ImageWorkflowModel } from './image-workflows.js';
+import {
+  applyLoras,
+  buildAvatarImageWorkflow,
+  type ImageWorkflowLora,
+  type ImageWorkflowModel,
+} from './image-workflows.js';
 import { templatePolicy } from './template-compatibility.js';
 import { decodeReferenceImage } from './reference-image.js';
 import { regionPrompt } from './vrm-retexture.js';
@@ -50,7 +67,8 @@ export interface AvatarGenerationServiceOptions {
   workDirectory: string;
   runner?: RetextureRunner;
   characterRunner?: CharacterRigRunner;
-  imageModels?: Pick<AvatarImageModelService, 'resolve'>;
+  imageModels?: Pick<AvatarImageModelService, 'resolve'> &
+    Partial<Pick<AvatarImageModelService, 'resolveViewModel'>>;
   /** Chooses the 3D geometry and rig models; the workflow defaults run without it. */
   characterModels?: Pick<AvatarCharacterModelService, 'resolveGeometry' | 'resolveRig'>;
   logger?: {
@@ -203,6 +221,104 @@ export class AvatarGenerationService {
     });
     await writeFile(path.join(job.directory, 'concept.png'), image);
     this.useConceptImage(job, image, false, 'Original image restored');
+  }
+
+  /** Draw this take's side and back views again from its current front image. */
+  async redrawViews(jobId: string): Promise<void> {
+    const job = this.getJob(jobId);
+    if (job.mode !== 'new-character') throw new Error('Only new 3D characters use side and back views.');
+    if (!job.status.previewDataUrl) throw new Error('This take has no image yet.');
+    if (isRunning(job.status.status)) throw new Error('Wait for this take to finish first.');
+    this.assertIdle();
+    job.abort = new AbortController();
+    const previous = job.status.status;
+    const message = job.status.message;
+    this.update(job, { status: 'concept', message: 'Drawing the side and back views', errorMessage: null });
+    void this.drawViews(job, () => this.comfyFor('image'), job.abort.signal, randomInt(0, 2 ** 47))
+      .catch(() => undefined)
+      .finally(() => {
+        if (job.status.status === 'concept')
+          this.update(job, { status: previous, message: job.abort.signal.aborted ? 'Cancelled' : message });
+      });
+  }
+
+  /**
+   * Draw the character's left side and back from the approved front image, for 3D models that take
+   * several views. A view that can't be drawn is left out (the build then uses what there is) and
+   * the reason is shown with the take.
+   */
+  private async drawViews(
+    job: JobState,
+    getComfy: () => Promise<ComfyUIClient>,
+    signal: AbortSignal,
+    seed: number,
+  ): Promise<void> {
+    // Only an installed Qwen-Image model can draw them; without the model list there is none to use.
+    const model = await this.options.imageModels?.resolveViewModel
+      ?.call(this.options.imageModels, job.imageModel)
+      .catch(() => undefined);
+    const models: QwenImageModels | undefined =
+      model?.clip && model.vae ? { unet: model.model, clip: model.clip, vae: model.vae } : undefined;
+    const loras: ImageWorkflowLora[] = model?.loras ?? [];
+    if (!models) {
+      this.update(job, {
+        views: {},
+        viewsMessage:
+          'Side and back views need Qwen-Image 2.1 in ComfyUI. Builds will use the front image only.',
+      });
+      return;
+    }
+    const views: { left?: string | null; back?: string | null } = {};
+    this.update(job, { views, viewsMessage: null });
+    try {
+      const comfy = await getComfy();
+      const front = await readFile(path.join(job.directory, 'concept.png'));
+      const frontName = await comfy.uploadImage(`${job.status.jobId}-front.png`, front);
+      for (const [index, view] of (['left', 'back'] as const).entries()) {
+        throwIfAborted(signal);
+        this.update(job, {
+          message: view === 'left' ? 'Drawing the side view' : 'Drawing the back view',
+        });
+        const { prompt, negative } = CHARACTER_VIEW_PROMPTS[view];
+        const triggers = [...new Set(loras.flatMap((lora) => lora.triggerWords ?? []))].join(', ');
+        const graph = characterViewGraph({
+          front: frontName,
+          prompt: triggers ? `${triggers}, ${prompt}` : prompt,
+          negative,
+          seed: seed + index,
+          models,
+        });
+        const png = await comfy.run(loras.length ? applyLoras(graph, loras) : graph, { signal });
+        throwIfAborted(signal);
+        await writeFile(path.join(job.directory, `view-${view}.png`), png);
+        views[view] = `data:image/png;base64,${png.toString('base64')}`;
+        this.update(job, { views: { ...views } });
+      }
+    } catch (error) {
+      if (signal.aborted) throw error;
+      const reason = error instanceof Error ? error.message : String(error);
+      this.options.logger?.warn?.('Could not draw the character views.', { jobId: job.status.jobId, reason });
+      this.update(job, {
+        viewsMessage: `The side and back views could not be drawn: ${reason}`,
+      });
+    }
+  }
+
+  /** The uploaded names of the views a geometry model is given: TRELLIS.2 only ever gets the front. */
+  private async uploadViews(
+    job: JobState,
+    comfy: ComfyUIClient,
+    concept: Buffer,
+  ): Promise<CharacterViewImages> {
+    const images: CharacterViewImages = {
+      front: await comfy.uploadImage(`${job.status.jobId}-concept.png`, concept),
+    };
+    if (!usesViews(job.geometry)) return images;
+    for (const view of ['left', 'back'] as const) {
+      const png = await readFile(path.join(job.directory, `view-${view}.png`)).catch(() => null);
+      if (png) images[view] = await comfy.uploadImage(`${job.status.jobId}-${view}.png`, png);
+    }
+    return images;
   }
 
   private useConceptImage(job: JobState, image: Buffer, backgroundRemoved: boolean, message: string): void {
@@ -434,6 +550,21 @@ export class AvatarGenerationService {
           ));
         throwIfAborted(signal);
         await writeFile(path.join(job.directory, 'concept.png'), concept);
+        if (job.mode === 'new-character') {
+          this.update(job, {
+            progress: 0.08,
+            previewDataUrl: `data:image/png;base64,${concept.toString('base64')}`,
+          });
+          // An upload has no image server yet; the views are drawn on the image one.
+          const imageComfy = job.imageComfy;
+          await this.drawViews(
+            job,
+            () => (imageComfy ? Promise.resolve(imageComfy) : this.comfyFor('image')),
+            signal,
+            seed + 101,
+          );
+          throwIfAborted(signal);
+        }
         this.update(job, {
           status: 'awaiting_confirmation',
           message: 'Review the concept image before continuing',
@@ -450,19 +581,51 @@ export class AvatarGenerationService {
         const runner = this.options.characterRunner;
         if (!runner) throw new Error('New character rigging is unavailable.');
         job.vrmPath = path.join(job.directory, 'avatar.vrm');
+        const painted = usesViews(job.geometry);
+        if (painted && !runner.paintViews)
+          throw new Error('Painting views onto the model is unavailable. Choose TRELLIS.2 instead.');
         this.update(job, {
           status: 'meshing',
           progress: 0.2,
-          message: 'Generating new textured 3D geometry',
+          message: painted
+            ? 'Generating the 3D shape from the front, side and back views'
+            : 'Generating new textured 3D geometry',
         });
-        const reference = await comfy.uploadImage(`${job.status.jobId}-concept.png`, concept);
-        const mesh = await comfy.run(characterMeshGraph(reference, seed, job.geometry), {
+        const images = await this.uploadViews(job, comfy, concept);
+        const mesh = await comfy.run(characterMeshGraph(images, seed, job.geometry), {
           signal,
           output: 'mesh',
         });
         throwIfAborted(signal);
         const meshPath = path.join(job.directory, 'source.glb');
-        await writeFile(meshPath, mesh);
+        if (painted && runner.paintViews) {
+          const shapePath = path.join(job.directory, 'source-shape.glb');
+          await writeFile(shapePath, mesh);
+          this.update(job, { progress: 0.65, message: 'Painting the views onto the model' });
+          const cut = async (view: string, file: string, already = false): Promise<string> => {
+            const source = path.join(job.directory, file);
+            if (already || !runner.removeBackground) return source;
+            // Painting finds the character by its white surroundings, so give it clean cut-outs.
+            const output = path.join(job.directory, `paint-${view}.png`);
+            return runner
+              .removeBackground({ imagePath: source, outputPath: output, signal })
+              .then(() => output)
+              .catch((error: unknown) => {
+                if (signal.aborted) throw error;
+                return source;
+              });
+          };
+          await runner.paintViews({
+            meshPath: shapePath,
+            outputPath: meshPath,
+            front: await cut('front', 'concept.png', job.status.backgroundRemoved === true),
+            ...(images.left ? { left: await cut('left', 'view-left.png') } : {}),
+            ...(images.back ? { back: await cut('back', 'view-back.png') } : {}),
+            signal,
+          });
+        } else {
+          await writeFile(meshPath, mesh);
+        }
         throwIfAborted(signal);
         this.update(job, {
           status: 'rigging',

@@ -208,8 +208,10 @@ describe('new character generation', () => {
   });
 
   it('builds an independent, seeded textured mesh graph and an animation-friendly reference', () => {
-    const first = characterMeshGraph('one.png', 123),
-      second = characterMeshGraph('two.png', 456);
+    const first = characterMeshGraph({ front: 'one.png', left: 'side.png' }, 123),
+      second = characterMeshGraph({ front: 'two.png' }, 456);
+    // TRELLIS.2 is only ever given the front.
+    expect(JSON.stringify(first)).not.toContain('side.png');
     expect(first.image.inputs.image).toBe('one.png');
     expect(second.image.inputs.image).toBe('two.png');
     expect(first.s_struct.inputs.seed).toBe(123);

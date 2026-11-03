@@ -168,6 +168,58 @@ export function retextureGraph(input: RetextureGraphInput): ComfyGraph {
 }
 
 
+/**
+ * Another view of the approved character (side or back), drawn as a Qwen-Image edit with the front
+ * image as the only reference. The canvas matches the front image's shape at about 1 MP.
+ */
+export function characterViewGraph(input: {
+  front: string;
+  prompt: string;
+  negative: string;
+  seed: number;
+  models?: QwenImageModels;
+}): ComfyGraph {
+  const models = input.models ?? DEFAULT_QWEN_IMAGE_MODELS;
+  return {
+    ...qwenBase(models),
+    frontImage: { class_type: 'LoadImage', inputs: { image: input.front } },
+    ref1: {
+      class_type: 'ImageScaleToTotalPixels',
+      inputs: { image: ['frontImage', 0], upscale_method: 'lanczos', megapixels: 1, resolution_steps: 16 },
+    },
+    encode: {
+      class_type: 'TextEncodeQwenImage21',
+      inputs: {
+        clip: ['clip', 0],
+        vae: ['vae', 0],
+        prompt: input.prompt,
+        negative_prompt: input.negative,
+        resolution: 1024,
+        'images.image_1': ['ref1', 0],
+      },
+    },
+    // Only sets the canvas size: at full denoise none of the front image's pixels survive.
+    latent: { class_type: 'VAEEncode', inputs: { pixels: ['ref1', 0], vae: ['vae', 0] } },
+    sample: {
+      class_type: 'KSampler',
+      inputs: {
+        model: ['cache', 0],
+        positive: ['encode', 0],
+        negative: ['encode', 1],
+        latent_image: ['latent', 0],
+        seed: input.seed,
+        steps: 25,
+        cfg: 1.0,
+        sampler_name: 'euler',
+        scheduler: 'simple',
+        denoise: 1.0,
+      },
+    },
+    decode: { class_type: 'VAEDecode', inputs: { samples: ['sample', 0], vae: ['vae', 0] } },
+    save: { class_type: 'SaveImage', inputs: { images: ['decode', 0], filename_prefix: 'aiembodied/view' } },
+  };
+}
+
 /** Backgrounds use the same local Qwen models with scenery-specific framing and negatives. */
 export function buildBackgroundPrompt(description: string): string {
   return `A polished wide environment background for a standing anime-style 3D companion. ${description.trim()}.

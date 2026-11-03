@@ -2,13 +2,24 @@ import type { MemoryStore } from '../../memory/index.js';
 import type { ImageModelFile } from './image-model-service.js';
 import type { AvatarCharacterModelSelection, AvatarCharacterModelSummary } from '../types.js';
 
-/** The weights a TRELLIS.2 geometry run loads; the workflow defaults are used when not detected. */
-export interface GeometryModel {
-  id: string;
-  name: string;
-  unet: string;
-  shapeVae: string;
-  textureVae: string;
+/**
+ * The weights a geometry run loads. TRELLIS.2 builds a textured mesh from the front image alone;
+ * Hunyuan3D 2mv builds the shape from front, side and back views, which are then painted on.
+ */
+export type GeometryModel =
+  | {
+      kind: 'trellis2';
+      id: string;
+      name: string;
+      unet: string;
+      shapeVae: string;
+      textureVae: string;
+    }
+  | { kind: 'hunyuan3d-2mv'; id: string; name: string; checkpoint: string };
+
+/** Whether a geometry model is given the side and back views as well as the front. */
+export function usesViews(model: GeometryModel | undefined): boolean {
+  return model?.kind === 'hunyuan3d-2mv';
 }
 export interface RigModel {
   id: string;
@@ -20,12 +31,26 @@ const DEFAULT_SHAPE_VAE = 'trellis_2_shape_vae_bf16.safetensors';
 const DEFAULT_TEXTURE_VAE = 'trellis_2_texture_vae_bf16.safetensors';
 export const BLENDER_FACE_FIT_RIG = 'blender-face-fit';
 
-const GEOMETRY_KEY = 'avatar.geometryModel';
+export const DEFAULT_HUNYUAN_MV = 'hunyuan3d-dit-v2-mv.safetensors';
+/**
+ * Hunyuan3D 2mv became the default in November 2026. Choices saved before then (when TRELLIS.2 was
+ * the only option) are not carried over, so the new default applies once.
+ */
+const GEOMETRY_KEY = 'avatar.geometryModel.v2';
 const RIG_KEY = 'avatar.rigModel';
 
 interface Entry<T> {
   model: T;
   summary: AvatarCharacterModelSummary;
+}
+
+function hunyuanName(file: string): string {
+  const variant = file
+    .replace(/\.safetensors$/i, '')
+    .replace(/^hunyuan3d[_-]?(dit[_-]?)?v?2[_-]?mv[_-]?/i, '')
+    .replaceAll(/[_-]/g, ' ')
+    .trim();
+  return variant ? `Hunyuan3D 2mv (${variant})` : 'Hunyuan3D 2mv';
 }
 
 function displayName(file: string): string {
@@ -36,7 +61,7 @@ function displayName(file: string): string {
 
 /**
  * Lists the models that turn an approved image into an animated avatar: the 3D geometry model
- * (TRELLIS.2 variants found in ComfyUI) and the rig and face-animation method.
+ * (Hunyuan3D 2mv first, then TRELLIS.2 variants found in ComfyUI) and the rig and face method.
  */
 export class AvatarCharacterModelService {
   private geometry: Entry<GeometryModel>[] = [];
@@ -87,6 +112,42 @@ export class AvatarCharacterModelService {
   }
 
   private geometryEntries(files: ImageModelFile[] | null): Entry<GeometryModel>[] {
+    return [...this.hunyuanEntries(files), ...this.trellisEntries(files)];
+  }
+
+  private hunyuanEntries(files: ImageModelFile[] | null): Entry<GeometryModel>[] {
+    const description = 'Shape from front, side and back views, then painted from those views.';
+    const checkpoints = files
+      ? files
+          .filter((file) => file.kind === 'hunyuan3d-2mv' && file.folder === 'checkpoints')
+          .map((file) => file.name)
+          .sort((a, b) =>
+            a === DEFAULT_HUNYUAN_MV ? -1 : b === DEFAULT_HUNYUAN_MV ? 1 : a.localeCompare(b),
+          )
+      : [DEFAULT_HUNYUAN_MV];
+    if (!checkpoints.length)
+      return [
+        {
+          model: { kind: 'hunyuan3d-2mv', id: DEFAULT_HUNYUAN_MV, name: 'Hunyuan3D 2mv', checkpoint: DEFAULT_HUNYUAN_MV },
+          summary: {
+            id: DEFAULT_HUNYUAN_MV,
+            name: 'Hunyuan3D 2mv',
+            description,
+            available: false,
+            unavailableReason: `Hunyuan3D 2mv was not found in ComfyUI. Put ${DEFAULT_HUNYUAN_MV} in its checkpoints folder and refresh.`,
+          },
+        },
+      ];
+    return checkpoints.map((checkpoint) => {
+      const name = hunyuanName(checkpoint);
+      return {
+        model: { kind: 'hunyuan3d-2mv', id: checkpoint, name, checkpoint },
+        summary: { id: checkpoint, name, description, available: true },
+      };
+    });
+  }
+
+  private trellisEntries(files: ImageModelFile[] | null): Entry<GeometryModel>[] {
     const pick = (kind: string, preferred: string) =>
       files?.find((file) => file.kind === kind && file.name === preferred)?.name ??
       files?.filter((file) => file.kind === kind).sort((a, b) => a.name.localeCompare(b.name))[0]
@@ -104,6 +165,7 @@ export class AvatarCharacterModelService {
       return [
         {
           model: {
+            kind: 'trellis2',
             id: DEFAULT_TRELLIS_UNET,
             name: displayName(DEFAULT_TRELLIS_UNET),
             unet: DEFAULT_TRELLIS_UNET,
@@ -129,6 +191,7 @@ export class AvatarCharacterModelService {
         const name = displayName(unet);
         return {
           model: {
+            kind: 'trellis2',
             id: unet,
             name,
             unet,
@@ -138,16 +201,16 @@ export class AvatarCharacterModelService {
           summary: {
             id: unet,
             name,
-            description: 'Textured mesh from one front image, generated in ComfyUI.',
+            description: 'Textured mesh from the front image only, generated in ComfyUI.',
             available: !reason,
             ...(reason ? { unavailableReason: reason } : {}),
           },
         };
       })
       .sort((a, b) =>
-        a.model.unet === DEFAULT_TRELLIS_UNET
+        a.model.id === DEFAULT_TRELLIS_UNET
           ? -1
-          : b.model.unet === DEFAULT_TRELLIS_UNET
+          : b.model.id === DEFAULT_TRELLIS_UNET
             ? 1
             : a.model.name.localeCompare(b.model.name),
       );

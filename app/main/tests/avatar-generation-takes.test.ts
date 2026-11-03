@@ -6,6 +6,7 @@ import { AvatarGenerationService } from '../src/avatar/generation/avatar-generat
 import {
   AvatarCharacterModelService,
   BLENDER_FACE_FIT_RIG,
+  DEFAULT_HUNYUAN_MV,
 } from '../src/avatar/generation/character-model-service.js';
 import type { ComfyUIClient } from '../src/avatar/generation/comfyui-client.js';
 import type { ImageModelFile } from '../src/avatar/generation/image-model-service.js';
@@ -36,6 +37,7 @@ async function setup(run = vi.fn().mockResolvedValue(Buffer.from('bytes'))) {
   };
   const characterModels = {
     resolveGeometry: vi.fn(async (id?: string) => ({
+      kind: 'trellis2' as const,
       id: id ?? 'trellis_2_int8_convrot.safetensors',
       name: id === 'trellis_2_bf16.safetensors' ? 'TRELLIS.2 (bf16)' : 'TRELLIS.2 (int8 convrot)',
       unet: id ?? 'trellis_2_int8_convrot.safetensors',
@@ -169,10 +171,14 @@ describe('3D avatar model choices', () => {
     );
     const selection = await service.list();
     expect(selection.geometry.map((model) => model.id)).toEqual([
+      DEFAULT_HUNYUAN_MV,
       'trellis_2_int8_convrot.safetensors',
       'trellis_2_bf16.safetensors',
     ]);
-    expect(selection.geometry[0]).toMatchObject({
+    // Hunyuan3D 2mv comes first but isn't installed here, so TRELLIS.2 is picked.
+    expect(selection.geometry[0]).toMatchObject({ available: false });
+    expect(selection.geometry[0].unavailableReason).toMatch(/checkpoints folder/);
+    expect(selection.geometry[1]).toMatchObject({
       name: 'TRELLIS.2 (int8 convrot)',
       available: true,
     });
@@ -192,11 +198,12 @@ describe('3D avatar model choices', () => {
     );
     await service.select('geometry', 'trellis_2_bf16.safetensors');
     expect(memory.setValue).toHaveBeenCalledWith(
-      'avatar.geometryModel',
+      'avatar.geometryModel.v2',
       'trellis_2_bf16.safetensors',
     );
     expect((await service.list()).selectedGeometryId).toBe('trellis_2_bf16.safetensors');
     await expect(service.resolveGeometry()).resolves.toEqual({
+      kind: 'trellis2',
       id: 'trellis_2_bf16.safetensors',
       name: 'TRELLIS.2 (bf16)',
       unet: 'trellis_2_bf16.safetensors',
@@ -215,7 +222,7 @@ describe('3D avatar model choices', () => {
     );
     const selection = await service.list();
     expect(selection.geometry.every((model) => !model.available)).toBe(true);
-    expect(selection.geometry[0].unavailableReason).toMatch(/VAEs/);
+    expect(selection.geometry[1].unavailableReason).toMatch(/VAEs/);
     expect(selection.rig[0]).toMatchObject({
       available: false,
       unavailableReason: 'Local face fitting needs setup.',
@@ -229,9 +236,12 @@ describe('3D avatar model choices', () => {
       vi.fn().mockResolvedValue(files.slice(4)),
       vi.fn().mockResolvedValue(undefined),
     );
-    const [only] = (await service.list()).geometry;
-    expect(only).toMatchObject({ available: false });
-    expect(only.unavailableReason).toMatch(/not found in ComfyUI/);
+    const geometry = (await service.list()).geometry;
+    expect(geometry).toHaveLength(2);
+    for (const model of geometry) {
+      expect(model).toMatchObject({ available: false });
+      expect(model.unavailableReason).toMatch(/not found in ComfyUI/);
+    }
   });
 
   it('falls back to the workflow defaults when the models cannot be listed', async () => {
@@ -240,8 +250,38 @@ describe('3D avatar model choices', () => {
       vi.fn().mockResolvedValue(undefined),
     );
     await expect(service.resolveGeometry()).resolves.toMatchObject({
+      kind: 'hunyuan3d-2mv',
+      checkpoint: DEFAULT_HUNYUAN_MV,
+    });
+    await expect(service.resolveGeometry('trellis_2_int8_convrot.safetensors')).resolves.toMatchObject({
       unet: 'trellis_2_int8_convrot.safetensors',
       shapeVae: 'trellis_2_shape_vae_bf16.safetensors',
+    });
+  });
+
+  it('makes an installed Hunyuan3D 2mv the default, ahead of an older saved TRELLIS.2 choice', async () => {
+    const memory = store();
+    memory.setValue('avatar.geometryModel', 'trellis_2_bf16.safetensors');
+    const service = new AvatarCharacterModelService(
+      vi.fn().mockResolvedValue([
+        ...files,
+        { folder: 'checkpoints', name: 'hunyuan3d-dit-v2-mv-turbo.safetensors', kind: 'hunyuan3d-2mv' },
+        { folder: 'checkpoints', name: DEFAULT_HUNYUAN_MV, kind: 'hunyuan3d-2mv' },
+      ]),
+      vi.fn().mockResolvedValue(undefined),
+      memory,
+    );
+    const selection = await service.list();
+    expect(selection.geometry.slice(0, 2).map((model) => model.name)).toEqual([
+      'Hunyuan3D 2mv',
+      'Hunyuan3D 2mv (turbo)',
+    ]);
+    expect(selection.selectedGeometryId).toBe(DEFAULT_HUNYUAN_MV);
+    await expect(service.resolveGeometry()).resolves.toEqual({
+      kind: 'hunyuan3d-2mv',
+      id: DEFAULT_HUNYUAN_MV,
+      name: 'Hunyuan3D 2mv',
+      checkpoint: DEFAULT_HUNYUAN_MV,
     });
   });
 });
@@ -293,5 +333,159 @@ describe('removing an image background on request', () => {
     await expect(service.removeConceptBackground(jobId)).rejects.toThrow('No character');
     expect(service.getStatus(jobId)).toMatchObject({ previewDataUrl: before, status: 'awaiting_confirmation' });
     expect(service.getStatus(jobId).backgroundRemoved).toBeUndefined();
+  });
+});
+
+describe('side and back views for multi-view 3D models', () => {
+  const qwen = {
+    id: 'diffusion_models:qwen.safetensors',
+    name: 'Qwen',
+    family: 'qwen-image-2.1' as const,
+    model: 'qwen.safetensors',
+    clip: 'qwen3vl.safetensors',
+    vae: 'qwen-vae.safetensors',
+  };
+  const hunyuan = {
+    kind: 'hunyuan3d-2mv' as const,
+    id: DEFAULT_HUNYUAN_MV,
+    name: 'Hunyuan3D 2mv',
+    checkpoint: DEFAULT_HUNYUAN_MV,
+  };
+
+  async function viewSetup(withQwen = true) {
+    const directory = await mkdtemp(path.join(tmpdir(), 'avatar-views-'));
+    directories.push(directory);
+    let image = 0;
+    const comfy = {
+      baseUrl: 'http://127.0.0.1:8188',
+      isAvailable: vi.fn().mockResolvedValue(true),
+      run: vi.fn(async (_graph: Record<string, { class_type: string }>, options?: { output?: string }) =>
+        Buffer.from(options?.output === 'mesh' ? 'SHAPE' : `image-${++image}`),
+      ),
+      uploadImage: vi.fn(async (name: string) => `up-${name}`),
+      interrupt: vi.fn(),
+    };
+    const characterRunner = {
+      assertAvailable: vi.fn().mockResolvedValue(undefined),
+      inspectReference: vi.fn().mockResolvedValue([]),
+      prepareReference: vi.fn().mockResolvedValue(path.join(directory, 'face-landmarks.json')),
+      removeBackground: vi.fn(async (input: { outputPath: string }) => {
+        await writeFile(input.outputPath, 'cut');
+      }),
+      paintViews: vi.fn(async (input: { outputPath: string }) => {
+        await writeFile(input.outputPath, 'PAINTED');
+      }),
+      build: vi.fn(async (input: { outputPath: string }) => {
+        await writeFile(input.outputPath, 'VRM');
+        return Buffer.from('VRM');
+      }),
+    };
+    const imageModels = {
+      resolve: vi.fn().mockResolvedValue(qwen),
+      resolveViewModel: vi.fn().mockResolvedValue(withQwen ? qwen : undefined),
+    };
+    const characterModels = {
+      resolveGeometry: vi.fn(async (id?: string) =>
+        id === 'trellis'
+          ? {
+              kind: 'trellis2' as const,
+              id: 'trellis',
+              name: 'TRELLIS.2',
+              unet: 'trellis.safetensors',
+              shapeVae: 'shape.safetensors',
+              textureVae: 'texture.safetensors',
+            }
+          : hunyuan,
+      ),
+      resolveRig: vi.fn(async () => ({ id: BLENDER_FACE_FIT_RIG, name: 'Blender rig' })),
+    };
+    const service = new AvatarGenerationService({
+      comfy: comfy as unknown as ComfyUIClient,
+      characterRunner,
+      characterModels,
+      imageModels,
+      models: { uploadModel: vi.fn(), setActiveModel: vi.fn() },
+      runner: { prepare: vi.fn(), score: vi.fn(), assemble: vi.fn() },
+      baseModelPath: path.join(directory, 'base.vrm'),
+      workDirectory: directory,
+    });
+    return { service, comfy, characterRunner, imageModels };
+  }
+
+  it('draws the side and back views from the front image with the image', async () => {
+    const { service, comfy } = await viewSetup();
+    const { jobId } = await service.startJob({ prompt: 'Auburn explorer' });
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+    expect(comfy.run).toHaveBeenCalledTimes(3);
+    const [, side, back] = comfy.run.mock.calls.map(([graph]) => graph as Record<string, { class_type: string; inputs: Record<string, unknown> }>);
+    expect(side.frontImage.inputs.image).toBe(`up-${jobId}-front.png`);
+    expect(side.encode.inputs.prompt).toMatch(/left side/);
+    expect(back.encode.inputs.prompt).toMatch(/from directly behind/);
+    expect(service.getStatus(jobId).views).toEqual({
+      left: `data:image/png;base64,${Buffer.from('image-2').toString('base64')}`,
+      back: `data:image/png;base64,${Buffer.from('image-3').toString('base64')}`,
+    });
+  });
+
+  it('builds Hunyuan3D 2mv from all three views and paints them on; TRELLIS.2 gets the front only', async () => {
+    const { service, comfy, characterRunner } = await viewSetup();
+    const { jobId } = await service.startJob({ prompt: 'Auburn explorer' });
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+    await service.confirmConcept(jobId);
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('completed'));
+    const mesh = comfy.run.mock.calls[3][0] as Record<string, { class_type: string; inputs: Record<string, unknown> }>;
+    expect(mesh.cond.class_type).toBe('Hunyuan3Dv2ConditioningMultiView');
+    expect(Object.keys(mesh.cond.inputs)).toEqual(['front', 'left', 'back']);
+    expect(mesh.checkpoint.inputs.ckpt_name).toBe(DEFAULT_HUNYUAN_MV);
+    expect(mesh.back_image.inputs.image).toBe(`up-${jobId}-back.png`);
+    expect(characterRunner.paintViews).toHaveBeenCalledWith(
+      expect.objectContaining({
+        meshPath: expect.stringMatching(/source-shape\.glb$/),
+        outputPath: expect.stringMatching(/source\.glb$/),
+        front: expect.stringMatching(/paint-front\.png$/),
+        left: expect.stringMatching(/paint-left\.png$/),
+        back: expect.stringMatching(/paint-back\.png$/),
+      }),
+    );
+    expect(characterRunner.build).toHaveBeenCalledWith(
+      expect.objectContaining({ meshPath: expect.stringMatching(/source\.glb$/) }),
+    );
+    expect(service.getStatus(jobId).geometryModelName).toBe('Hunyuan3D 2mv');
+
+    await service.confirmConcept(jobId, { geometryModelId: 'trellis' });
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('completed'));
+    const trellis = comfy.run.mock.calls[4][0] as Record<string, { inputs: Record<string, unknown> }>;
+    expect(trellis.image.inputs.image).toBe(`up-${jobId}-concept.png`);
+    expect(JSON.stringify(trellis)).not.toMatch(/-(left|back)\.png/);
+    expect(characterRunner.paintViews).toHaveBeenCalledTimes(1);
+  });
+
+  it('redraws the views with a new seed on request', async () => {
+    const { service, comfy } = await viewSetup();
+    const { jobId } = await service.startJob({ prompt: 'Auburn explorer' });
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+    const before = service.getStatus(jobId).views;
+    await service.redrawViews(jobId);
+    expect(service.getStatus(jobId).status).toBe('concept');
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+    expect(comfy.run).toHaveBeenCalledTimes(5);
+    const seed = (call: number) => (comfy.run.mock.calls[call][0] as Record<string, { inputs: Record<string, unknown> }>).sample.inputs.seed;
+    expect(seed(3)).not.toBe(seed(1));
+    expect(service.getStatus(jobId).views).not.toEqual(before);
+  });
+
+  it('explains when there is no Qwen-Image model to draw the views, and builds from the front', async () => {
+    const { service, comfy, characterRunner } = await viewSetup(false);
+    const { jobId } = await service.startJob({ prompt: 'Auburn explorer' });
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+    expect(comfy.run).toHaveBeenCalledTimes(1);
+    expect(service.getStatus(jobId).viewsMessage).toMatch(/need Qwen-Image/);
+    await service.confirmConcept(jobId);
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('completed'));
+    const mesh = comfy.run.mock.calls[1][0] as Record<string, { inputs: Record<string, unknown> }>;
+    expect(Object.keys(mesh.cond.inputs)).toEqual(['front']);
+    expect(characterRunner.paintViews).toHaveBeenCalledWith(
+      expect.not.objectContaining({ left: expect.anything() }),
+    );
   });
 });

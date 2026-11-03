@@ -222,6 +222,34 @@ describe('avatar studio', () => {
     expect(screen.getByRole('button', { name: 'Remove background' })).toBeInTheDocument();
   });
 
+  it('shows the side and back views beside the front, and redraws them on request', async () => {
+    const { api, mocks } = createApi([
+      take('job-1', { views: { left: 'data:image/png;base64,SIDE', back: 'data:image/png;base64,BACK' } }),
+    ]);
+    const extra = mocks as unknown as Record<string, unknown>;
+    extra.redrawAvatarViews = vi.fn(async () => undefined);
+    render(<AvatarStudio avatarApi={api} onClose={vi.fn()} pollIntervalMs={5} />);
+    await settle();
+    expect(screen.getByRole('img', { name: 'Take 1 side view' })).toHaveAttribute('src', 'data:image/png;base64,SIDE');
+    expect(screen.getByRole('img', { name: 'Take 1 back view' })).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Redraw side and back views' }));
+    });
+    expect(extra.redrawAvatarViews).toHaveBeenCalledWith('job-1');
+  });
+
+  it('says why a take has no side and back views', async () => {
+    const { api, mocks } = createApi([
+      take('job-1', { views: {}, viewsMessage: 'Side and back views need Qwen-Image 2.1 in ComfyUI.' }),
+    ]);
+    (mocks as unknown as Record<string, unknown>).redrawAvatarViews = vi.fn();
+    render(<AvatarStudio avatarApi={api} onClose={vi.fn()} pollIntervalMs={5} />);
+    await settle();
+    expect(screen.queryByRole('img', { name: 'Take 1 side view' })).not.toBeInTheDocument();
+    expect(screen.getByText('Side and back views need Qwen-Image 2.1 in ComfyUI.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Draw side and back views' })).toBeInTheDocument();
+  });
+
   it('sends warning acceptance only from the explicit build-anyway button', async () => {
     const { api, mocks } = createApi([
       take('job-1', {

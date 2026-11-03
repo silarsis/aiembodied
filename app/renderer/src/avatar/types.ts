@@ -242,6 +242,12 @@ export interface AvatarGenerationStatus {
   /** Concept image as a PNG data URL, once it exists. */
   previewDataUrl?: string | null;
   backgroundRemoved?: boolean;
+  /**
+   * The character's left side and back, drawn from the front image for 3D models that take
+   * several views (PNG data URLs). Missing when they couldn't be drawn; viewsMessage says why.
+   */
+  views?: { left?: string | null; back?: string | null };
+  viewsMessage?: string | null;
   errorMessage?: string | null;
   /** The description, or the name given to an upload. */
   prompt?: string;
@@ -325,6 +331,8 @@ export interface AvatarBridge {
   cancelAvatarGeneration?(jobId: string): Promise<void>;
   removeAvatarBackground?(jobId: string): Promise<void>;
   restoreAvatarBackground?(jobId: string): Promise<void>;
+  /** Draw the side and back views again from the current front image. */
+  redrawAvatarViews?(jobId: string): Promise<void>;
   listAvatarCharacterModels?(): Promise<AvatarCharacterModelSelection>;
   setAvatarCharacterModel?(stage: 'geometry' | 'rig', id: string): Promise<void>;
 }

@@ -202,6 +202,20 @@ export class AvatarImageModelService {
     this.store?.setValue('avatar.imageModel', id);
     this.selected = id;
   }
+  /**
+   * The Qwen-Image model that draws a character's side and back views (an image edit, which only
+   * Qwen-Image does here). The take's own model is used when it is Qwen-Image, with its LoRAs.
+   */
+  async resolveViewModel(preferred?: ImageWorkflowModel): Promise<ImageWorkflowModel | undefined> {
+    if (preferred?.family === 'qwen-image-2.1' && preferred.clip && preferred.vae) return preferred;
+    await this.refresh();
+    const saved = this.current();
+    const qwen = this.entries.filter(
+      (entry) => entry.model.family === 'qwen-image-2.1' && entry.summary.available,
+    );
+    const entry = qwen.find((candidate) => candidate.model.id === saved) ?? qwen[0];
+    return entry ? { ...entry.model } : undefined;
+  }
   async resolve(id?: string): Promise<ImageWorkflowModel> {
     await this.refresh();
     const selected = id ?? this.current();
@@ -289,7 +303,10 @@ export function remoteModelKind(folder: string, name: string): string | null {
     if (lower === 'ae.safetensors' || /flux.*ae/.test(lower)) return 'flux-ae';
     return null;
   }
-  if (folder === 'checkpoints') return /xl/.test(lower) ? 'sdxl' : 'sd1';
+  if (folder === 'checkpoints') {
+    if (lower.includes('hunyuan3d')) return /(^|[^a-z])(2_?)?mv([^a-z]|$)/.test(lower) ? 'hunyuan3d-2mv' : null;
+    return /xl/.test(lower) ? 'sdxl' : 'sd1';
+  }
   // Without the add-on a LoRA's family can't be read, so it is listed but never applied.
   if (folder === 'loras') return /\.safetensors$/.test(lower) ? 'lora' : null;
   return null;

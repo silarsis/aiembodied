@@ -305,6 +305,12 @@ export function AvatarStudio({
       await refresh();
     });
 
+  const redrawViews = (job: AvatarGenerationStatus) =>
+    run('Could not draw the side and back views.', async () => {
+      await avatarApi.redrawAvatarViews?.(job.jobId);
+      await refresh();
+    });
+
   const cancel = (job: AvatarGenerationStatus) =>
     run('Could not cancel.', async () => {
       if (!avatarApi.cancelAvatarGeneration)
@@ -417,7 +423,7 @@ export function AvatarStudio({
     </section>
   ) : null;
 
-  const imageElement = selected?.previewDataUrl ? (
+  const front = selected?.previewDataUrl ? (
     <button
       type="button"
       className="avatarStudio__image"
@@ -428,6 +434,43 @@ export function AvatarStudio({
       <img src={selected.previewDataUrl} alt={`Take ${selectedNumber} concept`} />
     </button>
   ) : null;
+  const sideViews = selected
+    ? (
+        [
+          ['left', 'side'],
+          ['back', 'back'],
+        ] as const
+      ).flatMap(([key, label]) => {
+        const url = selected.views?.[key];
+        return url ? [{ key, label, url }] : [];
+      })
+    : [];
+  // With side and back views, the three are shown together: they are what a multi-view 3D model gets.
+  const imageElement =
+    front && sideViews.length ? (
+      <div className="avatarStudio__views">
+        <figure>
+          {front}
+          <figcaption>Front</figcaption>
+        </figure>
+        {sideViews.map((view) => (
+          <figure key={view.key}>
+            <button
+              type="button"
+              className="avatarStudio__image"
+              aria-label={`Enlarge take ${selectedNumber} ${view.label} view`}
+              aria-haspopup="dialog"
+              onClick={() => setEnlarged(view.url)}
+            >
+              <img src={view.url} alt={`Take ${selectedNumber} ${view.label} view`} />
+            </button>
+            <figcaption>{view.label === 'side' ? 'Side' : 'Back'}</figcaption>
+          </figure>
+        ))}
+      </div>
+    ) : (
+      front
+    );
 
   const viewer = modelReady?.data ? (
     <AvatarModelViewer
@@ -707,6 +750,7 @@ export function AvatarStudio({
         {selected.status === 'failed' && !hasImage(selected) ? (
           <p className="kiosk__error">Image generation failed: {selected.errorMessage}</p>
         ) : null}
+        {hasImage(selected) && !isBuilding(selected) ? progress : null}
         {warnings}
         {selected.source !== 'upload' ? (
           <div className="avatarStudio__row">
@@ -740,6 +784,26 @@ export function AvatarStudio({
               {selected.backgroundRemoved
                 ? 'The character was cut out onto plain white.'
                 : 'Cuts the character out onto plain white. Try it if the build says the background isn’t light and plain.'}
+            </small>
+          </div>
+        ) : null}
+        {modeOf(selected) === 'new-character' &&
+        hasImage(selected) &&
+        !RUNNING.has(selected.status) &&
+        avatarApi.redrawAvatarViews ? (
+          <div className="avatarStudio__field">
+            <button
+              type="button"
+              disabled={busy || anyRunning}
+              onClick={() => void redrawViews(selected)}
+            >
+              {selected.views?.left || selected.views?.back
+                ? 'Redraw side and back views'
+                : 'Draw side and back views'}
+            </button>
+            <small className={selected.viewsMessage ? 'avatarStudio__warnText' : undefined}>
+              {selected.viewsMessage ??
+                'Drawn from the front image. Hunyuan3D 2mv builds from all three; TRELLIS.2 uses only the front.'}
             </small>
           </div>
         ) : null}
