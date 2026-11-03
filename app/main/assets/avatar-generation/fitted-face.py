@@ -115,7 +115,7 @@ def nearest_on_polyline(points,line):
     return segment,t[rows,segment],distance[rows,segment]
 
 
-def project_front_face(body,seams,source,p,oval,face_width,to_image):
+def project_front_face(body,seams,source,p,oval,face_width,to_image,eye_data):
     """Repaint the face from the front drawing, placed exactly where the landmarks put it.
 
     The painted head comes from paint-views' own fit of the front drawing, which can sit a
@@ -137,15 +137,23 @@ def project_front_face(body,seams,source,p,oval,face_width,to_image):
     weights=np.where(inner&(points[:,1]<centre_y),np.clip(edge/(face_width*.05),0,1),0)*np.clip((-normals[:,1]+.05)/.35,0,1)
     atlases={name:pixels.copy() for name,pixels in appearance.images.items()}
     covered={name:np.zeros(pixels.shape[:2],dtype=bool) for name,pixels in atlases.items()}
+    def near_eyes(co,grow=1.):
+        return np.any([((co[...,0]-center[0])/(ew*2.5*grow))**2+((co[...,2]-center[2])/(ew*1.1*grow))**2<1
+                       for center,ew,_,_ in eye_data],axis=0)&(co[...,1]<centre_y)
+    # Beside the face the head isn't subdivided, so a large triangle can cross the band with
+    # none of its corners in it: pick triangles with a looser band, test pixels exactly.
+    eye_band=near_eyes(points,2.)
+    occupied={name:np.zeros(pixels.shape[:2],dtype=bool) for name,pixels in atlases.items()}
     for tri in mesh.loop_triangles:
         ids=list(tri.vertices)
-        if weights[ids].max()==0:continue
         texture=appearance.textures[tri.material_index]
         if texture is None:continue
         output=atlases[texture];h,w=output.shape[:2]
         raster=seams['raster_triangle'](np.array([layer.data[i].uv[:] for i in tri.loops])*[w,h]-.5,w,h)
         if raster is None:continue
         lo,hi,wa,wb,wc,mask=raster
+        occupied[texture][lo[1]:hi[1]+1,lo[0]:hi[0]+1]|=mask
+        if weights[ids].max()==0 and not eye_band[ids].any():continue
         co=wa[...,None]*points[ids[0]]+wb[...,None]*points[ids[1]]+wc[...,None]*points[ids[2]]
         colour=sample_image(reference,*to_image(co))
         weight=wa*weights[ids[0]]+wb*weights[ids[1]]+wc*weights[ids[2]]
@@ -153,10 +161,22 @@ def project_front_face(body,seams,source,p,oval,face_width,to_image):
         weight=weight*np.clip((skin.min()+.2-colour.min(axis=-1))/.08,0,1)
         region=output[lo[1]:hi[1]+1,lo[0]:hi[0]+1,:3]
         blended=region*(1-weight[...,None])+colour*weight[...,None]
+        # Eye whites left on the skin show as pale crescents: the drawing's stylised eyes reach
+        # past the detected lid corners, and the side view paints its own eye towards the
+        # temple. At eye height, out towards the temples, pixels about as light as the skin
+        # but much greyer become skin; skin itself and darker detail (brows, lashes, hair)
+        # are left alone.
+        chroma=blended.max(axis=-1)-blended.min(axis=-1)
+        pale=near_eyes(co)&(blended.min(axis=-1)>skin.min()-.03)&(chroma<.6*(skin.max()-skin.min()))
+        blended[pale]=skin
         region[mask]=blended[mask]
         covered[texture][lo[1]:hi[1]+1,lo[0]:hi[0]+1]|=mask
     changed=0
     for name,pixels in atlases.items():
+        # Texture filtering reads a little past each chart's edge: carry the new colours into
+        # the unused gutter around them (never over another chart), or the old pale bake
+        # padding shows along the seams.
+        pixels,_=seams['extend_colors'](pixels,covered[name],3,blocked=occupied[name])
         image=bpy.data.images[name].copy();image.name='FrontFaceAtlas'
         image.pixels.foreach_set(pixels.ravel());image.update();image.pack()
         changed+=int(covered[name].sum())
@@ -244,15 +264,37 @@ def wrap_head(body,p,faces,face_width,height,seams,source,to_image):
         if len(rim)<6:raise RuntimeError('An eye or mouth opening on the head is too small.')
         xz=np.array([v.co[:] for v in rim])[:,[0,2]]
         fits=[(ids,*nearest_on_polyline(xz,p[ids][:,[0,2]])) for ids in (upper,lower)]
-        # The drawings have closed lips: a rim alternating between two nearly touching lip
-        # lines showed as a dashed slit, so at rest the mouth closes on the line between them.
-        line=(p[upper]+p[lower])/2 if upper is MOUTH_UPPER else None
+        if upper is MOUTH_UPPER:
+            # The drawings have closed lips, nearly touching. Choosing the nearer lip line let
+            # the rim zigzag between them (a jagged seam); instead each rim vertex belongs to
+            # the lip on its side of the line between them, and at rest the lips sit just apart
+            # by a thin, even gap.
+            mid=(p[upper]+p[lower])/2
+            segment,t,_=nearest_on_polyline(xz,mid[:,[0,2]])
+            gap=np.array([0,0,mouth_width*.008])
+            for n,v in enumerate(rim):
+                s,u=int(segment[n]),float(t[n])
+                at=mid[s]*(1-u)+mid[s+1]*u
+                above=v.co.z>=at[2]
+                v.co=Vector(at+(gap if above else -gap))
+                snapped[v]=(upper if above else lower,s,u)
+            continue
         for n,v in enumerate(rim):
             ids,segment,t,_=min(fits,key=lambda fit:fit[3][n])
             s,u=int(segment[n]),float(t[n])
-            rest=p[ids] if line is None else line
-            v.co=Vector(rest[s]*(1-u)+rest[s+1]*u)
+            v.co=Vector(p[ids[s]]*(1-u)+p[ids[s+1]]*u)
             snapped[v]=(ids,s,u)
+    # A lid has thickness. Run each eye's rim back into the head as a short wall, so a
+    # three-quarter view meets lid skin past the eyeball instead of the inside of the head.
+    for (upper,lower,verts),(center,ew,_,_) in zip(holes[:2],eye_data):
+        rim={v for v in verts if v.is_valid and v in snapped}
+        edges=[e for e in bm.edges if len(e.link_faces)==1 and all(v in rim for v in e.verts)]
+        made=bmesh.ops.extrude_edge_only(bm,edges=edges)['geom']
+        walls=[v for v in made if isinstance(v,bmesh.types.BMVert)]
+        for v in walls:
+            from_rim=min(rim,key=lambda r:(r.co-v.co).length)
+            snapped[v]=snapped[from_rim]
+            v.co.y+=ew*.35
     bm.verts.index_update()
     snapped={v.index:place for v,place in snapped.items()}
     bm.to_mesh(mesh);bm.free();mesh.update()
@@ -274,7 +316,7 @@ def wrap_head(body,p,faces,face_width,height,seams,source,to_image):
         weights=np.clip(bary[rows,best],0,None);weights/=weights.sum(axis=1,keepdims=True)
         for name in PRESETS:
             shift[name][chunk]=np.einsum('nk,nkd->nd',weights,delta[name][tri[best]])
-    face_pixels=project_front_face(body,seams,source,p,oval,face_width,to_image)
+    face_pixels=project_front_face(body,seams,source,p,oval,face_width,to_image,eye_data)
     body.shape_key_add(name='Basis',from_mix=False)
     for name in PRESETS:
         key=body.shape_key_add(name=name,from_mix=False)
