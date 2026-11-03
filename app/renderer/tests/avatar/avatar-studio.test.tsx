@@ -171,7 +171,7 @@ describe('avatar studio', () => {
     expect(screen.getByRole('heading', { name: 'Image · take 1' })).toBeInTheDocument();
   });
 
-  it('pairs a multi-view 3D model with Qwen-Image only', async () => {
+  it('lets any model draw the front for a multi-view 3D model, with Qwen-Image drawing the views', async () => {
     const { api, mocks } = createApi();
     const hunyuan = {
       geometry: [
@@ -194,9 +194,11 @@ describe('avatar studio', () => {
     render(<AvatarStudio avatarApi={api} onClose={vi.fn()} pollIntervalMs={5} />);
     await settle();
     await settle();
-    expect(mocks.setAvatarImageModel).toHaveBeenCalledWith('qwen');
-    expect(screen.getByRole('option', { name: 'Custom XL (not for this 3D model)' })).toBeDisabled();
-    expect(screen.getByText(/only Qwen-Image draws/)).toBeInTheDocument();
+    expect(mocks.setAvatarImageModel).not.toHaveBeenCalled();
+    expect(screen.getByRole('option', { name: 'Custom XL' })).toBeEnabled();
+    expect(screen.getByText(/Qwen-Image 2.1 then draws the side and back/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Avatar description'), { target: { value: 'An explorer' } });
+    expect(screen.getByRole('button', { name: 'Generate image' })).toBeEnabled();
   });
 
   it('blocks generating for a multi-view 3D model when no Qwen-Image is installed', async () => {
