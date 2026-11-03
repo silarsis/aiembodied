@@ -223,6 +223,8 @@ export interface AvatarGenerationStatus {
   message?: string | null;
   /** Concept image as a PNG data URL, once it exists. */
   previewDataUrl?: string | null;
+  /** The image is the cut-out version (the original is kept and can be restored). */
+  backgroundRemoved?: boolean;
   errorMessage?: string | null;
   /** The description, or the name given to an upload. */
   prompt?: string;

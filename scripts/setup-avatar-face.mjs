@@ -44,4 +44,8 @@ if (!bytes || createHash('sha256').update(bytes).digest('hex') !== expected) {
     throw new Error('Face model checksum mismatch.');
   await writeFile(file, bytes);
 }
+// The background-removal model (about 180 MB), so "Remove background" works offline.
+await mkdir(path.join(root, 'models', 'rembg'), { recursive: true });
+process.env.U2NET_HOME = process.env.U2NET_HOME || path.join(root, 'models', 'rembg');
+await run(python, ['-c', "from rembg import new_session; new_session('isnet-general-use')"]);
 console.log('Local avatar face fitting is ready. Inference does not require a network connection.');

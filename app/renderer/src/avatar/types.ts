@@ -241,6 +241,7 @@ export interface AvatarGenerationStatus {
   message?: string | null;
   /** Concept image as a PNG data URL, once it exists. */
   previewDataUrl?: string | null;
+  backgroundRemoved?: boolean;
   errorMessage?: string | null;
   /** The description, or the name given to an upload. */
   prompt?: string;
@@ -322,6 +323,8 @@ export interface AvatarBridge {
   rejectGeneratedAvatar(jobId: string): Promise<void>;
   listAvatarGenerationJobs?(): Promise<AvatarGenerationStatus[]>;
   cancelAvatarGeneration?(jobId: string): Promise<void>;
+  removeAvatarBackground?(jobId: string): Promise<void>;
+  restoreAvatarBackground?(jobId: string): Promise<void>;
   listAvatarCharacterModels?(): Promise<AvatarCharacterModelSelection>;
   setAvatarCharacterModel?(stage: 'geometry' | 'rig', id: string): Promise<void>;
 }

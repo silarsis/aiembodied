@@ -23,6 +23,13 @@ replaces the underlying face, projects the reference appearance, and authors the
 speech/emotion/blink/gaze morphs. Face fitting runs on the CPU; image and body mesh
 generation still use the shared ComfyUI runtime.
 
+**Remove background** in the avatar studio's image step cuts the character out onto plain
+white with rembg's `isnet-general-use` model (`app/main/assets/avatar-generation/remove-background.py`,
+model under `models/rembg`, downloaded by setup). It only runs when asked. Thin strokes the
+model keeps (rays, neon lines) are dropped by keeping the largest solid shape, and the canvas
+is padded with white when the character touches the edge. The original image is kept as
+`concept-original.png` and **Restore original image** puts it back.
+
 The template is Google's MediaPipe canonical face surface (Apache 2.0 asset and
 notice in `app/main/assets/avatar-generation/face-template`). It is modified in
 memory to remove its eye and mouth caps. This is a front-surface replacement,

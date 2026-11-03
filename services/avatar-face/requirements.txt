@@ -1,3 +1,6 @@
 mediapipe==0.10.32
 Pillow==13.0.0
 numpy==2.5.4
+# On-request background removal (Remove background in the avatar studio)
+rembg==2.0.86
+onnxruntime==1.31.1

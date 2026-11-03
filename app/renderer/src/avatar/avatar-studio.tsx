@@ -293,6 +293,18 @@ export function AvatarStudio({
       if (updated && (isBuilding(updated) || updated.status === 'completed')) setPanel('model');
     });
 
+  const removeBackground = (job: AvatarGenerationStatus) =>
+    run('Could not remove the background.', async () => {
+      await avatarApi.removeAvatarBackground?.(job.jobId);
+      await refresh();
+    });
+
+  const restoreBackground = (job: AvatarGenerationStatus) =>
+    run('Could not restore the original image.', async () => {
+      await avatarApi.restoreAvatarBackground?.(job.jobId);
+      await refresh();
+    });
+
   const cancel = (job: AvatarGenerationStatus) =>
     run('Could not cancel.', async () => {
       if (!avatarApi.cancelAvatarGeneration)
@@ -704,6 +716,31 @@ export function AvatarStudio({
             <button type="button" onClick={() => setPanel('describe')}>
               Edit description
             </button>
+          </div>
+        ) : null}
+        {modeOf(selected) === 'new-character' &&
+        hasImage(selected) &&
+        !RUNNING.has(selected.status) &&
+        avatarApi.removeAvatarBackground ? (
+          <div className="avatarStudio__field">
+            {selected.backgroundRemoved ? (
+              <button type="button" disabled={busy} onClick={() => void restoreBackground(selected)}>
+                Restore original image
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={busy || anyRunning}
+                onClick={() => void removeBackground(selected)}
+              >
+                Remove background
+              </button>
+            )}
+            <small>
+              {selected.backgroundRemoved
+                ? 'The character was cut out onto plain white.'
+                : 'Cuts the character out onto plain white. Try it if the build says the background isn’t light and plain.'}
+            </small>
           </div>
         ) : null}
         {characterSelectors}
