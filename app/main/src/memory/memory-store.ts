@@ -791,6 +791,19 @@ export class MemoryStore {
   }
 
   /** The oldest queued memory-engine writes, in the order they were queued. */
+  /** Drop queued writes for one conversation (it is being forgotten). Returns how many. */
+  dropMemoryOutboxForSession(sessionId: string): number {
+    this.ensureOpen();
+    const result = this.db
+      .prepare(
+        `DELETE FROM memory_outbox
+         WHERE (kind = 'session' AND json_extract(payload, '$.id') = ?)
+            OR (kind = 'message' AND json_extract(payload, '$.session_id') = ?)`,
+      )
+      .run(sessionId, sessionId);
+    return result.changes;
+  }
+
   listMemoryOutbox(limit = 100): MemoryOutboxEntry[] {
     this.ensureOpen();
     const rows = this.db

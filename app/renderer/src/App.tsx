@@ -15,6 +15,7 @@ import type { ProviderSettingsPatch } from '../../main/src/config/provider-setti
 import { ControlButton, ControlsDrawer } from './settings/controls-drawer.js';
 import { PanelDialog } from './settings/panel-dialog.js';
 import { ToolsSettings } from './settings/tools-settings.js';
+import { MemoryPanel } from './settings/memory-panel.js';
 import { ProviderSettingsPanel } from './settings/provider-settings-panel.js';
 import { ModelsDialog } from './settings/models-dialog.js';
 import type { UseId } from '../../main/src/config/model-routing.js';
@@ -748,7 +749,7 @@ export default function App() {
   const [modelsOpen, setModelsOpen] = useState(false);
   const [modelsInitialUse, setModelsInitialUse] = useState<UseId | undefined>(undefined);
   /** Which settings pop-up is open (the avatar studio and models pop-ups have their own state). */
-  const [panel, setPanel] = useState<'character' | 'backgrounds' | 'devices' | 'tools' | 'status' | null>(null);
+  const [panel, setPanel] = useState<'character' | 'backgrounds' | 'devices' | 'tools' | 'memory' | 'status' | null>(null);
   const [studioOpen, setStudioOpen] = useState(false);
   const closePanel = useCallback(() => setPanel(null), []);
   const openModels = useCallback((use?: UseId) => {
@@ -2393,6 +2394,14 @@ export default function App() {
               onOpen={() => setPanel('tools')}
             />
             <ControlButton
+              id="memory"
+              title="Memory"
+              summary="Facts · conversations"
+              keywords="memory remember facts forget conversations history recall summaries search past"
+              disabled={!activeBridge?.memoryEngine}
+              onOpen={() => setPanel('memory')}
+            />
+            <ControlButton
               id="status"
               title="Status and diagnostics"
               summary={isOnline ? 'Online' : 'Offline'}
@@ -2555,6 +2564,10 @@ export default function App() {
               active={panel === 'tools'}
               onOpenWebSearch={activeBridge?.models ? () => openModels('search') : undefined}
             />
+          </PanelDialog>
+
+          <PanelDialog id="memory" title="Memory" subtitle="What the assistant remembers, and what to correct or forget." open={panel === 'memory'} onClose={closePanel} wide>
+            <MemoryPanel memory={activeBridge?.memoryEngine} active={panel === 'memory'} />
           </PanelDialog>
 
           <PanelDialog id="status" title="Status and diagnostics" open={panel === 'status'} onClose={closePanel}>

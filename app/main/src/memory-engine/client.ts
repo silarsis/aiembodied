@@ -105,6 +105,41 @@ export interface MemoryEngineMemoryDetail {
   messages?: Array<{ id: string; role: string; speaker: string | null; content: string; tool: { name?: string } | null; created_at: string }>;
 }
 
+/** A stored fact, as the engine lists it. */
+export interface MemoryEngineStoredFact {
+  id: string;
+  text: string;
+  subject: string | null;
+  status: 'active' | 'superseded' | 'retracted';
+  pinned: boolean;
+  author: 'agent' | 'user' | 'extractor';
+  agent: string | null;
+  session_id: string | null;
+  source_message_ids: string[];
+  supersedes: string | null;
+  private: boolean;
+  reviewed_at: string | null;
+  created_at: string;
+}
+
+export interface MemoryEngineFactPatch {
+  text?: string;
+  subject?: string | null;
+  pinned?: boolean;
+  status?: 'active' | 'superseded' | 'retracted';
+  private?: boolean;
+  reviewed?: boolean;
+}
+
+export interface MemoryEngineRecallLogEntry {
+  id: number;
+  at: string;
+  session_id: string | null;
+  query: string;
+  items: Array<{ id: string; kind: string; score: number; similarity: number | null }>;
+  reason: string | null;
+}
+
 export interface MemoryEngineBrief {
   agent: string | null;
   facts: Array<{ id: string; text: string; subject: string | null; pinned: boolean; created_at: string }>;
@@ -221,6 +256,44 @@ export class MemoryEngineClient {
     if (options.includePrivate === false) params.set('include_private', 'false');
     const body = await this.request<Partial<MemoryEngineTimeline>>('GET', `/v1/timeline?${params.toString()}`);
     return { summaries: body.summaries ?? [], sessions: body.sessions ?? [] };
+  }
+
+  async listFacts(
+    options: { status?: 'active' | 'superseded' | 'retracted' | 'all'; unreviewed?: boolean; limit?: number } = {},
+  ): Promise<MemoryEngineStoredFact[]> {
+    const params = new URLSearchParams();
+    if (options.status) params.set('status', options.status);
+    if (options.unreviewed) params.set('unreviewed', 'true');
+    if (options.limit) params.set('limit', String(options.limit));
+    const query = params.toString();
+    const body = await this.request<{ facts: MemoryEngineStoredFact[] }>('GET', `/v1/facts${query ? `?${query}` : ''}`);
+    return body.facts;
+  }
+
+  patchFact(id: string, patch: MemoryEngineFactPatch): Promise<{ id: string }> {
+    return this.request('PATCH', `/v1/facts/${encodeURIComponent(id)}`, patch);
+  }
+
+  deleteFact(id: string): Promise<unknown> {
+    return this.request('DELETE', `/v1/facts/${encodeURIComponent(id)}`);
+  }
+
+  deleteSession(id: string): Promise<unknown> {
+    return this.request('DELETE', `/v1/sessions/${encodeURIComponent(id)}`);
+  }
+
+  async recallLog(options: { sessionId?: string; limit?: number } = {}): Promise<MemoryEngineRecallLogEntry[]> {
+    const params = new URLSearchParams();
+    if (options.sessionId) params.set('session_id', options.sessionId);
+    if (options.limit) params.set('limit', String(options.limit));
+    const query = params.toString();
+    const body = await this.request<{ entries: MemoryEngineRecallLogEntry[] }>('GET', `/v1/recall-log${query ? `?${query}` : ''}`);
+    return body.entries;
+  }
+
+  /** Do due summaries now, rather than waiting for quiet. Can take minutes with a local model. */
+  runSummaries(limit = 20): Promise<{ done: Array<Record<string, unknown>> }> {
+    return this.request('POST', '/v1/summaries/run', { limit }, 30 * 60_000);
   }
 
   /** Tell the engine a turn started or ended, so its background work waits for quiet. */

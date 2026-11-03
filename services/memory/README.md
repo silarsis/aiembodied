@@ -40,7 +40,9 @@ What exists so far (phases 1 to 4):
 - **Forget.** Delete a session, a message or a fact, with everything indexed from it. Deletes are
   recorded as tombstones so a future mirror can follow them.
 
-Still to come: a Memory panel in the app, and Supabase as a server option.
+Still to come: Supabase as a server option. In aiembodied, Controls → Memory is the panel for
+checking facts, reading or forgetting conversations by day, searching, and seeing what was
+recalled.
 
 Summary settings: `MEMORY_LLM_URL` (default `http://127.0.0.1:1234/v1`; `off` disables
 summaries), `MEMORY_LLM_MODEL` (default `qwen-next-flash`), `MEMORY_LLM_API_KEY`,

@@ -1764,6 +1764,20 @@ body {
 .toolsSettings__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .toolsSettings__add { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .toolsSettings__add label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #94a3b8; }
+.memoryPanel__tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.memoryPanel__tabs button[aria-selected='true'] { border-color: #7dd3fc; color: #7dd3fc; }
+.memoryPanel__error { margin: 0; color: #fca5a5; }
+.memoryPanel__danger { border-color: #f87171 !important; color: #fca5a5; }
+.memoryPanel__fact { padding: 8px 0; border-bottom: 1px solid #1e293b; }
+.memoryPanel__fact[data-status='retracted'] .memoryPanel__factText,
+.memoryPanel__fact[data-status='superseded'] .memoryPanel__factText { text-decoration: line-through; opacity: .7; }
+.memoryPanel__factText { flex-basis: 100%; }
+.memoryPanel__edit { display: flex; flex-wrap: wrap; gap: 8px; flex-basis: 100%; }
+.memoryPanel__edit input:first-child { flex: 1 1 320px; }
+.memoryPanel__messages li { align-items: flex-start; }
+.memoryPanel__turn { white-space: pre-wrap; flex: 1 1 320px; overflow-wrap: anywhere; }
+.memoryPanel__opened p { margin: 0; white-space: pre-wrap; }
+.memoryPanel__addFact input { width: 100%; }
 .panelDialog :where(button, select, input, textarea) { font: inherit; color: inherit; }
 .panelDialog :where(button) { padding: 5px 11px; border: 1px solid #334155; border-radius: 8px; background: #18253a; cursor: pointer; }
 .panelDialog :where(button:disabled) { opacity: .55; cursor: not-allowed; }
