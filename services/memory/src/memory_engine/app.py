@@ -11,6 +11,7 @@ import logging
 import secrets
 import threading
 from contextlib import asynccontextmanager
+from pathlib import Path
 from datetime import datetime
 from typing import Any, Literal, Optional
 from uuid import UUID
@@ -20,7 +21,7 @@ from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import __version__, context, db, facts, recall, store, summaries
+from . import __version__, context, db, facts, mirror, recall, store, storage, summaries
 from .embed import Embedder
 from .summaries import Summariser
 
@@ -75,6 +76,15 @@ class RecallBody(BaseModel):
     min_similarity: float = Field(default=context.RECALL_MIN_SIMILARITY, ge=0.0, le=1.0)
 
 
+class StorageBody(BaseModel):
+    database: Optional[str] = Field(default=None, max_length=2000)
+    mirror: Optional[str] = Field(default=None, max_length=2000)
+
+
+class StorageTestBody(BaseModel):
+    url: str = Field(min_length=1, max_length=2000)
+
+
 class ActivityBody(BaseModel):
     busy: bool
 
@@ -114,9 +124,22 @@ class Engine:
         embedder: Optional[Embedder] = None,
         embed_inline: bool = False,
         summariser: Optional[Summariser] = None,
+        settings_file: Optional[Path] = None,
+        mirror_interval: float = 60.0,
     ):
-        self.database_url = database_url
+        # This machine's database; the saved storage settings may point elsewhere.
+        self.local_url = database_url
+        self.settings_file = settings_file
+        self.storage = storage.load(settings_file)
+        self.database_url = self.storage.database or database_url
         self.schema = schema
+        self.mirror_interval = mirror_interval
+        self.mirror_error: Optional[str] = None
+        self.mirror_pushed_at: Optional[str] = None
+        self.moving = False
+        self._wake_mirror = threading.Event()
+        self._mirror_thread: Optional[threading.Thread] = None
+        self._storage_lock = threading.Lock()
         self.retry_seconds = retry_seconds
         # None: full-text search only. embed_inline (tests): embed during each write instead of
         # in the background worker.
@@ -128,7 +151,7 @@ class Engine:
         # None: no background summaries or fact extraction (no LLM configured).
         self.summariser = summariser
         self._summary_thread: Optional[threading.Thread] = None
-        self.pool = db.open_pool(database_url, schema)
+        self.pool = db.open_pool(self.database_url, schema)
         self.ready = False
         self.error: Optional[str] = None
         self.schema_version = 0
@@ -136,6 +159,9 @@ class Engine:
         self._thread: Optional[threading.Thread] = None
 
     def start(self, in_background: bool = True) -> None:
+        if in_background:
+            self._mirror_thread = threading.Thread(target=self._mirror_loop, name="memory-mirror", daemon=True)
+            self._mirror_thread.start()
         if self.summariser is not None and in_background:
             self._summary_thread = threading.Thread(target=self._summary_loop, name="memory-summaries", daemon=True)
             self._summary_thread.start()
@@ -153,7 +179,116 @@ class Engine:
     def stop(self) -> None:
         self._stop.set()
         self._wake_embedder.set()
+        self._wake_mirror.set()
         self.pool.close()
+
+    # --- where memory is kept ------------------------------------------------------------
+
+    def storage_view(self) -> dict[str, Any]:
+        return {
+            "database": {
+                "local": self.storage.database is None,
+                "where": storage.describe(self.database_url),
+            },
+            "mirror": (
+                {
+                    "where": storage.describe(self.storage.mirror),
+                    "pushed_at": self.mirror_pushed_at,
+                    "error": "the mirror is failing; see the engine's log" if self.mirror_error else None,
+                }
+                if self.storage.mirror
+                else None
+            ),
+            "moving": self.moving,
+        }
+
+    def set_storage(self, database: Optional[str], mirror: Optional[str], *, background: bool = True) -> None:
+        """Use another database (None: this machine's) and/or mirror (None: none). A move to a
+        database that is still empty copies everything there first; until that is done the API
+        answers 503, so the client queues its writes."""
+        with self._storage_lock:
+            new_url = database or self.local_url
+            changed = new_url != self.database_url
+            self.storage = storage.StorageSettings(database=database, mirror=mirror if mirror != new_url else None)
+            storage.save(self.settings_file, self.storage)
+            self._wake_mirror.set()
+            if not changed:
+                return
+            old_url, old_pool = self.database_url, self.pool
+            self.ready = False
+            self.moving = True
+            self.database_url = new_url
+            self.pool = db.open_pool(new_url, self.schema)
+        try:
+            old_pool.close()
+        except Exception:  # noqa: BLE001
+            log.exception("Closing the old database pool failed")
+        if background:
+            threading.Thread(target=self._move, args=(old_url, new_url), name="memory-move", daemon=True).start()
+        else:
+            self._move(old_url, new_url)
+
+    def _move(self, old_url: str, new_url: str) -> None:
+        try:
+            copied = mirror.copy_all(old_url, new_url, self.schema)
+            if copied:
+                log.info("Copied %s rows to the new memory database %s", copied, storage.describe(new_url))
+        except mirror.SourceUnavailable as error:
+            log.warning("Could not read the old memory database, so nothing was copied: %s", error)
+        except Exception as error:  # noqa: BLE001
+            # Back to where the memory is, rather than starting on a half-copied database.
+            log.warning("Moving memory to %s failed, staying where it was: %s", storage.describe(new_url), error)
+            with self._storage_lock:
+                self.storage = storage.StorageSettings(
+                    database=None if old_url == self.local_url else old_url, mirror=self.storage.mirror
+                )
+                storage.save(self.settings_file, self.storage)
+                self.database_url = old_url
+                self.pool = db.open_pool(old_url, self.schema)
+            self.error = "moving to the new database failed; see the engine's log"
+        finally:
+            self.moving = False
+        while not self._stop.is_set() and not self.ready:
+            self._connect_once()
+            if not self.ready:
+                self._stop.wait(self.retry_seconds)
+
+    def push_mirror(self) -> int:
+        """Send what the mirror doesn't have yet. Returns how many rows went."""
+        target_url = self.storage.mirror
+        if not target_url or not self.ready:
+            return 0
+        name = mirror.target_name(target_url)
+        with self.pool.connection(timeout=10) as source:
+            marks = mirror.load_marks(source, name)
+            try:
+                with mirror.connect_target(target_url, self.schema) as target:
+                    marks, sent = mirror.push(source, target, marks)
+            except Exception as error:
+                source.rollback()
+                mirror.save_marks(source, name, marks, error=str(error).splitlines()[0][:500] if str(error) else "failed")
+                raise
+            mirror.save_marks(source, name, marks)
+        self.mirror_error = None
+        self.mirror_pushed_at = mirror.now_iso()
+        return sent
+
+    def _mirror_loop(self) -> None:
+        while not self._stop.is_set():
+            self._wake_mirror.wait(self.mirror_interval)
+            self._wake_mirror.clear()
+            if self._stop.is_set():
+                return
+            try:
+                sent = self.push_mirror()
+                if sent:
+                    log.info("Mirror: sent %s rows to %s", sent, storage.describe(self.storage.mirror))
+            except Exception as error:  # noqa: BLE001 - keep trying; the source is untouched
+                message = str(error).strip().splitlines()[0] if str(error).strip() else type(error).__name__
+                if message != self.mirror_error:
+                    log.warning("Mirror push failed: %s", message)
+                self.mirror_error = message
+                self._stop.wait(min(self.mirror_interval * 4, 600))
 
     def written(self, conn) -> None:
         """Call after a write that may have added or changed index rows."""
@@ -287,6 +422,7 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
                 body["summariser"]["error"] = "summaries are failing; see the engine's log"
         else:
             body["summariser"] = None
+        body["storage"] = engine.storage_view()
         if engine.embed_error:
             body["embedder_error"] = "embedding is failing; see the engine's log"
         if engine.error:
@@ -386,6 +522,59 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
                     limit=limit,
                 )
         return {"results": results}
+
+    @app.get("/v1/storage", dependencies=guarded)
+    def get_storage():
+        return engine.storage_view()
+
+    @app.put("/v1/storage", dependencies=guarded)
+    def put_storage(body: StorageBody):
+        """Where memory is kept (null: this machine's database) and the optional mirror."""
+        for url in (body.database, body.mirror):
+            if url is not None and not storage.valid_url(url):
+                raise ApiError(400, "database addresses look like postgresql://user:password@host:5432/database")
+        engine.set_storage(body.database, body.mirror)
+        return engine.storage_view()
+
+    @app.post("/v1/storage/test", dependencies=guarded)
+    def test_storage(body: StorageTestBody):
+        """Can the engine use this database? Connects, and checks pgvector is available."""
+        if not storage.valid_url(body.url):
+            raise ApiError(400, "database addresses look like postgresql://user:password@host:5432/database")
+        try:
+            with psycopg.connect(body.url, connect_timeout=8) as conn:
+                version = conn.execute("SHOW server_version").fetchone()[0]
+                vector = conn.execute("SELECT 1 FROM pg_available_extensions WHERE name = 'vector'").fetchone() is not None
+        except psycopg.OperationalError as error:
+            text = str(error).lower()
+            log.info("Database test failed: %s", error)
+            if "password" in text or "authentication" in text:
+                reason = "the user name or password was refused"
+            elif "does not exist" in text:
+                reason = "that database does not exist"
+            elif "timeout" in text or "could not connect" in text or "connection refused" in text or "translate host" in text:
+                reason = "the server could not be reached"
+            else:
+                reason = "the connection failed; see the engine's log"
+            return {"ok": False, "error": reason}
+        if not vector:
+            return {"ok": False, "version": version, "error": "the pgvector extension is not available there"}
+        return {"ok": True, "version": version}
+
+    @app.post("/v1/storage/push", dependencies=guarded)
+    def push_storage():
+        """Send the mirror what it is missing now."""
+        if not engine.storage.mirror:
+            raise ApiError(409, "no mirror is set")
+        if not engine.ready:
+            raise ApiError(503, "memory database is not ready yet")
+        try:
+            sent = engine.push_mirror()
+        except Exception as error:  # noqa: BLE001
+            log.warning("Mirror push failed: %s", error)
+            engine.mirror_error = str(error)
+            raise ApiError(502, "the mirror could not be updated; see the engine's log") from None
+        return {"sent": sent}
 
     @app.post("/v1/activity", dependencies=guarded)
     def post_activity(body: ActivityBody):

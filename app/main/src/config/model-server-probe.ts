@@ -88,6 +88,9 @@ export async function probeModelServer(
         return key
           ? { status: 'up', models: {}, checkedAt }
           : { status: 'needs-key', message: 'Add your Brave Search API key.', models: {}, checkedAt };
+      case 'memory':
+        // Only the memory engine can reach its databases: see probeMemoryDatabase.
+        return { status: 'error', message: 'The memory engine checks this database.', models: {}, checkedAt };
       case 'civitai':
         // Optional: public models download without a key, many need one.
         return key
@@ -102,6 +105,39 @@ export async function probeModelServer(
       return { status: 'error', message: `The server answered ${error.status}.`, models: {}, checkedAt };
     }
     return down(`Not reachable at ${server.url}.`, checkedAt);
+  }
+}
+
+/** The parts of the memory engine's client a database check needs. */
+export interface MemoryDatabaseTester {
+  health(): Promise<{ database: string; error?: string }>;
+  testStorage(url: string): Promise<{ ok: boolean; version?: string; error?: string }>;
+}
+
+/**
+ * Check a memory database through the memory engine, which is what will connect to it (it may
+ * run on another machine than the app). `local` is the engine's own database on this PC.
+ */
+export async function probeMemoryDatabase(
+  target: { url: string; local: boolean },
+  engine: MemoryDatabaseTester | null,
+): Promise<ServerProbe> {
+  const checkedAt = Date.now();
+  if (!engine) return { status: 'error', message: 'Long-term memory is turned off (MEMORY_ENABLED).', models: {}, checkedAt };
+  try {
+    if (target.local) {
+      const health = await engine.health();
+      return health.database === 'ready'
+        ? { status: 'up', models: {}, checkedAt }
+        : { status: 'error', message: 'The memory engine is running, but its database is not ready yet.', models: {}, checkedAt };
+    }
+    const result = await engine.testStorage(target.url);
+    if (result.ok) return { status: 'up', models: {}, checkedAt };
+    const reason = result.error ?? 'the connection failed';
+    const message = `${reason.charAt(0).toUpperCase()}${reason.slice(1)}.`;
+    return { status: /password/.test(reason) ? 'needs-key' : 'error', message, models: {}, checkedAt };
+  } catch {
+    return down('The memory engine is not answering, so it can’t check the database.', checkedAt);
   }
 }
 

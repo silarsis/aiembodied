@@ -6,6 +6,8 @@ import {
   USE_SERVER_TYPES,
   USES_WITH_BACKUPS,
   USES_WITH_SPREAD,
+  USES_THAT_CAN_BE_OFF,
+  BUILT_IN_SERVER_IDS,
   type ModelRoute,
   type ServerType,
   type UseId,
@@ -22,7 +24,7 @@ export const OPENAI_VOICES = ['alloy', 'ash', 'ballad', 'cedar', 'coral', 'echo'
 
 interface UseInfo {
   id: UseId;
-  group: 'Talking' | 'Creating an avatar' | 'Helpers';
+  group: 'Talking' | 'Creating an avatar' | 'Helpers' | 'Memory';
   name: string;
   what: string;
 }
@@ -39,7 +41,20 @@ export const MODEL_USES: UseInfo[] = [
   { id: 'posegen', group: 'Helpers', name: 'Make poses', what: 'Writes bone rotations for a pose from a text prompt.' },
   { id: 'posecheck', group: 'Helpers', name: 'Check poses', what: 'Looks at a rendered pose and says whether it matches the prompt. Needs a model that reads images.' },
   { id: 'clips', group: 'Helpers', name: 'Animation clips', what: 'Writes keyframe animation clips from a prompt. Moving uses it when no motion service is picked.' },
+  {
+    id: 'memory',
+    group: 'Memory',
+    name: 'Memory database',
+    what: 'Where long-term memory is kept: every conversation, fact and summary. Picking an empty database copies everything there first; one that already holds memory is used as it is, nothing is merged.',
+  },
+  {
+    id: 'memorymirror',
+    group: 'Memory',
+    name: 'Memory mirror',
+    what: 'An optional second database, such as Supabase, that gets a copy of everything within a minute or so. Deletes are copied too.',
+  },
 ];
+const USE_GROUPS = ['Talking', 'Creating an avatar', 'Helpers', 'Memory'] as const;
 
 export const SERVER_TYPE_LABELS: Record<ServerType, string> = {
   chat: 'Chat model server',
@@ -48,6 +63,7 @@ export const SERVER_TYPE_LABELS: Record<ServerType, string> = {
   motion: 'Motion service',
   comfy: 'ComfyUI',
   search: 'SearXNG',
+  memory: 'Memory database (PostgreSQL)',
   openai: 'OpenAI',
   brave: 'Brave Search',
   civitai: 'Civitai',
@@ -60,7 +76,14 @@ const SERVER_TYPE_HINTS: Partial<Record<ServerType, { hint: string; example: str
   motion: { hint: 'services/motion from this repo, running ARDY or Kimodo.', example: 'http://192.168.1.20:8190' },
   comfy: { hint: 'Image, texture and 3D jobs. Needs the same models installed as this PC’s ComfyUI.', example: 'http://192.168.1.20:8188' },
   search: { hint: 'A SearXNG instance with JSON output turned on.', example: 'http://192.168.1.20:8888' },
+  memory: {
+    hint: 'A PostgreSQL database with the pgvector extension, such as Supabase (use its session pooler connection string). A password in the address is moved to the key store.',
+    example: 'postgresql://postgres.yourproject@aws-0-region.pooler.supabase.com:5432/postgres',
+  },
 };
+
+/** What a server's key is called: databases have a password. */
+const keyLabel = (type: ServerType) => (type === 'memory' ? 'Password' : 'API key');
 
 /** Which of a server's model lists a use picks from. */
 function roleFor(use: UseId, type: ServerType): ModelRole | null {
@@ -72,6 +95,7 @@ function roleFor(use: UseId, type: ServerType): ModelRole | null {
 }
 
 function modelLabel(use: UseId, type: ServerType): string {
+  if (type === 'memory') return '';
   if (use === 'tts' && type === 'speech') return 'Voice';
   if (use === 'stt' && type === 'speech') return '';
   return 'Model';
@@ -209,7 +233,7 @@ export function ModelsDialog({ api, avatarApi, engine, onClose, onChanged, initi
           <RailItem current={page.kind === 'engine'} onClick={() => setPage({ kind: 'engine' })} label="Conversation engine" chip={engine.backend === 'openai' ? 'Online' : 'Step by step'} />
         </>
       ) : null}
-      {(['Talking', 'Creating an avatar', 'Helpers'] as const).map((group) => (
+      {USE_GROUPS.map((group) => (
         <div key={group} className="modelsDialog__railGroup">
           {group !== 'Talking' || !engine ? <span className="modelsDialog__group">{group}</span> : null}
           {MODEL_USES.filter((use) => use.group === group).map((use) => {
@@ -512,7 +536,10 @@ interface UsePageProps {
 function UsePage({ use, view, probes, busy, onProbe, onRoute, onOpenServer, onAddServer, imageModels, characterModels }: UsePageProps) {
   const info = MODEL_USES.find((entry) => entry.id === use) ?? MODEL_USES[0];
   const route = view.routes[use];
-  const fitting = view.servers.filter((server) => USE_SERVER_TYPES[use].includes(server.type));
+  // The mirror can't be this PC's own memory database (only the engine knows its address).
+  const fitting = view.servers.filter(
+    (server) => USE_SERVER_TYPES[use].includes(server.type) && !(use === 'memorymirror' && server.id === BUILT_IN_SERVER_IDS.memory),
+  );
   const server = fitting.find((entry) => entry.id === route.server);
   const probe = server ? probes[server.id] : undefined;
   const role = server ? roleFor(use, server.type) : null;
@@ -570,7 +597,7 @@ function UsePage({ use, view, probes, busy, onProbe, onRoute, onOpenServer, onAd
       <div className="modelsDialog__fields">
         <label htmlFor={`models-${use}-server`}>Runs on</label>
         <select id={`models-${use}-server`} value={route.server} onChange={(event) => pickServer(event.target.value)} disabled={busy}>
-          {use === 'search' ? <option value="">Off</option> : null}
+          {USES_THAT_CAN_BE_OFF.includes(use) ? <option value="">Off</option> : null}
           {groups.map(({ group, servers }) =>
             servers.length ? (
               <optgroup key={group} label={WHERE_LABEL[group]}>
@@ -699,6 +726,11 @@ function UsePage({ use, view, probes, busy, onProbe, onRoute, onOpenServer, onAd
         </ServerRow>
       ) : use === 'search' ? (
         <p className="kiosk__helper">Web search is off: the assistant can’t look things up.</p>
+      ) : use === 'memorymirror' ? (
+        <p className="kiosk__helper">No mirror: memory is kept only in the memory database.</p>
+      ) : null}
+      {server && use === 'memorymirror' && view.routes.memory.server === server.id ? (
+        <p className="kiosk__error">This is also the memory database, so nothing is mirrored. Pick another one.</p>
       ) : null}
 
       {USES_WITH_BACKUPS.includes(use) && server ? (
@@ -847,8 +879,8 @@ function AddServerForm({
         <input id="models-add-name" value={draft.name} placeholder={`${SERVER_TYPE_LABELS[draft.type]} on …`} onChange={(event) => onChange({ ...draft, name: event.target.value })} />
         <label htmlFor="models-add-url">Address</label>
         <input id="models-add-url" value={draft.url} placeholder={hint?.example} onChange={(event) => onChange({ ...draft, url: event.target.value, probe: undefined })} />
-        <label htmlFor="models-add-key">API key</label>
-        <input id="models-add-key" type="password" autoComplete="off" value={draft.key} placeholder="Only if the server asks for one" onChange={(event) => onChange({ ...draft, key: event.target.value, probe: undefined })} />
+        <label htmlFor="models-add-key">{keyLabel(draft.type)}</label>
+        <input id="models-add-key" type="password" autoComplete="off" value={draft.key} placeholder={draft.type === 'memory' ? 'The database password' : 'Only if the server asks for one'} onChange={(event) => onChange({ ...draft, key: event.target.value, probe: undefined })} />
       </div>
       {draft.probe ? (
         <p role="status" className={draft.probe.status === 'up' ? 'kiosk__info' : 'kiosk__error'}>
@@ -932,7 +964,7 @@ function ServerPage({
         </span>
       </form>
       {server.managed ? <p className="kiosk__helper">On this PC: the app (or pnpm dev:run) starts it when a job needs it.</p> : null}
-      {server.type !== 'speech' && server.type !== 'motion' && server.type !== 'comfy' ? (
+      {server.type !== 'speech' && server.type !== 'motion' && server.type !== 'comfy' && server.id !== BUILT_IN_SERVER_IDS.memory ? (
         <form
           className="modelsDialog__fields"
           onSubmit={(event) => {
@@ -943,7 +975,7 @@ function ServerPage({
             }
           }}
         >
-          <label htmlFor="models-server-key">API key</label>
+          <label htmlFor="models-server-key">{keyLabel(server.type)}</label>
           <input
             id="models-server-key"
             type="password"
@@ -954,6 +986,8 @@ function ServerPage({
                 ? 'Saved. Enter a new one to replace it.'
                 : server.type === 'civitai'
                   ? 'Needed for many downloads'
+                  : server.type === 'memory'
+                    ? 'The database password'
                   : server.type === 'openai' || server.type === 'brave'
                     ? 'Needed'
                     : 'Only if the server asks for one'
@@ -983,7 +1017,7 @@ function ServerPage({
       {server.type === 'civitai' ? (
         <p className="kiosk__helper">Civitai runs no job itself. Its key lets ComfyUI servers download models from a pasted Civitai link (open a ComfyUI server, then Download a model).</p>
       ) : null}
-      <div className="modelsDialog__list" hidden={server.type === 'civitai'}>
+      <div className="modelsDialog__list" hidden={server.type === 'civitai' || server.type === 'memory'}>
         <span className="modelsDialog__group">
           Models it offers{' '}
           <button type="button" onClick={onProbe} disabled={probe === 'checking'}>

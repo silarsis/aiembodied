@@ -58,6 +58,8 @@ import {
   memoryEngineSettings,
   registerMemoryEngineIpc,
   setupMemoryEngine,
+  MemoryStorageSync,
+  memoryStorageTargets,
   type MemoryEngineRuntime,
 } from './memory-engine/index.js';
 import { buildVoiceEngines } from './local-voice/voice-engines.js';
@@ -91,8 +93,8 @@ import {
 import { getOpenAIClient } from './openai/client.js';
 import type OpenAI from 'openai';
 import { createChatCompletionsResponsesClient } from './openai/chat-completions-responses.js';
-import { BUILT_IN_SERVER_IDS, routeTargets, serverUrl, USE_SERVER_TYPES, type ModelRoute, type ServerType, type UseId } from './config/model-routing.js';
-import { probeModelServer } from './config/model-server-probe.js';
+import { BUILT_IN_SERVER_IDS, databaseUrlWithPassword, routeTargets, serverUrl, USE_SERVER_TYPES, type ModelRoute, type ServerType, type UseId } from './config/model-routing.js';
+import { probeMemoryDatabase, probeModelServer } from './config/model-server-probe.js';
 import { ComfyUIPool } from './avatar/generation/comfyui-pool.js';
 import { MCPManager } from './mcp/mcp-manager.js';
 import { ToolRegistry } from './tools/tool-registry.js';
@@ -205,6 +207,16 @@ let avatarGenerationService: AvatarGenerationService | null = null;
 let localMotionService: LocalMotionGenerationService | null = null;
 let localVoiceService: LocalVoiceService | null = null;
 let memoryEngine: MemoryEngineRuntime | null = null;
+let memoryStorageSync: MemoryStorageSync | null = null;
+let configManagerForMemory: ConfigManager | null = null;
+
+/** Point the memory engine at the database and mirror picked in Models and servers. */
+function syncMemoryStorage(manager: ConfigManager | null = configManagerForMemory): void {
+  if (!manager || !memoryEngine) return;
+  configManagerForMemory = manager;
+  memoryStorageSync ??= new MemoryStorageSync({ client: memoryEngine.client, logger });
+  void memoryStorageSync.apply(memoryStorageTargets(manager.getConfig().models, (id) => manager.getServerKey(id)));
+}
 let currentMotionServiceUrl: string | null = null;
 
 let toolRegistry: ToolRegistry | null = null;
@@ -581,6 +593,8 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
   }
 
   applyWebSearch(manager);
+  configManagerForMemory = manager;
+  syncMemoryStorage(manager);
 
   pushToTalk.apply(providers.talk?.shortcut ?? '');
 
@@ -833,6 +847,12 @@ function registerIpcHandlers(
     if (typeof payload?.serverId === 'string') {
       const server = manager.getConfig().models.servers.find((entry) => entry.id === payload.serverId);
       if (!server) throw new Error('That server no longer exists.');
+      if (server.type === 'memory') {
+        return probeMemoryDatabase(
+          { url: databaseUrlWithPassword(server.url, manager.getServerKey(server.id)), local: server.id === BUILT_IN_SERVER_IDS.memory },
+          memoryEngine?.client ?? null,
+        );
+      }
       return probeModelServer(server, manager.getServerKey(server.id));
     }
     const draft = payload?.draft;
@@ -846,6 +866,10 @@ function registerIpcHandlers(
       throw new Error('Enter the server address as a URL, such as http://192.168.1.20:8188.');
     }
     const type = draft.type as ServerType;
+    if (type === 'memory') {
+      const password = typeof draft.key === 'string' && draft.key.trim() ? draft.key.trim() : undefined;
+      return probeMemoryDatabase({ url: databaseUrlWithPassword(url, password), local: false }, memoryEngine?.client ?? null);
+    }
     return probeModelServer({ type, url: serverUrl(type, url) }, typeof draft.key === 'string' ? draft.key : undefined);
   });
   ipcMain.handle(
@@ -1554,6 +1578,8 @@ app.whenReady().then(async () => {
       conversations: conversationManager,
       logger,
     });
+    // Provider settings may have been applied before the engine existed.
+    syncMemoryStorage();
 
     // Initialize MCP tool registry and manager
     toolRegistry = new ToolRegistry();
@@ -1864,6 +1890,8 @@ app.on('before-quit', async (event) => {
   }
 
   // Synchronous cleanup. Queued memory writes stay in SQLite and go out on the next start.
+  memoryStorageSync?.stop();
+  memoryStorageSync = null;
   memoryEngine?.stop();
   memoryEngine = null;
   if (memoryStore) {

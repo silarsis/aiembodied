@@ -138,3 +138,34 @@ reviewed. Only active facts are searchable. DELETE forgets it entirely.
 ## `DELETE /v1/sessions/{id}` and `DELETE /v1/messages/{id}`
 
 Forget a session, or one message, and everything indexed from it. 404 if it isn't there.
+
+## `GET /v1/storage` and `PUT /v1/storage`
+
+```json
+{"database": "postgresql://user:password@db.example.com:5432/postgres", "mirror": null}
+```
+
+Where memory is kept and the optional mirror. `database: null` is this machine's own database
+(`MEMORY_DATABASE_URL`); `mirror: null` turns the mirror off. The answer never contains
+passwords:
+
+```json
+{"database": {"local": false, "where": "db.example.com:5432/postgres"},
+ "mirror": null, "moving": true}
+```
+
+A switch to an empty database copies everything there first; while `moving` is true the other
+routes answer 503. The setting is saved to the settings file and used on the next start. 400 if
+an address isn't `postgres://` or `postgresql://` with a host. `/health` includes the same view
+under `storage`.
+
+## `POST /v1/storage/test`
+
+`{"url": "postgresql://..."}` → `{"ok": true, "version": "17.2"}` or `{"ok": false, "error":
+"the user name or password was refused"}`. Connects and checks pgvector is available. Errors are
+general categories; the details go to the engine's log only.
+
+## `POST /v1/storage/push`
+
+Send the mirror what it is missing now → `{"sent": 42}`. 409 when no mirror is set.
+

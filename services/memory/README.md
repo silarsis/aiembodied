@@ -38,11 +38,14 @@ What exists so far (phases 1 to 4):
   and ends through `/v1/activity`), so it never competes with a live conversation for the model.
   A late message or a deletion makes the summaries above it due again.
 - **Forget.** Delete a session, a message or a fact, with everything indexed from it. Deletes are
-  recorded as tombstones so a future mirror can follow them.
+  recorded as tombstones, which the mirror follows.
+- **Move and mirror.** Switch to another database (such as Supabase) while running, copying
+  everything into it if it is empty, and optionally copy everything to a second database as it
+  arrives. See "Where the data lives".
 
-Still to come: Supabase as a server option. In aiembodied, Controls → Memory is the panel for
-checking facts, reading or forgetting conversations by day, searching, and seeing what was
-recalled.
+In aiembodied, Controls → Memory is the panel for checking facts, reading or forgetting
+conversations by day, searching, and seeing what was recalled. Controls → Voice & engine → Open
+models and servers → Memory picks the database and the mirror.
 
 Summary settings: `MEMORY_LLM_URL` (default `http://127.0.0.1:1234/v1`; `off` disables
 summaries), `MEMORY_LLM_MODEL` (default `qwen-next-flash`), `MEMORY_LLM_API_KEY`,
@@ -65,10 +68,25 @@ schema (`memory` by default, `MEMORY_SCHEMA`), which the engine creates and migr
   `aiembodied-memory-pgdata`, listening on `127.0.0.1:5433`. Port 5432 is left alone because
   majordomo's PostgreSQL in WSL is forwarded there. The password is generated once into
   `%LOCALAPPDATA%\aiembodied\memory\db-password`.
-- **Supabase (or any other PostgreSQL).** Set `MEMORY_DATABASE_URL` to the project's direct
-  connection or session pooler (port 5432; the transaction pooler doesn't work), and the start
-  script runs no container. Enable the `vector` extension in the dashboard first if the role
-  can't. Tables go in the `memory` schema, which Supabase's REST API doesn't expose.
+- **Supabase (or any other PostgreSQL).** In the app, add a server of type "Memory database
+  (PostgreSQL)" with the project's direct connection or session pooler string (port 5432; the
+  transaction pooler doesn't work) and pick it under Memory → Memory database. A password in the
+  pasted string is moved to the key store. The engine is told over `PUT /v1/storage` and saves
+  the choice in `%LOCALAPPDATA%\aiembodied\memory\engine-settings.json`
+  (`MEMORY_SETTINGS_FILE`), so it starts there next time. Enable the `vector` extension in the
+  dashboard first if the role can't. Tables go in the `memory` schema, which Supabase's REST API
+  doesn't expose. Without the app, set `MEMORY_DATABASE_URL` instead.
+
+  **Moving.** If the new database has no memory yet, the engine copies everything there first and
+  answers 503 until it is done (the app queues its writes meanwhile). If it already holds memory,
+  it is used as it is: nothing is merged, so switching back and forth between two databases that
+  both have data leaves each with its own history. If the old database can't be read, the switch
+  happens without a copy; any other failure keeps the old database.
+- **Mirror (optional).** Memory → Memory mirror picks a second database that gets a copy of
+  everything: new rows by sequence number, changed rows by `updated_at` (facts, sessions,
+  summaries, embeddings), and deletes from the tombstones. It pushes every minute
+  (`POST /v1/storage/push` pushes now), keeps its place per target in `mirror_state`, and creates
+  and migrates the schema there itself. This PC's own database can't be the mirror.
 
 Back up the local database with `pg_dump`:
 

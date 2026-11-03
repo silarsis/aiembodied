@@ -33,7 +33,8 @@ def embed_pending(conn: psycopg.Connection, embedder: Embedder, limit: int = 64)
     for (row_id, text), vector in zip(rows, vectors):
         # Only if the text is unchanged since it was read: a rewrite clears the vector again.
         conn.execute(
-            "UPDATE recall_index SET embedding = %s::vector, embed_model = %s WHERE id = %s AND text = %s",
+            "UPDATE recall_index SET embedding = %s::vector, embed_model = %s, updated_at = now()"
+            " WHERE id = %s AND text = %s",
             (to_pgvector(vector), embedder.name, row_id, text),
         )
     return len(rows)
