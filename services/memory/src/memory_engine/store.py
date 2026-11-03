@@ -268,6 +268,7 @@ def search_text(
     agent: Optional[str] = None,
     kinds: Optional[Sequence[str]] = None,
     include_private: bool = True,
+    exclude_ids: Sequence[UUID] = (),
     limit: int = 10,
 ) -> list[dict[str, Any]]:
     """Full-text search over the recall index, best match first. Embedding search joins this
@@ -283,6 +284,7 @@ def search_text(
           AND (%(agent)s::text IS NULL OR r.agent = %(agent)s)
           AND (%(kinds)s::text[] IS NULL OR r.kind = ANY(%(kinds)s))
           AND (%(private)s OR NOT r.private)
+          AND NOT (r.id = ANY(%(exclude)s))
         ORDER BY rank DESC, r.period_start DESC
         LIMIT %(limit)s
         """,
@@ -293,6 +295,7 @@ def search_text(
             "agent": agent,
             "kinds": list(kinds) if kinds else None,
             "private": include_private,
+            "exclude": list(exclude_ids),
             "limit": limit,
         },
     ).fetchall()
@@ -322,9 +325,13 @@ def delete_session(conn: psycopg.Connection, session_id: UUID) -> bool:
     extracted = conn.execute(
         "DELETE FROM facts WHERE author = 'extractor' AND session_id = %s RETURNING id", (session_id,)
     ).fetchall()
+    fact_index: list[tuple[str, Any]] = []
     for (fact_id,) in extracted:
-        conn.execute("DELETE FROM recall_index WHERE kind = 'fact' AND source_id = %s", (fact_id,))
-    _tombstone(conn, [("facts", r[0]) for r in extracted])
+        rows = conn.execute(
+            "DELETE FROM recall_index WHERE kind = 'fact' AND source_id = %s RETURNING id", (fact_id,)
+        ).fetchall()
+        fact_index.extend(("recall_index", r[0]) for r in rows)
+    _tombstone(conn, [("facts", r[0]) for r in extracted] + fact_index)
     index_ids = conn.execute(
         "DELETE FROM recall_index WHERE session_id = %s RETURNING id", (session_id,)
     ).fetchall()

@@ -144,13 +144,12 @@ def auto_recall(
             embedder=embedder,
             include_private=False,
             exclude_ids=exclude_ids,
+            skip_session=session_id,
             limit=limit * 4,
             now=now,
         )
         used = 0
         for result in found:
-            if session_id and result["session_id"] == str(session_id):
-                continue
             if (result["similarity"] or 0.0) < min_similarity:
                 continue
             result["text"] = _clip(result["text"], RECALL_ITEM_CHARS)

@@ -134,9 +134,13 @@ export function createVoiceMemory(options: VoiceMemoryOptions): VoiceMemory {
 
     async recall(text, alreadyRecalled) {
       if (!useRecall || !text.trim()) return null;
+      // The engine logs what it was asked. With no conversation to belong to, that log entry
+      // could never be forgotten, so a turn outside one gets no recall.
+      const sessionId = options.currentSessionId();
+      if (!sessionId) return null;
       try {
         const result = await options.client.recall(
-          { text, session_id: options.currentSessionId(), exclude: [...alreadyRecalled] },
+          { text, session_id: sessionId, exclude: [...alreadyRecalled] },
           options.recallTimeoutMs ?? RECALL_TIMEOUT_MS,
         );
         if (!result.items.length) return null;

@@ -506,7 +506,15 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
         with engine.connection() as conn:
             if mode == "text":
                 results = store.search_text(
-                    conn, q, start=start, end=end, agent=agent, kinds=kind, include_private=include_private, limit=limit
+                    conn,
+                    q,
+                    start=start,
+                    end=end,
+                    agent=agent,
+                    kinds=kind,
+                    include_private=include_private,
+                    exclude_ids=exclude or [],
+                    limit=limit,
                 )
             else:
                 results = recall.hybrid_search(
@@ -651,7 +659,8 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
             sessions = recall.timeline(
                 conn, start, end, agent=agent, include_private=include_private, turns_per_session=turns, limit=limit
             )
-            periods = recall.period_summaries(conn, start, end)
+            # Day, week and month summaries cover every character, so a filtered timeline leaves them out.
+            periods = recall.period_summaries(conn, start, end) if agent is None else []
         return {"from": start.isoformat(), "to": end.isoformat(), "summaries": periods, "sessions": sessions}
 
     @app.get("/v1/memories/{memory_id}", dependencies=guarded)

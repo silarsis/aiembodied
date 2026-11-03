@@ -168,6 +168,18 @@ class SessionJob:
     covered_seq: int
     transcript: str
     facts: list[tuple[str, str]] = field(default_factory=list)  # (id, text)
+    # Which messages the transcript was built from; a summary of anything else is stale.
+    revision: Optional[str] = None
+
+
+def _session_revision(conn: psycopg.Connection, session_id: UUID) -> Optional[str]:
+    return conn.execute(
+        """
+        SELECT md5(string_agg(id::text || ':' || seq::text, ',' ORDER BY seq)) FROM messages
+        WHERE session_id = %s AND role IN ('user', 'assistant', 'tool') AND NOT private
+        """,
+        (session_id,),
+    ).fetchone()[0]
 
 
 def load_session_job(conn: psycopg.Connection, session_id: UUID) -> Optional[SessionJob]:
@@ -210,6 +222,7 @@ def load_session_job(conn: psycopg.Connection, session_id: UUID) -> Optional[Ses
         covered_seq=last_seq,
         transcript=transcript,
         facts=[(str(f[0]), f[1]) for f in facts],
+        revision=_session_revision(conn, session_id),
     )
 
 
@@ -254,6 +267,10 @@ def apply_session(conn: psycopg.Connection, job: SessionJob, result: dict[str, A
     ).fetchone()[0]
     if current is None:
         return {"kind": "session", "session_id": str(job.session_id), "skipped": "deleted"}
+    if job.revision is not None and _session_revision(conn, job.session_id) != job.revision:
+        # A message was deleted or hidden meanwhile: a summary of the old transcript could bring
+        # it back. With no summary stored, the session is due again and is redone from what is left.
+        return {"kind": "session", "session_id": str(job.session_id), "skipped": "changed"}
 
     _drop_summaries(conn, "kind = 'session' AND session_id = %s", (job.session_id,))
     summary_id = conn.execute(

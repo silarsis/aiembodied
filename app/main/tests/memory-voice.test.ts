@@ -94,11 +94,14 @@ describe('voice memory', () => {
     expect(recalled?.block).toContain('<recalled>');
     expect(recalled?.block).toContain('Wed, 14 Oct 2026 (3 weeks ago, talked): User: the tomatoes went in / Echo: lovely');
 
-    const none = createVoiceMemory({ client: makeClient(), currentSessionId: () => null, agentName: () => 'Echo' });
+    // Outside a conversation nothing is asked, so nothing is logged that could never be forgotten.
+    const outside = makeClient();
+    const none = createVoiceMemory({ client: outside, currentSessionId: () => null, agentName: () => 'Echo' });
     expect(await none.recall('anything at all here', [])).toBeNull();
+    expect(outside.recall).not.toHaveBeenCalled();
     const failing = createVoiceMemory({
       client: makeClient({ recall: async () => { throw new Error('timeout'); } }),
-      currentSessionId: () => null,
+      currentSessionId: () => 's1',
       agentName: () => 'Echo',
     });
     expect(await failing.recall('anything at all here', [])).toBeNull();

@@ -164,6 +164,17 @@ export function formatMemory(detail: MemoryEngineMemoryDetail, now: Date): strin
   return fitTo([`Conversation ${header}:`, ...lines]);
 }
 
+/**
+ * Vector search always returns its nearest rows, related or not. A hit that matched only on
+ * meaning has to be at least this close (cosine) to count; word matches always count.
+ */
+export const VECTOR_ONLY_MIN_SIMILARITY = 0.5;
+
+export function isRelevant(result: MemoryEngineSearchResult): boolean {
+  if (!result.matched || result.matched.includes('text')) return true;
+  return (result.similarity ?? 0) >= VECTOR_ONLY_MIN_SIMILARITY;
+}
+
 export function createMemoryTools(options: MemoryToolsOptions): RegisteredTool[] {
   const now = options.now ?? (() => new Date());
 
@@ -198,7 +209,7 @@ export function createMemoryTools(options: MemoryToolsOptions): RegisteredTool[]
         to: period?.to.toISOString(),
         limit: readNumber(params, 'limit', 6, 1, 12),
       });
-      return formatSearchResults(results, now());
+      return formatSearchResults(results.filter(isRelevant), now());
     },
   };
 

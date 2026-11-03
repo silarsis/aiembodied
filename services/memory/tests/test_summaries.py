@@ -148,3 +148,37 @@ def test_a_failing_model_backs_off_and_the_brief_uses_summaries(summary_client, 
     done = run(summary_client, T0 + timedelta(minutes=12))
     assert [d.get("title") for d in done] == ["Shed"]  # the garden one is still waiting
     assert summary_client.get("/v1/brief").json()["last_session"]["summary"] == "The user talked about the shed."
+
+
+def test_a_summary_of_a_transcript_that_changed_meanwhile_is_dropped(summary_client, llm, database_url, schema):
+    import psycopg
+
+    session = uuid4()
+    secret = message(session, "user", "my locker code is 4471", 0)
+    post(summary_client, secret, message(session, "user", "anyway, the weather", 1), message(session, "assistant", "Sunny.", 2))
+
+    def reply(prompt):
+        if "4471" in prompt:
+            # The user forgets that message while the model is still writing.
+            with psycopg.connect(database_url) as conn:
+                conn.execute(f"DELETE FROM {schema}.messages WHERE id = %s", (secret["id"],))
+            return {"title": "Locker", "summary": "The locker code is 4471.", "topics": [], "facts": [{"text": "Locker code 4471"}]}
+        return {"title": "Weather", "summary": "They talked about the weather.", "topics": [], "facts": []}
+
+    llm.reply = reply
+    first = run(summary_client, T0 + timedelta(minutes=11))
+    assert first and first[0].get("skipped") == "changed"
+    assert summary_client.get("/v1/facts").json()["facts"] == []
+    run(summary_client, T0 + timedelta(minutes=12))
+    texts = [s["text"] for s in summary_client.get("/v1/summaries").json()["summaries"]]
+    assert texts == ["They talked about the weather."]
+
+
+def test_a_timeline_for_one_character_leaves_out_shared_period_summaries(summary_client, llm):
+    session = uuid4()
+    summary_client.put(f"/v1/sessions/{session}", json={"started_at": at(0), "agent": "Echo"})
+    post(summary_client, message(session, "user", "hello", 0))
+    run(summary_client, T0 + timedelta(days=3))
+    span = {"from": at(-3600), "to": at(86400 * 3)}
+    assert summary_client.get("/v1/timeline", params=span).json()["summaries"]
+    assert summary_client.get("/v1/timeline", params={**span, "agent": "Echo"}).json()["summaries"] == []
