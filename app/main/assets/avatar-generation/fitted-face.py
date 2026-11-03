@@ -469,7 +469,8 @@ def build_fitted_face(body, rig, height, landmarks_path, reference_path, allow_t
         # from the source image; the eyelids themselves belong to the fitted skin.
         # On the head's own face the opening is a real hole in a thick surface: a wider eyeball
         # sits just behind the lids, so a three-quarter view doesn't look past it into the head.
-        depth,radii=((.62,(.7,.52,.55)) if wrapped else (.75,(.58,.45,.49)))
+        # Its front stays well behind the lids: closed or narrowed lids pass in front of it.
+        depth,radii=((.74,(.66,.5,.52)) if wrapped else (.75,(.58,.45,.49)))
         forward=(.75-.45)-(depth-radii[1])
         ec=center.copy();ec[1]+=ew*depth
         solid('Eyeball'+str(index),ec,tuple(ew*r for r in radii),(.92,.94,.93))
