@@ -36,6 +36,12 @@ export interface MemoryEngineHealth {
   counts?: { sessions: number; messages: number; indexed: number };
 }
 
+export interface MemoryEngineStorage {
+  database: { local: boolean; where: string };
+  mirror: { where: string; pushed_at: string | null; error: string | null } | null;
+  moving: boolean;
+}
+
 export interface MemoryEngineSearchResult {
   id: string;
   kind: string;
@@ -299,6 +305,24 @@ export class MemoryEngineClient {
   /** Do due summaries now, rather than waiting for quiet. Can take minutes with a local model. */
   runSummaries(limit = 20): Promise<{ done: Array<Record<string, unknown>> }> {
     return this.request('POST', '/v1/summaries/run', { limit }, 30 * 60_000);
+  }
+
+  /** Where the engine keeps memory now, and the mirror (passwords never come back). */
+  storage(): Promise<MemoryEngineStorage> {
+    return this.request('GET', '/v1/storage');
+  }
+
+  /**
+   * Use another database (null: the engine's own on this PC) and mirror (null: none). Moving to
+   * an empty database copies everything there first; the engine answers 503 until it is done.
+   */
+  setStorage(settings: { database: string | null; mirror: string | null }): Promise<MemoryEngineStorage> {
+    return this.request('PUT', '/v1/storage', settings);
+  }
+
+  /** Can the engine use this database? Reasons are general, never the database's own message. */
+  testStorage(url: string): Promise<{ ok: boolean; version?: string; error?: string }> {
+    return this.request('POST', '/v1/storage/test', { url }, 15_000);
   }
 
   /** Tell the engine a turn started or ended, so its background work waits for quiet. */

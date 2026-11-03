@@ -20,6 +20,7 @@ import {
   defaultRoutes,
   resolveModelRouting,
   sanitizeStoredModels,
+  splitDatabasePassword,
   type ModelRoute,
   type ModelRouting,
   type ServerType,
@@ -382,15 +383,29 @@ export class ConfigManager {
     const existing = entry.id ? config.models.servers.find((server) => server.id === entry.id) : undefined;
     if (entry.id && !existing) throw new Error('That server no longer exists.');
     const name = entry.name?.trim();
-    const url = entry.url?.trim();
+    const type = existing?.type ?? entry.type;
+    let url = entry.url?.trim();
+    let password: string | undefined;
     if (url) {
       let parsed: URL;
       try {
         parsed = new URL(url);
       } catch {
-        throw new Error('Enter the server address as a URL, such as http://192.168.1.20:8188.');
+        throw new Error(
+          type === 'memory'
+            ? 'Enter the database address as a URL, such as postgresql://postgres@db.example.supabase.co:5432/postgres.'
+            : 'Enter the server address as a URL, such as http://192.168.1.20:8188.',
+        );
       }
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('Server addresses start with http:// or https://.');
+      if (type === 'memory') {
+        if ((parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') || !parsed.hostname) {
+          throw new Error('Database addresses look like postgresql://user@host:5432/database.');
+        }
+        // A pasted connection string often carries the password: keep it in the key store instead.
+        ({ url, password } = splitDatabasePassword(url));
+      } else if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error('Server addresses start with http:// or https://.');
+      }
     }
     if (!existing) {
       if (!entry.type || !ADDABLE_SERVER_TYPES.includes(entry.type)) throw new Error('Choose what kind of server this is.');
@@ -407,6 +422,7 @@ export class ConfigManager {
     });
     this.storedModels = { ...this.storedModels, servers };
     await this.applyModelChange();
+    if (password) await this.setServerKey(id, password);
     return id;
   }
 

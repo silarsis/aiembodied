@@ -39,6 +39,9 @@ def main(argv=None) -> None:
                     help="a conversation is summarised once it has been quiet this long")
     ap.add_argument("--idle-seconds", type=float, default=float(os.environ.get("MEMORY_IDLE_SECONDS", "120")),
                     help="background LLM work waits until the client has been idle this long")
+    ap.add_argument("--settings-file", default=os.environ.get("MEMORY_SETTINGS_FILE") or None,
+                    help="where the choice of database and mirror is saved (MEMORY_SETTINGS_FILE); "
+                         "default %%LOCALAPPDATA%%/aiembodied/memory/engine-settings.json; 'none' to not save")
     ap.add_argument("--log-level", default="info")
     a = ap.parse_args(argv)
 
@@ -83,8 +86,17 @@ def main(argv=None) -> None:
         if llm
         else None
     )
+    from pathlib import Path
+
+    from .storage import default_settings_file
+
+    settings_file = None if (a.settings_file or "").lower() == "none" else Path(a.settings_file or default_settings_file())
     engine = Engine(
-        a.database_url, a.schema, embedder=make_embedder(a.embedder, a.embed_model), summariser=summariser
+        a.database_url,
+        a.schema,
+        embedder=make_embedder(a.embedder, a.embed_model),
+        summariser=summariser,
+        settings_file=settings_file,
     )
     uvicorn.run(create_app(engine, api_token=api_token), host=a.host, port=a.port, log_level=a.log_level.lower())
 

@@ -158,3 +158,49 @@ def test_failed_model_load_waits_before_retrying(monkeypatch):
         except Exception:
             pass
     assert len(calls) == 1
+
+
+def test_timeline_counts_only_messages_inside_the_period_and_hides_private_ones(client):
+    spans, hidden = uuid4(), uuid4()
+    # Monday and Wednesday, nothing on Tuesday.
+    post(client, message(spans, "user", "monday words", 0), message(spans, "user", "wednesday words", 86400 * 2))
+    post(client, message(hidden, "user", "a private note", 86400 + 60, private=True))
+    tuesday = {"from": at(86400), "to": at(86400 * 2)}
+    assert [s["session_id"] for s in client.get("/v1/timeline", params=tuesday).json()["sessions"]] == [str(hidden)]
+    public = client.get("/v1/timeline", params={**tuesday, "include_private": "false"}).json()["sessions"]
+    assert public == []
+    monday = client.get("/v1/timeline", params={"from": at(0), "to": at(86400)}).json()["sessions"]
+    assert [(s["session_id"], s["message_count"]) for s in monday] == [(str(spans), 1)]
+
+
+def test_text_search_honours_exclude(client):
+    session = uuid4()
+    post(client, message(session, "user", "the shed roof leaks", 0))
+    found = client.get("/v1/search", params={"q": "shed roof", "mode": "text"}).json()["results"]
+    assert found
+    skip = client.get("/v1/search", params={"q": "shed roof", "mode": "text", "exclude": [found[0]["id"]]}).json()
+    assert skip["results"] == []
+
+
+def test_auto_recall_looks_past_a_conversation_full_of_the_same_words(client):
+    old, current = uuid4(), uuid4()
+    post(client, message(old, "user", "the bees swarmed in the apple tree last spring", 0))
+    post(client, *[message(current, "user", f"the bees swarmed in the apple tree again {i}", 86400 * 30 + i) for i in range(20)])
+    body = client.post("/v1/recall", json={"text": "the bees swarmed in the apple tree", "session_id": str(current)}).json()
+    assert [item["session_id"] for item in body["items"]] == [str(old)]
+
+
+def test_forgetting_a_session_tombstones_its_extracted_facts_index_rows(summary_client, llm, database_url, schema):
+    import psycopg
+
+    session = uuid4()
+    post(summary_client, message(session, "user", "I adopted a cat called Miso", 0))
+    llm.reply = lambda prompt: {"title": "Cat", "summary": "A cat.", "topics": [], "facts": [{"text": "The user has a cat called Miso"}]}
+    summary_client.post("/v1/summaries/run", json={"now": (T0 + timedelta(minutes=11)).isoformat()})
+    fact_index = summary_client.get("/v1/search", params={"q": "Miso", "kind": "fact"}).json()["results"][0]["id"]
+    summary_client.delete(f"/v1/sessions/{session}")
+    with psycopg.connect(database_url) as conn:
+        row = conn.execute(
+            f"SELECT 1 FROM {schema}.tombstones WHERE table_name = 'recall_index' AND row_id = %s", (fact_index,)
+        ).fetchone()
+    assert row is not None

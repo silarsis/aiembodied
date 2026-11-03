@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  isRelevant,
   createMemoryTools,
   describeAgo,
   formatSearchResults,
@@ -208,3 +209,14 @@ describe('memory tools', () => {
     expect(text).toContain('more not shown');
   });
 });
+
+describe('isRelevant', () => {
+  const base = { id: 'x', kind: 'turn', source_id: 'y', session_id: null, agent: null, period_start: '', period_end: '', text: '', score: 1, private: false };
+  it('keeps word matches, and meaning-only matches only when they are close', () => {
+    expect(isRelevant({ ...base, matched: ['text'], similarity: 0.1 })).toBe(true);
+    expect(isRelevant({ ...base, matched: ['vector'], similarity: 0.62 })).toBe(true);
+    expect(isRelevant({ ...base, matched: ['vector'], similarity: 0.3 })).toBe(false);
+    expect(isRelevant({ ...base })).toBe(true);
+  });
+});
+

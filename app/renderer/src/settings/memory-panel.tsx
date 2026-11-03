@@ -70,6 +70,12 @@ function statusSummary(status: MemoryPanelStatus | null): string {
   ];
   const summariser = health.summariser as { model?: string; error?: string } | null | undefined;
   parts.push(summariser ? (summariser.error ? 'summaries failing (see the engine log)' : `summaries by ${summariser.model}`) : 'no summaries');
+  const storage = health.storage as
+    | { database?: { local?: boolean; where?: string }; mirror?: { where?: string; error?: string | null } | null; moving?: boolean }
+    | undefined;
+  if (storage?.moving) parts.push('copying memory to the new database');
+  else if (storage?.database && !storage.database.local) parts.push(`kept on ${storage.database.where}`);
+  if (storage?.mirror) parts.push(storage.mirror.error ? `mirror to ${storage.mirror.where} failing` : `mirrored to ${storage.mirror.where}`);
   if (status.pending) parts.push(`${status.pending} writes queued`);
   return parts.join(' · ');
 }

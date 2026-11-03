@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from test_recall import at, message, post
+from test_recall import message, post
 
 
 def fact(client, text, **extra):

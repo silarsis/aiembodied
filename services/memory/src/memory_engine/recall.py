@@ -33,7 +33,8 @@ def embed_pending(conn: psycopg.Connection, embedder: Embedder, limit: int = 64)
     for (row_id, text), vector in zip(rows, vectors):
         # Only if the text is unchanged since it was read: a rewrite clears the vector again.
         conn.execute(
-            "UPDATE recall_index SET embedding = %s::vector, embed_model = %s WHERE id = %s AND text = %s",
+            "UPDATE recall_index SET embedding = %s::vector, embed_model = %s, updated_at = now()"
+            " WHERE id = %s AND text = %s",
             (to_pgvector(vector), embedder.name, row_id, text),
         )
     return len(rows)
@@ -47,6 +48,7 @@ def _filters(alias: str = "r") -> str:
           AND (%(kinds)s::text[] IS NULL OR {alias}.kind = ANY(%(kinds)s))
           AND (%(private)s OR NOT {alias}.private)
           AND NOT ({alias}.id = ANY(%(exclude)s))
+          AND (%(skip_session)s::uuid IS NULL OR {alias}.session_id IS DISTINCT FROM %(skip_session)s)
     """
 
 
@@ -61,6 +63,7 @@ def hybrid_search(
     kinds: Optional[Sequence[str]] = None,
     include_private: bool = True,
     exclude_ids: Sequence[UUID] = (),
+    skip_session: Optional[UUID] = None,
     limit: int = 10,
     now: Optional[datetime] = None,
 ) -> list[dict[str, Any]]:
@@ -76,6 +79,7 @@ def hybrid_search(
         "kinds": list(kinds) if kinds else None,
         "private": include_private,
         "exclude": list(exclude_ids),
+        "skip_session": skip_session,
         "candidates": CANDIDATES,
     }
     ranks: dict[UUID, dict[str, float]] = {}
@@ -165,22 +169,25 @@ def timeline(
     turns_per_session: int = 6,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
-    """What happened in [start, end): each session with activity in the range, oldest first,
-    with the start of its first few turns. Day and week summaries take over in phase 4."""
+    """What happened in [start, end): each session with messages in the range, oldest first,
+    with the start of its first few turns there. `message_count` and `last_at` count only the
+    range, and without `include_private` only messages that aren't private."""
     sessions = conn.execute(
         """
         SELECT s.id, s.agent, s.channel, s.title, s.started_at, m.last_at, m.count
         FROM sessions s
         JOIN LATERAL (
             SELECT count(*) AS count, max(created_at) AS last_at, min(created_at) AS first_at
-            FROM messages WHERE session_id = s.id AND role IN ('user', 'assistant')
+            FROM messages
+            WHERE session_id = s.id AND role IN ('user', 'assistant')
+              AND created_at >= %(start)s AND created_at < %(end)s
+              AND (%(private)s OR NOT private)
         ) m ON m.count > 0
-        WHERE m.last_at >= %(start)s AND m.first_at < %(end)s
-          AND (%(agent)s::text IS NULL OR s.agent = %(agent)s)
+        WHERE (%(agent)s::text IS NULL OR s.agent = %(agent)s)
         ORDER BY m.first_at
         LIMIT %(limit)s
         """,
-        {"start": start, "end": end, "agent": agent, "limit": limit},
+        {"start": start, "end": end, "agent": agent, "limit": limit, "private": include_private},
     ).fetchall()
     out = []
     for s in sessions:

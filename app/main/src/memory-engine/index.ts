@@ -7,3 +7,4 @@ export * from './period.js';
 export * from './tools.js';
 export * from './voice-memory.js';
 export * from './ipc.js';
+export * from './storage-sync.js';

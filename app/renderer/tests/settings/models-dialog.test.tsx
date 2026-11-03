@@ -192,4 +192,32 @@ describe('ModelsDialog', () => {
     await waitFor(() => expect(api.setRoute).toHaveBeenCalledWith('search', expect.objectContaining({ server: '' })));
     expect(await screen.findByText(/Web search is off/)).toBeTruthy();
   });
+
+  it('picks a memory mirror (never this PC’s own database), with a password instead of a model', async () => {
+    const view = baseView();
+    view.servers.push({
+      id: 'supa',
+      name: 'Supabase',
+      type: 'memory',
+      url: 'postgresql://postgres.abcd@db.example.com:5432/postgres',
+      builtIn: false,
+      managed: false,
+      hasKey: true,
+    });
+    const api = bridge(view);
+    render(<ModelsDialog api={api} onClose={vi.fn()} initialUse="memorymirror" />);
+    const select = (await screen.findByLabelText('Runs on')) as HTMLSelectElement;
+    const options = [...select.options].map((option) => option.value);
+    expect(options).toContain('');
+    expect(options).toContain('supa');
+    expect(options).not.toContain('local-memory');
+    expect(screen.getByText(/No mirror/)).toBeTruthy();
+    fireEvent.change(select, { target: { value: 'supa' } });
+    await waitFor(() => expect(api.setRoute).toHaveBeenCalledWith('memorymirror', expect.objectContaining({ server: 'supa' })));
+    expect(screen.queryByLabelText('Model')).toBeNull();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open' }));
+    expect(await screen.findByLabelText('Password')).toBeTruthy();
+    expect(screen.queryByText(/Models it offers/)?.closest('[hidden]')).toBeTruthy();
+  });
 });

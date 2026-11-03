@@ -14,13 +14,42 @@
  */
 import type { ProviderSettings } from './provider-settings.js';
 
-export type ServerType = 'chat' | 'transcribe' | 'speech' | 'motion' | 'comfy' | 'search' | 'openai' | 'brave' | 'civitai';
-export const SERVER_TYPES: readonly ServerType[] = ['chat', 'transcribe', 'speech', 'motion', 'comfy', 'search', 'openai', 'brave', 'civitai'];
+export type ServerType = 'chat' | 'transcribe' | 'speech' | 'motion' | 'comfy' | 'search' | 'memory' | 'openai' | 'brave' | 'civitai';
+export const SERVER_TYPES: readonly ServerType[] = ['chat', 'transcribe', 'speech', 'motion', 'comfy', 'search', 'memory', 'openai', 'brave', 'civitai'];
 /** Types a user can add more servers of. OpenAI, Brave and Civitai are one account each; Civitai runs no job, it supplies model downloads. */
-export const ADDABLE_SERVER_TYPES: readonly ServerType[] = ['chat', 'transcribe', 'speech', 'motion', 'comfy', 'search'];
+export const ADDABLE_SERVER_TYPES: readonly ServerType[] = ['chat', 'transcribe', 'speech', 'motion', 'comfy', 'search', 'memory'];
 
-export type UseId = 'llm' | 'stt' | 'tts' | 'motion' | 'search' | 'image' | 'mesh' | 'describe' | 'posegen' | 'posecheck' | 'clips';
-export const USE_IDS: readonly UseId[] = ['llm', 'stt', 'tts', 'motion', 'search', 'image', 'mesh', 'describe', 'posegen', 'posecheck', 'clips'];
+export type UseId =
+  | 'llm'
+  | 'stt'
+  | 'tts'
+  | 'motion'
+  | 'search'
+  | 'image'
+  | 'mesh'
+  | 'describe'
+  | 'posegen'
+  | 'posecheck'
+  | 'clips'
+  | 'memory'
+  | 'memorymirror';
+export const USE_IDS: readonly UseId[] = [
+  'llm',
+  'stt',
+  'tts',
+  'motion',
+  'search',
+  'image',
+  'mesh',
+  'describe',
+  'posegen',
+  'posecheck',
+  'clips',
+  'memory',
+  'memorymirror',
+];
+/** Uses that can be turned off (no server). */
+export const USES_THAT_CAN_BE_OFF: readonly UseId[] = ['search', 'memorymirror'];
 
 /** The server types that can do each use. */
 export const USE_SERVER_TYPES: Record<UseId, readonly ServerType[]> = {
@@ -35,6 +64,10 @@ export const USE_SERVER_TYPES: Record<UseId, readonly ServerType[]> = {
   posegen: ['chat', 'openai'],
   posecheck: ['chat', 'openai'],
   clips: ['chat', 'openai'],
+  // Long-term memory: the PostgreSQL database the memory engine keeps everything in, and an
+  // optional second one it copies everything to (such as Supabase).
+  memory: ['memory'],
+  memorymirror: ['memory'],
 };
 /** Uses that try backup servers when the first one fails. The others use only their first server. */
 export const USES_WITH_BACKUPS: readonly UseId[] = ['llm', 'stt', 'tts', 'search', 'image', 'mesh'];
@@ -47,6 +80,7 @@ export const BUILT_IN_SERVER_IDS = {
   motion: 'local-motion',
   comfy: 'local-comfy',
   searxng: 'local-searxng',
+  memory: 'local-memory',
   openai: 'openai',
   brave: 'brave',
   civitai: 'civitai',
@@ -55,6 +89,11 @@ export const BUILT_IN_SERVER_IDS = {
 export const OPENAI_BASE_URL = 'https://api.openai.com/v1';
 export const BRAVE_BASE_URL = 'https://api.search.brave.com';
 export const CIVITAI_BASE_URL = 'https://civitai.com';
+/**
+ * The memory engine's own database on this PC (services/memory starts it). Only shown: picking
+ * this server tells the engine to use its own database, whatever address it was started with.
+ */
+export const LOCAL_MEMORY_DATABASE_URL = 'postgresql://127.0.0.1:5433/memory';
 
 export interface ModelServer {
   id: string;
@@ -124,6 +163,7 @@ export function builtInServers({ providers, comfyUiBaseUrl, searxngUrl }: BuiltI
     local(BUILT_IN_SERVER_IDS.motion, 'Motion service on this PC', 'motion', providers.motion.localServiceUrl),
     local(BUILT_IN_SERVER_IDS.comfy, 'ComfyUI on this PC', 'comfy', comfyUiBaseUrl),
     local(BUILT_IN_SERVER_IDS.searxng, 'SearXNG on this PC', 'search', searxngUrl || DEFAULT_SEARXNG_URL),
+    local(BUILT_IN_SERVER_IDS.memory, 'Memory database on this PC', 'memory', LOCAL_MEMORY_DATABASE_URL),
     { id: BUILT_IN_SERVER_IDS.openai, name: 'OpenAI', type: 'openai', url: OPENAI_BASE_URL, builtIn: true, managed: false },
     { id: BUILT_IN_SERVER_IDS.brave, name: 'Brave Search', type: 'brave', url: BRAVE_BASE_URL, builtIn: true, managed: false },
     { id: BUILT_IN_SERVER_IDS.civitai, name: 'Civitai', type: 'civitai', url: CIVITAI_BASE_URL, builtIn: true, managed: false },
@@ -174,6 +214,8 @@ export function defaultRoutes(providers: ProviderSettings, webSearchProvider = '
     posegen: { server: openai, model: DEFAULT_HELPER_MODELS.posegen },
     posecheck: { server: openai, model: DEFAULT_HELPER_MODELS.posecheck },
     clips: { server: openai, model: providers.motion.openaiModel },
+    memory: { server: BUILT_IN_SERVER_IDS.memory },
+    memorymirror: { server: '' },
   };
 }
 
@@ -186,7 +228,7 @@ export function resolveModelRouting(
   const servers = builtIns.map((server) => {
     const override = stored.servers?.find((entry) => entry.id === server.id);
     if (!override) return { ...server };
-    const fixed = server.type === 'openai' || server.type === 'brave' || server.type === 'civitai';
+    const fixed = server.type === 'openai' || server.type === 'brave' || server.type === 'civitai' || server.id === BUILT_IN_SERVER_IDS.memory;
     const url = override.url && !fixed ? serverUrl(server.type, override.url) : server.url;
     return { ...server, name: override.name || server.name, url, managed: server.managed && isLocalUrl(url) };
   });
@@ -203,7 +245,7 @@ export function resolveModelRouting(
       const server = servers.find((entry) => entry.id === id);
       return Boolean(server && USE_SERVER_TYPES[use].includes(server.type));
     };
-    const base = saved && (fits(saved.server) || (use === 'search' && saved.server === '')) ? saved : defaults[use];
+    const base = saved && (fits(saved.server) || (USES_THAT_CAN_BE_OFF.includes(use) && saved.server === '')) ? saved : defaults[use];
     const primary = base.server;
     const seen = new Set([primary]);
     const backups = USES_WITH_BACKUPS.includes(use)
@@ -313,14 +355,47 @@ function trimUrl(url: string): string {
   return url.trim().replace(/\/+$/, '');
 }
 
+/** Web addresses, and PostgreSQL ones for memory databases. */
+export const SERVER_PROTOCOLS: readonly string[] = ['http:', 'https:', 'postgres:', 'postgresql:'];
+
 function validUrl(value: unknown): string | undefined {
   const raw = text(value);
   if (!raw) return undefined;
   try {
     const url = new URL(raw);
-    return url.protocol === 'http:' || url.protocol === 'https:' ? trimUrl(raw) : undefined;
+    return SERVER_PROTOCOLS.includes(url.protocol) ? trimUrl(raw) : undefined;
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * A memory database address with its password taken out, so the address can be shown and saved
+ * in preferences while the password goes to the key store. Supabase's connection strings carry
+ * the password inline (postgresql://postgres.ref:PASSWORD@host:5432/postgres).
+ */
+export function splitDatabasePassword(url: string): { url: string; password?: string } {
+  try {
+    const parsed = new URL(url.trim());
+    if (!parsed.password) return { url: trimUrl(url) };
+    const password = decodeURIComponent(parsed.password);
+    parsed.password = '';
+    return { url: trimUrl(parsed.toString()), password };
+  } catch {
+    return { url: trimUrl(url) };
+  }
+}
+
+/** A memory database address with the saved password put back in, for the memory engine only. */
+export function databaseUrlWithPassword(url: string, password: string | undefined): string {
+  if (!password) return url;
+  try {
+    const parsed = new URL(url);
+    if (parsed.password) return url;
+    parsed.password = encodeURIComponent(password);
+    return parsed.toString();
+  } catch {
+    return url;
   }
 }
 
