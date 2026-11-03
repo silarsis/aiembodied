@@ -352,25 +352,20 @@ export function AvatarStudio({
     }
   };
 
-  // A multi-view 3D model is paired with Qwen-Image, the only model that draws the side and back views.
+  // A multi-view 3D model also needs side and back views, which a Qwen-Image model draws as edits
+  // of the front. The front can come from any model; a Qwen front draws its own views.
   const geometryChoice = characterModels.geometry.find(
     (model) => model.id === characterModels.selectedGeometryId,
   );
-  const sealed = mode === 'new-character' && !usingUpload && geometryChoice?.views === true;
+  const needsViews = mode === 'new-character' && !usingUpload && geometryChoice?.views === true;
   const isQwen = (id: string | null | undefined) =>
     Boolean(id) && imageModels.modelFamilies?.[id ?? ''] === 'qwen-image-2.1';
   const qwenModels = imageModels.models.filter((item) => item.available && isQwen(item.id));
-  const sealedBlocked =
-    sealed && imageModels.supported && !imageModels.loading && !qwenModels.length;
-  useEffect(() => {
-    // Move to a Qwen-Image model when the 3D model needs one and another is selected.
-    if (!sealed || imageModels.loading || isQwen(imageModels.selectedModelId)) return;
-    const first = qwenModels[0];
-    if (first) void imageModels.select(first.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sealed, imageModels.loading, imageModels.selectedModelId, qwenModels[0]?.id]);
+  const viewsBlocked =
+    needsViews && imageModels.supported && !imageModels.loading && !qwenModels.length;
+  const frontIsQwen = isQwen(imageModels.selectedModelId);
   const canGenerate =
-    !sealedBlocked &&
+    !viewsBlocked &&
     !busy &&
     !anyRunning &&
     (usingUpload
@@ -637,23 +632,20 @@ export function AvatarStudio({
                   {imageModels.loading ? 'Finding installed models…' : 'No available image models'}
                 </option>
               ) : null}
-              {imageModels.models.map((item) => {
-                const locked = sealed && !isQwen(item.id);
-                return (
-                  <option key={item.id} value={item.id} disabled={!item.available || locked}>
-                    {item.name}
-                    {!item.available ? ' (unavailable)' : locked ? ' (not for this 3D model)' : ''}
-                  </option>
-                );
-              })}
+              {imageModels.models.map((item) => (
+                <option key={item.id} value={item.id} disabled={!item.available}>
+                  {item.name}
+                  {!item.available ? ' (unavailable)' : ''}
+                </option>
+              ))}
             </select>
-            {sealedBlocked ? (
+            {viewsBlocked ? (
               <small className="avatarStudio__warnText">
                 {`${geometryChoice?.name ?? 'This 3D model'} needs Qwen-Image 2.1 on the image server to draw the side and back views. Install it there, or pick TRELLIS.2 as the 3D model.`}
               </small>
-            ) : sealed ? (
+            ) : needsViews && !frontIsQwen && !imageModels.loading && imageModels.selectedModelId ? (
               <small>
-                {`${geometryChoice?.name ?? 'This 3D model'} builds from front, side and back views, which only Qwen-Image draws.`}
+                {`${geometryChoice?.name ?? 'This 3D model'} builds from front, side and back views. This model draws the front; ${qwenModels[0]?.name ?? 'Qwen-Image'} then draws the side and back from it.`}
               </small>
             ) : null}
             {imageModels.error ? (

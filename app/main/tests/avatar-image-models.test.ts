@@ -110,6 +110,23 @@ describe('installed image models', () => {
   });
 });
 
+describe('view model', () => {
+  it('draws views with the take\'s own Qwen model, or an installed Qwen when the front came from another family', async () => {
+    const service = new AvatarImageModelService(async () => installed);
+    const xlFront = await service.resolve('checkpoints:folder/variant.safetensors');
+    const fromXl = await service.resolveViewModel(xlFront);
+    expect(fromXl?.family).toBe('qwen-image-2.1');
+    expect(fromXl?.model).toBe('renamed-qwen.safetensors');
+    expect(fromXl?.loras).toBeUndefined();
+    const qwenFront = { ...(await service.resolve('diffusion_models:renamed-qwen.safetensors')), loras: [{ name: 'q.safetensors', strength: 1 }] };
+    expect(await service.resolveViewModel(qwenFront)).toBe(qwenFront);
+    const noQwen = new AvatarImageModelService(async () =>
+      installed.filter((file) => file.kind !== 'qwen-image-2.1'),
+    );
+    expect(await noQwen.resolveViewModel(await noQwen.resolve('checkpoints:folder/variant.safetensors'))).toBeUndefined();
+  });
+});
+
 describe('LoRAs', () => {
   const withLoras: ImageModelFile[] = [
     ...installed,
