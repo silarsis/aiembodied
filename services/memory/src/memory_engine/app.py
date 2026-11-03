@@ -114,11 +114,12 @@ class Engine:
 
     def connection(self):
         if not self.ready:
-            raise ApiError(503, f"memory database is not ready: {self.error or 'starting'}")
+            raise ApiError(503, "memory database is not ready yet")
         try:
             return self.pool.connection(timeout=10)
         except Exception as error:  # noqa: BLE001
-            raise ApiError(503, f"memory database is unavailable: {error}") from error
+            log.warning("No database connection: %s", error)
+            raise ApiError(503, "memory database is unavailable") from error
 
 
 def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_background: bool = True) -> FastAPI:
@@ -138,7 +139,8 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
 
     @app.exception_handler(psycopg.OperationalError)
     async def db_down(_request: Request, error: psycopg.OperationalError):
-        return JSONResponse(status_code=503, content={"error": f"memory database is unavailable: {error}"})
+        log.warning("Memory database error: %s", error)
+        return JSONResponse(status_code=503, content={"error": "memory database is unavailable"})
 
     def authorise(authorization: Optional[str] = Header(default=None)) -> None:
         if not api_token:
@@ -159,14 +161,15 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
             "schema_version": engine.schema_version,
         }
         if engine.error:
-            body["error"] = engine.error
+            body["error"] = "database not reachable yet; see the engine's log"
         if engine.ready:
             try:
                 with engine.pool.connection(timeout=2) as conn:
                     body["counts"] = store.counts(conn)
-            except Exception as error:  # noqa: BLE001
+            except Exception:  # noqa: BLE001
+                log.exception("Health check could not read the database")
                 body["database"] = "unavailable"
-                body["error"] = str(error)
+                body["error"] = "database query failed; see the engine's log"
         return body
 
     @app.put("/v1/sessions/{session_id}", dependencies=guarded)
