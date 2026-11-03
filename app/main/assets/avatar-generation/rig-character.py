@@ -1,7 +1,7 @@
 """Headless Blender: generated A-pose textured GLB -> expressive, skinned VRM 1 humanoid.
 
 Experimental MVP: adult proportions, short hair, close clothing, separated limbs, visible neutral face.
-The generated body/hair/outfit geometry is preserved; a landmark-fitted facial surface replaces the front head.
+The generated body/hair/outfit geometry is preserved; the head gets landmark-driven expressions (or, failing that, a fitted facial surface replaces the front head).
 No bundled avatar geometry or textures are used. No third-party Blender add-on is required.
 """
 import argparse
@@ -26,6 +26,8 @@ parser.add_argument("--reference", required=True)
 parser.add_argument("--landmarks", required=True)
 parser.add_argument("--emotion-renders", action="store_true")
 parser.add_argument("--allow-template-warnings", action="store_true")
+# Lay a separate landmark-fitted face over the head instead of giving the head its own expressions.
+parser.add_argument("--separate-face", action="store_true")
 args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:])
 args.reference = str(Path(args.reference).resolve())
 args.landmarks = str(Path(args.landmarks).resolve())
@@ -168,16 +170,8 @@ mod = body.modifiers.new("GeneratedRig", "ARMATURE")
 mod.object = rig
 body.parent = rig
 
-# Fit known open-eye/open-mouth topology to the detected reference and generated head.
-face_module = runpy.run_path(str(Path(__file__).with_name("fitted-face.py")))
-face_parts, face_report = face_module["build_fitted_face"](
-    body, rig, H, args.landmarks, args.reference, allow_template_warnings=args.allow_template_warnings)
-for part in face_parts:
-    if part.data.shape_keys:
-        for key in part.data.shape_keys.key_blocks:
-            key.value = 0
-
-# Bake just the generated body into T-pose. Face parts stay bound rigidly to the head.
+# Bake just the generated body into T-pose before the face fit: a mesh with shape keys can't
+# have its armature applied, and the face may give the body its own expression keys.
 bpy.context.view_layer.objects.active = rig
 for side in ("left", "right"):
     pb = rig.pose.bones[side + "UpperArm"]
@@ -196,6 +190,18 @@ bpy.ops.pose.armature_apply(selected=False)
 bpy.ops.object.mode_set(mode="OBJECT")
 mod = body.modifiers.new("GeneratedRig", "ARMATURE")
 mod.object = rig
+bpy.context.view_layer.update()
+
+# Fit known open-eye/open-mouth topology to the detected reference and generated head.
+face_module = runpy.run_path(str(Path(__file__).with_name("fitted-face.py")))
+face_parts, face_report = face_module["build_fitted_face"](
+    body, rig, H, args.landmarks, args.reference, allow_template_warnings=args.allow_template_warnings,
+    wrap=not args.separate_face)
+# Expression keys may sit on the face parts, the body itself, or both.
+keyed = [o for o in (body, *face_parts) if o.data.shape_keys]
+for part in keyed:
+    for key in part.data.shape_keys.key_blocks:
+        key.value = 0
 bpy.context.view_layer.update()
 
 glb_path = output.with_suffix(".glb")
@@ -317,24 +323,23 @@ if args.emotion_renders:
     scene.world.node_tree.nodes["Background"].inputs[1].default_value = .7
     camera = bpy.data.objects.new("FaceReviewCamera",bpy.data.cameras.new("FaceReviewCamera"))
     scene.collection.objects.link(camera);scene.camera=camera
-    face = next(o for o in face_parts if o.name == "FittedFace")
-    coords = np.array([v.co[:] for v in face.data.vertices])
+    face = next((o for o in face_parts if o.name == "FittedFace"), None)
+    # A wrapped head has no separate face: frame the eyes and mouth instead.
+    coords = np.array([v.co[:] for o in ([face] if face else face_parts) for v in o.data.vertices])
     center = Vector(coords.mean(axis=0));center.z = float((coords[:,2].min()+coords[:,2].max())/2)
     camera.location=(center.x,-3,center.z)
     camera.rotation_euler=(center-camera.location).to_track_quat('-Z','Y').to_euler()
-    camera.data.type='ORTHO';camera.data.ortho_scale=float(np.ptp(coords[:,2]))*1.65
+    camera.data.type='ORTHO';camera.data.ortho_scale=float(np.ptp(coords[:,2]))*(1.65 if face else 2.6)
     scene.view_settings.view_transform='Standard'
     renders=output.parent/'expressions';renders.mkdir(exist_ok=True)
     for expression in ('neutral','happy','sad','angry','fear','disgust','surprised','blink','aa','ih','ou','ee','oh','lookLeft','lookRight'):
-        for obj in face_parts:
-            if obj.data.shape_keys:
-                for key in obj.data.shape_keys.key_blocks:
-                    if key.name != 'Basis':key.value=1 if key.name==expression else 0
+        for obj in keyed:
+            for key in obj.data.shape_keys.key_blocks:
+                if key.name != 'Basis':key.value=1 if key.name==expression else 0
         bpy.context.view_layer.update()
         scene.render.filepath=str(renders/(expression+'.png'))
         bpy.ops.render.render(write_still=True)
     # Store an inspectable source scene with the actual fitted mesh and shape keys.
-    for obj in face_parts:
-        if obj.data.shape_keys:
-            for key in obj.data.shape_keys.key_blocks:key.value=0
+    for obj in keyed:
+        for key in obj.data.shape_keys.key_blocks:key.value=0
     bpy.ops.wm.save_as_mainfile(filepath=str(output.with_suffix('.blend')))
