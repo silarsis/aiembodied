@@ -57,6 +57,14 @@ describe('LocalVoiceService long-term memory', () => {
     expect(seen).toEqual([[], ['m1']]);
   });
 
+  it('marks each turn busy, then idle, for the engine', async () => {
+    const activity = vi.fn();
+    const memory: VoiceMemory = { brief: async () => null, recall: async () => null, activity };
+    const { service } = makeService(memory);
+    await service.respond({ requestId: 'r1', text: 'hello' }, () => {});
+    expect(activity.mock.calls).toEqual([[true], [false]]);
+  });
+
   it('starts a new brief after the conversation goes idle', async () => {
     let clock = 1_000_000;
     let briefs = 0;

@@ -72,7 +72,25 @@ export interface MemoryEngineTimelineSession {
   started_at: string;
   last_at: string;
   message_count: number;
+  /** The background summary of the conversation, once it has one. */
+  summary?: { id: string; title: string | null; text: string; topics: string[] } | null;
   turns: Array<{ id: string; at: string; text: string }>;
+}
+
+/** A day, week or month summary. */
+export interface MemoryEngineSummary {
+  id: string;
+  kind: string;
+  period_start: string;
+  period_end: string;
+  title: string | null;
+  text: string;
+  topics: string[];
+}
+
+export interface MemoryEngineTimeline {
+  summaries: MemoryEngineSummary[];
+  sessions: MemoryEngineTimelineSession[];
 }
 
 export interface MemoryEngineMemoryDetail {
@@ -97,8 +115,11 @@ export interface MemoryEngineBrief {
     title: string | null;
     started_at: string;
     last_at: string;
+    /** Its background summary, once made; otherwise use the turns. */
+    summary?: string | null;
     turns: string[];
   } | null;
+  recent_days?: Array<{ period_start: string; title: string | null; text: string }>;
 }
 
 export interface MemoryEngineRecallRequest {
@@ -194,12 +215,17 @@ export class MemoryEngineClient {
     return body.results;
   }
 
-  async timeline(from: string, to: string, options: { turns?: number; includePrivate?: boolean } = {}): Promise<MemoryEngineTimelineSession[]> {
+  async timeline(from: string, to: string, options: { turns?: number; includePrivate?: boolean } = {}): Promise<MemoryEngineTimeline> {
     const params = new URLSearchParams({ from, to });
     if (options.turns !== undefined) params.set('turns', String(options.turns));
     if (options.includePrivate === false) params.set('include_private', 'false');
-    const body = await this.request<{ sessions: MemoryEngineTimelineSession[] }>('GET', `/v1/timeline?${params.toString()}`);
-    return body.sessions;
+    const body = await this.request<Partial<MemoryEngineTimeline>>('GET', `/v1/timeline?${params.toString()}`);
+    return { summaries: body.summaries ?? [], sessions: body.sessions ?? [] };
+  }
+
+  /** Tell the engine a turn started or ended, so its background work waits for quiet. */
+  activity(busy: boolean): Promise<{ idle: boolean | null }> {
+    return this.request('POST', '/v1/activity', { busy }, 1000);
   }
 
   memory(id: string, around = 1): Promise<MemoryEngineMemoryDetail> {

@@ -7,7 +7,7 @@ import {
   parsePeriod,
   type MemoryEngineMemoryDetail,
   type MemoryEngineSearchResult,
-  type MemoryEngineTimelineSession,
+  type MemoryEngineTimeline,
   type OutboxItem,
 } from '../src/memory-engine/index.js';
 
@@ -76,18 +76,21 @@ function result(overrides: Partial<MemoryEngineSearchResult> = {}): MemoryEngine
 function makeTools() {
   const client = {
     search: vi.fn(async () => [result()]),
-    timeline: vi.fn(async (): Promise<MemoryEngineTimelineSession[]> => [
-      {
-        session_id: 'sess',
-        agent: 'Echo',
-        channel: 'voice',
-        title: null,
-        started_at: new Date(2026, 10, 2, 9).toISOString(),
-        last_at: new Date(2026, 10, 2, 9, 10).toISOString(),
-        message_count: 4,
-        turns: [{ id: 't1', at: new Date(2026, 10, 2, 9).toISOString(), text: 'Kevin: hi\nEcho: hello' }],
-      },
-    ]),
+    timeline: vi.fn(async (): Promise<MemoryEngineTimeline> => ({
+      summaries: [],
+      sessions: [
+        {
+          session_id: 'sess',
+          agent: 'Echo',
+          channel: 'voice',
+          title: null,
+          started_at: new Date(2026, 10, 2, 9).toISOString(),
+          last_at: new Date(2026, 10, 2, 9, 10).toISOString(),
+          message_count: 4,
+          turns: [{ id: 't1', at: new Date(2026, 10, 2, 9).toISOString(), text: 'Kevin: hi\nEcho: hello' }],
+        },
+      ],
+    })),
     memory: vi.fn(async (): Promise<MemoryEngineMemoryDetail> => ({
       id: 't1',
       kind: 'turn',
@@ -164,6 +167,38 @@ describe('memory tools', () => {
       kind: 'fact',
       fact: { text: 'Kevin prefers wslc', subject: 'tools', author: 'agent', agent: 'Echo', session_id: 'sess' },
     });
+  });
+
+  it('uses summaries in the timeline once they exist', async () => {
+    const { client, byId } = makeTools();
+    client.timeline.mockResolvedValueOnce({
+      summaries: [
+        { id: 'd1', kind: 'day', period_start: local(2026, 10, 27).toISOString(), period_end: local(2026, 10, 28).toISOString(),
+          title: 'Garden day', text: 'The user planted tomatoes.', topics: ['garden'] },
+      ],
+      sessions: [
+        {
+          session_id: 's', agent: 'Echo', channel: 'voice', title: null,
+          started_at: new Date(2026, 9, 27, 9).toISOString(), last_at: new Date(2026, 9, 27, 9, 5).toISOString(),
+          message_count: 6,
+          summary: { id: 'x1', title: 'Tomatoes', text: 'They talked about planting tomatoes.', topics: [] },
+          turns: [{ id: 't9', at: new Date(2026, 9, 27, 9).toISOString(), text: 'User: hi' }],
+        },
+      ],
+    });
+    const text = await byId[MEMORY_TOOL_IDS.timeline].execute({ period: 'last week' });
+    expect(text).toContain('[d1] Tue, 27 Oct 2026: Garden day. The user planted tomatoes.');
+    expect(text).toContain('Echo "Tomatoes", 6 messages:');
+    expect(text).toContain('[x1] They talked about planting tomatoes.');
+    expect(text).not.toContain('[t9]');
+  });
+
+  it('labels summaries in search results and opens them', async () => {
+    const { client, byId } = makeTools();
+    client.search.mockResolvedValueOnce([result({ id: 'w1', kind: 'week', agent: null, text: 'A busy week.' })]);
+    expect(await byId[MEMORY_TOOL_IDS.recall].execute({ query: 'week' })).toContain('summary of the week:');
+    client.memory.mockResolvedValueOnce({ id: 'w1', kind: 'week', period_start: local(2026, 10, 26).toISOString(), text: 'A busy week.' });
+    expect(await byId[MEMORY_TOOL_IDS.open].execute({ id: 'w1' })).toMatch(/^Summary of the week, .*: A busy week\.$/);
   });
 
   it('caps long results', () => {

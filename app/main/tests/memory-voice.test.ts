@@ -41,6 +41,30 @@ describe('voice memory', () => {
     expect(brief).toContain('- User: the greenhouse door is broken / Echo: I will remind you.');
   });
 
+  it('prefers summaries for the last conversation and recent days', async () => {
+    const client = makeClient({
+      brief: async () => ({
+        ...BRIEF,
+        last_session: BRIEF.last_session && { ...BRIEF.last_session, summary: 'They fixed the\ngreenhouse door.' },
+        recent_days: [{ period_start: new Date(2026, 10, 2).toISOString(), title: 'Monday', text: 'A quiet day.' }],
+      }),
+    });
+    const memory = createVoiceMemory({ client, currentSessionId: () => 's1', agentName: () => 'Echo', now: () => NOW });
+    const brief = await memory.brief();
+    expect(brief).toContain('Recent days:\n- Mon, 2 Nov 2026: A quiet day.');
+    expect(brief).toContain('Your last conversation (2 days ago, with Echo): They fixed the / greenhouse door.');
+    expect(brief).not.toContain('How your last conversation ended');
+  });
+
+  it('tells the engine when a turn starts and ends, ignoring failures', async () => {
+    const activity = vi.fn(async () => { throw new Error('down'); });
+    const memory = createVoiceMemory({ client: { ...makeClient(), activity }, currentSessionId: () => null, agentName: () => 'Echo' });
+    memory.activity?.(true);
+    memory.activity?.(false);
+    await Promise.resolve();
+    expect(activity.mock.calls).toEqual([[true], [false]]);
+  });
+
   it('still gives the time when the engine is down or the brief is off', async () => {
     const down = createVoiceMemory({
       client: makeClient({ brief: async () => { throw new Error('unreachable'); } }),

@@ -39,3 +39,39 @@ def client(database_url, schema):
     engine = Engine(database_url, schema, embedder=FakeEmbedder(), embed_inline=True)
     with TestClient(create_app(engine, connect_in_background=False)) as test_client:
         yield test_client
+
+
+class FakeLlm:
+    """Answers summary prompts from `reply(prompt)`; records every prompt it was given."""
+
+    name = "fake-llm"
+
+    def __init__(self, reply=None):
+        self.prompts = []
+        self.reply = reply or (lambda prompt: {"title": "A chat", "summary": "They talked.", "topics": ["chat"], "facts": []})
+
+    def complete_json(self, system, user, schema):
+        self.prompts.append(user)
+        return self.reply(user)
+
+
+@pytest.fixture
+def llm():
+    return FakeLlm()
+
+
+@pytest.fixture
+def summary_client(database_url, schema, llm):
+    from datetime import timezone as tz
+
+    from fastapi.testclient import TestClient
+
+    from memory_engine.app import Engine, create_app
+    from memory_engine.embed import FakeEmbedder
+    from memory_engine.summaries import Summariser
+
+    # UTC days, so test times land on predictable dates.
+    summariser = Summariser(llm, tz.utc, idle_seconds=0)
+    engine = Engine(database_url, schema, embedder=FakeEmbedder(), embed_inline=True, summariser=summariser)
+    with TestClient(create_app(engine, connect_in_background=False)) as test_client:
+        yield test_client

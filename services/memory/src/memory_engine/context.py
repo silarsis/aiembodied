@@ -89,7 +89,11 @@ def brief(
             """,
             (last[0], BRIEF_TURNS),
         ).fetchall()
+        summary = conn.execute(
+            "SELECT title, text FROM summaries WHERE kind = 'session' AND session_id = %s", (last[0],)
+        ).fetchone()
         last_session = {
+            "summary": summary[1] if summary else None,
             "session_id": str(last[0]),
             "agent": last[1],
             "channel": last[2],
@@ -98,7 +102,16 @@ def brief(
             "last_at": last[5].isoformat(),
             "turns": [_clip(t[0], BRIEF_TURN_CHARS) for t in turns],
         }
-    return {"agent": agent, "facts": facts, "last_session": last_session}
+    # The last two closed days with a summary, if they were in the past week.
+    days = conn.execute(
+        """
+        SELECT period_start, title, text FROM summaries
+        WHERE kind = 'day' AND period_end > now() - interval '7 days'
+        ORDER BY period_start DESC LIMIT 2
+        """
+    ).fetchall()
+    recent_days = [{"period_start": d[0].isoformat(), "title": d[1], "text": d[2]} for d in reversed(days)]
+    return {"agent": agent, "facts": facts, "last_session": last_session, "recent_days": recent_days}
 
 
 def auto_recall(

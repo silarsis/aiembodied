@@ -4,7 +4,7 @@ full context of one memory."""
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Sequence
 from uuid import UUID
 
@@ -202,10 +202,51 @@ def timeline(
                 "started_at": s[4].isoformat(),
                 "last_at": s[5].isoformat(),
                 "message_count": s[6],
+                "summary": _session_summary(conn, s[0]),
                 "turns": [{"id": str(t[0]), "at": t[1].isoformat(), "text": t[2][:300]} for t in turns],
             }
         )
     return out
+
+
+def _session_summary(conn: psycopg.Connection, session_id: UUID) -> Optional[dict[str, Any]]:
+    row = conn.execute(
+        "SELECT r.id, s.title, s.text, s.topics FROM summaries s"
+        " JOIN recall_index r ON r.source_id = s.id"
+        " WHERE s.kind = 'session' AND s.session_id = %s",
+        (session_id,),
+    ).fetchone()
+    return {"id": str(row[0]), "title": row[1], "text": row[2], "topics": list(row[3])} if row else None
+
+
+def period_summaries(conn: psycopg.Connection, start: datetime, end: datetime, limit: int = 40) -> list[dict[str, Any]]:
+    """Day, week or month summaries inside [start, end), the level picked by the span: days up
+    to about a month, weeks up to about four months, months beyond."""
+    days = (end - start).total_seconds() / 86400.0
+    if days <= 2:
+        return []
+    kind = "day" if days <= 35 else "week" if days <= 125 else "month"
+    rows = conn.execute(
+        """
+        SELECT r.id, s.kind, s.period_start, s.period_end, s.title, s.text, s.topics
+        FROM summaries s JOIN recall_index r ON r.source_id = s.id
+        WHERE s.kind = %s AND s.period_start >= %s AND s.period_end <= %s
+        ORDER BY s.period_start LIMIT %s
+        """,
+        (kind, start - timedelta(hours=14), end + timedelta(hours=14), limit),
+    ).fetchall()
+    return [
+        {
+            "id": str(r[0]),
+            "kind": r[1],
+            "period_start": r[2].isoformat(),
+            "period_end": r[3].isoformat(),
+            "title": r[4],
+            "text": r[5],
+            "topics": list(r[6]),
+        }
+        for r in rows
+    ]
 
 
 def memory_detail(conn: psycopg.Connection, index_id: UUID, around: int = 1) -> Optional[dict[str, Any]]:
@@ -244,8 +285,10 @@ def memory_detail(conn: psycopg.Connection, index_id: UUID, around: int = 1) -> 
         detail.update({"text": row[5]})
         if fact:
             detail.update({"subject": fact[1], "status": fact[2], "messages": _messages(conn, fact[3])})
-    else:
+    else:  # a summary: the conversation, day, week or month as a whole
         detail["text"] = row[5]
+        if session_id:
+            detail["session_id"] = str(session_id)
     return detail
 
 

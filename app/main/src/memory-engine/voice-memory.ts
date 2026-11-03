@@ -23,10 +23,12 @@ export interface VoiceMemory {
   brief(): Promise<string | null>;
   /** A block to put before the user's words, or null when nothing clearly matters. */
   recall(text: string, alreadyRecalled: readonly string[]): Promise<{ block: string; ids: string[] } | null>;
+  /** A turn started (true) or ended (false), so the engine's background work waits. */
+  activity?(busy: boolean): void;
 }
 
 export interface VoiceMemoryOptions {
-  client: Pick<MemoryEngineClient, 'brief' | 'recall'>;
+  client: Pick<MemoryEngineClient, 'brief' | 'recall'> & Partial<Pick<MemoryEngineClient, 'activity'>>;
   currentSessionId: () => string | null;
   agentName: () => string;
   /** Off: the brief is only the date and time. */
@@ -63,8 +65,19 @@ export function formatBrief(brief: MemoryEngineBrief | null, now: Date): string 
       lines.push(`- ${fact.text}`);
     }
   }
+  const days = brief?.recent_days ?? [];
+  if (days.length) {
+    lines.push('', 'Recent days:');
+    for (const day of days) {
+      lines.push(`- ${formatDay(new Date(day.period_start))}: ${oneLine(day.text)}`);
+    }
+  }
   const last = brief?.last_session;
-  if (last && last.turns.length) {
+  if (last?.summary) {
+    const when = new Date(last.last_at);
+    const who = last.agent ? `, with ${last.agent}` : '';
+    lines.push('', `Your last conversation (${describeAgo(when, now)}${who}): ${oneLine(last.summary)}`);
+  } else if (last && last.turns.length) {
     const when = new Date(last.last_at);
     const who = last.agent ? `, with ${last.agent}` : '';
     lines.push('', `How your last conversation ended (${describeAgo(when, now)}${who}):`);
@@ -112,6 +125,11 @@ export function createVoiceMemory(options: VoiceMemoryOptions): VoiceMemory {
         });
         return formatBrief(null, now());
       }
+    },
+
+    activity(busy) {
+      // Fire and forget: background work pausing a little late is harmless.
+      options.client.activity?.(busy).catch(() => undefined);
     },
 
     async recall(text, alreadyRecalled) {
