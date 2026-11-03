@@ -244,11 +244,15 @@ for index, name in enumerate(("front", "left", "back", "right")):
         hit = tree.ray_cast(origin, d)
         if hit[0] is None:
             weights[i, index] = sharp[i]
-# Hidden everywhere (between the legs, under the arms): use the views it faces anyway.
+# Hidden everywhere (between the legs, the sides of the body behind the arms): take the front or
+# back view, whichever it leans towards. Not the side view: what it shows there is the arm (a
+# profile drawing hangs the arms over the body), which painted skin and sleeve onto the jacket.
 hidden = weights.sum(axis=1) < 1e-6
-weights[hidden] = facing[hidden]
-still = weights.sum(axis=1) < 1e-6
-weights[still, 0] = 1.0
+weights[hidden] = 0
+lean = normals[hidden, 1]
+weights[hidden, 0] = np.where(available["back"], np.clip(-lean, 0, None) + 0.05, 1.0)
+if available["back"]:
+    weights[hidden, 2] = np.clip(lean, 0, None) + 0.05
 weights /= weights.sum(axis=1, keepdims=True)
 painted = {
     "front": float((weights[:, 0] > 0.5).mean()),
