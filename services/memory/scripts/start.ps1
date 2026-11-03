@@ -80,16 +80,24 @@ if ($DatabaseOnly) {
 
 if (-not $Venv) { $Venv = Join-Path $root '.venv' }
 $python = Join-Path $Venv 'Scripts\python.exe'
-if (-not (Test-Path $python)) {
+# (Re)install when the venv is new or pyproject.toml changed since the last install, so a pull
+# that adds a dependency (fastembed in phase 2) just works.
+$pyproject = Join-Path $root 'pyproject.toml'
+$marker = Join-Path $Venv '.memory-engine-installed'
+$stale = (-not (Test-Path $marker)) -or ((Get-Item $pyproject).LastWriteTimeUtc -gt (Get-Item $marker).LastWriteTimeUtc)
+if ((-not (Test-Path $python)) -or $stale) {
   if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-    throw "No Python at $python. Install uv, or create the venv by hand (README), or pass -Venv."
+    if (-not (Test-Path $python)) { throw "No Python at $python. Install uv, or create the venv by hand (README), or pass -Venv." }
+    Write-Warning 'pyproject.toml changed but uv is not installed; run "pip install -e ." in the venv by hand.'
+  } else {
+    $ErrorActionPreference = 'Continue'
+    if (-not (Test-Path $python)) { Write-Host "Creating $Venv with uv"; uv venv $Venv --python 3.13 }
+    uv pip install --python $python -e $root
+    $ok = ($LASTEXITCODE -eq 0)
+    $ErrorActionPreference = 'Stop'
+    if (-not (Test-Path $python)) { throw "Could not create the venv at $Venv." }
+    if ($ok) { Set-Content -Path $marker -Value (Get-Date -Format o) }
   }
-  Write-Host "Creating $Venv with uv"
-  $ErrorActionPreference = 'Continue'
-  uv venv $Venv --python 3.13
-  uv pip install --python $python -e $root
-  $ErrorActionPreference = 'Stop'
-  if (-not (Test-Path $python)) { throw "Could not create the venv at $Venv." }
 }
 
 # Passed in the environment, not on the command line, so the password stays out of process lists.

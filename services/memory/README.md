@@ -5,20 +5,32 @@ it, and can be found again by time, by subject and by relevance. It is a stand-a
 an HTTP API: aiembodied is one client, and nothing here depends on it. The design is in the
 [eternal memory design doc](https://claude.ai/artifact/VKbfzVfg91QQjFexz8eDr1).
 
-What exists so far (phase 1):
+What exists so far (phases 1 and 2):
 
 - **The record.** Sessions and every message verbatim (user, assistant, tool calls with their
   results), with client-made IDs so retried writes are harmless.
-- **Turns.** Each user message, the tool calls and the reply after it, indexed together for
-  full-text search. Turns are worked out from time order, so a message that arrives late still
-  lands in the right turn.
-- **Browse and search.** Sessions by date range, a session's messages, full-text search with
-  date, agent and privacy filters.
-- **Forget.** Delete a session or a message, with everything indexed from it. Deletes are recorded
-  as tombstones so a future mirror can follow them.
+- **Turns.** Each user message, the tool calls and the reply after it, indexed together.
+  Turns are worked out from time order, so a message that arrives late still lands in the right
+  turn.
+- **Facts.** Short durable statements ("Kevin prefers wslc over Docker") saved by the agent, the
+  user or, later, the background extractor. They go live at once; a fact can be pinned,
+  superseded by a newer one, retracted or marked reviewed.
+- **Hybrid search.** Full-text and vector search over turns and facts, merged by reciprocal rank
+  fusion, with a small boost for recent and important items. Embeddings come from a local model
+  on the CPU ([fastembed](https://github.com/qdrant/fastembed), `BAAI/bge-small-en-v1.5`, 384
+  dimensions, about 130 MB on first use), made in the background so writes never wait for them.
+  Until an item is embedded it is still found by full text.
+- **Timeline and detail.** What was talked about over a period, conversation by conversation, and
+  any one memory in full with the exchanges around it.
+- **Forget.** Delete a session, a message or a fact, with everything indexed from it. Deletes are
+  recorded as tombstones so a future mirror can follow them.
 
-Still to come: embeddings and hybrid search, facts, the session brief and auto-recall, background
-summaries by day, week and month, and Supabase mirroring.
+Still to come: the session brief and auto-recall, background summaries by day, week and month
+with fact extraction, a Memory panel in the app, and Supabase as a server option.
+
+Settings: `MEMORY_EMBEDDER` is `fastembed` (default), `fake` (hashed words, for wiring tests) or
+`off` (full text only); `MEMORY_EMBED_MODEL` picks another fastembed model, which must make
+384-dimension vectors. The model is kept in `%LOCALAPPDATA%\aiembodied\memory\models` (`MEMORY_EMBED_CACHE` to move it). If it can't be fetched, search carries on with full text and tries the model again every five minutes.
 
 The HTTP contract is in [API.md](API.md).
 

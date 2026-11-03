@@ -8,11 +8,12 @@ reachable yet, and the client should queue and retry.
 ## `GET /health`
 
 ```json
-{"status": "ok", "version": "0.1.0", "database": "ready", "schema": "memory", "schema_version": 1,
- "counts": {"sessions": 12, "messages": 340, "indexed": 160}}
+{"status": "ok", "version": "0.1.0", "database": "ready", "schema": "memory", "schema_version": 2,
+ "embedder": "BAAI/bge-small-en-v1.5", "counts": {"sessions": 12, "messages": 340, "indexed": 160}}
 ```
 
-`status` is `starting` (with `error`) until the database is reachable and migrated.
+`status` is `starting` (with `error`) until the database is reachable and migrated. `embedder` is
+null when embeddings are off; `embedder_error` says why the model failed to load.
 
 ## `PUT /v1/sessions/{id}`
 
@@ -52,11 +53,44 @@ page, passed as `before`.
 
 Every message of a session in time order.
 
-## `GET /v1/search?q=&from=&to=&agent=&kind=&include_private=true&limit=10`
+## `GET /v1/search?q=&from=&to=&agent=&kind=&include_private=true&exclude=&mode=hybrid&limit=10`
 
-Full-text search (web-search syntax: quotes, `or`, `-word`) over the recall index, best first.
-Each result has `kind` (`turn` for now), `session_id`, `period_start`, `period_end`, `text` and
-`score`.
+Search the recall index (turns and facts), best first. `mode=hybrid` (default) merges full-text
+and vector matches; `mode=text` is full text only. `kind` may repeat (`turn`, `fact`); `exclude`
+is a comma-separated list of result ids to leave out. Each result has `id`, `kind`, `source_id`,
+`session_id`, `agent`, `period_start`, `period_end`, `text`, `score`, `similarity` (cosine, when
+both sides are embedded) and `matched` (`["text", "vector"]`).
+
+## `GET /v1/timeline?from=&to=&agent=&include_private=true&turns=6&limit=50`
+
+Conversations that took place in `[from, to)`, oldest first, each with `title`, `agent`,
+`channel`, `started_at`, `last_at`, `message_count` and up to `turns` turns (`id`, `at`, `text`).
+400 if `to` is not after `from`.
+
+## `GET /v1/memories/{id}?around=1`
+
+One search or timeline result in full. For a turn: its messages and `around` turns either side.
+For a fact: the fact and the messages it came from. 404 if it isn't there.
+
+## `PUT /v1/facts/{id}`
+
+```json
+{"text": "Kevin prefers wslc over Docker", "subject": "tools", "author": "agent", "agent": "Echo",
+ "session_id": "...", "source_message_ids": [], "supersedes": null, "pinned": false, "private": false}
+```
+
+Save a fact; it is live at once. A repeat of the same id is ignored (`created: false`). With
+`supersedes`, the older fact is marked superseded and leaves search. An unknown `session_id` is
+dropped rather than refused, because the session's own write may still be queued.
+
+## `GET /v1/facts?status=active&pinned=&subject=&unreviewed=false&include_private=true&limit=200`
+
+Facts, pinned first then newest. `status` is `active`, `superseded`, `retracted` or `all`.
+
+## `PATCH /v1/facts/{id}` and `DELETE /v1/facts/{id}`
+
+Change `text`, `subject`, `pinned`, `status` or `private`, or pass `"reviewed": true` to mark it
+reviewed. Only active facts are searchable. DELETE forgets it entirely.
 
 ## `DELETE /v1/sessions/{id}` and `DELETE /v1/messages/{id}`
 
