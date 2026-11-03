@@ -131,7 +131,8 @@ export function AvatarStudio({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [enlarged, setEnlarged] = useState<string | null>(null);
+  // Which of the selected take's images (front, side, back) is enlarged.
+  const [enlarged, setEnlarged] = useState<number | null>(null);
   const [poses, setPoses] = useState<AvatarPoseSummary[]>([]);
   const [models, setModels] = useState<
     Record<string, { key: string; data?: ArrayBuffer; error?: string }>
@@ -442,7 +443,7 @@ export function AvatarStudio({
       className="avatarStudio__image"
       aria-label={`Enlarge take ${selectedNumber} image`}
       aria-haspopup="dialog"
-      onClick={() => setEnlarged(selected.previewDataUrl ?? null)}
+      onClick={() => setEnlarged(0)}
     >
       <img src={selected.previewDataUrl} alt={`Take ${selectedNumber} concept`} />
     </button>
@@ -458,6 +459,15 @@ export function AvatarStudio({
         return url ? [{ key, label, url }] : [];
       })
     : [];
+  const gallery = selected?.previewDataUrl
+    ? [
+        { label: 'front', url: selected.previewDataUrl },
+        ...sideViews.map((view) => ({ label: `${view.label} view`, url: view.url })),
+      ]
+    : [];
+  const enlargedImage = enlarged === null ? undefined : gallery[enlarged];
+  const stepEnlarged = (by: number) =>
+    setEnlarged((index) => (index === null ? index : (index + by + gallery.length) % gallery.length));
   // With side and back views, the three are shown together: they are what a multi-view 3D model gets.
   const imageElement =
     front && sideViews.length ? (
@@ -466,14 +476,14 @@ export function AvatarStudio({
           {front}
           <figcaption>Front</figcaption>
         </figure>
-        {sideViews.map((view) => (
+        {sideViews.map((view, index) => (
           <figure key={view.key}>
             <button
               type="button"
               className="avatarStudio__image"
               aria-label={`Enlarge take ${selectedNumber} ${view.label} view`}
               aria-haspopup="dialog"
-              onClick={() => setEnlarged(view.url)}
+              onClick={() => setEnlarged(index + 1)}
             >
               <img src={view.url} alt={`Take ${selectedNumber} ${view.label} view`} />
             </button>
@@ -710,14 +720,17 @@ export function AvatarStudio({
           disabled={characterModels.loading}
           onSelect={(id) => void characterModels.select('geometry', id)}
         />
-        <ModelSelect
-          id="avatar-studio-rig-model"
-          label="Rig and animation"
-          models={characterModels.rig}
-          selectedId={characterModels.selectedRigId}
-          disabled={characterModels.loading}
-          onSelect={(id) => void characterModels.select('rig', id)}
-        />
+        {characterModels.rig.length > 1 || characterModels.rig.some((rig) => !rig.available) ? (
+          // Shown when there is a choice, or to say why the only method (Blender today) can't run.
+          <ModelSelect
+            id="avatar-studio-rig-model"
+            label="Rig and animation"
+            models={characterModels.rig}
+            selectedId={characterModels.selectedRigId}
+            disabled={characterModels.loading}
+            onSelect={(id) => void characterModels.select('rig', id)}
+          />
+        ) : null}
         <button
           type="button"
           className="avatarStudio__link"
@@ -1101,11 +1114,14 @@ export function AvatarStudio({
           </div>
         </div>
       </div>
-      {enlarged ? (
+      {enlargedImage ? (
         <ExpandedImage
-          src={enlarged}
-          alt={`Take ${selectedNumber} concept`}
+          src={enlargedImage.url}
+          alt={`Take ${selectedNumber} ${enlargedImage.label}`}
           onDismiss={() => setEnlarged(null)}
+          {...(gallery.length > 1
+            ? { onPrevious: () => stepEnlarged(-1), onNext: () => stepEnlarged(1) }
+            : {})}
         />
       ) : null}
     </dialog>,

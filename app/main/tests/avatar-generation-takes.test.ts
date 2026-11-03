@@ -352,7 +352,14 @@ describe('side and back views for multi-view 3D models', () => {
     checkpoint: DEFAULT_HUNYUAN_MV,
   };
 
-  async function viewSetup(withQwen = true) {
+  const xl = {
+    id: 'checkpoints:xl.safetensors',
+    name: 'Custom XL',
+    family: 'sdxl' as const,
+    model: 'xl.safetensors',
+  };
+
+  async function viewSetup(withQwen = true, front: typeof qwen | typeof xl = qwen) {
     const directory = await mkdtemp(path.join(tmpdir(), 'avatar-views-'));
     directories.push(directory);
     let image = 0;
@@ -381,7 +388,7 @@ describe('side and back views for multi-view 3D models', () => {
       }),
     };
     const imageModels = {
-      resolve: vi.fn().mockResolvedValue(qwen),
+      resolve: vi.fn().mockResolvedValue(front),
       resolveViewModel: vi.fn().mockResolvedValue(withQwen ? qwen : undefined),
     };
     const characterModels = {
@@ -472,6 +479,29 @@ describe('side and back views for multi-view 3D models', () => {
     const seed = (call: number) => (comfy.run.mock.calls[call][0] as Record<string, { inputs: Record<string, unknown> }>).sample.inputs.seed;
     expect(seed(3)).not.toBe(seed(1));
     expect(service.getStatus(jobId).views).not.toEqual(before);
+  });
+
+  it('waits for approval before drawing the views when another model drew the front', async () => {
+    const { service, comfy, imageModels } = await viewSetup(true, xl);
+    const { jobId } = await service.startJob({ prompt: 'Auburn explorer' });
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+    expect(comfy.run).toHaveBeenCalledTimes(1);
+    expect(imageModels.resolveViewModel).not.toHaveBeenCalled();
+    expect(service.getStatus(jobId).views).toEqual({});
+    expect(service.getStatus(jobId).viewsMessage).toMatch(/after you approve/);
+    await service.confirmConcept(jobId);
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('completed'));
+    expect(comfy.run).toHaveBeenCalledTimes(4);
+    const graphs = comfy.run.mock.calls.map(([graph]) => graph as Record<string, { class_type: string; inputs: Record<string, unknown> }>);
+    expect(graphs[1].encode.inputs.prompt).toMatch(/left side/);
+    expect(graphs[2].encode.inputs.prompt).toMatch(/from directly behind/);
+    expect(Object.keys(graphs[3].cond.inputs)).toEqual(['front', 'left', 'back']);
+    expect(service.getStatus(jobId).views?.back).toBeTruthy();
+
+    // A rebuild reuses the views already drawn.
+    await service.confirmConcept(jobId);
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('completed'));
+    expect(comfy.run).toHaveBeenCalledTimes(5);
   });
 
   it('explains when there is no Qwen-Image model to draw the views, and builds from the front', async () => {
