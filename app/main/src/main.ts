@@ -52,6 +52,7 @@ import { AvatarCharacterModelService } from './avatar/generation/character-model
 import { LocalMotionClient } from './avatar/motion/local-motion-client.js';
 import { LocalMotionGenerationService } from './avatar/motion/local-motion-generation-service.js';
 import { LocalVoiceService } from './local-voice/local-voice-service.js';
+import { memoryEngineSettings, setupMemoryEngine, type MemoryEngineRuntime } from './memory-engine/index.js';
 import { buildVoiceEngines } from './local-voice/voice-engines.js';
 import { describeProviders, type ProviderSettingsPatch } from './config/provider-settings.js';
 import type { LocalVoiceRespondRequest } from './local-voice/types.js';
@@ -196,6 +197,7 @@ let avatarCharacterModels: AvatarCharacterModelService | undefined;
 let avatarGenerationService: AvatarGenerationService | null = null;
 let localMotionService: LocalMotionGenerationService | null = null;
 let localVoiceService: LocalVoiceService | null = null;
+let memoryEngine: MemoryEngineRuntime | null = null;
 let currentMotionServiceUrl: string | null = null;
 
 let toolRegistry: ToolRegistry | null = null;
@@ -546,7 +548,12 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
   if (localVoiceService) {
     localVoiceService.configure(engines);
   } else {
-    localVoiceService = new LocalVoiceService({ ...engines, tools: toolRegistry ?? undefined, logger });
+    localVoiceService = new LocalVoiceService({
+      ...engines,
+      tools: toolRegistry ?? undefined,
+      logger,
+      onToolResult: (record) => memoryEngine?.recordToolCall(record),
+    });
   }
 
   const motionServer = localMotionServer(manager);
@@ -1528,6 +1535,12 @@ app.whenReady().then(async () => {
       store: memoryStore,
       logger,
     });
+    memoryEngine = setupMemoryEngine({
+      settings: memoryEngineSettings(),
+      store: memoryStore,
+      conversations: conversationManager,
+      logger,
+    });
 
     // Initialize MCP tool registry and manager
     toolRegistry = new ToolRegistry();
@@ -1809,7 +1822,9 @@ app.on('before-quit', async (event) => {
     );
   }
 
-  // Synchronous cleanup
+  // Synchronous cleanup. Queued memory writes stay in SQLite and go out on the next start.
+  memoryEngine?.stop();
+  memoryEngine = null;
   if (memoryStore) {
     try {
       memoryStore.dispose();

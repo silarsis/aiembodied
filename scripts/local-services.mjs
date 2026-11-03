@@ -1,14 +1,15 @@
 /**
  * Make sure the local model servers the app talks to are running before the dev app starts:
  * the LLM (llama-server, Qwen Flash-Next), speech-to-text (llama-server, Qwen3-ASR), the speech
- * service (Kokoro TTS), the motion service (ARDY) and, when web search uses it, SearXNG (a container). A server that already
+ * service (Kokoro TTS), the motion service (ARDY), the memory engine (with PostgreSQL in a container) and, when web
+ * search uses it, SearXNG (a container). A server that already
  * answers is left alone, so one slopcore or another terminal started is reused. A missing one is started with
  * its own start script in a hidden console of its own, logging to .dev-home/logs/<id>.log
  * (and <id>.err.log), and keeps running after the app and the terminal close. Nothing waits for models to finish loading: the app polls each service and
  * picks it up once it reports ready.
  *
  * Settings come from the environment or .env: the same URLs the app uses (LOCAL_LLM_BASE_URL,
- * STT_URL, SPEECH_SERVICE_URL, MOTION_SERVICE_URL, SEARXNG_URL) plus the paths the start scripts need
+ * STT_URL, SPEECH_SERVICE_URL, MOTION_SERVICE_URL, MEMORY_SERVICE_URL, SEARXNG_URL) plus the paths the start scripts need
  * (KOKORO_DIR, MOTION_VENV, TEXT_ENCODERS_DIR, LOCAL_LLM_CONTEXT, ...). What the user saved on the
  * app's Settings page wins over the environment, as it does in the app: a part switched to OpenAI
  * needs no local server, and the motion model picked there is the one services/motion starts with.
@@ -105,6 +106,7 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
   const speechUrl = trimSlash(builtInUrl('local-speech') || providers.speechServiceUrl || env.SPEECH_SERVICE_URL || 'http://127.0.0.1:8192');
   const motionUrl = trimSlash(builtInUrl('local-motion') || providers.motion?.localServiceUrl || env.MOTION_SERVICE_URL || 'http://127.0.0.1:8190');
   const searxngUrl = trimSlash(builtInUrl('local-searxng') || env.SEARXNG_URL || 'http://127.0.0.1:8888');
+  const memoryUrl = trimSlash(env.MEMORY_SERVICE_URL || 'http://127.0.0.1:8194');
   const speechForStt = pipeline && usedBy('local-speech', ['stt']);
 
   const services = [
@@ -153,6 +155,15 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
         ...(env.TEXT_ENCODERS_DIR ? ['-TextEncodersDir', env.TEXT_ENCODERS_DIR] : []),
         ...(env.MOTION_VENV ? ['-Venv', env.MOTION_VENV] : []),
       ],
+    },
+    {
+      id: 'memory',
+      label: 'memory engine (PostgreSQL in a wslc or Docker container)',
+      enabled: isOn(env.MEMORY_ENABLED, true) && isOn(env.MEMORY_AUTOSTART, true),
+      url: memoryUrl,
+      probe: `${memoryUrl}/health`,
+      script: 'services/memory/scripts/start.ps1',
+      args: portArgs(memoryUrl),
     },
     {
       id: 'searxng',
