@@ -3,17 +3,27 @@ import { MemoryEngineError, registerMemoryEngineIpc, type MemoryEngineRuntime } 
 
 const SESSION = '22222222-2222-4222-8222-222222222222';
 
-function setup(runtime: Partial<MemoryEngineRuntime> | null) {
+function setup(runtime: Partial<MemoryEngineRuntime> | null, current: string | null = null) {
   const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
-  const store = { dropMemoryOutboxForSession: vi.fn(() => 2), deleteSession: vi.fn() };
+  const order: string[] = [];
+  const store = {
+    dropMemoryOutboxForSession: vi.fn(() => {
+      order.push('drop');
+      return 2;
+    }),
+    deleteSession: vi.fn(),
+  };
+  const leaveCurrentSession = vi.fn(() => order.push('leave'));
   registerMemoryEngineIpc({
     ipcMain: { handle: (channel: string, handler: (event: unknown, ...args: unknown[]) => unknown) => handlers.set(channel, handler) } as never,
     runtime: () => runtime as MemoryEngineRuntime | null,
     store,
+    currentSessionId: () => current,
+    leaveCurrentSession,
   });
   // Like ipcMain.handle: a throw becomes a rejected promise.
   const call = async (channel: string, ...args: unknown[]) => handlers.get(channel)?.({}, ...args);
-  return { call, store };
+  return { call, store, leaveCurrentSession, order };
 }
 
 describe('Memory panel IPC', () => {
@@ -24,6 +34,32 @@ describe('Memory panel IPC', () => {
     expect(store.dropMemoryOutboxForSession).toHaveBeenCalledWith(SESSION);
     expect(deleteSession).toHaveBeenCalledWith(SESSION);
     expect(store.deleteSession).toHaveBeenCalledWith(SESSION);
+  });
+
+  it('moves on from the conversation in progress before forgetting it, and only that one', async () => {
+    const deleteSession = vi.fn().mockResolvedValue({});
+    const live = setup({ client: { deleteSession } as never }, SESSION);
+    await live.call('memory-engine:forget-session', SESSION);
+    expect(live.order).toEqual(['leave', 'drop']);
+    const other = setup({ client: { deleteSession } as never }, '33333333-3333-4333-8333-333333333333');
+    await other.call('memory-engine:forget-session', SESSION);
+    expect(other.leaveCurrentSession).not.toHaveBeenCalled();
+  });
+
+  it('says so when the local copy could not be deleted', async () => {
+    const deleteSession = vi.fn().mockResolvedValue({});
+    const { call, store } = setup({ client: { deleteSession } as never });
+    store.deleteSession.mockImplementation(() => {
+      throw new Error('database is locked');
+    });
+    await expect(call('memory-engine:forget-session', SESSION)).rejects.toThrow(/own copy .* could not be deleted \(database is locked\)/);
+  });
+
+  it('asks for a whole day of conversations', async () => {
+    const timeline = vi.fn().mockResolvedValue({ summaries: [], sessions: [] });
+    const { call } = setup({ client: { timeline } as never });
+    await call('memory-engine:timeline', { from: '2026-11-03T00:00:00Z', to: '2026-11-04T00:00:00Z' });
+    expect(timeline).toHaveBeenCalledWith('2026-11-03T00:00:00.000Z', '2026-11-04T00:00:00.000Z', { turns: 50, limit: 200 });
   });
 
   it('treats a conversation the engine never had as forgotten', async () => {

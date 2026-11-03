@@ -250,9 +250,14 @@ export class MemoryEngineClient {
     return body.results;
   }
 
-  async timeline(from: string, to: string, options: { turns?: number; includePrivate?: boolean } = {}): Promise<MemoryEngineTimeline> {
+  async timeline(
+    from: string,
+    to: string,
+    options: { turns?: number; includePrivate?: boolean; limit?: number } = {},
+  ): Promise<MemoryEngineTimeline> {
     const params = new URLSearchParams({ from, to });
     if (options.turns !== undefined) params.set('turns', String(options.turns));
+    if (options.limit !== undefined) params.set('limit', String(options.limit));
     if (options.includePrivate === false) params.set('include_private', 'false');
     const body = await this.request<Partial<MemoryEngineTimeline>>('GET', `/v1/timeline?${params.toString()}`);
     return { summaries: body.summaries ?? [], sessions: body.sessions ?? [] };

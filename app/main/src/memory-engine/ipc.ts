@@ -24,8 +24,18 @@ export interface MemoryIpcOptions {
   runtime: () => MemoryEngineRuntime | null;
   /** The app's own copy of the conversation history, which forgetting clears too. */
   store: { dropMemoryOutboxForSession(sessionId: string): number; deleteSession(sessionId: string): void };
+  /** The conversation in progress, if any. */
+  currentSessionId?: () => string | null;
+  /**
+   * Forgetting the conversation in progress: drop it from the model's working history and move
+   * on to a fresh conversation, so nothing more is written to the one being forgotten.
+   */
+  leaveCurrentSession?: () => void;
   logger?: Logger;
 }
+
+/** The most conversations one day of the Conversations tab lists (the engine's own maximum). */
+export const TIMELINE_LIMIT = 200;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -99,7 +109,7 @@ export function registerMemoryEngineIpc(options: MemoryIpcOptions): void {
     const from = optionalIso(payload?.from);
     const to = optionalIso(payload?.to);
     if (!from || !to) throw new Error('a period is needed');
-    return engine().client.timeline(from, to, { turns: 50 });
+    return engine().client.timeline(from, to, { turns: 50, limit: TIMELINE_LIMIT });
   });
 
   ipcMain.handle('memory-engine:memory', (_event, payload: { id?: unknown; around?: unknown }) =>
@@ -142,6 +152,7 @@ export function registerMemoryEngineIpc(options: MemoryIpcOptions): void {
   ipcMain.handle('memory-engine:forget-session', async (_event, sessionId: unknown) => {
     const target = id(sessionId, 'conversation id');
     const runtime = engine();
+    if (options.currentSessionId?.() === target) options.leaveCurrentSession?.();
     // Queued writes first, so they can't bring it back after the engine forgets it.
     const dropped = options.store.dropMemoryOutboxForSession(target);
     try {
@@ -153,9 +164,9 @@ export function registerMemoryEngineIpc(options: MemoryIpcOptions): void {
     try {
       options.store.deleteSession(target);
     } catch (error) {
-      options.logger?.warn('Forgotten in long-term memory, but the local history copy could not be removed', {
-        message: error instanceof Error ? error.message : String(error),
-      });
+      const message = error instanceof Error ? error.message : String(error);
+      options.logger?.warn('Forgotten in long-term memory, but the local history copy could not be removed', { message });
+      throw new Error(`Forgotten in long-term memory, but the app's own copy of the conversation could not be deleted (${message}). Try again.`);
     }
     return { forgotten: target, dropped };
   });

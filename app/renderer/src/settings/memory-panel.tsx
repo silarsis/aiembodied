@@ -53,6 +53,9 @@ function authorLabel(fact: MemoryEngineStoredFact) {
   return fact.agent ? `noted by ${fact.agent}` : 'noted in conversation';
 }
 
+/** The most conversations one day lists (the engine's own maximum). */
+const DAY_LIMIT = 200;
+
 function statusSummary(status: MemoryPanelStatus | null): string {
   if (!status) return 'Checking…';
   if (!status.enabled) return 'Long-term memory is off (MEMORY_ENABLED=0).';
@@ -465,7 +468,13 @@ export function MemoryPanel({ memory, active }: { memory?: MemoryEngineBridge; a
           ) : timeline.sessions.length === 0 ? (
             <p className="kiosk__helper">No conversations on {formatWhen(day.toISOString(), false)}.</p>
           ) : (
-            timeline.sessions.map((session) => (
+            <>
+              {timeline.sessions.length >= DAY_LIMIT ? (
+                <p className="kiosk__helper" role="note">
+                  Showing the first {DAY_LIMIT} conversations of this day; search finds the later ones.
+                </p>
+              ) : null}
+              {timeline.sessions.map((session) => (
               <article key={session.session_id} className="toolsSettings__server" aria-label={session.summary?.title ?? session.title ?? 'Conversation'}>
                 <div className="toolsSettings__serverHeader">
                   <strong>{session.summary?.title ?? session.title ?? 'Conversation'}</strong>
@@ -508,7 +517,8 @@ export function MemoryPanel({ memory, active }: { memory?: MemoryEngineBridge; a
                   </ul>
                 ) : null}
               </article>
-            ))
+              ))}
+            </>
           )}
         </section>
       ) : tab === 'search' ? (

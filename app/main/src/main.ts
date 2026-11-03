@@ -1734,7 +1734,18 @@ app.whenReady().then(async () => {
     );
     if (memoryStore) {
       const store = memoryStore;
-      registerMemoryEngineIpc({ ipcMain, runtime: () => memoryEngine, store, logger });
+      registerMemoryEngineIpc({
+        ipcMain,
+        runtime: () => memoryEngine,
+        store,
+        logger,
+        currentSessionId: () => conversationManager?.getCurrentSessionId() ?? null,
+        leaveCurrentSession: () => {
+          localVoiceService?.cancel();
+          localVoiceService?.resetHistory();
+          conversationManager?.startSession({ startedAt: Date.now() });
+        },
+      });
     }
   } catch (error) {
     const message =
