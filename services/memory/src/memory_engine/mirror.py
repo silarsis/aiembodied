@@ -139,6 +139,15 @@ def push(source: psycopg.Connection, target: psycopg.Connection, marks: dict[str
         for _, table, row_id in rows:
             if table == "recall_log":
                 target.execute("DELETE FROM recall_log WHERE session_id = %s", (row_id,))
+            elif table == "messages":
+                # Forgetting a message also forgets it as an auto-recall query (store.delete_message);
+                # the mirror's copy of the message says which entries those were.
+                target.execute(
+                    "DELETE FROM recall_log r USING messages m"
+                    " WHERE m.id = %s AND r.session_id = m.session_id AND r.query = m.content",
+                    (row_id,),
+                )
+                target.execute("DELETE FROM messages WHERE id = %s", (row_id,))
             elif table in TOMBSTONE_TABLES:
                 target.execute(f"DELETE FROM {table} WHERE id = %s", (row_id,))  # noqa: S608 - checked name
         target.execute(

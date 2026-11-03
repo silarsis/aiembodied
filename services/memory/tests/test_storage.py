@@ -83,6 +83,13 @@ def test_a_mirror_gets_new_rows_changes_and_deletes(database_url, schema, second
         assert count(second_database, schema, "sessions") == 2
         assert count(second_database, schema, "recall_log") == 2
 
+        # Forgetting one message also forgets it from the mirror's recall log.
+        said = message(keep, "user", "my bank pin is in the drawer", 20)
+        post(client, said)
+        client.post("/v1/recall", json={"text": said["content"], "session_id": str(keep)})
+        client.post("/v1/storage/push")
+        assert count(second_database, schema, "recall_log") == 3
+        client.delete(f"/v1/messages/{said['id']}")
         client.patch(f"/v1/facts/{fact}", json={"pinned": True})
         client.delete(f"/v1/sessions/{gone}")
         post(client, message(keep, "user", "a later message", 60))
@@ -93,6 +100,7 @@ def test_a_mirror_gets_new_rows_changes_and_deletes(database_url, schema, second
             messages = conn.execute(f"SELECT count(*) FROM {schema}.messages").fetchone()[0]
             embedded = conn.execute(f"SELECT count(*) FROM {schema}.recall_index WHERE embedding IS NOT NULL").fetchone()[0]
         assert [str(r[0]) for r in sessions] == [str(keep)]
+        # One session forgotten, one message forgotten: only keep's first query is left.
         assert count(second_database, schema, "recall_log") == 1
         assert pinned is True
         assert messages == 2
