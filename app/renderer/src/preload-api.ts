@@ -35,6 +35,7 @@ import type {
 } from '../../main/src/mcp/types.js';
 import type { AvatarBridge } from './avatar/types.js';
 import type { CameraDetectionEvent } from './avatar/behavior-cues.js';
+import type { MemoryEngineBridge } from '../../main/src/memory-engine/bridge-types.js';
 
 export interface ConfigBridge {
   get(): Promise<RendererConfig>;
@@ -121,6 +122,7 @@ export interface PreloadApi {
   avatar?: AvatarBridge;
   camera?: CameraBridge;
   mcp?: McpBridge;
+  memoryEngine?: MemoryEngineBridge;
   ping(): string;
   __bridgeReady?: boolean;
   __bridgeVersion?: string;

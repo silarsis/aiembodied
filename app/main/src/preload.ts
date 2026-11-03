@@ -63,6 +63,7 @@ import type {
   MCPToolResult,
 } from './mcp/types.js';
 import type { OpenAIFunction } from './tools/tool-registry.js';
+import type { MemoryEngineBridge } from './memory-engine/bridge-types.js';
 
 function logPreloadMessage(
   level: 'info' | 'warn' | 'error',
@@ -189,6 +190,7 @@ export interface PreloadApi {
   avatar?: AvatarBridge;
   camera?: CameraBridge;
   mcp: MCPBridge;
+  memoryEngine?: MemoryEngineBridge;
   ping(): string;
   __bridgeReady?: boolean;
   __bridgeVersion?: string;
@@ -600,6 +602,20 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     emitDetection: async (event) => {
       await ipcRenderer.invoke('camera:emit-detection', event);
     },
+  },
+  memoryEngine: {
+    status: () => ipcRenderer.invoke('memory-engine:status'),
+    search: (query, period) => ipcRenderer.invoke('memory-engine:search', { query, ...period }),
+    timeline: (from, to) => ipcRenderer.invoke('memory-engine:timeline', { from, to }),
+    memory: (id, around) => ipcRenderer.invoke('memory-engine:memory', { id, around }),
+    facts: (options) => ipcRenderer.invoke('memory-engine:facts', options ?? {}),
+    addFact: (fact) => ipcRenderer.invoke('memory-engine:add-fact', fact),
+    updateFact: (id, patch) => ipcRenderer.invoke('memory-engine:update-fact', { id, patch }),
+    reviewFacts: (ids) => ipcRenderer.invoke('memory-engine:review-facts', ids),
+    deleteFact: (id) => ipcRenderer.invoke('memory-engine:delete-fact', id),
+    forgetSession: (id) => ipcRenderer.invoke('memory-engine:forget-session', id),
+    recallLog: (limit) => ipcRenderer.invoke('memory-engine:recall-log', { limit }),
+    runSummaries: () => ipcRenderer.invoke('memory-engine:run-summaries'),
   },
   mcp: {
     listServers: () => ipcRenderer.invoke('mcp:list-servers') as Promise<MCPServerConfig[]>,

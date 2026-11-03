@@ -163,6 +163,18 @@ describe('MemoryOutbox', () => {
   });
 });
 
+describe('MemoryStore outbox', () => {
+  it('drops the queued writes of one conversation only', async () => {
+    const store = await createStore();
+    store.enqueueMemoryOutbox('session', { id: 'a', session: {} });
+    store.enqueueMemoryOutbox('message', { id: 'm1', session_id: 'a', role: 'user', content: 'x' });
+    store.enqueueMemoryOutbox('message', { id: 'm2', session_id: 'b', role: 'user', content: 'y' });
+    store.enqueueMemoryOutbox('fact', { id: 'f', fact: { text: 'z', session_id: 'a' } });
+    expect(store.dropMemoryOutboxForSession('a')).toBe(2);
+    expect(store.listMemoryOutbox().map((entry) => entry.kind)).toEqual(['message', 'fact']);
+  });
+});
+
 describe('MemoryCapture', () => {
   function capture() {
     const items: OutboxItem[] = [];

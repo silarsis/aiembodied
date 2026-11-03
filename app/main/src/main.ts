@@ -56,6 +56,7 @@ import {
   activeAgent,
   createMemoryTools,
   memoryEngineSettings,
+  registerMemoryEngineIpc,
   setupMemoryEngine,
   type MemoryEngineRuntime,
 } from './memory-engine/index.js';
@@ -1731,6 +1732,21 @@ app.whenReady().then(async () => {
       avatarAnimationService,
       avatarPoseService,
     );
+    if (memoryStore) {
+      const store = memoryStore;
+      registerMemoryEngineIpc({
+        ipcMain,
+        runtime: () => memoryEngine,
+        store,
+        logger,
+        currentSessionId: () => conversationManager?.getCurrentSessionId() ?? null,
+        leaveCurrentSession: () => {
+          localVoiceService?.cancel();
+          localVoiceService?.resetHistory();
+          conversationManager?.startSession({ startedAt: Date.now() });
+        },
+      });
+    }
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Unknown IPC handler registration error occurred.';

@@ -168,6 +168,7 @@ vi.mock('../src/memory-engine/index.js', () => ({
   setupMemoryEngine: () => null,
   activeAgent: () => ({ name: 'assistant', id: null }),
   createMemoryTools: () => [],
+  registerMemoryEngineIpc: () => undefined,
 }));
 
 const resolvePreloadScriptPathMock = vi.fn();
