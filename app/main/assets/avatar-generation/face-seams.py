@@ -62,12 +62,26 @@ class SurfaceAppearance:
 
     def seam_color(self,point):
         base=self.sample(point);co=np.asarray(point);target=self.reference_color(co)
-        hit,_,_,_=self.bvh.ray_cast(Vector((co[0],-2,co[2])),Vector((0,1,0)),4)
-        visibility=1 if hit and abs(hit.y-co[1])<.004 else 0
+        hit,normal,_,_=self.bvh.ray_cast(Vector((co[0],-2,co[2])),Vector((0,1,0)),4)
+        visibility=self.facing(normal) if hit and abs(hit.y-co[1])<.004 else 0
         band=self.band_weight(co)
-        weight=band*visibility
-        if min(target)>.92:weight=0
+        weight=band*visibility*self.not_backdrop(target)
         return self.corrected(base)*(1-weight)+target*weight
+
+    @staticmethod
+    def facing(normal):
+        """1 where a surface faces the front image (-Y), fading gently to 0 near edge-on."""
+        return float(np.clip((-normal[1]-.05)/.45,0,1))
+
+    def not_backdrop(self,rgb):
+        """0 for the white backdrop and the pale anti-aliased edge around the face, 1 for skin.
+
+        A fixed near-white cutoff let the light edge pixels just outside the jaw through,
+        which painted a pale line along the seam. Anything clearly lighter than this
+        character's own skin is treated as backdrop.
+        """
+        lightest=np.min(rgb,axis=-1)
+        return np.clip((self.backdrop_from-lightest)/.08,0,1)
 
     def band_weight(self,points):
         x,z=points[...,0],points[...,2]
@@ -85,6 +99,7 @@ class SurfaceAppearance:
         skin=np.median(original,axis=0);reference=np.median(target,axis=0)
         self.skin_chroma=skin/max(float(skin.sum()),.001);self.skin_sum=float(skin.sum())
         self.offset=np.clip(reference-skin,-.30,.30)
+        self.backdrop_from=min(float(np.median(target.min(axis=1)))+.12,.84)
         mesh=body.data;mesh.calc_loop_triangles();layer=mesh.uv_layers.active
         points=np.array([v.co[:] for v in mesh.vertices])
         self.border_lo=points[boundary_ids].min(axis=0);self.border_hi=points[boundary_ids].max(axis=0)
@@ -95,7 +110,10 @@ class SurfaceAppearance:
         for i,point in enumerate(points):
             if weights[i]==0:continue
             hit,_,_,_=self.bvh.ray_cast(Vector((point[0],-2,point[2])),Vector((0,1,0)),4)
-            if hit and abs(hit.y-point[1])<.004:visible[i]=1
+            # Fade out where the surface turns away from the front image. At a grazing
+            # angle the image only holds the face's edge pixels, and a hard visible/hidden
+            # switch there left thin pale lines down the side of the cheek.
+            if hit and abs(hit.y-point[1])<.004:visible[i]=self.facing(mesh.vertices[i].normal)
         atlases={name:pix.copy() for name,pix in self.images.items()}
         painted={name:np.zeros(pix.shape[:2],dtype=bool) for name,pix in atlases.items()}
         occupied={name:np.zeros(pix.shape[:2],dtype=bool) for name,pix in atlases.items()}
@@ -117,7 +135,7 @@ class SurfaceAppearance:
             co=wa[...,None]*points[ids[0]]+wb[...,None]*points[ids[1]]+wc[...,None]*points[ids[2]]
             reference_color=self.reference_color(co)
             projection=self.band_weight(co)*(wa*visible[ids[0]]+wb*visible[ids[1]]+wc*visible[ids[2]])
-            projection[np.min(reference_color,axis=2)>.92]=0
+            projection*=self.not_backdrop(reference_color)
             region[mask]=(calibrated*(1-projection[...,None])+reference_color*projection[...,None])[mask]
             painted[texture][lo[1]:hi[1]+1,lo[0]:hi[0]+1] |= mask&(weight>.95)
         baked={}
@@ -268,7 +286,46 @@ def stitch_faces(inner,outer):
 
 
 
-def bake_boundary(source,uvs,triangles,colors,fade,face_triangle_count):
+def texture_sideways_bridge(seam,count,colors,material,width=512):
+    """Colour the bridge triangles that face sideways from their own strip texture.
+
+    The bridge runs round the side of the face, nearly edge-on to the front image, so a
+    front projection smears one column of edge pixels into a pale strip down the cheek.
+    The strip blends the face-edge colour (inner loop) into the body colour (outer loop),
+    using the same seam colours the face bake ends on. Front-facing triangles keep the
+    front image.
+    """
+    mesh=seam.data;points=np.array([v.co[:] for v in mesh.vertices]);colors=np.asarray(colors)
+    def progress(loop):
+        lengths=np.linalg.norm(np.roll(loop,-1,axis=0)-loop,axis=1)
+        return np.concatenate([[0],np.cumsum(lengths)[:-1]])/lengths.sum()
+    u=np.concatenate([progress(points[:count]),progress(points[count:])])
+    columns=(np.arange(width)+.5)/width
+    def row(ids):
+        order=ids[np.argsort(u[ids])]
+        return np.stack([np.interp(columns,u[order],colors[order,k],period=1) for k in range(3)],axis=1)
+    # Bottom row (v .25) is the inner loop, top row (v .75) the outer one.
+    strip=np.ones((2,width,4),dtype=np.float32)
+    strip[0,:,:3]=row(np.arange(count));strip[1,:,:3]=row(np.arange(count,len(points)))
+    image=bpy.data.images.new('FaceBridgeStrip',width,2,alpha=False)
+    image.pixels.foreach_set(strip.ravel());image.update();image.pack()
+    side=material.copy();side.name='FaceBridgeAppearance'
+    next(node for node in side.node_tree.nodes if node.type=='TEX_IMAGE').image=image
+    mesh.materials.append(side)
+    layer=mesh.uv_layers.active
+    for poly in mesh.polygons:
+        if abs(poly.normal.y)>.5:continue
+        poly.material_index=len(mesh.materials)-1
+        ids=[mesh.loops[li].vertex_index for li in poly.loop_indices]
+        us=u[ids].copy()
+        # The strip repeats, so a triangle across the loop's start reads past 1 instead of
+        # stretching back over the whole strip.
+        if us.max()-us.min()>.5:us[us<.5]+=1
+        for li,vi,uu in zip(poly.loop_indices,ids,us):layer.data[li].uv=(uu,.25 if vi<count else .75)
+    return sum(poly.material_index>0 for poly in mesh.polygons)
+
+
+def bake_boundary(source,uvs,triangles,colors,fade,face_triangle_count,not_backdrop):
     pixels=np.array(source.pixels[:],dtype=np.float32).reshape(source.size[1],source.size[0],4)
     base=pixels.copy();h,w=pixels.shape[:2];weighted=np.asarray(colors)*fade[:,None]
     coords=np.asarray(uvs)*[w,h]-.5
@@ -289,8 +346,9 @@ def bake_boundary(source,uvs,triangles,colors,fade,face_triangle_count):
         delta=a[...,None]*correction[ids[0]]+b[...,None]*correction[ids[1]]+c[...,None]*correction[ids[2]]
         result=original+delta
         if triangle_index>=face_triangle_count:
-            outside=np.min(original,axis=2)>.92
-            result[outside]=(original*(1-weight[...,None])+color)[outside]
+            # Backdrop and its pale anti-aliased edge take the seam colour outright.
+            backdrop=(1-not_backdrop(original))[...,None]
+            result=result*(1-backdrop)+(original*(1-weight[...,None])+color)*backdrop
         region[mask]=np.clip(result,0,1)[mask]
         occupied[lo[1]:hi[1]+1,lo[0]:hi[0]+1] |= mask
     pixels,_=extend_colors(pixels,occupied,2)

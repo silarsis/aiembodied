@@ -52,6 +52,13 @@ def load_view(path):
         raise RuntimeError(f"No character was found in {Path(path).name}; it should be on a plain white background.")
     # Percentiles ignore stray specks on the background.
     top, bottom = np.percentile(rows, [0.05, 99.95])
+    # Where the soles meet the floor the drawing fades into a soft grey that passes as
+    # character, and the soles' bottoms and inner sides picked it up. Near the floor,
+    # count pale greys as background too.
+    floor = np.arange(h)[:, None] >= bottom - 0.03 * (bottom - top)
+    mask &= ~(floor & (rgb.min(axis=2) > 0.78) & neutral)
+    rows, cols = np.nonzero(mask)
+    top, bottom = np.percentile(rows, [0.05, 99.95])
     left, right = np.percentile(cols, [0.05, 99.95])
     return {"rgb": rgb.copy(), "mask": mask, "w": w, "h": h, "box": (float(left), float(top), float(right), float(bottom))}
 
@@ -244,6 +251,39 @@ for index, name in enumerate(("front", "left", "back", "right")):
         hit = tree.ray_cast(origin, d)
         if hit[0] is None:
             weights[i, index] = sharp[i]
+# Where each drawing lands on the mesh: u = A * horizontal + B pixels across.
+fits, bled = {}, {}
+for name, view in views.items():
+    left, top, right, bottom = view["box"]
+    scale = (bottom - top) / height  # pixels per metre
+    horizontal = AXES[name](points)
+    centre = (horizontal.min() + horizontal.max()) / 2
+    fit = register(view, horizontal, points[:, 2], scale, lo[2])
+    # Without a believable fit, centre the bounding boxes.
+    A, B = fit[:2] if fit else (scale, (left + right) / 2 - centre * scale)
+    fits[name] = (A, B, scale, centre, fit)
+    bled[name] = bleed(view["rgb"], view["mask"])
+
+
+def sampled(name):
+    """Each vertex's colour in a drawing (nearest pixel)."""
+    A, B, scale = fits[name][:3]
+    view = views[name]
+    col = np.clip(np.round(A * AXES[name](points) + B), 0, view["w"] - 1).astype(int)
+    row = np.clip(np.round(view["box"][3] - (points[:, 2] - lo[2]) * scale), 0, view["h"] - 1).astype(int)
+    return bled[name][row, col]
+
+
+# A profile drawing hangs the arms beside the body, so on the sides of the hips and jacket the
+# side view shows a hand or sleeve the shape doesn't have there, which painted skin onto the
+# hem. Below the head, where the side drawing disagrees with both the front and the back, leave
+# the point to them.
+if "left" in views:
+    side = sampled("left")
+    differs = np.all([np.abs(side - sampled(n)).sum(axis=1) > 0.45 for n in ("front", "back") if n in views], axis=0)
+    differs &= points[:, 2] < lo[2] + 0.8 * height
+    weights[differs, 1] = 0
+    weights[differs, 3] = 0
 # Hidden everywhere (between the legs, the sides of the body behind the arms): take the front or
 # back view, whichever it leans towards. Not the side view: what it shows there is the arm (a
 # profile drawing hangs the arms over the body), which painted skin and sleeve onto the jacket.
@@ -294,15 +334,10 @@ for name, channel in (("front", "Red"), ("left", "Green"), ("back", "Blue")):
         continue
     view = views[name]
     left, top, right, bottom = view["box"]
-    scale = (bottom - top) / height  # pixels per metre
     sign = -1.0 if name == "back" else 1.0
     axis = "Y" if name == "left" else "X"
-    horizontal = AXES[name](points)
-    centre = (horizontal.min() + horizontal.max()) / 2
     w, h = view["w"], view["h"]
-    fit = register(view, horizontal, points[:, 2], scale, lo[2])
-    # Without a believable fit, centre the bounding boxes.
-    A, B = fit[:2] if fit else (scale, (left + right) / 2 - centre * scale)
+    A, B, scale, centre, fit = fits[name]
     # u = (A * horizontal + B) / w, with horizontal = sign * axis; v counts up from the bottom.
     a, b = sign * A / w, B / w
     c, d = scale / h, (h - bottom - lo[2] * scale) / h
@@ -325,7 +360,7 @@ for name, channel in (("front", "Red"), ("left", "Green"), ("back", "Blue")):
     links.new(u.outputs[0], uv.inputs["X"])
     links.new(v.outputs[0], uv.inputs["Y"])
     image = bpy.data.images.new(f"View_{name}", view["w"], view["h"], alpha=False)
-    rgb = bleed(view["rgb"], view["mask"])
+    rgb = bled[name]
     flat = np.concatenate([rgb[::-1], np.ones((h, w, 1), dtype=np.float32)], axis=2)
     image.pixels.foreach_set(flat.astype(np.float32).ravel())
     image.update()

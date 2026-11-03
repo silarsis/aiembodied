@@ -59,8 +59,8 @@ def build_fitted_face(body, rig, height, landmarks_path, reference_path, allow_t
     neighbors=[set() for _ in p]
     for tri in faces:
         for i in tri: neighbors[i].update(set(tri)-{i})
-    for _ in range(3):
-        p[:,1] = [.65*p[i,1]+.35*np.mean(p[list(ns),1]) for i,ns in enumerate(neighbors)]
+    for _ in range(1):
+        p[:,1] = [.75*p[i,1]+.25*np.mean(p[list(ns),1]) for i,ns in enumerate(neighbors)]
     p[:,1] -= .0008*height
     face_width = float(np.ptp(p[:,0]))
     policy=json.loads(Path(__file__).with_name('template-policy.json').read_text(encoding='utf-8'))
@@ -270,7 +270,8 @@ def build_fitted_face(body, rig, height, landmarks_path, reference_path, allow_t
     all_colors=np.vstack([colors,np.array([appearance.seam_color(co) for co in bridge_points])])
     all_fade=np.concatenate([fade,np.ones(len(bridge_points))])
     bake_triangles=list(faces)+[tuple(i+len(p) for i in tri) for tri in bridge_triangles]
-    image.image=seams['bake_boundary'](source,all_uv,bake_triangles,all_colors,all_fade,len(faces))
+    image.image=seams['bake_boundary'](source,all_uv,bake_triangles,all_colors,all_fade,len(faces),appearance.not_backdrop)
+    sideways_bridge=seams['texture_sideways_bridge'](seam,count,all_colors[len(p):],material)
     boundary_gaps=[float(np.linalg.norm(np.array(face.data.vertices[vi].co)-bridge_points[i])) for i,vi in enumerate(oval)]
     boundary_gaps += [float(np.linalg.norm(np.array(body.data.vertices[vi].co)-bridge_points[count+i])) for i,vi in enumerate(outer_ids)]
     max_boundary_gap=max(boundary_gaps)
@@ -281,7 +282,7 @@ def build_fitted_face(body, rig, height, landmarks_path, reference_path, allow_t
         'surfaceHitRatio':sum(y is not None for y in hits)/len(p),'replacedTriangles':removed_count,
         'faceWidthMeters':face_width,'topologyVertices':len(p),'expressions':PRESETS,
         'irisColorsLinearRGB':eye_colors,
-        'seam':{'bodyBoundaryVertices':len(outer_ids),'bridgeTriangles':len(bridge_triangles),'maxJoinGapMeters':max_boundary_gap,'fixedExpressionBoundary':True,'matchedHeadSkin':True,'skinColorOffset':appearance.offset.tolist(),'matchedSkinPixels':painted_pixels,'appearance':'skin calibration and shared boundary texture'},
+        'seam':{'bodyBoundaryVertices':len(outer_ids),'bridgeTriangles':len(bridge_triangles),'sidewaysBridgeTriangles':int(sideways_bridge),'maxJoinGapMeters':max_boundary_gap,'fixedExpressionBoundary':True,'matchedHeadSkin':True,'skinColorOffset':appearance.offset.tolist(),'matchedSkinPixels':painted_pixels,'appearance':'skin calibration and shared boundary texture'},
         'openingTrianglesRemoved':len(capped_faces)-len(faces),
         'neutralEyeApertureMeters':[float(np.max(p[upper,2]-p[lower,2])) for upper,lower in EYES],
         'blinkClosureGapMeters':[max(float((face.data.shape_keys.key_blocks['blink'].data[a].co-face.data.shape_keys.key_blocks['blink'].data[b].co).length) for a,b in zip(upper,lower)) for upper,lower in EYES],
