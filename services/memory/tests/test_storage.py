@@ -76,9 +76,12 @@ def test_a_mirror_gets_new_rows_changes_and_deletes(database_url, schema, second
         post(client, message(keep, "user", "keep this one", 0), message(gone, "user", "forget this one", 5))
         fact = str(uuid4())
         client.put(f"/v1/facts/{fact}", json={"text": "Likes tea"})
+        for session in (keep, gone):
+            client.post("/v1/recall", json={"text": "what did we say about that one", "session_id": str(session)})
         client.put("/v1/storage", json={"database": None, "mirror": second_database})
         assert client.post("/v1/storage/push").json()["sent"] > 0
         assert count(second_database, schema, "sessions") == 2
+        assert count(second_database, schema, "recall_log") == 2
 
         client.patch(f"/v1/facts/{fact}", json={"pinned": True})
         client.delete(f"/v1/sessions/{gone}")
@@ -90,6 +93,7 @@ def test_a_mirror_gets_new_rows_changes_and_deletes(database_url, schema, second
             messages = conn.execute(f"SELECT count(*) FROM {schema}.messages").fetchone()[0]
             embedded = conn.execute(f"SELECT count(*) FROM {schema}.recall_index WHERE embedding IS NOT NULL").fetchone()[0]
         assert [str(r[0]) for r in sessions] == [str(keep)]
+        assert count(second_database, schema, "recall_log") == 1
         assert pinned is True
         assert messages == 2
         assert embedded >= 1
@@ -122,3 +126,36 @@ def test_storage_rejects_other_addresses_and_tests_a_connection(client, database
     wrong = urlunsplit(parts._replace(netloc=f"{parts.username or 'x'}:wrong@127.0.0.1:1"))
     failed = client.post("/v1/storage/test", json={"url": wrong}).json()
     assert failed["ok"] is False and "reached" in failed["error"]
+
+
+def test_a_move_from_a_database_that_cannot_be_read_stays_put(database_url, schema, second_database, tmp_path, monkeypatch):
+    from memory_engine import mirror
+
+    def unreadable(*_args, **_kwargs):
+        raise mirror.SourceUnavailable("connection refused")
+
+    monkeypatch.setattr(mirror, "copy_all", unreadable)
+    engine, client = make_client(database_url, schema, tmp_path / "s.json")
+    with client:
+        client.put("/v1/storage", json={"database": second_database, "mirror": None})
+        deadline = time.monotonic() + 20
+        while engine.moving and time.monotonic() < deadline:
+            time.sleep(0.1)
+        wait_ready(client)
+        assert engine.database_url == database_url
+        view = client.get("/v1/storage").json()
+        assert view["database"]["local"] is True
+        assert "couldn't be read" in view["move_error"]
+
+
+def test_a_second_move_waits_for_the_first(database_url, schema, second_database, tmp_path):
+    engine, client = make_client(database_url, schema, tmp_path / "s.json")
+    with client:
+        engine.moving = True
+        try:
+            response = client.put("/v1/storage", json={"database": second_database, "mirror": None})
+        finally:
+            engine.moving = False
+        assert response.status_code == 503
+        assert engine.database_url == database_url
+

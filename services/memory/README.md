@@ -80,8 +80,9 @@ schema (`memory` by default, `MEMORY_SCHEMA`), which the engine creates and migr
   **Moving.** If the new database has no memory yet, the engine copies everything there first and
   answers 503 until it is done (the app queues its writes meanwhile). If it already holds memory,
   it is used as it is: nothing is merged, so switching back and forth between two databases that
-  both have data leaves each with its own history. If the old database can't be read, the switch
-  happens without a copy; any other failure keeps the old database.
+  both have data leaves each with its own history. If the old database can't be read, or the copy
+  fails, memory stays where it was and `/v1/storage` says why (`move_error`). Asking for another
+  move while one is copying gets a 503; the app tries again.
 - **Mirror (optional).** Memory → Memory mirror picks a second database that gets a copy of
   everything: new rows by sequence number, changed rows by `updated_at` (facts, sessions,
   summaries, embeddings), and deletes from the tombstones. It pushes every minute

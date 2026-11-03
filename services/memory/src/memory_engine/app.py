@@ -107,6 +107,10 @@ class MessagesBody(BaseModel):
     messages: list[MessageBody] = Field(max_length=MAX_BATCH)
 
 
+class MoveInProgress(Exception):
+    """Memory is being copied to another database; it can't be pointed elsewhere until then."""
+
+
 class ApiError(Exception):
     def __init__(self, status: int, message: str):
         self.status = status
@@ -137,6 +141,7 @@ class Engine:
         self.mirror_error: Optional[str] = None
         self.mirror_pushed_at: Optional[str] = None
         self.moving = False
+        self.move_error: Optional[str] = None
         self._wake_mirror = threading.Event()
         self._mirror_thread: Optional[threading.Thread] = None
         self._storage_lock = threading.Lock()
@@ -200,6 +205,7 @@ class Engine:
                 else None
             ),
             "moving": self.moving,
+            "move_error": self.move_error,
         }
 
     def set_storage(self, database: Optional[str], mirror: Optional[str], *, background: bool = True) -> None:
@@ -209,6 +215,9 @@ class Engine:
         with self._storage_lock:
             new_url = database or self.local_url
             changed = new_url != self.database_url
+            if changed and self.moving:
+                # A second move now would copy from a database that is still being filled.
+                raise MoveInProgress()
             self.storage = storage.StorageSettings(database=database, mirror=mirror if mirror != new_url else None)
             storage.save(self.settings_file, self.storage)
             self._wake_mirror.set()
@@ -217,6 +226,7 @@ class Engine:
             old_url, old_pool = self.database_url, self.pool
             self.ready = False
             self.moving = True
+            self.move_error = None
             self.database_url = new_url
             self.pool = db.open_pool(new_url, self.schema)
         try:
@@ -233,10 +243,10 @@ class Engine:
             copied = mirror.copy_all(old_url, new_url, self.schema)
             if copied:
                 log.info("Copied %s rows to the new memory database %s", copied, storage.describe(new_url))
-        except mirror.SourceUnavailable as error:
-            log.warning("Could not read the old memory database, so nothing was copied: %s", error)
         except Exception as error:  # noqa: BLE001
-            # Back to where the memory is, rather than starting on a half-copied database.
+            # Back to where the memory is, rather than starting on an empty or half-copied
+            # database. That includes an old database that can't be read right now (its
+            # container not started yet, say): moving without a copy would quietly lose memory.
             log.warning("Moving memory to %s failed, staying where it was: %s", storage.describe(new_url), error)
             with self._storage_lock:
                 self.storage = storage.StorageSettings(
@@ -245,7 +255,12 @@ class Engine:
                 storage.save(self.settings_file, self.storage)
                 self.database_url = old_url
                 self.pool = db.open_pool(old_url, self.schema)
-            self.error = "moving to the new database failed; see the engine's log"
+            self.move_error = (
+                "the current memory database couldn't be read, so nothing was moved"
+                if isinstance(error, mirror.SourceUnavailable)
+                else "moving to the new database failed; see the engine's log"
+            )
+            self.error = self.move_error
         finally:
             self.moving = False
         while not self._stop.is_set() and not self.ready:
@@ -541,7 +556,10 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
         for url in (body.database, body.mirror):
             if url is not None and not storage.valid_url(url):
                 raise ApiError(400, "database addresses look like postgresql://user:password@host:5432/database")
-        engine.set_storage(body.database, body.mirror)
+        try:
+            engine.set_storage(body.database, body.mirror)
+        except MoveInProgress:
+            raise ApiError(503, "memory is still being copied to a new database; try again when it is done") from None
         return engine.storage_view()
 
     @app.post("/v1/storage/test", dependencies=guarded)

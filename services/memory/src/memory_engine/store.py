@@ -339,6 +339,8 @@ def delete_session(conn: psycopg.Connection, session_id: UUID) -> bool:
     session = conn.execute("DELETE FROM sessions WHERE id = %s RETURNING id", (session_id,)).fetchone()
     conn.execute("DELETE FROM recall_log WHERE session_id = %s", (session_id,))
     tombstones = [("recall_index", r[0]) for r in index_ids] + [("messages", r[0]) for r in message_ids]
+    # recall_log ids aren't uuids: this one stands for "every entry of this session".
+    tombstones.append(("recall_log", session_id))
     if session:
         tombstones.append(("sessions", session[0]))
     _tombstone(conn, tombstones)
