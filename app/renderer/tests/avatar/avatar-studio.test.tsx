@@ -221,12 +221,12 @@ describe('avatar studio', () => {
     expect(screen.getByRole('button', { name: 'Generate image' })).toBeDisabled();
   });
 
-  it('offers 3D and rig model selectors on the image step and builds with them', async () => {
+  it('offers the 3D model selector on the image step, hides a rig choice of one, and builds with them', async () => {
     const { api, mocks } = createApi([take('job-1')]);
     render(<AvatarStudio avatarApi={api} onClose={vi.fn()} pollIntervalMs={5} />);
     await settle();
     expect(screen.getByRole('option', { name: 'TRELLIS.2 (bf16)' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Rig and animation')).toHaveValue('blender-face-fit');
+    expect(screen.queryByLabelText('Rig and animation')).not.toBeInTheDocument();
     await act(async () => {
       fireEvent.change(screen.getByLabelText('3D model'), { target: { value: 'bf16' } });
     });
@@ -282,6 +282,20 @@ describe('avatar studio', () => {
     await settle();
     expect(screen.getByRole('img', { name: 'Take 1 side view' })).toHaveAttribute('src', 'data:image/png;base64,SIDE');
     expect(screen.getByRole('img', { name: 'Take 1 back view' })).toBeInTheDocument();
+
+    // The enlarged image steps through front, side and back with arrows (buttons and keys).
+    fireEvent.click(screen.getByRole('button', { name: 'Enlarge take 1 side view' }));
+    const full = () => screen.getByRole('img', { name: /full size$/ });
+    expect(full()).toHaveAttribute('src', 'data:image/png;base64,SIDE');
+    fireEvent.click(screen.getByRole('button', { name: 'Next image' }));
+    expect(full()).toHaveAttribute('src', 'data:image/png;base64,BACK');
+    fireEvent.click(screen.getByRole('button', { name: 'Next image' }));
+    expect(full()).toHaveAttribute('src', 'data:image/png;base64,job-1');
+    fireEvent.keyDown(full(), { key: 'ArrowLeft' });
+    expect(full()).toHaveAttribute('src', 'data:image/png;base64,BACK');
+    fireEvent.click(screen.getByRole('button', { name: 'Close image preview' }));
+    expect(screen.queryByRole('img', { name: /full size$/ })).not.toBeInTheDocument();
+
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Redraw side and back views' }));
     });

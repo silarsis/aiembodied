@@ -97,6 +97,8 @@ interface JobState {
 }
 
 const MAX_PROMPT_LENGTH = 1000;
+const VIEWS_AFTER_APPROVAL =
+  'Side and back views are drawn with Qwen-Image after you approve this image, or draw them now to check them first.';
 /** Seeds tried per atlas region before falling back to its original texture. */
 const MAX_REGION_ATTEMPTS = 2;
 /**
@@ -302,6 +304,19 @@ export class AvatarGenerationService {
         viewsMessage: `The side and back views could not be drawn: ${reason}`,
       });
     }
+  }
+
+  /** Whether both views are on disk for this take's current front image. */
+  private async hasViews(job: JobState): Promise<boolean> {
+    for (const view of ['left', 'back'] as const) {
+      if (!job.status.views?.[view]) return false;
+      const found = await access(path.join(job.directory, `view-${view}.png`)).then(
+        () => true,
+        () => false,
+      );
+      if (!found) return false;
+    }
+    return true;
   }
 
   /** The uploaded names of the views a geometry model is given: TRELLIS.2 only ever gets the front. */
@@ -555,15 +570,21 @@ export class AvatarGenerationService {
             progress: 0.08,
             previewDataUrl: `data:image/png;base64,${concept.toString('base64')}`,
           });
-          // An upload has no image server yet; the views are drawn on the image one.
-          const imageComfy = job.imageComfy;
-          await this.drawViews(
-            job,
-            () => (imageComfy ? Promise.resolve(imageComfy) : this.comfyFor('image')),
-            signal,
-            seed + 101,
-          );
-          throwIfAborted(signal);
+          if (job.imageModel?.family === 'qwen-image-2.1') {
+            // A Qwen-Image front draws its own side and back views straight away (same model, one hop).
+            const imageComfy = job.imageComfy;
+            await this.drawViews(
+              job,
+              () => (imageComfy ? Promise.resolve(imageComfy) : this.comfyFor('image')),
+              signal,
+              seed + 101,
+            );
+            throwIfAborted(signal);
+          } else {
+            // Any other front (or an upload) waits for approval first, so the image model can be
+            // judged before Qwen-Image spends minutes on the views.
+            this.update(job, { views: {}, viewsMessage: VIEWS_AFTER_APPROVAL });
+          }
         }
         this.update(job, {
           status: 'awaiting_confirmation',
@@ -591,6 +612,16 @@ export class AvatarGenerationService {
             ? 'Generating the 3D shape from the front, side and back views'
             : 'Generating new textured 3D geometry',
         });
+        if (painted && !(await this.hasViews(job))) {
+          // Views weren't drawn with the image (another model's front, or an upload): draw them now.
+          this.update(job, { progress: 0.17, message: 'Drawing the side and back views' });
+          await this.drawViews(job, () => this.comfyFor('image'), signal, seed + 101);
+          throwIfAborted(signal);
+          this.update(job, {
+            progress: 0.2,
+            message: 'Generating the 3D shape from the front, side and back views',
+          });
+        }
         const images = await this.uploadViews(job, comfy, concept);
         const mesh = await comfy.run(characterMeshGraph(images, seed, job.geometry), {
           signal,

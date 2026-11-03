@@ -1,7 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-export function ExpandedImage({ src, alt, onDismiss }: { src: string; alt: string; onDismiss(): void }) {
+export function ExpandedImage({
+  src,
+  alt,
+  onDismiss,
+  onPrevious,
+  onNext,
+}: {
+  src: string;
+  alt: string;
+  onDismiss(): void;
+  /** With these, left and right arrows (buttons and keys) step through a set of images. */
+  onPrevious?(): void;
+  onNext?(): void;
+}) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -25,6 +38,14 @@ export function ExpandedImage({ src, alt, onDismiss }: { src: string; alt: strin
       onKeyDown={(event) => {
         // Escape dismisses this popup without also closing the controls drawer.
         if (event.key === 'Escape') event.stopPropagation();
+        if (event.key === 'ArrowLeft' && onPrevious) {
+          event.preventDefault();
+          onPrevious();
+        }
+        if (event.key === 'ArrowRight' && onNext) {
+          event.preventDefault();
+          onNext();
+        }
       }}
     >
       <div className="avatarPreview__header">
@@ -33,7 +54,29 @@ export function ExpandedImage({ src, alt, onDismiss }: { src: string; alt: strin
           ✕ Close
         </button>
       </div>
-      <img src={src} alt={`${alt} full size`} className="avatarPreview__fullImage" />
+      <div className="avatarPreview__stage">
+        {onPrevious ? (
+          <button
+            type="button"
+            className="avatarPreview__nav avatarPreview__nav--previous"
+            onClick={onPrevious}
+            aria-label="Previous image"
+          >
+            ‹
+          </button>
+        ) : null}
+        <img src={src} alt={`${alt} full size`} className="avatarPreview__fullImage" />
+        {onNext ? (
+          <button
+            type="button"
+            className="avatarPreview__nav avatarPreview__nav--next"
+            onClick={onNext}
+            aria-label="Next image"
+          >
+            ›
+          </button>
+        ) : null}
+      </div>
     </dialog>,
     document.body,
   );
