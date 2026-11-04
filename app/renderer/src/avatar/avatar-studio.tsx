@@ -365,6 +365,7 @@ export function AvatarStudio({
   const viewsBlocked =
     needsViews && imageModels.supported && !imageModels.loading && !qwenModels.length;
   const frontIsQwen = isQwen(imageModels.selectedModelId);
+  const selectedImageModel = imageModels.models.find((item) => item.id === imageModels.selectedModelId);
   const canGenerate =
     !viewsBlocked &&
     !busy &&
@@ -645,10 +646,25 @@ export function AvatarStudio({
               {imageModels.models.map((item) => (
                 <option key={item.id} value={item.id} disabled={!item.available}>
                   {item.name}
-                  {!item.available ? ' (unavailable)' : ''}
+                  {!item.available
+                    ? ' (unavailable)'
+                    : item.poseControl === 'none' || item.poseControl === 'unavailable' || item.poseControl === 'failed'
+                      ? ' (no pose control)'
+                      : ''}
                 </option>
               ))}
             </select>
+            {selectedImageModel?.poseNote && mode === 'new-character' ? (
+              <small
+                className={
+                  selectedImageModel.poseControl === 'guided' || selectedImageModel.poseControl === 'prompt'
+                    ? undefined
+                    : 'avatarStudio__warnText'
+                }
+              >
+                {selectedImageModel.poseNote}
+              </small>
+            ) : null}
             {viewsBlocked ? (
               <small className="avatarStudio__warnText">
                 {`${geometryChoice?.name ?? 'This 3D model'} needs Qwen-Image 2.1 on the image server to draw the side and back views. Install it there, or pick TRELLIS.2 as the 3D model.`}

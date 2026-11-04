@@ -31,9 +31,11 @@ import {
 import {
   applyLoras,
   buildAvatarImageWorkflow,
+  checkpointImageSize,
   type ImageWorkflowLora,
   type ImageWorkflowModel,
 } from './image-workflows.js';
+import { drawPoseSkeleton } from './pose-control.js';
 import { templatePolicy } from './template-compatibility.js';
 import { decodeReferenceImage } from './reference-image.js';
 import { regionPrompt } from './vrm-retexture.js';
@@ -555,11 +557,18 @@ export class AvatarGenerationService {
           job.mode === 'new-character'
             ? characterConceptPrompt(job.prompt)
             : buildConceptPrompt(job.prompt);
+        // A model with a pose ControlNet draws the front over the A-pose skeleton.
+        const pose = job.imageModel?.poseControlNet && (job.imageModel.family === 'sd1' || job.imageModel.family === 'sdxl')
+          ? checkpointImageSize(job.imageModel.family)
+          : undefined;
+        const poseImage = pose && !job.referenceImage
+          ? await comfy.uploadImage(`a-pose-${pose.width}x${pose.height}.png`, drawPoseSkeleton(pose.width, pose.height))
+          : undefined;
         const concept =
           job.referenceImage ??
           (await comfy.run(
             job.imageModel
-              ? buildAvatarImageWorkflow(job.imageModel, job.prompt, job.mode, seed)
+              ? buildAvatarImageWorkflow(job.imageModel, job.prompt, job.mode, seed, poseImage)
               : conceptGraph(prompt, seed),
             { signal },
           ));

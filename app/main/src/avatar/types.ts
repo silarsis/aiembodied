@@ -142,11 +142,20 @@ export type AvatarGenerationStage =
   | 'failed'
   | 'cancelled';
 
+/**
+ * How a model's front image gets its A-pose: held by a skeleton (guided), skeleton on its way
+ * (installing), download failed or impossible on this server, from the prompt (Qwen-Image follows
+ * it well), or none (no pose ControlNet for that family yet).
+ */
+export type AvatarImagePoseControl = 'guided' | 'installing' | 'failed' | 'unavailable' | 'prompt' | 'none';
 export interface AvatarImageModelSummary {
   id: string;
   name: string;
   available: boolean;
   unavailableReason?: string;
+  poseControl?: AvatarImagePoseControl;
+  /** One line for the picker saying what poseControl means for this model. */
+  poseNote?: string;
 }
 export interface AvatarLoraSummary {
   /** File name in ComfyUI's loras folder. */

@@ -140,11 +140,15 @@ export type AvatarGenerationStage =
   | 'failed'
   | 'cancelled';
 
+/** How a model's front gets its A-pose; see the main process type for each value. */
+export type AvatarImagePoseControl = 'guided' | 'installing' | 'failed' | 'unavailable' | 'prompt' | 'none';
 export interface AvatarImageModelSummary {
   id: string;
   name: string;
   available: boolean;
   unavailableReason?: string;
+  poseControl?: AvatarImagePoseControl;
+  poseNote?: string;
 }
 export interface AvatarLoraSummary {
   name: string;

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AvatarBridge, AvatarImageModelSelection, AvatarLoraChoice } from './types.js';
 
+const POSE_POLL_MS = 15_000;
+
 export function useImageModels(api: AvatarBridge | undefined, visible: boolean) {
   const [selection, setSelection] = useState<AvatarImageModelSelection>({
     models: [],
@@ -40,10 +42,20 @@ export function useImageModels(api: AvatarBridge | undefined, visible: boolean) 
       setSelection((current) => ({ ...current, selectedModelId: id }));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not select the image model.');
+      return;
     } finally {
       setLoading(false);
     }
+    // Choosing a model can start its pose-control download; show that straight away.
+    await refresh();
   };
+  const selectedPose = selection.models.find((model) => model.id === selection.selectedModelId)?.poseControl;
+  // Follow a pose-control download until it lands.
+  useEffect(() => {
+    if (!visible || selectedPose !== 'installing') return;
+    const timer = setTimeout(() => void refresh(), POSE_POLL_MS);
+    return () => clearTimeout(timer);
+  }, [visible, selectedPose, selection, refresh]);
   const setLoras = async (choices: AvatarLoraChoice[]) => {
     if (!api?.setAvatarImageLoras) return;
     setSelection((current) => ({ ...current, selectedLoras: choices }));
