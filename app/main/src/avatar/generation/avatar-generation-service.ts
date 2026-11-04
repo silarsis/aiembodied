@@ -103,6 +103,8 @@ const VIEWS_AFTER_APPROVAL =
   'Side and back views are drawn with Qwen-Image after you approve this image, or draw them now to check them first.';
 /** Seeds tried per atlas region before falling back to its original texture. */
 const MAX_REGION_ATTEMPTS = 2;
+/** Fronts drawn per take when one shows several characters or no usable face. */
+const MAX_FRONT_ATTEMPTS = 3;
 /**
  * Minimum `layoutSimilarity` for a repaint to be used. Against the bundled model, clean repaints
  * measured 0.73–0.98 (one at 0.52 that added a lot of new trim); ones where Qwen drew a character
@@ -338,6 +340,88 @@ export class AvatarGenerationService {
     return images;
   }
 
+  /**
+   * Check a new front before anything slow runs on it. A background that isn't light and neutral
+   * is cut away (the original is kept, as with Remove background). A front that shows more than
+   * one character, or no face the fitter can use, is drawn again with another seed, up to
+   * MAX_FRONT_ATTEMPTS times; an upload is checked but never redrawn. What is still wrong after
+   * the last attempt is shown at review. The face found here is reused by the build.
+   */
+  private async checkFront(
+    job: JobState,
+    first: Buffer,
+    redraw: ((attempt: number) => Promise<Buffer>) | null,
+    signal: AbortSignal,
+  ): Promise<Buffer> {
+    const runner = this.options.characterRunner;
+    if (!runner?.checkFront || !runner.prepareReference) return first;
+    const conceptPath = path.join(job.directory, 'concept.png');
+    const originalPath = path.join(job.directory, 'concept-original.png');
+    const cutoutPath = path.join(job.directory, 'concept-cutout.png');
+    let image = first;
+    let problem: string | null = null;
+    try {
+      await runner.assertAvailable();
+      for (let attempt = 1; ; attempt++) {
+        if (attempt > 1 && redraw) {
+          await copyFile(conceptPath, path.join(job.directory, `concept-rejected-${attempt - 1}.png`));
+          this.update(job, { message: `Drawing the front again: ${problem}` });
+          image = await redraw(attempt);
+          throwIfAborted(signal);
+          await writeFile(conceptPath, image);
+          this.update(job, { previewDataUrl: `data:image/png;base64,${image.toString('base64')}` });
+        }
+        this.update(job, { message: 'Checking the front image' });
+        let check = await runner.checkFront({ imagePath: conceptPath, signal });
+        let backgroundRemoved = false;
+        await rm(originalPath, { force: true });
+        if (!check.backgroundOk && runner.removeBackground) {
+          this.update(job, { message: 'Removing the background' });
+          await writeFile(originalPath, image);
+          await runner.removeBackground({ imagePath: originalPath, outputPath: cutoutPath, signal });
+          image = await readFile(cutoutPath);
+          await writeFile(conceptPath, image);
+          backgroundRemoved = true;
+          check = await runner.checkFront({ imagePath: conceptPath, signal });
+        }
+        problem = null;
+        job.landmarksPath = undefined;
+        if (check.figures !== null && check.figures > 1) {
+          problem = `It shows ${check.figures} characters instead of one.`;
+        } else {
+          this.update(job, { message: 'Finding the face' });
+          try {
+            job.landmarksPath = await runner.prepareReference({
+              referencePath: conceptPath,
+              outputPath: path.join(job.directory, 'avatar.vrm'),
+              signal,
+            });
+          } catch (error) {
+            throwIfAborted(signal);
+            problem = (error instanceof Error ? error.message : String(error)).replace(
+              /^The reference face could not be fitted: /,
+              '',
+            );
+          }
+        }
+        this.update(job, {
+          previewDataUrl: `data:image/png;base64,${image.toString('base64')}`,
+          backgroundRemoved,
+          frontCheck: { attempts: attempt, problem },
+        });
+        if (!problem || !redraw || attempt >= MAX_FRONT_ATTEMPTS) return image;
+      }
+    } catch (error) {
+      throwIfAborted(signal);
+      // The checks are a safeguard: when their tools are missing or fail, review goes ahead without them.
+      this.options.logger?.warn?.('Could not check the front image.', {
+        jobId: job.status.jobId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return image;
+    }
+  }
+
   private useConceptImage(job: JobState, image: Buffer, backgroundRemoved: boolean, message: string): void {
     // A changed image needs its face found again before the next build.
     job.landmarksPath = undefined;
@@ -564,14 +648,14 @@ export class AvatarGenerationService {
         const poseImage = pose && !job.referenceImage
           ? await comfy.uploadImage(`a-pose-${pose.width}x${pose.height}.png`, drawPoseSkeleton(pose.width, pose.height))
           : undefined;
-        const concept =
-          job.referenceImage ??
-          (await comfy.run(
+        const draw = (drawSeed: number) =>
+          comfy.run(
             job.imageModel
-              ? buildAvatarImageWorkflow(job.imageModel, job.prompt, job.mode, seed, poseImage)
-              : conceptGraph(prompt, seed),
+              ? buildAvatarImageWorkflow(job.imageModel, job.prompt, job.mode, drawSeed, poseImage)
+              : conceptGraph(prompt, drawSeed),
             { signal },
-          ));
+          );
+        let concept = job.referenceImage ?? (await draw(seed));
         throwIfAborted(signal);
         await writeFile(path.join(job.directory, 'concept.png'), concept);
         if (job.mode === 'new-character') {
@@ -579,6 +663,13 @@ export class AvatarGenerationService {
             progress: 0.08,
             previewDataUrl: `data:image/png;base64,${concept.toString('base64')}`,
           });
+          concept = await this.checkFront(
+            job,
+            concept,
+            job.referenceImage ? null : (attempt) => draw(seed + attempt * 7919),
+            signal,
+          );
+          throwIfAborted(signal);
           if (job.imageModel?.family === 'qwen-image-2.1') {
             // A Qwen-Image front draws its own side and back views straight away (same model, one hop).
             const imageComfy = job.imageComfy;

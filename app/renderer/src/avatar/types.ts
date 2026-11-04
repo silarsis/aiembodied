@@ -249,6 +249,11 @@ export interface AvatarGenerationStatus {
   previewDataUrl?: string | null;
   backgroundRemoved?: boolean;
   /**
+   * The checks on a new front: how many images were drawn for it, and what is still wrong with
+   * the one shown (null when it passed).
+   */
+  frontCheck?: { attempts: number; problem: string | null };
+  /**
    * The character's left side and back, drawn from the front image for 3D models that take
    * several views (PNG data URLs). Missing when they couldn't be drawn; viewsMessage says why.
    */

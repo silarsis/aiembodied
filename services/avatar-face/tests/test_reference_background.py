@@ -4,8 +4,10 @@ import unittest
 from pathlib import Path
 import numpy as np
 
-bounds = runpy.run_path(str(Path(__file__).resolve().parents[3] /
-    'app/main/assets/avatar-generation/reference-background.py'))['reference_body_bounds']
+module = runpy.run_path(str(Path(__file__).resolve().parents[3] /
+    'app/main/assets/avatar-generation/reference-background.py'))
+bounds = module['reference_body_bounds']
+count_figures = module['count_figures']
 
 
 class ReferenceBackgroundTests(unittest.TestCase):
@@ -40,3 +42,27 @@ class ReferenceBackgroundTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class FigureCountTests(unittest.TestCase):
+    def person(self, image, x):
+        image[10:30, x + 12:x + 28] = [60, 40, 30]  # head
+        image[30:110, x:x + 40] = [80, 140, 70]  # body and spread arms
+
+    def test_one_character_is_one_figure(self):
+        image = np.full((120, 200, 3), 255, dtype=np.uint8)
+        self.person(image, 80)
+        self.assertEqual(count_figures(image), 1)
+
+    def test_a_turnaround_of_three_is_three(self):
+        image = np.full((120, 200, 3), 255, dtype=np.uint8)
+        for x in (10, 80, 150):
+            self.person(image, x)
+        self.assertEqual(count_figures(image), 3)
+
+    def test_wing_outlines_beside_the_head_are_not_figures(self):
+        image = np.full((120, 200, 3), 255, dtype=np.uint8)
+        self.person(image, 80)
+        for row in range(4, 40, 6):  # thin outline strokes level with the head
+            image[row, 20:70] = image[row, 130:180] = [190, 190, 190]
+        self.assertEqual(count_figures(image), 1)

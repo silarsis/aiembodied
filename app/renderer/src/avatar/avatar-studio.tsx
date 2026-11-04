@@ -814,6 +814,18 @@ export function AvatarStudio({
           <p className="kiosk__error">Image generation failed: {selected.errorMessage}</p>
         ) : null}
         {hasImage(selected) && !isBuilding(selected) ? progress : null}
+        {selected.frontCheck && !RUNNING.has(selected.status) ? (
+          selected.frontCheck.problem ? (
+            <p className="avatarStudio__warnText" role="status">
+              {`This front may not build: ${selected.frontCheck.problem}`}
+              {selected.frontCheck.attempts > 1
+                ? ` It was drawn ${selected.frontCheck.attempts} times and every one had a problem. Try Regenerate or change the description.`
+                : ''}
+            </p>
+          ) : selected.frontCheck.attempts > 1 ? (
+            <small role="status">{`Drawn ${selected.frontCheck.attempts} times; the earlier fronts showed more than one character or no usable face.`}</small>
+          ) : null
+        ) : null}
         {warnings}
         {selected.source !== 'upload' ? (
           <div className="avatarStudio__row">
