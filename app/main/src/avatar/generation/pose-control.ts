@@ -112,8 +112,13 @@ export function poseKeypoints(width: number, height: number): [number, number][]
   return A_POSE.map(([x, y]) => [width / 2 + x * figure, top + y * figure]);
 }
 
+const skeletons = new Map<string, Buffer>();
+
 /** The A-pose skeleton as an OpenPose image (coloured limbs and joints on black). */
 export function drawPoseSkeleton(width: number, height: number): Buffer {
+  const key = `${width}x${height}`;
+  const cached = skeletons.get(key);
+  if (cached) return cached;
   const png = new PNG({ width, height });
   png.data.fill(0);
   for (let i = 3; i < png.data.length; i += 4) png.data[i] = 255;
@@ -142,7 +147,10 @@ export function drawPoseSkeleton(width: number, height: number): Buffer {
     paint(x0, y0, x1, y1, stroke, COLOURS[index].map((channel) => Math.floor(channel * 0.6)));
   });
   points.forEach(([x, y], index) => paint(x, y, x, y, stroke, COLOURS[index]));
-  return PNG.sync.write(png);
+  // Mostly black: the fastest deflate is nearly as small, and this runs on every new front.
+  const encoded = PNG.sync.write(png, { deflateLevel: 1, filterType: 0 });
+  skeletons.set(key, encoded);
+  return encoded;
 }
 
 /** How hard the skeleton holds the pose; released before the end so clothing and detail stay free. */
