@@ -41,6 +41,12 @@ export interface CharacterRigRunner {
   }): Promise<void>;
   build(input: {
     landmarksPath?: string;
+    /**
+     * fitted (default): the MediaPipe face from landmarksPath. stylised: the eyes and mouth are
+     * found on a render of the painted model by Qwen3-VL on the `vision` ComfyUI server.
+     */
+    faceStyle?: 'fitted' | 'stylised';
+    vision?: { comfyUrl: string; model?: string };
     allowTemplateWarnings?: boolean;
     meshPath: string;
     referencePath: string;
@@ -218,8 +224,66 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
     return landmarks;
   }
 
+  /**
+   * Render the painted model's head from the front, then ask Qwen3-VL where its eyes and mouth
+   * are. Returns the landmarks file for rig-character.py --face-style stylised.
+   */
+  private async findStylisedFace(
+    executable: string,
+    input: { meshPath: string; outputPath: string; vision?: { comfyUrl: string; model?: string }; signal: AbortSignal },
+  ): Promise<string> {
+    if (!input.vision) throw new Error('A stylised face needs a ComfyUI server with Qwen3-VL.');
+    const directory = path.dirname(input.outputPath);
+    const render = path.join(directory, 'head-front.png');
+    const landmarks = path.join(directory, 'stylised-face-landmarks.json');
+    await Promise.all([rm(render, { force: true }), rm(landmarks, { force: true })]);
+    const failed = (error: unknown, fallback: string): string => {
+      const stderr = error && typeof error === 'object' && 'stderr' in error ? String(error.stderr) : '';
+      return (
+        stderr.match(/FACE_FITTING_ERROR: ([^\r\n]+)/)?.[1] ??
+        pythonFailure(stderr) ??
+        (error instanceof Error ? error.message : fallback)
+      );
+    };
+    const options = { windowsHide: true, signal: input.signal, maxBuffer: 4 * 1024 * 1024, env: this.env };
+    await promisify(execFile)(
+      executable,
+      ['-b', '--factory-startup', '-t', '4', '-P', this.scriptPath, '--', '--input', input.meshPath,
+        '--output', input.outputPath, '--render-head', render],
+      { ...options, timeout: 5 * 60_000 },
+    ).catch((error: unknown) => {
+      if (input.signal.aborted) throw new Error('Cancelled.');
+      throw new Error(`The model's face could not be rendered: ${failed(error, 'Blender failed.')}`);
+    });
+    await access(render).catch(() => {
+      throw new Error("Blender did not render the model's face.");
+    });
+    await promisify(execFile)(
+      this.facePython,
+      [
+        path.join(path.dirname(this.scriptPath), 'stylised-face-landmarks.py'),
+        '--image',
+        render,
+        '--frame',
+        render.replace(/\.png$/, '.json'),
+        '--comfy',
+        input.vision.comfyUrl,
+        '--output',
+        landmarks,
+        ...(input.vision.model ? ['--clip', input.vision.model] : []),
+      ],
+      // Two vision-model answers, which can wait behind other ComfyUI work.
+      { ...options, timeout: 15 * 60_000 },
+    ).catch((error: unknown) => {
+      if (input.signal.aborted) throw new Error('Cancelled.');
+      throw new Error(`The eyes and mouth could not be found: ${failed(error, 'Stylised face detection failed.')}`);
+    });
+    return landmarks;
+  }
+
   async build(input: {
     landmarksPath?: string;
+    faceStyle?: 'fitted' | 'stylised';
     allowTemplateWarnings?: boolean;
     meshPath: string;
     referencePath: string;
@@ -234,9 +298,10 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
     // accept a candidate left over from an earlier attempt at the same path.
     await rm(input.outputPath, { force: true });
     const logPath = path.join(path.dirname(input.outputPath), 'blender.log');
+    const stylised = input.faceStyle === 'stylised' ? await this.findStylisedFace(executable, input) : undefined;
     let blenderOutput = '';
     try {
-      const landmarks = input.landmarksPath ?? (await this.prepareReference(input));
+      const landmarks = stylised ?? input.landmarksPath ?? (await this.prepareReference(input));
       const result = await promisify(execFile)(
         executable,
         [
@@ -257,6 +322,7 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
           input.referencePath,
           '--landmarks',
           landmarks,
+          ...(input.faceStyle === 'stylised' ? ['--face-style', 'stylised'] : []),
           ...(input.allowTemplateWarnings === true ? ['--allow-template-warnings'] : []),
         ],
         {
@@ -304,7 +370,7 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
       )
     ) {
       throw new Error(
-        'The fitted face was exported with active expressions instead of a neutral face.',
+        'The face was exported with active expressions instead of a neutral face.',
       );
     }
     if (!extensions?.VRMC_vrm || !Array.isArray(doc.skins) || !doc.skins.length) {
@@ -332,7 +398,7 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
       'disgust',
     ]) {
       if (!expressions[name]?.morphTargetBinds?.length)
-        throw new Error(`The fitted face is missing its ${name} animation.`);
+        throw new Error(`The face is missing its ${name} animation.`);
     }
     return bytes;
   }

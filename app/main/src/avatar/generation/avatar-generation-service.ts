@@ -381,15 +381,19 @@ export class AvatarGenerationService {
           rigModelName: job.rig?.name ?? 'Blender auto-rig with fitted face',
         });
         await runner?.assertAvailable();
-        if (!job.landmarksPath)
+        // A stylised face is found on the painted 3D model while rigging, so only the fitted
+        // (MediaPipe) face is checked here, along with its human-face template warnings.
+        const fitted = (job.rig?.face ?? 'fitted') === 'fitted';
+        if (fitted && !job.landmarksPath)
           job.landmarksPath = await runner?.prepareReference?.({
             referencePath: path.join(job.directory, 'concept.png'),
             outputPath: path.join(job.directory, 'avatar.vrm'),
             signal: job.abort.signal,
           });
-        const warnings = job.landmarksPath
-          ? ((await runner?.inspectReference?.(job.landmarksPath)) ?? [])
-          : [];
+        const warnings =
+          fitted && job.landmarksPath
+            ? ((await runner?.inspectReference?.(job.landmarksPath)) ?? [])
+            : [];
         throwIfAborted(job.abort.signal);
         if (this.jobs.get(jobId) !== job)
           throw new Error('This avatar generation job was discarded.');
@@ -663,13 +667,23 @@ export class AvatarGenerationService {
           progress: 0.8,
           message: 'Fitting the face, body skeleton and animated expressions',
         });
+        const stylised = job.rig?.face === 'stylised';
+        // Qwen3-VL lives with the image model, on the image server.
+        const vision = stylised
+          ? {
+              comfyUrl: (await this.comfyFor('image')).baseUrl,
+              ...(job.rig?.visionModel ? { model: job.rig.visionModel } : {}),
+            }
+          : undefined;
         await runner.build({
-          landmarksPath: job.landmarksPath,
+          landmarksPath: stylised ? undefined : job.landmarksPath,
           allowTemplateWarnings: job.status.warningsAccepted === true,
           meshPath,
           referencePath: path.join(job.directory, 'concept.png'),
           outputPath: job.vrmPath,
           name: summarise(job.prompt),
+          faceStyle: stylised ? 'stylised' : 'fitted',
+          ...(vision ? { vision } : {}),
           signal,
         });
         throwIfAborted(signal);

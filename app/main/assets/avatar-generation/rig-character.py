@@ -22,15 +22,22 @@ parser.add_argument("--input", required=True)
 parser.add_argument("--output", required=True)
 parser.add_argument("--name", default="Generated character")
 parser.add_argument("--render", action="store_true")
-parser.add_argument("--reference", required=True)
-parser.add_argument("--landmarks", required=True)
+parser.add_argument("--reference")
+parser.add_argument("--landmarks")
 parser.add_argument("--emotion-renders", action="store_true")
 parser.add_argument("--allow-template-warnings", action="store_true")
 # Lay a separate landmark-fitted face over the head instead of giving the head its own expressions.
 parser.add_argument("--separate-face", action="store_true")
+# fitted: MediaPipe landmarks and its human face topology (face-landmarks.py, fitted-face.py).
+# stylised: eye/mouth boxes from stylised-face-landmarks.py animate the head's painted face (stylised-face.py).
+parser.add_argument("--face-style", choices=("fitted", "stylised"), default="fitted")
+# Only render the painted head from the front (for stylised-face-landmarks.py) and stop.
+parser.add_argument("--render-head")
 args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:])
-args.reference = str(Path(args.reference).resolve())
-args.landmarks = str(Path(args.landmarks).resolve())
+if not args.render_head and not (args.reference and args.landmarks):
+    parser.error("--reference and --landmarks are required to rig")
+args.reference = args.reference and str(Path(args.reference).resolve())
+args.landmarks = args.landmarks and str(Path(args.landmarks).resolve())
 output = Path(args.output).resolve()
 output.parent.mkdir(parents=True, exist_ok=True)
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -87,6 +94,56 @@ for material in body.data.materials:
                     for link in list(socket.links):
                         material.node_tree.links.remove(link)
                     socket.default_value = value
+
+def emission_materials():
+    """Show base colours as they are, like the exported VRM's unlit materials."""
+    for mat in bpy.data.materials:
+        if mat.use_nodes:
+            shader = mat.node_tree.nodes.get('Principled BSDF')
+            if shader:
+                color = shader.inputs['Base Color']
+                emission = shader.inputs['Emission Color']
+                if color.is_linked:
+                    mat.node_tree.links.new(color.links[0].from_socket, emission)
+                else:
+                    emission.default_value = color.default_value
+                shader.inputs['Emission Strength'].default_value = 1
+                shader.inputs['Base Color'].default_value = (0, 0, 0, 1)
+
+
+if args.render_head:
+    # A stylised face is found on the painted model, not the drawing: Hunyuan3D's head can be
+    # shaped differently from the drawn one (a shorter chin, say), and paint-views paints the
+    # drawing onto the shape it got. Frame the head from the front on white, unlit.
+    # Size the view from the crown (the top 3%), which ribbons, ears held out or raised arms rarely reach.
+    crown = points[np.argmax(points[:, 2])]
+    top = points[(points[:, 2] > .97 * H) & (np.abs(points[:, 0] - crown[0]) < .15 * H)]
+    centre_x = float(np.median(top[:, 0]))
+    spread = np.percentile(top[:, 0], [3, 97])
+    side = float(np.clip(3 * (spread[1] - spread[0]), .2 * H, .5 * H))
+    scene = bpy.context.scene
+    emission_materials()
+    scene.render.engine = "BLENDER_EEVEE"
+    scene.render.resolution_x = scene.render.resolution_y = 1536
+    scene.render.resolution_percentage = 100
+    scene.render.image_settings.file_format = 'PNG'
+    scene.render.image_settings.color_mode = 'RGB'
+    scene.view_settings.view_transform = 'Standard'
+    scene.world = bpy.data.worlds.new("HeadWorld")
+    scene.world.use_nodes = True
+    scene.world.node_tree.nodes["Background"].inputs[0].default_value = (1, 1, 1, 1)
+    camera = bpy.data.objects.new("HeadCamera", bpy.data.cameras.new("HeadCamera"))
+    scene.collection.objects.link(camera)
+    scene.camera = camera
+    centre_z = H + .01 * H - side / 2
+    camera.location = (centre_x, -3, centre_z)
+    camera.rotation_euler = (Vector((centre_x, 0, centre_z)) - camera.location).to_track_quat('-Z', 'Y').to_euler()
+    camera.data.type, camera.data.ortho_scale = "ORTHO", side
+    scene.render.filepath = str(Path(args.render_head).resolve())
+    bpy.ops.render.render(write_still=True)
+    Path(args.render_head).with_suffix(".json").write_text(json.dumps({"center": [centre_x, centre_z], "size": side, "height": H}))
+    print("HEAD_RENDER_READY " + str(Path(args.render_head).resolve()), flush=True)
+    sys.exit(0)
 
 P = lambda x, z, y=0: Vector((x * H, y * H, z * H))
 bones = {
@@ -192,11 +249,16 @@ mod = body.modifiers.new("GeneratedRig", "ARMATURE")
 mod.object = rig
 bpy.context.view_layer.update()
 
-# Fit known open-eye/open-mouth topology to the detected reference and generated head.
-face_module = runpy.run_path(str(Path(__file__).with_name("fitted-face.py")))
-face_parts, face_report = face_module["build_fitted_face"](
-    body, rig, H, args.landmarks, args.reference, allow_template_warnings=args.allow_template_warnings,
-    wrap=not args.separate_face)
+if args.face_style == "stylised":
+    # Expressions bend the generated head's own painted eyes and mouth.
+    face_module = runpy.run_path(str(Path(__file__).with_name("stylised-face.py")))
+    face_parts, face_report = face_module["build_stylised_face"](body, rig, H, args.landmarks, args.reference)
+else:
+    # Fit known open-eye/open-mouth topology to the detected reference and generated head.
+    face_module = runpy.run_path(str(Path(__file__).with_name("fitted-face.py")))
+    face_parts, face_report = face_module["build_fitted_face"](
+        body, rig, H, args.landmarks, args.reference, allow_template_warnings=args.allow_template_warnings,
+        wrap=not args.separate_face)
 # Expression keys may sit on the face parts, the body itself, or both.
 keyed = [o for o in (body, *face_parts) if o.data.shape_keys]
 for part in keyed:
@@ -242,11 +304,13 @@ for preset in face_module["PRESETS"]:
         raise RuntimeError("Missing facial deformation: " + preset)
     expressions[preset] = {"morphTargetBinds": binds, "isBinary": False}
 doc.setdefault("extensionsUsed", []).append("VRMC_vrm")
+meta = {"name": args.name, "version": "0.1", "authors": ["AI Embodied local generator"],
+        "licenseUrl": "https://vrm.dev/licenses/1.0/"}
+if args.face_style == "fitted":
+    meta["thirdPartyLicenses"] = "Face topology derived from Google MediaPipe canonical_face_model.obj. Copyright Google LLC.\n" + (Path(__file__).parent / 'face-template' / 'LICENSE').read_text(encoding='utf-8')
 doc.setdefault("extensions", {})["VRMC_vrm"] = {
     "specVersion": "1.0",
-    "meta": {"name": args.name, "version": "0.1", "authors": ["AI Embodied local generator"],
-             "licenseUrl": "https://vrm.dev/licenses/1.0/",
-             "thirdPartyLicenses": "Face topology derived from Google MediaPipe canonical_face_model.obj. Copyright Google LLC.\n" + (Path(__file__).parent / 'face-template' / 'LICENSE').read_text(encoding='utf-8')},
+    "meta": meta,
     "humanoid": {"humanBones": human},
     "expressions": {"preset": {k: v for k, v in expressions.items() if k not in ("fear", "disgust")},
                     "custom": {k: expressions[k] for k in ("fear", "disgust")}},
@@ -302,17 +366,7 @@ if args.render:
 if args.emotion_renders:
     scene = bpy.context.scene
     # Match the exported VRM's unlit materials, including its baked reference shading.
-    for mat in bpy.data.materials:
-        if mat.use_nodes:
-            shader=mat.node_tree.nodes.get('Principled BSDF')
-            if shader:
-                color=shader.inputs['Base Color']
-                emission=shader.inputs['Emission Color']
-                if color.is_linked:
-                    mat.node_tree.links.new(color.links[0].from_socket,emission)
-                else:emission.default_value=color.default_value
-                shader.inputs['Emission Strength'].default_value=1
-                shader.inputs['Base Color'].default_value=(0,0,0,1)
+    emission_materials()
     scene.render.engine = "BLENDER_EEVEE"
     scene.render.resolution_x = scene.render.resolution_y = 320
     scene.render.resolution_percentage = 100
@@ -324,12 +378,18 @@ if args.emotion_renders:
     camera = bpy.data.objects.new("FaceReviewCamera",bpy.data.cameras.new("FaceReviewCamera"))
     scene.collection.objects.link(camera);scene.camera=camera
     face = next((o for o in face_parts if o.name == "FittedFace"), None)
-    # A wrapped head has no separate face: frame the eyes and mouth instead.
-    coords = np.array([v.co[:] for o in ([face] if face else face_parts) for v in o.data.vertices])
-    center = Vector(coords.mean(axis=0));center.z = float((coords[:,2].min()+coords[:,2].max())/2)
+    camera.data.type='ORTHO'
+    if 'frame' in face_report:
+        x, z, size = face_report['frame']
+        center = Vector((x, 0, z))
+        camera.data.ortho_scale = size
+    else:
+        # A wrapped head has no separate face: frame the eyes and mouth instead.
+        coords = np.array([v.co[:] for o in ([face] if face else face_parts) for v in o.data.vertices])
+        center = Vector(coords.mean(axis=0));center.z = float((coords[:,2].min()+coords[:,2].max())/2)
+        camera.data.ortho_scale=float(np.ptp(coords[:,2]))*(1.65 if face else 2.6)
     camera.location=(center.x,-3,center.z)
     camera.rotation_euler=(center-camera.location).to_track_quat('-Z','Y').to_euler()
-    camera.data.type='ORTHO';camera.data.ortho_scale=float(np.ptp(coords[:,2]))*(1.65 if face else 2.6)
     scene.view_settings.view_transform='Standard'
     renders=output.parent/'expressions';renders.mkdir(exist_ok=True)
     for expression in ('neutral','happy','sad','angry','fear','disgust','surprised','blink','aa','ih','ou','ee','oh','lookLeft','lookRight'):

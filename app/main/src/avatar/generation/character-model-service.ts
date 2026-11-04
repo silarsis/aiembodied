@@ -24,12 +24,19 @@ export function usesViews(model: GeometryModel | undefined): boolean {
 export interface RigModel {
   id: string;
   name: string;
+  /** fitted: MediaPipe face topology. stylised: a vision model's feature boxes bend the head's painted face. */
+  face: 'fitted' | 'stylised';
+  /** Stylised only: the ComfyUI text encoder file that answers where the features are. */
+  visionModel?: string;
 }
 
 export const DEFAULT_TRELLIS_UNET = 'trellis_2_int8_convrot.safetensors';
 const DEFAULT_SHAPE_VAE = 'trellis_2_shape_vae_bf16.safetensors';
 const DEFAULT_TEXTURE_VAE = 'trellis_2_texture_vae_bf16.safetensors';
 export const BLENDER_FACE_FIT_RIG = 'blender-face-fit';
+export const BLENDER_STYLISED_FACE_RIG = 'blender-stylised-face';
+/** Qwen3-VL, which finds stylised eyes and mouths; ComfyUI already has it as Qwen-Image's text encoder. */
+export const DEFAULT_FACE_VISION_MODEL = 'qwen3vl_8b_int8_convrot.safetensors';
 
 export const DEFAULT_HUNYUAN_MV = 'hunyuan3d-dit-v2-mv.safetensors';
 /**
@@ -92,9 +99,18 @@ export class AvatarCharacterModelService {
       } catch (error) {
         rigReason = error instanceof Error ? error.message : String(error);
       }
+      const vision = files
+        ? files.find((file) => file.kind === 'qwen3-vl' && file.name === DEFAULT_FACE_VISION_MODEL)?.name ??
+          files.find((file) => file.kind === 'qwen3-vl')?.name
+        : DEFAULT_FACE_VISION_MODEL;
+      const stylisedReason =
+        rigReason ??
+        (vision
+          ? undefined
+          : `Finding stylised faces needs Qwen3-VL in ComfyUI. Put ${DEFAULT_FACE_VISION_MODEL} in its text_encoders folder and refresh.`);
       this.rig = [
         {
-          model: { id: BLENDER_FACE_FIT_RIG, name: 'Blender auto-rig with fitted face' },
+          model: { id: BLENDER_FACE_FIT_RIG, name: 'Blender auto-rig with fitted face', face: 'fitted' },
           summary: {
             id: BLENDER_FACE_FIT_RIG,
             name: 'Blender auto-rig with fitted face',
@@ -102,6 +118,22 @@ export class AvatarCharacterModelService {
               'Fits a humanoid skeleton in Blender, then a local MediaPipe face with speech, blink, gaze and six emotions.',
             available: !rigReason,
             ...(rigReason ? { unavailableReason: rigReason } : {}),
+          },
+        },
+        {
+          model: {
+            id: BLENDER_STYLISED_FACE_RIG,
+            name: 'Blender auto-rig with stylised face',
+            face: 'stylised',
+            ...(vision ? { visionModel: vision } : {}),
+          },
+          summary: {
+            id: BLENDER_STYLISED_FACE_RIG,
+            name: 'Blender auto-rig with stylised face',
+            description:
+              'For anime, furry and cartoon faces: a vision model finds the eyes and mouth, and the head’s own painted face blinks, talks and shows six emotions.',
+            available: !stylisedReason,
+            ...(stylisedReason ? { unavailableReason: stylisedReason } : {}),
           },
         },
       ];
