@@ -31,11 +31,10 @@ import {
 import {
   applyLoras,
   buildAvatarImageWorkflow,
-  checkpointImageSize,
   type ImageWorkflowLora,
   type ImageWorkflowModel,
 } from './image-workflows.js';
-import { drawPoseSkeleton } from './pose-control.js';
+import { drawPoseSkeleton, poseImageSize } from './pose-control.js';
 import { templatePolicy } from './template-compatibility.js';
 import { decodeReferenceImage } from './reference-image.js';
 import { regionPrompt } from './vrm-retexture.js';
@@ -345,7 +344,8 @@ export class AvatarGenerationService {
    * is cut away (the original is kept, as with Remove background). A front that shows more than
    * one character, or no face the fitter can use, is drawn again with another seed, up to
    * MAX_FRONT_ATTEMPTS times; an upload is checked but never redrawn. What is still wrong after
-   * the last attempt is shown at review. The face found here is reused by the build.
+   * the last attempt is shown at review. The face found here is reused by the build. A rig that
+   * finds a stylised face on the built head skips the face check, which only knows human faces.
    */
   private async checkFront(
     job: JobState,
@@ -362,6 +362,8 @@ export class AvatarGenerationService {
     let problem: string | null = null;
     try {
       await runner.assertAvailable();
+      const rig = await this.options.characterModels?.resolveRig().catch(() => undefined);
+      const findFace = rig?.face !== 'stylised';
       for (let attempt = 1; ; attempt++) {
         if (attempt > 1 && redraw) {
           await copyFile(conceptPath, path.join(job.directory, `concept-rejected-${attempt - 1}.png`));
@@ -388,7 +390,7 @@ export class AvatarGenerationService {
         job.landmarksPath = undefined;
         if (check.figures !== null && check.figures > 1) {
           problem = `It shows ${check.figures} characters instead of one.`;
-        } else {
+        } else if (findFace) {
           this.update(job, { message: 'Finding the face' });
           try {
             job.landmarksPath = await runner.prepareReference({
@@ -641,10 +643,8 @@ export class AvatarGenerationService {
           job.mode === 'new-character'
             ? characterConceptPrompt(job.prompt)
             : buildConceptPrompt(job.prompt);
-        // A model with a pose ControlNet draws the front over the A-pose skeleton.
-        const pose = job.imageModel?.poseControlNet && (job.imageModel.family === 'sd1' || job.imageModel.family === 'sdxl')
-          ? checkpointImageSize(job.imageModel.family)
-          : undefined;
+        // Models with pose control draw the front over the A-pose skeleton.
+        const pose = job.imageModel ? poseImageSize(job.imageModel) : undefined;
         const poseImage = pose && !job.referenceImage
           ? await comfy.uploadImage(`a-pose-${pose.width}x${pose.height}.png`, drawPoseSkeleton(pose.width, pose.height))
           : undefined;

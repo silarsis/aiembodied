@@ -79,11 +79,10 @@ export interface PoseControlInstaller {
 }
 
 const POSE_NOTES: Record<AvatarImagePoseControl, string> = {
-  guided: 'The pose is held by an A-pose skeleton (OpenPose ControlNet).',
+  guided: 'The pose is held by an A-pose skeleton, so the arms stay clear of the body.',
   installing: 'Downloading pose control. Until it is ready, the pose comes from the prompt alone.',
   failed: 'Pose control could not be downloaded, so the pose comes from the prompt alone. Choosing this model again retries.',
   unavailable: 'This ComfyUI server cannot download pose control, so the pose comes from the prompt alone.',
-  prompt: 'This model follows the A-pose from the prompt.',
   none: 'No pose control for this kind of model yet. The pose comes from the prompt alone, so check the arms are clear of the body.',
 };
 
@@ -213,6 +212,7 @@ export class AvatarImageModelService {
   }
   private poseControl(family: ImageFamily): AvatarImagePoseControl {
     const support = poseSupport(family);
+    if (support === 'reference') return 'guided';
     if (support !== 'controlnet') return support;
     const poseFamily = family as PoseFamily;
     if (this.poseNets[poseFamily]) return 'guided';

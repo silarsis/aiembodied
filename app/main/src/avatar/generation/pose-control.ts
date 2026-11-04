@@ -1,19 +1,27 @@
 /**
- * Pose control for the front image: SD1.5 and SDXL models ignore "A-pose" in a prompt often enough
- * to break the rig, so their front is drawn through an OpenPose ControlNet holding a fixed A-pose
- * skeleton. Qwen-Image follows the pose from the prompt; Z-Image has no ControlNet here yet.
+ * Pose control for the front image: models ignore "A-pose" in a prompt often enough to break the
+ * rig, or draw the arms so close to the body that the 3D model fuses them to it. SD1.5 and SDXL
+ * fronts are drawn through an OpenPose ControlNet holding a fixed A-pose skeleton; Qwen-Image takes
+ * the same skeleton as a reference image. Z-Image has no pose control here yet.
  */
 import { PNG } from 'pngjs';
 import type { ComfyGraph } from './comfyui-client.js';
 import type { ImageFamily } from './image-workflows.js';
 import type { DownloadPlan } from './model-downloads.js';
 
-/** How a family's front image gets its pose. */
-export type PoseSupport = 'controlnet' | 'prompt' | 'none';
+/** How a family's front image gets its pose: a ControlNet, the skeleton as a reference image, or not at all. */
+export type PoseSupport = 'controlnet' | 'reference' | 'none';
 
 export function poseSupport(family: ImageFamily): PoseSupport {
   if (family === 'sd1' || family === 'sdxl') return 'controlnet';
-  return family === 'qwen-image-2.1' ? 'prompt' : 'none';
+  return family === 'qwen-image-2.1' ? 'reference' : 'none';
+}
+
+/** The size the skeleton is drawn at for a model's front, when that model takes one. */
+export function poseImageSize(model: { family: ImageFamily; poseControlNet?: string }): { width: number; height: number } | undefined {
+  if (model.family === 'sd1' || model.family === 'sdxl')
+    return model.poseControlNet ? (model.family === 'sd1' ? { width: 512, height: 768 } : { width: 1024, height: 1024 }) : undefined;
+  return poseSupport(model.family) === 'reference' ? { width: 1024, height: 1024 } : undefined;
 }
 
 interface PoseControlNet {
@@ -140,6 +148,25 @@ export function drawPoseSkeleton(width: number, height: number): Buffer {
 /** How hard the skeleton holds the pose; released before the end so clothing and detail stay free. */
 export const POSE_STRENGTH = 1;
 export const POSE_END = 0.65;
+
+/**
+ * Qwen-Image's instruction for the skeleton reference. Without it Qwen drew the arms about 20–35°
+ * from the body, close enough for the 3D model to fuse sleeve and torso (webbing under the arms
+ * once rigged); with it, about 45° with clear gaps. Outfits come out a little plainer.
+ */
+export const QWEN_POSE_INSTRUCTION =
+  'Image 1 is a pose skeleton (coloured stick figure on black). Draw the character standing in exactly that pose: ' +
+  'the same arm angles, with the arms held well away from the body, and the same leg spacing. ' +
+  'Do not draw the skeleton, its colours or the black background. ';
+
+/** Give a Qwen-Image text-to-image graph the uploaded skeleton as its first reference image. */
+export function applyPoseReference(graph: ComfyGraph, image: string): ComfyGraph {
+  const encoder = Object.values(graph).find((node) => node.class_type === 'TextEncodeQwenImage21');
+  if (!encoder || encoder.inputs['images.image_1'] !== undefined) return graph;
+  encoder.inputs['images.image_1'] = ['poseImage', 0];
+  encoder.inputs.prompt = `${QWEN_POSE_INSTRUCTION}${String(encoder.inputs.prompt)}`;
+  return { ...graph, poseImage: { class_type: 'LoadImage', inputs: { image } } };
+}
 
 /** Route the sampler's conditioning through an OpenPose ControlNet fed the uploaded skeleton image. */
 export function applyPoseControl(graph: ComfyGraph, controlNet: string, image: string): ComfyGraph {

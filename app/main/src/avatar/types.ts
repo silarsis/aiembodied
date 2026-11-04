@@ -143,11 +143,11 @@ export type AvatarGenerationStage =
   | 'cancelled';
 
 /**
- * How a model's front image gets its A-pose: held by a skeleton (guided), skeleton on its way
- * (installing), download failed or impossible on this server, from the prompt (Qwen-Image follows
- * it well), or none (no pose ControlNet for that family yet).
+ * How a model's front image gets its A-pose: held by a skeleton through a ControlNet or as a
+ * reference image (guided), ControlNet on its way (installing), its download failed or is
+ * impossible on this server, or none (no pose control for that family yet).
  */
-export type AvatarImagePoseControl = 'guided' | 'installing' | 'failed' | 'unavailable' | 'prompt' | 'none';
+export type AvatarImagePoseControl = 'guided' | 'installing' | 'failed' | 'unavailable' | 'none';
 export interface AvatarImageModelSummary {
   id: string;
   name: string;

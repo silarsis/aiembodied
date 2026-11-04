@@ -12,7 +12,7 @@ afterEach(async () => {
 });
 
 /** Each drawn front is "front-<n>"; checks and face results are scripted per call. */
-async function setup(checks: FrontCheck[], faces: (string | null)[]) {
+async function setup(checks: FrontCheck[], faces: (string | null)[], rigFace?: 'stylised') {
   const directory = await mkdtemp(path.join(tmpdir(), 'avatar-front-'));
   directories.push(directory);
   let drawn = 0;
@@ -41,6 +41,9 @@ async function setup(checks: FrontCheck[], faces: (string | null)[]) {
   const service = new AvatarGenerationService({
     comfy: comfy as unknown as ComfyUIClient,
     characterRunner,
+    ...(rigFace
+      ? { characterModels: { resolveGeometry: vi.fn(), resolveRig: vi.fn(async () => ({ id: 'stylised', name: 'Stylised face', face: rigFace })) } }
+      : {}),
     models: { uploadModel: vi.fn(), setActiveModel: vi.fn() },
     runner: { prepare: vi.fn(), score: vi.fn(), assemble: vi.fn() },
     baseModelPath: path.join(directory, 'base.vrm'),
@@ -105,6 +108,20 @@ describe('checks on a new front', () => {
     const { status } = await review(service, jobId);
     expect(run).not.toHaveBeenCalled();
     expect(status.frontCheck).toEqual({ attempts: 1, problem: 'Use a front-facing face rather than a profile.' });
+  });
+
+  it('leaves the face to a stylised-face rig, but still checks the background and figures', async () => {
+    const { service, run, characterRunner } = await setup(
+      [{ backgroundOk: true, figures: 2 }, { backgroundOk: false, figures: null }, { backgroundOk: true, figures: 1 }],
+      ['Need one clearly visible human face.'],
+      'stylised',
+    );
+    const { jobId } = await service.startJob({ prompt: 'Anime explorer' });
+    const { status, image } = await review(service, jobId);
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(image).toBe('front-2-cutout');
+    expect(status.frontCheck).toEqual({ attempts: 2, problem: null });
+    expect(characterRunner.prepareReference).not.toHaveBeenCalled();
   });
 
   it('goes on to review unchecked when the check tools fail', async () => {

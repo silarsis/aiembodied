@@ -24,6 +24,11 @@ export function usesViews(model: GeometryModel | undefined): boolean {
 export interface RigModel {
   id: string;
   name: string;
+  /**
+   * How the rig gives the head a face: fitted to human face landmarks found on the front image
+   * (the default), or stylised, found on the built head itself, so the front needs no human face.
+   */
+  face?: 'fitted' | 'stylised';
 }
 
 export const DEFAULT_TRELLIS_UNET = 'trellis_2_int8_convrot.safetensors';

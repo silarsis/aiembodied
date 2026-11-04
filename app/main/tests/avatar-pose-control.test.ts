@@ -11,7 +11,9 @@ import {
   drawPoseSkeleton,
   POSE_CONTROLNETS,
   poseControlNetPlan,
+  poseImageSize,
   poseKeypoints,
+  QWEN_POSE_INSTRUCTION,
 } from '../src/avatar/generation/pose-control.js';
 
 const checkpoint = (name: string, kind: 'sd1' | 'sdxl'): ImageModelFile => ({
@@ -95,14 +97,25 @@ describe('pose control in the front-image workflow', () => {
     expect(graph.negative.inputs.text).toContain('arms at sides');
   });
 
-  it('keeps the plain workflow without a ControlNet or skeleton, and for Qwen-Image', () => {
+  it('keeps the plain workflow without a ControlNet or skeleton', () => {
     expect(buildAvatarImageWorkflow(sd1, 'x', 'new-character', 7, 'a.png').poseApply).toBeUndefined();
     expect(buildAvatarImageWorkflow({ ...sd1, poseControlNet: 'pose.safetensors' }, 'x', 'new-character', 7).poseApply).toBeUndefined();
-    const qwen = buildAvatarImageWorkflow(
-      { id: 'q', name: 'Q', family: 'qwen-image-2.1', model: 'q', clip: 'c', vae: 'v', poseControlNet: 'pose.safetensors' },
-      'x', 'new-character', 7, 'a.png',
-    );
-    expect(qwen.poseApply).toBeUndefined();
+  });
+
+  it('gives a new character’s Qwen-Image front the skeleton as its reference image', () => {
+    const qwen = { id: 'q', name: 'Q', family: 'qwen-image-2.1' as const, model: 'q', clip: 'c', vae: 'v' };
+    expect(poseImageSize(qwen)).toEqual({ width: 1024, height: 1024 });
+    const graph = buildAvatarImageWorkflow(qwen, 'explorer', 'new-character', 7, 'aiembodied/a-pose.png');
+    expect(graph.poseImage.inputs.image).toBe('aiembodied/a-pose.png');
+    expect(graph.encode.inputs['images.image_1']).toEqual(['poseImage', 0]);
+    expect(String(graph.encode.inputs.prompt).startsWith(QWEN_POSE_INSTRUCTION)).toBe(true);
+    expect(graph.poseApply).toBeUndefined();
+    // A restyle keeps the bundled avatar's body, so it isn't posed; nor is a front without a skeleton.
+    expect(buildAvatarImageWorkflow(qwen, 'x', 'restyle', 7, 'a.png').poseImage).toBeUndefined();
+    expect(buildAvatarImageWorkflow(qwen, 'x', 'new-character', 7).poseImage).toBeUndefined();
+    expect(poseImageSize({ family: 'z-image-turbo' })).toBeUndefined();
+    expect(poseImageSize({ family: 'sdxl' })).toBeUndefined();
+    expect(poseImageSize({ family: 'sd1', poseControlNet: 'p' })).toEqual({ width: 512, height: 768 });
   });
 
   it('plans the download of each family’s pose ControlNet into the controlnet folder', () => {
@@ -124,7 +137,7 @@ describe('pose control for installed image models', () => {
     expect(pose).toEqual({
       'checkpoints:dreamshaper_8.safetensors': 'guided',
       'checkpoints:novaFurryXL.safetensors': 'installing',
-      'diffusion_models:qwen.safetensors': 'prompt',
+      'diffusion_models:qwen.safetensors': 'guided',
       'diffusion_models:z_image_turbo.safetensors': 'none',
     });
     expect(state.models.every((model) => model.poseNote)).toBe(true);

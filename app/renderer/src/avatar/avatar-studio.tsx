@@ -657,7 +657,7 @@ export function AvatarStudio({
             {selectedImageModel?.poseNote && mode === 'new-character' ? (
               <small
                 className={
-                  selectedImageModel.poseControl === 'guided' || selectedImageModel.poseControl === 'prompt'
+                  selectedImageModel.poseControl === 'guided'
                     ? undefined
                     : 'avatarStudio__warnText'
                 }

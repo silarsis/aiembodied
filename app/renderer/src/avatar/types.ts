@@ -141,7 +141,7 @@ export type AvatarGenerationStage =
   | 'cancelled';
 
 /** How a model's front gets its A-pose; see the main process type for each value. */
-export type AvatarImagePoseControl = 'guided' | 'installing' | 'failed' | 'unavailable' | 'prompt' | 'none';
+export type AvatarImagePoseControl = 'guided' | 'installing' | 'failed' | 'unavailable' | 'none';
 export interface AvatarImageModelSummary {
   id: string;
   name: string;

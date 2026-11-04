@@ -3,7 +3,7 @@ import { templatePromptGuidance } from './template-compatibility.js';
 import type { ComfyGraph } from './comfyui-client.js';
 import { buildConceptPrompt, conceptGraph, CONCEPT_NEGATIVE } from './graphs.js';
 import { characterConceptPrompt, faceSurfaceGuidance, faceSurfaceExclusions } from './character/graphs.js';
-import { applyPoseControl } from './pose-control.js';
+import { applyPoseControl, applyPoseReference } from './pose-control.js';
 
 export type ImageFamily = 'qwen-image-2.1' | 'z-image-turbo' | 'sdxl' | 'sd1';
 export interface ImageWorkflowLora {
@@ -168,7 +168,8 @@ export function applyLoras(graph: ComfyGraph, loras: ImageWorkflowLora[]): Comfy
 
 /**
  * CLIP models need positive framing and explicit negatives instead of prose negations. poseImage is
- * the uploaded A-pose skeleton; with it, a model that has a pose ControlNet is held to that pose.
+ * the uploaded A-pose skeleton: a model with a pose ControlNet is held to it, and a new character's
+ * Qwen-Image front takes it as a reference image.
  */
 export function buildAvatarImageWorkflow(
   model: ImageWorkflowModel,
@@ -183,11 +184,14 @@ export function buildAvatarImageWorkflow(
     graph.negative.inputs.text = `${CONCEPT_NEGATIVE}, multiple characters, character sheet, turnaround, back view, side view, ${mode === 'new-character' ? `${faceSurfaceExclusions}, fused limbs, arms at sides, hands touching thighs, hands on hips, long hair, oversized head, chibi proportions, featureless face, ` : ''}props, scenery, ground shadow`;
     return model.poseControlNet && poseImage ? applyPoseControl(graph, model.poseControlNet, poseImage) : graph;
   }
-  return buildImageWorkflow(
+  const graph = buildImageWorkflow(
     model,
     mode === 'new-character'
       ? characterConceptPrompt(description)
       : buildConceptPrompt(description),
     seed,
   );
+  return model.family === 'qwen-image-2.1' && mode === 'new-character' && poseImage
+    ? applyPoseReference(graph, poseImage)
+    : graph;
 }
