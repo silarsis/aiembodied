@@ -93,13 +93,14 @@ const COLOURS: [number, number, number][] = [
 ];
 
 /**
- * Where each keypoint lands in a width × height image: centred, up to 88% of the height, and small
- * enough that the hands (about 0.06 of the figure past the wrists) stay inside a 5% margin.
+ * Where each keypoint lands in a width × height image: centred, up to 80% of the height (the feet
+ * reach past the ankles), and small enough that the hands (about 0.06 of the figure past the
+ * wrists) stay inside a 5% margin.
  */
 export function poseKeypoints(width: number, height: number): [number, number][] {
   const reach = Math.max(...A_POSE.map(([x]) => Math.abs(x))) + 0.06;
-  const figure = Math.min(height * 0.88, (width * 0.9) / (2 * reach));
-  const top = (height - figure) * 0.4;
+  const figure = Math.min(height * 0.8, (width * 0.9) / (2 * reach));
+  const top = (height - figure) * 0.35;
   return A_POSE.map(([x, y]) => [width / 2 + x * figure, top + y * figure]);
 }
 
