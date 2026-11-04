@@ -6,6 +6,8 @@ import { AvatarGenerationService } from '../src/avatar/generation/avatar-generat
 import {
   AvatarCharacterModelService,
   BLENDER_FACE_FIT_RIG,
+  BLENDER_STYLISED_FACE_RIG,
+  DEFAULT_FACE_VISION_MODEL,
   DEFAULT_HUNYUAN_MV,
 } from '../src/avatar/generation/character-model-service.js';
 import type { ComfyUIClient } from '../src/avatar/generation/comfyui-client.js';
@@ -44,7 +46,7 @@ async function setup(run = vi.fn().mockResolvedValue(Buffer.from('bytes'))) {
       shapeVae: 'shape.safetensors',
       textureVae: 'texture.safetensors',
     })),
-    resolveRig: vi.fn(async () => ({ id: BLENDER_FACE_FIT_RIG, name: 'Blender rig' })),
+    resolveRig: vi.fn(async () => ({ id: BLENDER_FACE_FIT_RIG, name: 'Blender rig', face: 'fitted' as const })),
   };
   const service = new AvatarGenerationService({
     comfy: comfy as unknown as ComfyUIClient,
@@ -117,6 +119,45 @@ describe('avatar studio takes', () => {
     expect(typeof service.getStatus(jobId).buildSeconds).toBe('number');
   });
 
+  it('builds a stylised face from the vision model instead of MediaPipe', async () => {
+    const { service, characterModels, characterRunner } = await setup();
+    characterModels.resolveRig.mockImplementation(async (id?: string) =>
+      id === BLENDER_STYLISED_FACE_RIG
+        ? {
+            id: BLENDER_STYLISED_FACE_RIG,
+            name: 'Stylised rig',
+            face: 'stylised' as const,
+            visionModel: DEFAULT_FACE_VISION_MODEL,
+          }
+        : { id: BLENDER_FACE_FIT_RIG, name: 'Blender rig', face: 'fitted' as const },
+    );
+    const { jobId } = await service.startJob({ prompt: 'Fox adventurer' });
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+    await service.confirmConcept(jobId, { rigModelId: BLENDER_STYLISED_FACE_RIG });
+    await vi.waitFor(() => expect(service.getStatus(jobId).status).toBe('completed'));
+    // MediaPipe isn't run (it would reject a drawn or animal face), nor its human-face warnings.
+    expect(characterRunner.prepareReference).not.toHaveBeenCalled();
+    expect(characterRunner.inspectReference).not.toHaveBeenCalled();
+    expect(characterRunner.build).toHaveBeenCalledWith(
+      expect.objectContaining({
+        faceStyle: 'stylised',
+        landmarksPath: undefined,
+        vision: { comfyUrl: 'http://127.0.0.1:8188', model: DEFAULT_FACE_VISION_MODEL },
+      }),
+    );
+    // Rebuilding the same take with the fitted face finds MediaPipe landmarks first.
+    await service.confirmConcept(jobId, { rigModelId: BLENDER_FACE_FIT_RIG });
+    await vi.waitFor(() => expect(characterRunner.build).toHaveBeenCalledTimes(2));
+    expect(characterRunner.prepareReference).toHaveBeenCalledTimes(1);
+    expect(characterRunner.build).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        faceStyle: 'fitted',
+        landmarksPath: expect.stringMatching(/face-landmarks\.json$/),
+      }),
+    );
+    expect(characterRunner.build.mock.lastCall?.[0]).not.toHaveProperty('vision');
+  });
+
   it('rebuilds a finished or cancelled take from its image with a different model', async () => {
     const never = new Promise<Buffer>(() => undefined);
     const run = vi
@@ -154,6 +195,7 @@ describe('3D avatar model choices', () => {
     { folder: 'vae', name: 'trellis_2_shape_vae_bf16.safetensors', kind: 'trellis2-shape-vae' },
     { folder: 'vae', name: 'trellis_2_texture_vae_bf16.safetensors', kind: 'trellis2-texture-vae' },
     { folder: 'diffusion_models', name: 'qwen.safetensors', kind: 'qwen-image-2.1' },
+    { folder: 'text_encoders', name: DEFAULT_FACE_VISION_MODEL, kind: 'qwen3-vl' },
   ];
   const store = () => {
     const values = new Map<string, string>();
@@ -185,6 +227,7 @@ describe('3D avatar model choices', () => {
     expect(selection.selectedGeometryId).toBe('trellis_2_int8_convrot.safetensors');
     expect(selection.rig).toEqual([
       expect.objectContaining({ id: BLENDER_FACE_FIT_RIG, available: true }),
+      expect.objectContaining({ id: BLENDER_STYLISED_FACE_RIG, available: true }),
     ]);
     expect(selection.selectedRigId).toBe(BLENDER_FACE_FIT_RIG);
   });
@@ -223,12 +266,43 @@ describe('3D avatar model choices', () => {
     const selection = await service.list();
     expect(selection.geometry.every((model) => !model.available)).toBe(true);
     expect(selection.geometry[1].unavailableReason).toMatch(/VAEs/);
-    expect(selection.rig[0]).toMatchObject({
-      available: false,
-      unavailableReason: 'Local face fitting needs setup.',
-    });
+    for (const rig of selection.rig)
+      expect(rig).toMatchObject({
+        available: false,
+        unavailableReason: 'Local face fitting needs setup.',
+      });
     expect(selection.selectedGeometryId).toBeNull();
     await expect(service.resolveRig()).rejects.toThrow('Local face fitting needs setup.');
+  });
+
+  it('offers the stylised face only with Qwen3-VL installed, and resolves it with its vision model', async () => {
+    const memory = store();
+    const service = new AvatarCharacterModelService(
+      vi.fn().mockResolvedValue(files),
+      vi.fn().mockResolvedValue(undefined),
+      memory,
+    );
+    await service.select('rig', BLENDER_STYLISED_FACE_RIG);
+    expect((await service.list()).selectedRigId).toBe(BLENDER_STYLISED_FACE_RIG);
+    await expect(service.resolveRig()).resolves.toEqual({
+      id: BLENDER_STYLISED_FACE_RIG,
+      name: 'Blender auto-rig with stylised face',
+      face: 'stylised',
+      visionModel: DEFAULT_FACE_VISION_MODEL,
+    });
+    await expect(service.resolveRig(BLENDER_FACE_FIT_RIG)).resolves.toMatchObject({ face: 'fitted' });
+
+    const without = new AvatarCharacterModelService(
+      vi.fn().mockResolvedValue(files.slice(0, 5)),
+      vi.fn().mockResolvedValue(undefined),
+      memory,
+    );
+    const selection = await without.list();
+    expect(selection.rig[1]).toMatchObject({ id: BLENDER_STYLISED_FACE_RIG, available: false });
+    expect(selection.rig[1].unavailableReason).toMatch(/Qwen3-VL/);
+    // The saved stylised choice can't run here, so the fitted face is used.
+    expect(selection.selectedRigId).toBe(BLENDER_FACE_FIT_RIG);
+    await expect(without.resolveRig(BLENDER_STYLISED_FACE_RIG)).rejects.toThrow(/Qwen3-VL/);
   });
 
   it('reports TRELLIS.2 as not installed when ComfyUI has none', async () => {
@@ -404,7 +478,7 @@ describe('side and back views for multi-view 3D models', () => {
             }
           : hunyuan,
       ),
-      resolveRig: vi.fn(async () => ({ id: BLENDER_FACE_FIT_RIG, name: 'Blender rig' })),
+      resolveRig: vi.fn(async () => ({ id: BLENDER_FACE_FIT_RIG, name: 'Blender rig', face: 'fitted' as const })),
     };
     const service = new AvatarGenerationService({
       comfy: comfy as unknown as ComfyUIClient,
