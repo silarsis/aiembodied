@@ -142,11 +142,20 @@ export type AvatarGenerationStage =
   | 'failed'
   | 'cancelled';
 
+/**
+ * How a model's front image gets its A-pose: held by a skeleton through a ControlNet or as a
+ * reference image (guided), ControlNet on its way (installing), its download failed or is
+ * impossible on this server, or none (no pose control for that family yet).
+ */
+export type AvatarImagePoseControl = 'guided' | 'installing' | 'failed' | 'unavailable' | 'none';
 export interface AvatarImageModelSummary {
   id: string;
   name: string;
   available: boolean;
   unavailableReason?: string;
+  poseControl?: AvatarImagePoseControl;
+  /** One line for the picker saying what poseControl means for this model. */
+  poseNote?: string;
 }
 export interface AvatarLoraSummary {
   /** File name in ComfyUI's loras folder. */
@@ -227,6 +236,11 @@ export interface AvatarGenerationStatus {
   previewDataUrl?: string | null;
   /** The image is the cut-out version (the original is kept and can be restored). */
   backgroundRemoved?: boolean;
+  /**
+   * The checks on a new front: how many images were drawn for it, and what is still wrong with
+   * the one shown (null when it passed).
+   */
+  frontCheck?: { attempts: number; problem: string | null };
   /**
    * The character's left side and back, drawn from the front image for 3D models that take
    * several views (PNG data URLs). Missing when they couldn't be drawn; viewsMessage says why.

@@ -140,11 +140,15 @@ export type AvatarGenerationStage =
   | 'failed'
   | 'cancelled';
 
+/** How a model's front gets its A-pose; see the main process type for each value. */
+export type AvatarImagePoseControl = 'guided' | 'installing' | 'failed' | 'unavailable' | 'none';
 export interface AvatarImageModelSummary {
   id: string;
   name: string;
   available: boolean;
   unavailableReason?: string;
+  poseControl?: AvatarImagePoseControl;
+  poseNote?: string;
 }
 export interface AvatarLoraSummary {
   name: string;
@@ -244,6 +248,11 @@ export interface AvatarGenerationStatus {
   /** Concept image as a PNG data URL, once it exists. */
   previewDataUrl?: string | null;
   backgroundRemoved?: boolean;
+  /**
+   * The checks on a new front: how many images were drawn for it, and what is still wrong with
+   * the one shown (null when it passed).
+   */
+  frontCheck?: { attempts: number; problem: string | null };
   /**
    * The character's left side and back, drawn from the front image for 3D models that take
    * several views (PNG data URLs). Missing when they couldn't be drawn; viewsMessage says why.

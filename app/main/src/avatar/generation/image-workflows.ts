@@ -3,6 +3,7 @@ import { templatePromptGuidance } from './template-compatibility.js';
 import type { ComfyGraph } from './comfyui-client.js';
 import { buildConceptPrompt, conceptGraph, CONCEPT_NEGATIVE } from './graphs.js';
 import { characterConceptPrompt, faceSurfaceGuidance, faceSurfaceExclusions } from './character/graphs.js';
+import { applyPoseControl, applyPoseReference } from './pose-control.js';
 
 export type ImageFamily = 'qwen-image-2.1' | 'z-image-turbo' | 'sdxl' | 'sd1';
 export interface ImageWorkflowLora {
@@ -21,6 +22,13 @@ export interface ImageWorkflowModel {
   vae?: string;
   /** LoRAs of the same family, applied in order right after the model loads. */
   loras?: ImageWorkflowLora[];
+  /** The installed OpenPose ControlNet that holds the avatar front's A-pose (SD1.5 and SDXL). */
+  poseControlNet?: string;
+}
+
+/** The size a checkpoint draws at, which the pose skeleton has to match. */
+export function checkpointImageSize(family: 'sd1' | 'sdxl'): { width: number; height: number } {
+  return family === 'sd1' ? { width: 512, height: 768 } : { width: 1024, height: 1024 };
 }
 
 function checkpointWorkflow(model: ImageWorkflowModel, prompt: string, seed: number): ComfyGraph {
@@ -33,11 +41,7 @@ function checkpointWorkflow(model: ImageWorkflowModel, prompt: string, seed: num
     },
     latent: {
       class_type: 'EmptyLatentImage',
-      inputs: {
-        width: model.family === 'sd1' ? 512 : 1024,
-        height: model.family === 'sd1' ? 768 : 1024,
-        batch_size: 1,
-      },
+      inputs: { ...checkpointImageSize(model.family === 'sd1' ? 'sd1' : 'sdxl'), batch_size: 1 },
     },
     sample: {
       class_type: 'KSampler',
@@ -162,24 +166,32 @@ export function applyLoras(graph: ComfyGraph, loras: ImageWorkflowLora[]): Comfy
   return { ...graph, ...added };
 }
 
-/** CLIP models need positive framing and explicit negatives instead of prose negations. */
+/**
+ * CLIP models need positive framing and explicit negatives instead of prose negations. poseImage is
+ * the uploaded A-pose skeleton: a model with a pose ControlNet is held to it, and a new character's
+ * Qwen-Image front takes it as a reference image.
+ */
 export function buildAvatarImageWorkflow(
   model: ImageWorkflowModel,
   description: string,
   mode: 'new-character' | 'restyle',
   seed: number,
+  poseImage?: string,
 ): ComfyGraph {
   if (model.family === 'sdxl' || model.family === 'sd1') {
     const compact = `solo, one adult humanoid, full body, front view, symmetrical A-pose, arms straight and spread, legs apart, plain white background, ${description}, ${mode === 'new-character' ? `${templatePromptGuidance}, ${faceSurfaceGuidance}, appearance as described, clear gaps between adjacent body parts, short hair, clearly visible neutral humanoid face, open eyes, closed lips, defined eyelids and eyebrows, matte 3D character render` : 'clean cel shading, character reference'}`;
     const graph = buildImageWorkflow(model, compact, seed);
-    graph.negative.inputs.text = `${CONCEPT_NEGATIVE}, multiple characters, character sheet, turnaround, back view, side view, ${mode === 'new-character' ? `${faceSurfaceExclusions}, fused limbs, long hair, oversized head, chibi proportions, featureless face, ` : ''}props, scenery, ground shadow`;
-    return graph;
+    graph.negative.inputs.text = `${CONCEPT_NEGATIVE}, multiple characters, character sheet, turnaround, back view, side view, ${mode === 'new-character' ? `${faceSurfaceExclusions}, fused limbs, arms at sides, hands touching thighs, hands on hips, long hair, oversized head, chibi proportions, featureless face, ` : ''}props, scenery, ground shadow`;
+    return model.poseControlNet && poseImage ? applyPoseControl(graph, model.poseControlNet, poseImage) : graph;
   }
-  return buildImageWorkflow(
+  const graph = buildImageWorkflow(
     model,
     mode === 'new-character'
       ? characterConceptPrompt(description)
       : buildConceptPrompt(description),
     seed,
   );
+  return model.family === 'qwen-image-2.1' && mode === 'new-character' && poseImage
+    ? applyPoseReference(graph, poseImage)
+    : graph;
 }

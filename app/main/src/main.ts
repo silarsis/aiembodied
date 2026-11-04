@@ -44,7 +44,8 @@ import { AvatarDescriptionService } from './avatar/avatar-description-service.js
 import { AvatarGenerationService } from './avatar/generation/avatar-generation-service.js';
 import { ComfyUIClient } from './avatar/generation/comfyui-client.js';
 import { BlenderCharacterRunner } from './avatar/generation/character/rig-runner.js';
-import { AvatarImageModelService, createImageModelScanner, createRemoteComfyModelScanner } from './avatar/generation/image-model-service.js';
+import { AvatarImageModelService, createImageModelScanner, createRemoteComfyModelScanner, type PoseControlInstaller } from './avatar/generation/image-model-service.js';
+import { POSE_CONTROLNETS, poseControlNetPlan } from './avatar/generation/pose-control.js';
 import { baseModelForFamily, type BaseModelSuggestions, lookupCivitai, parseCivitaiRef, planCivitaiDownload, suggestBaseModels } from './avatar/generation/civitai.js';
 import { resolveComfyInstallation } from './avatar/generation/comfyui-runtime.js';
 import { ModelDownloadService } from './avatar/generation/model-downloads.js';
@@ -200,8 +201,35 @@ const comfyAddonDirectory = path.join(__dirname, '../assets/avatar-generation/co
 const modelDownloads = new ModelDownloadService({
   script: path.join(comfyAddonDirectory, 'aiembodied_downloader.py'),
   resolveInstallation: () => resolveComfyInstallation(),
+  // A new SD1.5 or SDXL checkpoint on the image server brings its pose ControlNet with it.
+  onFinished: (download, plan, server) => {
+    if (download.state !== 'done' || (plan.kind !== 'sd1' && plan.kind !== 'sdxl')) return;
+    if (avatarComfyPool?.primary('image')?.id !== server.id) return;
+    void avatarImageModels?.ensurePoseControl(plan.kind).catch((error: unknown) => {
+      logger.warn('Could not set up pose control for the new model.', { message: error instanceof Error ? error.message : String(error) });
+    });
+  },
   logger,
 });
+/** Downloads the pose ControlNets to the image step's first ComfyUI server. */
+const poseControlInstaller: PoseControlInstaller = {
+  status: (family) => {
+    const server = avatarComfyPool?.primary('image');
+    const download = server ? modelDownloads.find(server.id, POSE_CONTROLNETS[family].filename) : undefined;
+    if (!download) return null;
+    if (download.state === 'done') return { state: 'done' };
+    if (download.state === 'failed' || download.state === 'cancelled') return { state: 'failed', error: download.error };
+    return { state: 'downloading' };
+  },
+  install: async (family) => {
+    const server = avatarComfyPool?.primary('image');
+    if (!server || server.type !== 'comfy') return false;
+    if (!server.managed && !(await modelDownloads.hasAddon(server))) return false;
+    logger.info('Downloading pose control for avatar images.', { server: server.id, family });
+    modelDownloads.start(server, poseControlNetPlan(family), undefined);
+    return true;
+  },
+};
 let avatarCharacterModels: AvatarCharacterModelService | undefined;
 let avatarGenerationService: AvatarGenerationService | null = null;
 let localMotionService: LocalMotionGenerationService | null = null;
@@ -1642,7 +1670,7 @@ app.whenReady().then(async () => {
       ? createImageModelScanner(imageModelScript, server.url)()
       : createRemoteComfyModelScanner(server.url)();
   };
-  avatarImageModels = new AvatarImageModelService(scanComfyModels('image'), memoryStore ?? undefined);
+  avatarImageModels = new AvatarImageModelService(scanComfyModels('image'), memoryStore ?? undefined, poseControlInstaller);
   const characterRunner = new BlenderCharacterRunner(path.join(__dirname, '../assets/avatar-generation/rig-character.py').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1'));
   avatarCharacterModels = new AvatarCharacterModelService(scanComfyModels('mesh'), () => characterRunner.assertAvailable(), memoryStore ?? undefined);
   // Backgrounds draw on the image step's server; the pick and the run share one server.

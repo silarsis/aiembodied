@@ -11,8 +11,15 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import readline from 'node:readline';
 import type { ModelServer } from '../../config/model-routing.js';
-import type { CivitaiDownloadPlan } from './civitai.js';
+import type { CivitaiDownloadPlan, CivitaiFile, ModelInfo } from './civitai.js';
 import type { ComfyInstallation } from './comfyui-runtime.js';
+
+/** What to download: a Civitai plan, or a file the app installs itself (such as a pose ControlNet). */
+export type DownloadPlan = Pick<CivitaiDownloadPlan, 'title' | 'folder' | 'note' | 'kind'> & {
+  file: Pick<CivitaiFile, 'name' | 'sizeKB' | 'downloadUrl' | 'sha256'>;
+  /** Saved beside the file; a Civitai plan always has one. */
+  info?: Partial<ModelInfo>;
+};
 
 export type DownloadState = 'queued' | 'downloading' | 'verifying' | 'done' | 'failed' | 'cancelled';
 
@@ -44,7 +51,7 @@ export interface ModelDownloadOptions {
   script: string;
   resolveInstallation: () => Promise<ComfyInstallation>;
   /** Called when a download finishes, so model lists and kinds can be refreshed. */
-  onFinished?: (download: ModelDownload, plan: CivitaiDownloadPlan, server: ModelServer) => void;
+  onFinished?: (download: ModelDownload, plan: DownloadPlan, server: ModelServer) => void;
   fetchFn?: typeof fetch;
   spawnFn?: typeof spawn;
   pollMs?: number;
@@ -65,6 +72,11 @@ export class ModelDownloadService {
     return [...this.downloads.values()].sort((a, b) => b.startedAt - a.startedAt).map((entry) => ({ ...entry }));
   }
 
+  /** The most recent download of this file to this server, if any. */
+  find(serverId: string, filename: string): ModelDownload | undefined {
+    return this.list().find((entry) => entry.serverId === serverId && entry.filename === filename);
+  }
+
   cancel(id: string): void {
     this.cancels.get(id)?.();
   }
@@ -80,7 +92,7 @@ export class ModelDownloadService {
     }
   }
 
-  start(server: ModelServer, plan: CivitaiDownloadPlan, civitaiKey: string | undefined): ModelDownload {
+  start(server: ModelServer, plan: DownloadPlan, civitaiKey: string | undefined): ModelDownload {
     if (server.type !== 'comfy') throw new Error('Models download to ComfyUI servers.');
     const busy = [...this.downloads.values()].find(
       (entry) => entry.serverId === server.id && entry.filename === plan.file.name && (entry.state === 'queued' || entry.state === 'downloading' || entry.state === 'verifying'),
@@ -121,7 +133,7 @@ export class ModelDownloadService {
     if (status.error) download.error = status.error;
   }
 
-  private async runHere(download: ModelDownload, plan: CivitaiDownloadPlan, civitaiKey: string | undefined): Promise<void> {
+  private async runHere(download: ModelDownload, plan: DownloadPlan, civitaiKey: string | undefined): Promise<void> {
     const install = await this.options.resolveInstallation();
     const args = [
       this.options.script,
@@ -135,8 +147,7 @@ export class ModelDownloadService {
       '--url',
       plan.file.downloadUrl,
       ...(plan.file.sha256 ? ['--sha256', plan.file.sha256] : []),
-      '--info',
-      JSON.stringify(plan.info),
+      ...(plan.info ? ['--info', JSON.stringify(plan.info)] : []),
     ];
     const child = (this.options.spawnFn ?? spawn)(install.python, args, {
       // The key goes through the environment, never the command line.
@@ -175,7 +186,7 @@ export class ModelDownloadService {
     }
   }
 
-  private async runThere(download: ModelDownload, server: ModelServer, plan: CivitaiDownloadPlan, civitaiKey: string | undefined): Promise<void> {
+  private async runThere(download: ModelDownload, server: ModelServer, plan: DownloadPlan, civitaiKey: string | undefined): Promise<void> {
     const fetchFn = this.options.fetchFn ?? fetch;
     let response: Response;
     try {
