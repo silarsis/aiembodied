@@ -17,6 +17,11 @@ function pythonFailure(output: string): string | undefined {
     .slice(0, 500);
 }
 
+export interface FrontCheck {
+  backgroundOk: boolean;
+  figures: number | null;
+}
+
 export interface CharacterRigRunner {
   assertAvailable(): Promise<void>;
   inspectReference?(landmarksPath: string): Promise<AvatarGenerationWarning[]>;
@@ -25,8 +30,13 @@ export interface CharacterRigRunner {
     outputPath: string;
     signal: AbortSignal;
   }): Promise<string>;
-  /** Cut the character out of the image onto plain white (only when the user asks). */
+  /** Cut the character out of the image onto plain white. */
   removeBackground?(input: { imagePath: string; outputPath: string; signal: AbortSignal }): Promise<void>;
+  /**
+   * Quick checks on a front image: whether its background is light and neutral enough to find
+   * the figure, and how many characters stand side by side (null when the background isn't).
+   */
+  checkFront?(input: { imagePath: string; signal: AbortSignal }): Promise<FrontCheck>;
   /**
    * Paint the front, left-side and back images onto an untextured mesh (Hunyuan3D), writing a
    * textured GLB for build(). Views that are missing are left out.
@@ -133,6 +143,26 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
         stderr.match(/BACKGROUND_ERROR: ([^\r\n]+)/)?.[1] ?? (error instanceof Error ? error.message : 'Background removal failed.');
       throw new Error(`The background could not be removed: ${reason}`);
     });
+  }
+
+  async checkFront(input: { imagePath: string; signal: AbortSignal }): Promise<FrontCheck> {
+    if (!this.facePython) await this.assertAvailable();
+    const { stdout } = await promisify(execFile)(
+      this.facePython,
+      [path.join(path.dirname(this.scriptPath), 'check-front.py'), '--image', input.imagePath],
+      { windowsHide: true, signal: input.signal, timeout: 60_000, maxBuffer: 1024 * 1024, env: this.env },
+    ).catch((error: unknown) => {
+      if (input.signal.aborted) throw new Error('Cancelled.');
+      const stderr = error && typeof error === 'object' && 'stderr' in error ? String(error.stderr) : '';
+      const reason =
+        stderr.match(/FRONT_CHECK_ERROR: ([^\r\n]+)/)?.[1] ?? (error instanceof Error ? error.message : 'The check failed.');
+      throw new Error(`The front image could not be checked: ${reason}`);
+    });
+    const result = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) ?? '{}') as Partial<FrontCheck>;
+    return {
+      backgroundOk: result.backgroundOk === true,
+      figures: typeof result.figures === 'number' ? result.figures : null,
+    };
   }
 
   async paintViews(input: {

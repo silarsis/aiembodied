@@ -3,7 +3,8 @@ import { promisify } from 'node:util';
 import type { MemoryStore } from '../../memory/index.js';
 import { resolveComfyInstallation } from './comfyui-runtime.js';
 import type { ImageFamily, ImageWorkflowModel } from './image-workflows.js';
-import type { AvatarImageModelSelection, AvatarImageModelSummary, AvatarLoraChoice, AvatarLoraSummary } from '../types.js';
+import { POSE_CONTROLNETS, poseSupport } from './pose-control.js';
+import type { AvatarImageModelSelection, AvatarImageModelSummary, AvatarImagePoseControl, AvatarLoraChoice, AvatarLoraSummary } from '../types.js';
 
 export interface ImageModelFile {
   folder: string;
@@ -68,15 +69,37 @@ interface Entry {
 /** Installed files determine the choices; only a known compatible family can execute a job. */
 const LORAS_KEY = 'avatar.imageLoras';
 
+type PoseFamily = keyof typeof POSE_CONTROLNETS;
+/** Installs a family's pose ControlNet on the image step's ComfyUI server. */
+export interface PoseControlInstaller {
+  /** The last download of that ControlNet to the image server, if any. */
+  status(family: PoseFamily): { state: 'downloading' | 'done' | 'failed'; error?: string } | null;
+  /** Start downloading it; false when this server can't (another machine without the add-on). */
+  install(family: PoseFamily): Promise<boolean>;
+}
+
+const POSE_NOTES: Record<AvatarImagePoseControl, string> = {
+  guided: 'The pose is held by an A-pose skeleton, so the arms stay clear of the body.',
+  installing: 'Downloading pose control. Until it is ready, the pose comes from the prompt alone.',
+  failed: 'Pose control could not be downloaded, so the pose comes from the prompt alone. Choosing this model again retries.',
+  unavailable: 'This ComfyUI server cannot download pose control, so the pose comes from the prompt alone.',
+  none: 'No pose control for this kind of model yet. The pose comes from the prompt alone, so check the arms are clear of the body.',
+};
+
 export class AvatarImageModelService {
   private entries: Entry[] = [];
   private loras: AvatarLoraSummary[] = [];
   private chosenLoras: AvatarLoraChoice[] = [];
   private pending: Promise<void> | null = null;
   private selected: string | null = null;
+  /** The installed pose ControlNet of each family. */
+  private poseNets: Partial<Record<PoseFamily, string>> = {};
+  /** Families whose pose ControlNet this server can't download. */
+  private readonly poseUnavailable = new Set<PoseFamily>();
   constructor(
     private readonly scan: () => Promise<ImageModelFile[]>,
     private readonly store?: Pick<MemoryStore, 'getValue' | 'setValue'>,
+    private readonly poseInstaller?: PoseControlInstaller,
   ) {}
 
   private async refresh(): Promise<void> {
@@ -144,6 +167,16 @@ export class AvatarImageModelService {
             ...(Array.isArray(file.triggerWords) ? { triggerWords: file.triggerWords.filter((word) => typeof word === 'string') } : {}),
           }))
           .sort((a, b) => (a.title ?? a.name).localeCompare(b.title ?? b.name));
+        // The app's own pose ControlNet, else any installed OpenPose ControlNet of the family.
+        const nets = files.filter((file) => file.folder === 'controlnet' && file.kind === 'controlnet');
+        this.poseNets = {};
+        for (const family of Object.keys(POSE_CONTROLNETS) as PoseFamily[]) {
+          const ofFamily = nets.filter((file) => file.family === family);
+          const name =
+            ofFamily.find((file) => file.name === POSE_CONTROLNETS[family].filename)?.name ??
+            ofFamily.find((file) => /open_?pose/i.test(file.name))?.name;
+          if (name) this.poseNets[family] = name;
+        }
       })
       .finally(() => {
         this.pending = null;
@@ -177,12 +210,49 @@ export class AvatarImageModelService {
       return [];
     }
   }
+  private poseControl(family: ImageFamily): AvatarImagePoseControl {
+    const support = poseSupport(family);
+    if (support === 'reference') return 'guided';
+    if (support !== 'controlnet') return support;
+    const poseFamily = family as PoseFamily;
+    if (this.poseNets[poseFamily]) return 'guided';
+    if (this.poseUnavailable.has(poseFamily) || !this.poseInstaller) return 'unavailable';
+    return this.poseInstaller.status(poseFamily)?.state === 'failed' ? 'failed' : 'installing';
+  }
+
+  /**
+   * Make sure a family's pose ControlNet is installed or on its way. Called when a model of that
+   * family is chosen or installed; a failed download is tried again only when retry is set.
+   */
+  async ensurePoseControl(family: ImageFamily, retry = true, scanned = false): Promise<void> {
+    if (poseSupport(family) !== 'controlnet' || !this.poseInstaller) return;
+    const poseFamily = family as PoseFamily;
+    if (!scanned) await this.refresh();
+    if (this.poseNets[poseFamily]) return;
+    const last = this.poseInstaller.status(poseFamily)?.state;
+    if (last === 'downloading' || (last === 'failed' && !retry)) return;
+    if (last === 'done') {
+      // It finished after the scan that was already running; look again before downloading twice.
+      await this.refresh();
+      if (this.poseNets[poseFamily]) return;
+    }
+    if (await this.poseInstaller.install(poseFamily)) this.poseUnavailable.delete(poseFamily);
+    else this.poseUnavailable.add(poseFamily);
+  }
+
   async list(): Promise<AvatarImageModelSelection> {
     await this.refresh();
+    const selectedModelId = this.current();
+    const selected = this.entries.find((entry) => entry.model.id === selectedModelId);
+    // The chosen model's pose control is set up without anyone having to ask for it.
+    if (selected) await this.ensurePoseControl(selected.model.family, false, true).catch(() => undefined);
     const installed = new Set(this.loras.map((lora) => lora.name));
     return {
-      models: this.entries.map((entry) => ({ ...entry.summary })),
-      selectedModelId: this.current(),
+      models: this.entries.map((entry) => {
+        const poseControl = this.poseControl(entry.model.family);
+        return { ...entry.summary, poseControl, poseNote: POSE_NOTES[poseControl] };
+      }),
+      selectedModelId,
       modelFamilies: Object.fromEntries(this.entries.map((entry) => [entry.model.id, entry.model.family])),
       loras: this.loras.map((lora) => ({ ...lora })),
       selectedLoras: this.savedLoras().filter((choice) => installed.has(choice.name)),
@@ -198,9 +268,10 @@ export class AvatarImageModelService {
     this.store?.setValue(LORAS_KEY, JSON.stringify(clean));
   }
   async select(id: string): Promise<void> {
-    await this.resolve(id);
+    const model = await this.resolve(id);
     this.store?.setValue('avatar.imageModel', id);
     this.selected = id;
+    await this.ensurePoseControl(model.family, true, true).catch(() => undefined);
   }
   /**
    * The Qwen-Image model that draws a character's side and back views (an image edit, which only
@@ -231,7 +302,8 @@ export class AvatarImageModelService {
       if (!lora || lora.family !== entry.model.family || choice.strength <= 0) return [];
       return [{ name: lora.name, strength: choice.strength, ...(lora.triggerWords?.length ? { triggerWords: lora.triggerWords } : {}) }];
     });
-    return { ...entry.model, ...(loras.length ? { loras } : {}) };
+    const poseControlNet = this.poseNets[entry.model.family as PoseFamily];
+    return { ...entry.model, ...(loras.length ? { loras } : {}), ...(poseControlNet ? { poseControlNet } : {}) };
   }
 }
 
@@ -250,7 +322,7 @@ export function createRemoteComfyModelScanner(
       .then(async (response) => (response.ok ? ((await response.json()) as unknown) : null))
       .catch(() => null);
     if (Array.isArray(described) && described.every(isModelFile)) return described;
-    const folders = ['diffusion_models', 'text_encoders', 'vae', 'checkpoints', 'loras'] as const;
+    const folders = ['diffusion_models', 'text_encoders', 'vae', 'checkpoints', 'loras', 'controlnet'] as const;
     const listed = await Promise.all(
       folders.map(async (folder) => {
         const response = await fetchFn(`${root}/models/${folder}`, { signal: AbortSignal.timeout(10_000) });
@@ -272,6 +344,7 @@ export function createRemoteComfyModelScanner(
           folder,
           name,
           kind,
+          ...(folder === 'controlnet' ? { family: remoteControlNetFamily(name) } : {}),
           ...(folder === 'checkpoints' ? { embeddedVae: true, embeddedClip: true, embeddedClip2: kind === 'sdxl' } : {}),
         });
       }
@@ -307,9 +380,16 @@ export function remoteModelKind(folder: string, name: string): string | null {
     if (lower.includes('hunyuan3d')) return /(^|[^a-z])(2_?)?mv([^a-z]|$)/.test(lower) ? 'hunyuan3d-2mv' : null;
     return /xl/.test(lower) ? 'sdxl' : 'sd1';
   }
+  // Without the add-on only the app's own pose ControlNets are recognised, by their names.
+  if (folder === 'controlnet') return remoteControlNetFamily(name) ? 'controlnet' : null;
   // Without the add-on a LoRA's family can't be read, so it is listed but never applied.
   if (folder === 'loras') return /\.safetensors$/.test(lower) ? 'lora' : null;
   return null;
+}
+
+function remoteControlNetFamily(name: string): PoseFamily | undefined {
+  const base = name.split('/').at(-1);
+  return (Object.keys(POSE_CONTROLNETS) as PoseFamily[]).find((family) => POSE_CONTROLNETS[family].filename === base);
 }
 
 function isModelFile(value: unknown): value is ImageModelFile {

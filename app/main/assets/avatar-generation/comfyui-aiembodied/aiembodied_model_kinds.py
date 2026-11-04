@@ -87,6 +87,21 @@ def lora_family(header):
     return None
 
 
+def controlnet_family(header):
+    """sd1 or sdxl for a ControlNet (original or diffusers layout), from its cross-attention width."""
+    keys = [k for k in header if k != "__metadata__"]
+    if not any("input_hint_block" in k or "controlnet_cond_embedding" in k for k in keys):
+        return None
+    for key in keys:
+        if "attn2.to_k.weight" in key and isinstance(header[key], dict):
+            shape = header[key].get("shape", [])
+            if len(shape) == 2 and shape[1] == 768:
+                return "sd1"
+            if len(shape) == 2 and shape[1] == 2048:
+                return "sdxl"
+    return None
+
+
 def info_path(full_path):
     return os.path.splitext(full_path)[0] + INFO_SUFFIX
 
@@ -166,6 +181,10 @@ def describe(folder, name, full_path):
             if saved.get("name"):
                 entry["title"] = saved["name"]
             return entry
+        if folder == "controlnet":
+            # Only SD1.5/SDXL ControlNets are used (to hold the avatar's pose); their family comes from the tensors.
+            family = controlnet_family(header)
+            return {"folder": folder, "name": name.replace("\\", "/"), "kind": "controlnet", "family": family} if family else None
         info = signature(header, name)
         if not info["kind"]:
             info["kind"] = trellis_kind(folder, name)
@@ -185,7 +204,7 @@ def describe(folder, name, full_path):
 
 def scan(folder_paths):
     result = []
-    for folder in ("diffusion_models", "checkpoints", "text_encoders", "vae", "loras"):
+    for folder in ("diffusion_models", "checkpoints", "text_encoders", "vae", "loras", "controlnet"):
         try:
             names = folder_paths.get_filename_list(folder)
         except KeyError:

@@ -24,8 +24,11 @@ export function usesViews(model: GeometryModel | undefined): boolean {
 export interface RigModel {
   id: string;
   name: string;
-  /** fitted: MediaPipe face topology. stylised: a vision model's feature boxes bend the head's painted face. */
-  face: 'fitted' | 'stylised';
+  /**
+   * How the rig gives the head a face: fitted to human face landmarks found on the front image
+   * (the default), or stylised, found on the built head itself, so the front needs no human face.
+   */
+  face?: 'fitted' | 'stylised';
   /** Stylised only: the ComfyUI text encoder file that answers where the features are. */
   visionModel?: string;
 }

@@ -85,6 +85,24 @@ class ModelKindTests(unittest.TestCase):
         with open(os.path.join(root, "cyberpunk.aiembodied.json")) as stream:
             self.assertNotIn("junk", json.load(stream))
 
+    def test_lists_controlnets_with_their_family_in_either_layout(self):
+        root = tempfile.mkdtemp()
+        write_safetensors(os.path.join(root, "openpose15.safetensors"), {
+            "control_model.input_hint_block.0.weight": {"shape": [16, 3, 3, 3]},
+            "control_model.input_blocks.1.1.transformer_blocks.0.attn2.to_k.weight": {"shape": [320, 768]},
+        })
+        write_safetensors(os.path.join(root, "openpose_xl.safetensors"), {
+            "controlnet_cond_embedding.conv_in.weight": {"shape": [16, 3, 3, 3]},
+            "down_blocks.1.attentions.0.transformer_blocks.0.attn2.to_k.weight": {"shape": [640, 2048]},
+        })
+        # A Flux or Qwen ControlNet has no cross-attention of a known width: not offered.
+        write_safetensors(os.path.join(root, "other.safetensors"), {"controlnet_cond_embedding.weight": {"shape": [1]}})
+        paths = FakeFolderPaths(root, {"controlnet": ["openpose15.safetensors", "openpose_xl.safetensors", "other.safetensors"]})
+        self.assertEqual(model_kinds.scan(paths), [
+            {"folder": "controlnet", "name": "openpose15.safetensors", "kind": "controlnet", "family": "sd1"},
+            {"folder": "controlnet", "name": "openpose_xl.safetensors", "kind": "controlnet", "family": "sdxl"},
+        ])
+
 
 if __name__ == "__main__":
     unittest.main()
