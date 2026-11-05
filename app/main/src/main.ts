@@ -97,6 +97,7 @@ import { createChatCompletionsResponsesClient } from './openai/chat-completions-
 import { BUILT_IN_SERVER_IDS, databaseUrlWithPassword, routeTargets, serverUrl, USE_SERVER_TYPES, type ModelRoute, type ServerType, type UseId } from './config/model-routing.js';
 import { probeMemoryDatabase, probeModelServer } from './config/model-server-probe.js';
 import { ComfyUIPool } from './avatar/generation/comfyui-pool.js';
+import { LocalLlmControl } from './local-voice/local-llm-control.js';
 import { MCPManager } from './mcp/mcp-manager.js';
 import { ToolRegistry } from './tools/tool-registry.js';
 import { createRoutedSearchProvider, createWebSearchTool, WEB_SEARCH_TOOL_ID } from './tools/web-search.js';
@@ -1703,6 +1704,14 @@ app.whenReady().then(async () => {
       imageModels: avatarImageModels,
       characterModels: avatarCharacterModels,
       characterRunner,
+      localLlm: new LocalLlmControl({
+        baseUrl: () => {
+          const server = routeTargets(manager.getConfig().models, 'llm')[0]?.server;
+          return server?.id === 'local-llm' ? serverUrl(server.type, server.url) : null;
+        },
+        repoRoot: path.resolve(__dirname, '../../..'),
+        logDirectory: path.join(app.getPath('userData'), 'logs'),
+      }),
       logger,
     });
   }

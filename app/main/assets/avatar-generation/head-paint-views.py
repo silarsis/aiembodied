@@ -53,7 +53,7 @@ def check_memory():
     ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status))
     free = status.ullAvailPageFile / 2**30
     if free < args.min_free_gb:
-        raise RuntimeError(f"Only {free:.0f} GB of memory is free and this needs {args.min_free_gb:.0f} GB. Stopping the local LLM server would free the most.")
+        raise RuntimeError(f"Only {free:.0f} GB of memory is free and this needs {args.min_free_gb:.0f} GB. Close other large models and try again.")
 
 
 def find_checkpoint(name):

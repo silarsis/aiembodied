@@ -16,9 +16,9 @@ MV-Adapter's own rasteriser needs NVIDIA, so Blender renders the geometry instea
 `head-paint-fuse.py` the bake.
 
 A run takes about 6 minutes on a Radeon 8060S and peaks at about 20 GB of GPU memory. It won't start with
-under 40 GB of memory free, because on bija too many GPU jobs at once crashed the PC. With the local LLM
-server loaded it usually won't have that, so the build keeps today's painting and says so. Any failure
-does the same: this step never stops a build.
+under 40 GB of memory free, because on bija too many GPU jobs at once crashed the PC. The app stops this
+PC's LLM server first (about 130 GB) and starts it again when the build ends, so the assistant can't answer
+until it has reloaded. Any failure keeps today's painting and says why: this step never stops a build.
 
 ## Why only the front of the head
 

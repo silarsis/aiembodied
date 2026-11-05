@@ -70,6 +70,8 @@ export interface AvatarGenerationServiceOptions {
   characterRunner?: CharacterRigRunner;
   imageModels?: Pick<AvatarImageModelService, 'resolve'> &
     Partial<Pick<AvatarImageModelService, 'resolveViewModel' | 'list'>>;
+  /** This PC's LLM server, stopped for the head close-up and started again when the build ends. */
+  localLlm?: { stop(): Promise<boolean>; start(): void };
   /** Chooses the 3D geometry and rig models; the workflow defaults run without it. */
   characterModels?: Pick<AvatarCharacterModelService, 'resolveGeometry' | 'resolveRig'>;
   logger?: {
@@ -80,6 +82,8 @@ export interface AvatarGenerationServiceOptions {
 }
 
 interface JobState {
+  /** This build stopped the LLM server and owes a restart. */
+  llmStopped?: boolean;
   /** The ComfyUI server that drew the concept, and the one the build stage runs on. */
   imageComfy?: ComfyUIClient;
   buildComfy?: ComfyUIClient;
@@ -630,7 +634,14 @@ export class AvatarGenerationService {
         skipped('There is no SDXL model in ComfyUI to draw it with.');
         return;
       }
+      await runner.assertHeadPaintReady?.();
       this.update(job, { progress: 0.68, message: 'Repainting the face for a cleaner close-up' });
+      job.llmStopped = (await this.options.localLlm?.stop().catch((error: unknown) => {
+        this.options.logger?.warn?.('Could not stop the local LLM server.', {
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return false;
+      })) === true;
       const output = path.join(job.directory, 'source-head.glb');
       await runner.paintHead({
         meshPath,
@@ -941,6 +952,11 @@ export class AvatarGenerationService {
         message,
       });
       this.update(job, { status: 'failed', message: 'Generation failed', errorMessage: message });
+    } finally {
+      if (job.llmStopped) {
+        job.llmStopped = false;
+        this.options.localLlm?.start();
+      }
     }
   }
 }

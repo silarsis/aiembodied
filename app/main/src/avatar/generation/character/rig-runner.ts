@@ -50,6 +50,8 @@ export interface CharacterRigRunner {
     back?: string;
     signal: AbortSignal;
   }): Promise<void>;
+  /** Throws, saying why, when paintHead has no chance of running. */
+  assertHeadPaintReady?(): Promise<void>;
   /**
    * Repaint the front of the head of a painted model with MV-Adapter, writing a new GLB. Throws
    * when it can't, and the painted model is still good then.
@@ -230,6 +232,14 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
     });
   }
 
+  async assertHeadPaintReady(): Promise<void> {
+    const root = path.resolve(this.env.AVATAR_PAINT_DIR || 'services/avatar-paint');
+    await access(path.join(root, 'models', 'mvadapter_ig2mv_sdxl.safetensors')).catch(() => {
+      throw new Error('Not set up. Run pnpm avatar:paint:setup.');
+    });
+    await resolveComfyInstallation(this.env);
+  }
+
   async paintHead(input: {
     meshPath: string;
     outputPath: string;
@@ -241,10 +251,8 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
     if (!this.executable) await this.assertAvailable();
     const executable = this.executable;
     if (!executable) throw new Error('Blender is unavailable.');
+    await this.assertHeadPaintReady();
     const root = path.resolve(this.env.AVATAR_PAINT_DIR || 'services/avatar-paint');
-    await access(path.join(root, 'models', 'mvadapter_ig2mv_sdxl.safetensors')).catch(() => {
-      throw new Error('Not set up. Run pnpm avatar:paint:setup.');
-    });
     const { python, directory, modelPaths, env } = await resolveComfyInstallation(this.env);
     const assets = path.dirname(this.scriptPath);
     const work = path.join(path.dirname(input.outputPath), 'head-paint');

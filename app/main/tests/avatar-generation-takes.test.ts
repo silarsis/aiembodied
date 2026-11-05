@@ -582,6 +582,55 @@ describe('side and back views for multi-view 3D models', () => {
       expect(service.getStatus(jobId).headPaint).toEqual({ painted: false, reason: 'Only 6 GB of memory is free.' });
     });
 
+    it('stops the LLM for the close-up, and starts it again only when the build has ended', async () => {
+      const setup = await viewSetup(true, xl);
+      const events: string[] = [];
+      Object.assign(setup.characterRunner, {
+        paintHead: vi.fn(async (input: { outputPath: string }) => {
+          events.push('paint');
+          await writeFile(input.outputPath, 'HEAD');
+        }),
+      });
+      setup.characterRunner.build.mockImplementation(async (input: { outputPath: string }) => {
+        events.push('rig');
+        await writeFile(input.outputPath, 'VRM');
+        return Buffer.from('VRM');
+      });
+      const service = (setup.service as unknown as { options: { localLlm: unknown } }).options;
+      service.localLlm = {
+        stop: vi.fn(async () => {
+          events.push('stop');
+          return true;
+        }),
+        start: vi.fn(() => events.push('start')),
+      };
+      const { jobId } = await setup.service.startJob({ prompt: 'Auburn explorer' });
+      await vi.waitFor(() => expect(setup.service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+      await setup.service.confirmConcept(jobId);
+      await vi.waitFor(() => expect(events).toEqual(['stop', 'paint', 'rig', 'start']));
+    });
+
+    it('starts the LLM again after a failed close-up and does not touch it when not set up', async () => {
+      const setup = await viewSetup(true, xl);
+      const start = vi.fn();
+      const stop = vi.fn(async () => true);
+      Object.assign(setup.characterRunner, { paintHead: vi.fn(() => Promise.reject(new Error('Out of memory'))) });
+      (setup.service as unknown as { options: { localLlm: unknown } }).options.localLlm = { stop, start };
+      const { jobId } = await setup.service.startJob({ prompt: 'Auburn explorer' });
+      await vi.waitFor(() => expect(setup.service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+      await setup.service.confirmConcept(jobId);
+      await vi.waitFor(() => expect(setup.service.getStatus(jobId).status).toBe('completed'));
+      await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+
+      stop.mockClear();
+      start.mockClear();
+      Object.assign(setup.characterRunner, { assertHeadPaintReady: vi.fn(() => Promise.reject(new Error('Not set up.'))) });
+      await setup.service.confirmConcept(jobId);
+      await vi.waitFor(() => expect(setup.service.getStatus(jobId).headPaint?.reason).toBe('Not set up.'));
+      expect(stop).not.toHaveBeenCalled();
+      expect(start).not.toHaveBeenCalled();
+    });
+
     it('skips the close-up without an SDXL model', async () => {
       const setup = await viewSetup();
       const paintHead = vi.fn();
