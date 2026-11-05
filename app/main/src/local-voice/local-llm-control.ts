@@ -64,6 +64,8 @@ export class LocalLlmControl {
         `$id = Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess;`,
         `if ($id) { $process = Get-Process -Id $id -ErrorAction SilentlyContinue;`,
         `if ($process -and $process.ProcessName -eq 'llama-server') { Stop-Process -Id $id -Force; Wait-Process -Id $id -Timeout 30 -ErrorAction SilentlyContinue; 'stopped' } }`,
+        // Finding no listener still leaves a failure status behind.
+        'exit 0',
       ].join(' '),
     );
     return output.includes('stopped');
