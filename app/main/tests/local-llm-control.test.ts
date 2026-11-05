@@ -1,0 +1,72 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { LocalLlmControl, type LocalLlmControlOptions } from '../src/local-voice/local-llm-control.js';
+
+const folders: string[] = [];
+afterEach(async () => {
+  await Promise.all(folders.splice(0).map((folder) => rm(folder, { recursive: true, force: true })));
+});
+
+async function control(overrides: Partial<LocalLlmControlOptions> = {}, withScript = true) {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), 'llm-control-'));
+  folders.push(repoRoot);
+  if (withScript) {
+    await mkdir(path.join(repoRoot, 'scripts'));
+    await writeFile(path.join(repoRoot, 'scripts', 'start-local-llm.ps1'), '');
+  }
+  const powershell = vi.fn(async () => 'stopped\r\n');
+  const launch = vi.fn();
+  const llm = new LocalLlmControl({
+    baseUrl: () => 'http://127.0.0.1:1234/v1',
+    repoRoot,
+    logDirectory: path.join(repoRoot, 'logs'),
+    platform: 'win32',
+    powershell,
+    launch,
+    ...overrides,
+  });
+  return { llm, powershell, launch };
+}
+
+describe('LocalLlmControl', () => {
+  it('stops only llama-server on the configured port', async () => {
+    const { llm, powershell } = await control();
+    await expect(llm.stop()).resolves.toBe(true);
+    const command = powershell.mock.calls[0] as unknown as [string];
+    expect(command[0]).toContain('-LocalPort 1234');
+    expect(command[0]).toContain("ProcessName -eq 'llama-server'");
+  });
+
+  it('reports false when nothing was stopped', async () => {
+    const { llm } = await control({ powershell: async () => '' });
+    await expect(llm.stop()).resolves.toBe(false);
+  });
+
+  it.each([
+    ['another machine', { baseUrl: () => 'http://192.168.1.5:1234/v1' }],
+    ['no local server in use', { baseUrl: () => null }],
+    ['another platform', { platform: 'linux' }],
+  ])('leaves it alone with %s', async (_name, overrides) => {
+    const { llm, powershell } = await control(overrides);
+    await expect(llm.stop()).resolves.toBe(false);
+    expect(powershell).not.toHaveBeenCalled();
+  });
+
+  it("doesn't stop what it couldn't start again", async () => {
+    const { llm, powershell } = await control({}, false);
+    await expect(llm.stop()).resolves.toBe(false);
+    expect(powershell).not.toHaveBeenCalled();
+  });
+
+  it('starts it again with the start script on the same port', async () => {
+    const { llm, launch } = await control();
+    llm.start();
+    const command = (launch.mock.calls[0] as [string])[0];
+    expect(command).toContain('start-local-llm.ps1');
+    expect(command).toContain('"-Port"');
+    expect(command).toContain('"1234"');
+    expect(command).toContain('-WindowStyle Hidden');
+  });
+});

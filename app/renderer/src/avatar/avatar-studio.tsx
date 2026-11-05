@@ -826,6 +826,9 @@ export function AvatarStudio({
             <small role="status">{`Drawn ${selected.frontCheck.attempts} times; the earlier fronts showed more than one character or no usable face.`}</small>
           ) : null
         ) : null}
+        {selected.headPaint && !selected.headPaint.painted && !RUNNING.has(selected.status) ? (
+          <small role="status">{`Built with the standard face painting, without the close-up: ${selected.headPaint.reason ?? 'it could not run.'}`}</small>
+        ) : null}
         {warnings}
         {selected.source !== 'upload' ? (
           <div className="avatarStudio__row">
