@@ -3,7 +3,7 @@
  * restyle the bundled VRM. Candidates stay separate from the active model until accepted.
  */
 import { randomInt, randomUUID } from 'node:crypto';
-import { access, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ComfyUIClient } from './comfyui-client.js';
 import {
@@ -69,7 +69,7 @@ export interface AvatarGenerationServiceOptions {
   runner?: RetextureRunner;
   characterRunner?: CharacterRigRunner;
   imageModels?: Pick<AvatarImageModelService, 'resolve'> &
-    Partial<Pick<AvatarImageModelService, 'resolveViewModel'>>;
+    Partial<Pick<AvatarImageModelService, 'resolveViewModel' | 'list'>>;
   /** Chooses the 3D geometry and rig models; the workflow defaults run without it. */
   characterModels?: Pick<AvatarCharacterModelService, 'resolveGeometry' | 'resolveRig'>;
   logger?: {
@@ -608,6 +608,56 @@ export class AvatarGenerationService {
     job.status = { ...job.status, ...patch };
   }
 
+  /**
+   * Repaint the front of the head, where the three drawings disagree most. It's an extra: whatever
+   * goes wrong, the painted model is still good, and the job says why the close-up was left out.
+   */
+  private async paintHead(
+    job: JobState,
+    runner: CharacterRigRunner,
+    meshPath: string,
+    reference: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    if (!runner.paintHead) return;
+    const skipped = (reason: string) => {
+      this.options.logger?.warn?.('Avatar head close-up skipped.', { jobId: job.status.jobId, reason });
+      this.update(job, { headPaint: { painted: false, reason } });
+    };
+    try {
+      const checkpoint = await this.headCheckpoint(job);
+      if (!checkpoint) {
+        skipped('There is no SDXL model in ComfyUI to draw it with.');
+        return;
+      }
+      this.update(job, { progress: 0.68, message: 'Repainting the face for a cleaner close-up' });
+      const output = path.join(job.directory, 'source-head.glb');
+      await runner.paintHead({
+        meshPath,
+        outputPath: output,
+        reference,
+        prompt: job.prompt,
+        checkpoint,
+        signal,
+      });
+      await rename(meshPath, path.join(job.directory, 'source-painted.glb'));
+      await rename(output, meshPath);
+      this.update(job, { headPaint: { painted: true } });
+    } catch (error) {
+      if (signal.aborted) throw error;
+      skipped(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /** The front's own model when it's SDXL, else the first SDXL model installed. */
+  private async headCheckpoint(job: JobState): Promise<string | undefined> {
+    if (job.imageModel?.family === 'sdxl') return job.imageModel.model;
+    const models = await this.options.imageModels?.list?.call(this.options.imageModels);
+    const families = models?.modelFamilies ?? {};
+    const id = Object.keys(families).find((key) => families[key] === 'sdxl');
+    return id?.slice(id.indexOf(':') + 1);
+  }
+
   /** The ComfyUI server for a stage, started and checked. */
   private async comfyFor(stage: 'image' | 'mesh'): Promise<ComfyUIClient> {
     if (this.options.pickComfy) return this.options.pickComfy(stage);
@@ -711,6 +761,7 @@ export class AvatarGenerationService {
           throw new Error('Painting views onto the model is unavailable. Choose TRELLIS.2 instead.');
         this.update(job, {
           status: 'meshing',
+          headPaint: undefined,
           progress: 0.2,
           message: painted
             ? 'Generating the 3D shape from the front, side and back views'
@@ -750,14 +801,16 @@ export class AvatarGenerationService {
                 return source;
               });
           };
+          const front = await cut('front', 'concept.png', job.status.backgroundRemoved === true);
           await runner.paintViews({
             meshPath: shapePath,
             outputPath: meshPath,
-            front: await cut('front', 'concept.png', job.status.backgroundRemoved === true),
+            front,
             ...(images.left ? { left: await cut('left', 'view-left.png') } : {}),
             ...(images.back ? { back: await cut('back', 'view-back.png') } : {}),
             signal,
           });
+          await this.paintHead(job, runner, meshPath, front, signal);
         } else {
           await writeFile(meshPath, mesh);
         }

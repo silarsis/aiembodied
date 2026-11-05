@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -539,6 +539,72 @@ describe('side and back views for multi-view 3D models', () => {
     expect(trellis.image.inputs.image).toBe(`up-${jobId}-concept.png`);
     expect(JSON.stringify(trellis)).not.toMatch(/-(left|back)\.png/);
     expect(characterRunner.paintViews).toHaveBeenCalledTimes(1);
+  });
+
+  describe('the head close-up', () => {
+    const models = { list: vi.fn(async () => ({ models: [], selectedModelId: null, modelFamilies: { 'diffusion_models:qwen.safetensors': 'qwen-image-2.1', 'checkpoints:nova.safetensors': 'sdxl' }, loras: [], selectedLoras: [] })) };
+
+    async function build(paintHead: (input: { outputPath: string }) => Promise<void>, front: typeof qwen | typeof xl = qwen) {
+      const setup = await viewSetup(true, front);
+      Object.assign(setup.characterRunner, { paintHead: vi.fn(paintHead) });
+      Object.assign(setup.imageModels, models);
+      const { jobId } = await setup.service.startJob({ prompt: 'Auburn explorer' });
+      await vi.waitFor(() => expect(setup.service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+      await setup.service.confirmConcept(jobId);
+      await vi.waitFor(() => expect(setup.service.getStatus(jobId).status).toBe('completed'));
+      const runner = setup.characterRunner as typeof setup.characterRunner & { paintHead: ReturnType<typeof vi.fn> };
+      return { ...setup, characterRunner: runner, jobId };
+    }
+    const built = (characterRunner: { build: ReturnType<typeof vi.fn> }) =>
+      readFile((characterRunner.build.mock.calls[0][0] as { meshPath: string }).meshPath, 'utf8');
+
+    it('rigs the repainted model, drawn with an installed SDXL model', async () => {
+      const { service, characterRunner, jobId } = await build((input) => writeFile(input.outputPath, 'HEAD'));
+      expect(characterRunner.paintHead).toHaveBeenCalledWith(
+        expect.objectContaining({
+          meshPath: expect.stringMatching(/source\.glb$/),
+          reference: expect.stringMatching(/paint-front\.png$/),
+          checkpoint: 'nova.safetensors',
+        }),
+      );
+      expect(await built(characterRunner)).toBe('HEAD');
+      expect(service.getStatus(jobId).headPaint).toEqual({ painted: true });
+    });
+
+    it("prefers the front's own model when it is SDXL", async () => {
+      const { characterRunner } = await build((input) => writeFile(input.outputPath, 'HEAD'), xl);
+      expect(characterRunner.paintHead).toHaveBeenCalledWith(expect.objectContaining({ checkpoint: 'xl.safetensors' }));
+    });
+
+    it('keeps the painted model and says why when the close-up fails', async () => {
+      const { service, characterRunner, jobId } = await build(() => Promise.reject(new Error('Only 6 GB of memory is free.')));
+      expect(await built(characterRunner)).toBe('PAINTED');
+      expect(service.getStatus(jobId).headPaint).toEqual({ painted: false, reason: 'Only 6 GB of memory is free.' });
+    });
+
+    it('skips the close-up without an SDXL model', async () => {
+      const setup = await viewSetup();
+      const paintHead = vi.fn();
+      Object.assign(setup.characterRunner, { paintHead });
+      const { jobId } = await setup.service.startJob({ prompt: 'Auburn explorer' });
+      await vi.waitFor(() => expect(setup.service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+      await setup.service.confirmConcept(jobId);
+      await vi.waitFor(() => expect(setup.service.getStatus(jobId).status).toBe('completed'));
+      expect(paintHead).not.toHaveBeenCalled();
+      expect(setup.service.getStatus(jobId).headPaint?.painted).toBe(false);
+    });
+
+    it('leaves a TRELLIS.2 model alone', async () => {
+      const setup = await viewSetup();
+      const paintHead = vi.fn();
+      Object.assign(setup.characterRunner, { paintHead });
+      const { jobId } = await setup.service.startJob({ prompt: 'Auburn explorer' });
+      await vi.waitFor(() => expect(setup.service.getStatus(jobId).status).toBe('awaiting_confirmation'));
+      await setup.service.confirmConcept(jobId, { geometryModelId: 'trellis' });
+      await vi.waitFor(() => expect(setup.service.getStatus(jobId).status).toBe('completed'));
+      expect(paintHead).not.toHaveBeenCalled();
+      expect(setup.service.getStatus(jobId).headPaint).toBeUndefined();
+    });
   });
 
   it('redraws the views with a new seed on request', async () => {

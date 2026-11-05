@@ -253,6 +253,8 @@ export interface AvatarGenerationStatus {
    * the one shown (null when it passed).
    */
   frontCheck?: { attempts: number; problem: string | null };
+  /** Whether the front of the head got its MV-Adapter close-up, and why not when it didn't. */
+  headPaint?: { painted: boolean; reason?: string };
   /**
    * The character's left side and back, drawn from the front image for 3D models that take
    * several views (PNG data URLs). Missing when they couldn't be drawn; viewsMessage says why.

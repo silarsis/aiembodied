@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process';
-import { access, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { resolveComfyInstallation } from '../comfyui-runtime.js';
 import { readGlb } from '../vrm-retexture.js';
 import { inspectTemplateCompatibility } from '../template-compatibility.js';
 import type { AvatarGenerationWarning } from '../../types.js';
@@ -47,6 +48,18 @@ export interface CharacterRigRunner {
     front: string;
     left?: string;
     back?: string;
+    signal: AbortSignal;
+  }): Promise<void>;
+  /**
+   * Repaint the front of the head of a painted model with MV-Adapter, writing a new GLB. Throws
+   * when it can't, and the painted model is still good then.
+   */
+  paintHead?(input: {
+    meshPath: string;
+    outputPath: string;
+    reference: string;
+    prompt: string;
+    checkpoint: string;
     signal: AbortSignal;
   }): Promise<void>;
   build(input: {
@@ -214,6 +227,110 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
     if (failure) throw new Error(`The views could not be painted onto the model: ${failure}`);
     await access(input.outputPath).catch(() => {
       throw new Error(`Blender did not write the painted model. Check ${logPath}.`);
+    });
+  }
+
+  async paintHead(input: {
+    meshPath: string;
+    outputPath: string;
+    reference: string;
+    prompt: string;
+    checkpoint: string;
+    signal: AbortSignal;
+  }): Promise<void> {
+    if (!this.executable) await this.assertAvailable();
+    const executable = this.executable;
+    if (!executable) throw new Error('Blender is unavailable.');
+    const root = path.resolve(this.env.AVATAR_PAINT_DIR || 'services/avatar-paint');
+    await access(path.join(root, 'models', 'mvadapter_ig2mv_sdxl.safetensors')).catch(() => {
+      throw new Error('Not set up. Run pnpm avatar:paint:setup.');
+    });
+    const { python, directory, modelPaths, env } = await resolveComfyInstallation(this.env);
+    const assets = path.dirname(this.scriptPath);
+    const work = path.join(path.dirname(input.outputPath), 'head-paint');
+    await rm(input.outputPath, { force: true });
+    await rm(work, { recursive: true, force: true });
+    await mkdir(work, { recursive: true });
+    let log = '';
+    const step = async (command: string, args: string[], timeout: number, stepEnv: NodeJS.ProcessEnv): Promise<void> => {
+      let output: string;
+      try {
+        const result = await promisify(execFile)(command, args, {
+          windowsHide: true,
+          signal: input.signal,
+          timeout,
+          maxBuffer: 16 * 1024 * 1024,
+          env: stepEnv,
+        });
+        output = [result.stdout ?? '', result.stderr ?? ''].join('\n');
+      } catch (error) {
+        if (input.signal.aborted) throw new Error('Cancelled.');
+        output =
+          error && typeof error === 'object'
+            ? ['stdout' in error ? String(error.stdout) : '', 'stderr' in error ? String(error.stderr) : ''].join('\n')
+            : '';
+        log += output;
+        await writeFile(path.join(work, 'head-paint.log'), log, 'utf8').catch(() => undefined);
+        throw new Error(
+          output.match(/HEAD_PAINT_ERROR: ([^\r\n]+)/)?.[1] ??
+            pythonFailure(output) ??
+            (error instanceof Error ? error.message : String(error)),
+        );
+      }
+      log += output;
+      await writeFile(path.join(work, 'head-paint.log'), log, 'utf8').catch(() => undefined);
+      const failure = pythonFailure(output);
+      if (failure) throw new Error(failure);
+    };
+    const blender = (args: string[]): string[] => [
+      '-b',
+      '--factory-startup',
+      '-t',
+      '4',
+      '-P',
+      path.join(assets, 'head-paint-blender.py'),
+      '--',
+      '--input',
+      input.meshPath,
+      ...args,
+    ];
+    const pythonEnv: NodeJS.ProcessEnv = {
+      ...env,
+      PYTHONPATH: path.join(root, 'deps'),
+      PYTHONDONTWRITEBYTECODE: '1',
+      HF_HUB_OFFLINE: '1',
+    };
+    await step(executable, blender(['--prepare', '--dir', work]), 5 * 60_000, this.env);
+    await step(
+      python,
+      [
+        path.join(assets, 'head-paint-views.py'),
+        '--dir',
+        work,
+        '--reference',
+        input.reference,
+        '--paint-root',
+        root,
+        '--checkpoint',
+        input.checkpoint,
+        '--comfy-dir',
+        directory,
+        ...(modelPaths ? ['--model-paths', modelPaths] : []),
+        '--prompt',
+        input.prompt,
+      ],
+      30 * 60_000,
+      pythonEnv,
+    );
+    await step(python, [path.join(assets, 'head-paint-fuse.py'), '--dir', work], 5 * 60_000, pythonEnv);
+    await step(
+      executable,
+      blender(['--texture', path.join(work, 'texture.png'), '--output', input.outputPath]),
+      5 * 60_000,
+      this.env,
+    );
+    await access(input.outputPath).catch(() => {
+      throw new Error('Blender did not write the repainted model.');
     });
   }
 
