@@ -220,13 +220,18 @@ export function characterViewGraph(input: {
   };
 }
 
-/** Backgrounds use the same local Qwen models with scenery-specific framing and negatives. */
+/**
+ * Backgrounds use the same local Qwen models with scenery-specific framing.
+ * The prompt must not mention a character, companion or person, even to say where one will
+ * stand or to say "no people": the sampler runs at cfg 1.0, so the negative prompt is ignored
+ * and any mention of a figure in the positive prompt tends to draw one.
+ */
 export function buildBackgroundPrompt(description: string): string {
-  return `A polished wide environment background for a standing anime-style 3D companion. ${description.trim()}.
+  return `A polished wide empty environment background, scenery only. ${description.trim().replace(/\.?$/, '.')}
 Semi-realistic hand-painted 3D game environment, coherent soft lighting. Level eye-height camera, wide 16:9 landscape.
-Keep the central 45 percent open. A flat, unobstructed walkable floor or ground fills the lower 40 percent and extends below the frame.
-A full-body character will stand at horizontal center with feet 86 percent down the image. Place furniture, plants and structures behind or beside that spot.
-Empty place, no people, no characters, no animals, no foreground obstruction, no text, no logos, no prepainted character shadow.`;
+The central 45 percent of the image is open, empty space. A flat, unobstructed walkable floor or ground fills the lower 40 percent and extends below the frame; the spot at horizontal center, 86 percent down the image, is bare open floor.
+Furniture, plants and structures sit toward the back and the sides, leaving the middle clear.
+Unoccupied and deserted, nothing in the foreground, no text, no logos.`;
 }
 
 export function backgroundGraph(prompt: string, seed: number): ComfyGraph {

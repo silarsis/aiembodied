@@ -76,7 +76,11 @@ describe('background library', () => {
     const result = await service.generate('A peaceful forest clearing');
     const graph = comfy.run.mock.calls[0][0];
     expect(graph.latent.inputs).toMatchObject({ width: 1536, height: 864 });
-    expect(graph.encode.inputs.prompt).toContain('feet 86 percent');
+    expect(graph.encode.inputs.prompt).toContain('86 percent down the image');
+    // cfg 1.0 ignores the negative prompt, so the positive one must not name a figure at all.
+    expect(graph.encode.inputs.prompt).not.toMatch(
+      /\b(character|companion|person|people|human|figure|full-body|stand(s|ing)?)\b/i,
+    );
     expect(graph.encode.inputs.negative_prompt).not.toContain('background scenery');
     expect(result.builtIn).toBe(false);
     expect(service.getActive()).toBe('builtin:city');
