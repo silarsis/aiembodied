@@ -143,6 +143,52 @@ export class LocalVoiceClient {
     return { type: 'local', instructions: this.sessionConfig.instructions };
   }
 
+  /**
+   * Speak a one-off preview reply (Character → Test Response) through the avatar, so it plays on
+   * the conversation's output with lip-sync. It stays out of the conversation history and memory.
+   * Returns null when the conversation is not running; the caller then plays it on its own.
+   */
+  async preview(text: string, instructions?: string): Promise<{ text: string; cancelled: boolean } | null> {
+    const bridge = this.getBridge();
+    const context = this.context;
+    const output = this.output;
+    if (!bridge || !context || !output || this.state.status !== 'connected') {
+      return null;
+    }
+    if (this.busy) {
+      throw new Error('The assistant is busy with a reply; try again when it has finished.');
+    }
+    this.busy = true;
+    const connectionId = this.connectionId;
+    const previousPhase = this.activity.phase;
+    const turn = new Turn(`preview-${this.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, context, output);
+    turn.onSentenceStart = (sentence, first) => {
+      if (first) {
+        this.setActivity('responding', 'Voice preview');
+      }
+      this.callbacks.onTextContent?.(sentence);
+    };
+    this.turn = turn;
+    try {
+      const result = await bridge.respond({ requestId: turn.requestId, text, instructions, preview: true });
+      await turn.finished();
+      return { text: result.text, cancelled: result.cancelled === true };
+    } finally {
+      if (connectionId === this.connectionId) {
+        if (this.turn === turn) {
+          this.turn = null;
+        }
+        this.busy = false;
+        this.segmenter.reset();
+        if (previousPhase === 'listening') {
+          this.listen('Listening');
+        } else {
+          this.setActivity(this.requireWakeWord ? 'waiting' : 'listening');
+        }
+      }
+    }
+  }
+
   /** The wake word was heard: answer what is said next. */
   notifyWake(timestamp = this.now()): void {
     this.lastWakeAt = timestamp;
@@ -511,6 +557,45 @@ export class LocalVoiceClient {
   }
 }
 
+/**
+ * Speak a one-off preview reply (Character → Test Response) when the conversation is not
+ * running: the reply's sentences play straight to the speakers (`outputDeviceId` when set).
+ */
+export async function playPreviewReply(
+  bridge: LocalVoiceBridge,
+  request: { text: string; instructions?: string },
+  options: { outputDeviceId?: string | null; createAudioContext?: () => AudioContext } = {},
+): Promise<{ text: string; cancelled: boolean }> {
+  const context = (options.createAudioContext ?? (() => new AudioContext()))();
+  try {
+    await context.resume?.();
+    const sinkContext = context as AudioContext & { setSinkId?: (id: string) => Promise<void> };
+    if (options.outputDeviceId && typeof sinkContext.setSinkId === 'function') {
+      await sinkContext.setSinkId(options.outputDeviceId).catch((error: unknown) => {
+        console.warn('Preview: could not use the chosen output device', error);
+      });
+    }
+    const turn = new Turn(`preview-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, context, context.destination);
+    const unsubscribe = bridge.onEvent((event) => {
+      if (event.requestId !== turn.requestId) {
+        return;
+      }
+      if (event.type === 'sentence') {
+        turn.enqueue(event.text, event.wav, (error) => console.warn('Preview: failed to decode reply audio', error));
+      }
+    });
+    try {
+      const result = await bridge.respond({ requestId: turn.requestId, ...request, preview: true });
+      await turn.finished();
+      return { text: result.text, cancelled: result.cancelled === true };
+    } finally {
+      unsubscribe();
+    }
+  } finally {
+    void context.close().catch(() => undefined);
+  }
+}
+
 /** One reply being played: sentences are decoded and scheduled back to back, in order. */
 class Turn {
   onSentenceStart: ((sentence: string, first: boolean) => void) | null = null;
@@ -524,7 +609,7 @@ class Turn {
   constructor(
     readonly requestId: string,
     private readonly context: AudioContext,
-    private readonly output: MediaStreamAudioDestinationNode,
+    private readonly output: AudioNode,
   ) {}
 
   enqueue(text: string, wav: Uint8Array, onError: (error: unknown) => void): void {
