@@ -278,3 +278,12 @@ it('exposes only named background operations through the preload bridge', async 
   await api.backgrounds.delete('generated-id');
   expect(invoke).toHaveBeenCalledWith('background:delete', 'generated-id');
 });
+
+it('exposes app.quit through the bridge', async () => {
+  vi.resetModules();
+  await import('../src/preload.js');
+  const api = exposeInMainWorld.mock.calls.at(-1)![1];
+  invoke.mockResolvedValueOnce(undefined);
+  await api.app?.quit();
+  expect(invoke).toHaveBeenCalledWith('app:quit');
+});

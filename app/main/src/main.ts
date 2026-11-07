@@ -1627,6 +1627,12 @@ function registerIpcHandlers(
     return emitted;
   });
 
+  // Quit handler
+  ipcMain.handle('app:quit', () => {
+    logger.info('Quit requested via IPC');
+    app.quit();
+  });
+
   // Register MCP handlers
   if (toolRegistry && mcpManager) {
     registerMCPHandlers(mcpManager, toolRegistry);

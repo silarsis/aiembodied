@@ -134,6 +134,7 @@ export interface PreloadApi {
   camera?: CameraBridge;
   mcp?: McpBridge;
   memoryEngine?: MemoryEngineBridge;
+  app?: AppBridge;
   ping(): string;
   __bridgeReady?: boolean;
   __bridgeVersion?: string;
@@ -157,6 +158,10 @@ export interface McpBridge {
 export interface CameraBridge {
   onDetection(listener: (event: CameraDetectionEvent) => void): () => void;
   emitDetection(event: CameraDetectionEvent): Promise<void>;
+}
+
+export interface AppBridge {
+  quit(): Promise<void>;
 }
 
 export function getPreloadApi(): PreloadApi | undefined {

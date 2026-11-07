@@ -1,5 +1,8 @@
 # TODO
 
+* Pair the voice with the avatar so I can select a voice for each avatar and it changes automatically
+* Pair the prompt with the model and avatar, so I get more coherent behaviour/can alter the character based on how they look and think
+
 The goal is the best of Project Akari and Dipal D1, plus what only aiembodied
 does (fully local, text-to-motion, local avatar generation, provider choice per
 part). Each item notes where aiembodied stands today and how the competition
