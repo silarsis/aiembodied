@@ -49,6 +49,7 @@ runTests('tests/crash-guard.test.ts', 'Crash Guard');
 runTests('tests/runtime-paths.test.ts', 'Runtime Paths');
 runTests('tests/auto-launch*.test.ts', 'Auto Launch');
 runTests('tests/app-diagnostics.test.ts', 'App Diagnostics');
+runTests('tests/gpu-memory.test.ts', 'GPU Memory');
 runTests('tests/metrics/*.test.ts', 'Metrics');
 runTests('tests/run-dev-*.test.ts', 'Run Dev');
 runTests('tests/local-llm*.test.ts', 'Local LLM');

@@ -1,3 +1,4 @@
+import type { GpuMemoryBridge } from '../../main/src/diagnostics/gpu-memory.js';
 import type { CivitaiLookup } from '../../main/src/avatar/generation/civitai.js';
 import type { HfLookup } from '../../main/src/local-llm/huggingface.js';
 import type { LlmDownload, LocalLlmList } from '../../main/src/local-llm/llm-library.js';
@@ -134,6 +135,7 @@ export interface PreloadApi {
   camera?: CameraBridge;
   mcp?: McpBridge;
   memoryEngine?: MemoryEngineBridge;
+  gpuMemory?: GpuMemoryBridge;
   app?: AppBridge;
   ping(): string;
   __bridgeReady?: boolean;
