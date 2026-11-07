@@ -281,6 +281,29 @@ const nativeImageMock = {
 
 const menuBuildFromTemplateMock = vi.fn(() => ({}));
 
+let suspendHandler: (() => void) | null = null;
+let resumeHandler: (() => void) | null = null;
+
+const powerMonitorMock = {
+  on: vi.fn((event: string, handler: () => void) => {
+    if (event === 'suspend') {
+      suspendHandler = handler;
+    } else if (event === 'resume') {
+      resumeHandler = handler;
+    }
+  }),
+  triggerSuspend: async () => {
+    if (suspendHandler) {
+      await suspendHandler();
+    }
+  },
+  triggerResume: async () => {
+    if (resumeHandler) {
+      await resumeHandler();
+    }
+  },
+};
+
 vi.mock('electron', () => ({
   app: appEmitter,
   BrowserWindow: BrowserWindowMock,
@@ -290,6 +313,7 @@ vi.mock('electron', () => ({
   globalShortcut: { register: vi.fn(() => true), unregister: vi.fn() },
   Menu: { buildFromTemplate: menuBuildFromTemplateMock },
   nativeImage: nativeImageMock,
+  powerMonitor: powerMonitorMock,
 }));
 
 class AvatarModelServiceDouble {
@@ -1199,4 +1223,124 @@ describe('main process bootstrap', () => {
     expect(appEmitter.quit).toHaveBeenCalledTimes(1);
     expect(mockLogger.info).toHaveBeenCalledWith('Quit requested via IPC');
   });
+
+  it('registers powerMonitor suspend/resume handlers on Windows', async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+
+    try {
+      loadMock.mockResolvedValue({
+        realtimeApiKey: 'rt-key',
+        comfyUiBaseUrl: 'http://127.0.0.1:8188',
+        conversationBackend: 'local',
+        providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
+        webSearch: { provider: 'off' },
+        models: testRouting(),
+        audioInputDeviceId: undefined,
+        audioOutputDeviceId: undefined,
+        featureFlags: {},
+        wakeWord: {
+          model: 'hey_jarvis',
+          keywordLabel: 'Hey Jarvis',
+          threshold: 0.5,
+          cooldownMs: 900,
+          deviceIndex: 1,
+        },
+        metrics: { enabled: false, host: '127.0.0.1', port: 9477, path: '/metrics' },
+      } as const);
+      getConfigMock.mockReturnValue({
+        realtimeApiKey: 'rt-key',
+        comfyUiBaseUrl: 'http://127.0.0.1:8188',
+        conversationBackend: 'local',
+        providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
+        webSearch: { provider: 'off' },
+        models: testRouting(),
+        audioInputDeviceId: undefined,
+        audioOutputDeviceId: undefined,
+        featureFlags: {},
+        wakeWord: {
+          model: 'hey_jarvis',
+          keywordLabel: 'Hey Jarvis',
+          threshold: 0.5,
+          cooldownMs: 900,
+          deviceIndex: 1,
+        },
+        metrics: { enabled: false, host: '127.0.0.1', port: 9477, path: '/metrics' },
+      } as const);
+      getRendererConfigMock.mockReturnValue({ hasRealtimeApiKey: true });
+
+      await import('../src/main.js');
+
+      whenReadyDeferred.resolve();
+      await whenReadyDeferred.promise;
+      await flushPromises();
+
+      // Verify powerMonitor.on was called for suspend and resume
+      expect(powerMonitorMock.on).toHaveBeenCalledWith('suspend', expect.any(Function));
+      expect(powerMonitorMock.on).toHaveBeenCalledWith('resume', expect.any(Function));
+      expect(mockLogger.info).toHaveBeenCalledWith('System suspend/resume handlers registered');
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
+  });
+
+  it('registers powerMonitor handlers on Windows', async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+
+    try {
+      loadMock.mockResolvedValue({
+        realtimeApiKey: 'rt-key',
+        comfyUiBaseUrl: 'http://127.0.0.1:8188',
+        conversationBackend: 'local',
+        providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
+        webSearch: { provider: 'off' },
+        models: testRouting(),
+        audioInputDeviceId: undefined,
+        audioOutputDeviceId: undefined,
+        featureFlags: {},
+        wakeWord: {
+          model: 'hey_jarvis',
+          keywordLabel: 'Hey Jarvis',
+          threshold: 0.5,
+          cooldownMs: 900,
+          deviceIndex: 1,
+        },
+        metrics: { enabled: false, host: '127.0.0.1', port: 9477, path: '/metrics' },
+      } as const);
+      getConfigMock.mockReturnValue({
+        realtimeApiKey: 'rt-key',
+        comfyUiBaseUrl: 'http://127.0.0.1:8188',
+        conversationBackend: 'local',
+        providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
+        webSearch: { provider: 'off' },
+        models: testRouting(),
+        audioInputDeviceId: undefined,
+        audioOutputDeviceId: undefined,
+        featureFlags: {},
+        wakeWord: {
+          model: 'hey_jarvis',
+          keywordLabel: 'Hey Jarvis',
+          threshold: 0.5,
+          cooldownMs: 900,
+          deviceIndex: 1,
+        },
+        metrics: { enabled: false, host: '127.0.0.1', port: 9477, path: '/metrics' },
+      } as const);
+      getRendererConfigMock.mockReturnValue({ hasRealtimeApiKey: true });
+
+      await import('../src/main.js');
+
+      whenReadyDeferred.resolve();
+      await whenReadyDeferred.promise;
+      await flushPromises();
+
+      // Verify powerMonitor.on was called for suspend and resume
+      expect(powerMonitorMock.on).toHaveBeenCalledWith('suspend', expect.any(Function));
+      expect(powerMonitorMock.on).toHaveBeenCalledWith('resume', expect.any(Function));
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
+  });
+
 });
