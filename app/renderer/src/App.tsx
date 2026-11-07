@@ -2673,8 +2673,10 @@ export default function App() {
                 </div>
                 {testResponse && (
                   <div className="control">
-                    <label>Test Response</label>
-                    <div className="test-response">{testResponse}</div>
+                    <label htmlFor="test-response-output">Test Response</label>
+                    <output id="test-response-output" className="test-response" style={{ display: 'block' }}>
+                      {testResponse}
+                    </output>
                   </div>
                 )}
               </section>
