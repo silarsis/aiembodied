@@ -1076,36 +1076,44 @@ export default function App() {
   const canConnectConversation = isLocalBackend || hasRealtimeApiKey;
 
   // Generate a test response based on the base prompt
-  const handleTestResponse = useCallback(() => {
+  const handleTestResponse = useCallback(async () => {
+    if (!isLocalBackend) {
+      setTestResponse('Test response only available for local backend.');
+      return;
+    }
+
     setIsTesting(true);
     setTestResponse(null);
 
-    // Generate a simple test phrase based on the base prompt
-    const promptPreview = basePrompt.substring(0, 40) + (basePrompt.length > 40 ? '...' : '');
-    const testPhrases = [
-      `I'm echo, your AI assistant. Based on your instructions "${promptPreview}", I'm ready to help!`,
-      `Let's chat! I've been configured with: "${promptPreview}"`,
-      `Hello! I'm your digital companion. My personality is shaped by: "${promptPreview}"`,
-    ];
+    try {
+      // Generate a simple test prompt based on the base prompt
+      const promptPreview = basePrompt.substring(0, 40) + (basePrompt.length > 40 ? '...' : '');
+      const testPrompt = `Based on your instructions "${promptPreview}", say something helpful.`;
 
-    // Pick a random phrase
-    const randomPhrase = testPhrases[Math.floor(Math.random() * testPhrases.length)];
-
-    // Simulate streaming response
-    let currentPhrase = '';
-    let index = 0;
-
-    const interval = setInterval(() => {
-      currentPhrase += randomPhrase.charAt(index);
-      setTestResponse(currentPhrase);
-      index++;
-
-      if (index >= randomPhrase.length) {
-        clearInterval(interval);
+      // Use the local voice bridge to respond
+      const bridge = getPreloadApi()?.localVoice;
+      if (!bridge) {
+        setTestResponse('Local voice bridge unavailable.');
         setIsTesting(false);
+        return;
       }
-    }, 30); // Typing speed
-  }, [basePrompt]);
+
+      const poseSlugs = availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0);
+      const requestId = `test-${Date.now()}`;
+      const result = await bridge.respond({
+        requestId,
+        text: testPrompt,
+        instructions: buildSessionInstructions(basePrompt, availableAnimationSlugs, poseSlugs, activeVrmModel, liveMotionReady),
+      });
+
+      setTestResponse(result.text);
+    } catch (err) {
+      console.error('Test response failed:', err);
+      setTestResponse('Error generating response. Check logs.');
+    } finally {
+      setIsTesting(false);
+    }
+  }, [isLocalBackend, basePrompt, availableAnimationSlugs, availablePoses, activeVrmModel, liveMotionReady]);
   const wakePhrase = config?.wakeWord?.keywordLabel;
   // A saved gpt-4o-realtime-preview model is retired (model_not_found); fall back to the default.
   const realtimeModel =
