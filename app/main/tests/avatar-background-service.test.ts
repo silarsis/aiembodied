@@ -83,9 +83,12 @@ describe('background library', () => {
     );
     expect(graph.encode.inputs.negative_prompt).not.toContain('background scenery');
     expect(result.builtIn).toBe(false);
+    expect(result.description).toBe('A peaceful forest clearing');
     expect(service.getActive()).toBe('builtin:city');
     const restarted = new BackgroundService(options);
-    expect((await restarted.list()).map((item) => item.id)).toContain(result.id);
+    expect((await restarted.list()).find((item) => item.id === result.id)?.description).toBe(
+      'A peaceful forest clearing',
+    );
     expect(await restarted.load(result.id)).toMatch(/^data:image\/png;base64,/);
     const thumbnail = PNG.sync.read(await readFile(path.join(directory, `${result.id}-thumb.png`)));
     expect([thumbnail.width, thumbnail.height]).toEqual([320, 180]);
