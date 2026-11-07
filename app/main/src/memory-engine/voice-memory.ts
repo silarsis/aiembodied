@@ -72,6 +72,12 @@ export function formatBrief(brief: MemoryEngineBrief | null, now: Date): string 
       lines.push(`- ${formatDay(new Date(day.period_start))}: ${oneLine(day.text)}`);
     }
   }
+  const handoff = brief?.handoff;
+  if (handoff?.text) {
+    const when = new Date(handoff.written_at);
+    const by = handoff.model ? `, written by ${handoff.model}` : '';
+    lines.push('', `The note you left yourself for this conversation (${describeAgo(when, now)}${by}):`, handoff.text);
+  }
   const last = brief?.last_session;
   if (last?.summary) {
     const when = new Date(last.last_at);

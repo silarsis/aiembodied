@@ -48,9 +48,16 @@ function dayInputValue(date: Date) {
 }
 
 function authorLabel(fact: MemoryEngineStoredFact) {
+  const model = fact.model ? ` (${fact.model})` : '';
   if (fact.author === 'user') return 'added by you';
-  if (fact.author === 'extractor') return 'found in a conversation';
-  return fact.agent ? `noted by ${fact.agent}` : 'noted in conversation';
+  if (fact.author === 'extractor') return `found in a conversation${model}`;
+  return fact.agent ? `noted by ${fact.agent}${model}` : `noted in conversation${model}`;
+}
+
+/** Unpinned facts that are rarely used drop out of the conversation brief (still searchable). */
+function fadingLabel(fact: MemoryEngineStoredFact) {
+  if (fact.pinned || fact.status !== 'active' || fact.accessibility === undefined) return null;
+  return fact.accessibility < 0.25 ? 'fading: rarely comes up' : null;
 }
 
 /** The most conversations one day lists (the engine's own maximum). */
@@ -371,7 +378,7 @@ export function MemoryPanel({ memory, active }: { memory?: MemoryEngineBridge; a
                     </span>
                   )}
                   <span className="kiosk__helper">
-                    {[fact.subject, authorLabel(fact), formatWhen(fact.created_at, false), fact.status !== 'active' ? fact.status : null]
+                    {[fact.subject, authorLabel(fact), formatWhen(fact.created_at, false), fact.status !== 'active' ? fact.status : null, fadingLabel(fact)]
                       .filter(Boolean)
                       .join(' · ')}
                   </span>

@@ -21,7 +21,7 @@ from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import __version__, context, db, facts, mirror, recall, store, storage, summaries
+from . import __version__, context, db, facts, handoffs, mirror, recall, store, storage, summaries
 from .embed import Embedder
 from .summaries import Summariser
 
@@ -65,6 +65,27 @@ class FactBody(BaseModel):
     supersedes: Optional[UUID] = None
     pinned: bool = False
     private: bool = False
+    model: Optional[str] = Field(default=None, max_length=200)
+
+
+class CorrectBody(BaseModel):
+    """Name the fact by `id` (a fact's, or its search result's) or by `about` (what it said)."""
+
+    id: Optional[UUID] = None
+    about: Optional[str] = Field(default=None, max_length=1000)
+    action: Literal["replace", "retract"]
+    text: Optional[str] = Field(default=None, min_length=1, max_length=1000)
+    new_id: Optional[UUID] = None
+    author: Literal["agent", "user"] = "agent"
+    agent: Optional[str] = Field(default=None, max_length=200)
+    model: Optional[str] = Field(default=None, max_length=200)
+    session_id: Optional[UUID] = None
+
+
+class HandoffBody(BaseModel):
+    text: str = Field(min_length=1, max_length=handoffs.HANDOFF_MAX_CHARS)
+    agent: Optional[str] = Field(default=None, max_length=200)
+    model: Optional[str] = Field(default=None, max_length=200)
 
 
 class RecallBody(BaseModel):
@@ -517,6 +538,8 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
         include_private: bool = True,
         mode: Literal["hybrid", "text"] = "hybrid",
         limit: int = Query(default=10, ge=1, le=100),
+        touch: bool = Query(default=False, description="the agent is using what it finds: refresh those facts"),
+        session_id: Optional[UUID] = None,
     ):
         with engine.connection() as conn:
             if mode == "text":
@@ -544,6 +567,9 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
                     exclude_ids=exclude or [],
                     limit=limit,
                 )
+            # Looking (the Memory panel) changes nothing; the agent recalling strengthens.
+            if touch:
+                facts.touch(conn, [r["id"] for r in results if r["kind"] == "fact"], session_id)
         return {"results": results}
 
     @app.get("/v1/storage", dependencies=guarded)
@@ -682,9 +708,16 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
         return {"from": start.isoformat(), "to": end.isoformat(), "summaries": periods, "sessions": sessions}
 
     @app.get("/v1/memories/{memory_id}", dependencies=guarded)
-    def get_memory(memory_id: UUID, around: int = Query(default=1, ge=0, le=10)):
+    def get_memory(
+        memory_id: UUID,
+        around: int = Query(default=1, ge=0, le=10),
+        touch: bool = False,
+        session_id: Optional[UUID] = None,
+    ):
         with engine.connection() as conn:
             detail = recall.memory_detail(conn, memory_id, around=around)
+            if touch and detail is not None and detail["kind"] == "fact":
+                facts.touch(conn, [detail["id"]], session_id)
         if detail is None:
             raise ApiError(404, "no such memory")
         return detail
@@ -705,10 +738,43 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
                     supersedes=body.supersedes,
                     pinned=body.pinned,
                     private=body.private,
+                    model=body.model,
                 ),
             )
             engine.written(conn)
         return {"id": str(fact_id), "created": created}
+
+    @app.post("/v1/facts/correct", dependencies=guarded)
+    def correct_fact(body: CorrectBody):
+        """Replace a fact with new words, or retract it. The old one is kept, marked."""
+        if body.id is None and not (body.about or "").strip():
+            raise ApiError(400, "name the fact by 'id' or 'about'")
+        if body.action == "replace" and not (body.text or "").strip():
+            raise ApiError(400, "a replacement needs 'text'")
+        with engine.connection() as conn:
+            outcome = facts.correct(
+                conn,
+                target=body.id,
+                about=body.about,
+                action=body.action,
+                text=body.text,
+                new_id=body.new_id,
+                author=body.author,
+                agent=body.agent,
+                model=body.model,
+                session_id=body.session_id,
+                embedder=engine.embedder,
+            )
+            engine.written(conn)
+        return outcome
+
+    @app.put("/v1/sessions/{session_id}/handoff", dependencies=guarded)
+    def put_handoff(session_id: UUID, body: HandoffBody):
+        """The agent's note for its next conversation; replaces this conversation's earlier one."""
+        with engine.connection() as conn:
+            written = handoffs.put_handoff(conn, session_id, body.text, agent=body.agent, model=body.model)
+            engine.written(conn)
+        return written
 
     @app.get("/v1/facts", dependencies=guarded)
     def get_facts(

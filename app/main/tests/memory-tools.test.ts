@@ -2,10 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   isRelevant,
   createMemoryTools,
+  formatCorrection,
   describeAgo,
   formatSearchResults,
   MEMORY_TOOL_IDS,
   parsePeriod,
+  type MemoryEngineCorrection,
+  type MemoryEngineCorrectionResult,
   type MemoryEngineMemoryDetail,
   type MemoryEngineSearchResult,
   type MemoryEngineTimeline,
@@ -102,6 +105,11 @@ function makeTools() {
         { id: 'm2', role: 'assistant', speaker: null, content: 'hello', tool: null, created_at: new Date(2026, 10, 2, 9, 1).toISOString() },
       ],
     })),
+    correctFact: vi.fn(async (_body: MemoryEngineCorrection): Promise<MemoryEngineCorrectionResult> => ({
+      status: 'replaced',
+      fact: { id: 'f1', text: 'Kevin drives a Corolla' },
+      replacement: { id: 'f2', text: 'Kevin drives a Mazda' },
+    })),
   };
   const queued: OutboxItem[] = [];
   const tools = createMemoryTools({
@@ -109,6 +117,7 @@ function makeTools() {
     outbox: { enqueue: (item) => queued.push(item) },
     currentSessionId: () => 'sess',
     agentName: () => 'Echo',
+    modelName: () => 'qwen-next-flash',
     now: () => NOW,
   });
   const byId = Object.fromEntries(tools.map((tool) => [tool.id, tool]));
@@ -116,7 +125,7 @@ function makeTools() {
 }
 
 describe('memory tools', () => {
-  it('offers four tools the voice can use without a confirmation', () => {
+  it('offers six tools the voice can use without a confirmation', () => {
     const { byId } = makeTools();
     expect(Object.keys(byId).sort()).toEqual(Object.values(MEMORY_TOOL_IDS).sort());
     for (const tool of Object.values(byId)) {
@@ -131,6 +140,8 @@ describe('memory tools', () => {
       from: local(2026, 10, 26).toISOString(),
       to: local(2026, 11, 2).toISOString(),
       limit: 6,
+      touch: true,
+      sessionId: 'sess',
     });
     expect(text).toContain('[r1]');
     expect(text).toContain('2 days ago');
@@ -155,7 +166,7 @@ describe('memory tools', () => {
   it('open_memory reads a memory in full, accepting the id in brackets', async () => {
     const { client, byId } = makeTools();
     const text = await byId[MEMORY_TOOL_IDS.open].execute({ id: '[t1]' });
-    expect(client.memory).toHaveBeenCalledWith('t1', 1);
+    expect(client.memory).toHaveBeenCalledWith('t1', 1, { touch: true, sessionId: 'sess' });
     expect(text).toContain('User: hi');
     expect(text).toContain('Echo: hello');
   });
@@ -166,8 +177,42 @@ describe('memory tools', () => {
     expect(queued).toHaveLength(1);
     expect(queued[0]).toMatchObject({
       kind: 'fact',
-      fact: { text: 'Kevin prefers wslc', subject: 'tools', author: 'agent', agent: 'Echo', session_id: 'sess' },
+      fact: {
+        text: 'Kevin prefers wslc', subject: 'tools', author: 'agent', agent: 'Echo', session_id: 'sess',
+        model: 'qwen-next-flash',
+      },
     });
+  });
+
+  it('correct_memory replaces a fact by id, or withdraws one by what it said', async () => {
+    const { client, byId } = makeTools();
+    const replaced = await byId[MEMORY_TOOL_IDS.correct].execute({ id: '[f1]', correction: 'Kevin drives a Mazda' });
+    expect(replaced).toBe('Corrected. "Kevin drives a Corolla" is now "Kevin drives a Mazda".');
+    expect(client.correctFact).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: 'f1', action: 'replace', text: 'Kevin drives a Mazda', author: 'agent', agent: 'Echo',
+      model: 'qwen-next-flash', session_id: 'sess',
+    }));
+
+    client.correctFact.mockResolvedValueOnce({ status: 'retracted', fact: { id: 'f1', text: 'Kevin drives a Corolla' } });
+    expect(await byId[MEMORY_TOOL_IDS.correct].execute({ about: 'the Corolla' })).toBe('Withdrawn: "Kevin drives a Corolla".');
+    expect(client.correctFact).toHaveBeenLastCalledWith(expect.objectContaining({ about: 'the Corolla', action: 'retract' }));
+    await expect(byId[MEMORY_TOOL_IDS.correct].execute({})).rejects.toThrow(/needs an "id" or "about"/);
+  });
+
+  it('correct_memory lists candidates when unsure and explains what it cannot change', () => {
+    expect(formatCorrection({ status: 'ambiguous', candidates: [{ id: 'a', text: 'Cat is Pickle' }, { id: 'b', text: 'Cat is Mango' }] }))
+      .toContain('[a] Cat is Pickle\n[b] Cat is Mango');
+    expect(formatCorrection({ status: 'pinned', fact: { id: 'p', text: 'Partner is Erika' } })).toMatch(/Kevin pinned/);
+    expect(formatCorrection({ status: 'not_a_fact' })).toMatch(/remember instead/);
+    expect(formatCorrection({ status: 'not_found' })).toMatch(/recall_memories/);
+  });
+
+  it('note_for_next_time queues a signed note for this conversation', async () => {
+    const { queued, byId } = makeTools();
+    expect(await byId[MEMORY_TOOL_IDS.handoff].execute({ note: 'Halfway through the garden plan.' })).toBe('Noted for next time.');
+    expect(queued).toEqual([
+      { kind: 'handoff', sessionId: 'sess', handoff: { text: 'Halfway through the garden plan.', agent: 'Echo', model: 'qwen-next-flash' } },
+    ]);
   });
 
   it('uses summaries in the timeline once they exist', async () => {

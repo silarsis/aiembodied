@@ -8,16 +8,18 @@ const mockListTools = vi.fn();
 const mockCallTool = vi.fn();
 
 vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
-  Client: vi.fn().mockImplementation(() => ({
-    connect: mockConnect,
-    close: mockClose,
-    listTools: mockListTools,
-    callTool: mockCallTool,
-  })),
+  Client: vi.fn().mockImplementation(function () {
+    return {
+      connect: mockConnect,
+      close: mockClose,
+      listTools: mockListTools,
+      callTool: mockCallTool,
+    };
+  }),
 }));
 
 vi.mock('@modelcontextprotocol/sdk/client/sse.js', () => ({
-  SSEClientTransport: vi.fn().mockImplementation(() => ({})),
+  SSEClientTransport: vi.fn().mockImplementation(function () { return {}; }),
 }));
 
 describe('SSEMCPClient', () => {

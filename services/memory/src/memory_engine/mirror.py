@@ -33,10 +33,12 @@ LOOKBACK = timedelta(minutes=2)
 TABLES: list[tuple[str, list[str], bool, str]] = [
     ("sessions", ["id", "seq", "agent", "channel", "title", "location", "started_at", "ended_at", "meta",
                   "created_at", "updated_at"], True, "seq"),
+    ("handoffs", ["id", "seq", "session_id", "agent", "model", "text", "created_at", "updated_at"], True, "seq"),
     ("messages", ["id", "seq", "session_id", "role", "speaker", "location", "content", "tool", "created_at",
                   "received_at", "content_hash", "private", "meta"], False, "seq"),
     ("facts", ["id", "seq", "text", "subject", "status", "pinned", "author", "agent", "session_id",
-               "source_message_ids", "supersedes", "private", "reviewed_at", "created_at", "updated_at"], True, "seq"),
+               "source_message_ids", "supersedes", "private", "reviewed_at", "created_at", "updated_at", "model",
+               "recall_count", "last_recalled_at", "last_recalled_session"], True, "seq"),
     ("summaries", ["id", "seq", "kind", "session_id", "period_start", "period_end", "title", "text", "topics",
                    "covered_seq", "model", "created_at"], False, "seq"),
     ("recall_index", ["id", "seq", "kind", "source_id", "session_id", "agent", "period_start", "period_end", "text",

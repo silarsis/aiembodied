@@ -1,13 +1,16 @@
 /**
  * The memory tools the conversation model can call: recall_memories (relevance, optionally
  * within a period), recall_timeline (what happened over a period), open_memory (one memory in
- * full) and remember (save a durable fact). Few on purpose: the local model is more reliable
- * with a short list. Every result is capped so one call can't flood the context.
+ * full), remember (save a durable fact), correct_memory (fix or withdraw a saved fact) and
+ * note_for_next_time (a note it reads, word for word, when the next conversation starts). Few
+ * on purpose: the local model is more reliable with a short list. Every result is capped so one
+ * call can't flood the context. What the agent writes is signed with the conversation model.
  */
 import { randomUUID } from 'node:crypto';
 import type { RegisteredTool } from '../tools/tool-registry.js';
 import type {
   MemoryEngineClient,
+  MemoryEngineCorrectionResult,
   MemoryEngineMemoryDetail,
   MemoryEngineSearchResult,
   MemoryEngineTimeline,
@@ -20,6 +23,8 @@ export const MEMORY_TOOL_IDS = {
   timeline: 'builtin:recall_timeline',
   open: 'builtin:open_memory',
   remember: 'builtin:remember',
+  correct: 'builtin:correct_memory',
+  handoff: 'builtin:note_for_next_time',
 } as const;
 
 /** About 1,500 tokens. */
@@ -31,11 +36,13 @@ const PERIOD_HELP =
   '"the last 10 days", "last tuesday", or a date such as "2026-10-14" or "2026-10".';
 
 export interface MemoryToolsOptions {
-  client: Pick<MemoryEngineClient, 'search' | 'timeline' | 'memory'>;
+  client: Pick<MemoryEngineClient, 'search' | 'timeline' | 'memory' | 'correctFact'>;
   outbox: { enqueue(item: OutboxItem): void };
   /** The conversation the model is in, for linking a remembered fact to it. */
   currentSessionId: () => string | null;
   agentName: () => string;
+  /** The conversation model, recorded on what the agent writes; null when unknown. */
+  modelName?: () => string | null;
   now?: () => Date;
 }
 
@@ -93,6 +100,7 @@ const KIND_LABELS: Record<string, string> = {
   day: 'summary of the day',
   week: 'summary of the week',
   month: 'summary of the month',
+  handoff: 'note you left yourself',
 };
 
 export function formatSearchResults(results: MemoryEngineSearchResult[], now: Date): string {
@@ -175,8 +183,31 @@ export function isRelevant(result: MemoryEngineSearchResult): boolean {
   return (result.similarity ?? 0) >= VECTOR_ONLY_MIN_SIMILARITY;
 }
 
+export function formatCorrection(result: MemoryEngineCorrectionResult): string {
+  switch (result.status) {
+    case 'replaced':
+      return `Corrected. "${result.fact?.text ?? ''}" is now "${result.replacement?.text ?? ''}".`;
+    case 'retracted':
+      return `Withdrawn: "${result.fact?.text ?? ''}".`;
+    case 'ambiguous':
+      return fitTo([
+        'More than one saved fact could be meant. Call correct_memory again with the id of the right one:',
+        ...(result.candidates ?? []).map((c) => `[${c.id}] ${clip(c.text, 200)}`),
+      ]);
+    case 'not_a_fact':
+      return 'That is a record of a conversation, which is kept as it was said. Save the right version with remember instead.';
+    case 'inactive':
+      return 'That fact was already replaced or withdrawn.';
+    case 'pinned':
+      return `Kevin pinned "${result.fact?.text ?? 'that fact'}", so only he can change it. Tell him what looks wrong.`;
+    default:
+      return 'No saved fact matches that. Use recall_memories to find it, then pass its id.';
+  }
+}
+
 export function createMemoryTools(options: MemoryToolsOptions): RegisteredTool[] {
   const now = options.now ?? (() => new Date());
+  const modelName = () => options.modelName?.() ?? null;
 
   const recall: RegisteredTool = {
     id: MEMORY_TOOL_IDS.recall,
@@ -208,6 +239,9 @@ export function createMemoryTools(options: MemoryToolsOptions): RegisteredTool[]
         from: period?.from.toISOString(),
         to: period?.to.toISOString(),
         limit: readNumber(params, 'limit', 6, 1, 12),
+        // The agent recalling a fact keeps it from fading out of the brief.
+        touch: true,
+        sessionId: options.currentSessionId(),
       });
       return formatSearchResults(results.filter(isRelevant), now());
     },
@@ -259,7 +293,10 @@ export function createMemoryTools(options: MemoryToolsOptions): RegisteredTool[]
     execute: async (params) => {
       const id = readString(params, 'id')?.replace(/^\[|\]$/g, '');
       if (!id) throw new Error('open_memory needs an "id".');
-      const detail = await options.client.memory(id, readNumber(params, 'around', 1, 0, 5));
+      const detail = await options.client.memory(id, readNumber(params, 'around', 1, 0, 5), {
+        touch: true,
+        sessionId: options.currentSessionId(),
+      });
       return formatMemory(detail, now());
     },
   };
@@ -296,11 +333,84 @@ export function createMemoryTools(options: MemoryToolsOptions): RegisteredTool[]
           author: 'agent',
           agent: options.agentName(),
           session_id: options.currentSessionId(),
+          model: modelName(),
         },
       });
       return 'Saved.';
     },
   };
 
-  return [recall, timeline, open, remember];
+  const correct: RegisteredTool = {
+    id: MEMORY_TOOL_IDS.correct,
+    serverId: 'builtin',
+    toolName: 'correct_memory',
+    description:
+      'Fix or withdraw a saved fact that has turned out wrong or out of date, e.g. when Kevin says "I sold that car". ' +
+      'Name the fact by its id from recall_memories, or by what it said. Give the corrected wording to replace it, ' +
+      'or leave it out to withdraw the fact. The old version is kept for Kevin to review.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Optional. The fact\'s id in square brackets from recall_memories.' },
+        about: { type: 'string', description: 'Optional, instead of id. What the fact said, in a few words.' },
+        correction: {
+          type: 'string',
+          description: 'Optional. The corrected fact, one short sentence in the third person. Leave out to withdraw it.',
+        },
+      },
+    },
+    enabled: true,
+    confirmationLevel: 'notify',
+    describeCall: (params) => clip(readString(params, 'correction') ?? readString(params, 'about') ?? 'a fact', 80),
+    execute: async (params) => {
+      const id = readString(params, 'id')?.replace(/^\[|\]$/g, '');
+      const about = readString(params, 'about');
+      if (!id && !about) throw new Error('correct_memory needs an "id" or "about".');
+      const correction = readString(params, 'correction');
+      const result = await options.client.correctFact({
+        ...(id ? { id } : { about }),
+        action: correction ? 'replace' : 'retract',
+        text: correction ? clip(correction, 1000) : undefined,
+        new_id: randomUUID(),
+        author: 'agent',
+        agent: options.agentName(),
+        model: modelName(),
+        session_id: options.currentSessionId(),
+      });
+      return formatCorrection(result);
+    },
+  };
+
+  const handoff: RegisteredTool = {
+    id: MEMORY_TOOL_IDS.handoff,
+    serverId: 'builtin',
+    toolName: 'note_for_next_time',
+    description:
+      'Leave yourself a note for the start of your next conversation, in your own words: where things stand, what ' +
+      'you were in the middle of, what to follow up or ask about. You will read it word for word next time. It ' +
+      'replaces any note from this conversation. Use it when a conversation is winding down or the plan changes. ' +
+      'Facts about Kevin go in remember instead.',
+    inputSchema: {
+      type: 'object',
+      properties: { note: { type: 'string', description: 'The note, a few sentences at most.' } },
+      required: ['note'],
+    },
+    enabled: true,
+    confirmationLevel: 'none',
+    describeCall: () => 'a note for next time',
+    execute: async (params) => {
+      const note = readString(params, 'note');
+      if (!note) throw new Error('note_for_next_time needs a "note".');
+      const sessionId = options.currentSessionId();
+      if (!sessionId) return 'There is no conversation to attach the note to yet.';
+      options.outbox.enqueue({
+        kind: 'handoff',
+        sessionId,
+        handoff: { text: clip(note, 2000), agent: options.agentName(), model: modelName() },
+      });
+      return 'Noted for next time.';
+    },
+  };
+
+  return [recall, timeline, open, remember, correct, handoff];
 }

@@ -185,13 +185,13 @@ export class MCPManager extends EventEmitter {
       // Discover tools
       const tools = await client.listTools();
 
+      // Store the client first: registering a tool looks it up to route calls.
+      this.clients.set(serverId, client);
+
       // Register tools with ToolRegistry
       for (const tool of tools) {
         await this.registerTool(serverId, tool);
       }
-
-      // Store client
-      this.clients.set(serverId, client);
 
       // Update database
       const stmt = this.db.prepare(`

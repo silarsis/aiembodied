@@ -308,6 +308,7 @@ def apply_session(conn: psycopg.Connection, job: SessionJob, result: dict[str, A
                 agent=job.agent,
                 session_id=job.session_id,
                 supersedes=UUID(replaces) if replaces in known_ids else None,
+                model=model,
             ),
         )
         if created:

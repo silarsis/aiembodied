@@ -31,7 +31,7 @@ export type ServerKeyLookup = (serverId: string) => string | undefined;
 
 type Logger = Pick<Console, 'warn'>;
 
-const DEFAULT_OPENAI_MODELS = { llm: 'gpt-4.1-mini', stt: 'gpt-4o-mini-transcribe', tts: 'gpt-realtime-2.1-mini' };
+export const DEFAULT_OPENAI_MODELS = { llm: 'gpt-4.1-mini', stt: 'gpt-4o-mini-transcribe', tts: 'gpt-realtime-2.1-mini' };
 
 export function buildVoiceEngines(
   routing: ModelRouting,

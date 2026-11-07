@@ -61,7 +61,7 @@ describe('PoseGenerationService', () => {
       'Armature_RightShoulder': { rotation: [0, 0, 0, 1] },
     };
 
-    const { client } = createClient([expandedDescription, JSON.stringify(poseJson)]);
+    const { client } = createClient([expandedDescription, JSON.stringify({ bones: poseJson })]);
     const service = new PoseGenerationService({
       client,
       poseService,
@@ -102,7 +102,7 @@ describe('PoseGenerationService', () => {
 
     const expandedDescription = 'Test pose';
     const poseJson = { 'Armature_Hips': { rotation: [0, 0, 0, 1] } };
-    const { client, create } = createClient([expandedDescription, JSON.stringify(poseJson)]);
+    const { client, create } = createClient([expandedDescription, JSON.stringify({ bones: poseJson })]);
 
     const service = new PoseGenerationService({
       client,
@@ -146,7 +146,7 @@ describe('PoseGenerationService', () => {
 
     const expandedDescription = 'Test pose for a cheerful character';
     const poseJson = { 'Armature_Hips': { rotation: [0, 0, 0, 1] } };
-    const { client, create } = createClient([expandedDescription, JSON.stringify(poseJson)]);
+    const { client, create } = createClient([expandedDescription, JSON.stringify({ bones: poseJson })]);
 
     const service = new PoseGenerationService({
       client,
@@ -179,7 +179,7 @@ describe('PoseGenerationService', () => {
       'chest': { rotation: [0, 0.05, 0, 0.999] },
     };
 
-    const { client } = createClient(['expanded description', JSON.stringify(poseJson)]);
+    const { client } = createClient(['expanded description', JSON.stringify({ bones: poseJson })]);
     const service = new PoseGenerationService({ client, poseService });
 
     const result = await service.generatePose({
@@ -203,7 +203,7 @@ describe('PoseGenerationService', () => {
       'neck': { rotation: [0, 0, 0, 1] },           // Valid
     };
 
-    const { client } = createClient(['expanded', JSON.stringify(poseJson)]);
+    const { client } = createClient(['expanded', JSON.stringify({ bones: poseJson })]);
     const warnSpy = vi.fn();
     const service = new PoseGenerationService({
       client,

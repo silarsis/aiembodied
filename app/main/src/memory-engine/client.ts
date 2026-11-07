@@ -70,6 +70,9 @@ export interface MemoryEngineSearchOptions {
   exclude?: string[];
   mode?: 'hybrid' | 'text';
   timeoutMs?: number;
+  /** The agent is using what it finds: facts among the results are refreshed (not for the panel). */
+  touch?: boolean;
+  sessionId?: string | null;
 }
 
 export interface MemoryEngineTimelineSession {
@@ -128,6 +131,13 @@ export interface MemoryEngineStoredFact {
   private: boolean;
   reviewed_at: string | null;
   created_at: string;
+  /** The model that wrote it (the conversation or summary model); null for the user's own. */
+  model?: string | null;
+  /** Conversations it was recalled in, and when last. */
+  recall_count?: number;
+  last_recalled_at?: string | null;
+  /** 0-1: how easily it comes up; unused facts fade out of the brief (pinned stay at 1). */
+  accessibility?: number;
 }
 
 export interface MemoryEngineFactPatch {
@@ -163,6 +173,37 @@ export interface MemoryEngineBrief {
     turns: string[];
   } | null;
   recent_days?: Array<{ period_start: string; title: string | null; text: string }>;
+  /** The newest note the agent left itself in another conversation, to show word for word. */
+  handoff?: MemoryEngineHandoff | null;
+}
+
+export interface MemoryEngineHandoff {
+  id: string;
+  session_id: string;
+  agent: string | null;
+  model: string | null;
+  text: string;
+  written_at: string;
+}
+
+export interface MemoryEngineCorrection {
+  /** A fact's id or its search result's id; or `about`, what the fact said. */
+  id?: string;
+  about?: string;
+  action: 'replace' | 'retract';
+  text?: string;
+  new_id?: string;
+  author?: 'agent' | 'user';
+  agent?: string | null;
+  model?: string | null;
+  session_id?: string | null;
+}
+
+export interface MemoryEngineCorrectionResult {
+  status: 'replaced' | 'retracted' | 'not_found' | 'ambiguous' | 'not_a_fact' | 'inactive' | 'pinned';
+  fact?: { id: string; text: string };
+  replacement?: { id: string; text: string };
+  candidates?: Array<{ id: string; text: string }>;
 }
 
 export interface MemoryEngineRecallRequest {
@@ -190,6 +231,7 @@ export interface MemoryEngineFact {
   supersedes?: string | null;
   pinned?: boolean;
   private?: boolean;
+  model?: string | null;
 }
 
 /** A failed call. `retryable` is false when the engine rejected the request itself. */
@@ -249,6 +291,10 @@ export class MemoryEngineClient {
     if (options.mode) params.set('mode', options.mode);
     for (const kind of options.kinds ?? []) params.append('kind', kind);
     for (const id of options.exclude ?? []) params.append('exclude', id);
+    if (options.touch) {
+      params.set('touch', 'true');
+      if (options.sessionId) params.set('session_id', options.sessionId);
+    }
     const body = await this.request<{ results: MemoryEngineSearchResult[] }>(
       'GET',
       `/v1/search?${params.toString()}`,
@@ -332,8 +378,24 @@ export class MemoryEngineClient {
     return this.request('POST', '/v1/activity', { busy }, 1000);
   }
 
-  memory(id: string, around = 1): Promise<MemoryEngineMemoryDetail> {
-    return this.request('GET', `/v1/memories/${encodeURIComponent(id)}?around=${around}`);
+  /** One memory in full. `touch`: the agent is using it, so a fact is refreshed (not the panel). */
+  memory(id: string, around = 1, options: { touch?: boolean; sessionId?: string | null } = {}): Promise<MemoryEngineMemoryDetail> {
+    const params = new URLSearchParams({ around: String(around) });
+    if (options.touch) {
+      params.set('touch', 'true');
+      if (options.sessionId) params.set('session_id', options.sessionId);
+    }
+    return this.request('GET', `/v1/memories/${encodeURIComponent(id)}?${params.toString()}`);
+  }
+
+  /** Replace a fact with new words, or retract it; the old one is kept, marked. */
+  correctFact(body: MemoryEngineCorrection): Promise<MemoryEngineCorrectionResult> {
+    return this.request('POST', '/v1/facts/correct', body);
+  }
+
+  /** The agent's note for its next conversation; replaces this conversation's earlier note. */
+  putHandoff(sessionId: string, handoff: { text: string; agent?: string | null; model?: string | null }): Promise<{ id: string }> {
+    return this.request('PUT', `/v1/sessions/${encodeURIComponent(sessionId)}/handoff`, handoff);
   }
 
   putFact(id: string, fact: MemoryEngineFact): Promise<{ id: string; created: boolean }> {

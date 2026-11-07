@@ -75,13 +75,15 @@ def test_a_mirror_gets_new_rows_changes_and_deletes(database_url, schema, second
         keep, gone = uuid4(), uuid4()
         post(client, message(keep, "user", "keep this one", 0), message(gone, "user", "forget this one", 5))
         fact = str(uuid4())
-        client.put(f"/v1/facts/{fact}", json={"text": "Likes tea"})
+        client.put(f"/v1/facts/{fact}", json={"text": "Likes tea", "model": "qwen-next-flash"})
+        client.put(f"/v1/sessions/{gone}/handoff", json={"text": "Ask about the tea next time."})
         for session in (keep, gone):
             client.post("/v1/recall", json={"text": "what did we say about that one", "session_id": str(session)})
         client.put("/v1/storage", json={"database": None, "mirror": second_database})
         assert client.post("/v1/storage/push").json()["sent"] > 0
         assert count(second_database, schema, "sessions") == 2
         assert count(second_database, schema, "recall_log") == 2
+        assert count(second_database, schema, "handoffs") == 1
 
         # Forgetting one message also forgets it from the mirror's recall log.
         said = message(keep, "user", "my bank pin is in the drawer", 20)
@@ -100,6 +102,7 @@ def test_a_mirror_gets_new_rows_changes_and_deletes(database_url, schema, second
             messages = conn.execute(f"SELECT count(*) FROM {schema}.messages").fetchone()[0]
             embedded = conn.execute(f"SELECT count(*) FROM {schema}.recall_index WHERE embedding IS NOT NULL").fetchone()[0]
         assert [str(r[0]) for r in sessions] == [str(keep)]
+        assert count(second_database, schema, "handoffs") == 0
         # One session forgotten, one message forgotten: only keep's first query is left.
         assert count(second_database, schema, "recall_log") == 1
         assert pinned is True

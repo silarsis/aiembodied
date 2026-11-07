@@ -322,6 +322,9 @@ def delete_session(conn: psycopg.Connection, session_id: UUID) -> bool:
     from .summaries import invalidate_for_session
 
     invalidate_for_session(conn, session_id)
+    from .handoffs import delete_for_session as delete_handoffs
+
+    delete_handoffs(conn, session_id)
     extracted = conn.execute(
         "DELETE FROM facts WHERE author = 'extractor' AND session_id = %s RETURNING id", (session_id,)
     ).fetchall()

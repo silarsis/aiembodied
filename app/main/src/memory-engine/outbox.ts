@@ -15,7 +15,14 @@ import {
 export type OutboxItem =
   | { kind: 'session'; id: string; session: MemoryEngineSession }
   | { kind: 'message'; message: MemoryEngineMessage }
-  | { kind: 'fact'; id: string; fact: MemoryEngineFact };
+  | { kind: 'fact'; id: string; fact: MemoryEngineFact }
+  | { kind: 'handoff'; sessionId: string; handoff: MemoryEngineHandoffWrite };
+
+export interface MemoryEngineHandoffWrite {
+  text: string;
+  agent?: string | null;
+  model?: string | null;
+}
 
 export interface OutboxStore {
   enqueueMemoryOutbox(kind: string, payload: unknown, createdAt?: number): number;
@@ -32,7 +39,8 @@ type Logger = {
 
 export interface MemoryOutboxOptions {
   store: OutboxStore;
-  client: Pick<MemoryEngineClient, 'putSession' | 'postMessages' | 'putFact'>;
+  client: Pick<MemoryEngineClient, 'putSession' | 'postMessages' | 'putFact'> &
+    Partial<Pick<MemoryEngineClient, 'putHandoff'>>;
   logger?: Logger;
   /** How many queued entries one flush sends at most. */
   batchSize?: number;
@@ -85,6 +93,8 @@ export class MemoryOutbox {
       this.store.enqueueMemoryOutbox('session', { id: item.id, session: item.session });
     } else if (item.kind === 'fact') {
       this.store.enqueueMemoryOutbox('fact', { id: item.id, fact: item.fact });
+    } else if (item.kind === 'handoff') {
+      this.store.enqueueMemoryOutbox('handoff', { sessionId: item.sessionId, handoff: item.handoff });
     } else {
       this.store.enqueueMemoryOutbox('message', item.message);
     }
@@ -178,6 +188,11 @@ export class MemoryOutbox {
       } else if (entry.kind === 'fact') {
         const { id, fact } = entry.payload as { id: string; fact: MemoryEngineFact };
         await this.attempt([entry], () => this.client.putFact(id, fact));
+        index += 1;
+      } else if (entry.kind === 'handoff' && this.client.putHandoff) {
+        const { sessionId, handoff } = entry.payload as { sessionId: string; handoff: MemoryEngineHandoffWrite };
+        const putHandoff = this.client.putHandoff.bind(this.client);
+        await this.attempt([entry], () => putHandoff(sessionId, handoff));
         index += 1;
       } else {
         this.logger?.warn('Dropping unknown memory outbox entry', { kind: entry.kind });
