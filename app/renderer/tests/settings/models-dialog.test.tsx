@@ -77,6 +77,23 @@ function bridge(initial = baseView()) {
 }
 
 describe('ModelsDialog', () => {
+  it('checks every server when it opens, so every status dot is right without clicking', async () => {
+    const api = bridge();
+    const view = baseView();
+    render(<ModelsDialog api={api} onClose={vi.fn()} />);
+    await waitFor(() => expect(api.probe).toHaveBeenCalledTimes(view.servers.length));
+    const checked = api.probe.mock.calls.map(([target]) => ('serverId' in target ? target.serverId : null));
+    expect(new Set(checked)).toEqual(new Set(view.servers.map((server) => server.id)));
+    const rail = screen.getByRole('navigation', { name: 'Model uses' });
+    await waitFor(() => {
+      const dots = within(rail).getAllByRole('img');
+      expect(dots.length).toBeGreaterThan(1);
+      // Every use shows its server's status, or Off when it has none; nothing is left unchecked.
+      for (const dot of dots) expect(dot.className).toMatch(/is-(up|off)$/);
+      expect(within(rail).queryAllByLabelText('Not checked')).toEqual([]);
+    });
+  });
+
   it('lists only the picked server’s models, and reads them again on Refresh list', async () => {
     const api = bridge();
     const lists: Record<string, string[]> = { 'local-llm': ['qwen-next-flash', 'gemma'], openai: ['gpt-4.1', 'gpt-4.1-mini'] };
