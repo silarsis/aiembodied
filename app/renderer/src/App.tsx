@@ -1060,6 +1060,14 @@ export default function App() {
   const configOutputDeviceId = config?.audioOutputDeviceId ?? '';
   const hasRealtimeSupport = typeof RTCPeerConnection === 'function';
   const hasRealtimeApiKey = config?.hasRealtimeApiKey ?? false;
+
+  // Use avatar's voice preference when loaded
+  useEffect(() => {
+    if (avatarVoice && availableVoices.includes(avatarVoice)) {
+      setSelectedVoice(avatarVoice);
+    }
+  }, [avatarVoice, availableVoices]);
+
   const conversationBackend: ConversationBackend = config?.conversationBackend ?? 'local';
   const isLocalBackend = conversationBackend === 'local';
   // The local backend needs no API key; OpenAI Realtime does.
