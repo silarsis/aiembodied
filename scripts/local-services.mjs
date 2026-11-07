@@ -16,8 +16,8 @@
  * Skip it all with --no-services or DEV_START_SERVICES=0.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
 
@@ -54,12 +54,31 @@ export function readSavedPreferences(repoRoot) {
   return {};
 }
 
+/**
+ * The thinking model picked in the app (Models and servers → Thinking → Download a thinking model),
+ * from local-llm.json beside preferences.json, or null for the start script's default.
+ */
+export function readSelectedLocalLlm(repoRoot, exists = existsSync) {
+  for (const preferences of savedPreferencesPaths(repoRoot)) {
+    try {
+      const library = JSON.parse(readFileSync(join(dirname(preferences), 'local-llm.json'), 'utf8'));
+      const model = Array.isArray(library?.models) ? library.models.find((entry) => entry?.id === library.selected) : undefined;
+      if (model && typeof model.path === 'string' && typeof model.alias === 'string' && exists(model.path)) {
+        return { path: model.path, alias: model.alias, ...(Number(model.contextLength) > 0 ? { contextLength: Number(model.contextLength) } : {}) };
+      }
+    } catch {
+      // Missing or unreadable; try the next one.
+    }
+  }
+  return null;
+}
+
 function lower(value) {
   return typeof value === 'string' && value.trim() ? value.trim().toLowerCase() : undefined;
 }
 
 /** The services to ensure, with how to tell each is up and how to start it. */
-export function describeLocalServices(repoRoot, env, saved = readSavedPreferences(repoRoot)) {
+export function describeLocalServices(repoRoot, env, saved = readSavedPreferences(repoRoot), localLlm = readSelectedLocalLlm(repoRoot)) {
   const providers = saved.providers ?? {};
   const pipeline = (lower(saved.conversationBackend) ?? lower(env.CONVERSATION_BACKEND) ?? 'local') !== 'openai';
   const llmLocal = (lower(providers.llm?.provider) ?? lower(env.LLM_PROVIDER) ?? 'local') !== 'openai';
@@ -108,16 +127,23 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
   const searxngUrl = trimSlash(builtInUrl('local-searxng') || env.SEARXNG_URL || 'http://127.0.0.1:8888');
   const memoryUrl = trimSlash(env.MEMORY_SERVICE_URL || 'http://127.0.0.1:8194');
   const speechForStt = pipeline && usedBy('local-speech', ['stt']);
+  // A model downloaded in the app runs with its own name, and no more context than it was made for.
+  const contextCap = Number.parseInt(env.LOCAL_LLM_CONTEXT ?? '', 10) > 0 ? Number.parseInt(env.LOCAL_LLM_CONTEXT, 10) : 65536;
+  const llmContext = localLlm?.contextLength ? String(Math.min(localLlm.contextLength, contextCap)) : env.LOCAL_LLM_CONTEXT;
 
   const services = [
     {
       id: 'llm',
-      label: 'Qwen LLM (llama-server)',
+      label: localLlm ? `${localLlm.alias} (llama-server)` : 'Qwen LLM (llama-server)',
       enabled: usedBy('local-llm', [...voiceUses, 'describe', 'posegen', 'posecheck', 'clips']),
       url: llmUrl,
       probe: `${llmUrl}/models`,
       script: 'scripts/start-local-llm.ps1',
-      args: [...portArgs(llmUrl), ...(env.LOCAL_LLM_CONTEXT ? ['-Context', env.LOCAL_LLM_CONTEXT] : [])],
+      args: [
+        ...portArgs(llmUrl),
+        ...(localLlm ? ['-Model', localLlm.path, '-Alias', localLlm.alias] : []),
+        ...(llmContext ? ['-Context', llmContext] : []),
+      ],
     },
     {
       id: 'asr',

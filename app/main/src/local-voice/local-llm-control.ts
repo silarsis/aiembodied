@@ -20,6 +20,14 @@ export interface LocalLlmControlOptions {
   powershell?: (command: string) => Promise<string>;
   /** Starts a PowerShell command that outlives the app. */
   launch?: (command: string) => void;
+  /** The GGUF to run (downloaded from Hugging Face), or null for the start script's own default. */
+  model?: () => Promise<{ path: string; alias: string; contextLength?: number } | null>;
+}
+
+/** What a restart did, for the page to show. */
+export interface LocalLlmRestart {
+  restarted: boolean;
+  message: string;
 }
 
 /**
@@ -41,6 +49,12 @@ export class LocalLlmControl {
     } catch {
       return null;
     }
+  }
+
+  /** LOCAL_LLM_CONTEXT, or the start script's default: a smaller model's own limit is used when lower. */
+  private contextCap(): number {
+    const value = Number.parseInt((this.options.env ?? process.env).LOCAL_LLM_CONTEXT ?? '', 10);
+    return Number.isFinite(value) && value > 0 ? value : 65536;
   }
 
   private get script(): string {
@@ -71,12 +85,48 @@ export class LocalLlmControl {
     return output.includes('stopped');
   }
 
+  /**
+   * Stop llama-server (if it is running) and start it again with the picked model. Anything else
+   * listening on the port is left alone, and the message says what to do instead.
+   */
+  async restart(): Promise<LocalLlmRestart> {
+    const port = this.port();
+    const model = await this.options.model?.().catch(() => null);
+    const by = model ? `-Model "${model.path}" -Alias ${model.alias}` : 'its default model';
+    if (!port) {
+      return {
+        restarted: false,
+        message: `Thinking doesn't run on this PC's llama-server${(this.options.platform ?? process.platform) !== 'win32' ? ' (restarting it is Windows only)' : ''}. Start llama-server with ${by} yourself.`,
+      };
+    }
+    if (!existsSync(this.script)) return { restarted: false, message: `Restart llama-server with ${by} yourself.` };
+    const output = await this.run(
+      [
+        `$id = Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess;`,
+        `if ($id) { $process = Get-Process -Id $id -ErrorAction SilentlyContinue;`,
+        `if ($process -and $process.ProcessName -eq 'llama-server') { Stop-Process -Id $id -Force; Wait-Process -Id $id -Timeout 30 -ErrorAction SilentlyContinue; 'stopped' }`,
+        `elseif ($process) { 'other:' + $process.ProcessName } }`,
+        'exit 0',
+      ].join(' '),
+    ).catch(() => '');
+    const other = /other:([^\r\n]+)/.exec(output);
+    if (other) {
+      return { restarted: false, message: `Port ${port} is held by ${other[1]}, not llama-server, so it was left alone. Close it, then restart the app.` };
+    }
+    await this.start();
+    return { restarted: true, message: `llama-server is restarting with ${model ? model.alias : 'its default model'}; loading takes a minute or more.` };
+  }
+
   /** Starts the server in its own hidden console, the way pnpm dev:run does. Loading takes minutes. */
-  start(): void {
+  async start(): Promise<void> {
     const port = this.port();
     if (!port) return;
     mkdirSync(this.options.logDirectory, { recursive: true });
-    const args = ['-NoProfile', '-NonInteractive', '-File', this.script, '-Port', String(port)]
+    const model = await this.options.model?.().catch(() => null);
+    const modelArgs = model
+      ? ['-Model', model.path, '-Alias', model.alias, ...(model.contextLength ? ['-Context', String(Math.min(model.contextLength, this.contextCap()))] : [])]
+      : [];
+    const args = ['-NoProfile', '-NonInteractive', '-File', this.script, '-Port', String(port), ...modelArgs]
       // Windows PowerShell 5.1 joins -ArgumentList without quoting.
       .map((arg) => psQuote(`"${arg}"`))
       .join(', ');

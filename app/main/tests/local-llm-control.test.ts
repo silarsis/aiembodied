@@ -62,11 +62,35 @@ describe('LocalLlmControl', () => {
 
   it('starts it again with the start script on the same port', async () => {
     const { llm, launch } = await control();
-    llm.start();
+    await llm.start();
     const command = (launch.mock.calls[0] as [string])[0];
     expect(command).toContain('start-local-llm.ps1');
     expect(command).toContain('"-Port"');
     expect(command).toContain('"1234"');
     expect(command).toContain('-WindowStyle Hidden');
+  });
+
+  it('restarts llama-server with the downloaded model and its own context limit', async () => {
+    const model = async () => ({ path: 'C:\\models\\m-Q4_K_M.gguf', alias: 'm-q4_k_m', contextLength: 32768 });
+    const { llm, powershell, launch } = await control({ model });
+    await expect(llm.restart()).resolves.toMatchObject({ restarted: true, message: expect.stringContaining('m-q4_k_m') });
+    expect((powershell.mock.calls[0] as unknown as [string])[0]).toContain("ProcessName -eq 'llama-server'");
+    const command = (launch.mock.calls[0] as [string])[0];
+    expect(command).toContain('"-Model"');
+    expect(command).toContain('m-Q4_K_M.gguf');
+    expect(command).toContain('"-Alias"');
+    expect(command).toContain('"32768"');
+  });
+
+  it('leaves another program on the port alone', async () => {
+    const { llm, launch } = await control({ powershell: async () => 'other:LM Studio\r\n' });
+    await expect(llm.restart()).resolves.toMatchObject({ restarted: false, message: expect.stringContaining('LM Studio') });
+    expect(launch).not.toHaveBeenCalled();
+  });
+
+  it('says what to run when it cannot restart it', async () => {
+    const { llm, powershell } = await control({ platform: 'linux', model: async () => ({ path: '/m.gguf', alias: 'm' }) });
+    await expect(llm.restart()).resolves.toMatchObject({ restarted: false, message: expect.stringContaining('-Model "/m.gguf"') });
+    expect(powershell).not.toHaveBeenCalled();
   });
 });

@@ -3,6 +3,7 @@ import { app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain } from 'elect
 import dotenv from 'dotenv';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
   ConfigManager,
@@ -98,6 +99,8 @@ import { BUILT_IN_SERVER_IDS, databaseUrlWithPassword, routeTargets, serverUrl, 
 import { probeMemoryDatabase, probeModelServer } from './config/model-server-probe.js';
 import { ComfyUIPool } from './avatar/generation/comfyui-pool.js';
 import { LocalLlmControl } from './local-voice/local-llm-control.js';
+import { lookupHuggingFace, parseHuggingFaceRef } from './local-llm/huggingface.js';
+import { LlmLibrary } from './local-llm/llm-library.js';
 import { MCPManager } from './mcp/mcp-manager.js';
 import { ToolRegistry } from './tools/tool-registry.js';
 import { createRoutedSearchProvider, createWebSearchTool, WEB_SEARCH_TOOL_ID } from './tools/web-search.js';
@@ -179,7 +182,7 @@ const pushToTalk = new PushToTalkShortcut({
       mainWindow.webContents.send('talk:shortcut-status', status);
     }
   },
-  logger: { info: (...args) => logger.info(...args), warn: (...args) => logger.warn(...args) },
+  logger: { info: (message: string, meta?: unknown) => logger.info(message, meta), warn: (message: string, meta?: unknown) => logger.warn(message, meta) },
 });
 let memoryStore: MemoryStore | null = null;
 let conversationManager: ConversationManager | null = null;
@@ -635,6 +638,54 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
   await refreshAvatarDescriptionService(manager);
 }
 
+/**
+ * Thinking models downloaded from Hugging Face, and this PC's llama-server that runs the picked one.
+ * Built on first use: both need the config manager and the userData folder.
+ */
+let localLlmTools: { library: LlmLibrary; control: LocalLlmControl } | null = null;
+function getLocalLlmTools(manager: ConfigManager): { library: LlmLibrary; control: LocalLlmControl } {
+  if (localLlmTools) return localLlmTools;
+  // pnpm dev:run moves the profile folders; downloads go to the real one so they outlive .dev-home.
+  const home = process.env.AIEMBODIED_HOST_USERPROFILE?.trim() || os.homedir();
+  const library = new LlmLibrary({
+    file: path.join(app.getPath('userData'), 'local-llm.json'),
+    modelsDirectory: process.env.LOCAL_LLM_MODELS_DIR?.trim() || path.join(home, '.cache', 'aiembodied', 'llm-models'),
+    onDownloaded: (model) => useLocalLlm(manager, model.id),
+    logger,
+  });
+  const control = new LocalLlmControl({
+    baseUrl: () => {
+      const server = routeTargets(manager.getConfig().models, 'llm')[0]?.server;
+      return server?.id === BUILT_IN_SERVER_IDS.llm ? serverUrl(server.type, server.url) : null;
+    },
+    repoRoot: path.resolve(__dirname, '../../..'),
+    logDirectory: path.join(app.getPath('userData'), 'logs'),
+    model: () => library.selected(),
+  });
+  localLlmTools = { library, control };
+  return localLlmTools;
+}
+
+/**
+ * Run a downloaded model (or, with null, the start script's default) for Thinking: point Thinking
+ * at this PC's llama-server and restart it with that model. Returns what happened, in words.
+ */
+async function useLocalLlm(manager: ConfigManager, id: string | null): Promise<string> {
+  const { library, control } = getLocalLlmTools(manager);
+  const model = await library.select(id);
+  const current = manager.getConfig().models.routes.llm;
+  await manager.setModelRoute('llm', {
+    ...current,
+    server: BUILT_IN_SERVER_IDS.llm,
+    model: model?.alias,
+    backups: (current.backups ?? []).filter((backup) => backup.server !== BUILT_IN_SERVER_IDS.llm),
+  });
+  await applyProviderSettings(manager);
+  const result = await control.restart();
+  logger.info('Thinking model changed.', { model: model?.id ?? 'default', restarted: result.restarted });
+  return result.message;
+}
+
 /** The motion service Moving uses, or null when Moving runs on OpenAI keyframes. */
 function localMotionServer(manager: ConfigManager) {
   const target = routeTargets(manager.getConfig().models, 'motion')[0];
@@ -963,6 +1014,44 @@ function registerIpcHandlers(
   ipcMain.handle('models:comfy-addon', async (_event, serverId: unknown) => {
     const server = comfyServer(serverId);
     return { installed: await modelDownloads.hasAddon(server), folder: comfyAddonDirectory };
+  });
+  // Thinking models from Hugging Face, for this PC's llama-server.
+  const hfToken = () => manager.getServerKey(BUILT_IN_SERVER_IDS.huggingface);
+  const localLlmList = async () => {
+    const { library } = getLocalLlmTools(manager);
+    return { ...(await library.read()), folder: library.modelsDirectory };
+  };
+  ipcMain.handle('models:hf-lookup', async (_event, ref: unknown) => {
+    const parsed = parseHuggingFaceRef(typeof ref === 'string' ? ref : '');
+    if (!parsed) throw new Error('Paste a Hugging Face link or repo name (such as unsloth/Qwen3-8B-GGUF), or type words to search for.');
+    return lookupHuggingFace(parsed, hfToken());
+  });
+  ipcMain.handle('models:hf-download', async (_event, payload: { repo?: unknown; quant?: unknown; use?: unknown }) => {
+    if (typeof payload?.repo !== 'string' || typeof payload.quant !== 'string') throw new Error('Pick a model and size first.');
+    // Read the repo again here rather than trusting file names from the page.
+    const lookup = await lookupHuggingFace({ repo: payload.repo }, hfToken());
+    const quant = lookup.quants.find((entry) => entry.id === payload.quant);
+    if (!lookup.repo || !quant) throw new Error('That size is no longer in the repo. Look it up again.');
+    return getLocalLlmTools(manager).library.start(lookup.repo, quant, {
+      token: hfToken(),
+      use: payload.use !== false,
+      ...(lookup.contextLength ? { contextLength: lookup.contextLength } : {}),
+    });
+  });
+  ipcMain.handle('models:hf-downloads', () => getLocalLlmTools(manager).library.list());
+  ipcMain.handle('models:hf-cancel', (_event, id: unknown) => {
+    const { library } = getLocalLlmTools(manager);
+    if (typeof id === 'string') library.cancel(id);
+    return library.list();
+  });
+  ipcMain.handle('models:local-llms', () => localLlmList());
+  ipcMain.handle('models:use-local-llm', async (_event, id: unknown) => {
+    const message = await useLocalLlm(manager, typeof id === 'string' && id ? id : null);
+    return { message, library: await localLlmList(), models: manager.getModelRoutingView() };
+  });
+  ipcMain.handle('models:delete-local-llm', async (_event, id: unknown) => {
+    if (typeof id === 'string') await getLocalLlmTools(manager).library.remove(id);
+    return localLlmList();
   });
   ipcMain.handle('models:set-key', async (_event, payload: { serverId?: unknown; key?: unknown }) => {
     if (typeof payload?.serverId !== 'string') throw new Error('Choose a server.');
@@ -1704,14 +1793,8 @@ app.whenReady().then(async () => {
       imageModels: avatarImageModels,
       characterModels: avatarCharacterModels,
       characterRunner,
-      localLlm: new LocalLlmControl({
-        baseUrl: () => {
-          const server = routeTargets(manager.getConfig().models, 'llm')[0]?.server;
-          return server?.id === 'local-llm' ? serverUrl(server.type, server.url) : null;
-        },
-        repoRoot: path.resolve(__dirname, '../../..'),
-        logDirectory: path.join(app.getPath('userData'), 'logs'),
-      }),
+      // Started again afterwards with the thinking model picked in Models and servers.
+      localLlm: getLocalLlmTools(manager).control,
       logger,
     });
   }

@@ -96,6 +96,9 @@ export async function probeModelServer(
         return key
           ? { status: 'up', models: {}, checkedAt }
           : { status: 'needs-key', message: 'Many Civitai downloads need an API key (civitai.com → Account settings → API keys).', models: {}, checkedAt };
+      case 'huggingface':
+        // Optional too: only gated and private models need a token.
+        return { status: 'up', models: {}, checkedAt };
     }
   } catch (error) {
     if (error instanceof HttpError && (error.status === 401 || error.status === 403)) {
