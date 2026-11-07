@@ -1018,6 +1018,8 @@ export default function App() {
     'You are echo, an AI assistant. You are slightly sarcastic, very blunt, but helpful in your own way.\n\nYou question assumptions, and aren\'t afraid to ask questions or challenge me. You have a sharp wit.\n\nYou are here to help me be a better person, but you don\'t put up with bullshit. You also have an Australian sensibility when it comes to swearing and language overall.\n\nYou are good-natured and good-humoured.';
   const [selectedVoice, setSelectedVoice] = useState<string>(DEFAULT_VOICE);
   const [basePrompt, setBasePrompt] = useState<string>(DEFAULT_PROMPT);
+  const [testResponse, setTestResponse] = useState<string | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
   const [serverVoice, setServerVoice] = useState<string | null>(null);
   const [useServerVad, setUseServerVad] = useState<boolean>(true);
   const [vadThreshold, setVadThreshold] = useState<number>(0.85);
@@ -1072,6 +1074,38 @@ export default function App() {
   const isLocalBackend = conversationBackend === 'local';
   // The local backend needs no API key; OpenAI Realtime does.
   const canConnectConversation = isLocalBackend || hasRealtimeApiKey;
+
+  // Generate a test response based on the base prompt
+  const handleTestResponse = useCallback(() => {
+    setIsTesting(true);
+    setTestResponse(null);
+
+    // Generate a simple test phrase based on the base prompt
+    const promptPreview = basePrompt.substring(0, 40) + (basePrompt.length > 40 ? '...' : '');
+    const testPhrases = [
+      `I'm echo, your AI assistant. Based on your instructions "${promptPreview}", I'm ready to help!`,
+      `Let's chat! I've been configured with: "${promptPreview}"`,
+      `Hello! I'm your digital companion. My personality is shaped by: "${promptPreview}"`,
+    ];
+
+    // Pick a random phrase
+    const randomPhrase = testPhrases[Math.floor(Math.random() * testPhrases.length)];
+
+    // Simulate streaming response
+    let currentPhrase = '';
+    let index = 0;
+
+    const interval = setInterval(() => {
+      currentPhrase += randomPhrase.charAt(index);
+      setTestResponse(currentPhrase);
+      index++;
+
+      if (index >= randomPhrase.length) {
+        clearInterval(interval);
+        setIsTesting(false);
+      }
+    }, 30); // Typing speed
+  }, [basePrompt]);
   const wakePhrase = config?.wakeWord?.keywordLabel;
   // A saved gpt-4o-realtime-preview model is retired (model_not_found); fall back to the default.
   const realtimeModel =
@@ -2619,6 +2653,22 @@ export default function App() {
                     ))}
                   </select>
                 </div>
+                <div className="control">
+                  <button
+                    type="button"
+                    className="btn btn--secondary"
+                    onClick={handleTestResponse}
+                    disabled={isTesting || !isLocalBackend || loadingConfig}
+                  >
+                    {isTesting ? 'Testing...' : 'Test Response'}
+                  </button>
+                </div>
+                {testResponse && (
+                  <div className="control">
+                    <label>Test Response</label>
+                    <div className="test-response">{testResponse}</div>
+                  </div>
+                )}
               </section>
             </AvatarConfigurator>
           </PanelDialog>
