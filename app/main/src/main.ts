@@ -1,5 +1,5 @@
 import { BackgroundService } from './backgrounds/background-service.js';
-import { app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain } from 'electron';
+import { app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain, powerMonitor } from 'electron';
 import dotenv from 'dotenv';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
@@ -53,6 +53,7 @@ import { ModelDownloadService } from './avatar/generation/model-downloads.js';
 import { AvatarCharacterModelService } from './avatar/generation/character-model-service.js';
 import { LocalMotionClient } from './avatar/motion/local-motion-client.js';
 import { LocalMotionGenerationService } from './avatar/motion/local-motion-generation-service.js';
+import { ServerManager } from './server/server-manager.js';
 import { LocalVoiceService } from './local-voice/local-voice-service.js';
 import {
   activeAgent,
@@ -190,6 +191,7 @@ let removeConversationListeners: (() => void) | null = null;
 let metricsCollector: PrometheusCollector | null = null;
 let autoLaunchManager: AutoLaunchManager | null = null;
 let developmentTray: Tray | null = null;
+let serverManager: ServerManager | null = null;
 let avatarModelService: AvatarModelService | null = null;
 let avatarAnimationService: AvatarAnimationService | null = null;
 let avatarPoseService: AvatarPoseService | null = null;
@@ -1644,6 +1646,38 @@ function registerIpcHandlers(
     app.quit();
   });
 
+  // Hibernate handler
+  ipcMain.handle('app:hibernate', async (): Promise<void> => {
+    logger.info('Hibernate requested via IPC');
+    
+    if (!serverManager) {
+      throw new Error('Server manager not initialized');
+    }
+
+    // Stop all servers first
+    try {
+      await serverManager.hibernate();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('Failed to hibernate servers', { message });
+    }
+
+    // Request Windows hibernation
+    if (process.platform === 'win32') {
+      try {
+        const { spawnSync } = await import('node:child_process');
+        spawnSync('shutdown', ['/h'], { stdio: 'ignore', windowsHide: true });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error('Failed to initiate hibernation', { message });
+        throw new Error(`Failed to initiate hibernation: ${message}`);
+      }
+    } else {
+      logger.warn('Hibernate is Windows-only');
+      throw new Error('Hibernate is only supported on Windows');
+    }
+  });
+
   // Avatar voice preferences
   ipcMain.handle('avatar:voice:get-preference', () => {
     if (!memoryStore) {
@@ -1710,6 +1744,32 @@ if (!gotLock) {
 }
 
 app.whenReady().then(async () => {
+  // Initialize server manager for hibernation support
+  serverManager = new ServerManager(logger);
+  logger.info('ServerManager initialized');
+
+  // Register for system suspend/resume notifications
+  if (process.platform === 'win32') {
+    // Windows: Use powerMonitor (cross-platform) with native fallback
+    powerMonitor.on('suspend', async () => {
+      logger.info('System suspend detected');
+      await serverManager?.suspend().catch((error) => {
+        logger.warn('Failed to suspend servers', { message: error instanceof Error ? error.message : String(error) });
+      });
+    });
+
+    powerMonitor.on('resume', async () => {
+      logger.info('System resume detected');
+      await serverManager?.resume().catch((error) => {
+        logger.warn('Failed to resume servers', { message: error instanceof Error ? error.message : String(error) });
+      });
+    });
+
+    logger.info('System suspend/resume handlers registered');
+  } else {
+    logger.info('Suspend/resume handlers not available on this platform');
+  }
+
   const manager = new ConfigManager({
     secretStore,
     preferencesStore: new FilePreferencesStore(path.join(app.getPath('userData'), 'preferences.json')),
@@ -2038,6 +2098,13 @@ app.on('before-quit', async (event) => {
   pushToTalk.dispose();
   // Training carries on in WSL without the app; this only stops watching it.
   wakeWordTrainer?.dispose();
+
+  // Suspend servers before app exits
+  if (serverManager) {
+    await serverManager.suspend().catch((error) => {
+      logger.warn('Failed to suspend servers during shutdown', { message: error instanceof Error ? error.message : String(error) });
+    });
+  }
 
   // Async cleanup tasks
   const cleanupTasks: Promise<void>[] = [];

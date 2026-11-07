@@ -322,3 +322,123 @@ export async function ensureLocalServices(repoRoot, env, {
 export function shouldStartServices(argv, env) {
   return !argv.includes('--no-services') && isOn(env.DEV_START_SERVICES, true);
 }
+
+/**
+ * Check if a server is running by probing its health endpoint
+ */
+export async function isServerRunning(service, fetchFn = fetch, timeoutMs = 1000) {
+  return await responds(service.probe, fetchFn, timeoutMs);
+}
+
+/**
+ * Stop a server by port using PowerShell
+ * Returns true if the server was running and stopped
+ */
+export async function stopServerByPort(port, { spawnSyncFn = spawnSync, platform = process.platform, log = console } = {}) {
+  if (platform !== 'win32') {
+    log.warn(`[warn] Server stop is Windows-only (port ${port})`);
+    return false;
+  }
+
+  const script = resolve(process.cwd(), 'scripts', 'stop-service.ps1');
+  if (!existsSync(script)) {
+    log.warn(`[warn] Stop script not found: ${script}`);
+    return false;
+  }
+
+  try {
+    const result = spawnSyncFn(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-File', script, '-Port', String(port)],
+      { cwd: process.cwd(), stdio: 'pipe', windowsHide: true, timeout: 5000 }
+    );
+
+    if (result.status === 0) {
+      log.info(`[info] Stopped server on port ${port}`);
+      return true;
+    } else {
+      log.warn(`[warn] Failed to stop server on port ${port}: ${result.stderr?.toString().trim() || 'unknown error'}`);
+      return false;
+    }
+  } catch (error) {
+    log.warn(`[warn] Error stopping server on port ${port}: ${error.message}`);
+    return false;
+  }
+}
+
+/**
+ * Get the PID of a server listening on a port
+ */
+export async function getServerPid(port, { platform = process.platform } = {}) {
+  if (platform !== 'win32') return null;
+
+  try {
+    const { spawnSync } = await import('node:child_process');
+    const result = spawnSync(
+      'powershell.exe',
+      [`-Command "Get-NetTCPConnection -LocalPort ${port} -State Listen | Select-Object -First 1 -ExpandProperty OwningProcess"`],
+      { cwd: process.cwd(), stdio: 'pipe', windowsHide: true, timeout: 3000 }
+    );
+
+    if (result.status === 0) {
+      const pid = parseInt(result.stdout?.toString().trim(), 10);
+      return Number.isFinite(pid) ? pid : null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the process name for a PID
+ */
+export async function getProcessName(pid, { platform = process.platform } = {}) {
+  if (platform !== 'win32' || !pid) return null;
+
+  try {
+    const { spawnSync } = await import('node:child_process');
+    const result = spawnSync(
+      'powershell.exe',
+      [`-Command "(Get-Process -Id ${pid} -ErrorAction SilentlyContinue).ProcessName"`],
+      { cwd: process.cwd(), stdio: 'pipe', windowsHide: true, timeout: 3000 }
+    );
+
+    if (result.status === 0) {
+      return result.stdout?.toString().trim() || null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the port from a service URL
+ */
+export function getServicePort(service) {
+  try {
+    return new URL(service.url).port;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Stop all services that are currently running
+ */
+export async function stopRunningServices(services, options = {}) {
+  const stopped = [];
+  for (const service of services) {
+    if (await isServerRunning(service, options.fetchFn, options.probeTimeoutMs || 1000)) {
+      const port = getServicePort(service);
+      if (port) {
+        const wasRunning = await stopServerByPort(Number(port), options);
+        if (wasRunning) {
+          stopped.push({ id: service.id, port, label: service.label });
+        }
+      }
+    }
+  }
+  return stopped;
+}
