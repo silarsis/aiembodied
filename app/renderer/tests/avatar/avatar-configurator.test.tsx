@@ -137,6 +137,8 @@ function createAvatarBridgeStub(overrides: Partial<AvatarBridge> = {}): AvatarBr
     confirmAvatarConcept: vi.fn().mockResolvedValue(undefined),
     loadGeneratedAvatarPreview: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
     rejectGeneratedAvatar: vi.fn().mockResolvedValue(undefined),
+    getVoicePreference: vi.fn().mockResolvedValue(null),
+    setVoicePreference: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }

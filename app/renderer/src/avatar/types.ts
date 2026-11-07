@@ -348,4 +348,6 @@ export interface AvatarBridge {
   redrawAvatarViews?(jobId: string): Promise<void>;
   listAvatarCharacterModels?(): Promise<AvatarCharacterModelSelection>;
   setAvatarCharacterModel?(stage: 'geometry' | 'rig', id: string): Promise<void>;
+  getVoicePreference(): Promise<string | null>;
+  setVoicePreference(voice: string): Promise<void>;
 }

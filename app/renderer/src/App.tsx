@@ -666,6 +666,7 @@ export default function App() {
   const latencyTrackerRef = useRef<LatencyTracker>(new LatencyTracker());
   const [latencySnapshot, setLatencySnapshot] = useState<LatencySnapshot | null>(null);
   const [activeVrmModel, setActiveVrmModel] = useState<AvatarModelSummary | null>(null);
+  const [avatarVoice, setAvatarVoice] = useState<string | null>(null);
   const [availableAnimationSlugs, setAvailableAnimationSlugs] = useState<string[]>([]);
   const [availablePoses, setAvailablePoses] = useState<AvatarPoseSummary[]>([]);
   const animationBus = useMemo(() => createAvatarAnimationBus(), []);
@@ -746,6 +747,26 @@ export default function App() {
       clearInterval(timer);
     };
   }, [resolveApi]);
+
+  // Load avatar voice preference when avatar changes
+  useEffect(() => {
+    const avatarApi = resolveApi()?.avatar;
+    if (!avatarApi?.getVoicePreference) {
+      return;
+    }
+    let cancelled = false;
+
+    const loadVoice = async () => {
+      const voice = await avatarApi.getVoicePreference();
+      if (!cancelled) {
+        setAvatarVoice(voice);
+      }
+    };
+    loadVoice();
+    return () => {
+      cancelled = true;
+    };
+  }, [resolveApi, activeVrmModel?.id]);
 
   useEffect(() => {
     const avatar = resolveApi()?.avatar;
@@ -2152,6 +2173,15 @@ export default function App() {
       setSelectedVoice(availableVoices[0] ?? DEFAULT_VOICE);
     }
   }, [availableVoices, selectedVoice]);
+
+  // Save voice preference when it changes and there's an active avatar
+  useEffect(() => {
+    const avatarApi = resolveApi()?.avatar;
+    if (!avatarApi?.setVoicePreference || !activeVrmModel?.id) {
+      return;
+    }
+    avatarApi.setVoicePreference(selectedVoice || '');
+  }, [selectedVoice, activeVrmModel?.id, resolveApi]);
 
   const levelPercentage = useMemo(() => Math.min(100, Math.round(audioGraph.level * 100)), [audioGraph.level]);
 

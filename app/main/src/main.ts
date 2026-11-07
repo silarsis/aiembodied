@@ -1633,6 +1633,37 @@ function registerIpcHandlers(
     app.quit();
   });
 
+  // Avatar voice preferences
+  ipcMain.handle('avatar:voice:get-preference', () => {
+    if (!memoryStore) {
+      logger.warn('Memory store unavailable for avatar voice preference');
+      return null;
+    }
+    const activeModel = avatarModelService?.getActiveModel?.() || null;
+    if (!activeModel?.id) {
+      return null;
+    }
+    return memoryStore.getValue(`avatar.voice.${activeModel.id}`);
+  });
+
+  ipcMain.handle('avatar:voice:set-preference', (_event, voice: unknown) => {
+    if (typeof voice !== 'string' || !voice) {
+      logger.warn('Invalid voice preference:', voice);
+      return;
+    }
+    if (!memoryStore) {
+      logger.warn('Memory store unavailable for avatar voice preference');
+      return;
+    }
+    const activeModel = avatarModelService?.getActiveModel?.() || null;
+    if (!activeModel?.id) {
+      logger.warn('No active avatar model to set voice preference');
+      return;
+    }
+    memoryStore.setValue(`avatar.voice.${activeModel.id}`, voice);
+    logger.info('Avatar voice preference saved', { avatarId: activeModel.id, voice });
+  });
+
   // Register MCP handlers
   if (toolRegistry && mcpManager) {
     registerMCPHandlers(mcpManager, toolRegistry);
