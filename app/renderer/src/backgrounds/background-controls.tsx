@@ -25,7 +25,13 @@ export function BackgroundControls({ backgrounds }: { backgrounds: BackgroundCon
               type="button"
               className="backgroundCard"
               aria-pressed={item.id === backgrounds.activeId}
-              onClick={() => void backgrounds.select(item.id)}
+              onClick={() => {
+                if (item.description && !backgrounds.generating) {
+                  setPrompt(item.description);
+                  setNotice('');
+                }
+                void backgrounds.select(item.id);
+              }}
             >
               <img src={item.thumbnailDataUrl} alt="" />
               <span>{item.name}</span>

@@ -81,6 +81,22 @@ describe('background controls', () => {
     expect(screen.getByRole('button', { name: 'Delete Forest' })).toBeEnabled();
   });
 
+  it('fills the description field with the description a saved scene was made from', async () => {
+    const api = bridge();
+    vi.mocked(api.list).mockResolvedValue([
+      item('Garden'),
+      { ...item('Forest'), builtIn: false, description: 'A misty forest clearing at dawn' },
+    ]);
+    render(<Harness api={api} />);
+    const field = screen.getByLabelText('Background description');
+    fireEvent.click(await screen.findByRole('button', { name: 'Forest' }));
+    expect(field).toHaveValue('A misty forest clearing at dawn');
+    await waitFor(() => expect(api.setActive).toHaveBeenCalledWith('Forest'));
+    fireEvent.change(field, { target: { value: 'My own words' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Garden' }));
+    expect(field).toHaveValue('My own words');
+  });
+
   it('ignores stale image loads after choosing another scene', async () => {
     const api = bridge();
     let resolveOld!: (image: string) => void;

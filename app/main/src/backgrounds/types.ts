@@ -3,6 +3,8 @@ export interface BackgroundSummary {
   name: string;
   builtIn: boolean;
   thumbnailDataUrl: string;
+  /** The user's own description that generated this scene; absent for included scenes. */
+  description?: string;
   /** Shared composition anchor: object-position and projected avatar feet use this same fraction. */
   groundY: number;
 }

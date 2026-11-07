@@ -172,6 +172,7 @@ export class BackgroundService {
       id: entry.id,
       name: entry.name,
       builtIn: false,
+      description: entry.prompt,
       groundY: BACKGROUND_GROUND_Y,
       thumbnailDataUrl: await this.imageData(
         path.join(this.options.backgroundsDirectory, `${entry.id}-thumb.png`),
