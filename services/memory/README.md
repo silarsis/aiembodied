@@ -37,6 +37,12 @@ What exists so far (phases 1 to 4):
   and the brief use it. The work only runs while the client is idle (it says when a turn starts
   and ends through `/v1/activity`), so it never competes with a live conversation for the model.
   A late message or a deletion makes the summaries above it due again.
+- **Continuity (ideas from [mnemos](https://github.com/Riley-Coyote/mnemos-mcp)).** Long texts are
+  embedded in overlapping windows as well as whole, so they are found by what they say past the
+  opening. The agent can leave itself a note for the next conversation (a *handoff*), shown in the
+  next brief word for word, and can correct or withdraw a saved fact (the old one is kept). Facts
+  record the model that wrote them, and fade out of the brief unless they keep being used
+  (pinned facts never fade; faded ones are still searchable). See API.md.
 - **Forget.** Delete a session, a message or a fact, with everything indexed from it. Deletes are
   recorded as tombstones, which the mirror follows.
 - **Move and mirror.** Switch to another database (such as Supabase) while running, copying

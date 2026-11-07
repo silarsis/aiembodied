@@ -13,7 +13,9 @@ from uuid import UUID
 import psycopg
 from psycopg.types.json import Jsonb
 
+from . import handoffs
 from .embed import Embedder
+from .facts import ACCESSIBILITY_SQL, touch
 from .recall import hybrid_search
 
 BRIEF_FACT_CHARS = 1200
@@ -40,14 +42,17 @@ def brief(
     agent: Optional[str] = None,
     fact_chars: int = BRIEF_FACT_CHARS,
 ) -> dict[str, Any]:
-    """Pinned facts then the newest others, up to `fact_chars`, and how the last conversation
-    (not `session_id`, the one starting) ended. `agent` is reported, not filtered on: every
+    """Pinned facts then the most used and recent others, up to `fact_chars`; the newest note
+    the agent left itself; and how the last conversation (not `session_id`, the one starting)
+    ended. `agent` is reported, not filtered on: every
     character shares one memory."""
+    # Pinned first, then the easiest to reach: what is used stays, what never comes up fades
+    # out of the brief (still searchable). See facts.ACCESSIBILITY_SQL.
     rows = conn.execute(
-        """
-        SELECT id, text, subject, pinned, created_at FROM facts
+        f"""
+        SELECT id, text, subject, pinned, created_at, {ACCESSIBILITY_SQL} AS accessibility FROM facts
         WHERE status = 'active' AND NOT private
-        ORDER BY pinned DESC, created_at DESC
+        ORDER BY pinned DESC, accessibility DESC, created_at DESC
         LIMIT 200
         """
     ).fetchall()
@@ -111,7 +116,13 @@ def brief(
         """
     ).fetchall()
     recent_days = [{"period_start": d[0].isoformat(), "title": d[1], "text": d[2]} for d in reversed(days)]
-    return {"agent": agent, "facts": facts, "last_session": last_session, "recent_days": recent_days}
+    return {
+        "agent": agent,
+        "facts": facts,
+        "handoff": handoffs.latest(conn, exclude_session=session_id),
+        "last_session": last_session,
+        "recent_days": recent_days,
+    }
 
 
 def auto_recall(
@@ -161,6 +172,8 @@ def auto_recall(
                 break
         if not items:
             reason = "no strong match"
+        # What was put in front of the model was used: those facts are refreshed.
+        touch(conn, [item["id"] for item in items if item["kind"] == "fact"], session_id)
     conn.execute(
         "INSERT INTO recall_log (session_id, query, items, reason) VALUES (%s, %s, %s, %s)",
         (

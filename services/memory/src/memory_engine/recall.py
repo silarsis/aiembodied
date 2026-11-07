@@ -4,6 +4,7 @@ full context of one memory."""
 from __future__ import annotations
 
 import math
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Sequence
 from uuid import UUID
@@ -20,23 +21,91 @@ RECENCY_WEIGHT = 0.3
 RECENCY_HALF_LIFE_DAYS = 90.0
 
 
-def embed_pending(conn: psycopg.Connection, embedder: Embedder, limit: int = 64) -> int:
-    """Embed index rows that have no vector from the current model. Returns how many."""
+# Long texts are embedded in windows as well as whole: the model reads about 512 tokens and
+# averages what it reads, so one vector of a long exchange or summary mostly says what it
+# opened with. A row longer than PASSAGE_MIN_CHARS gets windows of whole sentences, about
+# PASSAGE_CHARS each, each starting on the last sentence of the one before, and is found by
+# its best window or its whole.
+PASSAGE_MIN_CHARS = 600
+PASSAGE_CHARS = 400
+MAX_PASSAGES = 40
+EMBED_ROWS = 16
+
+_SENTENCE_BREAK = re.compile(r"(?<=[.!?…])\s+|\n+")
+
+
+def _sentences(text: str) -> list[str]:
+    out: list[str] = []
+    for piece in _SENTENCE_BREAK.split(text):
+        piece = piece.strip()
+        while len(piece) > PASSAGE_CHARS:
+            # A run-on "sentence" (a tool result, a list): cut at the last space that fits.
+            cut = piece.rfind(" ", 0, PASSAGE_CHARS)
+            cut = cut if cut > PASSAGE_CHARS // 2 else PASSAGE_CHARS
+            out.append(piece[:cut].strip())
+            piece = piece[cut:].strip()
+        if piece:
+            out.append(piece)
+    return out
+
+
+def passages(text: str) -> list[str]:
+    """Overlapping windows of whole sentences over `text`, or none when it is short enough for
+    one vector to stand for it."""
+    if len(text) <= PASSAGE_MIN_CHARS:
+        return []
+    sentences = _sentences(text)
+    windows: list[str] = []
+    start = 0
+    while start < len(sentences) and len(windows) < MAX_PASSAGES:
+        end, size = start, 0
+        while end < len(sentences) and (end == start or size + len(sentences[end]) + 1 <= PASSAGE_CHARS):
+            size += len(sentences[end]) + 1
+            end += 1
+        windows.append(" ".join(sentences[start:end]))
+        if end >= len(sentences):
+            break
+        # Overlap by one sentence, unless that sentence filled the window by itself.
+        start = end - 1 if end - 1 > start else end
+    return windows
+
+
+def embed_pending(conn: psycopg.Connection, embedder: Embedder, limit: int = EMBED_ROWS) -> int:
+    """Embed index rows that have no vector, or no passages, from the current model. Returns
+    how many rows were done."""
     rows = conn.execute(
-        "SELECT id, text FROM recall_index WHERE embedding IS NULL OR embed_model IS DISTINCT FROM %s"
+        "SELECT id, text, embedding IS NOT NULL AND embed_model = %s FROM recall_index"
+        " WHERE embedding IS NULL OR embed_model IS DISTINCT FROM %s OR passages_model IS DISTINCT FROM %s"
         " ORDER BY seq LIMIT %s",
-        (embedder.name, limit),
+        (embedder.name, embedder.name, embedder.name, limit),
     ).fetchall()
     if not rows:
         return 0
-    vectors = embedder.embed([text for _, text in rows])
-    for (row_id, text), vector in zip(rows, vectors):
+    wholes = [(row_id, text) for row_id, text, has_whole in rows if not has_whole]
+    vectors = embedder.embed([text for _, text in wholes]) if wholes else []
+    for (row_id, text), vector in zip(wholes, vectors):
         # Only if the text is unchanged since it was read: a rewrite clears the vector again.
         conn.execute(
             "UPDATE recall_index SET embedding = %s::vector, embed_model = %s, updated_at = now()"
             " WHERE id = %s AND text = %s",
             (to_pgvector(vector), embedder.name, row_id, text),
         )
+    windows = [(row_id, text, passages(text)) for row_id, text, _ in rows]
+    flat = [window for _, _, parts in windows for window in parts]
+    flat_vectors = iter(embedder.embed(flat) if flat else [])
+    for row_id, text, parts in windows:
+        part_vectors = [next(flat_vectors) for _ in parts]
+        current = conn.execute("SELECT text = %s FROM recall_index WHERE id = %s", (text, row_id)).fetchone()
+        if not current or not current[0]:
+            continue  # rewritten meanwhile: its next pass makes them
+        conn.execute("DELETE FROM recall_passages WHERE index_id = %s", (row_id,))
+        for part, (window, vector) in enumerate(zip(parts, part_vectors)):
+            conn.execute(
+                "INSERT INTO recall_passages (index_id, part, text, embedding, embed_model)"
+                " VALUES (%s, %s, %s, %s::vector, %s)",
+                (row_id, part, window, to_pgvector(vector), embedder.name),
+            )
+        conn.execute("UPDATE recall_index SET passages_model = %s WHERE id = %s", (embedder.name, row_id))
     return len(rows)
 
 
@@ -81,6 +150,7 @@ def hybrid_search(
         "exclude": list(exclude_ids),
         "skip_session": skip_session,
         "candidates": CANDIDATES,
+        "passage_candidates": CANDIDATES * 3,
     }
     ranks: dict[UUID, dict[str, float]] = {}
 
@@ -109,12 +179,26 @@ def hybrid_search(
         if vector is not None:
             params["vector"] = to_pgvector(vector)
             params["model"] = embedder.name
+            # Each row by its closer of the whole and its best window. Windows of a row that is
+            # waiting to be re-embedded (its text changed) are stale, so they need its vector.
             vector_rows = conn.execute(
                 f"""
-                SELECT r.id, 1 - (r.embedding <=> %(vector)s::vector) AS similarity
-                FROM recall_index r
-                WHERE r.embed_model = %(model)s AND r.embedding IS NOT NULL {_filters()}
-                ORDER BY r.embedding <=> %(vector)s::vector
+                SELECT id, max(similarity) AS similarity FROM (
+                    (SELECT r.id, 1 - (r.embedding <=> %(vector)s::vector) AS similarity
+                     FROM recall_index r
+                     WHERE r.embed_model = %(model)s AND r.embedding IS NOT NULL {_filters()}
+                     ORDER BY r.embedding <=> %(vector)s::vector
+                     LIMIT %(candidates)s)
+                    UNION ALL
+                    (SELECT r.id, 1 - (p.embedding <=> %(vector)s::vector) AS similarity
+                     FROM recall_passages p JOIN recall_index r ON r.id = p.index_id
+                     WHERE p.embed_model = %(model)s AND r.embed_model = %(model)s AND r.embedding IS NOT NULL
+                       AND r.passages_model = %(model)s {_filters()}
+                     ORDER BY p.embedding <=> %(vector)s::vector
+                     LIMIT %(passage_candidates)s)
+                ) found
+                GROUP BY id
+                ORDER BY max(similarity) DESC
                 LIMIT %(candidates)s
                 """,
                 params,

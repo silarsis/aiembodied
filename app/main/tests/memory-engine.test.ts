@@ -147,6 +147,19 @@ describe('MemoryOutbox', () => {
     expect([...engine.state.messages.keys()]).toEqual(['m1', 'm2']);
   });
 
+  it('sends a handoff note after the conversation it belongs to', async () => {
+    const store = await createStore();
+    const engine = fakeEngine();
+    const client = new MemoryEngineClient({ baseUrl: 'http://engine', fetchFn: engine.fetchFn });
+    const outbox = new MemoryOutbox({ store, client, logger: quiet });
+    cleanups.push(() => outbox.stop());
+    outbox.enqueue({ kind: 'session', id: 's1', session: { started_at: '2026-11-03T08:00:00.000Z' } });
+    outbox.enqueue({ kind: 'handoff', sessionId: 's1', handoff: { text: 'Ask about the budget.', agent: 'Echo', model: 'qwen' } });
+    await outbox.flush();
+    expect(engine.state.calls).toEqual(['PUT /v1/sessions/s1', 'PUT /v1/sessions/s1/handoff']);
+    expect(outbox.status().pending).toBe(0);
+  });
+
   it('drops writes the engine refuses so they cannot block the queue', async () => {
     const store = await createStore();
     const client = {
@@ -170,7 +183,8 @@ describe('MemoryStore outbox', () => {
     store.enqueueMemoryOutbox('message', { id: 'm1', session_id: 'a', role: 'user', content: 'x' });
     store.enqueueMemoryOutbox('message', { id: 'm2', session_id: 'b', role: 'user', content: 'y' });
     store.enqueueMemoryOutbox('fact', { id: 'f', fact: { text: 'z', session_id: 'a' } });
-    expect(store.dropMemoryOutboxForSession('a')).toBe(2);
+    store.enqueueMemoryOutbox('handoff', { sessionId: 'a', handoff: { text: 'note' } });
+    expect(store.dropMemoryOutboxForSession('a')).toBe(3);
     expect(store.listMemoryOutbox().map((entry) => entry.kind)).toEqual(['message', 'fact']);
   });
 });

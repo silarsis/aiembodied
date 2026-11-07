@@ -56,6 +56,24 @@ describe('voice memory', () => {
     expect(brief).not.toContain('How your last conversation ended');
   });
 
+  it('puts the note left for this conversation in the brief word for word', async () => {
+    const client = makeClient({
+      brief: async () => ({
+        ...BRIEF,
+        handoff: {
+          id: 'h1', session_id: 's0', agent: 'Echo', model: 'qwen-next-flash',
+          text: 'Halfway through the garden plan.\nAsk about the budget.',
+          written_at: new Date(2026, 10, 1, 9, 30).toISOString(),
+        },
+      }),
+    });
+    const memory = createVoiceMemory({ client, currentSessionId: () => 's1', agentName: () => 'Echo', now: () => NOW });
+    expect(await memory.brief()).toContain(
+      'The note you left yourself for this conversation (2 days ago, written by qwen-next-flash):\n' +
+        'Halfway through the garden plan.\nAsk about the budget.',
+    );
+  });
+
   it('tells the engine when a turn starts and ends, ignoring failures', async () => {
     const activity = vi.fn(async () => { throw new Error('down'); });
     const memory = createVoiceMemory({ client: { ...makeClient(), activity }, currentSessionId: () => null, agentName: () => 'Echo' });

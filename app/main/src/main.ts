@@ -64,7 +64,7 @@ import {
   memoryStorageTargets,
   type MemoryEngineRuntime,
 } from './memory-engine/index.js';
-import { buildVoiceEngines } from './local-voice/voice-engines.js';
+import { buildVoiceEngines, DEFAULT_OPENAI_MODELS } from './local-voice/voice-engines.js';
 import { describeProviders, type ProviderSettingsPatch } from './config/provider-settings.js';
 import type { LocalVoiceRespondRequest } from './local-voice/types.js';
 import type {
@@ -241,6 +241,17 @@ let localVoiceService: LocalVoiceService | null = null;
 let memoryEngine: MemoryEngineRuntime | null = null;
 let memoryStorageSync: MemoryStorageSync | null = null;
 let configManagerForMemory: ConfigManager | null = null;
+
+/**
+ * The conversation model, as recorded on what the agent writes to memory: the model picked in
+ * Models and servers, OpenAI's default, or for a local server with none picked, its name.
+ */
+function conversationModelName(manager: ConfigManager | null = configManagerForMemory): string | null {
+  const target = manager ? routeTargets(manager.getConfig().models, 'llm')[0] : undefined;
+  if (!target) return null;
+  if (target.model?.trim()) return target.model.trim();
+  return target.server.type === 'openai' ? DEFAULT_OPENAI_MODELS.llm : target.server.name || null;
+}
 
 /** Point the memory engine at the database and mirror picked in Models and servers. */
 function syncMemoryStorage(manager: ConfigManager | null = configManagerForMemory): void {
@@ -1746,6 +1757,7 @@ app.whenReady().then(async () => {
         outbox: memoryEngine.outbox,
         currentSessionId: () => conversations.getCurrentSessionId(),
         agentName: () => activeAgent(store).name,
+        modelName: () => conversationModelName(),
       })) {
         toolRegistry.register(tool);
       }

@@ -798,9 +798,10 @@ export class MemoryStore {
       .prepare(
         `DELETE FROM memory_outbox
          WHERE (kind = 'session' AND json_extract(payload, '$.id') = ?)
-            OR (kind = 'message' AND json_extract(payload, '$.session_id') = ?)`,
+            OR (kind = 'message' AND json_extract(payload, '$.session_id') = ?)
+            OR (kind = 'handoff' AND json_extract(payload, '$.sessionId') = ?)`,
       )
-      .run(sessionId, sessionId);
+      .run(sessionId, sessionId, sessionId);
     return result.changes;
   }
 

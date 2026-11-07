@@ -53,13 +53,20 @@ page, passed as `before`.
 
 Every message of a session in time order.
 
-## `GET /v1/search?q=&from=&to=&agent=&kind=&include_private=true&exclude=&mode=hybrid&limit=10`
+## `GET /v1/search?q=&from=&to=&agent=&kind=&include_private=true&exclude=&mode=hybrid&limit=10&touch=false&session_id=`
 
 Search the recall index (turns and facts), best first. `mode=hybrid` (default) merges full-text
 and vector matches; `mode=text` is full text only. `kind` may repeat (`turn`, `fact`); `exclude`
 is a comma-separated list of result ids to leave out. Each result has `id`, `kind`, `source_id`,
 `session_id`, `agent`, `period_start`, `period_end`, `text`, `score`, `similarity` (cosine, when
 both sides are embedded) and `matched` (`["text", "vector"]`).
+
+Long texts are also embedded in overlapping windows of a few sentences, and a row's `similarity`
+is the closer of its whole and its best window, so a long exchange or summary is found by what it
+says past its opening. Kinds: `turn`, `fact`, `handoff`, `session`, `day`, `week`, `month`.
+
+Searching changes nothing, unless `touch=true` (the agent is using what it found): facts among the
+results are then refreshed, and counted once per `session_id`. See fading under the facts.
 
 ## `POST /v1/activity`
 
@@ -80,8 +87,9 @@ and the timeline carry them too, as kinds `session`, `day`, `week` and `month`.
 
 ## `GET /v1/brief?session_id=&agent=`
 
-For the start of a conversation: active, non-private `facts` (pinned first, then newest, up to
-about 1,200 characters) and `last_session`, the most recent conversation other than
+For the start of a conversation: active, non-private `facts` (pinned first, then the easiest to
+reach, see fading, up to about 1,200 characters); `handoff`, the newest note the agent left in
+another conversation (`text`, `agent`, `model`, `written_at`), to be shown whole; and `last_session`, the most recent conversation other than
 `session_id`, with its `summary` (once made) and last three turns, and `recent_days`, up to two
 day summaries from the past week. The client adds the date and time and formats it.
 
@@ -94,7 +102,7 @@ day summaries from the past week. The client adds the date and time and formats 
 
 Returns `{"items": [...search results...], "reason": null}`, or no items with a `reason`:
 `short` (under four words), `no embedder`, or `no strong match`. Results from `session_id` and
-private items are left out. Each call is logged.
+private items are left out. Each call is logged. Facts it returns count as used (see fading).
 
 ## `GET /v1/recall-log?session_id=&limit=50`
 
@@ -110,25 +118,63 @@ spans up to about a month, weeks up to about four months, months beyond (none fo
 less).
 400 if `to` is not after `from`.
 
-## `GET /v1/memories/{id}?around=1`
+## `GET /v1/memories/{id}?around=1&touch=false&session_id=`
 
 One search or timeline result in full. For a turn: its messages and `around` turns either side.
-For a fact: the fact and the messages it came from. 404 if it isn't there.
+For a fact: the fact and the messages it came from. 404 if it isn't there. With `touch=true` a
+fact counts as used.
 
 ## `PUT /v1/facts/{id}`
 
 ```json
 {"text": "Kevin prefers wslc over Docker", "subject": "tools", "author": "agent", "agent": "Echo",
- "session_id": "...", "source_message_ids": [], "supersedes": null, "pinned": false, "private": false}
+ "session_id": "...", "source_message_ids": [], "supersedes": null, "pinned": false, "private": false,
+ "model": "qwen-next-flash"}
 ```
 
 Save a fact; it is live at once. A repeat of the same id is ignored (`created: false`). With
 `supersedes`, the older fact is marked superseded and leaves search. An unknown `session_id` is
-dropped rather than refused, because the session's own write may still be queued.
+dropped rather than refused, because the session's own write may still be queued. `model` is
+the model that wrote it (the background extractor fills in its own).
 
 ## `GET /v1/facts?status=active&pinned=&subject=&unreviewed=false&include_private=true&limit=200`
 
-Facts, pinned first then newest. `status` is `active`, `superseded`, `retracted` or `all`.
+Facts, pinned first then newest. `status` is `active`, `superseded`, `retracted` or `all`. Each
+also has `model`, `recall_count` (conversations it was used in), `last_recalled_at` and
+`accessibility`.
+
+**Fading.** `accessibility` is 2^(−days since last used ÷ half-life). The half-life is 30 days and
+doubles with each conversation the fact was used in, up to four times (480 days); pinned facts stay
+at 1. It is worked out when read, and only decides what the brief has room for: a faded fact is
+still searchable, and nothing is deleted. Used means returned by auto-recall, or by search or
+`/v1/memories` with `touch=true`; the Memory panel's looking doesn't count.
+
+## `POST /v1/facts/correct`
+
+```json
+{"id": "<fact id or its search result id>", "about": "or what it said, instead of id",
+ "action": "replace", "text": "Kevin drives a red Mazda", "new_id": "...",
+ "author": "agent", "agent": "Echo", "model": "qwen-next-flash", "session_id": "..."}
+```
+
+Replace a fact with new words (a new fact that supersedes it, keeping its subject, pin, privacy and
+use count) or `"action": "retract"` it. Returns `status`: `replaced` (with `fact` and
+`replacement`), `retracted`, `ambiguous` (`about` matched more than one; `candidates` lists them
+with ids), `not_found`, `not_a_fact` (the id is a conversation or summary, which is a record and
+can't be corrected), `inactive` (already superseded or retracted) or `pinned` (only
+`"author": "user"` may change a pinned fact). 400 without `id` or `about`, or a replacement
+without `text`.
+
+## `PUT /v1/sessions/{id}/handoff`
+
+```json
+{"text": "Halfway through the garden plan; ask about the budget.", "agent": "Echo", "model": "..."}
+```
+
+The agent's note for its next conversation, at most 2,000 characters. One per conversation:
+writing again replaces it. The newest note from another conversation goes in the brief, and
+notes are searchable (kind `handoff`). Creates the session if its own write is still queued.
+Forgetting the session forgets its note.
 
 ## `PATCH /v1/facts/{id}` and `DELETE /v1/facts/{id}`
 
