@@ -16,10 +16,10 @@
     "@pixiv/three-vrm": "^3.5.5",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "three": "^0.186.1",
+    "three": "^0.187.0",
     "three-stdlib": "^2.36.1"
   },
   "devDependencies": {
-    "@types/three": "^0.186.0"
+    "@types/three": "^0.187.0"
   }
 }
