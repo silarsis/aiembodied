@@ -265,6 +265,8 @@ export interface AvatarBridge {
   updateModelThumbnail(modelId: string, thumbnailDataUrl: string): Promise<AvatarModelSummary | null>;
   updateModelDescription(modelId: string, description: string): Promise<AvatarModelSummary | null>;
   generateModelDescription(thumbnailDataUrl: string): Promise<string>;
+  getVoicePreference(): Promise<string | null>;
+  setVoicePreference(voice: string): Promise<void>;
   listAnimations(): Promise<AvatarAnimationSummary[]>;
   uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult>;
   generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;
@@ -503,6 +505,8 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     getActiveModel: () => ipcRenderer.invoke('avatar-model:get-active') as Promise<AvatarModelSummary | null>,
     setActiveModel: (modelId) =>
       ipcRenderer.invoke('avatar-model:set-active', modelId) as Promise<AvatarModelSummary | null>,
+    getVoicePreference: () => ipcRenderer.invoke('avatar:voice:get-preference') as Promise<string | null>,
+    setVoicePreference: (voice) => ipcRenderer.invoke('avatar:voice:set-preference', voice) as Promise<void>,
     uploadModel: (payload) =>
       ipcRenderer.invoke('avatar-model:upload', payload) as Promise<AvatarModelUploadResult>,
     deleteModel: async (modelId) => {
