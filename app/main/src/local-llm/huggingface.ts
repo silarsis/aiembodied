@@ -112,7 +112,7 @@ export function quantOf(name: string): string | null {
   // The file name wins over the folder; unsloth puts big quants in a folder named after the quant.
   for (const part of [parts.at(-1) ?? base, ...parts.slice(0, -1).reverse()]) {
     const match = QUANT.exec(part);
-    if (match) return match[1].toUpperCase().replace(/^UD-/, 'UD-');
+    if (match) return match[1].toUpperCase();
   }
   return null;
 }
