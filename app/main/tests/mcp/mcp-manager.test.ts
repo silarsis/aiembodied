@@ -10,29 +10,33 @@ import type { MCPServerConfigInput } from '../../src/mcp/types.js';
 
 // Mock the MCP clients
 vi.mock('../../src/mcp/clients/sse-client.js', () => ({
-  SSEMCPClient: vi.fn().mockImplementation(() => ({
-    connect: vi.fn().mockResolvedValue(undefined),
-    disconnect: vi.fn().mockResolvedValue(undefined),
-    listTools: vi.fn().mockResolvedValue([
-      {
-        name: 'test-tool',
-        description: 'A test tool',
-        inputSchema: { type: 'object', properties: {} },
-      },
-    ]),
-    callTool: vi.fn().mockResolvedValue('tool result'),
-    onToolsChanged: vi.fn(),
-  })),
+  SSEMCPClient: vi.fn().mockImplementation(function () {
+    return {
+      connect: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      listTools: vi.fn().mockResolvedValue([
+        {
+          name: 'test-tool',
+          description: 'A test tool',
+          inputSchema: { type: 'object', properties: {} },
+        },
+      ]),
+      callTool: vi.fn().mockResolvedValue('tool result'),
+      onToolsChanged: vi.fn(),
+    };
+  }),
 }));
 
 vi.mock('../../src/mcp/clients/stdio-client.js', () => ({
-  StdioMCPClient: vi.fn().mockImplementation(() => ({
-    connect: vi.fn().mockResolvedValue(undefined),
-    disconnect: vi.fn().mockResolvedValue(undefined),
-    listTools: vi.fn().mockResolvedValue([]),
-    callTool: vi.fn().mockRejectedValue(new Error('stdio not implemented')),
-    onToolsChanged: vi.fn(),
-  })),
+  StdioMCPClient: vi.fn().mockImplementation(function () {
+    return {
+      connect: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      listTools: vi.fn().mockResolvedValue([]),
+      callTool: vi.fn().mockRejectedValue(new Error('stdio not implemented')),
+      onToolsChanged: vi.fn(),
+    };
+  }),
 }));
 
 vi.mock('../../src/mcp/encryption.js', () => ({
@@ -294,7 +298,7 @@ describe('MCPManager', () => {
 
       await manager.connectServer(server.id);
 
-      const tools = toolRegistry.listAll();
+      const tools = toolRegistry.list();
       expect(tools.length).toBe(1);
       expect(tools[0].toolName).toBe('test-tool');
     });
@@ -339,16 +343,15 @@ describe('MCPManager', () => {
 
     it('handles connection errors gracefully', async () => {
       const { SSEMCPClient } = await import('../../src/mcp/clients/sse-client.js');
-      vi.mocked(SSEMCPClient).mockImplementationOnce(
-        () =>
-          ({
-            connect: vi.fn().mockRejectedValue(new Error('Connection failed')),
-            disconnect: vi.fn(),
-            listTools: vi.fn(),
-            callTool: vi.fn(),
-            onToolsChanged: vi.fn(),
-          }) as any,
-      );
+      vi.mocked(SSEMCPClient).mockImplementationOnce(function () {
+        return {
+          connect: vi.fn().mockRejectedValue(new Error('Connection failed')),
+          disconnect: vi.fn(),
+          listTools: vi.fn(),
+          callTool: vi.fn(),
+          onToolsChanged: vi.fn(),
+        } as any;
+      });
 
       const server = await manager.addServer({
         name: 'Failing Server',
@@ -380,13 +383,13 @@ describe('MCPManager', () => {
       });
 
       await manager.connectServer(server.id);
-      expect(toolRegistry.listAll().length).toBe(1);
+      expect(toolRegistry.list().length).toBe(1);
 
       await manager.disconnectServer(server.id);
 
       const updated = manager.listServers().find((s) => s.id === server.id);
       expect(updated?.connectionStatus).toBe('disconnected');
-      expect(toolRegistry.listAll().length).toBe(0);
+      expect(toolRegistry.list().length).toBe(0);
     });
   });
 
