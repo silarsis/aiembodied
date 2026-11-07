@@ -1148,4 +1148,55 @@ describe('main process bootstrap', () => {
       expect.objectContaining({ channels: expectedConfigChannels }),
     );
   });
+
+  it('exposes app:quit handler that calls app.quit', async () => {
+    const config = {
+      realtimeApiKey: 'rt-key',
+      comfyUiBaseUrl: 'http://127.0.0.1:8188',
+      conversationBackend: 'local',
+      providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
+      webSearch: { provider: 'off' },
+      models: testRouting(),
+      audioInputDeviceId: undefined,
+      audioOutputDeviceId: undefined,
+      featureFlags: {},
+      wakeWord: {
+        model: 'hey_jarvis',
+        keywordLabel: 'Hey Jarvis',
+        threshold: 0.5,
+        cooldownMs: 900,
+        deviceIndex: 1,
+      },
+      metrics: {
+        enabled: false,
+        host: '127.0.0.1',
+        port: 9477,
+        path: '/metrics',
+      },
+    } as const;
+
+    loadMock.mockResolvedValue(config);
+    getConfigMock.mockReturnValue(config);
+    getRendererConfigMock.mockReturnValue({ hasRealtimeApiKey: true });
+
+    await import('../src/main.js');
+
+    whenReadyDeferred.resolve();
+    await whenReadyDeferred.promise;
+    await flushPromises();
+
+    await import('../src/main.js');
+
+    whenReadyDeferred.resolve();
+    await whenReadyDeferred.promise;
+    await flushPromises();
+
+    const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
+    const quitHandler = handleEntries.get('app:quit');
+    expect(typeof quitHandler).toBe('function');
+
+    await quitHandler?.({} as unknown as IpcMainInvokeEvent);
+    expect(appEmitter.quit).toHaveBeenCalledTimes(1);
+    expect(mockLogger.info).toHaveBeenCalledWith('Quit requested via IPC');
+  });
 });

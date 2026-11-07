@@ -202,6 +202,7 @@ export interface PreloadApi {
   camera?: CameraBridge;
   mcp: MCPBridge;
   memoryEngine?: MemoryEngineBridge;
+  app?: AppBridge;
   ping(): string;
   __bridgeReady?: boolean;
   __bridgeVersion?: string;
@@ -313,6 +314,10 @@ export interface CameraDetectionEvent {
 export interface CameraBridge {
   onDetection(listener: (event: CameraDetectionEvent) => void): () => void;
   emitDetection(event: CameraDetectionEvent): Promise<void>;
+}
+
+export interface AppBridge {
+  quit(): Promise<void>;
 }
 
 export interface ServerStatusEvent {
@@ -670,6 +675,11 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     },
 
     getToolDefinitionsForLLM: () => ipcRenderer.invoke('mcp:get-tool-definitions') as Promise<OpenAIFunction[]>,
+  },
+  app: {
+    quit: async () => {
+      await ipcRenderer.invoke('app:quit');
+    },
   },
   ping: () => 'pong',
   __bridgeReady: true,
