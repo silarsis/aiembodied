@@ -167,6 +167,7 @@ const serverSecretName = (id: string) => `MODEL_SERVER_KEY:${id}`;
 const ACCOUNT_KEYS: Record<string, { env: string; secret: string }> = {
   [BUILT_IN_SERVER_IDS.brave]: { env: 'BRAVE_SEARCH_API_KEY', secret: 'BRAVE_SEARCH_API_KEY' },
   [BUILT_IN_SERVER_IDS.civitai]: { env: 'CIVITAI_API_KEY', secret: 'CIVITAI_API_KEY' },
+  [BUILT_IN_SERVER_IDS.huggingface]: { env: 'HF_TOKEN', secret: 'HUGGINGFACE_TOKEN' },
 };
 
 /** A server as the Models and servers pop-up sees it: no keys, only whether one is set. */

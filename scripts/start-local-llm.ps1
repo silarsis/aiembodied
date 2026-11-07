@@ -8,6 +8,8 @@
   (default http://127.0.0.1:1234/v1) and asks for LOCAL_LLM_MODEL (default qwen-next-flash,
   the --alias below). It needs ~92 GB, so stop ComfyUI first if it holds Qwen-Image.
   The context size comes from -Context or LOCAL_LLM_CONTEXT (default 65536).
+  A model downloaded from Hugging Face in the app (Models and servers -> Thinking) is passed in as
+  -Model and -Alias by the app and by pnpm dev:run.
 
 .EXAMPLE
   .\scripts\start-local-llm.ps1 -LlamaServer C:\...\llama-server.exe -Model C:\...\model-00001-of-00002.gguf

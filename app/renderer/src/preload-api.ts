@@ -1,4 +1,6 @@
 import type { CivitaiLookup } from '../../main/src/avatar/generation/civitai.js';
+import type { HfLookup } from '../../main/src/local-llm/huggingface.js';
+import type { LlmDownload, LocalLlmList } from '../../main/src/local-llm/llm-library.js';
 import type { ModelDownload } from '../../main/src/avatar/generation/model-downloads.js';
 import type { BackgroundBridge } from '../../main/src/backgrounds/types.js';
 import type { ConfigSecretKey, ModelRoutingView, RendererConfig } from '../../main/src/config/config-manager.js';
@@ -60,6 +62,15 @@ export interface ModelsBridge {
   downloads?(): Promise<ModelDownload[]>;
   cancelDownload?(id: string): Promise<ModelDownload[]>;
   comfyAddon?(serverId: string): Promise<{ installed: boolean; folder: string }>;
+  /** Thinking models from Hugging Face for this PC's llama-server. */
+  hfLookup?(ref: string): Promise<HfLookup>;
+  hfDownload?(repo: string, quant: string, use: boolean): Promise<LlmDownload>;
+  hfDownloads?(): Promise<LlmDownload[]>;
+  hfCancel?(id: string): Promise<LlmDownload[]>;
+  localLlms?(): Promise<LocalLlmList>;
+  /** Run a downloaded model for Thinking (null: llama-server's default) and restart llama-server. */
+  useLocalLlm?(id: string | null): Promise<{ message: string; library: LocalLlmList; models: ModelRoutingView }>;
+  deleteLocalLlm?(id: string): Promise<LocalLlmList>;
 }
 
 export interface WakeWordBridge {

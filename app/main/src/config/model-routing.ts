@@ -14,9 +14,12 @@
  */
 import type { ProviderSettings } from './provider-settings.js';
 
-export type ServerType = 'chat' | 'transcribe' | 'speech' | 'motion' | 'comfy' | 'search' | 'memory' | 'openai' | 'brave' | 'civitai';
-export const SERVER_TYPES: readonly ServerType[] = ['chat', 'transcribe', 'speech', 'motion', 'comfy', 'search', 'memory', 'openai', 'brave', 'civitai'];
-/** Types a user can add more servers of. OpenAI, Brave and Civitai are one account each; Civitai runs no job, it supplies model downloads. */
+export type ServerType = 'chat' | 'transcribe' | 'speech' | 'motion' | 'comfy' | 'search' | 'memory' | 'openai' | 'brave' | 'civitai' | 'huggingface';
+export const SERVER_TYPES: readonly ServerType[] = ['chat', 'transcribe', 'speech', 'motion', 'comfy', 'search', 'memory', 'openai', 'brave', 'civitai', 'huggingface'];
+/**
+ * Types a user can add more servers of. OpenAI, Brave, Civitai and Hugging Face are one account each; Civitai and
+ * Hugging Face run no job, they supply model downloads.
+ */
 export const ADDABLE_SERVER_TYPES: readonly ServerType[] = ['chat', 'transcribe', 'speech', 'motion', 'comfy', 'search', 'memory'];
 
 export type UseId =
@@ -84,11 +87,13 @@ export const BUILT_IN_SERVER_IDS = {
   openai: 'openai',
   brave: 'brave',
   civitai: 'civitai',
+  huggingface: 'huggingface',
 } as const;
 
 export const OPENAI_BASE_URL = 'https://api.openai.com/v1';
 export const BRAVE_BASE_URL = 'https://api.search.brave.com';
 export const CIVITAI_BASE_URL = 'https://civitai.com';
+export const HUGGINGFACE_BASE_URL = 'https://huggingface.co';
 /**
  * The memory engine's own database on this PC (services/memory starts it). Only shown: picking
  * this server tells the engine to use its own database, whatever address it was started with.
@@ -167,6 +172,7 @@ export function builtInServers({ providers, comfyUiBaseUrl, searxngUrl }: BuiltI
     { id: BUILT_IN_SERVER_IDS.openai, name: 'OpenAI', type: 'openai', url: OPENAI_BASE_URL, builtIn: true, managed: false },
     { id: BUILT_IN_SERVER_IDS.brave, name: 'Brave Search', type: 'brave', url: BRAVE_BASE_URL, builtIn: true, managed: false },
     { id: BUILT_IN_SERVER_IDS.civitai, name: 'Civitai', type: 'civitai', url: CIVITAI_BASE_URL, builtIn: true, managed: false },
+    { id: BUILT_IN_SERVER_IDS.huggingface, name: 'Hugging Face', type: 'huggingface', url: HUGGINGFACE_BASE_URL, builtIn: true, managed: false },
   ];
 }
 
@@ -228,7 +234,7 @@ export function resolveModelRouting(
   const servers = builtIns.map((server) => {
     const override = stored.servers?.find((entry) => entry.id === server.id);
     if (!override) return { ...server };
-    const fixed = server.type === 'openai' || server.type === 'brave' || server.type === 'civitai' || server.id === BUILT_IN_SERVER_IDS.memory;
+    const fixed = server.type === 'openai' || server.type === 'brave' || server.type === 'civitai' || server.type === 'huggingface' || server.id === BUILT_IN_SERVER_IDS.memory;
     const url = override.url && !fixed ? serverUrl(server.type, override.url) : server.url;
     return { ...server, name: override.name || server.name, url, managed: server.managed && isLocalUrl(url) };
   });

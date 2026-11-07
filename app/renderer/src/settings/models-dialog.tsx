@@ -15,6 +15,7 @@ import {
 import type { ModelRole, ServerProbe } from '../../../main/src/config/model-server-probe.js';
 import type { ModelsBridge } from '../preload-api.js';
 import { ModelDownloads } from './model-downloads.js';
+import { ThinkingDownloads } from './thinking-downloads.js';
 import type { AvatarBridge } from '../avatar/types.js';
 import { useCharacterModels } from '../avatar/use-character-models.js';
 import { useImageModels } from '../avatar/use-image-models.js';
@@ -67,6 +68,7 @@ export const SERVER_TYPE_LABELS: Record<ServerType, string> = {
   openai: 'OpenAI',
   brave: 'Brave Search',
   civitai: 'Civitai',
+  huggingface: 'Hugging Face',
 };
 
 const SERVER_TYPE_HINTS: Partial<Record<ServerType, { hint: string; example: string }>> = {
@@ -132,7 +134,7 @@ export interface ModelsDialogProps {
   initialUse?: UseId;
 }
 
-const ONLINE_TYPES: readonly ServerType[] = ['openai', 'brave', 'civitai'];
+const ONLINE_TYPES: readonly ServerType[] = ['openai', 'brave', 'civitai', 'huggingface'];
 const where = (server: ModelServerView) => (server.managed ? 'local' : ONLINE_TYPES.includes(server.type) ? 'online' : 'remote');
 const WHERE_LABEL = { local: 'This PC', remote: 'Your server', online: 'Online' } as const;
 
@@ -290,6 +292,7 @@ export function ModelsDialog({ api, avatarApi, engine, onClose, onChanged, initi
     );
   } else if (view && page.kind === 'use') {
     main = (
+      <>
       <UsePage
         key={page.use}
         use={page.use}
@@ -306,6 +309,8 @@ export function ModelsDialog({ api, avatarApi, engine, onClose, onChanged, initi
         imageModels={imageModels}
         characterModels={characterModels}
       />
+      {page.use === 'llm' ? <ThinkingDownloads api={api} busy={busy} onView={setView} /> : null}
+      </>
     );
   } else if (view && page.kind === 'servers') {
     main = (
@@ -986,6 +991,8 @@ function ServerPage({
                 ? 'Saved. Enter a new one to replace it.'
                 : server.type === 'civitai'
                   ? 'Needed for many downloads'
+                  : server.type === 'huggingface'
+                    ? 'Only for gated or private models'
                   : server.type === 'memory'
                     ? 'The database password'
                   : server.type === 'openai' || server.type === 'brave'
@@ -1014,10 +1021,16 @@ function ServerPage({
         </form>
       ) : null}
       {server.type === 'comfy' && api.download ? <ModelDownloads api={api} server={server} onFinished={onProbe} /> : null}
+      {server.type === 'huggingface' ? (
+        <p className="kiosk__helper">
+          Hugging Face runs no job itself. It supplies thinking models (Thinking → Download a thinking model). Gated models such as Llama and Gemma need a
+          token (huggingface.co → Settings → Access Tokens) and their licence accepted on the website.
+        </p>
+      ) : null}
       {server.type === 'civitai' ? (
         <p className="kiosk__helper">Civitai runs no job itself. Its key lets ComfyUI servers download models from a pasted Civitai link (open a ComfyUI server, then Download a model).</p>
       ) : null}
-      <div className="modelsDialog__list" hidden={server.type === 'civitai' || server.type === 'memory'}>
+      <div className="modelsDialog__list" hidden={server.type === 'civitai' || server.type === 'huggingface' || server.type === 'memory'}>
         <span className="modelsDialog__group">
           Models it offers{' '}
           <button type="button" onClick={onProbe} disabled={probe === 'checking'}>
@@ -1036,7 +1049,7 @@ function ServerPage({
           </p>
         )}
       </div>
-      <div className="modelsDialog__list" hidden={server.type === 'civitai'}>
+      <div className="modelsDialog__list" hidden={server.type === 'civitai' || server.type === 'huggingface'}>
         <span className="modelsDialog__group">Used by</span>
         {usedBy.length ? (
           <div className="modelsDialog__chips">

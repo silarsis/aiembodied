@@ -71,7 +71,7 @@ export interface AvatarGenerationServiceOptions {
   imageModels?: Pick<AvatarImageModelService, 'resolve'> &
     Partial<Pick<AvatarImageModelService, 'resolveViewModel' | 'list'>>;
   /** This PC's LLM server, stopped for the head close-up and started again when the build ends. */
-  localLlm?: { stop(): Promise<boolean>; start(): void };
+  localLlm?: { stop(): Promise<boolean>; start(): void | Promise<void> };
   /** Chooses the 3D geometry and rig models; the workflow defaults run without it. */
   characterModels?: Pick<AvatarCharacterModelService, 'resolveGeometry' | 'resolveRig'>;
   logger?: {
@@ -955,7 +955,7 @@ export class AvatarGenerationService {
     } finally {
       if (job.llmStopped) {
         job.llmStopped = false;
-        this.options.localLlm?.start();
+        void Promise.resolve(this.options.localLlm?.start()).catch(() => undefined);
       }
     }
   }

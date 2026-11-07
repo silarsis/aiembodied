@@ -4,6 +4,8 @@ import type { ConfigSecretKey, ModelRoutingView, RendererConfig } from './config
 import type { ModelRoute, ServerType, UseId } from './config/model-routing.js';
 import type { ServerProbe } from './config/model-server-probe.js';
 import type { BaseModelSuggestions, CivitaiLookup } from './avatar/generation/civitai.js';
+import type { HfLookup } from './local-llm/huggingface.js';
+import type { LlmDownload, LocalLlmList } from './local-llm/llm-library.js';
 import type { ModelDownload } from './avatar/generation/model-downloads.js';
 import type { AudioDevicePreferences } from './config/preferences-store.js';
 import type { ProviderSettingsPatch } from './config/provider-settings.js';
@@ -175,6 +177,15 @@ export interface ModelsBridge {
   downloads?(): Promise<ModelDownload[]>;
   cancelDownload?(id: string): Promise<ModelDownload[]>;
   comfyAddon?(serverId: string): Promise<{ installed: boolean; folder: string }>;
+  /** Thinking models from Hugging Face for this PC's llama-server. */
+  hfLookup?(ref: string): Promise<HfLookup>;
+  hfDownload?(repo: string, quant: string, use: boolean): Promise<LlmDownload>;
+  hfDownloads?(): Promise<LlmDownload[]>;
+  hfCancel?(id: string): Promise<LlmDownload[]>;
+  localLlms?(): Promise<LocalLlmList>;
+  /** Run a downloaded model for Thinking (null: llama-server's default) and restart llama-server. */
+  useLocalLlm?(id: string | null): Promise<{ message: string; library: LocalLlmList; models: ModelRoutingView }>;
+  deleteLocalLlm?(id: string): Promise<LocalLlmList>;
 }
 
 export interface PreloadApi {
@@ -366,6 +377,13 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     downloads: () => ipcRenderer.invoke('models:downloads') as Promise<ModelDownload[]>,
     cancelDownload: (id) => ipcRenderer.invoke('models:cancel-download', id) as Promise<ModelDownload[]>,
     comfyAddon: (serverId) => ipcRenderer.invoke('models:comfy-addon', serverId) as Promise<{ installed: boolean; folder: string }>,
+    hfLookup: (ref) => ipcRenderer.invoke('models:hf-lookup', ref) as Promise<HfLookup>,
+    hfDownload: (repo, quant, use) => ipcRenderer.invoke('models:hf-download', { repo, quant, use }) as Promise<LlmDownload>,
+    hfDownloads: () => ipcRenderer.invoke('models:hf-downloads') as Promise<LlmDownload[]>,
+    hfCancel: (id) => ipcRenderer.invoke('models:hf-cancel', id) as Promise<LlmDownload[]>,
+    localLlms: () => ipcRenderer.invoke('models:local-llms') as Promise<LocalLlmList>,
+    useLocalLlm: (id) => ipcRenderer.invoke('models:use-local-llm', id) as Promise<{ message: string; library: LocalLlmList; models: ModelRoutingView }>,
+    deleteLocalLlm: (id) => ipcRenderer.invoke('models:delete-local-llm', id) as Promise<LocalLlmList>,
   },
   realtime: {
     mintEphemeralToken: (request) =>

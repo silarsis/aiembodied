@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
-const { buildStartCommand, describeLocalServices, ensureLocalServices, readSavedPreferences, savedPreferencesPaths, shouldStartServices } = await import(
+const { buildStartCommand, describeLocalServices, ensureLocalServices, readSavedPreferences, readSelectedLocalLlm, savedPreferencesPaths, shouldStartServices } = await import(
   '../../../scripts/local-services.mjs'
 );
 
@@ -63,6 +63,10 @@ describe('local services', () => {
     expect(byId.llm.args).toEqual(['-Port', '1234']);
     const smallContext = describeLocalServices('/repo', { LOCAL_LLM_CONTEXT: '32768' });
     expect(smallContext[0].args).toEqual(['-Port', '1234', '-Context', '32768']);
+
+    const downloaded = describeLocalServices('/repo', { LOCAL_LLM_CONTEXT: '32768' }, {}, { path: 'C:\\m\\x.gguf', alias: 'x-q4_k_m', contextLength: 8192 });
+    expect(downloaded[0].args).toEqual(['-Port', '1234', '-Model', 'C:\\m\\x.gguf', '-Alias', 'x-q4_k_m', '-Context', '8192']);
+    expect(downloaded[0].label).toBe('x-q4_k_m (llama-server)');
 
     const onCpu = describeLocalServices('/repo', { MOTION_TEXT_ENCODER_DEVICE: 'cpu' });
     const motionOnCpu = onCpu.find((s: { id: string }) => s.id === 'motion');
@@ -233,5 +237,26 @@ describe('local services', () => {
     expect(shouldStartServices(['node', 'run-dev.mjs'], {})).toBe(true);
     expect(shouldStartServices(['node', 'run-dev.mjs', '--no-services'], {})).toBe(false);
     expect(shouldStartServices(['node', 'run-dev.mjs'], { DEV_START_SERVICES: '0' })).toBe(false);
+  });
+});
+
+describe('thinking model picked in the app', () => {
+  it('reads the picked model from local-llm.json beside preferences.json', () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'local-llm-'));
+    try {
+      const [preferences] = savedPreferencesPaths(repoRoot);
+      mkdirSync(dirname(preferences), { recursive: true });
+      const model = join(repoRoot, 'm.gguf');
+      writeFileSync(model, '');
+      writeFileSync(
+        join(dirname(preferences), 'local-llm.json'),
+        JSON.stringify({ selected: 'a/b:m', models: [{ id: 'a/b:m', path: model, alias: 'b-q4', contextLength: 4096 }] }),
+      );
+      expect(readSelectedLocalLlm(repoRoot)).toEqual({ path: model, alias: 'b-q4', contextLength: 4096 });
+      rmSync(model);
+      expect(readSelectedLocalLlm(repoRoot)).toBeNull();
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
   });
 });
