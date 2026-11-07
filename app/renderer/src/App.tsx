@@ -2424,7 +2424,7 @@ export default function App() {
             <ControlButton
               id="models"
               title="Models and servers"
-              summary={isLocalBackend ? 'Pipeline' : `OpenAI Realtime · ${selectedVoice}`}
+              summary={isLocalBackend ? 'Pipeline' : 'OpenAI Realtime'}
               keywords="language model speech text voice provider kokoro motion server url conversation api keys engine comfyui"
               disabled={!activeBridge?.models}
               onOpen={() => openModels()}
@@ -2585,8 +2585,7 @@ export default function App() {
               <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
                 <h2 id="kiosk-realtime-title">Personality</h2>
                 <p className="kiosk__helper">
-                  Configure how your assistant behaves. Models, voices and the conversation
-                  engine are under Models and servers.
+                  Configure how your assistant behaves.
                 </p>
                 <div className="control">
                   <label htmlFor="base-prompt">Base prompt</label>
@@ -2600,6 +2599,25 @@ export default function App() {
                     disabled={loadingConfig}
                     style={{ width: '100%' }}
                   />
+                </div>
+              </section>
+              <section className="kiosk__realtime" aria-labelledby="kiosk-voice-title">
+                <h2 id="kiosk-voice-title">Voice</h2>
+                <p className="kiosk__helper">Select the voice for this avatar.</p>
+                <div className="control">
+                  <label htmlFor="character-voice">Voice</label>
+                  <select
+                    id="character-voice"
+                    value={selectedVoice}
+                    onChange={(e) => setSelectedVoice(e.target.value)}
+                    disabled={loadingConfig || !availableVoices.length}
+                  >
+                    {availableVoices.map((voice) => (
+                      <option key={voice} value={voice}>
+                        {voice}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </section>
             </AvatarConfigurator>
