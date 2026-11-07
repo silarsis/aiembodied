@@ -1634,6 +1634,12 @@ function registerIpcHandlers(
   }
 }
 
+// Quit handler
+ipcMain.handle('app:quit', () => {
+  logger.info('Quit requested via IPC');
+  app.quit();
+});
+
 function focusExistingWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     logger.warn('Main window missing on second-instance event. Relaunching.');
@@ -1743,6 +1749,7 @@ app.whenReady().then(async () => {
     return;
   }
 
+  console.log('[DEBUG] manager:', manager);
   const appConfig = manager.getConfig();
   const comfyPool = new ComfyUIPool({
     routing: () => manager.getConfig().models,

@@ -1062,7 +1062,12 @@ describe('main process bootstrap', () => {
 
   it('logs and surfaces configuration bridge registration failures', async () => {
     const registrationError = new Error('Duplicate handler registration');
-    ipcMainMock.handle.mockImplementationOnce(() => {
+    // The quit handler is now registered at module level, so it will be the first handle call
+    // We need to mock the quit handler separately, then set up the error for config handlers
+    ipcMainMock.handle.mockImplementation((channel: string) => {
+      if (channel === 'app:quit') {
+        return undefined; // Success for quit handler
+      }
       throw registrationError;
     });
 
@@ -1147,5 +1152,46 @@ describe('main process bootstrap', () => {
       'Configuration bridge IPC handlers registered.',
       expect.objectContaining({ channels: expectedConfigChannels }),
     );
+  });
+
+  it('exposes app:quit handler that calls app.quit', async () => {
+    // Set up minimal config to avoid errors when app.whenReady() resolves
+    const config = {
+      realtimeApiKey: 'test-key',
+      comfyUiBaseUrl: 'http://127.0.0.1:8188',
+      conversationBackend: 'local',
+      providers: {
+        llm: { provider: 'local', localBaseUrl: 'http://127.0.0.1:1234/v1' },
+        stt: { provider: 'local' },
+        tts: { provider: 'kokoro', voice: 'af_aoede' },
+        motion: { provider: 'local', localServiceUrl: 'http://127.0.0.1:8190' },
+      },
+      webSearch: { provider: 'off' },
+      models: testRouting(),
+      audioInputDeviceId: undefined,
+      audioOutputDeviceId: undefined,
+      featureFlags: {},
+      wakeWord: { model: 'hey_jarvis', threshold: 0.5, cooldownMs: 750 },
+      metrics: { enabled: false, host: '127.0.0.1', port: 9477, path: '/metrics' },
+    } as const;
+
+    loadMock.mockResolvedValue(config);
+    getConfigMock.mockReturnValue(config);
+    getRendererConfigMock.mockReturnValue({ hasRealtimeApiKey: true });
+
+    await import('../src/main.js');
+
+    whenReadyDeferred.resolve();
+    await whenReadyDeferred.promise;
+    await flushPromises();
+
+    const allCalls = ipcMainMock.handle.mock.calls;
+    const handleEntries = new Map(allCalls.map(([channel, handler]) => [channel, handler]));
+    const quitHandler = handleEntries.get('app:quit');
+    expect(typeof quitHandler).toBe('function');
+
+    await quitHandler?.({} as unknown as IpcMainInvokeEvent);
+    expect(appEmitter.quit).toHaveBeenCalledTimes(1);
+    expect(mockLogger.info).toHaveBeenCalledWith('Quit requested via IPC');
   });
 });

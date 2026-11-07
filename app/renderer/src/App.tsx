@@ -1979,6 +1979,18 @@ export default function App() {
     [resolveApi],
   );
 
+  // Quit handler
+  const handleQuit = useCallback(() => {
+    const app = resolveApi()?.app;
+    if (app) {
+      app.quit().catch((err) => {
+        console.error('Failed to quit:', err);
+      });
+    } else {
+      console.warn('App bridge not available for quit');
+    }
+  }, [resolveApi]);
+
   const handlePromptBlur = useCallback(
     async () => {
       try {
@@ -2407,6 +2419,13 @@ export default function App() {
               summary={isOnline ? 'Online' : 'Offline'}
               keywords="status diagnostics network audio preload wake score tool calls models latency listening transcript meter"
               onOpen={() => setPanel('status')}
+            />
+            <ControlButton
+              id="quit"
+              title="Quit"
+              summary="Exit the application"
+              keywords="quit exit close application"
+              onOpen={handleQuit}
             />
           </ControlsDrawer>
 

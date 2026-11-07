@@ -134,9 +134,14 @@ export interface PreloadApi {
   camera?: CameraBridge;
   mcp?: McpBridge;
   memoryEngine?: MemoryEngineBridge;
+  app?: AppBridge;
   ping(): string;
   __bridgeReady?: boolean;
   __bridgeVersion?: string;
+}
+
+export interface AppBridge {
+  quit(): Promise<void>;
 }
 
 /** MCP servers and the tools the assistant can call (the parts the settings use). */

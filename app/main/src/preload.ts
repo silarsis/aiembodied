@@ -188,6 +188,10 @@ export interface ModelsBridge {
   deleteLocalLlm?(id: string): Promise<LocalLlmList>;
 }
 
+export interface AppBridge {
+  quit(): Promise<void>;
+}
+
 export interface PreloadApi {
   backgrounds?: BackgroundBridge;
   models?: ModelsBridge;
@@ -202,6 +206,7 @@ export interface PreloadApi {
   camera?: CameraBridge;
   mcp: MCPBridge;
   memoryEngine?: MemoryEngineBridge;
+  app?: AppBridge;
   ping(): string;
   __bridgeReady?: boolean;
   __bridgeVersion?: string;
@@ -670,6 +675,11 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     },
 
     getToolDefinitionsForLLM: () => ipcRenderer.invoke('mcp:get-tool-definitions') as Promise<OpenAIFunction[]>,
+  },
+  app: {
+    quit: async () => {
+      await ipcRenderer.invoke('app:quit');
+    },
   },
   ping: () => 'pong',
   __bridgeReady: true,
