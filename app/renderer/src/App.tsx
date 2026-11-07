@@ -2546,11 +2546,6 @@ export default function App() {
                 </div>
               </section>
             </AvatarConfigurator>
-            {canOpenStudio ? (
-              <button type="button" className="faces__submit" onClick={() => setStudioOpen(true)}>
-                Open avatar studio
-              </button>
-            ) : null}
           </PanelDialog>
 
           <PanelDialog id="backgrounds" title="Backgrounds" subtitle="Pick a scene or describe a new one." open={panel === 'backgrounds'} onClose={closePanel}>
