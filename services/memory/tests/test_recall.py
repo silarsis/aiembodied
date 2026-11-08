@@ -138,6 +138,39 @@ def test_background_worker_embeds_without_blocking_writes(database_url, schema):
         assert "vector" in hits[0]["matched"]
 
 
+def test_embedder_is_only_woken_once_the_write_is_visible(database_url, schema):
+    """The wake used to be set before the request's transaction committed, so the embedder could
+    look, find nothing, and sleep ten seconds. No timing involved: at the moment the wake is set,
+    another connection must already see the row."""
+    import time
+
+    import psycopg
+    from fastapi.testclient import TestClient
+
+    from memory_engine.app import Engine, create_app
+    from memory_engine.embed import FakeEmbedder
+
+    seen = []
+
+    class Wake:
+        def set(self):
+            with psycopg.connect(database_url, autocommit=True) as other:
+                seen.append(other.execute(f"SELECT count(*) FROM {schema}.recall_index").fetchone()[0])
+
+        def clear(self):
+            pass
+
+        def wait(self, timeout=None):
+            time.sleep(0.05)  # the embed thread keeps looping on this; don't let it spin
+            return False
+
+    engine = Engine(database_url, schema, embedder=FakeEmbedder())
+    with TestClient(create_app(engine, connect_in_background=False)) as c:
+        engine._wake_embedder = Wake()
+        post(c, message(uuid4(), "user", "visible before the wake", 0))
+    assert seen and seen[0] > 0
+
+
 def test_failed_model_load_waits_before_retrying(monkeypatch):
     import fastembed
 
