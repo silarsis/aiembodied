@@ -14,3 +14,10 @@ app/images/*
 .dev-home/
 
 __pycache__/
+
+# Scratch output from agents and local runs
+$null
+lint_output*.txt
+test-output*.txt
+test_output*.txt
+typecheck_log.txt

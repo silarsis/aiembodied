@@ -1,7 +1,5 @@
 # TODO
 
-* ~~Pair the voice with the avatar so I can select a voice for each avatar and it changes automatically~~
-  Done in #352, #353, #354, and per speaking engine in #363.
 * Pair the prompt with the model and avatar, so I get more coherent behaviour/can alter the character based on how they look and think.
   Partly there: the avatar's description is added to the prompt, but the
   personality text is still one global prompt, not saved per avatar.
@@ -25,25 +23,6 @@ Older design drafts in [features/](./features/README.md) cover some of these in
 more depth and are linked where they apply.
 
 ---
-
-## Voice input
-
-### ~~Wake word selection in settings~~
-
-- **Done:** "Hey Echo" is the default (#293). Settings → Wake word picks the
-  model and threshold live and trains new phrases in WSL (#294). Push-to-talk
-  and tap-to-talk skip the wake word (#291). Still open: a full 3-4 hour
-  training run from the app is untested, and naming the word after the avatar
-  is not automatic.
-- **Was:** openWakeWord, chosen with the `WAKE_WORD_MODEL` env var. Nothing in
-  the Settings tab.
-- **Akari:** "Hey Akari", plain "Akari", or a custom-trained wake word, picked in
-  setup.
-- **Dipal:** not described.
-- **To do:** wake word dropdown (built-ins plus any `.onnx` dropped into a
-  user folder), threshold slider showing the live score from the status panel,
-  and a short guide for training a custom word with openWakeWord's notebook.
-  A model named after the avatar ("hey <name>") is the target.
 
 ## Voice output
 
@@ -103,24 +82,6 @@ more depth and are linked where they apply.
 
 ## Mind
 
-### ~~Long-term memory~~
-
-- **Done:** the memory engine (`services/memory`, PostgreSQL + pgvector) keeps
-  every turn, with embeddings, hybrid search, facts, a session brief,
-  auto-recall, background summaries and fact extraction, a Memory panel to
-  view, edit and delete, Supabase as a server option, handoff notes and fading
-  facts (#333, #335-#340, #357). One memory is shared by all characters, by
-  choice. Still open: testing on bija, and the planned "sleep" method.
-- **Was:** transcripts in SQLite, only the last few turns seen, nothing recalled
-  across days.
-- **Akari:** a local database of memories with "receipts" (where each came
-  from), a memory viewer, and delete at any time.
-- **Dipal:** long-term memory and preference learning claimed, no detail.
-- **To do:** after each conversation, extract facts and preferences with the
-  LLM, store them with a link to the source turn, and inject the relevant ones
-  (embedding search) into each prompt. Add a memory viewer with edit and delete.
-  Memories belong to a persona (see below).
-
 ### Full persona
 
 - **Today:** a single instructions text shared by every avatar. Each avatar
@@ -132,7 +93,7 @@ more depth and are linked where they apply.
   ready-made characters, each with look, voice and motions.
 - **To do:** a persona is a bundle of name, archetype, backstory, speaking
   style, traits, likes and dislikes, VRM avatar, voice, wake word, idle and
-  reaction motions, and its own memories. Start from archetype templates, edit
+  reaction motions, and its own memories (one memory is shared by all characters for now). Start from archetype templates, edit
   freely, switch personas from Settings, and export or import a persona as one
   file. See [features/02-custom-voice-personas.md](./features/02-custom-voice-personas.md).
 
@@ -239,4 +200,6 @@ Keep these as differentiators while building the list above:
 - Web search (SearXNG locally, Brave optional).
 - Home Assistant history from several homes, kept out of the conversation.
 - Train your own wake word in the app.
+- Long-term memory engine (PostgreSQL + pgvector) with a Memory panel to view, edit and delete.
+- A voice per character, across Kokoro, Kitten TTS, Piper and OpenAI.
 - Source we own and can change.
