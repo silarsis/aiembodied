@@ -49,7 +49,7 @@ class KittenModel:
 
 KITTEN_MODELS = [
     KittenModel("mini-0.8", "KittenML/kitten-tts-mini-0.8", "Kitten mini 0.8", 80),
-    KittenModel("nano-0.8", "KittenML/kitten-tts-nano-0.8", "Kitten nano 0.8", 25),
+    KittenModel("nano-0.8", "KittenML/kitten-tts-nano-0.8", "Kitten nano 0.8", 57),
 ]
 # The ONNX models' eight voices, by the names config.json's voice_aliases give them.
 KITTEN_VOICES = ["Rosie", "Bella", "Luna", "Kiki", "Jasper", "Bruno", "Hugo", "Leo"]
@@ -80,16 +80,19 @@ def piper_files(voice: str) -> tuple[str, str]:
     return f"{folder}/{voice}.onnx", f"{folder}/{voice}.onnx.json"
 
 
-def trim_trailing_silence(samples: np.ndarray, rate: int, threshold: float = 0.004, keep_s: float = 0.08) -> np.ndarray:
-    """Drop the quiet tail some engines leave (Kitten's runs up to a second), keeping a short fade."""
+def trim_silence(
+    samples: np.ndarray, rate: int, threshold: float = 0.004, lead_s: float = 0.03, keep_s: float = 0.08
+) -> np.ndarray:
+    """Drop the quiet start and tail some engines leave (Kitten's: ~0.5 s before, up to a second after)."""
     if len(samples) == 0:
         return samples
     frame = max(1, int(rate * 0.01))
     loud = np.flatnonzero(np.abs(samples) > threshold)
     if len(loud) == 0:
         return samples
+    start = max(0, loud[0] - int(rate * lead_s))
     end = min(len(samples), loud[-1] + frame + int(rate * keep_s))
-    return samples[:end]
+    return samples[start:end]
 
 
 # --- downloads -------------------------------------------------------------------------------
@@ -234,7 +237,7 @@ class KittenSynthesizer:
                 # Kitten's own trim of the end-of-utterance noise.
                 parts.append(np.asarray(audio, dtype=np.float32).reshape(-1)[:-5000])
         samples = np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
-        return trim_trailing_silence(samples, KITTEN_SAMPLE_RATE), KITTEN_SAMPLE_RATE
+        return trim_silence(samples, KITTEN_SAMPLE_RATE), KITTEN_SAMPLE_RATE
 
 
 class PiperSynthesizer:
@@ -255,7 +258,7 @@ class PiperSynthesizer:
         if not chunks:
             return np.zeros(0, dtype=np.float32), 22050
         samples = np.concatenate([np.asarray(chunk.audio_float_array, dtype=np.float32) for chunk in chunks])
-        return trim_trailing_silence(samples, chunks[0].sample_rate), int(chunks[0].sample_rate)
+        return trim_silence(samples, chunks[0].sample_rate), int(chunks[0].sample_rate)
 
 
 def _importable(module: str) -> Optional[str]:

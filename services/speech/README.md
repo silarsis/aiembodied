@@ -25,7 +25,7 @@ the repo root), and sends the reply back here one sentence at a time to be spoke
   (`kokoro-v1.0.onnx`, `voices-v1.0.bin`, from the kokoro-onnx GitHub releases).
 
 - **More TTS engines**, picked in the app (Models and servers → Speaking) and downloaded from there:
-  - [Kitten TTS](https://github.com/KittenML/KittenTTS) 0.8 (mini 80 MB, nano 25 MB): the
+  - [Kitten TTS](https://github.com/KittenML/KittenTTS) 0.8 (mini 80 MB, nano 57 MB): the
     steadiest pitch from sentence to sentence in our tests (about 1.2 semitones, against Kokoro's
     3.2), RTF 0.06–0.12 on the CPU, American voices only. Run here straight on ONNX Runtime and
     espeak (both come with kokoro-onnx), not through the kittenml package, which needs torch.

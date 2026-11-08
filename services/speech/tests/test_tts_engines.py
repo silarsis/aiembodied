@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from speech_service.app import create_app
 from speech_service.engines import FakeSynthesizer, FakeTranscriber
 from speech_service.tts_engines import (TtsError, TtsModels, kitten_chunks, kitten_tokens, piper_files,
-                                        trim_trailing_silence)
+                                        trim_silence)
 
 PIPER_SAMPLE = Path("/mnt/user-data/uploads/aiembodied/experiments/tts-compare/models/piper")
 
@@ -130,11 +130,13 @@ def test_resumes_a_partial_download(tmp_path):
     assert ranges == [None, "bytes=5-"]
 
 
-def test_trailing_silence_is_trimmed():
+def test_leading_and_trailing_silence_is_trimmed():
     rate = 24000
-    audio = np.concatenate([np.full(rate // 2, 0.2, dtype=np.float32), np.zeros(rate, dtype=np.float32)])
-    trimmed = trim_trailing_silence(audio, rate)
-    assert rate // 2 < len(trimmed) < rate // 2 + int(rate * 0.1)
+    quiet = np.zeros(rate // 2, dtype=np.float32)
+    audio = np.concatenate([quiet, np.full(rate // 2, 0.2, dtype=np.float32), np.zeros(rate, dtype=np.float32)])
+    trimmed = trim_silence(audio, rate)
+    assert rate // 2 < len(trimmed) < rate // 2 + int(rate * 0.13)
+    assert np.abs(trimmed[: int(rate * 0.04)]).max() > 0.1
 
 
 def test_kitten_text_helpers():
