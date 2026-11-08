@@ -137,6 +137,17 @@ token, in `.env`; it is never stored in the database, logged or committed):
   `HA_ENTITIES` adds entity ids or `domain.*` patterns, comma separated. Reading the label needs
   an admin user's token; without one only `HA_ENTITIES` works (see `note` on `/v1/home/status`).
 - `HA_HOME_ID` (default `home`), `HA_HOME_NAME` (default `Home`), `HA_RAW_DAYS` (default 7).
+- More homes: every other pair `HA_<NAME>_URL` + `HA_<NAME>_TOKEN` (both must be set) is a home with
+  the id `<name lower-cased>` and the name `HA_<NAME>_NAME` (default `<NAME>`); `HA_<NAME>_LABEL`
+  (default `HA_LABEL`) and `HA_<NAME>_ENTITIES` are optional. `HA_SG_URL` + `HA_SG_TOKEN` is the home
+  `sg`, named `SG`.
+- Homes can also come from the app: `PUT /v1/home/servers` sets the app-managed ones (tokens are
+  kept in memory only, so the app sends them again when the engine restarts). `GET /v1/home/status`
+  lists every home.
+
+Each home has its own connection, label, entities, deadband and rollups. When a home's name is not
+the default `Home`, the sentences that are remembered carry it: "Front door (Hallway, SG) opened,
+was closed."
 
 Alerts (smoke, gas, water, alarm panels and the like) and state changes are kept as events and
 indexed for search with a readable sentence ("Front door (Hallway) opened, was closed."). Numbers

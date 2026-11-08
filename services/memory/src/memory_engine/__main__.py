@@ -104,26 +104,33 @@ def main(argv=None) -> None:
     from .storage import default_settings_file
 
     settings_file = None if (a.settings_file or "").lower() == "none" else Path(a.settings_file or default_settings_file())
-    from .home import HomeConfig, parse_entity_list
+    from .home import homes_from_env
 
-    home_config = HomeConfig(
-        url=a.ha_url,
-        token=os.environ.get("HA_TOKEN") or None,
-        home_id=a.ha_home_id,
-        name=a.ha_home_name,
-        label=a.ha_label,
-        entities=parse_entity_list(a.ha_entities),
-        raw_days=a.ha_raw_days,
-    )
-    if home_config.off_reason and (home_config.url or home_config.token):
-        logging.getLogger("memory_engine").warning("Home Assistant is off: %s", home_config.off_reason)
+    # The command-line options (which default to the environment) override the default home's
+    # variables; the HA_<NAME>_* homes come from the environment alone. Tokens are read from the
+    # environment only, never from the command line.
+    environ = dict(os.environ)
+    for key, value in (
+        ("HA_URL", a.ha_url),
+        ("HA_HOME_ID", a.ha_home_id),
+        ("HA_HOME_NAME", a.ha_home_name),
+        ("HA_LABEL", a.ha_label),
+        ("HA_ENTITIES", a.ha_entities),
+        ("HA_RAW_DAYS", str(a.ha_raw_days)),
+    ):
+        if value:
+            environ[key] = value
+    home_configs = homes_from_env(environ)
+    for config in home_configs:
+        if config.off_reason:
+            logging.getLogger("memory_engine").warning("Home Assistant (%s) is off: %s", config.home_id, config.off_reason)
     engine = Engine(
         a.database_url,
         a.schema,
         embedder=make_embedder(a.embedder, a.embed_model),
         summariser=summariser,
         settings_file=settings_file,
-        home_config=home_config,
+        home_configs=home_configs,
     )
     uvicorn.run(create_app(engine, api_token=api_token), host=a.host, port=a.port, log_level=a.log_level.lower())
 

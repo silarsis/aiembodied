@@ -284,6 +284,15 @@ describe('home_history', () => {
     expect(text).toMatch(/Ask which/);
   });
 
+  it('names the home when there is one', async () => {
+    const { client, byId } = makeTools();
+    const sg = { ...door, home_id: 'sg', home_name: 'SG' };
+    client.homeHistory.mockResolvedValueOnce({ matches: [sg] });
+    expect(await byId[MEMORY_TOOL_IDS.homeHistory].execute({ what: 'door' })).toContain('Front door, Hallway, SG [binary_sensor.front_door]');
+    client.homeHistory.mockResolvedValueOnce({ entity: sg, changes: [] });
+    expect(await byId[MEMORY_TOOL_IDS.homeHistory].execute({ what: 'binary_sensor.front_door' })).toContain('Front door (Hallway, SG) [binary_sensor.front_door]');
+  });
+
   it('defaults to the last 24 hours and passes an entity id as entity', async () => {
     const { client, byId } = makeTools();
     client.homeHistory.mockResolvedValueOnce({ entity: door, changes: [] });

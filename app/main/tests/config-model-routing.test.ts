@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ConfigManager } from '../src/config/config-manager.js';
 import {
+  ADDABLE_SERVER_TYPES,
+  USE_SERVER_TYPES,
   builtInServers,
   defaultRoutes,
   resolveModelRouting,
@@ -60,6 +62,18 @@ describe('model routing', () => {
       ['gpu', 'qwen'],
       ['openai', undefined],
     ]);
+  });
+
+  it('keeps a Home Assistant server’s base address and gives it no use', () => {
+    expect(serverUrl('homeassistant', 'http://ha.local:8123/')).toBe('http://ha.local:8123');
+    expect(serverUrl('homeassistant', 'http://ha.local:8123/api/')).toBe('http://ha.local:8123');
+    expect(serverUrl('homeassistant', 'https://ha.example.com/api')).toBe('https://ha.example.com');
+    expect(ADDABLE_SERVER_TYPES).toContain('homeassistant');
+    expect(Object.values(USE_SERVER_TYPES).flat()).not.toContain('homeassistant');
+    const routing = resolveModelRouting(builtIns(), defaultRoutes(DEFAULT_PROVIDER_SETTINGS), {
+      servers: [{ id: 'ha1', name: 'Penang', type: 'homeassistant', url: 'http://ha.local:8123/api/' }],
+    });
+    expect(routing.servers.find((server) => server.id === 'ha1')).toMatchObject({ type: 'homeassistant', url: 'http://ha.local:8123', builtIn: false });
   });
 
   it('adds /v1 to a chat or transcription server given with no path', () => {
@@ -176,6 +190,25 @@ describe('probing model servers', () => {
       status: 'down',
       message: 'Not reachable at http://rack:8188.',
     });
+  });
+
+  it('checks Home Assistant with its token', async () => {
+    const server = { type: 'homeassistant' as const, url: 'http://ha.local:8123' };
+    const calls: Array<[string, string | undefined]> = [];
+    const answer = (status: number) =>
+      vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+        calls.push([String(url), (init?.headers as Record<string, string>).Authorization]);
+        return json({ message: 'API running.' }, status);
+      }) as unknown as typeof fetch;
+    await expect(probeModelServer(server, 'tok', answer(200))).resolves.toMatchObject({ status: 'up' });
+    expect(calls[0]).toEqual(['http://ha.local:8123/api/', 'Bearer tok']);
+    await expect(probeModelServer(server, 'bad', answer(401))).resolves.toMatchObject({ status: 'down', message: 'token refused' });
+    await expect(probeModelServer(server, 'bad', answer(403))).resolves.toMatchObject({ status: 'down', message: 'token refused' });
+    await expect(probeModelServer(server, undefined, answer(200))).resolves.toMatchObject({ status: 'down', message: 'no token' });
+    const unreachable = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+    await expect(probeModelServer(server, 'tok', unreachable)).resolves.toMatchObject({ status: 'down' });
   });
 
   it('splits ComfyUI models into image and 3D, and counts its queue', async () => {

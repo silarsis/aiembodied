@@ -62,6 +62,8 @@ import {
   registerMemoryEngineIpc,
   setupMemoryEngine,
   MemoryStorageSync,
+  HomeServerSync,
+  homeServersFor,
   memoryStorageTargets,
   type MemoryEngineRuntime,
 } from './memory-engine/index.js';
@@ -259,6 +261,7 @@ let localMotionService: LocalMotionGenerationService | null = null;
 let localVoiceService: LocalVoiceService | null = null;
 let memoryEngine: MemoryEngineRuntime | null = null;
 let memoryStorageSync: MemoryStorageSync | null = null;
+let homeServerSync: HomeServerSync | null = null;
 let configManagerForMemory: ConfigManager | null = null;
 
 /**
@@ -278,6 +281,8 @@ function syncMemoryStorage(manager: ConfigManager | null = configManagerForMemor
   configManagerForMemory = manager;
   memoryStorageSync ??= new MemoryStorageSync({ client: memoryEngine.client, logger });
   void memoryStorageSync.apply(memoryStorageTargets(manager.getConfig().models, (id) => manager.getServerKey(id)));
+  homeServerSync ??= new HomeServerSync({ client: memoryEngine.client, logger });
+  void homeServerSync.apply(homeServersFor(manager.getConfig().models, (id) => manager.getServerKey(id)));
 }
 let currentMotionServiceUrl: string | null = null;
 
@@ -2255,6 +2260,8 @@ app.on('before-quit', async (event) => {
   // Synchronous cleanup. Queued memory writes stay in SQLite and go out on the next start.
   memoryStorageSync?.stop();
   memoryStorageSync = null;
+  homeServerSync?.stop();
+  homeServerSync = null;
   memoryEngine?.stop();
   memoryEngine = null;
   if (memoryStore) {

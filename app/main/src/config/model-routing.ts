@@ -14,13 +14,14 @@
  */
 import type { ProviderSettings } from './provider-settings.js';
 
-export type ServerType = 'chat' | 'transcribe' | 'speech' | 'motion' | 'comfy' | 'search' | 'memory' | 'openai' | 'brave' | 'civitai' | 'huggingface';
-export const SERVER_TYPES: readonly ServerType[] = ['chat', 'transcribe', 'speech', 'motion', 'comfy', 'search', 'memory', 'openai', 'brave', 'civitai', 'huggingface'];
+export type ServerType = 'chat' | 'transcribe' | 'speech' | 'motion' | 'comfy' | 'search' | 'memory' | 'openai' | 'brave' | 'civitai' | 'huggingface' | 'homeassistant';
+export const SERVER_TYPES: readonly ServerType[] = ['chat', 'transcribe', 'speech', 'motion', 'comfy', 'search', 'memory', 'homeassistant', 'openai', 'brave', 'civitai', 'huggingface'];
 /**
  * Types a user can add more servers of. OpenAI, Brave, Civitai and Hugging Face are one account each; Civitai and
  * Hugging Face run no job, they supply model downloads.
+ * Home Assistant runs no job either: the memory engine watches the homes listed here.
  */
-export const ADDABLE_SERVER_TYPES: readonly ServerType[] = ['chat', 'transcribe', 'speech', 'motion', 'comfy', 'search', 'memory'];
+export const ADDABLE_SERVER_TYPES: readonly ServerType[] = ['chat', 'transcribe', 'speech', 'motion', 'comfy', 'search', 'memory', 'homeassistant'];
 
 export type UseId =
   | 'llm'
@@ -347,6 +348,7 @@ export function isLocalUrl(url: string): boolean {
  */
 export function serverUrl(type: ServerType, url: string): string {
   const trimmed = trimUrl(url);
+  if (type === 'homeassistant') return trimUrl(trimmed.replace(/\/api\/?$/, ''));
   if (type !== 'chat' && type !== 'transcribe') return trimmed;
   try {
     const parsed = new URL(trimmed);

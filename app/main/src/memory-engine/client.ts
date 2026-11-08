@@ -60,6 +60,9 @@ export interface MemoryEngineSearchResult {
   matched?: string[];
   /** Where it came from; absent or "conversation" for memory of conversations. */
   source?: string;
+  /** Home Assistant events only: which home it happened in. */
+  home_id?: string | null;
+  home_name?: string | null;
 }
 
 export interface MemoryEngineSearchOptions {
@@ -241,6 +244,8 @@ export interface MemoryEngineFact {
 /** A Home Assistant device or sensor the engine watches. */
 export interface MemoryEngineHomeEntity {
   home_id: string;
+  /** Which home it belongs to, when the engine says (it may watch several). */
+  home_name?: string | null;
   entity_id: string;
   name: string | null;
   area: string | null;
@@ -278,6 +283,32 @@ export interface MemoryEngineHomeHistory {
   /** Numeric entities only. */
   readings?: MemoryEngineHomeReading[];
   raw?: Array<{ at: string; value: number | null }>;
+}
+
+/** A Home Assistant server for the engine to watch. The token is held in the engine's memory only. */
+export interface MemoryEngineHomeServer {
+  id: string;
+  name: string;
+  url: string;
+  token: string;
+  label?: string | null;
+  entities?: string[];
+}
+
+/** One home the engine watches; never carries a token. */
+export interface MemoryEngineHomeStatus {
+  id: string;
+  name: string;
+  source: 'env' | 'app';
+  configured: boolean;
+  connected: boolean;
+  url: string | null;
+  label: string | null;
+  watched: number;
+  events_today: number;
+  last_event_at: string | null;
+  error: string | null;
+  note: string | null;
 }
 
 /** A failed call. `retryable` is false when the engine rejected the request itself. */
@@ -361,6 +392,17 @@ export class MemoryEngineClient {
     if (options.to) params.set('to', options.to);
     if (options.limit) params.set('limit', String(options.limit));
     return this.request('GET', `/v1/home/history?${params.toString()}`);
+  }
+
+  /** Replace the app-managed homes the engine watches. Answers with the status of every home. */
+  async setHomeServers(servers: MemoryEngineHomeServer[]): Promise<MemoryEngineHomeStatus[]> {
+    const body = await this.request<{ homes: MemoryEngineHomeStatus[] }>('PUT', '/v1/home/servers', { servers });
+    return body.homes;
+  }
+
+  async homeStatus(): Promise<MemoryEngineHomeStatus[]> {
+    const body = await this.request<{ homes: MemoryEngineHomeStatus[] }>('GET', '/v1/home/status', undefined, 5000);
+    return body.homes;
   }
 
   async homeEntities(q?: string): Promise<MemoryEngineHomeEntity[]> {

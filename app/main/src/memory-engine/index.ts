@@ -8,3 +8,4 @@ export * from './tools.js';
 export * from './voice-memory.js';
 export * from './ipc.js';
 export * from './storage-sync.js';
+export * from './home-sync.js';
