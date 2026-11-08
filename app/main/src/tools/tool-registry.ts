@@ -15,6 +15,11 @@ export interface RegisteredTool {
   execute: (params: unknown) => Promise<unknown>; // Execution function
   spokenNotice?: string; // Said aloud by the local voice while the tool runs, e.g. "Let me look that up."
   describeCall?: (params: unknown) => string; // Short label for a call in the status panel
+  /**
+   * For a 'confirm' tool: true when this particular call may only be approved on the screen (the
+   * approval card), never by voice. Same effect as a 'block' tool that the card can approve.
+   */
+  cardOnly?: (params: unknown) => boolean | Promise<boolean>;
 }
 
 /**

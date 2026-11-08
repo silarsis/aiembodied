@@ -467,3 +467,95 @@ def test_restart_recovery_other_states(cfg, repo, client, ws):
     a, b = c2.get_task("20260101-cccc"), c2.get_task("20260101-dddd")
     assert a["status"] == "review" and a["error"] == "runner restarted during push"
     assert b["status"] == "failed" and b["error"] == "runner restarted"
+
+
+# ---- ask_echo, several dialogs, text questions, paused time limit -----------------------------
+
+def test_ask_echo_question_kind_and_answer(client, ws, monkeypatch):
+    monkeypatch.setenv("FAKE_PI_MODE", "ask")
+    ws()
+    t = wait_status(client, new_task(client)["id"], "question")
+    q = t["question"]
+    assert q["kind"] == "ask_echo" and q["method"] == "input" and q["message"] == "Which port?"
+    assert q["title"] == "Question from pi" and q["asked_at"]
+    assert t["questions"] == [q]
+    r = client.post(f"/v1/tasks/{t['id']}/answer", json={"value": "8080"})
+    assert r.status_code == 200
+    t = wait_status(client, t["id"], "review")
+    assert t["questions"] == [] and t["question"] is None
+    assert "8080" in (Path(t["worktree"]) / "hello.txt").read_text()
+
+
+def test_confirm_question_has_kind_confirm(client, ws, monkeypatch):
+    monkeypatch.setenv("FAKE_PI_MODE", "question")
+    ws()
+    t = wait_status(client, new_task(client)["id"], "question")
+    assert t["question"]["kind"] == "confirm"
+    client.post(f"/v1/tasks/{t['id']}/answer", json={"confirmed": False})
+    wait_status(client, t["id"], ("review", "done"))
+
+
+def test_several_pending_dialogs_answer_by_id_or_oldest(client, ws, monkeypatch):
+    monkeypatch.setenv("FAKE_PI_MODE", "two")
+    ws()
+    tid = new_task(client)["id"]
+    end = time.time() + 10
+    t = client.get(f"/v1/tasks/{tid}").json()
+    while len(t["questions"]) < 2 and time.time() < end:
+        time.sleep(0.05)
+        t = client.get(f"/v1/tasks/{tid}").json()
+    assert [q["id"] for q in t["questions"]] == ["q1", "a1"]
+    assert t["question"]["id"] == "q1"
+    assert client.post(f"/v1/tasks/{tid}/answer", json={"value": "x", "dialog_id": "nope"}).status_code == 404
+    r = client.post(f"/v1/tasks/{tid}/answer", json={"value": "9000", "dialog_id": "a1"}).json()
+    assert r["status"] == "question" and [q["id"] for q in r["questions"]] == ["q1"]
+    r = client.post(f"/v1/tasks/{tid}/answer", json={"confirmed": True}).json()  # oldest = q1
+    assert r["status"] == "working" and r["questions"] == []
+    t = wait_status(client, tid, "review")
+    assert "9000" in (Path(t["worktree"]) / "hello.txt").read_text()
+
+
+def test_plain_text_question_then_answer_continues(client, ws, monkeypatch):
+    monkeypatch.setenv("FAKE_PI_MODE", "textq")
+    ws()
+    t = wait_status(client, new_task(client)["id"], "question")
+    assert t["question"]["kind"] == "text" and t["question"]["message"] == "Which database should I use?"
+    assert client.post(f"/v1/tasks/{t['id']}/answer", json={}).status_code == 400
+    assert client.post(f"/v1/tasks/{t['id']}/answer", json={"value": "Use sqlite"}).status_code == 200
+    t = wait_status(client, t["id"], "review")
+    assert "Use sqlite" in (Path(t["worktree"]) / "hello.txt").read_text()
+    assert t["questions"] == []
+
+
+def test_text_question_with_changes_goes_to_review(client, ws, monkeypatch):
+    monkeypatch.setenv("FAKE_PI_MODE", "normal")
+    ws()
+    t = wait_status(client, new_task(client)["id"], "review")  # last text has no question mark
+    assert t["questions"] == []
+
+
+def test_time_limit_paused_while_question(client, ws, monkeypatch):
+    monkeypatch.setenv("FAKE_PI_MODE", "ask")
+    ws(time_limit_min=0.03)  # 1.8 s
+    t = wait_status(client, new_task(client)["id"], "question")
+    time.sleep(2.5)
+    assert client.get(f"/v1/tasks/{t['id']}").json()["status"] == "question"
+    client.post(f"/v1/tasks/{t['id']}/answer", json={"value": "ok"})
+    wait_status(client, t["id"], "review")
+
+
+def test_old_database_gets_questions_column(tmp_path):
+    import sqlite3
+    from coder.store import Store
+    p = tmp_path / "old.sqlite"
+    db = sqlite3.connect(p)
+    db.execute("CREATE TABLE tasks (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, goal TEXT NOT NULL, acceptance TEXT, "
+               "scope TEXT, provider TEXT, model TEXT, branch TEXT, worktree TEXT, base_commit TEXT, status TEXT NOT NULL, "
+               "phase_detail TEXT, current_tool TEXT, files_touched TEXT, question TEXT, last_text TEXT, checks_ok INTEGER, "
+               "checks_output TEXT, review TEXT, pr_url TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
+               "started_at TEXT, finished_at TEXT)")
+    db.commit()
+    db.close()
+    st = Store(p)
+    t = st.create_task(id="a", workspace_id="w", goal="g", files_touched=[])
+    assert t["questions"] == []

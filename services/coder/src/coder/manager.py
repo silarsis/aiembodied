@@ -28,6 +28,7 @@ PROVIDER_KEY_ENV = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"
 KEY_NAMES = ("openai", "anthropic", "github")
 # Events that do not count as agent activity when deciding that pi has gone quiet.
 QUIET_EVENTS = {"agent_end", "agent_settled", "queue_update", "response", "extension_ui_request"}
+ASK_PREFIX = "Question from pi: "  # title prefix of the ask_echo tool (assets/aiembodied-guard.ts)
 RUNNING = ("starting", "working", "question", "checks")
 # Statuses in which a local task needs the local model server.
 LOCAL_NEEDED = ("starting", "working", "question")
@@ -116,6 +117,8 @@ class TaskManager:
             has_wt = bool(t["worktree"]) and wt.is_dir() and bool(t["base_commit"])
             if not has_wt:
                 self._mark_failed(tid, "runner restarted")
+            elif t["status"] == "question" and t["questions"] and all(q.get("kind") == "text" for q in t["questions"]):
+                continue  # waiting for a text answer; pi is not running, nothing to resume
             elif t["status"] == "pushing":
                 self.store.update_task(tid, status="review", error="runner restarted during push",
                                        phase_detail="runner restarted during push")
@@ -171,7 +174,14 @@ class TaskManager:
     # ---- helpers ----------------------------------------------------------------------------
 
     def local_model_needed(self) -> bool:
-        return any(t["provider"] == "local" and t["status"] in LOCAL_NEEDED for t in self.store.list_tasks())
+        return any(t["provider"] == "local" and t["status"] in LOCAL_NEEDED and not self._text_question_only(t)
+                   for t in self.store.list_tasks())
+
+    @staticmethod
+    def _text_question_only(t: dict) -> bool:
+        """True while a task only waits for an answer to a plain-text question (pi is idle then)."""
+        qs = t.get("questions") or []
+        return t["status"] == "question" and bool(qs) and all(q.get("kind") == "text" for q in qs)
 
     def status(self) -> dict:
         active = [t["id"] for t in self.store.list_tasks() if t["status"] in ACTIVE]
@@ -184,11 +194,14 @@ class TaskManager:
                 self._needed = needed
                 self.on_change({"task_id": task["id"], "status": task["status"],
                                 "current_tool": task["current_tool"], "question": task["question"],
+                                "questions": task["questions"],
                                 "local_model_needed": needed})
             except Exception:
                 pass
 
     def _update(self, tid: str, force: bool = False, **fields: Any) -> Optional[dict]:
+        if "question" in fields and fields["question"] is None and "questions" not in fields:
+            fields["questions"] = []
         with self._lock:
             run = self._runs.get(tid)
             if run and run.stopped and not force:
@@ -197,7 +210,7 @@ class TaskManager:
         if "status" in fields:
             self.store.add_event(tid, "status", {"status": fields["status"], "detail": fields.get("phase_detail"),
                                                  "error": fields.get("error")})
-        if task and {"status", "current_tool", "question"} & set(fields):
+        if task and {"status", "current_tool", "question", "questions"} & set(fields):
             self._notify(task)
         return task
 
@@ -435,8 +448,19 @@ class TaskManager:
         elif t == "extension_ui_request" and ev.get("method") in QUESTION_METHODS:
             q = {k: ev.get(k) for k in ("id", "method", "title", "message", "options", "placeholder", "prefill",
                                         "timeout") if k in ev}
+            q["kind"] = "confirm"
+            title = str(q.get("title") or "")
+            if q.get("method") == "input" and title.startswith(ASK_PREFIX):
+                q.update(kind="ask_echo", title="Question from pi", message=title[len(ASK_PREFIX):])
+            q["asked_at"] = now()
             run.pending_question = True
-            self._update(tid, status="question", question=q, phase_detail=str(ev.get("title") or "waiting for an answer"))
+            with self._lock:
+                task = self.store.get_task(tid)
+                qs = list(task["questions"]) if task else []
+                if not any(x.get("id") == q.get("id") for x in qs):
+                    qs.append(q)
+                self._update(tid, status="question", question=qs[0], questions=qs,
+                             phase_detail=str(qs[0].get("message") or qs[0].get("title") or "waiting for an answer"))
 
     @staticmethod
     def _relative(task: Optional[dict], p: str) -> str:
@@ -454,7 +478,12 @@ class TaskManager:
         return 60 * ((ws.time_limit_min if ws and ws.time_limit_min else None) or self.cfg.time_limit_min)
 
     def _wait(self, run: Run, deadline: float) -> str:
+        last = time.monotonic()
         while True:
+            tick = time.monotonic()
+            if run.pending_question:  # the time limit does not run while pi waits for an answer
+                deadline += tick - last
+            last = tick
             if run.stopped:
                 return "stopped"
             if run.prompt_error:
@@ -500,6 +529,13 @@ class TaskManager:
             unchanged = gitops.head(wt) == base
         except GitError as e:
             return self._fail(tid, run, f"commit failed: {e}")
+        if unchanged and self._asks_in_text(task):
+            qid = f"text-{len(self.store.events(tid, 0, 100000))}"
+            q = {"id": qid, "method": "text", "kind": "text", "title": "Question from pi",
+                 "message": task["last_text"].strip(), "options": None, "asked_at": now()}
+            self._update(tid, status="question", question=q, questions=[q], current_tool=None,
+                         phase_detail="pi ended its turn with a question")
+            return
         if unchanged:
             if run.pi:
                 run.pi.stop(1)
@@ -518,6 +554,10 @@ class TaskManager:
         except GitError as e:
             return self._fail(tid, run, f"review failed: {e}")
         self._update(tid, status="review", review=rev, phase_detail="ready for review")
+
+    @staticmethod
+    def _asks_in_text(task: dict) -> bool:
+        return (task.get("last_text") or "").strip().endswith("?")
 
     def _run_checks(self, run: Run, command: str, cwd: Path) -> tuple[bool, str]:
         p = subprocess.Popen(command, shell=True, cwd=str(cwd), env=clean_env(), stdout=subprocess.PIPE,
@@ -546,6 +586,8 @@ class TaskManager:
 
     def steer(self, tid: str, message: str) -> dict:
         task = self._get(tid)
+        if self._text_question_only(task):
+            return self.follow_up(tid, message)
         if task["status"] not in ("working", "question"):
             raise CoderError(409, f"cannot steer a task that is {task['status']}")
         self._live_pi(tid).send({"type": "steer", "message": message})
@@ -555,11 +597,12 @@ class TaskManager:
     def follow_up(self, tid: str, message: str) -> dict:
         task = self._get(tid)
         st = task["status"]
-        if st in ("working", "question"):
+        text_q = self._text_question_only(task)
+        if st in ("working", "question") and not text_q:
             self._live_pi(tid).send({"type": "follow_up", "message": message})
             self.store.add_event(tid, "runner", {"follow_up": message})
             return task
-        if st != "review":
+        if st != "review" and not text_q:
             raise CoderError(409, f"cannot follow up a task that is {st}")
         run = self._runs.setdefault(tid, Run())
         if run.thread and run.thread.is_alive():
@@ -572,7 +615,8 @@ class TaskManager:
             run.active = True
         if task["provider"] == "local":
             # The local model may have been swapped out: wait for it in the worker.
-            self._update(tid, status="starting", phase_detail="waiting for the local model", error=None, finished_at=None)
+            self._update(tid, status="starting", phase_detail="waiting for the local model", error=None, finished_at=None,
+                         question=None)
             self.store.add_event(tid, "runner", {"follow_up": message})
             run.thread = threading.Thread(target=self._worker, args=(tid, run, self._restart_pi(message, "follow-up")),
                                           daemon=True, name=f"task-{tid}")
@@ -585,7 +629,7 @@ class TaskManager:
                 if run.pi and run.pi.exited.wait(1.5):
                     raise CoderError(409, "pi could not continue the session (is --continue supported?)")
             assert run.pi
-            self._update(tid, status="working", phase_detail="follow-up", error=None, finished_at=None)
+            self._update(tid, status="working", phase_detail="follow-up", error=None, finished_at=None, question=None)
             if not run.pi.send({"id": "followup", "type": "prompt", "message": message}):
                 raise CoderError(409, "pi did not accept the message")
         except Exception:
@@ -597,26 +641,44 @@ class TaskManager:
         run.thread.start()
         return self._get(tid)
 
-    def answer(self, tid: str, value: Optional[str], confirmed: Optional[bool], cancelled: Optional[bool]) -> dict:
-        task = self._get(tid)
-        if task["status"] != "question" or not task["question"]:
-            raise CoderError(409, "task is not waiting for an answer")
-        msg: dict[str, Any] = {"type": "extension_ui_response", "id": task["question"]["id"]}
-        if cancelled:
-            msg["cancelled"] = True
-        elif value is not None:
-            msg["value"] = value
-        elif confirmed is not None:
-            msg["confirmed"] = confirmed
-        else:
-            raise CoderError(400, "give value, confirmed or cancelled")
-        pi = self._live_pi(tid)
-        run = self._runs[tid]
-        run.pending_question = False
-        run.last_activity = time.monotonic()
-        pi.send(msg)
-        self.store.add_event(tid, "runner", {"answer": {k: v for k, v in msg.items() if k != "type"}})
-        return self._update(tid, status="working", question=None, phase_detail="answered") or task
+    def answer(self, tid: str, value: Optional[str], confirmed: Optional[bool], cancelled: Optional[bool],
+               dialog_id: Optional[str] = None) -> dict:
+        with self._lock:
+            task = self._get(tid)
+            qs = task["questions"]
+            if task["status"] != "question" or not qs:
+                raise CoderError(409, "task is not waiting for an answer")
+            if dialog_id is None:
+                q = qs[0]  # the oldest pending dialog
+            else:
+                q = next((x for x in qs if x.get("id") == dialog_id), None)
+                if q is None:
+                    raise CoderError(404, f"no pending question {dialog_id!r}")
+            if q.get("kind") == "text":
+                if value is None or not value.strip():
+                    raise CoderError(400, "a plain-text question needs a value")
+                self.store.add_event(tid, "runner", {"answer": {"id": q["id"], "value": value}})
+                return self.follow_up(tid, value)
+            msg: dict[str, Any] = {"type": "extension_ui_response", "id": q["id"]}
+            if cancelled:
+                msg["cancelled"] = True
+            elif value is not None:
+                msg["value"] = value
+            elif confirmed is not None:
+                msg["confirmed"] = confirmed
+            else:
+                raise CoderError(400, "give value, confirmed or cancelled")
+            pi = self._live_pi(tid)
+            run = self._runs[tid]
+            rest = [x for x in qs if x is not q]
+            run.pending_question = bool(rest)
+            run.last_activity = time.monotonic()
+            pi.send(msg)
+            self.store.add_event(tid, "runner", {"answer": {k: v for k, v in msg.items() if k != "type"}})
+            if rest:
+                return self._update(tid, status="question", question=rest[0], questions=rest,
+                                    phase_detail=str(rest[0].get("message") or rest[0].get("title"))) or task
+            return self._update(tid, status="working", question=None, phase_detail="answered") or task
 
     def _stop_run(self, tid: str, why: str) -> Optional[Run]:
         run = self._runs.get(tid)

@@ -9,7 +9,7 @@ import type { LocalLlmControl } from '../local-voice/local-llm-control.js';
 import type { CodingConfig } from './config.js';
 import { findCoderGguf } from './gguf-finder.js';
 import { CoderModelSwap, type SwapState } from './model-swap.js';
-import { CodingRunnerClient, type RunnerCapabilities } from './runner-client.js';
+import { CodingRunnerClient, type RunnerCapabilities, type RunnerEvent } from './runner-client.js';
 import { buildCodingSyncPayload, CodingSync } from './sync.js';
 
 type Logger = { info: (message: string, data?: Record<string, unknown>) => void; warn: (message: string, data?: Record<string, unknown>) => void };
@@ -51,6 +51,7 @@ export class CodingService {
   private client: CodingRunnerClient | null = null;
   private sync: CodingSync | null = null;
   private unsubscribe: (() => void) | null = null;
+  private readonly eventListeners = new Set<(event: RunnerEvent) => void>();
   private runnerUp = false;
   private needed = false;
   private readonly env: NodeJS.ProcessEnv;
@@ -75,6 +76,17 @@ export class CodingService {
   /** CODER_LLM_GGUF, else the first Qwen3-Coder-Next Q4_K_M file in the usual places. */
   detectGguf(): string | null {
     return this.env.CODER_LLM_GGUF?.trim() || findCoderGguf({ env: this.env });
+  }
+
+  /** The client for the runner in use, or null before the first apply(). */
+  runnerClient(): CodingRunnerClient | null {
+    return this.client;
+  }
+
+  /** Every message of the runner's event stream (task changes), as it arrives. Returns a function that stops listening. */
+  onRunnerEvent(listener: (event: RunnerEvent) => void): () => void {
+    this.eventListeners.add(listener);
+    return () => this.eventListeners.delete(listener);
   }
 
   chatOverride(): RouteOverride | null {
@@ -147,7 +159,15 @@ export class CodingService {
         void client.status().then((status) => this.setNeeded(status.local_model_needed), () => undefined);
       },
       onEvent: (event) => {
-        if (this.client === client && typeof event.local_model_needed === 'boolean') this.setNeeded(event.local_model_needed);
+        if (this.client !== client) return;
+        if (typeof event.local_model_needed === 'boolean') this.setNeeded(event.local_model_needed);
+        for (const listener of this.eventListeners) {
+          try {
+            listener(event);
+          } catch (error) {
+            this.options.logger.warn('A coding event listener failed.', { message: error instanceof Error ? error.message : String(error) });
+          }
+        }
       },
       onClose: down,
       onError: down,

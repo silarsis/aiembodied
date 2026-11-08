@@ -17,6 +17,8 @@ import type { VoiceActivity, VoicePhase } from './voice-activity.js';
 export interface LocalVoiceClientCallbacks extends RealtimeClientCallbacks {
   onUserTranscript?: (text: string) => void;
   onAssistantTranscript?: (text: string) => void;
+  /** A system turn (an update from the coding agent) ran: the note the model was given, marked as not from the user. */
+  onSystemNote?: (text: string) => void;
   /** Turn progress: waiting → listening → transcribing → thinking → responding. */
   onActivity?: (activity: VoiceActivity) => void;
   /** A tool the model called (web_search, MCP tools), as it starts and when it finishes. */
@@ -77,6 +79,9 @@ export class LocalVoiceClient {
   private remoteAudioElement: HTMLAudioElement | null = null;
   private outputDeviceId: string | null = null;
   private unsubscribeEvents: (() => void) | null = null;
+  private unsubscribeSystemReady: (() => void) | null = null;
+  /** Main said an update for the assistant is ready; it runs as soon as the conversation is idle. */
+  private systemReady = false;
   private statusTimer: number | null = null;
   private connectionId = 0;
   private busy = false;
@@ -185,6 +190,7 @@ export class LocalVoiceClient {
         } else {
           this.setActivity(this.requireWakeWord ? 'waiting' : 'listening');
         }
+        void this.maybeRunSystemTurn();
       }
     }
   }
@@ -262,6 +268,11 @@ export class LocalVoiceClient {
     this.sink = sink;
     this.output = output;
     this.unsubscribeEvents = bridge.onEvent((event) => this.handleEvent(event));
+    this.unsubscribeSystemReady =
+      bridge.onSystemReady?.(() => {
+        this.systemReady = true;
+        void this.maybeRunSystemTurn();
+      }) ?? null;
     this.log('info', 'Local voice capture started', { sampleRate: context.sampleRate });
 
     await this.waitForServices(bridge, connectionId);
@@ -315,6 +326,57 @@ export class LocalVoiceClient {
     }
     if (this.output) {
       this.callbacks.onRemoteStream?.(this.output.stream);
+    }
+    // Updates that arrived while no conversation was running.
+    void bridge
+      .systemStatus?.()
+      .then((status) => {
+        if (status.ready && connectionId === this.connectionId) {
+          this.systemReady = true;
+          void this.maybeRunSystemTurn();
+        }
+      })
+      .catch(() => undefined);
+  }
+
+  /**
+   * Speak an update from the coding agent when nothing else is going on: connected, not busy with
+   * a reply, and nobody is mid-sentence. Otherwise it waits (systemReady stays set) and is tried
+   * again when the current turn ends.
+   */
+  private async maybeRunSystemTurn(): Promise<void> {
+    const bridge = this.getBridge();
+    if (!this.systemReady || !bridge || this.state.status !== 'connected' || this.busy || this.segmenter.inProgress) {
+      return;
+    }
+    this.systemReady = false;
+    this.busy = true;
+    const connectionId = this.connectionId;
+    const previousPhase = this.activity.phase;
+    try {
+      const spoke = await this.respond(bridge, '', connectionId, true);
+      if (connectionId !== this.connectionId) {
+        return;
+      }
+      if (spoke) {
+        this.listen('Follow-up: no wake word needed');
+      } else if (previousPhase === 'listening') {
+        this.listen('Listening');
+      } else {
+        this.setActivity(this.requireWakeWord ? 'waiting' : 'listening');
+      }
+    } catch (error) {
+      const failure = describe(error);
+      this.log('error', 'Local voice update failed', failure);
+      if (connectionId === this.connectionId) {
+        this.setActivity('error', `Update failed: ${failure.message}`);
+      }
+    } finally {
+      if (connectionId === this.connectionId) {
+        this.busy = false;
+        this.segmenter.reset();
+        void this.maybeRunSystemTurn();
+      }
     }
   }
 
@@ -375,7 +437,7 @@ export class LocalVoiceClient {
       }
       this.callbacks.onUserTranscript?.(text);
       this.setActivity('thinking', `“${text}”`);
-      await this.respond(bridge, text, connectionId);
+      await this.respond(bridge, text, connectionId, false);
       if (connectionId === this.connectionId) {
         this.listen('Follow-up: no wake word needed');
       }
@@ -389,15 +451,17 @@ export class LocalVoiceClient {
       if (connectionId === this.connectionId) {
         this.busy = false;
         this.segmenter.reset();
+        void this.maybeRunSystemTurn();
       }
     }
   }
 
-  private async respond(bridge: LocalVoiceBridge, text: string, connectionId: number): Promise<void> {
+  /** Run one turn and play it. For a system turn `text` is empty; true if the assistant said something. */
+  private async respond(bridge: LocalVoiceBridge, text: string, connectionId: number, system: boolean): Promise<boolean> {
     const context = this.context;
     const output = this.output;
     if (!context || !output) {
-      return;
+      return false;
     }
     const turn = new Turn(`local-${this.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, context, output);
     turn.onSentenceStart = (sentence, first) => {
@@ -409,18 +473,33 @@ export class LocalVoiceClient {
     };
     this.turn = turn;
 
-    const result = await bridge.respond({ requestId: turn.requestId, text, instructions: this.sessionConfig.instructions });
+    if (system) {
+      this.setActivity('thinking', 'Update from the coding agent');
+    }
+    const result = await bridge.respond({
+      requestId: turn.requestId,
+      text,
+      instructions: this.sessionConfig.instructions,
+      ...(system ? { system: true } : {}),
+    });
     await turn.finished();
     if (connectionId !== this.connectionId) {
-      return;
+      return false;
     }
     this.turn = null;
+    if (system && !result.note) {
+      return false;
+    }
     await wait(PLAYBACK_TAIL_MS);
     // A follow-up needs no wake word for a little while.
     this.awakeUntil = this.now() + this.wakeWindowMs;
+    if (result.note) {
+      this.callbacks.onSystemNote?.(result.note);
+    }
     if (result.text && !result.cancelled) {
       this.callbacks.onAssistantTranscript?.(result.text);
     }
+    return true;
   }
 
   private handleEvent(event: LocalVoiceEvent): void {
@@ -516,6 +595,8 @@ export class LocalVoiceClient {
     }
     this.unsubscribeEvents?.();
     this.unsubscribeEvents = null;
+    this.unsubscribeSystemReady?.();
+    this.unsubscribeSystemReady = null;
     if (this.processor) {
       this.processor.onaudioprocess = null;
     }
@@ -683,6 +764,11 @@ export interface Utterance {
 
 /** Cuts a gated mic stream into utterances: speech, then `silenceMs` of quiet. */
 export class UtteranceSegmenter {
+  /** Someone is mid-utterance. */
+  get inProgress(): boolean {
+    return this.chunks.length > 0;
+  }
+
   private chunks: Float32Array[] = [];
   private startAt = 0;
   private lastVoiceAt = 0;

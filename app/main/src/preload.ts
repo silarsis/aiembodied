@@ -55,9 +55,11 @@ import type {
   LocalVoiceRespondRequest,
   LocalVoiceRespondResult,
   LocalVoiceStatus,
+  LocalVoiceSystemStatus,
   LocalVoiceTranscribeResult,
   SpeakingVoiceOptions,
 } from './local-voice/types.js';
+import type { ApprovalsBridge, ApprovalView } from './tools/approvals-ipc.js';
 import type { SpeechTtsEngine } from './local-voice/speech-service-client.js';
 import type {
   MCPServerConfig,
@@ -69,7 +71,7 @@ import type {
 import type { OpenAIFunction } from './tools/tool-registry.js';
 import type { MemoryEngineBridge } from './memory-engine/bridge-types.js';
 import type { GpuMemoryBridge } from './diagnostics/gpu-memory.js';
-import type { CodingBridge } from './coding/bridge-types.js';
+import type { CodingBridge, CodingTasksBridge, RunnerEvent } from './coding/bridge-types.js';
 import type { CodingStatus, CodingView } from './coding/coding-service.js';
 
 function logPreloadMessage(
@@ -213,6 +215,8 @@ export interface PreloadApi {
   memoryEngine?: MemoryEngineBridge;
   gpuMemory?: GpuMemoryBridge;
   coding?: CodingBridge;
+  codingTasks?: CodingTasksBridge;
+  approvals?: ApprovalsBridge;
   app?: AppBridge;
   ping(): string;
   __bridgeReady?: boolean;
@@ -265,6 +269,10 @@ export interface LocalVoiceBridge {
   resetHistory(): Promise<void>;
   /** The voices the active character can pick for the engine that speaks now. */
   getVoiceOptions?(): Promise<SpeakingVoiceOptions>;
+  /** Updates for Echo that are waiting to be spoken (from the coding agent). */
+  systemStatus?(): Promise<LocalVoiceSystemStatus>;
+  /** An update is ready: run a system turn if the conversation is idle. */
+  onSystemReady?(listener: () => void): () => void;
   onEvent(listener: (event: LocalVoiceEvent) => void): () => void;
 }
 
@@ -427,6 +435,15 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       await ipcRenderer.invoke('local-voice:reset');
     },
     getVoiceOptions: () => ipcRenderer.invoke('local-voice:voice-options') as Promise<SpeakingVoiceOptions>,
+    systemStatus: () => ipcRenderer.invoke('local-voice:system-status') as Promise<LocalVoiceSystemStatus>,
+    onSystemReady: (listener) => {
+      const channel = 'local-voice:system-ready';
+      const handler = () => listener();
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
     onEvent: (listener) => {
       const channel = 'local-voice:event';
       const handler = (_event: unknown, payload: LocalVoiceEvent) => listener(payload);
@@ -663,6 +680,38 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     pickGguf: () => ipcRenderer.invoke('coding:pick-gguf') as Promise<string | null>,
     pickFolder: () => ipcRenderer.invoke('coding:pick-folder') as Promise<string | null>,
     suggestChecks: (workspaceId) => ipcRenderer.invoke('coding:suggest-checks', workspaceId) as Promise<string | null>,
+  },
+  codingTasks: {
+    list: () => ipcRenderer.invoke('coding:tasks'),
+    get: (id) => ipcRenderer.invoke('coding:task', id),
+    diff: (id) => ipcRenderer.invoke('coding:diff', id),
+    start: (request) => ipcRenderer.invoke('coding:start-task', request),
+    answer: (id, answer) => ipcRenderer.invoke('coding:answer-task', id, answer),
+    followUp: (id, message) => ipcRenderer.invoke('coding:follow-up', id, message),
+    cancel: (id) => ipcRenderer.invoke('coding:cancel-task', id),
+    discard: (id) => ipcRenderer.invoke('coding:discard-task', id),
+    apply: (id) => ipcRenderer.invoke('coding:apply-task', id),
+    onEvent: (listener) => {
+      const channel = 'coding:task-event';
+      const handler = (_event: unknown, payload: RunnerEvent) => listener(payload);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
+  },
+  approvals: {
+    list: () => ipcRenderer.invoke('approvals:list'),
+    approve: (id) => ipcRenderer.invoke('approvals:approve', id),
+    decline: (id) => ipcRenderer.invoke('approvals:decline', id),
+    onChanged: (listener) => {
+      const channel = 'approvals:changed';
+      const handler = (_event: unknown, payload: ApprovalView[]) => listener(payload);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
   },
   memoryEngine: {
     status: () => ipcRenderer.invoke('memory-engine:status'),

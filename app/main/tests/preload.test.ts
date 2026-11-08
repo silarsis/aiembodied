@@ -136,6 +136,31 @@ describe('preload bridge', () => {
     expect(invoke).toHaveBeenCalledWith('coding:suggest-checks', 'aiembodied');
   });
 
+  it('exposes the coding task and approval helpers through the bridge', async () => {
+    const [, api] = exposeInMainWorld.mock.calls[0];
+    invoke.mockResolvedValue({});
+    await api.codingTasks.list();
+    expect(invoke).toHaveBeenCalledWith('coding:tasks');
+    await api.codingTasks.diff('t1');
+    expect(invoke).toHaveBeenCalledWith('coding:diff', 't1');
+    await api.codingTasks.start({ workspace_id: 'a', goal: 'g' });
+    expect(invoke).toHaveBeenCalledWith('coding:start-task', { workspace_id: 'a', goal: 'g' });
+    await api.codingTasks.answer('t1', { value: 'v' });
+    expect(invoke).toHaveBeenCalledWith('coding:answer-task', 't1', { value: 'v' });
+    await api.codingTasks.followUp('t1', 'more');
+    expect(invoke).toHaveBeenCalledWith('coding:follow-up', 't1', 'more');
+    await api.codingTasks.apply('t1');
+    expect(invoke).toHaveBeenCalledWith('coding:apply-task', 't1');
+    await api.approvals.list();
+    expect(invoke).toHaveBeenCalledWith('approvals:list');
+    await api.approvals.approve('ap1');
+    expect(invoke).toHaveBeenCalledWith('approvals:approve', 'ap1');
+    await api.approvals.decline('ap1');
+    expect(invoke).toHaveBeenCalledWith('approvals:decline', 'ap1');
+    await api.localVoice.systemStatus();
+    expect(invoke).toHaveBeenCalledWith('local-voice:system-status');
+  });
+
   it('exposes camera detection helpers through the bridge', async () => {
     const [, api] = exposeInMainWorld.mock.calls[0];
     const listener = vi.fn();

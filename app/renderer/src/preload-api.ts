@@ -1,5 +1,6 @@
 import type { GpuMemoryBridge } from '../../main/src/diagnostics/gpu-memory.js';
-import type { CodingBridge } from '../../main/src/coding/bridge-types.js';
+import type { CodingBridge, CodingTasksBridge } from '../../main/src/coding/bridge-types.js';
+import type { ApprovalsBridge } from '../../main/src/tools/approvals-ipc.js';
 import type { CivitaiLookup } from '../../main/src/avatar/generation/civitai.js';
 import type { HfLookup } from '../../main/src/local-llm/huggingface.js';
 import type { LlmDownload, LocalLlmList } from '../../main/src/local-llm/llm-library.js';
@@ -29,6 +30,7 @@ import type {
   LocalVoiceRespondRequest,
   LocalVoiceRespondResult,
   LocalVoiceStatus,
+  LocalVoiceSystemStatus,
   LocalVoiceTranscribeResult,
   SpeakingVoiceOptions,
 } from '../../main/src/local-voice/types.js';
@@ -127,6 +129,10 @@ export interface LocalVoiceBridge {
   resetHistory(): Promise<void>;
   /** The voices the active character can pick for the engine that speaks now. */
   getVoiceOptions?(): Promise<SpeakingVoiceOptions>;
+  /** Updates for Echo that are waiting to be spoken (from the coding agent). */
+  systemStatus?(): Promise<LocalVoiceSystemStatus>;
+  /** An update is ready: run a system turn if the conversation is idle. */
+  onSystemReady?(listener: () => void): () => void;
   onEvent(listener: (event: LocalVoiceEvent) => void): () => void;
 }
 
@@ -146,6 +152,8 @@ export interface PreloadApi {
   memoryEngine?: MemoryEngineBridge;
   gpuMemory?: GpuMemoryBridge;
   coding?: CodingBridge;
+  codingTasks?: CodingTasksBridge;
+  approvals?: ApprovalsBridge;
   app?: AppBridge;
   ping(): string;
   __bridgeReady?: boolean;

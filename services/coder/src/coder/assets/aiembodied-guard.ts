@@ -1,6 +1,11 @@
 // Safety rules for tasks run by the aiembodied coding runner. Loaded by pi from its agent dir.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import * as path from "node:path";
+import { Type } from "typebox";
+
+// The runner recognizes input dialogs from ask_echo by this title prefix.
+const ASK_TITLE = "Question from pi: ";
+const NO_ANSWER = "No answer was given; make a sensible choice and say so in your summary.";
 
 const BLOCKED_BASH = ["git push", "gh pr", "gh api", "git remote", "git config --global"];
 const SECRET_PATH = /(\.env|\.ssh|auth\.json|\.pi[\\/]+agent)/i;
@@ -23,6 +28,25 @@ function isProtected(rel: string): boolean {
 }
 
 export default function (pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "ask_echo",
+    label: "Ask Echo",
+    description:
+      "Ask Echo, the assistant who gave you this task, a question you cannot answer from the code. " +
+      "Use it instead of ending your turn with a question.",
+    parameters: Type.Object({ question: Type.String({ description: "The question, short and specific." }) }),
+    async execute(_toolCallId: string, params: { question: string }, _signal: unknown, _onUpdate: unknown, ctx: any) {
+      let answer: string | undefined;
+      try {
+        answer = await ctx.ui.input(ASK_TITLE + params.question, "type the answer");
+      } catch {
+        answer = undefined;
+      }
+      const text = typeof answer === "string" && answer.trim() ? answer.trim() : NO_ANSWER;
+      return { content: [{ type: "text", text }], details: { question: params.question, answered: text !== NO_ANSWER } };
+    },
+  });
+
   pi.on("tool_call", async (event: any, ctx: any) => {
     const tool = String(event.toolName ?? "").toLowerCase();
     const input = event.input ?? event.args ?? {};

@@ -49,12 +49,29 @@ export interface LocalVoiceRespondRequest {
    * it neither sees nor joins the conversation history.
    */
   preview?: boolean;
+  /**
+   * A system-initiated turn: `text` is ignored and the turn answers the updates queued with
+   * LocalVoiceService.notify() (for example from the coding agent). Nothing is said as Kevin.
+   */
+  system?: boolean;
 }
 
 export interface LocalVoiceRespondResult {
   requestId: string;
   text: string;
   cancelled: boolean;
+  /** For a system turn: the note the model was given, so the conversation record can keep it, marked. */
+  note?: string;
+}
+
+/** Updates for Echo waiting to be spoken (see LocalVoiceService.notify). */
+export interface LocalVoiceSystemStatus {
+  /** How many updates are queued. */
+  pending: number;
+  /** A system turn may run now (the coalescing wait and the rate limit have passed). */
+  ready: boolean;
+  /** The queued updates, for the status panel. */
+  texts: string[];
 }
 
 /** Streamed from main to the renderer on `local-voice:event` while a reply is generated. */

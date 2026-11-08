@@ -59,6 +59,34 @@ describe('CodingRunnerClient requests', () => {
   });
 });
 
+describe('CodingRunnerClient task controls', () => {
+  it('calls the task endpoints, and reads the diff as text', async () => {
+    const calls: Array<[string, string, unknown]> = [];
+    const fetchFn = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push([String(url), init?.method ?? 'GET', init?.body ? JSON.parse(String(init.body)) : undefined]);
+      return String(url).endsWith('/diff') ? new Response('diff --git a/x b/x\n', { status: 200, headers: { 'Content-Type': 'text/plain' } }) : json({ id: 't1', status: 'working' });
+    });
+    const runner = client(fetchFn);
+    expect(await runner.taskDiff('t1')).toBe('diff --git a/x b/x\n');
+    await runner.steer('t1', 'use the helper');
+    await runner.followUp('t1', 'add a test');
+    await runner.answer('t1', { value: '8080', dialog_id: 'a1' });
+    await runner.cancel('t1');
+    await runner.apply('t1');
+    await runner.discard('t1');
+    const base = 'http://127.0.0.1:8195/v1/tasks/t1';
+    expect(calls).toEqual([
+      [`${base}/diff`, 'GET', undefined],
+      [`${base}/steer`, 'POST', { message: 'use the helper' }],
+      [`${base}/follow_up`, 'POST', { message: 'add a test' }],
+      [`${base}/answer`, 'POST', { value: '8080', dialog_id: 'a1' }],
+      [`${base}/cancel`, 'POST', undefined],
+      [`${base}/apply`, 'POST', { draft: false }],
+      [`${base}/discard`, 'POST', undefined],
+    ]);
+  });
+});
+
 describe('server-sent events', () => {
   const encoder = new TextEncoder();
   const stream = (chunks: string[], end = true) =>

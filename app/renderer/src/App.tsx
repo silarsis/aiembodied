@@ -32,6 +32,8 @@ import { VisemeDriver, type VisemeFrame } from './audio/viseme-driver.js';
 import type { VoiceActivity } from './realtime/voice-activity.js';
 import { GpuMemoryPanel } from './status/gpu-memory-bar.js';
 import { CodingStatusLine } from './status/coding-status.js';
+import { ApprovalsCard } from './status/approvals-card.js';
+import { CodingTasksPanel } from './status/coding-tasks.js';
 import {
   AssistantStatusPanel,
   addToolCall,
@@ -1306,6 +1308,9 @@ export default function App() {
           onAssistantTranscript: (text) => {
             void recordTranscriptEntryRef.current({ speaker: 'assistant', text });
           },
+          onSystemNote: (text) => {
+            void recordTranscriptEntryRef.current({ speaker: 'system', text });
+          },
           onActivity: setVoiceActivity,
           onToolCall: (call) => {
             const id = `${call.requestId}:${call.callId}`;
@@ -2433,6 +2438,7 @@ export default function App() {
   return (
     <AnimationBusProvider bus={animationBus}>
       <BehaviorCueProvider>
+        {panel !== 'status' ? <ApprovalsCard api={activeBridge?.approvals} floating /> : null}
         <main
           className="kiosk"
           data-drawer-open={drawerOpen}
@@ -2876,7 +2882,9 @@ export default function App() {
                 Speech gate: {audioGraph.isActive ? 'open' : 'closed'}
               </p>
             </div>
+            <ApprovalsCard api={activeBridge?.approvals} />
             <CodingStatusLine api={activeBridge?.coding} active={panel === 'status'} />
+            <CodingTasksPanel api={activeBridge?.codingTasks} codingApi={activeBridge?.coding} localVoice={activeBridge?.localVoice} active={panel === 'status'} />
             <GpuMemoryPanel api={activeBridge?.gpuMemory} active={panel === 'status'} />
           </PanelDialog>
 

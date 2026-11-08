@@ -54,8 +54,12 @@ describe('CodingService', () => {
       platform: 'win32',
     });
 
+    const seen: unknown[] = [];
+    service.onRunnerEvent((event) => seen.push(event));
     await service.apply();
     await vi.waitFor(() => expect(service.swap.getState().phase).toBe('coder-loaded'));
+    await vi.waitFor(() => expect(seen).toContainEqual(expect.objectContaining({ task_id: 't1', status: 'working' })));
+    expect(service.runnerClient()?.baseUrl).toBe('http://127.0.0.1:8195');
     expect(echo.stop).toHaveBeenCalledTimes(1);
     expect(coder.start).toHaveBeenCalledTimes(1);
     expect(service.chatOverride()?.server.id).toBe('local-coder-llm');

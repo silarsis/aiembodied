@@ -7,6 +7,7 @@
 import type { ChatMessage, LlmToolCall, LlmToolDefinition } from './local-llm-client.js';
 import type { ChatClient } from './voice-engines.js';
 import type { RegisteredTool, ToolRegistry } from '../tools/tool-registry.js';
+import { describeOutcome, type ApprovalBroker } from '../tools/approvals.js';
 import type { VoiceMemory } from '../memory-engine/voice-memory.js';
 import type { SpeechServiceClient } from './speech-service-client.js';
 import {
@@ -20,6 +21,7 @@ import type {
   LocalVoiceRespondRequest,
   LocalVoiceRespondResult,
   LocalVoiceStatus,
+  LocalVoiceSystemStatus,
   LocalVoiceTranscribeResult,
 } from './types.js';
 
@@ -39,6 +41,18 @@ export const TOOL_GUIDANCE =
 const MAX_TOOL_ROUNDS = 3;
 const MAX_TOOL_RESULT_CHARS = 4000;
 const DEFAULT_SPOKEN_NOTICE = 'One moment.';
+/** Updates that arrive within this long of each other become one system turn. */
+export const SYSTEM_COALESCE_MS = 5000;
+/** At most one system turn per this long, unless an update is a question. */
+export const SYSTEM_MIN_GAP_MS = 20_000;
+/** Leads every system note, in the model's input, the history and the memory record. */
+export const SYSTEM_NOTE_MARKER = '[Update from the coding agent, not from Kevin]';
+
+interface QueuedNote {
+  text: string;
+  urgent: boolean;
+  at: number;
+}
 
 export interface LocalVoiceServiceOptions {
   llm: ChatClient;
@@ -57,6 +71,15 @@ export interface LocalVoiceServiceOptions {
   onToolResult?: (record: LocalVoiceToolRecord) => void;
   /** The active character's own voice for the engine that speaks, if it has picked one. */
   voiceFor?: () => string | undefined | Promise<string | undefined>;
+  /**
+   * Tools with confirmationLevel 'confirm' are offered to the model too; a call is not run but
+   * recorded here for Kevin to approve (card or a spoken yes). Without it they stay hidden.
+   */
+  approvals?: Pick<ApprovalBroker, 'request' | 'waitingMessage' | 'resolveSpoken'>;
+  /** A line added to the system prompt each turn, such as which workspaces the coding tools reach. */
+  extraInstructions?: () => string | null | undefined;
+  /** Updates are waiting and a system turn may run now: the renderer should call respond({ system: true }). */
+  onSystemReady?: () => void;
   /** Older turns are dropped past this many messages. */
   maxHistoryMessages?: number;
   /** After this long without a turn, the next one starts a fresh conversation. */
@@ -93,6 +116,12 @@ export class LocalVoiceService {
   /** Memories already put in front of the model in this conversation. */
   private recalledIds: string[] = [];
   private lastTurnAt = 0;
+  private readonly approvals?: LocalVoiceServiceOptions['approvals'];
+  private readonly extraInstructions?: LocalVoiceServiceOptions['extraInstructions'];
+  private readonly onSystemReady?: () => void;
+  private notes: QueuedNote[] = [];
+  private lastSystemTurnAt = Number.NEGATIVE_INFINITY;
+  private systemTimer: ReturnType<typeof setTimeout> | null = null;
   private active: { requestId: string; controller: AbortController } | null = null;
 
   constructor(options: LocalVoiceServiceOptions) {
@@ -106,6 +135,9 @@ export class LocalVoiceService {
     this.onToolResult = options.onToolResult;
     this.voiceFor = options.voiceFor;
     this.memory = options.memory;
+    this.approvals = options.approvals;
+    this.extraInstructions = options.extraInstructions;
+    this.onSystemReady = options.onSystemReady;
     this.historyIdleResetMs = options.historyIdleResetMs ?? 10 * 60_000;
     this.now = options.now ?? Date.now;
   }
@@ -165,6 +197,58 @@ export class LocalVoiceService {
     }
   }
 
+  /**
+   * Queue an update for Echo to say something about (a coding task needs an answer, a review is
+   * ready). Several within SYSTEM_COALESCE_MS become one turn, and turns are at least
+   * SYSTEM_MIN_GAP_MS apart unless one of the updates is `urgent` (a question). The renderer runs
+   * the turn, when the conversation is idle, in answer to onSystemReady.
+   */
+  notify(text: string, options: { urgent?: boolean } = {}): void {
+    const note = text.trim();
+    if (!note) return;
+    this.notes.push({ text: note, urgent: options.urgent === true, at: this.now() });
+    this.scheduleSystemReady();
+  }
+
+  systemStatus(): LocalVoiceSystemStatus {
+    return { pending: this.notes.length, ready: this.systemReady(), texts: this.notes.map((note) => note.text) };
+  }
+
+  private systemReadyAt(): number {
+    if (this.notes.length === 0) return Number.POSITIVE_INFINITY;
+    const coalesced = this.notes[0].at + SYSTEM_COALESCE_MS;
+    const urgent = this.notes.some((note) => note.urgent);
+    return urgent ? coalesced : Math.max(coalesced, this.lastSystemTurnAt + SYSTEM_MIN_GAP_MS);
+  }
+
+  private systemReady(): boolean {
+    return this.notes.length > 0 && this.now() >= this.systemReadyAt();
+  }
+
+  private scheduleSystemReady(): void {
+    if (this.systemTimer) clearTimeout(this.systemTimer);
+    this.systemTimer = null;
+    if (this.notes.length === 0) return;
+    const wait = Math.max(0, this.systemReadyAt() - this.now());
+    this.systemTimer = setTimeout(() => {
+      this.systemTimer = null;
+      if (this.systemReady()) this.onSystemReady?.();
+      else this.scheduleSystemReady();
+    }, wait);
+    this.systemTimer.unref?.();
+  }
+
+  /** The queued updates as one note for the model; empties the queue. */
+  private takeSystemNote(): string | null {
+    if (!this.systemReady()) return null;
+    const notes = this.notes;
+    this.notes = [];
+    this.lastSystemTurnAt = this.now();
+    if (this.systemTimer) clearTimeout(this.systemTimer);
+    this.systemTimer = null;
+    return `${SYSTEM_NOTE_MARKER} ${notes.map((note) => note.text).join(' ')}`;
+  }
+
   resetHistory(): void {
     this.history = [];
     this.brief = null;
@@ -177,6 +261,17 @@ export class LocalVoiceService {
   ): Promise<LocalVoiceRespondResult> {
     const { requestId } = request;
     const preview = request.preview === true;
+    const system = request.system === true && !preview;
+    let inputText = request.text;
+    let systemNote: string | undefined;
+    if (system) {
+      const note = this.takeSystemNote();
+      if (!note) {
+        return { requestId, text: '', cancelled: true };
+      }
+      systemNote = note;
+      inputText = note;
+    }
     this.cancel();
     const controller = new AbortController();
     this.active = { requestId, controller };
@@ -192,7 +287,7 @@ export class LocalVoiceService {
     // Both run at once and have their own time limits; neither throws.
     const [brief, recalled] = await Promise.all([
       this.brief === null && memory ? memory.brief() : Promise.resolve(preview ? null : this.brief),
-      memory?.recall(request.text, this.recalledIds) ?? Promise.resolve(null),
+      system ? Promise.resolve(null) : (memory?.recall(inputText, this.recalledIds) ?? Promise.resolve(null)),
     ]);
     if (signal.aborted) {
       memory?.activity?.(false);
@@ -207,18 +302,37 @@ export class LocalVoiceService {
     }
     // The recalled block rides in the user message (Qwen's template wants one system message,
     // first) and stays in the history as sent, so later turns keep the same prefix.
-    const userContent = recalled ? `${recalled.block}\n\n${request.text}` : request.text;
+    let userContent = recalled ? `${recalled.block}\n\n${inputText}` : inputText;
 
-    // Voice has no way to ask for approval yet, so tools that need it ("confirm") or are
-    // forbidden ("block") are never offered, and a call to one is refused as an unknown tool.
+    // A pending approval: a clear yes or no settles it before the model hears anything, and the
+    // model is told what happened. Anything else goes to the model as normal.
+    if (!preview && !system && this.approvals) {
+      const outcome = await this.approvals.resolveSpoken(inputText).catch(() => null);
+      if (outcome) {
+        userContent = `${userContent}\n\n[Approval handled: ${describeOutcome(outcome)} Tell Kevin in one short sentence.]`;
+        this.logger?.info('Local voice: spoken approval handled', { decision: outcome.decision, tool: outcome.approval.toolName });
+      }
+    }
+
+    // Tools that need approval ("confirm") are offered when there is a broker to ask Kevin;
+    // forbidden ones ("block") never are, and a call to one is refused as an unknown tool.
     const tools = (preview ? [] : (this.tools?.list() ?? [])).filter(
-      (tool) => tool.confirmationLevel === 'none' || tool.confirmationLevel === 'notify',
+      (tool) =>
+        tool.confirmationLevel === 'none' ||
+        tool.confirmationLevel === 'notify' ||
+        (tool.confirmationLevel === 'confirm' && this.approvals !== undefined),
     );
-    const system = [request.instructions?.trim(), SPOKEN_REPLY_GUIDANCE, tools.length ? TOOL_GUIDANCE : null, brief]
+    const systemPrompt = [
+      request.instructions?.trim(),
+      SPOKEN_REPLY_GUIDANCE,
+      tools.length ? TOOL_GUIDANCE : null,
+      tools.length ? this.extraInstructions?.()?.trim() : null,
+      brief,
+    ]
       .filter(Boolean)
       .join('\n\n');
     const messages: ChatMessage[] = [
-      { role: 'system', content: system },
+      { role: 'system', content: systemPrompt },
       ...(preview ? [] : this.history),
       { role: 'user', content: userContent },
     ];
@@ -323,6 +437,8 @@ export class LocalVoiceService {
     }
 
     // Tool exchanges stay out of the history: trimming it could split a call from its result.
+    // A system note is kept as a user-role message because Qwen's chat template allows a system
+    // message only at the start; its marker says plainly that it did not come from Kevin.
     this.history.push({ role: 'user', content: userContent });
     if (reply) {
       this.history.push({ role: 'assistant', content: reply });
@@ -337,7 +453,7 @@ export class LocalVoiceService {
       firstSentenceMs: firstSentenceAt === null ? null : firstSentenceAt - startedAt,
       totalMs: this.now() - startedAt,
     });
-    return { requestId, text: reply, cancelled };
+    return { requestId, text: reply, cancelled, ...(systemNote ? { note: systemNote } : {}) };
   }
 
   /** Run one tool call and return what the model sees as its result. */
@@ -363,6 +479,12 @@ export class LocalVoiceService {
       failure = `There is no tool called ${call.name}.`;
     } else if (params === undefined) {
       failure = 'The tool arguments were not valid JSON.';
+    } else if (tool.confirmationLevel === 'confirm' && this.approvals) {
+      // Not run: Kevin has to approve it first (the card, or a spoken yes).
+      const approval = await this.approvals.request(tool, params);
+      content = this.approvals.waitingMessage(approval);
+      this.logger?.info('Local voice: tool call waits for approval', { name: call.name, label, approvalId: approval.id });
+      emit({ ...event, status: 'done', detail: 'waiting for approval' });
     } else {
       const result = await this.tools.execute(tool.id, params);
       if (result.success) {

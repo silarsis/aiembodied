@@ -50,8 +50,9 @@ state), 422 (bad shape) or 502 (push failed).
 - `POST /v1/tasks/{id}/steer` `{"message": "use the existing helper"}` (working or question)
 - `POST /v1/tasks/{id}/follow_up` `{"message": "also add a test"}` (while running: queued for pi; in
   review: restarts pi with `--continue` if needed and runs again, then back to review)
-- `POST /v1/tasks/{id}/answer` `{"confirmed": true}` or `{"value": "text"}` or `{"cancelled": true}`
-  (status `question`; the pending dialog is in the task's `question`)
+- `POST /v1/tasks/{id}/answer` `{"confirmed": true}` or `{"value": "text"}` or `{"cancelled": true}`, plus
+  optional `"dialog_id"` (default: the oldest pending question). Status must be `question`. For a
+  `text` question a `value` is required; it is sent to pi as a new prompt and the task continues.
 - `POST /v1/tasks/{id}/cancel` keeps the worktree
 - `POST /v1/tasks/{id}/apply` `{"draft": false}` -> 409 unless status is `review` and no protected
   path changed. Pushes the branch, opens the pull request (GitHub key, else `gh`), removes the
@@ -61,7 +62,12 @@ state), 422 (bad shape) or 502 (push failed).
 
 Review shape: `{"no_changes": false, "summary": "2 file(s) changed, +10 -3", "files": [{"path", "added", "deleted", "binary"}], "changed_files": [...], "added": 10, "deleted": 3, "changed_lines": 13, "protected_violations": [], "flags": ["lockfile changed: pnpm-lock.yaml"]}`
 
-Question shape: `{"id": "q1", "method": "confirm", "title": "...", "message": "...", "options": [...]}`
+Question shape: `{"id": "q1", "method": "confirm", "kind": "confirm", "title": "...", "message": "...", "options": [...], "asked_at": "..."}`.
+`task.questions` lists all pending questions, oldest first; `task.question` is the first one (or null).
+`kind` is `confirm` (a guard confirmation, answer with `confirmed`), `ask_echo` (pi called its `ask_echo`
+tool; `message` is the question, answer with `value`) or `text` (pi ended its turn with a question and
+changed no files; `method` is `text`, answer with `value`). The time limit does not run while a
+question is pending.
 
 ## Live updates
 

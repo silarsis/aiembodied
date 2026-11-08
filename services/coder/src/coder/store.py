@@ -12,14 +12,14 @@ from pathlib import Path
 from typing import Any, Optional
 
 ACTIVE = ("starting", "working", "question", "checks", "pushing")
-JSON_COLS = ("acceptance", "scope", "files_touched", "question", "review")
+JSON_COLS = ("acceptance", "scope", "files_touched", "question", "questions", "review")
 EVENT_CAP = 20_000
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, goal TEXT NOT NULL,
   acceptance TEXT, scope TEXT, provider TEXT, model TEXT, branch TEXT, worktree TEXT, base_commit TEXT,
-  status TEXT NOT NULL, phase_detail TEXT, current_tool TEXT, files_touched TEXT, question TEXT,
+  status TEXT NOT NULL, phase_detail TEXT, current_tool TEXT, files_touched TEXT, question TEXT, questions TEXT,
   last_text TEXT, checks_ok INTEGER, checks_output TEXT, review TEXT, pr_url TEXT, error TEXT,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL, started_at TEXT, finished_at TEXT
 );
@@ -43,6 +43,9 @@ class Store:
         with self.lock:
             self.db.execute("PRAGMA journal_mode=WAL")
             self.db.executescript(SCHEMA)
+            cols = {r[1] for r in self.db.execute("PRAGMA table_info(tasks)")}
+            if "questions" not in cols:  # database from before pending dialogs were a list
+                self.db.execute("ALTER TABLE tasks ADD COLUMN questions TEXT")
             self.db.commit()
 
     def close(self) -> None:
@@ -59,6 +62,7 @@ class Store:
         d["acceptance"] = d["acceptance"] or []
         d["scope"] = d["scope"] or []
         d["files_touched"] = d["files_touched"] or []
+        d["questions"] = d["questions"] or ([d["question"]] if d["question"] else [])
         return d
 
     def new_id(self) -> str:
@@ -130,6 +134,7 @@ class Store:
         with self.lock:
             ids = [r[0] for r in self.db.execute(f"SELECT id FROM tasks WHERE status IN ({marks})", ACTIVE)]
         for tid in ids:
-            self.update_task(tid, status="failed", error="runner restarted", question=None, current_tool=None, finished_at=now())
+            self.update_task(tid, status="failed", error="runner restarted", question=None, questions=[], current_tool=None,
+                             finished_at=now())
             self.add_event(tid, "runner", {"message": "runner restarted; task marked failed"})
         return ids
