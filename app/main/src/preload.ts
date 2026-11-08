@@ -278,6 +278,9 @@ export interface AvatarBridge {
   /** The character's voice for `engine` (kokoro, kitten, piper); without one, its OpenAI voice. */
   getVoicePreference(engine?: string): Promise<string | null>;
   setVoicePreference(voice: string, engine?: string): Promise<void>;
+  /** The character's own personality prompt; null until it has one. */
+  getPromptPreference(): Promise<string | null>;
+  setPromptPreference(prompt: string): Promise<void>;
   listAnimations(): Promise<AvatarAnimationSummary[]>;
   uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult>;
   generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;
@@ -522,6 +525,8 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       ipcRenderer.invoke('avatar-model:set-active', modelId) as Promise<AvatarModelSummary | null>,
     getVoicePreference: (engine) => ipcRenderer.invoke('avatar:voice:get-preference', engine) as Promise<string | null>,
     setVoicePreference: (voice, engine) => ipcRenderer.invoke('avatar:voice:set-preference', voice, engine) as Promise<void>,
+    getPromptPreference: () => ipcRenderer.invoke('avatar:prompt:get-preference') as Promise<string | null>,
+    setPromptPreference: (prompt) => ipcRenderer.invoke('avatar:prompt:set-preference', prompt) as Promise<void>,
     uploadModel: (payload) =>
       ipcRenderer.invoke('avatar-model:upload', payload) as Promise<AvatarModelUploadResult>,
     deleteModel: async (modelId) => {

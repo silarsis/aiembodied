@@ -633,6 +633,12 @@ function characterVoiceKey(engine: SpeakingEngineId | 'openai'): string | null {
   return engine === 'openai' ? `avatar.voice.${activeModel.id}` : `avatar.voice.${activeModel.id}.${engine}`;
 }
 
+/** Where the active character's personality prompt is kept. */
+function characterPromptKey(): string | null {
+  const activeModel = avatarModelService?.getActiveModel?.() || null;
+  return activeModel?.id ? `avatar.prompt.${activeModel.id}` : null;
+}
+
 function characterVoice(engine: SpeakingEngineId | 'openai' | null): string | null {
   if (!engine || !memoryStore) return null;
   const key = characterVoiceKey(engine);
@@ -1832,6 +1838,29 @@ function registerIpcHandlers(
     }
     memoryStore.setValue(key, voice);
     logger.info('Avatar voice preference saved', { key, voice });
+  });
+
+  // Per-character personality prompt. Null means the character has none of its own yet, so the
+  // renderer falls back to the global prompt (what every character used before this existed).
+  ipcMain.handle('avatar:prompt:get-preference', () => {
+    const key = characterPromptKey();
+    if (!key || !memoryStore) return null;
+    const stored = memoryStore.getValue(key);
+    return typeof stored === 'string' && stored.length > 0 ? stored : null;
+  });
+
+  ipcMain.handle('avatar:prompt:set-preference', (_event, prompt: unknown) => {
+    if (typeof prompt !== 'string') {
+      logger.warn('Invalid personality prompt');
+      return;
+    }
+    const key = characterPromptKey();
+    if (!key || !memoryStore) {
+      logger.warn('No active avatar model to save the personality prompt for');
+      return;
+    }
+    memoryStore.setValue(key, prompt.trim());
+    logger.info('Avatar personality prompt saved', { key, length: prompt.trim().length });
   });
 
   ipcMain.handle('local-voice:voice-options', () => speakingVoiceOptions(manager));

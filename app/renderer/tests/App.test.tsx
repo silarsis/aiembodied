@@ -1231,6 +1231,50 @@ describe('App component', () => {
     });
   });
 
+  it('loads and saves the personality prompt per avatar, falling back to the global prompt', async () => {
+    const getPromptPreference = vi.fn().mockResolvedValue('Mei is gentle and curious.');
+    const setPromptPreference = vi.fn().mockResolvedValue(undefined);
+    (window as PreloadWindow).aiembodied = {
+      ping: () => 'pong',
+      config: {
+        get: vi.fn().mockResolvedValue({
+          audioInputDeviceId: '',
+          audioOutputDeviceId: '',
+          featureFlags: {},
+          hasRealtimeApiKey: true,
+          conversationBackend: 'openai',
+          realtimeVoice: 'shimmer',
+          sessionInstructions: 'Global prompt',
+          wakeWord: { model: 'hey_jarvis', keywordLabel: 'Hey Jarvis', threshold: 0.5, cooldownMs: 1500, deviceIndex: undefined },
+        }),
+        getSecret: vi.fn().mockResolvedValue('secret'),
+        setAudioDevicePreferences: setAudioDevicePreferencesMock,
+        setSecret: setSecretMock,
+        testSecret: testSecretMock,
+      },
+      realtime: { mintEphemeralToken: mintEphemeralTokenMock },
+      wakeWord: { onWake: () => () => { } },
+      avatar: createAvatarBridgeMock({
+        getActiveModel: vi.fn().mockResolvedValue({ id: 'mei', name: 'Mei' }),
+        getPromptPreference,
+        setPromptPreference,
+      }),
+      models: createModelsBridgeMock(),
+      __bridgeReady: true,
+      __bridgeVersion: '1.0.0',
+    } as unknown as PreloadWindow['aiembodied'];
+
+    render(<App />);
+    await openGroup(/Character/i);
+
+    const textarea = (await screen.findByLabelText(/Base prompt/i)) as HTMLTextAreaElement;
+    await waitFor(() => expect(textarea.value).toBe('Mei is gentle and curious.'));
+
+    fireEvent.change(textarea, { target: { value: 'Mei is now bold.' } });
+    fireEvent.blur(textarea);
+    await waitFor(() => expect(setPromptPreference).toHaveBeenCalledWith('Mei is now bold.'));
+  });
+
   it('surfaces configuration errors when preload bridge is unavailable', async () => {
     render(<App />);
 

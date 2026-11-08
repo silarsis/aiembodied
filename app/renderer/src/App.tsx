@@ -2103,17 +2103,23 @@ export default function App() {
   const handlePromptBlur = useCallback(
     async () => {
       try {
-        await persistPreferences({
-          audioInputDeviceId: selectedInput || undefined,
-          audioOutputDeviceId: selectedOutput || undefined,
-          sessionInstructions: basePrompt || undefined,
-        });
+        const avatarApi = resolveApi()?.avatar;
+        if (activeVrmModel?.id && avatarApi?.setPromptPreference) {
+          // Saved for this character only; the global prompt stays as the default for others.
+          await avatarApi.setPromptPreference(basePrompt);
+        } else {
+          await persistPreferences({
+            audioInputDeviceId: selectedInput || undefined,
+            audioOutputDeviceId: selectedOutput || undefined,
+            sessionInstructions: basePrompt || undefined,
+          });
+        }
         realtimeClient?.updateSessionConfig({ instructions: sessionInstructions || undefined });
       } catch (error) {
         console.error('Failed to persist base prompt', error);
       }
     },
-    [persistPreferences, selectedInput, selectedOutput, basePrompt, realtimeClient, sessionInstructions],
+    [persistPreferences, resolveApi, activeVrmModel?.id, selectedInput, selectedOutput, basePrompt, realtimeClient, sessionInstructions],
   );
 
   const applyVadPrefs = useCallback(
@@ -2155,11 +2161,6 @@ export default function App() {
         ? config.realtimeVoice
         : DEFAULT_VOICE;
     setSelectedVoice(persistedVoice);
-    setBasePrompt(
-      config?.sessionInstructions && config.sessionInstructions.length > 0
-        ? config.sessionInstructions
-        : DEFAULT_PROMPT,
-    );
     if (typeof config?.vadTurnDetection === 'string') {
       setUseServerVad(config.vadTurnDetection === 'server_vad');
     } else {
@@ -2169,7 +2170,32 @@ export default function App() {
     if (typeof config?.vadThreshold === 'number') setVadThreshold(config.vadThreshold as number);
     if (typeof config?.vadSilenceDurationMs === 'number') setVadSilenceMs(config.vadSilenceDurationMs as number);
     if (typeof config?.vadMinSpeechDurationMs === 'number') setVadMinSpeechMs(config.vadMinSpeechDurationMs as number);
-  }, [config?.realtimeVoice, config?.sessionInstructions, config?.vadTurnDetection, config?.vadThreshold, config?.vadSilenceDurationMs, config?.vadMinSpeechDurationMs]);
+  }, [config?.realtimeVoice, config?.vadTurnDetection, config?.vadThreshold, config?.vadSilenceDurationMs, config?.vadMinSpeechDurationMs]);
+
+  // The personality prompt belongs to the active character. One that has none yet starts from the
+  // global prompt (what every character used before prompts were per character).
+  const globalPrompt = config?.sessionInstructions;
+  useEffect(() => {
+    const fallback = globalPrompt && globalPrompt.length > 0 ? globalPrompt : DEFAULT_PROMPT;
+    const avatarApi = resolveApi()?.avatar;
+    if (!activeVrmModel?.id || !avatarApi?.getPromptPreference) {
+      setBasePrompt(fallback);
+      return;
+    }
+    let cancelled = false;
+    avatarApi
+      .getPromptPreference()
+      .then((stored) => {
+        if (!cancelled) setBasePrompt(stored && stored.length > 0 ? stored : fallback);
+      })
+      .catch((error: unknown) => {
+        console.warn('Could not read the personality prompt', error);
+        if (!cancelled) setBasePrompt(fallback);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeVrmModel?.id, globalPrompt, resolveApi]);
 
   // When the realtime client connects, push the current session config to ensure it applies
   useEffect(() => {
@@ -2665,7 +2691,7 @@ export default function App() {
               <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
                 <h2 id="kiosk-realtime-title">Personality</h2>
                 <p className="kiosk__helper">
-                  Configure how your assistant behaves.
+                  Configure how this character behaves. Each avatar keeps its own prompt.
                 </p>
                 <div className="control">
                   <label htmlFor="base-prompt">Base prompt</label>

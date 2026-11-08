@@ -351,4 +351,7 @@ export interface AvatarBridge {
   /** The character's voice for `engine` (kokoro, kitten, piper); without one, its OpenAI voice. */
   getVoicePreference(engine?: string): Promise<string | null>;
   setVoicePreference(voice: string, engine?: string): Promise<void>;
+  /** The character's own personality prompt; null until it has one (the global prompt applies). */
+  getPromptPreference?(): Promise<string | null>;
+  setPromptPreference?(prompt: string): Promise<void>;
 }
