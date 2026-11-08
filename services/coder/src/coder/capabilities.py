@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import statistics
 import subprocess
 import threading
@@ -19,6 +20,7 @@ from .store import Store
 from .workspaces import Workspace
 
 CACHE_S = 600
+log = logging.getLogger(__name__)
 
 
 class PiProbe:
@@ -42,8 +44,11 @@ class PiProbe:
                                encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL)
             out = (r.stdout.strip() or r.stderr.strip()).splitlines()
             v, err = (out[-1] if out else None), (None if r.returncode == 0 else f"exit code {r.returncode}")
-        except (OSError, subprocess.TimeoutExpired) as e:
-            v, err = None, str(e)
+        except subprocess.TimeoutExpired:
+            v, err = None, "pi --version timed out"
+        except OSError:
+            log.exception("could not run pi --version")
+            v, err = None, "could not run pi (is it installed and on PATH?)"
         with self._lock:
             self._version = (time.time(), v, err)
         return v, err
@@ -76,8 +81,9 @@ class PiProbe:
             pi.send({"id": "probe-commands", "type": "get_commands"})
             if not done.wait(self.cfg.probe_timeout_s):
                 return {"models": [], "commands": [], "error": "timed out waiting for pi"}
-        except OSError as e:
-            return {"models": [], "commands": [], "error": str(e)}
+        except OSError:
+            log.exception("could not start pi for the capability probe")
+            return {"models": [], "commands": [], "error": "could not start pi (is it installed and on PATH?)"}
         finally:
             pi.kill()
         m, c = got["probe-models"], got["probe-commands"]
