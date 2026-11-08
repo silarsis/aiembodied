@@ -70,6 +70,28 @@ describe('LocalLlmControl', () => {
     expect(command).toContain('-WindowStyle Hidden');
   });
 
+  it('names its pid and log files after fileName, so a second server has its own pid file', async () => {
+    const { llm, launch } = await control({
+      fileName: 'coder-llm',
+      baseUrl: () => 'http://127.0.0.1:1236/v1',
+      model: async () => ({ path: 'D:\\m\\coder-Q4_K_M-00001-of-00003.gguf', alias: 'qwen3-coder-next', contextLength: 65536 }),
+    });
+    await llm.start();
+    const command = (launch.mock.calls[0] as [string])[0];
+    expect(command).toContain('"1236"');
+    expect(command).toContain('"qwen3-coder-next"');
+    expect(command).toContain('"65536"');
+    expect(command).toMatch(/coder-llm\.pid/);
+    expect(command).toMatch(/coder-llm\.log/);
+    expect(command).toMatch(/coder-llm\.err\.log/);
+  });
+
+  it('keeps llm.pid by default', async () => {
+    const { llm, launch } = await control();
+    await llm.start();
+    expect((launch.mock.calls[0] as [string])[0]).toMatch(/[\\/]llm\.pid/);
+  });
+
   it('restarts llama-server with the downloaded model and its own context limit', async () => {
     const model = async () => ({ path: 'C:\\models\\m-Q4_K_M.gguf', alias: 'm-q4_k_m', contextLength: 32768 });
     const { llm, powershell, launch } = await control({ model });

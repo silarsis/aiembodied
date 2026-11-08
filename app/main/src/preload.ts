@@ -69,6 +69,8 @@ import type {
 import type { OpenAIFunction } from './tools/tool-registry.js';
 import type { MemoryEngineBridge } from './memory-engine/bridge-types.js';
 import type { GpuMemoryBridge } from './diagnostics/gpu-memory.js';
+import type { CodingBridge } from './coding/bridge-types.js';
+import type { CodingStatus, CodingView } from './coding/coding-service.js';
 
 function logPreloadMessage(
   level: 'info' | 'warn' | 'error',
@@ -210,6 +212,7 @@ export interface PreloadApi {
   mcp: MCPBridge;
   memoryEngine?: MemoryEngineBridge;
   gpuMemory?: GpuMemoryBridge;
+  coding?: CodingBridge;
   app?: AppBridge;
   ping(): string;
   __bridgeReady?: boolean;
@@ -652,6 +655,14 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
   },
   gpuMemory: {
     read: () => ipcRenderer.invoke('diagnostics:gpu-memory'),
+  },
+  coding: {
+    get: () => ipcRenderer.invoke('coding:get') as Promise<CodingView>,
+    set: (coding) => ipcRenderer.invoke('coding:set', coding) as Promise<CodingView>,
+    status: () => ipcRenderer.invoke('coding:status') as Promise<CodingStatus>,
+    pickGguf: () => ipcRenderer.invoke('coding:pick-gguf') as Promise<string | null>,
+    pickFolder: () => ipcRenderer.invoke('coding:pick-folder') as Promise<string | null>,
+    suggestChecks: (workspaceId) => ipcRenderer.invoke('coding:suggest-checks', workspaceId) as Promise<string | null>,
   },
   memoryEngine: {
     status: () => ipcRenderer.invoke('memory-engine:status'),

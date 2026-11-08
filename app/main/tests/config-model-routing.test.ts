@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { ConfigManager } from '../src/config/config-manager.js';
 import {
@@ -7,6 +8,7 @@ import {
   defaultRoutes,
   resolveModelRouting,
   routeTargets,
+  routeTargetsWithOverride,
   sanitizeStoredModels,
   serverUrl,
 } from '../src/config/model-routing.js';
@@ -87,6 +89,57 @@ describe('model routing', () => {
     expect(routing.servers.find((server) => server.id === 'lm')?.url).toBe('http://lm-studio:1234/v1');
   });
 
+  it('has built-in coding servers, a coding use that cannot be off, and online accounts that are key only', () => {
+    const routing = resolveModelRouting(builtIns(), defaultRoutes(DEFAULT_PROVIDER_SETTINGS));
+    const byId = Object.fromEntries(routing.servers.map((server) => [server.id, server]));
+    expect(byId['local-coder-runner']).toMatchObject({ type: 'coder', url: 'http://127.0.0.1:8195', builtIn: true, managed: true });
+    expect(byId['local-coder-llm']).toMatchObject({ name: 'Qwen3-Coder-Next (coding)', type: 'chat', url: 'http://127.0.0.1:1236/v1', managed: true });
+    expect(byId.anthropic).toMatchObject({ type: 'anthropic', url: 'https://api.anthropic.com', builtIn: true, managed: false });
+    expect(byId.github).toMatchObject({ type: 'github', url: 'https://api.github.com', builtIn: true, managed: false });
+    expect(routing.routes.coding).toEqual({ server: 'local-coder-llm', model: 'qwen3-coder-next' });
+    expect(USE_SERVER_TYPES.coding).toEqual(['chat', 'openai', 'anthropic']);
+    expect(Object.values(USE_SERVER_TYPES).flat()).not.toContain('github');
+    expect(Object.values(USE_SERVER_TYPES).flat()).not.toContain('coder');
+    expect(ADDABLE_SERVER_TYPES).toContain('coder');
+    expect(ADDABLE_SERVER_TYPES).not.toContain('anthropic');
+    expect(ADDABLE_SERVER_TYPES).not.toContain('github');
+
+    // Anthropic works for coding, has no backups, and the coding use cannot be switched off or sent to a runner.
+    const saved = resolveModelRouting(builtIns(), defaultRoutes(DEFAULT_PROVIDER_SETTINGS), {
+      routes: { coding: { server: 'anthropic', model: 'claude-sonnet', backups: [{ server: 'openai' }] } },
+    });
+    expect(saved.routes.coding).toEqual({ server: 'anthropic', model: 'claude-sonnet' });
+    const off = resolveModelRouting(builtIns(), defaultRoutes(DEFAULT_PROVIDER_SETTINGS), { routes: { coding: { server: '' } } });
+    expect(off.routes.coding.server).toBe('local-coder-llm');
+    const wrong = resolveModelRouting(builtIns(), defaultRoutes(DEFAULT_PROVIDER_SETTINGS), { routes: { coding: { server: 'local-coder-runner' } } });
+    expect(wrong.routes.coding.server).toBe('local-coder-llm');
+  });
+
+  it('takes the coder and runner addresses from the environment, and keeps the key-only addresses fixed', () => {
+    const servers = builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188', coderRunnerUrl: 'http://127.0.0.1:9000/', coderLlmUrl: 'http://192.168.1.9:1236/v1' });
+    const routing = resolveModelRouting(servers, defaultRoutes(DEFAULT_PROVIDER_SETTINGS), {
+      servers: [{ id: 'anthropic', url: 'http://evil.example' }, { id: 'rack-coder', name: 'Runner on rack', type: 'coder', url: 'http://rack:8195/' }],
+    });
+    expect(routing.servers.find((server) => server.id === 'local-coder-runner')?.url).toBe('http://127.0.0.1:9000');
+    const coderLlm = routing.servers.find((server) => server.id === 'local-coder-llm');
+    expect(coderLlm).toMatchObject({ url: 'http://192.168.1.9:1236/v1', managed: false });
+    expect(routing.servers.find((server) => server.id === 'anthropic')?.url).toBe('https://api.anthropic.com');
+    expect(routing.servers.find((server) => server.id === 'rack-coder')).toMatchObject({ type: 'coder', url: 'http://rack:8195', builtIn: false });
+  });
+
+  it('puts an override first for a use and leaves its excluded servers out', () => {
+    const routing = resolveModelRouting(builtIns(), defaultRoutes(DEFAULT_PROVIDER_SETTINGS), {
+      routes: { llm: { server: 'local-llm', model: 'flash', backups: [{ server: 'openai', model: 'gpt-4.1' }] } },
+    });
+    const coder = routing.servers.find((server) => server.id === 'local-coder-llm')!;
+    expect(routeTargetsWithOverride(routing, 'llm', null).map((t) => t.server.id)).toEqual(['local-llm', 'openai']);
+    const targets = routeTargetsWithOverride(routing, 'llm', { server: coder, model: 'qwen3-coder-next', exclude: ['local-llm'] });
+    expect(targets.map((t) => [t.server.id, t.model])).toEqual([
+      ['local-coder-llm', 'qwen3-coder-next'],
+      ['openai', 'gpt-4.1'],
+    ]);
+  });
+
   it('drops malformed saved data', () => {
     expect(
       sanitizeStoredModels({
@@ -121,6 +174,55 @@ describe('ConfigManager model servers', () => {
     await again.load();
     expect(again.getConfig().models.routes.llm).toEqual({ server: id, model: 'Qwen3-235B', backups: [{ server: 'local-llm' }] });
     expect(again.getServerKey(id)).toBe('secret-token');
+  });
+
+  it('keeps the Anthropic and GitHub keys in the key store, and an environment variable wins', async () => {
+    const { config, secretStore } = await manager();
+    await config.setServerKey('anthropic', 'sk-ant-1');
+    await config.setServerKey('github', 'ghp_1');
+    expect(config.getServerKey('anthropic')).toBe('sk-ant-1');
+    expect(await secretStore.getSecret('MODEL_SERVER_KEY:anthropic')).toBe('sk-ant-1');
+    expect(await secretStore.getSecret('MODEL_SERVER_KEY:github')).toBe('ghp_1');
+    const view = config.getModelRoutingView();
+    expect(view.servers.find((server) => server.id === 'github')).toMatchObject({ hasKey: true });
+    expect(JSON.stringify(view)).not.toContain('ghp_1');
+    const again = await manager({ GITHUB_TOKEN: 'from-env' });
+    expect(again.config.getServerKey('github')).toBe('from-env');
+    await config.setServerKey('github', '');
+    expect(config.getServerKey('github')).toBeUndefined();
+  });
+
+  it('seeds the first coding workspace once, only from a git checkout, and remembers changes', async () => {
+    const preferencesStore = new InMemoryPreferencesStore();
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const first = new ConfigManager({ env: {}, preferencesStore, logger, repoRoot: '/work/aiembodied', pathExists: (file) => file.endsWith('.git') });
+    await first.load();
+    expect(first.getCoding()).toEqual({
+      runner: 'local-coder-runner',
+      workspaces: [
+        { id: 'aiembodied', name: 'aiembodied', path: path.resolve('/work/aiembodied'), kind: 'self', baseBranch: 'main', checks: 'pnpm -w typecheck && pnpm test' },
+      ],
+    });
+    expect((await preferencesStore.load()).coding?.workspaces).toHaveLength(1);
+
+    // Removing it sticks: the saved section exists, so nothing is seeded again.
+    await first.setCoding({ runner: 'local-coder-runner', workspaces: [], coderGguf: 'D:\\m\\coder-Q4_K_M-00001-of-00003.gguf' });
+    const second = new ConfigManager({ env: {}, preferencesStore, logger, repoRoot: '/work/aiembodied', pathExists: () => true });
+    await second.load();
+    expect(second.getCoding()).toEqual({ runner: 'local-coder-runner', workspaces: [], coderGguf: 'D:\\m\\coder-Q4_K_M-00001-of-00003.gguf' });
+
+    // A checkout without .git seeds nothing.
+    const bare = new ConfigManager({ env: {}, preferencesStore: new InMemoryPreferencesStore(), logger, repoRoot: '/opt/app', pathExists: () => false });
+    await bare.load();
+    expect(bare.getCoding().workspaces).toEqual([]);
+  });
+
+  it('falls back to the built-in runner when the saved one is not a runner', async () => {
+    const { config } = await manager();
+    const saved = await config.setCoding({ runner: 'local-llm', workspaces: [] });
+    expect(saved.runner).toBe('local-coder-runner');
+    const id = await config.saveModelServer({ name: 'Runner on rack', type: 'coder', url: 'http://rack:8195' });
+    expect((await config.setCoding({ runner: id, workspaces: [] })).runner).toBe(id);
   });
 
   it('keeps saved servers when audio preferences are saved', async () => {
@@ -224,6 +326,38 @@ describe('probing model servers', () => {
       queue: 3,
     });
     expect(comfyQueueLength(null)).toBe(0);
+  });
+
+  it('checks Anthropic, GitHub and the coding runner', async () => {
+    const seen: Array<[string, Record<string, string>]> = [];
+    const answer = (body: unknown, status = 200) =>
+      vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+        seen.push([String(url), init?.headers as Record<string, string>]);
+        return json(body, status);
+      }) as unknown as typeof fetch;
+    const anthropic = { type: 'anthropic' as const, url: 'https://api.anthropic.com' };
+    await expect(probeModelServer(anthropic, undefined, answer({}))).resolves.toMatchObject({ status: 'needs-key' });
+    await expect(probeModelServer(anthropic, 'sk-ant', answer({ data: [{ id: 'claude-b' }, { id: 'claude-a' }] }))).resolves.toMatchObject({
+      status: 'up',
+      models: { chat: ['claude-a', 'claude-b'] },
+    });
+    expect(seen[0][0]).toBe('https://api.anthropic.com/v1/models?limit=100');
+    expect(seen[0][1]).toMatchObject({ 'x-api-key': 'sk-ant', 'anthropic-version': '2023-06-01' });
+    await expect(probeModelServer(anthropic, 'bad', answer({}, 401))).resolves.toMatchObject({ status: 'needs-key' });
+
+    const github = { type: 'github' as const, url: 'https://api.github.com' };
+    await expect(probeModelServer(github, undefined, answer({}))).resolves.toMatchObject({ status: 'needs-key' });
+    await expect(probeModelServer(github, 'ghp', answer({ login: 'me' }))).resolves.toMatchObject({ status: 'up' });
+    expect(seen.at(-1)).toEqual(['https://api.github.com/user', expect.objectContaining({ Authorization: 'Bearer ghp' })]);
+
+    const coder = { type: 'coder' as const, url: 'http://127.0.0.1:8195' };
+    await expect(probeModelServer(coder, undefined, answer({ ok: true, pi: { found: true } }))).resolves.toMatchObject({ status: 'up' });
+    expect(seen.at(-1)?.[0]).toBe('http://127.0.0.1:8195/v1/health');
+    await expect(probeModelServer(coder, undefined, answer({ ok: true, pi: { found: false } }))).resolves.toMatchObject({ status: 'error' });
+    const down = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+    await expect(probeModelServer(coder, undefined, down)).resolves.toMatchObject({ status: 'down' });
   });
 
   it('sorts OpenAI models by job and never calls Brave', async () => {

@@ -14,7 +14,9 @@ import {
   type UseId,
 } from '../../../main/src/config/model-routing.js';
 import type { ModelRole, ServerProbe } from '../../../main/src/config/model-server-probe.js';
+import type { CodingBridge } from '../../../main/src/coding/bridge-types.js';
 import type { ModelsBridge } from '../preload-api.js';
+import { CodingSettings } from './coding-settings.js';
 import { ModelDownloads } from './model-downloads.js';
 import { ThinkingDownloads } from './thinking-downloads.js';
 import type { AvatarBridge } from '../avatar/types.js';
@@ -27,7 +29,7 @@ export const OPENAI_VOICES: string[] = [...OPENAI_TTS_VOICES];
 
 interface UseInfo {
   id: UseId;
-  group: 'Talking' | 'Creating an avatar' | 'Helpers' | 'Memory';
+  group: 'Talking' | 'Creating an avatar' | 'Helpers' | 'Coding' | 'Memory';
   name: string;
   what: string;
 }
@@ -45,6 +47,12 @@ export const MODEL_USES: UseInfo[] = [
   { id: 'posecheck', group: 'Helpers', name: 'Check poses', what: 'Looks at a rendered pose and says whether it matches the prompt. Needs a model that reads images.' },
   { id: 'clips', group: 'Helpers', name: 'Animation clips', what: 'Writes keyframe animation clips from a prompt. Moving uses it when no motion service is picked.' },
   {
+    id: 'coding',
+    group: 'Coding',
+    name: 'Coding model',
+    what: 'The model the coding agent works with. The local one is Qwen3-Coder-Next: while a task runs, the app swaps Echo’s chat model out and this one in.',
+  },
+  {
     id: 'memory',
     group: 'Memory',
     name: 'Memory database',
@@ -57,7 +65,7 @@ export const MODEL_USES: UseInfo[] = [
     what: 'An optional second database, such as Supabase, that gets a copy of everything within a minute or so. Deletes are copied too.',
   },
 ];
-const USE_GROUPS = ['Talking', 'Creating an avatar', 'Helpers', 'Memory'] as const;
+const USE_GROUPS = ['Talking', 'Creating an avatar', 'Helpers', 'Coding', 'Memory'] as const;
 
 export const SERVER_TYPE_LABELS: Record<ServerType, string> = {
   chat: 'Chat model server',
@@ -68,7 +76,10 @@ export const SERVER_TYPE_LABELS: Record<ServerType, string> = {
   search: 'SearXNG',
   memory: 'Memory database (PostgreSQL)',
   homeassistant: 'Home Assistant',
+  coder: 'Coding runner',
   openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  github: 'GitHub',
   brave: 'Brave Search',
   civitai: 'Civitai',
   huggingface: 'Hugging Face',
@@ -85,6 +96,10 @@ const SERVER_TYPE_HINTS: Partial<Record<ServerType, { hint: string; example: str
     hint: 'A PostgreSQL database with the pgvector extension, such as Supabase (use its session pooler connection string). A password in the address is moved to the key store.',
     example: 'postgresql://postgres.yourproject@aws-0-region.pooler.supabase.com:5432/postgres',
   },
+  coder: {
+    hint: 'services/coder from this repo, running on another PC. It runs the pi coding agent in git worktrees on that PC. Pick it on the Coding page.',
+    example: 'http://192.168.1.20:8195',
+  },
   homeassistant: {
     hint: 'A long-lived access token from your Home Assistant profile. Tag entities with the label aiembodied to have them remembered.',
     example: 'http://homeassistant.local:8123',
@@ -92,11 +107,11 @@ const SERVER_TYPE_HINTS: Partial<Record<ServerType, { hint: string; example: str
 };
 
 /** What a server's key is called: databases have a password, Home Assistant a token. */
-const keyLabel = (type: ServerType) => (type === 'memory' ? 'Password' : type === 'homeassistant' ? 'Token' : 'API key');
+const keyLabel = (type: ServerType) => (type === 'memory' ? 'Password' : type === 'homeassistant' || type === 'github' ? 'Token' : 'API key');
 
 /** Which of a server's model lists a use picks from. */
 function roleFor(use: UseId, type: ServerType): ModelRole | null {
-  if (use === 'llm' || use === 'describe' || use === 'posegen' || use === 'posecheck' || use === 'clips') return 'chat';
+  if (use === 'llm' || use === 'coding' || use === 'describe' || use === 'posegen' || use === 'posecheck' || use === 'clips') return 'chat';
   if (use === 'stt') return 'transcribe';
   if (use === 'tts') return type === 'speech' ? 'voices' : 'realtime';
   if (use === 'motion') return type === 'motion' ? 'motion' : null;
@@ -111,7 +126,7 @@ function modelLabel(use: UseId, type: ServerType): string {
   return 'Model';
 }
 
-type Page = { kind: 'use'; use: UseId } | { kind: 'engine' } | { kind: 'servers' } | { kind: 'server'; id: string };
+type Page = { kind: 'use'; use: UseId } | { kind: 'coding' } | { kind: 'engine' } | { kind: 'servers' } | { kind: 'server'; id: string };
 
 interface AddDraft {
   type: ServerType;
@@ -135,6 +150,8 @@ export interface EngineControls {
 export interface ModelsDialogProps {
   api: ModelsBridge;
   avatarApi?: AvatarBridge;
+  /** The Coding page's settings (workspaces, runner, coder model file). Without it the page shows the model only. */
+  codingApi?: CodingBridge;
   engine?: EngineControls;
   onClose(): void;
   /** Called after any change, so the app can reload what depends on it (such as the OpenAI key). */
@@ -142,14 +159,14 @@ export interface ModelsDialogProps {
   initialUse?: UseId;
 }
 
-const ONLINE_TYPES: readonly ServerType[] = ['openai', 'brave', 'civitai', 'huggingface'];
+const ONLINE_TYPES: readonly ServerType[] = ['openai', 'anthropic', 'github', 'brave', 'civitai', 'huggingface'];
 const where = (server: ModelServerView) => (server.managed ? 'local' : ONLINE_TYPES.includes(server.type) ? 'online' : 'remote');
 const WHERE_LABEL = { local: 'This PC', remote: 'Your server', online: 'Online' } as const;
 
-export function ModelsDialog({ api, avatarApi, engine, onClose, onChanged, initialUse = 'llm' }: ModelsDialogProps) {
+export function ModelsDialog({ api, avatarApi, codingApi, engine, onClose, onChanged, initialUse = 'llm' }: ModelsDialogProps) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [view, setView] = useState<ModelRoutingView | null>(null);
-  const [page, setPage] = useState<Page>({ kind: 'use', use: initialUse });
+  const [page, setPage] = useState<Page>(initialUse === 'coding' ? { kind: 'coding' } : { kind: 'use', use: initialUse });
   const [probes, setProbes] = useState<Record<string, ServerProbe | 'checking'>>({});
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -241,7 +258,19 @@ export function ModelsDialog({ api, avatarApi, engine, onClose, onChanged, initi
       {USE_GROUPS.map((group) => (
         <div key={group} className="modelsDialog__railGroup">
           {group !== 'Talking' || !engine ? <span className="modelsDialog__group">{group}</span> : null}
-          {MODEL_USES.filter((use) => use.group === group).map((use) => {
+          {group === 'Coding' ? (
+            <RailItem
+              current={page.kind === 'coding'}
+              onClick={() => {
+                setNotice(null);
+                setPage({ kind: 'coding' });
+              }}
+              label="Coding"
+              chip={view ? (serverById(view.routes.coding.server)?.name ?? 'Off') : ''}
+              status={view ? probes[BUILT_IN_SERVER_IDS.coderRunner] : undefined}
+            />
+          ) : null}
+          {MODEL_USES.filter((use) => use.group === group && group !== 'Coding').map((use) => {
             const server = view ? serverById(view.routes[use.id].server) : undefined;
             const status: RailStatus = server ? probes[server.id] : 'off';
             return (
@@ -292,6 +321,32 @@ export function ModelsDialog({ api, avatarApi, engine, onClose, onChanged, initi
           ) : null}
         </div>
       </section>
+    );
+  } else if (view && page.kind === 'coding') {
+    const runners = view.servers.filter((server) => server.type === 'coder');
+    main = (
+      <>
+        <UsePage
+          key="coding"
+          use="coding"
+          view={view}
+          probes={probes}
+          busy={busy}
+          onProbe={probe}
+          onRoute={(route) => void setRoute('coding', route)}
+          onOpenServer={(id) => setPage({ kind: 'server', id })}
+          onAddServer={(type) => {
+            setAdding({ type, name: '', url: '', key: '', returnTo: 'coding' });
+            setPage({ kind: 'servers' });
+          }}
+          imageModels={imageModels}
+          characterModels={characterModels}
+          api={api}
+        />
+        {codingApi ? (
+          <CodingSettings api={codingApi} runners={runners} runnerProbe={probes[view.servers.find((server) => server.type === 'coder')?.id ?? '']} onProbeRunner={(id) => void probe(id)} />
+        ) : null}
+      </>
     );
   } else if (view && page.kind === 'use') {
     main = (
@@ -985,7 +1040,7 @@ function ServerPage({
         </span>
       </form>
       {server.managed ? <p className="kiosk__helper">On this PC: the app (or pnpm dev:run) starts it when a job needs it.</p> : null}
-      {server.type !== 'speech' && server.type !== 'motion' && server.type !== 'comfy' && server.id !== BUILT_IN_SERVER_IDS.memory ? (
+      {server.type !== 'speech' && server.type !== 'motion' && server.type !== 'comfy' && server.type !== 'coder' && server.id !== BUILT_IN_SERVER_IDS.memory ? (
         <form
           className="modelsDialog__fields"
           onSubmit={(event) => {
@@ -1013,7 +1068,9 @@ function ServerPage({
                     ? 'The database password'
                   : server.type === 'homeassistant'
                     ? 'The long-lived access token'
-                  : server.type === 'openai' || server.type === 'brave'
+                  : server.type === 'github'
+                    ? 'A token that can push branches and open pull requests'
+                  : server.type === 'openai' || server.type === 'anthropic' || server.type === 'brave'
                     ? 'Needed'
                     : 'Only if the server asks for one'
             }
@@ -1048,7 +1105,7 @@ function ServerPage({
       {server.type === 'civitai' ? (
         <p className="kiosk__helper">Civitai runs no job itself. Its key lets ComfyUI servers download models from a pasted Civitai link (open a ComfyUI server, then Download a model).</p>
       ) : null}
-      <div className="modelsDialog__list" hidden={server.type === 'civitai' || server.type === 'huggingface' || server.type === 'memory' || server.type === 'homeassistant'}>
+      <div className="modelsDialog__list" hidden={server.type === 'civitai' || server.type === 'huggingface' || server.type === 'memory' || server.type === 'homeassistant' || server.type === 'github' || server.type === 'coder'}>
         <span className="modelsDialog__group">
           Models it offers{' '}
           <button type="button" onClick={onProbe} disabled={probe === 'checking'}>
@@ -1067,10 +1124,16 @@ function ServerPage({
           </p>
         )}
       </div>
+      {server.type === 'github' ? (
+        <p className="kiosk__helper">GitHub runs no model. Its token lets the coding runner push a task’s branch and open the pull request.</p>
+      ) : null}
+      {server.type === 'coder' ? (
+        <p className="kiosk__helper">A coding runner takes the coding tasks. Choose which one on the Coding page.</p>
+      ) : null}
       {server.type === 'homeassistant' ? (
         <p className="kiosk__helper">Home Assistant runs no job. The memory engine watches the entities tagged aiembodied and remembers what they do.</p>
       ) : null}
-      <div className="modelsDialog__list" hidden={server.type === 'civitai' || server.type === 'huggingface' || server.type === 'homeassistant'}>
+      <div className="modelsDialog__list" hidden={server.type === 'civitai' || server.type === 'huggingface' || server.type === 'homeassistant' || server.type === 'github' || server.type === 'coder'}>
         <span className="modelsDialog__group">Used by</span>
         {usedBy.length ? (
           <div className="modelsDialog__chips">

@@ -304,3 +304,20 @@ describe('buildVoiceEngines', () => {
     expect((await service.status()).tts).toMatchObject({ provider: 'kokoro', voice: 'bf_emma' });
   });
 });
+
+describe('buildVoiceEngines with the coder model standing in for Thinking', () => {
+  it('asks the override first, leaves out the stopped server, and keeps the backups', () => {
+    const routing = resolveModelRouting(
+      builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }),
+      defaultRoutes(DEFAULT_PROVIDER_SETTINGS),
+      { routes: { llm: { server: 'local-llm', model: 'flash', backups: [{ server: 'openai', model: 'gpt-4.1' }] } } },
+    );
+    const coder = routing.servers.find((server) => server.id === 'local-coder-llm')!;
+    const plain = buildVoiceEngines(routing, openAiKey('sk'), {});
+    expect(plain.llm.baseUrl).toBe('http://127.0.0.1:1234/v1');
+    const swapped = buildVoiceEngines(routing, openAiKey('sk'), { llmOverride: { server: coder, model: 'qwen3-coder-next', exclude: ['local-llm'] } });
+    expect(swapped.llm.baseUrl).toBe('http://127.0.0.1:1236/v1');
+    expect(swapped.llm.model).toBe('qwen3-coder-next');
+    expect(swapped.llm.flavor).toBe('llama-server');
+  });
+});

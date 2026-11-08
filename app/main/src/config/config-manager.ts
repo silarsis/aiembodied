@@ -1,8 +1,10 @@
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { BUILTIN_WAKE_WORD_MODELS } from '../wake-word/open-wake-word.js';
 import { wakeWordLabel } from '../wake-word/wake-word-library.js';
 import { DEFAULT_WEB_SEARCH_PROVIDER } from '../tools/web-search.js';
+import { DEFAULT_CODING_CONFIG, sanitizeCodingConfig, seedCodingConfig, type CodingConfig } from '../coding/config.js';
 import type { SecretStore } from './secret-store.js';
 import type { AudioDevicePreferences, PreferencesStore } from './preferences-store.js';
 import {
@@ -55,6 +57,8 @@ export interface AppConfig {
   providers: ProviderSettings;
   /** Which server runs each use (see model-routing.ts). */
   models: ModelRouting;
+  /** The coding runner, workspaces and coder model file. */
+  coding: CodingConfig;
   webSearch: WebSearchConfig;
   audioInputDeviceId?: string;
   audioOutputDeviceId?: string;
@@ -89,7 +93,7 @@ export interface MetricsConfig {
 
 export type RendererWakeWordConfig = WakeWordConfig;
 
-export type RendererConfig = Omit<AppConfig, 'realtimeApiKey' | 'wakeWord' | 'comfyUiBaseUrl' | 'webSearch' | 'models'> & {
+export type RendererConfig = Omit<AppConfig, 'realtimeApiKey' | 'wakeWord' | 'comfyUiBaseUrl' | 'webSearch' | 'models' | 'coding'> & {
   hasRealtimeApiKey: boolean;
   /** True when the key comes from an environment variable, which the Settings page cannot change. */
   realtimeApiKeyFromEnv?: boolean;
@@ -113,6 +117,9 @@ export interface ConfigManagerOptions {
   fetchFn?: typeof fetch;
   logger?: ConfigLogger;
   openAIClientFactory?: OpenAIClientFactory;
+  /** The app's own checkout: the first coding workspace. */
+  repoRoot?: string;
+  pathExists?: (file: string) => boolean;
 }
 
 export class ConfigValidationError extends Error {
@@ -166,6 +173,8 @@ const serverSecretName = (id: string) => `MODEL_SERVER_KEY:${id}`;
 /** Online accounts whose key can also come from an environment variable, which wins. */
 const ACCOUNT_KEYS: Record<string, { env: string; secret: string }> = {
   [BUILT_IN_SERVER_IDS.brave]: { env: 'BRAVE_SEARCH_API_KEY', secret: 'BRAVE_SEARCH_API_KEY' },
+  [BUILT_IN_SERVER_IDS.anthropic]: { env: 'ANTHROPIC_API_KEY', secret: serverSecretName(BUILT_IN_SERVER_IDS.anthropic) },
+  [BUILT_IN_SERVER_IDS.github]: { env: 'GITHUB_TOKEN', secret: serverSecretName(BUILT_IN_SERVER_IDS.github) },
   [BUILT_IN_SERVER_IDS.civitai]: { env: 'CIVITAI_API_KEY', secret: 'CIVITAI_API_KEY' },
   [BUILT_IN_SERVER_IDS.huggingface]: { env: 'HF_TOKEN', secret: 'HUGGINGFACE_TOKEN' },
 };
@@ -209,6 +218,10 @@ export class ConfigManager {
   /** API keys of added servers and Brave, by server id. OpenAI's is `realtimeApiKey`. */
   private serverKeys = new Map<string, string>();
   private readonly keysFromEnv = new Set<string>();
+  /** The coding section as saved (or seeded); undefined until there is one. */
+  private storedCoding?: CodingConfig;
+  private readonly repoRoot?: string;
+  private readonly pathExists: (file: string) => boolean;
 
   constructor(options: ConfigManagerOptions = {}) {
     this.secretStore = options.secretStore;
@@ -217,6 +230,8 @@ export class ConfigManager {
     this.fetchFn = options.fetchFn ?? (typeof fetch === 'function' ? fetch : undefined);
     this.logger = options.logger ?? console;
     this.openAIClientFactory = options.openAIClientFactory;
+    this.repoRoot = options.repoRoot;
+    this.pathExists = options.pathExists ?? existsSync;
   }
 
   async load(): Promise<AppConfig> {
@@ -243,6 +258,13 @@ export class ConfigManager {
     const providers = resolveProviderSettings(this.env, this.storedProviders);
     const wakeWord = this.applyWakeWordSettings(this.envWakeWord, providers);
     this.storedModels = sanitizeStoredModels(storedPreferences.models);
+    this.storedCoding = sanitizeCodingConfig(storedPreferences.coding);
+    let seededCoding = false;
+    if (!this.storedCoding && this.repoRoot) {
+      // The first time: the app's own repository is the first workspace.
+      this.storedCoding = seedCodingConfig(this.repoRoot, this.pathExists) ?? undefined;
+      seededCoding = Boolean(this.storedCoding);
+    }
     const comfyUiBaseUrl = this.env.COMFYUI_BASE_URL?.trim() || DEFAULT_COMFYUI_BASE_URL;
     await this.loadServerKeys();
 
@@ -252,6 +274,7 @@ export class ConfigManager {
       conversationBackend: storedPreferences.conversationBackend ?? this.parseConversationBackend(),
       providers,
       models: this.resolveModels(providers, comfyUiBaseUrl),
+      coding: structuredClone(this.storedCoding ?? DEFAULT_CODING_CONFIG),
       webSearch: {
         provider: this.env.WEB_SEARCH_PROVIDER?.trim() || DEFAULT_WEB_SEARCH_PROVIDER,
         searxngUrl: this.env.SEARXNG_URL?.trim() || undefined,
@@ -274,6 +297,9 @@ export class ConfigManager {
     };
 
     this.config = config;
+    if (seededCoding && this.preferencesStore) {
+      await this.preferencesStore.save({ ...storedPreferences, coding: this.storedCoding });
+    }
     this.logger.info('Configuration loaded.', {
       hasRealtimeApiKey: Boolean(config.realtimeApiKey),
       conversationBackend: config.conversationBackend,
@@ -334,6 +360,7 @@ export class ConfigManager {
       conversationBackend,
       ...(Object.keys(this.storedProviders).length > 0 ? { providers: this.storedProviders } : {}),
       ...(Object.keys(this.storedModels).length > 0 ? { models: this.storedModels } : {}),
+      ...(this.storedCoding ? { coding: this.storedCoding } : {}),
     });
 
     return this.getRendererConfig();
@@ -370,6 +397,29 @@ export class ConfigManager {
       })),
       routes: structuredClone(models.routes),
     };
+  }
+
+  /** The coding settings (runner, workspaces, coder model file). */
+  getCoding(): CodingConfig {
+    return structuredClone(this.getConfig().coding);
+  }
+
+  /** Save new coding settings; an unknown runner falls back to the built-in one. */
+  async setCoding(next: unknown): Promise<CodingConfig> {
+    const config = this.getConfig();
+    const coding = sanitizeCodingConfig(next);
+    if (!coding) throw new Error('Those coding settings could not be saved.');
+    if (!config.models.servers.some((server) => server.id === coding.runner && server.type === 'coder')) {
+      coding.runner = DEFAULT_CODING_CONFIG.runner;
+    }
+    this.storedCoding = coding;
+    this.config = { ...config, coding };
+    if (this.preferencesStore) {
+      const saved = await this.preferencesStore.load();
+      await this.preferencesStore.save({ ...saved, coding });
+    }
+    this.logger.info('Coding settings updated.', { runner: coding.runner, workspaces: coding.workspaces.length });
+    return structuredClone(coding);
   }
 
   /** The API key to send to a server, if it has one. */
@@ -477,7 +527,13 @@ export class ConfigManager {
   }
 
   private resolveModels(providers: ProviderSettings, comfyUiBaseUrl: string): ModelRouting {
-    const builtIns = builtInServers({ providers, comfyUiBaseUrl, searxngUrl: this.env.SEARXNG_URL?.trim() || undefined });
+    const builtIns = builtInServers({
+      providers,
+      comfyUiBaseUrl,
+      searxngUrl: this.env.SEARXNG_URL?.trim() || undefined,
+      coderRunnerUrl: this.env.CODING_RUNNER_URL?.trim() || undefined,
+      coderLlmUrl: this.env.CODER_LLM_URL?.trim() || undefined,
+    });
     const defaults = defaultRoutes(providers, this.env.WEB_SEARCH_PROVIDER?.trim() || DEFAULT_WEB_SEARCH_PROVIDER);
     return resolveModelRouting(builtIns, defaults, this.storedModels);
   }
