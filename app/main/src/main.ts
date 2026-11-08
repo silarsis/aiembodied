@@ -106,6 +106,8 @@ import { MCPManager } from './mcp/mcp-manager.js';
 import { ToolRegistry } from './tools/tool-registry.js';
 import { createRoutedSearchProvider, createWebSearchTool, WEB_SEARCH_TOOL_ID } from './tools/web-search.js';
 import { registerMCPHandlers } from './mcp/ipc-handlers.js';
+import { GpuMemoryReader, localPort, type GpuMemoryServer } from './diagnostics/gpu-memory.js';
+import { DEFAULT_MEMORY_SERVICE_URL } from './memory-engine/settings.js';
 import { PushToTalkShortcut } from './talk/push-to-talk.js';
 import type { TalkTriggerEvent } from './talk/types.js';
 
@@ -933,6 +935,33 @@ function registerIpcHandlers(
     const nextConfig = await manager.setProviderSettings(patch ?? {});
     await applyProviderSettings(manager);
     return nextConfig;
+  });
+  // Status and diagnostics: GPU memory on this PC, split by the app's local servers.
+  const gpuMemoryReader = new GpuMemoryReader();
+  const GPU_SERVER_LABELS: Record<string, string> = {
+    [BUILT_IN_SERVER_IDS.llm]: 'Language model',
+    [BUILT_IN_SERVER_IDS.speech]: 'Speech (TTS)',
+    [BUILT_IN_SERVER_IDS.motion]: 'Motion',
+    [BUILT_IN_SERVER_IDS.comfy]: 'ComfyUI',
+    [BUILT_IN_SERVER_IDS.searxng]: 'SearXNG',
+    [BUILT_IN_SERVER_IDS.memory]: 'Memory database',
+  };
+  ipcMain.handle('diagnostics:gpu-memory', () => {
+    const servers: GpuMemoryServer[] = [];
+    const seen = new Set<number>();
+    const add = (id: string, name: string, url: string | undefined) => {
+      const port = localPort(url);
+      if (port === null || seen.has(port)) return;
+      seen.add(port);
+      servers.push({ id, name, port });
+    };
+    for (const server of manager.getConfig().models.servers) {
+      add(server.id, GPU_SERVER_LABELS[server.id] ?? server.name, server.url);
+    }
+    // Started by pnpm dev:run beside the servers above, not listed in Models and servers.
+    add('local-asr', 'Speech-to-text (ASR)', process.env.STT_URL?.trim() || 'http://127.0.0.1:1235/v1');
+    add('local-memory-engine', 'Memory engine', process.env.MEMORY_SERVICE_URL?.trim() || DEFAULT_MEMORY_SERVICE_URL);
+    return gpuMemoryReader.read(servers);
   });
   // Models and servers pop-up. Keys go in, never out: the view only says whether one is set.
   ipcMain.handle('models:get', () => manager.getModelRoutingView());
