@@ -42,6 +42,19 @@ def main(argv=None) -> None:
     ap.add_argument("--settings-file", default=os.environ.get("MEMORY_SETTINGS_FILE") or None,
                     help="where the choice of database and mirror is saved (MEMORY_SETTINGS_FILE); "
                          "default %%LOCALAPPDATA%%/aiembodied/memory/engine-settings.json; 'none' to not save")
+    ap.add_argument("--ha-url", default=os.environ.get("HA_URL") or None,
+                    help="Home Assistant address, e.g. http://homeassistant-1:8123; unset: no Home Assistant (HA_URL). "
+                         "The access token is read from HA_TOKEN only, never from the command line")
+    ap.add_argument("--ha-home-id", default=os.environ.get("HA_HOME_ID", "home"),
+                    help="id this Home Assistant is stored under (HA_HOME_ID)")
+    ap.add_argument("--ha-home-name", default=os.environ.get("HA_HOME_NAME", "Home"),
+                    help="its display name (HA_HOME_NAME)")
+    ap.add_argument("--ha-label", default=os.environ.get("HA_LABEL", "aiembodied"),
+                    help="watch the entities that carry this Home Assistant label (HA_LABEL)")
+    ap.add_argument("--ha-entities", default=os.environ.get("HA_ENTITIES", ""),
+                    help="also watch these entity ids or domain.* patterns, comma separated (HA_ENTITIES)")
+    ap.add_argument("--ha-raw-days", type=float, default=float(os.environ.get("HA_RAW_DAYS", "7")),
+                    help="keep raw sensor readings this many days; hourly rollups and changes are kept (HA_RAW_DAYS)")
     ap.add_argument("--log-level", default="info")
     a = ap.parse_args(argv)
 
@@ -91,12 +104,26 @@ def main(argv=None) -> None:
     from .storage import default_settings_file
 
     settings_file = None if (a.settings_file or "").lower() == "none" else Path(a.settings_file or default_settings_file())
+    from .home import HomeConfig, parse_entity_list
+
+    home_config = HomeConfig(
+        url=a.ha_url,
+        token=os.environ.get("HA_TOKEN") or None,
+        home_id=a.ha_home_id,
+        name=a.ha_home_name,
+        label=a.ha_label,
+        entities=parse_entity_list(a.ha_entities),
+        raw_days=a.ha_raw_days,
+    )
+    if home_config.off_reason and (home_config.url or home_config.token):
+        logging.getLogger("memory_engine").warning("Home Assistant is off: %s", home_config.off_reason)
     engine = Engine(
         a.database_url,
         a.schema,
         embedder=make_embedder(a.embedder, a.embed_model),
         summariser=summariser,
         settings_file=settings_file,
+        home_config=home_config,
     )
     uvicorn.run(create_app(engine, api_token=api_token), host=a.host, port=a.port, log_level=a.log_level.lower())
 

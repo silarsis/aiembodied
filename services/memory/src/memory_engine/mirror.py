@@ -47,6 +47,9 @@ TABLES: list[tuple[str, list[str], bool, str]] = [
     # mirror then drops that session's entries.
     ("recall_log", ["id", "at", "session_id", "query", "items", "reason"], False, "id"),
 ]
+# Rows the mirror leaves out: Home Assistant events in the recall index (their own tables are not
+# mirrored yet either).
+MIRROR_WHERE = {"recall_index": " AND source = 'conversation'"}
 JSON_COLUMNS = {"meta", "tool", "items"}
 TOMBSTONE_TABLES = {name for name, _, _, _ in TABLES}
 
@@ -97,10 +100,11 @@ def push(source: psycopg.Connection, target: psycopg.Connection, marks: dict[str
     sent = 0
     for table, columns, changes, seq_col in TABLES:
         seq_key, time_key = f"{table}.seq", f"{table}.updated_at"
+        only = MIRROR_WHERE.get(table, "")
         after = max(0, marks.get(seq_key, 0) - RESEND)
         while True:
             rows = source.execute(
-                f"SELECT {_select(table, columns)} FROM {table} WHERE {seq_col} > %s ORDER BY {seq_col} LIMIT %s",  # noqa: S608
+                f"SELECT {_select(table, columns)} FROM {table} WHERE {seq_col} > %s{only} ORDER BY {seq_col} LIMIT %s",  # noqa: S608
                 (after, BATCH),
             ).fetchall()
             if not rows:
@@ -116,13 +120,13 @@ def push(source: psycopg.Connection, target: psycopg.Connection, marks: dict[str
                 start = datetime.fromisoformat(since) - LOOKBACK
                 rows = source.execute(
                     f"SELECT {_select(table, columns)} FROM {table}"  # noqa: S608
-                    " WHERE updated_at >= %s AND seq <= %s ORDER BY updated_at",
+                    f" WHERE updated_at >= %s AND seq <= %s{only} ORDER BY updated_at",
                     (start, marks.get(seq_key, 0)),
                 ).fetchall()
                 if rows:
                     target.cursor().executemany(_upsert_sql(table, columns), [_row(columns, r) for r in rows])
                     sent += len(rows)
-            newest = source.execute(f"SELECT max(updated_at) FROM {table}").fetchone()[0]  # noqa: S608
+            newest = source.execute(f"SELECT max(updated_at) FROM {table} WHERE true{only}").fetchone()[0]  # noqa: S608
             if newest:
                 marks[time_key] = newest.isoformat()
         # Keep the target's own counter past the copied numbers, should it ever take over.

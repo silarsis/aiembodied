@@ -2,15 +2,18 @@
  * The memory tools the conversation model can call: recall_memories (relevance, optionally
  * within a period), recall_timeline (what happened over a period), open_memory (one memory in
  * full), remember (save a durable fact), correct_memory (fix or withdraw a saved fact) and
- * note_for_next_time (a note it reads, word for word, when the next conversation starts). Few
+ * note_for_next_time (a note it reads, word for word, when the next conversation starts) and
+ * home_history (what a Home Assistant device or sensor did over a period). Few
  * on purpose: the local model is more reliable with a short list. Every result is capped so one
  * call can't flood the context. What the agent writes is signed with the conversation model.
  */
 import { randomUUID } from 'node:crypto';
 import type { RegisteredTool } from '../tools/tool-registry.js';
+import { MemoryEngineError } from './client.js';
 import type {
   MemoryEngineClient,
   MemoryEngineCorrectionResult,
+  MemoryEngineHomeHistory,
   MemoryEngineMemoryDetail,
   MemoryEngineSearchResult,
   MemoryEngineTimeline,
@@ -25,6 +28,7 @@ export const MEMORY_TOOL_IDS = {
   remember: 'builtin:remember',
   correct: 'builtin:correct_memory',
   handoff: 'builtin:note_for_next_time',
+  homeHistory: 'builtin:home_history',
 } as const;
 
 /** About 1,500 tokens. */
@@ -36,7 +40,7 @@ const PERIOD_HELP =
   '"the last 10 days", "last tuesday", or a date such as "2026-10-14" or "2026-10".';
 
 export interface MemoryToolsOptions {
-  client: Pick<MemoryEngineClient, 'search' | 'timeline' | 'memory' | 'correctFact'>;
+  client: Pick<MemoryEngineClient, 'search' | 'timeline' | 'memory' | 'correctFact' | 'homeHistory'>;
   outbox: { enqueue(item: OutboxItem): void };
   /** The conversation the model is in, for linking a remembered fact to it. */
   currentSessionId: () => string | null;
@@ -101,7 +105,21 @@ const KIND_LABELS: Record<string, string> = {
   week: 'summary of the week',
   month: 'summary of the month',
   handoff: 'note you left yourself',
+  ha_event: 'home event',
 };
+
+/** The model says "home"; the engine says "home_assistant". */
+export function searchSource(value: string | undefined): 'conversation' | 'home_assistant' | 'all' | undefined {
+  switch (value?.toLowerCase()) {
+    case 'home':
+    case 'home_assistant':
+      return 'home_assistant';
+    case 'all':
+      return 'all';
+    default:
+      return undefined;
+  }
+}
 
 export function formatSearchResults(results: MemoryEngineSearchResult[], now: Date): string {
   if (results.length === 0) {
@@ -146,6 +164,77 @@ export function formatTimeline(timeline: MemoryEngineTimeline, period: Period, n
     for (const turn of brief ? session.turns.slice(0, 2) : session.turns) {
       lines.push(`  [${turn.id}] ${clip(turn.text.replace(/\n/g, ' / '), 240)}`);
     }
+  }
+  return fitTo(lines);
+}
+
+const HOUR_MS = 3_600_000;
+
+function formatValue(value: number | null | undefined, unit: string | null | undefined): string {
+  if (value === null || value === undefined) return '?';
+  return `${Math.round(value * 10) / 10}${unit ? ` ${unit}` : ''}`;
+}
+
+function entityLabel(entity: { name: string | null; entity_id: string; area: string | null }): string {
+  return `${entity.name ?? entity.entity_id}${entity.area ? ` (${entity.area})` : ''}`;
+}
+
+/** What a home entity did over a period: its changes, then (numeric) readings by hour or day. */
+export function formatHomeHistory(history: MemoryEngineHomeHistory, period: Period, now: Date): string {
+  if (history.matches) {
+    if (history.matches.length === 0) return 'No Home Assistant device or sensor matches that.';
+    return fitTo([
+      'Several devices match. Ask which one is meant, then call home_history again with its entity id:',
+      ...history.matches.map((m) => `${m.name ?? m.entity_id}${m.area ? `, ${m.area}` : ''} [${m.entity_id}]`),
+    ]);
+  }
+  const entity = history.entity;
+  if (!entity) return 'No Home Assistant device or sensor matches that.';
+  const unit = entity.unit;
+  const lines: string[] = [];
+  const current = entity.last_value !== null && entity.last_value !== undefined ? formatValue(entity.last_value, unit) : entity.last_state;
+  lines.push(`${entityLabel(entity)} [${entity.entity_id}]${current ? `, now ${current}` : ''}.`);
+
+  const changes = history.changes ?? [];
+  if (changes.length) {
+    lines.push('Changes, newest first:');
+    for (const change of changes) {
+      const when = new Date(change.at);
+      const what = change.text ?? (change.old_state ? `${change.old_state} to ${change.state ?? '?'}` : (change.state ?? 'changed'));
+      lines.push(`${formatDay(when)} ${formatTime(when)} (${describeAgo(when, now)}): ${what}`);
+    }
+  }
+
+  const readings = history.readings ?? [];
+  if (readings.length) {
+    const days = (period.to.getTime() - period.from.getTime()) / HOUR_MS > 48;
+    lines.push(days ? 'Readings by day (min / mean / max):' : 'Readings by hour (min / mean / max):');
+    if (days) {
+      const byDay = new Map<string, MemoryEngineHomeHistory['readings']>();
+      for (const reading of readings) {
+        const key = formatDay(new Date(reading.hour));
+        byDay.set(key, [...(byDay.get(key) ?? []), reading]);
+      }
+      for (const [day, group] of byDay) {
+        const rows = group ?? [];
+        const mins = rows.map((r) => r.min).filter((v): v is number => typeof v === 'number');
+        const maxes = rows.map((r) => r.max).filter((v): v is number => typeof v === 'number');
+        const means = rows.map((r) => r.mean).filter((v): v is number => typeof v === 'number');
+        const mean = means.length ? means.reduce((a, b) => a + b, 0) / means.length : null;
+        lines.push(
+          `${day}: ${formatValue(mins.length ? Math.min(...mins) : null, unit)} / ${formatValue(mean, unit)} / ${formatValue(maxes.length ? Math.max(...maxes) : null, unit)}`,
+        );
+      }
+    } else {
+      for (const r of readings) {
+        const hour = new Date(r.hour);
+        lines.push(`${formatDay(hour)} ${formatTime(hour)}: ${formatValue(r.min, unit)} / ${formatValue(r.mean, unit)} / ${formatValue(r.max, unit)}`);
+      }
+    }
+  }
+
+  if (!changes.length && !readings.length) {
+    lines.push(`Nothing recorded between ${formatDay(period.from)} and ${formatDay(new Date(period.to.getTime() - 1))}.`);
   }
   return fitTo(lines);
 }
@@ -223,6 +312,13 @@ export function createMemoryTools(options: MemoryToolsOptions): RegisteredTool[]
         query: { type: 'string', description: 'What to look for, in a few words.' },
         period: { type: 'string', description: `Optional. Only look in this period. ${PERIOD_HELP}` },
         subject: { type: 'string', description: 'Optional. A subject to focus on, such as "garden" or "car".' },
+        source: {
+          type: 'string',
+          enum: ['conversation', 'home', 'all'],
+          description:
+            'Optional. conversation (default) searches past conversations and saved facts; home searches Home ' +
+            'Assistant events such as doors, alerts and state changes; all searches both.',
+        },
       },
       required: ['query'],
     },
@@ -235,7 +331,9 @@ export function createMemoryTools(options: MemoryToolsOptions): RegisteredTool[]
       if (!query) throw new Error('recall_memories needs a "query".');
       const period = resolvePeriod(params, now());
       if (period === 'invalid') return `I could not read that period. ${PERIOD_HELP}`;
+      const source = searchSource(readString(params, 'source'));
       const results = await options.client.search(query, {
+        ...(source ? { source } : {}),
         from: period?.from.toISOString(),
         to: period?.to.toISOString(),
         limit: readNumber(params, 'limit', 6, 1, 12),
@@ -412,5 +510,46 @@ export function createMemoryTools(options: MemoryToolsOptions): RegisteredTool[]
     },
   };
 
-  return [recall, timeline, open, remember, correct, handoff];
+  const homeHistory: RegisteredTool = {
+    id: MEMORY_TOOL_IDS.homeHistory,
+    serverId: 'builtin',
+    toolName: 'home_history',
+    description:
+      'Look up what a Home Assistant device or sensor did over a period: when a door opened, an alert fired, or ' +
+      'how a temperature changed. Use it for questions about the house rather than about past conversations.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        what: { type: 'string', description: 'The device or sensor: its name, its room, or its entity id.' },
+        period: { type: 'string', description: `Optional. Default: the last 24 hours. ${PERIOD_HELP}` },
+      },
+      required: ['what'],
+    },
+    enabled: true,
+    confirmationLevel: 'none',
+    spokenNotice: 'Let me check the house.',
+    describeCall: (params) => readString(params, 'what') ?? 'the house',
+    execute: async (params) => {
+      const what = readString(params, 'what');
+      if (!what) throw new Error('home_history needs "what".');
+      const at = now();
+      const parsed = resolvePeriod(params, at);
+      if (parsed === 'invalid') return `I could not read that period. ${PERIOD_HELP}`;
+      const period = parsed ?? { from: new Date(at.getTime() - 24 * HOUR_MS), to: at };
+      let history: MemoryEngineHomeHistory;
+      try {
+        history = await options.client.homeHistory({
+          ...(/^[a-z_]+\.[a-z0-9_]+$/.test(what) ? { entity: what } : { q: what }),
+          from: period.from.toISOString(),
+          to: period.to.toISOString(),
+        });
+      } catch (error) {
+        if (error instanceof MemoryEngineError && error.status === null) return 'I cannot reach the house records right now.';
+        throw error;
+      }
+      return formatHomeHistory(history, period, at);
+    },
+  };
+
+  return [recall, timeline, open, remember, correct, handoff, homeHistory];
 }

@@ -270,19 +270,21 @@ def search_text(
     include_private: bool = True,
     exclude_ids: Sequence[UUID] = (),
     limit: int = 10,
+    sources: Optional[Sequence[str]] = ("conversation",),
 ) -> list[dict[str, Any]]:
     """Full-text search over the recall index, best match first. Embedding search joins this
     in phase 2; the result shape stays the same."""
     rows = conn.execute(
         """
         SELECT r.id, r.kind, r.source_id, r.session_id, r.agent, r.period_start, r.period_end,
-               r.text, ts_rank_cd(r.search, q) AS rank, r.private
+               r.text, ts_rank_cd(r.search, q) AS rank, r.private, r.source
         FROM recall_index r, websearch_to_tsquery('english', %(query)s) q
         WHERE r.search @@ q
           AND (%(start)s::timestamptz IS NULL OR r.period_end >= %(start)s)
           AND (%(end)s::timestamptz IS NULL OR r.period_start < %(end)s)
           AND (%(agent)s::text IS NULL OR r.agent = %(agent)s)
           AND (%(kinds)s::text[] IS NULL OR r.kind = ANY(%(kinds)s))
+          AND (%(sources)s::text[] IS NULL OR r.source = ANY(%(sources)s))
           AND (%(private)s OR NOT r.private)
           AND NOT (r.id = ANY(%(exclude)s))
         ORDER BY rank DESC, r.period_start DESC
@@ -294,6 +296,7 @@ def search_text(
             "end": end,
             "agent": agent,
             "kinds": list(kinds) if kinds else None,
+            "sources": list(sources) if sources is not None else None,
             "private": include_private,
             "exclude": list(exclude_ids),
             "limit": limit,
@@ -311,6 +314,7 @@ def search_text(
             "text": r[7],
             "score": float(r[8]),
             "private": r[9],
+            "source": r[10],
         }
         for r in rows
     ]
@@ -373,6 +377,6 @@ def _tombstone(conn: psycopg.Connection, rows: Sequence[tuple[str, UUID]]) -> No
 def counts(conn: psycopg.Connection) -> dict[str, int]:
     row = conn.execute(
         "SELECT (SELECT count(*) FROM sessions), (SELECT count(*) FROM messages),"
-        " (SELECT count(*) FROM recall_index)"
+        " (SELECT count(*) FROM recall_index WHERE source = 'conversation')"
     ).fetchone()
     return {"sessions": row[0], "messages": row[1], "indexed": row[2]}

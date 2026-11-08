@@ -115,6 +115,7 @@ def _filters(alias: str = "r") -> str:
           AND (%(end)s::timestamptz IS NULL OR {alias}.period_start < %(end)s)
           AND (%(agent)s::text IS NULL OR {alias}.agent = %(agent)s)
           AND (%(kinds)s::text[] IS NULL OR {alias}.kind = ANY(%(kinds)s))
+          AND (%(sources)s::text[] IS NULL OR {alias}.source = ANY(%(sources)s))
           AND (%(private)s OR NOT {alias}.private)
           AND NOT ({alias}.id = ANY(%(exclude)s))
           AND (%(skip_session)s::uuid IS NULL OR {alias}.session_id IS DISTINCT FROM %(skip_session)s)
@@ -135,9 +136,11 @@ def hybrid_search(
     skip_session: Optional[UUID] = None,
     limit: int = 10,
     now: Optional[datetime] = None,
+    sources: Optional[Sequence[str]] = ("conversation",),
 ) -> list[dict[str, Any]]:
     """Full-text and vector search, each taking its best CANDIDATES, fused by reciprocal rank,
-    then nudged by recency and importance. Full-text uses any of the query's words, so a spoken
+    then nudged by recency and importance. `sources` limits where rows come from (conversation
+    memory by default, so Home Assistant events stay out); None searches them all. Full-text uses any of the query's words, so a spoken
     question still matches. Each result carries `similarity` (cosine, when embedded) so callers
     can set their own bar."""
     params: dict[str, Any] = {
@@ -146,6 +149,7 @@ def hybrid_search(
         "end": end,
         "agent": agent,
         "kinds": list(kinds) if kinds else None,
+        "sources": list(sources) if sources is not None else None,
         "private": include_private,
         "exclude": list(exclude_ids),
         "skip_session": skip_session,
@@ -211,7 +215,7 @@ def hybrid_search(
     if not ranks:
         return []
     rows = conn.execute(
-        "SELECT id, kind, source_id, session_id, agent, period_start, period_end, text, importance, private"
+        "SELECT id, kind, source_id, session_id, agent, period_start, period_end, text, importance, private, source"
         " FROM recall_index WHERE id = ANY(%s)",
         (list(ranks),),
     ).fetchall()
@@ -234,6 +238,7 @@ def hybrid_search(
                 "period_end": r[6].isoformat(),
                 "text": r[7],
                 "private": r[9],
+                "source": r[10],
                 "score": fused * recency * importance,
                 "similarity": rank.get("similarity"),
                 "matched": [key.removesuffix("_rank") for key in ("text_rank", "vector_rank") if key in rank],
