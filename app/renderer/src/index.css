@@ -1788,3 +1788,73 @@ body {
 .panelDialog .vadControls { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 6px; }
 .panelDialog .vadControls label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #94a3b8; }
 .panelDialog .kiosk__controls .control > label:has(input[type='checkbox']) { display: flex; flex-direction: row; align-items: center; gap: 8px; }
+
+.gpuMemory {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.gpuMemory__title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.gpuMemory__pool {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.gpuMemory__poolHeader {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: rgba(226, 232, 240, 0.85);
+}
+
+.gpuMemory__bar {
+  display: flex;
+  width: 100%;
+  height: 16px;
+  border-radius: 6px;
+  background: rgba(30, 41, 59, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  overflow: hidden;
+}
+
+.gpuMemory__segment {
+  height: 100%;
+  transition: width 0.3s ease-out;
+}
+
+.gpuMemory__segment + .gpuMemory__segment {
+  border-left: 1px solid rgba(15, 23, 42, 0.8);
+}
+
+.gpuMemory__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.9rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8rem;
+  color: rgba(226, 232, 240, 0.8);
+}
+
+.gpuMemory__swatch {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  margin-right: 0.3rem;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+
+.gpuMemory__note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: rgba(226, 232, 240, 0.65);
+}

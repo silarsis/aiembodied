@@ -30,6 +30,7 @@ import { AudioGraph } from './audio/audio-graph.js';
 import { useWakeWordListening } from './audio/use-wake-word-listening.js';
 import { VisemeDriver, type VisemeFrame } from './audio/viseme-driver.js';
 import type { VoiceActivity } from './realtime/voice-activity.js';
+import { GpuMemoryPanel } from './status/gpu-memory-bar.js';
 import {
   AssistantStatusPanel,
   addToolCall,
@@ -2781,6 +2782,7 @@ export default function App() {
                 Speech gate: {audioGraph.isActive ? 'open' : 'closed'}
               </p>
             </div>
+            <GpuMemoryPanel api={activeBridge?.gpuMemory} active={panel === 'status'} />
           </PanelDialog>
 
           {modelsOpen && activeBridge?.models ? (

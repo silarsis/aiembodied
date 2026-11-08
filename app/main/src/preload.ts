@@ -66,6 +66,7 @@ import type {
 } from './mcp/types.js';
 import type { OpenAIFunction } from './tools/tool-registry.js';
 import type { MemoryEngineBridge } from './memory-engine/bridge-types.js';
+import type { GpuMemoryBridge } from './diagnostics/gpu-memory.js';
 
 function logPreloadMessage(
   level: 'info' | 'warn' | 'error',
@@ -202,6 +203,7 @@ export interface PreloadApi {
   camera?: CameraBridge;
   mcp: MCPBridge;
   memoryEngine?: MemoryEngineBridge;
+  gpuMemory?: GpuMemoryBridge;
   app?: AppBridge;
   ping(): string;
   __bridgeReady?: boolean;
@@ -629,6 +631,9 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     emitDetection: async (event) => {
       await ipcRenderer.invoke('camera:emit-detection', event);
     },
+  },
+  gpuMemory: {
+    read: () => ipcRenderer.invoke('diagnostics:gpu-memory'),
   },
   memoryEngine: {
     status: () => ipcRenderer.invoke('memory-engine:status'),

@@ -49,6 +49,7 @@ runTests('tests/crash-guard.test.ts', 'Crash Guard');
 runTests('tests/runtime-paths.test.ts', 'Runtime Paths');
 runTests('tests/auto-launch*.test.ts', 'Auto Launch');
 runTests('tests/app-diagnostics.test.ts', 'App Diagnostics');
+runTests('tests/gpu-memory.test.ts', 'GPU Memory');
 runTests('tests/metrics/*.test.ts', 'Metrics');
 runTests('tests/run-dev-*.test.ts', 'Run Dev');
 runTests('tests/local-llm*.test.ts', 'Local LLM');
@@ -56,6 +57,7 @@ runTests('tests/push-to-talk.test.ts', 'Push To Talk');
 runTests('tests/tool-registry.test.ts', 'Tool Registry');
 runTests('tests/mcp/*.test.ts', 'MCP');
 runTests('tests/pose-*.test.ts', 'Pose Generation');
+runTests('tests/server-manager.test.ts', 'Server Manager');
 
 console.log('\n' + '='.repeat(70));
 console.log('✅ All test groups passed!');
