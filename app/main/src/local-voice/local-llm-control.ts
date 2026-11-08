@@ -22,6 +22,12 @@ export interface LocalLlmControlOptions {
   launch?: (command: string) => void;
   /** The GGUF to run (downloaded from Hugging Face), or null for the start script's own default. */
   model?: () => Promise<{ path: string; alias: string; contextLength?: number } | null>;
+  /**
+   * What the pid and log files are called in logDirectory: `<name>.pid`, `<name>.log`,
+   * `<name>.err.log`. The app stops every server with a pid file there when it quits, so a
+   * second llama-server needs its own name. Default 'llm'.
+   */
+  fileName?: string;
 }
 
 /** What a restart did, for the page to show. */
@@ -122,6 +128,7 @@ export class LocalLlmControl {
     const port = this.port();
     if (!port) return;
     mkdirSync(this.options.logDirectory, { recursive: true });
+    const name = this.options.fileName ?? 'llm';
     const model = await this.options.model?.().catch(() => null);
     const modelArgs = model
       ? ['-Model', model.path, '-Alias', model.alias, ...(model.contextLength ? ['-Context', String(Math.min(model.contextLength, this.contextCap()))] : [])]
@@ -133,10 +140,10 @@ export class LocalLlmControl {
     const command = [
       `Start-Process -FilePath 'powershell.exe' -ArgumentList @(${args})`,
       `-WorkingDirectory ${psQuote(this.options.repoRoot)} -WindowStyle Hidden`,
-      `-RedirectStandardOutput ${psQuote(path.join(this.options.logDirectory, 'llm.log'))}`,
-      `-RedirectStandardError ${psQuote(path.join(this.options.logDirectory, 'llm.err.log'))} -PassThru |`,
+      `-RedirectStandardOutput ${psQuote(path.join(this.options.logDirectory, `${name}.log`))}`,
+      `-RedirectStandardError ${psQuote(path.join(this.options.logDirectory, `${name}.err.log`))} -PassThru |`,
       // The app stops it again when it quits or hibernates (server/server-manager.ts).
-      `ForEach-Object { Set-Content -LiteralPath ${psQuote(path.join(this.options.logDirectory, 'llm.pid'))} -Value $_.Id }`,
+      `ForEach-Object { Set-Content -LiteralPath ${psQuote(path.join(this.options.logDirectory, `${name}.pid`))} -Value $_.Id }`,
     ].join(' ');
     if (this.options.launch) {
       this.options.launch(command);

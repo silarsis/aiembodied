@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -340,3 +341,125 @@ def test_event_hub_publish():
 def test_slugify():
     assert slugify("Fix the *bug* in X!!") == "fix-the-bug-in-x"
     assert len(slugify("a" * 100)) == 40 and slugify("???") == "task"
+
+
+# ---- settings, local model wait, status, resume ------------------------------------------------
+
+def test_settings_roundtrip_and_agent_dir(cfg, client, tmp_path):
+    r = client.get("/v1/settings").json()
+    assert r["default_model"] == {"provider": "local", "id": cfg.local_model}
+    body = {"local_llm_url": "http://127.0.0.1:9/v1/", "local_model": "m2",
+            "default_model": {"provider": "openai", "id": "gpt-x"}}
+    r = client.put("/v1/settings", json=body)
+    assert r.status_code == 200 and r.json()["local_llm_url"] == "http://127.0.0.1:9/v1"
+    models = json.loads((cfg.agent_dir / "models.json").read_text())
+    assert models["providers"]["local"]["baseUrl"] == "http://127.0.0.1:9/v1"
+    assert models["providers"]["local"]["models"] == [{"id": "m2"}]
+    # a new runner on the same data dir reads the saved file
+    from coder.config import Config
+    c2 = Config(data_dir=cfg.data_dir)
+    create_app(c2)
+    assert c2.local_model == "m2" and c2.default_model == {"provider": "openai", "id": "gpt-x"}
+    # partial update keeps the rest
+    client.put("/v1/settings", json={"local_model": "m3"})
+    assert client.get("/v1/settings").json()["default_model"]["id"] == "gpt-x"
+    assert client.put("/v1/settings", json={"default_model": {"provider": "bad", "id": "x"}}).status_code == 422
+
+
+def test_task_without_model_uses_default_model(client, ws):
+    ws()
+    client.put("/v1/keys", json={"anthropic": "k"})
+    client.put("/v1/settings", json={"default_model": {"provider": "anthropic", "id": "claude-x"}})
+    t = new_task(client)
+    assert (t["provider"], t["model"]) == ("anthropic", "claude-x")
+    wait_status(client, t["id"], "review")
+
+
+def test_local_task_waits_for_model(client, ws, llm):
+    llm.ready = False
+    ws()
+    t = new_task(client)
+    t = wait_status(client, t["id"], "starting")
+    for _ in range(40):
+        t = client.get(f"/v1/tasks/{t['id']}").json()
+        if t["phase_detail"] == "waiting for the local model":
+            break
+        time.sleep(0.05)
+    assert t["phase_detail"] == "waiting for the local model"
+    assert client.get("/v1/status").json() == {"local_model_needed": True, "active": [t["id"]]}
+    llm.ready = True
+    wait_status(client, t["id"], "review")
+    assert client.get("/v1/status").json() == {"local_model_needed": False, "active": []}
+
+
+def test_local_wait_times_out(cfg, client, ws, llm):
+    llm.ready = False
+    cfg.local_wait_s = 0.4
+    ws()
+    t = wait_status(client, new_task(client)["id"], "failed")
+    assert t["error"] == "local model did not start"
+
+
+def test_follow_up_waits_for_model(client, ws, llm):
+    ws()
+    t = wait_status(client, new_task(client)["id"], "review")
+    llm.ready = False
+    client.post(f"/v1/tasks/{t['id']}/follow_up", json={"message": "again"})
+    assert client.get("/v1/status").json()["local_model_needed"] is True
+    time.sleep(0.4)
+    assert client.get(f"/v1/tasks/{t['id']}").json()["status"] == "starting"
+    llm.ready = True
+    wait_status(client, t["id"], "review")
+
+
+def test_status_not_needed_for_remote_task(client, ws):
+    ws()
+    client.put("/v1/keys", json={"openai": "k"})
+    t = new_task(client, model={"provider": "openai", "id": "gpt-x"})
+    assert client.get("/v1/status").json()["local_model_needed"] is False
+    wait_status(client, t["id"], "review")
+
+
+def test_sse_messages_carry_local_model_needed(client, ws):
+    ws()
+    seen = []
+    client.app.state.manager.on_change = seen.append
+    wait_status(client, new_task(client)["id"], "review")
+    assert seen and all("local_model_needed" in m for m in seen)
+    assert any(m["local_model_needed"] for m in seen) and seen[-1]["local_model_needed"] is False
+
+
+def test_resume_after_restart(cfg, repo, client, ws, monkeypatch, tmp_path):
+    monkeypatch.setenv("FAKE_PI_MODE", "hang")
+    ws()
+    t = wait_status(client, new_task(client)["id"], "working")
+    client.app.state.manager.shutdown()  # like a crash: the database still says working
+    run = client.app.state.manager._runs[t["id"]]
+    assert run.pi.exited.wait(5)
+    time.sleep(0.3)  # let the old runner's last event writes finish before a second runner uses the database
+    assert client.app.state.store.get_task(t["id"])["status"] == "working"
+    monkeypatch.setenv("FAKE_PI_MODE", "normal")
+    monkeypatch.setenv("FAKE_PI_ARGV_DUMP", str(tmp_path / "argv.json"))
+    with TestClient(create_app(cfg)) as c2:
+        t2 = wait_status(c2, t["id"], "review")
+        assert t2["error"] is None
+        events = c2.get(f"/v1/tasks/{t['id']}/events").json()
+        assert any(e["type"] == "runner" and "resuming" in json.dumps(e["payload"]) for e in events)
+    argv = json.loads((tmp_path / "argv.json").read_text())
+    assert "--continue" in argv and argv[argv.index("--session-dir") + 1].endswith(t["id"])
+
+
+def test_restart_recovery_other_states(cfg, repo, client, ws):
+    ws()
+    store = client.app.state.store
+    wt = cfg.worktrees_dir / "20260101-cccc"
+    gitops.create_worktree(repo, "origin", "main", "echo/x", wt)
+    base = git(wt, "rev-parse", "HEAD")
+    store.create_task(id="20260101-cccc", workspace_id="proj", goal="g", status="pushing", branch="echo/x",
+                      worktree=str(wt), base_commit=base)
+    store.create_task(id="20260101-dddd", workspace_id="proj", goal="g", status="working", branch="b",
+                      worktree=str(cfg.worktrees_dir / "missing"), base_commit="abc")
+    c2 = create_app(cfg).state.store
+    a, b = c2.get_task("20260101-cccc"), c2.get_task("20260101-dddd")
+    assert a["status"] == "review" and a["error"] == "runner restarted during push"
+    assert b["status"] == "failed" and b["error"] == "runner restarted"

@@ -14,14 +14,34 @@
  */
 import type { ProviderSettings } from './provider-settings.js';
 
-export type ServerType = 'chat' | 'transcribe' | 'speech' | 'motion' | 'comfy' | 'search' | 'memory' | 'openai' | 'brave' | 'civitai' | 'huggingface' | 'homeassistant';
-export const SERVER_TYPES: readonly ServerType[] = ['chat', 'transcribe', 'speech', 'motion', 'comfy', 'search', 'memory', 'homeassistant', 'openai', 'brave', 'civitai', 'huggingface'];
+export type ServerType =
+  | 'chat'
+  | 'transcribe'
+  | 'speech'
+  | 'motion'
+  | 'comfy'
+  | 'search'
+  | 'memory'
+  | 'openai'
+  | 'brave'
+  | 'civitai'
+  | 'huggingface'
+  | 'homeassistant'
+  | 'anthropic'
+  | 'github'
+  | 'coder';
+export const SERVER_TYPES: readonly ServerType[] = [
+  'chat', 'transcribe', 'speech', 'motion', 'comfy', 'search', 'memory', 'homeassistant', 'coder', 'openai', 'anthropic', 'github', 'brave', 'civitai', 'huggingface',
+];
 /**
  * Types a user can add more servers of. OpenAI, Brave, Civitai and Hugging Face are one account each; Civitai and
  * Hugging Face run no job, they supply model downloads.
  * Home Assistant runs no job either: the memory engine watches the homes listed here.
+ * Anthropic and GitHub are one account each (GitHub holds the token for pull requests). A coding
+ * runner runs no job as such: the Coding page picks which one takes the tasks, so one on another
+ * machine can be added.
  */
-export const ADDABLE_SERVER_TYPES: readonly ServerType[] = ['chat', 'transcribe', 'speech', 'motion', 'comfy', 'search', 'memory', 'homeassistant'];
+export const ADDABLE_SERVER_TYPES: readonly ServerType[] = ['chat', 'transcribe', 'speech', 'motion', 'comfy', 'search', 'memory', 'homeassistant', 'coder'];
 
 export type UseId =
   | 'llm'
@@ -36,7 +56,8 @@ export type UseId =
   | 'posecheck'
   | 'clips'
   | 'memory'
-  | 'memorymirror';
+  | 'memorymirror'
+  | 'coding';
 export const USE_IDS: readonly UseId[] = [
   'llm',
   'stt',
@@ -51,6 +72,7 @@ export const USE_IDS: readonly UseId[] = [
   'clips',
   'memory',
   'memorymirror',
+  'coding',
 ];
 /** Uses that can be turned off (no server). */
 export const USES_THAT_CAN_BE_OFF: readonly UseId[] = ['search', 'memorymirror'];
@@ -72,6 +94,8 @@ export const USE_SERVER_TYPES: Record<UseId, readonly ServerType[]> = {
   // optional second one it copies everything to (such as Supabase).
   memory: ['memory'],
   memorymirror: ['memory'],
+  // The model the coding agent (pi, run by services/coder) works with.
+  coding: ['chat', 'openai', 'anthropic'],
 };
 /** Uses that try backup servers when the first one fails. The others use only their first server. */
 export const USES_WITH_BACKUPS: readonly UseId[] = ['llm', 'stt', 'tts', 'search', 'image', 'mesh'];
@@ -85,13 +109,23 @@ export const BUILT_IN_SERVER_IDS = {
   comfy: 'local-comfy',
   searxng: 'local-searxng',
   memory: 'local-memory',
+  coderRunner: 'local-coder-runner',
+  coderLlm: 'local-coder-llm',
   openai: 'openai',
+  anthropic: 'anthropic',
+  github: 'github',
   brave: 'brave',
   civitai: 'civitai',
   huggingface: 'huggingface',
 } as const;
 
 export const OPENAI_BASE_URL = 'https://api.openai.com/v1';
+export const ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
+export const GITHUB_API_URL = 'https://api.github.com';
+export const DEFAULT_CODER_RUNNER_URL = 'http://127.0.0.1:8195';
+/** The llama-server that runs Qwen3-Coder-Next while a coding task needs it. */
+export const DEFAULT_CODER_LLM_URL = 'http://127.0.0.1:1236/v1';
+export const DEFAULT_CODER_MODEL = 'qwen3-coder-next';
 export const BRAVE_BASE_URL = 'https://api.search.brave.com';
 export const CIVITAI_BASE_URL = 'https://civitai.com';
 export const HUGGINGFACE_BASE_URL = 'https://huggingface.co';
@@ -144,6 +178,10 @@ export interface BuiltInServerSources {
   providers: ProviderSettings;
   comfyUiBaseUrl: string;
   searxngUrl?: string;
+  /** CODING_RUNNER_URL. */
+  coderRunnerUrl?: string;
+  /** CODER_LLM_URL. */
+  coderLlmUrl?: string;
 }
 
 export const DEFAULT_SEARXNG_URL = 'http://127.0.0.1:8888';
@@ -154,7 +192,7 @@ export const DEFAULT_HELPER_MODELS: Record<'describe' | 'posegen' | 'posecheck',
   posecheck: 'gpt-4o',
 };
 
-export function builtInServers({ providers, comfyUiBaseUrl, searxngUrl }: BuiltInServerSources): ModelServer[] {
+export function builtInServers({ providers, comfyUiBaseUrl, searxngUrl, coderRunnerUrl, coderLlmUrl }: BuiltInServerSources): ModelServer[] {
   const local = (id: string, name: string, type: ServerType, url: string): ModelServer => ({
     id,
     name,
@@ -170,7 +208,11 @@ export function builtInServers({ providers, comfyUiBaseUrl, searxngUrl }: BuiltI
     local(BUILT_IN_SERVER_IDS.comfy, 'ComfyUI on this PC', 'comfy', comfyUiBaseUrl),
     local(BUILT_IN_SERVER_IDS.searxng, 'SearXNG on this PC', 'search', searxngUrl || DEFAULT_SEARXNG_URL),
     local(BUILT_IN_SERVER_IDS.memory, 'Memory database on this PC', 'memory', LOCAL_MEMORY_DATABASE_URL),
+    local(BUILT_IN_SERVER_IDS.coderRunner, 'Coding runner on this PC', 'coder', coderRunnerUrl || DEFAULT_CODER_RUNNER_URL),
+    local(BUILT_IN_SERVER_IDS.coderLlm, 'Qwen3-Coder-Next (coding)', 'chat', coderLlmUrl || DEFAULT_CODER_LLM_URL),
     { id: BUILT_IN_SERVER_IDS.openai, name: 'OpenAI', type: 'openai', url: OPENAI_BASE_URL, builtIn: true, managed: false },
+    { id: BUILT_IN_SERVER_IDS.anthropic, name: 'Anthropic', type: 'anthropic', url: ANTHROPIC_BASE_URL, builtIn: true, managed: false },
+    { id: BUILT_IN_SERVER_IDS.github, name: 'GitHub', type: 'github', url: GITHUB_API_URL, builtIn: true, managed: false },
     { id: BUILT_IN_SERVER_IDS.brave, name: 'Brave Search', type: 'brave', url: BRAVE_BASE_URL, builtIn: true, managed: false },
     { id: BUILT_IN_SERVER_IDS.civitai, name: 'Civitai', type: 'civitai', url: CIVITAI_BASE_URL, builtIn: true, managed: false },
     { id: BUILT_IN_SERVER_IDS.huggingface, name: 'Hugging Face', type: 'huggingface', url: HUGGINGFACE_BASE_URL, builtIn: true, managed: false },
@@ -223,6 +265,7 @@ export function defaultRoutes(providers: ProviderSettings, webSearchProvider = '
     clips: { server: openai, model: providers.motion.openaiModel },
     memory: { server: BUILT_IN_SERVER_IDS.memory },
     memorymirror: { server: '' },
+    coding: { server: BUILT_IN_SERVER_IDS.coderLlm, model: DEFAULT_CODER_MODEL },
   };
 }
 
@@ -235,7 +278,7 @@ export function resolveModelRouting(
   const servers = builtIns.map((server) => {
     const override = stored.servers?.find((entry) => entry.id === server.id);
     if (!override) return { ...server };
-    const fixed = server.type === 'openai' || server.type === 'brave' || server.type === 'civitai' || server.type === 'huggingface' || server.id === BUILT_IN_SERVER_IDS.memory;
+    const fixed = server.type === 'openai' || server.type === 'anthropic' || server.type === 'github' || server.type === 'brave' || server.type === 'civitai' || server.type === 'huggingface' || server.id === BUILT_IN_SERVER_IDS.memory;
     const url = override.url && !fixed ? serverUrl(server.type, override.url) : server.url;
     return { ...server, name: override.name || server.name, url, managed: server.managed && isLocalUrl(url) };
   });
@@ -288,6 +331,29 @@ export function routeTargets(routing: ModelRouting, use: UseId): Array<{ server:
     targets.push({ server, model: backup.model || (server.type === primary.type ? route.model : undefined) });
   }
   return targets;
+}
+
+/**
+ * A server that takes a use's jobs first for a while, whatever the saved route says. The coding
+ * model swap uses it to let Echo's chat run on the coder model while Echo's own model is stopped.
+ */
+export interface RouteOverride {
+  server: ModelServer;
+  model?: string;
+  /** Servers left out meanwhile, such as the one that was stopped to make room. */
+  exclude?: string[];
+}
+
+/** routeTargets with the override put first and its excluded servers left out. */
+export function routeTargetsWithOverride(
+  routing: ModelRouting,
+  use: UseId,
+  override: RouteOverride | null | undefined,
+): Array<{ server: ModelServer; model?: string }> {
+  const targets = routeTargets(routing, use);
+  if (!override) return targets;
+  const skip = new Set([override.server.id, ...(override.exclude ?? [])]);
+  return [{ server: override.server, model: override.model }, ...targets.filter(({ server }) => !skip.has(server.id))];
 }
 
 /** Keep only well-formed saved servers and routes. */

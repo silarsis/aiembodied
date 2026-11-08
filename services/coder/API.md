@@ -10,6 +10,13 @@ state), 422 (bad shape) or 502 (push failed).
 ## Setup
 
 - `GET /v1/health` -> `{"ok": true, "version": "0.1.0", "pi": {"found": true, "version": "1.5.0"}}`
+- `PUT /v1/settings` -> the stored settings. Partial; saved in `settings.json` and applied to pi's config.
+  `{"local_llm_url": "http://127.0.0.1:1236/v1", "local_model": "qwen3-coder-next", "default_model": {"provider": "local", "id": "qwen3-coder-next"}}`
+  Tasks created without `model` (and without a workspace model) use `default_model`.
+- `GET /v1/settings` -> the same shape.
+- `GET /v1/status` -> `{"local_model_needed": true, "active": ["20261108-1a2b"]}`. `local_model_needed` is
+  true while any task on the `local` provider is `starting`, `working` or `question`. `active` lists tasks
+  in `starting, working, question, checks, pushing`.
 - `PUT /v1/workspaces` replaces the whole list. 400 if a path is not a git repository. Returns the stored list.
   ```json
   [{"id": "aiembodied", "name": "aiembodied", "path": "C:\\src\\aiembodied", "kind": "self",
@@ -59,5 +66,10 @@ Question shape: `{"id": "q1", "method": "confirm", "title": "...", "message": ".
 ## Live updates
 
 `GET /v1/events` is a server-sent event stream. Each message is
-`data: {"task_id": "...", "status": "working", "current_tool": "write", "question": null}`
-sent whenever a task's status, current tool or question changes. Comment lines are keep-alives.
+`data: {"task_id": "...", "status": "working", "current_tool": "write", "question": null, "local_model_needed": true}`
+sent whenever a task's status, current tool or question changes. `local_model_needed` is in every
+message. On connect the stream sends one message with `task_id: null` and the current value.
+
+A task on the local model waits in `starting` ("waiting for the local model") until the model server
+answers; after `CODER_LOCAL_WAIT_S` it fails. After a runner restart, running tasks with a worktree
+are resumed (see README). Comment lines are keep-alives.

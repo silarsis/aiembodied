@@ -2,7 +2,16 @@
  * Build the conversation pipeline's engines from the model routing: each part (thinking, hearing,
  * speaking) uses the server picked for it, then its backups in order when that one fails.
  */
-import { BUILT_IN_SERVER_IDS, OPENAI_TTS_VOICES, parseSpeakingModel, routeTargets, type ModelRouting, type ModelServer } from '../config/model-routing.js';
+import {
+  BUILT_IN_SERVER_IDS,
+  OPENAI_TTS_VOICES,
+  parseSpeakingModel,
+  routeTargets,
+  routeTargetsWithOverride,
+  type ModelRouting,
+  type ModelServer,
+  type RouteOverride,
+} from '../config/model-routing.js';
 import { LocalLlmClient, type ChatMessage, type LlmStreamPart, type LlmToolDefinition } from './local-llm-client.js';
 import { OpenAiAudioClient } from './openai-audio-client.js';
 import { OpenAiRealtimeTts, type RealtimeSocketFactory } from './openai-realtime-tts.js';
@@ -36,7 +45,13 @@ export const DEFAULT_OPENAI_MODELS = { llm: 'gpt-4.1-mini', stt: 'gpt-4o-mini-tr
 export function buildVoiceEngines(
   routing: ModelRouting,
   keyFor: ServerKeyLookup,
-  options: { fetchFn?: typeof fetch; createSocket?: RealtimeSocketFactory; logger?: Logger } = {},
+  options: {
+    fetchFn?: typeof fetch;
+    createSocket?: RealtimeSocketFactory;
+    logger?: Logger;
+    /** Thinking tries this server first for now (the coder model while a coding task has Echo's model stopped). */
+    llmOverride?: RouteOverride | null;
+  } = {},
 ): VoiceEngines {
   const { fetchFn, logger } = options;
   const speechClients = new Map<string, SpeechServiceClient>();
@@ -49,7 +64,7 @@ export function buildVoiceEngines(
     return client;
   };
 
-  const chats = routeTargets(routing, 'llm').map(({ server, model }) =>
+  const chats = routeTargetsWithOverride(routing, 'llm', options.llmOverride).map(({ server, model }) =>
     new LocalLlmClient({
       baseUrl: server.url,
       model: model || (server.type === 'openai' ? DEFAULT_OPENAI_MODELS.llm : 'default'),

@@ -30,10 +30,15 @@ Or by hand: `pip install -e .[test]`, then `python -m coder` (or `coding-runner`
 | `CODER_LOCAL_LLM_URL` | `http://127.0.0.1:1236/v1` | OpenAI-compatible server for provider `local` |
 | `CODER_LOCAL_MODEL` | `qwen3-coder-next` | model id served there |
 | `CODER_GIT_REMOTE` | `origin` | remote to fetch from and push to |
+| `CODER_LOCAL_WAIT_S` | `900` | how long a local-model task waits for the model server before it fails |
 
-Test knobs: `CODER_CANCEL_GRACE_S` (5), `CODER_SETTLE_S` (3), `CODER_GITHUB_API`.
+The local model URL, local model id and default model can also be set by the app with
+`PUT /v1/settings`. They are saved in `settings.json` in the data directory and override the
+variables above.
 
-Data directory layout: `coder.sqlite`, `workspaces.json`, `worktrees/<id>/`, `sessions/<id>/` (pi
+Test knobs: `CODER_CANCEL_GRACE_S` (5), `CODER_SETTLE_S` (3), `CODER_LOCAL_POLL_S` (3), `CODER_GITHUB_API`.
+
+Data directory layout: `coder.sqlite`, `workspaces.json`, `worktrees/<id>/`, `settings.json`, `sessions/<id>/` (pi
 sessions), `pi-agent/` (pi's config dir, rewritten on every start).
 
 ## Models and keys
@@ -42,6 +47,20 @@ Providers are `local` (default), `openai` and `anthropic`. API keys come from th
 `PUT /v1/keys`; they are held in memory only, never written to disk or logged, and passed to pi as
 `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` only for tasks that use that provider. The `github` key is used
 to open pull requests. The runner never reads your own `~/.pi/agent/auth.json`.
+
+## Local model and restarts
+
+A task on the `local` provider first waits (status `starting`, detail "waiting for the local model")
+until `<local_llm_url>/models` answers 200, checking every 3 s for up to `CODER_LOCAL_WAIT_S`. On
+timeout it fails with "local model did not start". The same wait happens before a follow-up restarts
+pi. `GET /v1/status` and every `/v1/events` message say whether any local task needs the model
+(`local_model_needed`), so the app can load and unload the model server around tasks.
+
+When the runner restarts, tasks that were `starting`, `working` or `question` and still have their
+worktree are resumed: pi is started with `--continue --session-dir <same session dir>` and gets a
+prompt telling it the runner restarted. Tasks in `checks` run their checks again. A task in `pushing`
+goes back to `review` with the error "runner restarted during push". Tasks whose worktree is gone fail
+with "runner restarted".
 
 ## Safety rules
 

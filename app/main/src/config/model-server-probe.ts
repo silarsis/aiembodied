@@ -104,6 +104,30 @@ export async function probeModelServer(
         if (!response.ok) return { status: 'error', message: `Home Assistant answered ${response.status}.`, models: {}, checkedAt };
         return { status: 'up', models: {}, checkedAt };
       }
+      case 'anthropic': {
+        if (!key) return { status: 'needs-key', message: 'Add your Anthropic API key.', models: {}, checkedAt };
+        const body = (await getJson(`${server.url}/v1/models?limit=100`, undefined, fetchFn, {
+          'x-api-key': key,
+          'anthropic-version': '2023-06-01',
+        })) as { data?: unknown };
+        const ids = Array.isArray(body.data)
+          ? body.data.map((entry) => (entry as { id?: unknown })?.id).filter((id): id is string => typeof id === 'string')
+          : [];
+        return { status: 'up', models: { chat: ids.sort() }, checkedAt };
+      }
+      case 'github': {
+        // A token for opening pull requests. GET /user answers 200 for a valid one.
+        if (!key) return { status: 'needs-key', message: 'Add a GitHub token that can push and open pull requests.', models: {}, checkedAt };
+        await getJson(`${server.url}/user`, key, fetchFn);
+        return { status: 'up', models: {}, checkedAt };
+      }
+      case 'coder': {
+        const body = (await getJson(`${server.url}/v1/health`, undefined, fetchFn)) as { pi?: { found?: unknown } };
+        if (body.pi?.found === false) {
+          return { status: 'error', message: 'The runner is up, but it cannot find pi. Install it with: npm install -g @earendil-works/pi-coding-agent', models: {}, checkedAt };
+        }
+        return { status: 'up', models: {}, checkedAt };
+      }
       case 'huggingface':
         // Optional too: only gated and private models need a token.
         return { status: 'up', models: {}, checkedAt };
@@ -183,8 +207,8 @@ function auth(key: string | undefined): Record<string, string> {
   return key ? { Authorization: `Bearer ${key}` } : {};
 }
 
-async function getJson(url: string, key: string | undefined, fetchFn: typeof fetch): Promise<unknown> {
-  const response = await fetchFn(url, { headers: { Accept: 'application/json', ...auth(key) }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+async function getJson(url: string, key: string | undefined, fetchFn: typeof fetch, extraHeaders: Record<string, string> = {}): Promise<unknown> {
+  const response = await fetchFn(url, { headers: { Accept: 'application/json', ...auth(key), ...extraHeaders }, signal: AbortSignal.timeout(TIMEOUT_MS) });
   if (!response.ok) throw new HttpError(response.status);
   return response.json();
 }

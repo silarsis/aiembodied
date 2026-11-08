@@ -105,6 +105,7 @@ import {
   OPENAI_TTS_VOICES,
   parseSpeakingModel,
   routeTargets,
+  routeTargetsWithOverride,
   serverUrl,
   SPEAKING_ENGINES,
   speakingVoiceKey,
@@ -117,6 +118,7 @@ import {
 import { probeMemoryDatabase, probeModelServer } from './config/model-server-probe.js';
 import { ComfyUIPool } from './avatar/generation/comfyui-pool.js';
 import { LocalLlmControl } from './local-voice/local-llm-control.js';
+import { CodingService, type CodingView } from './coding/coding-service.js';
 import { lookupHuggingFace, parseHuggingFaceRef } from './local-llm/huggingface.js';
 import { LlmLibrary } from './local-llm/llm-library.js';
 import { MCPManager } from './mcp/mcp-manager.js';
@@ -269,7 +271,7 @@ let configManagerForMemory: ConfigManager | null = null;
  * Models and servers, OpenAI's default, or for a local server with none picked, its name.
  */
 function conversationModelName(manager: ConfigManager | null = configManagerForMemory): string | null {
-  const target = manager ? routeTargets(manager.getConfig().models, 'llm')[0] : undefined;
+  const target = manager ? routeTargetsWithOverride(manager.getConfig().models, 'llm', codingService?.chatOverride())[0] : undefined;
   if (!target) return null;
   if (target.model?.trim()) return target.model.trim();
   return target.server.type === 'openai' ? DEFAULT_OPENAI_MODELS.llm : target.server.name || null;
@@ -689,7 +691,7 @@ async function speakingVoiceOptions(manager: ConfigManager): Promise<SpeakingVoi
 async function applyProviderSettings(manager: ConfigManager): Promise<void> {
   const config = manager.getConfig();
   const { providers, models } = config;
-  const engines = buildVoiceEngines(models, (id) => manager.getServerKey(id), { logger });
+  const engines = buildVoiceEngines(models, (id) => manager.getServerKey(id), { logger, llmOverride: codingService?.chatOverride() });
   if (localVoiceService) {
     localVoiceService.configure(engines);
   } else {
@@ -722,6 +724,9 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
   applyWebSearch(manager);
   configManagerForMemory = manager;
   syncMemoryStorage(manager);
+  void getCodingService(manager)
+    .apply()
+    .catch((error: unknown) => logger.warn('Coding runner setup failed.', { message: error instanceof Error ? error.message : String(error) }));
 
   pushToTalk.apply(providers.talk?.shortcut ?? '');
 
@@ -779,6 +784,42 @@ async function useLocalLlm(manager: ConfigManager, id: string | null): Promise<s
   const result = await control.restart();
   logger.info('Thinking model changed.', { model: model?.id ?? 'default', restarted: result.restarted });
   return result.message;
+}
+
+/**
+ * The coding runner side: events, sync, and swapping the local models while a task needs the coder
+ * model. Built on first use, like the local LLM tools it borrows Echo's llama-server control from.
+ */
+let codingService: CodingService | null = null;
+function getCodingService(manager: ConfigManager): CodingService {
+  if (codingService) return codingService;
+  const { control } = getLocalLlmTools(manager);
+  const repoRoot = path.resolve(__dirname, '../../..');
+  codingService = new CodingService({
+    settings: () => {
+      const { models, coding } = manager.getConfig();
+      return { models, coding };
+    },
+    keyFor: (id) => manager.getServerKey(id),
+    echoControl: control,
+    // Its pid file is coder-llm.pid in the logs folder, so ServerManager stops it when the app quits.
+    coderControl: (model, baseUrl) =>
+      new LocalLlmControl({
+        baseUrl: () => baseUrl,
+        repoRoot,
+        logDirectory: path.join(app.getPath('userData'), 'logs'),
+        model: async () => model,
+        fileName: 'coder-llm',
+      }),
+    onOverrideChange: () => applyProviderSettings(manager),
+    logger,
+  });
+  return codingService;
+}
+
+async function codingView(manager: ConfigManager): Promise<CodingView> {
+  const service = getCodingService(manager);
+  return { coding: manager.getCoding(), runnerId: service.runnerServer()?.id ?? null, status: service.status() };
 }
 
 /** The motion service Moving uses, or null when Moving runs on OpenAI keyframes. */
@@ -1025,6 +1066,7 @@ function registerIpcHandlers(
     [BUILT_IN_SERVER_IDS.comfy]: 'ComfyUI',
     [BUILT_IN_SERVER_IDS.searxng]: 'SearXNG',
     [BUILT_IN_SERVER_IDS.memory]: 'Memory database',
+    [BUILT_IN_SERVER_IDS.coderLlm]: 'Coding model',
   };
   ipcMain.handle('diagnostics:gpu-memory', () => {
     const servers: GpuMemoryServer[] = [];
@@ -1042,6 +1084,30 @@ function registerIpcHandlers(
     add('local-asr', 'Speech-to-text (ASR)', process.env.STT_URL?.trim() || 'http://127.0.0.1:1235/v1');
     add('local-memory-engine', 'Memory engine', process.env.MEMORY_SERVICE_URL?.trim() || DEFAULT_MEMORY_SERVICE_URL);
     return gpuMemoryReader.read(servers);
+  });
+  // Coding page of the Models and servers pop-up, and the coding line in Status and diagnostics.
+  ipcMain.handle('coding:get', () => codingView(manager));
+  ipcMain.handle('coding:status', () => getCodingService(manager).status());
+  ipcMain.handle('coding:set', async (_event, next: unknown) => {
+    await manager.setCoding(next);
+    await applyProviderSettings(manager);
+    return codingView(manager);
+  });
+  ipcMain.handle('coding:pick-gguf', async () => {
+    const options = { title: 'Choose the Qwen3-Coder-Next file', properties: ['openFile' as const], filters: [{ name: 'GGUF model', extensions: ['gguf'] }] };
+    const result = mainWindow && !mainWindow.isDestroyed() ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+  ipcMain.handle('coding:pick-folder', async () => {
+    const options = { title: 'Choose a git repository', properties: ['openDirectory' as const] };
+    const result = mainWindow && !mainWindow.isDestroyed() ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+  ipcMain.handle('coding:suggest-checks', async (_event, id: unknown) => {
+    if (typeof id !== 'string') throw new Error('Choose a workspace first.');
+    const service = getCodingService(manager);
+    await service.apply();
+    return service.suggestChecks(id);
   });
   // Models and servers pop-up. Keys go in, never out: the view only says whether one is set.
   ipcMain.handle('models:get', () => manager.getModelRoutingView());
@@ -1907,6 +1973,7 @@ app.whenReady().then(async () => {
     preferencesStore: new FilePreferencesStore(path.join(app.getPath('userData'), 'preferences.json')),
     logger,
     openAIClientFactory: getOpenAIClient,
+    repoRoot: path.resolve(__dirname, '../../..'),
   });
 
   try {
@@ -2230,6 +2297,7 @@ app.on('before-quit', async (event) => {
   pushToTalk.dispose();
   // Training carries on in WSL without the app; this only stops watching it.
   wakeWordTrainer?.dispose();
+  codingService?.stop();
 
   // Stop the local servers this app started, as hibernation does.
   if (serverManager) {

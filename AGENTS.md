@@ -76,6 +76,11 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 - Electron Builder packages the kiosk app with auto-launch hooks. Device setup scripts and systemd instructions live in the repo to support deployment on Intel N100-class mini PCs.
 - Development relies on pnpm workspaces, ESLint/Prettier, Vitest, and Playwright smoke tests; CI must keep `pnpm lint`, `pnpm typecheck`, and `pnpm test` green to honor the plan’s gating criteria.
 
+### Coding runner
+- `services/coder` is a Python service (:8195) that runs the pi coding agent per task in a git worktree and opens a pull request after approval. The app side is `app/main/src/coding/`: `runner-client.ts` (HTTP and the event stream), `sync.ts` (workspaces, keys, settings), `model-swap.ts` and `coding-service.ts`.
+- The `coding` model use defaults to the built-in `local-coder-llm` server (Qwen3-Coder-Next on :1236). On Windows, while a task needs the local model, `CoderModelSwap` stops Echo's llama-server, starts the coder's (pid file `coder-llm.pid`), and puts the coder server first for Thinking through `RouteOverride` (`routeTargetsWithOverride`, passed to `buildVoiceEngines` as `llmOverride`). After 120 s without need it swaps back.
+- Coding settings (`config.coding`: runner, workspaces, coder GGUF) live in preferences.json. The GitHub, Anthropic and OpenAI keys are sent to the runner and never logged. `services/coder` and `app/main/src/coding/` are protected paths for coding tasks on this repository.
+
 ### Module system
 - **Pure ESM**: This codebase uses ES Modules exclusively. No CommonJS allowed except for legacy configuration files (`.eslintrc.cjs`, `prettier.config.cjs`).
 - All packages have `"type": "module"` in package.json, TypeScript uses `"module": "ESNext"`, and source files use `.js` extensions in import paths.

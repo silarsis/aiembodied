@@ -1,5 +1,7 @@
 import os
 import subprocess
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import sys
 import time
 from pathlib import Path
@@ -40,10 +42,40 @@ def repo(tmp_path):
     return work
 
 
+class LocalLlmStub:
+    """Answers GET /v1/models with 200 while ready is True, else 503."""
+
+    def __init__(self):
+        self.ready = True
+        stub = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200 if stub.ready else 503)
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"{}")
+
+            def log_message(self, *a):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/v1"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+
 @pytest.fixture
-def cfg(tmp_path):
+def llm():
+    stub = LocalLlmStub()
+    yield stub
+    stub.server.shutdown()
+
+
+@pytest.fixture
+def cfg(tmp_path, llm):
     return Config(data_dir=tmp_path / "data", pi_command=f'"{sys.executable}" "{FAKE_PI}"',
-                  cancel_grace_s=0.2, settle_s=0.5, probe_timeout_s=10)
+                  cancel_grace_s=0.2, settle_s=0.5, probe_timeout_s=10, local_llm_url=llm.url, local_poll_s=0.1,
+                  local_wait_s=30)
 
 
 @pytest.fixture

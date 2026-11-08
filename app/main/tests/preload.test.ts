@@ -119,6 +119,23 @@ describe('preload bridge', () => {
     expect(invoke).toHaveBeenCalledWith('models:comfy-addon', 'rack');
   });
 
+  it('exposes the coding helpers through the bridge', async () => {
+    const [, api] = exposeInMainWorld.mock.calls[0];
+    invoke.mockResolvedValue({});
+    await api.coding.get();
+    expect(invoke).toHaveBeenCalledWith('coding:get');
+    await api.coding.set({ runner: 'local-coder-runner', workspaces: [] });
+    expect(invoke).toHaveBeenCalledWith('coding:set', { runner: 'local-coder-runner', workspaces: [] });
+    await api.coding.status();
+    expect(invoke).toHaveBeenCalledWith('coding:status');
+    await api.coding.pickGguf();
+    expect(invoke).toHaveBeenCalledWith('coding:pick-gguf');
+    await api.coding.pickFolder();
+    expect(invoke).toHaveBeenCalledWith('coding:pick-folder');
+    await api.coding.suggestChecks('aiembodied');
+    expect(invoke).toHaveBeenCalledWith('coding:suggest-checks', 'aiembodied');
+  });
+
   it('exposes camera detection helpers through the bridge', async () => {
     const [, api] = exposeInMainWorld.mock.calls[0];
     const listener = vi.fn();

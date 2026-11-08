@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import threading
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -16,7 +18,7 @@ from .config import Config
 from .gitops import GitError
 from .procs import clean_env, kill_tree, popen_flags
 from .rpc import PiProcess
-from .store import Store, now
+from .store import ACTIVE, Store, now
 from .workspaces import ModelRef, Workspace, WorkspaceRegistry
 
 log = logging.getLogger("coder")
@@ -27,6 +29,10 @@ KEY_NAMES = ("openai", "anthropic", "github")
 # Events that do not count as agent activity when deciding that pi has gone quiet.
 QUIET_EVENTS = {"agent_end", "agent_settled", "queue_update", "response", "extension_ui_request"}
 RUNNING = ("starting", "working", "question", "checks")
+# Statuses in which a local task needs the local model server.
+LOCAL_NEEDED = ("starting", "working", "question")
+RESUME_PROMPT = ("The runner restarted while you were working. Check the state of the files and continue the "
+                 "task where you left off.")
 
 
 class CoderError(Exception):
@@ -95,7 +101,58 @@ class TaskManager:
         self._runs: dict[str, Run] = {}
         self._lock = threading.RLock()
         self._closed = False
-        self.store.mark_stale_failed()
+        self._needed = False
+        self._to_resume: list[str] = []
+        self._recover()
+
+    # ---- restart recovery -------------------------------------------------------------------
+
+    def _recover(self) -> None:
+        """Deal with tasks that were running when the runner stopped. Resuming starts in resume_all()."""
+        for t in self.store.list_tasks():
+            if t["status"] not in ACTIVE:
+                continue
+            tid, wt = t["id"], Path(t["worktree"] or "")
+            has_wt = bool(t["worktree"]) and wt.is_dir() and bool(t["base_commit"])
+            if not has_wt:
+                self._mark_failed(tid, "runner restarted")
+            elif t["status"] == "pushing":
+                self.store.update_task(tid, status="review", error="runner restarted during push",
+                                       phase_detail="runner restarted during push")
+                self.store.add_event(tid, "runner", {"message": "runner restarted during push; back to review"})
+            else:
+                self._to_resume.append(tid)
+
+    def _mark_failed(self, tid: str, error: str) -> None:
+        self.store.update_task(tid, status="failed", error=error, question=None, current_tool=None, finished_at=now())
+        self.store.add_event(tid, "runner", {"message": f"{error}; task marked failed"})
+
+    def resume_all(self) -> None:
+        """Restart the tasks found by _recover(): checks run again, pi continues its session."""
+        with self._lock:
+            ids, self._to_resume = self._to_resume, []
+            for tid in ids:
+                task = self._get(tid)
+                run = self._runs.setdefault(tid, Run())
+                run.active = True
+                self.store.add_event(tid, "runner", {"message": "runner restarted; resuming"})
+                if task["status"] == "checks":
+                    entry = self._rerun_checks
+                else:
+                    entry = self._restart_pi(RESUME_PROMPT, "resumed after a runner restart")
+                run.thread = threading.Thread(target=self._worker, args=(tid, run, entry), daemon=True,
+                                              name=f"task-{tid}")
+                run.thread.start()
+        self._notify_all()
+
+    def _rerun_checks(self, tid: str, run: Run) -> bool:
+        self._finalize(tid, run)
+        return False
+
+    def _notify_all(self) -> None:
+        for t in self.store.list_tasks():
+            if t["status"] in ACTIVE:
+                self._notify(t)
 
     # ---- keys -------------------------------------------------------------------------------
 
@@ -113,11 +170,21 @@ class TaskManager:
 
     # ---- helpers ----------------------------------------------------------------------------
 
+    def local_model_needed(self) -> bool:
+        return any(t["provider"] == "local" and t["status"] in LOCAL_NEEDED for t in self.store.list_tasks())
+
+    def status(self) -> dict:
+        active = [t["id"] for t in self.store.list_tasks() if t["status"] in ACTIVE]
+        return {"local_model_needed": self.local_model_needed(), "active": active}
+
     def _notify(self, task: dict) -> None:
         if self.on_change:
             try:
+                needed = self.local_model_needed()
+                self._needed = needed
                 self.on_change({"task_id": task["id"], "status": task["status"],
-                                "current_tool": task["current_tool"], "question": task["question"]})
+                                "current_tool": task["current_tool"], "question": task["question"],
+                                "local_model_needed": needed})
             except Exception:
                 pass
 
@@ -153,7 +220,11 @@ class TaskManager:
 
     def _resolve_model(self, ws: Workspace, model: Optional[ModelRef]) -> tuple[str, str]:
         m = model or ws.model
-        provider, mid = (m.provider, m.id) if m else ("local", self.cfg.local_model)
+        if m:
+            provider, mid = m.provider, m.id
+        else:
+            d = self.cfg.default_model
+            provider, mid = d["provider"], d["id"]
         if provider in PROVIDER_KEY_ENV and provider not in self.keys:
             raise CoderError(400, f"no {provider} API key has been set (PUT /v1/keys)")
         return provider, mid
@@ -189,13 +260,13 @@ class TaskManager:
                 self.store.update_task(t["id"], status="starting")
                 self.store.add_event(t["id"], "status", {"status": "starting"})
                 self._notify(self.store.get_task(t["id"]))  # type: ignore[arg-type]
-                run.thread = threading.Thread(target=self._worker, args=(t["id"], run, True), daemon=True,
+                run.thread = threading.Thread(target=self._worker, args=(t["id"], run, self._start), daemon=True,
                                               name=f"task-{t['id']}")
                 run.thread.start()
 
-    def _worker(self, tid: str, run: Run, first: bool) -> None:
+    def _worker(self, tid: str, run: Run, entry: Optional[Callable[[str, Run], bool]] = None) -> None:
         try:
-            if first and not self._start(tid, run):
+            if entry and not entry(tid, run):
                 return
             self._supervise(tid, run)
         except Exception as e:
@@ -223,6 +294,8 @@ class TaskManager:
                      phase_detail="worktree ready")
         if run.stopped:
             return False
+        if not self._wait_local(tid, run, task):
+            return False
         if not self._spawn(tid, run, task, wt, continue_=False):
             return False
         self._update(tid, status="working", phase_detail="pi started")
@@ -231,6 +304,60 @@ class TaskManager:
             self._fail(tid, run, "pi exited before the prompt was sent")
             return False
         return True
+
+    def _wait_local(self, tid: str, run: Run, task: dict) -> bool:
+        """For a task on the local model: wait until the local server answers. False if stopped or timed out."""
+        if task["provider"] != "local":
+            return True
+        url = self.cfg.local_llm_url.rstrip("/") + "/models"
+        deadline = time.monotonic() + self.cfg.local_wait_s
+        announced = False
+        while True:
+            if run.stopped:
+                return False
+            if self._local_ready(url):
+                return True
+            if not announced:
+                announced = True
+                self._update(tid, status="starting", phase_detail="waiting for the local model")
+            if time.monotonic() >= deadline:
+                self._fail(tid, run, "local model did not start")
+                return False
+            time.sleep(min(self.cfg.local_poll_s, max(0.01, deadline - time.monotonic())))
+
+    @staticmethod
+    def _local_ready(url: str) -> bool:
+        try:
+            with urllib.request.urlopen(url, timeout=5) as r:
+                return r.status == 200
+        except (urllib.error.URLError, OSError, ValueError):
+            return False
+
+    def _restart_pi(self, message: str, detail: str, check_continue: bool = False):
+        """Entry for a worker: wait for the local model, start pi with --continue and send a prompt."""
+        def entry(tid: str, run: Run) -> bool:
+            task = self._get(tid)
+            wt = Path(task["worktree"] or "")
+            if not wt.is_dir():
+                self._fail(tid, run, "worktree is gone")
+                return False
+            if task["provider"] == "local":
+                self._update(tid, status="starting", phase_detail="waiting for the local model", question=None,
+                             error=None, finished_at=None)
+            if not self._wait_local(tid, run, task):
+                return False
+            if not (run.pi and run.pi.alive):
+                if not self._spawn(tid, run, task, wt, continue_=True):
+                    return False
+                if check_continue and run.pi and run.pi.exited.wait(1.5):
+                    self._fail(tid, run, "pi could not continue the session (is --continue supported?)")
+                    return False
+            self._update(tid, status="working", phase_detail=detail, error=None, finished_at=None, question=None)
+            if not run.pi or not run.pi.send({"id": "followup", "type": "prompt", "message": message}):
+                self._fail(tid, run, "pi did not accept the message")
+                return False
+            return True
+        return entry
 
     def _spawn(self, tid: str, run: Run, task: dict, wt: Path, continue_: bool) -> bool:
         session_dir = self.cfg.sessions_dir / tid
@@ -443,6 +570,14 @@ class TaskManager:
                 raise CoderError(409, "task is busy or its worktree is gone")
             run.reset()
             run.active = True
+        if task["provider"] == "local":
+            # The local model may have been swapped out: wait for it in the worker.
+            self._update(tid, status="starting", phase_detail="waiting for the local model", error=None, finished_at=None)
+            self.store.add_event(tid, "runner", {"follow_up": message})
+            run.thread = threading.Thread(target=self._worker, args=(tid, run, self._restart_pi(message, "follow-up")),
+                                          daemon=True, name=f"task-{tid}")
+            run.thread.start()
+            return self._get(tid)
         try:
             if not (run.pi and run.pi.alive):
                 if not self._spawn(tid, run, task, wt, continue_=True):
@@ -458,7 +593,7 @@ class TaskManager:
                 run.active = False
             raise
         self.store.add_event(tid, "runner", {"follow_up": message})
-        run.thread = threading.Thread(target=self._worker, args=(tid, run, False), daemon=True, name=f"task-{tid}")
+        run.thread = threading.Thread(target=self._worker, args=(tid, run), daemon=True, name=f"task-{tid}")
         run.thread.start()
         return self._get(tid)
 

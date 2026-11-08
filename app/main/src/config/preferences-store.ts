@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { sanitizeProviderPatch, type ProviderSettingsPatch } from './provider-settings.js';
 import { sanitizeStoredModels, type StoredModels } from './model-routing.js';
+import { sanitizeCodingConfig, type CodingConfig } from '../coding/config.js';
 
 export interface AudioDevicePreferences {
   audioInputDeviceId?: string;
@@ -18,6 +19,8 @@ export interface AudioDevicePreferences {
   providers?: ProviderSettingsPatch;
   /** Added model servers and which server runs each use (see model-routing.ts). */
   models?: StoredModels;
+  /** The coding runner, its workspaces and the coder model file (see coding/config.ts). */
+  coding?: CodingConfig;
 }
 
 export interface PreferencesStore {
@@ -126,6 +129,11 @@ export class FilePreferencesStore implements PreferencesStore {
     const models = sanitizeStoredModels(input.models);
     if (Object.keys(models).length > 0) {
       preferences.models = models;
+    }
+
+    const coding = sanitizeCodingConfig(input.coding);
+    if (coding) {
+      preferences.coding = coding;
     }
 
     return preferences;

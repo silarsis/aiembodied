@@ -1,15 +1,16 @@
 /**
  * Make sure the local model servers the app talks to are running before the dev app starts:
  * the LLM (llama-server, Qwen Flash-Next), speech-to-text (llama-server, Qwen3-ASR), the speech
- * service (Kokoro TTS), the motion service (ARDY), the memory engine (with PostgreSQL in a container) and, when web
- * search uses it, SearXNG (a container). A server that already
+ * service (Kokoro TTS), the motion service (ARDY), the memory engine (with PostgreSQL in a container), the coding
+ * runner (services/coder) and, when web search uses it, SearXNG (a container). The coder's own
+ * llama-server (Qwen3-Coder-Next) is not started here: the app starts it when a coding task needs it. A server that already
  * answers is left alone, so one slopcore or another terminal started is reused. A missing one is started with
  * its own start script in a hidden console of its own, logging to .dev-home/logs/<id>.log
  * (and <id>.err.log), and keeps running after the app and the terminal close. Nothing waits for models to finish loading: the app polls each service and
  * picks it up once it reports ready.
  *
  * Settings come from the environment or .env: the same URLs the app uses (LOCAL_LLM_BASE_URL,
- * STT_URL, SPEECH_SERVICE_URL, MOTION_SERVICE_URL, MEMORY_SERVICE_URL, SEARXNG_URL) plus the paths the start scripts need
+ * STT_URL, SPEECH_SERVICE_URL, MOTION_SERVICE_URL, MEMORY_SERVICE_URL, SEARXNG_URL, CODING_RUNNER_URL) plus the paths the start scripts need
  * (KOKORO_DIR, MOTION_VENV, TEXT_ENCODERS_DIR, LOCAL_LLM_CONTEXT, ...). What the user saved on the
  * app's Settings page wins over the environment, as it does in the app: a part switched to OpenAI
  * needs no local server, and the motion model picked there is the one services/motion starts with.
@@ -126,6 +127,9 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
   const motionUrl = trimSlash(builtInUrl('local-motion') || providers.motion?.localServiceUrl || env.MOTION_SERVICE_URL || 'http://127.0.0.1:8190');
   const searxngUrl = trimSlash(builtInUrl('local-searxng') || env.SEARXNG_URL || 'http://127.0.0.1:8888');
   const memoryUrl = trimSlash(env.MEMORY_SERVICE_URL || 'http://127.0.0.1:8194');
+  // The coding runner: the built-in server, unless the app points coding at a runner on another machine.
+  const coderServer = typeof saved.coding?.runner === 'string' && saved.coding.runner ? saved.coding.runner : 'local-coder-runner';
+  const coderUrl = trimSlash(builtInUrl('local-coder-runner') || env.CODING_RUNNER_URL || 'http://127.0.0.1:8195');
   const speechForStt = pipeline && usedBy('local-speech', ['stt']);
   // A model downloaded in the app runs with its own name, and no more context than it was made for.
   const contextCap = Number.parseInt(env.LOCAL_LLM_CONTEXT ?? '', 10) > 0 ? Number.parseInt(env.LOCAL_LLM_CONTEXT, 10) : 65536;
@@ -199,6 +203,15 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
       probe: `${searxngUrl}/healthz`,
       script: 'services/searxng/scripts/start.ps1',
       args: portArgs(searxngUrl),
+    },
+    {
+      id: 'coder',
+      label: 'Coding runner (services/coder)',
+      enabled: isOn(env.CODER_ENABLED, true) && isOn(env.CODER_AUTOSTART, true) && coderServer === 'local-coder-runner',
+      url: coderUrl,
+      probe: `${coderUrl}/v1/health`,
+      script: 'services/coder/scripts/start.ps1',
+      args: portArgs(coderUrl),
     },
   ];
 

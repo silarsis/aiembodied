@@ -17,6 +17,7 @@ from .agentdir import write_agent_dir
 from .config import Config
 from .manager import CoderError, TaskManager
 from .store import Store
+from . import settings as settings_mod
 from .workspaces import ModelRef, Workspace, WorkspaceError, WorkspaceRegistry
 
 log = logging.getLogger("coder")
@@ -74,6 +75,7 @@ class EventHub:
 def create_app(cfg: Optional[Config] = None) -> FastAPI:
     cfg = cfg or Config.from_env()
     cfg.data_dir.mkdir(parents=True, exist_ok=True)
+    settings_mod.load(cfg)
     write_agent_dir(cfg)
     store = Store(cfg.db_path)
     registry = WorkspaceRegistry(cfg.workspaces_path)
@@ -83,6 +85,7 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        manager.resume_all()
         manager.pump()
         yield
         manager.shutdown()
@@ -99,6 +102,18 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
         found = probe.found()
         version = probe.version()[0] if found else None
         return {"ok": True, "version": __version__, "pi": {"found": found, "version": version}}
+
+    @app.put("/v1/settings")
+    def put_settings(body: settings_mod.SettingsBody) -> dict:
+        return settings_mod.apply(cfg, body)
+
+    @app.get("/v1/settings")
+    def get_settings() -> dict:
+        return settings_mod.snapshot(cfg)
+
+    @app.get("/v1/status")
+    def status() -> dict:
+        return manager.status()
 
     @app.put("/v1/workspaces")
     def put_workspaces(items: list[Workspace]) -> list[Workspace]:
@@ -180,6 +195,7 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
         async def gen():
             try:
                 yield ": connected\n\n"
+                yield f"data: {json.dumps({'task_id': None, 'local_model_needed': manager.local_model_needed()})}\n\n"
                 while True:
                     try:
                         msg = await asyncio.wait_for(q.get(), 15)
