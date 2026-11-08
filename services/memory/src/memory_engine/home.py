@@ -609,6 +609,10 @@ class HomeListener:
                 loop.call_soon_threadsafe(event.set)
             except RuntimeError:  # the loop is already closed
                 pass
+        # Let a write in progress finish before the engine closes its pool (and, in tests,
+        # before the schema is dropped under it).
+        if self._thread is not None and self._thread is not threading.current_thread():
+            self._thread.join(timeout=5)
 
     def status(self) -> dict[str, Any]:
         if self._events_day != datetime.now().date():

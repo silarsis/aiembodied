@@ -369,6 +369,10 @@ class Engine:
         """Embed new and changed index rows, a batch at a time, whenever there are any."""
         while not self._stop.is_set():
             done = 0
+            # Cleared before looking for work, not after waiting: a wake that arrives while this
+            # pass runs (a write just committed) then ends the wait at once instead of being lost
+            # for ten seconds. Home Assistant writes made that window easy to hit.
+            self._wake_embedder.clear()
             if self.ready:
                 try:
                     with self.pool.connection(timeout=10) as conn:
@@ -385,7 +389,6 @@ class Engine:
                     continue
             if not done:
                 self._wake_embedder.wait(10)
-                self._wake_embedder.clear()
 
     def _summary_loop(self) -> None:
         """While the client is idle, work through due summaries one at a time."""
