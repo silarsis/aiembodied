@@ -418,3 +418,12 @@ def test_listener_is_off_without_a_token(database_url, schema):
     status = engine.home_status()
     assert status["configured"] is False and "HA_TOKEN" in status["note"]
     engine.pool.close()
+
+
+def test_named_entity_overrides_diagnostic_category():
+    """An entity named exactly in HA_ENTITIES is watched even when HA marks it diagnostic."""
+    from memory_engine.home import classify
+
+    attributes = {"unit_of_measurement": "%", "device_class": "battery"}
+    assert classify("sensor", "battery", "diagnostic", "80", attributes) == "ignore"
+    assert classify("sensor", "battery", None, "80", attributes) == "numeric"

@@ -768,9 +768,9 @@ class HomeListener:
         await self._call(ws, "subscribe_events", event_type="state_changed")
         self.connected = True
         self.error = None
-        log.info("Home Assistant connected; watching %d entities", len(self.watched))
         # Subscribed before the states are read, so nothing slips between the two.
         await self._refresh(ws)
+        log.info("Home Assistant connected; watching %d entities", len(self.watched))
         held, self._held = self._held or [], None
         for event in held:
             await asyncio.to_thread(self._on_event, event)
@@ -835,7 +835,11 @@ class HomeListener:
                 watched.add(entity_id)
         watched &= set(by_state)  # an entity with no state yet is picked up at a later refresh
         # Diagnostic and config entities are not kept at all.
+        # An entity named exactly in HA_ENTITIES is kept even if HA calls it diagnostic.
+        named = {pattern for pattern in config.entities if "*" not in pattern and "?" not in pattern}
         for entity_id in list(watched):
+            if entity_id in named:
+                continue
             state = by_state[entity_id]
             attributes = state.get("attributes") or {}
             if classify(entity_id.split(".", 1)[0], attributes.get("device_class"),
@@ -859,7 +863,7 @@ class HomeListener:
                 info = meta.get(entity_id, {})
                 upsert_entity(
                     conn, config.home_id, state, area=info.get("area"), registry_name=info.get("name"),
-                    entity_category=info.get("category"),
+                    entity_category=None if entity_id in named else info.get("category"),
                 )
                 result = record_state(conn, config.home_id, entity_id, state, catch_up=True)
                 if result and result["indexed"]:
