@@ -1860,3 +1860,8 @@ body {
   font-size: 0.8rem;
   color: rgba(226, 232, 240, 0.65);
 }
+
+.modelsDialog__fieldLabel { color: inherit; }
+.modelsDialog__speechModels { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.modelsDialog__speechModels li { display: flex; align-items: center; gap: 10px; }
+.modelsDialog__speechModels li > span { flex: 1; min-width: 0; }

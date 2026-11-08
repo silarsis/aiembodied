@@ -29,6 +29,24 @@ if (-not $Venv) { $Venv = Join-Path $root '.venv' }
 $python = Join-Path $Venv 'Scripts\python.exe'
 if (-not (Test-Path $python)) { throw "No Python at $python. Create the venv (README) or pass -Venv." }
 
+# Reinstall when pyproject.toml changed since the last install, so a pull that adds an engine
+# (Piper) just works.
+$pyproject = Join-Path $root 'pyproject.toml'
+$marker = Join-Path $Venv '.speech-service-installed'
+$stale = (-not (Test-Path $marker)) -or ((Get-Item $pyproject).LastWriteTimeUtc -gt (Get-Item $marker).LastWriteTimeUtc)
+if ($stale -and -not $Fake) {
+  $ErrorActionPreference = 'Continue'
+  if (Get-Command uv -ErrorAction SilentlyContinue) {
+    uv pip install --python $python -e "$root[engines]"
+  } else {
+    & $python -m pip install -e "$root[engines]"
+  }
+  $ok = ($LASTEXITCODE -eq 0)
+  $ErrorActionPreference = 'Stop'
+  if ($ok) { Set-Content -Path $marker -Value (Get-Date -Format o) }
+  else { Write-Warning "Installing the speech engines failed; Kitten or Piper may be unavailable." }
+}
+
 $cliArgs = @('-m', 'speech_service', '--host', $HostName, '--port', $Port)
 if ($Fake) {
   $cliArgs += @('--engines', 'fake')

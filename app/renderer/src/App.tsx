@@ -46,7 +46,7 @@ import { LocalVoiceClient, playPreviewReply } from './realtime/local-voice-clien
 import { LatencyTracker, type LatencySnapshot } from './metrics/latency-tracker.js';
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
 import type { AvatarModelSummary, AvatarMotionStatus, AvatarPoseSummary } from './avatar/types.js';
-import type { LocalVoiceStatus } from '../../main/src/local-voice/types.js';
+import type { LocalVoiceStatus, SpeakingVoiceOptions } from '../../main/src/local-voice/types.js';
 import { describeModels } from './status/model-status.js';
 import { extractAvatarTags, extractMoveTags, toAnimationSlug } from './avatar/animation-tags.js';
 import { MoveRequestFilter, enqueueMotionChunk } from './avatar/live-motion.js';
@@ -1075,6 +1075,40 @@ export default function App() {
   const isLocalBackend = conversationBackend === 'local';
   // The local backend needs no API key; OpenAI Realtime does.
   const canConnectConversation = isLocalBackend || hasRealtimeApiKey;
+
+  // Local conversation: the voices the engine that speaks offers, and this character's pick.
+  const [speakingVoices, setSpeakingVoices] = useState<SpeakingVoiceOptions | null>(null);
+  useEffect(() => {
+    if (panel !== 'character' || !isLocalBackend) {
+      return;
+    }
+    const bridge = getPreloadApi()?.localVoice;
+    if (!bridge?.getVoiceOptions) {
+      return;
+    }
+    let cancelled = false;
+    bridge
+      .getVoiceOptions()
+      .then((options) => {
+        if (!cancelled) setSpeakingVoices(options);
+      })
+      .catch((error: unknown) => {
+        console.warn('Could not read the speaking voices', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [panel, isLocalBackend, activeVrmModel?.id]);
+
+  const handleSpeakingVoiceChange = useCallback(
+    (voice: string) => {
+      const engine = speakingVoices?.engine;
+      if (!engine) return;
+      setSpeakingVoices((current) => (current ? { ...current, selected: voice || null } : current));
+      void resolveApi()?.avatar?.setVoicePreference?.(voice, engine);
+    },
+    [speakingVoices?.engine, resolveApi],
+  );
 
   const wakePhrase = config?.wakeWord?.keywordLabel;
   // A saved gpt-4o-realtime-preview model is retired (model_not_found); fall back to the default.
@@ -2649,22 +2683,55 @@ export default function App() {
               </section>
               <section className="kiosk__realtime" aria-labelledby="kiosk-voice-title">
                 <h2 id="kiosk-voice-title">Voice</h2>
-                <p className="kiosk__helper">Select the voice for this avatar.</p>
-                <div className="control">
-                  <label htmlFor="character-voice">Voice</label>
-                  <select
-                    id="character-voice"
-                    value={selectedVoice}
-                    onChange={(e) => setSelectedVoice(e.target.value)}
-                    disabled={loadingConfig || !availableVoices.length}
-                  >
-                    {availableVoices.map((voice) => (
-                      <option key={voice} value={voice}>
-                        {voice}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {isLocalBackend ? (
+                  <>
+                    <p className="kiosk__helper">
+                      {speakingVoices?.engine
+                        ? `Replies are spoken by ${speakingVoices.label}. Pick this avatar’s voice; the engine is set in Models and servers → Speaking.`
+                        : speakingVoices
+                          ? 'Nothing is set to speak. Pick a server in Models and servers → Speaking.'
+                          : 'Reading the voices…'}
+                    </p>
+                    <div className="control">
+                      <label htmlFor="character-voice">Voice</label>
+                      <select
+                        id="character-voice"
+                        value={speakingVoices?.selected ?? ''}
+                        onChange={(e) => handleSpeakingVoiceChange(e.target.value)}
+                        disabled={loadingConfig || !speakingVoices?.engine}
+                      >
+                        <option value="">Default{speakingVoices?.defaultVoice ? ` (${speakingVoices.defaultVoice})` : ''}</option>
+                        {speakingVoices?.selected && !speakingVoices.voices.includes(speakingVoices.selected) ? (
+                          <option value={speakingVoices.selected}>{speakingVoices.selected} (not available)</option>
+                        ) : null}
+                        {(speakingVoices?.voices ?? []).map((voice) => (
+                          <option key={voice} value={voice}>
+                            {voice}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="kiosk__helper">Select the voice for this avatar.</p>
+                    <div className="control">
+                      <label htmlFor="character-voice">Voice</label>
+                      <select
+                        id="character-voice"
+                        value={selectedVoice}
+                        onChange={(e) => setSelectedVoice(e.target.value)}
+                        disabled={loadingConfig || !availableVoices.length}
+                      >
+                        {availableVoices.map((voice) => (
+                          <option key={voice} value={voice}>
+                            {voice}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                )}
                 <div className="control">
                   <button
                     type="button"

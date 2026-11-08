@@ -67,7 +67,8 @@ import {
 } from './memory-engine/index.js';
 import { buildVoiceEngines, DEFAULT_OPENAI_MODELS } from './local-voice/voice-engines.js';
 import { describeProviders, type ProviderSettingsPatch } from './config/provider-settings.js';
-import type { LocalVoiceRespondRequest } from './local-voice/types.js';
+import type { LocalVoiceRespondRequest, SpeakingVoiceOptions } from './local-voice/types.js';
+import { SpeechServiceClient } from './local-voice/speech-service-client.js';
 import type {
   AvatarModelSummary,
   AvatarModelUploadRequest,
@@ -96,7 +97,21 @@ import {
 import { getOpenAIClient } from './openai/client.js';
 import type OpenAI from 'openai';
 import { createChatCompletionsResponsesClient } from './openai/chat-completions-responses.js';
-import { BUILT_IN_SERVER_IDS, databaseUrlWithPassword, routeTargets, serverUrl, USE_SERVER_TYPES, type ModelRoute, type ServerType, type UseId } from './config/model-routing.js';
+import {
+  BUILT_IN_SERVER_IDS,
+  databaseUrlWithPassword,
+  OPENAI_TTS_VOICES,
+  parseSpeakingModel,
+  routeTargets,
+  serverUrl,
+  SPEAKING_ENGINES,
+  speakingVoiceKey,
+  USE_SERVER_TYPES,
+  type ModelRoute,
+  type ServerType,
+  type SpeakingEngineId,
+  type UseId,
+} from './config/model-routing.js';
 import { probeMemoryDatabase, probeModelServer } from './config/model-server-probe.js';
 import { ComfyUIPool } from './avatar/generation/comfyui-pool.js';
 import { LocalLlmControl } from './local-voice/local-llm-control.js';
@@ -603,6 +618,65 @@ function startWakeWordService(wakeWord: WakeWordConfig): WakeWordService {
 }
 
 /**
+ * Where the active character's voice for an engine is kept. Each engine has its own voices, so a
+ * character keeps one per engine; OpenAI's is the one it always had (also used by the Realtime
+ * conversation engine).
+ */
+function characterVoiceKey(engine: SpeakingEngineId | 'openai'): string | null {
+  const activeModel = avatarModelService?.getActiveModel?.() || null;
+  if (!activeModel?.id) return null;
+  return engine === 'openai' ? `avatar.voice.${activeModel.id}` : `avatar.voice.${activeModel.id}.${engine}`;
+}
+
+function characterVoice(engine: SpeakingEngineId | 'openai' | null): string | null {
+  if (!engine || !memoryStore) return null;
+  const key = characterVoiceKey(engine);
+  return key ? memoryStore.getValue(key) ?? null : null;
+}
+
+/** The voices the character can pick for whatever speaks now, and the one it has. */
+async function speakingVoiceOptions(manager: ConfigManager): Promise<SpeakingVoiceOptions> {
+  const routing = manager.getConfig().models;
+  const target = routeTargets(routing, 'tts')[0];
+  const engine = speakingVoiceKey(routing);
+  if (!target || !engine) {
+    return { engine: null, label: 'Nothing speaks', voices: [], defaultVoice: null, selected: null };
+  }
+  const route = routing.routes.tts;
+  if (engine === 'openai') {
+    return {
+      engine,
+      label: 'OpenAI',
+      voices: [...OPENAI_TTS_VOICES],
+      defaultVoice: route.voice || 'alloy',
+      selected: characterVoice(engine),
+    };
+  }
+  const parsed = parseSpeakingModel(target.model);
+  const engines = await new SpeechServiceClient({ baseUrl: target.server.url }).ttsEngines();
+  const found = engines?.find((entry) => entry.id === engine);
+  let voices: string[] = [];
+  let fallback: string | null = null;
+  if (engine === 'piper') {
+    voices = (found?.models ?? []).filter((model) => model.installed).map((model) => model.id);
+  } else {
+    const model = found?.models.find((entry) => (engine === 'kitten' ? entry.id === parsed.model : true));
+    voices = model?.voices ?? [];
+    fallback = model?.defaultVoice ?? null;
+  }
+  if (!found && engine === 'kokoro') {
+    voices = (await new SpeechServiceClient({ baseUrl: target.server.url }).health())?.voices ?? [];
+  }
+  return {
+    engine,
+    label: found?.label ?? engine,
+    voices,
+    defaultVoice: parsed.legacyVoice || route.voice || fallback || voices[0] || null,
+    selected: characterVoice(engine),
+  };
+}
+
+/**
  * Point the conversation pipeline and motion at the current provider settings and API key. Runs
  * at startup and after every change on the Settings page, so a change applies without a restart
  * (except the local motion model, which the launcher picks when it starts services/motion).
@@ -619,6 +693,7 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
       tools: toolRegistry ?? undefined,
       logger,
       onToolResult: (record) => memoryEngine?.recordToolCall(record),
+      voiceFor: () => characterVoice(speakingVoiceKey(manager.getConfig().models)) ?? undefined,
       // Through memoryEngine at call time: it is set up after this service.
       memory: {
         brief: () => memoryEngine?.voice.brief() ?? Promise.resolve(null),
@@ -1049,6 +1124,20 @@ function registerIpcHandlers(
     return modelDownloads.start(server, plan, key);
   });
   ipcMain.handle('models:downloads', () => modelDownloads.list());
+  const speechServerClient = (serverId: unknown) => {
+    const server = manager.getConfig().models.servers.find((entry) => entry.id === serverId && entry.type === 'speech');
+    if (!server) throw new Error('That is not a speech service.');
+    return new SpeechServiceClient({ baseUrl: server.url });
+  };
+  ipcMain.handle('models:speech-engines', (_event, serverId: unknown) => speechServerClient(serverId).ttsEngines());
+  ipcMain.handle('models:speech-download', async (_event, payload: { serverId?: unknown; engine?: unknown; model?: unknown }) => {
+    if (typeof payload?.engine !== 'string' || typeof payload.model !== 'string') {
+      throw new Error('Pick a model to download.');
+    }
+    const client = speechServerClient(payload.serverId);
+    await client.downloadTtsModel(payload.engine, payload.model);
+    return client.ttsEngines();
+  });
   ipcMain.handle('models:cancel-download', (_event, id: unknown) => {
     if (typeof id === 'string') modelDownloads.cancel(id);
     return modelDownloads.list();
@@ -1708,20 +1797,22 @@ function registerIpcHandlers(
   });
 
   // Avatar voice preferences
-  ipcMain.handle('avatar:voice:get-preference', () => {
+  const voiceEngine = (engine: unknown): SpeakingEngineId | 'openai' =>
+    typeof engine === 'string' && (SPEAKING_ENGINES as readonly string[]).includes(engine) ? (engine as SpeakingEngineId) : 'openai';
+
+  // Without an engine: the OpenAI voice (the Realtime conversation engine's), as before.
+  ipcMain.handle('avatar:voice:get-preference', (_event, engine?: unknown) => {
     if (!memoryStore) {
       logger.warn('Memory store unavailable for avatar voice preference');
       return null;
     }
-    const activeModel = avatarModelService?.getActiveModel?.() || null;
-    if (!activeModel?.id) {
-      return null;
-    }
-    return memoryStore.getValue(`avatar.voice.${activeModel.id}`);
+    const key = characterVoiceKey(voiceEngine(engine));
+    return key ? memoryStore.getValue(key) : null;
   });
 
-  ipcMain.handle('avatar:voice:set-preference', (_event, voice: unknown) => {
-    if (typeof voice !== 'string' || !voice) {
+  ipcMain.handle('avatar:voice:set-preference', (_event, voice: unknown, engine?: unknown) => {
+    // An empty voice for an engine clears the character's pick (back to the engine's default).
+    if (typeof voice !== 'string' || (!voice && engine === undefined)) {
       logger.warn('Invalid voice preference:', voice);
       return;
     }
@@ -1729,14 +1820,16 @@ function registerIpcHandlers(
       logger.warn('Memory store unavailable for avatar voice preference');
       return;
     }
-    const activeModel = avatarModelService?.getActiveModel?.() || null;
-    if (!activeModel?.id) {
+    const key = characterVoiceKey(voiceEngine(engine));
+    if (!key) {
       logger.warn('No active avatar model to set voice preference');
       return;
     }
-    memoryStore.setValue(`avatar.voice.${activeModel.id}`, voice);
-    logger.info('Avatar voice preference saved', { avatarId: activeModel.id, voice });
+    memoryStore.setValue(key, voice);
+    logger.info('Avatar voice preference saved', { key, voice });
   });
+
+  ipcMain.handle('local-voice:voice-options', () => speakingVoiceOptions(manager));
 
   // Register MCP handlers
   if (toolRegistry && mcpManager) {

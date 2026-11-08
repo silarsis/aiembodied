@@ -11,6 +11,25 @@ export interface SpeechServiceHealth {
   defaultVoice: string | null;
 }
 
+/** One model of a speech-service TTS engine (GET /v1/tts/engines). */
+export interface SpeechTtsModel {
+  id: string;
+  label: string;
+  installed: boolean;
+  sizeMb?: number;
+  voices: string[];
+  defaultVoice: string | null;
+  download: { status: 'downloading' | 'done' | 'error'; received: number; total: number; error: string | null } | null;
+}
+
+export interface SpeechTtsEngine {
+  id: string;
+  label: string;
+  available: boolean;
+  error: string | null;
+  models: SpeechTtsModel[];
+}
+
 export interface SpeechServiceClientOptions {
   baseUrl: string;
   fetchFn?: typeof fetch;
@@ -89,9 +108,38 @@ export class SpeechServiceClient {
     return { text: typeof body.text === 'string' ? body.text : '', timings };
   }
 
+  /** The service's TTS engines and their models; null when it is down or too old to say. */
+  async ttsEngines(): Promise<SpeechTtsEngine[] | null> {
+    try {
+      const response = await this.fetchFn(`${this.baseUrl}/v1/tts/engines`, { signal: AbortSignal.timeout(this.healthTimeoutMs) });
+      if (!response.ok) return null;
+      const body = (await response.json()) as { engines?: unknown };
+      return Array.isArray(body.engines) ? body.engines.map(toEngine).filter((engine): engine is SpeechTtsEngine => engine !== null) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Start downloading a Kitten model or Piper voice; progress shows in ttsEngines(). */
+  async downloadTtsModel(engine: string, model: string): Promise<void> {
+    const response = await this.fetchFn(`${this.baseUrl}/v1/tts/download`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ engine, model }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) {
+      throw new Error(
+        response.status === 404
+          ? 'This speech service is too old to download models; restart it from an up-to-date checkout.'
+          : `Download failed: ${await errorText(response)}`,
+      );
+    }
+  }
+
   /** Speak `text`; returns a 16-bit PCM WAV. */
   async synthesize(
-    request: { text: string; voice?: string; speed?: number },
+    request: { text: string; voice?: string; speed?: number; engine?: string; model?: string },
     options: { signal?: AbortSignal } = {},
   ): Promise<Uint8Array> {
     const response = await this.fetchFn(`${this.baseUrl}/v1/tts`, {
@@ -122,4 +170,42 @@ async function errorText(response: Response): Promise<string> {
   } catch {
     return '';
   }
+}
+
+function toEngine(value: unknown): SpeechTtsEngine | null {
+  if (!value || typeof value !== 'object') return null;
+  const entry = value as Record<string, unknown>;
+  if (typeof entry.id !== 'string') return null;
+  const models = Array.isArray(entry.models) ? entry.models : [];
+  return {
+    id: entry.id,
+    label: typeof entry.label === 'string' ? entry.label : entry.id,
+    available: entry.available === true,
+    error: typeof entry.error === 'string' ? entry.error : null,
+    models: models.flatMap((raw): SpeechTtsModel[] => {
+      if (!raw || typeof raw !== 'object') return [];
+      const model = raw as Record<string, unknown>;
+      if (typeof model.id !== 'string') return [];
+      const download = model.download && typeof model.download === 'object' ? (model.download as Record<string, unknown>) : null;
+      return [
+        {
+          id: model.id,
+          label: typeof model.label === 'string' ? model.label : model.id,
+          installed: model.installed === true,
+          ...(typeof model.size_mb === 'number' ? { sizeMb: model.size_mb } : {}),
+          voices: Array.isArray(model.voices) ? model.voices.filter((voice): voice is string => typeof voice === 'string') : [],
+          defaultVoice: typeof model.default_voice === 'string' ? model.default_voice : null,
+          download:
+            download && (download.status === 'downloading' || download.status === 'done' || download.status === 'error')
+              ? {
+                  status: download.status,
+                  received: typeof download.received === 'number' ? download.received : 0,
+                  total: typeof download.total === 'number' ? download.total : 0,
+                  error: typeof download.error === 'string' ? download.error : null,
+                }
+              : null,
+        },
+      ];
+    }),
+  };
 }

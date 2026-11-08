@@ -2,12 +2,12 @@
  * Build the conversation pipeline's engines from the model routing: each part (thinking, hearing,
  * speaking) uses the server picked for it, then its backups in order when that one fails.
  */
-import { BUILT_IN_SERVER_IDS, routeTargets, type ModelRouting, type ModelServer } from '../config/model-routing.js';
+import { BUILT_IN_SERVER_IDS, OPENAI_TTS_VOICES, parseSpeakingModel, routeTargets, type ModelRouting, type ModelServer } from '../config/model-routing.js';
 import { LocalLlmClient, type ChatMessage, type LlmStreamPart, type LlmToolDefinition } from './local-llm-client.js';
 import { OpenAiAudioClient } from './openai-audio-client.js';
 import { OpenAiRealtimeTts, type RealtimeSocketFactory } from './openai-realtime-tts.js';
-import { KokoroTts, OpenAiStt, SpeechServiceStt } from './speech-engines.js';
-import type { SpeechToTextEngine, TextToSpeechEngine } from './speech-engines.js';
+import { OpenAiStt, SpeechServiceStt, SpeechServiceTts } from './speech-engines.js';
+import type { SpeakOptions, SpeechToTextEngine, TextToSpeechEngine } from './speech-engines.js';
 import { SpeechServiceClient, type SpeechServiceHealth } from './speech-service-client.js';
 import type { LocalVoiceTranscribeResult } from './types.js';
 
@@ -71,11 +71,12 @@ export function buildVoiceEngines(
   const ttsRoute = routing.routes.tts;
   const ttses = routeTargets(routing, 'tts').map(({ server, model }): TextToSpeechEngine =>
     server.type === 'speech'
-      ? new KokoroTts(speechFor(server), model)
+      ? speechTts(speechFor(server), model, ttsRoute.voice)
       : new OpenAiRealtimeTts({
           apiKey: keyFor(server.id) ?? '',
           model: model || DEFAULT_OPENAI_MODELS.tts,
-          voice: ttsRoute.voice || 'alloy',
+          // The route's voice may be a speech-service one when OpenAI is only the backup.
+          voice: isOpenAiVoice(ttsRoute.voice) ? ttsRoute.voice : 'alloy',
           style: ttsRoute.style ?? '',
           createSocket: options.createSocket,
           logger,
@@ -94,6 +95,16 @@ export function buildVoiceEngines(
     stt: stts.length > 1 ? new FailoverStt(stts, logger) : stts[0] ?? missingStt(),
     tts: ttses.length > 1 ? new FailoverTts(ttses, logger) : ttses[0] ?? missingTts(),
   };
+}
+
+function isOpenAiVoice(voice: string | undefined): voice is string {
+  return Boolean(voice) && (OPENAI_TTS_VOICES as readonly string[]).includes(voice as string);
+}
+
+/** A speech-service Speaking target: the engine its model names, with the route's voice as default. */
+function speechTts(speech: SpeechServiceClient, model: string | undefined, voice: string | undefined): SpeechServiceTts {
+  const parsed = parseSpeakingModel(model);
+  return new SpeechServiceTts(speech, { engine: parsed.engine, model: parsed.model, voice: parsed.legacyVoice ?? voice });
 }
 
 function isAbort(error: unknown, signal?: AbortSignal): boolean {
@@ -199,7 +210,7 @@ export class FailoverTts implements TextToSpeechEngine {
     private readonly logger?: Logger,
   ) {}
 
-  async synthesize(text: string, options?: { signal?: AbortSignal }): Promise<Uint8Array> {
+  async synthesize(text: string, options?: SpeakOptions): Promise<Uint8Array> {
     let lastError: unknown;
     for (const engine of this.engines) {
       try {

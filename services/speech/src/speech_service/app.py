@@ -1,4 +1,5 @@
-"""HTTP API (see ../../API.md): /health, /v1/stt (WAV in, text out), /v1/tts (JSON in, WAV out)."""
+"""HTTP API (see ../../API.md): /health, /v1/stt (WAV in, text out), /v1/tts (JSON in, WAV out),
+/v1/tts/engines and /v1/tts/download (Kitten and Piper models)."""
 
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, ValidationError
 
 from .engines import STT_SAMPLE_RATE, Synthesizer, Transcriber
+from .tts_engines import TtsError, TtsModels
 
 log = logging.getLogger("speech_service")
 
@@ -26,6 +28,15 @@ class TtsRequest(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
     voice: Optional[str] = None
     speed: float = Field(default=1.0, ge=0.5, le=2.0)
+    # kokoro (the default, the engine the service started with), kitten or piper.
+    engine: Optional[str] = None
+    # Kitten: mini-0.8 or nano-0.8. Piper: unused (each voice is its own model).
+    model: Optional[str] = None
+
+
+class DownloadRequest(BaseModel):
+    engine: str
+    model: str
 
 
 class ApiError(Exception):
@@ -70,7 +81,8 @@ def _ms(seconds: float) -> int:
 
 
 def create_app(transcriber: Transcriber, synthesizer: Synthesizer, default_voice: str,
-               language: str | None = "en", load_in_background: bool = True) -> FastAPI:
+               language: str | None = "en", load_in_background: bool = True,
+               models: TtsModels | None = None) -> FastAPI:
     state: dict = {"ready": False, "error": None}
     # One STT and one TTS at a time each; they use different engines, so they may overlap.
     stt_lock, tts_lock = threading.Lock(), threading.Lock()
@@ -100,6 +112,26 @@ def create_app(transcriber: Transcriber, synthesizer: Synthesizer, default_voice
     @app.exception_handler(ApiError)
     async def _api_error(_request: Request, error: ApiError) -> JSONResponse:
         return JSONResponse({"error": error.message}, status_code=error.status)
+
+    @app.exception_handler(TtsError)
+    async def _tts_error(_request: Request, error: TtsError) -> JSONResponse:
+        return JSONResponse({"error": error.message}, status_code=error.status)
+
+    def kokoro_engine() -> dict:
+        return {
+            "id": "kokoro",
+            "label": "Kokoro",
+            "available": state["ready"] and not state["error"],
+            "error": state["error"],
+            "models": [{
+                "id": "kokoro",
+                "label": synthesizer.description.get("engine", "kokoro"),
+                "installed": True,
+                "voices": list(synthesizer.voices),
+                "default_voice": default_voice,
+                "download": None,
+            }],
+        }
 
     def _require_ready() -> None:
         if state["error"]:
@@ -138,17 +170,40 @@ def create_app(transcriber: Transcriber, synthesizer: Synthesizer, default_voice
             body = TtsRequest.model_validate_json(await request.body())
         except ValidationError as error:
             raise ApiError(400, error.errors()[0]["msg"]) from error
-        voice = body.voice or default_voice
-        if synthesizer.voices and voice not in synthesizer.voices:
-            raise ApiError(400, f"unknown voice {voice!r}")
+        engine = (body.engine or "kokoro").strip().lower()
         started = time.perf_counter()
-        with tts_lock:
-            samples, rate = synthesizer.synthesize(body.text.strip(), voice, body.speed)
+        if engine == "kokoro":
+            voice = body.voice or default_voice
+            if synthesizer.voices and voice not in synthesizer.voices:
+                raise ApiError(400, f"unknown voice {voice!r}")
+            with tts_lock:
+                samples, rate = synthesizer.synthesize(body.text.strip(), voice, body.speed)
+        else:
+            if models is None:
+                raise ApiError(400, f"unknown engine {engine!r}")
+            voice = body.voice or body.model or ""
+            with tts_lock:
+                samples, rate = models.synthesize(engine, body.model, body.voice, body.text.strip(), body.speed)
         elapsed = time.perf_counter() - started
-        log.info("tts %d chars -> %.2f s audio in %d ms", len(body.text), len(samples) / rate, _ms(elapsed))
+        log.info("tts %s/%s %d chars -> %.2f s audio in %d ms", engine, voice, len(body.text),
+                 len(samples) / rate if rate else 0, _ms(elapsed))
         return Response(
             content=encode_wav(samples, rate), media_type="audio/wav",
             headers={"X-Audio-Ms": str(_ms(len(samples) / rate)), "X-Synthesize-Ms": str(_ms(elapsed))},
         )
+
+    @app.get("/v1/tts/engines")
+    def tts_engines() -> dict:
+        return {"engines": [kokoro_engine(), *(models.engines() if models else [])]}
+
+    @app.post("/v1/tts/download", status_code=202)
+    async def tts_download(request: Request) -> dict:
+        if models is None:
+            raise ApiError(400, "this speech service has no downloadable models")
+        try:
+            body = DownloadRequest.model_validate_json(await request.body())
+        except ValidationError as error:
+            raise ApiError(400, error.errors()[0]["msg"]) from error
+        return models.start_download(body.engine.strip().lower(), body.model.strip())
 
     return app

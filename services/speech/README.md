@@ -24,6 +24,16 @@ the repo root), and sends the reply back here one sentence at a time to be spoke
   The model files are the same ones slopcore uses
   (`kokoro-v1.0.onnx`, `voices-v1.0.bin`, from the kokoro-onnx GitHub releases).
 
+- **More TTS engines**, picked in the app (Models and servers → Speaking) and downloaded from there:
+  - [Kitten TTS](https://github.com/KittenML/KittenTTS) 0.8 (mini 80 MB, nano 57 MB): the
+    steadiest pitch from sentence to sentence in our tests (about 1.2 semitones, against Kokoro's
+    3.2), RTF 0.06–0.12 on the CPU, American voices only. Run here straight on ONNX Runtime and
+    espeak (both come with kokoro-onnx), not through the kittenml package, which needs torch.
+  - [Piper](https://github.com/OHF-Voice/piper1-gpl) (`piper-tts`): very fast (RTF about 0.02)
+    with British voices such as `en_GB-alba-medium`; a little more robotic.
+  Both trim the trailing silence they leave. Models go in `TTS_MODELS_DIR` (default
+  `~/.cache/aiembodied/tts-models`, or `--tts-models-dir`).
+
 The HTTP contract is in [API.md](API.md).
 
 ## Setup
@@ -33,6 +43,9 @@ cd services\speech
 uv venv .venv --python 3.13
 uv pip install --python .venv\Scripts\python.exe -e ".[engines,test]"
 ```
+
+`scripts\start.ps1` reinstalls the engines whenever `pyproject.toml` has changed since the last
+install, so a pull that adds one (Piper) needs nothing by hand.
 
 With `-Stt whisper`, the first start downloads the Whisper model to the Hugging Face cache. The
 default Qwen3-ASR server needs `unslothai/Qwen3-ASR-0.6B-GGUF` in the cache (model and `mmproj`).

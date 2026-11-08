@@ -348,6 +348,7 @@ export interface AvatarBridge {
   redrawAvatarViews?(jobId: string): Promise<void>;
   listAvatarCharacterModels?(): Promise<AvatarCharacterModelSelection>;
   setAvatarCharacterModel?(stage: 'geometry' | 'rig', id: string): Promise<void>;
-  getVoicePreference(): Promise<string | null>;
-  setVoicePreference(voice: string): Promise<void>;
+  /** The character's voice for `engine` (kokoro, kitten, piper); without one, its OpenAI voice. */
+  getVoicePreference(engine?: string): Promise<string | null>;
+  setVoicePreference(voice: string, engine?: string): Promise<void>;
 }

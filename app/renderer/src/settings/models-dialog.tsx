@@ -8,6 +8,7 @@ import {
   USES_WITH_SPREAD,
   USES_THAT_CAN_BE_OFF,
   BUILT_IN_SERVER_IDS,
+  OPENAI_TTS_VOICES,
   type ModelRoute,
   type ServerType,
   type UseId,
@@ -19,9 +20,10 @@ import { ThinkingDownloads } from './thinking-downloads.js';
 import type { AvatarBridge } from '../avatar/types.js';
 import { useCharacterModels } from '../avatar/use-character-models.js';
 import { useImageModels } from '../avatar/use-image-models.js';
+import { SpeakingEngineFields } from './speaking-engines.js';
 
 /** The Realtime API's voices, for OpenAI speaking and the Realtime engine. */
-export const OPENAI_VOICES = ['alloy', 'ash', 'ballad', 'cedar', 'coral', 'echo', 'marin', 'sage', 'shimmer', 'verse'];
+export const OPENAI_VOICES: string[] = [...OPENAI_TTS_VOICES];
 
 interface UseInfo {
   id: UseId;
@@ -74,7 +76,7 @@ export const SERVER_TYPE_LABELS: Record<ServerType, string> = {
 const SERVER_TYPE_HINTS: Partial<Record<ServerType, { hint: string; example: string }>> = {
   chat: { hint: 'Any OpenAI-compatible server: llama-server, LM Studio, vLLM, Ollama. An address with no path gets /v1 added.', example: 'http://192.168.1.20:1234/v1' },
   transcribe: { hint: 'An OpenAI-compatible /v1/audio/transcriptions server, such as speaches or whisper.cpp.', example: 'http://192.168.1.20:8000/v1' },
-  speech: { hint: 'services/speech from this repo: Kokoro voices, and its speech recognition.', example: 'http://192.168.1.20:8192' },
+  speech: { hint: 'services/speech from this repo: Kokoro, Kitten TTS and Piper voices, and its speech recognition.', example: 'http://192.168.1.20:8192' },
   motion: { hint: 'services/motion from this repo, running ARDY or Kimodo.', example: 'http://192.168.1.20:8190' },
   comfy: { hint: 'Image, texture and 3D jobs. Needs the same models installed as this PC’s ComfyUI.', example: 'http://192.168.1.20:8188' },
   search: { hint: 'A SearXNG instance with JSON output turned on.', example: 'http://192.168.1.20:8888' },
@@ -98,7 +100,8 @@ function roleFor(use: UseId, type: ServerType): ModelRole | null {
 
 function modelLabel(use: UseId, type: ServerType): string {
   if (type === 'memory') return '';
-  if (use === 'tts' && type === 'speech') return 'Voice';
+  // A speech service's engine, model and voice have their own fields (speaking-engines.tsx).
+  if (use === 'tts' && type === 'speech') return '';
   if (use === 'stt' && type === 'speech') return '';
   return 'Model';
 }
@@ -303,6 +306,7 @@ export function ModelsDialog({ api, avatarApi, engine, onClose, onChanged, initi
         }}
         imageModels={imageModels}
         characterModels={characterModels}
+        api={api}
       />
       {page.use === 'llm' ? <ThinkingDownloads api={api} busy={busy} onView={setView} /> : null}
       </>
@@ -540,9 +544,10 @@ interface UsePageProps {
   onAddServer(type: ServerType): void;
   imageModels: ReturnType<typeof useImageModels>;
   characterModels: ReturnType<typeof useCharacterModels>;
+  api: Pick<ModelsBridge, 'speechEngines' | 'speechDownload'>;
 }
 
-function UsePage({ use, view, probes, busy, onProbe, onRoute, onOpenServer, onAddServer, imageModels, characterModels }: UsePageProps) {
+function UsePage({ use, view, probes, busy, onProbe, onRoute, onOpenServer, onAddServer, imageModels, characterModels, api }: UsePageProps) {
   const info = MODEL_USES.find((entry) => entry.id === use) ?? MODEL_USES[0];
   const route = view.routes[use];
   // The mirror can't be this PC's own memory database (only the engine knows its address).
@@ -684,6 +689,8 @@ function UsePage({ use, view, probes, busy, onProbe, onRoute, onOpenServer, onAd
               </span>
             </span>
           </>
+        ) : server && use === 'tts' && server.type === 'speech' ? (
+          <SpeakingEngineFields key={server.id} api={api} server={server} route={route} busy={busy} onRoute={onRoute} />
         ) : server && use === 'stt' && server.type === 'speech' ? (
           <>
             <span />

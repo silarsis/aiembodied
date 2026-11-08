@@ -4,6 +4,7 @@
  * each sentence is an out-of-band response (conversation "none"), so sentences don't build up a
  * conversation the model could start answering. The model is told to read the text verbatim.
  */
+import { OPENAI_TTS_VOICES } from '../config/model-routing.js';
 import { pcm16ToWav } from './openai-audio-client.js';
 import type { TextToSpeechEngine } from './speech-engines.js';
 import type { LocalVoiceTtsStatus } from './types.js';
@@ -96,11 +97,11 @@ export class OpenAiRealtimeTts implements TextToSpeechEngine {
   }
 
   /** Speak `text`; returns a 16-bit PCM WAV. Sentences are spoken one at a time, in order. */
-  synthesize(text: string, options: { signal?: AbortSignal } = {}): Promise<Uint8Array> {
+  synthesize(text: string, options: { signal?: AbortSignal; voice?: string } = {}): Promise<Uint8Array> {
     if (!this.apiKey) {
       return Promise.reject(new Error('OpenAI text-to-speech needs an OpenAI API key.'));
     }
-    const result = this.queue.then(() => this.speak(text, options.signal));
+    const result = this.queue.then(() => this.speak(text, options.signal, options.voice));
     // The queue moves on once the server is done with the response, not when the caller gives up.
     this.queue = result.then(
       () => undefined,
@@ -129,7 +130,7 @@ export class OpenAiRealtimeTts implements TextToSpeechEngine {
     this.socket = null;
   }
 
-  private async speak(text: string, signal?: AbortSignal): Promise<Uint8Array> {
+  private async speak(text: string, signal?: AbortSignal, voice?: string): Promise<Uint8Array> {
     if (signal?.aborted) {
       throw abortError();
     }
@@ -173,6 +174,8 @@ export class OpenAiRealtimeTts implements TextToSpeechEngine {
           output_modalities: ['audio'],
           instructions: this.instructions,
           input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text }] }],
+          // A character's own voice, when it differs from the session's.
+          ...(voice && voice !== this.voice && (OPENAI_TTS_VOICES as readonly string[]).includes(voice) ? { audio: { output: { voice } } } : {}),
         },
       }),
     );
