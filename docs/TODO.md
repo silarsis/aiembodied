@@ -1,7 +1,8 @@
 # TODO
 
-* Pair the voice with the avatar so I can select a voice for each avatar and it changes automatically
-* Pair the prompt with the model and avatar, so I get more coherent behaviour/can alter the character based on how they look and think
+* Pair the prompt with the model and avatar, so I get more coherent behaviour/can alter the character based on how they look and think.
+  Partly there: the avatar's description is added to the prompt, but the
+  personality text is still one global prompt, not saved per avatar.
 
 The goal is the best of Project Akari and Dipal D1, plus what only aiembodied
 does (fully local, text-to-motion, local avatar generation, provider choice per
@@ -23,27 +24,12 @@ more depth and are linked where they apply.
 
 ---
 
-## Voice input
-
-### Wake word selection in settings
-
-- **Today:** openWakeWord, chosen with the `WAKE_WORD_MODEL` env var
-  (`hey_jarvis` default, `alexa`, `hey_mycroft`, `hey_rhasspy`, or a path to an
-  `.onnx`). Threshold and cooldown are env vars too. Nothing in the Settings tab.
-- **Akari:** "Hey Akari", plain "Akari", or a custom-trained wake word, picked in
-  setup.
-- **Dipal:** not described.
-- **To do:** wake word dropdown (built-ins plus any `.onnx` dropped into a
-  user folder), threshold slider showing the live score from the status panel,
-  and a short guide for training a custom word with openWakeWord's notebook.
-  A model named after the avatar ("hey <name>") is the target.
-
 ## Voice output
 
 ### Voice cloning
 
-- **Today:** Kokoro preset voices (style fixed per voice) or OpenAI voices,
-  chosen in Settings.
+- **Today:** Kokoro, Kitten TTS or Piper locally, with downloads and a voice
+  per character (#363), or OpenAI voices. None of them clone a voice.
 - **Akari:** any ElevenLabs voice, including ones you clone yourself (paid
   ElevenLabs plan).
 - **Dipal:** licensed character voice packs (for example A-SOUL), not
@@ -57,8 +43,11 @@ more depth and are linked where they apply.
 
 ### Emotional expressions
 
-- **Today:** VRM expressions and VRMA animations exist, and motion can be
-  generated from text, but nothing ties the mood of a reply to the face or body.
+- **Today:** VRM expressions and VRMA animations exist, motion can be
+  generated from text (`{move:...}`), and generated avatars get six emotion
+  expressions and emotion stance poses. The LLM is told to pick an emotion
+  stance with `{pose:...}`, but nothing tags each sentence with an emotion or
+  drives the face from it.
 - **Akari:** not described beyond breathing and blinking.
 - **Dipal:** 18+ emotions with matching facial and body animation. It also
   reads your mood from your face and voice and changes tone (teasing,
@@ -93,29 +82,18 @@ more depth and are linked where they apply.
 
 ## Mind
 
-### Long-term memory
-
-- **Today:** transcripts are saved to SQLite, but the local conversation only
-  sees the last few turns, and history resets after 10 minutes idle. Nothing is
-  recalled across days.
-- **Akari:** a local database of memories with "receipts" (where each came
-  from), a memory viewer, and delete at any time.
-- **Dipal:** long-term memory and preference learning claimed, no detail.
-- **To do:** after each conversation, extract facts and preferences with the
-  LLM, store them with a link to the source turn, and inject the relevant ones
-  (embedding search) into each prompt. Add a memory viewer with edit and delete.
-  Memories belong to a persona (see below).
-
 ### Full persona
 
-- **Today:** a single instructions text.
+- **Today:** a single instructions text shared by every avatar. Each avatar
+  already has its own description (added to the prompt), voice per speaking
+  engine, emotion poses and expressions.
 - **Akari:** name, backstory and speaking style, "remembered everywhere".
 - **Dipal:** personality archetypes (nurturing, tsundere, childhood friend,
   hyper-energetic, yandere), backstory, and traits down to star sign. 70,000+
   ready-made characters, each with look, voice and motions.
 - **To do:** a persona is a bundle of name, archetype, backstory, speaking
   style, traits, likes and dislikes, VRM avatar, voice, wake word, idle and
-  reaction motions, and its own memories. Start from archetype templates, edit
+  reaction motions, and its own memories (one memory is shared by all characters for now). Start from archetype templates, edit
   freely, switch personas from Settings, and export or import a persona as one
   file. See [features/02-custom-voice-personas.md](./features/02-custom-voice-personas.md).
 
@@ -123,14 +101,15 @@ more depth and are linked where they apply.
 
 ### Full MCP support
 
-- **Today:** MCP over SSE works; the stdio client is a stub. Registered tools
-  are not passed to the local Qwen path, so tools only work with OpenAI.
+- **Today:** MCP over SSE works and the Tools / MCP pop-up adds, enables and
+  tests servers. Tools are passed to local Qwen through tool calling (#282,
+  #283), with web search on SearXNG. The stdio client is still a stub, there is
+  no Streamable HTTP transport, and voice simply leaves out tools that need
+  confirmation instead of asking out loud.
 - **Akari:** MCP connectors for files, smart home and a 3D printer, plus
   voice-taught custom actions and shareable "recipe" packs.
 - **Dipal:** built-in assistant features only.
-- **To do:** finish the stdio client, pass tools to Qwen through the
-  OpenAI-compatible tool-calling API, add Streamable HTTP transport, and a
-  Settings page to add, enable and test servers. Ask for spoken confirmation
+- **To do:** finish the stdio client and add Streamable HTTP transport. Ask for spoken confirmation
   before risky tools, and keep a log of every call and refusal (Akari does
   both). See [features/02-mcp-integration.md](./features/02-mcp-integration.md).
 
@@ -148,13 +127,18 @@ more depth and are linked where they apply.
 
 ### Home Assistant integration
 
-- **Today:** none.
+- **Today:** step 1 is in. The memory engine listens to one or more Home
+  Assistants over WebSocket, keeps their events apart from conversation, and
+  offers a `home_history` tool (#364). Homes are managed in Models and servers
+  (#365). The avatar cannot control anything or speak on HA speakers yet. The
+  design is in the Home Assistant Claude Doc.
 - **Akari:** Home Assistant is next on the roadmap, then HomeKit and Matter.
   Also drives GPIO, Arduino and ESP32 boards directly, with six safety checks,
   spoken confirmation for risky actions and a Stop All button.
 - **Dipal:** smart home control claimed, no detail.
-- **To do:** use Home Assistant's own MCP server through the MCP work above,
-  with a direct REST fallback. Feed selected entity states into the tick.
+- **To do:** control through each home's MCP server (needs Streamable HTTP,
+  above), then our own call_service tools with per-entity confirm levels. Play
+  our TTS on HA speakers. Feed selected entity states into the tick.
   Confirm before locks, alarms and anything else risky.
 
 ### Spontaneous reactions and speech
@@ -175,22 +159,25 @@ more depth and are linked where they apply.
 
 ### Display modes and interface clean-up
 
-- **Today:** kiosk window in production, fullscreen in dev, plus the status
-  panel and Settings, Character and avatar tabs. `App.tsx` is large and has
-  lint warnings.
+- **Today:** kiosk window in production, fullscreen in dev. Controls now sit in
+  one drawer of buttons that open pop-ups (#332): Character, avatar studio,
+  Models and servers, Tools / MCP, Memory, Status and diagnostics. `App.tsx` is
+  still about 2,900 lines with lint warnings, and there is only one window
+  mode.
 - **Akari:** kiosk (avatar standing by), "mind" (particle view of thinking,
   memories, timers and sensors), dashboard (arrangeable widgets, no 3D), and
   voice-only (tray icon, no window).
 - **Dipal:** the pod screen itself, with the character movable to the phone.
 - **To do:** three window modes, switchable at runtime: half-screen (docked to
   one side, avatar plus compact chat), full screen (avatar with widgets), and
-  kiosk (avatar only, no chrome). Possibly a voice-only tray mode. Move
-  settings and tools behind one panel, split `App.tsx` into components, and
-  clear the lint warnings.
+  kiosk (avatar only, no chrome). Possibly a voice-only tray mode. Split
+  `App.tsx` into components and clear the lint warnings.
 
 ### Phone app or interface
 
-- **Today:** none.
+- **Today:** draft PR #311 has an Android companion (a Kotlin WebView shell)
+  and a desktop hub on port 8790 with a pairing code and Tailscale for remote
+  use. It is waiting on a test on a real phone.
 - **Akari:** "one Akari, many surfaces" is on the later roadmap.
 - **Dipal:** a mobile app with the same ID, and the character can move to the
   phone.
@@ -210,5 +197,9 @@ Keep these as differentiators while building the list above:
 - Text-to-motion (ARDY/Kimodo), AI poses and IK, rather than fixed clips.
 - Local avatar generation with ComfyUI.
 - Local or OpenAI per part (LLM, STT, TTS, motion).
-- Web search (in progress).
+- Web search (SearXNG locally, Brave optional).
+- Home Assistant history from several homes, kept out of the conversation.
+- Train your own wake word in the app.
+- Long-term memory engine (PostgreSQL + pgvector) with a Memory panel to view, edit and delete.
+- A voice per character, across Kokoro, Kitten TTS, Piper and OpenAI.
 - Source we own and can change.
