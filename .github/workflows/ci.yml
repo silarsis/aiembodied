@@ -36,6 +36,28 @@ jobs:
         # Porcupine tests are excluded due to heap exhaustion from vi.resetModules()
 
 
+  coding-runner:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/coder
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install
+        run: pip install -e ".[test]"
+      - name: Test
+        run: python -m pytest -q
+        env:
+          GIT_AUTHOR_NAME: ci
+          GIT_AUTHOR_EMAIL: ci@example.com
+          GIT_COMMITTER_NAME: ci
+          GIT_COMMITTER_EMAIL: ci@example.com
+
   memory-engine:
     runs-on: ubuntu-latest
     services:
