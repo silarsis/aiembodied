@@ -425,6 +425,10 @@ def test_sse_messages_carry_local_model_needed(client, ws):
     seen = []
     client.app.state.manager.on_change = seen.append
     wait_status(client, new_task(client)["id"], "review")
+    # The store is written just before the change is published, so the last message can trail the status.
+    deadline = time.time() + 5
+    while not (seen and seen[-1].get("status") == "review") and time.time() < deadline:
+        time.sleep(0.05)
     assert seen and all("local_model_needed" in m for m in seen)
     assert any(m["local_model_needed"] for m in seen) and seen[-1]["local_model_needed"] is False
 
