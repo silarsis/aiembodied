@@ -176,26 +176,31 @@ export class LocalVoiceService {
     emit: (event: LocalVoiceEvent) => void,
   ): Promise<LocalVoiceRespondResult> {
     const { requestId } = request;
+    const preview = request.preview === true;
     this.cancel();
     const controller = new AbortController();
     this.active = { requestId, controller };
     const { signal } = controller;
 
-    if (this.now() - this.lastTurnAt > this.historyIdleResetMs) {
+    if (!preview && this.now() - this.lastTurnAt > this.historyIdleResetMs) {
       this.resetHistory();
     }
 
-    this.memory?.activity?.(true);
+    // A preview stays out of long-term memory entirely.
+    const memory = preview ? undefined : this.memory;
+    memory?.activity?.(true);
     // Both run at once and have their own time limits; neither throws.
     const [brief, recalled] = await Promise.all([
-      this.brief === null && this.memory ? this.memory.brief() : Promise.resolve(this.brief),
-      this.memory?.recall(request.text, this.recalledIds) ?? Promise.resolve(null),
+      this.brief === null && memory ? memory.brief() : Promise.resolve(preview ? null : this.brief),
+      memory?.recall(request.text, this.recalledIds) ?? Promise.resolve(null),
     ]);
     if (signal.aborted) {
-      this.memory?.activity?.(false);
+      memory?.activity?.(false);
       return { requestId, text: '', cancelled: true };
     }
-    this.brief = brief;
+    if (!preview) {
+      this.brief = brief;
+    }
     if (recalled) {
       this.recalledIds.push(...recalled.ids);
       this.logger?.info('Local voice: recalled memories', { requestId, count: recalled.ids.length });
@@ -206,7 +211,7 @@ export class LocalVoiceService {
 
     // Voice has no way to ask for approval yet, so tools that need it ("confirm") or are
     // forbidden ("block") are never offered, and a call to one is refused as an unknown tool.
-    const tools = (this.tools?.list() ?? []).filter(
+    const tools = (preview ? [] : (this.tools?.list() ?? [])).filter(
       (tool) => tool.confirmationLevel === 'none' || tool.confirmationLevel === 'notify',
     );
     const system = [request.instructions?.trim(), SPOKEN_REPLY_GUIDANCE, tools.length ? TOOL_GUIDANCE : null, brief]
@@ -214,7 +219,7 @@ export class LocalVoiceService {
       .join('\n\n');
     const messages: ChatMessage[] = [
       { role: 'system', content: system },
-      ...this.history,
+      ...(preview ? [] : this.history),
       { role: 'user', content: userContent },
     ];
 
@@ -309,9 +314,13 @@ export class LocalVoiceService {
       if (this.active?.requestId === requestId) {
         this.active = null;
       }
-      this.memory?.activity?.(false);
+      memory?.activity?.(false);
     }
     cancelled ||= signal.aborted;
+    if (preview) {
+      this.logger?.info('Local voice: preview finished', { requestId, cancelled, sentences: index });
+      return { requestId, text: reply, cancelled };
+    }
 
     // Tool exchanges stay out of the history: trimming it could split a call from its result.
     this.history.push({ role: 'user', content: userContent });

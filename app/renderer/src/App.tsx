@@ -42,7 +42,7 @@ import type { ConversationSessionWithMessages } from '../../main/src/conversatio
 import { useAudioDevices } from './hooks/use-audio-devices.js';
 import { getPreloadApi, type PreloadApi } from './preload-api.js';
 import { RealtimeClient, type RealtimeClientCallbacks, type RealtimeClientState } from './realtime/realtime-client.js';
-import { LocalVoiceClient } from './realtime/local-voice-client.js';
+import { LocalVoiceClient, playPreviewReply } from './realtime/local-voice-client.js';
 import { LatencyTracker, type LatencySnapshot } from './metrics/latency-tracker.js';
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
 import type { AvatarModelSummary, AvatarMotionStatus, AvatarPoseSummary } from './avatar/types.js';
@@ -1110,45 +1110,6 @@ export default function App() {
     [speakingVoices?.engine, resolveApi],
   );
 
-  // Generate a test response based on the base prompt
-  const handleTestResponse = useCallback(async () => {
-    if (!isLocalBackend) {
-      setTestResponse('Test response only available for local backend.');
-      return;
-    }
-
-    setIsTesting(true);
-    setTestResponse(null);
-
-    try {
-      // Generate a simple test prompt based on the base prompt
-      const promptPreview = basePrompt.substring(0, 40) + (basePrompt.length > 40 ? '...' : '');
-      const testPrompt = `Based on your instructions "${promptPreview}", say something helpful.`;
-
-      // Use the local voice bridge to respond
-      const bridge = getPreloadApi()?.localVoice;
-      if (!bridge) {
-        setTestResponse('Local voice bridge unavailable.');
-        setIsTesting(false);
-        return;
-      }
-
-      const poseSlugs = availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0);
-      const requestId = `test-${Date.now()}`;
-      const result = await bridge.respond({
-        requestId,
-        text: testPrompt,
-        instructions: buildSessionInstructions(basePrompt, availableAnimationSlugs, poseSlugs, activeVrmModel, liveMotionReady),
-      });
-
-      setTestResponse(result.text);
-    } catch (err) {
-      console.error('Test response failed:', err);
-      setTestResponse('Error generating response. Check logs.');
-    } finally {
-      setIsTesting(false);
-    }
-  }, [isLocalBackend, basePrompt, availableAnimationSlugs, availablePoses, activeVrmModel, liveMotionReady]);
   const wakePhrase = config?.wakeWord?.keywordLabel;
   // A saved gpt-4o-realtime-preview model is retired (model_not_found); fall back to the default.
   const realtimeModel =
@@ -1388,6 +1349,48 @@ export default function App() {
       },
     });
   }, [hasRealtimeSupport, pushLatency, loadingConfig, isLocalBackend, wakePhrase, realtimeModel]);
+
+  // Generate a test response based on the base prompt
+  const handleTestResponse = useCallback(async () => {
+    if (!isLocalBackend) {
+      setTestResponse('Test response only available for local backend.');
+      return;
+    }
+
+    setIsTesting(true);
+    setTestResponse(null);
+
+    try {
+      // Generate a simple test prompt based on the base prompt
+      const promptPreview = basePrompt.substring(0, 40) + (basePrompt.length > 40 ? '...' : '');
+      const testPrompt = `Based on your instructions "${promptPreview}", say something helpful.`;
+
+      // Use the local voice bridge to respond
+      const bridge = getPreloadApi()?.localVoice;
+      if (!bridge) {
+        setTestResponse('Local voice bridge unavailable.');
+        setIsTesting(false);
+        return;
+      }
+
+      const poseSlugs = availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0);
+      const instructions = buildSessionInstructions(basePrompt, availableAnimationSlugs, poseSlugs, activeVrmModel, liveMotionReady);
+
+      // Spoken aloud in the configured voice: through the avatar (with lip-sync) while the
+      // conversation is running, otherwise straight to the chosen speakers.
+      const client = realtimeClient instanceof LocalVoiceClient ? realtimeClient : null;
+      const result =
+        (await client?.preview(testPrompt, instructions)) ??
+        (await playPreviewReply(bridge, { text: testPrompt, instructions }, { outputDeviceId: selectedOutput || null }));
+
+      setTestResponse(result.text || (result.cancelled ? 'Test response was interrupted.' : 'No reply was generated.'));
+    } catch (err) {
+      console.error('Test response failed:', err);
+      setTestResponse('Error generating response. Check logs.');
+    } finally {
+      setIsTesting(false);
+    }
+  }, [isLocalBackend, basePrompt, availableAnimationSlugs, availablePoses, activeVrmModel, liveMotionReady, realtimeClient, selectedOutput]);
 
   const mintEphemeralToken = useCallback(
     async (reason: string) => {

@@ -85,3 +85,35 @@ describe('LocalVoiceService long-term memory', () => {
     expect(chats[0].messages[1]).toEqual({ role: 'user', content: 'hello' });
   });
 });
+
+describe('LocalVoiceService voice preview', () => {
+  it('speaks a preview without memory, history or tools, and leaves the conversation alone', async () => {
+    const activity = vi.fn();
+    const memory: VoiceMemory = {
+      brief: vi.fn(async () => 'Now: brief.'),
+      recall: vi.fn(async () => null),
+      activity,
+    };
+    const { service, chats } = makeService(memory);
+    const events: Array<{ type: string }> = [];
+
+    await service.respond({ requestId: 'r1', text: 'hello', instructions: 'Be Echo.' }, () => {});
+    const result = await service.respond(
+      { requestId: 'p1', text: 'say something', instructions: 'Be Echo.', preview: true },
+      (event) => events.push(event),
+    );
+    await service.respond({ requestId: 'r2', text: 'and again', instructions: 'Be Echo.' }, () => {});
+
+    expect(result).toEqual({ requestId: 'p1', text: 'Sure.', cancelled: false });
+    // The preview's audio is still sent, sentence by sentence.
+    expect(events.map((event) => event.type)).toEqual(['sentence']);
+    expect(chats[1].messages).toEqual([
+      { role: 'system', content: expect.not.stringContaining('Now: brief.') as unknown as string },
+      { role: 'user', content: 'say something' },
+    ]);
+    expect(memory.recall).toHaveBeenCalledTimes(2);
+    expect(activity).toHaveBeenCalledTimes(4);
+    // The next real turn sees only the real conversation.
+    expect(chats[2].messages.map((message) => message.content).slice(1)).toEqual(['hello', 'Sure.', 'and again']);
+  });
+});

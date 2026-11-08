@@ -190,25 +190,20 @@ export function ModelsDialog({ api, avatarApi, engine, onClose, onChanged, initi
     [api],
   );
 
-  // Check the servers the open page shows, once each.
+  // Check every server once as soon as the list loads (and any added later), so every status
+  // dot in the rail and the server list is right without opening each page first.
   const probesRef = useRef(probes);
   useEffect(() => {
     probesRef.current = probes;
   }, [probes]);
   useEffect(() => {
     if (!view) return;
-    const ids =
-      page.kind === 'use'
-        ? [view.routes[page.use].server, ...(view.routes[page.use].backups ?? []).map((backup) => backup.server)]
-        : page.kind === 'server'
-          ? [page.id]
-          : page.kind === 'servers'
-            ? view.servers.map((server) => server.id)
-            : [];
-    const pending = ids.filter((id) => id && !probesRef.current[id]);
+    const pending = view.servers.map((server) => server.id).filter((id) => id && !probesRef.current[id]);
     if (!pending.length) return;
+    // Marked at once, so a re-render before the effect's probes start doesn't check twice.
+    probesRef.current = { ...probesRef.current, ...Object.fromEntries(pending.map((id) => [id, 'checking' as const])) };
     void Promise.resolve().then(() => Promise.all(pending.map((id) => probe(id))));
-  }, [page, view, probe]);
+  }, [view, probe]);
 
   const run = async (action: () => Promise<ModelRoutingView | void>, done?: string, openAiKey = false) => {
     setBusy(true);
@@ -235,7 +230,7 @@ export function ModelsDialog({ api, avatarApi, engine, onClose, onChanged, initi
       {engine ? (
         <>
           <span className="modelsDialog__group">Talking</span>
-          <RailItem current={page.kind === 'engine'} onClick={() => setPage({ kind: 'engine' })} label="Conversation engine" chip={engine.backend === 'openai' ? 'Online' : 'Step by step'} />
+          <RailItem current={page.kind === 'engine'} onClick={() => setPage({ kind: 'engine' })} label="Conversation engine" chip={engine.backend === 'openai' ? 'Online' : 'Step by step'} status="none" />
         </>
       ) : null}
       {USE_GROUPS.map((group) => (
@@ -243,7 +238,7 @@ export function ModelsDialog({ api, avatarApi, engine, onClose, onChanged, initi
           {group !== 'Talking' || !engine ? <span className="modelsDialog__group">{group}</span> : null}
           {MODEL_USES.filter((use) => use.group === group).map((use) => {
             const server = view ? serverById(view.routes[use.id].server) : undefined;
-            const status = server ? probes[server.id] : undefined;
+            const status: RailStatus = server ? probes[server.id] : 'off';
             return (
               <RailItem
                 key={use.id}
@@ -261,7 +256,7 @@ export function ModelsDialog({ api, avatarApi, engine, onClose, onChanged, initi
         </div>
       ))}
       <span className="modelsDialog__group">Setup</span>
-      <RailItem current={page.kind === 'servers' || page.kind === 'server'} onClick={() => setPage({ kind: 'servers' })} label="Servers" chip={view ? String(view.servers.length) : ''} />
+      <RailItem current={page.kind === 'servers' || page.kind === 'server'} onClick={() => setPage({ kind: 'servers' })} label="Servers" chip={view ? String(view.servers.length) : ''} status="none" />
     </nav>
   );
 
@@ -499,10 +494,19 @@ function statusText(probe?: ServerProbe | 'checking'): string {
   return probe.message ?? (probe.status === 'down' ? 'Not reachable' : 'Not ready');
 }
 
-function RailItem({ current, onClick, label, chip, status }: { current: boolean; onClick(): void; label: string; chip?: string; status?: ServerProbe | 'checking' }) {
+/** A rail entry's dot: its server's status, 'off' for a use with no server, 'none' for no dot. */
+type RailStatus = ServerProbe | 'checking' | 'off' | 'none' | undefined;
+
+function RailItem({ current, onClick, label, chip, status }: { current: boolean; onClick(): void; label: string; chip?: string; status?: RailStatus }) {
   return (
     <button type="button" className="modelsDialog__item" aria-current={current} onClick={onClick}>
-      <StatusDot probe={status} />
+      {status === 'none' ? (
+        <span className="modelsDialog__dot is-none" aria-hidden="true" />
+      ) : status === 'off' ? (
+        <span className="modelsDialog__dot is-off" title="Off" aria-label="Off" role="img" />
+      ) : (
+        <StatusDot probe={status} />
+      )}
       <span>{label}</span>
       {chip ? <small>{chip}</small> : null}
     </button>

@@ -1707,6 +1707,8 @@ body {
 .modelsDialog__dot.is-down { background: #f87171; }
 .modelsDialog__dot.is-needs-key, .modelsDialog__dot.is-error { background: #fbbf24; }
 .modelsDialog__dot.is-checking { background: #38bdf8; }
+.modelsDialog__dot.is-off { background: transparent; box-shadow: inset 0 0 0 1px #64748b; }
+.modelsDialog__dot.is-none { visibility: hidden; }
 .modelsDialog__backups, .modelsDialog__list { display: flex; flex-direction: column; gap: 8px; }
 .modelsDialog__chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .modelsDialog .modelsDialog__chips button { border-radius: 999px; padding: 3px 11px; display: inline-flex; gap: 6px; align-items: center; }

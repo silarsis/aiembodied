@@ -1867,7 +1867,12 @@ if (!gotLock) {
 
 app.whenReady().then(async () => {
   // Initialize server manager for hibernation support
-  serverManager = new ServerManager(logger);
+  // pnpm dev:run writes a pid file for each server it starts (.dev-home/logs); the app writes its
+  // own for llama-server restarts and ComfyUI (<userData>/logs).
+  serverManager = new ServerManager({
+    logger,
+    pidDirectories: [path.resolve(__dirname, '../../..', '.dev-home', 'logs'), path.join(app.getPath('userData'), 'logs')],
+  });
   logger.info('ServerManager initialized');
 
   // Register for system suspend/resume notifications
@@ -2221,10 +2226,10 @@ app.on('before-quit', async (event) => {
   // Training carries on in WSL without the app; this only stops watching it.
   wakeWordTrainer?.dispose();
 
-  // Suspend servers before app exits
+  // Stop the local servers this app started, as hibernation does.
   if (serverManager) {
-    await serverManager.suspend().catch((error) => {
-      logger.warn('Failed to suspend servers during shutdown', { message: error instanceof Error ? error.message : String(error) });
+    await serverManager.shutdown().catch((error) => {
+      logger.warn('Failed to stop servers during shutdown', { message: error instanceof Error ? error.message : String(error) });
     });
   }
 
