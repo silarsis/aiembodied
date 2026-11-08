@@ -1,4 +1,0 @@
-
-> @aiembodied/renderer@0.0.1 typecheck C:\Users\kevin\repos\aiembodied\app\renderer
-> tsc -p tsconfig.json --noEmit
-
