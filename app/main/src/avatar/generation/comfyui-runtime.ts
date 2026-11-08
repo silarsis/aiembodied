@@ -125,7 +125,9 @@ export class ComfyUIRuntime {
       `-ArgumentList @(${args.map((arg) => quote(`"${arg}"`)).join(',')})`,
       `-WorkingDirectory ${quote(directory)} -WindowStyle Hidden`,
       `-RedirectStandardOutput ${quote(path.join(this.options.logDirectory, 'comfyui.log'))}`,
-      `-RedirectStandardError ${quote(path.join(this.options.logDirectory, 'comfyui.err.log'))} | Out-Null;`,
+      `-RedirectStandardError ${quote(path.join(this.options.logDirectory, 'comfyui.err.log'))} -PassThru |`,
+      // The app stops it again when it quits or hibernates (server/server-manager.ts).
+      `ForEach-Object { Set-Content -LiteralPath ${quote(path.join(this.options.logDirectory, 'comfyui.pid'))} -Value $_.Id };`,
       `} catch { $_.Exception.Message | Out-File -LiteralPath ${quote(startupErrorPath)} -Encoding utf8; exit 1 }`,
     ].join(' ');
     // Match scripts/local-services.mjs: a background service can retain inherited
