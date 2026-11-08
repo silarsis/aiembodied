@@ -396,6 +396,10 @@ class Engine:
             while recall.embed_pending(conn, self.embedder):
                 pass
         else:
+            # Callers are still inside their connection block, so the write is not committed yet.
+            # Wake the embedder only after it is, or its pass can run first, see nothing, and sleep
+            # ten seconds before looking again.
+            conn.commit()
             self._wake_embedder.set()
 
     def wake_embedder(self, conn=None) -> None:
