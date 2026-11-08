@@ -841,6 +841,13 @@ class HomeListener:
             if classify(entity_id.split(".", 1)[0], attributes.get("device_class"),
                         meta.get(entity_id, {}).get("category"), state.get("state"), attributes) == "ignore":
                 watched.discard(entity_id)
+        if registry and not watched:
+            # Connected but watching nothing: say why, so the status explains an empty memory.
+            self.note = (
+                f'No entity carries the label "{config.label}" in Home Assistant'
+                + (" and nothing matches HA_ENTITIES" if config.entities else "")
+                + "; add the label to the entities to remember"
+            )
         if not self.engine.ready:
             self.watched = watched
             return
