@@ -57,6 +57,7 @@ runTests('tests/push-to-talk.test.ts', 'Push To Talk');
 runTests('tests/tool-registry.test.ts', 'Tool Registry');
 runTests('tests/mcp/*.test.ts', 'MCP');
 runTests('tests/pose-*.test.ts', 'Pose Generation');
+runTests('tests/server-manager.test.ts', 'Server Manager');
 
 console.log('\n' + '='.repeat(70));
 console.log('✅ All test groups passed!');

@@ -134,7 +134,9 @@ export class LocalLlmControl {
       `Start-Process -FilePath 'powershell.exe' -ArgumentList @(${args})`,
       `-WorkingDirectory ${psQuote(this.options.repoRoot)} -WindowStyle Hidden`,
       `-RedirectStandardOutput ${psQuote(path.join(this.options.logDirectory, 'llm.log'))}`,
-      `-RedirectStandardError ${psQuote(path.join(this.options.logDirectory, 'llm.err.log'))}`,
+      `-RedirectStandardError ${psQuote(path.join(this.options.logDirectory, 'llm.err.log'))} -PassThru |`,
+      // The app stops it again when it quits or hibernates (server/server-manager.ts).
+      `ForEach-Object { Set-Content -LiteralPath ${psQuote(path.join(this.options.logDirectory, 'llm.pid'))} -Value $_.Id }`,
     ].join(' ');
     if (this.options.launch) {
       this.options.launch(command);
