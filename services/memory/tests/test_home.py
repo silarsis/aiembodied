@@ -373,7 +373,8 @@ def test_listener_against_a_scripted_home_assistant(database_url, schema):
     engine = Engine(database_url, schema, embedder=FakeEmbedder(), home_config=config)
     engine.start(in_background=True)
     try:
-        wait_for(lambda: engine.home_status()["homes"][0]["connected"])
+        # "connected" turns on before the first full refresh fills the watched set, so wait for both.
+        wait_for(lambda: engine.home_status()["homes"][0]["connected"] and engine.home_status()["homes"][0]["watched"] == 3)
         status = engine.home_status()["homes"][0]
         assert status["id"] == "home" and status["source"] == "env" and status["configured"] and status["watched"] == 3 and status["url"] == config.url
         assert "secret" not in json.dumps(status)
