@@ -44,6 +44,11 @@ export interface LocalVoiceRespondRequest {
   text: string;
   /** System prompt for the turn (the same session instructions the Realtime backend gets). */
   instructions?: string;
+  /**
+   * A one-off sample of the voice (Character → Test Response): no tools, no long-term memory, and
+   * it neither sees nor joins the conversation history.
+   */
+  preview?: boolean;
 }
 
 export interface LocalVoiceRespondResult {
