@@ -29,7 +29,9 @@ import type {
   LocalVoiceRespondResult,
   LocalVoiceStatus,
   LocalVoiceTranscribeResult,
+  SpeakingVoiceOptions,
 } from '../../main/src/local-voice/types.js';
+import type { SpeechTtsEngine } from '../../main/src/local-voice/speech-service-client.js';
 import type {
   MCPConnectionResult,
   MCPServerConfig,
@@ -61,6 +63,10 @@ export interface ModelsBridge {
   civitaiLookup?(ref: string, versionId?: number): Promise<CivitaiLookup>;
   download?(serverId: string, ref: string, versionId?: number): Promise<ModelDownload>;
   downloads?(): Promise<ModelDownload[]>;
+  /** A speech service's text-to-speech engines and models (null: it is down or too old). */
+  speechEngines?(serverId: string): Promise<SpeechTtsEngine[] | null>;
+  /** Download a Kitten model or Piper voice on a speech service; returns the updated list. */
+  speechDownload?(serverId: string, engine: string, model: string): Promise<SpeechTtsEngine[] | null>;
   cancelDownload?(id: string): Promise<ModelDownload[]>;
   comfyAddon?(serverId: string): Promise<{ installed: boolean; folder: string }>;
   /** Thinking models from Hugging Face for this PC's llama-server. */
@@ -118,6 +124,8 @@ export interface LocalVoiceBridge {
   respond(request: LocalVoiceRespondRequest): Promise<LocalVoiceRespondResult>;
   cancel(requestId?: string): Promise<void>;
   resetHistory(): Promise<void>;
+  /** The voices the active character can pick for the engine that speaks now. */
+  getVoiceOptions?(): Promise<SpeakingVoiceOptions>;
   onEvent(listener: (event: LocalVoiceEvent) => void): () => void;
 }
 

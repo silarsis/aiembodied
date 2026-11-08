@@ -55,6 +55,8 @@ export interface LocalVoiceServiceOptions {
   memory?: VoiceMemory;
   /** Told about every tool call once it has finished, for long-term memory. */
   onToolResult?: (record: LocalVoiceToolRecord) => void;
+  /** The active character's own voice for the engine that speaks, if it has picked one. */
+  voiceFor?: () => string | undefined | Promise<string | undefined>;
   /** Older turns are dropped past this many messages. */
   maxHistoryMessages?: number;
   /** After this long without a turn, the next one starts a fresh conversation. */
@@ -81,6 +83,7 @@ export class LocalVoiceService {
   private readonly maxHistoryMessages: number;
 
   private readonly onToolResult?: (record: LocalVoiceToolRecord) => void;
+  private readonly voiceFor?: () => string | undefined | Promise<string | undefined>;
   private readonly historyIdleResetMs: number;
   private readonly now: () => number;
   private history: ChatMessage[] = [];
@@ -101,6 +104,7 @@ export class LocalVoiceService {
     this.logger = options.logger;
     this.maxHistoryMessages = options.maxHistoryMessages ?? 24;
     this.onToolResult = options.onToolResult;
+    this.voiceFor = options.voiceFor;
     this.memory = options.memory;
     this.historyIdleResetMs = options.historyIdleResetMs ?? 10 * 60_000;
     this.now = options.now ?? Date.now;
@@ -215,6 +219,7 @@ export class LocalVoiceService {
     ];
 
     const { llm, tts } = this;
+    const voice = await Promise.resolve(this.voiceFor?.()).catch(() => undefined);
     const splitter = new SentenceSplitter();
     let index = 0;
     let speaking = Promise.resolve();
@@ -231,7 +236,7 @@ export class LocalVoiceService {
           return;
         }
         try {
-          const wav = spoken ? await tts.synthesize(spoken, { signal }) : new Uint8Array(0);
+          const wav = spoken ? await tts.synthesize(spoken, { signal, ...(voice ? { voice } : {}) }) : new Uint8Array(0);
           if (!signal.aborted) {
             emit({ requestId, type: 'sentence', index: sentenceIndex, text: sentence, wav });
           }

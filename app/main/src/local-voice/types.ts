@@ -9,7 +9,7 @@ export interface LocalVoiceSttStatus {
 }
 
 export interface LocalVoiceTtsStatus {
-  provider: 'kokoro' | 'openai';
+  provider: 'kokoro' | 'kitten' | 'piper' | 'openai';
   available: boolean;
   ready: boolean;
   model: string | null;
@@ -67,3 +67,15 @@ export type LocalVoiceEvent =
       status: 'started' | 'done' | 'failed';
       detail?: string;
     };
+
+/** The voices a character can pick for the engine that speaks now (Character → Voice). */
+export interface SpeakingVoiceOptions {
+  /** What the choice is saved for; null when nothing speaks. */
+  engine: 'kokoro' | 'kitten' | 'piper' | 'openai' | null;
+  label: string;
+  voices: string[];
+  /** What speaks when the character hasn't picked one (Models and servers → Speaking). */
+  defaultVoice: string | null;
+  /** The character's own pick for this engine, if any. */
+  selected: string | null;
+}

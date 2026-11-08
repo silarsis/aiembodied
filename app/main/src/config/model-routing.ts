@@ -416,3 +416,41 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function compact<T extends object>(value: T): Partial<T> {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as Partial<T>;
 }
+
+/** The text-to-speech engines in services/speech. */
+export type SpeakingEngineId = 'kokoro' | 'kitten' | 'piper';
+export const SPEAKING_ENGINES: readonly SpeakingEngineId[] = ['kokoro', 'kitten', 'piper'];
+export const DEFAULT_KITTEN_MODEL = 'mini-0.8';
+
+/**
+ * Which engine (and, for Kitten, which model) a speech-service Speaking route uses. Its `model`
+ * holds "kokoro", "kitten:<model>" or "piper". Before there was a choice it held a Kokoro voice
+ * name, which still means Kokoro with that voice.
+ */
+export function parseSpeakingModel(model?: string): { engine: SpeakingEngineId; model?: string; legacyVoice?: string } {
+  const value = model?.trim() ?? '';
+  if (!value || value === 'kokoro') return { engine: 'kokoro' };
+  if (value === 'piper') return { engine: 'piper' };
+  if (value === 'kitten' || value.startsWith('kitten:')) {
+    return { engine: 'kitten', model: value.slice('kitten:'.length) || DEFAULT_KITTEN_MODEL };
+  }
+  return { engine: 'kokoro', legacyVoice: value };
+}
+
+export function formatSpeakingModel(engine: SpeakingEngineId, model?: string): string {
+  return engine === 'kitten' ? `kitten:${model || DEFAULT_KITTEN_MODEL}` : engine;
+}
+
+/** The Realtime API's voices, for OpenAI speaking and the Realtime conversation engine. */
+export const OPENAI_TTS_VOICES = ['alloy', 'ash', 'ballad', 'cedar', 'coral', 'echo', 'marin', 'sage', 'shimmer', 'verse'] as const;
+
+/**
+ * What a character's voice choice is saved for: each engine has its own voices, so a character
+ * keeps one per engine. Null when nothing speaks.
+ */
+export function speakingVoiceKey(routing: ModelRouting): SpeakingEngineId | 'openai' | null {
+  const target = routeTargets(routing, 'tts')[0];
+  if (!target) return null;
+  if (target.server.type === 'openai') return 'openai';
+  return parseSpeakingModel(target.model).engine;
+}

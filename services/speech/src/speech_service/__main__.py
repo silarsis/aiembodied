@@ -31,6 +31,9 @@ def main(argv=None) -> None:
     ap.add_argument("--style-row", type=int, default=int(os.environ.get("KOKORO_STYLE_ROW", "120")),
                     help="Kokoro style row used for every sentence, so the voice stays consistent "
                          "(-1: let kokoro-onnx pick by text length)")
+    ap.add_argument("--tts-models-dir", default=None,
+                    help="where Kitten and Piper models are downloaded (TTS_MODELS_DIR, default "
+                         "~/.cache/aiembodied/tts-models)")
     ap.add_argument("--log-level", default="info")
     a = ap.parse_args(argv)
 
@@ -57,7 +60,13 @@ def main(argv=None) -> None:
     from .app import create_app
 
     language = None if a.language == "auto" else a.language
-    uvicorn.run(create_app(transcriber, synthesizer, voice, language), host=a.host, port=a.port,
+    from pathlib import Path
+
+    from .tts_engines import TtsModels, default_models_dir
+
+    models = TtsModels(Path(a.tts_models_dir) if a.tts_models_dir else default_models_dir(),
+                       token=os.environ.get("HF_TOKEN") or None)
+    uvicorn.run(create_app(transcriber, synthesizer, voice, language, models=models), host=a.host, port=a.port,
                 log_level=a.log_level.lower())
 
 

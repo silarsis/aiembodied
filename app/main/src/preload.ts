@@ -56,7 +56,9 @@ import type {
   LocalVoiceRespondResult,
   LocalVoiceStatus,
   LocalVoiceTranscribeResult,
+  SpeakingVoiceOptions,
 } from './local-voice/types.js';
+import type { SpeechTtsEngine } from './local-voice/speech-service-client.js';
 import type {
   MCPServerConfig,
   MCPServerConfigInput,
@@ -176,6 +178,10 @@ export interface ModelsBridge {
   civitaiLookup?(ref: string, versionId?: number): Promise<CivitaiLookup>;
   download?(serverId: string, ref: string, versionId?: number): Promise<ModelDownload>;
   downloads?(): Promise<ModelDownload[]>;
+  /** A speech service's text-to-speech engines and models (null: it is down or too old). */
+  speechEngines?(serverId: string): Promise<SpeechTtsEngine[] | null>;
+  /** Download a Kitten model or Piper voice on a speech service; returns the updated list. */
+  speechDownload?(serverId: string, engine: string, model: string): Promise<SpeechTtsEngine[] | null>;
   cancelDownload?(id: string): Promise<ModelDownload[]>;
   comfyAddon?(serverId: string): Promise<{ installed: boolean; folder: string }>;
   /** Thinking models from Hugging Face for this PC's llama-server. */
@@ -254,6 +260,8 @@ export interface LocalVoiceBridge {
   respond(request: LocalVoiceRespondRequest): Promise<LocalVoiceRespondResult>;
   cancel(requestId?: string): Promise<void>;
   resetHistory(): Promise<void>;
+  /** The voices the active character can pick for the engine that speaks now. */
+  getVoiceOptions?(): Promise<SpeakingVoiceOptions>;
   onEvent(listener: (event: LocalVoiceEvent) => void): () => void;
 }
 
@@ -267,8 +275,9 @@ export interface AvatarBridge {
   updateModelThumbnail(modelId: string, thumbnailDataUrl: string): Promise<AvatarModelSummary | null>;
   updateModelDescription(modelId: string, description: string): Promise<AvatarModelSummary | null>;
   generateModelDescription(thumbnailDataUrl: string): Promise<string>;
-  getVoicePreference(): Promise<string | null>;
-  setVoicePreference(voice: string): Promise<void>;
+  /** The character's voice for `engine` (kokoro, kitten, piper); without one, its OpenAI voice. */
+  getVoicePreference(engine?: string): Promise<string | null>;
+  setVoicePreference(voice: string, engine?: string): Promise<void>;
   listAnimations(): Promise<AvatarAnimationSummary[]>;
   uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult>;
   generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;
@@ -384,6 +393,9 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     civitaiLookup: (ref, versionId) => ipcRenderer.invoke('models:civitai-lookup', { ref, versionId }) as Promise<CivitaiLookup>,
     download: (serverId, ref, versionId) => ipcRenderer.invoke('models:download', { serverId, ref, versionId }) as Promise<ModelDownload>,
     downloads: () => ipcRenderer.invoke('models:downloads') as Promise<ModelDownload[]>,
+    speechEngines: (serverId) => ipcRenderer.invoke('models:speech-engines', serverId) as Promise<SpeechTtsEngine[] | null>,
+    speechDownload: (serverId, engine, model) =>
+      ipcRenderer.invoke('models:speech-download', { serverId, engine, model }) as Promise<SpeechTtsEngine[] | null>,
     cancelDownload: (id) => ipcRenderer.invoke('models:cancel-download', id) as Promise<ModelDownload[]>,
     comfyAddon: (serverId) => ipcRenderer.invoke('models:comfy-addon', serverId) as Promise<{ installed: boolean; folder: string }>,
     hfLookup: (ref) => ipcRenderer.invoke('models:hf-lookup', ref) as Promise<HfLookup>,
@@ -408,6 +420,7 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     resetHistory: async () => {
       await ipcRenderer.invoke('local-voice:reset');
     },
+    getVoiceOptions: () => ipcRenderer.invoke('local-voice:voice-options') as Promise<SpeakingVoiceOptions>,
     onEvent: (listener) => {
       const channel = 'local-voice:event';
       const handler = (_event: unknown, payload: LocalVoiceEvent) => listener(payload);
@@ -507,8 +520,8 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     getActiveModel: () => ipcRenderer.invoke('avatar-model:get-active') as Promise<AvatarModelSummary | null>,
     setActiveModel: (modelId) =>
       ipcRenderer.invoke('avatar-model:set-active', modelId) as Promise<AvatarModelSummary | null>,
-    getVoicePreference: () => ipcRenderer.invoke('avatar:voice:get-preference') as Promise<string | null>,
-    setVoicePreference: (voice) => ipcRenderer.invoke('avatar:voice:set-preference', voice) as Promise<void>,
+    getVoicePreference: (engine) => ipcRenderer.invoke('avatar:voice:get-preference', engine) as Promise<string | null>,
+    setVoicePreference: (voice, engine) => ipcRenderer.invoke('avatar:voice:set-preference', voice, engine) as Promise<void>,
     uploadModel: (payload) =>
       ipcRenderer.invoke('avatar-model:upload', payload) as Promise<AvatarModelUploadResult>,
     deleteModel: async (modelId) => {

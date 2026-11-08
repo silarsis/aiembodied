@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "aiembodied-speech-service"
 version = "0.1.0"
-description = "Local speech-to-text (faster-whisper) and text-to-speech (Kokoro) HTTP service for the aiembodied app"
+description = "Local speech-to-text (faster-whisper) and text-to-speech (Kokoro, Kitten, Piper) HTTP service for the aiembodied app"
 requires-python = ">=3.10"
 dependencies = [
   "fastapi>=0.110",
@@ -16,7 +16,8 @@ dependencies = [
 
 [project.optional-dependencies]
 # The real engines; tests run against the fake ones without them.
-engines = ["faster-whisper>=1.1", "kokoro-onnx>=0.4"]
+# Kitten TTS runs on kokoro-onnx's onnxruntime and espeak; Piper needs piper-tts.
+engines = ["faster-whisper>=1.1", "kokoro-onnx>=0.4", "piper-tts>=1.3"]
 test = ["pytest>=8", "httpx>=0.27"]
 
 [project.scripts]

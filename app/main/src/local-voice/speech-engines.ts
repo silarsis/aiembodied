@@ -8,6 +8,8 @@ import type { SpeechServiceClient, SpeechServiceHealth } from './speech-service-
 import type { LocalVoiceSttStatus, LocalVoiceTranscribeResult, LocalVoiceTtsStatus } from './types.js';
 
 type CallOptions = { signal?: AbortSignal };
+/** `voice`: the character's own voice for this engine, used instead of the engine's default. */
+export type SpeakOptions = CallOptions & { voice?: string };
 
 export interface SpeechToTextEngine {
   transcribe(wav: Uint8Array, options?: CallOptions): Promise<LocalVoiceTranscribeResult>;
@@ -17,7 +19,7 @@ export interface SpeechToTextEngine {
 
 export interface TextToSpeechEngine {
   /** Speak `text`; returns a 16-bit PCM WAV. */
-  synthesize(text: string, options?: CallOptions): Promise<Uint8Array>;
+  synthesize(text: string, options?: SpeakOptions): Promise<Uint8Array>;
   status(speech: SpeechServiceHealth | null): LocalVoiceTtsStatus;
   /** Release a held connection; called when settings swap the engine out. */
   close?(): void;
@@ -38,26 +40,51 @@ export class SpeechServiceStt implements SpeechToTextEngine {
   }
 }
 
-export class KokoroTts implements TextToSpeechEngine {
-  /** `voice` empty or unset: the speech service's default. */
+/**
+ * Speaking through services/speech: Kokoro (the engine it starts with), Kitten or Piper. A voice
+ * the engine doesn't know (a character's choice from before a model was removed, say) is dropped
+ * and the engine's default voice speaks instead.
+ */
+export class SpeechServiceTts implements TextToSpeechEngine {
   constructor(
     private readonly speech: SpeechServiceClient,
-    private readonly voice?: string,
+    private readonly target: { engine: 'kokoro' | 'kitten' | 'piper'; model?: string; voice?: string },
   ) {}
 
-  synthesize(text: string, options?: CallOptions): Promise<Uint8Array> {
-    return this.speech.synthesize({ text, voice: this.voice || undefined }, options);
+  get engine(): 'kokoro' | 'kitten' | 'piper' {
+    return this.target.engine;
+  }
+
+  async synthesize(text: string, options?: SpeakOptions): Promise<Uint8Array> {
+    const { engine, model } = this.target;
+    const voice = options?.voice || this.target.voice || undefined;
+    const request = { text, voice, ...(engine === 'kokoro' ? {} : { engine, ...(model ? { model } : {}) }) };
+    try {
+      return await this.speech.synthesize(request, { signal: options?.signal });
+    } catch (error) {
+      if (voice && voice !== this.target.voice && error instanceof Error && /unknown voice/i.test(error.message)) {
+        return this.speech.synthesize({ ...request, voice: this.target.voice || undefined }, { signal: options?.signal });
+      }
+      throw error;
+    }
   }
 
   status(health: SpeechServiceHealth | null): LocalVoiceTtsStatus {
     return {
-      provider: 'kokoro',
+      provider: this.target.engine,
       available: Boolean(health),
       ready: health?.ready === true,
-      model: health?.ttsModel ?? null,
-      voice: this.voice || health?.defaultVoice || null,
+      model: this.target.engine === 'kokoro' ? health?.ttsModel ?? null : this.target.model ?? this.target.engine,
+      voice: this.target.voice || (this.target.engine === 'kokoro' ? health?.defaultVoice : null) || null,
       error: health?.error ?? null,
     };
+  }
+}
+
+/** Kokoro through services/speech, with `voice` (empty: the service's default). */
+export class KokoroTts extends SpeechServiceTts {
+  constructor(speech: SpeechServiceClient, voice?: string) {
+    super(speech, { engine: 'kokoro', voice });
   }
 }
 
