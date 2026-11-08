@@ -128,7 +128,8 @@ export function formatSearchResults(results: MemoryEngineSearchResult[], now: Da
   return fitTo(
     results.map((result) => {
       const when = new Date(result.period_start);
-      const who = KIND_LABELS[result.kind] ?? (result.agent ? `with ${result.agent}` : 'conversation');
+      const kind = KIND_LABELS[result.kind] ?? (result.agent ? `with ${result.agent}` : 'conversation');
+      const who = result.kind === 'ha_event' && result.home_name ? `${kind} at ${result.home_name}` : kind;
       return `[${result.id}] ${formatDay(when)} (${describeAgo(when, now)}), ${who}:\n${clip(result.text, SNIPPET_CHARS)}\n`;
     }),
   );
@@ -175,8 +176,9 @@ function formatValue(value: number | null | undefined, unit: string | null | und
   return `${Math.round(value * 10) / 10}${unit ? ` ${unit}` : ''}`;
 }
 
-function entityLabel(entity: { name: string | null; entity_id: string; area: string | null }): string {
-  return `${entity.name ?? entity.entity_id}${entity.area ? ` (${entity.area})` : ''}`;
+function entityLabel(entity: { name: string | null; entity_id: string; area: string | null; home_name?: string | null }): string {
+  const where = [entity.area, entity.home_name].filter(Boolean).join(', ');
+  return `${entity.name ?? entity.entity_id}${where ? ` (${where})` : ''}`;
 }
 
 /** What a home entity did over a period: its changes, then (numeric) readings by hour or day. */
@@ -185,7 +187,7 @@ export function formatHomeHistory(history: MemoryEngineHomeHistory, period: Peri
     if (history.matches.length === 0) return 'No Home Assistant device or sensor matches that.';
     return fitTo([
       'Several devices match. Ask which one is meant, then call home_history again with its entity id:',
-      ...history.matches.map((m) => `${m.name ?? m.entity_id}${m.area ? `, ${m.area}` : ''} [${m.entity_id}]`),
+      ...history.matches.map((m) => `${m.name ?? m.entity_id}${m.area ? `, ${m.area}` : ''}${m.home_name ? `, ${m.home_name}` : ''} [${m.entity_id}]`),
     ]);
   }
   const entity = history.entity;

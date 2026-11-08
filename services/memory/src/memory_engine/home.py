@@ -16,11 +16,13 @@ import asyncio
 import fnmatch
 import json
 import logging
+import os
+import re
 import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence
 from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
@@ -60,13 +62,22 @@ class HomeConfig:
     label: str = "aiembodied"
     entities: list[str] = field(default_factory=list)
     raw_days: float = 7.0
+    env_prefix: str = "HA"  # the environment variables it came from: HA, or HA_<NAME>
+    source: str = "env"  # "env": from the environment; "app": pushed by the app (PUT /v1/home/servers)
 
     @property
     def off_reason(self) -> Optional[str]:
+        if self.source == "app":
+            if not self.url:
+                return "the server has no address"
+            if not self.token:
+                return "the server has no token"
+            return None
+        prefix = self.env_prefix
         if not self.url:
-            return "HA_URL is not set"
+            return f"{prefix}_URL is not set"
         if not self.token:
-            return "HA_TOKEN is not set"
+            return f"{prefix}_TOKEN is not set"
         return None
 
     @property
@@ -76,6 +87,83 @@ class HomeConfig:
 
 def parse_entity_list(text: Optional[str]) -> list[str]:
     return [part.strip() for part in (text or "").split(",") if part.strip()]
+
+
+DEFAULT_HOME_NAME = "Home"
+# HA_<word>_URL names that belong to the single default home's settings, not to a home of their own.
+RESERVED_NAMES = {"HOME", "RAW"}
+_NAMED_URL = re.compile(r"^HA_([A-Za-z0-9_]+)_URL$")
+
+
+def _float(text: Optional[str], default: float) -> float:
+    try:
+        return float(text) if text not in (None, "") else default
+    except ValueError:
+        return default
+
+
+def homes_from_env(environ: Mapping[str, str]) -> list[HomeConfig]:
+    """The homes the environment describes: the default one (HA_URL, HA_TOKEN, HA_HOME_ID,
+    HA_HOME_NAME, HA_LABEL, HA_ENTITIES, HA_RAW_DAYS; listed if either of URL and token is set, so
+    the status can say what is missing) and one for every HA_<NAME>_URL that has an HA_<NAME>_TOKEN."""
+    label = environ.get("HA_LABEL") or "aiembodied"
+    raw_days = _float(environ.get("HA_RAW_DAYS"), 7.0)
+    homes: dict[str, HomeConfig] = {}
+    if environ.get("HA_URL") or environ.get("HA_TOKEN"):
+        config = HomeConfig(
+            url=environ.get("HA_URL") or None,
+            token=environ.get("HA_TOKEN") or None,
+            home_id=environ.get("HA_HOME_ID") or "home",
+            name=environ.get("HA_HOME_NAME") or DEFAULT_HOME_NAME,
+            label=label,
+            entities=parse_entity_list(environ.get("HA_ENTITIES")),
+            raw_days=raw_days,
+        )
+        homes[config.home_id] = config
+    for key in sorted(environ):
+        found = _NAMED_URL.match(key)
+        if not found:
+            continue
+        name = found.group(1)
+        if name.upper() in RESERVED_NAMES:
+            continue
+        url, token = environ.get(key), environ.get(f"HA_{name}_TOKEN")
+        if not url or not token:
+            continue
+        config = HomeConfig(
+            url=url,
+            token=token,
+            home_id=name.lower(),
+            name=environ.get(f"HA_{name}_NAME") or name,
+            env_prefix=f"HA_{name}",
+            label=environ.get(f"HA_{name}_LABEL") or label,
+            entities=parse_entity_list(environ.get(f"HA_{name}_ENTITIES")),
+            raw_days=raw_days,
+        )
+        homes[config.home_id] = config
+    return list(homes.values())
+
+
+def valid_server_url(url: str) -> bool:
+    try:
+        parts = urlsplit(url.strip())
+        parts.port  # noqa: B018 - raises ValueError for a bad port
+        return parts.scheme.lower() in ("http", "https") and bool(parts.hostname)
+    except ValueError:
+        return False
+
+
+def public_url(url: Optional[str]) -> Optional[str]:
+    """The address without any credentials in it."""
+    if not url:
+        return url
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return None
+    if "@" not in parts.netloc:
+        return url
+    return urlunsplit(parts._replace(netloc=parts.netloc.rsplit("@", 1)[1]))
 
 
 def ws_url(url: str) -> str:
@@ -195,9 +283,12 @@ def describe_change(
     old: Optional[str],
     new: str,
     unit: Optional[str] = None,
+    home_name: Optional[str] = None,
 ) -> str:
-    """A readable sentence: "Front door (Hallway) opened, was closed." """
-    who = f"{name} ({area})" if area else name
+    """A readable sentence: "Front door (Hallway) opened, was closed." With a home that has a name
+    of its own: "Front door (Hallway, SG) opened, was closed." """
+    where = ", ".join(part for part in (area, home_name if home_name and home_name != DEFAULT_HOME_NAME else None) if part)
+    who = f"{name} ({where})" if where else name
     if domain == "binary_sensor" and new in ("on", "off") and old in (None, "on", "off"):
         on_word, off_word = _BINARY_WORDS.get(device_class or "", ("turned on", "turned off"))
         head = f"{who} {on_word if new == 'on' else off_word}"
@@ -405,7 +496,8 @@ def _store_event(
         " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (event_id, home_id, entity_id, event_kind, at, state, old_state, value, Jsonb(kept)),
     )
-    sentence = describe_change(name, area, domain, device_class, old_state, state, unit)
+    home_name = conn.execute("SELECT name FROM homes WHERE id = %s", (home_id,)).fetchone()
+    sentence = describe_change(name, area, domain, device_class, old_state, state, unit, home_name[0] if home_name else None)
     text = f"Alert: {sentence}" if event_kind == "alert" else sentence
     conn.execute(
         """
@@ -428,18 +520,23 @@ def handle_event(conn: psycopg.Connection, home_id: str, event: dict[str, Any]) 
     return record_state(conn, home_id, entity_id, data.get("new_state"))
 
 
-def prune(conn: psycopg.Connection, raw_days: float) -> int:
-    """Delete raw readings older than raw_days; rollups and changes stay."""
+def prune(conn: psycopg.Connection, raw_days: float, home_id: Optional[str] = None) -> int:
+    """Delete raw readings older than raw_days (of one home, or of all); rollups and changes stay."""
     cur = conn.execute(
-        "DELETE FROM ha_events WHERE kind = 'reading' AND at < now() - make_interval(secs => %s)",
-        (raw_days * 86400.0,),
+        "DELETE FROM ha_events WHERE kind = 'reading' AND at < now() - make_interval(secs => %s)"
+        " AND (%s::text IS NULL OR home_id = %s)",
+        (raw_days * 86400.0, home_id, home_id),
     )
     return cur.rowcount
 
 
 # --- look-ups ---------------------------------------------------------------------------------
 
-ENTITY_COLUMNS = "home_id, entity_id, name, area, domain, device_class, class, unit, last_state, last_value"
+ENTITY_COLUMNS = (
+    "e.home_id, e.entity_id, e.name, e.area, e.domain, e.device_class, e.class, e.unit, e.last_state, e.last_value,"
+    " h.name"
+)
+ENTITY_FROM = "ha_entities e LEFT JOIN homes h ON h.id = e.home_id"
 RAW_MAX_RANGE = timedelta(days=2)
 READINGS_MAX = 2000
 
@@ -456,6 +553,7 @@ def _entity_json(row: tuple) -> dict[str, Any]:
         "unit": row[7],
         "last_state": row[8],
         "last_value": row[9],
+        "home_name": row[10] or row[0],
     }
 
 
@@ -465,16 +563,19 @@ def _like_all(term: str) -> list[str]:
     return ["%" + w.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" for w in words]
 
 
-_HAYSTACK = "(coalesce(name, '') || ' ' || coalesce(area, '') || ' ' || replace(replace(entity_id, '_', ' '), '.', ' '))"
+_HAYSTACK = (
+    "(coalesce(e.name, '') || ' ' || coalesce(e.area, '') || ' ' || replace(replace(e.entity_id, '_', ' '), '.', ' ')"
+    " || ' ' || CASE WHEN h.name IS NOT NULL AND h.name <> 'Home' THEN h.name ELSE '' END)"
+)
 
 
 def find_entities(conn: psycopg.Connection, home_id: Optional[str], term: Optional[str], limit: int = 200) -> list[dict[str, Any]]:
     patterns = _like_all(term or "")
     rows = conn.execute(
-        f"SELECT {ENTITY_COLUMNS} FROM ha_entities"  # noqa: S608 - fixed text
-        f" WHERE (%(home)s::text IS NULL OR home_id = %(home)s)"
+        f"SELECT {ENTITY_COLUMNS} FROM {ENTITY_FROM}"  # noqa: S608 - fixed text
+        f" WHERE (%(home)s::text IS NULL OR e.home_id = %(home)s)"
         f" AND (cardinality(%(patterns)s::text[]) = 0 OR {_HAYSTACK} ILIKE ALL(%(patterns)s))"
-        " ORDER BY area NULLS LAST, name, entity_id LIMIT %(limit)s",
+        " ORDER BY e.area NULLS LAST, e.name, e.entity_id LIMIT %(limit)s",
         {"home": home_id, "patterns": patterns, "limit": limit},
     ).fetchall()
     return [_entity_json(r) for r in rows]
@@ -497,8 +598,8 @@ def history(
     candidates come back as {"matches": [...]} and no history."""
     chosen: Optional[dict[str, Any]] = None
     exact = conn.execute(
-        f"SELECT {ENTITY_COLUMNS} FROM ha_entities WHERE entity_id = ANY(%s)"  # noqa: S608
-        " AND (%s::text IS NULL OR home_id = %s) LIMIT 2",
+        f"SELECT {ENTITY_COLUMNS} FROM {ENTITY_FROM} WHERE e.entity_id = ANY(%s)"  # noqa: S608
+        " AND (%s::text IS NULL OR e.home_id = %s) LIMIT 2",
         ([t for t in (entity, q) if t], home_id, home_id),
     ).fetchall()
     if len(exact) == 1:
@@ -537,7 +638,7 @@ def history(
                 "value": r[4],
                 "text": describe_change(
                     chosen["name"] or entity_id, chosen["area"], chosen["domain"], chosen["device_class"],
-                    r[3], r[2] or "", chosen["unit"],
+                    r[3], r[2] or "", chosen["unit"], chosen["home_name"],
                 ),
             }
             for r in changes
@@ -598,7 +699,7 @@ class HomeListener:
     # --- thread control ----
 
     def start(self) -> None:
-        self._thread = threading.Thread(target=self._run, name="memory-home", daemon=True)
+        self._thread = threading.Thread(target=self._run, name=f"memory-home-{self.config.home_id}", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
@@ -618,10 +719,12 @@ class HomeListener:
         if self._events_day != datetime.now().date():
             self._events_day, self._events_today = datetime.now().date(), 0
         return {
+            "id": self.config.home_id,
+            "name": self.config.name,
+            "source": self.config.source,
             "configured": True,
             "connected": self.connected,
-            "url": self.config.url,
-            "home_id": self.config.home_id,
+            "url": public_url(self.config.url),
             "label": self.config.label,
             "watched": len(self.watched),
             "events_today": self._events_today,
@@ -634,7 +737,7 @@ class HomeListener:
         try:
             asyncio.run(self._main())
         except Exception:  # noqa: BLE001
-            log.exception("The Home Assistant listener stopped")
+            log.exception("The Home Assistant listener for %s stopped", self.config.home_id)
             self.error = "the listener stopped; see the engine's log"
         self.connected = False
 
@@ -669,14 +772,15 @@ class HomeListener:
                 self.error = None
             except AuthRefused:
                 self.error = "token refused"
-                log.warning("Home Assistant refused the access token; trying again in %d minutes", AUTH_REFUSED_WAIT // 60)
+                log.warning("Home Assistant (%s) refused the access token; trying again in %d minutes",
+                            self.config.home_id, AUTH_REFUSED_WAIT // 60)
                 wait = AUTH_REFUSED_WAIT
             except asyncio.CancelledError:
                 raise
             except Exception as error:  # noqa: BLE001 - drop the connection and try again
                 message = _first_line(error)
                 if message != self.error:
-                    log.warning("Home Assistant connection failed: %s", message)
+                    log.warning("Home Assistant (%s) connection failed: %s", self.config.home_id, message)
                 self.error = message
             finally:
                 self.connected = False
@@ -774,7 +878,7 @@ class HomeListener:
         self.error = None
         # Subscribed before the states are read, so nothing slips between the two.
         await self._refresh(ws)
-        log.info("Home Assistant connected; watching %d entities", len(self.watched))
+        log.info("Home Assistant (%s) connected; watching %d entities", self.config.home_id, len(self.watched))
         held, self._held = self._held or [], None
         for event in held:
             await asyncio.to_thread(self._on_event, event)
@@ -817,6 +921,7 @@ class HomeListener:
         by_state = {s["entity_id"]: s for s in states if isinstance(s, dict) and "entity_id" in s}
         meta: dict[str, dict[str, Any]] = {}
         watched: set[str] = set()
+        labelled: set[str] = set()
         if registry:
             label_id = _find_label(registry["labels"], config.label)
             area_names = {a.get("area_id"): a.get("name") for a in registry["areas"]}
@@ -833,14 +938,16 @@ class HomeListener:
                 }
                 if label_id is not None and label_id in (entry.get("labels") or []):
                     watched.add(entity_id)
+                    labelled.add(entity_id)
         disabled = {e["entity_id"] for e in (registry or {}).get("entries", []) if e.get("disabled_by")}
         for entity_id in by_state:
             if entity_id not in disabled and matches_entity(entity_id, config.entities):
                 watched.add(entity_id)
         watched &= set(by_state)  # an entity with no state yet is picked up at a later refresh
         # Diagnostic and config entities are not kept at all.
-        # An entity named exactly in HA_ENTITIES is kept even if HA calls it diagnostic.
-        named = {pattern for pattern in config.entities if "*" not in pattern and "?" not in pattern}
+        # An entity someone chose on purpose (it carries the label, or is named exactly in
+        # HA_ENTITIES) is kept even if HA calls it diagnostic: a phone's tracker is, for one.
+        named = {pattern for pattern in config.entities if "*" not in pattern and "?" not in pattern} | labelled
         for entity_id in list(watched):
             if entity_id in named:
                 continue
@@ -913,11 +1020,11 @@ class HomeListener:
             try:
                 def run() -> int:
                     with self.engine.pool.connection(timeout=10) as conn:
-                        return prune(conn, self.config.raw_days)
+                        return prune(conn, self.config.raw_days, self.config.home_id)
 
                 removed = await asyncio.to_thread(run)
                 if removed:
-                    log.info("Pruned %d old Home Assistant readings", removed)
+                    log.info("Pruned %d old Home Assistant readings (%s)", removed, self.config.home_id)
             except Exception as error:  # noqa: BLE001
                 log.warning("Pruning Home Assistant readings failed: %s", _first_line(error))
 
@@ -940,13 +1047,14 @@ def _first_line(error: BaseException) -> str:
     return text.splitlines()[0][:300] if text else type(error).__name__
 
 
-def unconfigured_status(config: Optional[HomeConfig]) -> dict[str, Any]:
-    config = config or HomeConfig()
+def unconfigured_status(config: HomeConfig) -> dict[str, Any]:
     return {
+        "id": config.home_id,
+        "name": config.name,
+        "source": config.source,
         "configured": False,
         "connected": False,
-        "url": config.url,
-        "home_id": config.home_id,
+        "url": public_url(config.url),
         "label": config.label,
         "watched": 0,
         "events_today": 0,
@@ -954,3 +1062,67 @@ def unconfigured_status(config: Optional[HomeConfig]) -> dict[str, Any]:
         "error": None,
         "note": f"Home Assistant is off: {config.off_reason or 'not configured'}",
     }
+
+
+class HomeManager:
+    """One HomeListener per home, keyed by home id. The environment's homes are fixed; the app's
+    are replaced as a set (set_app). An app home with the id of an environment home replaces it
+    while it is there. Tokens live in memory only."""
+
+    def __init__(self, engine: "Engine", env_configs: Sequence[HomeConfig] = ()):
+        self.engine = engine
+        self.env: dict[str, HomeConfig] = {c.home_id: c for c in env_configs}
+        self.app: dict[str, HomeConfig] = {}
+        self.raw_days = next(iter(self.env.values())).raw_days if self.env else 7.0
+        self.listeners: dict[str, HomeListener] = {}
+        self.configs: dict[str, HomeConfig] = {}  # what is in effect, listed in the status
+        self.started = False
+        self._lock = threading.RLock()
+        self._reconcile()
+
+    def start(self) -> None:
+        with self._lock:
+            self.started = True
+            self._reconcile()
+
+    def stop(self) -> None:
+        with self._lock:
+            self.started = False
+            listeners, self.listeners = list(self.listeners.values()), {}
+        for listener in listeners:
+            listener.stop()
+
+    def set_app(self, configs: Sequence[HomeConfig]) -> None:
+        with self._lock:
+            self.app = {c.home_id: c for c in configs}
+            self._reconcile()
+
+    def _reconcile(self) -> None:
+        """Start, restart or stop listeners so they match the homes in effect."""
+        wanted = {**self.env, **self.app}
+        self.configs = wanted
+        for home_id in list(self.listeners):
+            listener = self.listeners[home_id]
+            if home_id not in wanted or not wanted[home_id].enabled or listener.config != wanted[home_id]:
+                del self.listeners[home_id]
+                listener.stop()
+        if not self.started:
+            return
+        for home_id, config in wanted.items():
+            if config.enabled and home_id not in self.listeners:
+                listener = HomeListener(self.engine, config)
+                self.listeners[home_id] = listener
+                listener.start()
+
+    def status(self) -> list[dict[str, Any]]:
+        with self._lock:
+            out = []
+            for home_id, config in self.configs.items():
+                listener = self.listeners.get(home_id)
+                if listener is not None:
+                    out.append(listener.status())
+                elif config.enabled:  # configured, not started (yet)
+                    out.append({**unconfigured_status(config), "configured": True, "note": None})
+                else:
+                    out.append(unconfigured_status(config))
+            return out

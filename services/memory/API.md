@@ -10,7 +10,7 @@ reachable yet, and the client should queue and retry.
 ```json
 {"status": "ok", "version": "0.1.0", "database": "ready", "schema": "memory", "schema_version": 2,
  "embedder": "BAAI/bge-small-en-v1.5", "counts": {"sessions": 12, "messages": 340, "indexed": 160},
- "home": {"configured": false, "connected": false}}
+ "home": {"configured": false, "connected": 0, "homes": 0}}
 ```
 
 `status` is `starting` (with `error`) until the database is reachable and migrated. `embedder` is
@@ -220,27 +220,50 @@ general categories; the details go to the engine's log only.
 Send the mirror what it is missing now → `{"sent": 42}`. 409 when no mirror is set.
 
 
-## `GET /v1/home/status`
+## `PUT /v1/home/servers`
 
-Home Assistant listener state; works when it is not configured.
+The Home Assistant servers the app manages, replacing the previous set (homes from the engine's
+environment are kept; an app server whose `id` equals an environment home's id replaces it while it
+is listed). At most 20.
 
 ```json
-{"configured": true, "connected": true, "url": "http://homeassistant-1:8123", "home_id": "home",
- "label": "aiembodied", "watched": 14, "events_today": 6, "last_event_at": "2026-11-08T07:58:12+00:00",
- "error": null, "note": null}
+{"servers": [{"id": "<server id>", "name": "Penang", "url": "http://homeassistant.local:8123",
+              "token": "<long-lived access token>", "label": null, "entities": []}]}
 ```
 
-Unconfigured (no `HA_URL` or `HA_TOKEN`): `configured` false, `note` says why ("Home Assistant is
+`id` becomes the home id. `label` (null: `aiembodied`) and `entities` work as `HA_LABEL` and
+`HA_ENTITIES`. The token is held in memory only: never stored, logged or returned, so the app sends
+the set again after the engine restarts (it can tell from `/v1/home/status`). A listener whose
+`name`, `url`, `token`, `label` or `entities` changed is restarted; the others keep running.
+Returns the same body as `GET /v1/home/status`. 400 (`{"error": ...}`, never repeating the request)
+when `url` is not an http(s) address with a host, an id is empty or repeated, a field has the wrong
+type, or there are more than 20 servers.
+
+## `GET /v1/home/status`
+
+The state of every home; `{"homes": []}` when none is configured.
+
+```json
+{"homes": [{"id": "home", "name": "Home", "source": "env", "configured": true, "connected": true,
+            "url": "http://homeassistant-1:8123", "label": "aiembodied", "watched": 14,
+            "events_today": 6, "last_event_at": "2026-11-08T07:58:12+00:00", "error": null, "note": null},
+           {"id": "srv-1", "name": "Penang", "source": "app", "configured": true, "connected": false,
+            "url": "http://penang.local:8123", "label": "aiembodied", "watched": 0, "events_today": 0,
+            "last_event_at": null, "error": "token refused", "note": null}]}
+```
+
+`source` is `env` (the engine's environment) or `app` (`PUT /v1/home/servers`). A home missing its
+address or token is listed with `configured` false and a `note` that says why ("Home Assistant is
 off: HA_TOKEN is not set"). `error` is e.g. `"token refused"`; `note` carries things like "could
 not read the registries, so only HA_ENTITIES is watched". `events_today` counts alerts and
-changes, not sensor readings. The token is never shown.
+changes, not sensor readings. `url` has no credentials in it, and the token is never shown.
 
 ## `GET /v1/home/entities?home=&q=`
 
 ```json
 {"entities": [{"home_id": "home", "entity_id": "binary_sensor.front_door", "name": "Front door",
   "area": "Hallway", "domain": "binary_sensor", "device_class": "door", "class": "state",
-  "unit": null, "last_state": "off", "last_value": null}]}
+  "unit": null, "last_state": "off", "last_value": null, "home_name": "Home"}]}
 ```
 
 The watched entities, by area then name. `q` is split into words; each must appear in the entity
@@ -257,7 +280,7 @@ no name matches exactly) the answer is only the candidates, empty if none:
 ```json
 {"matches": [{"home_id": "home", "entity_id": "sensor.hall_temp", "name": "Hall temperature",
   "area": "Hallway", "domain": "sensor", "device_class": "temperature", "class": "numeric",
-  "unit": "°C", "last_state": "19", "last_value": 19.0}]}
+  "unit": "°C", "last_state": "19", "last_value": 19.0, "home_name": "Home"}]}
 ```
 
 Otherwise:

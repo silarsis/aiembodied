@@ -67,6 +67,7 @@ export const SERVER_TYPE_LABELS: Record<ServerType, string> = {
   comfy: 'ComfyUI',
   search: 'SearXNG',
   memory: 'Memory database (PostgreSQL)',
+  homeassistant: 'Home Assistant',
   openai: 'OpenAI',
   brave: 'Brave Search',
   civitai: 'Civitai',
@@ -84,10 +85,14 @@ const SERVER_TYPE_HINTS: Partial<Record<ServerType, { hint: string; example: str
     hint: 'A PostgreSQL database with the pgvector extension, such as Supabase (use its session pooler connection string). A password in the address is moved to the key store.',
     example: 'postgresql://postgres.yourproject@aws-0-region.pooler.supabase.com:5432/postgres',
   },
+  homeassistant: {
+    hint: 'A long-lived access token from your Home Assistant profile. Tag entities with the label aiembodied to have them remembered.',
+    example: 'http://homeassistant.local:8123',
+  },
 };
 
-/** What a server's key is called: databases have a password. */
-const keyLabel = (type: ServerType) => (type === 'memory' ? 'Password' : 'API key');
+/** What a server's key is called: databases have a password, Home Assistant a token. */
+const keyLabel = (type: ServerType) => (type === 'memory' ? 'Password' : type === 'homeassistant' ? 'Token' : 'API key');
 
 /** Which of a server's model lists a use picks from. */
 function roleFor(use: UseId, type: ServerType): ModelRole | null {
@@ -896,7 +901,7 @@ function AddServerForm({
         <label htmlFor="models-add-url">Address</label>
         <input id="models-add-url" value={draft.url} placeholder={hint?.example} onChange={(event) => onChange({ ...draft, url: event.target.value, probe: undefined })} />
         <label htmlFor="models-add-key">{keyLabel(draft.type)}</label>
-        <input id="models-add-key" type="password" autoComplete="off" value={draft.key} placeholder={draft.type === 'memory' ? 'The database password' : 'Only if the server asks for one'} onChange={(event) => onChange({ ...draft, key: event.target.value, probe: undefined })} />
+        <input id="models-add-key" type="password" autoComplete="off" value={draft.key} placeholder={draft.type === 'memory' ? 'The database password' : draft.type === 'homeassistant' ? 'The long-lived access token' : 'Only if the server asks for one'} onChange={(event) => onChange({ ...draft, key: event.target.value, probe: undefined })} />
       </div>
       {draft.probe ? (
         <p role="status" className={draft.probe.status === 'up' ? 'kiosk__info' : 'kiosk__error'}>
@@ -1006,6 +1011,8 @@ function ServerPage({
                     ? 'Only for gated or private models'
                   : server.type === 'memory'
                     ? 'The database password'
+                  : server.type === 'homeassistant'
+                    ? 'The long-lived access token'
                   : server.type === 'openai' || server.type === 'brave'
                     ? 'Needed'
                     : 'Only if the server asks for one'
@@ -1041,7 +1048,7 @@ function ServerPage({
       {server.type === 'civitai' ? (
         <p className="kiosk__helper">Civitai runs no job itself. Its key lets ComfyUI servers download models from a pasted Civitai link (open a ComfyUI server, then Download a model).</p>
       ) : null}
-      <div className="modelsDialog__list" hidden={server.type === 'civitai' || server.type === 'huggingface' || server.type === 'memory'}>
+      <div className="modelsDialog__list" hidden={server.type === 'civitai' || server.type === 'huggingface' || server.type === 'memory' || server.type === 'homeassistant'}>
         <span className="modelsDialog__group">
           Models it offers{' '}
           <button type="button" onClick={onProbe} disabled={probe === 'checking'}>
@@ -1060,7 +1067,10 @@ function ServerPage({
           </p>
         )}
       </div>
-      <div className="modelsDialog__list" hidden={server.type === 'civitai' || server.type === 'huggingface'}>
+      {server.type === 'homeassistant' ? (
+        <p className="kiosk__helper">Home Assistant runs no job. The memory engine watches the entities tagged aiembodied and remembers what they do.</p>
+      ) : null}
+      <div className="modelsDialog__list" hidden={server.type === 'civitai' || server.type === 'huggingface' || server.type === 'homeassistant'}>
         <span className="modelsDialog__group">Used by</span>
         {usedBy.length ? (
           <div className="modelsDialog__chips">

@@ -234,13 +234,12 @@ def test_mirror_skips_home_assistant_rows(client, db, schema, second_database):
 
 
 def test_status_entities_and_history_routes(client, db):
-    status = client.get("/v1/home/status").json()
-    assert status["configured"] is False and status["connected"] is False and "HA_URL" in status["note"]
-    assert client.get("/health").json()["home"] == {"configured": False, "connected": False}
+    assert client.get("/v1/home/status").json() == {"homes": []}
+    assert client.get("/health").json()["home"] == {"configured": False, "connected": 0, "homes": 0}
 
     entities = client.get("/v1/home/entities").json()["entities"]
     assert [e["entity_id"] for e in entities] == ["binary_sensor.front_door", "binary_sensor.smoke", "sensor.kitchen_temp"]
-    assert set(entities[0]) == {"home_id", "entity_id", "name", "area", "domain", "device_class", "class", "unit", "last_state", "last_value"}
+    assert set(entities[0]) == {"home_id", "home_name", "entity_id", "name", "area", "domain", "device_class", "class", "unit", "last_state", "last_value"}
     assert [e["entity_id"] for e in client.get("/v1/home/entities", params={"q": "kitchen"}).json()["entities"]] == ["sensor.kitchen_temp"]
     assert [e["entity_id"] for e in client.get("/v1/home/entities", params={"q": "hallway"}).json()["entities"]] == ["binary_sensor.front_door", "binary_sensor.smoke"]
 
@@ -374,9 +373,9 @@ def test_listener_against_a_scripted_home_assistant(database_url, schema):
     engine = Engine(database_url, schema, embedder=FakeEmbedder(), home_config=config)
     engine.start(in_background=True)
     try:
-        wait_for(lambda: engine.home_status()["connected"])
-        status = engine.home_status()
-        assert status["configured"] and status["watched"] == 2 and status["url"] == config.url
+        wait_for(lambda: engine.home_status()["homes"][0]["connected"])
+        status = engine.home_status()["homes"][0]
+        assert status["id"] == "home" and status["source"] == "env" and status["configured"] and status["watched"] == 3 and status["url"] == config.url
         assert "secret" not in json.dumps(status)
 
         def stored():
@@ -388,11 +387,13 @@ def test_listener_against_a_scripted_home_assistant(database_url, schema):
             entities = conn.execute("SELECT entity_id, name, area, class FROM ha_entities ORDER BY entity_id").fetchall()
             text = conn.execute("SELECT text FROM recall_index WHERE source = 'home_assistant'").fetchone()[0]
             url = conn.execute("SELECT url FROM homes").fetchone()[0]
+        # The battery is "diagnostic" in HA, but it carries the label, so it is kept.
         assert entities == [("binary_sensor.front_door", "Front door", "Hallway", "state"),
+                            ("sensor.battery", "sensor.battery", None, "numeric"),
                             ("sensor.patio_temp", "Patio temperature", None, "numeric")]
         assert text == "Front door (Hallway) opened, was closed."
         assert url == config.url
-        assert engine.home_status()["events_today"] == 1
+        assert engine.home_status()["homes"][0]["events_today"] == 1
     finally:
         engine.stop()
 
@@ -404,7 +405,7 @@ def test_listener_reports_a_refused_token(database_url, schema):
     engine = Engine(database_url, schema, home_config=home.HomeConfig(url=f"http://127.0.0.1:{fake.port}", token="nope"))
     engine.start(in_background=True)
     try:
-        status = wait_for(lambda: engine.home_status()["error"] and engine.home_status())
+        status = wait_for(lambda: engine.home_status()["homes"][0]["error"] and engine.home_status()["homes"][0])
         assert status["error"] == "token refused" and status["connected"] is False
     finally:
         engine.stop()
@@ -414,8 +415,8 @@ def test_listener_is_off_without_a_token(database_url, schema):
     from memory_engine.app import Engine
 
     engine = Engine(database_url, schema, home_config=home.HomeConfig(url="http://ha:8123"))
-    assert engine.home is None
-    status = engine.home_status()
+    assert engine.homes.listeners == {}
+    status = engine.home_status()["homes"][0]
     assert status["configured"] is False and "HA_TOKEN" in status["note"]
     engine.pool.close()
 
@@ -427,3 +428,220 @@ def test_named_entity_overrides_diagnostic_category():
     attributes = {"unit_of_measurement": "%", "device_class": "battery"}
     assert classify("sensor", "battery", "diagnostic", "80", attributes) == "ignore"
     assert classify("sensor", "battery", None, "80", attributes) == "numeric"
+
+
+# --- several homes ---
+
+
+def test_homes_from_env():
+    env = {
+        "HA_URL": "http://one:8123", "HA_TOKEN": "t1", "HA_HOME_ID": "main", "HA_HOME_NAME": "Melbourne",
+        "HA_LABEL": "remember", "HA_ENTITIES": "light.*, sensor.a", "HA_RAW_DAYS": "3",
+        "HA_SG_URL": "http://sg:8123", "HA_SG_TOKEN": "t2",
+        "HA_PENANG_URL": "http://penang:8123", "HA_PENANG_TOKEN": "t3", "HA_PENANG_NAME": "Penang house",
+        "HA_PENANG_LABEL": "mine", "HA_PENANG_ENTITIES": "lock.door",
+        "HA_LONELY_URL": "http://x:8123",  # no token: not a home
+        "HA_NOURL_TOKEN": "t",  # no url: not a home
+        "HA_HOME_URL": "http://reserved", "HA_HOME_TOKEN": "t",  # reserved word
+        "PATH": "/bin",
+    }
+    homes = {h.home_id: h for h in home.homes_from_env(env)}
+    assert set(homes) == {"main", "sg", "penang"}
+    main, sg, penang = homes["main"], homes["sg"], homes["penang"]
+    assert (main.url, main.token, main.name, main.label, main.entities, main.raw_days, main.source) == (
+        "http://one:8123", "t1", "Melbourne", "remember", ["light.*", "sensor.a"], 3.0, "env")
+    assert (sg.url, sg.token, sg.name, sg.label, sg.entities, sg.raw_days) == (
+        "http://sg:8123", "t2", "SG", "remember", [], 3.0)
+    assert (penang.name, penang.label, penang.entities) == ("Penang house", "mine", ["lock.door"])
+    assert "t1" not in repr(main)
+
+    assert home.homes_from_env({}) == []
+    only = home.homes_from_env({"HA_URL": "http://one:8123", "HA_TOKEN": "t"})
+    assert [(h.home_id, h.name, h.label, h.raw_days) for h in only] == [("home", "Home", "aiembodied", 7.0)]
+    # The default home is listed with what is missing, so the status can say so.
+    missing = home.homes_from_env({"HA_URL": "http://one:8123"})
+    assert missing[0].off_reason == "HA_TOKEN is not set"
+    assert home.homes_from_env({"HA_SG_URL": "http://sg", "HA_SG_TOKEN": "t", "HA_RAW_DAYS": "bogus"})[0].raw_days == 7.0
+
+
+def test_describe_change_names_the_home():
+    assert describe_change("Front door", "Hallway", "binary_sensor", "door", "off", "on", home_name="SG") == "Front door (Hallway, SG) opened, was closed."
+    assert describe_change("Front door", None, "binary_sensor", "door", "off", "on", home_name="SG") == "Front door (SG) opened, was closed."
+    assert describe_change("Front door", "Hallway", "binary_sensor", "door", "off", "on", home_name="Home") == "Front door (Hallway) opened, was closed."
+
+
+def test_indexed_text_and_entities_carry_the_home_name(client, db):
+    with db.pool.connection() as conn:
+        sg = home.HomeConfig(url="http://sg:8123", token="t", home_id="sg", name="SG")
+        home.upsert_home(conn, sg, connected=True)
+        home.upsert_entity(conn, "sg", entity_state("binary_sensor.front_door", "off", 0, friendly_name="Front door", device_class="door"), area="Hallway")
+        home.upsert_entity(conn, "sg", entity_state("binary_sensor.gate", "off", 0, friendly_name="Gate", device_class="door"))
+        for entity_id in ("binary_sensor.front_door", "binary_sensor.gate"):
+            home.record_state(conn, "sg", entity_id, entity_state(entity_id, "off", 0))
+        home.handle_event(conn, "sg", event("binary_sensor.front_door", entity_state("binary_sensor.front_door", "on", 60)))
+        home.handle_event(conn, "sg", event("binary_sensor.gate", entity_state("binary_sensor.gate", "on", 60)))
+        home.handle_event(conn, "home", event("binary_sensor.front_door", entity_state("binary_sensor.front_door", "on", 60)))
+        texts = {r[0] for r in conn.execute("SELECT text FROM recall_index WHERE source = 'home_assistant'").fetchall()}
+    assert texts == {"Front door (Hallway, SG) opened, was closed.", "Gate (SG) opened, was closed.", "Front door (Hallway) opened, was closed."}
+
+    entities = client.get("/v1/home/entities").json()["entities"]
+    names = {(e["home_id"], e["entity_id"]): e["home_name"] for e in entities}
+    assert names[("sg", "binary_sensor.gate")] == "SG" and names[("home", "binary_sensor.front_door")] == "Home"
+    assert {e["home_id"] for e in client.get("/v1/home/entities", params={"home": "sg"}).json()["entities"]} == {"sg"}
+    assert {e["home_id"] for e in client.get("/v1/home/entities", params={"q": "SG hallway"}).json()["entities"]} == {"sg"}
+    # The same entity id in two homes needs the home to single one out.
+    both = client.get("/v1/home/history", params={"entity": "binary_sensor.front_door"}).json()
+    assert {m["home_id"] for m in both["matches"]} == {"home", "sg"}
+    one = client.get("/v1/home/history", params={"entity": "binary_sensor.front_door", "home": "sg", "from": iso(-3600), "to": iso(3600)}).json()
+    assert one["entity"]["home_name"] == "SG"
+    assert one["changes"][0]["text"] == "Front door (Hallway, SG) opened, was closed."
+
+
+def make_app(database_url, schema, **kwargs):
+    from fastapi.testclient import TestClient
+
+    from memory_engine.app import Engine, create_app
+    from memory_engine.embed import FakeEmbedder
+
+    engine = Engine(database_url, schema, embedder=FakeEmbedder(), **kwargs)
+    return engine, TestClient(create_app(engine))
+
+
+def put_servers(client, *servers):
+    return client.put("/v1/home/servers", json={"servers": list(servers)})
+
+
+def server(fake, id, name, token="secret", **extra):
+    return {"id": id, "name": name, "url": f"http://127.0.0.1:{fake.port}", "token": token, "label": None, "entities": [], **extra}
+
+
+def by_id(response):
+    return {h["id"]: h for h in response.json()["homes"]}
+
+
+def test_app_servers_add_replace_and_remove_listeners(database_url, schema):
+    penang_fake, sg_fake = FakeHomeAssistant(token="penang-secret"), FakeHomeAssistant(token="sg-secret")
+    env = home.HomeConfig(url=f"http://127.0.0.1:{sg_fake.port}", token="sg-secret", home_id="sg", name="SG")
+    engine, http = make_app(database_url, schema, home_configs=[env])
+    with http as client:
+        wait_for(lambda: by_id(client.get("/v1/home/status"))["sg"]["connected"])
+        assert by_id(client.get("/v1/home/status"))["sg"]["source"] == "env"
+
+        # Add an app home next to the environment's.
+        response = put_servers(client, server(penang_fake, "srv-1", "Penang", token="penang-secret"))
+        assert response.status_code == 200
+        assert "penang-secret" not in response.text and "sg-secret" not in response.text
+        homes = by_id(response)
+        assert set(homes) == {"sg", "srv-1"} and homes["srv-1"]["source"] == "app" and homes["srv-1"]["name"] == "Penang"
+        assert set(homes["srv-1"]) == {"id", "name", "source", "configured", "connected", "url", "label", "watched", "events_today", "last_event_at", "error", "note"}
+        wait_for(lambda: by_id(client.get("/v1/home/status"))["srv-1"]["connected"])
+        status = client.get("/v1/home/status")
+        assert "penang-secret" not in status.text and "sg-secret" not in status.text
+        assert by_id(status)["srv-1"]["watched"] == 2 and by_id(status)["sg"]["connected"]
+        health = client.get("/health").json()["home"]
+        assert health == {"configured": True, "connected": 2, "homes": 2}
+        env_listener = engine.homes.listeners["sg"]
+        app_listener = engine.homes.listeners["srv-1"]
+
+        # The same set again: nothing restarts.
+        put_servers(client, server(penang_fake, "srv-1", "Penang", token="penang-secret"))
+        assert engine.homes.listeners["sg"] is env_listener and engine.homes.listeners["srv-1"] is app_listener
+
+        # A changed token restarts that listener (the fake refuses it); the other keeps running.
+        homes = by_id(put_servers(client, server(penang_fake, "srv-1", "Penang", token="wrong")))
+        assert engine.homes.listeners["srv-1"] is not app_listener and engine.homes.listeners["sg"] is env_listener
+        wait_for(lambda: by_id(client.get("/v1/home/status"))["srv-1"]["error"] == "token refused")
+        assert "wrong" not in client.get("/v1/home/status").text
+
+        # A new name restarts it too, and the name reaches the database.
+        put_servers(client, server(penang_fake, "srv-1", "Penang house", token="penang-secret"))
+        wait_for(lambda: by_id(client.get("/v1/home/status"))["srv-1"]["connected"])
+        with engine.pool.connection() as conn:
+            assert conn.execute("SELECT name FROM homes WHERE id = 'srv-1'").fetchone()[0] == "Penang house"
+
+        # An app home with an environment home's id replaces it; removing it brings the other back.
+        put_servers(client, server(penang_fake, "sg", "Singapore (app)", token="penang-secret"))
+        homes = by_id(client.get("/v1/home/status"))
+        assert set(homes) == {"sg"} and homes["sg"]["source"] == "app" and homes["sg"]["name"] == "Singapore (app)"
+        assert engine.homes.listeners["sg"] is not env_listener
+        response = put_servers(client)
+        assert response.status_code == 200
+        homes = by_id(response)
+        assert set(homes) == {"sg"} and homes["sg"]["source"] == "env"
+        wait_for(lambda: by_id(client.get("/v1/home/status"))["sg"]["connected"])
+        assert set(engine.homes.listeners) == {"sg"}
+
+
+def test_two_homes_are_remembered_under_their_own_names(database_url, schema):
+    fake_a, fake_b = FakeHomeAssistant(), FakeHomeAssistant()
+    engine, http = make_app(database_url, schema)
+    with http as client:
+        put_servers(client, server(fake_a, "a", "Penang"), server(fake_b, "b", "Home"))
+        wait_for(lambda: all(h["connected"] for h in by_id(client.get("/v1/home/status")).values()) and len(by_id(client.get("/v1/home/status"))) == 2)
+        texts = wait_for(lambda: len(rows(engine)) == 2 and sorted(rows(engine)))
+        assert texts == ["Front door (Hallway) opened, was closed.", "Front door (Hallway, Penang) opened, was closed."]
+        entities = client.get("/v1/home/entities").json()["entities"]
+        assert {(e["home_id"], e["home_name"]) for e in entities} == {("a", "Penang"), ("b", "Home")}
+        assert len({e["home_id"] for e in client.get("/v1/home/entities", params={"home": "a"}).json()["entities"]}) == 1
+
+
+def rows(engine):
+    with engine.pool.connection() as conn:
+        return [r[0] for r in conn.execute("SELECT text FROM recall_index WHERE source = 'home_assistant'").fetchall()]
+
+
+def test_put_home_servers_validates_and_never_echoes_a_token(database_url, schema):
+    fake = FakeHomeAssistant()
+    engine, http = make_app(database_url, schema)
+    with http as client:
+        wait_for(lambda: engine.ready)  # stopping during the migrations can deadlock the schema's drop
+        good = server(fake, "a", "A")
+        for bad in (
+            {**good, "url": "ftp://host"},
+            {**good, "url": "homeassistant.local:8123"},
+            {**good, "url": "http://"},
+            {**good, "url": 5},
+            {**good, "id": ""},
+            {**good, "token": 12345},
+            {**good, "entities": "light.*"},
+        ):
+            response = client.put("/v1/home/servers", json={"servers": [bad]})
+            assert response.status_code == 400, bad
+            assert "secret" not in response.text
+        assert client.put("/v1/home/servers", json={"servers": [good, good]}).status_code == 400
+        assert client.put("/v1/home/servers", json={"nope": []}).status_code == 400
+        assert client.put("/v1/home/servers", content="not json").status_code == 400
+        too_many = [{**good, "id": f"s{i}"} for i in range(21)]
+        assert client.put("/v1/home/servers", json={"servers": too_many}).status_code == 400
+        assert client.get("/v1/home/status").json() == {"homes": []}  # a refused request changes nothing
+        ok = client.put("/v1/home/servers", json={"servers": [{**good, "id": f"s{i}"} for i in range(20)]})
+        assert ok.status_code == 200 and len(ok.json()["homes"]) == 20
+
+        # No token: listed, but off. Credentials in the address are not shown.
+        response = put_servers(client, {"id": "x", "name": "X", "url": "http://user:pw@host:8123", "token": ""})
+        entry = by_id(response)["x"]
+        assert entry["configured"] is False and entry["url"] == "http://host:8123" and "pw" not in response.text
+        assert "x" not in engine.homes.listeners
+
+
+def test_put_home_servers_needs_the_api_token(database_url, schema):
+    from fastapi.testclient import TestClient
+
+    from memory_engine.app import Engine, create_app
+
+    engine = Engine(database_url, schema)
+    with TestClient(create_app(engine, api_token="k")) as client:
+        wait_for(lambda: engine.ready)
+        assert client.put("/v1/home/servers", json={"servers": []}).status_code == 401
+        assert client.put("/v1/home/servers", json={"servers": []}, headers={"Authorization": "Bearer k"}).status_code == 200
+
+
+def test_engine_stop_stops_every_listener(database_url, schema):
+    fake_a, fake_b = FakeHomeAssistant(), FakeHomeAssistant()
+    engine, http = make_app(database_url, schema)
+    with http as client:
+        wait_for(lambda: engine.ready)
+        put_servers(client, server(fake_a, "a", "A"), server(fake_b, "b", "B"))
+        wait_for(lambda: len(engine.homes.listeners) == 2)
+        threads = [listener._thread for listener in engine.homes.listeners.values()]
+    assert all(not t.is_alive() for t in threads) and engine.homes.listeners == {}

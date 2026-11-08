@@ -18,6 +18,7 @@ from uuid import UUID
 
 import psycopg
 from fastapi import Depends, FastAPI, Header, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -128,6 +129,49 @@ class MessagesBody(BaseModel):
     messages: list[MessageBody] = Field(max_length=MAX_BATCH)
 
 
+MAX_HOME_SERVERS = 20
+
+
+def parse_home_servers(body: Any) -> list[home.HomeConfig]:
+    """Validate the PUT /v1/home/servers body by hand, so an error can't repeat a token."""
+    servers = body.get("servers") if isinstance(body, dict) else None
+    if not isinstance(servers, list):
+        raise ApiError(400, 'expected {"servers": [...]}')
+    if len(servers) > MAX_HOME_SERVERS:
+        raise ApiError(400, f"at most {MAX_HOME_SERVERS} servers")
+    configs: dict[str, home.HomeConfig] = {}
+    for index, item in enumerate(servers):
+        if not isinstance(item, dict):
+            raise ApiError(400, f"servers[{index}] is not an object")
+        server_id, url, token = item.get("id"), item.get("url"), item.get("token")
+        if not isinstance(server_id, str) or not server_id.strip() or len(server_id) > 200:
+            raise ApiError(400, f"servers[{index}].id must be a non-empty string")
+        if server_id in configs:
+            raise ApiError(400, f"servers[{index}].id is listed twice")
+        if not isinstance(url, str) or not home.valid_server_url(url):
+            raise ApiError(400, f"servers[{index}].url must be an http(s) address with a host")
+        if token is not None and not isinstance(token, str):
+            raise ApiError(400, f"servers[{index}].token must be a string")
+        name, label, entities = item.get("name"), item.get("label"), item.get("entities")
+        if name is not None and not isinstance(name, str):
+            raise ApiError(400, f"servers[{index}].name must be a string")
+        if label is not None and not isinstance(label, str):
+            raise ApiError(400, f"servers[{index}].label must be a string or null")
+        if entities is not None and (not isinstance(entities, list) or not all(isinstance(e, str) for e in entities)):
+            raise ApiError(400, f"servers[{index}].entities must be a list of strings")
+        configs[server_id] = home.HomeConfig(
+            url=url.strip(),
+            token=token or None,
+            home_id=server_id,
+            name=(name or "").strip() or server_id,
+            label=(label or "").strip() or "aiembodied",
+            entities=[e.strip() for e in (entities or []) if e.strip()],
+            env_prefix="",
+            source="app",
+        )
+    return list(configs.values())
+
+
 class MoveInProgress(Exception):
     """Memory is being copied to another database; it can't be pointed elsewhere until then."""
 
@@ -152,6 +196,7 @@ class Engine:
         settings_file: Optional[Path] = None,
         mirror_interval: float = 60.0,
         home_config: Optional[home.HomeConfig] = None,
+        home_configs: Optional[list[home.HomeConfig]] = None,
     ):
         # This machine's database; the saved storage settings may point elsewhere.
         self.local_url = database_url
@@ -178,11 +223,8 @@ class Engine:
         # None: no background summaries or fact extraction (no LLM configured).
         self.summariser = summariser
         self._summary_thread: Optional[threading.Thread] = None
-        # Home Assistant: the listener only exists when it has an address and a token.
-        self.home_config = home_config
-        self.home: Optional[home.HomeListener] = (
-            home.HomeListener(self, home_config) if home_config is not None and home_config.enabled else None
-        )
+        # Home Assistant: a listener for each home that has an address and a token.
+        self.homes = home.HomeManager(self, [*([home_config] if home_config else []), *(home_configs or [])])
         self.pool = db.open_pool(self.database_url, schema)
         self.ready = False
         self.error: Optional[str] = None
@@ -200,8 +242,8 @@ class Engine:
         if self.embedder is not None and not self.embed_inline:
             self._embed_thread = threading.Thread(target=self._embed_loop, name="memory-embed", daemon=True)
             self._embed_thread.start()
-        if self.home is not None and in_background:
-            self.home.start()
+        if in_background:
+            self.homes.start()
         if in_background:
             self._thread = threading.Thread(target=self._connect_loop, name="memory-db", daemon=True)
             self._thread.start()
@@ -214,14 +256,17 @@ class Engine:
         self._stop.set()
         self._wake_embedder.set()
         self._wake_mirror.set()
-        if self.home is not None:
-            self.home.stop()
+        self.homes.stop()
         self.pool.close()
 
     def home_status(self) -> dict[str, Any]:
-        if self.home is None:
-            return home.unconfigured_status(self.home_config)
-        return self.home.status()
+        return {"homes": self.homes.status()}
+
+    def set_home_servers(self, configs: list[home.HomeConfig]) -> dict[str, Any]:
+        for config in configs:
+            config.raw_days = self.homes.raw_days
+        self.homes.set_app(configs)
+        return self.home_status()
 
     # --- where memory is kept ------------------------------------------------------------
 
@@ -479,8 +524,12 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
             "schema_version": engine.schema_version,
             "embedder": engine.embedder.name if engine.embedder else None,
         }
-        home_status = engine.home_status()
-        body["home"] = {"configured": home_status["configured"], "connected": home_status["connected"]}
+        homes = engine.home_status()["homes"]
+        body["home"] = {
+            "configured": any(h["configured"] for h in homes),
+            "connected": sum(1 for h in homes if h["connected"]),
+            "homes": len(homes),
+        }
         if engine.summariser is not None:
             body["summariser"] = {
                 "model": engine.summariser.llm.name,
@@ -614,6 +663,18 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
     @app.get("/v1/home/status", dependencies=guarded)
     def home_status():
         return engine.home_status()
+
+    @app.put("/v1/home/servers", dependencies=guarded)
+    async def put_home_servers(request: Request):
+        """The Home Assistant servers the app manages. Replaces the previous set; tokens are kept
+        in memory only and never returned. Errors never echo the request."""
+        try:
+            body = await request.json()
+        except ValueError:
+            raise ApiError(400, "the body is not JSON") from None
+        configs = parse_home_servers(body)
+        # The listeners start and stop threads; keep that off the event loop.
+        return await run_in_threadpool(engine.set_home_servers, configs)
 
     @app.get("/v1/home/entities", dependencies=guarded)
     def home_entities(home_id: Optional[str] = Query(default=None, alias="home"), q: Optional[str] = None):

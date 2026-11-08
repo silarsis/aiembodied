@@ -96,6 +96,14 @@ export async function probeModelServer(
         return key
           ? { status: 'up', models: {}, checkedAt }
           : { status: 'needs-key', message: 'Many Civitai downloads need an API key (civitai.com → Account settings → API keys).', models: {}, checkedAt };
+      case 'homeassistant': {
+        // GET /api/ answers 200 {"message": "API running."} for a valid long-lived token.
+        if (!key) return down('no token', checkedAt);
+        const response = await fetchFn(`${server.url}/api/`, { headers: auth(key), signal: AbortSignal.timeout(TIMEOUT_MS) });
+        if (response.status === 401 || response.status === 403) return down('token refused', checkedAt);
+        if (!response.ok) return { status: 'error', message: `Home Assistant answered ${response.status}.`, models: {}, checkedAt };
+        return { status: 'up', models: {}, checkedAt };
+      }
       case 'huggingface':
         // Optional too: only gated and private models need a token.
         return { status: 'up', models: {}, checkedAt };
