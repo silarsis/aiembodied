@@ -58,6 +58,8 @@ export interface MemoryEngineSearchResult {
   /** Cosine similarity to the query, when the item and query were embedded. */
   similarity?: number | null;
   matched?: string[];
+  /** Where it came from; absent or "conversation" for memory of conversations. */
+  source?: string;
 }
 
 export interface MemoryEngineSearchOptions {
@@ -69,6 +71,8 @@ export interface MemoryEngineSearchOptions {
   kinds?: string[];
   exclude?: string[];
   mode?: 'hybrid' | 'text';
+  /** Which memory to search (the engine's default is conversations only). */
+  source?: 'conversation' | 'home_assistant' | 'all';
   timeoutMs?: number;
   /** The agent is using what it finds: facts among the results are refreshed (not for the panel). */
   touch?: boolean;
@@ -234,6 +238,48 @@ export interface MemoryEngineFact {
   model?: string | null;
 }
 
+/** A Home Assistant device or sensor the engine watches. */
+export interface MemoryEngineHomeEntity {
+  home_id: string;
+  entity_id: string;
+  name: string | null;
+  area: string | null;
+  domain: string;
+  class: string;
+  unit: string | null;
+  last_state: string | null;
+  last_value: number | null;
+}
+
+export interface MemoryEngineHomeChange {
+  at: string;
+  kind: string;
+  state: string | null;
+  old_state: string | null;
+  value: number | null;
+  text: string | null;
+}
+
+export interface MemoryEngineHomeReading {
+  hour: string;
+  min: number | null;
+  mean: number | null;
+  max: number | null;
+  last: number | null;
+}
+
+/** Several entities fit the question (`matches`), or one entity with what it did. */
+export interface MemoryEngineHomeHistory {
+  matches?: MemoryEngineHomeEntity[];
+  entity?: MemoryEngineHomeEntity;
+  from?: string;
+  to?: string;
+  changes?: MemoryEngineHomeChange[];
+  /** Numeric entities only. */
+  readings?: MemoryEngineHomeReading[];
+  raw?: Array<{ at: string; value: number | null }>;
+}
+
 /** A failed call. `retryable` is false when the engine rejected the request itself. */
 export class MemoryEngineError extends Error {
   constructor(
@@ -289,6 +335,7 @@ export class MemoryEngineClient {
     if (options.limit) params.set('limit', String(options.limit));
     if (options.includePrivate === false) params.set('include_private', 'false');
     if (options.mode) params.set('mode', options.mode);
+    if (options.source) params.set('source', options.source);
     for (const kind of options.kinds ?? []) params.append('kind', kind);
     for (const id of options.exclude ?? []) params.append('exclude', id);
     if (options.touch) {
@@ -302,6 +349,26 @@ export class MemoryEngineClient {
       options.timeoutMs,
     );
     return body.results;
+  }
+
+  homeHistory(
+    options: { entity?: string; q?: string; from?: string; to?: string; limit?: number } = {},
+  ): Promise<MemoryEngineHomeHistory> {
+    const params = new URLSearchParams();
+    if (options.entity) params.set('entity', options.entity);
+    if (options.q) params.set('q', options.q);
+    if (options.from) params.set('from', options.from);
+    if (options.to) params.set('to', options.to);
+    if (options.limit) params.set('limit', String(options.limit));
+    return this.request('GET', `/v1/home/history?${params.toString()}`);
+  }
+
+  async homeEntities(q?: string): Promise<MemoryEngineHomeEntity[]> {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    const query = params.toString();
+    const body = await this.request<{ entities: MemoryEngineHomeEntity[] }>('GET', `/v1/home/entities${query ? `?${query}` : ''}`);
+    return body.entities;
   }
 
   async timeline(

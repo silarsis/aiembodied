@@ -126,6 +126,29 @@ Settings: `MEMORY_DATABASE_URL`, `MEMORY_SCHEMA`, `MEMORY_HOST` / `MEMORY_PORT`,
 `MEMORY_API_TOKEN`, which, when set, makes every `/v1` call need `Authorization: Bearer <token>`.
 Set it if the engine listens on anything but localhost.
 
+## Home Assistant
+
+The engine can keep what a Home Assistant house does: doors, alerts, state changes and sensor
+readings. It is off unless both are set, in the environment (put `HA_TOKEN`, a long-lived access
+token, in `.env`; it is never stored in the database, logged or committed):
+
+- `HA_URL`, e.g. `http://homeassistant-1:8123`, and `HA_TOKEN`.
+- `HA_LABEL` (default `aiembodied`): the entities carrying this Home Assistant label are watched.
+  `HA_ENTITIES` adds entity ids or `domain.*` patterns, comma separated. Reading the label needs
+  an admin user's token; without one only `HA_ENTITIES` works (see `note` on `/v1/home/status`).
+- `HA_HOME_ID` (default `home`), `HA_HOME_NAME` (default `Home`), `HA_RAW_DAYS` (default 7).
+
+Alerts (smoke, gas, water, alarm panels and the like) and state changes are kept as events and
+indexed for search with a readable sentence ("Front door (Hallway) opened, was closed."). Numbers
+are kept as a reading only when they move past a small deadband or every 15 minutes, and every
+value goes into an hourly min/mean/max rollup. Raw readings older than `HA_RAW_DAYS` are deleted;
+changes and rollups stay. Diagnostic and config entities are ignored. After a gap the latest
+state of each entity is recorded if it differs from the last one seen.
+
+All of it is flagged `source = home_assistant` and is left out of the brief, auto-recall,
+`/v1/recall`, summaries, fact extraction and the mirror. It is reached with
+`/v1/search?source=home_assistant|all` and the `/v1/home/*` routes (see API.md).
+
 ## Test
 
 The turn logic tests need nothing. The API tests need a PostgreSQL with pgvector; each test uses a

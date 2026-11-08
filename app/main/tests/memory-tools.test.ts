@@ -6,9 +6,11 @@ import {
   describeAgo,
   formatSearchResults,
   MEMORY_TOOL_IDS,
+  MemoryEngineError,
   parsePeriod,
   type MemoryEngineCorrection,
   type MemoryEngineCorrectionResult,
+  type MemoryEngineHomeHistory,
   type MemoryEngineMemoryDetail,
   type MemoryEngineSearchResult,
   type MemoryEngineTimeline,
@@ -105,6 +107,7 @@ function makeTools() {
         { id: 'm2', role: 'assistant', speaker: null, content: 'hello', tool: null, created_at: new Date(2026, 10, 2, 9, 1).toISOString() },
       ],
     })),
+    homeHistory: vi.fn(async (_options: Record<string, unknown>): Promise<MemoryEngineHomeHistory> => ({ matches: [] })),
     correctFact: vi.fn(async (_body: MemoryEngineCorrection): Promise<MemoryEngineCorrectionResult> => ({
       status: 'replaced',
       fact: { id: 'f1', text: 'Kevin drives a Corolla' },
@@ -125,7 +128,7 @@ function makeTools() {
 }
 
 describe('memory tools', () => {
-  it('offers six tools the voice can use without a confirmation', () => {
+  it('offers seven tools the voice can use without a confirmation', () => {
     const { byId } = makeTools();
     expect(Object.keys(byId).sort()).toEqual(Object.values(MEMORY_TOOL_IDS).sort());
     for (const tool of Object.values(byId)) {
@@ -146,6 +149,18 @@ describe('memory tools', () => {
     expect(text).toContain('[r1]');
     expect(text).toContain('2 days ago');
     expect(text).toContain('with Echo');
+  });
+
+  it('recall_memories maps source home to the engine\'s home_assistant and omits it by default', async () => {
+    const { client, byId } = makeTools();
+    await byId[MEMORY_TOOL_IDS.recall].execute({ query: 'front door', source: 'home' });
+    expect(client.search).toHaveBeenLastCalledWith('front door', expect.objectContaining({ source: 'home_assistant' }));
+    await byId[MEMORY_TOOL_IDS.recall].execute({ query: 'front door', source: 'all' });
+    expect(client.search).toHaveBeenLastCalledWith('front door', expect.objectContaining({ source: 'all' }));
+    await byId[MEMORY_TOOL_IDS.recall].execute({ query: 'front door', source: 'conversation' });
+    expect(client.search.mock.calls.at(-1)?.[1]).not.toHaveProperty('source');
+    client.search.mockResolvedValueOnce([result({ id: 'h1', kind: 'ha_event', source: 'home_assistant', agent: null, text: 'Front door opened.' })]);
+    expect(await byId[MEMORY_TOOL_IDS.recall].execute({ query: 'door', source: 'home' })).toContain('home event:');
   });
 
   it('explains a period it cannot read instead of searching', async () => {
@@ -252,6 +267,76 @@ describe('memory tools', () => {
     const text = formatSearchResults(many, NOW);
     expect(text.length).toBeLessThan(6200);
     expect(text).toContain('more not shown');
+  });
+});
+
+describe('home_history', () => {
+  const door = { home_id: 'home', entity_id: 'binary_sensor.front_door', name: 'Front door', area: 'Hallway', domain: 'binary_sensor', class: 'alert', unit: null, last_state: 'off', last_value: null };
+  const temp = { ...door, entity_id: 'sensor.lounge_temp', name: 'Lounge temperature', area: 'Lounge', domain: 'sensor', class: 'numeric', unit: '°C', last_state: '21.4', last_value: 21.4 };
+
+  it('lists matches and asks which is meant', async () => {
+    const { client, byId } = makeTools();
+    client.homeHistory.mockResolvedValueOnce({ matches: [door, temp] });
+    const text = await byId[MEMORY_TOOL_IDS.homeHistory].execute({ what: 'lounge' });
+    expect(client.homeHistory).toHaveBeenCalledWith(expect.objectContaining({ q: 'lounge' }));
+    expect(text).toContain('Front door, Hallway [binary_sensor.front_door]');
+    expect(text).toContain('Lounge temperature, Lounge [sensor.lounge_temp]');
+    expect(text).toMatch(/Ask which/);
+  });
+
+  it('defaults to the last 24 hours and passes an entity id as entity', async () => {
+    const { client, byId } = makeTools();
+    client.homeHistory.mockResolvedValueOnce({ entity: door, changes: [] });
+    const text = await byId[MEMORY_TOOL_IDS.homeHistory].execute({ what: 'binary_sensor.front_door' });
+    expect(client.homeHistory).toHaveBeenCalledWith({
+      entity: 'binary_sensor.front_door',
+      from: new Date(NOW.getTime() - 24 * 3_600_000).toISOString(),
+      to: NOW.toISOString(),
+    });
+    expect(text).toContain('Nothing recorded');
+  });
+
+  it('lists changes newest first with dates', async () => {
+    const { client, byId } = makeTools();
+    client.homeHistory.mockResolvedValueOnce({
+      entity: door,
+      changes: [
+        { at: new Date(2026, 10, 3, 14, 5).toISOString(), kind: 'change', state: 'on', old_state: 'off', value: null, text: 'Front door (Hallway) opened, was closed.' },
+        { at: new Date(2026, 10, 2, 8, 0).toISOString(), kind: 'change', state: 'off', old_state: 'on', value: null, text: null },
+      ],
+    });
+    const text = await byId[MEMORY_TOOL_IDS.homeHistory].execute({ what: 'front door', period: 'the last 3 days' });
+    expect(text).toContain('Front door (Hallway) [binary_sensor.front_door], now off.');
+    expect(text).toContain('(today): Front door (Hallway) opened, was closed.');
+    expect(text).toContain('(yesterday): on to off');
+  });
+
+  it('summarises readings by hour for a short period and by day for a long one', async () => {
+    const { client, byId } = makeTools();
+    const readings = [
+      { hour: new Date(2026, 10, 1, 9).toISOString(), min: 19, mean: 20, max: 21, last: 21 },
+      { hour: new Date(2026, 10, 1, 10).toISOString(), min: 21, mean: 22, max: 23, last: 23 },
+      { hour: new Date(2026, 10, 2, 9).toISOString(), min: 18, mean: 19, max: 20, last: 20 },
+    ];
+    client.homeHistory.mockResolvedValueOnce({ entity: temp, changes: [], readings });
+    const hourly = await byId[MEMORY_TOOL_IDS.homeHistory].execute({ what: 'lounge temperature', period: 'yesterday' });
+    expect(hourly).toContain('Readings by hour');
+    expect(hourly).toContain('9:00 am: 19 °C / 20 °C / 21 °C');
+
+    client.homeHistory.mockResolvedValueOnce({ entity: temp, changes: [], readings });
+    const daily = await byId[MEMORY_TOOL_IDS.homeHistory].execute({ what: 'lounge temperature', period: 'last week' });
+    expect(daily).toContain('Readings by day');
+    expect(daily).toContain('Sun, 1 Nov 2026: 19 °C / 21 °C / 23 °C');
+    expect(daily).toContain('Mon, 2 Nov 2026: 18 °C / 19 °C / 20 °C');
+    expect(daily).not.toContain('9:00');
+  });
+
+  it('says so when the engine is down, and explains a period it cannot read', async () => {
+    const { client, byId } = makeTools();
+    client.homeHistory.mockRejectedValueOnce(new MemoryEngineError('unreachable', null, true));
+    expect(await byId[MEMORY_TOOL_IDS.homeHistory].execute({ what: 'door' })).toMatch(/cannot reach/);
+    expect(await byId[MEMORY_TOOL_IDS.homeHistory].execute({ what: 'door', period: 'the other day-ish thing' })).toMatch(/could not read that period/);
+    await expect(byId[MEMORY_TOOL_IDS.homeHistory].execute({})).rejects.toThrow(/needs "what"/);
   });
 });
 

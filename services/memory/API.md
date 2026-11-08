@@ -9,7 +9,8 @@ reachable yet, and the client should queue and retry.
 
 ```json
 {"status": "ok", "version": "0.1.0", "database": "ready", "schema": "memory", "schema_version": 2,
- "embedder": "BAAI/bge-small-en-v1.5", "counts": {"sessions": 12, "messages": 340, "indexed": 160}}
+ "embedder": "BAAI/bge-small-en-v1.5", "counts": {"sessions": 12, "messages": 340, "indexed": 160},
+ "home": {"configured": false, "connected": false}}
 ```
 
 `status` is `starting` (with `error`) until the database is reachable and migrated. `embedder` is
@@ -53,9 +54,11 @@ page, passed as `before`.
 
 Every message of a session in time order.
 
-## `GET /v1/search?q=&from=&to=&agent=&kind=&include_private=true&exclude=&mode=hybrid&limit=10&touch=false&session_id=`
+## `GET /v1/search?q=&from=&to=&agent=&kind=&include_private=true&exclude=&mode=hybrid&limit=10&touch=false&session_id=&source=conversation`
 
-Search the recall index (turns and facts), best first. `mode=hybrid` (default) merges full-text
+Search the recall index (turns and facts), best first. `source` is `conversation` (default),
+`home_assistant` (door, alert and state-change events from Home Assistant, kind `ha_event`) or
+`all`; every result has a `source`. `/v1/recall` and the brief never include Home Assistant rows. `mode=hybrid` (default) merges full-text
 and vector matches; `mode=text` is full text only. `kind` may repeat (`turn`, `fact`); `exclude`
 is a comma-separated list of result ids to leave out. Each result has `id`, `kind`, `source_id`,
 `session_id`, `agent`, `period_start`, `period_end`, `text`, `score`, `similarity` (cosine, when
@@ -216,3 +219,57 @@ general categories; the details go to the engine's log only.
 
 Send the mirror what it is missing now → `{"sent": 42}`. 409 when no mirror is set.
 
+
+## `GET /v1/home/status`
+
+Home Assistant listener state; works when it is not configured.
+
+```json
+{"configured": true, "connected": true, "url": "http://homeassistant-1:8123", "home_id": "home",
+ "label": "aiembodied", "watched": 14, "events_today": 6, "last_event_at": "2026-11-08T07:58:12+00:00",
+ "error": null, "note": null}
+```
+
+Unconfigured (no `HA_URL` or `HA_TOKEN`): `configured` false, `note` says why ("Home Assistant is
+off: HA_TOKEN is not set"). `error` is e.g. `"token refused"`; `note` carries things like "could
+not read the registries, so only HA_ENTITIES is watched". `events_today` counts alerts and
+changes, not sensor readings. The token is never shown.
+
+## `GET /v1/home/entities?home=&q=`
+
+```json
+{"entities": [{"home_id": "home", "entity_id": "binary_sensor.front_door", "name": "Front door",
+  "area": "Hallway", "domain": "binary_sensor", "device_class": "door", "class": "state",
+  "unit": null, "last_state": "off", "last_value": null}]}
+```
+
+The watched entities, by area then name. `q` is split into words; each must appear in the entity
+id, name or area (case-insensitive). `class` is `alert`, `state` or `numeric`. For a numeric
+entity `last_value` is the last reading kept.
+
+## `GET /v1/home/history?entity=&q=&from=&to=&limit=200&home=`
+
+What one entity did in `[from, to)` (default: the last 24 hours; 400 if `to <= from`, or if
+neither `entity` nor `q` is given). The entity is `entity` if it is an exact entity id, else the
+best match for `q` (or `entity`) on id, name and area. When that is not exactly one entity (and
+no name matches exactly) the answer is only the candidates, empty if none:
+
+```json
+{"matches": [{"home_id": "home", "entity_id": "sensor.hall_temp", "name": "Hall temperature",
+  "area": "Hallway", "domain": "sensor", "device_class": "temperature", "class": "numeric",
+  "unit": "°C", "last_state": "19", "last_value": 19.0}]}
+```
+
+Otherwise:
+
+```json
+{"entity": {"...as above..."}, "from": "2026-11-07T08:00:00+00:00", "to": "2026-11-08T08:00:00+00:00",
+ "changes": [{"at": "2026-11-08T06:12:00+00:00", "kind": "change", "state": "on", "old_state": "off",
+              "value": null, "text": "Front door (Hallway) opened, was closed."}],
+ "readings": [{"hour": "2026-11-08T06:00:00+00:00", "n": 12, "min": 20.1, "mean": 20.6, "max": 21.0, "last": 20.9}],
+ "raw": [{"at": "2026-11-08T06:12:00+00:00", "value": 20.4}]}
+```
+
+`changes` are alerts and changes, newest first, up to `limit`. `readings` (numeric entities only)
+are hourly rollups of every value seen, oldest first; `raw` (numeric, ranges of two days or
+less) are the readings that were kept, oldest first. Both are empty otherwise.

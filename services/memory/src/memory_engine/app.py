@@ -12,7 +12,7 @@ import secrets
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Optional
 from uuid import UUID
 
@@ -21,7 +21,7 @@ from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import __version__, context, db, facts, handoffs, mirror, recall, store, storage, summaries
+from . import __version__, context, db, facts, handoffs, home, mirror, recall, store, storage, summaries
 from .embed import Embedder
 from .summaries import Summariser
 
@@ -151,6 +151,7 @@ class Engine:
         summariser: Optional[Summariser] = None,
         settings_file: Optional[Path] = None,
         mirror_interval: float = 60.0,
+        home_config: Optional[home.HomeConfig] = None,
     ):
         # This machine's database; the saved storage settings may point elsewhere.
         self.local_url = database_url
@@ -177,6 +178,11 @@ class Engine:
         # None: no background summaries or fact extraction (no LLM configured).
         self.summariser = summariser
         self._summary_thread: Optional[threading.Thread] = None
+        # Home Assistant: the listener only exists when it has an address and a token.
+        self.home_config = home_config
+        self.home: Optional[home.HomeListener] = (
+            home.HomeListener(self, home_config) if home_config is not None and home_config.enabled else None
+        )
         self.pool = db.open_pool(self.database_url, schema)
         self.ready = False
         self.error: Optional[str] = None
@@ -194,6 +200,8 @@ class Engine:
         if self.embedder is not None and not self.embed_inline:
             self._embed_thread = threading.Thread(target=self._embed_loop, name="memory-embed", daemon=True)
             self._embed_thread.start()
+        if self.home is not None and in_background:
+            self.home.start()
         if in_background:
             self._thread = threading.Thread(target=self._connect_loop, name="memory-db", daemon=True)
             self._thread.start()
@@ -206,7 +214,14 @@ class Engine:
         self._stop.set()
         self._wake_embedder.set()
         self._wake_mirror.set()
+        if self.home is not None:
+            self.home.stop()
         self.pool.close()
+
+    def home_status(self) -> dict[str, Any]:
+        if self.home is None:
+            return home.unconfigured_status(self.home_config)
+        return self.home.status()
 
     # --- where memory is kept ------------------------------------------------------------
 
@@ -338,6 +353,18 @@ class Engine:
         else:
             self._wake_embedder.set()
 
+    def wake_embedder(self, conn=None) -> None:
+        """Embed new index rows soon, without counting as user activity (Home Assistant events
+        come in at all hours). With embed_inline, embeds now on `conn`."""
+        if self.embedder is None:
+            return
+        if self.embed_inline:
+            if conn is not None:
+                while recall.embed_pending(conn, self.embedder):
+                    pass
+        else:
+            self._wake_embedder.set()
+
     def _embed_loop(self) -> None:
         """Embed new and changed index rows, a batch at a time, whenever there are any."""
         while not self._stop.is_set():
@@ -419,6 +446,7 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
             engine.stop()
 
     app = FastAPI(title="memory engine", version=__version__, lifespan=lifespan)
+    app.state.engine = engine
 
     @app.exception_handler(ApiError)
     async def api_error(_request: Request, error: ApiError):
@@ -448,6 +476,8 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
             "schema_version": engine.schema_version,
             "embedder": engine.embedder.name if engine.embedder else None,
         }
+        home_status = engine.home_status()
+        body["home"] = {"configured": home_status["configured"], "connected": home_status["connected"]}
         if engine.summariser is not None:
             body["summariser"] = {
                 "model": engine.summariser.llm.name,
@@ -540,7 +570,11 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
         limit: int = Query(default=10, ge=1, le=100),
         touch: bool = Query(default=False, description="the agent is using what it finds: refresh those facts"),
         session_id: Optional[UUID] = None,
+        source: Literal["conversation", "home_assistant", "all"] = Query(
+            default="conversation", description="where to search: conversation memory, Home Assistant events, or both"
+        ),
     ):
+        sources = None if source == "all" else [source]
         with engine.connection() as conn:
             if mode == "text":
                 results = store.search_text(
@@ -553,6 +587,7 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
                     include_private=include_private,
                     exclude_ids=exclude or [],
                     limit=limit,
+                    sources=sources,
                 )
             else:
                 results = recall.hybrid_search(
@@ -566,11 +601,39 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
                     include_private=include_private,
                     exclude_ids=exclude or [],
                     limit=limit,
+                    sources=sources,
                 )
             # Looking (the Memory panel) changes nothing; the agent recalling strengthens.
             if touch:
                 facts.touch(conn, [r["id"] for r in results if r["kind"] == "fact"], session_id)
         return {"results": results}
+
+    @app.get("/v1/home/status", dependencies=guarded)
+    def home_status():
+        return engine.home_status()
+
+    @app.get("/v1/home/entities", dependencies=guarded)
+    def home_entities(home_id: Optional[str] = Query(default=None, alias="home"), q: Optional[str] = None):
+        with engine.connection() as conn:
+            return {"entities": home.list_entities(conn, home_id, q)}
+
+    @app.get("/v1/home/history", dependencies=guarded)
+    def home_history(
+        entity: Optional[str] = Query(default=None, max_length=300),
+        q: Optional[str] = Query(default=None, max_length=300),
+        start: Optional[datetime] = Query(default=None, alias="from"),
+        end: Optional[datetime] = Query(default=None, alias="to"),
+        limit: int = Query(default=200, ge=1, le=1000),
+        home_id: Optional[str] = Query(default=None, alias="home"),
+    ):
+        if not (entity or q):
+            raise ApiError(400, "give entity or q")
+        end = end or datetime.now(timezone.utc)
+        start = start or end - timedelta(hours=24)
+        if end <= start:
+            raise ApiError(400, "to must be after from")
+        with engine.connection() as conn:
+            return home.history(conn, home_id, entity, q, start, end, limit)
 
     @app.get("/v1/storage", dependencies=guarded)
     def get_storage():
