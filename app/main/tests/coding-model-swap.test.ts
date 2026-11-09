@@ -185,6 +185,26 @@ describe('CoderModelSwap auto mode', () => {
     expect(setHold).toHaveBeenLastCalledWith(false);
   });
 
+  it('retries releasing the hold on a later tick when setHold(false) failed', async () => {
+    let failures = 2; // the release and the retry inside the same reconcile
+    const { swap, setHold, activity, clock, advance } = setup({
+      mode: 'auto', free: 20 * GiB, size,
+      setHold: async (hold) => { if (!hold && failures-- > 0) { throw new Error('runner down'); } },
+    });
+    await swap.setNeeded(true);
+    advance(5000);
+    activity.at = clock();
+    await swap.tick(); // hold(true) works
+    setHold.mockClear();
+    await swap.setNeeded(false); // hold(false) fails once
+    expect(setHold).toHaveBeenCalledTimes(2);
+    await swap.tick(); // retried and succeeds
+    expect(setHold).toHaveBeenCalledTimes(3);
+    expect(setHold).toHaveBeenLastCalledWith(false);
+    await swap.tick();
+    expect(setHold).toHaveBeenCalledTimes(3);
+  });
+
   it('still swaps back when pausing the tasks fails', async () => {
     const { swap, log, activity, clock, advance, logger } = setup({
       mode: 'auto', free: 20 * GiB, size, setHold: async () => { throw new Error('runner down'); },

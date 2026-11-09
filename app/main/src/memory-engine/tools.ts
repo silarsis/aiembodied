@@ -109,11 +109,13 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 /** The model says "home"; the engine says "home_assistant". */
-export function searchSource(value: string | undefined): 'conversation' | 'home_assistant' | 'all' | undefined {
+export function searchSource(value: string | undefined): 'conversation' | 'home_assistant' | 'coding' | 'all' | undefined {
   switch (value?.toLowerCase()) {
     case 'home':
     case 'home_assistant':
       return 'home_assistant';
+    case 'coding':
+      return 'coding';
     case 'all':
       return 'all';
     default:
@@ -316,10 +318,11 @@ export function createMemoryTools(options: MemoryToolsOptions): RegisteredTool[]
         subject: { type: 'string', description: 'Optional. A subject to focus on, such as "garden" or "car".' },
         source: {
           type: 'string',
-          enum: ['conversation', 'home', 'all'],
+          enum: ['conversation', 'home', 'coding', 'all'],
           description:
             'Optional. conversation (default) searches past conversations and saved facts; home searches Home ' +
-            'Assistant events such as doors, alerts and state changes; all searches both.',
+            'Assistant events such as doors, alerts and state changes; coding searches your past coding tasks ' +
+            '(what you changed, in which project, and the pull request); all searches everything.',
         },
       },
       required: ['query'],

@@ -30,6 +30,7 @@ Or by hand: `pip install -e .[test]`, then `python -m coder` (or `coding-runner`
 | `CODER_LOCAL_LLM_URL` | `http://127.0.0.1:1236/v1` | OpenAI-compatible server for provider `local` |
 | `CODER_LOCAL_MODEL` | `qwen3-coder-next` | model id served there |
 | `CODER_GIT_REMOTE` | `origin` | remote to fetch from and push to |
+| `CODER_PR_POLL_S` | `300` | how often open pull requests are checked (merged / closed / CI result); `0` disables |
 | `CODER_LOCAL_WAIT_S` | `900` | how long a local-model task waits for the model server before it fails |
 
 The local model URL, local model id and default model can also be set by the app with

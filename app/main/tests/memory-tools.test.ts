@@ -163,6 +163,12 @@ describe('memory tools', () => {
     expect(await byId[MEMORY_TOOL_IDS.recall].execute({ query: 'door', source: 'home' })).toContain('home event:');
   });
 
+  it('recall_memories passes source coding to the engine', async () => {
+    const { client, byId } = makeTools();
+    await byId[MEMORY_TOOL_IDS.recall].execute({ query: 'retry', source: 'coding' });
+    expect(client.search).toHaveBeenLastCalledWith('retry', expect.objectContaining({ source: 'coding' }));
+  });
+
   it('explains a period it cannot read instead of searching', async () => {
     const { client, byId } = makeTools();
     const text = await byId[MEMORY_TOOL_IDS.recall].execute({ query: 'x', period: 'the other day-ish thing' });

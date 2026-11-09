@@ -122,6 +122,17 @@ describe('ApprovalBroker', () => {
     expect(broker.list()).toEqual([]);
   });
 
+  it('marks spoken outcomes delivered before emitting them', async () => {
+    const { broker, tool } = setup();
+    const seen: boolean[] = [];
+    broker.on('outcome', (o: { delivered: boolean }) => seen.push(o.delivered));
+    await broker.request(tool, { goal: 'one' });
+    await broker.resolveSpoken('yes');
+    await broker.request(tool, { goal: 'two' });
+    await broker.resolveSpoken('no');
+    expect(seen).toEqual([true, true]);
+  });
+
   it('does not settle an approval older than five minutes by voice', async () => {
     const { broker, tool, advance } = setup();
     await broker.request(tool, { goal: 'old' });

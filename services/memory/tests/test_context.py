@@ -28,7 +28,8 @@ def test_brief_has_pinned_facts_first_and_the_last_conversation(client):
 
 def test_brief_is_empty_on_a_new_memory(client):
     assert client.get("/v1/brief").json() == {
-        "agent": None, "facts": [], "handoff": None, "last_session": None, "recent_days": []
+        "agent": None, "facts": [], "handoff": None, "last_session": None, "recent_days": [],
+        "recent_coding": [],
     }
 
 

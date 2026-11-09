@@ -22,7 +22,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import __version__, context, db, facts, handoffs, home, mirror, recall, store, storage, summaries
+from . import __version__, coding, context, db, facts, handoffs, home, mirror, recall, store, storage, summaries
 from .embed import Embedder
 from .summaries import Summariser
 
@@ -127,6 +127,27 @@ class FactPatch(BaseModel):
 
 class MessagesBody(BaseModel):
     messages: list[MessageBody] = Field(max_length=MAX_BATCH)
+
+
+class CodingTaskBody(BaseModel):
+    task_id: str = Field(min_length=1, max_length=200)
+    workspace_id: str = Field(min_length=1, max_length=200)
+    workspace_name: str = Field(min_length=1, max_length=200)
+    title: str = Field(min_length=1, max_length=2000)
+    outcome: Literal["done", "failed", "cancelled", "discarded"]
+    pr_url: Optional[str] = Field(default=None, max_length=1000)
+    pr_state: Optional[str] = Field(default=None, max_length=50)
+    branch: Optional[str] = Field(default=None, max_length=300)
+    files_changed: list[str] = Field(default_factory=list, max_length=coding.MAX_FILES)
+    added: int = Field(default=0, ge=0)
+    removed: int = Field(default=0, ge=0)
+    review_flags: list[str] = Field(default_factory=list, max_length=50)
+    summary: str = Field(default="", max_length=coding.MAX_SUMMARY_CHARS)
+    model: Optional[str] = Field(default=None, max_length=200)
+    provider: Optional[str] = Field(default=None, max_length=200)
+    agent: Optional[str] = Field(default=None, max_length=200)
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
 
 
 MAX_HOME_SERVERS = 20
@@ -626,8 +647,9 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
         limit: int = Query(default=10, ge=1, le=100),
         touch: bool = Query(default=False, description="the agent is using what it finds: refresh those facts"),
         session_id: Optional[UUID] = None,
-        source: Literal["conversation", "home_assistant", "all"] = Query(
-            default="conversation", description="where to search: conversation memory, Home Assistant events, or both"
+        source: Literal["conversation", "home_assistant", "coding", "all"] = Query(
+            default="conversation",
+            description="where to search: conversation memory, Home Assistant events, past coding tasks, or all",
         ),
     ):
         sources = None if source == "all" else [source]
@@ -663,6 +685,14 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
             if touch:
                 facts.touch(conn, [r["id"] for r in results if r["kind"] == "fact"], session_id)
         return {"results": results}
+
+    @app.post("/v1/coding/tasks", dependencies=guarded)
+    def post_coding_task(body: CodingTaskBody):
+        """Remember a finished coding task. Posting the same task_id again updates it."""
+        with engine.connection() as conn:
+            result = coding.upsert_task(conn, body.model_dump())
+            engine.written(conn)
+        return result
 
     @app.get("/v1/home/status", dependencies=guarded)
     def home_status():

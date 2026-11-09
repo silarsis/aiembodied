@@ -127,6 +127,14 @@ describe('coding tools', () => {
     expect(client.answer).toHaveBeenLastCalledWith('20261108-1a2b', { confirmed: false, dialog_id: 'c1' });
   });
 
+  it('answers a select question with one of its options only', async () => {
+    const questions = [{ id: 's1', kind: 'select' as const, method: 'select', title: 'Pick', options: ['red', 'green'] }];
+    const { byId, client } = setup([task({ status: 'question', questions })]);
+    await expect(byId(CODING_TOOL_IDS.answer).execute({ answer: 'blue' })).rejects.toThrow('red, green');
+    await byId(CODING_TOOL_IDS.answer).execute({ answer: 'Green' });
+    expect(client.answer).toHaveBeenCalledWith('20261108-1a2b', { value: 'green', dialog_id: 's1' });
+  });
+
   it('reviews with checks, a diff stat and a verdict hint', async () => {
     const review = { summary: '2 file(s) changed, +10 -3', files: [{ path: 'a.ts', added: 8, deleted: 1 }, { path: 'b.ts', added: 2, deleted: 2 }], flags: ['lockfile changed: pnpm-lock.yaml'], protected_violations: [] };
     const { byId } = setup([task({ status: 'review', review, checks_ok: false, checks_output: 'a\nb\nFAIL test x', last_text: 'Done.' })]);

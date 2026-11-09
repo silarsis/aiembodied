@@ -125,8 +125,10 @@ export class CoderModelSwap {
   private downChecks = 0;
   /** An activity-triggered swap back is running (the override may already be gone, Echo's server not yet answering). */
   private reclaimingNow = false;
-  /** The tasks are paused (setHold(true) was called and not yet released). */
+  /** The hold state the runner last confirmed (setHold succeeded). */
   private held = false;
+  /** The hold state we want; differs from `held` after a failed setHold, and is retried on the next step. */
+  private wantHold = false;
   /** Kevin's talking sent the models back; the next swap in needs a quiet moment, even in swap mode. */
   private needQuiet = false;
   /** After a failed load, no new try before this time, so a broken model doesn't stop Echo's over and over. */
@@ -189,10 +191,11 @@ export class CoderModelSwap {
   }
 
   private async hold(hold: boolean): Promise<void> {
+    this.wantHold = hold;
     if (!this.options.setHold || hold === this.held) return;
-    this.held = hold;
     try {
       await this.options.setHold(hold);
+      this.held = hold; // a newer wish that differs is retried by the next step
     } catch (error) {
       this.options.logger.warn('Could not change the coding hold.', { hold, message: error instanceof Error ? error.message : String(error) });
     }
@@ -232,6 +235,7 @@ export class CoderModelSwap {
 
   private async step(): Promise<void> {
     const { phase } = this.state;
+    if (this.wantHold !== this.held) await this.hold(this.wantHold); // retry a hold change that failed earlier
     if (phase === 'waiting-for-quiet') {
       // While it isn't quiet, only measure memory again once a minute (the reader runs PowerShell).
       // After Kevin talked, only a quiet moment will do; otherwise look at memory again once a minute.

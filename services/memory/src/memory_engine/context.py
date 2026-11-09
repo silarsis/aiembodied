@@ -13,7 +13,7 @@ from uuid import UUID
 import psycopg
 from psycopg.types.json import Jsonb
 
-from . import handoffs
+from . import coding, handoffs
 from .embed import Embedder
 from .facts import ACCESSIBILITY_SQL, touch
 from .recall import hybrid_search
@@ -122,6 +122,7 @@ def brief(
         "handoff": handoffs.latest(conn, exclude_session=session_id),
         "last_session": last_session,
         "recent_days": recent_days,
+        "recent_coding": coding.recent(conn),
     }
 
 

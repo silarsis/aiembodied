@@ -72,6 +72,14 @@ export function formatBrief(brief: MemoryEngineBrief | null, now: Date): string 
       lines.push(`- ${formatDay(new Date(day.period_start))}: ${oneLine(day.text)}`);
     }
   }
+  const coding = brief?.recent_coding ?? [];
+  if (coding.length) {
+    lines.push('', 'Recent coding work (search it with recall_memories source "coding"):');
+    for (const task of coding) {
+      const pr = task.pr_url ? `, PR ${task.pr_url}${task.pr_state ? ` (${task.pr_state})` : ''}` : '';
+      lines.push(`- ${task.workspace}: ${oneLine(task.title)} (${task.outcome}${pr})`);
+    }
+  }
   const handoff = brief?.handoff;
   if (handoff?.text) {
     const when = new Date(handoff.written_at);

@@ -238,15 +238,29 @@ export class LocalVoiceService {
     this.systemTimer.unref?.();
   }
 
-  /** The queued updates as one note for the model; empties the queue. */
-  private takeSystemNote(): string | null {
+  /**
+   * The queued updates as one note for the model; empties the queue. The notes stay in flight:
+   * `restore` puts them back at the front (and re-arms the timer) if the turn fails or is cancelled.
+   */
+  private takeSystemNote(): { text: string; restore: () => void } | null {
     if (!this.systemReady()) return null;
     const notes = this.notes;
+    const previousTurnAt = this.lastSystemTurnAt;
     this.notes = [];
     this.lastSystemTurnAt = this.now();
     if (this.systemTimer) clearTimeout(this.systemTimer);
     this.systemTimer = null;
-    return `${SYSTEM_NOTE_MARKER} ${notes.map((note) => note.text).join(' ')}`;
+    let restored = false;
+    return {
+      text: `${SYSTEM_NOTE_MARKER} ${notes.map((note) => note.text).join(' ')}`,
+      restore: () => {
+        if (restored) return;
+        restored = true;
+        this.notes = [...notes, ...this.notes];
+        this.lastSystemTurnAt = previousTurnAt;
+        this.scheduleSystemReady();
+      },
+    };
   }
 
   resetHistory(): void {
@@ -277,14 +291,30 @@ export class LocalVoiceService {
     const system = request.system === true && !preview;
     let inputText = request.text;
     let systemNote: string | undefined;
+    let restoreNotes: (() => void) | undefined;
     if (system) {
-      const note = this.takeSystemNote();
-      if (!note) {
+      const taken = this.takeSystemNote();
+      if (!taken) {
         return { requestId, text: '', cancelled: true };
       }
-      systemNote = note;
-      inputText = note;
+      systemNote = taken.text;
+      restoreNotes = taken.restore;
+      inputText = taken.text;
     }
+    try {
+      return await this.runTurn(request, emit, { requestId, preview, system, inputText, systemNote, restoreNotes });
+    } catch (error) {
+      restoreNotes?.();
+      throw error;
+    }
+  }
+
+  private async runTurn(
+    request: LocalVoiceRespondRequest,
+    emit: (event: LocalVoiceEvent) => void,
+    turn: { requestId: string; preview: boolean; system: boolean; inputText: string; systemNote?: string; restoreNotes?: () => void },
+  ): Promise<LocalVoiceRespondResult> {
+    const { requestId, preview, system, inputText, systemNote, restoreNotes } = turn;
     this.cancel();
     const controller = new AbortController();
     this.active = { requestId, controller };
@@ -304,6 +334,7 @@ export class LocalVoiceService {
     ]);
     if (signal.aborted) {
       memory?.activity?.(false);
+      restoreNotes?.();
       return { requestId, text: '', cancelled: true };
     }
     if (!preview) {
@@ -444,6 +475,7 @@ export class LocalVoiceService {
       memory?.activity?.(false);
     }
     cancelled ||= signal.aborted;
+    if (cancelled) restoreNotes?.();
     if (preview) {
       this.logger?.info('Local voice: preview finished', { requestId, cancelled, sentences: index });
       return { requestId, text: reply, cancelled };

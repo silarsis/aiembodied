@@ -34,6 +34,8 @@ class Config:
     # How long a task waits for the local model server, and how often it asks.
     local_wait_s: float = 900.0
     local_poll_s: float = 3.0
+    # How often open pull requests are looked at, in seconds (0 turns it off).
+    pr_poll_seconds: float = 300.0
     # Tuning knobs (mostly for tests).
     cancel_grace_s: float = 5.0
     settle_s: float = 3.0
@@ -58,6 +60,7 @@ class Config:
         c.local_poll_s = float(env.get("CODER_LOCAL_POLL_S", c.local_poll_s))
         c.cancel_grace_s = float(env.get("CODER_CANCEL_GRACE_S", c.cancel_grace_s))
         c.settle_s = float(env.get("CODER_SETTLE_S", c.settle_s))
+        c.pr_poll_seconds = float(env.get("CODER_PR_POLL_S", c.pr_poll_seconds))
         c.github_api = env.get("CODER_GITHUB_API", c.github_api)
         return c
 
