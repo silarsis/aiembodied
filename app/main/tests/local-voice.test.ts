@@ -98,6 +98,16 @@ describe('toSpeakableText', () => {
     expect(toSpeakableText('{anim:wave}')).toBe('');
     expect(toSpeakableText(' * ')).toBe('');
   });
+
+  it('removes scene tags the same way, and never splits a sentence inside one', () => {
+    expect(toSpeakableText('Let me see. {go:bookshelf}{move:runs a finger along the spines} {sit:the sofa} {stand} {put:mug@coffee table} {come}')).toBe(
+      'Let me see.',
+    );
+    const splitter = new SentenceSplitter();
+    expect(splitter.push('Okay, {put:the mug on the side table. Really} done. Next')).toEqual([
+      'Okay, {put:the mug on the side table. Really} done.',
+    ]);
+  });
 });
 
 describe('LocalVoiceService', () => {

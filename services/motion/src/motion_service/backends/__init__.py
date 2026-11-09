@@ -1,4 +1,4 @@
-from .base import Backend, BackendOptions, Chunk, Motion
+from .base import Backend, BackendOptions, Chunk, Motion, StreamHistory
 
 
 def make_backend(name: str, options: BackendOptions) -> Backend:
@@ -17,4 +17,4 @@ def make_backend(name: str, options: BackendOptions) -> Backend:
     raise ValueError(f"unknown backend {name!r} (expected ardy, kimodo or fake)")
 
 
-__all__ = ["Backend", "BackendOptions", "Chunk", "Motion", "make_backend"]
+__all__ = ["Backend", "BackendOptions", "Chunk", "Motion", "StreamHistory", "make_backend"]

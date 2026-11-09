@@ -1692,6 +1692,7 @@ function registerIpcHandlers(
     const modelDescription = activeModel?.description ?? undefined;
     return vrmaGenerationService.generateAnimation({ ...payload, bones, modelDescription });
   });
+  const motionStreamControllers = new Map<string, AbortController>();
   ipcMain.handle('avatar-motion:status', async (): Promise<AvatarMotionStatus> => {
     if (!localMotionServer(manager)) {
       const clips = routeTargets(manager.getConfig().models, 'clips')[0];
@@ -1719,11 +1720,26 @@ function registerIpcHandlers(
     }
 
     const sender = event.sender;
-    return localMotionService.streamMotion(payload, (chunk) => {
-      if (!sender.isDestroyed()) {
-        sender.send('avatar-motion:chunk', chunk);
-      }
-    });
+    const controller = new AbortController();
+    motionStreamControllers.set(payload.streamId, controller);
+    try {
+      return await localMotionService.streamMotion(
+        payload,
+        (chunk) => {
+          if (!sender.isDestroyed()) {
+            sender.send('avatar-motion:chunk', chunk);
+          }
+        },
+        { signal: controller.signal },
+      );
+    } finally {
+      motionStreamControllers.delete(payload.streamId);
+    }
+  });
+  ipcMain.handle('avatar-motion:cancel', (_event, streamId: unknown) => {
+    if (typeof streamId === 'string') {
+      motionStreamControllers.get(streamId)?.abort();
+    }
   });
   ipcMain.handle('local-voice:status', async () => {
     if (!localVoiceService) {

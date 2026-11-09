@@ -85,16 +85,18 @@ def test_stream_chunks_are_continuous(client):
         assert_valid_vrma(c["vrma"])
         assert c["vrma"]["tracks"][0]["keyframes"][0]["t"] == 0
     assert "encodeMs" in chunks[0]["timings"] and "totalMs" in chunks[1]["timings"]
-    assert done == {"type": "done", "chunks": 3, "timings": done["timings"]}
+    assert done == {"type": "done", "chunks": 3, "timings": done["timings"], "session": done["session"]}
+    assert done["session"].startswith("s-")
+    assert all("end_pose" in c for c in chunks)
     # hips continue across the chunk boundary (shared floor/origin)
     end0 = chunks[0]["vrma"]["hips"]["position"]["keyframes"][-1]["p"]
     start1 = chunks[1]["vrma"]["hips"]["position"]["keyframes"][0]["p"]
     assert abs(start1[0] - end0[0]) < 0.01 and start1[1] == pytest.approx(end0[1], abs=1e-4)
 
 
-def test_stream_allows_20s_but_not_more(client):
-    assert client.post("/v1/motion/stream", json={"prompt": "x", "duration": 20}).status_code == 200
-    assert client.post("/v1/motion/stream", json={"prompt": "x", "duration": 20.5}).status_code == 400
+def test_stream_allows_30s_but_not_more(client):
+    assert client.post("/v1/motion/stream", json={"prompt": "x", "duration": 30}).status_code == 200
+    assert client.post("/v1/motion/stream", json={"prompt": "x", "duration": 30.5}).status_code == 400
 
 
 def test_stream_error_mid_way_is_reported_in_band():

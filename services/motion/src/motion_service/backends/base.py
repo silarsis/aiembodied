@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
-from typing import Iterator, Optional
+from typing import Any, Iterator, Optional, Sequence
 
 import numpy as np
+
+log = logging.getLogger("motion_service")
 
 
 @dataclass
@@ -24,6 +27,11 @@ class Motion:
     def slice(self, start: int, end: int) -> "Motion":
         return Motion(self.global_rot_mats[start:end], self.posed_joints[start:end], self.root_positions[start:end])
 
+    def translated(self, delta: np.ndarray) -> "Motion":
+        """Every joint and the root moved by `delta` ([T, 3] metres)."""
+        d = np.asarray(delta, dtype=self.posed_joints.dtype)
+        return Motion(self.global_rot_mats, self.posed_joints + d[:, None, :], self.root_positions + d)
+
     @staticmethod
     def concat(parts: list["Motion"]) -> "Motion":
         return Motion(
@@ -34,11 +42,22 @@ class Motion:
 
 
 @dataclass
+class StreamHistory:
+    """What a backend needs to carry on a stream later (`continue_from`): opaque to app.py.
+
+    total_frames counts the frames generated so far across the stream and the ones it continued."""
+
+    total_frames: int = 0
+    payload: Any = None
+
+
+@dataclass
 class Chunk:
     motion: Motion
     start_frame: int
     encode_ms: float = 0.0
     generate_ms: float = 0.0
+    history: Optional[StreamHistory] = None  # state after this chunk; the last one of a stream is what to keep
 
 
 @dataclass
@@ -87,10 +106,22 @@ class Backend:
         """Run a tiny generation so the text encoder and model weights stay resident on the GPU."""
         self.generate(self.encode("A person stands still."), 30, 2)
 
-    def stream(self, text, frames: int, steps: int) -> Iterator[Chunk]:
-        """Yield continuous chunks covering `frames` frames. Default: one chunk."""
+    supports_constraints = False
+    _warned_constraints = False
+
+    def stream(self, text, frames: int, steps: int, *, plan=None, phase_texts: Optional[Sequence] = None,
+               history: Optional[StreamHistory] = None, constraint_weight: float = 2.0) -> Iterator[Chunk]:
+        """Yield continuous chunks covering `frames` frames. Default: one chunk, constraints ignored.
+
+        plan: a `ConstraintPlan` (model units, request-relative frames) or None.
+        phase_texts: [(start_frame, text)] later prompts; each applies from the first chunk starting at or
+            after its frame.
+        history: a `StreamHistory` from an earlier stream to continue in the same frame."""
         import time
 
+        if (plan is not None or phase_texts or history is not None) and not type(self)._warned_constraints:
+            type(self)._warned_constraints = True
+            log.warning("the %s backend ignores paths, targets, phases and continue_from (they need ARDY)", self.name)
         t = time.perf_counter()
         motion = self.generate(text, frames, steps)
         yield Chunk(motion, 0, generate_ms=(time.perf_counter() - t) * 1000)

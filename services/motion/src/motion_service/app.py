@@ -9,16 +9,19 @@ import os
 import threading
 import time
 from contextlib import asynccontextmanager
-from typing import Iterator, Optional
+from typing import Annotated, Iterator, Literal, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .backends.base import Backend
 from .calibration import REST_BONES, arm_forward_for_avatar
+from .constraints import (DEFAULT_CORNER_RADIUS, PathParams, TargetParams, build_plan, end_pose,
+                          scale_for, seconds_to_frame_ceil, snap_root)
 from .retarget import RootFrame, chest_forward_deg, joint_names, slugify, to_vrma
+from .sessions import Session, SessionStore
 
 log = logging.getLogger("motion_service")
 
@@ -55,8 +58,68 @@ class ClipRequest(BaseModel):
         return v
 
 
+Num = Annotated[float, Field(allow_inf_nan=False, ge=-10000, le=10000)]
+
+
+class PathSpec(BaseModel):
+    """A pelvis path on the floor, in the motion frame (avatar metres)."""
+
+    points: list[tuple[Num, Num]] = Field(min_length=1, max_length=500)
+    corner_radius: float = Field(default=DEFAULT_CORNER_RADIUS, ge=0, le=20, allow_inf_nan=False)
+    speed: float = Field(default=1.0, gt=0, le=10, allow_inf_nan=False)
+    start_s: float = Field(default=0.3, ge=0, le=60, allow_inf_nan=False)
+    mode: Literal["dense", "waypoints"] = "dense"
+
+
+class TargetSpec(BaseModel):
+    """A timed keyframe: pelvis root / height / heading and, with `hand`, a wrist position."""
+
+    t: float = Field(ge=0, le=60, allow_inf_nan=False)
+    until: Optional[float] = Field(default=None, ge=0, le=60, allow_inf_nan=False)
+    root: Optional[tuple[Num, Num]] = None
+    height: Optional[float] = Field(default=None, gt=0, le=10, allow_inf_nan=False)
+    heading: Optional[Num] = None
+    hand: Optional[Literal["left", "right"]] = None
+    position: Optional[tuple[Num, Num, Num]] = None
+    reveal_s: float = Field(default=0.0, ge=0, le=60, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _shape(self):
+        if self.until is not None and self.until < self.t:
+            raise ValueError("until must not be before t")
+        if self.hand is not None:
+            if self.position is None:
+                raise ValueError("a hand target needs position")
+            if self.root is None or self.height is None or self.heading is None:
+                raise ValueError("a hand target needs root, height and heading (the pelvis to hold)")
+        elif self.position is not None:
+            raise ValueError("position needs hand")
+        elif self.root is None and self.height is None and self.heading is None:
+            raise ValueError("a target needs root, height, heading or hand")
+        return self
+
+
+class PhaseSpec(BaseModel):
+    prompt: str = Field(min_length=1, max_length=500)
+    start_s: float = Field(ge=0, le=60, allow_inf_nan=False)
+
+    @field_validator("prompt")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("prompt must not be empty")
+        return v
+
+
 class StreamRequest(ClipRequest):
-    duration: float = Field(default=4.0, ge=0.5, le=20.0)
+    duration: float = Field(default=4.0, ge=0.5, le=30.0)
+    phases: Optional[list[PhaseSpec]] = Field(default=None, max_length=16)
+    path: Optional[PathSpec] = None
+    targets: Optional[list[TargetSpec]] = Field(default=None, max_length=64)
+    constraint_weight: float = Field(default=2.0, ge=0, le=10, allow_inf_nan=False)
+    continue_from: Optional[str] = Field(default=None, max_length=64)
+    snap_s: float = Field(default=0.3, ge=0, le=5, allow_inf_nan=False)
 
 
 class ApiError(Exception):
@@ -81,13 +144,15 @@ def _arm_forward(req: ClipRequest) -> Optional[float]:
         return None
 
 
-def create_app(backend: Backend, load_in_background: bool = True, keep_warm_seconds: float = 0) -> FastAPI:
+def create_app(backend: Backend, load_in_background: bool = True, keep_warm_seconds: float = 0,
+               session_ttl_seconds: float = 600.0, max_sessions: int = 8) -> FastAPI:
     """keep_warm_seconds > 0: after that much idle time, run a tiny generation (and repeat) so the
     first request after a long pause doesn't pay to page the 8B text encoder back in (measured ~11 s
     after several idle hours on a Radeon 8060S, vs ~0.15 s warm)."""
     state = {"ready": False, "error": None, "last_used": time.monotonic(), "warmups": 0}
     lock = threading.Lock()  # one generation at a time: the GPU is the bottleneck anyway
     stop = threading.Event()
+    sessions = SessionStore(max_entries=max_sessions, ttl_s=session_ttl_seconds)
 
     def _keep_warm():
         while not stop.wait(min(keep_warm_seconds, 30.0)):
@@ -184,7 +249,20 @@ def create_app(backend: Backend, load_in_background: bool = True, keep_warm_seco
     @app.post("/v1/motion/stream")
     def stream(req: StreamRequest):
         frames, steps, name = _check(req)
+        previous: Optional[Session] = None
+        if req.continue_from is not None:
+            previous = sessions.get(req.continue_from)
+            if previous is None:
+                raise ApiError(404, "unknown session")
         arm_forward = _arm_forward(req)
+        fps = backend.fps
+        scale = scale_for(req.avatar_rest)
+        plan = None
+        if req.path is not None or req.targets:
+            path = None if req.path is None else PathParams(**req.path.model_dump())
+            targets = [TargetParams(**t.model_dump()) for t in req.targets or []]
+            plan = build_plan(path, targets, fps, scale, frames)
+        phase_specs = sorted(req.phases or [], key=lambda p: p.start_s)
 
         def lines() -> Iterator[bytes]:
             with lock:
@@ -193,30 +271,55 @@ def create_app(backend: Backend, load_in_background: bool = True, keep_warm_seco
                 try:
                     t0 = time.perf_counter()
                     text = backend.encode(req.prompt)
+                    encoded = {req.prompt: text}  # each distinct prompt is encoded once
+                    phase_texts = []
+                    for p in phase_specs:
+                        if p.prompt not in encoded:
+                            encoded[p.prompt] = backend.encode(p.prompt)
+                        phase_texts.append((seconds_to_frame_ceil(p.start_s, fps), encoded[p.prompt]))
                     encode_s = time.perf_counter() - t0
-                    root_frame: Optional[RootFrame] = None
+                    root_frame: Optional[RootFrame] = None if previous is None else previous.root_frame
+                    carry = (0.0, 0.0) if previous is None else previous.carry
+                    last_history = None
                     t_prev = time.perf_counter()
-                    for chunk in backend.stream(text, frames, steps):
+                    for chunk in backend.stream(text, frames, steps, plan=plan, phase_texts=phase_texts or None,
+                                                history=None if previous is None else previous.history,
+                                                constraint_weight=req.constraint_weight):
                         m = chunk.motion
                         t_gen = time.perf_counter()
+                        names = joint_names(m.global_rot_mats.shape[1])
                         if root_frame is None:  # every chunk shares the first chunk's floor and origin
-                            root_frame = RootFrame.from_motion(m.posed_joints, m.root_positions,
-                                                               joint_names(m.global_rot_mats.shape[1]))
+                            root_frame = RootFrame.from_motion(m.posed_joints, m.root_positions, names)
+                        if plan is not None or previous is not None:
+                            _snapped, delta = snap_root(m.root_positions, plan, fps, req.snap_s,
+                                                        chunk.start_frame, carry if chunk.start_frame == 0 else None)
+                            if delta.any():
+                                m = m.translated(delta)
+                            carry_out = (float(delta[-1, 0]), float(delta[-1, 2]))
+                        else:
+                            carry_out = (0.0, 0.0)
                         vrma = to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, f"{name}-{count}",
-                                       fps=backend.fps, kind=backend.name, root_frame=root_frame,
-                                       arm_forward=arm_forward)
+                                       fps=fps, kind=backend.name, root_frame=root_frame, arm_forward=arm_forward)
+                        pose = end_pose(m.root_positions, m.posed_joints, names,
+                                        (root_frame.origin_x, root_frame.origin_z), scale)
                         t_done = time.perf_counter()
                         timings = {"generateMs": _ms(t_gen - t_prev), "retargetMs": _ms(t_done - t_gen),
                                    "totalMs": _ms(t_done - t_prev + (encode_s if count == 0 else 0))}
                         if count == 0:
                             timings["encodeMs"] = _ms(encode_s)
                         yield (json.dumps({"type": "chunk", "index": count,
-                                           "start": round(chunk.start_frame / backend.fps, 5),
-                                           "vrma": vrma, "timings": timings}) + "\n").encode()
+                                           "start": round(chunk.start_frame / fps, 5),
+                                           "vrma": vrma, "timings": timings, "end_pose": pose}) + "\n").encode()
                         count += 1
+                        if chunk.history is not None:
+                            last_history = chunk.history
+                            carry = carry_out
                         t_prev = time.perf_counter()
-                    yield (json.dumps({"type": "done", "chunks": count,
-                                       "timings": {"totalMs": _ms(time.perf_counter() - t_start)}}) + "\n").encode()
+                    done = {"type": "done", "chunks": count,
+                            "timings": {"totalMs": _ms(time.perf_counter() - t_start)}}
+                    if last_history is not None and root_frame is not None:
+                        done["session"] = sessions.put(Session(last_history, root_frame, carry))
+                    yield (json.dumps(done) + "\n").encode()
                 except Exception as e:  # headers are already sent: report in-band and end the stream
                     log.exception("stream failed")
                     yield (json.dumps({"type": "error", "message": f"{type(e).__name__}: {e}"}) + "\n").encode()

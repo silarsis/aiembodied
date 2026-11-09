@@ -1,6 +1,6 @@
 # 3D rooms
 
-**Status:** Step 2 shipped (scene runtime and selector). Not run end to end on a real display at merge time; the room renderer was checked with a software WebGL screenshot and the physics and navigation code with unit tests.
+**Status:** Step 2 shipped (scene runtime and selector). Step 3 (walking, sitting, looking and picking things up) is implemented in the app and in `services/motion`. Neither step has been run end to end on a real display with the ARDY model at merge time: the room renderer was checked with a software WebGL screenshot, and the physics, navigation, planner and executor with unit tests. The grip pose and the hand-held object look are unchecked by eye.
 
 Controls → Backgrounds now has two tabs, **2D pictures** and **3D rooms**. Picking a room puts the avatar inside it: the room is loaded into the avatar's three.js scene with physics colliders, a navigation mesh and a fixed camera. The 2D picture and its ground shadow are hidden while a room is active. The Backgrounds item in the drawer shows the room's name.
 
@@ -10,7 +10,7 @@ Controls → Backgrounds now has two tabs, **2D pictures** and **3D rooms**. Pic
 - The avatar stands at the room's home spot, about 2.4 m in front of the camera, facing it. The canvas fills the stage instead of the fixed 480 by 640 pixels, so the same room works on a portrait or a landscape window.
 - Dynamic props (the mug) are rigid bodies and settle on the table. The avatar is a kinematic capsule that follows the avatar's position and can push them.
 - Choosing another room, or going back to a picture or the plain background, disposes the old room, puts the avatar back at the origin facing forward, restores the 2D camera and cancels any live motion clip and queued animations.
-- On a 2D picture the hips' horizontal travel is removed from live `{move:...}` clips so the avatar stays on its spot (the height is kept). In a room the travel is kept. The next step turns it into root motion.
+- On a 2D picture the hips' horizontal travel is removed from live `{move:...}` clips so the avatar stays on its spot (the height is kept). In a room the travel is kept, and the scene actions below turn it into real root motion.
 - With the metrics HUD flag on, the 3D tab has a **Show walkable area** checkbox that draws the navigation mesh over the room.
 - Describing a room to build it is not part of this step. The 3D tab says so.
 
@@ -38,13 +38,63 @@ Renderer: `app/renderer/src/rooms/`.
 | `room-physics.ts` | Rapier world: static colliders, dynamic props, avatar capsule (radius 0.25, height 1.6). |
 | `room-navmesh.ts` | Recast navmesh (agent radius 0.3, height 1.7, max climb 0.15): `findPath`, `closestWalkable`, `isWalkable`, `debugMesh`. |
 | `room-stage.ts` | `RoomStage` ties these together without touching WebGL, so it runs in tests. If either WASM library fails to start the room still renders. |
-| `room-scene-controller.ts` | Switches the avatar renderer between 2D and room mode (canvas size, camera, avatar placement). |
+| `room-scene-controller.ts` | Switches the avatar renderer between 2D and room mode (canvas size, camera, avatar placement). Owns the `sceneEnv`. |
+| `scene-frames.ts` | World to motion frame maths and the root bake. |
+| `scene-actions.ts` | Tag object matching and the planner: scene action to motion stream request. Pure. |
+| `scene-executor.ts` | The action queue, stream tracking, events, bake and state. Runs against `SceneEnv` and `SceneBridge` interfaces. |
+| `scene-env.ts` | The real `SceneEnv`: avatar root pose, hand attach, grip, placing props. |
+| `grip-pose.ts` | Curls the finger bones of a hand around a held object. |
+| `scene-instructions.ts` | The room description and tag syntax added to the model's instructions. |
 | `room-thumbnail.ts` | Renders the selector's card images, or nothing where WebGL is missing. |
 
 The navmesh is built from the floor with every non-dynamic collider's footprint cut out, so furniture is never walkable on top. Paths therefore keep about 0.3 m from furniture and walls, and a target inside furniture (such as a sit position) snaps to the nearest floor beside it.
 
+## Scene actions (step 3)
+
+In a room, while the local motion service is ready, the assistant can walk to things, look at them, sit, stand, pick things up and put them down. It writes tags in its reply, next to any `{move:...}` tags:
+
+| Tag | What happens |
+|---|---|
+| `{go:X}` | Walk to X's `stand` tag, or the closest walkable point in front of X's face (the side facing the room centre), and face X. |
+| `{come}` | Walk back to the room's `home` spot and face its facing. |
+| `{look:X}` | Turn on the spot to X's `look` tag (or the middle of X). Skipped if already within 20 degrees. |
+| `{sit:X}` | X needs a `sit` tag. Walk to the point 0.45 m in front of the seat, turn around and sit. |
+| `{stand}` | Stand up from the seat. Does nothing when already standing. |
+| `{pick:X}` | X needs a `grab` tag and must be dynamic. Go near it if more than 0.7 m away, reach with the nearer hand, take it. |
+| `{put:X@S}` (or `{put:X on S}`) | Needs to be holding X and S needs a `surface` tag. Go near S if needed, reach to the top of S, put X down. |
+
+Object names match a room object's id or name, ignoring case, articles ("the") and a simple plural. A bare noun such as "table" works when exactly one object name ends with it. Unknown objects, missing tags, no path, or a room without navigation skip the action with a `console.warn` and the queue carries on. The tags are stripped from speech and from the transcript like `{move:}`; `{stand}` and `{come}` are reserved, so an animation with either slug cannot be played by the plain `{slug}` form (use `{anim:stand}`).
+
+**What the model is told.** `buildSceneInstructions` (`rooms/scene-instructions.ts`) adds the room name, its objects with what each allows (sit; go to / look at; pick up; put things on) and the tag syntax to the animation instructions, only when a room is active and live motion is ready. In 2D the text is unchanged. It is part of `sessionInstructions` in `App.tsx`, which both the local voice path and OpenAI Realtime use, so a room change refreshes it through the usual session update.
+
+### How an action is planned and run
+
+- Actions run **one at a time** from a queue (`SceneActionExecutor`, `rooms/scene-executor.ts`). `{move:}` gestures that arrive meanwhile wait in the same queue, and are skipped while seated.
+- Each action becomes **one** `POST /v1/motion/stream` (see `services/motion/API.md`), built by `planAction` in `rooms/scene-actions.ts` from the room, the navmesh and the avatar's state. Getting ready is done by inserting actions: a walk, look, pick or put while seated first plays a stand; a pick or put that is too far first goes near.
+- **Walking:** the navmesh path becomes a dense `path` (corners rounded 0.6 m, 1 m/s, start 0.3 s) with the prompt "a person walks calmly". Heading is left off along the path; one heading target at arrival plus 0.5 s faces the object. Duration is arrival plus 1.5 s.
+- **Sitting:** a walk phase, then a second prompt ("a person turns around and sits down on a chair") from the next 2 s chunk boundary after arrival (`phases`). The sit target (root, hip height = seat height plus 0.08 m, heading) is only revealed from that boundary (`reveal_s`). The session id the service returns is kept; **standing up** continues from it (`continue_from`) in the same motion frame.
+- **Reaching:** prompt "a person reaches out and picks something up from a table", a hand target (the demo's end-effector bundle is built by the service) at 1.5 to 1.8 s with the pelvis held. At 1.7 s the object is attached to the hand bone (it keeps its world transform and then follows the hand), its physics body goes kinematic, and the fingers curl (`rooms/grip-pose.ts`). A put detaches it at 1.7 s, sets it on the top of the surface at the hand's position (clamped 0.15 m inside the edge), makes it dynamic again and opens the hand.
+- **Frames** (`rooms/scene-frames.ts`): a fresh stream's origin is the avatar's root (the VRM scene's x/z and yaw). World points are translated, rotated by minus the yaw and **divided by the avatar's scale** (the scene scale, so world metres become the avatar's own metres, which is what the service expects). The hips tracks of the chunks are then already in the avatar's local frame, which is how the hips node moves under the VRM scene, so nothing is converted per frame.
+- **Root bake:** when the last chunk of a standing-ended stream has finished playing, the scene root is moved to the last chunk's `end_pose` (converted back to the world) and turned to its heading, and the clip is dropped in the same frame so the idle pose takes over at the local origin. Chunks end in an `onEnd` callback that answers `release` for this; the planned end is the fallback when the service reports no `end_pose`.
+
+### Avatar states
+
+`standing` (free), `seated` (on object X, with the stream session and the motion-frame origin kept) and, combinable with standing or seated, `holding` (object Y in a hand). While seated the last frame of the sit clip is held (`onEnd` answers `hold`), idle motion stays suspended, and a pose tag, an animation tag or a gesture is ignored so nothing stands the avatar up; only the stand-up continuation replaces the pose. Breathing is therefore off while seated; blinking and speech stay.
+
+### Interruptions
+
+- The user starts talking (the microphone gate opens while the avatar is not speaking), a wake word, or a tap or push-to-talk: the queue is dropped and a walk or turn in progress is stopped where it is (the stream is cancelled over `avatar-motion:cancel`, further chunks are ignored, and the root is baked at the end of the last chunk already queued). Sitting, standing, picking up and putting down finish. A seated avatar stays seated.
+- A room change (or leaving the room, or a new avatar model) cancels everything, puts a held object back where it was picked up, and resets the state.
+
+### Limits
+
+- The physics capsule follows the hips, so a walking avatar pushes the mug; a held object is kinematic and is ignored by it.
+- A prop that is more than about 0.6 m from the nearest walkable point cannot be reached; the reach just ends with the hand short and the object snapping to the hand when attached.
+- The motion origin is taken to be the VRM scene origin. A model whose hips sit far from it is offset by that distance.
+- The avatar holds one object at a time.
+- Paths, targets and phases need the ARDY backend of the motion service; the fake backend only moves the root crudely and Kimodo ignores them.
+
 ## What's next
 
-- Motion tools: walk along a path, sit, stand up and pick up an object, using `findPath` and the tags. Live clips become root motion in rooms.
 - Idle director: use `idle` tags and `look` points to give the avatar things to do between turns.
 - Generation: build a `RoomFile` from a text description, save it under `<userData>/rooms`, and load GLB models for objects.
