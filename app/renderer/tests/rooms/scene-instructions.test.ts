@@ -49,6 +49,16 @@ describe('scene instructions', () => {
     expect(inRoom.startsWith('Available animations:')).toBe(true);
   });
 
+  it('adds one line about what the avatar did while idle, only in a room with live motion', () => {
+    const base = buildSceneInstructions(room, true);
+    const note = 'walked to the bookshelf (browses the books); sat down on the armchair';
+    const text = buildSceneInstructions(room, true, note);
+    expect(text).toBe(`${base} Just before this, while idle, you: ${note}.`);
+    expect(buildSceneInstructions(room, true, '  ')).toBe(base);
+    expect(buildSceneInstructions(null, true, note)).toBe('');
+    expect(buildSceneInstructions(room, false, note)).toBe('');
+  });
+
   it('matches the instructions of the studio flat too', () => {
     const flat = builtInRoom('studio-flat');
     const text = buildSceneInstructions(flat, true);

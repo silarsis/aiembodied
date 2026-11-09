@@ -1275,6 +1275,52 @@ describe('App component', () => {
     await waitFor(() => expect(setPromptPreference).toHaveBeenCalledWith('Mei is now bold.'));
   });
 
+  it('loads and saves the idle habits per avatar beside the personality prompt', async () => {
+    const getIdleHabits = vi.fn().mockResolvedValue('Sits by the window with tea.');
+    const setIdleHabits = vi.fn().mockResolvedValue(undefined);
+    (window as PreloadWindow).aiembodied = {
+      ping: () => 'pong',
+      config: {
+        get: vi.fn().mockResolvedValue({
+          audioInputDeviceId: '',
+          audioOutputDeviceId: '',
+          featureFlags: {},
+          hasRealtimeApiKey: true,
+          conversationBackend: 'openai',
+          realtimeVoice: 'shimmer',
+          sessionInstructions: 'Global prompt',
+          wakeWord: { model: 'hey_jarvis', keywordLabel: 'Hey Jarvis', threshold: 0.5, cooldownMs: 1500, deviceIndex: undefined },
+        }),
+        getSecret: vi.fn().mockResolvedValue('secret'),
+        setAudioDevicePreferences: setAudioDevicePreferencesMock,
+        setSecret: setSecretMock,
+        testSecret: testSecretMock,
+      },
+      realtime: { mintEphemeralToken: mintEphemeralTokenMock },
+      wakeWord: { onWake: () => () => { } },
+      avatar: createAvatarBridgeMock({
+        getActiveModel: vi.fn().mockResolvedValue({ id: 'mei', name: 'Mei' }),
+        getIdleHabits,
+        setIdleHabits,
+      }),
+      models: createModelsBridgeMock(),
+      __bridgeReady: true,
+      __bridgeVersion: '1.0.0',
+    } as unknown as PreloadWindow['aiembodied'];
+
+    render(<App />);
+    await openGroup(/Character/i);
+
+    const textarea = (await screen.findByLabelText(/Idle habits/i)) as HTMLTextAreaElement;
+    await waitFor(() => expect(textarea.value).toBe('Sits by the window with tea.'));
+    expect(textarea.maxLength).toBe(500);
+    expect(screen.getByText(/What they like to do when nobody is talking/i)).toBeInTheDocument();
+
+    fireEvent.change(textarea, { target: { value: 'Tidies when bored.' } });
+    fireEvent.blur(textarea);
+    await waitFor(() => expect(setIdleHabits).toHaveBeenCalledWith('Tidies when bored.'));
+  });
+
   it('surfaces configuration errors when preload bridge is unavailable', async () => {
     render(<App />);
 

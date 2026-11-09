@@ -205,6 +205,15 @@ def test_snap_off_and_carry():
     assert np.allclose(out[10:], root[10:])  # gone after snap_s
 
 
+def test_single_frame_targets_are_not_snapped_only_spans_are():
+    root = _walk_root(120)
+    waypoint = ConstraintPlan(FPS, snaps=[SnapTarget(60, 60, 0.3, 2.0)])
+    out, delta = snap_root(root, waypoint, FPS, 0.3)
+    assert np.array_equal(out, root) and not delta.any()
+    hold = ConstraintPlan(FPS, snaps=[SnapTarget(60, 61, 0.3, 2.0)])
+    assert np.allclose(snap_root(root, hold, FPS, 0.3)[0][60:62, [0, 2]], [0.3, 2.0])
+
+
 def test_snap_weights_shape():
     w = snap_weights(np.arange(100), SnapTarget(50, 60, 0, 0), 9)
     assert w[50:61].tolist() == [1.0] * 11 and w[:41].sum() == 0 and w[70:].sum() == 0

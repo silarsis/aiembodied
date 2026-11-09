@@ -81,7 +81,7 @@ follows root targets crudely, Kimodo ignores them). A request without them behav
   ],
   "constraint_weight": 2.0,        // default 2.0 (the constraint-only CFG pass; 1.0 helps on sharp paths)
   "continue_from": "s-1a2b",       // start from the end of an earlier stream, same motion frame
-  "snap_s": 0.3                    // blend the root onto exact root targets over this window before each target; 0 = off
+  "snap_s": 0.3                    // blend the root onto exact root targets that hold (until > t) over this window before each target; 0 = off
 }
 ```
 
@@ -95,8 +95,10 @@ Frames and units:
   end-effector bundle (wrist and middle-fingertip positions, palm-down wrist rotation, pelvis x/z/height and
   heading), so `root`, `height` and `heading` are required: they are the pelvis values to hold.
 - `t`/`until`: the target holds on every frame from `t` to `until` inclusive (30 fps); `until` defaults to `t`.
-  A target with a `root` is also snapped onto exactly (x/z only) in the decoded motion, which moves the whole
-  body with it.
+  A target with a `root` that holds for more than one frame (`until` later than `t`) is also snapped onto exactly
+  (x/z only) in the decoded motion, which moves the whole body with it. Single-frame targets and path
+  waypoints are steered towards but not snapped: pulling the root onto points the feet are not planted for
+  doubled foot sliding.
 - `reveal_s`: the model only sees the target in chunks starting at or after this time (default 0). Reveal an
   action's targets when its phase starts, or the model squats on the walk to a chair that it can already see.
 - **Round corners**: in `dense` mode the service rounds path corners with arcs of `corner_radius` (clamped to
@@ -123,7 +125,9 @@ Lines:
   rest-hips-height units. With `continue_from` it continues from the earlier stream's origin, not from 0.
 - `session` in `done` is an id usable as `continue_from` (kept in memory for 10 minutes, the last 8 only).
   It is absent for backends that cannot continue (Kimodo). A stream that ends part way through a 2 s chunk is
-  continued from the last whole 4-frame group it played.
+  continued from the last whole 4-frame group it played; the continued stream's first chunk leaves out the (up to
+  3) frames the earlier stream had already sent, so its first hips position is the step after the last frame
+  played, `start` times of later chunks count only frames actually sent, and the keyframe times still start at 0.
 - The Kimodo backend sends the whole clip as a single chunk.
 - A failure mid-stream is sent as `{"type": "error", "message": "..."}` and ends
   the stream.

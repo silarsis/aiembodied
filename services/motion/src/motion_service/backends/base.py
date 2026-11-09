@@ -45,10 +45,13 @@ class Motion:
 class StreamHistory:
     """What a backend needs to carry on a stream later (`continue_from`): opaque to app.py.
 
-    total_frames counts the frames generated so far across the stream and the ones it continued."""
+    total_frames counts the frames generated so far across the stream and the ones it continued.
+    emitted_ahead is how many frames the stream already sent beyond total_frames: the history is cut to
+    whole patches, so a continuation starts that many frames before the last one the client played."""
 
     total_frames: int = 0
     payload: Any = None
+    emitted_ahead: int = 0
 
 
 @dataclass

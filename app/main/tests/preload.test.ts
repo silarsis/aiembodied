@@ -323,6 +323,22 @@ it('exposes only named background operations through the preload bridge', async 
   expect(invoke).toHaveBeenCalledWith('background:list-rooms');
   await api.backgrounds.loadRoom('room:builtin:reading-room');
   expect(invoke).toHaveBeenCalledWith('background:load-room', 'room:builtin:reading-room');
+  await api.backgrounds.getIdleSettings();
+  expect(invoke).toHaveBeenCalledWith('rooms:idle-settings:get');
+  await api.backgrounds.setIdleSettings({ enabled: false, restlessness: 'calm', onTalk: 'turn' });
+  expect(invoke).toHaveBeenCalledWith('rooms:idle-settings:set', { enabled: false, restlessness: 'calm', onTalk: 'turn' });
+  await api.backgrounds.pickIdle({ system: 's', user: 'u' });
+  expect(invoke).toHaveBeenCalledWith('rooms:idle-pick', { system: 's', user: 'u' });
+});
+
+it('exposes the per-character idle habits through the avatar bridge', async () => {
+  vi.resetModules();
+  await import('../src/preload.js');
+  const api = exposeInMainWorld.mock.calls.at(-1)![1];
+  await api.avatar.getIdleHabits();
+  expect(invoke).toHaveBeenCalledWith('avatar:idle-habits:get');
+  await api.avatar.setIdleHabits('sits by the window');
+  expect(invoke).toHaveBeenCalledWith('avatar:idle-habits:set', 'sits by the window');
 });
 
 it('exposes app.quit through the bridge', async () => {

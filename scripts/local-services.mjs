@@ -102,12 +102,17 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
     posegen: ['openai'],
     posecheck: ['openai'],
     clips: ['openai'],
+    // Idle thoughts follow Thinking until routed elsewhere; with the OpenAI Realtime engine they do not
+    // keep this PC's model running by themselves.
+    idle: pipeline ? [llmLocal ? 'local-llm' : 'openai'] : [],
   };
   const serversFor = (use) => {
     const route = routes[use];
-    return route && typeof route.server === 'string'
-      ? [route.server, ...(Array.isArray(route.backups) ? route.backups.map((backup) => backup?.server) : [])]
-      : defaults[use];
+    if (route && typeof route.server === 'string') {
+      return [route.server, ...(Array.isArray(route.backups) ? route.backups.map((backup) => backup?.server) : [])];
+    }
+    // Idle thoughts follow a saved Thinking route too.
+    return use === 'idle' && pipeline && routes.llm ? serversFor('llm') : defaults[use];
   };
   const usedBy = (id, uses) => uses.some((use) => serversFor(use).includes(id));
   const voiceUses = pipeline ? ['llm', 'stt', 'tts'] : [];
@@ -139,7 +144,7 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
     {
       id: 'llm',
       label: localLlm ? `${localLlm.alias} (llama-server)` : 'Qwen LLM (llama-server)',
-      enabled: usedBy('local-llm', [...voiceUses, 'describe', 'posegen', 'posecheck', 'clips']),
+      enabled: usedBy('local-llm', [...voiceUses, 'describe', 'posegen', 'posecheck', 'clips', 'idle']),
       url: llmUrl,
       probe: `${llmUrl}/models`,
       script: 'scripts/start-local-llm.ps1',

@@ -363,6 +363,49 @@ describe('SceneActionExecutor', () => {
     });
   });
 
+  describe('plans and interrupt listeners', () => {
+    it('decides a plan when its turn comes, from where the avatar is by then', async () => {
+      executor.submit([{ kind: 'go', objectId: 'bookshelf' }]);
+      await until(() => bridge.requests.length === 1);
+      const seen: Array<{ x: number; state: string }> = [];
+      executor.submitPlan('turn to the user', (world, state) => {
+        seen.push({ x: world.frame.origin.x, state: state.posture });
+        return [{ kind: 'look', objectId: 'sofa' }];
+      });
+      expect(seen).toEqual([]); // still waiting behind the walk
+      const end = bridge.requests[0]?.path?.points.at(-1) ?? [0, 0];
+      await playStream(executor, bridge, 's1', [{ root: end, height: 0.95, heading: -1.5 }]);
+      await until(() => bridge.requests.length === 2);
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.x).not.toBe(0); // planned after the bake
+      expect(bridge.requests[1]?.prompt).toBe('a person turns to look at something');
+    });
+
+    it('does nothing when a plan returns no actions or throws', async () => {
+      executor.submitPlan('nothing', () => []);
+      executor.submitPlan('broken', () => {
+        throw new Error('boom');
+      });
+      await tick();
+      await tick();
+      expect(bridge.requests).toHaveLength(0);
+      expect(executor.busy).toBe(false);
+    });
+
+    it('reports the world for planning and tells listeners about an interrupt after the queue is dropped', () => {
+      expect(executor.world()?.room.id).toBe(room.id);
+      const queueWhenHeard: boolean[] = [];
+      const off = executor.onInterrupt(() => queueWhenHeard.push(executor.busy));
+      executor.submit([{ kind: 'go', objectId: 'bookshelf' }]);
+      executor.interrupt();
+      expect(queueWhenHeard).toEqual([true]); // the running walk is still being cancelled; nothing else is queued
+      off();
+      executor.interrupt();
+      expect(queueWhenHeard).toHaveLength(1);
+      expect(new SceneActionExecutor().world()).toBeNull();
+    });
+  });
+
   describe('reset', () => {
     it('cancels streams, puts the held object back and forgets the state when the room changes', async () => {
       executor.submit([{ kind: 'go', objectId: 'bookshelf' }]);

@@ -173,6 +173,28 @@ describe('look', () => {
   });
 });
 
+describe('look at a point', () => {
+  const camera: Vec3 = [0, 1.5, 2.1];
+
+  it('turns on the spot towards the point, like a look', () => {
+    const stream = streamOf(planAction(worldAt(-2, -1, 0), INITIAL_STATE, { kind: 'lookAtPoint', position: camera, label: 'the camera' }));
+    expect(stream.label).toBe('the camera');
+    expect(stream.request.prompt).toBe('a person turns to look at something');
+    const target = stream.request.targets?.[0];
+    if (!target) throw new Error('no target');
+    expect(target.root).toEqual([0, 0]);
+    // The camera is at +x and +z of the avatar, so the heading is positive (towards +x).
+    expect(target.heading ?? NaN).toBeCloseTo(Math.atan2(2, 3.1), 3);
+  });
+
+  it('skips when already facing it, and never stands a seated avatar up', () => {
+    const facing = planAction(worldAt(0, 0, 0), INITIAL_STATE, { kind: 'lookAtPoint', position: camera });
+    expect(facing).toMatchObject({ type: 'skip' });
+    const seated: AvatarState = { posture: 'seated', held: null, seat: { objectId: 'sofa', session: 's', frame: worldAt(0, 0, 0).frame, approach: [0, 0, 0], facing: 0 } };
+    expect(planAction(worldAt(-2, -1, 0), seated, { kind: 'lookAtPoint', position: camera })).toEqual({ type: 'skip', reason: 'seated' });
+  });
+});
+
 describe('sit and stand', () => {
   it('walks to the front of the sofa, then sits in a later, chunk-aligned phase', () => {
     const world = worldAt(0, -0.3, 0);

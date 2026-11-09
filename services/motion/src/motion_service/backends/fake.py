@@ -99,6 +99,7 @@ class FakeBackend(Backend):
         if fresh:  # a new stream starts exactly at the origin, like the real model's first frame
             x[0], z[0], y[0], yaw[0] = 0.0, 0.0, HIPS_HEIGHT, 0.0
         state.update(x=float(x[-1]), z=float(z[-1]), y=float(y[-1]), yaw=float(yaw[-1]))
+        state["_per_frame"] = (x, y, z, yaw)  # stream() rewinds to the kept frames and drops this
         R = _yaw(yaw)
         old = m.root_positions
         root = np.stack([x, y, z], axis=1)
@@ -118,11 +119,22 @@ class FakeBackend(Backend):
             if self.fail_after_chunks is not None and i >= self.fail_after_chunks:
                 raise RuntimeError("fake backend failure")
             n = min(self.chunk_frames, frames - start)
+            # Like ARDY, a stream cut short keeps whole 4-frame groups: a continuation resumes there.
+            keep = n if n == self.chunk_frames else (n // 4) * 4
             m = synthetic_motion(n, self.fps, base + start)
+            before = dict(state)
             if tracked:
                 tg = plan.visible(start) if plan is not None else None
                 call["visible"][start] = tg
                 m = self._track(m, state, tg if tg is not None else Targets(), start,
                                 fresh=history is None and start == 0)
+                per_frame = state.pop("_per_frame", None)
+                if keep < n:
+                    if keep == 0 or per_frame is None:
+                        state.update({k: before[k] for k in ("x", "y", "z", "yaw")})
+                    else:
+                        x, y, z, yaw = per_frame
+                        state.update(x=float(x[keep - 1]), y=float(y[keep - 1]), z=float(z[keep - 1]), yaw=float(yaw[keep - 1]))
             call["texts"].append(next((t for f, t in reversed(phases) if f <= start), text))
-            yield Chunk(m, start, generate_ms=1.0, history=StreamHistory(base + start + n, dict(state)))
+            yield Chunk(m, start, generate_ms=1.0,
+                        history=StreamHistory(base + start + keep, dict(state), emitted_ahead=n - keep))

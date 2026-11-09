@@ -1,4 +1,5 @@
-import type { RoomFile, RoomSummary } from '../rooms/types.js';
+import type { IdleSettings } from '../rooms/idle-settings.js';
+import type { IdlePickContext, IdlePickResult, RoomFile, RoomSummary } from '../rooms/types.js';
 
 export interface BackgroundSummary {
   id: string;
@@ -20,4 +21,9 @@ export interface BackgroundBridge {
   delete(id: string): Promise<void>;
   listRooms(): Promise<RoomSummary[]>;
   loadRoom(id: string): Promise<RoomFile>;
+  /** The "When idle" settings of 3D rooms (key `rooms.idle`). */
+  getIdleSettings?(): Promise<IdleSettings>;
+  setIdleSettings?(settings: IdleSettings): Promise<IdleSettings>;
+  /** Ask the Idle thoughts model what to do next; null when it fails (pick at random instead). */
+  pickIdle?(context: IdlePickContext): Promise<IdlePickResult | null>;
 }

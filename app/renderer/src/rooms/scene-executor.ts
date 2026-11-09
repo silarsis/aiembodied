@@ -103,7 +103,13 @@ interface RunningStream {
   done: Deferred;
 }
 
-type QueueItem = { type: 'action'; action: SceneAction } | { type: 'task'; label: string; run: () => Promise<unknown> };
+/** Decides at its turn, from where the avatar is by then, which actions to run (none: nothing happens). */
+export type PlanBuilder = (world: PlanWorld, state: AvatarState) => SceneAction[];
+
+type QueueItem =
+  | { type: 'action'; action: SceneAction }
+  | { type: 'task'; label: string; run: () => Promise<unknown> }
+  | { type: 'plan'; label: string; build: PlanBuilder };
 
 const MAX_INSERT_DEPTH = 4;
 const DEFAULT_CHUNK_SECONDS = 2;
@@ -120,6 +126,7 @@ export class SceneActionExecutor {
   /** Bumped by `interrupt`; the rest of an interrupted action chain is dropped. */
   private epoch = 0;
   private listeners = new Set<(activity: SceneActivity) => void>();
+  private interruptListeners = new Set<() => void>();
   private readonly newId: () => string;
   private readonly setTimer: (fn: () => void, ms: number) => unknown;
   private readonly clearTimer: (handle: unknown) => void;
@@ -152,6 +159,19 @@ export class SceneActionExecutor {
     return this.state;
   }
 
+  /** A snapshot of the room and the avatar in it for planning, or null while there is no room or avatar. */
+  world(): PlanWorld | null {
+    return this.env?.planWorld() ?? null;
+  }
+
+  /** Called after each `interrupt` (the user spoke, woke the avatar or tapped). */
+  onInterrupt(listener: () => void): () => void {
+    this.interruptListeners.add(listener);
+    return () => {
+      this.interruptListeners.delete(listener);
+    };
+  }
+
   /** True while an action is queued or running. */
   get busy(): boolean {
     return this.running || this.queue.length > 0;
@@ -164,6 +184,16 @@ export class SceneActionExecutor {
       return;
     }
     for (const action of actions) this.queue.push({ type: 'action', action });
+    void this.pump();
+  }
+
+  /**
+   * Queues a decision: when its turn comes, `build` looks at the room and the avatar as they are by
+   * then and returns the actions to run (for example, walk home only if it wandered off).
+   */
+  submitPlan(label: string, build: PlanBuilder): void {
+    if (!this.env || !this.bridge) return;
+    this.queue.push({ type: 'plan', label, build });
     void this.pump();
   }
 
@@ -186,6 +216,13 @@ export class SceneActionExecutor {
     this.queue.length = 0;
     for (const stream of this.streams.values()) {
       if (stream.interruptible && !stream.cancelled) this.cancelStream(stream);
+    }
+    for (const listener of [...this.interruptListeners]) {
+      try {
+        listener();
+      } catch (error) {
+        console.error('[scene-actions] interrupt listener threw', error);
+      }
     }
   }
 
@@ -246,6 +283,8 @@ export class SceneActionExecutor {
             } else {
               await item.run();
             }
+          } else if (item.type === 'plan') {
+            await this.runPlan(item, generation, epoch);
           } else {
             await this.runAction(item.action, generation, epoch, 0);
           }
@@ -256,6 +295,19 @@ export class SceneActionExecutor {
     } finally {
       if (generation === this.generation) this.running = false;
     }
+  }
+
+  private async runPlan(item: Extract<QueueItem, { type: 'plan' }>, generation: number, epoch: number): Promise<void> {
+    const world = this.env?.planWorld();
+    if (!world) return;
+    let actions: SceneAction[];
+    try {
+      actions = item.build(world, this.state);
+    } catch (error) {
+      console.warn(`[scene-actions] could not decide "${item.label}"`, error);
+      return;
+    }
+    for (const action of actions) await this.runAction(action, generation, epoch, 0);
   }
 
   private stale(generation: number, epoch: number): boolean {
@@ -481,6 +533,8 @@ function describeAction(action: SceneAction): string {
     case 'sit':
     case 'pick':
       return `${action.kind} ${action.objectId}`;
+    case 'lookAtPoint':
+      return `look at ${action.label ?? 'a point'}`;
     case 'put':
       return `put ${action.objectId} on ${action.surfaceId}`;
     default:

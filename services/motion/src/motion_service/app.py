@@ -281,6 +281,11 @@ def create_app(backend: Backend, load_in_background: bool = True, keep_warm_seco
                     root_frame: Optional[RootFrame] = None if previous is None else previous.root_frame
                     carry = (0.0, 0.0) if previous is None else previous.carry
                     last_history = None
+                    # A continuation restarts at the last whole 4-frame group the earlier stream kept, which
+                    # is up to 3 frames before the last frame the client played: drop those replayed frames
+                    # from the first chunk. Later chunks start that much earlier on the stream's own clock.
+                    replay = 0 if previous is None else previous.history.emitted_ahead
+                    shift = 0
                     t_prev = time.perf_counter()
                     for chunk in backend.stream(text, frames, steps, plan=plan, phase_texts=phase_texts or None,
                                                 history=None if previous is None else previous.history,
@@ -298,6 +303,9 @@ def create_app(backend: Backend, load_in_background: bool = True, keep_warm_seco
                             carry_out = (float(delta[-1, 0]), float(delta[-1, 2]))
                         else:
                             carry_out = (0.0, 0.0)
+                        if count == 0 and replay > 0:
+                            shift = min(replay, m.frames - 1)
+                            m = m.slice(shift, m.frames)
                         vrma = to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, f"{name}-{count}",
                                        fps=fps, kind=backend.name, root_frame=root_frame, arm_forward=arm_forward)
                         pose = end_pose(m.root_positions, m.posed_joints, names,
@@ -308,7 +316,7 @@ def create_app(backend: Backend, load_in_background: bool = True, keep_warm_seco
                         if count == 0:
                             timings["encodeMs"] = _ms(encode_s)
                         yield (json.dumps({"type": "chunk", "index": count,
-                                           "start": round(chunk.start_frame / fps, 5),
+                                           "start": round((chunk.start_frame - shift) / fps, 5),
                                            "vrma": vrma, "timings": timings, "end_pose": pose}) + "\n").encode()
                         count += 1
                         if chunk.history is not None:

@@ -55,6 +55,7 @@ export type UseId =
   | 'posegen'
   | 'posecheck'
   | 'clips'
+  | 'idle'
   | 'memory'
   | 'memorymirror'
   | 'coding';
@@ -70,6 +71,7 @@ export const USE_IDS: readonly UseId[] = [
   'posegen',
   'posecheck',
   'clips',
+  'idle',
   'memory',
   'memorymirror',
   'coding',
@@ -90,6 +92,8 @@ export const USE_SERVER_TYPES: Record<UseId, readonly ServerType[]> = {
   posegen: ['chat', 'openai'],
   posecheck: ['chat', 'openai'],
   clips: ['chat', 'openai'],
+  // What the avatar does on its own in a 3D room (app/main/src/rooms/idle-thoughts.ts).
+  idle: ['chat', 'openai'],
   // Long-term memory: the PostgreSQL database the memory engine keeps everything in, and an
   // optional second one it copies everything to (such as Supabase).
   memory: ['memory'],
@@ -98,7 +102,7 @@ export const USE_SERVER_TYPES: Record<UseId, readonly ServerType[]> = {
   coding: ['chat', 'openai', 'anthropic'],
 };
 /** Uses that try backup servers when the first one fails. The others use only their first server. */
-export const USES_WITH_BACKUPS: readonly UseId[] = ['llm', 'stt', 'tts', 'search', 'image', 'mesh'];
+export const USES_WITH_BACKUPS: readonly UseId[] = ['llm', 'stt', 'tts', 'search', 'image', 'mesh', 'idle'];
 /** Uses that can send each job to whichever of their servers is least busy. */
 export const USES_WITH_SPREAD: readonly UseId[] = ['image', 'mesh'];
 
@@ -232,11 +236,12 @@ export function defaultRoutes(providers: ProviderSettings, webSearchProvider = '
   const searchServers = searchNames
     .map((name): string | null => (name === 'searxng' ? BUILT_IN_SERVER_IDS.searxng : name === 'brave' ? BUILT_IN_SERVER_IDS.brave : null))
     .filter((id): id is string => Boolean(id));
+  const llm: ModelRoute =
+    providers.llm.provider === 'openai'
+      ? { server: openai, model: providers.llm.openaiModel }
+      : { server: BUILT_IN_SERVER_IDS.llm, model: providers.llm.localModel };
   return {
-    llm:
-      providers.llm.provider === 'openai'
-        ? { server: openai, model: providers.llm.openaiModel }
-        : { server: BUILT_IN_SERVER_IDS.llm, model: providers.llm.localModel },
+    llm,
     stt:
       providers.stt.provider === 'openai'
         ? { server: openai, model: providers.stt.openaiModel }
@@ -263,6 +268,7 @@ export function defaultRoutes(providers: ProviderSettings, webSearchProvider = '
     posegen: { server: openai, model: DEFAULT_HELPER_MODELS.posegen },
     posecheck: { server: openai, model: DEFAULT_HELPER_MODELS.posecheck },
     clips: { server: openai, model: providers.motion.openaiModel },
+    idle: { ...llm },
     memory: { server: BUILT_IN_SERVER_IDS.memory },
     memorymirror: { server: '' },
     coding: { server: BUILT_IN_SERVER_IDS.coderLlm, model: DEFAULT_CODER_MODEL },
@@ -295,7 +301,9 @@ export function resolveModelRouting(
       const server = servers.find((entry) => entry.id === id);
       return Boolean(server && USE_SERVER_TYPES[use].includes(server.type));
     };
-    const base = saved && (fits(saved.server) || (USES_THAT_CAN_BE_OFF.includes(use) && saved.server === '')) ? saved : defaults[use];
+    const usable = saved && (fits(saved.server) || (USES_THAT_CAN_BE_OFF.includes(use) && saved.server === ''));
+    // Idle thoughts follow Thinking (server, model and backups) until they are pointed somewhere else.
+    const base = usable ? saved : use === 'idle' && routes.llm ? routes.llm : defaults[use];
     const primary = base.server;
     const seen = new Set([primary]);
     const backups = USES_WITH_BACKUPS.includes(use)

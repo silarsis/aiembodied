@@ -122,6 +122,21 @@ describe('local services', () => {
     }),
   );
 
+  it('keeps this PC’s language model running for Idle thoughts, which follows Thinking until it is pointed elsewhere', () => {
+    const llm = (env: Record<string, string>, saved: object = {}) =>
+      describeLocalServices('/repo', env, saved).find((s: { id: string }) => s.id === 'llm');
+    const saved = (routes: object) => ({ models: { routes } });
+    // Nothing else uses the language model: only the idle job keeps it on.
+    const onlyIdle = saved({ llm: { server: 'openai' }, stt: { server: 'openai' }, tts: { server: 'openai' }, idle: { server: 'local-llm' } });
+    expect(llm({}, onlyIdle)?.enabled).toBe(true);
+    const idleElsewhere = saved({ llm: { server: 'openai' }, stt: { server: 'openai' }, tts: { server: 'openai' }, idle: { server: 'openai' } });
+    expect(llm({}, idleElsewhere)?.enabled).toBe(false);
+    expect(llm({ LLM_PROVIDER: 'openai', STT_PROVIDER: 'openai', TTS_PROVIDER: 'openai' }, {})?.enabled).toBe(false);
+    // With the OpenAI Realtime engine, an unrouted Idle thoughts does not start the local model by itself.
+    expect(llm({}, { conversationBackend: 'openai' })?.enabled).toBe(false);
+    expect(llm({}, { conversationBackend: 'openai', models: { routes: { idle: { server: 'local-llm' } } } })?.enabled).toBe(true);
+  });
+
   it('starts the coding runner with its port, and leaves a runner on another machine alone', () => {
     const coder = (env: Record<string, string>, saved: object = {}) =>
       describeLocalServices('/repo', env, saved).find((s: { id: string }) => s.id === 'coder');

@@ -405,4 +405,7 @@ export interface AvatarBridge {
   /** The character's own personality prompt; null until it has one (the global prompt applies). */
   getPromptPreference?(): Promise<string | null>;
   setPromptPreference?(prompt: string): Promise<void>;
+  /** What the character likes to do when nobody is talking (at most 500 characters). */
+  getIdleHabits?(): Promise<string>;
+  setIdleHabits?(habits: string): Promise<void>;
 }

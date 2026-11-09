@@ -50,7 +50,7 @@ export class RoomSceneController {
   private rig: AvatarRig | null = null;
   private body: THREE.Object3D | null = null;
   /** What scene actions use to reach the room and the avatar; stable for the controller's life. */
-  readonly sceneEnv = new RoomSceneEnv({ stage: () => this.stage, rig: () => this.rig });
+  readonly sceneEnv = new RoomSceneEnv({ stage: () => this.stage, rig: () => this.rig, aspect: () => this.deps.camera.aspect });
 
   constructor(private readonly deps: Deps) {}
 

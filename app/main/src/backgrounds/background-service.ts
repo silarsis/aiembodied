@@ -6,6 +6,7 @@ import type { MemoryStore } from '../memory/memory-store.js';
 import type { ComfyUIClient } from '../avatar/generation/comfyui-client.js';
 import { backgroundGraph, buildBackgroundPrompt } from '../avatar/generation/graphs.js';
 import { BACKGROUND_GROUND_Y, DEFAULT_BACKGROUNDS } from './defaults.js';
+import { IDLE_SETTINGS_KEY, parseIdleSettings, sanitizeIdleSettings, type IdleSettings } from '../rooms/idle-settings.js';
 import type { BackgroundSummary } from './types.js';
 
 const LIBRARY_KEY = 'stage.backgrounds';
@@ -50,6 +51,17 @@ export class BackgroundService {
       throw new Error('The saved background library could not be read.');
     }
     return parsed as SavedBackground[];
+  }
+
+  /** The "When idle" settings of 3D rooms. */
+  getIdleSettings(): IdleSettings {
+    return parseIdleSettings(this.options.store.getValue(IDLE_SETTINGS_KEY));
+  }
+
+  setIdleSettings(settings: unknown): IdleSettings {
+    const next = sanitizeIdleSettings(settings);
+    this.options.store.setValue(IDLE_SETTINGS_KEY, JSON.stringify(next));
+    return next;
   }
 
   async list(): Promise<BackgroundSummary[]> {

@@ -1,6 +1,6 @@
 # 3D rooms
 
-**Status:** Step 2 shipped (scene runtime and selector). Step 3 (walking, sitting, looking and picking things up) is implemented in the app and in `services/motion`. Neither step has been run end to end on a real display with the ARDY model at merge time: the room renderer was checked with a software WebGL screenshot, and the physics, navigation, planner and executor with unit tests. The grip pose and the hand-held object look are unchecked by eye.
+**Status:** Step 2 shipped (scene runtime and selector). Step 3 (walking, sitting, looking and picking things up) and step 3b (idle wandering) are implemented in the app and in `services/motion`. Neither step has been run end to end on a real display with the ARDY model at merge time: the room renderer was checked with a software WebGL screenshot, and the physics, navigation, planner and executor with unit tests. The grip pose and the hand-held object look are unchecked by eye.
 
 Controls → Backgrounds now has two tabs, **2D pictures** and **3D rooms**. Picking a room puts the avatar inside it: the room is loaded into the avatar's three.js scene with physics colliders, a navigation mesh and a fixed camera. The 2D picture and its ground shadow are hidden while a room is active. The Backgrounds item in the drawer shows the room's name.
 
@@ -77,6 +77,8 @@ Object names match a room object's id or name, ignoring case, articles ("the") a
 - **Frames** (`rooms/scene-frames.ts`): a fresh stream's origin is the avatar's root (the VRM scene's x/z and yaw). World points are translated, rotated by minus the yaw and **divided by the avatar's scale** (the scene scale, so world metres become the avatar's own metres, which is what the service expects). The hips tracks of the chunks are then already in the avatar's local frame, which is how the hips node moves under the VRM scene, so nothing is converted per frame.
 - **Root bake:** when the last chunk of a standing-ended stream has finished playing, the scene root is moved to the last chunk's `end_pose` (converted back to the world) and turned to its heading, and the clip is dropped in the same frame so the idle pose takes over at the local origin. Chunks end in an `onEnd` callback that answers `release` for this; the planned end is the fallback when the service reports no `end_pose`.
 
+- **Motion service details** (`services/motion/API.md`): the root is snapped only onto root targets that hold for more than one frame (`until` later than `t`), never onto single-frame waypoints or turn points, which doubled foot sliding in the sit test (6.2 to 11.7 cm/s). A `continue_from` stream whose parent ended mid-chunk leaves out the (up to 3) frames the parent had already sent, so a walk does not rewind by about 9 cm and the hips track stays continuous.
+
 ### Avatar states
 
 `standing` (free), `seated` (on object X, with the stream session and the motion-frame origin kept) and, combinable with standing or seated, `holding` (object Y in a hand). While seated the last frame of the sit clip is held (`onEnd` answers `hold`), idle motion stays suspended, and a pose tag, an animation tag or a gesture is ignored so nothing stands the avatar up; only the stand-up continuation replaces the pose. Breathing is therefore off while seated; blinking and speech stay.
@@ -94,7 +96,33 @@ Object names match a room object's id or name, ignoring case, articles ("the") a
 - The avatar holds one object at a time.
 - Paths, targets and phases need the ARDY backend of the motion service; the fake backend only moves the root crudely and Kimodo ignores them.
 
+## Idle wandering (step 3b)
+
+When nobody has talked for a while, the avatar in a 3D room does things on its own: walks to the bookshelf and browses, sits in the armchair, picks up a mug. It only goes to things the fixed camera can see, only in a 3D room, only while the local motion service is ready, and talking always wins.
+
+**Settings.** Controls → Backgrounds → 3D rooms → **When idle** (saved as `rooms.idle` in the memory store, read and written through `backgrounds.getIdleSettings` / `setIdleSettings`):
+
+- *Wander when nobody is talking*, on by default.
+- *Restlessness*: Calm, Normal (default) or Restless, a mean wait between idle actions of 180, 90 or 40 seconds. Each wait is drawn uniformly from 60 % to 140 % of the mean.
+- *When I start talking*: **Turn to me where it is** (default) or **Come back to me**.
+
+**Idle habits.** Controls → Character has an *Idle habits* text (at most 500 characters) under the personality prompt, kept per avatar (`avatar:idle-habits:get` / `:set`, stored under `avatar.idleHabits.<model id>` like the personality prompt). It goes into the idle prompt, e.g. "sits by the window with tea; tidies when bored".
+
+**When it acts** (`rooms/idle-director.ts`). The avatar counts as idle when there is no user speech, wake word, tap or push-to-talk, the assistant is not transcribing, thinking or responding, and no scene action is queued or running. The first idle action comes 45 s after the last activity; each later one after the restlessness interval, counted from the end of the previous idle action. Any conversation activity throws away a decision still being made and goes back to the 45 s rule.
+
+**What it does.** The director asks the **Idle thoughts** model (a Models and servers job, see [Models and servers](models-and-servers.md)) for 1 to 3 action tags. The prompt (`rooms/idle-prompt.ts`) gives the character's name and the first 300 characters of the personality, the idle habits, the room, the objects the camera can see with what each allows and its `tags.idle` hint, the current state (standing near X, seated on Y, holding Z), the last five idle actions and the local time of day. The reply is read with the normal tag parser: at most 3 tags, only scene tags, `{move:...}` and `{wait}` (do nothing this time). Tags are dropped when the object does not exist, is not visible to the room camera, or lacks the tag the action needs. If nothing valid is left, or the model fails or times out (15 s), a weighted random picker takes over (`rooms/idle-actions.ts`): sit on seats, `{go:x}` with a `{move:<idle hint or "looks around">}` for things with a stand or look tag, `{pick:x}` when the hands are free, `{put:held@x}` on a surface while holding, `{come}` with low weight when far from home, and when seated 60 % `{wait}` and 40 % `{stand}`. The last two targets are avoided. The chosen tags go to the scene executor through the same path as spoken tags.
+
+**Visibility** (`rooms/room-visibility.ts`). `visibleObjects(room, aspect)` rebuilds the room camera with three.js (no renderer) and keeps objects whose middle and sit or stand spot are all inside the frustum with a 5 % margin. The aspect is the real canvas aspect, so a narrow window sees fewer objects. In the reading room at 16:9 the bookshelf is off to the left and is not offered; at 21:9 it is.
+
+**When talking starts.** The existing interrupt cancels walks and turns. If the avatar wandered since the user last talked, then 1.5 s after the last interrupt (a wake word is usually followed by speech) it queues, according to the setting: *Come back to me*: `{stand}` if seated, then `{come}`, when seated or more than 1.0 m from home; *Turn to me where it is*: a look at the camera position (`lookAtPoint` action, not exposed in the prompt), when standing and facing more than 30 degrees away. A seated avatar stays seated for *Turn to me*. The decision is made when the queued item's turn comes (`SceneActionExecutor.submitPlan`), from where the avatar is by then.
+
+**The conversation knows.** The director keeps the last 8 idle actions with their time (`recent()`) and `recentSummary()` gives those of the last 10 minutes, such as "walked to the bookshelf (browses the books); sat down on the armchair". The room part of the session instructions then ends with "Just before this, while idle, you: …". It is updated only when the summary changed and the assistant is not transcribing, thinking or responding.
+
+Code: `idle-director.ts` (timing and state, with injected clock, timers, random, model and executor, so it is unit tested), `idle-actions.ts` (parse, validate, fallback, log text), `idle-prompt.ts`, `idle-talk.ts`, `room-visibility.ts`, `use-idle-director.ts` (React hook; used by `App.tsx`). Main process: `app/main/src/rooms/idle-thoughts.ts`, `idle-settings.ts`, `idle-habits.ts`.
+
+Limits: idle actions use the same stream path as spoken tags, so a user interrupt cancels a walk in progress where it is; the reaction to talking starts 1.5 s after the last interrupt and a later speech-start interrupt can still cancel a walk back home. Walk-home and turn-to-camera happen only after an idle action, not after a walk the assistant chose in conversation. The camera aspect is read when an idle decision is made, not tracked live.
+
 ## What's next
 
-- Idle director: use `idle` tags and `look` points to give the avatar things to do between turns.
+- Generation: build a `RoomFile` from a text description, save it under `<userData>/rooms`, and load GLB models for objects.
 - Generation: build a `RoomFile` from a text description, save it under `<userData>/rooms`, and load GLB models for objects.

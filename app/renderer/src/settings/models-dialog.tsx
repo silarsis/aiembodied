@@ -29,7 +29,7 @@ export const OPENAI_VOICES: string[] = [...OPENAI_TTS_VOICES];
 
 interface UseInfo {
   id: UseId;
-  group: 'Talking' | 'Creating an avatar' | 'Helpers' | 'Coding' | 'Memory';
+  group: 'Talking' | 'Creating an avatar' | 'Helpers' | 'Rooms' | 'Coding' | 'Memory';
   name: string;
   what: string;
 }
@@ -46,6 +46,12 @@ export const MODEL_USES: UseInfo[] = [
   { id: 'posegen', group: 'Helpers', name: 'Make poses', what: 'Writes bone rotations for a pose from a text prompt.' },
   { id: 'posecheck', group: 'Helpers', name: 'Check poses', what: 'Looks at a rendered pose and says whether it matches the prompt. Needs a model that reads images.' },
   { id: 'clips', group: 'Helpers', name: 'Animation clips', what: 'Writes keyframe animation clips from a prompt. Moving uses it when no motion service is picked.' },
+  {
+    id: 'idle',
+    group: 'Rooms',
+    name: 'Idle thoughts',
+    what: 'Picks what the avatar does next on its own in a 3D room when nobody is talking. It starts out on the same model as Thinking; a small, fast model is enough.',
+  },
   {
     id: 'coding',
     group: 'Coding',
@@ -65,7 +71,7 @@ export const MODEL_USES: UseInfo[] = [
     what: 'An optional second database, such as Supabase, that gets a copy of everything within a minute or so. Deletes are copied too.',
   },
 ];
-const USE_GROUPS = ['Talking', 'Creating an avatar', 'Helpers', 'Coding', 'Memory'] as const;
+const USE_GROUPS = ['Talking', 'Creating an avatar', 'Helpers', 'Rooms', 'Coding', 'Memory'] as const;
 
 export const SERVER_TYPE_LABELS: Record<ServerType, string> = {
   chat: 'Chat model server',
@@ -111,7 +117,7 @@ const keyLabel = (type: ServerType) => (type === 'memory' ? 'Password' : type ==
 
 /** Which of a server's model lists a use picks from. */
 function roleFor(use: UseId, type: ServerType): ModelRole | null {
-  if (use === 'llm' || use === 'coding' || use === 'describe' || use === 'posegen' || use === 'posecheck' || use === 'clips') return 'chat';
+  if (use === 'llm' || use === 'coding' || use === 'describe' || use === 'posegen' || use === 'posecheck' || use === 'clips' || use === 'idle') return 'chat';
   if (use === 'stt') return 'transcribe';
   if (use === 'tts') return type === 'speech' ? 'voices' : 'realtime';
   if (use === 'motion') return type === 'motion' ? 'motion' : null;

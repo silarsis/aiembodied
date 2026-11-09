@@ -217,3 +217,29 @@ def test_valid_full_request_is_accepted(client):
 
 def test_clip_endpoint_ignores_none_of_the_stream_fields_but_stays_10s(client):
     assert client.post("/v1/motion/clip", json={"prompt": "x", "duration": 11}).status_code == 400
+
+
+def test_continue_after_a_cut_short_stream_does_not_rewind(client):
+    # 46 frames: the stream keeps 44 (whole 4-frame groups), so the continuation restarts 2 frames back.
+    first = chunks_of(client.post("/v1/motion/stream", json={
+        "prompt": "walk", "duration": 46 / 30, "path": {"points": [[0, 0], [0, 6]], "speed": 1.0, "start_s": 0.0}}))
+    end_z = first[0][-1]["end_pose"]["root"][1]
+    assert end_z == pytest.approx(45 / 30, abs=1e-3)
+    # the continuation walks on the same line: its frame 0 is the stream's frame 44
+    second, _ = chunks_of(client.post("/v1/motion/stream", json={
+        "prompt": "walk", "duration": 3.0, "continue_from": first[1]["session"],
+        "path": {"points": [[0, 44 / 30], [0, 8]], "speed": 1.0, "start_s": 0.0}}))
+    hips = second[0]["vrma"]["hips"]["position"]["keyframes"]
+    assert hips[0]["t"] == 0.0
+    # the first frame played is the one after the last frame already played, not two frames before it
+    assert hips[0]["p"][2] * 0.989 == pytest.approx(end_z + 1 / 30, abs=1e-3)
+    assert len(hips) == 60 - 2
+    assert second[1]["start"] == pytest.approx(58 / 30, abs=1e-4)
+    assert hips[1]["p"][2] > hips[0]["p"][2]
+
+
+def test_continue_after_a_whole_chunk_drops_nothing(client):
+    first = chunks_of(client.post("/v1/motion/stream", json={"prompt": "walk", "duration": 2.0}))
+    second, _ = chunks_of(client.post("/v1/motion/stream", json={
+        "prompt": "walk", "duration": 2.0, "continue_from": first[1]["session"]}))
+    assert len(second[0]["vrma"]["hips"]["position"]["keyframes"]) == 60 and second[0]["start"] == 0.0

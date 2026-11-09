@@ -20,6 +20,8 @@ export interface AvatarRig {
 export interface SceneEnvHost {
   stage(): RoomStage | null;
   rig(): AvatarRig | null;
+  /** Width over height of the room view. */
+  aspect?(): number;
 }
 
 interface Carried {
@@ -57,6 +59,7 @@ export class RoomSceneEnv implements SceneEnv {
         scale: rig.scene.scale.x || 1,
       },
       restHipsHeight: rig.restHipsHeight > 0 ? rig.restHipsHeight : FALLBACK_HIPS_HEIGHT,
+      cameraAspect: this.host.aspect?.(),
     };
   }
 

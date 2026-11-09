@@ -19,6 +19,8 @@ export type SceneAction =
   | { kind: 'goto'; position: Vec3; faceToward?: Vec3 }
   | { kind: 'come' }
   | { kind: 'look'; objectId: string }
+  /** Turn on the spot to face a world point (the camera, when the user starts talking). Never stands up. */
+  | { kind: 'lookAtPoint'; position: Vec3; label?: string }
   | { kind: 'sit'; objectId: string }
   | { kind: 'stand' }
   | { kind: 'pick'; objectId: string }
@@ -61,6 +63,8 @@ export interface PlanWorld {
   frame: MotionFrame;
   /** Standing pelvis height in avatar metres (the rest skeleton's hips height). */
   restHipsHeight: number;
+  /** Width over height of the room view, for judging what the camera can see. */
+  cameraAspect?: number;
 }
 
 export interface StreamEvent {
@@ -600,6 +604,10 @@ function planPut(world: PlanWorld, state: AvatarState, object: RoomObject, surfa
   };
 }
 
+function planLookAtPoint(world: PlanWorld, action: Extract<SceneAction, { kind: 'lookAtPoint' }>): ActionPlan {
+  return turnPlan(world, yawToward(rootWorld(world), action.position), action.label ?? 'the camera');
+}
+
 function planGoto(world: PlanWorld, action: Extract<SceneAction, { kind: 'goto' }>): ActionPlan {
   const target: Vec3 = [action.position[0], 0, action.position[2]];
   const face = action.faceToward ? yawToward(target, action.faceToward) : null;
@@ -611,6 +619,7 @@ const NEEDS_STANDING = new Set<SceneAction['kind']>(['go', 'goto', 'come', 'look
 
 export function planAction(world: PlanWorld, state: AvatarState, action: SceneAction): ActionPlan {
   if (action.kind === 'stand') return planStand(world, state);
+  if (action.kind === 'lookAtPoint') return state.posture === 'seated' ? skip('seated') : planLookAtPoint(world, action);
   if (state.posture === 'seated' && (NEEDS_STANDING.has(action.kind) || action.kind === 'sit')) {
     if (action.kind === 'sit' && state.seat?.objectId === action.objectId) return skip('already sitting there');
     return { type: 'insert', actions: [{ kind: 'stand' }] };
