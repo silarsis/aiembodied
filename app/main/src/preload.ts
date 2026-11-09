@@ -538,6 +538,8 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     load: (id) => ipcRenderer.invoke('background:load', id),
     generate: (prompt) => ipcRenderer.invoke('background:generate', prompt),
     delete: (id) => ipcRenderer.invoke('background:delete', id),
+    listRooms: () => ipcRenderer.invoke('background:list-rooms'),
+    loadRoom: (id) => ipcRenderer.invoke('background:load-room', id),
   },
   avatar: {
     listModels: () => ipcRenderer.invoke('avatar-model:list') as Promise<AvatarModelSummary[]>,

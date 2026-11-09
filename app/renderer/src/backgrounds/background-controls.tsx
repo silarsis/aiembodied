@@ -1,14 +1,59 @@
 import { useState } from 'react';
 import type { BackgroundController } from './use-backgrounds.js';
+import { RoomCards } from './room-cards.js';
 
-export function BackgroundControls({ backgrounds }: { backgrounds: BackgroundController }) {
+export interface WalkableAreaToggle {
+  shown: boolean;
+  onChange: (shown: boolean) => void;
+}
+
+export function BackgroundControls({
+  backgrounds,
+  walkableArea,
+}: {
+  backgrounds: BackgroundController;
+  /** Developer toggle for the navmesh overlay; only passed when the metrics HUD flag is on. */
+  walkableArea?: WalkableAreaToggle;
+}) {
   const [prompt, setPrompt] = useState('');
   const [notice, setNotice] = useState('');
+  const [chosenTab, setChosenTab] = useState<'2d' | '3d' | null>(null);
   if (!backgrounds.available)
     return <p className="kiosk__helper">Background controls are available in the desktop app.</p>;
+  const tab = chosenTab ?? backgrounds.activeKind;
   return (
     <div className="backgroundControls">
+      <div className="backgroundControls__tabs" role="group" aria-label="Background type">
+        {(['2d', '3d'] as const).map((kind) => (
+          <button
+            key={kind}
+            type="button"
+            className="backgroundControls__tab"
+            aria-pressed={tab === kind}
+            onClick={() => setChosenTab(kind)}
+          >
+            {kind === '2d' ? '2D pictures' : '3D rooms'}
+          </button>
+        ))}
+      </div>
       {backgrounds.loading ? <p role="status">Loading backgrounds…</p> : null}
+      {tab === '3d' ? (
+        <>
+          <RoomCards backgrounds={backgrounds} />
+          <p className="kiosk__helper">Describing a room to build it comes in a later update.</p>
+          {walkableArea ? (
+            <label className="kiosk__helper">
+              <input
+                type="checkbox"
+                checked={walkableArea.shown}
+                onChange={(event) => walkableArea.onChange(event.target.checked)}
+              />{' '}
+              Show walkable area
+            </label>
+          ) : null}
+        </>
+      ) : null}
+      {tab === '2d' ? <>
       <div className="backgroundControls__grid" aria-label="Background choices">
         <button
           type="button"
@@ -91,6 +136,7 @@ export function BackgroundControls({ backgrounds }: { backgrounds: BackgroundCon
           Creating your background. You can keep talking and use the other controls.
         </p>
       ) : null}
+      </> : null}
       {notice ? (
         <p role="status" className="kiosk__info">
           {notice}

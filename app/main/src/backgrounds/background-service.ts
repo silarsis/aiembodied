@@ -21,6 +21,8 @@ interface Options {
   backgroundsDirectory: string;
   comfy: Pick<ComfyUIClient, 'isAvailable' | 'run'>;
   ensureComfyReady?: () => Promise<void>;
+  /** Rooms can be the active stage; ids starting with `room:` are checked here. */
+  rooms?: { hasRoom(id: string): boolean };
 }
 
 /** Main-process ownership keeps file paths and generation off the renderer bridge. */
@@ -162,6 +164,7 @@ export class BackgroundService {
   }
 
   private exists(id: string): boolean {
+    if (id.startsWith('room:')) return this.options.rooms?.hasRoom(id) ?? false;
     return (
       DEFAULT_BACKGROUNDS.some((entry) => entry.id === id) ||
       this.saved().some((entry) => entry.id === id)

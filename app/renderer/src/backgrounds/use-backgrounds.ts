@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BackgroundBridge, BackgroundSummary } from '../../../main/src/backgrounds/types.js';
+import type { RoomFile, RoomSummary } from '../../../main/src/rooms/types.js';
+
+export const isRoomId = (id: string | null): id is string => Boolean(id?.startsWith('room:'));
 
 export function useBackgrounds(api?: BackgroundBridge) {
   const [items, setItems] = useState<BackgroundSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [loadedImage, setLoadedImage] = useState<{ id: string; url: string } | null>(null);
+  const [loadedRoom, setLoadedRoom] = useState<{ id: string; room: RoomFile } | null>(null);
   const [loading, setLoading] = useState(Boolean(api));
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,10 +25,11 @@ export function useBackgrounds(api?: BackgroundBridge) {
   useEffect(() => {
     if (!api) return;
     let cancelled = false;
-    Promise.all([api.list(), api.getActive()])
-      .then(([next, active]) => {
+    Promise.all([api.list(), api.getActive(), api.listRooms().catch(() => [] as RoomSummary[])])
+      .then(([next, active, nextRooms]) => {
         if (!cancelled) {
           setItems(next);
+          setRooms(nextRooms);
           setActiveId(active);
           setLoading(false);
         }
@@ -41,7 +47,16 @@ export function useBackgrounds(api?: BackgroundBridge) {
 
   useEffect(() => {
     let cancelled = false;
-    if (api && activeId) {
+    if (api && isRoomId(activeId)) {
+      api
+        .loadRoom(activeId)
+        .then((room) => {
+          if (!cancelled) setLoadedRoom({ id: activeId, room });
+        })
+        .catch((cause: unknown) => {
+          if (!cancelled) setError(message(cause));
+        });
+    } else if (api && activeId) {
       api
         .load(activeId)
         .then((image) => {
@@ -108,11 +123,24 @@ export function useBackgrounds(api?: BackgroundBridge) {
     [api],
   );
 
+  const activeKind: '2d' | '3d' = isRoomId(activeId) ? '3d' : '2d';
+  const active = items.find((item) => item.id === activeId) ?? null;
+  const activeRoomSummary = rooms.find((room) => room.id === activeId) ?? null;
+
+  const loadRoom = useCallback(async (id: string) => (api ? api.loadRoom(id) : null), [api]);
+
   return {
     items,
+    rooms,
+    loadRoom,
     activeId,
-    active: items.find((item) => item.id === activeId) ?? null,
-    imageUrl: loadedImage?.id === activeId ? loadedImage.url : null,
+    activeKind,
+    active,
+    activeRoomSummary,
+    /** Name for summaries: the room in 3D mode, the picture in 2D mode. */
+    activeName: activeRoomSummary?.name ?? active?.name ?? 'Plain background',
+    activeRoom: activeKind === '3d' && loadedRoom?.id === activeId ? loadedRoom.room : null,
+    imageUrl: activeKind === '2d' && loadedImage?.id === activeId ? loadedImage.url : null,
     loading,
     generating,
     error,

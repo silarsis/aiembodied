@@ -1,0 +1,420 @@
+{
+  "version": 1,
+  "id": "room:builtin:reading-room",
+  "name": "Reading room",
+  "description": "A warm reading room with a sofa, an armchair and a wall of books.",
+  "shell": {
+    "width": 6,
+    "depth": 5,
+    "height": 2.8,
+    "floor": {
+      "color": "#8a6240"
+    },
+    "walls": {
+      "color": "#d9cbb0"
+    },
+    "ceiling": {
+      "color": "#efe9dd"
+    },
+    "outside": {
+      "color": "#a9cdea"
+    },
+    "openings": [
+      {
+        "wall": "north",
+        "kind": "window",
+        "offset": 0.6,
+        "width": 1.6,
+        "height": 1.3,
+        "sill": 0.95
+      },
+      {
+        "wall": "east",
+        "kind": "door",
+        "offset": 1.2,
+        "width": 0.95,
+        "height": 2.1
+      }
+    ]
+  },
+  "lights": [
+    {
+      "type": "hemisphere",
+      "color": "#fff4e0",
+      "groundColor": "#7a5c3e",
+      "intensity": 0.9
+    },
+    {
+      "type": "directional",
+      "color": "#fff1d6",
+      "intensity": 1.1,
+      "position": [-1.5, 2.6, 2.0]
+    },
+    {
+      "type": "point",
+      "color": "#ffcf8a",
+      "intensity": 3,
+      "position": [-2.4, 1.6, -2.1]
+    }
+  ],
+  "camera": {
+    "position": [0, 1.5, 2.1],
+    "target": [0, 1.0, -0.3],
+    "fov": 50
+  },
+  "home": {
+    "position": [0, 0, -0.3],
+    "facing": 0
+  },
+  "objects": [
+    {
+      "id": "rug",
+      "name": "rug",
+      "description": "A deep red woven rug.",
+      "position": [0.2, 0, -0.9],
+      "size": [3.2, 0.02, 2.4],
+      "collider": "none",
+      "parts": [
+        {
+          "shape": "box",
+          "size": [3.2, 0.02, 2.4],
+          "offset": [0, 0.01, 0],
+          "color": "#8c3b3b"
+        },
+        {
+          "shape": "box",
+          "size": [2.8, 0.022, 2.0],
+          "offset": [0, 0.011, 0],
+          "color": "#a64b45"
+        }
+      ]
+    },
+    {
+      "id": "sofa",
+      "name": "sofa",
+      "description": "A three-seat fabric sofa under the window.",
+      "position": [0.6, 0, -2.0],
+      "size": [2.0, 0.9, 0.9],
+      "parts": [
+        {
+          "shape": "box",
+          "size": [2.0, 0.4, 0.9],
+          "offset": [0, 0.2, 0],
+          "color": "#4f6b5c"
+        },
+        {
+          "shape": "box",
+          "size": [1.7, 0.14, 0.7],
+          "offset": [0, 0.47, 0.08],
+          "color": "#628472"
+        },
+        {
+          "shape": "box",
+          "size": [2.0, 0.5, 0.2],
+          "offset": [0, 0.65, -0.35],
+          "color": "#4f6b5c"
+        },
+        {
+          "shape": "box",
+          "size": [0.2, 0.3, 0.8],
+          "offset": [-0.9, 0.55, 0.05],
+          "color": "#43594d"
+        },
+        {
+          "shape": "box",
+          "size": [0.2, 0.3, 0.8],
+          "offset": [0.9, 0.55, 0.05],
+          "color": "#43594d"
+        }
+      ],
+      "tags": {
+        "sit": {
+          "position": [0, 0.5, 0.05],
+          "facing": 0
+        },
+        "stand": {
+          "position": [0, 0, 1.0],
+          "facing": 180
+        }
+      }
+    },
+    {
+      "id": "armchair",
+      "name": "armchair",
+      "description": "A deep armchair turned toward the room.",
+      "position": [-1.7, 0, -1.6],
+      "rotationY": 40,
+      "size": [0.9, 0.95, 0.9],
+      "parts": [
+        {
+          "shape": "box",
+          "size": [0.9, 0.4, 0.9],
+          "offset": [0, 0.2, 0],
+          "color": "#9a5f3c"
+        },
+        {
+          "shape": "box",
+          "size": [0.6, 0.12, 0.6],
+          "offset": [0, 0.46, 0.05],
+          "color": "#b0714a"
+        },
+        {
+          "shape": "box",
+          "size": [0.9, 0.55, 0.18],
+          "offset": [0, 0.68, -0.36],
+          "color": "#9a5f3c"
+        },
+        {
+          "shape": "box",
+          "size": [0.14, 0.3, 0.7],
+          "offset": [-0.38, 0.55, 0.05],
+          "color": "#85502f"
+        },
+        {
+          "shape": "box",
+          "size": [0.14, 0.3, 0.7],
+          "offset": [0.38, 0.55, 0.05],
+          "color": "#85502f"
+        }
+      ],
+      "tags": {
+        "sit": {
+          "position": [0, 0.5, 0.05],
+          "facing": 0
+        },
+        "stand": {
+          "position": [0, 0, 0.9],
+          "facing": 180
+        }
+      }
+    },
+    {
+      "id": "coffee-table",
+      "name": "coffee table",
+      "description": "A low wooden coffee table.",
+      "position": [1.1, 0, -1.0],
+      "size": [1.0, 0.42, 0.6],
+      "parts": [
+        {
+          "shape": "box",
+          "size": [1.0, 0.04, 0.6],
+          "offset": [0, 0.4, 0],
+          "color": "#6b4a2f"
+        },
+        {
+          "shape": "box",
+          "size": [0.06, 0.38, 0.06],
+          "offset": [-0.44, 0.19, -0.24],
+          "color": "#553a24"
+        },
+        {
+          "shape": "box",
+          "size": [0.06, 0.38, 0.06],
+          "offset": [0.44, 0.19, -0.24],
+          "color": "#553a24"
+        },
+        {
+          "shape": "box",
+          "size": [0.06, 0.38, 0.06],
+          "offset": [-0.44, 0.19, 0.24],
+          "color": "#553a24"
+        },
+        {
+          "shape": "box",
+          "size": [0.06, 0.38, 0.06],
+          "offset": [0.44, 0.19, 0.24],
+          "color": "#553a24"
+        }
+      ],
+      "tags": {
+        "surface": {
+          "height": 0.42
+        },
+        "stand": {
+          "position": [0, 0, 0.8],
+          "facing": 180
+        }
+      }
+    },
+    {
+      "id": "mug",
+      "name": "mug",
+      "description": "A ceramic mug.",
+      "position": [1.1, 0.42, -1.0],
+      "size": [0.1, 0.1, 0.1],
+      "dynamic": true,
+      "parts": [
+        {
+          "shape": "cylinder",
+          "radius": 0.04,
+          "height": 0.1,
+          "offset": [0, 0.05, 0],
+          "color": "#e8e2d4"
+        },
+        {
+          "shape": "box",
+          "size": [0.015, 0.06, 0.03],
+          "offset": [0.05, 0.05, 0],
+          "color": "#e8e2d4"
+        }
+      ],
+      "tags": {
+        "grab": {
+          "position": [0, 0.06, 0]
+        }
+      }
+    },
+    {
+      "id": "bookshelf",
+      "name": "bookshelf",
+      "description": "A tall bookshelf full of books.",
+      "position": [-2.8, 0, -0.5],
+      "rotationY": 90,
+      "size": [1.6, 2.0, 0.35],
+      "parts": [
+        {
+          "shape": "box",
+          "size": [1.6, 2.0, 0.05],
+          "offset": [0, 1.0, -0.15],
+          "color": "#5a3d28"
+        },
+        {
+          "shape": "box",
+          "size": [0.05, 2.0, 0.35],
+          "offset": [-0.775, 1.0, 0],
+          "color": "#5a3d28"
+        },
+        {
+          "shape": "box",
+          "size": [0.05, 2.0, 0.35],
+          "offset": [0.775, 1.0, 0],
+          "color": "#5a3d28"
+        },
+        {
+          "shape": "box",
+          "size": [1.6, 0.05, 0.35],
+          "offset": [0, 0.025, 0],
+          "color": "#5a3d28"
+        },
+        {
+          "shape": "box",
+          "size": [1.6, 0.05, 0.35],
+          "offset": [0, 0.5, 0],
+          "color": "#5a3d28"
+        },
+        {
+          "shape": "box",
+          "size": [1.6, 0.05, 0.35],
+          "offset": [0, 1.0, 0],
+          "color": "#5a3d28"
+        },
+        {
+          "shape": "box",
+          "size": [1.6, 0.05, 0.35],
+          "offset": [0, 1.5, 0],
+          "color": "#5a3d28"
+        },
+        {
+          "shape": "box",
+          "size": [1.6, 0.05, 0.35],
+          "offset": [0, 1.975, 0],
+          "color": "#5a3d28"
+        },
+        {
+          "shape": "box",
+          "size": [1.4, 0.35, 0.22],
+          "offset": [0, 0.7, 0.02],
+          "color": "#9b4a3a"
+        },
+        {
+          "shape": "box",
+          "size": [1.4, 0.35, 0.22],
+          "offset": [0, 1.2, 0.02],
+          "color": "#3e5f7a"
+        },
+        {
+          "shape": "box",
+          "size": [1.4, 0.35, 0.22],
+          "offset": [0, 1.7, 0.02],
+          "color": "#c2a14d"
+        },
+        {
+          "shape": "box",
+          "size": [1.4, 0.35, 0.22],
+          "offset": [0, 0.25, 0.02],
+          "color": "#5d7a4e"
+        }
+      ],
+      "tags": {
+        "look": {
+          "position": [0, 1.4, 0.2]
+        },
+        "stand": {
+          "position": [0, 0, 0.8],
+          "facing": 180
+        },
+        "idle": "browse the books"
+      }
+    },
+    {
+      "id": "floor-lamp",
+      "name": "floor lamp",
+      "description": "A tall lamp with a warm shade.",
+      "position": [-2.55, 0, -2.15],
+      "size": [0.4, 1.8, 0.4],
+      "parts": [
+        {
+          "shape": "cylinder",
+          "radius": 0.15,
+          "height": 0.03,
+          "offset": [0, 0.015, 0],
+          "color": "#2f2f2f"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.02,
+          "height": 1.55,
+          "offset": [0, 0.8, 0],
+          "color": "#3a3a3a"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.2,
+          "height": 0.3,
+          "offset": [0, 1.65, 0],
+          "color": "#f2d49b"
+        }
+      ]
+    },
+    {
+      "id": "side-table",
+      "name": "side table",
+      "description": "A small round side table next to the sofa.",
+      "position": [1.95, 0, -2.1],
+      "size": [0.45, 0.5, 0.45],
+      "parts": [
+        {
+          "shape": "cylinder",
+          "radius": 0.22,
+          "height": 0.04,
+          "offset": [0, 0.48, 0],
+          "color": "#6b4a2f"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.04,
+          "height": 0.46,
+          "offset": [0, 0.23, 0],
+          "color": "#553a24"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.15,
+          "height": 0.03,
+          "offset": [0, 0.015, 0],
+          "color": "#553a24"
+        }
+      ]
+    }
+  ]
+}

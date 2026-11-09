@@ -1,4 +1,5 @@
 import { BackgroundService } from './backgrounds/background-service.js';
+import { RoomService } from './rooms/room-service.js';
 import { app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain, powerMonitor } from 'electron';
 import dotenv from 'dotenv';
 import path from 'node:path';
@@ -223,6 +224,7 @@ let avatarModelService: AvatarModelService | null = null;
 let avatarAnimationService: AvatarAnimationService | null = null;
 let avatarPoseService: AvatarPoseService | null = null;
 let backgroundService: BackgroundService | null = null;
+let roomService: RoomService | null = null;
 let vrmaGenerationService: VrmaGenerationService | null = null;
 let poseGenerationService: PoseGenerationService | null = null;
 let poseEvaluationService: PoseEvaluationService | null = null;
@@ -1543,6 +1545,10 @@ function registerIpcHandlers(
 
     return avatarModels.loadModelBinary(modelId);
   });
+  const requireRooms = (): RoomService => {
+    if (!roomService) throw new Error('Rooms are unavailable.');
+    return roomService;
+  };
   const requireBackgrounds = (): BackgroundService => {
     if (!backgroundService) throw new Error('Backgrounds are unavailable.');
     return backgroundService;
@@ -1553,6 +1559,8 @@ function registerIpcHandlers(
   ipcMain.handle('background:load', (_event, id: string) => requireBackgrounds().load(id));
   ipcMain.handle('background:generate', (_event, prompt: string) => requireBackgrounds().generate(prompt));
   ipcMain.handle('background:delete', (_event, id: string) => requireBackgrounds().delete(id));
+  ipcMain.handle('background:list-rooms', () => requireRooms().list());
+  ipcMain.handle('background:load-room', (_event, id: string) => requireRooms().load(id));
   const requireAvatarGeneration = (): AvatarGenerationService => {
     if (!avatarGenerationService) {
       throw new Error('Avatar generation is unavailable.');
@@ -2204,8 +2212,13 @@ app.whenReady().then(async () => {
   let backgroundComfy: ComfyUIClient | null = null;
   const fallbackComfy = new ComfyUIClient({ baseUrl: appConfig.comfyUiBaseUrl });
   if (memoryStore) {
+    roomService = new RoomService({
+      assetsDirectory: path.join(__dirname, '../assets/rooms'),
+      roomsDirectory: path.join(app.getPath('userData'), 'rooms'),
+    });
     backgroundService = new BackgroundService({
       store: memoryStore,
+      rooms: roomService,
       assetsDirectory: path.join(__dirname, '../assets/backgrounds'),
       backgroundsDirectory: path.join(app.getPath('userData'), 'backgrounds'),
       comfy: {

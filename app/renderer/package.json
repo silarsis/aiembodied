@@ -13,9 +13,12 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.21.0",
     "@pixiv/three-vrm": "^3.5.5",
+    "@recast-navigation/three": "^0.44.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "recast-navigation": "^0.44.0",
     "three": "^0.187.0",
     "three-stdlib": "^2.36.1"
   },

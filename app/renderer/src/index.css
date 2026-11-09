@@ -1067,6 +1067,24 @@ body {
 .kiosk[data-drawer-open='true'] .kiosk__avatar canvas {
   transform: scale(0.9);
 }
+/* 3D rooms: the canvas is the whole stage, so none of the 2D foot-anchoring applies. */
+.kiosk__avatar[data-stage-mode='3d'] {
+  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  transform: none;
+}
+.kiosk__avatar[data-stage-mode='3d'] canvas,
+.kiosk[data-drawer-open='true'] .kiosk__avatar[data-stage-mode='3d'] canvas {
+  width: 100% !important;
+  height: 100% !important;
+  aspect-ratio: auto;
+  max-width: none;
+  transform: none;
+  transition: none;
+}
 .stageToolbar {
   position: absolute;
   bottom: 26px;
@@ -1953,4 +1971,30 @@ body {
   font-family: ui-monospace, Consolas, monospace;
   font-size: 0.75rem;
   white-space: pre;
+}
+
+.backgroundControls__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.14);
+  align-self: flex-start;
+}
+.backgroundControls__tab {
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #cbd5e1;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.backgroundControls__tab[aria-pressed='true'] {
+  background: #334155;
+  color: #f8fafc;
+}
+.backgroundCard__room {
+  background: linear-gradient(135deg, #3b4252, #5b6475);
 }

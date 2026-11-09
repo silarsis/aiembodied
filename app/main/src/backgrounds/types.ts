@@ -1,3 +1,5 @@
+import type { RoomFile, RoomSummary } from '../rooms/types.js';
+
 export interface BackgroundSummary {
   id: string;
   name: string;
@@ -16,4 +18,6 @@ export interface BackgroundBridge {
   load(id: string): Promise<string>;
   generate(prompt: string): Promise<BackgroundSummary>;
   delete(id: string): Promise<void>;
+  listRooms(): Promise<RoomSummary[]>;
+  loadRoom(id: string): Promise<RoomFile>;
 }
