@@ -55,3 +55,26 @@ describe('RoomSceneController.setRoom', () => {
     instance.dispose();
   });
 });
+
+describe('RoomSceneController soles on the floor', () => {
+  it('lifts an avatar normalised with its ankles on y = 0 so the soles meet the floor', async () => {
+    const canvas = document.createElement('canvas');
+    const parent = document.createElement('div');
+    parent.append(canvas);
+    Object.defineProperty(parent, 'clientWidth', { value: 800 });
+    Object.defineProperty(parent, 'clientHeight', { value: 600 });
+    const renderer = { setClearColor: () => undefined, setSize: () => undefined } as unknown as THREE.WebGLRenderer;
+    const instance = new RoomSceneController({ renderer, scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(), canvas, legacySize: { width: 480, height: 640 } });
+    const avatar = new THREE.Group();
+    avatar.position.y = -0.07; // the 2D normalisation dropped the ankle bone to y = 0
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.6, 0.3));
+    body.position.y = 0.8 - 0.09; // soles 9 cm below the ankle
+    avatar.add(body);
+    instance.attachAvatar(avatar);
+    await instance.setRoom(builtInRoom('reading-room'));
+    avatar.updateWorldMatrix(true, true);
+    const bottom = new THREE.Box3().setFromObject(body).min.y;
+    expect(bottom).toBeCloseTo(builtInRoom('reading-room').home.position[1], 3);
+    instance.dispose();
+  });
+});
