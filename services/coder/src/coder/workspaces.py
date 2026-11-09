@@ -34,6 +34,8 @@ class Workspace(BaseModel):
     kind: Literal["project", "self"] = "project"
     base_branch: str = "main"
     checks: Optional[str] = None
+    # Run in the fresh worktree before pi starts. Unset means auto-detect from the lockfile.
+    setup: Optional[str] = None
     protected_paths: Optional[list[str]] = None
     model: Optional[ModelRef] = None
     time_limit_min: Optional[float] = Field(default=None, gt=0)
@@ -54,6 +56,8 @@ def normalise(ws: Workspace) -> Workspace:
         ws.protected_paths = list(SELF_PROTECTED) if ws.kind == "self" else []
     if ws.checks is not None and not ws.checks.strip():
         ws.checks = None
+    if ws.setup is not None and not ws.setup.strip():
+        ws.setup = None
     return ws
 
 

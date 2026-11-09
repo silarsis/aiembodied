@@ -8,6 +8,7 @@
  */
 import { BUILT_IN_SERVER_IDS, DEFAULT_CODER_MODEL, routeTargets, type ModelRouting } from '../config/model-routing.js';
 import { toRunnerWorkspace, type CodingConfig } from './config.js';
+import { CODER_CONTEXT_LENGTH } from './types.js';
 import { RunnerError, type CodingRunnerClient, type RunnerKeys, type RunnerSettings } from './runner-client.js';
 
 type Logger = { info: (message: string, data?: Record<string, unknown>) => void; warn: (message: string, data?: Record<string, unknown>) => void };
@@ -31,12 +32,15 @@ export function buildCodingSyncPayload(
   let settings: Partial<RunnerSettings> | undefined;
   if (target?.server.type === 'chat') {
     const model = target.model?.trim() || DEFAULT_CODER_MODEL;
-    settings = { local_llm_url: target.server.url, local_model: model, default_model: { provider: 'local', id: model } };
+    settings = { local_llm_url: target.server.url, local_model: model,
+      // Only the built-in coder server is started by this app with that context size.
+      ...(target.server.id === BUILT_IN_SERVER_IDS.coderLlm ? { local_context: CODER_CONTEXT_LENGTH } : {}),
+      default_model: { provider: 'local', id: model } };
   } else if (target && (target.server.type === 'openai' || target.server.type === 'anthropic') && target.model?.trim()) {
     // The local model settings stay those of the built-in coder server; only the default changes.
     const local = routing.servers.find((server) => server.id === BUILT_IN_SERVER_IDS.coderLlm);
     settings = {
-      ...(local ? { local_llm_url: local.url, local_model: DEFAULT_CODER_MODEL } : {}),
+      ...(local ? { local_llm_url: local.url, local_model: DEFAULT_CODER_MODEL, local_context: CODER_CONTEXT_LENGTH } : {}),
       default_model: { provider: target.server.type, id: target.model.trim() },
     };
   }

@@ -11,7 +11,8 @@ state), 422 (bad shape) or 502 (push failed).
 
 - `GET /v1/health` -> `{"ok": true, "version": "0.1.0", "pi": {"found": true, "version": "1.5.0"}}`
 - `PUT /v1/settings` -> the stored settings. Partial; saved in `settings.json` and applied to pi's config.
-  `{"local_llm_url": "http://127.0.0.1:1236/v1", "local_model": "qwen3-coder-next", "default_model": {"provider": "local", "id": "qwen3-coder-next"}}`
+  `{"local_llm_url": "http://127.0.0.1:1236/v1", "local_model": "qwen3-coder-next", "local_context": 65536, "default_model": {"provider": "local", "id": "qwen3-coder-next"}}`
+  `local_context` is the context size the local llama-server runs with; it becomes `contextWindow` in pi's model config.
   Tasks created without `model` (and without a workspace model) use `default_model`.
 - `GET /v1/settings` -> the same shape.
 - `GET /v1/status` -> `{"local_model_needed": true, "active": ["20261108-1a2b"], "hold": false}`.
@@ -25,10 +26,15 @@ state), 422 (bad shape) or 502 (push failed).
 - `PUT /v1/workspaces` replaces the whole list. 400 if a path is not a git repository. Returns the stored list.
   ```json
   [{"id": "aiembodied", "name": "aiembodied", "path": "C:\\src\\aiembodied", "kind": "self",
-    "base_branch": "main", "checks": "pnpm -w typecheck && pnpm test",
+    "base_branch": "main", "checks": "pnpm -w typecheck && pnpm test", "setup": "pnpm install --frozen-lockfile",
     "protected_paths": ["services/coder/"], "model": {"provider": "local", "id": "qwen3-coder-next"},
     "time_limit_min": 60}]
   ```
+  `setup` (optional) runs in the fresh worktree before pi starts, and before the checks if it has not run. Unset means
+  auto-detect: `pnpm-lock.yaml` -> `pnpm install --frozen-lockfile --prefer-offline`, `package-lock.json` ->
+  `npm ci --prefer-offline`, `yarn.lock` -> `yarn install --frozen-lockfile`, `uv.lock` -> `uv sync`, else nothing.
+  Its output goes to the task events; a failure is an event and the review flag `setup failed`, and pi still runs.
+  A failed check adds the review flag `checks failed`.
 - `GET /v1/workspaces`
 - `PUT /v1/keys` -> 204. Merges; an empty or null value clears a key.
   `{"openai": "sk-...", "anthropic": "sk-ant-...", "github": "ghp_..."}`

@@ -12,6 +12,8 @@ export interface CodingWorkspace {
   baseBranch: string;
   /** Command the runner runs in the worktree before review, such as "pnpm test". */
   checks?: string;
+  /** Command run in the fresh worktree before pi starts (installs dependencies). Unset: the runner picks one from the lockfile. */
+  setup?: string;
   /** Extra paths (relative to the repository) that a task may not change. */
   protectedPaths?: string[];
 }
@@ -29,6 +31,9 @@ export interface CodingConfig {
    */
   coderMemory?: 'auto' | 'side-by-side' | 'swap';
 }
+
+/** Context size (tokens) the coder's llama-server runs with; also sent to the runner so pi's model config matches. */
+export const CODER_CONTEXT_LENGTH = 65536;
 
 /** Paths a task in a 'self' workspace may never change. Mirrors SELF_PROTECTED in services/coder. */
 export const SELF_PROTECTED_PATHS: readonly string[] = [
