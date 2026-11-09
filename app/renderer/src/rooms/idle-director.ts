@@ -356,7 +356,7 @@ export interface IdleDirectorInputs {
 
 const NO_INPUTS: IdleDirectorInputs = {
   room: null,
-  settings: { enabled: false, restlessness: 'normal', onTalk: 'turn' },
+  settings: { enabled: false, restlessness: 'normal', onTalk: 'turn', avatarHeight: 1.6 },
   motionReady: false,
   persona: { name: '', personality: '', habits: '' },
   pick: async () => null,

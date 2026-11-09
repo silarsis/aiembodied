@@ -1,4 +1,7 @@
-/** The "When idle" settings of the Backgrounds pop-up's 3D rooms tab, saved under the `rooms.idle` key. */
+/**
+ * The "When idle" settings of the Backgrounds pop-up's 3D rooms tab, saved under the `rooms.idle` key,
+ * plus how tall the avatar stands in rooms (the same tab's "Avatar height").
+ */
 export const IDLE_SETTINGS_KEY = 'rooms.idle';
 
 export type Restlessness = 'calm' | 'normal' | 'restless';
@@ -10,9 +13,14 @@ export interface IdleSettings {
   enabled: boolean;
   restlessness: Restlessness;
   onTalk: OnTalk;
+  /** How tall the avatar stands in 3D rooms, sole to crown, in metres. */
+  avatarHeight: number;
 }
 
-export const DEFAULT_IDLE_SETTINGS: IdleSettings = { enabled: true, restlessness: 'normal', onTalk: 'turn' };
+export const MIN_ROOM_AVATAR_HEIGHT = 1.0;
+export const MAX_ROOM_AVATAR_HEIGHT = 2.2;
+
+export const DEFAULT_IDLE_SETTINGS: IdleSettings = { enabled: true, restlessness: 'normal', onTalk: 'turn', avatarHeight: 1.6 };
 
 /** Mean wait between idle actions, in seconds. */
 export const RESTLESSNESS_MEAN_SECONDS: Record<Restlessness, number> = { calm: 180, normal: 90, restless: 40 };
@@ -27,6 +35,10 @@ export function sanitizeIdleSettings(input: unknown): IdleSettings {
         ? value.restlessness
         : DEFAULT_IDLE_SETTINGS.restlessness,
     onTalk: value.onTalk === 'come-back' || value.onTalk === 'turn' ? value.onTalk : DEFAULT_IDLE_SETTINGS.onTalk,
+    avatarHeight:
+      typeof value.avatarHeight === 'number' && Number.isFinite(value.avatarHeight)
+        ? Math.round(Math.min(MAX_ROOM_AVATAR_HEIGHT, Math.max(MIN_ROOM_AVATAR_HEIGHT, value.avatarHeight)) * 100) / 100
+        : DEFAULT_IDLE_SETTINGS.avatarHeight,
   };
 }
 

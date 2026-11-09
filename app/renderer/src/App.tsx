@@ -2555,6 +2555,7 @@ export default function App() {
                   onGroundPositionChange={setAvatarFootY}
                   animationVersion={0}
                   room={backgrounds.activeRoom}
+                  roomAvatarHeight={backgrounds.idleSettings.avatarHeight}
                   showWalkableArea={showDeveloperHud && showWalkableArea}
                   sceneActions={sceneActions}
                 />

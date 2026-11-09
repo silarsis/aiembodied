@@ -106,7 +106,7 @@ describe('idle habits', () => {
 
 describe('idle settings', () => {
   it('defaults to wandering, normal restlessness and turning where it is', () => {
-    expect(parseIdleSettings(null)).toEqual({ enabled: true, restlessness: 'normal', onTalk: 'turn' });
+    expect(parseIdleSettings(null)).toEqual({ enabled: true, restlessness: 'normal', onTalk: 'turn', avatarHeight: 1.6 });
     expect(parseIdleSettings('not json')).toEqual(DEFAULT_IDLE_SETTINGS);
     expect(RESTLESSNESS_MEAN_SECONDS).toEqual({ calm: 180, normal: 90, restless: 40 });
   });
@@ -116,8 +116,12 @@ describe('idle settings', () => {
       enabled: false,
       restlessness: 'normal',
       onTalk: 'come-back',
+      avatarHeight: 1.6,
     });
     expect(sanitizeIdleSettings('x')).toEqual(DEFAULT_IDLE_SETTINGS);
+    expect(sanitizeIdleSettings({ avatarHeight: 1.234 }).avatarHeight).toBe(1.23);
+    expect(sanitizeIdleSettings({ avatarHeight: 9 }).avatarHeight).toBe(2.2);
+    expect(sanitizeIdleSettings({ avatarHeight: 0.2 }).avatarHeight).toBe(1);
   });
 
   it('is saved under rooms.idle by the background service', () => {
@@ -130,7 +134,7 @@ describe('idle settings', () => {
     });
     expect(service.getIdleSettings()).toEqual(DEFAULT_IDLE_SETTINGS);
     service.setIdleSettings({ enabled: false, restlessness: 'restless', onTalk: 'turn' });
-    expect(JSON.parse(values.get('rooms.idle')!)).toEqual({ enabled: false, restlessness: 'restless', onTalk: 'turn' });
+    expect(JSON.parse(values.get('rooms.idle')!)).toEqual({ enabled: false, restlessness: 'restless', onTalk: 'turn', avatarHeight: 1.6 });
     expect(service.getIdleSettings().restlessness).toBe('restless');
     expect(service.setIdleSettings({ restlessness: 'nope' })).toEqual(DEFAULT_IDLE_SETTINGS);
   });
