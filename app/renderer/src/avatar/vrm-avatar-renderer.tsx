@@ -66,6 +66,8 @@ export interface VrmAvatarRendererProps {
   animationVersion?: number;
   /** A 3D room to stand in. Null or absent keeps the 2D backdrop behaviour. */
   room?: RoomFile | null;
+  /** How tall the avatar stands in rooms, sole to crown, in metres. */
+  roomAvatarHeight?: number;
   /** Developer overlay of the walkable area (rooms only). */
   showWalkableArea?: boolean;
   /** Runs scene actions (walk, sit, pick up) in the room; it is given the room's env while this renders. */
@@ -1172,6 +1174,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   idleOptions,
   animationVersion,
   room = null,
+  roomAvatarHeight,
   showWalkableArea = false,
   sceneActions = null,
 }: VrmAvatarRendererProps) {
@@ -2113,6 +2116,11 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     }
     void controller.setRoom(room);
   }, [room, rendererReady, clearActiveAnimation, releaseIdleSuspension, sceneActions]);
+
+  useEffect(() => {
+    if (!rendererReady || roomAvatarHeight === undefined) return;
+    roomControllerRef.current?.setAvatarHeight(roomAvatarHeight);
+  }, [roomAvatarHeight, rendererReady]);
 
   useEffect(() => {
     const controller = roomControllerRef.current;

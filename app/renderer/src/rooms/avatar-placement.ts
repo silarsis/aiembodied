@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { DEFAULT_IDLE_SETTINGS } from '../../../main/src/rooms/idle-settings.js';
 import type { Vec3 } from '../../../main/src/rooms/types.js';
 
 export interface AvatarBaseTransform {
@@ -23,6 +24,15 @@ export function placeAtHome(base: AvatarBaseTransform, home: { position: Vec3; f
   };
 }
 
+/** How tall the avatar stands in a room by default, in metres, sole to crown. */
+export const DEFAULT_ROOM_AVATAR_HEIGHT = DEFAULT_IDLE_SETTINGS.avatarHeight;
+
+/** Sole-to-crown height of the visible meshes at rest, in world metres; 0 if nothing is visible. */
+export function measureAvatarHeight(root: THREE.Object3D): number {
+  const box = visibleBounds(root);
+  return box ? box.max.y - box.min.y : 0;
+}
+
 /** Most a rest-pose sole may sit below the scene's ground line before it is treated as stray geometry. */
 export const MAX_SOLE_LIFT = 0.2;
 
@@ -33,8 +43,14 @@ export const MAX_SOLE_LIFT = 0.2;
  * meshes' rest bounds in world space; clamped to [0, MAX_SOLE_LIFT] so stray geometry can't fling it.
  */
 export function measureSoleLift(root: THREE.Object3D): number {
+  const box = visibleBounds(root);
+  if (!box) return 0;
+  return Math.min(MAX_SOLE_LIFT, Math.max(0, -box.min.y));
+}
+
+function visibleBounds(root: THREE.Object3D): THREE.Box3 | null {
   root.updateWorldMatrix(true, true);
-  let minY = Infinity;
+  const total = new THREE.Box3();
   const box = new THREE.Box3();
   root.traverse((object) => {
     const mesh = object as THREE.Mesh;
@@ -42,10 +58,9 @@ export function measureSoleLift(root: THREE.Object3D): number {
     if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
     if (!mesh.geometry.boundingBox) return;
     box.copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
-    if (!box.isEmpty()) minY = Math.min(minY, box.min.y);
+    if (!box.isEmpty()) total.union(box);
   });
-  if (!Number.isFinite(minY)) return 0;
-  return Math.min(MAX_SOLE_LIFT, Math.max(0, -minY));
+  return total.isEmpty() ? null : total;
 }
 
 function isVisible(object: THREE.Object3D, root: THREE.Object3D): boolean {

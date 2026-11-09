@@ -119,12 +119,15 @@ describe('When idle settings', () => {
     expect(screen.getByLabelText('Restlessness')).toBeDisabled();
 
     fireEvent.click(screen.getByLabelText('Wander when nobody is talking'));
-    await waitFor(() => expect(api.setIdleSettings).toHaveBeenLastCalledWith({ enabled: true, restlessness: 'calm', onTalk: 'come-back' }));
+    await waitFor(() => expect(api.setIdleSettings).toHaveBeenLastCalledWith({ enabled: true, restlessness: 'calm', onTalk: 'come-back', avatarHeight: 1.6 }));
     fireEvent.change(screen.getByLabelText('Restlessness'), { target: { value: 'restless' } });
-    await waitFor(() => expect(api.setIdleSettings).toHaveBeenLastCalledWith({ enabled: true, restlessness: 'restless', onTalk: 'come-back' }));
+    await waitFor(() => expect(api.setIdleSettings).toHaveBeenLastCalledWith({ enabled: true, restlessness: 'restless', onTalk: 'come-back', avatarHeight: 1.6 }));
     fireEvent.change(screen.getByLabelText('When I start talking'), { target: { value: 'turn' } });
-    await waitFor(() => expect(api.setIdleSettings).toHaveBeenLastCalledWith({ enabled: true, restlessness: 'restless', onTalk: 'turn' }));
+    await waitFor(() => expect(api.setIdleSettings).toHaveBeenLastCalledWith({ enabled: true, restlessness: 'restless', onTalk: 'turn', avatarHeight: 1.6 }));
     expect(screen.getByLabelText('Restlessness')).toHaveValue('restless');
+    fireEvent.change(screen.getByLabelText(/Avatar height in rooms/), { target: { value: '1.45' } });
+    await waitFor(() => expect(api.setIdleSettings).toHaveBeenLastCalledWith({ enabled: true, restlessness: 'restless', onTalk: 'turn', avatarHeight: 1.45 }));
+    expect(screen.getByText(/Avatar height in rooms: 1.45 m/)).toBeInTheDocument();
   });
 });
 

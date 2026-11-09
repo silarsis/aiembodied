@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { BackgroundController } from './use-backgrounds.js';
-import type { OnTalk, Restlessness } from '../../../main/src/rooms/idle-settings.js';
+import { MAX_ROOM_AVATAR_HEIGHT, MIN_ROOM_AVATAR_HEIGHT, type OnTalk, type Restlessness } from '../../../main/src/rooms/idle-settings.js';
 import { RoomCards } from './room-cards.js';
 import { RoomDescribeForm } from './room-describe-form.js';
 import { GeneratedObjects, MakeMissingObjects } from './room-objects.js';
@@ -47,6 +47,7 @@ export function BackgroundControls({
           <RoomDescribeForm backgrounds={backgrounds} prompt={roomPrompt} onPromptChange={setRoomPrompt} />
           <MakeMissingObjects backgrounds={backgrounds} />
           <GeneratedObjects backgrounds={backgrounds} />
+          <AvatarHeight backgrounds={backgrounds} />
           <WhenIdle backgrounds={backgrounds} />
           {walkableArea ? (
             <label className="kiosk__helper">
@@ -167,6 +168,26 @@ const ON_TALK: Array<{ value: OnTalk; label: string }> = [
   { value: 'turn', label: 'Turn to me where it is' },
   { value: 'come-back', label: 'Come back to me' },
 ];
+
+/** How tall the avatar stands in rooms: the furniture is real size, the 2D stage fills the frame. */
+function AvatarHeight({ backgrounds }: { backgrounds: BackgroundController }) {
+  const { idleSettings: settings, setIdleSettings } = backgrounds;
+  return (
+    <div className="control">
+      <label htmlFor="room-avatar-height">Avatar height in rooms: {settings.avatarHeight.toFixed(2)} m</label>
+      <input
+        id="room-avatar-height"
+        type="range"
+        min={MIN_ROOM_AVATAR_HEIGHT}
+        max={MAX_ROOM_AVATAR_HEIGHT}
+        step={0.05}
+        value={settings.avatarHeight}
+        onChange={(event) => void setIdleSettings({ avatarHeight: Number(event.target.value) })}
+      />
+      <p className="kiosk__helper">Head to toe. Doors are about 2 m and chair seats 0.45 m.</p>
+    </div>
+  );
+}
 
 /** What the avatar does on its own in a room when nobody is talking. */
 function WhenIdle({ backgrounds }: { backgrounds: BackgroundController }) {
