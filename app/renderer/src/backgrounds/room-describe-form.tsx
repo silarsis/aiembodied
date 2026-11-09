@@ -10,7 +10,7 @@ export function RoomDescribeForm({
   prompt: string;
   onPromptChange: (value: string) => void;
 }) {
-  const { roomBuilding } = backgrounds;
+  const { roomBuilding, roomBusy, roomMaking } = backgrounds;
   return (
     <>
       <form
@@ -29,13 +29,13 @@ export function RoomDescribeForm({
             value={prompt}
             placeholder="A cosy reading room with an armchair by the window and a wall of books…"
             onChange={(event) => onPromptChange(event.target.value)}
-            disabled={roomBuilding}
+            disabled={roomBusy}
           />
         </label>
-        <button type="submit" className="faces__submit" disabled={roomBuilding || !prompt.trim()}>
-          {roomBuilding ? 'Building room…' : 'Build room'}
+        <button type="submit" className="faces__submit" disabled={roomBusy || !prompt.trim()}>
+          {roomBuilding ? 'Building room…' : roomMaking ? 'Making objects…' : 'Build room'}
         </button>
-        {roomBuilding ? (
+        {roomBusy ? (
           <button type="button" className="faces__submit" onClick={() => void backgrounds.cancelRoom()}>
             Cancel
           </button>
@@ -43,9 +43,11 @@ export function RoomDescribeForm({
       </form>
       <p className="kiosk__helper">
         Describe a room and a language model plans it. Furniture comes from the free Poly Haven library (downloaded the first time
-        it is needed); anything not found becomes a simple shape.
+        it is needed). Anything not found is made on this PC from a generated picture when that is switched on below (it takes
+        minutes per object and the room is usable meanwhile), else it becomes a simple shape.
       </p>
       {roomBuilding && backgrounds.roomProgress ? <p role="status">{backgrounds.roomProgress}</p> : null}
+      {!roomBuilding && roomMaking ? <p role="status">{roomMaking.message}</p> : null}
       {backgrounds.roomWarnings.length > 0 ? (
         <ul className="kiosk__helper" aria-label="Notes about the new room">
           {backgrounds.roomWarnings.map((warning) => (

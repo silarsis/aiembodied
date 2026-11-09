@@ -1178,6 +1178,8 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   const roomRef = useRef<RoomFile | null>(room);
   roomRef.current = room;
   const roomControllerRef = useRef<RoomSceneController | null>(null);
+  /** Id of the room the stage was last given, so a reload of the same room can be told from a new one. */
+  const lastRoomIdRef = useRef<string | null>(null);
   const groundCallbackRef = useRef(onGroundPositionChange);
   const groundMeasuredRef = useRef(false);
   useEffect(() => { groundCallbackRef.current = onGroundPositionChange; }, [onGroundPositionChange]);
@@ -2099,11 +2101,16 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     if (!rendererReady || !controller) {
       return;
     }
-    // Any walk, sit or motion in progress is cancelled when the stage changes.
-    clearActiveAnimation();
-    animationQueueRef.current = [];
-    releaseIdleSuspension();
-    sceneActions?.reset();
+    // Any walk, sit or motion in progress is cancelled when the stage changes. The same room
+    // loaded again (an object was made for it) leaves the avatar and its action alone.
+    const reload = room !== null && lastRoomIdRef.current === room.id;
+    lastRoomIdRef.current = room?.id ?? null;
+    if (!reload) {
+      clearActiveAnimation();
+      animationQueueRef.current = [];
+      releaseIdleSuspension();
+      sceneActions?.reset();
+    }
     void controller.setRoom(room);
   }, [room, rendererReady, clearActiveAnimation, releaseIdleSuspension, sceneActions]);
 

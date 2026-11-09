@@ -4,7 +4,7 @@ import { pickIdleActions } from './rooms/idle-thoughts.js';
 import { MAX_IDLE_HABITS_LENGTH, normalizeIdleHabits } from './rooms/idle-habits.js';
 import { app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain, powerMonitor, protocol } from 'electron';
 import { ASSET_SCHEME, ASSET_SCHEME_PRIVILEGES, registerAssetProtocol } from './rooms/asset-protocol.js';
-import { ASSET_FOLDER, createRoomGenerationService } from './rooms/room-generation-setup.js';
+import { ASSET_FOLDER, createRoomGenerationService, objectMakingAvailable, pickSingleImageGeometry } from './rooms/room-generation-setup.js';
 import type { RoomGenerationService } from './rooms/room-generation.js';
 import dotenv from 'dotenv';
 import path from 'node:path';
@@ -1583,6 +1583,18 @@ function registerIpcHandlers(
     requireGeneration().generate(String(description ?? ''), (progress) => broadcastToWindows('rooms:generate-progress', progress)),
   );
   ipcMain.handle('rooms:cancel-generate', () => requireGeneration().cancel());
+  ipcMain.handle('rooms:making', () => requireGeneration().making);
+  const objectSettingsView = () => ({
+    ...requireBackgrounds().getObjectSettings(),
+    available: objectMakingAvailable(manager.getConfig().models),
+  });
+  ipcMain.handle('rooms:object-settings:get', () => objectSettingsView());
+  ipcMain.handle('rooms:object-settings:set', (_event, settings: unknown) => {
+    requireBackgrounds().setObjectSettings(settings);
+    return objectSettingsView();
+  });
+  ipcMain.handle('rooms:generated:list', () => requireGeneration().listGenerated());
+  ipcMain.handle('rooms:generated:delete', (_event, id: unknown) => requireGeneration().deleteGenerated(String(id ?? '')));
   ipcMain.handle('rooms:delete', async (_event, id: string) => {
     await requireGeneration().delete(id);
     if (backgroundService && (await backgroundService.getActive()) === id) await backgroundService.setActive(null);
@@ -2296,6 +2308,20 @@ app.whenReady().then(async () => {
       keyFor: (id) => manager.getServerKey(id),
       appVersion: app.getVersion(),
       logger,
+      readSetting: (key) => memoryStore?.getValue(key),
+      // Missing objects are made with the avatar studio's image and 3D steps, on the same servers.
+      comfy: {
+        pick: (stage) => comfyPool.pick(stage),
+        imageModel: () => {
+          if (!avatarImageModels) throw new Error('Image models are unavailable.');
+          return avatarImageModels.resolve();
+        },
+        geometryModel: () => {
+          if (!avatarCharacterModels) throw new Error('3D models are unavailable.');
+          return pickSingleImageGeometry(avatarCharacterModels);
+        },
+      },
+      onRoomUpdated: (roomId) => broadcastToWindows('rooms:updated', roomId),
     });
     backgroundService = new BackgroundService({
       store: memoryStore,

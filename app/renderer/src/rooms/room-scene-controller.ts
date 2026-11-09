@@ -80,6 +80,8 @@ export class RoomSceneController {
       return;
     }
     if (!this.room) this.saved2d = captureCamera(this.deps.camera);
+    // The same room loaded again (an object was made for it): the avatar stays where it is.
+    const reload = this.stage !== null && this.room?.id === room.id;
     this.room = room;
     let next: RoomStage;
     try {
@@ -101,7 +103,7 @@ export class RoomSceneController {
     if (!wasActive) this.enterCanvasMode();
     this.applyCamera(room);
     this.deps.renderer.setClearColor(room.shell.outside?.color ?? NEUTRAL_CLEAR, 1);
-    this.placeAvatar();
+    if (!reload) this.placeAvatar();
   }
 
   /**

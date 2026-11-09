@@ -26,6 +26,18 @@ describe('model loader', () => {
     expect(modelUrl(object())).toBe('aiembodied-asset://polyhaven/ArmChair_01/textures/a%20b.gltf');
     expect(modelUrl(object({ model: { file: 'x.glb' } }))).toBeNull();
   });
+  it('builds the URL of a generated .glb, which the same loader grounds and centres', async () => {
+    const generated = object({ model: { asset: 'generated/rocking-chair-3fa91c2e', file: 'model.glb', scale: 0.5 } });
+    expect(modelUrl(generated)).toBe('aiembodied-asset://generated/rocking-chair-3fa91c2e/model.glb');
+    const urls: string[] = [];
+    const model = await createModelLoader({ load: async (url) => (urls.push(url), { scene: scene() }) })(generated);
+    model.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(model);
+    expect(urls).toEqual(['aiembodied-asset://generated/rocking-chair-3fa91c2e/model.glb']);
+    expect(box.min.y).toBeCloseTo(0);
+    expect(box.max.y).toBeCloseTo(0.5);
+    expect((box.min.x + box.max.x) / 2).toBeCloseTo(0);
+  });
   it('scales, centres the footprint and puts the bottom on the floor', async () => {
     const urls: string[] = [];
     const load = createModelLoader({ load: async (url) => (urls.push(url), { scene: scene() }) });

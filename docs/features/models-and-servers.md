@@ -13,8 +13,8 @@ Controls → Voice & engine → **Open models and servers** opens one pop-up tha
 | Talking | Speaking (`tts`) | Speech service (Kokoro voices), OpenAI (Realtime voices, speaking style) | Yes | |
 | Talking | Moving (`motion`) | Motion service, OpenAI | No | OpenAI here means keyframe clips from the Animation clips job. `pnpm dev:run` starts this PC's motion service with the picked model (ardy or kimodo). |
 | Talking | Web search (`search`) | SearXNG, Brave Search | Yes | "Off" removes the `web_search` tool. |
-| Creating an avatar | Concept image (`image`) | ComfyUI | Yes, plus spread | Also texture repaints and backgrounds. Model is the image model picker from the studio. |
-| Creating an avatar | 3D model (`mesh`) | ComfyUI | Yes, plus spread | Hunyuan3D 2mv (default) or TRELLIS.2 picker. Painting and rigging always run in Blender on this PC. |
+| Creating an avatar | Concept image (`image`) | ComfyUI | Yes, plus spread | Also texture repaints and backgrounds, and the pictures of room objects made for 3D rooms (see [3D rooms](3d-rooms.md)). Model is the image model picker from the studio. |
+| Creating an avatar | 3D model (`mesh`) | ComfyUI | Yes, plus spread | Hunyuan3D 2mv (default) or TRELLIS.2 picker. Painting and rigging always run in Blender on this PC. Room objects made for 3D rooms use this job too, from a single picture: TRELLIS.2 when it is installed, else Hunyuan3D 2mv from the front image alone; no Blender step. |
 | Helpers | Describe the avatar (`describe`) | Chat model server, OpenAI | No | Needs a model that reads images. |
 | Helpers | Make poses (`posegen`) | Chat model server, OpenAI | No | |
 | Helpers | Check poses (`posecheck`) | Chat model server, OpenAI | No | Needs a model that reads images. |
@@ -77,6 +77,7 @@ The servers and routes are saved under `models` in the preferences file (`Stored
 - `app/main/src/config/model-server-probe.ts`: Test.
 - `app/main/src/local-voice/voice-engines.ts`: Hearing, Thinking and Speaking with failover.
 - `app/main/src/rooms/room-layout-llm.ts`: the Room layout request (`generateRoomLayout`), failing over like Thinking.
+- `app/main/src/rooms/asset-library/generated-source.ts`: room objects made from the Concept image and 3D model jobs (picks each stage's server through `comfyui-pool.ts`).
 - `app/main/src/rooms/idle-thoughts.ts`: the Idle thoughts request (`pickIdleActions`, IPC `rooms:idle-pick`), failing over like Thinking.
 - `app/main/src/openai/chat-completions-responses.ts`: lets the helper jobs (written for OpenAI's Responses API) run on any chat server.
 - `app/main/src/avatar/generation/comfyui-pool.ts`: ComfyUI server choice per stage.

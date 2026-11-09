@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BackgroundBridge, BackgroundSummary } from '../../../main/src/backgrounds/types.js';
 import { DEFAULT_IDLE_SETTINGS, sanitizeIdleSettings, type IdleSettings } from '../../../main/src/rooms/idle-settings.js';
+import type { GeneratedObjectSummary, ObjectSettings, ObjectSettingsView } from '../../../main/src/rooms/object-settings.js';
 import type { RoomGenerationProgress } from '../../../main/src/rooms/room-generation.js';
 import type { RoomFile, RoomSummary } from '../../../main/src/rooms/types.js';
 
@@ -20,6 +21,16 @@ export function useBackgrounds(api?: BackgroundBridge) {
   const [roomWarnings, setRoomWarnings] = useState<string[]>([]);
   const [idleSettings, setIdleSettingsState] = useState<IdleSettings>(DEFAULT_IDLE_SETTINGS);
   const idleRef = useRef<IdleSettings>(DEFAULT_IDLE_SETTINGS);
+  /** The saved room whose new objects are still being made in the background. */
+  const [roomMaking, setRoomMaking] = useState<{ roomId: string; message: string } | null>(null);
+  const [objectSettings, setObjectSettingsState] = useState<ObjectSettingsView | null>(null);
+  const [generatedObjects, setGeneratedObjects] = useState<GeneratedObjectSummary[]>([]);
+  /** Counts up per room each time its file changed, so cached pictures of it can be redrawn. */
+  const [roomRevisions, setRoomRevisions] = useState<Record<string, number>>({});
+  const activeIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
   const selection = useRef(0);
   const alive = useRef(true);
   useEffect(() => {
@@ -67,6 +78,56 @@ export function useBackgrounds(api?: BackgroundBridge) {
       cancelled = true;
     };
   }, [api]);
+
+  const refreshGenerated = useCallback(async () => {
+    if (!api?.listGeneratedObjects) return;
+    try {
+      const next = await api.listGeneratedObjects();
+      if (alive.current) setGeneratedObjects(next);
+    } catch {
+      /* The list is a convenience; the rooms still work. */
+    }
+  }, [api]);
+
+  useEffect(() => {
+    if (!api) return;
+    let cancelled = false;
+    api
+      .listGeneratedObjects?.()
+      .then((list) => {
+        if (!cancelled) setGeneratedObjects(list);
+      })
+      .catch(() => undefined);
+    api
+      .getObjectSettings?.()
+      .then((saved) => {
+        if (!cancelled && saved) setObjectSettingsState(saved);
+      })
+      .catch(() => undefined);
+    api
+      .getMakingRoom?.()
+      .then((roomId) => {
+        if (!cancelled && roomId) setRoomMaking((previous) => previous ?? { roomId, message: 'Making new objects…' });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  /** Applies at once and saves under `rooms.objects`. */
+  const setObjectSettings = useCallback(
+    async (patch: Partial<ObjectSettings>) => {
+      if (!api?.setObjectSettings) return;
+      try {
+        const saved = await api.setObjectSettings(patch);
+        if (alive.current) setObjectSettingsState(saved);
+      } catch (cause) {
+        if (alive.current) setError(message(cause));
+      }
+    },
+    [api],
+  );
 
   /** Applies at once and saves under `rooms.idle`. */
   const setIdleSettings = useCallback(
@@ -164,9 +225,36 @@ export function useBackgrounds(api?: BackgroundBridge) {
   useEffect(() => {
     if (!api?.onRoomProgress) return;
     return api.onRoomProgress((progress: RoomGenerationProgress) => {
-      if (alive.current) setRoomProgress(progress.message);
+      if (!alive.current) return;
+      if (progress.phase === 'making' && progress.roomId) {
+        setRoomMaking({ roomId: progress.roomId, message: progress.message });
+      } else if (progress.phase === 'done' && progress.roomId) {
+        setRoomMaking(null);
+        const notes = progress.warnings ?? [];
+        if (notes.length) setRoomWarnings((previous) => [...previous, ...notes.filter((note) => !previous.includes(note))]);
+        void refreshGenerated();
+      } else {
+        setRoomProgress(progress.message);
+      }
     });
-  }, [api]);
+  }, [api, refreshGenerated]);
+
+  /** The main process changed a saved room's file: show the new version if it is the stage. */
+  useEffect(() => {
+    if (!api?.onRoomUpdated) return;
+    return api.onRoomUpdated((roomId: string) => {
+      if (!alive.current) return;
+      setRoomRevisions((previous) => ({ ...previous, [roomId]: (previous[roomId] ?? 0) + 1 }));
+      void refreshGenerated();
+      if (activeIdRef.current !== roomId) return;
+      api
+        .loadRoom(roomId)
+        .then((room) => {
+          if (alive.current && activeIdRef.current === roomId) setLoadedRoom({ id: roomId, room });
+        })
+        .catch(() => undefined);
+    });
+  }, [api, refreshGenerated]);
 
   /** Describes a room in words; on success the new room is listed and becomes the stage. */
   const buildRoom = useCallback(
@@ -182,6 +270,7 @@ export function useBackgrounds(api?: BackgroundBridge) {
         if (!alive.current) return true;
         setRooms(next);
         setRoomWarnings(result.warnings);
+        if (result.making) setRoomMaking((previous) => previous ?? { roomId: result.room.id, message: 'Making new objects…' });
         await api.setActive(result.room.id);
         if (alive.current) setActiveId(result.room.id);
         return true;
@@ -220,6 +309,26 @@ export function useBackgrounds(api?: BackgroundBridge) {
     [api],
   );
 
+  /** Deletes a generated object; rooms that used it show a simple shape the next time they load. */
+  const removeGeneratedObject = useCallback(
+    async (id: string) => {
+      if (!api?.deleteGeneratedObject) return;
+      setError(null);
+      try {
+        await api.deleteGeneratedObject(id);
+        await refreshGenerated();
+        const current = activeIdRef.current;
+        if (isRoomId(current)) {
+          const room = await api.loadRoom(current);
+          if (alive.current && activeIdRef.current === current) setLoadedRoom({ id: current, room });
+        }
+      } catch (cause) {
+        if (alive.current) setError(message(cause));
+      }
+    },
+    [api, refreshGenerated],
+  );
+
   const activeKind: '2d' | '3d' = isRoomId(activeId) ? '3d' : '2d';
   const active = items.find((item) => item.id === activeId) ?? null;
   const activeRoomSummary = rooms.find((room) => room.id === activeId) ?? null;
@@ -243,6 +352,14 @@ export function useBackgrounds(api?: BackgroundBridge) {
     loading,
     generating,
     roomBuilding,
+    roomMaking,
+    /** A room is being planned or its objects made: no other can be started. */
+    roomBusy: roomBuilding || roomMaking !== null,
+    roomRevisions,
+    objectSettings,
+    setObjectSettings,
+    generatedObjects,
+    removeGeneratedObject,
     roomProgress,
     roomWarnings,
     buildRoom,

@@ -40,6 +40,10 @@ describe('validateRoomFile', () => {
     expect(() => validateRoomFile(room)).not.toThrow();
     expect(() => validateRoomFile(mutate((r) => (r.objects[0].model = { file: 'a.glb' })))).not.toThrow();
   });
+  it('accepts a generated object as the asset', () => {
+    const room = mutate((r) => (r.objects[0].model = { asset: 'generated/rocking-chair-3fa91c2e', file: 'model.glb', scale: 0.8 }));
+    expect(validateRoomFile(room).objects[0].model?.asset).toBe('generated/rocking-chair-3fa91c2e');
+  });
   it('accepts both built-in rooms', () => {
     const directory = path.resolve('assets/rooms');
     const files = readdirSync(directory).filter((name) => name.endsWith('.json'));
