@@ -8,7 +8,7 @@ const encoder = new TextEncoder();
 describe('CodingService', () => {
   it('follows the runner’s events: swaps the models in, sends the setup, and reports the state', async () => {
     const routing = resolveModelRouting(builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }), defaultRoutes(DEFAULT_PROVIDER_SETTINGS));
-    const coding = { runner: 'local-coder-runner', workspaces: [{ id: 'aiembodied', name: 'aiembodied', path: '/src/a', kind: 'self' as const, baseBranch: 'main' }] };
+    const coding = { runner: 'local-coder-runner', coderMemory: 'swap' as const, workspaces: [{ id: 'aiembodied', name: 'aiembodied', path: '/src/a', kind: 'self' as const, baseBranch: 'main' }] };
     let coderUp = false;
     const requests: string[] = [];
     let release: () => void = () => undefined;

@@ -256,9 +256,19 @@ export function CodingSettings({ api, runners, runnerProbe, onProbeRunner }: Cod
               {status?.detectedGguf ? <small>Detected: {status.detectedGguf}</small> : <small>Nothing detected. Pick the file.</small>}
             </span>
           </span>
+          <label htmlFor="coding-memory">Memory</label>
+          <select
+            id="coding-memory"
+            value={coding.coderMemory ?? 'side-by-side'}
+            disabled={busy}
+            onChange={(event) => void save({ ...coding, coderMemory: event.target.value === 'swap' ? 'swap' : 'side-by-side' }, 'Saved.')}
+          >
+            <option value="side-by-side">Run next to Echo’s model (needs memory for both)</option>
+            <option value="swap">Swap: stop Echo’s model while coding (Echo chats on the coder model)</option>
+          </select>
         </div>
         <p className="kiosk__helper">
-          Only used when the Coding model is the built-in Qwen3-Coder-Next server. While a task runs, the app stops Echo’s chat model, loads this one, and puts Echo’s model back when the tasks are done.
+          Only used when the Coding model is the built-in Qwen3-Coder-Next server. While a task runs, the app loads this model next to Echo’s chat model and stops it again when it is no longer needed. With Swap, it stops Echo’s chat model instead and puts it back when the tasks are done.
         </p>
       </div>
 

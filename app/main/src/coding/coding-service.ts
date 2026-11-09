@@ -59,6 +59,7 @@ export class CodingService {
   constructor(private readonly options: CodingServiceOptions) {
     this.env = options.env ?? process.env;
     const backSeconds = Number.parseFloat(this.env.CODER_SWAP_BACK_S ?? '');
+    const idleStopSeconds = Number.parseFloat(this.env.CODER_IDLE_STOP_S ?? '');
     this.swap = new CoderModelSwap({
       routing: () => options.settings().models,
       configuredGguf: () => options.settings().coding.coderGguf,
@@ -69,6 +70,8 @@ export class CodingService {
       onOverrideChange: options.onOverrideChange,
       logger: options.logger,
       platform: options.platform,
+      mode: () => options.settings().coding.coderMemory ?? 'side-by-side',
+      ...(Number.isFinite(idleStopSeconds) && idleStopSeconds >= 0 ? { idleStopMs: idleStopSeconds * 1000 } : {}),
       ...(Number.isFinite(backSeconds) && backSeconds >= 0 ? { swapBackMs: backSeconds * 1000 } : {}),
     });
   }

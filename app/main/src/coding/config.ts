@@ -57,7 +57,13 @@ export function sanitizeCodingConfig(input: unknown): CodingConfig | undefined {
     });
   }
   const coderGguf = text(record.coderGguf);
-  return { runner: text(record.runner) ?? DEFAULT_CODING_CONFIG.runner, workspaces, ...(coderGguf ? { coderGguf } : {}) };
+  const coderMemory = record.coderMemory === 'swap' || record.coderMemory === 'side-by-side' ? record.coderMemory : undefined;
+  return {
+    runner: text(record.runner) ?? DEFAULT_CODING_CONFIG.runner,
+    workspaces,
+    ...(coderGguf ? { coderGguf } : {}),
+    ...(coderMemory ? { coderMemory } : {}),
+  };
 }
 
 /** The first workspace: this app's own repository, when the app runs from a git checkout. */

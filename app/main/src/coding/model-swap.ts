@@ -1,11 +1,17 @@
 /**
- * Makes room for the coder model on a PC that cannot hold it next to Echo's chat model.
+ * Loads the coder model while a coding task needs it, next to Echo's chat model or in its place.
  *
- * On bija, Echo's chat model (Qwen Next Flash, about 86 GB) and Qwen3-Coder-Next (about 48 GB)
- * do not fit in memory together. While a coding task needs the local model, this stops Echo's
- * llama-server, starts the coder's, and lets Echo's chat use the coder model meanwhile. When no
- * task has needed it for a while, it swaps back. Windows only, and only when the Coding model is
- * the built-in coder server (the app can start and stop that one).
+ * Side by side (the default): Echo's llama-server keeps running and the coder's is started next to
+ * it. When no task has needed the coder model for a while (idleStopMs), the coder's server stops
+ * to free memory.
+ *
+ * Swap (opt-in, for PCs that cannot hold both, such as bija with Echo's 86 GB chat model and the
+ * 48 GB Qwen3-Coder-Next): this stops Echo's llama-server, starts the coder's, and lets Echo's
+ * chat use the coder model meanwhile. When no task has needed it for a while (swapBackMs), it
+ * swaps back.
+ *
+ * Windows only, and only when the Coding model is the built-in coder server (the app can start
+ * and stop that one).
  *
  * Steps run one after another (a promise chain), so a quick change of mind never starts and stops
  * a model at the same time.
@@ -20,6 +26,8 @@ import {
   type RouteOverride,
 } from '../config/model-routing.js';
 import type { LocalLlmControl } from '../local-voice/local-llm-control.js';
+
+export type CoderMemoryMode = 'side-by-side' | 'swap';
 
 export type SwapPhase = 'idle' | 'swapping-in' | 'coder-loaded' | 'swapping-back';
 
@@ -50,8 +58,12 @@ export interface CoderModelSwapOptions {
   platform?: string;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
-  /** How long no task has needed the model before swapping back. Default 120 s (CODER_SWAP_BACK_S). */
+  /** How the coder model gets its memory. Read once each time a load starts. */
+  mode: () => CoderMemoryMode;
+  /** Swap mode: how long no task has needed the model before swapping back. Default 120 s (CODER_SWAP_BACK_S). */
   swapBackMs?: number;
+  /** Side-by-side mode: how long no task has needed the model before it is stopped. Default 10 minutes (CODER_IDLE_STOP_S). */
+  idleStopMs?: number;
   /** How long to wait for the coder model to load. Default 15 minutes. */
   loadTimeoutMs?: number;
   /** How often to look while it loads. Default 3 s. */
@@ -72,6 +84,10 @@ export class CoderModelSwap {
   private stoppedEcho = false;
   /** We started the coder's llama-server, so we stop it again. */
   private startedCoder = false;
+  /** The mode of the current load, read when it started. */
+  private loadMode: CoderMemoryMode = 'side-by-side';
+  /** The coder server that is loaded (the override is not set in side-by-side mode). */
+  private loadedServer: ModelServer | null = null;
   private coderControl: Pick<LocalLlmControl, 'stop' | 'start'> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private downChecks = 0;
@@ -80,6 +96,7 @@ export class CoderModelSwap {
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly swapBackMs: number;
+  private readonly idleStopMs: number;
   private readonly loadTimeoutMs: number;
   private readonly pollMs: number;
 
@@ -87,6 +104,7 @@ export class CoderModelSwap {
     this.now = options.now ?? Date.now;
     this.sleep = options.sleep ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
     this.swapBackMs = options.swapBackMs ?? 120_000;
+    this.idleStopMs = options.idleStopMs ?? 10 * 60_000;
     this.loadTimeoutMs = options.loadTimeoutMs ?? 15 * 60_000;
     this.pollMs = options.pollMs ?? 3000;
     const tickMs = options.tickMs ?? 5000;
@@ -140,9 +158,13 @@ export class CoderModelSwap {
     const { phase } = this.state;
     if (this.needed && phase === 'idle' && this.now() >= this.retryAfter) return this.swapIn();
     if (this.needed && phase === 'coder-loaded') return this.watch();
-    if (!this.needed && phase === 'coder-loaded' && this.idleSince !== null && this.now() - this.idleSince >= this.swapBackMs) {
+    if (!this.needed && phase === 'coder-loaded' && this.idleSince !== null && this.now() - this.idleSince >= this.idleLimit()) {
       return this.swapBack();
     }
+  }
+
+  private idleLimit(): number {
+    return this.loadMode === 'swap' ? this.swapBackMs : this.idleStopMs;
   }
 
   /** The coder server, when the Coding model is the built-in one on this PC and the app can run it. */
@@ -177,11 +199,14 @@ export class CoderModelSwap {
       return;
     }
     const modelsUrl = `${coder.server.url}/models`;
-    this.set('swapping-in', 'Stopping Echo’s model to make room for the coder model.');
+    const swapMode = this.options.mode() === 'swap';
+    this.loadMode = swapMode ? 'swap' : 'side-by-side';
+    this.loadedServer = coder.server;
+    this.set('swapping-in', swapMode ? 'Stopping Echo’s model to make room for the coder model.' : 'Loading the coder model next to Echo’s.');
     const routing = this.options.routing();
     const echoTarget = routeTargets(routing, 'llm')[0];
     let echoId: string | null = null;
-    if (echoTarget?.server.id === BUILT_IN_SERVER_IDS.llm) {
+    if (swapMode && echoTarget?.server.id === BUILT_IN_SERVER_IDS.llm) {
       echoId = echoTarget.server.id;
       this.stoppedEcho = (await this.options.echo.stop().catch(() => false)) || this.stoppedEcho;
     }
@@ -189,7 +214,7 @@ export class CoderModelSwap {
       // Something already serves it (started by hand): use it, and leave it running afterwards.
       this.startedCoder = false;
     } else {
-      this.set('swapping-in', 'Loading the coder model. This takes a few minutes.');
+      this.set('swapping-in', swapMode ? 'Loading the coder model. This takes a few minutes.' : 'Loading the coder model next to Echo’s. This takes a few minutes.');
       this.coderControl = this.options.coder({ path: gguf, alias: coder.alias, contextLength: CONTEXT_LENGTH }, coder.server.url);
       await this.coderControl.start();
       this.startedCoder = true;
@@ -203,21 +228,30 @@ export class CoderModelSwap {
       if (this.now() >= deadline) {
         this.options.logger.warn('The coder model did not start in time.');
         this.retryAfter = this.now() + 10 * 60_000;
-        await this.restoreEcho('The coder model did not start. Echo’s model is back; trying again in 10 minutes.');
+        await this.restoreEcho(
+          swapMode
+            ? 'The coder model did not start. Echo’s model is back; trying again in 10 minutes.'
+            : 'The coder model did not start; trying again in 10 minutes.',
+        );
         return;
       }
       await this.sleep(this.pollMs);
     }
     this.downChecks = 0;
-    await this.setOverride({ server: coder.server, model: coder.alias, exclude: echoId && this.stoppedEcho ? [echoId] : [] });
-    this.set('coder-loaded', 'The coder model is loaded. Echo’s chat uses it until the tasks are done.');
+    if (swapMode) {
+      await this.setOverride({ server: coder.server, model: coder.alias, exclude: echoId && this.stoppedEcho ? [echoId] : [] });
+    }
+    this.set(
+      'coder-loaded',
+      swapMode ? 'The coder model is loaded. Echo’s chat uses it until the tasks are done.' : 'The coder model is loaded next to Echo’s.',
+    );
   }
 
   /** While the coder model is loaded and needed: restart it if it stopped (the PC slept, or it crashed). */
   private async watch(): Promise<void> {
-    const override = this.override;
-    if (!override) return;
-    if (await this.options.isUp(`${override.server.url}/models`).catch(() => false)) {
+    const server = this.loadedServer;
+    if (!server) return;
+    if (await this.options.isUp(`${server.url}/models`).catch(() => false)) {
       this.downChecks = 0;
       return;
     }
@@ -225,26 +259,32 @@ export class CoderModelSwap {
     if (this.downChecks < 2) return;
     this.options.logger.warn('The coder model stopped answering; starting it again.');
     this.downChecks = 0;
-    await this.setOverride(null);
+    if (this.override) await this.setOverride(null);
     this.state = { phase: 'idle', message: 'The coder model stopped answering.' };
     this.startedCoder = false;
     await this.swapIn();
   }
 
   private async swapBack(): Promise<void> {
-    await this.restoreEcho('Not needed now. Echo’s model is back.');
+    await this.restoreEcho(
+      this.loadMode === 'swap' ? 'Not needed now. Echo’s model is back.' : 'Not needed now; the coder model was stopped to free memory.',
+    );
   }
 
-  /** Stop the coder model (if we started it), start Echo's again (if we stopped it), clear the override. */
+  /** Stop the coder model (if we started it), start Echo's again (if we stopped it), clear the override. Side by side, Echo's model is never touched. */
   private async restoreEcho(message: string): Promise<void> {
-    this.set('swapping-back', 'Stopping the coder model and starting Echo’s model again.');
-    await this.setOverride(null);
+    this.set(
+      'swapping-back',
+      this.loadMode === 'swap' ? 'Stopping the coder model and starting Echo’s model again.' : 'Stopping the coder model to free memory.',
+    );
+    if (this.override) await this.setOverride(null);
     if (this.startedCoder) await this.coderControl?.stop().catch(() => false);
     this.startedCoder = false;
     if (this.stoppedEcho) await this.options.echo.start().catch((error) => {
       this.options.logger.warn('Echo’s model could not be started again.', { message: error instanceof Error ? error.message : String(error) });
     });
     this.stoppedEcho = false;
+    this.loadedServer = null;
     this.set('idle', message);
   }
 }

@@ -14,6 +14,7 @@ function setup(
     detected?: string | null;
     echoRunning?: boolean;
     answering?: () => boolean;
+    mode?: 'side-by-side' | 'swap';
   } = {},
 ) {
   const routing = resolveModelRouting(
@@ -60,6 +61,8 @@ function setup(
     sleep: async (ms) => {
       clock += ms;
     },
+    mode: () => options.mode ?? 'swap',
+    idleStopMs: 600_000,
     tickMs: 0,
     pollMs: 1000,
     loadTimeoutMs: 60_000,
@@ -224,5 +227,64 @@ describe('CoderModelSwap', () => {
     await swap.setNeeded(true);
     const phases = logger.info.mock.calls.filter(([message]) => message === 'Coder model swap.').map(([, data]) => (data as { phase: string }).phase);
     expect(phases).toEqual(['swapping-in', 'swapping-in', 'coder-loaded']);
+  });
+
+  describe('side by side', () => {
+    it('starts the coder model without touching Echo’s model or the chat override', async () => {
+      const { swap, echo, coderFactory, coderControl, onOverrideChange } = setup({ mode: 'side-by-side' });
+      await swap.setNeeded(true);
+      expect(echo.stop).not.toHaveBeenCalled();
+      expect(coderControl.start).toHaveBeenCalledTimes(1);
+      expect(coderFactory).toHaveBeenCalledWith({ path: GGUF, alias: 'qwen3-coder-next', contextLength: 65536 }, 'http://127.0.0.1:1236/v1');
+      expect(swap.chatOverride()).toBeNull();
+      expect(onOverrideChange).not.toHaveBeenCalled();
+      expect(swap.getState()).toMatchObject({ phase: 'coder-loaded', message: 'The coder model is loaded next to Echo’s.' });
+    });
+
+    it('stops the coder model only after idleStopMs, and never starts Echo’s', async () => {
+      const { swap, echo, coderControl, advance } = setup({ mode: 'side-by-side' });
+      await swap.setNeeded(true);
+      await swap.setNeeded(false);
+      advance(599_000);
+      await swap.tick();
+      expect(swap.getState().phase).toBe('coder-loaded');
+      expect(coderControl.stop).not.toHaveBeenCalled();
+      advance(2000);
+      await swap.tick();
+      expect(coderControl.stop).toHaveBeenCalledTimes(1);
+      expect(swap.getState()).toMatchObject({ phase: 'idle', message: 'Not needed now; the coder model was stopped to free memory.' });
+      expect(echo.stop).not.toHaveBeenCalled();
+      expect(echo.start).not.toHaveBeenCalled();
+      expect(swap.chatOverride()).toBeNull();
+    });
+
+    it('does not stop a coder server it did not start', async () => {
+      const { swap, coderControl, advance } = setup({ mode: 'side-by-side', answering: () => true });
+      await swap.setNeeded(true);
+      await swap.setNeeded(false);
+      advance(601_000);
+      await swap.tick();
+      expect(coderControl.start).not.toHaveBeenCalled();
+      expect(coderControl.stop).not.toHaveBeenCalled();
+      expect(swap.getState().phase).toBe('idle');
+    });
+
+    it('restarts the coder model if it stops answering, and leaves Echo’s alone when a load fails', async () => {
+      const { swap, coderControl, echo, setCoderUp } = setup({ mode: 'side-by-side' });
+      await swap.setNeeded(true);
+      setCoderUp(false);
+      await swap.tick();
+      await swap.tick();
+      expect(coderControl.start).toHaveBeenCalledTimes(2);
+      expect(swap.getState().phase).toBe('coder-loaded');
+
+      const failing = setup({ mode: 'side-by-side', answering: () => false });
+      await failing.swap.setNeeded(true);
+      expect(failing.swap.getState().message).toContain('did not start');
+      expect(failing.coderControl.stop).toHaveBeenCalledTimes(1);
+      expect(failing.echo.stop).not.toHaveBeenCalled();
+      expect(failing.echo.start).not.toHaveBeenCalled();
+      expect(echo.stop).not.toHaveBeenCalled();
+    });
   });
 });
