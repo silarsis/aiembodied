@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BackgroundBridge, BackgroundSummary } from '../../../main/src/backgrounds/types.js';
+import { DEFAULT_IDLE_SETTINGS, sanitizeIdleSettings, type IdleSettings } from '../../../main/src/rooms/idle-settings.js';
 import type { RoomFile, RoomSummary } from '../../../main/src/rooms/types.js';
 
 export const isRoomId = (id: string | null): id is string => Boolean(id?.startsWith('room:'));
@@ -13,6 +14,8 @@ export function useBackgrounds(api?: BackgroundBridge) {
   const [loading, setLoading] = useState(Boolean(api));
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [idleSettings, setIdleSettingsState] = useState<IdleSettings>(DEFAULT_IDLE_SETTINGS);
+  const idleRef = useRef<IdleSettings>(DEFAULT_IDLE_SETTINGS);
   const selection = useRef(0);
   const alive = useRef(true);
   useEffect(() => {
@@ -44,6 +47,37 @@ export function useBackgrounds(api?: BackgroundBridge) {
       cancelled = true;
     };
   }, [api]);
+
+  useEffect(() => {
+    if (!api?.getIdleSettings) return;
+    let cancelled = false;
+    api
+      .getIdleSettings()
+      .then((saved) => {
+        if (cancelled) return;
+        idleRef.current = sanitizeIdleSettings(saved);
+        setIdleSettingsState(idleRef.current);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  /** Applies at once and saves under `rooms.idle`. */
+  const setIdleSettings = useCallback(
+    async (patch: Partial<IdleSettings>) => {
+      const next = sanitizeIdleSettings({ ...idleRef.current, ...patch });
+      idleRef.current = next;
+      setIdleSettingsState(next);
+      try {
+        await api?.setIdleSettings?.(next);
+      } catch (cause) {
+        if (alive.current) setError(message(cause));
+      }
+    },
+    [api],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -141,6 +175,8 @@ export function useBackgrounds(api?: BackgroundBridge) {
     activeName: activeRoomSummary?.name ?? active?.name ?? 'Plain background',
     activeRoom: activeKind === '3d' && loadedRoom?.id === activeId ? loadedRoom.room : null,
     imageUrl: activeKind === '2d' && loadedImage?.id === activeId ? loadedImage.url : null,
+    idleSettings,
+    setIdleSettings,
     loading,
     generating,
     error,

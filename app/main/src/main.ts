@@ -1,5 +1,7 @@
 import { BackgroundService } from './backgrounds/background-service.js';
 import { RoomService } from './rooms/room-service.js';
+import { pickIdleActions } from './rooms/idle-thoughts.js';
+import { MAX_IDLE_HABITS_LENGTH, normalizeIdleHabits } from './rooms/idle-habits.js';
 import { app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain, powerMonitor } from 'electron';
 import dotenv from 'dotenv';
 import path from 'node:path';
@@ -651,6 +653,12 @@ function characterVoiceKey(engine: SpeakingEngineId | 'openai'): string | null {
   const activeModel = avatarModelService?.getActiveModel?.() || null;
   if (!activeModel?.id) return null;
   return engine === 'openai' ? `avatar.voice.${activeModel.id}` : `avatar.voice.${activeModel.id}.${engine}`;
+}
+
+/** Where the active character's idle habits (what they do when nobody is talking) are kept. */
+function characterIdleHabitsKey(): string | null {
+  const activeModel = avatarModelService?.getActiveModel?.() || null;
+  return activeModel?.id ? `avatar.idleHabits.${activeModel.id}` : null;
 }
 
 /** Where the active character's personality prompt is kept. */
@@ -1561,6 +1569,16 @@ function registerIpcHandlers(
   ipcMain.handle('background:delete', (_event, id: string) => requireBackgrounds().delete(id));
   ipcMain.handle('background:list-rooms', () => requireRooms().list());
   ipcMain.handle('background:load-room', (_event, id: string) => requireRooms().load(id));
+  ipcMain.handle('rooms:idle-settings:get', () => requireBackgrounds().getIdleSettings());
+  ipcMain.handle('rooms:idle-settings:set', (_event, settings: unknown) => requireBackgrounds().setIdleSettings(settings));
+  // The "Idle thoughts" job: what the avatar does next on its own. Null on any failure; the renderer then picks at random.
+  ipcMain.handle('rooms:idle-pick', (_event, context: unknown) =>
+    pickIdleActions(context as { system: string; user: string }, {
+      routing: manager.getConfig().models,
+      keyFor: (id) => manager.getServerKey(id),
+      logger,
+    }),
+  );
   const requireAvatarGeneration = (): AvatarGenerationService => {
     if (!avatarGenerationService) {
       throw new Error('Avatar generation is unavailable.');
@@ -2049,6 +2067,27 @@ function registerIpcHandlers(
     }
     memoryStore.setValue(key, prompt.trim());
     logger.info('Avatar personality prompt saved', { key, length: prompt.trim().length });
+  });
+
+  ipcMain.handle('avatar:idle-habits:get', () => {
+    const key = characterIdleHabitsKey();
+    if (!key || !memoryStore) return '';
+    return normalizeIdleHabits(memoryStore.getValue(key));
+  });
+
+  ipcMain.handle('avatar:idle-habits:set', (_event, habits: unknown) => {
+    if (typeof habits !== 'string') {
+      logger.warn('Invalid idle habits');
+      return;
+    }
+    const key = characterIdleHabitsKey();
+    if (!key || !memoryStore) {
+      logger.warn('No active avatar model to save idle habits for');
+      return;
+    }
+    const saved = normalizeIdleHabits(habits);
+    memoryStore.setValue(key, saved);
+    logger.info('Avatar idle habits saved', { key, length: saved.length, max: MAX_IDLE_HABITS_LENGTH });
   });
 
   ipcMain.handle('local-voice:voice-options', () => speakingVoiceOptions(manager));

@@ -58,6 +58,8 @@ import { MoveRequestFilter, enqueueMotionChunk } from './avatar/live-motion.js';
 import { SceneActionExecutor } from './rooms/scene-executor.js';
 import { tagToAction, type SceneAction } from './rooms/scene-actions.js';
 import { buildSceneInstructions } from './rooms/scene-instructions.js';
+import { useIdleDirector } from './rooms/use-idle-director.js';
+import { useIdleHabits } from './avatar/use-idle-habits.js';
 
 const CURSOR_IDLE_TIMEOUT_MS = 3000;
 const WAKE_ACTIVE_DURATION_MS = 4000;
@@ -1170,11 +1172,23 @@ export default function App() {
     const phase = realtimeState.status === 'connected' ? 'listening' : realtimeState.status === 'error' ? 'error' : 'off';
     return { phase, detail: realtimeState.error, since: voiceActivity.since };
   }, [isLocalBackend, voiceActivity, realtimeState]);
+  // The avatar wanders on its own in a 3D room when nobody has talked for a while (rooms/idle-director.ts).
+  const idleHabits = useIdleHabits(activeBridge?.avatar, activeVrmModel?.id);
+  const { idleNote } = useIdleDirector({
+    executor: sceneActions,
+    room: backgrounds.activeRoom,
+    settings: backgrounds.idleSettings,
+    motionReady: liveMotionReady,
+    persona: { name: activeVrmModel?.name ?? '', personality: basePrompt, habits: idleHabits.habits },
+    phase: voiceActivity.phase,
+    pick: async (context) => (await activeBridge?.backgrounds?.pickIdle?.(context)) ?? null,
+    run: (text) => animationTextHandlerRef.current(text),
+  });
   // Describes the active 3D room (and the scene tags) to the model; empty in 2D. Part of the session
   // instructions, so a room change reaches both the local voice and Realtime sessions.
   const sceneInstructions = useMemo(
-    () => buildSceneInstructions(backgrounds.activeRoom, liveMotionReady),
-    [backgrounds.activeRoom, liveMotionReady],
+    () => buildSceneInstructions(backgrounds.activeRoom, liveMotionReady, idleNote),
+    [backgrounds.activeRoom, liveMotionReady, idleNote],
   );
   const sessionInstructions = useMemo(
     () => {
@@ -2786,6 +2800,23 @@ export default function App() {
                     disabled={loadingConfig}
                     style={{ width: '100%' }}
                   />
+                </div>
+                <div className="control">
+                  <label htmlFor="idle-habits">Idle habits</label>
+                  <textarea
+                    id="idle-habits"
+                    placeholder="Sits by the window with tea; tidies when bored."
+                    rows={2}
+                    maxLength={idleHabits.maxLength}
+                    value={idleHabits.habits}
+                    onChange={(e) => idleHabits.setHabits(e.target.value)}
+                    onBlur={() => void idleHabits.save()}
+                    disabled={loadingConfig || !idleHabits.available}
+                    style={{ width: '100%' }}
+                  />
+                  <p className="kiosk__helper">
+                    What they like to do when nobody is talking, e.g. sits by the window with tea; tidies when bored.
+                  </p>
                 </div>
               </section>
               <section className="kiosk__realtime" aria-labelledby="kiosk-voice-title">

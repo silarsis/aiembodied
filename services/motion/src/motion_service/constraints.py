@@ -365,11 +365,12 @@ def snap_weights(frames: np.ndarray, snap: SnapTarget, n: int) -> np.ndarray:
 
 def snap_root(root_positions: np.ndarray, plan: Optional[ConstraintPlan], fps: float, snap_s: float,
               start_frame: int = 0, carry: Optional[Sequence[float]] = None) -> tuple[np.ndarray, np.ndarray]:
-    """Pull the decoded root x/z onto the plan's root targets.
+    """Pull the decoded root x/z onto the plan's root targets that hold (a span, until > t).
 
     `root_positions` is [T, 3] for the frames start_frame.. of the request (model units). Each frame is
     blended towards a target with weight 1 on t..until and a smoothstep ramp over `snap_s` before t (and
-    back to the raw motion after until, so nothing pops). The blend is per frame, so it is the same
+    back to the raw motion after until, so nothing pops). Single-frame targets (waypoints, turn points)
+    are not snapped: pulling the root onto points the feet are not planted for doubled foot sliding. The blend is per frame, so it is the same
     whichever chunk a frame lands in. `carry` (x, z) is an offset still applied from an earlier stream; it
     fades out over `snap_s`. snap_s <= 0 turns everything off.
 
@@ -387,6 +388,8 @@ def snap_root(root_positions: np.ndarray, plan: Optional[ConstraintPlan], fps: f
         cur[:, 2] += carry[1] * fade
     if plan is not None:
         for s in plan.snaps:
+            if s.until <= s.t:
+                continue
             w = snap_weights(frames, s, n)
             if not w.any():
                 continue

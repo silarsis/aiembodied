@@ -28,6 +28,9 @@ describe('model routing', () => {
     expect(routes.motion).toEqual({ server: 'local-motion', model: 'ardy' });
     expect(routes.search).toEqual({ server: 'local-searxng', backups: [{ server: 'brave' }] });
     expect(routes.posecheck).toEqual({ server: 'openai', model: 'gpt-4o' });
+    // Idle thoughts start on whatever Thinking starts on.
+    expect(routes.idle).toEqual({ server: 'openai', model: 'gpt-4.1' });
+    expect(defaultRoutes(DEFAULT_PROVIDER_SETTINGS).idle).toEqual(defaultRoutes(DEFAULT_PROVIDER_SETTINGS).llm);
     expect(defaultRoutes(providers, 'off').search).toEqual({ server: '' });
   });
 
@@ -52,6 +55,32 @@ describe('model routing', () => {
     expect(routing.routes.llm).toEqual({ server: 'local-llm', model: 'qwen-next-flash' });
     // Helpers use only their first server.
     expect(routing.routes.describe).toEqual({ server: 'local-llm' });
+  });
+
+  it('lets Idle thoughts follow Thinking until they are pointed elsewhere, and take a smaller model', () => {
+    const base = defaultRoutes(DEFAULT_PROVIDER_SETTINGS);
+    const follows = resolveModelRouting(builtIns(), base, {
+      servers: [{ id: 'gpu', type: 'chat', url: 'http://gpu:8000/v1' }],
+      routes: { llm: { server: 'gpu', model: 'big', backups: [{ server: 'openai' }] } },
+    });
+    expect(follows.routes.idle).toEqual({ server: 'gpu', model: 'big', backups: [{ server: 'openai' }] });
+    expect(USE_SERVER_TYPES.idle).toEqual(['chat', 'openai']);
+
+    const own = resolveModelRouting(builtIns(), base, {
+      routes: { llm: { server: 'openai', model: 'gpt-4.1' }, idle: { server: 'local-llm', model: 'qwen-tiny', backups: [{ server: 'openai' }] } },
+    });
+    expect(own.routes.idle).toEqual({ server: 'local-llm', model: 'qwen-tiny', backups: [{ server: 'openai' }] });
+    expect(routeTargets(own, 'idle').map(({ server, model }) => [server.id, model])).toEqual([
+      ['local-llm', 'qwen-tiny'],
+      ['openai', undefined],
+    ]);
+    // A saved route that cannot do the job falls back to following Thinking.
+    const bad = resolveModelRouting(builtIns(), base, { routes: { idle: { server: 'local-comfy' } } });
+    expect(bad.routes.idle).toEqual(bad.routes.llm);
+    expect(sanitizeStoredModels({ routes: { idle: { server: 'local-llm', model: ' tiny ' } } }).routes?.idle).toEqual({
+      server: 'local-llm',
+      model: 'tiny',
+    });
   });
 
   it('gives a backup the first server model only when it is the same kind of server', () => {

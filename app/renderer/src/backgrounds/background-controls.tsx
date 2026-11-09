@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { BackgroundController } from './use-backgrounds.js';
+import type { OnTalk, Restlessness } from '../../../main/src/rooms/idle-settings.js';
 import { RoomCards } from './room-cards.js';
 
 export interface WalkableAreaToggle {
@@ -40,6 +41,7 @@ export function BackgroundControls({
       {tab === '3d' ? (
         <>
           <RoomCards backgrounds={backgrounds} />
+          <WhenIdle backgrounds={backgrounds} />
           <p className="kiosk__helper">Describing a room to build it comes in a later update.</p>
           {walkableArea ? (
             <label className="kiosk__helper">
@@ -148,5 +150,67 @@ export function BackgroundControls({
         </p>
       ) : null}
     </div>
+  );
+}
+
+const RESTLESSNESS: Array<{ value: Restlessness; label: string }> = [
+  { value: 'calm', label: 'Calm' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'restless', label: 'Restless' },
+];
+const ON_TALK: Array<{ value: OnTalk; label: string }> = [
+  { value: 'turn', label: 'Turn to me where it is' },
+  { value: 'come-back', label: 'Come back to me' },
+];
+
+/** What the avatar does on its own in a room when nobody is talking. */
+function WhenIdle({ backgrounds }: { backgrounds: BackgroundController }) {
+  const { idleSettings: settings, setIdleSettings } = backgrounds;
+  return (
+    <section className="backgroundControls__idle" aria-labelledby="when-idle-title">
+      <h3 id="when-idle-title">When idle</h3>
+      <label className="kiosk__helper">
+        <input
+          type="checkbox"
+          checked={settings.enabled}
+          onChange={(event) => void setIdleSettings({ enabled: event.target.checked })}
+        />{' '}
+        Wander when nobody is talking
+      </label>
+      <div className="control">
+        <label htmlFor="idle-restlessness">Restlessness</label>
+        <select
+          id="idle-restlessness"
+          value={settings.restlessness}
+          disabled={!settings.enabled}
+          onChange={(event) => void setIdleSettings({ restlessness: event.target.value as Restlessness })}
+        >
+          {RESTLESSNESS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="control">
+        <label htmlFor="idle-on-talk">When I start talking</label>
+        <select
+          id="idle-on-talk"
+          value={settings.onTalk}
+          disabled={!settings.enabled}
+          onChange={(event) => void setIdleSettings({ onTalk: event.target.value as OnTalk })}
+        >
+          {ON_TALK.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <p className="kiosk__helper">
+        After a quiet minute or so the avatar walks to things it can see, sits, browses or picks something up. Talking always
+        wins. Needs the motion service.
+      </p>
+    </section>
   );
 }

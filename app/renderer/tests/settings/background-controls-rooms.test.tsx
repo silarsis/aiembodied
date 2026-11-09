@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { BackgroundControls } from '../../src/backgrounds/background-controls.js';
 import { useBackgrounds } from '../../src/backgrounds/use-backgrounds.js';
+import type { IdleSettings } from '../../../main/src/rooms/idle-settings.js';
 import type { BackgroundBridge, BackgroundSummary } from '../../../main/src/backgrounds/types.js';
 import { builtInRoom } from '../rooms/fixtures.js';
 
@@ -42,6 +43,8 @@ function bridge(active: string | null = 'Garden'): BackgroundBridge {
       { id: 'room:builtin:studio-flat', name: 'Studio flat', builtIn: true, description: 'A studio.' },
     ]),
     loadRoom: vi.fn().mockResolvedValue(reading),
+    getIdleSettings: vi.fn().mockResolvedValue({ enabled: true, restlessness: 'normal', onTalk: 'turn' }),
+    setIdleSettings: vi.fn().mockImplementation(async (settings: IdleSettings) => settings),
   };
 }
 
@@ -82,5 +85,44 @@ describe('3D rooms in the background controls', () => {
     unmount();
     render(<Harness api={bridge('room:builtin:reading-room')} walkable />);
     expect(await screen.findByLabelText('Show walkable area')).toBeInTheDocument();
+  });
+});
+
+describe('When idle settings', () => {
+  it('shows the defaults: wander on, normal restlessness, turn to me where it is', async () => {
+    const api = bridge('room:builtin:reading-room');
+    (api.getIdleSettings as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    render(<Harness api={api} />);
+    expect(await screen.findByText('When idle')).toBeInTheDocument();
+    expect(screen.getByLabelText('Wander when nobody is talking')).toBeChecked();
+    expect(screen.getByLabelText('Restlessness')).toHaveValue('normal');
+    expect(screen.getByLabelText('When I start talking')).toHaveValue('turn');
+    expect(screen.getAllByRole('option', { name: /Calm|Normal|Restless/ }).map((option) => option.textContent)).toEqual(['Calm', 'Normal', 'Restless']);
+    expect(screen.getByRole('option', { name: 'Come back to me' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Turn to me where it is' })).toBeInTheDocument();
+  });
+
+  it('only shows on the 3D rooms tab', async () => {
+    render(<Harness api={bridge('Garden')} />);
+    await screen.findByRole('button', { name: 'Garden' });
+    expect(screen.queryByText('When idle')).not.toBeInTheDocument();
+  });
+
+  it('loads what was saved and saves every change under rooms.idle', async () => {
+    const api = bridge('room:builtin:reading-room');
+    (api.getIdleSettings as ReturnType<typeof vi.fn>).mockResolvedValue({ enabled: false, restlessness: 'calm', onTalk: 'come-back' });
+    render(<Harness api={api} />);
+    await waitFor(() => expect(screen.getByLabelText('Wander when nobody is talking')).not.toBeChecked());
+    expect(screen.getByLabelText('Restlessness')).toHaveValue('calm');
+    expect(screen.getByLabelText('When I start talking')).toHaveValue('come-back');
+    expect(screen.getByLabelText('Restlessness')).toBeDisabled();
+
+    fireEvent.click(screen.getByLabelText('Wander when nobody is talking'));
+    await waitFor(() => expect(api.setIdleSettings).toHaveBeenLastCalledWith({ enabled: true, restlessness: 'calm', onTalk: 'come-back' }));
+    fireEvent.change(screen.getByLabelText('Restlessness'), { target: { value: 'restless' } });
+    await waitFor(() => expect(api.setIdleSettings).toHaveBeenLastCalledWith({ enabled: true, restlessness: 'restless', onTalk: 'come-back' }));
+    fireEvent.change(screen.getByLabelText('When I start talking'), { target: { value: 'turn' } });
+    await waitFor(() => expect(api.setIdleSettings).toHaveBeenLastCalledWith({ enabled: true, restlessness: 'restless', onTalk: 'turn' }));
+    expect(screen.getByLabelText('Restlessness')).toHaveValue('restless');
   });
 });

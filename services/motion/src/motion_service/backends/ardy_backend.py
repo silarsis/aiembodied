@@ -179,7 +179,7 @@ class ArdyBackend(Backend):
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             yield Chunk(chunk, start, generate_ms=(time.perf_counter() - t0) * 1000,
-                        history=StreamHistory(base + start + keep, feats))
+                        history=StreamHistory(base + start + keep, feats, emitted_ahead=n - keep))
 
     def generate(self, text, frames: int, steps: int) -> Motion:
         return Motion.concat([c.motion for c in self.stream(text, frames, steps)])

@@ -293,6 +293,9 @@ export interface AvatarBridge {
   /** The character's own personality prompt; null until it has one. */
   getPromptPreference(): Promise<string | null>;
   setPromptPreference(prompt: string): Promise<void>;
+  /** What the character likes to do when nobody is talking (at most 500 characters); empty until set. */
+  getIdleHabits(): Promise<string>;
+  setIdleHabits(habits: string): Promise<void>;
   listAnimations(): Promise<AvatarAnimationSummary[]>;
   uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult>;
   generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;
@@ -542,6 +545,9 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     delete: (id) => ipcRenderer.invoke('background:delete', id),
     listRooms: () => ipcRenderer.invoke('background:list-rooms'),
     loadRoom: (id) => ipcRenderer.invoke('background:load-room', id),
+    getIdleSettings: () => ipcRenderer.invoke('rooms:idle-settings:get'),
+    setIdleSettings: (settings) => ipcRenderer.invoke('rooms:idle-settings:set', settings),
+    pickIdle: (context) => ipcRenderer.invoke('rooms:idle-pick', context),
   },
   avatar: {
     listModels: () => ipcRenderer.invoke('avatar-model:list') as Promise<AvatarModelSummary[]>,
@@ -552,6 +558,8 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     setVoicePreference: (voice, engine) => ipcRenderer.invoke('avatar:voice:set-preference', voice, engine) as Promise<void>,
     getPromptPreference: () => ipcRenderer.invoke('avatar:prompt:get-preference') as Promise<string | null>,
     setPromptPreference: (prompt) => ipcRenderer.invoke('avatar:prompt:set-preference', prompt) as Promise<void>,
+    getIdleHabits: () => ipcRenderer.invoke('avatar:idle-habits:get') as Promise<string>,
+    setIdleHabits: (habits) => ipcRenderer.invoke('avatar:idle-habits:set', habits) as Promise<void>,
     uploadModel: (payload) =>
       ipcRenderer.invoke('avatar-model:upload', payload) as Promise<AvatarModelUploadResult>,
     deleteModel: async (modelId) => {

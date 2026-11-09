@@ -115,3 +115,14 @@ export interface RoomSummary {
   builtIn: boolean;
   description?: string;
 }
+
+/** What the renderer asks the "Idle thoughts" model: the whole prompt, built in the renderer. */
+export interface IdlePickContext {
+  system: string;
+  user: string;
+}
+
+/** The model's reply (action tags as text), or null when it could not be reached or answered nothing. */
+export interface IdlePickResult {
+  text: string;
+}
