@@ -43,7 +43,7 @@ describe('coding config', () => {
     expect(seedCodingConfig('/src/aiembodied', exists)).toEqual({
       runner: 'local-coder-runner',
       workspaces: [
-        { id: 'aiembodied', name: 'aiembodied', path: path.resolve('/src/aiembodied'), kind: 'self', baseBranch: 'main', checks: 'pnpm -w typecheck && pnpm test' },
+        { id: 'aiembodied', name: 'aiembodied', path: path.resolve('/src/aiembodied'), kind: 'self', baseBranch: 'main', checks: 'pnpm -w typecheck && pnpm test', setup: 'pnpm install --frozen-lockfile --prefer-offline && pnpm --filter @aiembodied/main exec install-electron' },
       ],
     });
     expect(seedCodingConfig('/elsewhere', exists)).toBeNull();
@@ -67,5 +67,14 @@ describe('coding config', () => {
   it('makes workspace ids from names', () => {
     expect(slugifyWorkspaceId('My Notes App!')).toBe('my-notes-app');
     expect(slugifyWorkspaceId('???')).toBe('workspace');
+  });
+});
+
+describe('self workspace setup default', () => {
+  it('fills in the setup command for an already seeded self workspace', () => {
+    const config = sanitizeCodingConfig({
+      workspaces: [{ id: 'aiembodied', path: '/src/aiembodied', kind: 'self', checks: 'pnpm -w typecheck && pnpm test' }],
+    });
+    expect(config?.workspaces[0].setup).toContain('install-electron');
   });
 });

@@ -66,6 +66,8 @@ class Run:
         self.prompt_error: Optional[str] = None
         self.pending_question = False
         self.checks_proc: Optional[subprocess.Popen] = None
+        self.setup_done = False  # the setup command has run (or was not needed) in this worktree
+        self.setup_ok: Optional[bool] = None  # None: not run; False: it failed
 
 
 def slugify(text: str, limit: int = 40) -> str:
@@ -317,6 +319,9 @@ class TaskManager:
                      phase_detail="worktree ready")
         if run.stopped:
             return False
+        self._ensure_setup(tid, run, ws, wt)
+        if run.stopped:
+            return False
         if not self._wait_local(tid, run, task):
             return False
         if not self._spawn(tid, run, task, wt, continue_=False):
@@ -559,14 +564,18 @@ class TaskManager:
             self._update(tid, status="done", review=review_mod.no_changes_review(), finished_at=now(),
                          phase_detail="no changes were made")
             return
+        checks_ok: Optional[bool] = None
         if ws.checks:
             self._update(tid, status="checks", phase_detail="running checks")
-            ok, out = self._run_checks(run, ws.checks, wt)
+            self._ensure_setup(tid, run, ws, wt)
             if run.stopped:
                 return
-            self._update(tid, checks_ok=ok, checks_output=out)
+            checks_ok, out = self._run_checks(run, ws.checks, wt)
+            if run.stopped:
+                return
+            self._update(tid, checks_ok=checks_ok, checks_output=out)
         try:
-            rev = review_mod.build_review(wt, base, ws.protected_paths or [])
+            rev = review_mod.build_review(wt, base, ws.protected_paths or [], checks_ok, run.setup_ok)
         except GitError as e:
             return self._fail(tid, run, f"review failed: {e}")
         self._update(tid, status="review", review=rev, phase_detail="ready for review")
@@ -575,13 +584,46 @@ class TaskManager:
     def _asks_in_text(task: dict) -> bool:
         return (task.get("last_text") or "").strip().endswith("?")
 
+    @staticmethod
+    def detect_setup(wt: Path) -> Optional[str]:
+        """The install command to use when a workspace has no setup command, judged by the lockfile."""
+        if (wt / "pnpm-lock.yaml").exists():
+            return "pnpm install --frozen-lockfile --prefer-offline"
+        if (wt / "package-lock.json").exists():
+            return "npm ci --prefer-offline"
+        if (wt / "yarn.lock").exists():
+            return "yarn install --frozen-lockfile"
+        if (wt / "uv.lock").exists():
+            return "uv sync"
+        return None
+
+    def _ensure_setup(self, tid: str, run: Run, ws: Workspace, wt: Path) -> None:
+        """Run the workspace's setup command in the worktree once. A failure is logged but never stops the task."""
+        if run.setup_done:
+            return
+        run.setup_done = True
+        command = ws.setup or self.detect_setup(wt)
+        if not command:
+            return
+        self._update(tid, phase_detail="installing dependencies")
+        self.store.add_event(tid, "runner", {"message": f"setup: {command}"})
+        ok, out = self._run_command(run, command, wt, self.cfg.setup_timeout_s, "setup")
+        if run.stopped:
+            return
+        run.setup_ok = ok
+        self.store.add_event(tid, "runner", {"message": "setup finished" if ok else "setup failed", "output": out})
+
     def _run_checks(self, run: Run, command: str, cwd: Path) -> tuple[bool, str]:
+        return self._run_command(run, command, cwd, self.cfg.checks_timeout_s, "checks")
+
+    def _run_command(self, run: Run, command: str, cwd: Path, timeout_s: float, label: str) -> tuple[bool, str]:
+        """Run a shell command with the stripped environment; returns (succeeded, the last lines of output)."""
         p = subprocess.Popen(command, shell=True, cwd=str(cwd), env=clean_env(), stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT, **popen_flags())
         run.checks_proc = p
         timed_out = False
         try:
-            out, _ = p.communicate(timeout=self.cfg.checks_timeout_s)
+            out, _ = p.communicate(timeout=timeout_s)
         except subprocess.TimeoutExpired:
             timed_out = True
             kill_tree(p)
@@ -589,7 +631,7 @@ class TaskManager:
         text = out.decode("utf-8", errors="replace")
         lines = text.splitlines()[-200:]
         if timed_out:
-            lines.append("[checks timed out]")
+            lines.append(f"[{label} timed out]")
         return (p.returncode == 0 and not timed_out), "\n".join(lines)
 
     # ---- controls ---------------------------------------------------------------------------

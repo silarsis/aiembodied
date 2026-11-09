@@ -18,11 +18,12 @@ interface Draft {
   kind: 'project' | 'self';
   baseBranch: string;
   checks: string;
+  setup: string;
   /** One path per line. */
   protectedPaths: string;
 }
 
-const emptyDraft = (): Draft => ({ id: '', name: '', path: '', kind: 'project', baseBranch: 'main', checks: '', protectedPaths: '' });
+const emptyDraft = (): Draft => ({ id: '', name: '', path: '', kind: 'project', baseBranch: 'main', checks: '', setup: '', protectedPaths: '' });
 
 const toDraft = (workspace: CodingWorkspace): Draft => ({
   id: workspace.id,
@@ -31,6 +32,7 @@ const toDraft = (workspace: CodingWorkspace): Draft => ({
   kind: workspace.kind,
   baseBranch: workspace.baseBranch,
   checks: workspace.checks ?? '',
+  setup: workspace.setup ?? '',
   protectedPaths: (workspace.protectedPaths ?? []).join('\n'),
 });
 
@@ -52,6 +54,7 @@ function fromDraft(draft: Draft, taken: string[]): CodingWorkspace {
     kind: draft.kind,
     baseBranch: draft.baseBranch.trim() || 'main',
     ...(draft.checks.trim() ? { checks: draft.checks.trim() } : {}),
+    ...(draft.setup.trim() ? { setup: draft.setup.trim() } : {}),
     ...(protectedPaths.length ? { protectedPaths } : {}),
   };
 }
@@ -347,6 +350,11 @@ export function CodingSettings({ api, runners, runnerProbe, onProbeRunner }: Cod
                   </button>
                   <small>Run before a task goes to review. Suggest saves the row and asks the runner.</small>
                 </span>
+              </span>
+              <label htmlFor="ws-setup">Setup command</label>
+              <span className="modelsDialog__model">
+                <input id="ws-setup" value={draft.setup} placeholder="auto: install dependencies" onChange={(event) => setDraft({ ...draft, setup: event.target.value })} />
+                <small>Runs in each task’s fresh worktree before pi starts. Empty: installs with pnpm, npm, yarn or uv if it finds their lockfile.</small>
               </span>
               <label htmlFor="ws-protected">{draft.kind === 'self' ? 'Extra protected paths' : 'Protected paths'}</label>
               <span className="modelsDialog__model">

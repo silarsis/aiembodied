@@ -29,6 +29,8 @@ Or by hand: `pip install -e .[test]`, then `python -m coder` (or `coding-runner`
 | `CODER_TIME_LIMIT_MIN` | `60` | per task; a workspace can set its own |
 | `CODER_LOCAL_LLM_URL` | `http://127.0.0.1:1236/v1` | OpenAI-compatible server for provider `local` |
 | `CODER_LOCAL_MODEL` | `qwen3-coder-next` | model id served there |
+| `CODER_LOCAL_CONTEXT` | `65536` | context size of the local server; written as `contextWindow` in pi's model config |
+| `CODER_SETUP_TIMEOUT_S` | `900` | limit for a workspace's setup (dependency install) command |
 | `CODER_GIT_REMOTE` | `origin` | remote to fetch from and push to |
 | `CODER_PR_POLL_S` | `300` | how often open pull requests are checked (merged / closed / CI result); `0` disables |
 | `CODER_LOCAL_WAIT_S` | `900` | how long a local-model task waits for the model server before it fails |

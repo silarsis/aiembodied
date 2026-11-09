@@ -21,6 +21,7 @@ describe('buildCodingSyncPayload', () => {
     expect(payload.settings).toEqual({
       local_llm_url: 'http://127.0.0.1:1236/v1',
       local_model: 'qwen3-coder-next',
+      local_context: 65536,
       default_model: { provider: 'local', id: 'qwen3-coder-next' },
     });
     expect(payload.keys).toEqual({ openai: 'sk-openai', anthropic: 'sk-ant', github: 'ghp_x' });

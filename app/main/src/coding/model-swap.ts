@@ -33,6 +33,7 @@ import {
   type ModelServer,
   type RouteOverride,
 } from '../config/model-routing.js';
+import { CODER_CONTEXT_LENGTH } from './types.js';
 import type { LocalLlmControl } from '../local-voice/local-llm-control.js';
 
 export type CoderMemoryMode = 'auto' | 'side-by-side' | 'swap';
@@ -92,7 +93,6 @@ export interface CoderModelSwapOptions {
   tickMs?: number;
 }
 
-const CONTEXT_LENGTH = 65536;
 const GIB = 1024 ** 3;
 const WAITING_MESSAGE = 'Not enough memory to run the coder next to Echo’s model; waiting until things are quiet to swap.';
 
@@ -358,7 +358,7 @@ export class CoderModelSwap {
       this.startedCoder = false;
     } else {
       this.set('swapping-in', swapMode ? 'Loading the coder model. This takes a few minutes.' : 'Loading the coder model next to Echo’s. This takes a few minutes.');
-      this.coderControl = this.options.coder({ path: gguf, alias: coder.alias, contextLength: CONTEXT_LENGTH }, coder.server.url);
+      this.coderControl = this.options.coder({ path: gguf, alias: coder.alias, contextLength: CODER_CONTEXT_LENGTH }, coder.server.url);
       await this.coderControl.start();
       this.startedCoder = true;
     }
@@ -428,8 +428,30 @@ export class CoderModelSwap {
     if (this.stoppedEcho) await this.options.echo.start().catch((error) => {
       this.options.logger.warn('Echo’s model could not be started again.', { message: error instanceof Error ? error.message : String(error) });
     });
+    const startedEcho = this.stoppedEcho;
     this.stoppedEcho = false;
     this.loadedServer = null;
+    // Echo's model takes a minute or two to load, so keep saying so until it answers.
+    if (startedEcho && !(await this.waitForEchoModel())) {
+      this.set('idle', 'Echo’s model didn’t answer yet; it may still be loading.');
+      return;
+    }
     this.set('idle', message);
+  }
+
+  /** After starting Echo's llama-server: wait (up to loadTimeoutMs) until it answers GET /models. True if it did, or if there is nothing to ask. */
+  private async waitForEchoModel(): Promise<boolean> {
+    const echo = routeTargets(this.options.routing(), 'llm')[0];
+    if (!echo) return true;
+    this.set('swapping-back', 'Starting Echo’s model again…');
+    const deadline = this.now() + this.loadTimeoutMs;
+    while (!(await this.options.isUp(`${echo.server.url}/models`).catch(() => false))) {
+      if (this.now() >= deadline) {
+        this.options.logger.warn('Echo’s model did not answer in time after the swap back.');
+        return false;
+      }
+      await this.sleep(this.pollMs);
+    }
+    return true;
   }
 }

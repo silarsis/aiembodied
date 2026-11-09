@@ -200,7 +200,7 @@ describe('ConfigManager model servers', () => {
     expect(first.getCoding()).toEqual({
       runner: 'local-coder-runner',
       workspaces: [
-        { id: 'aiembodied', name: 'aiembodied', path: path.resolve('/work/aiembodied'), kind: 'self', baseBranch: 'main', checks: 'pnpm -w typecheck && pnpm test' },
+        { id: 'aiembodied', name: 'aiembodied', path: path.resolve('/work/aiembodied'), kind: 'self', baseBranch: 'main', checks: 'pnpm -w typecheck && pnpm test', setup: 'pnpm install --frozen-lockfile --prefer-offline && pnpm --filter @aiembodied/main exec install-electron' },
       ],
     });
     expect((await preferencesStore.load()).coding?.workspaces).toHaveLength(1);

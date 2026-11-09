@@ -18,6 +18,8 @@ export interface RunnerModelRef {
 export interface RunnerSettings {
   local_llm_url: string;
   local_model: string;
+  /** Context size the local llama-server runs with; becomes contextWindow in pi's model config. */
+  local_context?: number;
   default_model: RunnerModelRef;
 }
 
