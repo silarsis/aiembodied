@@ -138,6 +138,7 @@ def track_record(store: Store) -> list[dict]:
     out = []
     for (wid, provider, model), tasks in sorted(groups.items(), key=lambda kv: tuple(str(x) for x in kv[0])):
         checked = [t for t in tasks if t["checks_ok"] is not None]
+        ci_final = [t for t in tasks if t.get("ci_state") in ("success", "failure")]
         mins = [m for m in (_minutes(t) for t in tasks if t["status"] in ("done", "failed", "cancelled")) if m is not None]
         out.append({
             "workspace_id": wid, "provider": provider, "model": model,
@@ -147,6 +148,9 @@ def track_record(store: Store) -> list[dict]:
             "cancelled": sum(1 for t in tasks if t["status"] == "cancelled"),
             "discarded": sum(1 for t in tasks if t["status"] == "discarded"),
             "with_pr": sum(1 for t in tasks if t["pr_url"]),
+            "merged": sum(1 for t in tasks if t.get("pr_state") == "merged"),
+            "closed_unmerged": sum(1 for t in tasks if t.get("pr_state") == "closed"),
+            "ci_pass_rate": (sum(1 for t in ci_final if t["ci_state"] == "success") / len(ci_final)) if ci_final else None,
             "checks_pass_rate": (sum(1 for t in checked if t["checks_ok"]) / len(checked)) if checked else None,
             "median_minutes": round(statistics.median(mins), 2) if mins else None,
         })

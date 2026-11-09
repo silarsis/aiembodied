@@ -23,7 +23,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Download Electron binary
-        run: pnpm --filter @aiembodied/main exec install-electron
+        # GitHub's release downloads sometimes answer 504 for a while; try a few times before failing.
+        run: |
+          for attempt in 1 2 3 4 5; do
+            pnpm --filter @aiembodied/main exec install-electron && exit 0
+            echo "Electron download failed (attempt $attempt); retrying in $((attempt * 20)) s"
+            sleep $((attempt * 20))
+          done
+          exit 1
       - name: Run tests with coverage
         run: xvfb-run --auto-servernum pnpm test:coverage
         # Note: xvfb-run is needed because tests run in Electron which requires a display

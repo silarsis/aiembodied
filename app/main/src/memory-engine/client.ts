@@ -75,7 +75,7 @@ export interface MemoryEngineSearchOptions {
   exclude?: string[];
   mode?: 'hybrid' | 'text';
   /** Which memory to search (the engine's default is conversations only). */
-  source?: 'conversation' | 'home_assistant' | 'all';
+  source?: 'conversation' | 'home_assistant' | 'coding' | 'all';
   timeoutMs?: number;
   /** The agent is using what it finds: facts among the results are refreshed (not for the panel). */
   touch?: boolean;
@@ -182,6 +182,40 @@ export interface MemoryEngineBrief {
   recent_days?: Array<{ period_start: string; title: string | null; text: string }>;
   /** The newest note the agent left itself in another conversation, to show word for word. */
   handoff?: MemoryEngineHandoff | null;
+  /** Up to three coding tasks finished in the last week, newest first. */
+  recent_coding?: MemoryEngineCodingBrief[];
+}
+
+export interface MemoryEngineCodingBrief {
+  task_id: string;
+  workspace: string;
+  title: string;
+  outcome: 'done' | 'failed' | 'cancelled' | 'discarded';
+  pr_url: string | null;
+  pr_state?: string | null;
+  finished_at: string;
+}
+
+/** A finished coding task, as POST /v1/coding/tasks takes it. */
+export interface MemoryEngineCodingTask {
+  task_id: string;
+  workspace_id: string;
+  workspace_name: string;
+  title: string;
+  outcome: 'done' | 'failed' | 'cancelled' | 'discarded';
+  pr_url?: string | null;
+  pr_state?: string | null;
+  branch?: string | null;
+  files_changed: string[];
+  added: number;
+  removed: number;
+  review_flags: string[];
+  summary: string;
+  model?: string | null;
+  provider?: string | null;
+  agent?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
 }
 
 export interface MemoryEngineHandoff {
@@ -505,6 +539,11 @@ export class MemoryEngineClient {
   /** The agent's note for its next conversation; replaces this conversation's earlier note. */
   putHandoff(sessionId: string, handoff: { text: string; agent?: string | null; model?: string | null }): Promise<{ id: string }> {
     return this.request('PUT', `/v1/sessions/${encodeURIComponent(sessionId)}/handoff`, handoff);
+  }
+
+  /** Remember a finished coding task. The engine updates it if the same task_id comes again. */
+  postCodingTask(task: MemoryEngineCodingTask): Promise<{ task_id: string; indexed: boolean }> {
+    return this.request('POST', '/v1/coding/tasks', task);
   }
 
   putFact(id: string, fact: MemoryEngineFact): Promise<{ id: string; created: boolean }> {

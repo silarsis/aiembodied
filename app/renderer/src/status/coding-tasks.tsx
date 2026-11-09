@@ -159,6 +159,17 @@ function TaskCard({ task, api, workspaces, onChanged }: { task: RunnerTask; api:
                 Deny
               </button>
             </div>
+          ) : q.kind === 'select' ? (
+            <div className="codingTask__actions">
+              {(q.options ?? []).map((o) => {
+                const value = typeof o === 'string' ? o : String((o as { value?: unknown; label?: unknown })?.value ?? (o as { label?: unknown })?.label ?? '');
+                return (
+                  <button key={value} type="button" disabled={busy} onClick={() => void run(() => api.answer(task.id, { value, dialog_id: q.id }))}>
+                    {value}
+                  </button>
+                );
+              })}
+            </div>
           ) : (
             <form
               className="codingTask__row"

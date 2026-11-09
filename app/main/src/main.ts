@@ -119,6 +119,7 @@ import { probeMemoryDatabase, probeModelServer } from './config/model-server-pro
 import { ComfyUIPool } from './avatar/generation/comfyui-pool.js';
 import { LocalLlmControl } from './local-voice/local-llm-control.js';
 import { CodingService, type CodingView } from './coding/coding-service.js';
+import { CodingMemoryWriter } from './coding/memory-writer.js';
 import { CodingNudger } from './coding/nudger.js';
 import { registerCodingTaskIpc } from './coding/task-ipc.js';
 import { CODING_SERVER_ID, CODING_TOOL_IDS, createCodingTools } from './coding/tools.js';
@@ -851,6 +852,15 @@ function getCodingService(manager: ConfigManager): CodingService {
     logger,
   });
   service.onRunnerEvent((event) => void codingNudger?.handleEvent(event));
+  // Finished tasks become memories. The memory engine is set up later, so it is read at call time.
+  const memoryWriter = new CodingMemoryWriter({
+    getTask: (id) => service.runnerClient()?.getTask(id).catch(() => null) ?? Promise.resolve(null),
+    workspaceName,
+    post: (task) => memoryEngine?.outbox.enqueue({ kind: 'coding_task', task }),
+    agentName: () => (memoryStore ? activeAgent(memoryStore).name : null),
+    logger,
+  });
+  service.onRunnerEvent((event) => void memoryWriter.handleEvent(event));
   return codingService;
 }
 

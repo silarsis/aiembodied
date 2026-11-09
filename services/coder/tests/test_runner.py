@@ -495,6 +495,44 @@ def test_confirm_question_has_kind_confirm(client, ws, monkeypatch):
     wait_status(client, t["id"], ("review", "done"))
 
 
+def _dialog(client, ws, monkeypatch, mode):
+    monkeypatch.setenv("FAKE_PI_MODE", mode)
+    ws()
+    return wait_status(client, new_task(client)["id"], "question")
+
+
+def _note(client, tid):
+    t = wait_status(client, tid, "review")
+    return (Path(t["worktree"]) / "hello.txt").read_text()
+
+
+def test_select_question_kind_options_and_answer(client, ws, monkeypatch):
+    t = _dialog(client, ws, monkeypatch, "select")
+    q = t["question"]
+    assert q["kind"] == "select" and q["options"] == ["red", "green"]
+    assert client.post(f"/v1/tasks/{t['id']}/answer", json={"value": "blue"}).status_code == 400
+    assert client.post(f"/v1/tasks/{t['id']}/answer", json={"confirmed": True}).status_code == 400
+    assert client.post(f"/v1/tasks/{t['id']}/answer", json={"value": "green"}).status_code == 200
+    assert '{"value": "green"}' in _note(client, t["id"])
+
+
+@pytest.mark.parametrize("mode", ["input", "editor"])
+def test_input_and_editor_questions_answer_with_value(client, ws, monkeypatch, mode):
+    t = _dialog(client, ws, monkeypatch, mode)
+    assert t["question"]["kind"] == "input" and t["question"]["method"] == mode
+    assert client.post(f"/v1/tasks/{t['id']}/answer", json={"confirmed": True}).status_code == 400
+    assert client.post(f"/v1/tasks/{t['id']}/answer", json={"value": "hi"}).status_code == 200
+    assert '{"value": "hi"}' in _note(client, t["id"])
+
+
+def test_confirm_answer_sends_confirmed_only(client, ws, monkeypatch):
+    monkeypatch.setenv("FAKE_PI_MODE", "question")
+    ws()
+    t = wait_status(client, new_task(client)["id"], "question")
+    assert client.post(f"/v1/tasks/{t['id']}/answer", json={"value": "yes"}).status_code == 400
+    assert client.post(f"/v1/tasks/{t['id']}/answer", json={"confirmed": True}).status_code == 200
+
+
 def test_several_pending_dialogs_answer_by_id_or_oldest(client, ws, monkeypatch):
     monkeypatch.setenv("FAKE_PI_MODE", "two")
     ws()

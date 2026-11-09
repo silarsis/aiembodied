@@ -29,6 +29,16 @@ function makeClient(overrides: { brief?: () => Promise<MemoryEngineBrief>; recal
   };
 }
 
+describe('formatBrief coding work', () => {
+  it('lists recent coding tasks, and nothing when there are none', () => {
+    const task = { task_id: 't1', workspace: 'aiembodied', title: 'Fix the retry', outcome: 'done' as const, pr_url: 'https://x/pull/7', pr_state: 'merged', finished_at: NOW.toISOString() };
+    const text = formatBrief({ ...BRIEF, recent_coding: [task] }, NOW);
+    expect(text).toContain('Recent coding work');
+    expect(text).toContain('- aiembodied: Fix the retry (done, PR https://x/pull/7 (merged))');
+    expect(formatBrief({ ...BRIEF, recent_coding: [] }, NOW)).not.toContain('Recent coding work');
+  });
+});
+
 describe('voice memory', () => {
   it('builds the brief from the time, saved facts and the last conversation', async () => {
     const client = makeClient();

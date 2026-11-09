@@ -57,8 +57,8 @@ Every message of a session in time order.
 ## `GET /v1/search?q=&from=&to=&agent=&kind=&include_private=true&exclude=&mode=hybrid&limit=10&touch=false&session_id=&source=conversation`
 
 Search the recall index (turns and facts), best first. `source` is `conversation` (default),
-`home_assistant` (door, alert and state-change events from Home Assistant, kind `ha_event`) or
-`all`; every result has a `source`. `/v1/recall` and the brief never include Home Assistant rows. `mode=hybrid` (default) merges full-text
+`home_assistant` (door, alert and state-change events from Home Assistant, kind `ha_event`),
+`coding` (finished coding tasks, kind `coding_task`) or `all`; every result has a `source`. `/v1/recall` never includes Home Assistant or coding rows. `mode=hybrid` (default) merges full-text
 and vector matches; `mode=text` is full text only. `kind` may repeat (`turn`, `fact`); `exclude`
 is a comma-separated list of result ids to leave out. Each result has `id`, `kind`, `source_id`,
 `session_id`, `agent`, `period_start`, `period_end`, `text`, `score`, `similarity` (cosine, when
@@ -94,7 +94,18 @@ For the start of a conversation: active, non-private `facts` (pinned first, then
 reach, see fading, up to about 1,200 characters); `handoff`, the newest note the agent left in
 another conversation (`text`, `agent`, `model`, `written_at`), to be shown whole; and `last_session`, the most recent conversation other than
 `session_id`, with its `summary` (once made) and last three turns, and `recent_days`, up to two
-day summaries from the past week. The client adds the date and time and formats it.
+day summaries from the past week; and `recent_coding`, up to three coding tasks finished in the past week
+(`workspace`, `title`, `outcome`, `pr_url`, `pr_state`, `finished_at`; empty when none). The client adds the date and time and formats it.
+
+## `POST /v1/coding/tasks`
+
+Remember a finished coding task; posting the same `task_id` again updates it (for instance once its
+pull request is merged). Body: `task_id`, `workspace_id`, `workspace_name`, `title`, `outcome`
+(`done|failed|cancelled|discarded`), and optionally `pr_url`, `pr_state`, `branch`, `files_changed`
+(at most 200 paths), `added`, `removed`, `review_flags`, `summary` (at most 4,000 characters),
+`model`, `provider`, `agent`, `started_at`, `finished_at`. It is stored in `coding_tasks` and indexed
+as one sentence (kind `coding_task`, source `coding`). Coding rows are not mirrored and are kept out
+of auto-recall, summaries and fact extraction.
 
 ## `POST /v1/recall`
 

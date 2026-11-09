@@ -160,6 +160,21 @@ describe('MemoryOutbox', () => {
     expect(outbox.status().pending).toBe(0);
   });
 
+  it('posts a finished coding task through the outbox', async () => {
+    const store = await createStore();
+    const engine = fakeEngine();
+    const client = new MemoryEngineClient({ baseUrl: 'http://engine', fetchFn: engine.fetchFn });
+    const outbox = new MemoryOutbox({ store, client, logger: quiet });
+    cleanups.push(() => outbox.stop());
+    outbox.enqueue({
+      kind: 'coding_task',
+      task: { task_id: 't1', workspace_id: 'w', workspace_name: 'w', title: 'Fix', outcome: 'done', files_changed: [], added: 0, removed: 0, review_flags: [], summary: '' },
+    });
+    await outbox.flush();
+    expect(engine.state.calls).toEqual(['POST /v1/coding/tasks']);
+    expect(outbox.status().pending).toBe(0);
+  });
+
   it('drops writes the engine refuses so they cannot block the queue', async () => {
     const store = await createStore();
     const client = {

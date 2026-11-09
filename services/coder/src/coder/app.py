@@ -93,6 +93,7 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
     async def lifespan(_app: FastAPI):
         manager.resume_all()
         manager.pump()
+        manager.start_pr_poller()
         yield
         manager.shutdown()
 
@@ -193,6 +194,10 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
     @app.post("/v1/tasks/{tid}/apply")
     def apply(tid: str, body: Optional[ApplyBody] = None) -> dict:
         return manager.apply(tid, body.draft if body else False)
+
+    @app.post("/v1/tasks/{tid}/pr/refresh")
+    def pr_refresh(tid: str) -> dict:
+        return manager.refresh_pr(tid)
 
     @app.post("/v1/tasks/{tid}/discard")
     def discard(tid: str) -> dict:

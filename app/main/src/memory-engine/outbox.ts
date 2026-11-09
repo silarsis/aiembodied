@@ -7,6 +7,7 @@ import type { MemoryOutboxEntry } from '../memory/memory-store.js';
 import {
   MemoryEngineError,
   type MemoryEngineClient,
+  type MemoryEngineCodingTask,
   type MemoryEngineFact,
   type MemoryEngineMessage,
   type MemoryEngineSession,
@@ -16,7 +17,8 @@ export type OutboxItem =
   | { kind: 'session'; id: string; session: MemoryEngineSession }
   | { kind: 'message'; message: MemoryEngineMessage }
   | { kind: 'fact'; id: string; fact: MemoryEngineFact }
-  | { kind: 'handoff'; sessionId: string; handoff: MemoryEngineHandoffWrite };
+  | { kind: 'handoff'; sessionId: string; handoff: MemoryEngineHandoffWrite }
+  | { kind: 'coding_task'; task: MemoryEngineCodingTask };
 
 export interface MemoryEngineHandoffWrite {
   text: string;
@@ -40,7 +42,7 @@ type Logger = {
 export interface MemoryOutboxOptions {
   store: OutboxStore;
   client: Pick<MemoryEngineClient, 'putSession' | 'postMessages' | 'putFact'> &
-    Partial<Pick<MemoryEngineClient, 'putHandoff'>>;
+    Partial<Pick<MemoryEngineClient, 'putHandoff' | 'postCodingTask'>>;
   logger?: Logger;
   /** How many queued entries one flush sends at most. */
   batchSize?: number;
@@ -95,6 +97,8 @@ export class MemoryOutbox {
       this.store.enqueueMemoryOutbox('fact', { id: item.id, fact: item.fact });
     } else if (item.kind === 'handoff') {
       this.store.enqueueMemoryOutbox('handoff', { sessionId: item.sessionId, handoff: item.handoff });
+    } else if (item.kind === 'coding_task') {
+      this.store.enqueueMemoryOutbox('coding_task', { task: item.task });
     } else {
       this.store.enqueueMemoryOutbox('message', item.message);
     }
@@ -193,6 +197,11 @@ export class MemoryOutbox {
         const { sessionId, handoff } = entry.payload as { sessionId: string; handoff: MemoryEngineHandoffWrite };
         const putHandoff = this.client.putHandoff.bind(this.client);
         await this.attempt([entry], () => putHandoff(sessionId, handoff));
+        index += 1;
+      } else if (entry.kind === 'coding_task' && this.client.postCodingTask) {
+        const { task } = entry.payload as { task: MemoryEngineCodingTask };
+        const postCodingTask = this.client.postCodingTask.bind(this.client);
+        await this.attempt([entry], () => postCodingTask(task));
         index += 1;
       } else {
         this.logger?.warn('Dropping unknown memory outbox entry', { kind: entry.kind });
