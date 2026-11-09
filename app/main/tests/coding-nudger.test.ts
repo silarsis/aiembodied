@@ -58,6 +58,14 @@ describe('CodingNudger', () => {
     expect(notify.mock.calls[1][0]).toContain('Task t2 (aiembodied: Fix X) failed: time limit');
   });
 
+  it('says once that a task is paused, not urgent', async () => {
+    const { nudger, notify } = setup({ t1: { ...base, status: 'paused' } });
+    await nudger.handleEvent({ task_id: 't1', status: 'paused' });
+    await nudger.handleEvent({ task_id: 't1', status: 'paused' });
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith('The coding task is paused while you talk to Kevin; it resumes when things are quiet.', { urgent: false });
+  });
+
   it('stays quiet for working, cancelled, and the connect message', async () => {
     const { nudger, notify } = setup({ t1: base });
     await nudger.handleEvent({ task_id: null, local_model_needed: false });

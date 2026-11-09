@@ -42,6 +42,11 @@ class AnswerBody(BaseModel):
     dialog_id: Optional[str] = None
 
 
+class HoldBody(BaseModel):
+    hold: bool
+    reason: Optional[str] = None
+
+
 class ApplyBody(BaseModel):
     draft: bool = False
 
@@ -115,6 +120,10 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
     @app.get("/v1/status")
     def status() -> dict:
         return manager.status()
+
+    @app.put("/v1/local/hold")
+    def put_hold(body: HoldBody) -> dict:
+        return manager.set_hold(body.hold, body.reason)
 
     @app.put("/v1/workspaces")
     def put_workspaces(items: list[Workspace]) -> list[Workspace]:

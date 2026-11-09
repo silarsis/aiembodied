@@ -33,6 +33,7 @@ import type { VoiceActivity } from './realtime/voice-activity.js';
 import { GpuMemoryPanel } from './status/gpu-memory-bar.js';
 import { CodingStatusLine } from './status/coding-status.js';
 import { ApprovalsCard } from './status/approvals-card.js';
+import { BusyCard } from './status/busy-card.js';
 import { CodingTasksPanel } from './status/coding-tasks.js';
 import {
   AssistantStatusPanel,
@@ -2439,6 +2440,7 @@ export default function App() {
     <AnimationBusProvider bus={animationBus}>
       <BehaviorCueProvider>
         {panel !== 'status' ? <ApprovalsCard api={activeBridge?.approvals} floating /> : null}
+        <BusyCard api={activeBridge?.codingBusy} />
         <main
           className="kiosk"
           data-drawer-open={drawerOpen}

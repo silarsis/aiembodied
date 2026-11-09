@@ -24,6 +24,8 @@ export interface RunnerSettings {
 export interface RunnerStatus {
   local_model_needed: boolean;
   active: string[];
+  /** True while the tasks on the local model are held (paused) for Echo. */
+  hold?: boolean;
 }
 
 export interface RunnerWorkspace {
@@ -117,6 +119,7 @@ export interface RunnerEvent {
   question?: unknown;
   questions?: RunnerQuestion[];
   local_model_needed?: boolean;
+  hold?: boolean;
 }
 
 export class RunnerError extends Error {
@@ -178,6 +181,11 @@ export class CodingRunnerClient {
 
   status(): Promise<RunnerStatus> {
     return this.request('GET', '/v1/status');
+  }
+
+  /** Pause (true) or resume (false) the tasks on the local model, so Echo can use the model server. */
+  async setLocalHold(hold: boolean, reason?: string): Promise<void> {
+    await this.request('PUT', '/v1/local/hold', { hold, ...(reason ? { reason } : {}) });
   }
 
   capabilities(refresh = false): Promise<RunnerCapabilities> {

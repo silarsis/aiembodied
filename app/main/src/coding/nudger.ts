@@ -48,6 +48,11 @@ export class CodingNudger {
       const status = event.status ?? undefined;
       if (!status || this.lastStatus.get(id) === status) return;
       this.lastStatus.set(id, status);
+      if (status === 'paused') {
+        // Once per pause: lastStatus only changes when the task leaves "paused" and comes back.
+        this.send('The coding task is paused while you talk to Kevin; it resumes when things are quiet.', false);
+        return;
+      }
       if (!['review', 'done', 'failed'].includes(status)) return;
       if (this.suppressed.delete(`${id}:${status}`)) return;
       const task = await this.options.getTask(id);

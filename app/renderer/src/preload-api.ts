@@ -1,5 +1,5 @@
 import type { GpuMemoryBridge } from '../../main/src/diagnostics/gpu-memory.js';
-import type { CodingBridge, CodingTasksBridge } from '../../main/src/coding/bridge-types.js';
+import type { CodingBridge, CodingBusyBridge, CodingTasksBridge } from '../../main/src/coding/bridge-types.js';
 import type { ApprovalsBridge } from '../../main/src/tools/approvals-ipc.js';
 import type { CivitaiLookup } from '../../main/src/avatar/generation/civitai.js';
 import type { HfLookup } from '../../main/src/local-llm/huggingface.js';
@@ -153,6 +153,7 @@ export interface PreloadApi {
   gpuMemory?: GpuMemoryBridge;
   coding?: CodingBridge;
   codingTasks?: CodingTasksBridge;
+  codingBusy?: CodingBusyBridge;
   approvals?: ApprovalsBridge;
   app?: AppBridge;
   ping(): string;

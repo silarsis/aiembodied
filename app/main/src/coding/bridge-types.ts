@@ -34,3 +34,13 @@ export interface CodingTasksBridge {
   /** A task changed (status, tool, question). */
   onEvent(listener: (event: RunnerEvent) => void): () => void;
 }
+
+/** Echo is busy getting its own model back from the coder: shown as a card while Kevin waits. */
+export interface CodingBusy {
+  busy: boolean;
+  message?: string;
+}
+
+export interface CodingBusyBridge {
+  onChanged(listener: (busy: CodingBusy) => void): () => void;
+}

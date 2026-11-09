@@ -10,8 +10,8 @@ import type { LocalVoiceBridge } from '../preload-api.js';
 
 export const CODING_TASKS_POLL_MS = 10_000;
 const FINISHED = ['done', 'failed', 'cancelled', 'discarded'];
-const CANCELLABLE = ['queued', 'starting', 'working', 'question', 'checks'];
-const HAS_DIFF = ['working', 'question', 'checks', 'review', 'done', 'failed', 'cancelled'];
+const CANCELLABLE = ['queued', 'starting', 'working', 'question', 'paused', 'checks'];
+const HAS_DIFF = ['working', 'question', 'paused', 'checks', 'review', 'done', 'failed', 'cancelled'];
 const MAX_FINISHED_SHOWN = 4;
 
 export function sortTasks(tasks: RunnerTask[]): RunnerTask[] {

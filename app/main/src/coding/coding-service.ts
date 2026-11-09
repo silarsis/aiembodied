@@ -81,6 +81,9 @@ export class CodingService {
       platform: options.platform,
       mode: () => options.settings().coding.coderMemory ?? 'auto',
       measureFree: () => this.measureFree(),
+      setHold: async (hold) => {
+        await this.client?.setLocalHold(hold, hold ? 'Kevin is talking to Echo' : undefined);
+      },
       ggufSize,
       onWaiting: () =>
         options.notify?.(
@@ -112,6 +115,16 @@ export class CodingService {
   /** Kevin spoke to Echo (not a system update). */
   noteActivity(): void {
     void this.swap.noteActivity();
+  }
+
+  /** True while the coder model holds Echo's place or Echo's model is being brought back. */
+  swapReclaiming(): boolean {
+    return this.swap.reclaiming();
+  }
+
+  /** Resolves true once Echo's model answers again, false after timeoutMs. */
+  waitForEcho(timeoutMs: number): Promise<boolean> {
+    return this.swap.waitForEcho(timeoutMs);
   }
 
   chatOverride(): RouteOverride | null {

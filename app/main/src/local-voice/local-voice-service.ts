@@ -255,6 +255,19 @@ export class LocalVoiceService {
     this.recalledIds = [];
   }
 
+  /** Say one line out loud without asking the model: speech only, sent as a 'sentence' event of the request that is about to be answered. */
+  async speakOnly(requestId: string, text: string, emit: (event: LocalVoiceEvent) => void): Promise<void> {
+    const spoken = toSpeakableText(text);
+    if (!spoken) return;
+    try {
+      const voice = await Promise.resolve(this.voiceFor?.()).catch(() => undefined);
+      const wav = await this.tts.synthesize(spoken, voice ? { voice } : {});
+      emit({ requestId, type: 'sentence', index: 0, text, wav });
+    } catch (error) {
+      this.logger?.warn('Local voice: could not speak the holding line', { message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
   async respond(
     request: LocalVoiceRespondRequest,
     emit: (event: LocalVoiceEvent) => void,

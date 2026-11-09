@@ -69,7 +69,7 @@ import {
 } from './memory-engine/index.js';
 import { buildVoiceEngines, DEFAULT_OPENAI_MODELS } from './local-voice/voice-engines.js';
 import { describeProviders, type ProviderSettingsPatch } from './config/provider-settings.js';
-import type { LocalVoiceRespondRequest, SpeakingVoiceOptions } from './local-voice/types.js';
+import type { LocalVoiceEvent, LocalVoiceRespondRequest, SpeakingVoiceOptions } from './local-voice/types.js';
 import { SpeechServiceClient } from './local-voice/speech-service-client.js';
 import type {
   AvatarModelSummary,
@@ -1729,8 +1729,23 @@ function registerIpcHandlers(
     }
 
     // Kevin's own speech or typing (not a system update or a preview): the coder model gives way to it.
-    if (!payload.system && !payload.preview) codingService?.noteActivity();
+    const ownTurn = !payload.system && !payload.preview;
+    if (ownTurn) codingService?.noteActivity();
     const sender = event.sender;
+    // The coder model has Echo's place: the tasks are paused and Echo's model is coming back. Say so, and wait for it.
+    if (ownTurn && codingService?.swapReclaiming()) {
+      const message = 'Hang on, I’m busy, be with you in a sec…';
+      const send = (voiceEvent: LocalVoiceEvent) => {
+        if (!sender.isDestroyed()) sender.send('local-voice:event', voiceEvent);
+      };
+      if (!sender.isDestroyed()) sender.send('coding:busy', { busy: true, message });
+      try {
+        await localVoiceService.speakOnly(payload.requestId, message, send);
+        await codingService.waitForEcho(15 * 60_000);
+      } finally {
+        if (!sender.isDestroyed()) sender.send('coding:busy', { busy: false });
+      }
+    }
     return localVoiceService.respond(payload, (voiceEvent) => {
       if (!sender.isDestroyed()) {
         sender.send('local-voice:event', voiceEvent);

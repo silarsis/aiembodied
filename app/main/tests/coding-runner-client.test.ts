@@ -23,6 +23,7 @@ describe('CodingRunnerClient requests', () => {
     await runner.getKeys();
     await runner.putKeys({ openai: 'sk', github: null });
     await runner.status();
+    await runner.setLocalHold(true, 'Kevin is talking to Echo');
     await runner.capabilities(true);
     await runner.listTasks('review');
     await runner.getTask('20261108-1a2b');
@@ -36,6 +37,7 @@ describe('CodingRunnerClient requests', () => {
       ['http://127.0.0.1:8195/v1/keys', 'GET', undefined],
       ['http://127.0.0.1:8195/v1/keys', 'PUT', { openai: 'sk', github: null }],
       ['http://127.0.0.1:8195/v1/status', 'GET', undefined],
+      ['http://127.0.0.1:8195/v1/local/hold', 'PUT', { hold: true, reason: 'Kevin is talking to Echo' }],
       ['http://127.0.0.1:8195/v1/capabilities?refresh=1', 'GET', undefined],
       ['http://127.0.0.1:8195/v1/tasks?status=review', 'GET', undefined],
       ['http://127.0.0.1:8195/v1/tasks/20261108-1a2b', 'GET', undefined],

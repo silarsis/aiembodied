@@ -386,10 +386,10 @@ def test_local_task_waits_for_model(client, ws, llm):
             break
         time.sleep(0.05)
     assert t["phase_detail"] == "waiting for the local model"
-    assert client.get("/v1/status").json() == {"local_model_needed": True, "active": [t["id"]]}
+    assert client.get("/v1/status").json() == {"local_model_needed": True, "active": [t["id"]], "hold": False}
     llm.ready = True
     wait_status(client, t["id"], "review")
-    assert client.get("/v1/status").json() == {"local_model_needed": False, "active": []}
+    assert client.get("/v1/status").json() == {"local_model_needed": False, "active": [], "hold": False}
 
 
 def test_local_wait_times_out(cfg, client, ws, llm):
@@ -559,3 +559,60 @@ def test_old_database_gets_questions_column(tmp_path):
     st = Store(p)
     t = st.create_task(id="a", workspace_id="w", goal="g", files_touched=[])
     assert t["questions"] == []
+
+
+# ---- hold: pause while Echo needs the local model -----------------------------------------------
+
+def test_hold_pauses_and_release_resumes(client, ws, monkeypatch, tmp_path):
+    monkeypatch.setenv("FAKE_PI_MODE", "hang")
+    ws()
+    t = wait_status(client, new_task(client)["id"], "working")
+    seen = []
+    client.app.state.manager.on_change = seen.append
+    r = client.put("/v1/local/hold", json={"hold": True, "reason": "test"})
+    assert r.status_code == 200 and r.json()["hold"] is True
+    t = client.get(f"/v1/tasks/{t['id']}").json()
+    assert t["status"] == "paused" and "Kevin" in t["phase_detail"]
+    assert any(m.get("status") == "paused" for m in seen)
+    st = client.get("/v1/status").json()
+    assert st["hold"] is True and st["local_model_needed"] is True and t["id"] in st["active"]
+    assert client.app.state.manager._runs[t["id"]].pi.exited.is_set()
+    monkeypatch.setenv("FAKE_PI_MODE", "normal")
+    monkeypatch.setenv("FAKE_PI_ARGV_DUMP", str(tmp_path / "argv.json"))
+    client.put("/v1/local/hold", json={"hold": False})
+    wait_status(client, t["id"], "review")
+    assert "--continue" in json.loads((tmp_path / "argv.json").read_text())
+    assert client.get("/v1/status").json()["hold"] is False
+
+
+def test_new_local_task_waits_during_hold(client, ws):
+    ws()
+    client.put("/v1/local/hold", json={"hold": True})
+    t = new_task(client)
+    time.sleep(0.6)
+    assert client.get(f"/v1/tasks/{t['id']}").json()["status"] == "starting"
+    client.put("/v1/local/hold", json={"hold": False})
+    wait_status(client, t["id"], "review")
+
+
+def test_paused_time_does_not_count_against_limit(client, ws, monkeypatch):
+    monkeypatch.setenv("FAKE_PI_MODE", "hang")
+    ws(time_limit_min=0.05)  # 3 s
+    t = wait_status(client, new_task(client)["id"], "working")
+    client.put("/v1/local/hold", json={"hold": True})
+    time.sleep(3.5)
+    assert client.get(f"/v1/tasks/{t['id']}").json()["status"] == "paused"
+    monkeypatch.setenv("FAKE_PI_MODE", "normal")
+    client.put("/v1/local/hold", json={"hold": False})
+    wait_status(client, t["id"], "review")
+
+
+def test_cancel_paused_task(client, ws, monkeypatch):
+    monkeypatch.setenv("FAKE_PI_MODE", "hang")
+    ws()
+    t = wait_status(client, new_task(client)["id"], "working")
+    client.put("/v1/local/hold", json={"hold": True})
+    assert client.post(f"/v1/tasks/{t['id']}/cancel").json()["status"] == "cancelled"
+    client.put("/v1/local/hold", json={"hold": False})
+    time.sleep(0.3)
+    assert client.get(f"/v1/tasks/{t['id']}").json()["status"] == "cancelled"

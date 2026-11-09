@@ -4,8 +4,9 @@
  * Auto (the default): at the start of each load it measures whether the coder fits next to what
  * is running (free GPU memory and Windows commit headroom against the GGUF size plus a margin).
  * If it fits, it loads side by side. If not, it waits until Echo has been quiet for a while, then
- * swaps. After a swap, if Kevin talks to Echo again, it swaps back as soon as it can and goes
- * back to waiting for a quiet moment while a task still needs the model.
+ * swaps. After a swap, if Kevin talks to Echo again, it pauses the coding tasks, swaps back as
+ * soon as it can and goes back to waiting for a quiet moment while a task still needs the model.
+ * The tasks are released once the coder model is loaded again.
  *
  * Side by side: Echo's llama-server keeps running and the coder's is started next to
  * it. When no task has needed the coder model for a while (idleStopMs), the coder's server stops
@@ -14,7 +15,8 @@
  * Swap (opt-in, for PCs that cannot hold both, such as bija with Echo's 86 GB chat model and the
  * 48 GB Qwen3-Coder-Next): this stops Echo's llama-server, starts the coder's, and lets Echo's
  * chat use the coder model meanwhile. When no task has needed it for a while (swapBackMs), it
- * swaps back.
+ * swaps back. If Kevin talks to Echo meanwhile, it pauses the tasks and swaps back at once, then
+ * waits for a quiet moment before loading the coder again.
  *
  * Windows only, and only when the Coding model is the built-in coder server (the app can start
  * and stop that one).
@@ -78,6 +80,8 @@ export interface CoderModelSwapOptions {
   lastActivityAt?: () => number | null;
   /** Auto mode: how long Echo must have had no conversation turn before a swap. Default 10 minutes (CODER_QUIET_S). */
   quietMs?: number;
+  /** Pauses (true) or releases (false) the coding tasks on the local model, so Echo can have the model server. */
+  setHold?: (hold: boolean) => Promise<void>;
   /** Called once each time a task starts waiting for a quiet moment to swap. */
   onWaiting?: (message: string) => void;
   /** How long to wait for the coder model to load. Default 15 minutes. */
@@ -113,14 +117,18 @@ export class CoderModelSwap {
   private loadedServer: ModelServer | null = null;
   private coderControl: Pick<LocalLlmControl, 'stop' | 'start'> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
-  /** This load is an auto-mode swap: a conversation turn sends it back. */
-  private autoSwapped = false;
   /** When the current load started, to tell turns before it from turns after it. */
   private loadStartedAt = 0;
   private lastActivity: number | null = null;
   /** When auto mode last measured memory while waiting for quiet. */
   private waitCheckedAt = 0;
   private downChecks = 0;
+  /** An activity-triggered swap back is running (the override may already be gone, Echo's server not yet answering). */
+  private reclaimingNow = false;
+  /** The tasks are paused (setHold(true) was called and not yet released). */
+  private held = false;
+  /** Kevin's talking sent the models back; the next swap in needs a quiet moment, even in swap mode. */
+  private needQuiet = false;
   /** After a failed load, no new try before this time, so a broken model doesn't stop Echo's over and over. */
   private retryAfter = 0;
   private readonly now: () => number;
@@ -158,8 +166,36 @@ export class CoderModelSwap {
   /** Kevin said something to Echo (a conversation turn, not a system update). In auto mode after a swap, this sends the models back. */
   noteActivity(): Promise<void> {
     this.lastActivity = this.now();
-    if (this.autoSwapped && this.state.phase === 'coder-loaded') return this.reconcile();
+    if (this.override && this.loadMode === 'swap' && this.state.phase === 'coder-loaded') return this.reconcile();
     return this.chain;
+  }
+
+  /** True while the coder model holds Echo's place or is being swapped out for Echo's model, so Echo can't answer yet. */
+  reclaiming(): boolean {
+    return this.reclaimingNow || this.override !== null || (this.state.phase === 'swapping-in' && this.loadMode === 'swap');
+  }
+
+  /** Resolves true once the swap back is done and Echo's llama-server answers; false if that takes longer than timeoutMs. */
+  async waitForEcho(timeoutMs: number): Promise<boolean> {
+    const deadline = this.now() + timeoutMs;
+    for (;;) {
+      if (!this.reclaiming()) {
+        const echo = routeTargets(this.options.routing(), 'llm')[0];
+        if (!echo || (await this.options.isUp(`${echo.server.url}/models`).catch(() => false))) return true;
+      }
+      if (this.now() >= deadline) return false;
+      await this.sleep(this.pollMs);
+    }
+  }
+
+  private async hold(hold: boolean): Promise<void> {
+    if (!this.options.setHold || hold === this.held) return;
+    this.held = hold;
+    try {
+      await this.options.setHold(hold);
+    } catch (error) {
+      this.options.logger.warn('Could not change the coding hold.', { hold, message: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   /** The runner says whether a task needs the local model. */
@@ -167,6 +203,7 @@ export class CoderModelSwap {
     if (needed === this.needed && !(needed && this.state.phase === 'idle')) return this.chain;
     this.needed = needed;
     this.idleSince = needed ? null : this.now();
+    if (!needed) void this.hold(false);
     this.options.logger.info('Coding model needed changed.', { needed });
     return this.reconcile();
   }
@@ -197,14 +234,22 @@ export class CoderModelSwap {
     const { phase } = this.state;
     if (phase === 'waiting-for-quiet') {
       // While it isn't quiet, only measure memory again once a minute (the reader runs PowerShell).
-      if (this.needed && (this.isQuiet() || this.now() - this.waitCheckedAt >= 60_000)) return this.swapIn();
+      // After Kevin talked, only a quiet moment will do; otherwise look at memory again once a minute.
+      if (this.needed && (this.isQuiet() || (!this.needQuiet && this.now() - this.waitCheckedAt >= 60_000))) return this.swapIn();
       if (this.needed) return;
       this.state = { phase: 'idle', message: 'Not needed now.' };
       return;
     }
-    if (phase === 'coder-loaded' && this.autoSwapped && this.talkedSince(this.loadStartedAt)) {
-      // Kevin is talking to Echo: give the memory back now, and wait for a quiet moment if a task still needs the model.
-      await this.restoreEcho('Kevin is talking to Echo, so Echo’s model is back.');
+    if (phase === 'coder-loaded' && this.loadMode === 'swap' && this.override && this.talkedSince(this.loadStartedAt)) {
+      // Kevin is talking to Echo: pause the tasks and give the memory back now, and wait for a quiet moment if a task still needs the model.
+      this.reclaimingNow = true;
+      try {
+        await this.hold(true);
+        await this.restoreEcho('Kevin is talking to Echo, so Echo’s model is back.');
+      } finally {
+        this.reclaimingNow = false;
+      }
+      this.needQuiet = true;
       // We already know the coder doesn't fit, and Echo's model is still loading, so measuring now would say it fits.
       if (this.needed) {
         this.waitCheckedAt = this.now();
@@ -283,7 +328,6 @@ export class CoderModelSwap {
     const echoTarget = routeTargets(routing, 'llm')[0];
     const mode = this.options.mode();
     let swapMode = mode === 'swap';
-    this.autoSwapped = false;
     // Auto only has a choice to make when Echo's model is the one this app runs; otherwise nothing shares memory with it.
     if (mode === 'auto' && echoTarget?.server.id === BUILT_IN_SERVER_IDS.llm && !(await this.fitsNextToEcho(gguf))) {
       if (!this.isQuiet()) {
@@ -295,7 +339,6 @@ export class CoderModelSwap {
         return;
       }
       swapMode = true;
-      this.autoSwapped = true;
     }
     this.loadStartedAt = this.now();
     this.loadMode = swapMode ? 'swap' : 'side-by-side';
@@ -334,6 +377,7 @@ export class CoderModelSwap {
       await this.sleep(this.pollMs);
     }
     this.downChecks = 0;
+    this.needQuiet = false;
     if (swapMode) {
       await this.setOverride({ server: coder.server, model: coder.alias, exclude: echoId && this.stoppedEcho ? [echoId] : [] });
     }
@@ -341,6 +385,7 @@ export class CoderModelSwap {
       'coder-loaded',
       swapMode ? 'The coder model is loaded. Echo’s chat uses it until the tasks are done.' : 'The coder model is loaded next to Echo’s.',
     );
+    await this.hold(false);
   }
 
   /** While the coder model is loaded and needed: restart it if it stopped (the PC slept, or it crashed). */

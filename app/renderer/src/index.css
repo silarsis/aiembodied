@@ -1877,6 +1877,16 @@ body {
   background: rgba(120, 53, 15, 0.35);
 }
 
+.busy-card--floating {
+  position: fixed;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 61;
+  max-width: 420px;
+  background: rgba(15, 23, 42, 0.95);
+}
+
 .approvals--floating {
   position: fixed;
   right: 1rem;

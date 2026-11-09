@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-ACTIVE = ("starting", "working", "question", "checks", "pushing")
+ACTIVE = ("starting", "working", "question", "checks", "pushing", "paused")
 JSON_COLS = ("acceptance", "scope", "files_touched", "question", "questions", "review")
 EVENT_CAP = 20_000
 

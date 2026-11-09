@@ -5,7 +5,7 @@ state), 422 (bad shape) or 502 (push failed).
 
 ## Status values
 
-`queued, starting, working, question, checks, review, pushing, done, failed, cancelled, discarded`
+`queued, starting, working, question, paused, checks, review, pushing, done, failed, cancelled, discarded`
 
 ## Setup
 
@@ -14,9 +14,14 @@ state), 422 (bad shape) or 502 (push failed).
   `{"local_llm_url": "http://127.0.0.1:1236/v1", "local_model": "qwen3-coder-next", "default_model": {"provider": "local", "id": "qwen3-coder-next"}}`
   Tasks created without `model` (and without a workspace model) use `default_model`.
 - `GET /v1/settings` -> the same shape.
-- `GET /v1/status` -> `{"local_model_needed": true, "active": ["20261108-1a2b"]}`. `local_model_needed` is
-  true while any task on the `local` provider is `starting`, `working` or `question`. `active` lists tasks
-  in `starting, working, question, checks, pushing`.
+- `GET /v1/status` -> `{"local_model_needed": true, "active": ["20261108-1a2b"], "hold": false}`.
+  `local_model_needed` is true while any task on the `local` provider is `starting`, `working`, `question`
+  or `paused`. `active` lists tasks in `starting, working, question, paused, checks, pushing`.
+- `PUT /v1/local/hold` `{"hold": true, "reason": "Kevin is talking to Echo"}` -> the status. While held, every
+  local task that is `working` or in `question` has its pi stopped (the session is kept) and becomes
+  `paused` ("paused while Kevin talks to Echo"); local tasks that start meanwhile wait for the local
+  model. `{"hold": false}` resumes the paused tasks (they wait for the local model, then pi continues
+  with `--continue`). The time limit does not run while paused.
 - `PUT /v1/workspaces` replaces the whole list. 400 if a path is not a git repository. Returns the stored list.
   ```json
   [{"id": "aiembodied", "name": "aiembodied", "path": "C:\\src\\aiembodied", "kind": "self",

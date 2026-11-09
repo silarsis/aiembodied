@@ -71,7 +71,7 @@ import type {
 import type { OpenAIFunction } from './tools/tool-registry.js';
 import type { MemoryEngineBridge } from './memory-engine/bridge-types.js';
 import type { GpuMemoryBridge } from './diagnostics/gpu-memory.js';
-import type { CodingBridge, CodingTasksBridge, RunnerEvent } from './coding/bridge-types.js';
+import type { CodingBridge, CodingBusy, CodingBusyBridge, CodingTasksBridge, RunnerEvent } from './coding/bridge-types.js';
 import type { CodingStatus, CodingView } from './coding/coding-service.js';
 
 function logPreloadMessage(
@@ -216,6 +216,7 @@ export interface PreloadApi {
   gpuMemory?: GpuMemoryBridge;
   coding?: CodingBridge;
   codingTasks?: CodingTasksBridge;
+  codingBusy?: CodingBusyBridge;
   approvals?: ApprovalsBridge;
   app?: AppBridge;
   ping(): string;
@@ -694,6 +695,16 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     onEvent: (listener) => {
       const channel = 'coding:task-event';
       const handler = (_event: unknown, payload: RunnerEvent) => listener(payload);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
+  },
+  codingBusy: {
+    onChanged: (listener) => {
+      const channel = 'coding:busy';
+      const handler = (_event: unknown, payload: CodingBusy) => listener(payload);
       ipcRenderer.on(channel, handler);
       return () => {
         ipcRenderer.removeListener(channel, handler);

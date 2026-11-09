@@ -31,7 +31,9 @@ QUIET_EVENTS = {"agent_end", "agent_settled", "queue_update", "response", "exten
 ASK_PREFIX = "Question from pi: "  # title prefix of the ask_echo tool (assets/aiembodied-guard.ts)
 RUNNING = ("starting", "working", "question", "checks")
 # Statuses in which a local task needs the local model server.
-LOCAL_NEEDED = ("starting", "working", "question")
+LOCAL_NEEDED = ("starting", "working", "question", "paused")
+PAUSE_DETAIL = "paused while Kevin talks to Echo"
+PAUSE_PROMPT = ("You were paused while the local model was needed elsewhere. Continue where you left off.")
 RESUME_PROMPT = ("The runner restarted while you were working. Check the state of the files and continue the "
                  "task where you left off.")
 
@@ -49,6 +51,9 @@ class Run:
         self.pi: Optional[PiProcess] = None
         self.thread: Optional[threading.Thread] = None
         self.active = False
+        self.used_s = 0.0  # time already spent working, kept across pauses so they do not count against the limit
+        self.sup_start: Optional[float] = None
+        self.q_s = 0.0  # time spent waiting for answers since sup_start
         self.reset()
 
     def reset(self) -> None:
@@ -103,6 +108,7 @@ class TaskManager:
         self._lock = threading.RLock()
         self._closed = False
         self._needed = False
+        self._hold = False
         self._to_resume: list[str] = []
         self._recover()
 
@@ -185,7 +191,7 @@ class TaskManager:
 
     def status(self) -> dict:
         active = [t["id"] for t in self.store.list_tasks() if t["status"] in ACTIVE]
-        return {"local_model_needed": self.local_model_needed(), "active": active}
+        return {"local_model_needed": self.local_model_needed(), "active": active, "hold": self._hold}
 
     def _notify(self, task: dict) -> None:
         if self.on_change:
@@ -261,7 +267,7 @@ class TaskManager:
         with self._lock:
             if self._closed:
                 return
-            running = sum(1 for r in self._runs.values() if r.active)
+            running = sum(1 for r in self._runs.values() if r.active) + len(self.store.list_tasks("paused"))
             for t in reversed(self.store.list_tasks("queued")):
                 if running >= self.cfg.max_tasks:
                     break
@@ -328,7 +334,9 @@ class TaskManager:
         while True:
             if run.stopped:
                 return False
-            if self._local_ready(url):
+            if self._hold:  # Echo needs the model server: wait, and do not run down the timeout
+                deadline = time.monotonic() + self.cfg.local_wait_s
+            elif self._local_ready(url):
                 return True
             if not announced:
                 announced = True
@@ -483,6 +491,7 @@ class TaskManager:
             tick = time.monotonic()
             if run.pending_question:  # the time limit does not run while pi waits for an answer
                 deadline += tick - last
+                run.q_s += tick - last
             last = tick
             if run.stopped:
                 return "stopped"
@@ -501,7 +510,8 @@ class TaskManager:
 
     def _supervise(self, tid: str, run: Run) -> None:
         task = self._get(tid)
-        outcome = self._wait(run, time.monotonic() + self._limit_s(task))
+        run.sup_start, run.q_s = time.monotonic(), 0.0
+        outcome = self._wait(run, run.sup_start + max(0.0, self._limit_s(task) - run.used_s))
         if run.stopped:
             return
         if outcome == "timeout":
@@ -697,11 +707,62 @@ class TaskManager:
 
     def cancel(self, tid: str) -> dict:
         task = self._get(tid)
-        if task["status"] not in ("queued", "starting", "working", "question", "checks", "review"):
+        if task["status"] not in ("queued", "starting", "working", "question", "checks", "review", "paused"):
             raise CoderError(409, f"cannot cancel a task that is {task['status']}")
         self._stop_run(tid, "cancelled")
-        return self._update(tid, force=True, status="cancelled", current_tool=None, question=None,
-                            finished_at=now(), phase_detail="cancelled") or task
+        out = self._update(tid, force=True, status="cancelled", current_tool=None, question=None,
+                           finished_at=now(), phase_detail="cancelled") or task
+        if task["status"] == "paused":
+            self.pump()  # a paused task held a slot but has no worker to free it
+        return out
+
+    # ---- hold: Echo needs the local model server ---------------------------------------------
+
+    def set_hold(self, hold: bool, reason: Optional[str] = None) -> dict:
+        """While held, local tasks are paused (pi stopped, session kept) and new ones wait. Releasing resumes them."""
+        with self._lock:
+            if self._closed:
+                return self.status()
+            self._hold = hold
+            ids = [t["id"] for t in self.store.list_tasks()
+                   if t["provider"] == "local" and (t["status"] in ("working", "question") if hold else t["status"] == "paused")
+                   and not self._text_question_only(t)]
+        for tid in ids:
+            (self._pause if hold else self._resume)(tid, reason)
+        if self.on_change:
+            try:
+                self.on_change({"task_id": None, "hold": hold, "local_model_needed": self.local_model_needed()})
+            except Exception:
+                pass
+        return self.status()
+
+    def _pause(self, tid: str, reason: Optional[str]) -> None:
+        run = self._runs.get(tid)
+        task = self.store.get_task(tid)
+        if not run or not task:
+            return
+        # Count the time worked so far, minus the time spent waiting for answers.
+        if run.sup_start is not None:
+            run.used_s += max(0.0, time.monotonic() - run.sup_start - run.q_s)
+            run.sup_start = None
+        self._stop_run(tid, "paused")
+        if run.thread and run.thread.is_alive() and run.thread is not threading.current_thread():
+            run.thread.join(10)
+        self.store.add_event(tid, "runner", {"message": "paused", "reason": reason})
+        self._update(tid, force=True, status="paused", current_tool=None, question=None, questions=[],
+                     phase_detail=PAUSE_DETAIL)
+
+    def _resume(self, tid: str, reason: Optional[str] = None) -> None:
+        run = self._runs.setdefault(tid, Run())
+        with self._lock:
+            if run.active:
+                return
+            run.reset()
+            run.active = True
+        self.store.add_event(tid, "runner", {"message": "resuming after pause"})
+        run.thread = threading.Thread(target=self._worker, args=(tid, run, self._restart_pi(PAUSE_PROMPT, "resumed after a pause")),
+                                      daemon=True, name=f"task-{tid}")
+        run.thread.start()
 
     def discard(self, tid: str) -> dict:
         task = self._get(tid)
