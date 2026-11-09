@@ -5,6 +5,7 @@ import { CoderModelSwap } from '../src/coding/model-swap.js';
 
 const GGUF = 'D:\\models\\Qwen3-Coder-Next-Q4_K_M-00001-of-00003.gguf';
 const CODER_URL = 'http://127.0.0.1:1236/v1/models';
+const ECHO_URL = 'http://127.0.0.1:1234/v1/models';
 
 function setup(
   options: {
@@ -14,6 +15,13 @@ function setup(
     detected?: string | null;
     echoRunning?: boolean;
     answering?: () => boolean;
+    mode?: 'auto' | 'side-by-side' | 'swap';
+    free?: number | null;
+    size?: number | null;
+    lastActivity?: number | null;
+    ownClock?: boolean;
+    echoUp?: () => boolean;
+    setHold?: (hold: boolean) => Promise<void>;
   } = {},
 ) {
   const routing = resolveModelRouting(
@@ -43,8 +51,14 @@ function setup(
       coderUp = true;
     }),
   };
+  const setHold = vi.fn(async (hold: boolean) => {
+    log.push(hold ? 'hold' : 'release');
+    await options.setHold?.(hold);
+  });
   const coderFactory = vi.fn((_model: unknown, _url: string) => coderControl);
   const onOverrideChange = vi.fn(async () => void log.push('override'));
+  const activity = { at: options.lastActivity ?? null };
+  const onWaiting = vi.fn();
   const logger = { info: vi.fn(), warn: vi.fn() };
   const swap = new CoderModelSwap({
     routing: () => routing,
@@ -52,7 +66,8 @@ function setup(
     detectGguf: () => (options.detected === undefined ? GGUF : options.detected),
     echo,
     coder: coderFactory,
-    isUp: async (url) => (url === CODER_URL ? (options.answering ? options.answering() : coderUp) : false),
+    isUp: async (url) => (url === CODER_URL ? (options.answering ? options.answering() : coderUp) : url === ECHO_URL ? (options.echoUp ? options.echoUp() : true) : false),
+    setHold,
     onOverrideChange,
     logger,
     platform: options.platform ?? 'win32',
@@ -60,12 +75,194 @@ function setup(
     sleep: async (ms) => {
       clock += ms;
     },
+    mode: () => options.mode ?? 'swap',
+    measureFree: async () => options.free ?? null,
+    ggufSize: async () => options.size ?? null,
+    ...(options.ownClock ? {} : { lastActivityAt: () => activity.at }),
+    onWaiting,
+    quietMs: 600_000,
+    idleStopMs: 600_000,
     tickMs: 0,
     pollMs: 1000,
     loadTimeoutMs: 60_000,
   });
-  return { swap, echo, coderControl, coderFactory, onOverrideChange, logger, log, advance: (ms: number) => void (clock += ms), setCoderUp: (up: boolean) => void (coderUp = up) };
+  return { swap, setHold, echo, activity, onWaiting, clock: () => clock, coderControl, coderFactory, onOverrideChange, logger, log, advance: (ms: number) => void (clock += ms), setCoderUp: (up: boolean) => void (coderUp = up) };
 }
+
+const GiB = 1024 ** 3;
+
+describe('CoderModelSwap auto mode', () => {
+  // A 48 GiB model needs 48 * 1.15 + 4 = 59.2 GiB.
+  const size = 48 * GiB;
+
+  it('loads next to Echo’s model when it fits, leaving Echo alone', async () => {
+    const { swap, log, echo } = setup({ mode: 'auto', free: 80 * GiB, size });
+    await swap.setNeeded(true);
+    expect(log).toEqual(['coder.start']);
+    expect(echo.stop).not.toHaveBeenCalled();
+    expect(swap.chatOverride()).toBeNull();
+    expect(swap.getState().phase).toBe('coder-loaded');
+  });
+
+  it('loads side by side when the memory cannot be measured', async () => {
+    const unknownFree = setup({ mode: 'auto', free: null, size });
+    await unknownFree.swap.setNeeded(true);
+    expect(unknownFree.log).toEqual(['coder.start']);
+    const unknownSize = setup({ mode: 'auto', free: 10 * GiB, size: null });
+    await unknownSize.swap.setNeeded(true);
+    expect(unknownSize.log).toEqual(['coder.start']);
+  });
+
+  it('waits for a quiet moment when it does not fit and Echo was just talked to', async () => {
+    const { swap, log, echo, onWaiting, activity, clock, advance } = setup({ mode: 'auto', free: 20 * GiB, size });
+    activity.at = clock() - 1000;
+    await swap.setNeeded(true);
+    expect(swap.getState().phase).toBe('waiting-for-quiet');
+    expect(swap.getState().message).toContain('waiting until things are quiet');
+    expect(echo.stop).not.toHaveBeenCalled();
+    expect(log).toEqual([]);
+    advance(60_000);
+    await swap.tick();
+    expect(swap.getState().phase).toBe('waiting-for-quiet');
+    expect(onWaiting).toHaveBeenCalledTimes(1);
+
+    advance(600_000);
+    await swap.tick();
+    expect(log).toEqual(['echo.stop', 'coder.start', 'override']);
+    expect(swap.getState().phase).toBe('coder-loaded');
+    expect(swap.chatOverride()?.server.id).toBe('local-coder-llm');
+  });
+
+  it('swaps at once when it does not fit and Echo has been quiet', async () => {
+    const { swap, log } = setup({ mode: 'auto', free: 20 * GiB, size });
+    await swap.setNeeded(true);
+    expect(log).toEqual(['echo.stop', 'coder.start', 'override']);
+  });
+
+  it('swaps back when Kevin talks to Echo, then waits for quiet while the task needs the model', async () => {
+    const { swap, log, echo, activity, clock, advance, onWaiting } = setup({ mode: 'auto', free: 20 * GiB, size });
+    await swap.setNeeded(true);
+    log.length = 0;
+    advance(5000);
+    activity.at = clock();
+    await swap.tick();
+    expect(log).toEqual(['hold', 'override', 'coder.stop', 'echo.start']);
+    expect(echo.start).toHaveBeenCalledTimes(1);
+    expect(swap.chatOverride()).toBeNull();
+    expect(swap.getState().phase).toBe('waiting-for-quiet');
+    expect(onWaiting).toHaveBeenCalledTimes(1);
+
+    advance(600_000);
+    await swap.tick();
+    expect(swap.getState().phase).toBe('coder-loaded');
+    expect(swap.chatOverride()).not.toBeNull();
+  });
+
+  it('noteActivity() sends a swapped coder back', async () => {
+    const { swap, log, advance } = setup({ mode: 'auto', free: 20 * GiB, size, ownClock: true });
+    await swap.setNeeded(true);
+    log.length = 0;
+    advance(1000);
+    await swap.noteActivity();
+    expect(log).toEqual(['hold', 'override', 'coder.stop', 'echo.start']);
+    expect(swap.getState().phase).toBe('waiting-for-quiet');
+  });
+
+  it('pauses the tasks before stopping the coder, and releases them once it is loaded again', async () => {
+    const { swap, log, activity, clock, advance, setHold } = setup({ mode: 'auto', free: 20 * GiB, size });
+    await swap.setNeeded(true);
+    log.length = 0;
+    advance(5000);
+    activity.at = clock();
+    await swap.tick();
+    expect(log.indexOf('hold')).toBeLessThan(log.indexOf('coder.stop'));
+    expect(setHold).toHaveBeenLastCalledWith(true);
+    log.length = 0;
+    advance(600_000);
+    await swap.tick();
+    expect(swap.getState().phase).toBe('coder-loaded');
+    expect(log[log.length - 1]).toBe('release');
+    expect(setHold).toHaveBeenLastCalledWith(false);
+  });
+
+  it('still swaps back when pausing the tasks fails', async () => {
+    const { swap, log, activity, clock, advance, logger } = setup({
+      mode: 'auto', free: 20 * GiB, size, setHold: async () => { throw new Error('runner down'); },
+    });
+    await swap.setNeeded(true);
+    log.length = 0;
+    advance(5000);
+    activity.at = clock();
+    await swap.tick();
+    expect(log).toEqual(['hold', 'override', 'coder.stop', 'echo.start']);
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it('releases the hold when the task no longer needs the model', async () => {
+    const { swap, setHold, activity, clock, advance } = setup({ mode: 'auto', free: 20 * GiB, size });
+    await swap.setNeeded(true);
+    advance(5000);
+    activity.at = clock();
+    await swap.tick();
+    await swap.setNeeded(false);
+    expect(setHold).toHaveBeenLastCalledWith(false);
+    expect(swap.getState().phase).toBe('idle');
+  });
+
+  it('reclaiming() is true while the coder holds Echo’s place, false after the swap back', async () => {
+    const { swap, activity, clock, advance } = setup({ mode: 'auto', free: 20 * GiB, size });
+    expect(swap.reclaiming()).toBe(false);
+    await swap.setNeeded(true);
+    expect(swap.reclaiming()).toBe(true);
+    advance(5000);
+    activity.at = clock();
+    await swap.tick();
+    expect(swap.reclaiming()).toBe(false);
+  });
+
+  it('waitForEcho() resolves true once Echo answers, false on timeout', async () => {
+    let echoUp = false;
+    const { swap, activity, clock, advance } = setup({ mode: 'auto', free: 20 * GiB, size, echoUp: () => echoUp });
+    await swap.setNeeded(true);
+    advance(5000);
+    activity.at = clock();
+    await swap.tick();
+    expect(await swap.waitForEcho(5000)).toBe(false);
+    echoUp = true;
+    expect(await swap.waitForEcho(5000)).toBe(true);
+  });
+
+  it('waitForEcho() waits for the swap back while the coder holds Echo’s place', async () => {
+    const { swap } = setup({ mode: 'auto', free: 20 * GiB, size });
+    await swap.setNeeded(true);
+    expect(await swap.waitForEcho(3000)).toBe(false);
+  });
+
+  it('swap mode also pauses and swaps back when Kevin talks, then waits for quiet', async () => {
+    const { swap, log, activity, clock, advance } = setup({ mode: 'swap' });
+    await swap.setNeeded(true);
+    log.length = 0;
+    advance(5000);
+    activity.at = clock();
+    await swap.tick();
+    expect(log).toEqual(['hold', 'override', 'coder.stop', 'echo.start']);
+    expect(swap.getState().phase).toBe('waiting-for-quiet');
+    advance(60_000);
+    await swap.tick();
+    expect(swap.getState().phase).toBe('waiting-for-quiet');
+    advance(600_000);
+    await swap.tick();
+    expect(swap.getState().phase).toBe('coder-loaded');
+  });
+
+  it('stops waiting when the task no longer needs the model', async () => {
+    const { swap, activity, clock } = setup({ mode: 'auto', free: 20 * GiB, size });
+    activity.at = clock();
+    await swap.setNeeded(true);
+    await swap.setNeeded(false);
+    expect(swap.getState().phase).toBe('idle');
+  });
+});
 
 describe('CoderModelSwap', () => {
   it('stops Echo’s model, starts the coder model, and lets Echo’s chat use it', async () => {
@@ -224,5 +421,64 @@ describe('CoderModelSwap', () => {
     await swap.setNeeded(true);
     const phases = logger.info.mock.calls.filter(([message]) => message === 'Coder model swap.').map(([, data]) => (data as { phase: string }).phase);
     expect(phases).toEqual(['swapping-in', 'swapping-in', 'coder-loaded']);
+  });
+
+  describe('side by side', () => {
+    it('starts the coder model without touching Echo’s model or the chat override', async () => {
+      const { swap, echo, coderFactory, coderControl, onOverrideChange } = setup({ mode: 'side-by-side' });
+      await swap.setNeeded(true);
+      expect(echo.stop).not.toHaveBeenCalled();
+      expect(coderControl.start).toHaveBeenCalledTimes(1);
+      expect(coderFactory).toHaveBeenCalledWith({ path: GGUF, alias: 'qwen3-coder-next', contextLength: 65536 }, 'http://127.0.0.1:1236/v1');
+      expect(swap.chatOverride()).toBeNull();
+      expect(onOverrideChange).not.toHaveBeenCalled();
+      expect(swap.getState()).toMatchObject({ phase: 'coder-loaded', message: 'The coder model is loaded next to Echo’s.' });
+    });
+
+    it('stops the coder model only after idleStopMs, and never starts Echo’s', async () => {
+      const { swap, echo, coderControl, advance } = setup({ mode: 'side-by-side' });
+      await swap.setNeeded(true);
+      await swap.setNeeded(false);
+      advance(599_000);
+      await swap.tick();
+      expect(swap.getState().phase).toBe('coder-loaded');
+      expect(coderControl.stop).not.toHaveBeenCalled();
+      advance(2000);
+      await swap.tick();
+      expect(coderControl.stop).toHaveBeenCalledTimes(1);
+      expect(swap.getState()).toMatchObject({ phase: 'idle', message: 'Not needed now; the coder model was stopped to free memory.' });
+      expect(echo.stop).not.toHaveBeenCalled();
+      expect(echo.start).not.toHaveBeenCalled();
+      expect(swap.chatOverride()).toBeNull();
+    });
+
+    it('does not stop a coder server it did not start', async () => {
+      const { swap, coderControl, advance } = setup({ mode: 'side-by-side', answering: () => true });
+      await swap.setNeeded(true);
+      await swap.setNeeded(false);
+      advance(601_000);
+      await swap.tick();
+      expect(coderControl.start).not.toHaveBeenCalled();
+      expect(coderControl.stop).not.toHaveBeenCalled();
+      expect(swap.getState().phase).toBe('idle');
+    });
+
+    it('restarts the coder model if it stops answering, and leaves Echo’s alone when a load fails', async () => {
+      const { swap, coderControl, echo, setCoderUp } = setup({ mode: 'side-by-side' });
+      await swap.setNeeded(true);
+      setCoderUp(false);
+      await swap.tick();
+      await swap.tick();
+      expect(coderControl.start).toHaveBeenCalledTimes(2);
+      expect(swap.getState().phase).toBe('coder-loaded');
+
+      const failing = setup({ mode: 'side-by-side', answering: () => false });
+      await failing.swap.setNeeded(true);
+      expect(failing.swap.getState().message).toContain('did not start');
+      expect(failing.coderControl.stop).toHaveBeenCalledTimes(1);
+      expect(failing.echo.stop).not.toHaveBeenCalled();
+      expect(failing.echo.start).not.toHaveBeenCalled();
+      expect(echo.stop).not.toHaveBeenCalled();
+    });
   });
 });

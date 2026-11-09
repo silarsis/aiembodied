@@ -23,6 +23,7 @@ describe('CodingRunnerClient requests', () => {
     await runner.getKeys();
     await runner.putKeys({ openai: 'sk', github: null });
     await runner.status();
+    await runner.setLocalHold(true, 'Kevin is talking to Echo');
     await runner.capabilities(true);
     await runner.listTasks('review');
     await runner.getTask('20261108-1a2b');
@@ -36,6 +37,7 @@ describe('CodingRunnerClient requests', () => {
       ['http://127.0.0.1:8195/v1/keys', 'GET', undefined],
       ['http://127.0.0.1:8195/v1/keys', 'PUT', { openai: 'sk', github: null }],
       ['http://127.0.0.1:8195/v1/status', 'GET', undefined],
+      ['http://127.0.0.1:8195/v1/local/hold', 'PUT', { hold: true, reason: 'Kevin is talking to Echo' }],
       ['http://127.0.0.1:8195/v1/capabilities?refresh=1', 'GET', undefined],
       ['http://127.0.0.1:8195/v1/tasks?status=review', 'GET', undefined],
       ['http://127.0.0.1:8195/v1/tasks/20261108-1a2b', 'GET', undefined],
@@ -56,6 +58,34 @@ describe('CodingRunnerClient requests', () => {
     expect(error).toBeInstanceOf(RunnerError);
     expect((error as Error).message).toBe('The coding runner is not answering at http://127.0.0.1:8195.');
     expect((error as Error).message).not.toContain('sk-secret');
+  });
+});
+
+describe('CodingRunnerClient task controls', () => {
+  it('calls the task endpoints, and reads the diff as text', async () => {
+    const calls: Array<[string, string, unknown]> = [];
+    const fetchFn = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push([String(url), init?.method ?? 'GET', init?.body ? JSON.parse(String(init.body)) : undefined]);
+      return String(url).endsWith('/diff') ? new Response('diff --git a/x b/x\n', { status: 200, headers: { 'Content-Type': 'text/plain' } }) : json({ id: 't1', status: 'working' });
+    });
+    const runner = client(fetchFn);
+    expect(await runner.taskDiff('t1')).toBe('diff --git a/x b/x\n');
+    await runner.steer('t1', 'use the helper');
+    await runner.followUp('t1', 'add a test');
+    await runner.answer('t1', { value: '8080', dialog_id: 'a1' });
+    await runner.cancel('t1');
+    await runner.apply('t1');
+    await runner.discard('t1');
+    const base = 'http://127.0.0.1:8195/v1/tasks/t1';
+    expect(calls).toEqual([
+      [`${base}/diff`, 'GET', undefined],
+      [`${base}/steer`, 'POST', { message: 'use the helper' }],
+      [`${base}/follow_up`, 'POST', { message: 'add a test' }],
+      [`${base}/answer`, 'POST', { value: '8080', dialog_id: 'a1' }],
+      [`${base}/cancel`, 'POST', undefined],
+      [`${base}/apply`, 'POST', { draft: false }],
+      [`${base}/discard`, 'POST', undefined],
+    ]);
   });
 });
 

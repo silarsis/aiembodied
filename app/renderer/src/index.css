@@ -1865,3 +1865,92 @@ body {
 .modelsDialog__speechModels { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .modelsDialog__speechModels li { display: flex; align-items: center; gap: 10px; }
 .modelsDialog__speechModels li > span { flex: 1; min-width: 0; }
+
+.approvals {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0.75rem 0;
+  padding: 0.9rem 1rem;
+  border-radius: 10px;
+  border: 2px solid rgba(251, 191, 36, 0.85);
+  background: rgba(120, 53, 15, 0.35);
+}
+
+.busy-card--floating {
+  position: fixed;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 61;
+  max-width: 420px;
+  background: rgba(15, 23, 42, 0.95);
+}
+
+.approvals--floating {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 60;
+  max-width: 360px;
+  background: rgba(15, 23, 42, 0.95);
+}
+
+.approvals__title { margin: 0; font-size: 1rem; color: #fde68a; }
+.approvals__summary { margin: 0; font-weight: 600; color: #f8fafc; }
+.approvals__note, .approvals__error { margin: 0; font-size: 0.8rem; color: rgba(226, 232, 240, 0.8); }
+.approvals__error, .codingTask__error { color: #fca5a5; }
+.approvals__actions, .codingTask__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.approvals button, .codingTask button {
+  padding: 0.35rem 0.8rem;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  background: rgba(30, 41, 59, 0.8);
+  color: inherit;
+  cursor: pointer;
+}
+.approvals button:disabled, .codingTask button:disabled { opacity: 0.5; cursor: default; }
+.approvals button.approvals__approve { border-color: rgba(52, 211, 153, 0.8); background: rgba(6, 95, 70, 0.6); }
+
+.codingTasks { display: flex; flex-direction: column; gap: 0.7rem; margin-top: 1rem; }
+.codingTasks__title { margin: 0; font-size: 1rem; }
+.codingTask {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(30, 41, 59, 0.5);
+  font-size: 0.85rem;
+}
+.codingTask p { margin: 0; }
+.codingTask__header { display: flex; justify-content: space-between; gap: 0.75rem; }
+.codingTask__workspace, .codingTask__meta { color: rgba(148, 163, 184, 0.9); font-size: 0.8rem; }
+.codingTask__status { color: rgba(226, 232, 240, 0.9); }
+.codingTask__flag { color: #fde68a; }
+.codingTask__ok { color: #6ee7b7; }
+.codingTask__link { word-break: break-all; }
+.codingTask__question { padding: 0.5rem; border-radius: 6px; background: rgba(120, 53, 15, 0.3); display: flex; flex-direction: column; gap: 0.4rem; }
+.codingTask__row { display: flex; gap: 0.5rem; }
+.codingTask__row input, .codingTask--new textarea, .codingTask--new select {
+  flex: 1;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(15, 23, 42, 0.8);
+  color: inherit;
+  font: inherit;
+}
+.codingTask--new label { display: flex; flex-direction: column; gap: 0.2rem; color: rgba(148, 163, 184, 0.9); font-size: 0.8rem; }
+.codingTask__pre {
+  margin: 0;
+  padding: 0.5rem;
+  max-height: 260px;
+  overflow: auto;
+  border-radius: 6px;
+  background: rgba(2, 6, 23, 0.8);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.75rem;
+  white-space: pre;
+}

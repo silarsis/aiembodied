@@ -69,7 +69,7 @@ import {
 } from './memory-engine/index.js';
 import { buildVoiceEngines, DEFAULT_OPENAI_MODELS } from './local-voice/voice-engines.js';
 import { describeProviders, type ProviderSettingsPatch } from './config/provider-settings.js';
-import type { LocalVoiceRespondRequest, SpeakingVoiceOptions } from './local-voice/types.js';
+import type { LocalVoiceEvent, LocalVoiceRespondRequest, SpeakingVoiceOptions } from './local-voice/types.js';
 import { SpeechServiceClient } from './local-voice/speech-service-client.js';
 import type {
   AvatarModelSummary,
@@ -119,6 +119,11 @@ import { probeMemoryDatabase, probeModelServer } from './config/model-server-pro
 import { ComfyUIPool } from './avatar/generation/comfyui-pool.js';
 import { LocalLlmControl } from './local-voice/local-llm-control.js';
 import { CodingService, type CodingView } from './coding/coding-service.js';
+import { CodingNudger } from './coding/nudger.js';
+import { registerCodingTaskIpc } from './coding/task-ipc.js';
+import { CODING_SERVER_ID, CODING_TOOL_IDS, createCodingTools } from './coding/tools.js';
+import { ApprovalBroker } from './tools/approvals.js';
+import { registerApprovalsIpc } from './tools/approvals-ipc.js';
 import { lookupHuggingFace, parseHuggingFaceRef } from './local-llm/huggingface.js';
 import { LlmLibrary } from './local-llm/llm-library.js';
 import { MCPManager } from './mcp/mcp-manager.js';
@@ -289,6 +294,16 @@ function syncMemoryStorage(manager: ConfigManager | null = configManagerForMemor
 let currentMotionServiceUrl: string | null = null;
 
 let toolRegistry: ToolRegistry | null = null;
+let approvalBroker: ApprovalBroker | null = null;
+let codingNudger: CodingNudger | null = null;
+let codingToolsSignature: string | null = null;
+
+/** Send a message to every open window. */
+function broadcastToWindows(channel: string, payload?: unknown): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) window.webContents.send(channel, payload);
+  }
+}
 let mcpManager: MCPManager | null = null;
 
 function emitCameraDetection(event: CameraDetectionEventPayload): boolean {
@@ -704,6 +719,9 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
     localVoiceService = new LocalVoiceService({
       ...engines,
       tools: toolRegistry ?? undefined,
+      approvals: approvalBroker ?? undefined,
+      extraInstructions: () => codingBrief(manager),
+      onSystemReady: () => broadcastToWindows('local-voice:system-ready'),
       logger,
       onToolResult: (record) => memoryEngine?.recordToolCall(record),
       voiceFor: () => characterVoice(speakingVoiceKey(manager.getConfig().models)) ?? undefined,
@@ -728,6 +746,7 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
   }
 
   applyWebSearch(manager);
+  applyCodingTools(manager);
   configManagerForMemory = manager;
   syncMemoryStorage(manager);
   void getCodingService(manager)
@@ -796,6 +815,7 @@ async function useLocalLlm(manager: ConfigManager, id: string | null): Promise<s
  * The coding runner side: events, sync, and swapping the local models while a task needs the coder
  * model. Built on first use, like the local LLM tools it borrows Echo's llama-server control from.
  */
+const gpuMemoryReader = new GpuMemoryReader();
 let codingService: CodingService | null = null;
 function getCodingService(manager: ConfigManager): CodingService {
   if (codingService) return codingService;
@@ -818,9 +838,51 @@ function getCodingService(manager: ConfigManager): CodingService {
         fileName: 'coder-llm',
       }),
     onOverrideChange: () => applyProviderSettings(manager),
+    gpuMemory: gpuMemoryReader,
+    notify: (text, options) => localVoiceService?.notify(text, options),
     logger,
   });
+  const service = codingService;
+  const workspaceName = (id: string | undefined) => manager.getCoding().workspaces.find((ws) => ws.id === id)?.name ?? id ?? 'a workspace';
+  codingNudger = new CodingNudger({
+    notify: (text, options) => localVoiceService?.notify(text, options),
+    getTask: (id) => service.runnerClient()?.getTask(id).catch(() => null) ?? Promise.resolve(null),
+    workspaceName,
+    logger,
+  });
+  service.onRunnerEvent((event) => void codingNudger?.handleEvent(event));
   return codingService;
+}
+
+/** Echo's coding tools exist while workspaces are set up. Re-registered when the list changes. */
+function applyCodingTools(manager: ConfigManager): void {
+  if (!toolRegistry) return;
+  const service = getCodingService(manager);
+  const workspaces = manager.getCoding().workspaces;
+  const signature = JSON.stringify(workspaces.map((ws) => [ws.id, ws.name, ws.kind]));
+  if (signature === codingToolsSignature) return;
+  codingToolsSignature = signature;
+  for (const id of Object.values(CODING_TOOL_IDS)) toolRegistry.unregister(id);
+  if (workspaces.length === 0) {
+    logger.info('Coding tools are off: no workspaces.');
+    return;
+  }
+  for (const tool of createCodingTools({
+    client: () => service.runnerClient(),
+    workspaces: () => manager.getCoding().workspaces,
+    suppressNudge: (taskId, status) => codingNudger?.suppress(taskId, status),
+  })) {
+    toolRegistry.register(tool);
+  }
+  logger.info('Coding tools registered', { server: CODING_SERVER_ID, workspaces: workspaces.length });
+}
+
+/** One line for Echo's prompt: where the coding agent can work. Empty when it can't be reached. */
+function codingBrief(manager: ConfigManager): string | null {
+  const workspaces = manager.getCoding().workspaces;
+  if (workspaces.length === 0 || !codingService?.status().runnerUp) return null;
+  const names = workspaces.map((ws) => (ws.kind === 'self' ? `${ws.name} (your own code)` : ws.name)).join(', ');
+  return `You can hand coding work to the coding agent in: ${names}. Use the coding tools.`;
 }
 
 async function codingView(manager: ConfigManager): Promise<CodingView> {
@@ -1064,7 +1126,6 @@ function registerIpcHandlers(
     return nextConfig;
   });
   // Status and diagnostics: GPU memory on this PC, split by the app's local servers.
-  const gpuMemoryReader = new GpuMemoryReader();
   const GPU_SERVER_LABELS: Record<string, string> = {
     [BUILT_IN_SERVER_IDS.llm]: 'Language model',
     [BUILT_IN_SERVER_IDS.speech]: 'Speech (TTS)',
@@ -1109,6 +1170,15 @@ function registerIpcHandlers(
     const result = mainWindow && !mainWindow.isDestroyed() ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
+  registerCodingTaskIpc({
+    ipcMain,
+    client: () => getCodingService(manager).runnerClient(),
+    onRunnerEvent: (listener) => getCodingService(manager).onRunnerEvent(listener),
+    broadcast: broadcastToWindows,
+  });
+  if (approvalBroker) {
+    registerApprovalsIpc({ ipcMain, broker: approvalBroker, broadcast: broadcastToWindows });
+  }
   ipcMain.handle('coding:suggest-checks', async (_event, id: unknown) => {
     if (typeof id !== 'string') throw new Error('Choose a workspace first.');
     const service = getCodingService(manager);
@@ -1658,7 +1728,24 @@ function registerIpcHandlers(
       throw new Error('Invalid local voice request payload received.');
     }
 
+    // Kevin's own speech or typing (not a system update or a preview): the coder model gives way to it.
+    const ownTurn = !payload.system && !payload.preview;
+    if (ownTurn) codingService?.noteActivity();
     const sender = event.sender;
+    // The coder model has Echo's place: the tasks are paused and Echo's model is coming back. Say so, and wait for it.
+    if (ownTurn && codingService?.swapReclaiming()) {
+      const message = 'Hang on, I’m busy, be with you in a sec…';
+      const send = (voiceEvent: LocalVoiceEvent) => {
+        if (!sender.isDestroyed()) sender.send('local-voice:event', voiceEvent);
+      };
+      if (!sender.isDestroyed()) sender.send('coding:busy', { busy: true, message });
+      try {
+        await localVoiceService.speakOnly(payload.requestId, message, send);
+        await codingService.waitForEcho(15 * 60_000);
+      } finally {
+        if (!sender.isDestroyed()) sender.send('coding:busy', { busy: false });
+      }
+    }
     return localVoiceService.respond(payload, (voiceEvent) => {
       if (!sender.isDestroyed()) {
         sender.send('local-voice:event', voiceEvent);
@@ -1669,6 +1756,7 @@ function registerIpcHandlers(
     localVoiceService?.cancel(typeof requestId === 'string' ? requestId : undefined);
     return true;
   });
+  ipcMain.handle('local-voice:system-status', () => localVoiceService?.systemStatus() ?? { pending: 0, ready: false, texts: [] });
   ipcMain.handle('local-voice:reset', () => {
     localVoiceService?.resetHistory();
     return true;
@@ -2037,6 +2125,8 @@ app.whenReady().then(async () => {
 
     // Initialize MCP tool registry and manager
     toolRegistry = new ToolRegistry();
+    approvalBroker = new ApprovalBroker({ registry: toolRegistry, logger });
+    approvalBroker.on('outcome', (outcome) => codingNudger?.handleApproval(outcome));
     if (memoryEngine) {
       const store = memoryStore;
       const conversations = conversationManager;
@@ -2327,6 +2417,7 @@ app.on('before-quit', async (event) => {
   // Training carries on in WSL without the app; this only stops watching it.
   wakeWordTrainer?.dispose();
   codingService?.stop();
+  approvalBroker?.dispose();
 
   // Stop the local servers this app started, as hibernation does.
   if (serverManager) {

@@ -1,6 +1,6 @@
 """A fake pi for tests: speaks the RPC protocol on stdin/stdout.
 
-FAKE_PI_MODE: normal | question | hang | nosettled
+FAKE_PI_MODE: normal | question | ask | two | textq | hang | nosettled
 FAKE_PI_FILE: file to write in the cwd (default hello.txt)
 FAKE_PI_ENV_DUMP / FAKE_PI_ARGV_DUMP: write the environment / argv as JSON to this path
 """
@@ -36,7 +36,7 @@ def emit(obj):
         sys.stdout.flush()
 
 
-def flow(n):
+def flow(n, message=None):
     emit({"type": "agent_start"})
     emit({"type": "future_unknown_event", "x": 1})
     print("some non-json noise", flush=True)
@@ -49,6 +49,26 @@ def flow(n):
         emit({"type": "extension_ui_request", "id": "n1", "method": "notify", "message": "hi"})
         a = answers.get()
         write = bool(a.get("confirmed"))
+    note = ""
+    if mode == "ask":
+        emit({"type": "extension_ui_request", "id": "a1", "method": "input",
+              "title": "Question from pi: Which port?", "placeholder": "type the answer"})
+        a = answers.get()
+        note = a.get("value") or "no answer"
+    if mode == "two":
+        emit({"type": "extension_ui_request", "id": "q1", "method": "confirm", "title": "Delete things?",
+              "message": "rm -rf build"})
+        emit({"type": "extension_ui_request", "id": "a1", "method": "input",
+              "title": "Question from pi: Which port?"})
+        got = {}
+        for _ in range(2):
+            a = answers.get()
+            got[a["id"]] = a
+        note = got["a1"].get("value") or "no answer"
+    if mode == "textq" and n == 1:
+        write = False
+    if mode == "textq" and n > 1:
+        note = message or ""
     if mode == "hang":
         emit({"type": "tool_execution_start", "toolCallId": "h", "toolName": "bash", "args": {"command": "sleep 100"}})
         aborted.wait(60)
@@ -61,10 +81,12 @@ def flow(n):
         if d:
             os.makedirs(d, exist_ok=True)
         with open(target, "w") as f:
-            f.write(f"hello from fake pi, run {n}\n")
+            f.write(f"hello from fake pi, run {n} {note}\n")
         emit({"type": "tool_execution_end", "toolCallId": "t1", "toolName": "write",
               "result": {"content": [], "details": {}}, "isError": False})
     text = f"Wrote {target}" if write else "Skipped"
+    if mode == "textq" and n == 1:
+        text = "Which database should I use?"
     emit({"type": "message_end", "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}})
     emit({"type": "turn_end"})
     emit({"type": "agent_end", "messages": []})
@@ -93,4 +115,4 @@ for line in sys.stdin:
     emit(resp)
     if t in ("prompt", "follow_up"):
         runs += 1
-        threading.Thread(target=flow, args=(runs,), daemon=True).start()
+        threading.Thread(target=flow, args=(runs, cmd.get("message")), daemon=True).start()

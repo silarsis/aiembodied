@@ -72,6 +72,7 @@ const ConfigManagerMock = vi.fn(function () {
       const models = (getConfigMock() as { models: ReturnType<typeof testRouting> }).models;
       return { servers: models.servers.map((server) => ({ ...server, hasKey: false })), routes: models.routes };
     },
+    getCoding: () => (getConfigMock() as { coding?: unknown } | undefined)?.coding ?? { workspaces: [] },
   };
 });
 

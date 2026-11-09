@@ -386,10 +386,10 @@ def test_local_task_waits_for_model(client, ws, llm):
             break
         time.sleep(0.05)
     assert t["phase_detail"] == "waiting for the local model"
-    assert client.get("/v1/status").json() == {"local_model_needed": True, "active": [t["id"]]}
+    assert client.get("/v1/status").json() == {"local_model_needed": True, "active": [t["id"]], "hold": False}
     llm.ready = True
     wait_status(client, t["id"], "review")
-    assert client.get("/v1/status").json() == {"local_model_needed": False, "active": []}
+    assert client.get("/v1/status").json() == {"local_model_needed": False, "active": [], "hold": False}
 
 
 def test_local_wait_times_out(cfg, client, ws, llm):
@@ -467,3 +467,152 @@ def test_restart_recovery_other_states(cfg, repo, client, ws):
     a, b = c2.get_task("20260101-cccc"), c2.get_task("20260101-dddd")
     assert a["status"] == "review" and a["error"] == "runner restarted during push"
     assert b["status"] == "failed" and b["error"] == "runner restarted"
+
+
+# ---- ask_echo, several dialogs, text questions, paused time limit -----------------------------
+
+def test_ask_echo_question_kind_and_answer(client, ws, monkeypatch):
+    monkeypatch.setenv("FAKE_PI_MODE", "ask")
+    ws()
+    t = wait_status(client, new_task(client)["id"], "question")
+    q = t["question"]
+    assert q["kind"] == "ask_echo" and q["method"] == "input" and q["message"] == "Which port?"
+    assert q["title"] == "Question from pi" and q["asked_at"]
+    assert t["questions"] == [q]
+    r = client.post(f"/v1/tasks/{t['id']}/answer", json={"value": "8080"})
+    assert r.status_code == 200
+    t = wait_status(client, t["id"], "review")
+    assert t["questions"] == [] and t["question"] is None
+    assert "8080" in (Path(t["worktree"]) / "hello.txt").read_text()
+
+
+def test_confirm_question_has_kind_confirm(client, ws, monkeypatch):
+    monkeypatch.setenv("FAKE_PI_MODE", "question")
+    ws()
+    t = wait_status(client, new_task(client)["id"], "question")
+    assert t["question"]["kind"] == "confirm"
+    client.post(f"/v1/tasks/{t['id']}/answer", json={"confirmed": False})
+    wait_status(client, t["id"], ("review", "done"))
+
+
+def test_several_pending_dialogs_answer_by_id_or_oldest(client, ws, monkeypatch):
+    monkeypatch.setenv("FAKE_PI_MODE", "two")
+    ws()
+    tid = new_task(client)["id"]
+    end = time.time() + 10
+    t = client.get(f"/v1/tasks/{tid}").json()
+    while len(t["questions"]) < 2 and time.time() < end:
+        time.sleep(0.05)
+        t = client.get(f"/v1/tasks/{tid}").json()
+    assert [q["id"] for q in t["questions"]] == ["q1", "a1"]
+    assert t["question"]["id"] == "q1"
+    assert client.post(f"/v1/tasks/{tid}/answer", json={"value": "x", "dialog_id": "nope"}).status_code == 404
+    r = client.post(f"/v1/tasks/{tid}/answer", json={"value": "9000", "dialog_id": "a1"}).json()
+    assert r["status"] == "question" and [q["id"] for q in r["questions"]] == ["q1"]
+    r = client.post(f"/v1/tasks/{tid}/answer", json={"confirmed": True}).json()  # oldest = q1
+    assert r["status"] == "working" and r["questions"] == []
+    t = wait_status(client, tid, "review")
+    assert "9000" in (Path(t["worktree"]) / "hello.txt").read_text()
+
+
+def test_plain_text_question_then_answer_continues(client, ws, monkeypatch):
+    monkeypatch.setenv("FAKE_PI_MODE", "textq")
+    ws()
+    t = wait_status(client, new_task(client)["id"], "question")
+    assert t["question"]["kind"] == "text" and t["question"]["message"] == "Which database should I use?"
+    assert client.post(f"/v1/tasks/{t['id']}/answer", json={}).status_code == 400
+    assert client.post(f"/v1/tasks/{t['id']}/answer", json={"value": "Use sqlite"}).status_code == 200
+    t = wait_status(client, t["id"], "review")
+    assert "Use sqlite" in (Path(t["worktree"]) / "hello.txt").read_text()
+    assert t["questions"] == []
+
+
+def test_text_question_with_changes_goes_to_review(client, ws, monkeypatch):
+    monkeypatch.setenv("FAKE_PI_MODE", "normal")
+    ws()
+    t = wait_status(client, new_task(client)["id"], "review")  # last text has no question mark
+    assert t["questions"] == []
+
+
+def test_time_limit_paused_while_question(client, ws, monkeypatch):
+    monkeypatch.setenv("FAKE_PI_MODE", "ask")
+    ws(time_limit_min=0.03)  # 1.8 s
+    t = wait_status(client, new_task(client)["id"], "question")
+    time.sleep(2.5)
+    assert client.get(f"/v1/tasks/{t['id']}").json()["status"] == "question"
+    client.post(f"/v1/tasks/{t['id']}/answer", json={"value": "ok"})
+    wait_status(client, t["id"], "review")
+
+
+def test_old_database_gets_questions_column(tmp_path):
+    import sqlite3
+    from coder.store import Store
+    p = tmp_path / "old.sqlite"
+    db = sqlite3.connect(p)
+    db.execute("CREATE TABLE tasks (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, goal TEXT NOT NULL, acceptance TEXT, "
+               "scope TEXT, provider TEXT, model TEXT, branch TEXT, worktree TEXT, base_commit TEXT, status TEXT NOT NULL, "
+               "phase_detail TEXT, current_tool TEXT, files_touched TEXT, question TEXT, last_text TEXT, checks_ok INTEGER, "
+               "checks_output TEXT, review TEXT, pr_url TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
+               "started_at TEXT, finished_at TEXT)")
+    db.commit()
+    db.close()
+    st = Store(p)
+    t = st.create_task(id="a", workspace_id="w", goal="g", files_touched=[])
+    assert t["questions"] == []
+
+
+# ---- hold: pause while Echo needs the local model -----------------------------------------------
+
+def test_hold_pauses_and_release_resumes(client, ws, monkeypatch, tmp_path):
+    monkeypatch.setenv("FAKE_PI_MODE", "hang")
+    ws()
+    t = wait_status(client, new_task(client)["id"], "working")
+    seen = []
+    client.app.state.manager.on_change = seen.append
+    r = client.put("/v1/local/hold", json={"hold": True, "reason": "test"})
+    assert r.status_code == 200 and r.json()["hold"] is True
+    t = client.get(f"/v1/tasks/{t['id']}").json()
+    assert t["status"] == "paused" and "Kevin" in t["phase_detail"]
+    assert any(m.get("status") == "paused" for m in seen)
+    st = client.get("/v1/status").json()
+    assert st["hold"] is True and st["local_model_needed"] is True and t["id"] in st["active"]
+    assert client.app.state.manager._runs[t["id"]].pi.exited.is_set()
+    monkeypatch.setenv("FAKE_PI_MODE", "normal")
+    monkeypatch.setenv("FAKE_PI_ARGV_DUMP", str(tmp_path / "argv.json"))
+    client.put("/v1/local/hold", json={"hold": False})
+    wait_status(client, t["id"], "review")
+    assert "--continue" in json.loads((tmp_path / "argv.json").read_text())
+    assert client.get("/v1/status").json()["hold"] is False
+
+
+def test_new_local_task_waits_during_hold(client, ws):
+    ws()
+    client.put("/v1/local/hold", json={"hold": True})
+    t = new_task(client)
+    time.sleep(0.6)
+    assert client.get(f"/v1/tasks/{t['id']}").json()["status"] == "starting"
+    client.put("/v1/local/hold", json={"hold": False})
+    wait_status(client, t["id"], "review")
+
+
+def test_paused_time_does_not_count_against_limit(client, ws, monkeypatch):
+    monkeypatch.setenv("FAKE_PI_MODE", "hang")
+    ws(time_limit_min=0.05)  # 3 s
+    t = wait_status(client, new_task(client)["id"], "working")
+    client.put("/v1/local/hold", json={"hold": True})
+    time.sleep(3.5)
+    assert client.get(f"/v1/tasks/{t['id']}").json()["status"] == "paused"
+    monkeypatch.setenv("FAKE_PI_MODE", "normal")
+    client.put("/v1/local/hold", json={"hold": False})
+    wait_status(client, t["id"], "review")
+
+
+def test_cancel_paused_task(client, ws, monkeypatch):
+    monkeypatch.setenv("FAKE_PI_MODE", "hang")
+    ws()
+    t = wait_status(client, new_task(client)["id"], "working")
+    client.put("/v1/local/hold", json={"hold": True})
+    assert client.post(f"/v1/tasks/{t['id']}/cancel").json()["status"] == "cancelled"
+    client.put("/v1/local/hold", json={"hold": False})
+    time.sleep(0.3)
+    assert client.get(f"/v1/tasks/{t['id']}").json()["status"] == "cancelled"

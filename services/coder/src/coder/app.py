@@ -39,6 +39,12 @@ class AnswerBody(BaseModel):
     value: Optional[str] = None
     confirmed: Optional[bool] = None
     cancelled: Optional[bool] = None
+    dialog_id: Optional[str] = None
+
+
+class HoldBody(BaseModel):
+    hold: bool
+    reason: Optional[str] = None
 
 
 class ApplyBody(BaseModel):
@@ -115,6 +121,10 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
     def status() -> dict:
         return manager.status()
 
+    @app.put("/v1/local/hold")
+    def put_hold(body: HoldBody) -> dict:
+        return manager.set_hold(body.hold, body.reason)
+
     @app.put("/v1/workspaces")
     def put_workspaces(items: list[Workspace]) -> list[Workspace]:
         try:
@@ -174,7 +184,7 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
 
     @app.post("/v1/tasks/{tid}/answer")
     def answer(tid: str, body: AnswerBody) -> dict:
-        return manager.answer(tid, body.value, body.confirmed, body.cancelled)
+        return manager.answer(tid, body.value, body.confirmed, body.cancelled, body.dialog_id)
 
     @app.post("/v1/tasks/{tid}/cancel")
     def cancel(tid: str) -> dict:

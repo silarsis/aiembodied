@@ -30,6 +30,14 @@ describe('coding config', () => {
     expect(sanitizeCodingConfig({})).toEqual({ runner: 'local-coder-runner', workspaces: [] });
   });
 
+  it('keeps coderMemory only when it is swap or side-by-side', () => {
+    expect(sanitizeCodingConfig({ coderMemory: 'auto' })?.coderMemory).toBe('auto');
+    expect(sanitizeCodingConfig({ coderMemory: 'swap' })?.coderMemory).toBe('swap');
+    expect(sanitizeCodingConfig({ coderMemory: 'side-by-side' })?.coderMemory).toBe('side-by-side');
+    expect(sanitizeCodingConfig({ coderMemory: 'other' })).toEqual({ runner: 'local-coder-runner', workspaces: [] });
+    expect(sanitizeCodingConfig({ coderMemory: 1 })).toEqual({ runner: 'local-coder-runner', workspaces: [] });
+  });
+
   it('seeds the app repository when it is a git checkout', () => {
     const exists = (file: string) => file === path.join(path.resolve('/src/aiembodied'), '.git');
     expect(seedCodingConfig('/src/aiembodied', exists)).toEqual({

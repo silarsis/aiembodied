@@ -5,7 +5,7 @@ state), 422 (bad shape) or 502 (push failed).
 
 ## Status values
 
-`queued, starting, working, question, checks, review, pushing, done, failed, cancelled, discarded`
+`queued, starting, working, question, paused, checks, review, pushing, done, failed, cancelled, discarded`
 
 ## Setup
 
@@ -14,9 +14,14 @@ state), 422 (bad shape) or 502 (push failed).
   `{"local_llm_url": "http://127.0.0.1:1236/v1", "local_model": "qwen3-coder-next", "default_model": {"provider": "local", "id": "qwen3-coder-next"}}`
   Tasks created without `model` (and without a workspace model) use `default_model`.
 - `GET /v1/settings` -> the same shape.
-- `GET /v1/status` -> `{"local_model_needed": true, "active": ["20261108-1a2b"]}`. `local_model_needed` is
-  true while any task on the `local` provider is `starting`, `working` or `question`. `active` lists tasks
-  in `starting, working, question, checks, pushing`.
+- `GET /v1/status` -> `{"local_model_needed": true, "active": ["20261108-1a2b"], "hold": false}`.
+  `local_model_needed` is true while any task on the `local` provider is `starting`, `working`, `question`
+  or `paused`. `active` lists tasks in `starting, working, question, paused, checks, pushing`.
+- `PUT /v1/local/hold` `{"hold": true, "reason": "Kevin is talking to Echo"}` -> the status. While held, every
+  local task that is `working` or in `question` has its pi stopped (the session is kept) and becomes
+  `paused` ("paused while Kevin talks to Echo"); local tasks that start meanwhile wait for the local
+  model. `{"hold": false}` resumes the paused tasks (they wait for the local model, then pi continues
+  with `--continue`). The time limit does not run while paused.
 - `PUT /v1/workspaces` replaces the whole list. 400 if a path is not a git repository. Returns the stored list.
   ```json
   [{"id": "aiembodied", "name": "aiembodied", "path": "C:\\src\\aiembodied", "kind": "self",
@@ -50,8 +55,9 @@ state), 422 (bad shape) or 502 (push failed).
 - `POST /v1/tasks/{id}/steer` `{"message": "use the existing helper"}` (working or question)
 - `POST /v1/tasks/{id}/follow_up` `{"message": "also add a test"}` (while running: queued for pi; in
   review: restarts pi with `--continue` if needed and runs again, then back to review)
-- `POST /v1/tasks/{id}/answer` `{"confirmed": true}` or `{"value": "text"}` or `{"cancelled": true}`
-  (status `question`; the pending dialog is in the task's `question`)
+- `POST /v1/tasks/{id}/answer` `{"confirmed": true}` or `{"value": "text"}` or `{"cancelled": true}`, plus
+  optional `"dialog_id"` (default: the oldest pending question). Status must be `question`. For a
+  `text` question a `value` is required; it is sent to pi as a new prompt and the task continues.
 - `POST /v1/tasks/{id}/cancel` keeps the worktree
 - `POST /v1/tasks/{id}/apply` `{"draft": false}` -> 409 unless status is `review` and no protected
   path changed. Pushes the branch, opens the pull request (GitHub key, else `gh`), removes the
@@ -61,7 +67,12 @@ state), 422 (bad shape) or 502 (push failed).
 
 Review shape: `{"no_changes": false, "summary": "2 file(s) changed, +10 -3", "files": [{"path", "added", "deleted", "binary"}], "changed_files": [...], "added": 10, "deleted": 3, "changed_lines": 13, "protected_violations": [], "flags": ["lockfile changed: pnpm-lock.yaml"]}`
 
-Question shape: `{"id": "q1", "method": "confirm", "title": "...", "message": "...", "options": [...]}`
+Question shape: `{"id": "q1", "method": "confirm", "kind": "confirm", "title": "...", "message": "...", "options": [...], "asked_at": "..."}`.
+`task.questions` lists all pending questions, oldest first; `task.question` is the first one (or null).
+`kind` is `confirm` (a guard confirmation, answer with `confirmed`), `ask_echo` (pi called its `ask_echo`
+tool; `message` is the question, answer with `value`) or `text` (pi ended its turn with a question and
+changed no files; `method` is `text`, answer with `value`). The time limit does not run while a
+question is pending.
 
 ## Live updates
 

@@ -62,6 +62,13 @@ prompt telling it the runner restarted. Tasks in `checks` run their checks again
 goes back to `review` with the error "runner restarted during push". Tasks whose worktree is gone fail
 with "runner restarted".
 
+## Asking Echo
+
+The guard extension also gives pi a tool `ask_echo(question)`. It opens an `input` dialog titled
+`Question from pi: <question>`, which the runner stores as a pending question of kind `ask_echo`. The
+answer becomes the tool result. If pi ends a turn with a question mark and changed no files, the task
+waits in `question` (kind `text`) and the answer is sent to pi as a new prompt.
+
 ## Safety rules
 
 - Every task works in its own worktree; the original checkout is never touched.
