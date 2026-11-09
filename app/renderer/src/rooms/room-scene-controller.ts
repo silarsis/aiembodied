@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { RoomFile } from '../../../main/src/rooms/types.js';
-import { placeAtHome } from './avatar-placement.js';
+import { measureSoleLift, placeAtHome } from './avatar-placement.js';
 import { RoomStage } from './room-stage.js';
 import { createModelLoader } from './room-model-loader.js';
 import { RoomSceneEnv, type AvatarRig } from './scene-env.js';
@@ -45,6 +45,8 @@ export class RoomSceneController {
   private ticket = 0;
   private avatar: THREE.Object3D | null = null;
   private avatarBase: { position: THREE.Vector3; rotationY: number } | null = null;
+  /** Raise from the 2D normalisation (ankles on y = 0) to soles on the floor; see measureSoleLift. */
+  private soleLift = 0;
   private observer: ResizeObserver | null = null;
   private debugNavmesh = false;
   private saved2d: CameraState | null = null;
@@ -119,6 +121,8 @@ export class RoomSceneController {
     this.sceneEnv.releaseHeld();
     this.avatar = root;
     this.avatarBase = root ? { position: root.position.clone(), rotationY: root.rotation.y } : null;
+    // Measured before placement, while the avatar still stands at its normalised spot.
+    this.soleLift = root ? measureSoleLift(root) : 0;
     this.rig =
       root && humanoid ? { scene: root, baseRotationY: root.rotation.y, humanoid, restHipsHeight } : null;
     this.body = humanoid?.getNormalizedBoneNode('hips') ?? null;
@@ -220,7 +224,7 @@ export class RoomSceneController {
     if (!this.avatar || !this.avatarBase || !this.room) return;
     const placed = placeAtHome(
       { position: this.avatarBase.position.toArray() as [number, number, number], rotationY: this.avatarBase.rotationY },
-      this.room.home,
+      { position: [this.room.home.position[0], this.room.home.position[1] + this.soleLift, this.room.home.position[2]], facing: this.room.home.facing },
     );
     this.avatar.position.set(...placed.position);
     this.avatar.rotation.y = placed.rotationY;
