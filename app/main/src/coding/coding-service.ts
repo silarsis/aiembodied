@@ -3,8 +3,12 @@
  * supplied with workspaces, keys and settings (sync.ts), and swap the local models when a task
  * needs the coder model (model-swap.ts).
  */
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import type { ModelRouting, ModelServer, RouteOverride } from '../config/model-routing.js';
 import { BUILT_IN_SERVER_IDS } from '../config/model-routing.js';
+import { readCommitHeadroom } from '../diagnostics/commit-memory.js';
+import type { GpuMemoryReader } from '../diagnostics/gpu-memory.js';
 import type { LocalLlmControl } from '../local-voice/local-llm-control.js';
 import type { CodingConfig } from './config.js';
 import { findCoderGguf } from './gguf-finder.js';
@@ -41,6 +45,10 @@ export interface CodingServiceOptions {
   /** Rebuild Echo's engines: the chat override changed. */
   onOverrideChange: () => void | Promise<void>;
   logger: Logger;
+  /** Reads GPU memory, for auto mode. Without it only the Windows commit headroom is measured. */
+  gpuMemory?: Pick<GpuMemoryReader, 'read'>;
+  /** Tell Echo something (the nudge path): used when a task has to wait for a quiet moment. */
+  notify?: (text: string, options: { urgent: boolean }) => void;
   env?: NodeJS.ProcessEnv;
   fetchFn?: typeof fetch;
   platform?: string;
@@ -59,6 +67,7 @@ export class CodingService {
   constructor(private readonly options: CodingServiceOptions) {
     this.env = options.env ?? process.env;
     const backSeconds = Number.parseFloat(this.env.CODER_SWAP_BACK_S ?? '');
+    const quietSeconds = Number.parseFloat(this.env.CODER_QUIET_S ?? '');
     const idleStopSeconds = Number.parseFloat(this.env.CODER_IDLE_STOP_S ?? '');
     this.swap = new CoderModelSwap({
       routing: () => options.settings().models,
@@ -70,7 +79,15 @@ export class CodingService {
       onOverrideChange: options.onOverrideChange,
       logger: options.logger,
       platform: options.platform,
-      mode: () => options.settings().coding.coderMemory ?? 'side-by-side',
+      mode: () => options.settings().coding.coderMemory ?? 'auto',
+      measureFree: () => this.measureFree(),
+      ggufSize,
+      onWaiting: () =>
+        options.notify?.(
+          'The coding task is waiting: not enough memory to run the coder model next to yours. It will start when things are quiet.',
+          { urgent: false },
+        ),
+      ...(Number.isFinite(quietSeconds) && quietSeconds >= 0 ? { quietMs: quietSeconds * 1000 } : {}),
       ...(Number.isFinite(idleStopSeconds) && idleStopSeconds >= 0 ? { idleStopMs: idleStopSeconds * 1000 } : {}),
       ...(Number.isFinite(backSeconds) && backSeconds >= 0 ? { swapBackMs: backSeconds * 1000 } : {}),
     });
@@ -90,6 +107,11 @@ export class CodingService {
   onRunnerEvent(listener: (event: RunnerEvent) => void): () => void {
     this.eventListeners.add(listener);
     return () => this.eventListeners.delete(listener);
+  }
+
+  /** Kevin spoke to Echo (not a system update). */
+  noteActivity(): void {
+    void this.swap.noteActivity();
   }
 
   chatOverride(): RouteOverride | null {
@@ -182,6 +204,19 @@ export class CodingService {
     void this.swap.setNeeded(needed);
   }
 
+  /** Free memory for the coder: the smaller of free GPU memory and Windows commit headroom; null when neither is known. */
+  private async measureFree(): Promise<number | null> {
+    const platform = (this.options.platform ?? process.platform) as NodeJS.Platform;
+    const snapshot = await this.options.gpuMemory?.read([]).catch(() => null);
+    let gpu: number | null = null;
+    if (snapshot?.supported && (snapshot.dedicatedTotal !== null || snapshot.sharedTotal !== null)) {
+      gpu = (snapshot.dedicatedTotal ?? 0) + (snapshot.sharedTotal ?? 0) - snapshot.used.dedicated - snapshot.used.shared;
+    }
+    const commit = await readCommitHeadroom({ platform });
+    const known = [gpu, commit].filter((value): value is number => value !== null);
+    return known.length ? Math.min(...known) : null;
+  }
+
   private async answers(url: string): Promise<boolean> {
     try {
       const response = await (this.options.fetchFn ?? fetch)(url, { signal: AbortSignal.timeout(3000) });
@@ -189,5 +224,22 @@ export class CodingService {
     } catch {
       return false;
     }
+  }
+}
+
+/** Size of the GGUF on disk. A split file (name-00001-of-00003.gguf) counts all its parts. */
+async function ggufSize(file: string): Promise<number | null> {
+  try {
+    const split = /^(.*-)(\d+)-of-(\d+)(\.gguf)$/i.exec(path.basename(file));
+    if (!split) return (await fs.stat(file)).size;
+    const count = Number(split[3]);
+    let total = 0;
+    for (let part = 1; part <= count; part += 1) {
+      const name = `${split[1]}${String(part).padStart(split[2].length, '0')}-of-${split[3]}${split[4]}`;
+      total += (await fs.stat(path.join(path.dirname(file), name))).size;
+    }
+    return total;
+  } catch {
+    return null;
   }
 }

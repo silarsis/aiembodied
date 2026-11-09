@@ -31,6 +31,7 @@ describe('coding config', () => {
   });
 
   it('keeps coderMemory only when it is swap or side-by-side', () => {
+    expect(sanitizeCodingConfig({ coderMemory: 'auto' })?.coderMemory).toBe('auto');
     expect(sanitizeCodingConfig({ coderMemory: 'swap' })?.coderMemory).toBe('swap');
     expect(sanitizeCodingConfig({ coderMemory: 'side-by-side' })?.coderMemory).toBe('side-by-side');
     expect(sanitizeCodingConfig({ coderMemory: 'other' })).toEqual({ runner: 'local-coder-runner', workspaces: [] });

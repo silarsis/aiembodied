@@ -64,6 +64,10 @@ export interface CodingSettingsProps {
   onProbeRunner(id: string): void;
 }
 
+function coderMemoryFrom(value: string): 'auto' | 'side-by-side' | 'swap' {
+  return value === 'swap' || value === 'side-by-side' ? value : 'auto';
+}
+
 export function CodingSettings({ api, runners, runnerProbe, onProbeRunner }: CodingSettingsProps) {
   const [coding, setCoding] = useState<CodingConfig | null>(null);
   const [runnerId, setRunnerId] = useState<string | null>(null);
@@ -259,10 +263,11 @@ export function CodingSettings({ api, runners, runnerProbe, onProbeRunner }: Cod
           <label htmlFor="coding-memory">Memory</label>
           <select
             id="coding-memory"
-            value={coding.coderMemory ?? 'side-by-side'}
+            value={coding.coderMemory ?? 'auto'}
             disabled={busy}
-            onChange={(event) => void save({ ...coding, coderMemory: event.target.value === 'swap' ? 'swap' : 'side-by-side' }, 'Saved.')}
+            onChange={(event) => void save({ ...coding, coderMemory: coderMemoryFrom(event.target.value) }, 'Saved.')}
           >
+            <option value="auto">Auto: next to Echo’s model if it fits, otherwise wait for a quiet moment and swap</option>
             <option value="side-by-side">Run next to Echo’s model (needs memory for both)</option>
             <option value="swap">Swap: stop Echo’s model while coding (Echo chats on the coder model)</option>
           </select>

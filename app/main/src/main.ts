@@ -815,6 +815,7 @@ async function useLocalLlm(manager: ConfigManager, id: string | null): Promise<s
  * The coding runner side: events, sync, and swapping the local models while a task needs the coder
  * model. Built on first use, like the local LLM tools it borrows Echo's llama-server control from.
  */
+const gpuMemoryReader = new GpuMemoryReader();
 let codingService: CodingService | null = null;
 function getCodingService(manager: ConfigManager): CodingService {
   if (codingService) return codingService;
@@ -837,6 +838,8 @@ function getCodingService(manager: ConfigManager): CodingService {
         fileName: 'coder-llm',
       }),
     onOverrideChange: () => applyProviderSettings(manager),
+    gpuMemory: gpuMemoryReader,
+    notify: (text, options) => localVoiceService?.notify(text, options),
     logger,
   });
   const service = codingService;
@@ -1123,7 +1126,6 @@ function registerIpcHandlers(
     return nextConfig;
   });
   // Status and diagnostics: GPU memory on this PC, split by the app's local servers.
-  const gpuMemoryReader = new GpuMemoryReader();
   const GPU_SERVER_LABELS: Record<string, string> = {
     [BUILT_IN_SERVER_IDS.llm]: 'Language model',
     [BUILT_IN_SERVER_IDS.speech]: 'Speech (TTS)',
@@ -1726,6 +1728,8 @@ function registerIpcHandlers(
       throw new Error('Invalid local voice request payload received.');
     }
 
+    // Kevin's own speech or typing (not a system update or a preview): the coder model gives way to it.
+    if (!payload.system && !payload.preview) codingService?.noteActivity();
     const sender = event.sender;
     return localVoiceService.respond(payload, (voiceEvent) => {
       if (!sender.isDestroyed()) {

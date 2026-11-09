@@ -57,7 +57,7 @@ export function sanitizeCodingConfig(input: unknown): CodingConfig | undefined {
     });
   }
   const coderGguf = text(record.coderGguf);
-  const coderMemory = record.coderMemory === 'swap' || record.coderMemory === 'side-by-side' ? record.coderMemory : undefined;
+  const coderMemory = record.coderMemory === 'auto' || record.coderMemory === 'swap' || record.coderMemory === 'side-by-side' ? record.coderMemory : undefined;
   return {
     runner: text(record.runner) ?? DEFAULT_CODING_CONFIG.runner,
     workspaces,

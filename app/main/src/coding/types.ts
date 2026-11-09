@@ -23,10 +23,11 @@ export interface CodingConfig {
   /** The Qwen3-Coder-Next GGUF to run. Empty: look for one (gguf-finder.ts). */
   coderGguf?: string;
   /**
-   * 'side-by-side' (default): keep Echo's model running and load the coder next to it.
+   * 'auto' (default): load the coder next to Echo's model if it fits; otherwise wait for a quiet moment and swap.
+   * 'side-by-side': keep Echo's model running and load the coder next to it.
    * 'swap': stop Echo's model while the coder runs, for PCs that can't hold both.
    */
-  coderMemory?: 'side-by-side' | 'swap';
+  coderMemory?: 'auto' | 'side-by-side' | 'swap';
 }
 
 /** Paths a task in a 'self' workspace may never change. Mirrors SELF_PROTECTED in services/coder. */
