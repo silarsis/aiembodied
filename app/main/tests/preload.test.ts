@@ -319,6 +319,10 @@ it('exposes only named background operations through the preload bridge', async 
   expect(invoke).toHaveBeenCalledWith('background:generate', 'A forest clearing');
   await api.backgrounds.delete('generated-id');
   expect(invoke).toHaveBeenCalledWith('background:delete', 'generated-id');
+  await api.backgrounds.listRooms();
+  expect(invoke).toHaveBeenCalledWith('background:list-rooms');
+  await api.backgrounds.loadRoom('room:builtin:reading-room');
+  expect(invoke).toHaveBeenCalledWith('background:load-room', 'room:builtin:reading-room');
 });
 
 it('exposes app.quit through the bridge', async () => {

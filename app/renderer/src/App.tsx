@@ -799,6 +799,7 @@ export default function App() {
   const acceptsWakeRef = useRef(false);
   useEffect(() => { acceptsWakeRef.current = isListeningEnabled && !loadingConfig; }, [isListeningEnabled, loadingConfig]);
   const backgrounds = useBackgrounds(activeBridge?.backgrounds);
+  const [showWalkableArea, setShowWalkableArea] = useState(false);
   const [avatarFootY, setAvatarFootY] = useState(0.9);
 
   useEffect(() => {
@@ -2455,7 +2456,7 @@ export default function App() {
             data-tap-to-talk={tapToTalk ? 'true' : 'false'}
           >
             <section className="kiosk__stage" aria-label="Avatar stage" style={stageStyle}>
-              {backgrounds.imageUrl ? <>
+              {backgrounds.activeKind === '2d' && backgrounds.imageUrl ? <>
                 <img className="stageBackground" src={backgrounds.imageUrl} alt="" draggable={false} style={{ objectPosition: `50% ${(backgrounds.active?.groundY ?? 0.86) * 100}%` }} />
                 <div className="stageGroundShadow" aria-hidden="true" />
               </> : null}
@@ -2463,6 +2464,7 @@ export default function App() {
                 className="kiosk__avatar"
                 data-state={visemeSummary.status.toLowerCase()}
                 data-avatar-mode="vrm"
+                data-stage-mode={backgrounds.activeKind}
               >
                 <VrmAvatarRenderer
                   key={activeVrmModel?.id ?? 'vrm'}
@@ -2471,6 +2473,8 @@ export default function App() {
                   onStatusChange={handleVrmStatusChange}
                   onGroundPositionChange={setAvatarFootY}
                   animationVersion={0}
+                  room={backgrounds.activeRoom}
+                  showWalkableArea={showDeveloperHud && showWalkableArea}
                 />
               </div>
             </section>
@@ -2532,7 +2536,7 @@ export default function App() {
             <ControlButton
               id="backgrounds"
               title="Backgrounds"
-              summary={backgrounds.active?.name ?? 'Plain background'}
+              summary={backgrounds.activeName}
               keywords="scene background place environment scenery generate creation description garden lounge beach city mountain"
               onOpen={() => setPanel('backgrounds')}
             />
@@ -2790,7 +2794,10 @@ export default function App() {
           </PanelDialog>
 
           <PanelDialog id="backgrounds" title="Backgrounds" subtitle="Pick a scene or describe a new one." open={panel === 'backgrounds'} onClose={closePanel}>
-            <BackgroundControls backgrounds={backgrounds} />
+            <BackgroundControls
+              backgrounds={backgrounds}
+              walkableArea={showDeveloperHud ? { shown: showWalkableArea, onChange: setShowWalkableArea } : undefined}
+            />
           </PanelDialog>
 
           <PanelDialog id="tools" title="Tools / MCP" subtitle="What the assistant can do besides talk." open={panel === 'tools'} onClose={closePanel}>

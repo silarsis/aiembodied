@@ -28,6 +28,8 @@ function bridge(): BackgroundBridge {
     load: vi.fn().mockImplementation(async (id) => `data:image/png;name=${id};base64,AA==`),
     generate: vi.fn().mockResolvedValue({ ...item('Forest'), builtIn: false }),
     delete: vi.fn().mockResolvedValue(undefined),
+    listRooms: vi.fn().mockResolvedValue([]),
+    loadRoom: vi.fn().mockRejectedValue(new Error('no rooms')),
   };
 }
 

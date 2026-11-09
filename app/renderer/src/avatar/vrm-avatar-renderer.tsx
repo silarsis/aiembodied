@@ -24,6 +24,10 @@ import {
   type PoseTransitionConfig,
 } from './animation-bus.js';
 import { toAnimationSlug } from './animation-tags.js';
+import { LIVE_MOTION_SOURCE } from './live-motion.js';
+import { pinHipsHorizontal } from './hips-pinning.js';
+import type { RoomFile } from '../../../main/src/rooms/types.js';
+import { RoomSceneController } from '../rooms/room-scene-controller.js';
 import { useBehaviorCues, type BehaviorCueEvent } from './behavior-cues.js';
 import {
   createClipFromVrma,
@@ -58,6 +62,10 @@ export interface VrmAvatarRendererProps {
   className?: string;
   idleOptions?: IdleAnimationOptions;
   animationVersion?: number;
+  /** A 3D room to stand in. Null or absent keeps the 2D backdrop behaviour. */
+  room?: RoomFile | null;
+  /** Developer overlay of the walkable area (rooms only). */
+  showWalkableArea?: boolean;
 }
 
 const VISEME_PRESETS: VRMExpressionPresetName[] = [
@@ -1154,7 +1162,12 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   className,
   idleOptions,
   animationVersion,
+  room = null,
+  showWalkableArea = false,
 }: VrmAvatarRendererProps) {
+  const roomRef = useRef<RoomFile | null>(room);
+  roomRef.current = room;
+  const roomControllerRef = useRef<RoomSceneController | null>(null);
   const groundCallbackRef = useRef(onGroundPositionChange);
   const groundMeasuredRef = useRef(false);
   useEffect(() => { groundCallbackRef.current = onGroundPositionChange; }, [onGroundPositionChange]);
@@ -1556,10 +1569,12 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
               console.warn('[vrm-avatar-renderer] streamed VRMA clip contained no animation', { slug });
               return;
             }
-            clipRegistryRef.current.set(slug, {
-              clip: createClipFromVrma(vrm, result.animation, slug),
-              vrmaData: result.gltf,
-            });
+            const clip = createClipFromVrma(vrm, result.animation, slug);
+            if (request.source === LIVE_MOTION_SOURCE && !roomRef.current) {
+              // 2D backdrop: the avatar stays on its spot, so drop the clip's horizontal hips travel.
+              pinHipsHorizontal(clip, vrm.humanoid?.getNormalizedBoneNode('hips')?.name);
+            }
+            clipRegistryRef.current.set(slug, { clip, vrmaData: result.gltf });
             enqueueAnimation({
               slug,
               intent: request.intent,
@@ -1653,6 +1668,14 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       camera.updateProjectionMatrix();
     }
 
+    roomControllerRef.current = new RoomSceneController({
+      renderer,
+      scene,
+      camera,
+      canvas,
+      legacySize: { width: VRM_CANVAS_WIDTH, height: VRM_CANVAS_HEIGHT },
+    });
+
     const timer = new THREE.Timer();
     timer.connect(document);
 
@@ -1702,6 +1725,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       }
 
       mixerRef.current?.update(delta);
+      roomControllerRef.current?.step(delta);
 
       // Apply expression keyframes from VRMA metadata at current animation time
       const activeAnimation = activeAnimationRef.current;
@@ -1713,7 +1737,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       idleSchedulerRef.current?.update(delta);
       currentVrmRef.current?.update(delta);
       rendererInstance.render(sceneInstance, cameraInstance);
-      if (currentVrmRef.current && !groundMeasuredRef.current) {
+      if (currentVrmRef.current && !groundMeasuredRef.current && !roomControllerRef.current?.active) {
         const fraction = renderedFootFraction(rendererInstance);
         if (fraction !== null) {
           groundMeasuredRef.current = true;
@@ -1734,6 +1758,8 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       scene.remove(ambient);
       scene.remove(keyLight);
       scene.remove(fillLight);
+      roomControllerRef.current?.dispose();
+      roomControllerRef.current = null;
       clearActiveAnimation();
       clipRegistryRef.current.clear();
       animationQueueRef.current = [];
@@ -1785,6 +1811,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       }
       disposeVrm(currentVrmRef.current);
       currentVrmRef.current = null;
+      roomControllerRef.current?.attachAvatar(null);
       setAvatarRestSkeleton(null);
       try {
         mixerRef.current?.stopAllAction();
@@ -1856,7 +1883,15 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
 
         const renderableBounds = computeRenderableBounds(vrm.scene);
         if (renderableBounds && cameraRef.current) {
-          fitCameraToBounds(cameraRef.current, renderableBounds);
+          // In a room the camera belongs to the room; fit a copy so leaving the room restores this view.
+          const controller = roomControllerRef.current;
+          if (controller?.active) {
+            const spare = cameraRef.current.clone();
+            fitCameraToBounds(spare, renderableBounds);
+            controller.remember2dCamera(spare);
+          } else {
+            fitCameraToBounds(cameraRef.current, renderableBounds);
+          }
         }
         const meshStats = { meshes: 0, skinnedMeshes: 0 };
         vrm.scene.traverse((object) => {
@@ -1899,6 +1934,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
 
         scene.add(vrm.scene);
         currentVrmRef.current = vrm;
+        roomControllerRef.current?.attachAvatar(vrm.scene);
         setAvatarRestSkeleton(restSkeleton);
         expressionManagerRef.current = vrm.expressionManager ?? null;
         expressionManagerRef.current?.resetValues();
@@ -2003,6 +2039,22 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       cancelled = true;
     };
   }, [animationVersion, playNextQueuedAnimation]);
+
+  useEffect(() => {
+    const controller = roomControllerRef.current;
+    if (!rendererReady || !controller) {
+      return;
+    }
+    // Any walk, sit or motion in progress is cancelled when the stage changes.
+    clearActiveAnimation();
+    animationQueueRef.current = [];
+    releaseIdleSuspension();
+    void controller.setRoom(room);
+  }, [room, rendererReady, clearActiveAnimation, releaseIdleSuspension]);
+
+  useEffect(() => {
+    roomControllerRef.current?.setDebugNavmesh(showWalkableArea);
+  }, [showWalkableArea, rendererReady, room]);
 
   return <canvas ref={canvasRef} className={className} data-renderer="vrm" />;
 });
