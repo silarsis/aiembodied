@@ -20,6 +20,7 @@ export function initPhysics(): Promise<void> {
 }
 
 interface DynamicBody {
+  id: string;
   body: RAPIER.RigidBody;
   node: THREE.Object3D;
   halfHeight: number;
@@ -30,6 +31,7 @@ export class RoomPhysics {
   private readonly avatar: RAPIER.RigidBody;
   private readonly dynamics: DynamicBody[] = [];
   private readonly bodies = new Map<string, RAPIER.RigidBody>();
+  private readonly held = new Set<string>();
   private accumulator = 0;
   private disposed = false;
 
@@ -69,7 +71,7 @@ export class RoomPhysics {
         );
         this.bodies.set(object.id, body);
         const node = nodes.get(object.id);
-        if (node) this.dynamics.push({ body, node, halfHeight: height / 2 });
+        if (node) this.dynamics.push({ id: object.id, body, node, halfHeight: height / 2 });
       } else {
         fixed(center, object.size, yaw);
       }
@@ -107,16 +109,60 @@ export class RoomPhysics {
 
   /** World position of a dynamic object's floor-contact origin, or null if it isn't dynamic. */
   dynamicPosition(id: string): [number, number, number] | null {
-    const entry = this.dynamics.find((candidate) => this.bodies.get(id) === candidate.body);
+    const entry = this.dynamics.find((candidate) => candidate.id === id);
     if (!entry) return null;
     const p = entry.body.translation();
     return [p.x, p.y - entry.halfHeight, p.z];
   }
 
+  /**
+   * A held object follows the avatar's hand, not physics: its body turns kinematic (so it neither
+   * falls nor pushes the avatar's capsule) and its node is left to whoever carries it.
+   */
+  setHeld(id: string, held: boolean): void {
+    const body = this.bodies.get(id);
+    if (!body || this.disposed) return;
+    if (held) {
+      this.held.add(id);
+      body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+    } else {
+      this.held.delete(id);
+      body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+    }
+  }
+
+  isHeld(id: string): boolean {
+    return this.held.has(id);
+  }
+
+  /** Moves a held object's body to where its carried node is (floor-contact origin and orientation). */
+  moveHeld(id: string, origin: THREE.Vector3, orientation: THREE.Quaternion): void {
+    const body = this.bodies.get(id);
+    const entry = this.dynamics.find((candidate) => candidate.id === id);
+    if (!body || !entry || this.disposed) return;
+    const centre = new THREE.Vector3(0, entry.halfHeight, 0).applyQuaternion(orientation).add(origin);
+    body.setNextKinematicTranslation({ x: centre.x, y: centre.y, z: centre.z });
+    body.setNextKinematicRotation({ x: orientation.x, y: orientation.y, z: orientation.z, w: orientation.w });
+  }
+
+  /** Puts a dynamic object down: upright at `origin` (floor contact) with the given yaw, at rest, and live again. */
+  place(id: string, origin: readonly [number, number, number], yaw: number): void {
+    const body = this.bodies.get(id);
+    const entry = this.dynamics.find((candidate) => candidate.id === id);
+    if (!body || !entry || this.disposed) return;
+    this.held.delete(id);
+    body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+    body.setTranslation({ x: origin[0], y: origin[1] + entry.halfHeight, z: origin[2] }, true);
+    body.setRotation(yawQuaternion(yaw), true);
+    body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+  }
+
   private syncNodes(): void {
     const offset = new THREE.Vector3();
     const rotation = new THREE.Quaternion();
-    for (const { body, node, halfHeight } of this.dynamics) {
+    for (const { id, body, node, halfHeight } of this.dynamics) {
+      if (this.held.has(id)) continue;
       const t = body.translation();
       const r = body.rotation();
       rotation.set(r.x, r.y, r.z, r.w);

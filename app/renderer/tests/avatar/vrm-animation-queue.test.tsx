@@ -458,6 +458,87 @@ describe('VrmAvatarRenderer animation queue', () => {
     expect(action.stop).not.toHaveBeenCalled();
   });
 
+  describe('clip end handling for scene actions', () => {
+    async function setup() {
+      type BusLike = { enqueue: (request: AvatarAnimationRequest) => void; signalResponse: () => void };
+      const holder: { bus: BusLike | null } = { bus: null };
+      render(
+        <AnimationBusProvider>
+          <BusCapture
+            onReady={(bus) => {
+              holder.bus = bus as unknown as BusLike;
+            }}
+          />
+          <VrmAvatarRenderer frame={null} model={model} />
+        </AnimationBusProvider>,
+      );
+      await waitFor(() => {
+        expect(threeMockState.mixers.length).toBeGreaterThan(0);
+      });
+      const mixer = threeMockState.mixers[0];
+      return { mixer, bus: holder.bus as BusLike, initial: mixer.actions.length };
+    }
+
+    it('releases a finished clip at once when onEnd says so, instead of fading it out', async () => {
+      const { mixer, bus, initial } = await setup();
+      const onEnd = vi.fn(() => 'release' as const);
+      bus.enqueue({ slug: toAnimationSlug('First'), intent: 'play', onEnd });
+      await waitFor(() => expect(mixer.actions.length).toBe(initial + 1));
+      const action = mixer.actions.at(-1) as MockAnimationAction;
+
+      mixer.emitFinished(action);
+
+      expect(onEnd).toHaveBeenCalledTimes(1);
+      expect(action.stop).toHaveBeenCalled();
+      expect(action.fadeOut).not.toHaveBeenCalled();
+    });
+
+    it('does not ask for a hold or release while more clips are queued', async () => {
+      const { mixer, bus, initial } = await setup();
+      const onEnd = vi.fn(() => 'hold' as const);
+      bus.enqueue({ slug: toAnimationSlug('First'), intent: 'play', onEnd });
+      bus.enqueue({ slug: toAnimationSlug('Second'), intent: 'play' });
+      await waitFor(() => expect(mixer.actions.length).toBe(initial + 1));
+      const first = mixer.actions.at(-1) as MockAnimationAction;
+
+      mixer.emitFinished(first);
+
+      await waitFor(() => expect(mixer.actions.length).toBe(initial + 2));
+      expect(first.stop).toHaveBeenCalled();
+      expect(first.setEffectiveTimeScale).not.toHaveBeenCalledWith(0);
+    });
+
+    it('holds the last frame on request, survives a new response, and gives way to the next clip without a blend-in', async () => {
+      const { mixer, bus, initial } = await setup();
+      bus.enqueue({ slug: toAnimationSlug('First'), intent: 'play', onEnd: () => 'hold' });
+      await waitFor(() => expect(mixer.actions.length).toBe(initial + 1));
+      const seated = mixer.actions.at(-1) as MockAnimationAction;
+
+      mixer.emitFinished(seated);
+      expect(seated.setEffectiveTimeScale).toHaveBeenLastCalledWith(0);
+      expect(seated.stop).not.toHaveBeenCalled();
+      expect(seated.fadeOut).not.toHaveBeenCalled();
+
+      // A new assistant response must not stand the avatar up.
+      bus.signalResponse();
+      expect(seated.stop).not.toHaveBeenCalled();
+
+      // Other clips (an animation tag, a gesture) are ignored while seated.
+      bus.enqueue({ slug: toAnimationSlug('First'), intent: 'play' });
+      await Promise.resolve();
+      expect(mixer.actions.length).toBe(initial + 1);
+      expect(seated.stop).not.toHaveBeenCalled();
+
+      // The stand-up clip replaces the held one in the same step, starting where it left off.
+      bus.enqueue({ slug: toAnimationSlug('Second'), intent: 'play', continuation: true });
+      await waitFor(() => expect(mixer.actions.length).toBe(initial + 2));
+      const standing = mixer.actions.at(-1) as MockAnimationAction;
+      expect(seated.stop).toHaveBeenCalled();
+      expect(standing.play).toHaveBeenCalled();
+      expect(standing.fadeIn).not.toHaveBeenCalled();
+    });
+  });
+
   it('looks up clips by slug name', async () => {
     let busRef: { enqueue: (request: AvatarAnimationRequest) => void } | null = null;
     const avatarBridge = (window as unknown as { aiembodied?: { avatar?: { listAnimations?: ReturnType<typeof vi.fn> } } })

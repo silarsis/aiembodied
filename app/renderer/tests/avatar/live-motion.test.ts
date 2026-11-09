@@ -64,3 +64,36 @@ describe('enqueueMotionChunk', () => {
     expect(Array.from(new Uint8Array(base64ToArrayBuffer('AAEC')))).toEqual([0, 1, 2]);
   });
 });
+
+describe('enqueueMotionChunk hooks', () => {
+  it('passes start, end and continuation through to the clip request', () => {
+    const bus = createAvatarAnimationBus();
+    const events: AvatarAnimationEvent[] = [];
+    bus.subscribe((event) => events.push(event));
+    const onStart = vi.fn();
+    const onEnd = vi.fn(() => 'release' as const);
+
+    enqueueMotionChunk(
+      bus,
+      { streamId: 'abc', index: 1, start: 2, name: 'x', duration: 2, data: 'AAEC' },
+      { continuation: true, onStart, onEnd },
+    );
+
+    const request = (events[0] as Extract<AvatarAnimationEvent, { type: 'enqueue' }>).request;
+    expect(request.continuation).toBe(true);
+    expect(request.onEnd).toBe(onEnd);
+    request.timing?.onStart?.(1);
+    expect(onStart).toHaveBeenCalled();
+  });
+
+  it('adds nothing extra for a plain chunk', () => {
+    const bus = createAvatarAnimationBus();
+    const events: AvatarAnimationEvent[] = [];
+    bus.subscribe((event) => events.push(event));
+    enqueueMotionChunk(bus, { streamId: 'abc', index: 0, start: 0, name: 'x', duration: 2, data: 'AAEC' });
+    const request = (events[0] as Extract<AvatarAnimationEvent, { type: 'enqueue' }>).request;
+    expect(request).not.toHaveProperty('onEnd');
+    expect(request).not.toHaveProperty('continuation');
+    expect(request).not.toHaveProperty('timing');
+  });
+});

@@ -106,3 +106,31 @@ describe('RoomPhysics', () => {
     expect(() => stage.step(1 / 60, root)).not.toThrow();
   });
 });
+
+describe('RoomStage carrying', () => {
+  const room = builtInRoom('reading-room');
+
+  it('keeps a held prop kinematic: it neither falls nor is moved by physics, then settles when put down', async () => {
+    const stage = await RoomStage.create(room);
+    const mug = stage.objectNode('mug')!;
+    stage.setHeld('mug', true);
+    // Carry it up into the air; gravity must not act and the sync must not overwrite the node.
+    const carrier = new THREE.Object3D();
+    carrier.position.set(0, 1.5, 0);
+    carrier.add(mug);
+    carrier.updateWorldMatrix(true, true);
+    for (let i = 0; i < 60; i += 1) stage.step(1 / 60);
+    expect(mug.parent).toBe(carrier);
+    expect(stage.objectPosition('mug')![1]).toBeCloseTo(1.5 + mug.position.y, 4);
+    expect(mug.position.y).toBeGreaterThan(0.3); // still where it was in the carrier's space
+
+    stage.propParent.add(mug);
+    stage.placeObject('mug', [1.1, 0.42, -1.0], 0);
+    stage.setHeld('mug', false);
+    for (let i = 0; i < 120; i += 1) stage.step(1 / 60);
+    const p = stage.objectPosition('mug')!;
+    expect(p[1]).toBeGreaterThan(0.4);
+    expect(p[1]).toBeLessThan(0.45);
+    stage.dispose();
+  });
+});

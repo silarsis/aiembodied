@@ -15,6 +15,7 @@ import type {
   AvatarRestSkeleton,
 } from '../types.js';
 import type { LocalMotionClient, MotionServiceHealth } from './local-motion-client.js';
+import { sanitizeMotionControls } from './motion-controls.js';
 
 export interface LocalMotionGenerationServiceOptions {
   client: LocalMotionClient;
@@ -30,7 +31,7 @@ export interface LocalMotionGenerationServiceOptions {
 const DEFAULT_CLIP_DURATION = 3;
 const DEFAULT_STREAM_DURATION = 4;
 const MAX_CLIP_DURATION = 10;
-const MAX_STREAM_DURATION = 20;
+const MAX_STREAM_DURATION = 30;
 const MAX_SLUG_LENGTH = 40;
 
 export class LocalMotionGenerationService {
@@ -105,6 +106,7 @@ export class LocalMotionGenerationService {
         duration: clampDuration(request.duration, DEFAULT_STREAM_DURATION, MAX_STREAM_DURATION),
         name: toSlug(prompt),
         ...(avatarRest ? { avatar_rest: avatarRest } : {}),
+        ...sanitizeMotionControls(request),
       },
       options,
     );
@@ -120,7 +122,13 @@ export class LocalMotionGenerationService {
           totalMs,
           serviceTimings: next.value.timings,
         });
-        return { streamId, chunks: count, firstChunkMs, totalMs };
+        return {
+          streamId,
+          chunks: count,
+          firstChunkMs,
+          totalMs,
+          ...(next.value.session ? { session: next.value.session } : {}),
+        };
       }
 
       const chunk = next.value;
@@ -135,6 +143,7 @@ export class LocalMotionGenerationService {
         name: chunk.vrma.meta.name,
         duration: chunk.vrma.meta.duration ?? null,
         data: encodeVrmaGlb(chunk.vrma).toString('base64'),
+        ...(chunk.endPose ? { endPose: chunk.endPose } : {}),
       });
     }
   }

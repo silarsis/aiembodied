@@ -298,6 +298,8 @@ export interface AvatarBridge {
   generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;
   getMotionStatus(): Promise<AvatarMotionStatus>;
   streamMotion(request: AvatarMotionStreamRequest): Promise<AvatarMotionStreamResult>;
+  /** Stops a running motion stream; its promise rejects. */
+  cancelMotion(streamId: string): Promise<void>;
   onMotionChunk(listener: (chunk: AvatarMotionChunkEvent) => void): () => void;
   deleteAnimation(animationId: string): Promise<void>;
   renameAnimation(animationId: string, newName: string): Promise<AvatarAnimationSummary>;
@@ -584,6 +586,9 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     getMotionStatus: () => ipcRenderer.invoke('avatar-motion:status') as Promise<AvatarMotionStatus>,
     streamMotion: (payload: AvatarMotionStreamRequest) =>
       ipcRenderer.invoke('avatar-motion:stream', payload) as Promise<AvatarMotionStreamResult>,
+    cancelMotion: async (streamId) => {
+      await ipcRenderer.invoke('avatar-motion:cancel', streamId);
+    },
     onMotionChunk: (listener) => {
       const channel = 'avatar-motion:chunk';
       const handler = (_event: unknown, payload: AvatarMotionChunkEvent) => listener(payload);

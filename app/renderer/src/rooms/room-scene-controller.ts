@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { RoomFile } from '../../../main/src/rooms/types.js';
 import { placeAtHome } from './avatar-placement.js';
 import { RoomStage } from './room-stage.js';
+import { RoomSceneEnv, type AvatarRig } from './scene-env.js';
 
 interface Deps {
   renderer: THREE.WebGLRenderer;
@@ -46,6 +47,10 @@ export class RoomSceneController {
   private observer: ResizeObserver | null = null;
   private debugNavmesh = false;
   private saved2d: CameraState | null = null;
+  private rig: AvatarRig | null = null;
+  private body: THREE.Object3D | null = null;
+  /** What scene actions use to reach the room and the avatar; stable for the controller's life. */
+  readonly sceneEnv = new RoomSceneEnv({ stage: () => this.stage, rig: () => this.rig });
 
   constructor(private readonly deps: Deps) {}
 
@@ -98,16 +103,29 @@ export class RoomSceneController {
     this.placeAvatar();
   }
 
-  /** Called when a VRM has been added to the scene (or removed, with null). */
-  attachAvatar(root: THREE.Object3D | null): void {
+  /**
+   * Called when a VRM has been added to the scene (or removed, with null). The VRM's humanoid
+   * gives scene actions the hands and the pelvis (the physics capsule follows it); `restHipsHeight`
+   * is the standing pelvis height in the avatar's own metres.
+   */
+  attachAvatar(
+    root: THREE.Object3D | null,
+    humanoid?: AvatarRig['humanoid'] | null,
+    restHipsHeight = 0,
+  ): void {
+    this.sceneEnv.releaseHeld();
     this.avatar = root;
     this.avatarBase = root ? { position: root.position.clone(), rotationY: root.rotation.y } : null;
-    // TODO(next step): a held object is parented to the avatar's hand here once pick-up exists.
+    this.rig =
+      root && humanoid ? { scene: root, baseRotationY: root.rotation.y, humanoid, restHipsHeight } : null;
+    this.body = humanoid?.getNormalizedBoneNode('hips') ?? null;
     if (root && this.stage) this.placeAvatar();
   }
 
+  /** Call once per frame after the animation mixer has run. */
   step(dt: number): void {
-    this.stage?.step(dt, this.avatar);
+    this.sceneEnv.step(dt);
+    this.stage?.step(dt, this.body ?? this.avatar);
   }
 
   setDebugNavmesh(on: boolean): void {
@@ -124,6 +142,8 @@ export class RoomSceneController {
     this.room = null;
     this.avatar = null;
     this.avatarBase = null;
+    this.rig = null;
+    this.body = null;
   }
 
   private leaveRoom(): void {
@@ -152,6 +172,7 @@ export class RoomSceneController {
   }
 
   private disposeStage(): void {
+    this.sceneEnv.releaseHeld();
     if (!this.stage) return;
     this.deps.scene.remove(this.stage.group);
     this.stage.dispose();

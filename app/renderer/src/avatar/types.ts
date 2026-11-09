@@ -64,6 +64,44 @@ export type AvatarRestSkeleton = Record<
   [number, number, number]
 >;
 
+/** Pelvis path on the floor, in the stream's motion frame (avatar metres). */
+export interface AvatarMotionPath {
+  points: Array<[number, number]>;
+  cornerRadius?: number;
+  speed?: number;
+  startS?: number;
+  mode?: 'dense' | 'waypoints';
+}
+
+/** A timed keyframe in the motion frame: pelvis values and, for hand targets, a wrist position. */
+export interface AvatarMotionTarget {
+  t: number;
+  until?: number;
+  root?: [number, number];
+  height?: number;
+  /** Radians; facing is (sin, 0, cos). */
+  heading?: number;
+  /** The target is only shown to the model for chunks starting at or after this time. */
+  revealS?: number;
+  hand?: 'left' | 'right';
+  position?: [number, number, number];
+}
+
+/** A later prompt that applies from `startS` on (chunk-aligned). */
+export interface AvatarMotionPhase {
+  prompt: string;
+  startS: number;
+}
+
+/** Where a chunk ended, in the stream's motion frame and avatar metres. */
+export interface AvatarMotionEndPose {
+  root: [number, number];
+  height: number;
+  heading: number;
+  leftHand?: [number, number, number];
+  rightHand?: [number, number, number];
+}
+
 export interface AvatarMotionStreamRequest {
   /** Caller-chosen id echoed on every chunk so concurrent streams can be told apart. */
   streamId: string;
@@ -71,6 +109,13 @@ export interface AvatarMotionStreamRequest {
   duration?: number;
   /** The avatar on screen, so the motion is calibrated to its build. */
   avatarRest?: AvatarRestSkeleton;
+  phases?: AvatarMotionPhase[];
+  path?: AvatarMotionPath;
+  targets?: AvatarMotionTarget[];
+  constraintWeight?: number;
+  /** A session id from an earlier stream's result: continue from where it ended, in the same motion frame. */
+  continueFrom?: string;
+  snapS?: number;
 }
 
 export interface AvatarMotionChunkEvent {
@@ -82,6 +127,8 @@ export interface AvatarMotionChunkEvent {
   duration: number | null;
   /** Base64 .vrma binary. */
   data: string;
+  /** Where the last frame of this chunk is (only from services that report it). */
+  endPose?: AvatarMotionEndPose;
 }
 
 export interface AvatarMotionStreamResult {
@@ -89,6 +136,8 @@ export interface AvatarMotionStreamResult {
   chunks: number;
   firstChunkMs: number | null;
   totalMs: number;
+  /** Usable as `continueFrom` for a while after the stream. */
+  session?: string;
 }
 
 export interface AvatarMotionStatus {
@@ -315,6 +364,8 @@ export interface AvatarBridge {
   generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;
   getMotionStatus?(): Promise<AvatarMotionStatus>;
   streamMotion?(request: AvatarMotionStreamRequest): Promise<AvatarMotionStreamResult>;
+  /** Stops a running motion stream; its promise rejects. */
+  cancelMotion?(streamId: string): Promise<void>;
   onMotionChunk?(listener: (chunk: AvatarMotionChunkEvent) => void): () => void;
   deleteAnimation(animationId: string): Promise<void>;
   renameAnimation(animationId: string, newName: string): Promise<AvatarAnimationSummary>;
