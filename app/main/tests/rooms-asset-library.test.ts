@@ -218,6 +218,18 @@ describe('asset protocol paths', () => {
   ])('refuses outright %s', (url) => {
     expect(ok(url)).toBeNull();
   });
+  it('serves a generated glb and its source picture', async () => {
+    await mkdir(path.join(dir, 'generated', 'chair-3fa91c2e'), { recursive: true });
+    await writeFile(path.join(dir, 'generated', 'chair-3fa91c2e', 'model.glb'), 'glb!');
+    await writeFile(path.join(dir, 'generated', 'chair-3fa91c2e', 'source.png'), 'png!');
+    let handler!: (request: { url: string }) => Promise<Response> | Response;
+    registerAssetProtocol({ handle: (_scheme, h) => (handler = h) }, dir);
+    const model = await handler({ url: `${ASSET_SCHEME}://generated/chair-3fa91c2e/model.glb` });
+    expect(model.status).toBe(200);
+    expect(model.headers.get('Content-Type')).toBe('model/gltf-binary');
+    expect(await model.text()).toBe('glb!');
+    expect((await handler({ url: `${ASSET_SCHEME}://generated/chair-3fa91c2e/source.png` })).headers.get('Content-Type')).toBe('image/png');
+  });
   it('serves with the right MIME type and 404s otherwise', async () => {
     expect(mimeFor('a.gltf')).toBe('model/gltf+json');
     expect(mimeFor('a.bin')).toBe('application/octet-stream');

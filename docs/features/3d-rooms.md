@@ -1,6 +1,6 @@
 # 3D rooms
 
-**Status:** Step 2 shipped (scene runtime and selector). Step 3 (walking, sitting, looking and picking things up) and step 3b (idle wandering) are implemented in the app and in `services/motion`. Neither step has been run end to end on a real display with the ARDY model at merge time: the room renderer was checked with a software WebGL screenshot, and the physics, navigation, planner and executor with unit tests. The grip pose and the hand-held object look are unchecked by eye.
+**Status:** Step 2 shipped (scene runtime and selector). Step 4 (describing a room) and step 5 (making missing objects locally) are implemented and unit tested without network or GPU; see their sections for what was not checked on real hardware. Step 3 (walking, sitting, looking and picking things up) and step 3b (idle wandering) are implemented in the app and in `services/motion`. Neither step has been run end to end on a real display with the ARDY model at merge time: the room renderer was checked with a software WebGL screenshot, and the physics, navigation, planner and executor with unit tests. The grip pose and the hand-held object look are unchecked by eye.
 
 Controls → Backgrounds now has two tabs, **2D pictures** and **3D rooms**. Picking a room puts the avatar inside it: the room is loaded into the avatar's three.js scene with physics colliders, a navigation mesh and a fixed camera. The 2D picture and its ground shadow are hidden while a room is active. The Backgrounds item in the drawer shows the room's name.
 
@@ -12,7 +12,7 @@ Controls → Backgrounds now has two tabs, **2D pictures** and **3D rooms**. Pic
 - Choosing another room, or going back to a picture or the plain background, disposes the old room, puts the avatar back at the origin facing forward, restores the 2D camera and cancels any live motion clip and queued animations.
 - On a 2D picture the hips' horizontal travel is removed from live `{move:...}` clips so the avatar stays on its spot (the height is kept). In a room the travel is kept, and the scene actions below turn it into real root motion.
 - With the metrics HUD flag on, the 3D tab has a **Show walkable area** checkbox that draws the navigation mesh over the room.
-- Describing a room builds a new one (step 4, below).
+- Describing a room builds a new one (step 4, below); objects the library lacks can be made locally (step 5, below).
 
 ## Scene format
 
@@ -156,14 +156,38 @@ The library is **Poly Haven** (https://polyhaven.com), whose models are **CC0** 
 
 ### Where step 5 plugs in
 
-`asset-library/library-source.ts` defines `ObjectSource`; `room-generation-setup.ts` builds the list `[Poly Haven]`. A source that generates a missing object (the avatar image-to-3D pipeline) goes between the library and the simple shapes by adding it to that list; whatever no source resolves still falls back to shapes.
+`asset-library/library-source.ts` defines `ObjectSource`; `room-generation-setup.ts` builds the list `[Poly Haven, generated objects]`. Whatever neither has is made in the background (next section), and whatever that cannot make still gets simple shapes.
+
+## Making missing objects (step 5)
+
+**Status:** Implemented and unit tested with a fake ComfyUI client (no network, no GPU). Not run end to end against a real ComfyUI with TRELLIS.2 or Hunyuan3D at merge time, so the look of the generated meshes, their facing and their scale are unchecked by eye.
+
+When the Poly Haven library has no good match for an object, the app makes it on this PC with the same ComfyUI path the avatar studio uses, keeps it in a local library, and reuses it in later rooms.
+
+**Settings** (Controls → Backgrounds → 3D rooms → **New objects**, saved as `rooms.objects` in the memory store, read and written through `backgrounds.getObjectSettings` / `setObjectSettings`):
+
+- *Make missing objects*, on by default. The checkbox is hidden, with a hint to set up ComfyUI under Models and servers, when the **Concept image** or **3D model** job has no server.
+- *At most this many per room*: 0 to 8, default 3. Models that already exist in the generated library cost nothing and do not count.
+
+**What happens**
+
+1. The room is planned, library objects are found (models made earlier count as library objects), and the placer solves positions. The room is then **saved and shown at once**, with simple shapes for the objects still to be made.
+2. Those objects are made **one at a time in the background**, most important first (bed, seat, table, storage, appliance, lamp, plant, decor, prop; larger first within a category). Flat things (under 6 cm high, such as rugs) are never made. Progress reads "Making the rocking chair (1/3)…", and the saved room's card shows a small spinner until the last one is done.
+3. Each object: the **image model** (the studio's selected one, without its LoRAs) draws "a single <name>, <colour and material words>, product photo, isolated on plain white background, full object in frame, straight-on front view, no people, no text" (`asset-library/generated-prompt.ts`); the **3D step** turns that picture into a `.glb` using the same graphs as the avatar's front image: TRELLIS.2 (textured) when it is installed, else the studio's selected Hunyuan3D 2mv from the front image alone (an untextured shape). Both graphs cut the object out with BiRefNet themselves, so there is no separate background-removal step; side and back views, painting, rigging and VRM export are skipped. Image and mesh each run on the server Models and servers picks for their job.
+4. The object is saved in the generated library and swapped into the room: `room.json` gets its `model`, the size and scale are re-fitted (the model's height is matched to the layout's, as for library models), and the object keeps its placed position and turn. If the real footprint would poke through a wall by up to 25 cm the object is slid in by that much; if it would still leave the room, stand in the avatar's spot or overlap another object, the simple shape stays and a note says so. The main process then sends `rooms:updated`; the renderer reloads that room if it is on stage and leaves the avatar where it is (an open walk, sit or action is not interrupted).
+5. One room generation, background objects included, runs at a time: Build room is disabled meanwhile, and **Cancel** stops the background work too (the room stays as it is). Deleting the room being made stops it. Generation does not use any GPU lock of its own: both steps go through the ComfyUI server's queue, so they wait behind an avatar job that is already running there instead of running alongside it.
+
+**Notes after a room.** Objects the library lacked and that will not be made (switched off, over the limit, flat) read "Couldn't find a lamp, used a simple shape." Objects that were made read "Made a new model for the rocking chair."; a failure reads "Couldn't make a desk, used a simple shape."; a made model that did not fit reads "Made a new desk but it would overlap the sofa, so kept a simple shape." `generation.json` records `madeObjects`, `couldNotMake` and `makingNotes`.
+
+**The generated library.** `<userData>/rooms/assets/generated/<slug>-<hash>/` holds `model.glb`, `source.png` (the picture it was made from) and `meta.json` (`name`, `search` words, `category`, `prompt`, `created`, `sourceImage`, `bbox`, plus the seed and model names). A room refers to it as `{asset: "generated/<slug>-<hash>", file: "model.glb", scale}`; the `aiembodied-asset://` protocol already serves anything under the asset cache (`.glb` as `model/gltf-binary`), and the renderer's loader grounds and centres it like a library model. Before making anything, the library is searched with the same scorer as Poly Haven (`asset-library/search.ts`, `generated-library.ts`), so a "rocking chair" made once is reused for a "rocking chairs" later. The bounding box comes from `glbBounds` in `gltf-bounds.ts` (the GLB's JSON chunk, or the vertices when the accessors carry no range). The mesh is assumed to be Y-up with its front towards +Z, as the placer assumes for library models.
+
+**Generated objects list** (same tab): name, the picture and **Delete** for each, so a bad one can be removed (`rooms:generated:list`, `rooms:generated:delete`). A room that used a deleted object (or a Poly Haven model that is no longer cached) shows simple shapes of the same kind, size and colour the next time it loads: `RoomService.load` checks that each model file exists and rebuilds the shapes from `layout.json` (a plain grey box without it).
+
+Code: `asset-library/generated-source.ts` (`GeneratedSource`: reuse, make, list, delete), `generated-library.ts`, `generated-prompt.ts`, `room-refit.ts` (swapping shapes for a model), `object-settings.ts`, the background phase in `room-generation.ts`, and `renderer/src/backgrounds/room-objects.tsx`.
 
 ### Limits
 
 - The placer is a heuristic: small odd layouts may drop objects, and `near`/`facing` choices can look stiff. There is no re-roll button yet; build again for another arrangement.
-- Library models face whichever way their authors made them; the placer assumes +Z is the front, so some pieces may look turned.
+- Library models and generated meshes face whichever way they were made; the placer assumes +Z is the front, so some pieces may look turned.
+- Making an object takes minutes (an image, then a 3D build), and a Hunyuan-only setup gives untextured grey shapes. There is no check that the picture shows one clean object. A restart while objects are being made leaves the rest as simple shapes (they are not resumed).
 - Objects that stand or sit at a window or door are only kept clear by zones, not by looking at the opening's frame.
-
-## What's next
-
-- Step 5: generate missing objects with the avatar image-to-3D pipeline.

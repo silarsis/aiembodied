@@ -7,6 +7,7 @@ import type { ComfyUIClient } from '../avatar/generation/comfyui-client.js';
 import { backgroundGraph, buildBackgroundPrompt } from '../avatar/generation/graphs.js';
 import { BACKGROUND_GROUND_Y, DEFAULT_BACKGROUNDS } from './defaults.js';
 import { IDLE_SETTINGS_KEY, parseIdleSettings, sanitizeIdleSettings, type IdleSettings } from '../rooms/idle-settings.js';
+import { OBJECT_SETTINGS_KEY, parseObjectSettings, sanitizeObjectSettings, type ObjectSettings } from '../rooms/object-settings.js';
 import type { BackgroundSummary } from './types.js';
 
 const LIBRARY_KEY = 'stage.backgrounds';
@@ -61,6 +62,17 @@ export class BackgroundService {
   setIdleSettings(settings: unknown): IdleSettings {
     const next = sanitizeIdleSettings(settings);
     this.options.store.setValue(IDLE_SETTINGS_KEY, JSON.stringify(next));
+    return next;
+  }
+
+  /** The "Make missing objects" settings of 3D rooms. */
+  getObjectSettings(): ObjectSettings {
+    return parseObjectSettings(this.options.store.getValue(OBJECT_SETTINGS_KEY));
+  }
+
+  setObjectSettings(settings: unknown): ObjectSettings {
+    const next = sanitizeObjectSettings({ ...this.getObjectSettings(), ...(typeof settings === 'object' && settings !== null ? settings : {}) });
+    this.options.store.setValue(OBJECT_SETTINGS_KEY, JSON.stringify(next));
     return next;
   }
 

@@ -134,7 +134,7 @@ export function validateRoomFile(raw: unknown): RoomFile {
       const model = object.model as Record<string, unknown>;
       if (model.asset !== undefined) {
         if (typeof model.asset !== 'string' || !ASSET_REF.test(model.asset))
-          fail(`${where}.model.asset`, 'must look like polyhaven/<id>');
+          fail(`${where}.model.asset`, 'must look like polyhaven/<id> or generated/<folder>');
       }
       if (model.scale !== undefined && (positive(model.scale, `${where}.model.scale`) > 20))
         fail(`${where}.model.scale`, 'is too large');

@@ -3,6 +3,7 @@ import type { BackgroundController } from './use-backgrounds.js';
 import type { OnTalk, Restlessness } from '../../../main/src/rooms/idle-settings.js';
 import { RoomCards } from './room-cards.js';
 import { RoomDescribeForm } from './room-describe-form.js';
+import { GeneratedObjects, MakeMissingObjects } from './room-objects.js';
 
 export interface WalkableAreaToggle {
   shown: boolean;
@@ -44,6 +45,8 @@ export function BackgroundControls({
         <>
           <RoomCards backgrounds={backgrounds} onPickDescription={setRoomPrompt} />
           <RoomDescribeForm backgrounds={backgrounds} prompt={roomPrompt} onPromptChange={setRoomPrompt} />
+          <MakeMissingObjects backgrounds={backgrounds} />
+          <GeneratedObjects backgrounds={backgrounds} />
           <WhenIdle backgrounds={backgrounds} />
           {walkableArea ? (
             <label className="kiosk__helper">

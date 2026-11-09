@@ -61,7 +61,7 @@ export interface RoomObjectTags {
 
 export interface RoomModelRef {
   file: string;
-  /** Asset-cache folder, e.g. "polyhaven/ArmChair_01". */
+  /** Asset-cache folder, e.g. "polyhaven/ArmChair_01" or "generated/rocking-chair-3fa91c2e". */
   asset?: string;
   /** Uniform scale applied to the model as downloaded. */
   scale?: number;
@@ -81,7 +81,7 @@ export interface RoomObject {
   size: Vec3;
   parts?: RoomPart[];
   /**
-   * A 3D model for the object. With `asset` ("polyhaven/<id>") the file is relative to that folder
+   * A 3D model for the object. With `asset` ("polyhaven/<id>" or "generated/<folder>") the file is relative to that folder
    * of the asset cache and `scale` is the uniform scale that makes it match `size`; without it,
    * the file is relative to the room's folder (reserved, never fetched).
    */

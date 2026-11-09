@@ -85,3 +85,93 @@ export function gltfBounds(json: unknown): Bounds | null {
   if (!Number.isFinite(min[0]) || !Number.isFinite(max[0])) return null;
   return { min, max, size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]] };
 }
+
+const GLB_MAGIC = 0x46546c67; // "glTF"
+const CHUNK_JSON = 0x4e4f534a;
+const CHUNK_BIN = 0x004e4942;
+
+interface GlbFile {
+  json: Record<string, unknown>;
+  bin: Buffer | null;
+}
+
+/** The JSON and binary chunks of a .glb (12-byte header, then length-prefixed chunks), or null when it is not a valid one. */
+export function parseGlb(data: Buffer): GlbFile | null {
+  if (data.length < 20 || data.readUInt32LE(0) !== GLB_MAGIC || data.readUInt32LE(4) !== 2) return null;
+  const end = Math.min(data.length, data.readUInt32LE(8));
+  let json: Record<string, unknown> | null = null;
+  let bin: Buffer | null = null;
+  for (let offset = 12; offset + 8 <= end; ) {
+    const length = data.readUInt32LE(offset);
+    const type = data.readUInt32LE(offset + 4);
+    const start = offset + 8;
+    if (start + length > end) return null;
+    if (type === CHUNK_JSON && json === null) {
+      try {
+        const parsed: unknown = JSON.parse(data.subarray(start, start + length).toString('utf8'));
+        if (typeof parsed !== 'object' || parsed === null) return null;
+        json = parsed as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    } else if (type === CHUNK_BIN && bin === null) {
+      bin = data.subarray(start, start + length);
+    }
+    offset = start + length + ((4 - (length % 4)) % 4);
+  }
+  return json ? { json, bin } : null;
+}
+
+interface BufferView {
+  byteOffset?: number;
+  byteStride?: number;
+  byteLength?: number;
+}
+interface RawAccessor {
+  bufferView?: number;
+  byteOffset?: number;
+  componentType?: number;
+  count?: number;
+  type?: string;
+  min?: number[];
+  max?: number[];
+}
+
+/** Fills in min/max of float VEC3 POSITION accessors that have none, from the binary chunk. */
+function fillPositionRanges(json: Record<string, unknown>, bin: Buffer | null): void {
+  const accessors = json.accessors as RawAccessor[] | undefined;
+  const views = json.bufferViews as BufferView[] | undefined;
+  const meshes = json.meshes as Array<{ primitives?: Array<{ attributes?: Record<string, number> }> }> | undefined;
+  if (!accessors || !views || !bin || !meshes) return;
+  for (const mesh of meshes)
+    for (const primitive of mesh.primitives ?? []) {
+      const accessor = accessors[primitive.attributes?.POSITION ?? -1];
+      if (!accessor || (accessor.min && accessor.max)) continue;
+      const view = views[accessor.bufferView ?? -1];
+      if (!view || accessor.componentType !== 5126 || accessor.type !== 'VEC3' || !accessor.count) continue;
+      const stride = view.byteStride && view.byteStride >= 12 ? view.byteStride : 12;
+      const base = (view.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
+      if (base + stride * (accessor.count - 1) + 12 > bin.length) continue;
+      const min = [Infinity, Infinity, Infinity];
+      const max = [-Infinity, -Infinity, -Infinity];
+      for (let i = 0; i < accessor.count; i += 1)
+        for (let axis = 0; axis < 3; axis += 1) {
+          const v = bin.readFloatLE(base + i * stride + axis * 4);
+          if (!Number.isFinite(v)) continue;
+          if (v < min[axis]) min[axis] = v;
+          if (v > max[axis]) max[axis] = v;
+        }
+      if (min.every(Number.isFinite) && max.every(Number.isFinite)) {
+        accessor.min = min;
+        accessor.max = max;
+      }
+    }
+}
+
+/** Bounding box of a binary glTF (.glb), the same as `gltfBounds` gives for the JSON; null when it has no usable mesh. */
+export function glbBounds(data: Buffer): Bounds | null {
+  const glb = parseGlb(data);
+  if (!glb) return null;
+  fillPositionRanges(glb.json, glb.bin);
+  return gltfBounds(glb.json);
+}

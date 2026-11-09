@@ -559,6 +559,19 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     getIdleSettings: () => ipcRenderer.invoke('rooms:idle-settings:get'),
     setIdleSettings: (settings) => ipcRenderer.invoke('rooms:idle-settings:set', settings),
     pickIdle: (context) => ipcRenderer.invoke('rooms:idle-pick', context),
+    getObjectSettings: () => ipcRenderer.invoke('rooms:object-settings:get'),
+    setObjectSettings: (settings) => ipcRenderer.invoke('rooms:object-settings:set', settings),
+    listGeneratedObjects: () => ipcRenderer.invoke('rooms:generated:list'),
+    deleteGeneratedObject: (id) => ipcRenderer.invoke('rooms:generated:delete', id),
+    getMakingRoom: () => ipcRenderer.invoke('rooms:making'),
+    onRoomUpdated: (listener) => {
+      const channel = 'rooms:updated';
+      const handler = (_event: unknown, roomId: string) => listener(roomId);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
   },
   avatar: {
     listModels: () => ipcRenderer.invoke('avatar-model:list') as Promise<AvatarModelSummary[]>,

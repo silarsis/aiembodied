@@ -94,3 +94,58 @@ describe('BackgroundService with rooms', () => {
     expect(() => service.setActive('room:builtin:reading-room')).toThrow('not available');
   });
 });
+
+describe('RoomService with models that are no longer on disk', () => {
+  const MADE = '3f2b8c1e-0000-4000-8000-000000000003';
+  async function roomWithModels() {
+    const { roomsDirectory } = await setup();
+    const builtIn = JSON.parse(await (await import('node:fs/promises')).readFile(path.resolve('assets/rooms/studio-flat.json'), 'utf8')) as { objects: Array<Record<string, any>> };
+    const objects = [
+      { id: 'chair', name: 'rocking chair', position: [1, 0, 1], size: [0.6, 0.9, 0.6], model: { asset: 'generated/chair-3fa91c2e', file: 'model.glb', scale: 0.8 }, tags: { sit: { position: [0, 0.45, 0.05], facing: 0 } } },
+      { id: 'lamp', name: 'lamp', position: [-1, 0, 1], size: [0.3, 1.5, 0.3], model: { asset: 'polyhaven/Lamp_01', file: 'Lamp_01_1k.gltf', scale: 1 } },
+      { id: 'box', name: 'box', position: [0, 0, -1], size: [1, 1, 1], parts: [{ shape: 'box', size: [1, 1, 1], offset: [0, 0.5, 0], color: '#112233' }] },
+    ];
+    await mkdir(path.join(roomsDirectory, MADE));
+    await writeFile(path.join(roomsDirectory, MADE, 'room.json'), JSON.stringify({ ...builtIn, name: 'Made room', objects }));
+    await writeFile(path.join(roomsDirectory, MADE, 'layout.json'), JSON.stringify({ objects: [{ id: 'chair', category: 'seat', color: 'red' }, { id: 'lamp', category: 'lamp', color: 'black' }] }));
+    return { roomsDirectory, service: new RoomService({ assetsDirectory: path.resolve('assets/rooms'), roomsDirectory }) };
+  }
+
+  it('turns them into simple shapes of the right kind, size and colour', async () => {
+    const { service } = await roomWithModels();
+    const room = await service.load(`room:${MADE}`);
+    const chair = room.objects.find((o) => o.id === 'chair')!;
+    expect(chair.model).toBeUndefined();
+    expect(chair.parts?.length).toBeGreaterThan(1);
+    expect(chair.parts?.[0].color).toBe('#a8372f');
+    expect(chair.size).toEqual([0.6, 0.9, 0.6]);
+    expect(room.objects.find((o) => o.id === 'lamp')?.model).toBeUndefined();
+    expect(room.objects.find((o) => o.id === 'lamp')?.parts?.length).toBeGreaterThan(0);
+    expect(room.objects.find((o) => o.id === 'box')?.parts).toHaveLength(1);
+    expect((await service.list()).map((r) => r.name)).toContain('Made room');
+  });
+
+  it('keeps the model while its file is there', async () => {
+    const { service, roomsDirectory } = await roomWithModels();
+    await mkdir(path.join(roomsDirectory, 'assets', 'generated', 'chair-3fa91c2e'), { recursive: true });
+    await writeFile(path.join(roomsDirectory, 'assets', 'generated', 'chair-3fa91c2e', 'model.glb'), 'glb');
+    const room = await service.load(`room:${MADE}`);
+    expect(room.objects.find((o) => o.id === 'chair')?.model?.asset).toBe('generated/chair-3fa91c2e');
+    expect(room.objects.find((o) => o.id === 'chair')?.parts).toBeUndefined();
+    expect(room.objects.find((o) => o.id === 'lamp')?.model).toBeUndefined();
+  });
+
+  it('uses a plain grey box when the room has no layout.json', async () => {
+    const { service, roomsDirectory } = await roomWithModels();
+    await (await import('node:fs/promises')).rm(path.join(roomsDirectory, MADE, 'layout.json'));
+    const chair = (await service.load(`room:${MADE}`)).objects.find((o) => o.id === 'chair')!;
+    expect(chair.model).toBeUndefined();
+    expect(chair.parts?.length).toBeGreaterThan(0);
+  });
+
+  it('never touches built-in rooms', async () => {
+    const { service } = await roomWithModels();
+    const room = await service.load('room:builtin:reading-room');
+    expect(room.objects.every((o) => o.model === undefined)).toBe(true);
+  });
+});
