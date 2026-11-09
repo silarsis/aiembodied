@@ -3,6 +3,7 @@ import type { RoomFile } from './types.js';
 const WALLS = ['north', 'south', 'east', 'west'];
 const LIGHTS = ['ambient', 'directional', 'point', 'hemisphere'];
 const MAX_OBJECTS = 200;
+const ASSET_REF = /^[a-z0-9_-]+\/[A-Za-z0-9_-][A-Za-z0-9_.-]*$/;
 const MAX_PARTS = 100;
 
 function fail(where: string, problem: string): never {
@@ -130,6 +131,13 @@ export function validateRoomFile(raw: unknown): RoomFile {
       const file = str(record(object.model, `${where}.model`).file, `${where}.model.file`);
       if (file.includes('..') || /^([a-zA-Z]:|[\\/])/.test(file))
         fail(`${where}.model.file`, 'must stay inside the room folder');
+      const model = object.model as Record<string, unknown>;
+      if (model.asset !== undefined) {
+        if (typeof model.asset !== 'string' || !ASSET_REF.test(model.asset))
+          fail(`${where}.model.asset`, 'must look like polyhaven/<id>');
+      }
+      if (model.scale !== undefined && (positive(model.scale, `${where}.model.scale`) > 20))
+        fail(`${where}.model.scale`, 'is too large');
     }
     if (object.parts !== undefined) {
       array(object.parts, `${where}.parts`, MAX_PARTS).forEach((partRaw, p) => {

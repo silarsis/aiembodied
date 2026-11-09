@@ -43,6 +43,8 @@ export interface LocalLlmClientOptions {
   temperature?: number;
   maxTokens?: number;
   healthTimeoutMs?: number;
+  /** Ask the server for a JSON object reply (`response_format: {type: "json_object"}`). */
+  jsonObject?: boolean;
 }
 
 export class LocalLlmClient {
@@ -54,6 +56,7 @@ export class LocalLlmClient {
   private readonly temperature: number;
   private readonly maxTokens: number;
   private readonly healthTimeoutMs: number;
+  private readonly jsonObject: boolean;
 
   constructor(options: LocalLlmClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
@@ -64,6 +67,7 @@ export class LocalLlmClient {
     this.temperature = options.temperature ?? 0.7;
     this.maxTokens = options.maxTokens ?? 1024;
     this.healthTimeoutMs = options.healthTimeoutMs ?? 2000;
+    this.jsonObject = options.jsonObject ?? false;
   }
 
   /** True when the server answers /models. For OpenAI, true when there is a key (no request per poll). */
@@ -87,7 +91,10 @@ export class LocalLlmClient {
     messages: ChatMessage[],
     options: { signal?: AbortSignal; tools?: LlmToolDefinition[] } = {},
   ): AsyncGenerator<LlmStreamPart> {
-    const tools = options.tools?.length ? { tools: options.tools } : {};
+    const tools = {
+      ...(options.tools?.length ? { tools: options.tools } : {}),
+      ...(this.jsonObject ? { response_format: { type: 'json_object' } } : {}),
+    };
     const response = await this.fetchFn(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...this.authHeaders() },

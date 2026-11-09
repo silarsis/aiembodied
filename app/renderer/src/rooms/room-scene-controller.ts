@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { RoomFile } from '../../../main/src/rooms/types.js';
 import { placeAtHome } from './avatar-placement.js';
 import { RoomStage } from './room-stage.js';
+import { createModelLoader } from './room-model-loader.js';
 import { RoomSceneEnv, type AvatarRig } from './scene-env.js';
 
 interface Deps {
@@ -82,7 +83,7 @@ export class RoomSceneController {
     this.room = room;
     let next: RoomStage;
     try {
-      next = await RoomStage.create(room);
+      next = await RoomStage.create(room, { loadModel: createModelLoader() });
     } catch (error) {
       console.error('[rooms] could not start the room', error);
       if (ticket === this.ticket) this.leaveRoom();

@@ -29,7 +29,7 @@ function useRoomThumbnails(backgrounds: BackgroundController): Record<string, st
   return thumbnails;
 }
 
-export function RoomCards({ backgrounds }: { backgrounds: BackgroundController }) {
+export function RoomCards({ backgrounds, onPickDescription }: { backgrounds: BackgroundController; onPickDescription?: (description: string) => void }) {
   const thumbnails = useRoomThumbnails(backgrounds);
   const selected = backgrounds.rooms.find((room) => room.id === backgrounds.activeId);
   return (
@@ -41,7 +41,10 @@ export function RoomCards({ backgrounds }: { backgrounds: BackgroundController }
               type="button"
               className="backgroundCard"
               aria-pressed={room.id === backgrounds.activeId}
-              onClick={() => void backgrounds.select(room.id)}
+              onClick={() => {
+                if (room.description && !room.builtIn && !backgrounds.roomBuilding) onPickDescription?.(room.description);
+                void backgrounds.select(room.id);
+              }}
             >
               {thumbnails[room.id] ? (
                 <img src={thumbnails[room.id] ?? undefined} alt="" />
@@ -50,6 +53,16 @@ export function RoomCards({ backgrounds }: { backgrounds: BackgroundController }
               )}
               <span>{room.name}</span>
             </button>
+            {!room.builtIn ? (
+              <button
+                type="button"
+                className="backgroundCard__delete"
+                aria-label={`Delete ${room.name}`}
+                onClick={() => void backgrounds.removeRoom(room.id)}
+              >
+                Delete
+              </button>
+            ) : null}
           </div>
         ))}
       </div>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { BackgroundController } from './use-backgrounds.js';
 import type { OnTalk, Restlessness } from '../../../main/src/rooms/idle-settings.js';
 import { RoomCards } from './room-cards.js';
+import { RoomDescribeForm } from './room-describe-form.js';
 
 export interface WalkableAreaToggle {
   shown: boolean;
@@ -18,6 +19,7 @@ export function BackgroundControls({
 }) {
   const [prompt, setPrompt] = useState('');
   const [notice, setNotice] = useState('');
+  const [roomPrompt, setRoomPrompt] = useState('');
   const [chosenTab, setChosenTab] = useState<'2d' | '3d' | null>(null);
   if (!backgrounds.available)
     return <p className="kiosk__helper">Background controls are available in the desktop app.</p>;
@@ -40,9 +42,9 @@ export function BackgroundControls({
       {backgrounds.loading ? <p role="status">Loading backgrounds…</p> : null}
       {tab === '3d' ? (
         <>
-          <RoomCards backgrounds={backgrounds} />
+          <RoomCards backgrounds={backgrounds} onPickDescription={setRoomPrompt} />
+          <RoomDescribeForm backgrounds={backgrounds} prompt={roomPrompt} onPromptChange={setRoomPrompt} />
           <WhenIdle backgrounds={backgrounds} />
-          <p className="kiosk__helper">Describing a room to build it comes in a later update.</p>
           {walkableArea ? (
             <label className="kiosk__helper">
               <input

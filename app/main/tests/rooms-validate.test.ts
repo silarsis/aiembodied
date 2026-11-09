@@ -35,6 +35,11 @@ describe('validateRoomFile', () => {
   it('accepts a good file', () => {
     expect(validateRoomFile(good()).name).toBe('Test room');
   });
+  it('accepts library models with an asset, file and scale, and the old file-only form', () => {
+    const room = mutate((r) => (r.objects[0].model = { asset: 'polyhaven/ArmChair_01', file: 'ArmChair_01_1k.gltf', scale: 1.2 }));
+    expect(() => validateRoomFile(room)).not.toThrow();
+    expect(() => validateRoomFile(mutate((r) => (r.objects[0].model = { file: 'a.glb' })))).not.toThrow();
+  });
   it('accepts both built-in rooms', () => {
     const directory = path.resolve('assets/rooms');
     const files = readdirSync(directory).filter((name) => name.endsWith('.json'));
@@ -62,6 +67,8 @@ describe('validateRoomFile', () => {
     ['negative size', (r) => (r.objects[0].size = [1, -1, 1]), /size/],
     ['bad part shape', (r) => (r.objects[0].parts[0].shape = 'cone'), /shape/],
     ['model path escape', (r) => (r.objects[0].model = { file: '../x.glb' }), /room folder/],
+    ['bad asset ref', (r) => (r.objects[0].model = { file: 'a.gltf', asset: 'polyhaven/..' }), /asset/],
+    ['bad scale', (r) => (r.objects[0].model = { file: 'a.gltf', asset: 'polyhaven/X_1', scale: 0 }), /scale/],
     ['bad collider', (r) => (r.objects[0].collider = 'mesh'), /collider/],
     ['bad tag', (r) => (r.objects[0].tags = { sit: { position: [0, 0], facing: 0 } }), /sit/],
   ];
