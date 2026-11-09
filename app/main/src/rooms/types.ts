@@ -59,6 +59,14 @@ export interface RoomObjectTags {
   idle?: string;
 }
 
+export interface RoomModelRef {
+  file: string;
+  /** Asset-cache folder, e.g. "polyhaven/ArmChair_01". */
+  asset?: string;
+  /** Uniform scale applied to the model as downloaded. */
+  scale?: number;
+}
+
 export interface RoomObject {
   /** Slug, unique within the room. */
   id: string;
@@ -72,8 +80,12 @@ export interface RoomObject {
   /** Bounding box width, height, depth in metres (colliders and navmesh obstacles). */
   size: Vec3;
   parts?: RoomPart[];
-  /** GLB inside the room's folder (later steps). */
-  model?: { file: string } | null;
+  /**
+   * A 3D model for the object. With `asset` ("polyhaven/<id>") the file is relative to that folder
+   * of the asset cache and `scale` is the uniform scale that makes it match `size`; without it,
+   * the file is relative to the room's folder (reserved, never fetched).
+   */
+  model?: RoomModelRef | null;
   /** Default 'box'. */
   collider?: 'box' | 'none';
   /** Small props that physics can move. Default false. */

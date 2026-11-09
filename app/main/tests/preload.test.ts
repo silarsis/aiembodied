@@ -323,6 +323,12 @@ it('exposes only named background operations through the preload bridge', async 
   expect(invoke).toHaveBeenCalledWith('background:list-rooms');
   await api.backgrounds.loadRoom('room:builtin:reading-room');
   expect(invoke).toHaveBeenCalledWith('background:load-room', 'room:builtin:reading-room');
+  await api.backgrounds.generateRoom('a cosy study');
+  expect(invoke).toHaveBeenCalledWith('rooms:generate', 'a cosy study');
+  await api.backgrounds.cancelRoomGeneration();
+  expect(invoke).toHaveBeenCalledWith('rooms:cancel-generate');
+  await api.backgrounds.deleteRoom('room:abc');
+  expect(invoke).toHaveBeenCalledWith('rooms:delete', 'room:abc');
   await api.backgrounds.getIdleSettings();
   expect(invoke).toHaveBeenCalledWith('rooms:idle-settings:get');
   await api.backgrounds.setIdleSettings({ enabled: false, restlessness: 'calm', onTalk: 'turn' });

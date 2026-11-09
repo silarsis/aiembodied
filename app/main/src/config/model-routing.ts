@@ -56,6 +56,7 @@ export type UseId =
   | 'posecheck'
   | 'clips'
   | 'idle'
+  | 'scenelayout'
   | 'memory'
   | 'memorymirror'
   | 'coding';
@@ -72,6 +73,7 @@ export const USE_IDS: readonly UseId[] = [
   'posecheck',
   'clips',
   'idle',
+  'scenelayout',
   'memory',
   'memorymirror',
   'coding',
@@ -94,6 +96,8 @@ export const USE_SERVER_TYPES: Record<UseId, readonly ServerType[]> = {
   clips: ['chat', 'openai'],
   // What the avatar does on its own in a 3D room (app/main/src/rooms/idle-thoughts.ts).
   idle: ['chat', 'openai'],
+  // Writes a 3D room layout from a description (app/main/src/rooms/room-layout-llm.ts).
+  scenelayout: ['chat', 'openai'],
   // Long-term memory: the PostgreSQL database the memory engine keeps everything in, and an
   // optional second one it copies everything to (such as Supabase).
   memory: ['memory'],
@@ -102,7 +106,7 @@ export const USE_SERVER_TYPES: Record<UseId, readonly ServerType[]> = {
   coding: ['chat', 'openai', 'anthropic'],
 };
 /** Uses that try backup servers when the first one fails. The others use only their first server. */
-export const USES_WITH_BACKUPS: readonly UseId[] = ['llm', 'stt', 'tts', 'search', 'image', 'mesh', 'idle'];
+export const USES_WITH_BACKUPS: readonly UseId[] = ['llm', 'stt', 'tts', 'search', 'image', 'mesh', 'idle', 'scenelayout'];
 /** Uses that can send each job to whichever of their servers is least busy. */
 export const USES_WITH_SPREAD: readonly UseId[] = ['image', 'mesh'];
 
@@ -269,6 +273,7 @@ export function defaultRoutes(providers: ProviderSettings, webSearchProvider = '
     posecheck: { server: openai, model: DEFAULT_HELPER_MODELS.posecheck },
     clips: { server: openai, model: providers.motion.openaiModel },
     idle: { ...llm },
+    scenelayout: { ...llm },
     memory: { server: BUILT_IN_SERVER_IDS.memory },
     memorymirror: { server: '' },
     coding: { server: BUILT_IN_SERVER_IDS.coderLlm, model: DEFAULT_CODER_MODEL },
@@ -302,8 +307,8 @@ export function resolveModelRouting(
       return Boolean(server && USE_SERVER_TYPES[use].includes(server.type));
     };
     const usable = saved && (fits(saved.server) || (USES_THAT_CAN_BE_OFF.includes(use) && saved.server === ''));
-    // Idle thoughts follow Thinking (server, model and backups) until they are pointed somewhere else.
-    const base = usable ? saved : use === 'idle' && routes.llm ? routes.llm : defaults[use];
+    // Idle thoughts and Room layout follow Thinking (server, model and backups) until they are pointed somewhere else.
+    const base = usable ? saved : (use === 'idle' || use === 'scenelayout') && routes.llm ? routes.llm : defaults[use];
     const primary = base.server;
     const seen = new Set([primary]);
     const backups = USES_WITH_BACKUPS.includes(use)

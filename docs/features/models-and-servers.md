@@ -20,6 +20,7 @@ Controls → Voice & engine → **Open models and servers** opens one pop-up tha
 | Helpers | Check poses (`posecheck`) | Chat model server, OpenAI | No | Needs a model that reads images. |
 | Helpers | Animation clips (`clips`) | Chat model server, OpenAI | No | |
 | Rooms | Idle thoughts (`idle`) | Chat model server, OpenAI | Yes | Picks what the avatar does next on its own in a 3D room (see [3D rooms](3d-rooms.md)). Starts out on the same server and model as Thinking, backups included, and follows Thinking until you pick something else here. A small, fast model is enough: it gets one short prompt, no history, memory or tools, and answers in under 80 tokens. A failure or a 15 s timeout falls back to a random pick, so a slow or missing model never freezes the avatar. |
+| Rooms | Room layout (`scenelayout`) | Chat model server, OpenAI | Yes | Writes the furniture list and layout when you describe a 3D room (see [3D rooms](3d-rooms.md)). Starts out on the same server and model as Thinking, backups included, and follows Thinking until you pick something else here. One request (temperature 0.4, about 2500 tokens) that asks for a JSON object; a bigger model gives better rooms. An unusable reply is retried once with the problem, then the build fails with a message. |
 
 The Conversation engine item (step by step or OpenAI Realtime, and the Realtime voice) sits at the top of the rail. The wake word stays under Devices & wake word.
 
@@ -75,6 +76,7 @@ The servers and routes are saved under `models` in the preferences file (`Stored
 - `app/main/src/config/model-routing.ts`: types, built-in servers, default routes, `resolveModelRouting`, `routeTargets`.
 - `app/main/src/config/model-server-probe.ts`: Test.
 - `app/main/src/local-voice/voice-engines.ts`: Hearing, Thinking and Speaking with failover.
+- `app/main/src/rooms/room-layout-llm.ts`: the Room layout request (`generateRoomLayout`), failing over like Thinking.
 - `app/main/src/rooms/idle-thoughts.ts`: the Idle thoughts request (`pickIdleActions`, IPC `rooms:idle-pick`), failing over like Thinking.
 - `app/main/src/openai/chat-completions-responses.ts`: lets the helper jobs (written for OpenAI's Responses API) run on any chat server.
 - `app/main/src/avatar/generation/comfyui-pool.ts`: ComfyUI server choice per stage.

@@ -545,6 +545,17 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     delete: (id) => ipcRenderer.invoke('background:delete', id),
     listRooms: () => ipcRenderer.invoke('background:list-rooms'),
     loadRoom: (id) => ipcRenderer.invoke('background:load-room', id),
+    generateRoom: (description) => ipcRenderer.invoke('rooms:generate', description),
+    cancelRoomGeneration: () => ipcRenderer.invoke('rooms:cancel-generate'),
+    deleteRoom: (id) => ipcRenderer.invoke('rooms:delete', id),
+    onRoomProgress: (listener) => {
+      const channel = 'rooms:generate-progress';
+      const handler = (_event: unknown, payload: Parameters<typeof listener>[0]) => listener(payload);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
     getIdleSettings: () => ipcRenderer.invoke('rooms:idle-settings:get'),
     setIdleSettings: (settings) => ipcRenderer.invoke('rooms:idle-settings:set', settings),
     pickIdle: (context) => ipcRenderer.invoke('rooms:idle-pick', context),

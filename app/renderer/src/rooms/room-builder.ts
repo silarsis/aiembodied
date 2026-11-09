@@ -10,9 +10,9 @@ export interface BuiltRoom {
 
 export interface BuildRoomOptions {
   /**
-   * TODO(later step): objects with `model.file` are skipped for now. When given, this hook is
-   * asked for the object's model (a GLB inside the room's folder, scaled to `size` by the caller)
-   * and the result is added to the object's node. The builder never fetches files itself.
+   * Asked for the model of an object that has `model.file`; the result replaces the grey
+   * placeholder box the object shows until it arrives (and keeps if loading fails). The builder
+   * never fetches files itself; see room-model-loader.ts.
    */
   loadModel?: (object: RoomObject) => Promise<THREE.Object3D>;
 }
@@ -109,11 +109,19 @@ export function buildRoom(room: RoomFile, options: BuildRoomOptions = {}): Built
       }
       node.add(partMesh);
     }
+    if (object.model?.file && !object.parts?.length) {
+      // A grey box of the object's size stands in until the model loads (or if it never does).
+      const placeholder = mesh(geometry(new THREE.BoxGeometry(...object.size)), material('#a0a0a0'));
+      placeholder.position.y = object.size[1] / 2;
+      placeholder.name = 'placeholder';
+      node.add(placeholder);
+    }
     if (object.model?.file && options.loadModel) {
       options
         .loadModel(object)
         .then((model) => {
           if (disposed) return;
+          node.getObjectByName('placeholder')?.removeFromParent();
           node.add(model);
         })
         .catch((error: unknown) => {

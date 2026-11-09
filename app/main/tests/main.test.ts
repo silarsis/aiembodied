@@ -267,6 +267,7 @@ const appEmitter = Object.assign(new EventEmitter(), {
   requestSingleInstanceLock: vi.fn(() => true),
   quit: vi.fn(),
   getPath: vi.fn(() => '/tmp/aiembodied-test'),
+  getVersion: vi.fn(() => '0.0.0-test'),
   isPackaged: false,
 });
 
@@ -315,6 +316,7 @@ vi.mock('electron', () => ({
   Menu: { buildFromTemplate: menuBuildFromTemplateMock },
   nativeImage: nativeImageMock,
   powerMonitor: powerMonitorMock,
+  protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() },
 }));
 
 class AvatarModelServiceDouble {

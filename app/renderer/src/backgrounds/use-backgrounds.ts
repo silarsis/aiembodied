@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BackgroundBridge, BackgroundSummary } from '../../../main/src/backgrounds/types.js';
 import { DEFAULT_IDLE_SETTINGS, sanitizeIdleSettings, type IdleSettings } from '../../../main/src/rooms/idle-settings.js';
+import type { RoomGenerationProgress } from '../../../main/src/rooms/room-generation.js';
 import type { RoomFile, RoomSummary } from '../../../main/src/rooms/types.js';
 
 export const isRoomId = (id: string | null): id is string => Boolean(id?.startsWith('room:'));
@@ -14,6 +15,9 @@ export function useBackgrounds(api?: BackgroundBridge) {
   const [loading, setLoading] = useState(Boolean(api));
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [roomBuilding, setRoomBuilding] = useState(false);
+  const [roomProgress, setRoomProgress] = useState<string>('');
+  const [roomWarnings, setRoomWarnings] = useState<string[]>([]);
   const [idleSettings, setIdleSettingsState] = useState<IdleSettings>(DEFAULT_IDLE_SETTINGS);
   const idleRef = useRef<IdleSettings>(DEFAULT_IDLE_SETTINGS);
   const selection = useRef(0);
@@ -157,6 +161,65 @@ export function useBackgrounds(api?: BackgroundBridge) {
     [api],
   );
 
+  useEffect(() => {
+    if (!api?.onRoomProgress) return;
+    return api.onRoomProgress((progress: RoomGenerationProgress) => {
+      if (alive.current) setRoomProgress(progress.message);
+    });
+  }, [api]);
+
+  /** Describes a room in words; on success the new room is listed and becomes the stage. */
+  const buildRoom = useCallback(
+    async (description: string) => {
+      if (!api?.generateRoom) return false;
+      setRoomBuilding(true);
+      setRoomWarnings([]);
+      setRoomProgress('Planning the room');
+      setError(null);
+      try {
+        const result = await api.generateRoom(description);
+        const next = await api.listRooms();
+        if (!alive.current) return true;
+        setRooms(next);
+        setRoomWarnings(result.warnings);
+        await api.setActive(result.room.id);
+        if (alive.current) setActiveId(result.room.id);
+        return true;
+      } catch (cause) {
+        if (alive.current) setError(message(cause));
+        return false;
+      } finally {
+        if (alive.current) {
+          setRoomBuilding(false);
+          setRoomProgress('');
+        }
+      }
+    },
+    [api],
+  );
+
+  const cancelRoom = useCallback(async () => {
+    await api?.cancelRoomGeneration?.();
+  }, [api]);
+
+  const removeRoom = useCallback(
+    async (id: string) => {
+      if (!api?.deleteRoom) return;
+      setError(null);
+      try {
+        await api.deleteRoom(id);
+        const [next, active] = await Promise.all([api.listRooms(), api.getActive()]);
+        if (alive.current) {
+          setRooms(next);
+          setActiveId(active);
+        }
+      } catch (cause) {
+        if (alive.current) setError(message(cause));
+      }
+    },
+    [api],
+  );
+
   const activeKind: '2d' | '3d' = isRoomId(activeId) ? '3d' : '2d';
   const active = items.find((item) => item.id === activeId) ?? null;
   const activeRoomSummary = rooms.find((room) => room.id === activeId) ?? null;
@@ -179,6 +242,12 @@ export function useBackgrounds(api?: BackgroundBridge) {
     setIdleSettings,
     loading,
     generating,
+    roomBuilding,
+    roomProgress,
+    roomWarnings,
+    buildRoom,
+    cancelRoom,
+    removeRoom,
     error,
     select,
     generate,

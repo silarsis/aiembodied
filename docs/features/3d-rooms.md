@@ -12,14 +12,14 @@ Controls → Backgrounds now has two tabs, **2D pictures** and **3D rooms**. Pic
 - Choosing another room, or going back to a picture or the plain background, disposes the old room, puts the avatar back at the origin facing forward, restores the 2D camera and cancels any live motion clip and queued animations.
 - On a 2D picture the hips' horizontal travel is removed from live `{move:...}` clips so the avatar stays on its spot (the height is kept). In a room the travel is kept, and the scene actions below turn it into real root motion.
 - With the metrics HUD flag on, the 3D tab has a **Show walkable area** checkbox that draws the navigation mesh over the room.
-- Describing a room to build it is not part of this step. The 3D tab says so.
+- Describing a room builds a new one (step 4, below).
 
 ## Scene format
 
 Rooms are JSON files (`RoomFile` in `app/main/src/rooms/types.ts`, checked by `validateRoomFile` in `validate.ts`). Built-in rooms live in `app/main/assets/rooms/<name>.json` and have the id `room:builtin:<name>`. Saved rooms live in `<userData>/rooms/<uuid>/room.json` with the id `room:<uuid>`; a saved file that fails validation is skipped with a console warning. The active room is stored under the same `stage.activeBackground` key as pictures; any id starting with `room:` must exist.
 
 - `shell`: floor-centred box (`width` along x, `depth` along z, `height`), colours, optional ceiling, `openings` (windows and doors with `wall`, `offset` from the wall's centre along +x or +z, `width`, `height`, `sill`) and an `outside` colour seen through windows. Walls are 0.1 m thick, built around the openings.
-- `objects`: `id` (unique slug), `name`, `position` (y is the floor contact), `rotationY`, `size` (bounding box used for colliders and navigation obstacles), `parts` (primitive geometry relative to the object origin), `collider` (`box` by default, `none` for the rugs), `dynamic`, and `tags`. A `model.file` field is reserved for GLB models in a later step; it is validated but never fetched yet.
+- `objects`: `id` (unique slug), `name`, `position` (y is the floor contact), `rotationY`, `size` (bounding box used for colliders and navigation obstacles), `parts` (primitive geometry relative to the object origin), `collider` (`box` by default, `none` for the rugs), `dynamic`, and `tags`. `model` is either `{asset, file, scale}` (a library model, see Describing a room) or the old room-folder `{file}` form, which is validated but never fetched.
 - Tags (`sit`, `stand`, `grab`, `look`, `surface`, `idle`) are in object-local space and rotate with the object. `worldTag(room, objectId, kind)` in `app/renderer/src/rooms/room-tags.ts` converts them to world positions and facings.
 - `lights`, a `camera` (position, target, vertical fov) and the `home` pose.
 
@@ -122,7 +122,48 @@ Code: `idle-director.ts` (timing and state, with injected clock, timers, random,
 
 Limits: idle actions use the same stream path as spoken tags, so a user interrupt cancels a walk in progress where it is; the reaction to talking starts 1.5 s after the last interrupt and a later speech-start interrupt can still cancel a walk back home. Walk-home and turn-to-camera happen only after an idle action, not after a walk the assistant chose in conversation. The camera aspect is read when an idle decision is made, not tracked live.
 
+## Describing a room (step 4)
+
+**Status:** Implemented and unit tested with all network mocked. Not run end to end against api.polyhaven.com or a real language model at merge time (the build container cannot reach Poly Haven), and the downloaded models have not been looked at in the real renderer.
+
+Controls → Backgrounds → 3D rooms has a **Room description** box and **Build room** button. Describe a place ("a cosy reading room with an armchair by the window and a wall of books") and the app:
+
+1. **Plans** it: the **Room layout** model (a Models and servers job, `scenelayout`, starting out on Thinking's server and model) writes a JSON layout: shell size, floor and wall colours, windows, door, a lighting preset and up to 14 objects, each with a library search phrase, category, approximate size, colour word and a placement (`against` a wall, `near` another object, `on` a surface, `facing`, `corner`). One request at temperature 0.4 and about 2500 tokens; JSON mode is asked for and dropped if the server rejects it; an unusable reply is sent back once with the problem, then the build fails with a clear message. Code: `room-layout.ts` (schema, checks, ids/colours), `room-layout-prompt.ts`, `room-layout-llm.ts`.
+2. **Finds furniture**: each object goes through the object sources. The first source is the Poly Haven library (below); an object nothing matches gets simple shapes (seat = base, back and arms; table = top and legs; storage = shelves; bed; lamp; plant; mug or box) in the colour the layout names.
+3. **Arranges** it: `room-placer.ts` solves positions deterministically for a seed.
+4. Saves `<userData>/rooms/<uuid>/room.json` with `layout.json` (what the model wrote) and `generation.json` (description, seed, warnings, which objects fell back, which library model each got). The new room is selected.
+
+Progress shows as "Planning the room", "Finding furniture (3/9)", "Arranging", "Done", with notes afterwards ("Couldn't find a rocking chair, used a simple shape."; "Left out the wardrobe: there was no room"). One room is built at a time and **Cancel** stops it. Saved rooms have a **Delete** button (built-in rooms do not), and clicking a saved room puts its description back in the box. IPC: `rooms:generate` (progress on `rooms:generate-progress`), `rooms:cancel-generate`, `rooms:delete`.
+
+### The placer
+
+- Dimensions are clamped (width and depth 3 to 10 m, height 2.4 to 3.5 m). The camera is on the south side (z = depth/2 - 0.4, y 1.5, fov 50) looking north; home is 2.3 m in front of it facing it.
+- Keep-clear zones: a 0.7 m square around home for everything, the sight line between camera and home for tall things (over 0.85 m), the strip in front of the door for everything, and the strip under each window for tall things.
+- Order: objects against a wall (largest first, along the wall on a 10 cm grid; corner objects prefer the ends), free objects that others are `near`, `near` objects (on the side facing the room centre, facing their anchor), the remaining free objects, rugs and other flat things under the furniture group, then `on` objects on their surface's top. A turn towards a named `facing` target happens last. Footprints (rotated rectangles) keep a 10 cm gap and stay inside the walls. An object that does not fit is left out with a warning; one that cannot go against its wall is tried in the open floor first.
+- Walkability (`room-walkability.ts`): a 10 cm floor grid with the navmesh's clearances (0.3 m from walls, 0.35 m from furniture) is flood filled from home. Every seat needs a reachable stand spot (in front, else behind or beside), and every surface and every grabbable prop needs reachable floor within 0.9 m of the footprint it rests on. If not, the placer moves or drops the smaller free and `near` objects, then the object itself. The real navmesh is still built in the renderer.
+- Tags: seats and beds get `sit` (at `seat_height`) and `stand`; tables, counters, shelves and appliances get `stand`; tables and `surface` objects get `surface.height` (shelves 1.0 m at most); grabbable props are `dynamic` with `grab` at the top centre; every object has `look`; an idle hint becomes `tags.idle`.
+
+### Poly Haven models
+
+The library is **Poly Haven** (https://polyhaven.com), whose models are **CC0** (public domain): no attribution or licence is needed, but they are not bundled; they are downloaded the first time a room needs them.
+
+- Catalog: `GET https://api.polyhaven.com/assets?t=models`, cached in `<userData>/rooms/assets/polyhaven/catalog.json` for 7 days (an old copy is used if the network fails).
+- Files: `GET https://api.polyhaven.com/files/<id>`, using `gltf["1k"].gltf` (2k if there is no 1k): the glTF and its `include` files (.bin, textures) go to `<userData>/rooms/assets/polyhaven/<id>/` with the relative layout kept, written as `.part` and renamed, md5 checked when Poly Haven gives one. At most 3 downloads at once. Requests send `User-Agent: aiembodied/<version> room builder`. Paths from the API are checked to stay inside the model's folder and only https URLs are fetched. A failed download makes that object use simple shapes.
+- Search (`asset-library/search.ts`, no embedder): tokens of the object's search words, name and category are scored against the entry's name, tags and categories (exact word, plural/stem, a small synonym table); the entry's categories must suit the object's (seat with furniture or seating, plant with plants, and so on); below a threshold nothing is used.
+- Size: `asset-library/gltf-bounds.ts` reads the glTF's POSITION accessor ranges through the node transforms (no three.js in the main process). The model is scaled uniformly so its height matches the layout's, with the scale kept between 0.5 and 2; the scaled real size becomes the object's `size`, and the scale goes in `model.scale`.
+- Serving: the main process registers `aiembodied-asset://` (standard, secure, fetch-capable, CORS enabled) and serves only files under `<userData>/rooms/assets/`, refusing anything that is not a clean relative path. The renderer's Content-Security-Policy allows the scheme for `img-src` and `connect-src`.
+- Loading: `room-model-loader.ts` loads `aiembodied-asset://polyhaven/<id>/<file>` with GLTFLoader, applies `model.scale`, centres the footprint on the object origin with the bottom on the floor. The room appears at once with a grey box of `size` per model object and the models swap in as they load; a model that fails to load stays a grey box. Colliders and the navmesh stay box-based.
+
+### Where step 5 plugs in
+
+`asset-library/library-source.ts` defines `ObjectSource`; `room-generation-setup.ts` builds the list `[Poly Haven]`. A source that generates a missing object (the avatar image-to-3D pipeline) goes between the library and the simple shapes by adding it to that list; whatever no source resolves still falls back to shapes.
+
+### Limits
+
+- The placer is a heuristic: small odd layouts may drop objects, and `near`/`facing` choices can look stiff. There is no re-roll button yet; build again for another arrangement.
+- Library models face whichever way their authors made them; the placer assumes +Z is the front, so some pieces may look turned.
+- Objects that stand or sit at a window or door are only kept clear by zones, not by looking at the opening's frame.
+
 ## What's next
 
-- Generation: build a `RoomFile` from a text description, save it under `<userData>/rooms`, and load GLB models for objects.
-- Generation: build a `RoomFile` from a text description, save it under `<userData>/rooms`, and load GLB models for objects.
+- Step 5: generate missing objects with the avatar image-to-3D pipeline.

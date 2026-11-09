@@ -2,7 +2,10 @@ import { BackgroundService } from './backgrounds/background-service.js';
 import { RoomService } from './rooms/room-service.js';
 import { pickIdleActions } from './rooms/idle-thoughts.js';
 import { MAX_IDLE_HABITS_LENGTH, normalizeIdleHabits } from './rooms/idle-habits.js';
-import { app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain, powerMonitor } from 'electron';
+import { app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain, powerMonitor, protocol } from 'electron';
+import { ASSET_SCHEME, ASSET_SCHEME_PRIVILEGES, registerAssetProtocol } from './rooms/asset-protocol.js';
+import { ASSET_FOLDER, createRoomGenerationService } from './rooms/room-generation-setup.js';
+import type { RoomGenerationService } from './rooms/room-generation.js';
 import dotenv from 'dotenv';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
@@ -227,6 +230,9 @@ let avatarAnimationService: AvatarAnimationService | null = null;
 let avatarPoseService: AvatarPoseService | null = null;
 let backgroundService: BackgroundService | null = null;
 let roomService: RoomService | null = null;
+let roomGeneration: RoomGenerationService | null = null;
+// The scheme that serves downloaded room models must be declared before the app is ready.
+protocol.registerSchemesAsPrivileged([{ scheme: ASSET_SCHEME, privileges: ASSET_SCHEME_PRIVILEGES }]);
 let vrmaGenerationService: VrmaGenerationService | null = null;
 let poseGenerationService: PoseGenerationService | null = null;
 let poseEvaluationService: PoseEvaluationService | null = null;
@@ -1569,6 +1575,18 @@ function registerIpcHandlers(
   ipcMain.handle('background:delete', (_event, id: string) => requireBackgrounds().delete(id));
   ipcMain.handle('background:list-rooms', () => requireRooms().list());
   ipcMain.handle('background:load-room', (_event, id: string) => requireRooms().load(id));
+  const requireGeneration = (): RoomGenerationService => {
+    if (!roomGeneration) throw new Error('Room building is unavailable.');
+    return roomGeneration;
+  };
+  ipcMain.handle('rooms:generate', (_event, description: unknown) =>
+    requireGeneration().generate(String(description ?? ''), (progress) => broadcastToWindows('rooms:generate-progress', progress)),
+  );
+  ipcMain.handle('rooms:cancel-generate', () => requireGeneration().cancel());
+  ipcMain.handle('rooms:delete', async (_event, id: string) => {
+    await requireGeneration().delete(id);
+    if (backgroundService && (await backgroundService.getActive()) === id) await backgroundService.setActive(null);
+  });
   ipcMain.handle('rooms:idle-settings:get', () => requireBackgrounds().getIdleSettings());
   ipcMain.handle('rooms:idle-settings:set', (_event, settings: unknown) => requireBackgrounds().setIdleSettings(settings));
   // The "Idle thoughts" job: what the avatar does next on its own. Null on any failure; the renderer then picks at random.
@@ -2270,6 +2288,14 @@ app.whenReady().then(async () => {
     roomService = new RoomService({
       assetsDirectory: path.join(__dirname, '../assets/rooms'),
       roomsDirectory: path.join(app.getPath('userData'), 'rooms'),
+    });
+    registerAssetProtocol(protocol, path.join(app.getPath('userData'), 'rooms', ASSET_FOLDER));
+    roomGeneration = createRoomGenerationService({
+      userData: app.getPath('userData'),
+      routing: () => manager.getConfig().models,
+      keyFor: (id) => manager.getServerKey(id),
+      appVersion: app.getVersion(),
+      logger,
     });
     backgroundService = new BackgroundService({
       store: memoryStore,

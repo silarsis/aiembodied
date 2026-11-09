@@ -76,6 +76,7 @@ describe('buildRoom', () => {
     await Promise.resolve();
     expect(built.objectNodes.get(room.objects[0].id)?.children).toContain(model);
     const skipped = buildRoom(withModel);
-    expect(skipped.objectNodes.get(room.objects[0].id)?.children).toHaveLength(0);
+    // Without a loader the object keeps its grey placeholder box.
+    expect(skipped.objectNodes.get(room.objects[0].id)?.children.map((c) => c.name)).toEqual(['placeholder']);
   });
 });

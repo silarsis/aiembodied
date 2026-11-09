@@ -1,4 +1,5 @@
 import type { IdleSettings } from '../rooms/idle-settings.js';
+import type { RoomGenerationProgress, RoomGenerationResult } from '../rooms/room-generation.js';
 import type { IdlePickContext, IdlePickResult, RoomFile, RoomSummary } from '../rooms/types.js';
 
 export interface BackgroundSummary {
@@ -21,6 +22,12 @@ export interface BackgroundBridge {
   delete(id: string): Promise<void>;
   listRooms(): Promise<RoomSummary[]>;
   loadRoom(id: string): Promise<RoomFile>;
+  /** Describe a room in words and build it (resolves when saved; progress comes through onRoomProgress). */
+  generateRoom?(description: string): Promise<RoomGenerationResult>;
+  cancelRoomGeneration?(): Promise<boolean>;
+  /** Deletes a saved (not built-in) room. */
+  deleteRoom?(id: string): Promise<void>;
+  onRoomProgress?(listener: (progress: RoomGenerationProgress) => void): () => void;
   /** The "When idle" settings of 3D rooms (key `rooms.idle`). */
   getIdleSettings?(): Promise<IdleSettings>;
   setIdleSettings?(settings: IdleSettings): Promise<IdleSettings>;
