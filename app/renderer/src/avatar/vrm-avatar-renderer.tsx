@@ -27,6 +27,7 @@ import {
 import { toAnimationSlug } from './animation-tags.js';
 import { LIVE_MOTION_SOURCE } from './live-motion.js';
 import { pinHipsHorizontal } from './hips-pinning.js';
+import { JumpDetector } from '../rooms/jump-detector.js';
 import type { RoomFile } from '../../../main/src/rooms/types.js';
 import { RoomSceneController } from '../rooms/room-scene-controller.js';
 import type { SceneActionExecutor } from '../rooms/scene-executor.js';
@@ -1192,6 +1193,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const currentVrmRef = useRef<VRM | null>(null);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
+  const jumpDetectorRef = useRef(new JumpDetector());
   const idleSchedulerRef = useRef<IdleAnimationScheduler | null>(null);
   const waveActionRef = useRef<THREE.AnimationAction | null>(null);
   const expressionManagerRef = useRef<VRMExpressionManager | null>(null);
@@ -1796,6 +1798,20 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       idleSchedulerRef.current?.update(delta);
       currentVrmRef.current?.update(delta);
       rendererInstance.render(sceneInstance, cameraInstance);
+      if (roomControllerRef.current?.active) {
+        const playing = activeAnimationRef.current;
+        jumpDetectorRef.current.check(
+          playing
+            ? {
+                clip: playing.action.getClip().name,
+                clipTime: Math.round(playing.action.time * 1000) / 1000,
+                clipWeight: Math.round(playing.action.getEffectiveWeight() * 1000) / 1000,
+              }
+            : {},
+        );
+      } else {
+        jumpDetectorRef.current.reset();
+      }
       if (currentVrmRef.current && !groundMeasuredRef.current && !roomControllerRef.current?.active) {
         const fraction = renderedFootFraction(rendererInstance);
         if (fraction !== null) {
@@ -1871,6 +1887,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       disposeVrm(currentVrmRef.current);
       currentVrmRef.current = null;
       roomControllerRef.current?.attachAvatar(null);
+      jumpDetectorRef.current.track(null, null, []);
       setAvatarRestSkeleton(null);
       try {
         mixerRef.current?.stopAllAction();
@@ -1994,6 +2011,10 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         scene.add(vrm.scene);
         currentVrmRef.current = vrm;
         roomControllerRef.current?.attachAvatar(vrm.scene, vrm.humanoid, restSkeleton?.hips[1]);
+        jumpDetectorRef.current.track(vrm.scene, vrm.humanoid?.getNormalizedBoneNode('hips'), [
+          vrm.humanoid?.getNormalizedBoneNode('leftHand'),
+          vrm.humanoid?.getNormalizedBoneNode('rightHand'),
+        ]);
         setAvatarRestSkeleton(restSkeleton);
         expressionManagerRef.current = vrm.expressionManager ?? null;
         expressionManagerRef.current?.resetValues();
