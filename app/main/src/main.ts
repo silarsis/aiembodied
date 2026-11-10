@@ -6,6 +6,8 @@ import { app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain, powerMonitor
 import { ASSET_SCHEME, ASSET_SCHEME_PRIVILEGES, registerAssetProtocol } from './rooms/asset-protocol.js';
 import { ASSET_FOLDER, createRoomGenerationService, objectMakingAvailable, pickSingleImageGeometry } from './rooms/room-generation-setup.js';
 import type { RoomGenerationService } from './rooms/room-generation.js';
+import { SwitchboardClient } from './switchboard/client.js';
+import { SwitchboardMirror } from './switchboard/mirror.js';
 import dotenv from 'dotenv';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
@@ -130,7 +132,7 @@ import { CodingMemoryWriter } from './coding/memory-writer.js';
 import { CodingNudger } from './coding/nudger.js';
 import { registerCodingTaskIpc } from './coding/task-ipc.js';
 import { CODING_SERVER_ID, CODING_TOOL_IDS, createCodingTools } from './coding/tools.js';
-import { ApprovalBroker } from './tools/approvals.js';
+import { ApprovalBroker, type PendingApproval } from './tools/approvals.js';
 import { registerApprovalsIpc } from './tools/approvals-ipc.js';
 import { lookupHuggingFace, parseHuggingFaceRef } from './local-llm/huggingface.js';
 import { LlmLibrary } from './local-llm/llm-library.js';
@@ -310,6 +312,12 @@ let currentMotionServiceUrl: string | null = null;
 let toolRegistry: ToolRegistry | null = null;
 let approvalBroker: ApprovalBroker | null = null;
 let codingNudger: CodingNudger | null = null;
+// Copies app events onto the switchboard (services/switchboard). Phase 1: mirror only; null when off.
+let switchboardClient: SwitchboardClient | null = null;
+let switchboardMirror: SwitchboardMirror | null = null;
+/** The voice turn being answered now, so tool results can name their turn. */
+let activeVoiceRequestId: string | undefined;
+const seenApprovalIds = new Set<string>();
 let codingToolsSignature: string | null = null;
 
 /** Send a message to every open window. */
@@ -743,7 +751,10 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
       extraInstructions: () => codingBrief(manager),
       onSystemReady: () => broadcastToWindows('local-voice:system-ready'),
       logger,
-      onToolResult: (record) => memoryEngine?.recordToolCall(record),
+      onToolResult: (record) => {
+        memoryEngine?.recordToolCall(record);
+        switchboardMirror?.toolResult(record, activeVoiceRequestId);
+      },
       voiceFor: () => characterVoice(speakingVoiceKey(manager.getConfig().models)) ?? undefined,
       // Through memoryEngine at call time: it is set up after this service.
       memory: {
@@ -897,18 +908,25 @@ function getCodingService(manager: ConfigManager): CodingService {
       }),
     onOverrideChange: () => applyProviderSettings(manager),
     gpuMemory: gpuMemoryReader,
-    notify: (text, options) => localVoiceService?.notify(text, options),
+    notify: (text, options) => {
+      switchboardMirror?.noteQueued(text, options?.urgent === true);
+      return localVoiceService?.notify(text, options);
+    },
     logger,
   });
   const service = codingService;
   const workspaceName = (id: string | undefined) => manager.getCoding().workspaces.find((ws) => ws.id === id)?.name ?? id ?? 'a workspace';
   codingNudger = new CodingNudger({
-    notify: (text, options) => localVoiceService?.notify(text, options),
+    notify: (text, options) => {
+      switchboardMirror?.noteQueued(text, options?.urgent === true);
+      return localVoiceService?.notify(text, options);
+    },
     getTask: (id) => service.runnerClient()?.getTask(id).catch(() => null) ?? Promise.resolve(null),
     workspaceName,
     logger,
   });
   service.onRunnerEvent((event) => void codingNudger?.handleEvent(event));
+  service.onRunnerEvent((event) => switchboardMirror?.runnerEvent(event));
   // Finished tasks become memories. The memory engine is set up later, so it is read at call time.
   const memoryWriter = new CodingMemoryWriter({
     getTask: (id) => service.runnerClient()?.getTask(id).catch(() => null) ?? Promise.resolve(null),
@@ -1883,11 +1901,22 @@ function registerIpcHandlers(
         if (!sender.isDestroyed()) sender.send('coding:busy', { busy: false });
       }
     }
-    return localVoiceService.respond(payload, (voiceEvent) => {
-      if (!sender.isDestroyed()) {
-        sender.send('local-voice:event', voiceEvent);
-      }
-    });
+    switchboardMirror?.turnStarted(payload.requestId, { text: payload.text, system: payload.system === true, preview: payload.preview === true });
+    activeVoiceRequestId = payload.requestId;
+    try {
+      const result = await localVoiceService.respond(payload, (voiceEvent) => {
+        if (!sender.isDestroyed()) {
+          sender.send('local-voice:event', voiceEvent);
+        }
+      });
+      if (!payload.preview) switchboardMirror?.turnFinished(payload.requestId, { text: result.text, cancelled: result.cancelled });
+      return result;
+    } catch (error) {
+      if (!payload.preview) switchboardMirror?.turnFinished(payload.requestId, { text: '', error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    } finally {
+      if (activeVoiceRequestId === payload.requestId) activeVoiceRequestId = undefined;
+    }
   });
   ipcMain.handle('local-voice:cancel', (_event, requestId?: string) => {
     localVoiceService?.cancel(typeof requestId === 'string' ? requestId : undefined);
@@ -2257,6 +2286,11 @@ app.whenReady().then(async () => {
     repoRoot: path.resolve(__dirname, '../../..'),
   });
 
+  if (process.env.SWITCHBOARD_ENABLED !== '0' && !switchboardClient) {
+    switchboardClient = new SwitchboardClient({ baseUrl: process.env.SWITCHBOARD_URL?.trim() || 'http://127.0.0.1:8196', logger });
+    switchboardMirror = new SwitchboardMirror({ client: switchboardClient });
+  }
+
   try {
     memoryStore = new MemoryStore({ filePath: path.join(app.getPath('userData'), 'memory.db') });
     avatarModelService = new AvatarModelService({
@@ -2291,6 +2325,15 @@ app.whenReady().then(async () => {
     toolRegistry = new ToolRegistry();
     approvalBroker = new ApprovalBroker({ registry: toolRegistry, logger });
     approvalBroker.on('outcome', (outcome) => codingNudger?.handleApproval(outcome));
+    approvalBroker.on('outcome', (outcome) => switchboardMirror?.approvalOutcome(outcome));
+    // 'changed' lists everything pending; only ids not seen before are new requests.
+    approvalBroker.on('changed', (pending: PendingApproval[]) => {
+      for (const approval of pending) {
+        if (seenApprovalIds.has(approval.id)) continue;
+        seenApprovalIds.add(approval.id);
+        switchboardMirror?.approvalRequested(approval);
+      }
+    });
     if (memoryEngine) {
       const store = memoryStore;
       const conversations = conversationManager;
@@ -2609,6 +2652,7 @@ app.on('before-quit', async (event) => {
   wakeWordTrainer?.dispose();
   codingService?.stop();
   approvalBroker?.dispose();
+  void switchboardClient?.stop();
 
   // Stop the local servers this app started, as hibernation does.
   if (serverManager) {

@@ -168,6 +168,9 @@ Design and decisions: [Echo event bus Claude Doc](https://claude.ai/artifact/5zm
   event envelope (producer, addressees, transaction, audience), a SQLite
   journal and transaction ledger, and a floor manager per scene using rules
   first, then bids. Audio and motion stay on their direct paths.
+- **Built (phase 1, mirror only):** `services/switchboard` and the app's mirror
+  (`app/main/src/switchboard`) copy voice turns, tool results, approvals,
+  coding events and queued updates onto the bus; app behaviour is unchanged.
 - **To do:** build it locally in phases: mirror today's events, make Echo an
   actor with an inbox policy, then several local avatars.
 

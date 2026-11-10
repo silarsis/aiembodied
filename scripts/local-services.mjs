@@ -133,6 +133,7 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
   const speechUrl = trimSlash(builtInUrl('local-speech') || providers.speechServiceUrl || env.SPEECH_SERVICE_URL || 'http://127.0.0.1:8192');
   const motionUrl = trimSlash(builtInUrl('local-motion') || providers.motion?.localServiceUrl || env.MOTION_SERVICE_URL || 'http://127.0.0.1:8190');
   const searxngUrl = trimSlash(builtInUrl('local-searxng') || env.SEARXNG_URL || 'http://127.0.0.1:8888');
+  const switchboardUrl = trimSlash(env.SWITCHBOARD_URL || 'http://127.0.0.1:8196');
   const memoryUrl = trimSlash(env.MEMORY_SERVICE_URL || 'http://127.0.0.1:8194');
   // The coding runner: the built-in server, unless the app points coding at a runner on another machine.
   const coderServer = typeof saved.coding?.runner === 'string' && saved.coding.runner ? saved.coding.runner : 'local-coder-runner';
@@ -222,6 +223,15 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
       probe: `${coderUrl}/v1/health`,
       script: 'services/coder/scripts/start.ps1',
       args: portArgs(coderUrl),
+    },
+    {
+      id: 'switchboard',
+      label: 'Switchboard event bus (services/switchboard)',
+      enabled: isOn(env.SWITCHBOARD_ENABLED, true) && isOn(env.SWITCHBOARD_AUTOSTART, true),
+      url: switchboardUrl,
+      probe: `${switchboardUrl}/health`,
+      script: 'services/switchboard/scripts/start.ps1',
+      args: portArgs(switchboardUrl),
     },
   ];
 
