@@ -13,6 +13,7 @@ import path from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { aliasFor, resolveUrl, type HfFile, type HfQuant } from './huggingface.js';
+import { clampContextPerSlot, clampSlots, resolveLlmSettings, type LocalLlmSettings } from './llm-settings.js';
 
 export interface LocalLlmModel {
   /** <repo>:<quant id>. */
@@ -33,11 +34,17 @@ export interface LocalLlmLibraryFile {
   /** The model llama-server runs. None: the start script's own default (Qwen Flash-Next). */
   selected?: string;
   models: LocalLlmModel[];
+  /** Conversations at once (1..8). Absent: LOCAL_LLM_SLOTS, else 2. */
+  slots?: number;
+  /** Tokens of context per slot (4096 or more). Absent: LOCAL_LLM_CONTEXT, else 65536. */
+  contextPerSlot?: number;
 }
 
 /** What the page lists: the downloaded models, the one in use, and where they are kept. */
 export interface LocalLlmList extends LocalLlmLibraryFile {
   folder: string;
+  /** The slots and per-slot context llama-server runs with, defaults filled in. */
+  settings: LocalLlmSettings;
 }
 
 export type LlmDownloadState = 'queued' | 'downloading' | 'verifying' | 'done' | 'failed' | 'cancelled';
@@ -111,7 +118,14 @@ export class LlmLibrary {
         ? parsed.models.filter((entry): entry is LocalLlmModel => typeof entry?.id === 'string' && typeof entry.path === 'string' && typeof entry.alias === 'string')
         : [];
       const selected = typeof parsed.selected === 'string' && models.some((entry) => entry.id === parsed.selected) ? parsed.selected : undefined;
-      return { models, ...(selected ? { selected } : {}) };
+      const slots = clampSlots(parsed.slots);
+      const contextPerSlot = clampContextPerSlot(parsed.contextPerSlot);
+      return {
+        models,
+        ...(selected ? { selected } : {}),
+        ...(slots !== null ? { slots } : {}),
+        ...(contextPerSlot !== null ? { contextPerSlot } : {}),
+      };
     } catch {
       return { models: [] };
     }
@@ -122,6 +136,23 @@ export class LlmLibrary {
     const temp = `${this.options.file}.${process.pid}.tmp`;
     await fs.writeFile(temp, JSON.stringify(library, null, 2), 'utf8');
     await fs.rename(temp, this.options.file);
+  }
+
+  /** The slots and per-slot context llama-server should run with: saved, else the environment, else 2 x 64K. */
+  async settings(env: NodeJS.ProcessEnv = process.env): Promise<LocalLlmSettings> {
+    return resolveLlmSettings(await this.read(), env);
+  }
+
+  /** Save the slots and per-slot context (clamped to 1..8 and 4096 or more). */
+  async setSettings(settings: Partial<LocalLlmSettings>): Promise<void> {
+    const library = await this.read();
+    const slots = clampSlots(settings.slots) ?? library.slots;
+    const contextPerSlot = clampContextPerSlot(settings.contextPerSlot) ?? library.contextPerSlot;
+    await this.write({
+      ...library,
+      ...(slots !== undefined ? { slots } : {}),
+      ...(contextPerSlot !== undefined ? { contextPerSlot } : {}),
+    });
   }
 
   /** The model llama-server should run, if one was picked and its file is still there. */
@@ -137,7 +168,9 @@ export class LlmLibrary {
     const model = id ? library.models.find((entry) => entry.id === id) : undefined;
     if (id && !model) throw new Error('That model is no longer downloaded.');
     if (model && !existsSync(model.path)) throw new Error(`${model.path} is missing. Download it again.`);
-    await this.write({ models: library.models, ...(model ? { selected: model.id } : {}) });
+    const next = { ...library };
+    delete next.selected;
+    await this.write({ ...next, ...(model ? { selected: model.id } : {}) });
     return model ?? null;
   }
 

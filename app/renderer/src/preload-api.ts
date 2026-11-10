@@ -3,6 +3,7 @@ import type { CodingBridge, CodingBusyBridge, CodingTasksBridge } from '../../ma
 import type { ApprovalsBridge } from '../../main/src/tools/approvals-ipc.js';
 import type { CivitaiLookup } from '../../main/src/avatar/generation/civitai.js';
 import type { HfLookup } from '../../main/src/local-llm/huggingface.js';
+import type { LocalLlmSettings } from '../../main/src/local-llm/llm-settings.js';
 import type { LlmDownload, LocalLlmList } from '../../main/src/local-llm/llm-library.js';
 import type { VisionStatus } from '../../main/src/local-vision/vision-model.js';
 import type { ModelDownload } from '../../main/src/avatar/generation/model-downloads.js';
@@ -83,8 +84,11 @@ export interface ModelsBridge {
   visionDownload?(ref?: string): Promise<VisionStatus>;
   visionCancel?(): Promise<VisionStatus>;
   localLlms?(): Promise<LocalLlmList>;
-  /** Run a downloaded model for Thinking (null: llama-server's default) and restart llama-server. */
-  useLocalLlm?(id: string | null): Promise<{ message: string; library: LocalLlmList; models: ModelRoutingView }>;
+  /**
+   * Run a downloaded model for Thinking (null: llama-server's default) and restart llama-server.
+   * With settings, the slots and per-slot context are saved first.
+   */
+  useLocalLlm?(id: string | null, settings?: Partial<LocalLlmSettings>): Promise<{ message: string; library: LocalLlmList; models: ModelRoutingView }>;
   deleteLocalLlm?(id: string): Promise<LocalLlmList>;
 }
 

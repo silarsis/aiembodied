@@ -6,12 +6,18 @@ import type { ModelsBridge } from '../preload-api.js';
 import { formatBytes } from './model-downloads.js';
 
 const ACTIVE = new Set(['queued', 'downloading', 'verifying']);
+const SLOT_CHOICES = [1, 2, 3, 4];
+const CONTEXT_CHOICES = [8192, 16384, 32768, 65536, 131072];
+
+function tokens(count: number): string {
+  return count >= 1024 ? `${Math.round(count / 1024)}K` : String(count);
+}
 
 /**
  * On the Thinking page: paste a Hugging Face link or name, pick a size, download it, and (by
  * default) switch Thinking to it, which restarts this PC's llama-server with that model.
  */
-export function ThinkingDownloads({ api, busy: parentBusy, onView }: { api: ModelsBridge; busy: boolean; onView(view: ModelRoutingView): void }) {
+export function ThinkingDownloads({ api, busy: parentBusy, onView, local = true }: { api: ModelsBridge; busy: boolean; onView(view: ModelRoutingView): void; local?: boolean }) {
   const [ref, setRef] = useState('');
   const [lookup, setLookup] = useState<HfLookup | null>(null);
   const [quant, setQuant] = useState('');
@@ -104,6 +110,24 @@ export function ThinkingDownloads({ api, busy: parentBusy, onView }: { api: Mode
     }
   };
 
+  // Saving the slots or context restarts llama-server, the same way picking a model does.
+  const saveSettings = async (change: { slots?: number; contextPerSlot?: number }) => {
+    if (!api.useLocalLlm || !library) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.useLocalLlm(library.selected ?? null, { ...library.settings, ...change });
+      setLibrary(result.library);
+      onView(result.models);
+      setNotice(result.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not change the slots.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const remove = async (id: string) => {
     if (!api.deleteLocalLlm) return;
     setBusy(true);
@@ -119,6 +143,7 @@ export function ThinkingDownloads({ api, busy: parentBusy, onView }: { api: Mode
 
   if (!api.hfLookup) return null;
   const disabled = busy || parentBusy;
+  const selectedModel = library?.models.find((model) => model.id === library.selected);
   const chosen = lookup?.quants.find((entry) => entry.id === quant);
   return (
     <div className="modelsDialog__list modelsDialog__downloads">
@@ -269,6 +294,44 @@ export function ThinkingDownloads({ api, busy: parentBusy, onView }: { api: Mode
               )}
             </div>
           ))}
+          {local ? (
+            <div className="modelsDialog__plan" aria-label="llama-server slots">
+              <label className="modelsDialog__inline">
+                Conversations at once{' '}
+                <select
+                  value={library.settings.slots}
+                  onChange={(event) => void saveSettings({ slots: Number(event.target.value) })}
+                  disabled={disabled}
+                >
+                  {[...new Set([...SLOT_CHOICES, library.settings.slots])].sort((a, b) => a - b).map((count) => (
+                    <option key={count} value={count}>
+                      {count}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <small className="kiosk__helper">One per avatar talking; each keeps its own cache.</small>
+              <label className="modelsDialog__inline">
+                Context per conversation{' '}
+                <select
+                  value={library.settings.contextPerSlot}
+                  onChange={(event) => void saveSettings({ contextPerSlot: Number(event.target.value) })}
+                  disabled={disabled}
+                >
+                  {[...new Set([...CONTEXT_CHOICES, library.settings.contextPerSlot])].sort((a, b) => a - b).map((count) => (
+                    <option key={count} value={count} disabled={count !== library.settings.contextPerSlot && count > (selectedModel?.contextLength ?? Infinity)}>
+                      {tokens(count)}
+                      {selectedModel?.contextLength && count > selectedModel.contextLength ? ' (more than this model supports)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <small className="kiosk__helper">
+                llama-server reserves {tokens(library.settings.slots * Math.min(library.settings.contextPerSlot, selectedModel?.contextLength ?? Infinity))} tokens of context in all.
+                Changing either restarts it.
+              </small>
+            </div>
+          ) : null}
           <small className="kiosk__helper">
             Saved in <code>{library.folder}</code> (set LOCAL_LLM_MODELS_DIR to use another drive).
           </small>

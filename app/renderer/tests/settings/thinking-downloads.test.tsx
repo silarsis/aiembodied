@@ -21,7 +21,7 @@ const lookup: HfLookup = {
 
 function bridge() {
   let list: LlmDownload[] = [];
-  let library: LocalLlmList = { models: [], folder: 'C:/Users/kevin/.cache/aiembodied/llm-models' };
+  let library: LocalLlmList = { models: [], folder: 'C:/Users/kevin/.cache/aiembodied/llm-models', settings: { slots: 2, contextPerSlot: 65536 } };
   const entry = (state: LlmDownload['state'], extra: Partial<LlmDownload> = {}): LlmDownload => ({
     id: 'd1',
     repo: 'unsloth/Qwen3-8B-GGUF',
@@ -114,5 +114,25 @@ describe('Download a thinking model', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Use' }));
     await waitFor(() => expect(api.useLocalLlm).toHaveBeenCalledWith(null));
     expect(await screen.findByText('llama-server is restarting with its default model.')).toBeTruthy();
+  });
+
+  it('saves the slots and context per slot, restarting llama-server', async () => {
+    const { api } = bridge();
+    render(<ThinkingDownloads api={api} busy={false} onView={vi.fn()} />);
+    const slots = (await screen.findByLabelText(/Conversations at once/)) as HTMLSelectElement;
+    expect(slots.value).toBe('2');
+    expect((screen.getByLabelText(/Context per conversation/) as HTMLSelectElement).value).toBe('65536');
+    expect(screen.getByText(/reserves 128K tokens of context in all/)).toBeTruthy();
+    fireEvent.change(slots, { target: { value: '3' } });
+    await waitFor(() => expect(api.useLocalLlm).toHaveBeenCalledWith(null, { slots: 3, contextPerSlot: 65536 }));
+    fireEvent.change(screen.getByLabelText(/Context per conversation/), { target: { value: '32768' } });
+    await waitFor(() => expect(api.useLocalLlm).toHaveBeenLastCalledWith(null, { slots: 2, contextPerSlot: 32768 }));
+  });
+
+  it('hides the slot controls when Thinking runs elsewhere', async () => {
+    const { api } = bridge();
+    render(<ThinkingDownloads api={api} busy={false} onView={vi.fn()} local={false} />);
+    await screen.findByText('On this PC');
+    expect(screen.queryByLabelText(/Conversations at once/)).toBeNull();
   });
 });

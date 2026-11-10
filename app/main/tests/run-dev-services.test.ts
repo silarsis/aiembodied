@@ -60,12 +60,16 @@ describe('local services', () => {
     expect(byId.speech.args).toEqual(['-Port', '8192', '-KokoroDir', 'C:\\kokoro']);
     expect(byId.motion.args).toEqual(['-Port', '8190', '-TextEncodersDir', 'C:\\enc', '-Venv', 'C:\\venv']);
     expect(byId.llm.script).toBe(resolve('/repo', 'scripts/start-local-llm.ps1'));
-    expect(byId.llm.args).toEqual(['-Port', '1234']);
+    expect(byId.llm.args).toEqual(['-Port', '1234', '-Slots', '2', '-Context', '65536']);
     const smallContext = describeLocalServices('/repo', { LOCAL_LLM_CONTEXT: '32768' });
-    expect(smallContext[0].args).toEqual(['-Port', '1234', '-Context', '32768']);
+    expect(smallContext[0].args).toEqual(['-Port', '1234', '-Slots', '2', '-Context', '32768']);
+    const tooManySlots = describeLocalServices('/repo', { LOCAL_LLM_SLOTS: '12' });
+    expect(tooManySlots[0].args).toEqual(['-Port', '1234', '-Slots', '8', '-Context', '65536']);
 
     const downloaded = describeLocalServices('/repo', { LOCAL_LLM_CONTEXT: '32768' }, {}, { path: 'C:\\m\\x.gguf', alias: 'x-q4_k_m', contextLength: 8192 });
-    expect(downloaded[0].args).toEqual(['-Port', '1234', '-Model', 'C:\\m\\x.gguf', '-Alias', 'x-q4_k_m', '-Context', '8192']);
+    expect(downloaded[0].args).toEqual(['-Port', '1234', '-Model', 'C:\\m\\x.gguf', '-Alias', 'x-q4_k_m', '-Slots', '2', '-Context', '8192']);
+    const saved = describeLocalServices('/repo', { LOCAL_LLM_SLOTS: '4' }, {}, { path: 'C:\\m\\x.gguf', alias: 'x', contextLength: 131072, slots: 1, contextPerSlot: 131072 });
+    expect(saved[0].args).toEqual(['-Port', '1234', '-Model', 'C:\\m\\x.gguf', '-Alias', 'x', '-Slots', '1', '-Context', '131072']);
     expect(downloaded[0].label).toBe('x-q4_k_m (llama-server)');
 
     const onCpu = describeLocalServices('/repo', { MOTION_TEXT_ENCODER_DEVICE: 'cpu' });
@@ -345,8 +349,14 @@ describe('thinking model picked in the app', () => {
         JSON.stringify({ selected: 'a/b:m', models: [{ id: 'a/b:m', path: model, alias: 'b-q4', contextLength: 4096 }] }),
       );
       expect(readSelectedLocalLlm(repoRoot)).toEqual({ path: model, alias: 'b-q4', contextLength: 4096 });
+      writeFileSync(
+        join(dirname(preferences), 'local-llm.json'),
+        JSON.stringify({ selected: 'a/b:m', slots: 20, contextPerSlot: 100, models: [{ id: 'a/b:m', path: model, alias: 'b-q4' }] }),
+      );
+      expect(readSelectedLocalLlm(repoRoot)).toEqual({ path: model, alias: 'b-q4', slots: 8, contextPerSlot: 4096 });
       rmSync(model);
-      expect(readSelectedLocalLlm(repoRoot)).toBeNull();
+      // The model is gone, but its slot settings still apply to the start script's own default.
+      expect(readSelectedLocalLlm(repoRoot)).toEqual({ slots: 8, contextPerSlot: 4096 });
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
     }

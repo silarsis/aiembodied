@@ -116,4 +116,28 @@ describe('LlmLibrary', () => {
     expect((await lib.read()).models).toEqual([]);
     await expect(stat(path.join(root, 'models', 'o', 'r', 'Q4', 'm-Q4_K_M-00001-of-00002.gguf'))).rejects.toThrow();
   });
+
+  it('defaults to 2 slots of 64K, takes the environment, and clamps what is saved', async () => {
+    const { lib, root } = await library();
+    await expect(lib.settings({})).resolves.toEqual({ slots: 2, contextPerSlot: 65536 });
+    await expect(lib.settings({ LOCAL_LLM_SLOTS: '3', LOCAL_LLM_CONTEXT: '32768' })).resolves.toEqual({ slots: 3, contextPerSlot: 32768 });
+    await expect(lib.settings({ LOCAL_LLM_SLOTS: '99' })).resolves.toMatchObject({ slots: 8 });
+    await lib.setSettings({ slots: 0, contextPerSlot: 100 });
+    await expect(lib.settings({ LOCAL_LLM_SLOTS: '3' })).resolves.toEqual({ slots: 1, contextPerSlot: 4096 });
+    await lib.setSettings({ slots: 4, contextPerSlot: 131072 });
+    expect(JSON.parse(await readFile(path.join(root, 'userData', 'local-llm.json'), 'utf8'))).toMatchObject({ slots: 4, contextPerSlot: 131072 });
+    // Garbage in the file is ignored.
+    await writeFile(path.join(root, 'userData', 'local-llm.json'), JSON.stringify({ models: [], slots: 'many', contextPerSlot: null }));
+    await expect(lib.settings({})).resolves.toEqual({ slots: 2, contextPerSlot: 65536 });
+  });
+
+  it('keeps the slot settings when a model is picked or deleted', async () => {
+    const { lib } = await library();
+    await settle(lib, (await lib.start('o/r', quant, { use: false })).id);
+    await lib.setSettings({ slots: 3, contextPerSlot: 16384 });
+    await lib.select('o/r:Q4/m-Q4_K_M.gguf');
+    await lib.select(null);
+    await lib.remove('o/r:Q4/m-Q4_K_M.gguf');
+    await expect(lib.settings({})).resolves.toEqual({ slots: 3, contextPerSlot: 16384 });
+  });
 });

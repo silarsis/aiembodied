@@ -136,6 +136,7 @@ import { ApprovalBroker, type PendingApproval } from './tools/approvals.js';
 import { registerApprovalsIpc } from './tools/approvals-ipc.js';
 import { lookupHuggingFace, parseHuggingFaceRef } from './local-llm/huggingface.js';
 import { LlmLibrary } from './local-llm/llm-library.js';
+import type { LocalLlmSettings } from './local-llm/llm-settings.js';
 import { VisionModel } from './local-vision/vision-model.js';
 import { VisionServer, withVisionServer } from './local-vision/vision-server.js';
 import { MCPManager } from './mcp/mcp-manager.js';
@@ -817,6 +818,7 @@ function getLocalLlmTools(manager: ConfigManager): { library: LlmLibrary; contro
     repoRoot: path.resolve(__dirname, '../../..'),
     logDirectory: path.join(app.getPath('userData'), 'logs'),
     model: () => library.selected(),
+    settings: () => library.settings(),
   });
   localLlmTools = { library, control };
   return localLlmTools;
@@ -864,9 +866,10 @@ function withVision<T>(manager: ConfigManager, use: 'describe' | 'posecheck', jo
  * Run a downloaded model (or, with null, the start script's default) for Thinking: point Thinking
  * at this PC's llama-server and restart it with that model. Returns what happened, in words.
  */
-async function useLocalLlm(manager: ConfigManager, id: string | null): Promise<string> {
+async function useLocalLlm(manager: ConfigManager, id: string | null, settings?: Partial<LocalLlmSettings>): Promise<string> {
   const { library, control } = getLocalLlmTools(manager);
   const model = await library.select(id);
+  if (settings) await library.setSettings(settings);
   const current = manager.getConfig().models.routes.llm;
   await manager.setModelRoute('llm', {
     ...current,
@@ -905,6 +908,8 @@ function getCodingService(manager: ConfigManager): CodingService {
         logDirectory: path.join(app.getPath('userData'), 'logs'),
         model: async () => model,
         fileName: 'coder-llm',
+        // The coder runs one job at a time, so it keeps one slot whatever Thinking is set to.
+        slots: 1,
       }),
     onOverrideChange: () => applyProviderSettings(manager),
     gpuMemory: gpuMemoryReader,
@@ -1383,7 +1388,7 @@ function registerIpcHandlers(
   const hfToken = () => manager.getServerKey(BUILT_IN_SERVER_IDS.huggingface);
   const localLlmList = async () => {
     const { library } = getLocalLlmTools(manager);
-    return { ...(await library.read()), folder: library.modelsDirectory };
+    return { ...(await library.read()), folder: library.modelsDirectory, settings: await library.settings() };
   };
   ipcMain.handle('models:hf-lookup', async (_event, ref: unknown) => {
     const parsed = parseHuggingFaceRef(typeof ref === 'string' ? ref : '');
@@ -1421,8 +1426,9 @@ function registerIpcHandlers(
     return model.status();
   });
   ipcMain.handle('models:local-llms', () => localLlmList());
-  ipcMain.handle('models:use-local-llm', async (_event, id: unknown) => {
-    const message = await useLocalLlm(manager, typeof id === 'string' && id ? id : null);
+  ipcMain.handle('models:use-local-llm', async (_event, id: unknown, settings: unknown) => {
+    const given = settings && typeof settings === 'object' ? (settings as Partial<LocalLlmSettings>) : undefined;
+    const message = await useLocalLlm(manager, typeof id === 'string' && id ? id : null, given);
     return { message, library: await localLlmList(), models: manager.getModelRoutingView() };
   });
   ipcMain.handle('models:delete-local-llm', async (_event, id: unknown) => {

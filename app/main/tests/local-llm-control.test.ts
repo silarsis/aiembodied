@@ -102,6 +102,36 @@ describe('LocalLlmControl', () => {
     expect(command).toContain('m-Q4_K_M.gguf');
     expect(command).toContain('"-Alias"');
     expect(command).toContain('"32768"');
+    // Nothing saved: two slots, each as large as the model allows.
+    expect(command).toContain('"-Slots"');
+    expect(command).toContain('"2"');
+  });
+
+  it('passes the saved slots and context per slot, capped by the model', async () => {
+    const settings = async () => ({ slots: 3, contextPerSlot: 131072 });
+    const model = async () => ({ path: 'C:\\models\\m.gguf', alias: 'm', contextLength: 40960 });
+    const { llm, launch } = await control({ model, settings });
+    await llm.restart();
+    const command = (launch.mock.calls[0] as [string])[0];
+    expect(command).toContain(`'"-Slots"', '"3"'`);
+    expect(command).toContain('"40960"');
+    const { llm: plain, launch: plainLaunch } = await control({ settings });
+    await plain.start();
+    const plainCommand = (plainLaunch.mock.calls[0] as [string])[0];
+    expect(plainCommand).toContain('"131072"');
+    expect(plainCommand).not.toContain('"-Model"');
+  });
+
+  it('keeps one slot for a server that is given slots', async () => {
+    const { llm, launch } = await control({
+      slots: 1,
+      settings: async () => ({ slots: 4, contextPerSlot: 65536 }),
+      model: async () => ({ path: 'D:\\m\\coder.gguf', alias: 'coder', contextLength: 65536 }),
+    });
+    await llm.start();
+    const command = (launch.mock.calls[0] as [string])[0];
+    expect(command).toContain(`'"-Slots"', '"1"'`);
+    expect(command).not.toContain('"4"');
   });
 
   it('leaves another program on the port alone', async () => {

@@ -2,6 +2,7 @@ import { execFile, spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { DEFAULT_LLM_SLOTS, type LocalLlmSettings } from '../local-llm/llm-settings.js';
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
@@ -22,6 +23,10 @@ export interface LocalLlmControlOptions {
   launch?: (command: string) => void;
   /** The GGUF to run (downloaded from Hugging Face), or null for the start script's own default. */
   model?: () => Promise<{ path: string; alias: string; contextLength?: number } | null>;
+  /** The saved slots and per-slot context (see local-llm/llm-settings.ts). Absent: 2 slots, LOCAL_LLM_CONTEXT or 64K each. */
+  settings?: () => Promise<LocalLlmSettings>;
+  /** A fixed number of slots, ignoring the saved setting. The coder's llama-server uses 1. */
+  slots?: number;
   /**
    * What the pid and log files are called in logDirectory: `<name>.pid`, `<name>.log`,
    * `<name>.err.log`. The app stops every server with a pid file there when it quits, so a
@@ -57,7 +62,7 @@ export class LocalLlmControl {
     }
   }
 
-  /** LOCAL_LLM_CONTEXT, or the start script's default: a smaller model's own limit is used when lower. */
+  /** LOCAL_LLM_CONTEXT (per slot), or the start script's default: a smaller model's own limit is used when lower. */
   private contextCap(): number {
     const value = Number.parseInt((this.options.env ?? process.env).LOCAL_LLM_CONTEXT ?? '', 10);
     return Number.isFinite(value) && value > 0 ? value : 65536;
@@ -98,7 +103,8 @@ export class LocalLlmControl {
   async restart(): Promise<LocalLlmRestart> {
     const port = this.port();
     const model = await this.options.model?.().catch(() => null);
-    const by = model ? `-Model "${model.path}" -Alias ${model.alias}` : 'its default model';
+    const saved = await this.options.settings?.().catch(() => null);
+    const by = (model ? `-Model "${model.path}" -Alias ${model.alias}` : 'its default model') + (saved ? ` -Slots ${saved.slots} -Context ${saved.contextPerSlot}` : '');
     if (!port) {
       return {
         restarted: false,
@@ -130,10 +136,13 @@ export class LocalLlmControl {
     mkdirSync(this.options.logDirectory, { recursive: true });
     const name = this.options.fileName ?? 'llm';
     const model = await this.options.model?.().catch(() => null);
-    const modelArgs = model
-      ? ['-Model', model.path, '-Alias', model.alias, ...(model.contextLength ? ['-Context', String(Math.min(model.contextLength, this.contextCap()))] : [])]
-      : [];
-    const args = ['-NoProfile', '-NonInteractive', '-File', this.script, '-Port', String(port), ...modelArgs]
+    const saved = await this.options.settings?.().catch(() => null);
+    const slots = this.options.slots ?? saved?.slots ?? DEFAULT_LLM_SLOTS;
+    const perSlot = saved?.contextPerSlot ?? this.contextCap();
+    // The context is per slot; a model's own limit caps it.
+    const context = model?.contextLength ? Math.min(model.contextLength, perSlot) : perSlot;
+    const modelArgs = model ? ['-Model', model.path, '-Alias', model.alias] : [];
+    const args = ['-NoProfile', '-NonInteractive', '-File', this.script, '-Port', String(port), ...modelArgs, '-Slots', String(slots), '-Context', String(context)]
       // Windows PowerShell 5.1 joins -ArgumentList without quoting.
       .map((arg) => psQuote(`"${arg}"`))
       .join(', ');

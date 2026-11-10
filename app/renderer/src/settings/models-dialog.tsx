@@ -390,7 +390,7 @@ export function ModelsDialog({ api, avatarApi, codingApi, engine, onClose, onCha
         characterModels={characterModels}
         api={api}
       />
-      {page.use === 'llm' ? <ThinkingDownloads api={api} busy={busy} onView={setView} /> : null}
+      {page.use === 'llm' ? <ThinkingDownloads api={api} busy={busy} onView={setView} local={view.routes.llm.server === BUILT_IN_SERVER_IDS.llm} /> : null}
       {page.use === 'describe' && view.routes.describe.server === BUILT_IN_SERVER_IDS.vision ? <VisionDownload api={api} busy={busy} /> : null}
       </>
     );
