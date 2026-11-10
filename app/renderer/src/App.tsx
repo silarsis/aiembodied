@@ -32,6 +32,8 @@ import { VisemeDriver, type VisemeFrame } from './audio/viseme-driver.js';
 import type { VoiceActivity } from './realtime/voice-activity.js';
 import { GpuMemoryPanel } from './status/gpu-memory-bar.js';
 import { SwitchboardStatusLine } from './status/switchboard-status.js';
+import { DoNotDisturbToggle } from './status/dnd-toggle.js';
+import { usePresenceReporter } from './presence/use-presence-reporter.js';
 import { CodingStatusLine } from './status/coding-status.js';
 import { ApprovalsCard } from './status/approvals-card.js';
 import { BusyCard } from './status/busy-card.js';
@@ -1173,6 +1175,7 @@ export default function App() {
     const phase = realtimeState.status === 'connected' ? 'listening' : realtimeState.status === 'error' ? 'error' : 'off';
     return { phase, detail: realtimeState.error, since: voiceActivity.since };
   }, [isLocalBackend, voiceActivity, realtimeState]);
+  usePresenceReporter(activeBridge?.presence, activeBridge?.camera, { listening: isListeningEnabled, voicePhase: voiceActivity.phase });
   // The avatar wanders on its own in a 3D room when nobody has talked for a while (rooms/idle-director.ts).
   const idleHabits = useIdleHabits(activeBridge?.avatar, activeVrmModel?.id);
   const { idleNote } = useIdleDirector({
@@ -3020,6 +3023,7 @@ export default function App() {
             <CodingStatusLine api={activeBridge?.coding} active={panel === 'status'} />
             <CodingTasksPanel api={activeBridge?.codingTasks} codingApi={activeBridge?.coding} localVoice={activeBridge?.localVoice} active={panel === 'status'} />
             <SwitchboardStatusLine api={activeBridge?.switchboard} active={panel === 'status'} />
+            <DoNotDisturbToggle api={activeBridge?.presence} />
             <GpuMemoryPanel api={activeBridge?.gpuMemory} active={panel === 'status'} />
           </PanelDialog>
 

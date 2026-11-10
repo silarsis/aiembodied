@@ -43,6 +43,20 @@ One line per event: `HH:MM:SS.mmm type producer -> to [txn state] payload` (time
 | `SWITCHBOARD_RETENTION_DAYS` | `30` | events and closed transactions older than this are deleted (at start and hourly) |
 | `SWITCHBOARD_NODE` | the host name | reported by `/health` and the WebSocket welcome |
 
+## Echo's inbox and decision step
+
+In the app (`app/main/src/switchboard/inbox.ts`), events addressed to `avatar:echo` follow a rule table.
+`home.alert` and high or urgent `avatar.inbox` events speak at once and never wait for a model.
+Other `avatar.inbox` events have the action `deliberate`: a small model (the `idle` model use, 6 s timeout,
+no tools; `switchboard/deliberate.ts`) sees a presence summary (`presence/presence.ts`: microphone, voice
+phase, when Kevin and Echo last spoke, camera, do not disturb, local time) plus the event and answers
+`ignore`, `remember` or `say`. `say` is spoken as an urgent update so it is announced even when no conversation
+is running. `remember` saves a `system` message in the recent session, `[Update from <source>, not from Kevin,
+saved quietly] ...`. With do not disturb on (Status panel), non-urgent events are remembered without a model
+call. If the model fails or times out, the event is spoken when idle, as before. Every decision is published as a
+private `avatar.decision` event (payload: event, type, action, reason, ms, fallback, doNotDisturb) and closes
+the event's transaction.
+
 ## Code
 
 `models.py` envelope and settings, `store.py` SQLite, `ledger.py` transaction rules, `hub.py` publishing and

@@ -5,6 +5,7 @@
  * switchboard up or down, because the bus delivers locally when it is not connected.
  */
 import type { SwitchboardBus } from './bus.js';
+import type { Decision } from './deliberate.js';
 import type { SwitchboardEvent } from './types.js';
 
 type Logger = {
@@ -13,7 +14,8 @@ type Logger = {
   warn: (message: string, data?: Record<string, unknown>) => void;
 };
 
-export type InboxAction = 'speak-urgent' | 'speak-idle' | 'remember' | 'ignore';
+/** `deliberate` hands the event to a small model (with presence) that picks ignore, remember or say. */
+export type InboxAction = 'speak-urgent' | 'speak-idle' | 'remember' | 'ignore' | 'deliberate';
 
 export interface InboxRule {
   action: InboxAction | ((event: SwitchboardEvent) => InboxAction);
@@ -25,7 +27,7 @@ export interface InboxRule {
 
 /** Exact types and families (`home.*`); `*` is the fallback. The longest match wins. */
 export const DEFAULT_INBOX_POLICY: Record<string, InboxRule> = {
-  'avatar.inbox': { action: (event) => (event.priority === 'high' || event.priority === 'urgent' ? 'speak-urgent' : 'speak-idle') },
+  'avatar.inbox': { action: (event) => (event.priority === 'high' || event.priority === 'urgent' ? 'speak-urgent' : 'deliberate') },
   'home.alert': { action: 'speak-urgent', source: 'Home Assistant' },
   'home.change': { action: 'remember' },
   '*': { action: 'ignore' },
@@ -47,6 +49,12 @@ export interface AvatarInboxOptions {
   logger?: Logger;
   policy?: Record<string, InboxRule>;
   now?: () => number;
+  /** The decision step; null means it failed and the inbox falls back to speaking when idle. */
+  deliberate?: (event: SwitchboardEvent) => Promise<Decision | null>;
+  /** Saves an update quietly (a system message in the recent session). */
+  remember?: (event: SwitchboardEvent, text: string) => void;
+  /** True while do-not-disturb is on. */
+  doNotDisturb?: () => boolean;
 }
 
 export class AvatarInbox {
@@ -77,20 +85,103 @@ export class AvatarInbox {
     }
     const rule = lookupRule(this.options.policy ?? DEFAULT_INBOX_POLICY, event.type);
     const action = typeof rule?.action === 'function' ? rule.action(event) : (rule?.action ?? 'ignore');
+    if (action === 'deliberate') {
+      void this.deliberating(event, rule, now).catch((error) => {
+        logger?.warn('Inbox: deliberation failed', { message: error instanceof Error ? error.message : String(error) });
+      });
+      return;
+    }
     if (action === 'ignore' || action === 'remember') {
       logger?.debug?.(`Inbox: ${action}`, { type: event.type, id: event.id });
       return;
     }
-    const text = typeof event.payload.text === 'string' ? event.payload.text.trim() : '';
+    this.speak(event, rule, action === 'speak-urgent');
+  }
+
+  private textOf(event: SwitchboardEvent): string {
+    return typeof event.payload.text === 'string' ? event.payload.text.trim() : '';
+  }
+
+  private speak(event: SwitchboardEvent, rule: InboxRule | undefined, urgent: boolean): void {
+    const { logger } = this.options;
+    const text = this.textOf(event);
     if (!text) {
       logger?.warn('Inbox: event has no text to speak', { type: event.type, id: event.id });
       return;
     }
     const payloadSource = typeof event.payload.source === 'string' && event.payload.source !== 'coding' ? event.payload.source : undefined;
     try {
-      this.options.notify(`${rule?.prefix ?? ''}${text}`, { urgent: action === 'speak-urgent', source: rule?.source ?? payloadSource });
+      this.options.notify(`${rule?.prefix ?? ''}${text}`, { urgent, source: rule?.source ?? payloadSource });
     } catch (error) {
       logger?.warn('Inbox: notify failed', { message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  private save(event: SwitchboardEvent, rule: InboxRule | undefined): void {
+    const { logger } = this.options;
+    const text = this.textOf(event);
+    if (!text) return;
+    const source = rule?.source ?? (typeof event.payload.source === 'string' ? event.payload.source : `${event.producer.kind}:${event.producer.id}`);
+    try {
+      this.options.remember?.(event, text);
+    } catch (error) {
+      logger?.warn('Inbox: remember failed', { source, message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  private async deliberating(event: SwitchboardEvent, rule: InboxRule | undefined, startedAt: number): Promise<void> {
+    const { logger } = this.options;
+    const nowFn = this.options.now ?? Date.now;
+    const dnd = this.options.doNotDisturb?.() === true;
+    let action: 'ignore' | 'remember' | 'say' | 'speak-urgent' | 'speak-idle';
+    let reason = '';
+    let fallback = false;
+    if (dnd) {
+      action = event.priority === 'urgent' ? 'speak-urgent' : 'remember';
+      reason = 'do not disturb';
+    } else {
+      let decision: Decision | null = null;
+      try {
+        decision = (await this.options.deliberate?.(event)) ?? null;
+      } catch (error) {
+        logger?.warn('Inbox: deliberate threw', { message: error instanceof Error ? error.message : String(error) });
+      }
+      if (decision) {
+        action = decision.action;
+        reason = decision.reason;
+      } else {
+        action = 'speak-idle';
+        reason = 'deliberation failed; speaking when idle';
+        fallback = true;
+      }
+    }
+    const ms = Math.max(0, nowFn() - startedAt);
+    this.journal(event, action, reason, ms, fallback, dnd);
+    if (event.expires && Date.parse(event.expires) < nowFn()) {
+      logger?.debug?.('Inbox: event expired while deliberating', { type: event.type, id: event.id });
+      return;
+    }
+    logger?.debug?.(`Inbox: deliberated ${action}`, { type: event.type, id: event.id, reason });
+    if (action === 'ignore') return;
+    if (action === 'remember') this.save(event, rule);
+    else if (action === 'say') this.speak(event, rule, true);
+    else this.speak(event, rule, action === 'speak-urgent');
+  }
+
+  /** Fire-and-forget record of a decision on the bus (private, nobody addressed). Never throws. */
+  private journal(event: SwitchboardEvent, action: string, reason: string, ms: number, fallback: boolean, doNotDisturb: boolean): void {
+    try {
+      const txnId = event.txn?.id ?? `decision:${event.id}`;
+      this.options.bus.publish({
+        type: 'avatar.decision',
+        producer: { kind: 'avatar', id: this.options.avatarId },
+        to: [],
+        audience: 'private',
+        txn: event.txn ? { id: txnId, state: 'done' } : { id: txnId, parent: undefined, cause: event.id, state: 'done', title: `Decision on ${event.type}` },
+        payload: { event: event.id, type: event.type, action, reason, ms, fallback, doNotDisturb },
+      });
+    } catch {
+      // Journaling must never disturb the inbox.
     }
   }
 }
