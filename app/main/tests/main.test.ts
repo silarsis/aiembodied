@@ -727,8 +727,8 @@ describe('main process bootstrap', () => {
     });
 
     const handleEntries = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
-
-    expect(mockLogger.info).toHaveBeenCalledWith('Animation clip generation ready.', { model: 'gpt-4.1-mini' });
+    // Animation clips follow Thinking (the local model) unless pointed elsewhere.
+    expect(mockLogger.info).toHaveBeenCalledWith('Animation clip generation ready.', { model: 'qwen-next-flash' });
 
     const expectedConfigChannels = [
       'config:get',
@@ -767,10 +767,12 @@ describe('main process bootstrap', () => {
     });
     expect(setSecretMock).toHaveBeenCalledWith('realtimeApiKey', 'next-key');
 
-    // A new key rebuilds the helpers that use it.
-    expect(mockLogger.info.mock.calls.filter(([message]) => message === 'Animation clip generation ready.')).toHaveLength(2);
+    // A new key rebuilds the helpers that use it (Pose generation is on OpenAI by default); Animation
+    // clips run on the local Thinking model, so the key leaves them alone.
+    expect(mockLogger.info.mock.calls.filter(([message]) => message === 'Pose generation ready.')).toHaveLength(2);
+    expect(mockLogger.info.mock.calls.filter(([message]) => message === 'Animation clip generation ready.')).toHaveLength(1);
 
-    expect(vrmaGenerationServiceInstances).toHaveLength(2);
+    expect(vrmaGenerationServiceInstances).toHaveLength(1);
 
     const testSecretHandler = handleEntries.get('config:test-secret');
     expect(typeof testSecretHandler).toBe('function');
