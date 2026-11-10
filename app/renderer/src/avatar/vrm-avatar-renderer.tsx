@@ -6,6 +6,7 @@ import {
   VRMLoaderPlugin,
   VRMUtils,
   VRMExpressionPresetName,
+  VRMHumanBoneList,
   type VRMExpressionManager,
   type VRMPose,
 } from '@pixiv/three-vrm';
@@ -28,6 +29,7 @@ import { toAnimationSlug } from './animation-tags.js';
 import { LIVE_MOTION_SOURCE } from './live-motion.js';
 import { pinHipsHorizontal } from './hips-pinning.js';
 import { JumpDetector } from '../rooms/jump-detector.js';
+import { PoseBlend } from './pose-blend.js';
 import type { RoomFile } from '../../../main/src/rooms/types.js';
 import { RoomSceneController } from '../rooms/room-scene-controller.js';
 import type { SceneActionExecutor } from '../rooms/scene-executor.js';
@@ -87,6 +89,8 @@ const BLINK_HOLD_SECONDS = 0.12;
 /** Blend between queued clips and the idle pose so clips don't snap in or out. */
 const CLIP_FADE_IN_SECONDS = 0.25;
 const CLIP_FADE_OUT_SECONDS = 0.3;
+/** How long the body eases from the last frame of a motion into the standing pose. */
+const MOTION_RELEASE_BLEND_SECONDS = 0.3;
 const CAMERA_DISTANCE = 1.45;
 const CAMERA_HEIGHT = 1.35;
 const CAMERA_FOV = 35;
@@ -1194,6 +1198,9 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   const currentVrmRef = useRef<VRM | null>(null);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const jumpDetectorRef = useRef(new JumpDetector());
+  const poseBlendRef = useRef(new PoseBlend());
+  /** Clips that handed over to a continuation clip; stopped just before the next mixer update. */
+  const handedOverRef = useRef<(() => void)[]>([]);
   const idleSchedulerRef = useRef<IdleAnimationScheduler | null>(null);
   const waveActionRef = useRef<THREE.AnimationAction | null>(null);
   const expressionManagerRef = useRef<VRMExpressionManager | null>(null);
@@ -1340,13 +1347,24 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       activeAnimationRef.current = null;
       if (animationQueueRef.current.length > 0) {
         // The next clip (e.g. the following streamed chunk) starts where this one ended: hand over instantly.
-        finish();
+        // This clip is stopped only before the next mixer update: stopped now, the next clip may not be
+        // sampled until then, and for one frame the bones would drop back to their rest pose.
+        handedOverRef.current.push(finish);
         playNextQueuedAnimation(true);
         return;
       }
 
       if (verdict === 'release') {
-        // The root has been moved to where the motion ended: hand over to the idle pose in the same frame.
+        // The root has been moved to where the motion ended: hand over to the idle pose in the same frame,
+        // easing the limbs out of the motion's last frame. The hips are left out: their heading now
+        // lives in the root.
+        const vrm = currentVrmRef.current;
+        if (vrm?.humanoid) {
+          poseBlendRef.current.capture(
+            VRMHumanBoneList.filter((bone) => bone !== 'hips').map((bone) => vrm.humanoid.getNormalizedBoneNode(bone)),
+            MOTION_RELEASE_BLEND_SECONDS,
+          );
+        }
         finish();
         playNextQueuedAnimation();
         return;
@@ -1785,6 +1803,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         manager.update();
       }
 
+      for (const stopHandedOver of handedOverRef.current.splice(0)) stopHandedOver();
       mixerRef.current?.update(delta);
       roomControllerRef.current?.step(delta);
 
@@ -1796,6 +1815,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       }
 
       idleSchedulerRef.current?.update(delta);
+      poseBlendRef.current.apply(delta);
       currentVrmRef.current?.update(delta);
       rendererInstance.render(sceneInstance, cameraInstance);
       if (roomControllerRef.current?.active) {
@@ -1888,6 +1908,8 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       currentVrmRef.current = null;
       roomControllerRef.current?.attachAvatar(null);
       jumpDetectorRef.current.track(null, null, []);
+      poseBlendRef.current.cancel();
+      for (const stopHandedOver of handedOverRef.current.splice(0)) stopHandedOver();
       setAvatarRestSkeleton(null);
       try {
         mixerRef.current?.stopAllAction();

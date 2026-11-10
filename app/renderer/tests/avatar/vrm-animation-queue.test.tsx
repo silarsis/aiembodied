@@ -1,4 +1,4 @@
-import { render, waitFor } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const loaderState = vi.hoisted(() => ({
@@ -188,6 +188,16 @@ function BusCapture({
   return null;
 }
 
+/** Runs the renderer's latest requested animation frame (requestAnimationFrame is stubbed in these tests). */
+function runAnimationFrame(): void {
+  const calls = vi.mocked(window.requestAnimationFrame).mock.calls;
+  const callback = calls.at(-1)?.[0];
+  if (!callback) throw new Error('Expected a requested animation frame.');
+  act(() => {
+    callback(performance.now());
+  });
+}
+
 describe('VrmAvatarRenderer animation queue', () => {
   let originalGetContext: typeof HTMLCanvasElement.prototype.getContext;
   let originalGetBoundingClientRect: typeof HTMLCanvasElement.prototype.getBoundingClientRect;
@@ -357,6 +367,9 @@ describe('VrmAvatarRenderer animation queue', () => {
       expect(mixer.actions.length).toBe(initialActions + 2);
     });
     const second = mixer.actions.at(-1);
+    // The first clip keeps its last frame until the next frame is drawn, so the bones never show the rest pose.
+    expect(first.stop).not.toHaveBeenCalled();
+    runAnimationFrame();
     expect(first.stop).toHaveBeenCalled();
     expect(first.fadeOut).not.toHaveBeenCalled();
     expect(second?.fadeIn).not.toHaveBeenCalled();
@@ -504,6 +517,7 @@ describe('VrmAvatarRenderer animation queue', () => {
       mixer.emitFinished(first);
 
       await waitFor(() => expect(mixer.actions.length).toBe(initial + 2));
+      runAnimationFrame();
       expect(first.stop).toHaveBeenCalled();
       expect(first.setEffectiveTimeScale).not.toHaveBeenCalledWith(0);
     });
