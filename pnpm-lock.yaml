@@ -136,8 +136,8 @@ importers:
         specifier: ^1.31.1
         version: 1.31.1
       openai:
-        specifier: ^7.45.1
-        version: 7.45.1(undici@8.12.3)(zod@4.6.7)
+        specifier: ^7.53.0
+        version: 7.53.0(undici@8.12.3)(zod@4.6.7)
       pngjs:
         specifier: ^7.0.0
         version: 7.0.0
@@ -2755,8 +2755,8 @@ packages:
     resolution: {integrity: sha512-ijnSghbDHVWaQ2nDPmVccPlCHI8kH1Mx1aJ4a/qzRP16bBcVs4E3EqZQKZCkhWnbqN1tuQWxagimFtDpbPYYQw==}
     os: [win32, darwin, linux]
 
-  openai@7.45.1:
-    resolution: {integrity: sha512-mutrJXwhJIMZ24Lab2COFtNp44OcpZSnV4O2O7q38wAHUa2m2fQqUO5pj1XS3PqLfOTeODBUS9YoadqDnnGk5A==}
+  openai@7.53.0:
+    resolution: {integrity: sha512-PXiIZraFYMb2QYgTtWqDA16Oszj4fWRZNn7qLIAddmiJxM5uQPWBFaxp9O8MhLfTUOQ+iQsnFSRJhLPecsGovQ==}
     engines: {node: '>=22.0.0'}
     peerDependencies:
       '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
@@ -6494,7 +6494,7 @@ snapshots:
       global-agent: 4.1.6
       onnxruntime-common: 1.31.1
 
-  openai@7.45.1(undici@8.12.3)(zod@4.6.7):
+  openai@7.53.0(undici@8.12.3)(zod@4.6.7):
     optionalDependencies:
       undici: 8.12.3
       zod: 4.6.7
