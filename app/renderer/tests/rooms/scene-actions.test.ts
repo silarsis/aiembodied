@@ -5,6 +5,7 @@ import {
   INITIAL_STATE,
   frontOfFace,
   nearestFootprintPoint,
+  pathStartHeading,
   planAction,
   resolveObjectRef,
   tagToAction,
@@ -13,7 +14,9 @@ import {
   type PlanWorld,
   type PlannedStream,
   type SceneAction,
+  walkStart,
 } from '../../src/rooms/scene-actions.js';
+import type { AvatarMotionTarget } from '../../src/avatar/types.js';
 import { motionToWorld, worldToMotion, type MotionFrame } from '../../src/rooms/scene-frames.js';
 import { builtInRoom } from './fixtures.js';
 
@@ -75,6 +78,36 @@ describe('object references', () => {
   });
 });
 
+describe('turning before a walk', () => {
+  const world = { restHipsHeight: REST_HIPS } as PlanWorld;
+
+  it('walks straight off when the path starts roughly ahead', () => {
+    expect(walkStart(world, [[0, 0], [0.3, 2]])).toEqual({ startS: 0.3, targets: [] });
+  });
+
+  it('turns on the spot first when the path starts behind, and waits for the turn before walking', () => {
+    const { startS, targets } = walkStart(world, [[0, 0], [0, -0.1], [0.05, -2]]);
+    expect(targets).toHaveLength(1);
+    const [turn] = targets as [AvatarMotionTarget];
+    expect(turn.root).toEqual([0, 0]);
+    expect(Math.abs(turn.heading!)).toBeGreaterThan(Math.PI * 0.9);
+    expect(turn.t).toBeGreaterThan(0.9);
+    expect(startS).toBeCloseTo(turn.t + 0.2, 6);
+  });
+
+  it('takes a shorter turn for a path that starts to the side', () => {
+    const side = walkStart(world, [[0, 0], [-2, 0]]);
+    const behind = walkStart(world, [[0, 0], [0, -2]]);
+    expect(side.targets[0]!.heading).toBeCloseTo(-Math.PI / 2, 3);
+    expect(side.targets[0]!.t).toBeLessThan(behind.targets[0]!.t);
+  });
+
+  it('measures the start direction a little way along the path, not from a tiny first leg', () => {
+    expect(pathStartHeading([[0, 0], [0.01, -0.01], [1, 0.5], [3, 0.5]])).toBeGreaterThan(0.5);
+    expect(pathStartHeading([[0, 0]])).toBeNull();
+  });
+});
+
 describe('go and come', () => {
   it('walks from the avatar to the stand tag and faces the object', () => {
     const world = worldAt(0, -0.3, 0);
@@ -90,18 +123,25 @@ describe('go and come', () => {
     const end = path.points[path.points.length - 1]!;
     const [ex, ez] = motionToWorld(world.frame, end[0], end[1]);
     expect(Math.hypot(ex - stand.position[0], ez - stand.position[2])).toBeLessThan(0.35);
-    // One heading target at the end only, 0.5 s after arrival, facing the shelf (-X, so -pi/2).
+    // The path sets off well to the side, so the avatar first turns on the spot to face along it,
+    // then walks; one heading target at the end, 0.5 s after arrival, faces the shelf (-X, so -pi/2).
     const targets = stream.request.targets!;
-    expect(targets).toHaveLength(1);
+    expect(targets).toHaveLength(2);
+    const [turn, arrive] = targets as [AvatarMotionTarget, AvatarMotionTarget];
+    const startHeading = pathStartHeading(path.points)!;
+    expect(Math.abs(startHeading)).toBeGreaterThan(Math.PI / 3);
+    expect(turn.root).toEqual([0, 0]);
+    expect(turn.heading).toBeCloseTo(startHeading, 2);
+    expect(path.startS).toBeCloseTo(turn.t + 0.2, 3);
     let length = 0;
     for (let i = 1; i < path.points.length; i += 1) {
       length += Math.hypot(path.points[i]![0] - path.points[i - 1]![0], path.points[i]![1] - path.points[i - 1]![1]);
     }
-    expect(targets[0]!.t).toBeCloseTo(0.3 + length + 0.5, 2);
-    expect(stream.request.duration).toBeCloseTo(0.3 + length + 1.5, 2);
-    expect(targets[0]!.heading).toBeCloseTo(-Math.PI / 2, 1);
-    expect(targets[0]!.height).toBe(REST_HIPS);
-    expect(targets[0]!.root).toEqual(end);
+    expect(arrive.t).toBeCloseTo(path.startS! + length + 0.5, 2);
+    expect(stream.request.duration).toBeCloseTo(path.startS! + length + 1.5, 2);
+    expect(arrive.heading).toBeCloseTo(-Math.PI / 2, 1);
+    expect(arrive.height).toBe(REST_HIPS);
+    expect(arrive.root).toEqual(end);
   });
 
   it('expresses the path in the avatar frame whatever way the avatar faces', () => {
@@ -208,12 +248,12 @@ describe('sit and stand', () => {
     let length = 0;
     const pts = request.path!.points;
     for (let i = 1; i < pts.length; i += 1) length += Math.hypot(pts[i]![0] - pts[i - 1]![0], pts[i]![1] - pts[i - 1]![1]);
-    const arrival = 0.3 + length;
+    const arrival = request.path!.startS! + length;
     expect(phase.startS).toBeGreaterThanOrEqual(arrival);
     expect(phase.startS - arrival).toBeLessThan(2);
     expect(request.duration).toBe(phase.startS + 4);
 
-    const target = request.targets![0]!;
+    const target = request.targets!.at(-1)!;
     const sit = stage.worldTag('sofa', 'sit')!;
     const [sx, sz] = motionToWorld(world.frame, target.root![0], target.root![1]);
     expect(sx).toBeCloseTo(sit.position[0], 6);
@@ -228,13 +268,13 @@ describe('sit and stand', () => {
 
   it('sends the seat height in avatar metres for a scaled avatar', () => {
     const stream = streamOf(planAction(worldAt(0, -0.3, 0, 1.25), INITIAL_STATE, { kind: 'sit', objectId: 'sofa' }));
-    expect(stream.request.targets![0]!.height).toBeCloseTo((0.5 + 0.08) / 1.25, 6);
+    expect(stream.request.targets!.at(-1)!.height).toBeCloseTo((0.5 + 0.08) / 1.25, 6);
   });
 
   it('turns the heading into the avatar frame for a rotated armchair', () => {
     const world = worldAt(0, 0, 0);
     const stream = streamOf(planAction(world, INITIAL_STATE, { kind: 'sit', objectId: 'armchair' }));
-    expect(stream.request.targets![0]!.heading).toBeCloseTo((40 * Math.PI) / 180, 6);
+    expect(stream.request.targets!.at(-1)!.heading).toBeCloseTo((40 * Math.PI) / 180, 6);
   });
 
   it('sits straight away, with no phases, when already at the seat', () => {
