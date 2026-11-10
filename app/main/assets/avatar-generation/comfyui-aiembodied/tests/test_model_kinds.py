@@ -85,6 +85,23 @@ class ModelKindTests(unittest.TestCase):
         with open(os.path.join(root, "cyberpunk.aiembodied.json")) as stream:
             self.assertNotIn("junk", json.load(stream))
 
+    def test_tells_qwen_image_loras_by_attention_width(self):
+        lightning = {
+            "__metadata__": {"format": "pt"},
+            "transformer.transformer_blocks.0.attn.to_k.lora.down.weight": {"shape": [16, 4096]},
+            "transformer.transformer_blocks.0.attn.to_k.lora.up.weight": {"shape": [4096, 16]},
+        }
+        illustration = {
+            "__metadata__": {"ss_base_model_version": "qwen_image"},
+            "diffusion_model.transformer_blocks.0.attn.to_k.lora_A.weight": {"shape": [42, 3072]},
+        }
+        self.assertEqual(model_kinds.lora_family(lightning), "qwen-image-2.1")
+        self.assertEqual(model_kinds.lora_family(illustration), "qwen-image")
+        self.assertEqual(model_kinds.lora_family({"__metadata__": {"ss_base_model_version": "qwen_image"}}), "qwen-image")
+        self.assertIsNone(model_kinds.lora_family({"lora_unet_x.lora_down.weight": {"shape": [4, 4096]}}))
+        sd1 = {"lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight": {"shape": [32, 768]}}
+        self.assertEqual(model_kinds.lora_family(sd1), "sd1")
+
     def test_lists_controlnets_with_their_family_in_either_layout(self):
         root = tempfile.mkdtemp()
         write_safetensors(os.path.join(root, "openpose15.safetensors"), {

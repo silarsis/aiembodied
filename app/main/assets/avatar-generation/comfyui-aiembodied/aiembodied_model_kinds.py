@@ -63,8 +63,29 @@ def signature(header, filename=""):
     }
 
 
+QWEN_PREFIXES = ("model.diffusion_model.", "diffusion_model.", "transformer.")
+QWEN_ATTN = re.compile(r"^transformer_blocks\.\d+\.attn\.(to_[kqv]|add_[kqv]_proj)\.(lora_down|lora\.down|lora_A)\.weight$")
+
+
+def qwen_lora_width(tensors):
+    """Input width of a Qwen-Image LoRA's attention projections, or None if it has none."""
+    for key, value in tensors.items():
+        for prefix in QWEN_PREFIXES:
+            if key.startswith(prefix):
+                key = key[len(prefix):]
+                break
+        shape = value.get("shape", [])
+        if QWEN_ATTN.match(key) and len(shape) == 2:
+            return shape[1]
+    return None
+
+
 def lora_family(header):
-    """sd1 or sdxl for a LoRA, from its cross-attention width or its trainer's metadata."""
+    """sd1 or sdxl for a LoRA, from its cross-attention width or its trainer's metadata.
+
+    Qwen-Image LoRAs are told by the width of their attention inputs: 4096 is qwen-image-2.1, 3072 the
+    original 20B Qwen-Image (qwen-image), which the app has no workflow for.
+    """
     tensors = {k: v for k, v in header.items() if k != "__metadata__" and isinstance(v, dict)}
     for key, value in tensors.items():
         lower = key.lower()
@@ -76,6 +97,11 @@ def lora_family(header):
                 return "sdxl"
     meta = header.get("__metadata__", {})
     version = str(meta.get("ss_base_model_version", "") if isinstance(meta, dict) else "").lower()
+    width = qwen_lora_width(tensors)
+    if width == 4096:
+        return "qwen-image-2.1"
+    if width == 3072 or (width is None and "qwen_image" in version):
+        return "qwen-image"
     if "sdxl" in version:
         return "sdxl"
     if version.startswith("sd_v1") or version.startswith("sd_1"):

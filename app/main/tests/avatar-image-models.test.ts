@@ -196,4 +196,14 @@ describe('LoRAs', () => {
     expect(graph.lora1.inputs).toEqual({ model: ['lora0', 0], lora_name: 'b.safetensors', strength_model: 0.5 });
     expect(graph.sampling.inputs.model).toEqual(['lora1', 0]);
   });
+
+  it('runs a lightning LoRA at its own step count on a diffusion model only', () => {
+    const qwen = { id: 'q', name: 'Q', family: 'qwen-image-2.1' as const, model: 'q.safetensors', clip: 'c.safetensors', vae: 'v.safetensors' };
+    const lightning = { name: 'qwen_image_2.1_lightning_4step.safetensors', strength: 1 };
+    const samplerSteps = (graph: ReturnType<typeof buildImageWorkflow>) =>
+      Object.values(graph).filter((node) => node.class_type.startsWith('KSampler')).map((node) => node.inputs.steps);
+    expect(samplerSteps(buildImageWorkflow({ ...qwen, loras: [lightning] }, 'x', 1))).toEqual([4]);
+    expect(samplerSteps(buildImageWorkflow({ ...qwen, loras: [{ ...lightning, strength: 0 }] }, 'x', 1))).not.toContain(4);
+    expect(samplerSteps(buildImageWorkflow({ ...qwen, loras: [{ name: 'style.safetensors', strength: 1 }] }, 'x', 1))).not.toContain(4);
+  });
 });
