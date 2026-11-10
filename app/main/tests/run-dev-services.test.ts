@@ -87,6 +87,51 @@ describe('local services', () => {
   });
 
   it(
+    'restarts a motion service that answers but failed to load its model, and only reports others',
+    withTempRepo(async (repoRoot) => {
+      const launcher = fakeLauncher(777);
+      const fetchFn = vi.fn(async (url: string) => {
+        if (url.startsWith('http://127.0.0.1:8190') || url.startsWith('http://127.0.0.1:8192')) {
+          return new Response(JSON.stringify({ status: 'error', error: 'OSError: text encoder missing', ready: false }), { status: 200 });
+        }
+        if (url.startsWith('http://127.0.0.1:1234') || url.startsWith('http://127.0.0.1:1235')) return new Response('{}', { status: 200 });
+        throw new Error('ECONNREFUSED');
+      });
+      const results = await ensureLocalServices(
+        repoRoot,
+        { KOKORO_DIR: 'C:\\kokoro', WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0' },
+        { fetchFn, spawnSyncFn: launcher, platform: 'win32', log: quiet },
+      );
+      const byId = Object.fromEntries(results.map((r: { id: string }) => [r.id, r]));
+      expect(byId.motion).toMatchObject({ status: 'restarted', pid: 777 });
+      // The speech service has no restart rule: it is left running, with the error reported.
+      expect(byId.speech).toMatchObject({ status: 'running', error: 'OSError: text encoder missing' });
+      const calls = launcher.mock.calls as unknown as Array<[string, string[]]>;
+      expect(calls).toHaveLength(2);
+      expect(calls[0][1]).toEqual(['-NoProfile', '-NonInteractive', '-File', join(repoRoot, 'scripts', 'stop-service.ps1'), '-Port', '8190']);
+      expect(decodeCommand(calls[1][1])).toContain(resolve(repoRoot, 'services/motion/scripts/start.ps1'));
+    }),
+  );
+
+  it(
+    'does not start a new motion service when the failed one cannot be stopped',
+    withTempRepo(async (repoRoot) => {
+      const launcher = vi.fn(() => ({ status: 1 }));
+      const fetchFn = vi.fn(async (url: string) => {
+        if (url.startsWith('http://127.0.0.1:8190')) return new Response(JSON.stringify({ status: 'error', error: 'boom' }), { status: 200 });
+        throw new Error('ECONNREFUSED');
+      });
+      const results = await ensureLocalServices(
+        repoRoot,
+        { WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', LLM_PROVIDER: 'openai', STT_PROVIDER: 'openai', TTS_PROVIDER: 'openai' },
+        { fetchFn, spawnSyncFn: launcher, platform: 'win32', log: quiet },
+      );
+      expect(results.find((r: { id: string }) => r.id === 'motion')).toMatchObject({ status: 'failed' });
+      expect(launcher).toHaveBeenCalledTimes(1);
+    }),
+  );
+
+  it(
     'leaves running servers alone and starts the missing ones in a hidden console, with logs',
     withTempRepo(async (repoRoot) => {
       const launcher = fakeLauncher();

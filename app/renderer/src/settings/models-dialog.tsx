@@ -32,6 +32,8 @@ interface UseInfo {
   group: 'Talking' | 'Creating an avatar' | 'Helpers' | 'Rooms' | 'Coding' | 'Memory';
   name: string;
   what: string;
+  /** Kept in the config but not listed. */
+  hidden?: boolean;
 }
 
 export const MODEL_USES: UseInfo[] = [
@@ -43,9 +45,16 @@ export const MODEL_USES: UseInfo[] = [
   { id: 'image', group: 'Creating an avatar', name: 'Concept image', what: 'Draws the character from the description, repaints textures and makes backgrounds.' },
   { id: 'mesh', group: 'Creating an avatar', name: '3D model', what: 'Turns the approved image into a textured mesh. Rigging runs in Blender on this PC.' },
   { id: 'describe', group: 'Helpers', name: 'Describe the avatar', what: 'Looks at a screenshot of the avatar and writes a short character description that guides animation. Needs a model that reads images.' },
-  { id: 'posegen', group: 'Helpers', name: 'Make poses', what: 'Writes bone rotations for a pose from a text prompt.' },
-  { id: 'posecheck', group: 'Helpers', name: 'Check poses', what: 'Looks at a rendered pose and says whether it matches the prompt. Needs a model that reads images.' },
-  { id: 'clips', group: 'Helpers', name: 'Animation clips', what: 'Writes keyframe animation clips from a prompt. Moving uses it when no motion service is picked.' },
+  // Nothing in the app makes or checks poses since the sidebar pose controls went (they come back
+  // built on the motion service), so these routes stay in the config but are not shown.
+  { id: 'posegen', group: 'Helpers', name: 'Make poses', what: 'Writes bone rotations for a pose from a text prompt.', hidden: true },
+  { id: 'posecheck', group: 'Helpers', name: 'Check poses', what: 'Looks at a rendered pose and says whether it matches the prompt. Needs a model that reads images.', hidden: true },
+  {
+    id: 'clips',
+    group: 'Helpers',
+    name: 'Animation clips',
+    what: 'Writes keyframe animation clips from a prompt when the motion service (ARDY) is not running or not picked for Moving. It starts out on the same model as Thinking.',
+  },
   {
     id: 'idle',
     group: 'Rooms',
@@ -282,7 +291,7 @@ export function ModelsDialog({ api, avatarApi, codingApi, engine, onClose, onCha
               status={view ? probes[BUILT_IN_SERVER_IDS.coderRunner] : undefined}
             />
           ) : null}
-          {MODEL_USES.filter((use) => use.group === group && group !== 'Coding').map((use) => {
+          {MODEL_USES.filter((use) => use.group === group && group !== 'Coding' && !use.hidden).map((use) => {
             const server = view ? serverById(view.routes[use.id].server) : undefined;
             const status: RailStatus = server ? probes[server.id] : 'off';
             return (

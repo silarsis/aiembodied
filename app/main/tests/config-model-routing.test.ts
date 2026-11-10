@@ -64,6 +64,9 @@ describe('model routing', () => {
       routes: { llm: { server: 'gpu', model: 'big', backups: [{ server: 'openai' }] } },
     });
     expect(follows.routes.idle).toEqual({ server: 'gpu', model: 'big', backups: [{ server: 'openai' }] });
+    // Animation clips (Moving's fallback when ARDY isn't running) follow Thinking too, without backups.
+    expect(follows.routes.clips).toEqual({ server: 'gpu', model: 'big' });
+    expect(base.clips).toEqual(base.llm);
     expect(USE_SERVER_TYPES.idle).toEqual(['chat', 'openai']);
 
     const own = resolveModelRouting(builtIns(), base, {
