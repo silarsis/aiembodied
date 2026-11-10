@@ -192,6 +192,31 @@ export class ConversationManager extends EventEmitter {
     };
   }
 
+  /**
+   * Append messages to the current session if it was active within `maxIdleMs` (its newest message,
+   * or its start when empty); otherwise start a new session first. Used for announcements made when
+   * no conversation is running, so they still reach the memory capture.
+   */
+  appendToRecentSession(
+    payloads: Omit<ConversationAppendMessagePayload, 'sessionId'>[],
+    maxIdleMs = 30 * 60_000,
+  ): ConversationMessage[] {
+    const now = Date.now();
+    let sessionId: string | null = null;
+    if (this.currentSessionId) {
+      const loaded = this.store.getSessionWithMessages(this.currentSessionId);
+      if (loaded) {
+        const newest = loaded.messages.reduce((latest, message) => Math.max(latest, message.ts), loaded.startedAt);
+        if (now - newest <= maxIdleMs) {
+          sessionId = loaded.id;
+        }
+      }
+    }
+    sessionId ??= this.startSession().id;
+    const id = sessionId;
+    return payloads.map((payload) => this.appendMessage({ ...payload, sessionId: id }));
+  }
+
   private initializeCurrentSession() {
     const storedId = this.store.getValue(CURRENT_SESSION_KEY);
     if (!storedId) {

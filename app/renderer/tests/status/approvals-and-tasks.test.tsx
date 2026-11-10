@@ -194,7 +194,7 @@ describe('CodingTasksPanel', () => {
 
   it('refreshes when the runner reports a change, and shows waiting updates', async () => {
     const { api, push } = tasksApi([task()]);
-    const localVoice = { systemStatus: vi.fn(async () => ({ pending: 2, ready: false, texts: [] })) };
+    const localVoice = { systemStatus: vi.fn(async () => ({ pending: 2, ready: false, texts: [], urgent: false })) };
     render(<CodingTasksPanel api={api} codingApi={codingApi} localVoice={localVoice} active />);
     await screen.findByTestId('coding-task');
     expect((await screen.findByTestId('coding-waiting')).textContent).toContain('2 updates waiting');

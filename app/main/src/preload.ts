@@ -259,6 +259,8 @@ export interface TalkBridge {
 export interface ConversationBridge {
   getHistory(): Promise<ConversationHistory>;
   appendMessage(message: ConversationAppendMessagePayload): Promise<ConversationMessage>;
+  /** Record an announcement made without a running conversation (the update note and Echo's reply). */
+  announce(entry: { note?: string; reply?: string; ts?: number }): Promise<ConversationMessage[]>;
   onSessionStarted(listener: (session: ConversationSession) => void): () => void;
   onMessageAppended(listener: (message: ConversationMessage) => void): () => void;
 }
@@ -284,7 +286,7 @@ export interface LocalVoiceBridge {
   /** Updates for Echo that are waiting to be spoken (from the coding agent). */
   systemStatus?(): Promise<LocalVoiceSystemStatus>;
   /** An update is ready: run a system turn if the conversation is idle. */
-  onSystemReady?(listener: () => void): () => void;
+  onSystemReady?(listener: (info?: { urgent: boolean }) => void): () => void;
   onEvent(listener: (event: LocalVoiceEvent) => void): () => void;
 }
 
@@ -458,7 +460,7 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     systemStatus: () => ipcRenderer.invoke('local-voice:system-status') as Promise<LocalVoiceSystemStatus>,
     onSystemReady: (listener) => {
       const channel = 'local-voice:system-ready';
-      const handler = () => listener();
+      const handler = (_event: unknown, info?: { urgent?: boolean }) => listener({ urgent: info?.urgent === true });
       ipcRenderer.on(channel, handler);
       return () => {
         ipcRenderer.removeListener(channel, handler);
@@ -528,6 +530,7 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     getHistory: () => ipcRenderer.invoke('conversation:get-history') as Promise<ConversationHistory>,
     appendMessage: (message) =>
       ipcRenderer.invoke('conversation:append-message', message) as Promise<ConversationMessage>,
+    announce: (entry) => ipcRenderer.invoke('conversation:announce', entry) as Promise<ConversationMessage[]>,
     onSessionStarted: (listener) => {
       const channel = 'conversation:session-started';
       const handler = (_event: unknown, payload: ConversationSession) => listener(payload);

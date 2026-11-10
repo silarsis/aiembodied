@@ -22,9 +22,9 @@ function createFakeContext() {
   return { context: context as unknown as AudioContext, processor };
 }
 
-function createBridge(note: string | undefined, ready = false) {
+function createBridge(note: string | undefined, ready = false, urgent = false) {
   let events: ((event: LocalVoiceEvent) => void) | null = null;
-  let systemReady: (() => void) | null = null;
+  let systemReady: ((info?: { urgent: boolean }) => void) | null = null;
   const bridge = {
     getStatus: vi.fn(async () => ({ llm: { available: true, baseUrl: 'http://llm' }, speech: { available: true, ready: true, error: null } })),
     transcribe: vi.fn(async () => ({ text: 'hi' })),
@@ -38,15 +38,15 @@ function createBridge(note: string | undefined, ready = false) {
       events = next;
       return () => undefined;
     }),
-    systemStatus: vi.fn(async () => ({ pending: ready ? 1 : 0, ready, texts: [] })),
-    onSystemReady: vi.fn((next: () => void) => {
+    systemStatus: vi.fn(async () => ({ pending: ready ? 1 : 0, ready, texts: [], urgent })),
+    onSystemReady: vi.fn((next: (info?: { urgent: boolean }) => void) => {
       systemReady = next;
       return () => {
         systemReady = null;
       };
     }),
   };
-  return { bridge: bridge as unknown as LocalVoiceBridge & typeof bridge, fire: () => systemReady?.() };
+  return { bridge: bridge as unknown as LocalVoiceBridge & typeof bridge, fire: (info?: { urgent: boolean }) => systemReady?.(info) };
 }
 
 describe('system turns (updates from the coding agent)', () => {
@@ -104,5 +104,121 @@ describe('system turns (updates from the coding agent)', () => {
     expect(bridge.respond).toHaveBeenCalledTimes(1);
     expect(onSystemNote).not.toHaveBeenCalled();
     expect(client.getActivity().phase).toBe('waiting');
+  });
+
+  describe('announcements while no conversation is running', () => {
+    const NOTE = '[Update from the coding agent, not from Kevin] Task one asks: "Which port?"';
+
+    it('announces an urgent update when idle, output only', async () => {
+      const { context, processor } = createFakeContext();
+      const { bridge, fire } = createBridge(NOTE);
+      const getUserMedia = vi.fn();
+      vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } });
+      const onRemoteStream = vi.fn();
+      const onAnnouncement = vi.fn();
+      const onSystemNote = vi.fn();
+      const onAssistantTranscript = vi.fn();
+      const client = new LocalVoiceClient({
+        getBridge: () => bridge,
+        createAudioContext: () => context,
+        now: () => 10_000,
+        callbacks: { onRemoteStream, onAnnouncement, onSystemNote, onAssistantTranscript },
+      });
+      client.watchUpdates();
+      fire({ urgent: true });
+      await vi.advanceTimersByTimeAsync(1500);
+
+      expect(bridge.respond).toHaveBeenCalledWith(expect.objectContaining({ text: '', system: true }));
+      expect(onRemoteStream).toHaveBeenCalledTimes(1);
+      expect(onAnnouncement).toHaveBeenCalledWith({ note: NOTE, reply: 'Task one asks a question.' });
+      expect(onSystemNote).not.toHaveBeenCalled();
+      expect(onAssistantTranscript).not.toHaveBeenCalled();
+      expect(getUserMedia).not.toHaveBeenCalled();
+      expect(context.createMediaStreamSource).not.toHaveBeenCalled();
+      expect(context.createScriptProcessor).not.toHaveBeenCalled();
+      expect(processor.onaudioprocess).toBeNull();
+      expect(context.close).toHaveBeenCalledTimes(1);
+      expect(client.getActivity().phase).toBe('off');
+      expect(client.getState().status).toBe('idle');
+      expect(client.getRemoteStream()).toBeNull();
+      vi.unstubAllGlobals();
+    });
+
+    it('ignores non-urgent updates and a missing flag while idle', async () => {
+      const { context } = createFakeContext();
+      const { bridge, fire } = createBridge(NOTE);
+      const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => context, now: () => 10_000 });
+      client.watchUpdates();
+      fire({ urgent: false });
+      fire();
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(bridge.respond).not.toHaveBeenCalled();
+    });
+
+    it('announces urgent updates that were queued before the window loaded', async () => {
+      const { context } = createFakeContext();
+      const { bridge } = createBridge(NOTE, true, true);
+      const onAnnouncement = vi.fn();
+      const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => context, now: () => 10_000, callbacks: { onAnnouncement } });
+      client.watchUpdates();
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(onAnnouncement).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not announce non-urgent updates queued before load, and stops after unwatch', async () => {
+      const { context } = createFakeContext();
+      const { bridge, fire } = createBridge(NOTE, true, false);
+      const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => context, now: () => 10_000 });
+      client.watchUpdates();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(bridge.respond).not.toHaveBeenCalled();
+      client.unwatchUpdates();
+      fire({ urgent: true });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(bridge.respond).not.toHaveBeenCalled();
+    });
+
+    it('still runs a normal system turn when connected', async () => {
+      const { context } = createFakeContext();
+      const { bridge, fire } = createBridge(NOTE);
+      const onSystemNote = vi.fn();
+      const onAnnouncement = vi.fn();
+      const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => context, now: () => 10_000, callbacks: { onSystemNote, onAnnouncement } });
+      client.watchUpdates();
+      await client.connect({ inputStream: {} as MediaStream });
+      fire({ urgent: false });
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(onSystemNote).toHaveBeenCalledWith(NOTE);
+      expect(onAnnouncement).not.toHaveBeenCalled();
+      expect(client.getActivity().phase).toBe('listening');
+    });
+
+    it('does not close the new connection when connect() happens during an announcement', async () => {
+      const announceCtx = createFakeContext();
+      const connectCtx = createFakeContext();
+      const contexts = [announceCtx.context, connectCtx.context];
+      const { bridge, fire } = createBridge(NOTE);
+      let release: () => void = () => undefined;
+      bridge.respond.mockImplementationOnce(
+        (request: { requestId: string }) =>
+          new Promise((resolve) => {
+            release = () => resolve({ requestId: request.requestId, text: 'late', cancelled: false, note: NOTE });
+          }),
+      );
+      const onAnnouncement = vi.fn();
+      const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => contexts.shift() as AudioContext, now: () => 10_000, callbacks: { onAnnouncement } });
+      client.watchUpdates();
+      fire({ urgent: true });
+      await vi.advanceTimersByTimeAsync(10);
+      expect(bridge.respond).toHaveBeenCalledTimes(1);
+
+      await client.connect({ inputStream: {} as MediaStream });
+      release();
+      await vi.advanceTimersByTimeAsync(1500);
+
+      expect(connectCtx.context.close).not.toHaveBeenCalled();
+      expect(client.getState().status).toBe('connected');
+      expect(onAnnouncement).not.toHaveBeenCalled();
+    });
   });
 });

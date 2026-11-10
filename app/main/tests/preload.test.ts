@@ -159,6 +159,18 @@ describe('preload bridge', () => {
     expect(invoke).toHaveBeenCalledWith('approvals:decline', 'ap1');
     await api.localVoice.systemStatus();
     expect(invoke).toHaveBeenCalledWith('local-voice:system-status');
+    await api.conversation.announce({ note: 'n', reply: 'r' });
+    expect(invoke).toHaveBeenCalledWith('conversation:announce', { note: 'n', reply: 'r' });
+
+    const readyListener = vi.fn();
+    const unsubscribeReady = api.localVoice.onSystemReady(readyListener);
+    const readyCall = on.mock.calls.find(([channel]) => channel === 'local-voice:system-ready');
+    const readyHandler = readyCall?.[1] as (event: unknown, info?: { urgent: boolean }) => void;
+    readyHandler({}, { urgent: true });
+    readyHandler({});
+    expect(readyListener).toHaveBeenNthCalledWith(1, { urgent: true });
+    expect(readyListener).toHaveBeenNthCalledWith(2, { urgent: false });
+    unsubscribeReady();
   });
 
   it('exposes camera detection helpers through the bridge', async () => {

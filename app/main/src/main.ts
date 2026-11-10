@@ -765,7 +765,7 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
       tools: toolRegistry ?? undefined,
       approvals: approvalBroker ?? undefined,
       extraInstructions: () => codingBrief(manager),
-      onSystemReady: () => broadcastToWindows('local-voice:system-ready'),
+      onSystemReady: () => broadcastToWindows('local-voice:system-ready', { urgent: localVoiceService?.systemStatus().urgent === true }),
       logger,
       onToolResult: (record) => {
         memoryEngine?.recordToolCall(record);
@@ -1591,6 +1591,16 @@ function registerIpcHandlers(
     }
     return conversation.appendMessage(payload);
   });
+  ipcMain.handle('conversation:announce', (_event, payload: { note?: string; reply?: string; ts?: number }) => {
+    if (!conversation) {
+      throw new Error('Conversation manager is not initialized.');
+    }
+    const ts = typeof payload?.ts === 'number' ? payload.ts : Date.now();
+    const messages: Omit<ConversationAppendMessagePayload, 'sessionId'>[] = [];
+    if (payload?.note?.trim()) messages.push({ role: 'system', content: payload.note, ts });
+    if (payload?.reply?.trim()) messages.push({ role: 'assistant', content: payload.reply, ts });
+    return messages.length > 0 ? conversation.appendToRecentSession(messages) : [];
+  });
   ipcMain.handle('metrics:observe-latency', (_event, payload: LatencyObservation) => {
     if (!metrics) {
       return false;
@@ -1943,7 +1953,7 @@ function registerIpcHandlers(
     url: switchboardClient ? process.env.SWITCHBOARD_URL?.trim() || 'http://127.0.0.1:8196' : null,
     openTxns: ((await switchboardClient?.openTxns(20)) ?? null)?.map((t) => ({ id: t.id, title: t.title ?? null, state: t.state, opened_by: t.opened_by ?? null, owner: t.owner ?? null, updated_at: t.updated_at ?? null })) ?? null,
   }));
-  ipcMain.handle('local-voice:system-status', () => localVoiceService?.systemStatus() ?? { pending: 0, ready: false, texts: [] });
+  ipcMain.handle('local-voice:system-status', () => localVoiceService?.systemStatus() ?? { pending: 0, ready: false, texts: [], urgent: false });
   ipcMain.handle('local-voice:reset', () => {
     localVoiceService?.resetHistory();
     return true;

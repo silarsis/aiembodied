@@ -229,7 +229,12 @@ export class LocalVoiceService {
   }
 
   systemStatus(): LocalVoiceSystemStatus {
-    return { pending: this.notes.length, ready: this.systemReady(), texts: this.notes.map((note) => note.text) };
+    return {
+      pending: this.notes.length,
+      ready: this.systemReady(),
+      texts: this.notes.map((note) => note.text),
+      urgent: this.notes.some((note) => note.urgent),
+    };
   }
 
   private systemReadyAt(): number {
