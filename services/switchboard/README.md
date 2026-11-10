@@ -27,6 +27,7 @@ Watch what is going on:
 
 ```powershell
 python -m switchboard tail                          # live, every event
+python -m switchboard send "The washing is done" --source "my test" --urgent   # tell Echo something
 python -m switchboard tail --type "task.*" --txn task:20261108-1a2b
 python -m switchboard tail --since 01JC... --url ws://127.0.0.1:8196
 ```
