@@ -6,8 +6,9 @@ import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
-from typing import Any, Optional
+from typing import Any, Awaitable, Callable, Optional
 
+import anyio
 from fastapi import Body, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 
 from . import __version__
@@ -102,11 +103,20 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
             await ws.send_json({"op": "welcome", "node": cfg.node})
             for ev in replay:
                 await ws.send_json({"op": "event", "event": ev})
-            tasks = [asyncio.create_task(_pump(ws, client)), asyncio.create_task(_listen(ws, client, hub))]
-            await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-            for t in tasks:
-                t.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+            # An anyio task group, not bare asyncio tasks: when either side ends it cancels the other,
+            # and a cancellation from outside (the server stopping) passes through cleanly.
+            async with anyio.create_task_group() as group:
+
+                async def run(side: Callable[[], Awaitable[None]]) -> None:
+                    try:
+                        await side()
+                    except WebSocketDisconnect:
+                        pass
+                    finally:
+                        group.cancel_scope.cancel()
+
+                group.start_soon(run, lambda: _pump(ws, client))
+                group.start_soon(run, lambda: _listen(ws, client, hub))
         except WebSocketDisconnect:
             pass
         finally:
