@@ -24,7 +24,7 @@
     "better-sqlite3": "^13.0.3",
     "debug": "^4.4.3",
     "dotenv": "^18.0.9",
-    "electron": "^45.2.2",
+    "electron": "^45.2.3",
     "keytar": "^7.9.0",
     "onnxruntime-node": "^1.31.1",
     "openai": "^7.45.1",
