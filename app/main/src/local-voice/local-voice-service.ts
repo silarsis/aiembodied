@@ -47,11 +47,29 @@ export const SYSTEM_COALESCE_MS = 5000;
 export const SYSTEM_MIN_GAP_MS = 20_000;
 /** Leads every system note, in the model's input, the history and the memory record. */
 export const SYSTEM_NOTE_MARKER = '[Update from the coding agent, not from Kevin]';
+const DEFAULT_NOTE_SOURCE = 'the coding agent';
+const noteMarker = (source: string) => `[Update from ${source}, not from Kevin]`;
 
 interface QueuedNote {
   text: string;
   urgent: boolean;
   at: number;
+  /** Who the update is from, as the marker says it. */
+  source: string;
+}
+
+/** One marker per run of updates from the same source; with only the default source it is the old single marker. */
+function systemNoteText(notes: QueuedNote[]): string {
+  const parts: string[] = [];
+  let last: string | null = null;
+  for (const note of notes) {
+    if (note.source !== last) {
+      parts.push(noteMarker(note.source));
+      last = note.source;
+    }
+    parts.push(note.text);
+  }
+  return parts.join(' ');
 }
 
 export interface LocalVoiceServiceOptions {
@@ -203,10 +221,10 @@ export class LocalVoiceService {
    * SYSTEM_MIN_GAP_MS apart unless one of the updates is `urgent` (a question). The renderer runs
    * the turn, when the conversation is idle, in answer to onSystemReady.
    */
-  notify(text: string, options: { urgent?: boolean } = {}): void {
+  notify(text: string, options: { urgent?: boolean; source?: string } = {}): void {
     const note = text.trim();
     if (!note) return;
-    this.notes.push({ text: note, urgent: options.urgent === true, at: this.now() });
+    this.notes.push({ text: note, urgent: options.urgent === true, at: this.now(), source: options.source?.trim() || DEFAULT_NOTE_SOURCE });
     this.scheduleSystemReady();
   }
 
@@ -252,7 +270,7 @@ export class LocalVoiceService {
     this.systemTimer = null;
     let restored = false;
     return {
-      text: `${SYSTEM_NOTE_MARKER} ${notes.map((note) => note.text).join(' ')}`,
+      text: systemNoteText(notes),
       restore: () => {
         if (restored) return;
         restored = true;

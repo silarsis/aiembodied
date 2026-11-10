@@ -31,6 +31,7 @@ import { useWakeWordListening } from './audio/use-wake-word-listening.js';
 import { VisemeDriver, type VisemeFrame } from './audio/viseme-driver.js';
 import type { VoiceActivity } from './realtime/voice-activity.js';
 import { GpuMemoryPanel } from './status/gpu-memory-bar.js';
+import { SwitchboardStatusLine } from './status/switchboard-status.js';
 import { CodingStatusLine } from './status/coding-status.js';
 import { ApprovalsCard } from './status/approvals-card.js';
 import { BusyCard } from './status/busy-card.js';
@@ -2994,6 +2995,7 @@ export default function App() {
             <ApprovalsCard api={activeBridge?.approvals} />
             <CodingStatusLine api={activeBridge?.coding} active={panel === 'status'} />
             <CodingTasksPanel api={activeBridge?.codingTasks} codingApi={activeBridge?.coding} localVoice={activeBridge?.localVoice} active={panel === 'status'} />
+            <SwitchboardStatusLine api={activeBridge?.switchboard} active={panel === 'status'} />
             <GpuMemoryPanel api={activeBridge?.gpuMemory} active={panel === 'status'} />
           </PanelDialog>
 

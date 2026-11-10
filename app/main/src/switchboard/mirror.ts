@@ -8,13 +8,15 @@ import os from 'node:os';
 import type { RunnerEvent } from '../coding/runner-client.js';
 import type { LocalVoiceToolRecord } from '../local-voice/local-voice-service.js';
 import type { ApprovalOutcome, PendingApproval } from '../tools/approvals.js';
-import type { SwitchboardEventInput, SwitchboardProducer, TxnState } from './types.js';
+import type { Address, ActorKind, SwitchboardEventInput, SwitchboardProducer, TxnState } from './types.js';
 
 export const DEFAULT_AVATAR_ID = 'echo';
 export const DEFAULT_PERSON_ID = 'kevin';
 
 const TEXT_LIMIT = 2000;
 const TITLE_LIMIT = 120;
+const START_CODING_TOOL = 'start_coding_task';
+const TASK_PARENT_LIMIT = 500;
 
 export interface SwitchboardPublisher {
   publish(event: SwitchboardEventInput): unknown;
@@ -25,6 +27,12 @@ export interface SwitchboardMirrorOptions {
   avatarId?: string;
   personId?: string;
   node?: string;
+}
+
+/** `avatar:echo` as a producer. */
+function addressProducer(address: string, node: string): SwitchboardProducer {
+  const [kind, ...rest] = address.split(':');
+  return { kind: kind as ActorKind, id: rest.join(':'), node };
 }
 
 function clip(text: string, limit: number): string {
@@ -67,6 +75,8 @@ export class SwitchboardMirror {
   private readonly seenTasks = new Set<string>();
   private readonly seenQuestions = new Set<string>();
   private readonly toolCounts = new Map<string, number>();
+  /** Coding task id -> the txn of the start_coding_task call that made it, so the task hangs under the turn. */
+  private readonly taskParents = new Map<string, string>();
   private toolSerial = 0;
 
   constructor(options: SwitchboardMirrorOptions) {
@@ -133,6 +143,13 @@ export class SwitchboardMirror {
       this.toolSerial += 1;
       txnId = `tool:${record.at}:${record.name}:${this.toolSerial}`;
     }
+    if (record.ok && record.name === START_CODING_TOOL) {
+      const taskId = /Started task (\S+) in/.exec(record.result)?.[1];
+      if (taskId) {
+        this.taskParents.set(taskId, txnId);
+        if (this.taskParents.size > TASK_PARENT_LIMIT) this.taskParents.delete(this.taskParents.keys().next().value as string);
+      }
+    }
     this.send({
       type: 'tool.result',
       producer: { kind: 'tool', id: record.name, node: this.node },
@@ -146,8 +163,8 @@ export class SwitchboardMirror {
   approvalRequested(approval: PendingApproval): void {
     this.send({
       type: 'approval.requested',
-      producer: this.avatar(),
-      to: [this.toPerson()],
+      producer: addressProducer(approval.requestedBy ?? `avatar:${this.avatarId}`, this.node),
+      to: (approval.approvers ?? [`person:${this.personId}`]) as Address[],
       txn: { id: `approval:${approval.id}`, state: 'waiting', title: clip(approval.summary, TITLE_LIMIT), deadline: new Date(approval.expiresAt).toISOString() },
       audience: 'household',
       payload: { tool: approval.toolName, summary: clip(approval.summary, TEXT_LIMIT), cardOnly: approval.cardOnly },
@@ -189,7 +206,7 @@ export class SwitchboardMirror {
       type: 'task.status',
       producer: { kind: 'tool', id: 'coding', node: this.node },
       to: [this.toAvatar()],
-      txn: { id: txnId, state },
+      txn: { id: txnId, parent: this.taskParents.get(taskId), state },
       audience: 'household',
       payload: clipDeep(rest, TEXT_LIMIT) as Record<string, unknown>,
     });
@@ -210,14 +227,14 @@ export class SwitchboardMirror {
   }
 
   /** An update was queued for Echo (LocalVoiceService.notify). */
-  noteQueued(text: string, urgent: boolean): void {
+  noteQueued(text: string, urgent: boolean, source = 'coding'): void {
     this.send({
       type: 'avatar.inbox',
       producer: this.service(),
       to: [this.toAvatar()],
       priority: urgent ? 'high' : 'normal',
       audience: 'household',
-      payload: { text: clip(text, TEXT_LIMIT) },
+      payload: { text: clip(text, TEXT_LIMIT), source },
     });
   }
 }

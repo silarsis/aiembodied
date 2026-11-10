@@ -72,6 +72,7 @@ import type {
 } from './mcp/types.js';
 import type { OpenAIFunction } from './tools/tool-registry.js';
 import type { MemoryEngineBridge } from './memory-engine/bridge-types.js';
+import type { SwitchboardBridge } from './switchboard/bridge-types.js';
 import type { GpuMemoryBridge } from './diagnostics/gpu-memory.js';
 import type { CodingBridge, CodingBusy, CodingBusyBridge, CodingTasksBridge, RunnerEvent } from './coding/bridge-types.js';
 import type { CodingStatus, CodingView } from './coding/coding-service.js';
@@ -223,6 +224,7 @@ export interface PreloadApi {
   mcp: MCPBridge;
   memoryEngine?: MemoryEngineBridge;
   gpuMemory?: GpuMemoryBridge;
+  switchboard?: SwitchboardBridge;
   coding?: CodingBridge;
   codingTasks?: CodingTasksBridge;
   codingBusy?: CodingBusyBridge;
@@ -721,6 +723,9 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     emitDetection: async (event) => {
       await ipcRenderer.invoke('camera:emit-detection', event);
     },
+  },
+  switchboard: {
+    status: () => ipcRenderer.invoke('switchboard:status'),
   },
   gpuMemory: {
     read: () => ipcRenderer.invoke('diagnostics:gpu-memory'),

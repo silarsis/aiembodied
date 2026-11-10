@@ -149,6 +149,13 @@ Each home has its own connection, label, entities, deadband and rollups. When a 
 the default `Home`, the sentences that are remembered carry it: "Front door (Hallway, SG) opened,
 was closed."
 
+Changes are also published to the switchboard (`src/memory_engine/bus.py`, fire and forget, never
+blocking): `home.change` (priority low, observers only) for every real change of a watched entity,
+and `home.alert` (urgent, to `avatar:echo`) when a smoke, gas, carbon monoxide, moisture, safety or
+tamper sensor turns on or an alarm panel is triggered. `SWITCHBOARD_URL` (default
+`http://127.0.0.1:8196`) says where; `SWITCHBOARD_ENABLED=0` turns it off. The switchboard being
+down only costs a log line.
+
 Alerts (smoke, gas, water, alarm panels and the like) and state changes are kept as events and
 indexed for search with a readable sentence ("Front door (Hallway) opened, was closed."). Numbers
 are kept as a reading only when they move past a small deadband or every 15 minutes, and every
