@@ -61,7 +61,7 @@ export class JumpDetector {
     if (hipsMove <= JUMP_METRES && handMove <= POSE_JUMP_METRES) return false;
     if (!this.allowReport()) return true;
     tracked.root.getWorldPosition(TMP);
-    console.warn('[rooms] avatar jumped in one frame', {
+    const detail = {
       hipsMove: round(hipsMove),
       handMove: round(handMove),
       hipsFrom: xyz(previous[0]),
@@ -71,7 +71,9 @@ export class JumpDetector {
       hipsLocal: xyz(tracked.hips.position),
       before: previousContext,
       now: context,
-    });
+    };
+    // The diagnostics log keeps only the message text, so the details go into the string.
+    console.warn(`[rooms] avatar jumped in one frame ${JSON.stringify(detail)}`);
     return true;
   }
 
