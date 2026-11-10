@@ -1020,6 +1020,10 @@ export default function App() {
       timestamp?: number;
       persist?: boolean;
     }) => {
+      // Realtime turns never pass through local-voice:respond, so presence learns of them here.
+      if (speaker === 'user' || speaker === 'assistant') {
+        void Promise.resolve((api ?? getPreloadApi())?.presence?.update(speaker === 'user' ? { userSpokeAt: timestamp } : { assistantSpokeAt: timestamp })).catch(() => undefined);
+      }
       const canPersist = Boolean(persist && api?.conversation && activeSessionIdRef.current);
       let entryId = `${timestamp}-${Math.random().toString(36).slice(2, 10)}`;
 
@@ -1175,7 +1179,7 @@ export default function App() {
     const phase = realtimeState.status === 'connected' ? 'listening' : realtimeState.status === 'error' ? 'error' : 'off';
     return { phase, detail: realtimeState.error, since: voiceActivity.since };
   }, [isLocalBackend, voiceActivity, realtimeState]);
-  usePresenceReporter(activeBridge?.presence, activeBridge?.camera, { listening: isListeningEnabled, voicePhase: voiceActivity.phase });
+  usePresenceReporter(activeBridge?.presence, activeBridge?.camera, { listening: isListeningEnabled, voicePhase: displayedActivity.phase });
   // The avatar wanders on its own in a 3D room when nobody has talked for a while (rooms/idle-director.ts).
   const idleHabits = useIdleHabits(activeBridge?.avatar, activeVrmModel?.id);
   const { idleNote } = useIdleDirector({

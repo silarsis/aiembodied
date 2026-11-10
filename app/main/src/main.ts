@@ -1958,6 +1958,8 @@ function registerIpcHandlers(
       listening: typeof p.listening === 'boolean' ? p.listening : undefined,
       voicePhase: isVoicePhase(p.voicePhase) ? p.voicePhase : undefined,
       faceSeenAt: typeof p.faceSeenAt === 'number' ? p.faceSeenAt : undefined,
+      lastUserSpeechAt: typeof p.userSpokeAt === 'number' ? p.userSpokeAt : undefined,
+      lastAssistantSpokeAt: typeof p.assistantSpokeAt === 'number' ? p.assistantSpokeAt : undefined,
     });
     return true;
   });
