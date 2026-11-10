@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { validateLayout, LayoutError } from '../src/rooms/room-layout.js';
+import { validateLayout, normaliseCategory, LayoutError } from '../src/rooms/room-layout.js';
 import { buildLayoutPrompt } from '../src/rooms/room-layout-prompt.js';
 import { extractJson, generateRoomLayout } from '../src/rooms/room-layout-llm.js';
 import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/config/model-routing.js';
@@ -34,12 +34,92 @@ describe('validateLayout', () => {
     ['not an object', 'nope', /JSON object/],
     ['no shell', { objects: good.objects }, /shell/],
     ['no objects', { ...good, objects: [] }, /objects/],
-    ['bad category', { ...good, objects: [{ name: 'x', category: 'spaceship', size: [1, 1, 1] }] }, /category/],
     ['bad size', { ...good, objects: [{ name: 'x', category: 'prop', size: [1, 1] }] }, /size/],
-    ['bad wall', { ...good, shell: { ...good.shell, door: { wall: 'up' } } }, /wall/],
+    ['only unusable objects', { ...good, objects: [{ category: 'prop', size: [1, 1, 1] }, 'junk'] }, /objects\[0\]\.name/],
   ])('rejects %s', (_name, input, message) => {
     expect(() => validateLayout(input)).toThrow(LayoutError);
     expect(() => validateLayout(input)).toThrow(message);
+  });
+});
+
+describe('free-form categories', () => {
+  it('keeps known categories as they are', () => {
+    expect(normaliseCategory(' Seat ')).toEqual({ category: 'seat' });
+    expect(normaliseCategory('appliance', 'fridge')).toEqual({ category: 'appliance' });
+  });
+  it.each([
+    ['sofa', 'big sofa', 'seat'],
+    ['armchairs', 'armchair', 'seat'],
+    ['Bookcase', 'tall bookcase', 'storage'],
+    ['rug', 'round rug', 'decor'],
+    ['lighting', 'floor lamp', 'lamp'],
+    ['electronics', 'record player', 'appliance'],
+    ['furniture', 'coffee table', 'table'],
+    ['item', 'paperback book', 'prop'],
+    ['aquarium', 'fish tank', 'prop'],
+    ['spaceship', 'model spaceship', 'prop'],
+  ])('maps %s to a known category and keeps the word as its label', (word, name, category) => {
+    expect(normaliseCategory(word, name)).toEqual({ category, label: word.toLowerCase() });
+  });
+  it('falls back to the name, then to prop', () => {
+    expect(normaliseCategory('thingamajig', 'reading lamp')).toEqual({ category: 'lamp', label: 'thingamajig' });
+    expect(normaliseCategory(undefined, 'coffee table')).toEqual({ category: 'table' });
+    expect(normaliseCategory(42, 'box')).toEqual({ category: 'prop' });
+  });
+  it('accepts any category in a layout and keeps the behaviour of the mapped one', () => {
+    const layout = validateLayout({
+      ...good,
+      objects: [
+        { name: 'loveseat', category: 'couch', size: [1.5, 0.8, 0.8], seat_height: '0.42' },
+        { name: 'fish tank', category: 'aquarium', size: [1, 0.6, 0.4] },
+        { name: 'desk', category: 'table', size: [1.2, 0.75, 0.6] },
+      ],
+    });
+    expect(layout.objects.map((o) => [o.category, o.label])).toEqual([
+      ['seat', 'couch'],
+      ['prop', 'aquarium'],
+      ['table', undefined],
+    ]);
+    expect(layout.objects[0].seatHeight).toBeCloseTo(0.42);
+    expect('label' in layout.objects[2]).toBe(false);
+  });
+});
+
+describe('lenient validation', () => {
+  it('leaves out an unusable object instead of failing the room, and says so', () => {
+    const notes: string[] = [];
+    const layout = validateLayout(
+      {
+        ...good,
+        objects: [
+          ...good.objects,
+          { name: 'ghost chair', category: 'seat', size: [1, 1] },
+          { category: 'prop', size: [1, 1, 1] },
+          'not an object',
+          { name: 'stool', category: 'seat', size: [0.4, 'tall', 0.4] },
+        ],
+      },
+      notes,
+    );
+    expect(layout.objects.map((o) => o.id)).toEqual(['desk', 'lamp']);
+    expect(notes).toHaveLength(4);
+    expect(notes[0]).toMatch(/objects\[2\]\.size/);
+  });
+  it('treats bad walls as none instead of failing', () => {
+    const notes: string[] = [];
+    const layout = validateLayout(
+      {
+        ...good,
+        shell: { ...good.shell, windows: [{ wall: 'up', width: 1 }, { wall: 'south', width: 'wide' }], door: { wall: 'up' } },
+        objects: [{ name: 'shelf', category: 'storage', size: [1, 2, 0.4], place: { against: 'ceiling' }, seat_height: 'n/a' }],
+      },
+      notes,
+    );
+    expect(layout.shell.door).toBeNull();
+    expect(layout.shell.windows).toEqual([{ wall: 'south', width: 1.4 }]);
+    expect(layout.objects[0].place.against).toBeNull();
+    expect(layout.objects[0].seatHeight).toBeNull();
+    expect(notes).toHaveLength(2);
   });
 });
 
