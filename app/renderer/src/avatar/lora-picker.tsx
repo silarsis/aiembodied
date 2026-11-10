@@ -6,6 +6,7 @@ const FAMILY_LABELS: Record<string, string> = {
   sdxl: 'SDXL',
   'z-image-turbo': 'Z-Image Turbo',
   'qwen-image-2.1': 'Qwen-Image 2.1',
+  'qwen-image': 'Qwen-Image (original 20B, not supported)',
 };
 
 function gb(bytes: number): string {

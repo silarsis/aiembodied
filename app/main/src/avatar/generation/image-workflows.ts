@@ -163,6 +163,18 @@ export function applyLoras(graph: ComfyGraph, loras: ImageWorkflowLora[]): Comfy
       else if (withClip && value[1] === 1) node.inputs[key] = clip;
     }
   }
+  // A few-step "lightning" LoRA only helps if the sampler runs its step count, not the graph's 25 or 8.
+  if (!withClip) {
+    const stepCounts = loras
+      .filter((lora) => lora.strength > 0 && /lightning|lightx2v/i.test(lora.name))
+      .map((lora) => Number(/(\d+)[-_ ]?steps?/i.exec(lora.name)?.[1]))
+      .filter((steps) => steps > 0);
+    if (stepCounts.length) {
+      for (const node of Object.values(graph)) {
+        if (['KSampler', 'KSamplerAdvanced'].includes(node.class_type)) node.inputs.steps = Math.min(...stepCounts);
+      }
+    }
+  }
   return { ...graph, ...added };
 }
 
