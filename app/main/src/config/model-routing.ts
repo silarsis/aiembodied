@@ -55,6 +55,8 @@ export type UseId =
   | 'posegen'
   | 'posecheck'
   | 'clips'
+  | 'idle'
+  | 'scenelayout'
   | 'memory'
   | 'memorymirror'
   | 'coding';
@@ -70,6 +72,8 @@ export const USE_IDS: readonly UseId[] = [
   'posegen',
   'posecheck',
   'clips',
+  'idle',
+  'scenelayout',
   'memory',
   'memorymirror',
   'coding',
@@ -90,6 +94,10 @@ export const USE_SERVER_TYPES: Record<UseId, readonly ServerType[]> = {
   posegen: ['chat', 'openai'],
   posecheck: ['chat', 'openai'],
   clips: ['chat', 'openai'],
+  // What the avatar does on its own in a 3D room (app/main/src/rooms/idle-thoughts.ts).
+  idle: ['chat', 'openai'],
+  // Writes a 3D room layout from a description (app/main/src/rooms/room-layout-llm.ts).
+  scenelayout: ['chat', 'openai'],
   // Long-term memory: the PostgreSQL database the memory engine keeps everything in, and an
   // optional second one it copies everything to (such as Supabase).
   memory: ['memory'],
@@ -98,7 +106,7 @@ export const USE_SERVER_TYPES: Record<UseId, readonly ServerType[]> = {
   coding: ['chat', 'openai', 'anthropic'],
 };
 /** Uses that try backup servers when the first one fails. The others use only their first server. */
-export const USES_WITH_BACKUPS: readonly UseId[] = ['llm', 'stt', 'tts', 'search', 'image', 'mesh'];
+export const USES_WITH_BACKUPS: readonly UseId[] = ['llm', 'stt', 'tts', 'search', 'image', 'mesh', 'idle', 'scenelayout'];
 /** Uses that can send each job to whichever of their servers is least busy. */
 export const USES_WITH_SPREAD: readonly UseId[] = ['image', 'mesh'];
 
@@ -111,6 +119,7 @@ export const BUILT_IN_SERVER_IDS = {
   memory: 'local-memory',
   coderRunner: 'local-coder-runner',
   coderLlm: 'local-coder-llm',
+  vision: 'local-vision',
   openai: 'openai',
   anthropic: 'anthropic',
   github: 'github',
@@ -126,6 +135,9 @@ export const DEFAULT_CODER_RUNNER_URL = 'http://127.0.0.1:8195';
 /** The llama-server that runs Qwen3-Coder-Next while a coding task needs it. */
 export const DEFAULT_CODER_LLM_URL = 'http://127.0.0.1:1236/v1';
 export const DEFAULT_CODER_MODEL = 'qwen3-coder-next';
+/** The llama-server that reads images (Qwen3-VL) while Describe the avatar needs it. */
+export const DEFAULT_VISION_URL = 'http://127.0.0.1:1237/v1';
+export const DEFAULT_VISION_MODEL = 'qwen3-vl';
 export const BRAVE_BASE_URL = 'https://api.search.brave.com';
 export const CIVITAI_BASE_URL = 'https://civitai.com';
 export const HUGGINGFACE_BASE_URL = 'https://huggingface.co';
@@ -210,6 +222,7 @@ export function builtInServers({ providers, comfyUiBaseUrl, searxngUrl, coderRun
     local(BUILT_IN_SERVER_IDS.memory, 'Memory database on this PC', 'memory', LOCAL_MEMORY_DATABASE_URL),
     local(BUILT_IN_SERVER_IDS.coderRunner, 'Coding runner on this PC', 'coder', coderRunnerUrl || DEFAULT_CODER_RUNNER_URL),
     local(BUILT_IN_SERVER_IDS.coderLlm, 'Qwen3-Coder-Next (coding)', 'chat', coderLlmUrl || DEFAULT_CODER_LLM_URL),
+    local(BUILT_IN_SERVER_IDS.vision, 'Vision model on this PC', 'chat', DEFAULT_VISION_URL),
     { id: BUILT_IN_SERVER_IDS.openai, name: 'OpenAI', type: 'openai', url: OPENAI_BASE_URL, builtIn: true, managed: false },
     { id: BUILT_IN_SERVER_IDS.anthropic, name: 'Anthropic', type: 'anthropic', url: ANTHROPIC_BASE_URL, builtIn: true, managed: false },
     { id: BUILT_IN_SERVER_IDS.github, name: 'GitHub', type: 'github', url: GITHUB_API_URL, builtIn: true, managed: false },
@@ -232,11 +245,12 @@ export function defaultRoutes(providers: ProviderSettings, webSearchProvider = '
   const searchServers = searchNames
     .map((name): string | null => (name === 'searxng' ? BUILT_IN_SERVER_IDS.searxng : name === 'brave' ? BUILT_IN_SERVER_IDS.brave : null))
     .filter((id): id is string => Boolean(id));
+  const llm: ModelRoute =
+    providers.llm.provider === 'openai'
+      ? { server: openai, model: providers.llm.openaiModel }
+      : { server: BUILT_IN_SERVER_IDS.llm, model: providers.llm.localModel };
   return {
-    llm:
-      providers.llm.provider === 'openai'
-        ? { server: openai, model: providers.llm.openaiModel }
-        : { server: BUILT_IN_SERVER_IDS.llm, model: providers.llm.localModel },
+    llm,
     stt:
       providers.stt.provider === 'openai'
         ? { server: openai, model: providers.stt.openaiModel }
@@ -259,10 +273,14 @@ export function defaultRoutes(providers: ProviderSettings, webSearchProvider = '
       : { server: '' },
     image: { server: BUILT_IN_SERVER_IDS.comfy },
     mesh: { server: BUILT_IN_SERVER_IDS.comfy },
-    describe: { server: openai, model: DEFAULT_HELPER_MODELS.describe },
+    // Reading an image runs on the small local vision model, started only while a job needs it.
+    describe: { server: BUILT_IN_SERVER_IDS.vision, model: DEFAULT_VISION_MODEL },
     posegen: { server: openai, model: DEFAULT_HELPER_MODELS.posegen },
-    posecheck: { server: openai, model: DEFAULT_HELPER_MODELS.posecheck },
-    clips: { server: openai, model: providers.motion.openaiModel },
+    posecheck: { server: BUILT_IN_SERVER_IDS.vision, model: DEFAULT_VISION_MODEL },
+    // Only a fallback: Moving uses the motion service (ARDY) whenever it runs.
+    clips: { ...llm },
+    idle: { ...llm },
+    scenelayout: { ...llm },
     memory: { server: BUILT_IN_SERVER_IDS.memory },
     memorymirror: { server: '' },
     coding: { server: BUILT_IN_SERVER_IDS.coderLlm, model: DEFAULT_CODER_MODEL },
@@ -295,7 +313,10 @@ export function resolveModelRouting(
       const server = servers.find((entry) => entry.id === id);
       return Boolean(server && USE_SERVER_TYPES[use].includes(server.type));
     };
-    const base = saved && (fits(saved.server) || (USES_THAT_CAN_BE_OFF.includes(use) && saved.server === '')) ? saved : defaults[use];
+    const usable = saved && (fits(saved.server) || (USES_THAT_CAN_BE_OFF.includes(use) && saved.server === ''));
+    // Idle thoughts, Room layout and Animation clips follow Thinking (server, model and, where the use
+    // has them, backups) until they are pointed somewhere else.
+    const base = usable ? saved : (use === 'idle' || use === 'scenelayout' || use === 'clips') && routes.llm ? routes.llm : defaults[use];
     const primary = base.server;
     const seen = new Set([primary]);
     const backups = USES_WITH_BACKUPS.includes(use)

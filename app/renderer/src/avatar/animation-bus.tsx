@@ -49,6 +49,9 @@ export interface PoseTransitionConfig {
   easing?: 'linear' | 'easeOut' | 'easeInOut';
 }
 
+/** What the avatar does after a clip's last frame: keep it ('hold'), or drop it at once ('release'). */
+export type ClipEndAction = 'hold' | 'release' | undefined;
+
 export interface AvatarAnimationRequest {
   slug: string;
   intent: AvatarAnimationIntent;
@@ -59,6 +62,14 @@ export interface AvatarAnimationRequest {
    * motion service). It is registered under `slug` for this playback only.
    */
   vrmaBinary?: ArrayBuffer;
+  /**
+   * Called when the clip has played to its end (not when it is cancelled). Returning 'hold' keeps the
+   * last frame until another clip is requested (idle motion stays suspended); 'release' stops the clip
+   * at once instead of fading it out, for a handover to the idle pose.
+   */
+  onEnd?: () => ClipEndAction;
+  /** The clip starts where the previous one ended, so it is not blended in from the idle pose. */
+  continuation?: boolean;
 }
 
 export type AvatarAnimationEvent =

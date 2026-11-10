@@ -118,6 +118,24 @@ describe('ModelsDialog', () => {
     expect(screen.getByRole('button', { name: /Concept image/ })).toBeTruthy();
   });
 
+  it('lists Idle thoughts under Rooms, on Thinking’s model until pointed at a smaller one, with backups', async () => {
+    const api = bridge();
+    render(<ModelsDialog api={api} onClose={vi.fn()} initialUse="idle" />);
+    const rail = screen.getByRole('navigation', { name: 'Model uses' });
+    expect(within(rail).getByText('Rooms')).toBeTruthy();
+    expect(within(rail).getByRole('button', { name: /Idle thoughts/ })).toBeTruthy();
+    const runsOn = (await screen.findByLabelText('Runs on')) as HTMLSelectElement;
+    expect(runsOn.value).toBe('local-llm');
+    expect([...runsOn.options].map((option) => option.value)).toEqual(expect.arrayContaining(['local-llm', 'openai']));
+    expect([...runsOn.options].map((option) => option.value)).not.toContain('local-speech');
+    expect(screen.getByRole('group', { name: 'Backup servers' })).toBeTruthy();
+
+    await waitFor(async () => expect([...((await screen.findByLabelText('Model')) as HTMLSelectElement).options].map((o) => o.value)).toContain('gemma'));
+    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'gemma' } });
+    await waitFor(() => expect(api.setRoute).toHaveBeenLastCalledWith('idle', expect.objectContaining({ server: 'local-llm', model: 'gemma' })));
+    expect(api.setRoute).not.toHaveBeenCalledWith('llm', expect.anything());
+  });
+
   it('moves a job to another server and saves a model picked or typed', async () => {
     const api = bridge();
     const onChanged = vi.fn();

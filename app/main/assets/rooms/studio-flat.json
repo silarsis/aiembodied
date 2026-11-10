@@ -1,0 +1,346 @@
+{
+  "version": 1,
+  "id": "room:builtin:studio-flat",
+  "name": "Studio flat",
+  "description": "A bright studio flat with a desk, a bed and a small kitchen counter.",
+  "shell": {
+    "width": 6,
+    "depth": 5,
+    "height": 2.8,
+    "floor": {
+      "color": "#b89a74"
+    },
+    "walls": {
+      "color": "#e6e1d8"
+    },
+    "ceiling": {
+      "color": "#f6f3ee"
+    },
+    "outside": {
+      "color": "#bcd8ee"
+    },
+    "openings": [
+      {
+        "wall": "north",
+        "kind": "window",
+        "offset": -0.3,
+        "width": 1.9,
+        "height": 1.4,
+        "sill": 0.8
+      },
+      {
+        "wall": "east",
+        "kind": "door",
+        "offset": 1.2,
+        "width": 0.95,
+        "height": 2.1
+      }
+    ]
+  },
+  "lights": [
+    {
+      "type": "hemisphere",
+      "color": "#ffffff",
+      "groundColor": "#a89880",
+      "intensity": 1.0
+    },
+    {
+      "type": "directional",
+      "color": "#fff8ec",
+      "intensity": 1.2,
+      "position": [1.5, 2.6, 2.0]
+    },
+    {
+      "type": "point",
+      "color": "#ffe2b0",
+      "intensity": 2.5,
+      "position": [-1.9, 1.5, -1.6]
+    }
+  ],
+  "camera": {
+    "position": [0, 1.5, 2.1],
+    "target": [0, 1.0, -0.3],
+    "fov": 50
+  },
+  "home": {
+    "position": [0, 0, -0.3],
+    "facing": 0
+  },
+  "objects": [
+    {
+      "id": "rug",
+      "name": "rug",
+      "description": "A soft grey rug.",
+      "position": [0, 0, -0.5],
+      "size": [2.6, 0.02, 1.8],
+      "collider": "none",
+      "parts": [
+        {
+          "shape": "box",
+          "size": [2.6, 0.02, 1.8],
+          "offset": [0, 0.01, 0],
+          "color": "#8d9aa6"
+        }
+      ]
+    },
+    {
+      "id": "desk",
+      "name": "desk",
+      "description": "A work desk under the side of the window.",
+      "position": [-1.9, 0, -2.1],
+      "size": [1.4, 0.75, 0.7],
+      "parts": [
+        {
+          "shape": "box",
+          "size": [1.4, 0.04, 0.7],
+          "offset": [0, 0.73, 0],
+          "color": "#c9a679"
+        },
+        {
+          "shape": "box",
+          "size": [0.05, 0.71, 0.65],
+          "offset": [-0.65, 0.355, 0],
+          "color": "#a98756"
+        },
+        {
+          "shape": "box",
+          "size": [0.05, 0.71, 0.65],
+          "offset": [0.65, 0.355, 0],
+          "color": "#a98756"
+        },
+        {
+          "shape": "box",
+          "size": [0.4, 0.26, 0.03],
+          "offset": [0.1, 0.9, -0.15],
+          "color": "#222831"
+        },
+        {
+          "shape": "box",
+          "size": [0.1, 0.1, 0.06],
+          "offset": [0.1, 0.78, -0.15],
+          "color": "#222831"
+        }
+      ],
+      "tags": {
+        "surface": {
+          "height": 0.75
+        },
+        "stand": {
+          "position": [0, 0, 0.9],
+          "facing": 180
+        }
+      }
+    },
+    {
+      "id": "desk-chair",
+      "name": "desk chair",
+      "description": "A simple desk chair facing the desk.",
+      "position": [-1.9, 0, -1.4],
+      "rotationY": 180,
+      "size": [0.5, 0.9, 0.5],
+      "parts": [
+        {
+          "shape": "box",
+          "size": [0.46, 0.06, 0.46],
+          "offset": [0, 0.45, 0],
+          "color": "#3d4b5c"
+        },
+        {
+          "shape": "box",
+          "size": [0.46, 0.45, 0.06],
+          "offset": [0, 0.7, -0.2],
+          "color": "#3d4b5c"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.03,
+          "height": 0.42,
+          "offset": [0, 0.21, 0],
+          "color": "#2a2a2a"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 0.25,
+          "height": 0.03,
+          "offset": [0, 0.015, 0],
+          "color": "#2a2a2a"
+        }
+      ],
+      "tags": {
+        "sit": {
+          "position": [0, 0.5, 0],
+          "facing": 0
+        }
+      }
+    },
+    {
+      "id": "bed",
+      "name": "bed",
+      "description": "A single bed with a blue blanket, headboard against the north wall.",
+      "position": [1.95, 0, -1.45],
+      "size": [1.4, 0.55, 2.0],
+      "parts": [
+        {
+          "shape": "box",
+          "size": [1.4, 0.3, 2.0],
+          "offset": [0, 0.15, 0],
+          "color": "#8b6b4a"
+        },
+        {
+          "shape": "box",
+          "size": [1.34, 0.18, 1.94],
+          "offset": [0, 0.39, 0],
+          "color": "#f1efe9"
+        },
+        {
+          "shape": "box",
+          "size": [1.36, 0.1, 1.3],
+          "offset": [0, 0.5, 0.3],
+          "color": "#4a6fa5"
+        },
+        {
+          "shape": "box",
+          "size": [0.9, 0.12, 0.4],
+          "offset": [0, 0.54, -0.75],
+          "color": "#ffffff"
+        },
+        {
+          "shape": "box",
+          "size": [1.4, 0.7, 0.06],
+          "offset": [0, 0.65, -0.97],
+          "color": "#8b6b4a"
+        }
+      ],
+      "tags": {
+        "sit": {
+          "position": [0, 0.5, 0.7],
+          "facing": 0
+        },
+        "stand": {
+          "position": [0, 0, 1.3],
+          "facing": 180
+        }
+      }
+    },
+    {
+      "id": "kitchen-counter",
+      "name": "kitchen counter",
+      "description": "A small kitchen counter with a sink.",
+      "position": [-2.65, 0, -0.3],
+      "rotationY": 90,
+      "size": [2.0, 0.9, 0.6],
+      "parts": [
+        {
+          "shape": "box",
+          "size": [2.0, 0.86, 0.58],
+          "offset": [0, 0.43, 0],
+          "color": "#e9e5dc"
+        },
+        {
+          "shape": "box",
+          "size": [2.0, 0.04, 0.6],
+          "offset": [0, 0.88, 0],
+          "color": "#5c6670"
+        },
+        {
+          "shape": "box",
+          "size": [0.5, 0.02, 0.35],
+          "offset": [-0.5, 0.9, 0],
+          "color": "#aeb6bd"
+        }
+      ],
+      "tags": {
+        "surface": {
+          "height": 0.9
+        },
+        "stand": {
+          "position": [0, 0, 0.7],
+          "facing": 180
+        },
+        "idle": "tidy the counter"
+      }
+    },
+    {
+      "id": "mug",
+      "name": "mug",
+      "description": "A ceramic mug.",
+      "position": [-2.65, 0.9, 0.3],
+      "size": [0.1, 0.1, 0.1],
+      "dynamic": true,
+      "parts": [
+        {
+          "shape": "cylinder",
+          "radius": 0.04,
+          "height": 0.1,
+          "offset": [0, 0.05, 0],
+          "color": "#c75b4a"
+        },
+        {
+          "shape": "box",
+          "size": [0.015, 0.06, 0.03],
+          "offset": [0.05, 0.05, 0],
+          "color": "#c75b4a"
+        }
+      ],
+      "tags": {
+        "grab": {
+          "position": [0, 0.06, 0]
+        }
+      }
+    },
+    {
+      "id": "plant",
+      "name": "plant",
+      "description": "A leafy houseplant in a terracotta pot.",
+      "position": [-2.5, 0, 1.6],
+      "size": [0.5, 1.1, 0.5],
+      "parts": [
+        {
+          "shape": "cylinder",
+          "radius": 0.2,
+          "height": 0.35,
+          "offset": [0, 0.175, 0],
+          "color": "#b4663f"
+        },
+        {
+          "shape": "sphere",
+          "radius": 0.28,
+          "offset": [0, 0.72, 0],
+          "color": "#4f8a4b"
+        },
+        {
+          "shape": "sphere",
+          "radius": 0.2,
+          "offset": [0.1, 0.98, 0.05],
+          "color": "#5fa05a"
+        }
+      ],
+      "tags": {
+        "look": {
+          "position": [0, 0.8, 0]
+        }
+      }
+    },
+    {
+      "id": "bedside-table",
+      "name": "bedside table",
+      "description": "A small table beside the bed.",
+      "position": [2.6, 0, -0.1],
+      "size": [0.4, 0.5, 0.4],
+      "parts": [
+        {
+          "shape": "box",
+          "size": [0.4, 0.5, 0.4],
+          "offset": [0, 0.25, 0],
+          "color": "#8b6b4a"
+        },
+        {
+          "shape": "box",
+          "size": [0.3, 0.03, 0.01],
+          "offset": [0, 0.35, 0.2],
+          "color": "#5a4630"
+        }
+      ]
+    }
+  ]
+}

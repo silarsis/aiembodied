@@ -52,8 +52,14 @@ import type { LatencyMetricName } from '../../main/src/metrics/types.js';
 import type { AvatarModelSummary, AvatarMotionStatus, AvatarPoseSummary } from './avatar/types.js';
 import type { LocalVoiceStatus, SpeakingVoiceOptions } from '../../main/src/local-voice/types.js';
 import { describeModels } from './status/model-status.js';
-import { extractAvatarTags, extractMoveTags, toAnimationSlug } from './avatar/animation-tags.js';
+import { extractAvatarTags, extractMotionTags, toAnimationSlug } from './avatar/animation-tags.js';
+import { ANIMATION_INSTRUCTION_PREFIX, buildAnimationInstructions } from './avatar/animation-instructions.js';
 import { MoveRequestFilter, enqueueMotionChunk } from './avatar/live-motion.js';
+import { SceneActionExecutor } from './rooms/scene-executor.js';
+import { tagToAction, type SceneAction } from './rooms/scene-actions.js';
+import { buildSceneInstructions } from './rooms/scene-instructions.js';
+import { useIdleDirector } from './rooms/use-idle-director.js';
+import { useIdleHabits } from './avatar/use-idle-habits.js';
 
 const CURSOR_IDLE_TIMEOUT_MS = 3000;
 const WAKE_ACTIVE_DURATION_MS = 4000;
@@ -95,7 +101,6 @@ const STATIC_VOICE_OPTIONS: readonly string[] = [
 ] as const;
 
 const DEFAULT_VOICE = 'shimmer';
-const ANIMATION_INSTRUCTION_PREFIX = 'Available animations:';
 
 function toTranscriptSpeaker(role: string): TranscriptSpeaker | null {
   if (role === 'system' || role === 'user' || role === 'assistant') {
@@ -132,33 +137,6 @@ function formatLatency(value?: number): string {
 const LIVE_MOTION_STATUS_INTERVAL_MS = 5_000;
 const MODEL_STATUS_INTERVAL_MS = 5_000;
 
-function buildAnimationInstructions(
-  availableAnimations: string[],
-  availablePoses: string[],
-  liveMotionAvailable = false,
-): string {
-  const animList = availableAnimations.length > 0 ? availableAnimations.join(', ') : 'none';
-  const poseList = availablePoses.length > 0 ? availablePoses.join(', ') : 'none';
-  const moveInstructions = liveMotionAvailable
-    ? [
-        'For any other body movement, include `{move:<short description of the movement>}`',
-        '(e.g. `{move:shrugs with both shoulders}`); it is generated on the fly and starts within about a second.',
-      ]
-    : [];
-  return [
-    `Available animations: ${animList}.`,
-    `Available poses: ${poseList}.`,
-    'You have a 3D body you can control through animations or poses.',
-    'To trigger an animation, include `{anim:<slug>}` in your response (e.g. `{anim:happy-wave}`).',
-    'To apply a pose, include `{pose:<slug>}` in your response (e.g. `{pose:power-stance}`).',
-    ...(availablePoses.includes('relaxed-neutral') ? [
-      'Your base stances are relaxed-neutral, happiness, sadness, anger, fear, disgust, and surprise. Choose an available pose when it suits your emotion or the user asks for it. Use {pose:relaxed-neutral} to return to your relaxed stance.',
-    ] : []),
-    ...moveInstructions,
-    'Multiple tags are allowed. Slug format: lowercase letters, numbers, and hyphens.',
-  ].join(' ');
-}
-
 function buildAvatarDescription(model: AvatarModelSummary | null): string {
   if (!model?.description || model.description.trim().length === 0) {
     return '';
@@ -172,10 +150,16 @@ function buildSessionInstructions(
   availablePoses: string[],
   activeVrmModel: AvatarModelSummary | null,
   liveMotionAvailable = false,
+  sceneInstructions = '',
 ): string {
   const trimmedBase = basePrompt.trim();
   const avatarDescription = buildAvatarDescription(activeVrmModel);
-  const animationInstructions = buildAnimationInstructions(availableAnimations, availablePoses, liveMotionAvailable);
+  const animationInstructions = buildAnimationInstructions(
+    availableAnimations,
+    availablePoses,
+    liveMotionAvailable,
+    sceneInstructions,
+  );
 
   const parts = [trimmedBase, avatarDescription, animationInstructions].filter((s) => s.length > 0);
   return parts.join('\n\n');
@@ -773,15 +757,64 @@ export default function App() {
     };
   }, [resolveApi, activeVrmModel?.id]);
 
+  // Runs {go:}, {sit:}, {pick:} and the other scene tags in a 3D room (see rooms/scene-executor.ts).
+  const sceneActions = useMemo(() => new SceneActionExecutor(), []);
   useEffect(() => {
     const avatar = resolveApi()?.avatar;
     if (!avatar?.onMotionChunk) {
       return;
     }
     return avatar.onMotionChunk((chunk) => {
-      enqueueMotionChunk(animationBus, chunk);
+      if (!sceneActions.handleChunk(chunk)) {
+        enqueueMotionChunk(animationBus, chunk);
+      }
     });
-  }, [animationBus, resolveApi]);
+  }, [animationBus, resolveApi, sceneActions]);
+  useEffect(() => {
+    const avatar = resolveApi()?.avatar;
+    const streamMotion = avatar?.streamMotion;
+    if (!avatar || !streamMotion) {
+      return;
+    }
+    sceneActions.setBridge({
+      streamMotion: (request) => streamMotion.call(avatar, request),
+      cancelMotion: (streamId) => {
+        void avatar.cancelMotion?.(streamId)?.catch(() => undefined);
+      },
+      playChunk: (chunk, hooks) => enqueueMotionChunk(animationBus, chunk, hooks),
+      avatarRest: () => getAvatarRestSkeleton() ?? undefined,
+    });
+    return () => sceneActions.setBridge(null);
+  }, [animationBus, resolveApi, sceneActions]);
+  useEffect(
+    () =>
+      sceneActions.onActivity((activity) => {
+        const now = Date.now();
+        if (activity.type === 'start') {
+          setToolCalls((calls) =>
+            addToolCall(calls, { id: activity.id, kind: 'move', label: activity.label, status: 'pending', startedAt: now }),
+          );
+        } else if (activity.type === 'done') {
+          setToolCalls((calls) => finishToolCall(calls, activity.id, 'done', now, activity.detail));
+        } else if (activity.type === 'failed') {
+          setToolCalls((calls) => finishToolCall(calls, activity.id, 'failed', now, activity.message));
+        } else {
+          const id = Math.random().toString(36).slice(2, 10);
+          setToolCalls((calls) =>
+            addToolCall(calls, {
+              id,
+              kind: 'move',
+              label: activity.label,
+              status: 'failed',
+              startedAt: now,
+              finishedAt: now,
+              detail: `skipped: ${activity.reason}`,
+            }),
+          );
+        }
+      }),
+    [sceneActions],
+  );
   const [isListeningEnabled, setListeningEnabled] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
@@ -799,6 +832,7 @@ export default function App() {
   const acceptsWakeRef = useRef(false);
   useEffect(() => { acceptsWakeRef.current = isListeningEnabled && !loadingConfig; }, [isListeningEnabled, loadingConfig]);
   const backgrounds = useBackgrounds(activeBridge?.backgrounds);
+  const [showWalkableArea, setShowWalkableArea] = useState(false);
   const [avatarFootY, setAvatarFootY] = useState(0.9);
 
   useEffect(() => {
@@ -1138,12 +1172,30 @@ export default function App() {
     const phase = realtimeState.status === 'connected' ? 'listening' : realtimeState.status === 'error' ? 'error' : 'off';
     return { phase, detail: realtimeState.error, since: voiceActivity.since };
   }, [isLocalBackend, voiceActivity, realtimeState]);
+  // The avatar wanders on its own in a 3D room when nobody has talked for a while (rooms/idle-director.ts).
+  const idleHabits = useIdleHabits(activeBridge?.avatar, activeVrmModel?.id);
+  const { idleNote } = useIdleDirector({
+    executor: sceneActions,
+    room: backgrounds.activeRoom,
+    settings: backgrounds.idleSettings,
+    motionReady: liveMotionReady,
+    persona: { name: activeVrmModel?.name ?? '', personality: basePrompt, habits: idleHabits.habits },
+    phase: voiceActivity.phase,
+    pick: async (context) => (await activeBridge?.backgrounds?.pickIdle?.(context)) ?? null,
+    run: (text) => animationTextHandlerRef.current(text),
+  });
+  // Describes the active 3D room (and the scene tags) to the model; empty in 2D. Part of the session
+  // instructions, so a room change reaches both the local voice and Realtime sessions.
+  const sceneInstructions = useMemo(
+    () => buildSceneInstructions(backgrounds.activeRoom, liveMotionReady, idleNote),
+    [backgrounds.activeRoom, liveMotionReady, idleNote],
+  );
   const sessionInstructions = useMemo(
     () => {
       const poseSlugs = availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0);
-      return buildSessionInstructions(basePrompt, availableAnimationSlugs, poseSlugs, activeVrmModel, liveMotionReady);
+      return buildSessionInstructions(basePrompt, availableAnimationSlugs, poseSlugs, activeVrmModel, liveMotionReady, sceneInstructions);
     },
-    [basePrompt, availableAnimationSlugs, availablePoses, activeVrmModel, liveMotionReady],
+    [basePrompt, availableAnimationSlugs, availablePoses, activeVrmModel, liveMotionReady, sceneInstructions],
   );
   const availableAnimationSlugSet = useMemo(
     () => new Set(availableAnimationSlugs),
@@ -1155,6 +1207,9 @@ export default function App() {
   );
   const animationTextHandlerRef = useRef<(text: string) => void>(() => undefined);
   const moveRequestFilterRef = useRef(new MoveRequestFilter());
+  const sceneActionFilterRef = useRef(new MoveRequestFilter());
+  const activeRoomRef = useRef(backgrounds.activeRoom);
+  useEffect(() => { activeRoomRef.current = backgrounds.activeRoom; }, [backgrounds.activeRoom]);
   const handleRealtimeTextContent = useCallback(
     (content: string) => {
       if (!content) {
@@ -1162,27 +1217,48 @@ export default function App() {
       }
       const streamMotion = resolveApi()?.avatar?.streamMotion;
       if (liveMotionReady && streamMotion) {
-        for (const move of extractMoveTags(content)) {
+        const room = activeRoomRef.current;
+        // In a room the tags run in the order written; a {move:} waits for the scene actions before it.
+        const pendingActions: SceneAction[] = [];
+        const flushActions = () => {
+          if (pendingActions.length > 0) sceneActions.submit(pendingActions.splice(0));
+        };
+        for (const tag of extractMotionTags(content)) {
+          if (tag.type !== 'move') {
+            if (!room || !sceneActionFilterRef.current.shouldStart(JSON.stringify(tag))) continue;
+            const action = tagToAction(room, tag);
+            if (action) pendingActions.push(action);
+            continue;
+          }
+          const move = tag;
           if (!moveRequestFilterRef.current.shouldStart(move.text)) {
             continue;
           }
-          const streamId = Math.random().toString(36).slice(2, 10);
-          setToolCalls((calls) =>
-            addToolCall(calls, { id: streamId, kind: 'move', label: move.text, status: 'pending', startedAt: Date.now() }),
-          );
-          streamMotion({ streamId, prompt: move.text, avatarRest: getAvatarRestSkeleton() ?? undefined })
-            .then((result) => {
+          const startMove = async () => {
+            const streamId = Math.random().toString(36).slice(2, 10);
+            setToolCalls((calls) =>
+              addToolCall(calls, { id: streamId, kind: 'move', label: move.text, status: 'pending', startedAt: Date.now() }),
+            );
+            try {
+              const result = await streamMotion({ streamId, prompt: move.text, avatarRest: getAvatarRestSkeleton() ?? undefined });
               const firstChunk = result.firstChunkMs === null ? '' : `, first after ${(result.firstChunkMs / 1000).toFixed(1)} s`;
               setToolCalls((calls) =>
                 finishToolCall(calls, streamId, 'done', Date.now(), `${result.chunks} chunk${result.chunks === 1 ? '' : 's'}${firstChunk}`),
               );
-            })
-            .catch((error: unknown) => {
+            } catch (error: unknown) {
               const message = error instanceof Error ? error.message : String(error);
               console.error('[App] Live motion generation failed', { prompt: move.text, error: message });
               setToolCalls((calls) => finishToolCall(calls, streamId, 'failed', Date.now(), message));
-            });
+            }
+          };
+          if (room) {
+            flushActions();
+            sceneActions.submitGesture(move.text, startMove);
+          } else {
+            void startMove();
+          }
         }
+        flushActions();
       }
       const tags = extractAvatarTags(content, {
         allowedAnimationSlugs: availableAnimationSlugSet,
@@ -1229,7 +1305,7 @@ export default function App() {
         }
       }
     },
-    [animationBus, availableAnimationSlugSet, availablePoseSlugSet, availablePoses, liveMotionReady, resolveApi],
+    [animationBus, availableAnimationSlugSet, availablePoseSlugSet, availablePoses, liveMotionReady, resolveApi, sceneActions],
   );
 
   useEffect(() => {
@@ -1381,7 +1457,7 @@ export default function App() {
       }
 
       const poseSlugs = availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0);
-      const instructions = buildSessionInstructions(basePrompt, availableAnimationSlugs, poseSlugs, activeVrmModel, liveMotionReady);
+      const instructions = buildSessionInstructions(basePrompt, availableAnimationSlugs, poseSlugs, activeVrmModel, liveMotionReady, sceneInstructions);
 
       // Spoken aloud in the configured voice: through the avatar (with lip-sync) while the
       // conversation is running, otherwise straight to the chosen speakers.
@@ -1397,7 +1473,7 @@ export default function App() {
     } finally {
       setIsTesting(false);
     }
-  }, [isLocalBackend, basePrompt, availableAnimationSlugs, availablePoses, activeVrmModel, liveMotionReady, realtimeClient, selectedOutput]);
+  }, [isLocalBackend, basePrompt, availableAnimationSlugs, availablePoses, activeVrmModel, liveMotionReady, sceneInstructions, realtimeClient, selectedOutput]);
 
   const mintEphemeralToken = useCallback(
     async (reason: string) => {
@@ -1655,6 +1731,8 @@ export default function App() {
 
   const audioGraph = useAudioGraphState(selectedInput || undefined, isListeningEnabled && !loadingConfig && !wakeListening.error);
   const previousSpeechActiveRef = useRef(audioGraph.isActive);
+  const voicePhaseRef = useRef(voiceActivity.phase);
+  useEffect(() => { voicePhaseRef.current = voiceActivity.phase; }, [voiceActivity.phase]);
 
   useEffect(() => {
     const payload: SessionConfigUpdate = {
@@ -1704,6 +1782,8 @@ export default function App() {
   useEffect(() => {
     const wasActive = previousSpeechActiveRef.current;
     if (!wasActive && audioGraph.isActive) {
+      // The user started speaking (not the avatar's own voice coming back): drop what it still had queued to do.
+      if (voicePhaseRef.current !== 'responding') sceneActions.interrupt();
       const snapshot = latencyTrackerRef.current.recordCapture(Date.now(), activeSessionIdRef.current);
       if (snapshot) {
         setLatencySnapshot((previous) => ({ ...(previous ?? {}), ...snapshot }));
@@ -1711,7 +1791,7 @@ export default function App() {
       }
     }
     previousSpeechActiveRef.current = audioGraph.isActive;
-  }, [audioGraph.isActive, pushLatency]);
+  }, [audioGraph.isActive, pushLatency, sceneActions]);
 
   useEffect(() => {
     if (!realtimeClient) {
@@ -1843,6 +1923,7 @@ export default function App() {
 
     const unsubscribe = bridge.wakeWord.onWake((event) => {
       if (!acceptsWakeRef.current) return;
+      sceneActions.interrupt();
       const client = conversationClientRef.current;
       if (client instanceof LocalVoiceClient) {
         client.notifyWake(event.timestamp);
@@ -1890,12 +1971,13 @@ export default function App() {
       }
       unsubscribe?.();
     };
-  }, [api, resolveApi, recordTranscriptEntry]);
+  }, [api, resolveApi, recordTranscriptEntry, sceneActions]);
 
   // Push-to-talk and tap-to-talk skip the wake word. With listening off they turn it on, and the
   // local client starts listening once it has connected.
   const startTalking = useCallback(
     (source: 'shortcut' | 'tap') => {
+      sceneActions.interrupt();
       setListeningEnabled(true);
       const client = conversationClientRef.current;
       if (client instanceof LocalVoiceClient) {
@@ -1903,7 +1985,7 @@ export default function App() {
       }
       console.info(`[talk] ${source === 'shortcut' ? 'Push-to-talk key' : 'Screen tap'}`);
     },
-    [setListeningEnabled],
+    [setListeningEnabled, sceneActions],
   );
 
   const [pushToTalkStatus, setPushToTalkStatus] = useState<PushToTalkStatus | null>(null);
@@ -2455,7 +2537,7 @@ export default function App() {
             data-tap-to-talk={tapToTalk ? 'true' : 'false'}
           >
             <section className="kiosk__stage" aria-label="Avatar stage" style={stageStyle}>
-              {backgrounds.imageUrl ? <>
+              {backgrounds.activeKind === '2d' && backgrounds.imageUrl ? <>
                 <img className="stageBackground" src={backgrounds.imageUrl} alt="" draggable={false} style={{ objectPosition: `50% ${(backgrounds.active?.groundY ?? 0.86) * 100}%` }} />
                 <div className="stageGroundShadow" aria-hidden="true" />
               </> : null}
@@ -2463,6 +2545,7 @@ export default function App() {
                 className="kiosk__avatar"
                 data-state={visemeSummary.status.toLowerCase()}
                 data-avatar-mode="vrm"
+                data-stage-mode={backgrounds.activeKind}
               >
                 <VrmAvatarRenderer
                   key={activeVrmModel?.id ?? 'vrm'}
@@ -2471,6 +2554,10 @@ export default function App() {
                   onStatusChange={handleVrmStatusChange}
                   onGroundPositionChange={setAvatarFootY}
                   animationVersion={0}
+                  room={backgrounds.activeRoom}
+                  roomAvatarHeight={backgrounds.idleSettings.avatarHeight}
+                  showWalkableArea={showDeveloperHud && showWalkableArea}
+                  sceneActions={sceneActions}
                 />
               </div>
             </section>
@@ -2532,7 +2619,7 @@ export default function App() {
             <ControlButton
               id="backgrounds"
               title="Backgrounds"
-              summary={backgrounds.active?.name ?? 'Plain background'}
+              summary={backgrounds.activeName}
               keywords="scene background place environment scenery generate creation description garden lounge beach city mountain"
               onOpen={() => setPanel('backgrounds')}
             />
@@ -2715,6 +2802,23 @@ export default function App() {
                     style={{ width: '100%' }}
                   />
                 </div>
+                <div className="control">
+                  <label htmlFor="idle-habits">Idle habits</label>
+                  <textarea
+                    id="idle-habits"
+                    placeholder="Sits by the window with tea; tidies when bored."
+                    rows={2}
+                    maxLength={idleHabits.maxLength}
+                    value={idleHabits.habits}
+                    onChange={(e) => idleHabits.setHabits(e.target.value)}
+                    onBlur={() => void idleHabits.save()}
+                    disabled={loadingConfig || !idleHabits.available}
+                    style={{ width: '100%' }}
+                  />
+                  <p className="kiosk__helper">
+                    What they like to do when nobody is talking, e.g. sits by the window with tea; tidies when bored.
+                  </p>
+                </div>
               </section>
               <section className="kiosk__realtime" aria-labelledby="kiosk-voice-title">
                 <h2 id="kiosk-voice-title">Voice</h2>
@@ -2790,7 +2894,10 @@ export default function App() {
           </PanelDialog>
 
           <PanelDialog id="backgrounds" title="Backgrounds" subtitle="Pick a scene or describe a new one." open={panel === 'backgrounds'} onClose={closePanel}>
-            <BackgroundControls backgrounds={backgrounds} />
+            <BackgroundControls
+              backgrounds={backgrounds}
+              walkableArea={showDeveloperHud ? { shown: showWalkableArea, onChange: setShowWalkableArea } : undefined}
+            />
           </PanelDialog>
 
           <PanelDialog id="tools" title="Tools / MCP" subtitle="What the assistant can do besides talk." open={panel === 'tools'} onClose={closePanel}>

@@ -33,6 +33,7 @@ import {
   type ModelServer,
   type RouteOverride,
 } from '../config/model-routing.js';
+import { CODER_CONTEXT_LENGTH } from './types.js';
 import type { LocalLlmControl } from '../local-voice/local-llm-control.js';
 
 export type CoderMemoryMode = 'auto' | 'side-by-side' | 'swap';
@@ -92,7 +93,6 @@ export interface CoderModelSwapOptions {
   tickMs?: number;
 }
 
-const CONTEXT_LENGTH = 65536;
 const GIB = 1024 ** 3;
 const WAITING_MESSAGE = 'Not enough memory to run the coder next to Echo’s model; waiting until things are quiet to swap.';
 
@@ -125,8 +125,10 @@ export class CoderModelSwap {
   private downChecks = 0;
   /** An activity-triggered swap back is running (the override may already be gone, Echo's server not yet answering). */
   private reclaimingNow = false;
-  /** The tasks are paused (setHold(true) was called and not yet released). */
+  /** The hold state the runner last confirmed (setHold succeeded). */
   private held = false;
+  /** The hold state we want; differs from `held` after a failed setHold, and is retried on the next step. */
+  private wantHold = false;
   /** Kevin's talking sent the models back; the next swap in needs a quiet moment, even in swap mode. */
   private needQuiet = false;
   /** After a failed load, no new try before this time, so a broken model doesn't stop Echo's over and over. */
@@ -189,10 +191,11 @@ export class CoderModelSwap {
   }
 
   private async hold(hold: boolean): Promise<void> {
+    this.wantHold = hold;
     if (!this.options.setHold || hold === this.held) return;
-    this.held = hold;
     try {
       await this.options.setHold(hold);
+      this.held = hold; // a newer wish that differs is retried by the next step
     } catch (error) {
       this.options.logger.warn('Could not change the coding hold.', { hold, message: error instanceof Error ? error.message : String(error) });
     }
@@ -232,6 +235,7 @@ export class CoderModelSwap {
 
   private async step(): Promise<void> {
     const { phase } = this.state;
+    if (this.wantHold !== this.held) await this.hold(this.wantHold); // retry a hold change that failed earlier
     if (phase === 'waiting-for-quiet') {
       // While it isn't quiet, only measure memory again once a minute (the reader runs PowerShell).
       // After Kevin talked, only a quiet moment will do; otherwise look at memory again once a minute.
@@ -354,7 +358,7 @@ export class CoderModelSwap {
       this.startedCoder = false;
     } else {
       this.set('swapping-in', swapMode ? 'Loading the coder model. This takes a few minutes.' : 'Loading the coder model next to Echo’s. This takes a few minutes.');
-      this.coderControl = this.options.coder({ path: gguf, alias: coder.alias, contextLength: CONTEXT_LENGTH }, coder.server.url);
+      this.coderControl = this.options.coder({ path: gguf, alias: coder.alias, contextLength: CODER_CONTEXT_LENGTH }, coder.server.url);
       await this.coderControl.start();
       this.startedCoder = true;
     }
@@ -424,8 +428,30 @@ export class CoderModelSwap {
     if (this.stoppedEcho) await this.options.echo.start().catch((error) => {
       this.options.logger.warn('Echo’s model could not be started again.', { message: error instanceof Error ? error.message : String(error) });
     });
+    const startedEcho = this.stoppedEcho;
     this.stoppedEcho = false;
     this.loadedServer = null;
+    // Echo's model takes a minute or two to load, so keep saying so until it answers.
+    if (startedEcho && !(await this.waitForEchoModel())) {
+      this.set('idle', 'Echo’s model didn’t answer yet; it may still be loading.');
+      return;
+    }
     this.set('idle', message);
+  }
+
+  /** After starting Echo's llama-server: wait (up to loadTimeoutMs) until it answers GET /models. True if it did, or if there is nothing to ask. */
+  private async waitForEchoModel(): Promise<boolean> {
+    const echo = routeTargets(this.options.routing(), 'llm')[0];
+    if (!echo) return true;
+    this.set('swapping-back', 'Starting Echo’s model again…');
+    const deadline = this.now() + this.loadTimeoutMs;
+    while (!(await this.options.isUp(`${echo.server.url}/models`).catch(() => false))) {
+      if (this.now() >= deadline) {
+        this.options.logger.warn('Echo’s model did not answer in time after the swap back.');
+        return false;
+      }
+      await this.sleep(this.pollMs);
+    }
+    return true;
   }
 }

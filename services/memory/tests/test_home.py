@@ -535,7 +535,8 @@ def test_app_servers_add_replace_and_remove_listeners(database_url, schema):
         homes = by_id(response)
         assert set(homes) == {"sg", "srv-1"} and homes["srv-1"]["source"] == "app" and homes["srv-1"]["name"] == "Penang"
         assert set(homes["srv-1"]) == {"id", "name", "source", "configured", "connected", "url", "label", "watched", "events_today", "last_event_at", "error", "note"}
-        wait_for(lambda: by_id(client.get("/v1/home/status"))["srv-1"]["connected"])
+        # "connected" flips before the entity list is loaded, so wait for the watch list too.
+        wait_for(lambda: (h := by_id(client.get("/v1/home/status"))["srv-1"])["connected"] and h["watched"] == 2)
         status = client.get("/v1/home/status")
         assert "penang-secret" not in status.text and "sg-secret" not in status.text
         assert by_id(status)["srv-1"]["watched"] == 2 and by_id(status)["sg"]["connected"]

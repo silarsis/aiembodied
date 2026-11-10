@@ -19,6 +19,7 @@ import type { ModelsBridge } from '../preload-api.js';
 import { CodingSettings } from './coding-settings.js';
 import { ModelDownloads } from './model-downloads.js';
 import { ThinkingDownloads } from './thinking-downloads.js';
+import { VisionDownload } from './vision-download.js';
 import type { AvatarBridge } from '../avatar/types.js';
 import { useCharacterModels } from '../avatar/use-character-models.js';
 import { useImageModels } from '../avatar/use-image-models.js';
@@ -29,9 +30,11 @@ export const OPENAI_VOICES: string[] = [...OPENAI_TTS_VOICES];
 
 interface UseInfo {
   id: UseId;
-  group: 'Talking' | 'Creating an avatar' | 'Helpers' | 'Coding' | 'Memory';
+  group: 'Talking' | 'Creating an avatar' | 'Helpers' | 'Rooms' | 'Coding' | 'Memory';
   name: string;
   what: string;
+  /** Kept in the config but not listed. */
+  hidden?: boolean;
 }
 
 export const MODEL_USES: UseInfo[] = [
@@ -42,10 +45,29 @@ export const MODEL_USES: UseInfo[] = [
   { id: 'search', group: 'Talking', name: 'Web search', what: 'The web_search tool the assistant can call.' },
   { id: 'image', group: 'Creating an avatar', name: 'Concept image', what: 'Draws the character from the description, repaints textures and makes backgrounds.' },
   { id: 'mesh', group: 'Creating an avatar', name: '3D model', what: 'Turns the approved image into a textured mesh. Rigging runs in Blender on this PC.' },
-  { id: 'describe', group: 'Helpers', name: 'Describe the avatar', what: 'Looks at a screenshot of the avatar and writes a short character description that guides animation. Needs a model that reads images.' },
-  { id: 'posegen', group: 'Helpers', name: 'Make poses', what: 'Writes bone rotations for a pose from a text prompt.' },
-  { id: 'posecheck', group: 'Helpers', name: 'Check poses', what: 'Looks at a rendered pose and says whether it matches the prompt. Needs a model that reads images.' },
-  { id: 'clips', group: 'Helpers', name: 'Animation clips', what: 'Writes keyframe animation clips from a prompt. Moving uses it when no motion service is picked.' },
+  { id: 'describe', group: 'Helpers', name: 'Describe the avatar', what: 'Looks at a screenshot of the avatar and writes a short character description that guides animation. Needs a model that reads images; it starts out on a small one that runs on this PC.' },
+  // Nothing in the app makes or checks poses since the sidebar pose controls went (they come back
+  // built on the motion service), so these routes stay in the config but are not shown.
+  { id: 'posegen', group: 'Helpers', name: 'Make poses', what: 'Writes bone rotations for a pose from a text prompt.', hidden: true },
+  { id: 'posecheck', group: 'Helpers', name: 'Check poses', what: 'Looks at a rendered pose and says whether it matches the prompt. Needs a model that reads images.', hidden: true },
+  {
+    id: 'clips',
+    group: 'Helpers',
+    name: 'Animation clips',
+    what: 'Writes keyframe animation clips from a prompt when the motion service (ARDY) is not running or not picked for Moving. It starts out on the same model as Thinking.',
+  },
+  {
+    id: 'idle',
+    group: 'Rooms',
+    name: 'Idle thoughts',
+    what: 'Picks what the avatar does next on its own in a 3D room when nobody is talking. It starts out on the same model as Thinking; a small, fast model is enough.',
+  },
+  {
+    id: 'scenelayout',
+    group: 'Rooms',
+    name: 'Room layout',
+    what: 'Writes the furniture list and layout when you describe a 3D room. It starts out on the same model as Thinking; a larger model gives better rooms.',
+  },
   {
     id: 'coding',
     group: 'Coding',
@@ -65,7 +87,7 @@ export const MODEL_USES: UseInfo[] = [
     what: 'An optional second database, such as Supabase, that gets a copy of everything within a minute or so. Deletes are copied too.',
   },
 ];
-const USE_GROUPS = ['Talking', 'Creating an avatar', 'Helpers', 'Coding', 'Memory'] as const;
+const USE_GROUPS = ['Talking', 'Creating an avatar', 'Helpers', 'Rooms', 'Coding', 'Memory'] as const;
 
 export const SERVER_TYPE_LABELS: Record<ServerType, string> = {
   chat: 'Chat model server',
@@ -111,7 +133,7 @@ const keyLabel = (type: ServerType) => (type === 'memory' ? 'Password' : type ==
 
 /** Which of a server's model lists a use picks from. */
 function roleFor(use: UseId, type: ServerType): ModelRole | null {
-  if (use === 'llm' || use === 'coding' || use === 'describe' || use === 'posegen' || use === 'posecheck' || use === 'clips') return 'chat';
+  if (use === 'llm' || use === 'coding' || use === 'describe' || use === 'posegen' || use === 'posecheck' || use === 'clips' || use === 'idle' || use === 'scenelayout') return 'chat';
   if (use === 'stt') return 'transcribe';
   if (use === 'tts') return type === 'speech' ? 'voices' : 'realtime';
   if (use === 'motion') return type === 'motion' ? 'motion' : null;
@@ -270,7 +292,7 @@ export function ModelsDialog({ api, avatarApi, codingApi, engine, onClose, onCha
               status={view ? probes[BUILT_IN_SERVER_IDS.coderRunner] : undefined}
             />
           ) : null}
-          {MODEL_USES.filter((use) => use.group === group && group !== 'Coding').map((use) => {
+          {MODEL_USES.filter((use) => use.group === group && group !== 'Coding' && !use.hidden).map((use) => {
             const server = view ? serverById(view.routes[use.id].server) : undefined;
             const status: RailStatus = server ? probes[server.id] : 'off';
             return (
@@ -369,6 +391,7 @@ export function ModelsDialog({ api, avatarApi, codingApi, engine, onClose, onCha
         api={api}
       />
       {page.use === 'llm' ? <ThinkingDownloads api={api} busy={busy} onView={setView} /> : null}
+      {page.use === 'describe' && view.routes.describe.server === BUILT_IN_SERVER_IDS.vision ? <VisionDownload api={api} busy={busy} /> : null}
       </>
     );
   } else if (view && page.kind === 'servers') {

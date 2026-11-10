@@ -1,5 +1,11 @@
 import { BackgroundService } from './backgrounds/background-service.js';
-import { app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain, powerMonitor } from 'electron';
+import { RoomService } from './rooms/room-service.js';
+import { pickIdleActions } from './rooms/idle-thoughts.js';
+import { MAX_IDLE_HABITS_LENGTH, normalizeIdleHabits } from './rooms/idle-habits.js';
+import { app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain, powerMonitor, protocol } from 'electron';
+import { ASSET_SCHEME, ASSET_SCHEME_PRIVILEGES, registerAssetProtocol } from './rooms/asset-protocol.js';
+import { ASSET_FOLDER, createRoomGenerationService, objectMakingAvailable, pickSingleImageGeometry } from './rooms/room-generation-setup.js';
+import type { RoomGenerationService } from './rooms/room-generation.js';
 import dotenv from 'dotenv';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
@@ -107,6 +113,7 @@ import {
   routeTargets,
   routeTargetsWithOverride,
   serverUrl,
+  isLocalUrl,
   SPEAKING_ENGINES,
   speakingVoiceKey,
   USE_SERVER_TYPES,
@@ -119,6 +126,7 @@ import { probeMemoryDatabase, probeModelServer } from './config/model-server-pro
 import { ComfyUIPool } from './avatar/generation/comfyui-pool.js';
 import { LocalLlmControl } from './local-voice/local-llm-control.js';
 import { CodingService, type CodingView } from './coding/coding-service.js';
+import { CodingMemoryWriter } from './coding/memory-writer.js';
 import { CodingNudger } from './coding/nudger.js';
 import { registerCodingTaskIpc } from './coding/task-ipc.js';
 import { CODING_SERVER_ID, CODING_TOOL_IDS, createCodingTools } from './coding/tools.js';
@@ -126,6 +134,8 @@ import { ApprovalBroker } from './tools/approvals.js';
 import { registerApprovalsIpc } from './tools/approvals-ipc.js';
 import { lookupHuggingFace, parseHuggingFaceRef } from './local-llm/huggingface.js';
 import { LlmLibrary } from './local-llm/llm-library.js';
+import { VisionModel } from './local-vision/vision-model.js';
+import { VisionServer, withVisionServer } from './local-vision/vision-server.js';
 import { MCPManager } from './mcp/mcp-manager.js';
 import { ToolRegistry } from './tools/tool-registry.js';
 import { createRoutedSearchProvider, createWebSearchTool, WEB_SEARCH_TOOL_ID } from './tools/web-search.js';
@@ -222,6 +232,10 @@ let avatarModelService: AvatarModelService | null = null;
 let avatarAnimationService: AvatarAnimationService | null = null;
 let avatarPoseService: AvatarPoseService | null = null;
 let backgroundService: BackgroundService | null = null;
+let roomService: RoomService | null = null;
+let roomGeneration: RoomGenerationService | null = null;
+// The scheme that serves downloaded room models must be declared before the app is ready.
+protocol.registerSchemesAsPrivileged([{ scheme: ASSET_SCHEME, privileges: ASSET_SCHEME_PRIVILEGES }]);
 let vrmaGenerationService: VrmaGenerationService | null = null;
 let poseGenerationService: PoseGenerationService | null = null;
 let poseEvaluationService: PoseEvaluationService | null = null;
@@ -650,6 +664,12 @@ function characterVoiceKey(engine: SpeakingEngineId | 'openai'): string | null {
   return engine === 'openai' ? `avatar.voice.${activeModel.id}` : `avatar.voice.${activeModel.id}.${engine}`;
 }
 
+/** Where the active character's idle habits (what they do when nobody is talking) are kept. */
+function characterIdleHabitsKey(): string | null {
+  const activeModel = avatarModelService?.getActiveModel?.() || null;
+  return activeModel?.id ? `avatar.idleHabits.${activeModel.id}` : null;
+}
+
 /** Where the active character's personality prompt is kept. */
 function characterPromptKey(): string | null {
   const activeModel = avatarModelService?.getActiveModel?.() || null;
@@ -792,6 +812,44 @@ function getLocalLlmTools(manager: ConfigManager): { library: LlmLibrary; contro
 }
 
 /**
+ * The vision model for Describe the avatar and Check poses: its download (local-vision.json) and the
+ * llama-server that runs it only while a job needs it. Built on first use.
+ */
+let visionTools: { model: VisionModel; server: VisionServer } | null = null;
+function getVisionTools(manager: ConfigManager): { model: VisionModel; server: VisionServer } {
+  if (visionTools) return visionTools;
+  const home = process.env.AIEMBODIED_HOST_USERPROFILE?.trim() || os.homedir();
+  const logDirectory = path.join(app.getPath('userData'), 'logs');
+  const repoRoot = path.resolve(__dirname, '../../..');
+  const baseUrl = () => {
+    const server = manager.getConfig().models.servers.find((entry) => entry.id === BUILT_IN_SERVER_IDS.vision);
+    return server && isLocalUrl(server.url) ? serverUrl(server.type, server.url) : null;
+  };
+  const model = new VisionModel({
+    file: path.join(app.getPath('userData'), 'local-vision.json'),
+    modelsDirectory: process.env.LOCAL_LLM_MODELS_DIR?.trim() || path.join(home, '.cache', 'aiembodied', 'llm-models'),
+    token: () => manager.getServerKey(BUILT_IN_SERVER_IDS.huggingface),
+    logger,
+  });
+  const server = new VisionServer({
+    baseUrl,
+    pick: () => model.pick(),
+    repoRoot,
+    logDirectory,
+    // Reuses the llama-server stopper; it only ever stops a process named llama-server on that port.
+    stop: () => new LocalLlmControl({ baseUrl, repoRoot, logDirectory, fileName: 'vision' }).stop(),
+    logger,
+  });
+  visionTools = { model, server };
+  return visionTools;
+}
+
+/** Run a helper job on the vision model when `use` is routed to it (starting it first), else as is. */
+function withVision<T>(manager: ConfigManager, use: 'describe' | 'posecheck', job: () => Promise<T>): Promise<T> {
+  return withVisionServer(manager.getConfig().models, use, getVisionTools(manager).server, job);
+}
+
+/**
  * Run a downloaded model (or, with null, the start script's default) for Thinking: point Thinking
  * at this PC's llama-server and restart it with that model. Returns what happened, in words.
  */
@@ -851,6 +909,15 @@ function getCodingService(manager: ConfigManager): CodingService {
     logger,
   });
   service.onRunnerEvent((event) => void codingNudger?.handleEvent(event));
+  // Finished tasks become memories. The memory engine is set up later, so it is read at call time.
+  const memoryWriter = new CodingMemoryWriter({
+    getTask: (id) => service.runnerClient()?.getTask(id).catch(() => null) ?? Promise.resolve(null),
+    workspaceName,
+    post: (task) => memoryEngine?.outbox.enqueue({ kind: 'coding_task', task }),
+    agentName: () => (memoryStore ? activeAgent(memoryStore).name : null),
+    logger,
+  });
+  service.onRunnerEvent((event) => void memoryWriter.handleEvent(event));
   return codingService;
 }
 
@@ -1134,6 +1201,7 @@ function registerIpcHandlers(
     [BUILT_IN_SERVER_IDS.searxng]: 'SearXNG',
     [BUILT_IN_SERVER_IDS.memory]: 'Memory database',
     [BUILT_IN_SERVER_IDS.coderLlm]: 'Coding model',
+    [BUILT_IN_SERVER_IDS.vision]: 'Vision model',
   };
   ipcMain.handle('diagnostics:gpu-memory', () => {
     const servers: GpuMemoryServer[] = [];
@@ -1321,6 +1389,18 @@ function registerIpcHandlers(
     const { library } = getLocalLlmTools(manager);
     if (typeof id === 'string') library.cancel(id);
     return library.list();
+  });
+  // The vision model (Qwen3-VL) for Describe the avatar: download status and progress.
+  ipcMain.handle('models:vision-status', () => getVisionTools(manager).model.status());
+  ipcMain.handle('models:vision-download', async (_event, ref: unknown) => {
+    const { model } = getVisionTools(manager);
+    await model.download(typeof ref === 'string' ? ref : undefined);
+    return model.status();
+  });
+  ipcMain.handle('models:vision-cancel', async () => {
+    const { model } = getVisionTools(manager);
+    model.cancel();
+    return model.status();
   });
   ipcMain.handle('models:local-llms', () => localLlmList());
   ipcMain.handle('models:use-local-llm', async (_event, id: unknown) => {
@@ -1533,6 +1613,10 @@ function registerIpcHandlers(
 
     return avatarModels.loadModelBinary(modelId);
   });
+  const requireRooms = (): RoomService => {
+    if (!roomService) throw new Error('Rooms are unavailable.');
+    return roomService;
+  };
   const requireBackgrounds = (): BackgroundService => {
     if (!backgroundService) throw new Error('Backgrounds are unavailable.');
     return backgroundService;
@@ -1543,6 +1627,42 @@ function registerIpcHandlers(
   ipcMain.handle('background:load', (_event, id: string) => requireBackgrounds().load(id));
   ipcMain.handle('background:generate', (_event, prompt: string) => requireBackgrounds().generate(prompt));
   ipcMain.handle('background:delete', (_event, id: string) => requireBackgrounds().delete(id));
+  ipcMain.handle('background:list-rooms', () => requireRooms().list());
+  ipcMain.handle('background:load-room', (_event, id: string) => requireRooms().load(id));
+  const requireGeneration = (): RoomGenerationService => {
+    if (!roomGeneration) throw new Error('Room building is unavailable.');
+    return roomGeneration;
+  };
+  ipcMain.handle('rooms:generate', (_event, description: unknown) =>
+    requireGeneration().generate(String(description ?? ''), (progress) => broadcastToWindows('rooms:generate-progress', progress)),
+  );
+  ipcMain.handle('rooms:cancel-generate', () => requireGeneration().cancel());
+  ipcMain.handle('rooms:making', () => requireGeneration().making);
+  const objectSettingsView = () => ({
+    ...requireBackgrounds().getObjectSettings(),
+    available: objectMakingAvailable(manager.getConfig().models),
+  });
+  ipcMain.handle('rooms:object-settings:get', () => objectSettingsView());
+  ipcMain.handle('rooms:object-settings:set', (_event, settings: unknown) => {
+    requireBackgrounds().setObjectSettings(settings);
+    return objectSettingsView();
+  });
+  ipcMain.handle('rooms:generated:list', () => requireGeneration().listGenerated());
+  ipcMain.handle('rooms:generated:delete', (_event, id: unknown) => requireGeneration().deleteGenerated(String(id ?? '')));
+  ipcMain.handle('rooms:delete', async (_event, id: string) => {
+    await requireGeneration().delete(id);
+    if (backgroundService && (await backgroundService.getActive()) === id) await backgroundService.setActive(null);
+  });
+  ipcMain.handle('rooms:idle-settings:get', () => requireBackgrounds().getIdleSettings());
+  ipcMain.handle('rooms:idle-settings:set', (_event, settings: unknown) => requireBackgrounds().setIdleSettings(settings));
+  // The "Idle thoughts" job: what the avatar does next on its own. Null on any failure; the renderer then picks at random.
+  ipcMain.handle('rooms:idle-pick', (_event, context: unknown) =>
+    pickIdleActions(context as { system: string; user: string }, {
+      routing: manager.getConfig().models,
+      keyFor: (id) => manager.getServerKey(id),
+      logger,
+    }),
+  );
   const requireAvatarGeneration = (): AvatarGenerationService => {
     if (!avatarGenerationService) {
       throw new Error('Avatar generation is unavailable.');
@@ -1632,10 +1752,11 @@ function registerIpcHandlers(
         await refreshAvatarDescriptionService(manager);
       }
       if (!avatarDescriptionService) {
-        throw new Error('Avatar description service is unavailable. Ensure REALTIME_API_KEY is set.');
+        throw new Error('Describe the avatar has no model to use. Pick one in Models and servers → Describe the avatar (or add the OpenAI API key if it runs on OpenAI).');
       }
 
-      return avatarDescriptionService.generateDescription(payload.thumbnailDataUrl);
+      const service = avatarDescriptionService;
+      return withVision(manager, 'describe', () => service.generateDescription(payload.thumbnailDataUrl));
     },
   );
   ipcMain.handle('avatar-animation:list', async () => {
@@ -1674,6 +1795,7 @@ function registerIpcHandlers(
     const modelDescription = activeModel?.description ?? undefined;
     return vrmaGenerationService.generateAnimation({ ...payload, bones, modelDescription });
   });
+  const motionStreamControllers = new Map<string, AbortController>();
   ipcMain.handle('avatar-motion:status', async (): Promise<AvatarMotionStatus> => {
     if (!localMotionServer(manager)) {
       const clips = routeTargets(manager.getConfig().models, 'clips')[0];
@@ -1701,11 +1823,26 @@ function registerIpcHandlers(
     }
 
     const sender = event.sender;
-    return localMotionService.streamMotion(payload, (chunk) => {
-      if (!sender.isDestroyed()) {
-        sender.send('avatar-motion:chunk', chunk);
-      }
-    });
+    const controller = new AbortController();
+    motionStreamControllers.set(payload.streamId, controller);
+    try {
+      return await localMotionService.streamMotion(
+        payload,
+        (chunk) => {
+          if (!sender.isDestroyed()) {
+            sender.send('avatar-motion:chunk', chunk);
+          }
+        },
+        { signal: controller.signal },
+      );
+    } finally {
+      motionStreamControllers.delete(payload.streamId);
+    }
+  });
+  ipcMain.handle('avatar-motion:cancel', (_event, streamId: unknown) => {
+    if (typeof streamId === 'string') {
+      motionStreamControllers.get(streamId)?.abort();
+    }
   });
   ipcMain.handle('local-voice:status', async () => {
     if (!localVoiceService) {
@@ -1831,7 +1968,7 @@ function registerIpcHandlers(
       await refreshPoseEvaluationService(manager);
     }
     if (!poseEvaluationService) {
-      throw new Error('Pose evaluation service is unavailable. Ensure REALTIME_API_KEY is set.');
+      throw new Error('Check poses has no model to use. Pick one in Models and servers (or add the OpenAI API key if it runs on OpenAI).');
     }
 
     // Load pose data if only poseId is provided
@@ -1848,20 +1985,23 @@ function registerIpcHandlers(
     const activeModel = avatarModels?.getActiveModel() ?? null;
     const modelDescription = activeModel?.description ?? undefined;
 
-    return poseEvaluationService.evaluatePose({
-      ...payload,
-      poseData,
-      bones,
-      boneHierarchy,
-      modelDescription,
-    });
+    const evaluator = poseEvaluationService;
+    return withVision(manager, 'posecheck', () =>
+      evaluator.evaluatePose({
+        ...payload,
+        poseData,
+        bones,
+        boneHierarchy,
+        modelDescription,
+      }),
+    );
   });
   ipcMain.handle('avatar-pose:refine', async (_event, payload: PoseEvaluationRequest) => {
     if (!poseEvaluationService) {
       await refreshPoseEvaluationService(manager);
     }
     if (!poseEvaluationService) {
-      throw new Error('Pose evaluation service is unavailable. Ensure REALTIME_API_KEY is set.');
+      throw new Error('Check poses has no model to use. Pick one in Models and servers (or add the OpenAI API key if it runs on OpenAI).');
     }
 
     // Load pose data if only poseId is provided
@@ -1878,13 +2018,16 @@ function registerIpcHandlers(
     const activeModel = avatarModels?.getActiveModel() ?? null;
     const modelDescription = activeModel?.description ?? undefined;
 
-    return poseEvaluationService.refinePose({
-      ...payload,
-      poseData,
-      bones,
-      boneHierarchy,
-      modelDescription,
-    });
+    const evaluator = poseEvaluationService;
+    return withVision(manager, 'posecheck', () =>
+      evaluator.refinePose({
+        ...payload,
+        poseData,
+        bones,
+        boneHierarchy,
+        modelDescription,
+      }),
+    );
   });
   ipcMain.handle('avatar:trigger-behavior', async (_event, cue: string) => {
     const value = typeof cue === 'string' ? cue.trim() : '';
@@ -2015,6 +2158,27 @@ function registerIpcHandlers(
     }
     memoryStore.setValue(key, prompt.trim());
     logger.info('Avatar personality prompt saved', { key, length: prompt.trim().length });
+  });
+
+  ipcMain.handle('avatar:idle-habits:get', () => {
+    const key = characterIdleHabitsKey();
+    if (!key || !memoryStore) return '';
+    return normalizeIdleHabits(memoryStore.getValue(key));
+  });
+
+  ipcMain.handle('avatar:idle-habits:set', (_event, habits: unknown) => {
+    if (typeof habits !== 'string') {
+      logger.warn('Invalid idle habits');
+      return;
+    }
+    const key = characterIdleHabitsKey();
+    if (!key || !memoryStore) {
+      logger.warn('No active avatar model to save idle habits for');
+      return;
+    }
+    const saved = normalizeIdleHabits(habits);
+    memoryStore.setValue(key, saved);
+    logger.info('Avatar idle habits saved', { key, length: saved.length, max: MAX_IDLE_HABITS_LENGTH });
   });
 
   ipcMain.handle('local-voice:voice-options', () => speakingVoiceOptions(manager));
@@ -2194,8 +2358,35 @@ app.whenReady().then(async () => {
   let backgroundComfy: ComfyUIClient | null = null;
   const fallbackComfy = new ComfyUIClient({ baseUrl: appConfig.comfyUiBaseUrl });
   if (memoryStore) {
+    roomService = new RoomService({
+      assetsDirectory: path.join(__dirname, '../assets/rooms'),
+      roomsDirectory: path.join(app.getPath('userData'), 'rooms'),
+    });
+    registerAssetProtocol(protocol, path.join(app.getPath('userData'), 'rooms', ASSET_FOLDER));
+    roomGeneration = createRoomGenerationService({
+      userData: app.getPath('userData'),
+      routing: () => manager.getConfig().models,
+      keyFor: (id) => manager.getServerKey(id),
+      appVersion: app.getVersion(),
+      logger,
+      readSetting: (key) => memoryStore?.getValue(key),
+      // Missing objects are made with the avatar studio's image and 3D steps, on the same servers.
+      comfy: {
+        pick: (stage) => comfyPool.pick(stage),
+        imageModel: () => {
+          if (!avatarImageModels) throw new Error('Image models are unavailable.');
+          return avatarImageModels.resolve();
+        },
+        geometryModel: () => {
+          if (!avatarCharacterModels) throw new Error('3D models are unavailable.');
+          return pickSingleImageGeometry(avatarCharacterModels);
+        },
+      },
+      onRoomUpdated: (roomId) => broadcastToWindows('rooms:updated', roomId),
+    });
     backgroundService = new BackgroundService({
       store: memoryStore,
+      rooms: roomService,
       assetsDirectory: path.join(__dirname, '../assets/backgrounds'),
       backgroundsDirectory: path.join(app.getPath('userData'), 'backgrounds'),
       comfy: {

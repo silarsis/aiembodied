@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -25,6 +26,7 @@ log = logging.getLogger("coder")
 
 QUESTION_METHODS = ("confirm", "select", "input", "editor")
 PROVIDER_KEY_ENV = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}
+PR_FOLLOW_DAYS = 30
 KEY_NAMES = ("openai", "anthropic", "github")
 # Events that do not count as agent activity when deciding that pi has gone quiet.
 QUIET_EVENTS = {"agent_end", "agent_settled", "queue_update", "response", "extension_ui_request"}
@@ -64,6 +66,8 @@ class Run:
         self.prompt_error: Optional[str] = None
         self.pending_question = False
         self.checks_proc: Optional[subprocess.Popen] = None
+        self.setup_done = False  # the setup command has run (or was not needed) in this worktree
+        self.setup_ok: Optional[bool] = None  # None: not run; False: it failed
 
 
 def slugify(text: str, limit: int = 40) -> str:
@@ -110,6 +114,8 @@ class TaskManager:
         self._needed = False
         self._hold = False
         self._to_resume: list[str] = []
+        self._stop_poll = threading.Event()
+        self._poller: Optional[threading.Thread] = None
         self._recover()
 
     # ---- restart recovery -------------------------------------------------------------------
@@ -313,6 +319,9 @@ class TaskManager:
                      phase_detail="worktree ready")
         if run.stopped:
             return False
+        self._ensure_setup(tid, run, ws, wt)
+        if run.stopped:
+            return False
         if not self._wait_local(tid, run, task):
             return False
         if not self._spawn(tid, run, task, wt, continue_=False):
@@ -456,9 +465,11 @@ class TaskManager:
         elif t == "extension_ui_request" and ev.get("method") in QUESTION_METHODS:
             q = {k: ev.get(k) for k in ("id", "method", "title", "message", "options", "placeholder", "prefill",
                                         "timeout") if k in ev}
-            q["kind"] = "confirm"
+            method = ev.get("method")
+            # confirm -> answer with `confirmed`; select -> `value` (one of options); input/editor -> `value`
+            q["kind"] = {"confirm": "confirm", "select": "select"}.get(method, "input")
             title = str(q.get("title") or "")
-            if q.get("method") == "input" and title.startswith(ASK_PREFIX):
+            if method == "input" and title.startswith(ASK_PREFIX):
                 q.update(kind="ask_echo", title="Question from pi", message=title[len(ASK_PREFIX):])
             q["asked_at"] = now()
             run.pending_question = True
@@ -553,14 +564,18 @@ class TaskManager:
             self._update(tid, status="done", review=review_mod.no_changes_review(), finished_at=now(),
                          phase_detail="no changes were made")
             return
+        checks_ok: Optional[bool] = None
         if ws.checks:
             self._update(tid, status="checks", phase_detail="running checks")
-            ok, out = self._run_checks(run, ws.checks, wt)
+            self._ensure_setup(tid, run, ws, wt)
             if run.stopped:
                 return
-            self._update(tid, checks_ok=ok, checks_output=out)
+            checks_ok, out = self._run_checks(run, ws.checks, wt)
+            if run.stopped:
+                return
+            self._update(tid, checks_ok=checks_ok, checks_output=out)
         try:
-            rev = review_mod.build_review(wt, base, ws.protected_paths or [])
+            rev = review_mod.build_review(wt, base, ws.protected_paths or [], checks_ok, run.setup_ok)
         except GitError as e:
             return self._fail(tid, run, f"review failed: {e}")
         self._update(tid, status="review", review=rev, phase_detail="ready for review")
@@ -569,13 +584,46 @@ class TaskManager:
     def _asks_in_text(task: dict) -> bool:
         return (task.get("last_text") or "").strip().endswith("?")
 
+    @staticmethod
+    def detect_setup(wt: Path) -> Optional[str]:
+        """The install command to use when a workspace has no setup command, judged by the lockfile."""
+        if (wt / "pnpm-lock.yaml").exists():
+            return "pnpm install --frozen-lockfile --prefer-offline"
+        if (wt / "package-lock.json").exists():
+            return "npm ci --prefer-offline"
+        if (wt / "yarn.lock").exists():
+            return "yarn install --frozen-lockfile"
+        if (wt / "uv.lock").exists():
+            return "uv sync"
+        return None
+
+    def _ensure_setup(self, tid: str, run: Run, ws: Workspace, wt: Path) -> None:
+        """Run the workspace's setup command in the worktree once. A failure is logged but never stops the task."""
+        if run.setup_done:
+            return
+        run.setup_done = True
+        command = ws.setup or self.detect_setup(wt)
+        if not command:
+            return
+        self._update(tid, phase_detail="installing dependencies")
+        self.store.add_event(tid, "runner", {"message": f"setup: {command}"})
+        ok, out = self._run_command(run, command, wt, self.cfg.setup_timeout_s, "setup")
+        if run.stopped:
+            return
+        run.setup_ok = ok
+        self.store.add_event(tid, "runner", {"message": "setup finished" if ok else "setup failed", "output": out})
+
     def _run_checks(self, run: Run, command: str, cwd: Path) -> tuple[bool, str]:
+        return self._run_command(run, command, cwd, self.cfg.checks_timeout_s, "checks")
+
+    def _run_command(self, run: Run, command: str, cwd: Path, timeout_s: float, label: str) -> tuple[bool, str]:
+        """Run a shell command with the stripped environment; returns (succeeded, the last lines of output)."""
         p = subprocess.Popen(command, shell=True, cwd=str(cwd), env=clean_env(), stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT, **popen_flags())
         run.checks_proc = p
         timed_out = False
         try:
-            out, _ = p.communicate(timeout=self.cfg.checks_timeout_s)
+            out, _ = p.communicate(timeout=timeout_s)
         except subprocess.TimeoutExpired:
             timed_out = True
             kill_tree(p)
@@ -583,7 +631,7 @@ class TaskManager:
         text = out.decode("utf-8", errors="replace")
         lines = text.splitlines()[-200:]
         if timed_out:
-            lines.append("[checks timed out]")
+            lines.append(f"[{label} timed out]")
         return (p.returncode == 0 and not timed_out), "\n".join(lines)
 
     # ---- controls ---------------------------------------------------------------------------
@@ -670,14 +718,22 @@ class TaskManager:
                 self.store.add_event(tid, "runner", {"answer": {"id": q["id"], "value": value}})
                 return self.follow_up(tid, value)
             msg: dict[str, Any] = {"type": "extension_ui_response", "id": q["id"]}
+            kind = q.get("kind")
             if cancelled:
                 msg["cancelled"] = True
+            elif kind == "confirm":
+                if confirmed is None:
+                    raise CoderError(400, "a confirm question needs confirmed (true or false) or cancelled")
+                msg["confirmed"] = confirmed
+            elif kind == "select":
+                opts = [o.get("value", o.get("label")) if isinstance(o, dict) else o for o in (q.get("options") or [])]
+                if value is None or value not in opts:
+                    raise CoderError(400, f"a select question needs value to be one of {opts}")
+                msg["value"] = value
             elif value is not None:
                 msg["value"] = value
-            elif confirmed is not None:
-                msg["confirmed"] = confirmed
             else:
-                raise CoderError(400, "give value, confirmed or cancelled")
+                raise CoderError(400, "this question needs value or cancelled")
             pi = self._live_pi(tid)
             run = self._runs[tid]
             rest = [x for x in qs if x is not q]
@@ -844,9 +900,86 @@ class TaskManager:
         parts += ["", "Opened by Echo's coding runner"]
         return "\n\n".join(parts)
 
+    # ---- following pull requests -------------------------------------------------------------
+
+    def start_pr_poller(self) -> None:
+        """Start the background thread that follows open pull requests (it idles while pr_poll_seconds is 0)."""
+        if self._poller:
+            return
+        self._poller = threading.Thread(target=self._poll_loop, daemon=True, name="pr-poller")
+        self._poller.start()
+
+    def _poll_loop(self) -> None:
+        while not self._stop_poll.is_set():
+            interval = self.cfg.pr_poll_seconds
+            if interval > 0:
+                self.poll_prs()
+            # With polling off, look again soon so that turning it on takes effect without a restart.
+            self._stop_poll.wait(interval if interval > 0 else 5)
+
+    def poll_prs(self) -> int:
+        """Check every followed pull request once. Returns how many were checked."""
+        checked = 0
+        for t in self.store.list_tasks():
+            if self._stop_poll.is_set():
+                break
+            if t["pr_url"] and t["pr_state"] in (None, "open") and not self._pr_too_old(t):
+                try:
+                    self._check_pr(t)
+                    checked += 1
+                except (CoderError, github.PrError):
+                    continue  # logged where it happened; try again next round
+        return checked
+
+    @staticmethod
+    def _pr_too_old(task: dict) -> bool:
+        """True once a PR was opened more than PR_FOLLOW_DAYS ago (it is opened when the task finishes)."""
+        try:
+            opened = datetime.fromisoformat(task["finished_at"] or task["created_at"])
+        except ValueError:
+            return False
+        return datetime.now(timezone.utc) - opened > timedelta(days=PR_FOLLOW_DAYS)
+
+    def refresh_pr(self, tid: str) -> dict:
+        """Check one task's pull request now and return the task."""
+        task = self._get(tid)
+        if not task["pr_url"]:
+            raise CoderError(409, "task has no pull request")
+        try:
+            return self._check_pr(task)
+        except github.PrError as e:
+            raise CoderError(502, str(e))
+
+    def _check_pr(self, task: dict) -> dict:
+        parsed = github.parse_pr_url(task["pr_url"])
+        token = self.keys.get("github")
+        if not parsed:
+            raise CoderError(409, "the pull request address is not a GitHub pull request")
+        if not token and not github.gh_available():
+            raise CoderError(409, "no GitHub key and no gh CLI to read the pull request with")
+        got = github.read_pr(self.cfg.github_api, token, *parsed)
+        fields = {"pr_state": got["pr_state"], "ci_state": got["ci_state"], "pr_checked_at": now()}
+        if got["merged_at"]:
+            fields["merged_at"] = got["merged_at"]
+        changed = (task["pr_state"], task["ci_state"]) != (got["pr_state"], got["ci_state"])
+        updated = self.store.update_task(task["id"], **fields) or task
+        if changed:
+            self.store.add_event(task["id"], "pr", {"pr_state": got["pr_state"], "ci_state": got["ci_state"]})
+            self._emit_pr(updated)
+        return updated
+
+    def _emit_pr(self, task: dict) -> None:
+        if self.on_change:
+            try:
+                self.on_change({"type": "pr", "task_id": task["id"], "pr_state": task["pr_state"],
+                                "ci_state": task["ci_state"]})
+            except Exception:
+                log.exception("could not publish a pull request update")
+
     # ---- shutdown ---------------------------------------------------------------------------
 
     def shutdown(self) -> None:
+        self._stop_poll.set()
         with self._lock:
             self._closed = True
             runs = list(self._runs.values())

@@ -27,7 +27,12 @@ describe('model routing', () => {
     expect(routes.stt).toEqual({ server: 'local-speech' });
     expect(routes.motion).toEqual({ server: 'local-motion', model: 'ardy' });
     expect(routes.search).toEqual({ server: 'local-searxng', backups: [{ server: 'brave' }] });
-    expect(routes.posecheck).toEqual({ server: 'openai', model: 'gpt-4o' });
+    expect(routes.posecheck).toEqual({ server: 'local-vision', model: 'qwen3-vl' });
+    expect(routes.describe).toEqual({ server: 'local-vision', model: 'qwen3-vl' });
+    expect(routes.posegen).toEqual({ server: 'openai', model: 'gpt-4.1-mini' });
+    // Idle thoughts start on whatever Thinking starts on.
+    expect(routes.idle).toEqual({ server: 'openai', model: 'gpt-4.1' });
+    expect(defaultRoutes(DEFAULT_PROVIDER_SETTINGS).idle).toEqual(defaultRoutes(DEFAULT_PROVIDER_SETTINGS).llm);
     expect(defaultRoutes(providers, 'off').search).toEqual({ server: '' });
   });
 
@@ -52,6 +57,35 @@ describe('model routing', () => {
     expect(routing.routes.llm).toEqual({ server: 'local-llm', model: 'qwen-next-flash' });
     // Helpers use only their first server.
     expect(routing.routes.describe).toEqual({ server: 'local-llm' });
+  });
+
+  it('lets Idle thoughts follow Thinking until they are pointed elsewhere, and take a smaller model', () => {
+    const base = defaultRoutes(DEFAULT_PROVIDER_SETTINGS);
+    const follows = resolveModelRouting(builtIns(), base, {
+      servers: [{ id: 'gpu', type: 'chat', url: 'http://gpu:8000/v1' }],
+      routes: { llm: { server: 'gpu', model: 'big', backups: [{ server: 'openai' }] } },
+    });
+    expect(follows.routes.idle).toEqual({ server: 'gpu', model: 'big', backups: [{ server: 'openai' }] });
+    // Animation clips (Moving's fallback when ARDY isn't running) follow Thinking too, without backups.
+    expect(follows.routes.clips).toEqual({ server: 'gpu', model: 'big' });
+    expect(base.clips).toEqual(base.llm);
+    expect(USE_SERVER_TYPES.idle).toEqual(['chat', 'openai']);
+
+    const own = resolveModelRouting(builtIns(), base, {
+      routes: { llm: { server: 'openai', model: 'gpt-4.1' }, idle: { server: 'local-llm', model: 'qwen-tiny', backups: [{ server: 'openai' }] } },
+    });
+    expect(own.routes.idle).toEqual({ server: 'local-llm', model: 'qwen-tiny', backups: [{ server: 'openai' }] });
+    expect(routeTargets(own, 'idle').map(({ server, model }) => [server.id, model])).toEqual([
+      ['local-llm', 'qwen-tiny'],
+      ['openai', undefined],
+    ]);
+    // A saved route that cannot do the job falls back to following Thinking.
+    const bad = resolveModelRouting(builtIns(), base, { routes: { idle: { server: 'local-comfy' } } });
+    expect(bad.routes.idle).toEqual(bad.routes.llm);
+    expect(sanitizeStoredModels({ routes: { idle: { server: 'local-llm', model: ' tiny ' } } }).routes?.idle).toEqual({
+      server: 'local-llm',
+      model: 'tiny',
+    });
   });
 
   it('gives a backup the first server model only when it is the same kind of server', () => {
@@ -87,6 +121,18 @@ describe('model routing', () => {
       servers: [{ id: 'lm', type: 'chat', url: 'http://lm-studio:1234' }],
     });
     expect(routing.servers.find((server) => server.id === 'lm')?.url).toBe('http://lm-studio:1234/v1');
+  });
+
+  it('has a built-in vision server that Describe the avatar uses until the user picks another, and a saved route wins', () => {
+    const routing = resolveModelRouting(builtIns(), defaultRoutes(DEFAULT_PROVIDER_SETTINGS));
+    const vision = routing.servers.find((server) => server.id === 'local-vision');
+    expect(vision).toMatchObject({ name: 'Vision model on this PC', type: 'chat', url: 'http://127.0.0.1:1237/v1', builtIn: true, managed: true });
+    expect(routing.routes.describe).toEqual({ server: 'local-vision', model: 'qwen3-vl' });
+    const saved = resolveModelRouting(builtIns(), defaultRoutes(DEFAULT_PROVIDER_SETTINGS), {
+      routes: { describe: { server: 'openai', model: 'gpt-4.1-mini' } },
+    });
+    expect(saved.routes.describe).toEqual({ server: 'openai', model: 'gpt-4.1-mini' });
+    expect(saved.routes.posecheck).toEqual({ server: 'local-vision', model: 'qwen3-vl' });
   });
 
   it('has built-in coding servers, a coding use that cannot be off, and online accounts that are key only', () => {
@@ -200,7 +246,7 @@ describe('ConfigManager model servers', () => {
     expect(first.getCoding()).toEqual({
       runner: 'local-coder-runner',
       workspaces: [
-        { id: 'aiembodied', name: 'aiembodied', path: path.resolve('/work/aiembodied'), kind: 'self', baseBranch: 'main', checks: 'pnpm -w typecheck && pnpm test' },
+        { id: 'aiembodied', name: 'aiembodied', path: path.resolve('/work/aiembodied'), kind: 'self', baseBranch: 'main', checks: 'pnpm -w typecheck && pnpm test', setup: 'pnpm install --frozen-lockfile --prefer-offline && pnpm --filter @aiembodied/main exec install-electron' },
       ],
     });
     expect((await preferencesStore.load()).coding?.workspaces).toHaveLength(1);

@@ -319,6 +319,50 @@ it('exposes only named background operations through the preload bridge', async 
   expect(invoke).toHaveBeenCalledWith('background:generate', 'A forest clearing');
   await api.backgrounds.delete('generated-id');
   expect(invoke).toHaveBeenCalledWith('background:delete', 'generated-id');
+  await api.backgrounds.listRooms();
+  expect(invoke).toHaveBeenCalledWith('background:list-rooms');
+  await api.backgrounds.loadRoom('room:builtin:reading-room');
+  expect(invoke).toHaveBeenCalledWith('background:load-room', 'room:builtin:reading-room');
+  await api.backgrounds.generateRoom('a cosy study');
+  expect(invoke).toHaveBeenCalledWith('rooms:generate', 'a cosy study');
+  await api.backgrounds.cancelRoomGeneration();
+  expect(invoke).toHaveBeenCalledWith('rooms:cancel-generate');
+  await api.backgrounds.deleteRoom('room:abc');
+  expect(invoke).toHaveBeenCalledWith('rooms:delete', 'room:abc');
+  await api.backgrounds.getIdleSettings();
+  expect(invoke).toHaveBeenCalledWith('rooms:idle-settings:get');
+  await api.backgrounds.setIdleSettings({ enabled: false, restlessness: 'calm', onTalk: 'turn' });
+  expect(invoke).toHaveBeenCalledWith('rooms:idle-settings:set', { enabled: false, restlessness: 'calm', onTalk: 'turn' });
+  await api.backgrounds.pickIdle({ system: 's', user: 'u' });
+  expect(invoke).toHaveBeenCalledWith('rooms:idle-pick', { system: 's', user: 'u' });
+  await api.backgrounds.getObjectSettings();
+  expect(invoke).toHaveBeenCalledWith('rooms:object-settings:get');
+  await api.backgrounds.setObjectSettings({ maxPerRoom: 2 });
+  expect(invoke).toHaveBeenCalledWith('rooms:object-settings:set', { maxPerRoom: 2 });
+  await api.backgrounds.listGeneratedObjects();
+  expect(invoke).toHaveBeenCalledWith('rooms:generated:list');
+  await api.backgrounds.deleteGeneratedObject('chair-3fa91c2e');
+  expect(invoke).toHaveBeenCalledWith('rooms:generated:delete', 'chair-3fa91c2e');
+  await api.backgrounds.getMakingRoom();
+  expect(invoke).toHaveBeenCalledWith('rooms:making');
+  const heard: string[] = [];
+  const stop = api.backgrounds.onRoomUpdated((roomId: string) => heard.push(roomId));
+  const [channel, handler] = on.mock.calls.at(-1)!;
+  expect(channel).toBe('rooms:updated');
+  (handler as (event: unknown, roomId: string) => void)({}, 'room:abc');
+  expect(heard).toEqual(['room:abc']);
+  stop();
+  expect(removeListener).toHaveBeenCalledWith('rooms:updated', handler);
+});
+
+it('exposes the per-character idle habits through the avatar bridge', async () => {
+  vi.resetModules();
+  await import('../src/preload.js');
+  const api = exposeInMainWorld.mock.calls.at(-1)![1];
+  await api.avatar.getIdleHabits();
+  expect(invoke).toHaveBeenCalledWith('avatar:idle-habits:get');
+  await api.avatar.setIdleHabits('sits by the window');
+  expect(invoke).toHaveBeenCalledWith('avatar:idle-habits:set', 'sits by the window');
 });
 
 it('exposes app.quit through the bridge', async () => {

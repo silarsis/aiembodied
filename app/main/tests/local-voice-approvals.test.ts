@@ -30,14 +30,16 @@ function tool(name: string, level: RegisteredTool['confirmationLevel'], execute 
   };
 }
 
-function setup(rounds: Delta[][], options: { approvals?: boolean; tools?: RegisteredTool[]; now?: () => number; onSystemReady?: () => void; extra?: string } = {}) {
+function setup(rounds: Array<Delta[] | Error>, options: { approvals?: boolean; tools?: RegisteredTool[]; now?: () => number; onSystemReady?: () => void; extra?: string } = {}) {
   const chats: Array<{ messages: Array<{ role: string; content: string }>; tools?: Array<{ function: { name: string } }> }> = [];
   let round = 0;
   const fetchFn = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith('/chat/completions')) {
       chats.push(JSON.parse(String(init?.body)));
-      return sseResponse(rounds[round++] ?? [{ content: 'Okay.' }]);
+      const next = rounds[round++] ?? [{ content: 'Okay.' }];
+      if (next instanceof Error) throw next;
+      return sseResponse(next);
     }
     if (url.endsWith('/v1/tts')) return new Response(new Uint8Array([1]), { status: 200 });
     throw new Error(`unexpected request ${url}`);
@@ -178,6 +180,35 @@ describe('LocalVoiceService system turns', () => {
     service.notify('a question', { urgent: true });
     await vi.advanceTimersByTimeAsync(SYSTEM_COALESCE_MS + 100);
     expect(ready).toHaveBeenCalledTimes(1);
+  });
+
+  it('puts the notes back when the system turn fails, and drops them once a turn completes', async () => {
+    const c = clock();
+    const { service, chats } = setup([new Error('llm down'), [{ content: 'Heads up.' }]], { now: c.now });
+    service.notify('Task done.');
+    c.advance(SYSTEM_COALESCE_MS);
+    await expect(service.respond({ requestId: 's1', text: '', system: true }, () => {})).rejects.toThrow();
+    expect(service.systemStatus()).toMatchObject({ pending: 1, ready: true, texts: ['Task done.'] });
+    const result = await service.respond({ requestId: 's2', text: '', system: true }, () => {});
+    expect(result.note).toBe(`${SYSTEM_NOTE_MARKER} Task done.`);
+    expect(chats).toHaveLength(2);
+    expect(service.systemStatus().pending).toBe(0);
+  });
+
+  it('puts the notes back at the front and re-arms the timer when the system turn is cancelled', async () => {
+    vi.useFakeTimers();
+    const ready = vi.fn();
+    const { service } = setup([[{ content: 'Never heard.' }]], { now: () => Date.now(), onSystemReady: ready });
+    service.notify('first');
+    await vi.advanceTimersByTimeAsync(SYSTEM_COALESCE_MS);
+    ready.mockClear();
+    const turn = service.respond({ requestId: 's1', text: '', system: true }, () => {});
+    service.notify('second');
+    service.cancel();
+    expect(await turn).toMatchObject({ cancelled: true });
+    expect(service.systemStatus().texts).toEqual(['first', 'second']);
+    await vi.advanceTimersByTimeAsync(SYSTEM_COALESCE_MS + SYSTEM_MIN_GAP_MS);
+    expect(ready).toHaveBeenCalled();
   });
 
   it('keeps the note in the history as a marked, non-Kevin message', async () => {

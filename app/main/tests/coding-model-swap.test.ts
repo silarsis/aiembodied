@@ -139,6 +139,36 @@ describe('CoderModelSwap auto mode', () => {
     expect(log).toEqual(['echo.stop', 'coder.start', 'override']);
   });
 
+  it('stays in swapping-back until Echo’s model answers after a swap back', async () => {
+    let echoUp = false;
+    let polls = 0;
+    const { swap, setNeeded, ...rest } = (() => {
+      const r = setup({ mode: 'swap', echoUp: () => (++polls > 3 ? (echoUp = true) : false) });
+      return { ...r, setNeeded: r.swap.setNeeded.bind(r.swap) };
+    })();
+    await setNeeded(true);
+    await setNeeded(false);
+    rest.advance(120_000);
+    await swap.tick();
+    expect(echoUp).toBe(true);
+    expect(swap.getState()).toEqual({ phase: 'idle', message: 'Not needed now. Echo’s model is back.' });
+    expect(polls).toBeGreaterThan(3);
+  });
+
+  it('gives up waiting for Echo’s model after the load timeout and says so', async () => {
+    const { swap, setNeeded, advance, logger } = (() => {
+      const r = setup({ mode: 'swap', echoUp: () => false });
+      return { ...r, setNeeded: r.swap.setNeeded.bind(r.swap) };
+    })();
+    await setNeeded(true);
+    await setNeeded(false);
+    advance(120_000);
+    await swap.tick();
+    expect(swap.getState().phase).toBe('idle');
+    expect(swap.getState().message).toContain('didn’t answer yet');
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
   it('swaps back when Kevin talks to Echo, then waits for quiet while the task needs the model', async () => {
     const { swap, log, echo, activity, clock, advance, onWaiting } = setup({ mode: 'auto', free: 20 * GiB, size });
     await swap.setNeeded(true);
@@ -183,6 +213,26 @@ describe('CoderModelSwap auto mode', () => {
     expect(swap.getState().phase).toBe('coder-loaded');
     expect(log[log.length - 1]).toBe('release');
     expect(setHold).toHaveBeenLastCalledWith(false);
+  });
+
+  it('retries releasing the hold on a later tick when setHold(false) failed', async () => {
+    let failures = 2; // the release and the retry inside the same reconcile
+    const { swap, setHold, activity, clock, advance } = setup({
+      mode: 'auto', free: 20 * GiB, size,
+      setHold: async (hold) => { if (!hold && failures-- > 0) { throw new Error('runner down'); } },
+    });
+    await swap.setNeeded(true);
+    advance(5000);
+    activity.at = clock();
+    await swap.tick(); // hold(true) works
+    setHold.mockClear();
+    await swap.setNeeded(false); // hold(false) fails once
+    expect(setHold).toHaveBeenCalledTimes(2);
+    await swap.tick(); // retried and succeeds
+    expect(setHold).toHaveBeenCalledTimes(3);
+    expect(setHold).toHaveBeenLastCalledWith(false);
+    await swap.tick();
+    expect(setHold).toHaveBeenCalledTimes(3);
   });
 
   it('still swaps back when pausing the tasks fails', async () => {

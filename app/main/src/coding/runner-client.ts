@@ -18,6 +18,8 @@ export interface RunnerModelRef {
 export interface RunnerSettings {
   local_llm_url: string;
   local_model: string;
+  /** Context size the local llama-server runs with; becomes contextWindow in pi's model config. */
+  local_context?: number;
   default_model: RunnerModelRef;
 }
 
@@ -48,8 +50,8 @@ export interface RunnerCapabilities {
 /** One pending question of a task (the runner's `questions` list, oldest first). */
 export interface RunnerQuestion {
   id: string;
-  /** confirm: a guard confirmation; ask_echo: pi called its ask_echo tool; text: pi ended its turn with a question. */
-  kind: 'confirm' | 'ask_echo' | 'text';
+  /** confirm: a guard confirmation; select: pick one of options; input: free text for an input/editor dialog; ask_echo: pi called its ask_echo tool; text: pi ended its turn with a question. */
+  kind: 'confirm' | 'select' | 'input' | 'ask_echo' | 'text';
   method: string;
   title?: string | null;
   message?: string | null;
@@ -88,6 +90,7 @@ export interface RunnerTask {
   checks_output?: string | null;
   review?: RunnerReview | null;
   pr_url?: string | null;
+  pr_state?: string | null;
   error?: string | null;
   provider?: string | null;
   model?: string | null;
@@ -113,7 +116,11 @@ export interface RunnerTaskRequest {
 
 /** One message of GET /v1/events. task_id is null for the message sent on connect. */
 export interface RunnerEvent {
+  /** "pr" when the task's pull request changed state; other messages carry no type. */
+  type?: string;
   task_id: string | null;
+  pr_state?: string | null;
+  ci_state?: string | null;
   status?: string | null;
   current_tool?: string | null;
   question?: unknown;

@@ -130,6 +130,13 @@ describe('CodingTasksPanel', () => {
     await waitFor(() => expect(api.answer).toHaveBeenCalledWith('t1', { value: '8080', dialog_id: 'a1' }));
   });
 
+  it('answers a select question by choosing an option', async () => {
+    const { api } = tasksApi([task({ status: 'question', questions: [{ id: 's1', kind: 'select', method: 'select', title: 'Pick', options: ['red', 'green'] }] })]);
+    render(<CodingTasksPanel api={api} codingApi={codingApi} active />);
+    fireEvent.click(await screen.findByRole('button', { name: 'green' }));
+    await waitFor(() => expect(api.answer).toHaveBeenCalledWith('t1', { value: 'green', dialog_id: 's1' }));
+  });
+
   it('allows or denies a permission question', async () => {
     const { api } = tasksApi([task({ status: 'question', questions: [{ id: 'c1', kind: 'confirm', method: 'confirm', title: 'Recursive delete', message: 'rm -rf build' }] })]);
     render(<CodingTasksPanel api={api} codingApi={codingApi} active />);

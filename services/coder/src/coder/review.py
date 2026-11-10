@@ -14,7 +14,8 @@ TEST_DIR = re.compile(r"(^|/)(tests?|__tests__|spec|specs)/", re.I)
 MAX_LINES = 1000
 
 
-def build_review(worktree: Path, base_commit: str, protected: list[str]) -> dict:
+def build_review(worktree: Path, base_commit: str, protected: list[str], checks_ok: Optional[bool] = None,
+                 setup_ok: Optional[bool] = None) -> dict:
     files = gitops.numstat(worktree, base_commit)
     deleted = gitops.deleted_files(worktree, base_commit)
     added = sum(f["added"] for f in files)
@@ -30,6 +31,10 @@ def build_review(worktree: Path, base_commit: str, protected: list[str]) -> dict
     flags += [f"lockfile changed: {p}" for p in paths if p.rsplit("/", 1)[-1] in LOCKFILES]
     if added + removed > MAX_LINES:
         flags.append(f"large change: {added + removed} lines (over {MAX_LINES})")
+    if setup_ok is False:
+        flags.append("setup failed")
+    if checks_ok is False:
+        flags.append("checks failed")
     if violations:
         flags.append("protected paths changed: " + ", ".join(violations))
     return {

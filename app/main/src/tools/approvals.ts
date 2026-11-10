@@ -142,7 +142,7 @@ export class ApprovalBroker extends EventEmitter {
       : `Waiting for Kevin to approve: ${approval.summary}. Ask him out loud whether to go ahead.`;
   }
 
-  async approve(id: string, by: 'card' | 'voice' = 'card'): Promise<ApprovalOutcome | null> {
+  async approve(id: string, by: 'card' | 'voice' = 'card', delivered = false): Promise<ApprovalOutcome | null> {
     const approval = this.take(id);
     if (!approval) return null;
     if (by === 'voice' && approval.cardOnly) {
@@ -165,14 +165,14 @@ export class ApprovalBroker extends EventEmitter {
       result = error instanceof Error ? error.message : String(error);
     }
     this.options.logger?.info('Approved tool finished', { id, tool: approval.toolName, ok });
-    return this.finish({ approval, decision: 'approved', by, result, ok, delivered: false });
+    return this.finish({ approval, decision: 'approved', by, result, ok, delivered });
   }
 
-  decline(id: string, by: 'card' | 'voice' = 'card'): ApprovalOutcome | null {
+  decline(id: string, by: 'card' | 'voice' = 'card', delivered = false): ApprovalOutcome | null {
     const approval = this.take(id);
     if (!approval) return null;
     this.options.logger?.info('Approval declined', { id, tool: approval.toolName, summary: approval.summary, by });
-    return this.finish({ approval, decision: 'declined', by, delivered: false });
+    return this.finish({ approval, decision: 'declined', by, delivered });
   }
 
   /**
@@ -187,15 +187,11 @@ export class ApprovalBroker extends EventEmitter {
     const decision = parseSpokenDecision(text);
     if (!decision) return null;
     if (decision === 'no') {
-      const outcome = this.decline(pending[pending.length - 1].id, 'voice');
-      if (outcome) outcome.delivered = true;
-      return outcome;
+      return this.decline(pending[pending.length - 1].id, 'voice', true);
     }
     const target = [...pending].reverse().find((entry) => !entry.cardOnly);
     if (!target) return null;
-    const outcome = await this.approve(target.id, 'voice');
-    if (outcome) outcome.delivered = true;
-    return outcome;
+    return this.approve(target.id, 'voice', true);
   }
 
   /** True when some pending approval can be settled by voice. */

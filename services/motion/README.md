@@ -133,5 +133,14 @@ The code is in `src/motion_service/retarget.py`.
   a touch forward. The bundled avatar comes out at 4.25° + 1.5° = 5.75°.
 - Without `avatar_rest` the swing is 6°. `MOTION_ARM_FORWARD_DEG` is a manual override: when it is
   set, it is used for every request and the calibration is skipped (`0` keeps ARDY's arm directions exactly).
+- `/v1/motion/stream` can steer ARDY: pelvis paths, timed root/height/heading and hand targets, per-phase
+  prompts and `continue_from` (see API.md). `constraints.py` holds the pure-numpy parts (path rounding and
+  timing, unit scaling, reveal filtering, root snapping, window sizing) and is what the tests cover without a
+  GPU; `backends/ardy_backend.py` turns the visible targets into ARDY's `motion_mask` / `observed_motion`
+  (ported from the verified steering experiment). To keep room for future targets in ARDY's 10 s window, the
+  stream now shows each step 2 s of history instead of up to 8 s. `sessions.py` keeps the last 8 finished
+  streams for 10 minutes so a later request can continue in the same frame.
+- Steering rules of thumb: round path corners (the service does in dense mode) and keep turns on the spot in
+  their own phase; reveal an action's targets only when its phase starts (`reveal_s`, `phases`).
 - Stream chunks share one floor/origin, so they are continuous. Each chunk's keyframes restart at
   `t = 0`.

@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, goal TEXT NOT NULL,
   acceptance TEXT, scope TEXT, provider TEXT, model TEXT, branch TEXT, worktree TEXT, base_commit TEXT,
   status TEXT NOT NULL, phase_detail TEXT, current_tool TEXT, files_touched TEXT, question TEXT, questions TEXT,
-  last_text TEXT, checks_ok INTEGER, checks_output TEXT, review TEXT, pr_url TEXT, error TEXT,
+  last_text TEXT, checks_ok INTEGER, checks_output TEXT, review TEXT, pr_url TEXT, pr_state TEXT, ci_state TEXT, pr_checked_at TEXT, merged_at TEXT, error TEXT,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL, started_at TEXT, finished_at TEXT
 );
 CREATE TABLE IF NOT EXISTS events (
@@ -46,6 +46,9 @@ class Store:
             cols = {r[1] for r in self.db.execute("PRAGMA table_info(tasks)")}
             if "questions" not in cols:  # database from before pending dialogs were a list
                 self.db.execute("ALTER TABLE tasks ADD COLUMN questions TEXT")
+            for col in ("pr_state", "ci_state", "pr_checked_at", "merged_at"):
+                if col not in cols:  # database from before pull requests were followed
+                    self.db.execute(f"ALTER TABLE tasks ADD COLUMN {col} TEXT")
             self.db.commit()
 
     def close(self) -> None:

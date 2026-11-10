@@ -6,6 +6,7 @@ import type { ServerProbe } from './config/model-server-probe.js';
 import type { BaseModelSuggestions, CivitaiLookup } from './avatar/generation/civitai.js';
 import type { HfLookup } from './local-llm/huggingface.js';
 import type { LlmDownload, LocalLlmList } from './local-llm/llm-library.js';
+import type { VisionStatus } from './local-vision/vision-model.js';
 import type { ModelDownload } from './avatar/generation/model-downloads.js';
 import type { AudioDevicePreferences } from './config/preferences-store.js';
 import type { ProviderSettingsPatch } from './config/provider-settings.js';
@@ -193,6 +194,10 @@ export interface ModelsBridge {
   hfDownload?(repo: string, quant: string, use: boolean): Promise<LlmDownload>;
   hfDownloads?(): Promise<LlmDownload[]>;
   hfCancel?(id: string): Promise<LlmDownload[]>;
+  /** The local vision model for Describe the avatar: download status, start a download (default model, or a link / owner/repo[:QUANT]), cancel. */
+  visionStatus?(): Promise<VisionStatus>;
+  visionDownload?(ref?: string): Promise<VisionStatus>;
+  visionCancel?(): Promise<VisionStatus>;
   localLlms?(): Promise<LocalLlmList>;
   /** Run a downloaded model for Thinking (null: llama-server's default) and restart llama-server. */
   useLocalLlm?(id: string | null): Promise<{ message: string; library: LocalLlmList; models: ModelRoutingView }>;
@@ -293,11 +298,16 @@ export interface AvatarBridge {
   /** The character's own personality prompt; null until it has one. */
   getPromptPreference(): Promise<string | null>;
   setPromptPreference(prompt: string): Promise<void>;
+  /** What the character likes to do when nobody is talking (at most 500 characters); empty until set. */
+  getIdleHabits(): Promise<string>;
+  setIdleHabits(habits: string): Promise<void>;
   listAnimations(): Promise<AvatarAnimationSummary[]>;
   uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult>;
   generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;
   getMotionStatus(): Promise<AvatarMotionStatus>;
   streamMotion(request: AvatarMotionStreamRequest): Promise<AvatarMotionStreamResult>;
+  /** Stops a running motion stream; its promise rejects. */
+  cancelMotion(streamId: string): Promise<void>;
   onMotionChunk(listener: (chunk: AvatarMotionChunkEvent) => void): () => void;
   deleteAnimation(animationId: string): Promise<void>;
   renameAnimation(animationId: string, newName: string): Promise<AvatarAnimationSummary>;
@@ -417,6 +427,9 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     hfDownload: (repo, quant, use) => ipcRenderer.invoke('models:hf-download', { repo, quant, use }) as Promise<LlmDownload>,
     hfDownloads: () => ipcRenderer.invoke('models:hf-downloads') as Promise<LlmDownload[]>,
     hfCancel: (id) => ipcRenderer.invoke('models:hf-cancel', id) as Promise<LlmDownload[]>,
+    visionStatus: () => ipcRenderer.invoke('models:vision-status') as Promise<VisionStatus>,
+    visionDownload: (ref) => ipcRenderer.invoke('models:vision-download', ref) as Promise<VisionStatus>,
+    visionCancel: () => ipcRenderer.invoke('models:vision-cancel') as Promise<VisionStatus>,
     localLlms: () => ipcRenderer.invoke('models:local-llms') as Promise<LocalLlmList>,
     useLocalLlm: (id) => ipcRenderer.invoke('models:use-local-llm', id) as Promise<{ message: string; library: LocalLlmList; models: ModelRoutingView }>,
     deleteLocalLlm: (id) => ipcRenderer.invoke('models:delete-local-llm', id) as Promise<LocalLlmList>,
@@ -538,6 +551,35 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     load: (id) => ipcRenderer.invoke('background:load', id),
     generate: (prompt) => ipcRenderer.invoke('background:generate', prompt),
     delete: (id) => ipcRenderer.invoke('background:delete', id),
+    listRooms: () => ipcRenderer.invoke('background:list-rooms'),
+    loadRoom: (id) => ipcRenderer.invoke('background:load-room', id),
+    generateRoom: (description) => ipcRenderer.invoke('rooms:generate', description),
+    cancelRoomGeneration: () => ipcRenderer.invoke('rooms:cancel-generate'),
+    deleteRoom: (id) => ipcRenderer.invoke('rooms:delete', id),
+    onRoomProgress: (listener) => {
+      const channel = 'rooms:generate-progress';
+      const handler = (_event: unknown, payload: Parameters<typeof listener>[0]) => listener(payload);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
+    getIdleSettings: () => ipcRenderer.invoke('rooms:idle-settings:get'),
+    setIdleSettings: (settings) => ipcRenderer.invoke('rooms:idle-settings:set', settings),
+    pickIdle: (context) => ipcRenderer.invoke('rooms:idle-pick', context),
+    getObjectSettings: () => ipcRenderer.invoke('rooms:object-settings:get'),
+    setObjectSettings: (settings) => ipcRenderer.invoke('rooms:object-settings:set', settings),
+    listGeneratedObjects: () => ipcRenderer.invoke('rooms:generated:list'),
+    deleteGeneratedObject: (id) => ipcRenderer.invoke('rooms:generated:delete', id),
+    getMakingRoom: () => ipcRenderer.invoke('rooms:making'),
+    onRoomUpdated: (listener) => {
+      const channel = 'rooms:updated';
+      const handler = (_event: unknown, roomId: string) => listener(roomId);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
   },
   avatar: {
     listModels: () => ipcRenderer.invoke('avatar-model:list') as Promise<AvatarModelSummary[]>,
@@ -548,6 +590,8 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     setVoicePreference: (voice, engine) => ipcRenderer.invoke('avatar:voice:set-preference', voice, engine) as Promise<void>,
     getPromptPreference: () => ipcRenderer.invoke('avatar:prompt:get-preference') as Promise<string | null>,
     setPromptPreference: (prompt) => ipcRenderer.invoke('avatar:prompt:set-preference', prompt) as Promise<void>,
+    getIdleHabits: () => ipcRenderer.invoke('avatar:idle-habits:get') as Promise<string>,
+    setIdleHabits: (habits) => ipcRenderer.invoke('avatar:idle-habits:set', habits) as Promise<void>,
     uploadModel: (payload) =>
       ipcRenderer.invoke('avatar-model:upload', payload) as Promise<AvatarModelUploadResult>,
     deleteModel: async (modelId) => {
@@ -582,6 +626,9 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     getMotionStatus: () => ipcRenderer.invoke('avatar-motion:status') as Promise<AvatarMotionStatus>,
     streamMotion: (payload: AvatarMotionStreamRequest) =>
       ipcRenderer.invoke('avatar-motion:stream', payload) as Promise<AvatarMotionStreamResult>,
+    cancelMotion: async (streamId) => {
+      await ipcRenderer.invoke('avatar-motion:cancel', streamId);
+    },
     onMotionChunk: (listener) => {
       const channel = 'avatar-motion:chunk';
       const handler = (_event: unknown, payload: AvatarMotionChunkEvent) => listener(payload);

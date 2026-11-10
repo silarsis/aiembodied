@@ -25,6 +25,9 @@ export {
   type WorkspaceKind,
 };
 
+const SELF_CHECKS = 'pnpm -w typecheck && pnpm test';
+const SELF_SETUP = 'pnpm install --frozen-lockfile --prefer-offline && pnpm --filter @aiembodied/main exec install-electron';
+
 function text(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
@@ -46,6 +49,8 @@ export function sanitizeCodingConfig(input: unknown): CodingConfig | undefined {
       ? item.protectedPaths.map(text).filter((value): value is string => Boolean(value))
       : [];
     const checks = text(item.checks);
+    // This app's own checkout also needs the Electron binary for its tests (pnpm test runs in Electron).
+    const setup = text(item.setup) ?? (item.kind === 'self' && checks === SELF_CHECKS ? SELF_SETUP : undefined);
     workspaces.push({
       id,
       name: text(item.name) ?? id,
@@ -53,6 +58,7 @@ export function sanitizeCodingConfig(input: unknown): CodingConfig | undefined {
       kind: item.kind === 'self' ? 'self' : 'project',
       baseBranch: text(item.baseBranch) ?? 'main',
       ...(checks ? { checks } : {}),
+      ...(setup ? { setup } : {}),
       ...(protectedPaths.length ? { protectedPaths } : {}),
     });
   }
@@ -73,7 +79,7 @@ export function seedCodingConfig(repoRoot: string, exists: (file: string) => boo
   return {
     runner: DEFAULT_CODING_CONFIG.runner,
     workspaces: [
-      { id: 'aiembodied', name: 'aiembodied', path: root, kind: 'self', baseBranch: 'main', checks: 'pnpm -w typecheck && pnpm test' },
+      { id: 'aiembodied', name: 'aiembodied', path: root, kind: 'self', baseBranch: 'main', checks: SELF_CHECKS, setup: SELF_SETUP },
     ],
   };
 }
@@ -91,6 +97,7 @@ export function toRunnerWorkspace(workspace: CodingWorkspace): Record<string, un
     kind: workspace.kind,
     base_branch: workspace.baseBranch,
     ...(workspace.checks ? { checks: workspace.checks } : {}),
+    ...(workspace.setup ? { setup: workspace.setup } : {}),
     protected_paths: protectedPaths,
   };
 }

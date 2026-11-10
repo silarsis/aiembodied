@@ -1067,6 +1067,24 @@ body {
 .kiosk[data-drawer-open='true'] .kiosk__avatar canvas {
   transform: scale(0.9);
 }
+/* 3D rooms: the canvas is the whole stage, so none of the 2D foot-anchoring applies. */
+.kiosk__avatar[data-stage-mode='3d'] {
+  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  transform: none;
+}
+.kiosk__avatar[data-stage-mode='3d'] canvas,
+.kiosk[data-drawer-open='true'] .kiosk__avatar[data-stage-mode='3d'] canvas {
+  width: 100% !important;
+  height: 100% !important;
+  aspect-ratio: auto;
+  max-width: none;
+  transform: none;
+  transition: none;
+}
 .stageToolbar {
   position: absolute;
   bottom: 26px;
@@ -1473,6 +1491,7 @@ body {
   gap: 12px;
 }
 .backgroundCard {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1508,6 +1527,45 @@ body {
   display: flex;
   flex-direction: column;
   gap: 5px;
+}
+.backgroundCard__making {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #38bdf8;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: avatarStudioSpin 0.9s linear infinite;
+}
+.backgroundCard__objects {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.backgroundCard__objects li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.backgroundCard__objects img {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #fff;
+}
+.backgroundCard__objects span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .backgroundCard__delete {
   align-self: flex-end;
@@ -1953,4 +2011,30 @@ body {
   font-family: ui-monospace, Consolas, monospace;
   font-size: 0.75rem;
   white-space: pre;
+}
+
+.backgroundControls__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.14);
+  align-self: flex-start;
+}
+.backgroundControls__tab {
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #cbd5e1;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.backgroundControls__tab[aria-pressed='true'] {
+  background: #334155;
+  color: #f8fafc;
+}
+.backgroundCard__room {
+  background: linear-gradient(135deg, #3b4252, #5b6475);
 }

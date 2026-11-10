@@ -4,6 +4,12 @@
  * app's VRMA JSON, validated here with the same schema the OpenAI pipeline uses.
  */
 import { parseVrmaSchema, type VrmaSchema } from '../vrma-schema.js';
+import type {
+  AvatarMotionEndPose,
+  AvatarMotionPath,
+  AvatarMotionPhase,
+  AvatarMotionTarget,
+} from '../types.js';
 
 export interface LocalMotionClientOptions {
   baseUrl: string;
@@ -25,6 +31,76 @@ export interface MotionRequest {
   name?: string;
   /** The avatar's rest skeleton, for per-avatar arm calibration (see services/motion/API.md). */
   avatar_rest?: Record<string, [number, number, number]>;
+  /** Streams only. Later prompts, a floor path and timed targets steer the motion (see API.md). */
+  phases?: AvatarMotionPhase[];
+  path?: AvatarMotionPath;
+  targets?: AvatarMotionTarget[];
+  constraintWeight?: number;
+  continueFrom?: string;
+  snapS?: number;
+}
+
+/** The JSON body the service expects: the camelCase control fields become snake_case. */
+export function toWireRequest(request: MotionRequest): Record<string, unknown> {
+  const { phases, path, targets, constraintWeight, continueFrom, snapS, ...rest } = request;
+  const wire: Record<string, unknown> = { ...rest };
+  if (phases?.length) {
+    wire.phases = phases.map((phase) => ({ prompt: phase.prompt, start_s: phase.startS }));
+  }
+  if (path) {
+    wire.path = definedOnly({
+      points: path.points,
+      corner_radius: path.cornerRadius,
+      speed: path.speed,
+      start_s: path.startS,
+      mode: path.mode,
+    });
+  }
+  if (targets?.length) {
+    wire.targets = targets.map((target) =>
+      definedOnly({
+        t: target.t,
+        until: target.until,
+        root: target.root,
+        height: target.height,
+        heading: target.heading,
+        reveal_s: target.revealS,
+        hand: target.hand,
+        position: target.position,
+      }),
+    );
+  }
+  if (constraintWeight !== undefined) wire.constraint_weight = constraintWeight;
+  if (continueFrom) wire.continue_from = continueFrom;
+  if (snapS !== undefined) wire.snap_s = snapS;
+  return wire;
+}
+
+function definedOnly(entries: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(entries).filter(([, value]) => value !== undefined));
+}
+
+function parseEndPose(value: unknown): AvatarMotionEndPose | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = value as Record<string, unknown>;
+  const [rootX, rootZ] = numberTuple(raw.root, 2) ?? [];
+  if (rootX === undefined || rootZ === undefined) return undefined;
+  if (typeof raw.height !== 'number' || typeof raw.heading !== 'number') return undefined;
+  if (!Number.isFinite(raw.height) || !Number.isFinite(raw.heading)) return undefined;
+  const [lx, ly, lz] = numberTuple(raw.left_hand, 3) ?? [];
+  const [rx, ry, rz] = numberTuple(raw.right_hand, 3) ?? [];
+  return {
+    root: [rootX, rootZ],
+    height: raw.height,
+    heading: raw.heading,
+    ...(lx !== undefined && ly !== undefined && lz !== undefined ? { leftHand: [lx, ly, lz] as [number, number, number] } : {}),
+    ...(rx !== undefined && ry !== undefined && rz !== undefined ? { rightHand: [rx, ry, rz] as [number, number, number] } : {}),
+  };
+}
+
+function numberTuple(value: unknown, length: number): number[] | null {
+  if (!Array.isArray(value) || value.length !== length) return null;
+  return value.every((entry) => typeof entry === 'number' && Number.isFinite(entry)) ? (value as number[]) : null;
 }
 
 export type MotionTimings = Record<string, number>;
@@ -37,11 +113,15 @@ export interface MotionClip {
 export interface MotionChunk extends MotionClip {
   index: number;
   start: number;
+  /** Where the chunk's last frame is, when the service reports it. */
+  endPose?: AvatarMotionEndPose;
 }
 
 export interface MotionStreamSummary {
   chunks: number;
   timings: MotionTimings;
+  /** Id for `continueFrom` on a later request. */
+  session?: string;
 }
 
 export interface MotionCallOptions {
@@ -113,11 +193,13 @@ export class LocalMotionClient {
           start: typeof message.start === 'number' ? message.start : 0,
           vrma: parseVrmaSchema(message.vrma),
           timings: normalizeTimings(message.timings),
+          ...(parseEndPose(message.end_pose) ? { endPose: parseEndPose(message.end_pose) } : {}),
         };
       } else if (message.type === 'done') {
         return {
           chunks: typeof message.chunks === 'number' ? message.chunks : 0,
           timings: normalizeTimings(message.timings),
+          ...(typeof message.session === 'string' && message.session ? { session: message.session } : {}),
         };
       } else if (message.type === 'error') {
         throw new Error(`Motion service failed: ${String(message.message ?? 'unknown error')}`);
@@ -131,7 +213,7 @@ export class LocalMotionClient {
     const response = await this.fetchFn(`${this.baseUrl}${pathName}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request),
+      body: JSON.stringify(toWireRequest(request)),
       signal: options.signal,
     });
     if (!response.ok) {

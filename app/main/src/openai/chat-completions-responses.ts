@@ -4,8 +4,8 @@
  * (animation clips, poses, pose checks, avatar description) were written for the Responses API,
  * which most self-hosted servers don't offer; this lets them run on any chat server.
  *
- * Only what the helpers use is translated: message input with text and image parts, and
- * text.format json_schema. The reply comes back as `output_text`, like the SDK's.
+ * Only what the helpers use is translated: message input with text and image parts,
+ * max_output_tokens (as max_tokens), temperature and text.format json_schema. The reply comes back as `output_text`, like the SDK's.
  */
 
 type InputPart = { type?: string; text?: string; image_url?: string };
@@ -15,6 +15,9 @@ interface ResponsesParams {
   model?: string;
   instructions?: string;
   input?: string | InputMessage[];
+  /** Responses names the reply's length cap max_output_tokens; chat servers call it max_tokens. */
+  max_output_tokens?: number;
+  temperature?: number;
   text?: { format?: { type?: string; name?: string; schema?: unknown; strict?: boolean } };
 }
 
@@ -43,6 +46,8 @@ export function createChatCompletionsResponsesClient(options: {
           // llama-server's Qwen template: answer directly instead of thinking first.
           chat_template_kwargs: { enable_thinking: false },
         };
+        if (typeof params.max_output_tokens === 'number' && params.max_output_tokens > 0) body.max_tokens = Math.floor(params.max_output_tokens);
+        if (typeof params.temperature === 'number') body.temperature = params.temperature;
         const format = params.text?.format;
         if (format?.type === 'json_schema') {
           body.response_format = {

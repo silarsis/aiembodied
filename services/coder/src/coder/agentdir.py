@@ -24,7 +24,7 @@ def write_agent_dir(cfg: Config) -> Path:
                 "baseUrl": cfg.local_llm_url,
                 "api": "openai-completions",
                 "apiKey": "not-needed",
-                "models": [{"id": cfg.local_model}],
+                "models": [{"id": cfg.local_model, "contextWindow": cfg.local_context}],
             }
         }
     }

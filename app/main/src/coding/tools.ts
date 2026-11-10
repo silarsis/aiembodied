@@ -100,8 +100,11 @@ export function createCodingTools(deps: CodingToolsDeps): RegisteredTool[] {
   const taskLine = (task: RunnerTask) =>
     `${task.id} [${wsName(task.workspace_id)}] ${clip(task.goal ?? '', 70)} - ${task.status}${task.pr_url ? ` ${task.pr_url}` : ''}`;
 
+  const optionValues = (q: RunnerQuestion): string[] =>
+    (q.options ?? []).map((o) => (typeof o === 'string' ? o : String((o as { value?: unknown; label?: unknown })?.value ?? (o as { label?: unknown })?.label ?? '')));
+
   const questionLine = (q: RunnerQuestion) =>
-    `[${q.id}] ${q.kind === 'confirm' ? `asks permission (${clip(q.title ?? '', 60)}): ${clip(q.message ?? '', 160)}` : clip(q.message ?? q.title ?? '', 240)}`;
+    `[${q.id}] ${q.kind === 'confirm' ? `asks permission (${clip(q.title ?? '', 60)}): ${clip(q.message ?? '', 160)}` : clip(q.message ?? q.title ?? '', 240)}${q.kind === 'select' ? ` Options: ${optionValues(q).join(', ')}` : ''}`;
 
   const withTask = (extra: Record<string, unknown>) => ({ type: 'string', description: 'The task id. Optional: the most recent fitting task is used.', ...extra });
 
@@ -262,6 +265,11 @@ export function createCodingTools(deps: CodingToolsDeps): RegisteredTool[] {
         const no = /^(no|n|don'?t|deny|decline|stop|cancel)\b/i.test(text);
         if (!yes && !no) throw new Error('That question needs a yes or no.');
         body = { confirmed: yes, dialog_id: question.id };
+      } else if (question.kind === 'select') {
+        const options = optionValues(question);
+        const match = options.find((o) => o.toLowerCase() === text.trim().toLowerCase());
+        if (!match) throw new Error(`That question needs one of: ${options.join(', ')}.`);
+        body = { value: match, dialog_id: question.id };
       } else {
         body = { value: text, dialog_id: question.id };
       }

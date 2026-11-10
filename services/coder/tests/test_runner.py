@@ -84,6 +84,43 @@ def test_failing_checks_recorded(client, ws):
     assert t["checks_ok"] is False and "nope" in t["checks_output"]
 
 
+def test_failing_checks_flagged_in_review(client, ws):
+    ws(checks="exit 3")
+    t = wait_status(client, new_task(client)["id"], "review")
+    assert "checks failed" in t["review"]["flags"]
+
+
+def test_setup_runs_before_pi_and_checks(client, ws):
+    ws(setup="echo setup-ran > setup.marker", checks="test -f setup.marker")
+    t = wait_status(client, new_task(client)["id"], "review")
+    assert t["checks_ok"] is True
+    events = client.get(f"/v1/tasks/{t['id']}/events").json()
+    assert any(e["payload"].get("message") == "setup finished" for e in events if e["type"] == "runner")
+
+
+def test_failed_setup_is_flagged_but_pi_still_runs(client, ws):
+    ws(setup="echo broken; exit 2")
+    t = wait_status(client, new_task(client)["id"], "review")
+    assert "setup failed" in t["review"]["flags"]
+    events = client.get(f"/v1/tasks/{t['id']}/events").json()
+    assert any(e["payload"].get("message") == "setup failed" and "broken" in e["payload"]["output"]
+               for e in events if e["type"] == "runner")
+
+
+def test_setup_autodetected_from_lockfile(tmp_path):
+    from coder.manager import TaskManager as Manager
+    assert Manager.detect_setup(tmp_path) is None
+    (tmp_path / "pnpm-lock.yaml").write_text("")
+    assert Manager.detect_setup(tmp_path) == "pnpm install --frozen-lockfile --prefer-offline"
+
+
+def test_local_context_in_pi_models(client, cfg):
+    import json
+    client.put("/v1/settings", json={"local_context": 32768})
+    models = json.loads((cfg.agent_dir / "models.json").read_text())
+    assert models["providers"]["local"]["models"][0]["contextWindow"] == 32768
+
+
 def test_settles_without_agent_settled(client, ws, monkeypatch):
     monkeypatch.setenv("FAKE_PI_MODE", "nosettled")
     ws()
@@ -354,7 +391,7 @@ def test_settings_roundtrip_and_agent_dir(cfg, client, tmp_path):
     assert r.status_code == 200 and r.json()["local_llm_url"] == "http://127.0.0.1:9/v1"
     models = json.loads((cfg.agent_dir / "models.json").read_text())
     assert models["providers"]["local"]["baseUrl"] == "http://127.0.0.1:9/v1"
-    assert models["providers"]["local"]["models"] == [{"id": "m2"}]
+    assert models["providers"]["local"]["models"] == [{"id": "m2", "contextWindow": 65536}]
     # a new runner on the same data dir reads the saved file
     from coder.config import Config
     c2 = Config(data_dir=cfg.data_dir)
@@ -493,6 +530,44 @@ def test_confirm_question_has_kind_confirm(client, ws, monkeypatch):
     assert t["question"]["kind"] == "confirm"
     client.post(f"/v1/tasks/{t['id']}/answer", json={"confirmed": False})
     wait_status(client, t["id"], ("review", "done"))
+
+
+def _dialog(client, ws, monkeypatch, mode):
+    monkeypatch.setenv("FAKE_PI_MODE", mode)
+    ws()
+    return wait_status(client, new_task(client)["id"], "question")
+
+
+def _note(client, tid):
+    t = wait_status(client, tid, "review")
+    return (Path(t["worktree"]) / "hello.txt").read_text()
+
+
+def test_select_question_kind_options_and_answer(client, ws, monkeypatch):
+    t = _dialog(client, ws, monkeypatch, "select")
+    q = t["question"]
+    assert q["kind"] == "select" and q["options"] == ["red", "green"]
+    assert client.post(f"/v1/tasks/{t['id']}/answer", json={"value": "blue"}).status_code == 400
+    assert client.post(f"/v1/tasks/{t['id']}/answer", json={"confirmed": True}).status_code == 400
+    assert client.post(f"/v1/tasks/{t['id']}/answer", json={"value": "green"}).status_code == 200
+    assert '{"value": "green"}' in _note(client, t["id"])
+
+
+@pytest.mark.parametrize("mode", ["input", "editor"])
+def test_input_and_editor_questions_answer_with_value(client, ws, monkeypatch, mode):
+    t = _dialog(client, ws, monkeypatch, mode)
+    assert t["question"]["kind"] == "input" and t["question"]["method"] == mode
+    assert client.post(f"/v1/tasks/{t['id']}/answer", json={"confirmed": True}).status_code == 400
+    assert client.post(f"/v1/tasks/{t['id']}/answer", json={"value": "hi"}).status_code == 200
+    assert '{"value": "hi"}' in _note(client, t["id"])
+
+
+def test_confirm_answer_sends_confirmed_only(client, ws, monkeypatch):
+    monkeypatch.setenv("FAKE_PI_MODE", "question")
+    ws()
+    t = wait_status(client, new_task(client)["id"], "question")
+    assert client.post(f"/v1/tasks/{t['id']}/answer", json={"value": "yes"}).status_code == 400
+    assert client.post(f"/v1/tasks/{t['id']}/answer", json={"confirmed": True}).status_code == 200
 
 
 def test_several_pending_dialogs_answer_by_id_or_oldest(client, ws, monkeypatch):

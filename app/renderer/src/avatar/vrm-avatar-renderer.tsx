@@ -18,12 +18,18 @@ import { measureRestSkeleton, setAvatarRestSkeleton } from './rest-skeleton.js';
 import {
   useAvatarAnimationQueue,
   type AvatarAnimationEvent,
+  type AvatarAnimationRequest,
   type AvatarAnimationTiming,
   type VRMPoseData,
   type VRMPoseExpressions,
   type PoseTransitionConfig,
 } from './animation-bus.js';
 import { toAnimationSlug } from './animation-tags.js';
+import { LIVE_MOTION_SOURCE } from './live-motion.js';
+import { pinHipsHorizontal } from './hips-pinning.js';
+import type { RoomFile } from '../../../main/src/rooms/types.js';
+import { RoomSceneController } from '../rooms/room-scene-controller.js';
+import type { SceneActionExecutor } from '../rooms/scene-executor.js';
 import { useBehaviorCues, type BehaviorCueEvent } from './behavior-cues.js';
 import {
   createClipFromVrma,
@@ -58,6 +64,14 @@ export interface VrmAvatarRendererProps {
   className?: string;
   idleOptions?: IdleAnimationOptions;
   animationVersion?: number;
+  /** A 3D room to stand in. Null or absent keeps the 2D backdrop behaviour. */
+  room?: RoomFile | null;
+  /** How tall the avatar stands in rooms, sole to crown, in metres. */
+  roomAvatarHeight?: number;
+  /** Developer overlay of the walkable area (rooms only). */
+  showWalkableArea?: boolean;
+  /** Runs scene actions (walk, sit, pick up) in the room; it is given the room's env while this renders. */
+  sceneActions?: SceneActionExecutor | null;
 }
 
 const VISEME_PRESETS: VRMExpressionPresetName[] = [
@@ -118,6 +132,8 @@ interface QueuedAnimation {
   timing?: AvatarAnimationTiming;
   /** Registered for a single playback (streamed clips); dropped from the registry once played. */
   ephemeral?: boolean;
+  onEnd?: AvatarAnimationRequest['onEnd'];
+  continuation?: boolean;
 }
 
 interface ActiveAnimation {
@@ -125,6 +141,9 @@ interface ActiveAnimation {
   intent: AnimationQueueIntent;
   onFinish: (event: { action?: THREE.AnimationAction | null }) => void;
   vrmaData?: VrmaGltf;
+  /** The clip ended on request 'hold': its last frame stays (a seated pose) until another clip replaces it. */
+  held?: boolean;
+  dispose?: () => void;
 }
 
 function buildIdleSchedulerConfig(
@@ -1154,7 +1173,16 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   className,
   idleOptions,
   animationVersion,
+  room = null,
+  roomAvatarHeight,
+  showWalkableArea = false,
+  sceneActions = null,
 }: VrmAvatarRendererProps) {
+  const roomRef = useRef<RoomFile | null>(room);
+  roomRef.current = room;
+  const roomControllerRef = useRef<RoomSceneController | null>(null);
+  /** Id of the room the stage was last given, so a reload of the same room can be told from a new one. */
+  const lastRoomIdRef = useRef<string | null>(null);
   const groundCallbackRef = useRef(onGroundPositionChange);
   const groundMeasuredRef = useRef(false);
   useEffect(() => { groundCallbackRef.current = onGroundPositionChange; }, [onGroundPositionChange]);
@@ -1211,6 +1239,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
 
     try {
       active.action.stop();
+      active.dispose?.();
     } catch (error) {
       console.warn('[vrm-avatar-renderer] failed to stop animation action', error);
     }
@@ -1275,6 +1304,25 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         return;
       }
 
+      let verdict = next.onEnd?.();
+      if (verdict === 'hold' && animationQueueRef.current.length === 0) {
+        // A seated pose: keep the last frame, and keep idle motion off, until the next clip replaces it.
+        action.clampWhenFinished = true;
+        action.enabled = true;
+        action.setEffectiveTimeScale(0);
+        clipRegistryRef.current.delete(next.slug);
+        activeAnimationRef.current = {
+          action,
+          intent: 'play',
+          onFinish: handleFinished,
+          vrmaData: clipData.vrmaData,
+          held: true,
+          dispose: () => mixer.uncacheClip(clipData.clip),
+        };
+        return;
+      }
+      if (verdict === 'hold') verdict = undefined;
+
       const finish = () => {
         try {
           action.stop();
@@ -1292,6 +1340,13 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         // The next clip (e.g. the following streamed chunk) starts where this one ended: hand over instantly.
         finish();
         playNextQueuedAnimation(true);
+        return;
+      }
+
+      if (verdict === 'release') {
+        // The root has been moved to where the motion ended: hand over to the idle pose in the same frame.
+        finish();
+        playNextQueuedAnimation();
         return;
       }
 
@@ -1324,7 +1379,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       action.setEffectiveWeight(1);
       action.setEffectiveTimeScale(1);
       action.clampWhenFinished = true;
-      if (!continuation && typeof action.fadeIn === 'function') {
+      if (!continuation && !next.continuation && typeof action.fadeIn === 'function') {
         // Blend in from the idle pose; continuation clips already start on the previous clip's last frame.
         action.fadeIn(CLIP_FADE_IN_SECONDS);
       }
@@ -1430,6 +1485,10 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       }
 
       if (event.type === 'applyPose') {
+        if (activeAnimationRef.current?.held) {
+          // Seated: a pose would stand the avatar up out of the chair.
+          return;
+        }
         // Apply pose via animated transition for smooth interpolation
         const vrm = currentVrmRef.current;
         const mixer = mixerRef.current;
@@ -1537,6 +1596,12 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         return;
       }
 
+      if (activeAnimationRef.current?.held && !event.request.continuation) {
+        // Seated: only the clip that continues from the seat (standing up) may replace the pose.
+        console.info('[vrm-avatar-renderer] ignoring a clip while the avatar is seated', { slug });
+        return;
+      }
+
       if (activeAnimationRef.current?.intent === 'pose') {
         clearActiveAnimation();
       }
@@ -1556,16 +1621,22 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
               console.warn('[vrm-avatar-renderer] streamed VRMA clip contained no animation', { slug });
               return;
             }
-            clipRegistryRef.current.set(slug, {
-              clip: createClipFromVrma(vrm, result.animation, slug),
-              vrmaData: result.gltf,
-            });
+            const clip = createClipFromVrma(vrm, result.animation, slug);
+            if (request.source === LIVE_MOTION_SOURCE && !roomRef.current) {
+              // 2D backdrop: the avatar stays on its spot, so drop the clip's horizontal hips travel.
+              pinHipsHorizontal(clip, vrm.humanoid?.getNormalizedBoneNode('hips')?.name);
+            }
+            clipRegistryRef.current.set(slug, { clip, vrmaData: result.gltf });
+            // A held seated pose gives way here, in the same tick the next clip starts.
+            if (activeAnimationRef.current?.held) clearActiveAnimation();
             enqueueAnimation({
               slug,
               intent: request.intent,
               source: request.source,
               timing: request.timing,
               ephemeral: true,
+              onEnd: request.onEnd,
+              continuation: request.continuation,
             });
           })
           .catch((error: unknown) => {
@@ -1574,11 +1645,14 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         return;
       }
 
+      if (activeAnimationRef.current?.held) clearActiveAnimation();
       enqueueAnimation({
         slug,
         intent: request.intent,
         source: request.source,
         timing: request.timing,
+        onEnd: request.onEnd,
+        continuation: request.continuation,
       });
     },
     [clearActiveAnimation, enqueueAnimation, playNextQueuedAnimation, suspendIdleAnimations, releaseIdleSuspension],
@@ -1653,6 +1727,14 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       camera.updateProjectionMatrix();
     }
 
+    roomControllerRef.current = new RoomSceneController({
+      renderer,
+      scene,
+      camera,
+      canvas,
+      legacySize: { width: VRM_CANVAS_WIDTH, height: VRM_CANVAS_HEIGHT },
+    });
+
     const timer = new THREE.Timer();
     timer.connect(document);
 
@@ -1702,6 +1784,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       }
 
       mixerRef.current?.update(delta);
+      roomControllerRef.current?.step(delta);
 
       // Apply expression keyframes from VRMA metadata at current animation time
       const activeAnimation = activeAnimationRef.current;
@@ -1713,7 +1796,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       idleSchedulerRef.current?.update(delta);
       currentVrmRef.current?.update(delta);
       rendererInstance.render(sceneInstance, cameraInstance);
-      if (currentVrmRef.current && !groundMeasuredRef.current) {
+      if (currentVrmRef.current && !groundMeasuredRef.current && !roomControllerRef.current?.active) {
         const fraction = renderedFootFraction(rendererInstance);
         if (fraction !== null) {
           groundMeasuredRef.current = true;
@@ -1734,6 +1817,8 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       scene.remove(ambient);
       scene.remove(keyLight);
       scene.remove(fillLight);
+      roomControllerRef.current?.dispose();
+      roomControllerRef.current = null;
       clearActiveAnimation();
       clipRegistryRef.current.clear();
       animationQueueRef.current = [];
@@ -1785,6 +1870,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       }
       disposeVrm(currentVrmRef.current);
       currentVrmRef.current = null;
+      roomControllerRef.current?.attachAvatar(null);
       setAvatarRestSkeleton(null);
       try {
         mixerRef.current?.stopAllAction();
@@ -1856,7 +1942,15 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
 
         const renderableBounds = computeRenderableBounds(vrm.scene);
         if (renderableBounds && cameraRef.current) {
-          fitCameraToBounds(cameraRef.current, renderableBounds);
+          // In a room the camera belongs to the room; fit a copy so leaving the room restores this view.
+          const controller = roomControllerRef.current;
+          if (controller?.active) {
+            const spare = cameraRef.current.clone();
+            fitCameraToBounds(spare, renderableBounds);
+            controller.remember2dCamera(spare);
+          } else {
+            fitCameraToBounds(cameraRef.current, renderableBounds);
+          }
         }
         const meshStats = { meshes: 0, skinnedMeshes: 0 };
         vrm.scene.traverse((object) => {
@@ -1899,6 +1993,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
 
         scene.add(vrm.scene);
         currentVrmRef.current = vrm;
+        roomControllerRef.current?.attachAvatar(vrm.scene, vrm.humanoid, restSkeleton?.hips[1]);
         setAvatarRestSkeleton(restSkeleton);
         expressionManagerRef.current = vrm.expressionManager ?? null;
         expressionManagerRef.current?.resetValues();
@@ -2003,6 +2098,42 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       cancelled = true;
     };
   }, [animationVersion, playNextQueuedAnimation]);
+
+  useEffect(() => {
+    const controller = roomControllerRef.current;
+    if (!rendererReady || !controller) {
+      return;
+    }
+    // Any walk, sit or motion in progress is cancelled when the stage changes. The same room
+    // loaded again (an object was made for it) leaves the avatar and its action alone.
+    const reload = room !== null && lastRoomIdRef.current === room.id;
+    lastRoomIdRef.current = room?.id ?? null;
+    if (!reload) {
+      clearActiveAnimation();
+      animationQueueRef.current = [];
+      releaseIdleSuspension();
+      sceneActions?.reset();
+    }
+    void controller.setRoom(room);
+  }, [room, rendererReady, clearActiveAnimation, releaseIdleSuspension, sceneActions]);
+
+  useEffect(() => {
+    if (!rendererReady || roomAvatarHeight === undefined) return;
+    roomControllerRef.current?.setAvatarHeight(roomAvatarHeight);
+  }, [roomAvatarHeight, rendererReady]);
+
+  useEffect(() => {
+    const controller = roomControllerRef.current;
+    if (!sceneActions || !rendererReady || !controller) {
+      return;
+    }
+    sceneActions.setEnv(controller.sceneEnv);
+    return () => sceneActions.setEnv(null);
+  }, [sceneActions, rendererReady]);
+
+  useEffect(() => {
+    roomControllerRef.current?.setDebugNavmesh(showWalkableArea);
+  }, [showWalkableArea, rendererReady, room]);
 
   return <canvas ref={canvasRef} className={className} data-renderer="vrm" />;
 });

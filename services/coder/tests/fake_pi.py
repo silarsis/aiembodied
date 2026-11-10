@@ -55,6 +55,13 @@ def flow(n, message=None):
               "title": "Question from pi: Which port?", "placeholder": "type the answer"})
         a = answers.get()
         note = a.get("value") or "no answer"
+    if mode in ("select", "input", "editor"):
+        req = {"type": "extension_ui_request", "id": "d1", "method": mode, "title": "Pick one"}
+        if mode == "select":
+            req["options"] = ["red", "green"]
+        emit(req)
+        a = answers.get()
+        note = json.dumps({k: a.get(k) for k in ("value", "confirmed", "cancelled") if k in a}, sort_keys=True)
     if mode == "two":
         emit({"type": "extension_ui_request", "id": "q1", "method": "confirm", "title": "Delete things?",
               "message": "rm -rf build"})

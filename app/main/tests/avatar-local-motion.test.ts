@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { LocalMotionClient } from '../src/avatar/motion/local-motion-client.js';
+import { LocalMotionClient, toWireRequest } from '../src/avatar/motion/local-motion-client.js';
 import {
   LocalMotionGenerationService,
   sanitizeRestSkeleton,
   toSlug,
 } from '../src/avatar/motion/local-motion-generation-service.js';
+import { sanitizeMotionControls } from '../src/avatar/motion/motion-controls.js';
 import type { VrmaSchema } from '../src/avatar/vrma-schema.js';
 import type {
   AvatarAnimationUploadRequest,
@@ -228,5 +229,97 @@ describe('LocalMotionGenerationService', () => {
     expect(toSlug('Waves hello, then bows!')).toBe('waves-hello-then-bows');
     expect(toSlug('!!!')).toBe('motion');
     expect(toSlug('a'.repeat(39) + ' b')).toBe('a'.repeat(39));
+  });
+});
+
+describe('motion steering fields', () => {
+  it('maps camelCase controls to the snake_case wire format and leaves plain requests alone', () => {
+    expect(toWireRequest({ prompt: 'wave', duration: 3 })).toEqual({ prompt: 'wave', duration: 3 });
+    const wire = toWireRequest({
+      prompt: 'a person walks calmly',
+      duration: 6,
+      phases: [{ prompt: 'a person sits down', startS: 4 }],
+      path: { points: [[0, 0], [0, 2]], cornerRadius: 0.6, speed: 1, startS: 0.3, mode: 'dense' },
+      targets: [
+        { t: 5.5, until: 7, root: [0, 2.65], height: 0.5, heading: 3.14, revealS: 4 },
+        { t: 2, hand: 'right', position: [-0.18, 0.75, 0.5], root: [0, 0], height: 0.9, heading: 0 },
+      ],
+      constraintWeight: 2,
+      continueFrom: 's-1a2b',
+      snapS: 0.3,
+    });
+    expect(wire).toEqual({
+      prompt: 'a person walks calmly',
+      duration: 6,
+      phases: [{ prompt: 'a person sits down', start_s: 4 }],
+      path: { points: [[0, 0], [0, 2]], corner_radius: 0.6, speed: 1, start_s: 0.3, mode: 'dense' },
+      targets: [
+        { t: 5.5, until: 7, root: [0, 2.65], height: 0.5, heading: 3.14, reveal_s: 4 },
+        { t: 2, root: [0, 0], height: 0.9, heading: 0, hand: 'right', position: [-0.18, 0.75, 0.5] },
+      ],
+      constraint_weight: 2,
+      continue_from: 's-1a2b',
+      snap_s: 0.3,
+    });
+  });
+
+  it('drops malformed steering fields instead of failing the movement', () => {
+    const controls = sanitizeMotionControls({
+      path: { points: [[0, 0], [Number.NaN, 1], [0, 2]], speed: -1 },
+      targets: [
+        { t: 1, root: [0, 1], height: 0.9, heading: 0 },
+        { t: Number.NaN, root: [0, 1] },
+        { t: 2, hand: 'middle' as 'left', position: [0, 0, 0] },
+        { t: 2, hand: 'left', position: [0, 0, 0] },
+      ],
+      phases: [{ prompt: '  ', startS: 2 }, { prompt: 'sit', startS: 2 }],
+      continueFrom: 'bad id!',
+      constraintWeight: 0,
+      snapS: 0,
+    });
+    expect(controls.path).toEqual({ points: [[0, 0], [0, 2]] });
+    expect(controls.targets).toEqual([{ t: 1, root: [0, 1], height: 0.9, heading: 0 }]);
+    expect(controls.phases).toEqual([{ prompt: 'sit', startS: 2 }]);
+    expect(controls.continueFrom).toBeUndefined();
+    expect(controls.constraintWeight).toBeUndefined();
+    expect(controls.snapS).toBe(0);
+  });
+
+  it('streams steering fields to the service and reports end poses and the session', async () => {
+    const fetchFn = vi.fn(async () =>
+      ndjsonResponse([
+        {
+          type: 'chunk',
+          index: 0,
+          start: 0,
+          vrma: sampleVrma('walk-0'),
+          end_pose: { root: [0, 1.5], height: 0.95, heading: 0.2, right_hand: [0, 1, 0.2] },
+        },
+        { type: 'chunk', index: 1, start: 2, vrma: sampleVrma('walk-1'), end_pose: { root: ['x'] } },
+        { type: 'done', chunks: 2, timings: {}, session: 's-42' },
+      ]),
+    );
+    const service = new LocalMotionGenerationService({
+      client: new LocalMotionClient({ baseUrl: 'http://127.0.0.1:8190', fetchFn }),
+      animationService: { uploadAnimation: vi.fn() },
+    });
+    const chunks: AvatarMotionChunkEvent[] = [];
+
+    const result = await service.streamMotion(
+      {
+        streamId: 's1',
+        prompt: 'walk',
+        duration: 25,
+        path: { points: [[0, 0], [0, 3]] },
+        continueFrom: 's-41',
+      },
+      (chunk) => chunks.push(chunk),
+    );
+
+    const body = JSON.parse((fetchFn.mock.calls[0]?.[1] as RequestInit).body as string);
+    expect(body).toMatchObject({ duration: 25, path: { points: [[0, 0], [0, 3]] }, continue_from: 's-41' });
+    expect(chunks[0]?.endPose).toEqual({ root: [0, 1.5], height: 0.95, heading: 0.2, rightHand: [0, 1, 0.2] });
+    expect(chunks[1]?.endPose).toBeUndefined();
+    expect(result.session).toBe('s-42');
   });
 });

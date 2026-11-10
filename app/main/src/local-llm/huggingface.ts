@@ -46,6 +46,8 @@ export interface HfLookup {
   selected?: string;
   /** The context length the model was trained for, when Hugging Face reads it from the GGUF. */
   contextLength?: number;
+  /** The repo's vision projector files (mmproj), for models that read images. */
+  mmproj?: HfFile[];
   /** GGUF repos to pick from when the reference was search words or a repo with no GGUF files. */
   suggestions: HfRepoSuggestion[];
   note?: string;
@@ -157,6 +159,22 @@ export function groupGgufQuants(files: RawSibling[]): HfQuant[] {
   return quants.sort((a, b) => a.sizeBytes - b.sizeBytes);
 }
 
+/** A repo's vision projector (mmproj) GGUF files, sorted by name. */
+export function listMmprojFiles(files: RawSibling[]): HfFile[] {
+  const result: HfFile[] = [];
+  for (const entry of files) {
+    const path = entry.rfilename ?? entry.path;
+    if (!path || !/mmproj.*\.gguf$/i.test(path)) continue;
+    const sha256 = entry.lfs?.sha256 ?? entry.lfs?.oid;
+    result.push({
+      path,
+      size: entry.lfs?.size ?? entry.size ?? 0,
+      ...(sha256 && /^[a-f0-9]{64}$/i.test(sha256) ? { sha256: sha256.toLowerCase() } : {}),
+    });
+  }
+  return result.sort((a, b) => a.path.localeCompare(b.path));
+}
+
 /** The quant to preselect: the one asked for, else a common chat default, else the middle size. */
 export function pickDefaultQuant(quants: HfQuant[], wanted?: string, file?: string): string | undefined {
   if (!quants.length) return undefined;
@@ -246,6 +264,7 @@ export async function lookupHuggingFace(ref: HuggingFaceRef, token?: string, fet
   const repo = model.id ?? ref.repo;
   const gated = Boolean(model.gated);
   const quants = groupGgufQuants(model.siblings ?? []);
+  const mmproj = listMmprojFiles(model.siblings ?? []);
   const contextLength = typeof model.gguf?.context_length === 'number' && model.gguf.context_length > 0 ? model.gguf.context_length : undefined;
   if (!quants.length) {
     // A base model (safetensors): offer the GGUF versions made from it.
@@ -264,6 +283,7 @@ export async function lookupHuggingFace(ref: HuggingFaceRef, token?: string, fet
     gated,
     quants,
     selected: pickDefaultQuant(quants, ref.quant, ref.file),
+    ...(mmproj.length ? { mmproj } : {}),
     ...(contextLength ? { contextLength } : {}),
     suggestions: [],
     ...(gated ? { note: `${repo} is gated: accept its licence on huggingface.co and add a Hugging Face token under Servers before downloading.` } : {}),
