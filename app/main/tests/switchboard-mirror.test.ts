@@ -9,7 +9,7 @@ function setup() {
   return { events, mirror };
 }
 
-const approval: PendingApproval = { id: 'ap-1', toolId: 't', toolName: 'coding_start', params: {}, summary: 'start a task', createdAt: 0, expiresAt: Date.UTC(2026, 0, 1), source: 'voice', cardOnly: false };
+const approval: PendingApproval = { id: 'ap-1', toolId: 't', toolName: 'coding_start', params: {}, summary: 'start a task', createdAt: 0, expiresAt: Date.UTC(2026, 0, 1), source: 'voice', cardOnly: false, requestedBy: 'avatar:echo', approvers: ['person:kevin'] };
 
 describe('SwitchboardMirror', () => {
   it('skips previews entirely', () => {
@@ -84,7 +84,7 @@ describe('SwitchboardMirror', () => {
     mirror.noteQueued('urgent one', true);
     mirror.noteQueued('calm one', false);
     expect(events.map((e) => [e.type, e.priority])).toEqual([['avatar.inbox', 'high'], ['avatar.inbox', 'normal']]);
-    expect(events[0].payload).toEqual({ text: 'urgent one' });
+    expect(events[0].payload).toEqual({ text: 'urgent one', source: 'coding' });
   });
 
   it('never throws when the client does', () => {

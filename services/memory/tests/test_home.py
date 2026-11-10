@@ -647,3 +647,111 @@ def test_engine_stop_stops_every_listener(database_url, schema):
         wait_for(lambda: len(engine.homes.listeners) == 2)
         threads = [listener._thread for listener in engine.homes.listeners.values()]
     assert all(not t.is_alive() for t in threads) and engine.homes.listeners == {}
+
+
+# --- switchboard events ----------------------------------------------------------------------
+
+
+class FakeBus:
+    def __init__(self):
+        self.events = []
+
+    def publish(self, event):
+        self.events.append(event)
+
+    def types(self):
+        return [e["type"] for e in self.events]
+
+
+@pytest.fixture
+def fake_bus():
+    from memory_engine import bus
+
+    fake = FakeBus()
+    bus.set_default(fake)
+    return fake
+
+
+def test_change_publishes_home_change(client, db, fake_bus):
+    handle(db, door := entity_state("binary_sensor.front_door", "on", 60, friendly_name="Front door", device_class="door"))
+    assert fake_bus.types() == ["home.change"]
+    event_ = fake_bus.events[0]
+    assert event_["producer"] == {"kind": "sensor", "id": "ha:home"}
+    assert event_["to"] == [] and event_["audience"] == "private" and event_["priority"] == "low"
+    payload = event_["payload"]
+    assert payload["entity_id"] == "binary_sensor.front_door" and payload["old"] == "off" and payload["new"] == "on"
+    assert payload["home_id"] == "home" and payload["area"] == "Hallway" and payload["domain"] == "binary_sensor"
+    assert payload["text"] == home.describe_change("Front door", "Hallway", "binary_sensor", "door", "off", "on", None, None)
+
+
+def test_smoke_on_also_publishes_home_alert(client, db, fake_bus):
+    handle(db, entity_state("binary_sensor.smoke", "on", 60, friendly_name="Hall smoke alarm", device_class="smoke"))
+    assert fake_bus.types() == ["home.change", "home.alert"]
+    alert = fake_bus.events[1]
+    assert alert["to"] == ["avatar:echo"] and alert["priority"] == "urgent" and alert["audience"] == "private"
+    assert alert["payload"] == fake_bus.events[0]["payload"]
+    # Turning it off again is a change, not an alert.
+    fake_bus.events.clear()
+    handle(db, entity_state("binary_sensor.smoke", "off", 120, friendly_name="Hall smoke alarm", device_class="smoke"))
+    assert fake_bus.types() == ["home.change"]
+
+
+def test_unknown_to_on_is_not_published(client, db, fake_bus):
+    handle(db, entity_state("binary_sensor.smoke", "unknown", 60, device_class="smoke"))
+    handle(db, entity_state("binary_sensor.smoke", "on", 120, device_class="smoke"))
+    assert fake_bus.events == []
+
+
+def test_disabled_publisher_sends_nothing(client, db, monkeypatch):
+    from memory_engine import bus
+
+    monkeypatch.setenv("SWITCHBOARD_ENABLED", "0")
+    publisher = bus.Publisher.from_env()
+    assert publisher.enabled is False
+    bus.set_default(publisher)
+    handle(db, entity_state("binary_sensor.smoke", "on", 60, device_class="smoke"))
+    assert publisher._thread is None and not publisher._queue
+
+
+def test_bus_posts_batches_and_survives_a_dead_switchboard():
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from memory_engine import bus
+
+    got = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            got.append((self.path, json.loads(self.rfile.read(int(self.headers["Content-Length"])))))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        publisher = bus.Publisher(f"http://127.0.0.1:{server.server_port}")
+        for n in range(3):
+            publisher.publish({"type": "home.change", "payload": {"n": n}})
+        wait_for(lambda: got)
+        assert got[0][0] == "/v1/events" and [e["payload"]["n"] for e in got[0][1]["events"]] == [0, 1, 2]
+    finally:
+        server.shutdown()
+    dead = bus.Publisher("http://127.0.0.1:1")
+    dead.publish({"type": "x"})  # must not raise
+    wait_for(lambda: dead._down)
+    small = bus.Publisher(enabled=False)
+    assert small.publish({"type": "x"}) is None
+
+
+def test_bus_queue_drops_the_oldest():
+    from memory_engine import bus
+
+    publisher = bus.Publisher()
+    publisher._thread = threading.current_thread()  # no sender thread in this test
+    for n in range(bus.QUEUE_SIZE + 5):
+        publisher.publish({"n": n})
+    assert len(publisher._queue) == bus.QUEUE_SIZE and publisher._queue[0]["n"] == 5

@@ -30,6 +30,10 @@ export interface PendingApproval {
   source: 'voice';
   /** Only the card can approve this one. */
   cardOnly: boolean;
+  /** Switchboard address of whoever asked. */
+  requestedBy: string;
+  /** Switchboard addresses of who may decide. */
+  approvers: string[];
 }
 
 export type ApprovalDecision = 'approved' | 'declined' | 'expired';
@@ -125,6 +129,8 @@ export class ApprovalBroker extends EventEmitter {
       expiresAt: createdAt + this.ttlMs,
       source: 'voice',
       cardOnly,
+      requestedBy: 'avatar:echo',
+      approvers: ['person:kevin'],
     };
     this.pending.set(approval.id, approval);
     const timer = setTimeout(() => this.expireOld(), this.ttlMs + 50);

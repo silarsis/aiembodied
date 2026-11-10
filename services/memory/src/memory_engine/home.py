@@ -29,6 +29,8 @@ from uuid import uuid4
 import psycopg
 from psycopg.types.json import Jsonb
 
+from . import bus
+
 if TYPE_CHECKING:
     from .app import Engine
 
@@ -48,6 +50,10 @@ KEEP_EVERY = timedelta(minutes=15)
 ALERT_DEVICE_CLASSES = {"smoke", "gas", "carbon_monoxide", "moisture", "safety", "problem", "tamper", "heat", "cold"}
 NUMERIC_DOMAINS = {"sensor", "number", "input_number"}
 NO_VALUE = {"unavailable", "unknown"}
+# What makes a change an alarm for the switchboard (a narrower set than ALERT_DEVICE_CLASSES).
+# An alarm older than this when it is published (found while catching up) is not spoken.
+ALERT_FRESH = timedelta(minutes=2)
+BUS_ALARM_CLASSES = {"smoke", "gas", "carbon_monoxide", "moisture", "safety", "tamper"}
 
 
 # --- configuration and status ----------------------------------------------------------------
@@ -507,7 +513,34 @@ def _store_event(
         """,
         (INDEX_KIND, SOURCE, event_id, at, at, text, 0.9 if event_kind == "alert" else 0.4),
     )
+    _publish(home_id, home_name[0] if home_name else None, entity_id, name, area, domain, device_class,
+             old_state, state, sentence, at)
     return {"kind": event_kind, "indexed": True}
+
+
+def _publish(home_id, home_name, entity_id, name, area, domain, device_class, old, new, text, at: datetime) -> None:
+    """Tell the switchboard about a real change: home.change for observers, and home.alert to Echo
+    when it is an alarm. Events carry the time of the change, and an alert expires ALERT_FRESH
+    after it, so one found while catching up after a reconnect is not announced as news. The
+    labels of an entity are not kept, so the "aiembodied-alert" label is not looked at. Never raises."""
+    try:
+        if old == new or old is None or old in NO_VALUE or new in NO_VALUE:
+            return
+        payload = {"home_id": home_id, "home_name": home_name, "entity_id": entity_id, "name": name, "area": area,
+                   "domain": domain, "device_class": device_class, "old": old, "new": new, "text": text}
+        producer = {"kind": "sensor", "id": f"ha:{home_id}"}
+        when = at.astimezone(timezone.utc)
+        stamp = when.isoformat().replace("+00:00", "Z")
+        bus.publish({"type": "home.change", "producer": producer, "to": [], "audience": "private",
+                     "priority": "low", "at": stamp, "payload": payload})
+        if (domain == "binary_sensor" and device_class in BUS_ALARM_CLASSES and new == "on") or (
+            domain == "alarm_control_panel" and new == "triggered"
+        ):
+            bus.publish({"type": "home.alert", "producer": producer, "to": ["avatar:echo"], "audience": "private",
+                         "priority": "urgent", "at": stamp,
+                         "expires": (when + ALERT_FRESH).isoformat().replace("+00:00", "Z"), "payload": payload})
+    except Exception as error:  # noqa: BLE001 - a bus problem must not lose the stored event
+        log.debug("Could not publish a home event: %s", error)
 
 
 def handle_event(conn: psycopg.Connection, home_id: str, event: dict[str, Any]) -> Optional[dict[str, Any]]:

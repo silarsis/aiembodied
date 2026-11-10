@@ -6,8 +6,10 @@ import { app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain, powerMonitor
 import { ASSET_SCHEME, ASSET_SCHEME_PRIVILEGES, registerAssetProtocol } from './rooms/asset-protocol.js';
 import { ASSET_FOLDER, createRoomGenerationService, objectMakingAvailable, pickSingleImageGeometry } from './rooms/room-generation-setup.js';
 import type { RoomGenerationService } from './rooms/room-generation.js';
-import { SwitchboardClient } from './switchboard/client.js';
-import { SwitchboardMirror } from './switchboard/mirror.js';
+import { SwitchboardClient, makeEventId } from './switchboard/client.js';
+import { LocalOnlyBus, type SwitchboardBus } from './switchboard/bus.js';
+import { AvatarInbox } from './switchboard/inbox.js';
+import { DEFAULT_AVATAR_ID, SwitchboardMirror } from './switchboard/mirror.js';
 import dotenv from 'dotenv';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
@@ -316,6 +318,9 @@ let codingNudger: CodingNudger | null = null;
 // Copies app events onto the switchboard (services/switchboard). Phase 1: mirror only; null when off.
 let switchboardClient: SwitchboardClient | null = null;
 let switchboardMirror: SwitchboardMirror | null = null;
+// Where events go: the client, or a local-only bus when the switchboard is off. Always set once the app is ready.
+let switchboardBus: SwitchboardBus | null = null;
+let avatarInbox: AvatarInbox | null = null;
 /** The voice turn being answered now, so tool results can name their turn. */
 let activeVoiceRequestId: string | undefined;
 const seenApprovalIds = new Set<string>();
@@ -738,6 +743,16 @@ async function speakingVoiceOptions(manager: ConfigManager): Promise<SpeakingVoi
  * at startup and after every change on the Settings page, so a change applies without a restart
  * (except the local motion model, which the launcher picks when it starts services/motion).
  */
+/**
+ * A note for Echo goes onto the bus as avatar.inbox; the inbox (below) hands it to
+ * LocalVoiceService.notify, over the switchboard or, when it is not connected, straight back.
+ * Before the bus exists (very early) it goes to Echo directly.
+ */
+function notifyEcho(text: string, urgent: boolean): void {
+  if (switchboardMirror) switchboardMirror.noteQueued(text, urgent);
+  else localVoiceService?.notify(text, { urgent });
+}
+
 async function applyProviderSettings(manager: ConfigManager): Promise<void> {
   const config = manager.getConfig();
   const { providers, models } = config;
@@ -913,19 +928,13 @@ function getCodingService(manager: ConfigManager): CodingService {
       }),
     onOverrideChange: () => applyProviderSettings(manager),
     gpuMemory: gpuMemoryReader,
-    notify: (text, options) => {
-      switchboardMirror?.noteQueued(text, options?.urgent === true);
-      return localVoiceService?.notify(text, options);
-    },
+    notify: (text, options) => notifyEcho(text, options?.urgent === true),
     logger,
   });
   const service = codingService;
   const workspaceName = (id: string | undefined) => manager.getCoding().workspaces.find((ws) => ws.id === id)?.name ?? id ?? 'a workspace';
   codingNudger = new CodingNudger({
-    notify: (text, options) => {
-      switchboardMirror?.noteQueued(text, options?.urgent === true);
-      return localVoiceService?.notify(text, options);
-    },
+    notify: (text, options) => notifyEcho(text, options?.urgent === true),
     getTask: (id) => service.runnerClient()?.getTask(id).catch(() => null) ?? Promise.resolve(null),
     workspaceName,
     logger,
@@ -1928,6 +1937,12 @@ function registerIpcHandlers(
     localVoiceService?.cancel(typeof requestId === 'string' ? requestId : undefined);
     return true;
   });
+  ipcMain.handle('switchboard:status', async () => ({
+    enabled: switchboardClient !== null,
+    connected: switchboardBus?.connected() === true,
+    url: switchboardClient ? process.env.SWITCHBOARD_URL?.trim() || 'http://127.0.0.1:8196' : null,
+    openTxns: ((await switchboardClient?.openTxns(20)) ?? null)?.map((t) => ({ id: t.id, title: t.title ?? null, state: t.state, opened_by: t.opened_by ?? null, owner: t.owner ?? null, updated_at: t.updated_at ?? null })) ?? null,
+  }));
   ipcMain.handle('local-voice:system-status', () => localVoiceService?.systemStatus() ?? { pending: 0, ready: false, texts: [] });
   ipcMain.handle('local-voice:reset', () => {
     localVoiceService?.resetHistory();
@@ -2292,9 +2307,21 @@ app.whenReady().then(async () => {
     repoRoot: path.resolve(__dirname, '../../..'),
   });
 
-  if (process.env.SWITCHBOARD_ENABLED !== '0' && !switchboardClient) {
-    switchboardClient = new SwitchboardClient({ baseUrl: process.env.SWITCHBOARD_URL?.trim() || 'http://127.0.0.1:8196', logger });
-    switchboardMirror = new SwitchboardMirror({ client: switchboardClient });
+  if (!switchboardBus) {
+    if (process.env.SWITCHBOARD_ENABLED !== '0') {
+      switchboardClient = new SwitchboardClient({ baseUrl: process.env.SWITCHBOARD_URL?.trim() || 'http://127.0.0.1:8196', logger });
+      switchboardBus = switchboardClient;
+    } else {
+      switchboardBus = new LocalOnlyBus(makeEventId);
+    }
+    switchboardMirror = new SwitchboardMirror({ client: switchboardBus });
+    avatarInbox = new AvatarInbox({
+      avatarId: DEFAULT_AVATAR_ID,
+      bus: switchboardBus,
+      notify: (text, options) => localVoiceService?.notify(text, options),
+      logger,
+    });
+    avatarInbox.start();
   }
 
   try {
@@ -2658,6 +2685,7 @@ app.on('before-quit', async (event) => {
   wakeWordTrainer?.dispose();
   codingService?.stop();
   approvalBroker?.dispose();
+  avatarInbox?.stop();
   void switchboardClient?.stop();
 
   // Stop the local servers this app started, as hibernation does.

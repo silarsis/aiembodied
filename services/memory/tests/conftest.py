@@ -75,3 +75,13 @@ def summary_client(database_url, schema, llm):
     engine = Engine(database_url, schema, embedder=FakeEmbedder(), embed_inline=True, summariser=summariser)
     with TestClient(create_app(engine, connect_in_background=False)) as test_client:
         yield test_client
+
+
+@pytest.fixture(autouse=True)
+def no_switchboard():
+    """No test talks to a real switchboard; one that wants to see events injects its own."""
+    from memory_engine import bus
+
+    bus.set_default(bus.Publisher(enabled=False))
+    yield
+    bus.set_default(None)
