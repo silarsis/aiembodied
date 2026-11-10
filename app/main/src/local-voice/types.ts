@@ -72,6 +72,8 @@ export interface LocalVoiceSystemStatus {
   ready: boolean;
   /** The queued updates, for the status panel. */
   texts: string[];
+  /** At least one queued update is urgent (a question): it is announced even when no conversation is running. */
+  urgent: boolean;
 }
 
 /** Streamed from main to the renderer on `local-voice:event` while a reply is generated. */

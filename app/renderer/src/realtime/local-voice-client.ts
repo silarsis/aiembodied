@@ -19,6 +19,8 @@ export interface LocalVoiceClientCallbacks extends RealtimeClientCallbacks {
   onAssistantTranscript?: (text: string) => void;
   /** A system turn (an update from the coding agent) ran: the note the model was given, marked as not from the user. */
   onSystemNote?: (text: string) => void;
+  /** An urgent update was announced while no conversation was running: the note given to the model and its spoken reply. */
+  onAnnouncement?: (announcement: { note?: string; reply?: string }) => void;
   /** Turn progress: waiting → listening → transcribing → thinking → responding. */
   onActivity?: (activity: VoiceActivity) => void;
   /** A tool the model called (web_search, MCP tools), as it starts and when it finishes. */
@@ -80,6 +82,7 @@ export class LocalVoiceClient {
   private outputDeviceId: string | null = null;
   private unsubscribeEvents: (() => void) | null = null;
   private unsubscribeSystemReady: (() => void) | null = null;
+  private unsubscribeWatch: (() => void) | null = null;
   /** Main said an update for the assistant is ready; it runs as soon as the conversation is idle. */
   private systemReady = false;
   private statusTimer: number | null = null;
@@ -285,11 +288,91 @@ export class LocalVoiceClient {
     this.setActivity('off');
   }
 
+  /**
+   * Announce urgent updates even when the conversation is not running (state idle): an output-only
+   * turn that never opens the microphone. Non-urgent updates wait for the next conversation. Call
+   * once after creating the client; `unwatchUpdates` (or destroy) stops it.
+   */
+  watchUpdates(): void {
+    const bridge = this.getBridge();
+    if (!bridge || this.disposed || this.unsubscribeWatch) {
+      return;
+    }
+    let active = true;
+    const unsubscribe = bridge.onSystemReady?.((info) => {
+      if (this.state.status === 'connected') {
+        this.systemReady = true;
+        void this.maybeRunSystemTurn();
+      } else if (info?.urgent === true) {
+        void this.announce();
+      }
+    });
+    this.unsubscribeWatch = () => {
+      active = false;
+      unsubscribe?.();
+    };
+    // Updates that were queued before this window loaded.
+    void bridge
+      .systemStatus?.()
+      .then((status) => {
+        if (active && status.ready && status.urgent) {
+          void this.announce();
+        }
+      })
+      .catch(() => undefined);
+  }
+
+  unwatchUpdates(): void {
+    this.unsubscribeWatch?.();
+    this.unsubscribeWatch = null;
+  }
+
+  /** Output-only system turn while no conversation is running. State stays idle and the mic stays closed. */
+  private async announce(): Promise<void> {
+    const bridge = this.getBridge();
+    if (!bridge || this.disposed || this.busy || this.state.status !== 'idle') {
+      return;
+    }
+    this.busy = true;
+    const connectionId = this.connectionId;
+    let context: AudioContext | null = null;
+    try {
+      context = this.createAudioContext();
+      await context.resume?.();
+      if (connectionId !== this.connectionId || this.disposed) {
+        return;
+      }
+      const output = context.createMediaStreamDestination();
+      this.context = context;
+      this.output = output;
+      this.unsubscribeEvents = bridge.onEvent((event) => this.handleEvent(event));
+      this.callbacks.onRemoteStream?.(output.stream);
+      await this.respond(bridge, '', connectionId, true, true);
+    } catch (error) {
+      const failure = describe(error);
+      this.log('error', 'Local voice announcement failed', failure);
+    } finally {
+      if (connectionId === this.connectionId) {
+        this.unsubscribeEvents?.();
+        this.unsubscribeEvents = null;
+        this.output?.disconnect();
+        this.context = null;
+        this.output = null;
+        this.turn = null;
+        this.busy = false;
+        this.setActivity('off');
+      }
+      // A connect() during the announcement tore this context down already; otherwise close it here.
+      void context?.close().catch(() => undefined);
+    }
+  }
+
   async destroy(): Promise<void> {
     if (this.disposed) {
       return;
     }
     this.disposed = true;
+    this.unwatchUpdates();
     await this.disconnect();
   }
 
@@ -457,7 +540,13 @@ export class LocalVoiceClient {
   }
 
   /** Run one turn and play it. For a system turn `text` is empty; true if the assistant said something. */
-  private async respond(bridge: LocalVoiceBridge, text: string, connectionId: number, system: boolean): Promise<boolean> {
+  private async respond(
+    bridge: LocalVoiceBridge,
+    text: string,
+    connectionId: number,
+    system: boolean,
+    announcement = false,
+  ): Promise<boolean> {
     const context = this.context;
     const output = this.output;
     if (!context || !output) {
@@ -491,6 +580,12 @@ export class LocalVoiceClient {
       return false;
     }
     await wait(PLAYBACK_TAIL_MS);
+    if (announcement) {
+      if ((result.note || result.text) && !result.cancelled) {
+        this.callbacks.onAnnouncement?.({ note: result.note, reply: result.text || undefined });
+      }
+      return true;
+    }
     // A follow-up needs no wake word for a little while.
     this.awakeUntil = this.now() + this.wakeWindowMs;
     if (result.note) {

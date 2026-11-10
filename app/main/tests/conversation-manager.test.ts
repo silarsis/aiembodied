@@ -157,5 +157,60 @@ describe('ConversationManager', () => {
 
     expect(() => manager.appendMessage({ role: 'system', content: 'orphan message' })).toThrow();
   });
-});
 
+  describe('appendToRecentSession', () => {
+    const MIN = 60_000;
+
+    it('reuses the current session when its newest message is recent', () => {
+      const { store, state } = createStoreDouble();
+      const manager = new ConversationManager({ store });
+      const now = Date.now();
+      const session = manager.startSession({ startedAt: now - 2 * 60 * MIN });
+      manager.appendMessage({ sessionId: session.id, role: 'user', content: 'hi', ts: now - 5 * MIN });
+
+      const started = vi.fn();
+      manager.on('session-started', started);
+      const added = manager.appendToRecentSession([
+        { role: 'system', content: 'note', ts: now },
+        { role: 'assistant', content: 'reply', ts: now },
+      ]);
+
+      expect(started).not.toHaveBeenCalled();
+      expect(state.sessions).toHaveLength(1);
+      expect(added.map((m) => [m.role, m.content, m.sessionId])).toEqual([
+        ['system', 'note', session.id],
+        ['assistant', 'reply', session.id],
+      ]);
+    });
+
+    it('starts a new session when the current one has been idle too long', () => {
+      const { store, state } = createStoreDouble();
+      const manager = new ConversationManager({ store });
+      const now = Date.now();
+      const old = manager.startSession({ startedAt: now - 3 * 60 * MIN });
+      manager.appendMessage({ sessionId: old.id, role: 'user', content: 'hi', ts: now - 31 * MIN });
+
+      const started = vi.fn();
+      manager.on('session-started', started);
+      const added = manager.appendToRecentSession([{ role: 'system', content: 'note' }]);
+
+      expect(started).toHaveBeenCalledTimes(1);
+      expect(state.sessions).toHaveLength(2);
+      expect(added[0]?.sessionId).not.toBe(old.id);
+      expect(manager.getCurrentSessionId()).toBe(added[0]?.sessionId);
+    });
+
+    it('uses the start time of an empty session, and starts one when none exists', () => {
+      const { store, state } = createStoreDouble();
+      const manager = new ConversationManager({ store });
+      const first = manager.appendToRecentSession([{ role: 'system', content: 'a' }]);
+      expect(state.sessions).toHaveLength(1);
+
+      const empty = manager.startSession({ startedAt: Date.now() - 40 * MIN });
+      const second = manager.appendToRecentSession([{ role: 'system', content: 'b' }]);
+      expect(second[0]?.sessionId).not.toBe(empty.id);
+      expect(second[0]?.sessionId).not.toBe(first[0]?.sessionId);
+      expect(manager.appendToRecentSession([{ role: 'system', content: 'c' }], 60 * MIN)).toHaveLength(1);
+    });
+  });
+});

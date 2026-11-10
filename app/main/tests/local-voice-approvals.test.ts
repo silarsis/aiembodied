@@ -141,7 +141,16 @@ describe('LocalVoiceService system turns', () => {
     service.notify('a');
     expect(await service.respond({ requestId: 's2', text: '', system: true }, () => {})).toMatchObject({ cancelled: true });
     expect(chats).toHaveLength(0);
-    expect(service.systemStatus()).toMatchObject({ pending: 1, ready: false });
+    expect(service.systemStatus()).toMatchObject({ pending: 1, ready: false, urgent: false });
+  });
+
+  it('reports urgent when any queued update is urgent', () => {
+    const { service } = setup([]);
+    expect(service.systemStatus().urgent).toBe(false);
+    service.notify('routine');
+    expect(service.systemStatus().urgent).toBe(false);
+    service.notify('a question', { urgent: true });
+    expect(service.systemStatus().urgent).toBe(true);
   });
 
   it('joins updates that arrive within five seconds into one turn', async () => {

@@ -1389,6 +1389,19 @@ export default function App() {
           onSystemNote: (text) => {
             void recordTranscriptEntryRef.current({ speaker: 'system', text });
           },
+          onAnnouncement: ({ note, reply }) => {
+            // No conversation is running, so the announcement is saved here and only shown in the transcript.
+            const ts = Date.now();
+            void getPreloadApi()
+              ?.conversation?.announce?.({ note, reply, ts })
+              .catch((error: unknown) => console.error('Failed to persist announcement', error));
+            if (note) {
+              void recordTranscriptEntryRef.current({ speaker: 'system', text: note, timestamp: ts, persist: false });
+            }
+            if (reply) {
+              void recordTranscriptEntryRef.current({ speaker: 'assistant', text: reply, timestamp: ts + 1, persist: false });
+            }
+          },
           onActivity: setVoiceActivity,
           onToolCall: (call) => {
             const id = `${call.requestId}:${call.callId}`;
@@ -1433,6 +1446,17 @@ export default function App() {
       },
     });
   }, [hasRealtimeSupport, pushLatency, loadingConfig, isLocalBackend, wakePhrase, realtimeModel]);
+
+  // Urgent updates are announced even when the conversation is not running.
+  useEffect(() => {
+    if (!(realtimeClient instanceof LocalVoiceClient)) {
+      return undefined;
+    }
+    realtimeClient.watchUpdates();
+    return () => {
+      realtimeClient.unwatchUpdates();
+    };
+  }, [realtimeClient]);
 
   // Generate a test response based on the base prompt
   const handleTestResponse = useCallback(async () => {

@@ -117,6 +117,8 @@ export interface TalkBridge {
 export interface ConversationBridge {
   getHistory(): Promise<ConversationHistory>;
   appendMessage(message: ConversationAppendMessagePayload): Promise<ConversationMessage>;
+  /** Record an announcement made without a running conversation (the update note and Echo's reply). */
+  announce(entry: { note?: string; reply?: string; ts?: number }): Promise<ConversationMessage[]>;
   onSessionStarted(listener: (session: ConversationSession) => void): () => void;
   onMessageAppended(listener: (message: ConversationMessage) => void): () => void;
 }
@@ -142,7 +144,7 @@ export interface LocalVoiceBridge {
   /** Updates for Echo that are waiting to be spoken (from the coding agent). */
   systemStatus?(): Promise<LocalVoiceSystemStatus>;
   /** An update is ready: run a system turn if the conversation is idle. */
-  onSystemReady?(listener: () => void): () => void;
+  onSystemReady?(listener: (info?: { urgent: boolean }) => void): () => void;
   onEvent(listener: (event: LocalVoiceEvent) => void): () => void;
 }
 
