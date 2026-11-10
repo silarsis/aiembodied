@@ -11,14 +11,14 @@ Controls → Voice & engine → **Open models and servers** opens one pop-up tha
 | Talking | Hearing (`stt`) | Speech service, transcription server, OpenAI | Yes | The speech service uses the recogniser it was started with. |
 | Talking | Thinking (`llm`) | Chat model server, OpenAI | Yes | No retry once a reply has started streaming, or after the user stops it. |
 | Talking | Speaking (`tts`) | Speech service (Kokoro voices), OpenAI (Realtime voices, speaking style) | Yes | |
-| Talking | Moving (`motion`) | Motion service, OpenAI | No | OpenAI here means keyframe clips from the Animation clips job. `pnpm dev:run` starts this PC's motion service with the picked model (ardy or kimodo). |
+| Talking | Moving (`motion`) | Motion service, OpenAI | No | OpenAI here means keyframe clips from the Animation clips job. `pnpm dev:run` starts this PC's motion service with the picked model (ardy or kimodo), and restarts one that answers but reports its model failed to load (`/health` status `error`). |
 | Talking | Web search (`search`) | SearXNG, Brave Search | Yes | "Off" removes the `web_search` tool. |
 | Creating an avatar | Concept image (`image`) | ComfyUI | Yes, plus spread | Also texture repaints and backgrounds, and the pictures of room objects made for 3D rooms (see [3D rooms](3d-rooms.md)). Model is the image model picker from the studio. |
 | Creating an avatar | 3D model (`mesh`) | ComfyUI | Yes, plus spread | Hunyuan3D 2mv (default) or TRELLIS.2 picker. Painting and rigging always run in Blender on this PC. Room objects made for 3D rooms use this job too, from a single picture: TRELLIS.2 when it is installed, else Hunyuan3D 2mv from the front image alone; no Blender step. |
 | Helpers | Describe the avatar (`describe`) | Chat model server, OpenAI | No | Needs a model that reads images. |
-| Helpers | Make poses (`posegen`) | Chat model server, OpenAI | No | |
-| Helpers | Check poses (`posecheck`) | Chat model server, OpenAI | No | Needs a model that reads images. |
-| Helpers | Animation clips (`clips`) | Chat model server, OpenAI | No | |
+| Helpers | Make poses (`posegen`) | Chat model server, OpenAI | No | Not listed in the dialog: nothing in the app makes poses since the sidebar pose controls went. The route stays in the config. |
+| Helpers | Check poses (`posecheck`) | Chat model server, OpenAI | No | Needs a model that reads images. Not listed in the dialog, as for Make poses. |
+| Helpers | Animation clips (`clips`) | Chat model server, OpenAI | No | Only Moving's fallback: animation requests use the motion service (ARDY) whenever it is ready. Starts out on the same server and model as Thinking and follows it until you pick something else here. |
 | Rooms | Idle thoughts (`idle`) | Chat model server, OpenAI | Yes | Picks what the avatar does next on its own in a 3D room (see [3D rooms](3d-rooms.md)). Starts out on the same server and model as Thinking, backups included, and follows Thinking until you pick something else here. A small, fast model is enough: it gets one short prompt, no history, memory or tools, and answers in under 80 tokens. A failure or a 15 s timeout falls back to a random pick, so a slow or missing model never freezes the avatar. |
 | Rooms | Room layout (`scenelayout`) | Chat model server, OpenAI | Yes | Writes the furniture list and layout when you describe a 3D room (see [3D rooms](3d-rooms.md)). Starts out on the same server and model as Thinking, backups included, and follows Thinking until you pick something else here. One request (temperature 0.4, about 2500 tokens) that asks for a JSON object; a bigger model gives better rooms. An unusable reply is retried once with the problem, then the build fails with a message. |
 

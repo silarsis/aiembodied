@@ -271,7 +271,8 @@ export function defaultRoutes(providers: ProviderSettings, webSearchProvider = '
     describe: { server: openai, model: DEFAULT_HELPER_MODELS.describe },
     posegen: { server: openai, model: DEFAULT_HELPER_MODELS.posegen },
     posecheck: { server: openai, model: DEFAULT_HELPER_MODELS.posecheck },
-    clips: { server: openai, model: providers.motion.openaiModel },
+    // Only a fallback: Moving uses the motion service (ARDY) whenever it runs.
+    clips: { ...llm },
     idle: { ...llm },
     scenelayout: { ...llm },
     memory: { server: BUILT_IN_SERVER_IDS.memory },
@@ -307,8 +308,9 @@ export function resolveModelRouting(
       return Boolean(server && USE_SERVER_TYPES[use].includes(server.type));
     };
     const usable = saved && (fits(saved.server) || (USES_THAT_CAN_BE_OFF.includes(use) && saved.server === ''));
-    // Idle thoughts and Room layout follow Thinking (server, model and backups) until they are pointed somewhere else.
-    const base = usable ? saved : (use === 'idle' || use === 'scenelayout') && routes.llm ? routes.llm : defaults[use];
+    // Idle thoughts, Room layout and Animation clips follow Thinking (server, model and, where the use
+    // has them, backups) until they are pointed somewhere else.
+    const base = usable ? saved : (use === 'idle' || use === 'scenelayout' || use === 'clips') && routes.llm ? routes.llm : defaults[use];
     const primary = base.server;
     const seen = new Set([primary]);
     const backups = USES_WITH_BACKUPS.includes(use)

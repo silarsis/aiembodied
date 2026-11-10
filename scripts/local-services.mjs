@@ -101,6 +101,7 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
     describe: ['openai'],
     posegen: ['openai'],
     posecheck: ['openai'],
+    // Animation clips follow Thinking too, but only as Moving's fallback, so they don't start anything.
     clips: ['openai'],
     // Idle thoughts follow Thinking until routed elsewhere; with the OpenAI Realtime engine they do not
     // keep this PC's model running by themselves.
@@ -180,6 +181,9 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
       url: motionUrl,
       probe: `${motionUrl}/health`,
       script: 'services/motion/scripts/start.ps1',
+      // It keeps answering /health after its model failed to load (status "error"), for example
+      // when the text encoder was missing; a restart is the only way out, so dev:run does one.
+      restartIfFailed: true,
       // The text encoder (~16.5 GB) runs on the GPU by default. MOTION_TEXT_ENCODER_DEVICE=cpu
       // saves that GPU memory but needs the same in system RAM, which a unified-memory machine
       // with most of its RAM carved out for the GPU (bija: 31.6 GB visible) may not have.
@@ -234,12 +238,29 @@ function isLocalUrl(url) {
 
 /** True when the server answers at all: llama-server returns 503 while a model loads. */
 async function responds(probeUrl, fetchFn, timeoutMs) {
+  return (await probe(probeUrl, fetchFn, timeoutMs)).answered;
+}
+
+/**
+ * Whether the server answers, and the load error its health JSON reports (`status: "error"`,
+ * as the motion service does when its model failed to load), if any.
+ */
+async function probe(probeUrl, fetchFn, timeoutMs) {
+  let response;
   try {
-    await fetchFn(probeUrl, { signal: AbortSignal.timeout(timeoutMs) });
-    return true;
+    response = await fetchFn(probeUrl, { signal: AbortSignal.timeout(timeoutMs) });
   } catch {
-    return false;
+    return { answered: false, error: null };
   }
+  try {
+    const body = await response.json();
+    if (body && typeof body === 'object' && body.status === 'error') {
+      return { answered: true, error: typeof body.error === 'string' && body.error ? body.error : 'load failed' };
+    }
+  } catch {
+    // Not JSON: answering is all we can tell.
+  }
+  return { answered: true, error: null };
 }
 
 function psQuote(value) {
@@ -269,7 +290,7 @@ export function buildStartCommand({ script, args, cwd, logPath, errPath, pidPath
 
 /**
  * Check each service and start the ones that are down. Returns one line per service:
- * running | started | skipped (with the reason).
+ * running | started | restarted (it answered but its model had failed to load) | skipped | failed.
  */
 export async function ensureLocalServices(repoRoot, env, {
   fetchFn = fetch,
@@ -285,10 +306,24 @@ export async function ensureLocalServices(repoRoot, env, {
       results.push({ id: service.id, status: 'skipped', reason: 'not needed with this configuration' });
       continue;
     }
-    if (await responds(service.probe, fetchFn, probeTimeoutMs)) {
-      results.push({ id: service.id, status: 'running', url: service.url });
-      log.info?.(`[info] ${service.label} is already running at ${service.url}`);
-      continue;
+    const state = await probe(service.probe, fetchFn, probeTimeoutMs);
+    let restarting = false;
+    if (state.answered) {
+      const canRestart = service.restartIfFailed && isLocalUrl(service.url) && platform === 'win32';
+      if (!state.error || !canRestart) {
+        results.push({ id: service.id, status: 'running', url: service.url, ...(state.error ? { error: state.error } : {}) });
+        if (state.error) log.warn?.(`[warn] ${service.label} is running at ${service.url} but failed to load: ${state.error}`);
+        else log.info?.(`[info] ${service.label} is already running at ${service.url}`);
+        continue;
+      }
+      log.warn?.(`[warn] ${service.label} at ${service.url} failed to load (${state.error}); restarting it.`);
+      const stopped = stopByPort(repoRoot, new URL(service.url).port, spawnSyncFn);
+      if (!stopped) {
+        results.push({ id: service.id, status: 'failed', reason: `could not stop it to restart (it failed to load: ${state.error})` });
+        log.warn?.(`[warn] Could not stop ${service.label} to restart it.`);
+        continue;
+      }
+      restarting = true;
     }
     if (!isLocalUrl(service.url)) {
       results.push({ id: service.id, status: 'skipped', reason: `${service.url} is not on this machine` });
@@ -331,10 +366,22 @@ export async function ensureLocalServices(repoRoot, env, {
       log.warn?.(`[warn] Could not start ${service.label}: ${reason}`);
       continue;
     }
-    results.push({ id: service.id, status: 'started', url: service.url, logPath, pid });
-    log.info?.(`[info] Started ${service.label} at ${service.url} (pid ${pid}, log: ${logPath})`);
+    results.push({ id: service.id, status: restarting ? 'restarted' : 'started', url: service.url, logPath, pid });
+    log.info?.(`[info] ${restarting ? 'Restarted' : 'Started'} ${service.label} at ${service.url} (pid ${pid}, log: ${logPath})`);
   }
   return results;
+}
+
+/** Stop whatever listens on `port` with scripts/stop-service.ps1; true when that succeeded. */
+function stopByPort(repoRoot, port, spawnSyncFn) {
+  const script = join(repoRoot, 'scripts', 'stop-service.ps1');
+  const result = spawnSyncFn('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', script, '-Port', String(port)], {
+    cwd: repoRoot,
+    stdio: 'ignore',
+    windowsHide: true,
+    timeout: 15_000,
+  });
+  return result?.status === 0;
 }
 
 export function shouldStartServices(argv, env) {
