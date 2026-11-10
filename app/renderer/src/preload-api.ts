@@ -1,4 +1,5 @@
 import type { SwitchboardBridge } from '../../main/src/switchboard/bridge-types.js';
+import type { PresenceBridge } from '../../main/src/presence/bridge-types.js';
 import type { GpuMemoryBridge } from '../../main/src/diagnostics/gpu-memory.js';
 import type { CodingBridge, CodingBusyBridge, CodingTasksBridge } from '../../main/src/coding/bridge-types.js';
 import type { ApprovalsBridge } from '../../main/src/tools/approvals-ipc.js';
@@ -164,6 +165,7 @@ export interface PreloadApi {
   memoryEngine?: MemoryEngineBridge;
   gpuMemory?: GpuMemoryBridge;
   switchboard?: SwitchboardBridge;
+  presence?: PresenceBridge;
   coding?: CodingBridge;
   codingTasks?: CodingTasksBridge;
   codingBusy?: CodingBusyBridge;

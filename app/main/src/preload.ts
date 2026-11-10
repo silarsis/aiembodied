@@ -73,6 +73,7 @@ import type {
 import type { OpenAIFunction } from './tools/tool-registry.js';
 import type { MemoryEngineBridge } from './memory-engine/bridge-types.js';
 import type { SwitchboardBridge } from './switchboard/bridge-types.js';
+import type { PresenceBridge } from './presence/bridge-types.js';
 import type { GpuMemoryBridge } from './diagnostics/gpu-memory.js';
 import type { CodingBridge, CodingBusy, CodingBusyBridge, CodingTasksBridge, RunnerEvent } from './coding/bridge-types.js';
 import type { CodingStatus, CodingView } from './coding/coding-service.js';
@@ -225,6 +226,7 @@ export interface PreloadApi {
   memoryEngine?: MemoryEngineBridge;
   gpuMemory?: GpuMemoryBridge;
   switchboard?: SwitchboardBridge;
+  presence?: PresenceBridge;
   coding?: CodingBridge;
   codingTasks?: CodingTasksBridge;
   codingBusy?: CodingBusyBridge;
@@ -729,6 +731,11 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
   },
   switchboard: {
     status: () => ipcRenderer.invoke('switchboard:status'),
+  },
+  presence: {
+    update: (payload) => ipcRenderer.invoke('presence:update', payload),
+    getDoNotDisturb: () => ipcRenderer.invoke('presence:get-dnd'),
+    setDoNotDisturb: (enabled) => ipcRenderer.invoke('presence:set-dnd', enabled),
   },
   gpuMemory: {
     read: () => ipcRenderer.invoke('diagnostics:gpu-memory'),

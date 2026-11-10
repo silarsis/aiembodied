@@ -9,6 +9,8 @@ import type { RoomGenerationService } from './rooms/room-generation.js';
 import { SwitchboardClient, makeEventId } from './switchboard/client.js';
 import { LocalOnlyBus, type SwitchboardBus } from './switchboard/bus.js';
 import { AvatarInbox } from './switchboard/inbox.js';
+import { deliberate } from './switchboard/deliberate.js';
+import { PresenceTracker, isVoicePhase } from './presence/presence.js';
 import { DEFAULT_AVATAR_ID, SwitchboardMirror } from './switchboard/mirror.js';
 import dotenv from 'dotenv';
 import path from 'node:path';
@@ -321,6 +323,11 @@ let switchboardMirror: SwitchboardMirror | null = null;
 // Where events go: the client, or a local-only bus when the switchboard is off. Always set once the app is ready.
 let switchboardBus: SwitchboardBus | null = null;
 let avatarInbox: AvatarInbox | null = null;
+/** Whether Kevin is around, for the inbox's decision step. Do-not-disturb is saved in the memory store. */
+const presence = new PresenceTracker({
+  getValue: (key) => memoryStore?.getValue(key) ?? null,
+  setValue: (key, value) => memoryStore?.setValue(key, value),
+});
 /** The voice turn being answered now, so tool results can name their turn. */
 let activeVoiceRequestId: string | undefined;
 const seenApprovalIds = new Set<string>();
@@ -1928,6 +1935,7 @@ function registerIpcHandlers(
     }
     switchboardMirror?.turnStarted(payload.requestId, { text: payload.text, system: payload.system === true, preview: payload.preview === true });
     activeVoiceRequestId = payload.requestId;
+    if (!payload.preview && !payload.system) presence.update({ lastUserSpeechAt: Date.now() });
     try {
       const result = await localVoiceService.respond(payload, (voiceEvent) => {
         if (!sender.isDestroyed()) {
@@ -1935,6 +1943,7 @@ function registerIpcHandlers(
         }
       });
       if (!payload.preview) switchboardMirror?.turnFinished(payload.requestId, { text: result.text, cancelled: result.cancelled });
+      if (!payload.preview && result.text) presence.update({ lastAssistantSpokeAt: Date.now() });
       return result;
     } catch (error) {
       if (!payload.preview) switchboardMirror?.turnFinished(payload.requestId, { text: '', error: error instanceof Error ? error.message : String(error) });
@@ -1942,6 +1951,20 @@ function registerIpcHandlers(
     } finally {
       if (activeVoiceRequestId === payload.requestId) activeVoiceRequestId = undefined;
     }
+  });
+  ipcMain.handle('presence:update', (_event, payload: unknown) => {
+    const p = (typeof payload === 'object' && payload !== null ? payload : {}) as Record<string, unknown>;
+    presence.update({
+      listening: typeof p.listening === 'boolean' ? p.listening : undefined,
+      voicePhase: isVoicePhase(p.voicePhase) ? p.voicePhase : undefined,
+      faceSeenAt: typeof p.faceSeenAt === 'number' ? p.faceSeenAt : undefined,
+    });
+    return true;
+  });
+  ipcMain.handle('presence:get-dnd', () => presence.doNotDisturb);
+  ipcMain.handle('presence:set-dnd', (_event, enabled: unknown) => {
+    presence.update({ doNotDisturb: enabled === true });
+    return presence.doNotDisturb;
   });
   ipcMain.handle('local-voice:cancel', (_event, requestId?: string) => {
     localVoiceService?.cancel(typeof requestId === 'string' ? requestId : undefined);
@@ -2329,6 +2352,15 @@ app.whenReady().then(async () => {
       avatarId: DEFAULT_AVATAR_ID,
       bus: switchboardBus,
       notify: (text, options) => localVoiceService?.notify(text, options),
+      deliberate: (event) =>
+        deliberate(event, presence, { routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger }),
+      remember: (event, text) => {
+        const source = typeof event.payload.source === 'string' ? event.payload.source : `${event.producer.kind}:${event.producer.id}`;
+        conversationManager?.appendToRecentSession([
+          { role: 'system', content: `[Update from ${source}, not from Kevin, saved quietly] ${text}`, ts: Date.now() },
+        ]);
+      },
+      doNotDisturb: () => presence.doNotDisturb,
       logger,
     });
     avatarInbox.start();
@@ -2336,6 +2368,7 @@ app.whenReady().then(async () => {
 
   try {
     memoryStore = new MemoryStore({ filePath: path.join(app.getPath('userData'), 'memory.db') });
+    presence.hydrate();
     avatarModelService = new AvatarModelService({
       store: memoryStore,
       modelsDirectory: path.join(app.getPath('userData'), 'vrm-models'),
