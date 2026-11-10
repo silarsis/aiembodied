@@ -5,6 +5,7 @@ import type { ModelRoute, ServerType, UseId } from './config/model-routing.js';
 import type { ServerProbe } from './config/model-server-probe.js';
 import type { BaseModelSuggestions, CivitaiLookup } from './avatar/generation/civitai.js';
 import type { HfLookup } from './local-llm/huggingface.js';
+import type { LocalLlmSettings } from './local-llm/llm-settings.js';
 import type { LlmDownload, LocalLlmList } from './local-llm/llm-library.js';
 import type { VisionStatus } from './local-vision/vision-model.js';
 import type { ModelDownload } from './avatar/generation/model-downloads.js';
@@ -199,8 +200,11 @@ export interface ModelsBridge {
   visionDownload?(ref?: string): Promise<VisionStatus>;
   visionCancel?(): Promise<VisionStatus>;
   localLlms?(): Promise<LocalLlmList>;
-  /** Run a downloaded model for Thinking (null: llama-server's default) and restart llama-server. */
-  useLocalLlm?(id: string | null): Promise<{ message: string; library: LocalLlmList; models: ModelRoutingView }>;
+  /**
+   * Run a downloaded model for Thinking (null: llama-server's default) and restart llama-server.
+   * With settings, the slots and per-slot context are saved first.
+   */
+  useLocalLlm?(id: string | null, settings?: Partial<LocalLlmSettings>): Promise<{ message: string; library: LocalLlmList; models: ModelRoutingView }>;
   deleteLocalLlm?(id: string): Promise<LocalLlmList>;
 }
 
@@ -431,7 +435,7 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     visionDownload: (ref) => ipcRenderer.invoke('models:vision-download', ref) as Promise<VisionStatus>,
     visionCancel: () => ipcRenderer.invoke('models:vision-cancel') as Promise<VisionStatus>,
     localLlms: () => ipcRenderer.invoke('models:local-llms') as Promise<LocalLlmList>,
-    useLocalLlm: (id) => ipcRenderer.invoke('models:use-local-llm', id) as Promise<{ message: string; library: LocalLlmList; models: ModelRoutingView }>,
+    useLocalLlm: (id, settings) => ipcRenderer.invoke('models:use-local-llm', id, settings) as Promise<{ message: string; library: LocalLlmList; models: ModelRoutingView }>,
     deleteLocalLlm: (id) => ipcRenderer.invoke('models:delete-local-llm', id) as Promise<LocalLlmList>,
   },
   realtime: {

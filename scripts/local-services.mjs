@@ -11,7 +11,7 @@
  *
  * Settings come from the environment or .env: the same URLs the app uses (LOCAL_LLM_BASE_URL,
  * STT_URL, SPEECH_SERVICE_URL, MOTION_SERVICE_URL, MEMORY_SERVICE_URL, SEARXNG_URL, CODING_RUNNER_URL) plus the paths the start scripts need
- * (KOKORO_DIR, MOTION_VENV, TEXT_ENCODERS_DIR, LOCAL_LLM_CONTEXT, ...). What the user saved on the
+ * (KOKORO_DIR, MOTION_VENV, TEXT_ENCODERS_DIR, LOCAL_LLM_SLOTS, LOCAL_LLM_CONTEXT (per slot), ...). What the user saved on the
  * app's Settings page wins over the environment, as it does in the app: a part switched to OpenAI
  * needs no local server, and the motion model picked there is the one services/motion starts with.
  * Skip it all with --no-services or DEV_START_SERVICES=0.
@@ -59,14 +59,32 @@ export function readSavedPreferences(repoRoot) {
  * The thinking model picked in the app (Models and servers → Thinking → Download a thinking model),
  * from local-llm.json beside preferences.json, or null for the start script's default.
  */
+/** The slots (1..8) and per-slot context (4096 or more) saved in local-llm.json, when valid. Mirrors local-llm/llm-settings.ts. */
+function readSlotSettings(library) {
+  const slots = Number.parseInt(library?.slots, 10);
+  const contextPerSlot = Number.parseInt(library?.contextPerSlot, 10);
+  return {
+    ...(Number.isFinite(slots) ? { slots: Math.min(8, Math.max(1, slots)) } : {}),
+    ...(Number.isFinite(contextPerSlot) ? { contextPerSlot: Math.max(4096, contextPerSlot) } : {}),
+  };
+}
+
 export function readSelectedLocalLlm(repoRoot, exists = existsSync) {
   for (const preferences of savedPreferencesPaths(repoRoot)) {
     try {
       const library = JSON.parse(readFileSync(join(dirname(preferences), 'local-llm.json'), 'utf8'));
       const model = Array.isArray(library?.models) ? library.models.find((entry) => entry?.id === library.selected) : undefined;
       if (model && typeof model.path === 'string' && typeof model.alias === 'string' && exists(model.path)) {
-        return { path: model.path, alias: model.alias, ...(Number(model.contextLength) > 0 ? { contextLength: Number(model.contextLength) } : {}) };
+        return {
+          path: model.path,
+          alias: model.alias,
+          ...(Number(model.contextLength) > 0 ? { contextLength: Number(model.contextLength) } : {}),
+          ...readSlotSettings(library),
+        };
       }
+      // No model picked (the start script's own default): the slots can still be set.
+      const settings = readSlotSettings(library);
+      if (Object.keys(settings).length) return { ...settings };
     } catch {
       // Missing or unreadable; try the next one.
     }
@@ -133,14 +151,19 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
   const speechUrl = trimSlash(builtInUrl('local-speech') || providers.speechServiceUrl || env.SPEECH_SERVICE_URL || 'http://127.0.0.1:8192');
   const motionUrl = trimSlash(builtInUrl('local-motion') || providers.motion?.localServiceUrl || env.MOTION_SERVICE_URL || 'http://127.0.0.1:8190');
   const searxngUrl = trimSlash(builtInUrl('local-searxng') || env.SEARXNG_URL || 'http://127.0.0.1:8888');
+  const switchboardUrl = trimSlash(env.SWITCHBOARD_URL || 'http://127.0.0.1:8196');
   const memoryUrl = trimSlash(env.MEMORY_SERVICE_URL || 'http://127.0.0.1:8194');
   // The coding runner: the built-in server, unless the app points coding at a runner on another machine.
   const coderServer = typeof saved.coding?.runner === 'string' && saved.coding.runner ? saved.coding.runner : 'local-coder-runner';
   const coderUrl = trimSlash(builtInUrl('local-coder-runner') || env.CODING_RUNNER_URL || 'http://127.0.0.1:8195');
   const speechForStt = pipeline && usedBy('local-speech', ['stt']);
   // A model downloaded in the app runs with its own name, and no more context than it was made for.
-  const contextCap = Number.parseInt(env.LOCAL_LLM_CONTEXT ?? '', 10) > 0 ? Number.parseInt(env.LOCAL_LLM_CONTEXT, 10) : 65536;
-  const llmContext = localLlm?.contextLength ? String(Math.min(localLlm.contextLength, contextCap)) : env.LOCAL_LLM_CONTEXT;
+  // Slots and context per slot: what the app saved, else LOCAL_LLM_SLOTS / LOCAL_LLM_CONTEXT, else 2 x 64K.
+  const envSlots = Number.parseInt(env.LOCAL_LLM_SLOTS ?? '', 10);
+  const llmSlots = localLlm?.slots ?? (Number.isFinite(envSlots) ? Math.min(8, Math.max(1, envSlots)) : 2);
+  const envContext = Number.parseInt(env.LOCAL_LLM_CONTEXT ?? '', 10);
+  const contextCap = localLlm?.contextPerSlot ?? (envContext > 0 ? envContext : 65536);
+  const llmContext = String(localLlm?.contextLength ? Math.min(localLlm.contextLength, contextCap) : contextCap);
 
   const services = [
     {
@@ -153,7 +176,10 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
       args: [
         ...portArgs(llmUrl),
         ...(localLlm ? ['-Model', localLlm.path, '-Alias', localLlm.alias] : []),
-        ...(llmContext ? ['-Context', llmContext] : []),
+        '-Slots',
+        String(llmSlots),
+        '-Context',
+        llmContext,
       ],
     },
     {
@@ -222,6 +248,15 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
       probe: `${coderUrl}/v1/health`,
       script: 'services/coder/scripts/start.ps1',
       args: portArgs(coderUrl),
+    },
+    {
+      id: 'switchboard',
+      label: 'Switchboard event bus (services/switchboard)',
+      enabled: isOn(env.SWITCHBOARD_ENABLED, true) && isOn(env.SWITCHBOARD_AUTOSTART, true),
+      url: switchboardUrl,
+      probe: `${switchboardUrl}/health`,
+      script: 'services/switchboard/scripts/start.ps1',
+      args: portArgs(switchboardUrl),
     },
   ];
 

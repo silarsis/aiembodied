@@ -7,7 +7,10 @@
   the other will find it on the same port. The app reaches it through LOCAL_LLM_BASE_URL
   (default http://127.0.0.1:1234/v1) and asks for LOCAL_LLM_MODEL (default qwen-next-flash,
   the --alias below). It needs ~92 GB, so stop ComfyUI first if it holds Qwen-Image.
-  The context size comes from -Context or LOCAL_LLM_CONTEXT (default 65536).
+  -Slots (or LOCAL_LLM_SLOTS, default 2, 1 to 8) is how many conversations it serves at once, one
+  slot per avatar so each keeps its own prompt cache. -Context (or LOCAL_LLM_CONTEXT, default
+  65536) is the context PER SLOT; llama-server's own -c is the total, so it is given Context x Slots.
+  Two slots of 64K reserve 128K tokens of context in all. A larger model may want fewer or smaller.
   A model downloaded from Hugging Face in the app (Models and servers -> Thinking) is passed in as
   -Model and -Alias by the app and by pnpm dev:run.
 
@@ -20,7 +23,9 @@ param(
   [string]$Model = $env:LOCAL_LLM_GGUF,
   [string]$Alias = 'qwen-next-flash',
   [int]$Port = 1234,
-  # 64K costs only ~1.5 GB more commit than 16K: the ~86 GB is almost all weights.
+  # Conversations at once; each slot keeps its own prompt cache.
+  [int]$Slots = $(if ($env:LOCAL_LLM_SLOTS) { [int]$env:LOCAL_LLM_SLOTS } else { 2 }),
+  # Context per slot. 64K costs only ~1.5 GB more commit than 16K: the ~86 GB is almost all weights.
   [int]$Context = $(if ($env:LOCAL_LLM_CONTEXT) { [int]$env:LOCAL_LLM_CONTEXT } else { 65536 }),
   [string]$Device = 'Vulkan0'
 )
@@ -33,10 +38,12 @@ if (-not $Model) {
 }
 if (-not $Model -or -not (Test-Path $Model)) { throw 'Model GGUF not found. Pass -Model or set LOCAL_LLM_GGUF.' }
 
+$Slots = [Math]::Min(8, [Math]::Max(1, $Slots))
+$TotalContext = $Context * $Slots
 $cliArgs = @('-m', $Model, '--port', $Port, '--host', '127.0.0.1', '--alias', $Alias,
-             '-c', $Context, '--parallel', '1', '--flash-attn', 'on', '--no-context-shift',
+             '-c', $TotalContext, '--parallel', $Slots, '--flash-attn', 'on', '--no-context-shift',
              '-ngl', '-1', '--jinja', '--device', $Device)
-Write-Host "Starting llama-server ($Alias) on http://127.0.0.1:$Port/v1"
+Write-Host "Starting llama-server ($Alias) on http://127.0.0.1:$Port/v1 with $Slots slot(s) of $Context tokens of context each ($TotalContext in all)"
 # Native stderr (llama.cpp/uvicorn logs) must not become terminating errors under 'Stop'.
 $ErrorActionPreference = 'Continue'
 & $LlamaServer @cliArgs

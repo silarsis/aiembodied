@@ -155,6 +155,46 @@ more depth and are linked where they apply.
   since it last spoke). Kevin suggested "laya" for this check; still to be
   identified. Small actions (a glance, a stretch) can happen without speech.
 
+## Avatars together
+
+Design and decisions: [Echo event bus Claude Doc](https://claude.ai/artifact/5zmHyKjHcRsYBSjWbCMmvB).
+
+### Event bus (switchboard)
+
+- **Today:** every path (voice, tools, approvals, coding runner, Home
+  Assistant) is a separate link through the Electron main process, with no
+  avatar id, person id or link between a request and its outcome.
+- **Decided (2026-11-09):** a Python "switchboard" service on :8196 with one
+  event envelope (producer, addressees, transaction, audience), a SQLite
+  journal and transaction ledger, and a floor manager per scene using rules
+  first, then bids. Audio and motion stay on their direct paths.
+- **Built (phase 1, mirror only):** `services/switchboard` and the app's mirror
+  (`app/main/src/switchboard`) copy voice turns, tool results, approvals,
+  coding events and queued updates onto the bus; app behaviour is unchanged.
+- **To do:** build it locally in phases: mirror today's events, make Echo an
+  actor with an inbox policy, then several local avatars.
+
+### Several avatars in one scene
+
+- **Decided (2026-11-09):** every avatar shares the same models by default
+  (no loading or unloading between avatars), with its own settings: prompt,
+  voice and so on. An avatar may instead use a remote server option (for
+  example one on ChatGPT, one local). Avatars talk to each other out loud and
+  over a back channel, with a toggle for whether Kevin hears their chatter.
+
+### Voice ID
+
+- **To do (not started, separate work):** tell people apart by voice (Kevin,
+  Erika, guests), so the avatars know who is speaking and memory records it.
+
+### Remote avatars (AvChat)
+
+- **To do (after local works):** remote avatars talk over a text channel
+  only, like WhatsApp messages between them, through an internal "AvChat" app
+  the avatars use. Kevin will test with a copy of the avatar on another server.
+- **To do:** decide the remote protocol (our own envelope between switchboards,
+  or A2A at the edge). See the Remote avatars section of the design doc.
+
 ## Interface
 
 ### Display modes and interface clean-up
