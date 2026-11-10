@@ -6,6 +6,7 @@ import type { ServerProbe } from './config/model-server-probe.js';
 import type { BaseModelSuggestions, CivitaiLookup } from './avatar/generation/civitai.js';
 import type { HfLookup } from './local-llm/huggingface.js';
 import type { LlmDownload, LocalLlmList } from './local-llm/llm-library.js';
+import type { VisionStatus } from './local-vision/vision-model.js';
 import type { ModelDownload } from './avatar/generation/model-downloads.js';
 import type { AudioDevicePreferences } from './config/preferences-store.js';
 import type { ProviderSettingsPatch } from './config/provider-settings.js';
@@ -193,6 +194,10 @@ export interface ModelsBridge {
   hfDownload?(repo: string, quant: string, use: boolean): Promise<LlmDownload>;
   hfDownloads?(): Promise<LlmDownload[]>;
   hfCancel?(id: string): Promise<LlmDownload[]>;
+  /** The local vision model for Describe the avatar: download status, start a download (default model, or a link / owner/repo[:QUANT]), cancel. */
+  visionStatus?(): Promise<VisionStatus>;
+  visionDownload?(ref?: string): Promise<VisionStatus>;
+  visionCancel?(): Promise<VisionStatus>;
   localLlms?(): Promise<LocalLlmList>;
   /** Run a downloaded model for Thinking (null: llama-server's default) and restart llama-server. */
   useLocalLlm?(id: string | null): Promise<{ message: string; library: LocalLlmList; models: ModelRoutingView }>;
@@ -422,6 +427,9 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     hfDownload: (repo, quant, use) => ipcRenderer.invoke('models:hf-download', { repo, quant, use }) as Promise<LlmDownload>,
     hfDownloads: () => ipcRenderer.invoke('models:hf-downloads') as Promise<LlmDownload[]>,
     hfCancel: (id) => ipcRenderer.invoke('models:hf-cancel', id) as Promise<LlmDownload[]>,
+    visionStatus: () => ipcRenderer.invoke('models:vision-status') as Promise<VisionStatus>,
+    visionDownload: (ref) => ipcRenderer.invoke('models:vision-download', ref) as Promise<VisionStatus>,
+    visionCancel: () => ipcRenderer.invoke('models:vision-cancel') as Promise<VisionStatus>,
     localLlms: () => ipcRenderer.invoke('models:local-llms') as Promise<LocalLlmList>,
     useLocalLlm: (id) => ipcRenderer.invoke('models:use-local-llm', id) as Promise<{ message: string; library: LocalLlmList; models: ModelRoutingView }>,
     deleteLocalLlm: (id) => ipcRenderer.invoke('models:delete-local-llm', id) as Promise<LocalLlmList>,

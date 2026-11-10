@@ -4,6 +4,7 @@ import type { ApprovalsBridge } from '../../main/src/tools/approvals-ipc.js';
 import type { CivitaiLookup } from '../../main/src/avatar/generation/civitai.js';
 import type { HfLookup } from '../../main/src/local-llm/huggingface.js';
 import type { LlmDownload, LocalLlmList } from '../../main/src/local-llm/llm-library.js';
+import type { VisionStatus } from '../../main/src/local-vision/vision-model.js';
 import type { ModelDownload } from '../../main/src/avatar/generation/model-downloads.js';
 import type { BackgroundBridge } from '../../main/src/backgrounds/types.js';
 import type { ConfigSecretKey, ModelRoutingView, RendererConfig } from '../../main/src/config/config-manager.js';
@@ -77,6 +78,10 @@ export interface ModelsBridge {
   hfDownload?(repo: string, quant: string, use: boolean): Promise<LlmDownload>;
   hfDownloads?(): Promise<LlmDownload[]>;
   hfCancel?(id: string): Promise<LlmDownload[]>;
+  /** The local vision model for Describe the avatar: download status, start a download (default model, or a link / owner/repo[:QUANT]), cancel. */
+  visionStatus?(): Promise<VisionStatus>;
+  visionDownload?(ref?: string): Promise<VisionStatus>;
+  visionCancel?(): Promise<VisionStatus>;
   localLlms?(): Promise<LocalLlmList>;
   /** Run a downloaded model for Thinking (null: llama-server's default) and restart llama-server. */
   useLocalLlm?(id: string | null): Promise<{ message: string; library: LocalLlmList; models: ModelRoutingView }>;

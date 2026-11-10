@@ -182,6 +182,12 @@ describe('local services', () => {
     expect(llm({}, { conversationBackend: 'openai', models: { routes: { idle: { server: 'local-llm' } } } })?.enabled).toBe(true);
   });
 
+  it('never starts the vision model, and Describe the avatar on it does not keep the language model on', () => {
+    const services = describeLocalServices('/repo', { LLM_PROVIDER: 'openai', STT_PROVIDER: 'openai', TTS_PROVIDER: 'openai' }, {});
+    expect(services.map((s: { id: string }) => s.id)).not.toContain('vision');
+    expect(services.find((s: { id: string }) => s.id === 'llm')?.enabled).toBe(false);
+  });
+
   it('starts the coding runner with its port, and leaves a runner on another machine alone', () => {
     const coder = (env: Record<string, string>, saved: object = {}) =>
       describeLocalServices('/repo', env, saved).find((s: { id: string }) => s.id === 'coder');

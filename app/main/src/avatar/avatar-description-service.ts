@@ -77,6 +77,9 @@ export class AvatarDescriptionService {
       ).responses.create({
         model: this.model,
         input,
+        // A short reply on any model: a local vision model would otherwise ramble.
+        max_output_tokens: 300,
+        temperature: 0.3,
       });
 
       const description = response?.output_text?.trim() ?? '';

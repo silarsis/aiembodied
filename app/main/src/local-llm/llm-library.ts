@@ -66,6 +66,10 @@ export interface LlmLibraryOptions {
   fetchFn?: typeof fetch;
   /** Free bytes on the drive holding `directory` (null when it can't be told). */
   freeSpace?: (directory: string) => Promise<number | null>;
+  /** Folder name for a repo's files under modelsDirectory. Default: <owner>/<repo>. */
+  folderName?: (repo: string) => string;
+  /** Called instead of recording the model in `file` once a download is verified (for libraries kept elsewhere). */
+  persist?: (model: LocalLlmModel) => Promise<void>;
   /** Called after a download that should be put to use; returns what happened, for the page. */
   onDownloaded?: (model: LocalLlmModel) => Promise<string | undefined>;
   logger?: { info(message: string, meta?: unknown): void; warn(message: string, meta?: unknown): void };
@@ -163,7 +167,7 @@ export class LlmLibrary {
 
   /** Where a repo's files go. */
   folderFor(repo: string): string {
-    return path.join(this.options.modelsDirectory, ...repo.split('/'));
+    return path.join(this.options.modelsDirectory, ...(this.options.folderName ? [this.options.folderName(repo)] : repo.split('/')));
   }
 
   /** Start downloading one size of a repo. It carries on in the background; poll list(). */
@@ -217,8 +221,12 @@ export class LlmLibrary {
           ...(contextLength ? { contextLength } : {}),
           downloadedAt: Date.now(),
         };
-        const library = await this.read();
-        await this.write({ ...library, models: [...library.models.filter((entry) => entry.id !== id), model] });
+        if (this.options.persist) {
+          await this.options.persist(model);
+        } else {
+          const library = await this.read();
+          await this.write({ ...library, models: [...library.models.filter((entry) => entry.id !== id), model] });
+        }
         download.state = 'done';
         if (use && this.options.onDownloaded) {
           download.result = await this.options.onDownloaded(model).catch(
