@@ -130,6 +130,12 @@ const ARRIVE_HEADING_DELAY = 0.5;
 const LOOK_TOLERANCE = (20 * Math.PI) / 180;
 const FACE_TOLERANCE = (25 * Math.PI) / 180;
 const MIN_WALK = 0.25;
+/** Turn on the spot before walking when the path starts further than this from straight ahead. */
+const TURN_FIRST_ANGLE = (60 * Math.PI) / 180;
+/** How far along the path its starting direction is measured. */
+const TURN_LOOKAHEAD = 0.4;
+/** Seconds the walk waits after the turn has finished. */
+const TURN_SETTLE_S = 0.2;
 const SIT_APPROACH = 0.45;
 const SEAT_HEIGHT_OFFSET = 0.08;
 const REACH_DISTANCE = 0.7;
@@ -302,6 +308,39 @@ function pathInMotionFrame(world: PlanWorld, path: Vec3[]): Array<[number, numbe
   return points;
 }
 
+/** Heading (motion frame) of the path's start: toward the point `TURN_LOOKAHEAD` metres along it. */
+export function pathStartHeading(points: Array<[number, number]>): number | null {
+  let travelled = 0;
+  let previous = points[0];
+  if (!previous) return null;
+  for (const point of points.slice(1)) {
+    const leg = Math.hypot(point[0] - previous[0], point[1] - previous[1]);
+    travelled += leg;
+    if (travelled >= TURN_LOOKAHEAD || point === points[points.length - 1]) {
+      const origin = points[0] ?? [0, 0];
+      if (Math.hypot(point[0] - origin[0], point[1] - origin[1]) < 1e-6) return null;
+      return Math.atan2(point[0] - origin[0], point[1] - origin[1]);
+    }
+    previous = point;
+  }
+  return null;
+}
+
+/**
+ * When the path starts well off to the side or behind, the avatar turns on the spot to face along
+ * it first, then walks, instead of setting off sideways or backwards. Returns when the walk starts
+ * and the turn target (none when the path starts roughly ahead).
+ */
+export function walkStart(world: PlanWorld, points: Array<[number, number]>): { startS: number; targets: AvatarMotionTarget[] } {
+  const heading = pathStartHeading(points);
+  if (heading === null || Math.abs(heading) <= TURN_FIRST_ANGLE) return { startS: WALK_START_S, targets: [] };
+  const turnS = roundMs(0.5 + (0.6 * Math.abs(heading)) / Math.PI);
+  return {
+    startS: roundMs(turnS + TURN_SETTLE_S),
+    targets: [{ t: turnS, root: [0, 0], height: world.restHipsHeight, heading: roundMs(heading) }],
+  };
+}
+
 // -- Plans ------------------------------------------------------------------------------------
 
 function skip(reason: string): ActionPlan {
@@ -327,16 +366,19 @@ function walkPlan(
     return turnPlan(world, faceYaw, label);
   }
 
-  const arrival = WALK_START_S + length / WALK_SPEED;
+  const start = walkStart(world, points);
+  const arrival = start.startS + length / WALK_SPEED;
   const duration = roundMs(arrival + 1.5);
   if (duration > MAX_DURATION) return skip(`${label} is too far to walk in one go`);
   const end = points[points.length - 1] ?? [0, 0];
   const lastLeg = points[points.length - 2] ?? [0, 0];
   const heading = faceYaw === null ? Math.atan2(end[0] - lastLeg[0], end[1] - lastLeg[1]) : headingOf(faceYaw);
-  const targets: AvatarMotionTarget[] =
-    faceYaw === null
+  const targets: AvatarMotionTarget[] = [
+    ...start.targets,
+    ...(faceYaw === null
       ? []
-      : [{ t: roundMs(arrival + ARRIVE_HEADING_DELAY), root: end, height: world.restHipsHeight, heading }];
+      : [{ t: roundMs(arrival + ARRIVE_HEADING_DELAY), root: end, height: world.restHipsHeight, heading }]),
+  ];
   return {
     type: 'stream',
     stream: {
@@ -344,7 +386,7 @@ function walkPlan(
       request: {
         prompt,
         duration,
-        path: { points, cornerRadius: CORNER_RADIUS, speed: WALK_SPEED, startS: WALK_START_S, mode: 'dense' },
+        path: { points, cornerRadius: CORNER_RADIUS, speed: WALK_SPEED, startS: start.startS, mode: 'dense' },
         ...(targets.length > 0 ? { targets } : {}),
       },
       frame: world.frame,
@@ -422,7 +464,8 @@ function planSit(world: PlanWorld, object: RoomObject): ActionPlan {
     }
   }
 
-  const arrival = points ? WALK_START_S + polylineLength(points) / WALK_SPEED : 0;
+  const start = points ? walkStart(world, points) : null;
+  const arrival = points && start ? start.startS + polylineLength(points) / WALK_SPEED : 0;
   const phaseStart = points ? Math.ceil(arrival / CHUNK_SECONDS - 1e-9) * CHUNK_SECONDS : 0;
   const duration = roundMs(phaseStart + 4);
   if (duration > MAX_DURATION) return skip(`${object.name} is too far to walk to in one go`);
@@ -445,11 +488,11 @@ function planSit(world: PlanWorld, object: RoomObject): ActionPlan {
         duration,
         ...(points
           ? {
-              path: { points, cornerRadius: CORNER_RADIUS, speed: WALK_SPEED, startS: WALK_START_S, mode: 'dense' as const },
+              path: { points, cornerRadius: CORNER_RADIUS, speed: WALK_SPEED, startS: start?.startS ?? WALK_START_S, mode: 'dense' as const },
               phases: [{ prompt: SIT_PROMPT, startS: phaseStart }],
             }
           : {}),
-        targets: [target],
+        targets: [...(start?.targets ?? []), target],
       },
       frame,
       expectedEnd: { root, heading },
