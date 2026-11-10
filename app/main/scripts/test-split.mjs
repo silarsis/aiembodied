@@ -53,6 +53,7 @@ runTests('tests/gpu-memory.test.ts', 'GPU Memory');
 runTests('tests/metrics/*.test.ts', 'Metrics');
 runTests('tests/run-dev-*.test.ts', 'Run Dev');
 runTests('tests/local-llm*.test.ts', 'Local LLM');
+runTests('tests/local-vision*.test.ts', 'Local Vision');
 runTests('tests/push-to-talk.test.ts', 'Push To Talk');
 runTests('tests/tool-registry.test.ts', 'Tool Registry');
 runTests('tests/mcp/*.test.ts', 'MCP');

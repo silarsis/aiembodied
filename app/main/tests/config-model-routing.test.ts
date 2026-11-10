@@ -27,7 +27,9 @@ describe('model routing', () => {
     expect(routes.stt).toEqual({ server: 'local-speech' });
     expect(routes.motion).toEqual({ server: 'local-motion', model: 'ardy' });
     expect(routes.search).toEqual({ server: 'local-searxng', backups: [{ server: 'brave' }] });
-    expect(routes.posecheck).toEqual({ server: 'openai', model: 'gpt-4o' });
+    expect(routes.posecheck).toEqual({ server: 'local-vision', model: 'qwen3-vl' });
+    expect(routes.describe).toEqual({ server: 'local-vision', model: 'qwen3-vl' });
+    expect(routes.posegen).toEqual({ server: 'openai', model: 'gpt-4.1-mini' });
     // Idle thoughts start on whatever Thinking starts on.
     expect(routes.idle).toEqual({ server: 'openai', model: 'gpt-4.1' });
     expect(defaultRoutes(DEFAULT_PROVIDER_SETTINGS).idle).toEqual(defaultRoutes(DEFAULT_PROVIDER_SETTINGS).llm);
@@ -119,6 +121,18 @@ describe('model routing', () => {
       servers: [{ id: 'lm', type: 'chat', url: 'http://lm-studio:1234' }],
     });
     expect(routing.servers.find((server) => server.id === 'lm')?.url).toBe('http://lm-studio:1234/v1');
+  });
+
+  it('has a built-in vision server that Describe the avatar uses until the user picks another, and a saved route wins', () => {
+    const routing = resolveModelRouting(builtIns(), defaultRoutes(DEFAULT_PROVIDER_SETTINGS));
+    const vision = routing.servers.find((server) => server.id === 'local-vision');
+    expect(vision).toMatchObject({ name: 'Vision model on this PC', type: 'chat', url: 'http://127.0.0.1:1237/v1', builtIn: true, managed: true });
+    expect(routing.routes.describe).toEqual({ server: 'local-vision', model: 'qwen3-vl' });
+    const saved = resolveModelRouting(builtIns(), defaultRoutes(DEFAULT_PROVIDER_SETTINGS), {
+      routes: { describe: { server: 'openai', model: 'gpt-4.1-mini' } },
+    });
+    expect(saved.routes.describe).toEqual({ server: 'openai', model: 'gpt-4.1-mini' });
+    expect(saved.routes.posecheck).toEqual({ server: 'local-vision', model: 'qwen3-vl' });
   });
 
   it('has built-in coding servers, a coding use that cannot be off, and online accounts that are key only', () => {

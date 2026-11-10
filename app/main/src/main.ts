@@ -113,6 +113,7 @@ import {
   routeTargets,
   routeTargetsWithOverride,
   serverUrl,
+  isLocalUrl,
   SPEAKING_ENGINES,
   speakingVoiceKey,
   USE_SERVER_TYPES,
@@ -133,6 +134,8 @@ import { ApprovalBroker } from './tools/approvals.js';
 import { registerApprovalsIpc } from './tools/approvals-ipc.js';
 import { lookupHuggingFace, parseHuggingFaceRef } from './local-llm/huggingface.js';
 import { LlmLibrary } from './local-llm/llm-library.js';
+import { VisionModel } from './local-vision/vision-model.js';
+import { VisionServer, withVisionServer } from './local-vision/vision-server.js';
 import { MCPManager } from './mcp/mcp-manager.js';
 import { ToolRegistry } from './tools/tool-registry.js';
 import { createRoutedSearchProvider, createWebSearchTool, WEB_SEARCH_TOOL_ID } from './tools/web-search.js';
@@ -809,6 +812,44 @@ function getLocalLlmTools(manager: ConfigManager): { library: LlmLibrary; contro
 }
 
 /**
+ * The vision model for Describe the avatar and Check poses: its download (local-vision.json) and the
+ * llama-server that runs it only while a job needs it. Built on first use.
+ */
+let visionTools: { model: VisionModel; server: VisionServer } | null = null;
+function getVisionTools(manager: ConfigManager): { model: VisionModel; server: VisionServer } {
+  if (visionTools) return visionTools;
+  const home = process.env.AIEMBODIED_HOST_USERPROFILE?.trim() || os.homedir();
+  const logDirectory = path.join(app.getPath('userData'), 'logs');
+  const repoRoot = path.resolve(__dirname, '../../..');
+  const baseUrl = () => {
+    const server = manager.getConfig().models.servers.find((entry) => entry.id === BUILT_IN_SERVER_IDS.vision);
+    return server && isLocalUrl(server.url) ? serverUrl(server.type, server.url) : null;
+  };
+  const model = new VisionModel({
+    file: path.join(app.getPath('userData'), 'local-vision.json'),
+    modelsDirectory: process.env.LOCAL_LLM_MODELS_DIR?.trim() || path.join(home, '.cache', 'aiembodied', 'llm-models'),
+    token: () => manager.getServerKey(BUILT_IN_SERVER_IDS.huggingface),
+    logger,
+  });
+  const server = new VisionServer({
+    baseUrl,
+    pick: () => model.pick(),
+    repoRoot,
+    logDirectory,
+    // Reuses the llama-server stopper; it only ever stops a process named llama-server on that port.
+    stop: () => new LocalLlmControl({ baseUrl, repoRoot, logDirectory, fileName: 'vision' }).stop(),
+    logger,
+  });
+  visionTools = { model, server };
+  return visionTools;
+}
+
+/** Run a helper job on the vision model when `use` is routed to it (starting it first), else as is. */
+function withVision<T>(manager: ConfigManager, use: 'describe' | 'posecheck', job: () => Promise<T>): Promise<T> {
+  return withVisionServer(manager.getConfig().models, use, getVisionTools(manager).server, job);
+}
+
+/**
  * Run a downloaded model (or, with null, the start script's default) for Thinking: point Thinking
  * at this PC's llama-server and restart it with that model. Returns what happened, in words.
  */
@@ -1160,6 +1201,7 @@ function registerIpcHandlers(
     [BUILT_IN_SERVER_IDS.searxng]: 'SearXNG',
     [BUILT_IN_SERVER_IDS.memory]: 'Memory database',
     [BUILT_IN_SERVER_IDS.coderLlm]: 'Coding model',
+    [BUILT_IN_SERVER_IDS.vision]: 'Vision model',
   };
   ipcMain.handle('diagnostics:gpu-memory', () => {
     const servers: GpuMemoryServer[] = [];
@@ -1347,6 +1389,18 @@ function registerIpcHandlers(
     const { library } = getLocalLlmTools(manager);
     if (typeof id === 'string') library.cancel(id);
     return library.list();
+  });
+  // The vision model (Qwen3-VL) for Describe the avatar: download status and progress.
+  ipcMain.handle('models:vision-status', () => getVisionTools(manager).model.status());
+  ipcMain.handle('models:vision-download', async (_event, ref: unknown) => {
+    const { model } = getVisionTools(manager);
+    await model.download(typeof ref === 'string' ? ref : undefined);
+    return model.status();
+  });
+  ipcMain.handle('models:vision-cancel', async () => {
+    const { model } = getVisionTools(manager);
+    model.cancel();
+    return model.status();
   });
   ipcMain.handle('models:local-llms', () => localLlmList());
   ipcMain.handle('models:use-local-llm', async (_event, id: unknown) => {
@@ -1698,10 +1752,11 @@ function registerIpcHandlers(
         await refreshAvatarDescriptionService(manager);
       }
       if (!avatarDescriptionService) {
-        throw new Error('Avatar description service is unavailable. Ensure REALTIME_API_KEY is set.');
+        throw new Error('Describe the avatar has no model to use. Pick one in Models and servers → Describe the avatar (or add the OpenAI API key if it runs on OpenAI).');
       }
 
-      return avatarDescriptionService.generateDescription(payload.thumbnailDataUrl);
+      const service = avatarDescriptionService;
+      return withVision(manager, 'describe', () => service.generateDescription(payload.thumbnailDataUrl));
     },
   );
   ipcMain.handle('avatar-animation:list', async () => {
@@ -1913,7 +1968,7 @@ function registerIpcHandlers(
       await refreshPoseEvaluationService(manager);
     }
     if (!poseEvaluationService) {
-      throw new Error('Pose evaluation service is unavailable. Ensure REALTIME_API_KEY is set.');
+      throw new Error('Check poses has no model to use. Pick one in Models and servers (or add the OpenAI API key if it runs on OpenAI).');
     }
 
     // Load pose data if only poseId is provided
@@ -1930,20 +1985,23 @@ function registerIpcHandlers(
     const activeModel = avatarModels?.getActiveModel() ?? null;
     const modelDescription = activeModel?.description ?? undefined;
 
-    return poseEvaluationService.evaluatePose({
-      ...payload,
-      poseData,
-      bones,
-      boneHierarchy,
-      modelDescription,
-    });
+    const evaluator = poseEvaluationService;
+    return withVision(manager, 'posecheck', () =>
+      evaluator.evaluatePose({
+        ...payload,
+        poseData,
+        bones,
+        boneHierarchy,
+        modelDescription,
+      }),
+    );
   });
   ipcMain.handle('avatar-pose:refine', async (_event, payload: PoseEvaluationRequest) => {
     if (!poseEvaluationService) {
       await refreshPoseEvaluationService(manager);
     }
     if (!poseEvaluationService) {
-      throw new Error('Pose evaluation service is unavailable. Ensure REALTIME_API_KEY is set.');
+      throw new Error('Check poses has no model to use. Pick one in Models and servers (or add the OpenAI API key if it runs on OpenAI).');
     }
 
     // Load pose data if only poseId is provided
@@ -1960,13 +2018,16 @@ function registerIpcHandlers(
     const activeModel = avatarModels?.getActiveModel() ?? null;
     const modelDescription = activeModel?.description ?? undefined;
 
-    return poseEvaluationService.refinePose({
-      ...payload,
-      poseData,
-      bones,
-      boneHierarchy,
-      modelDescription,
-    });
+    const evaluator = poseEvaluationService;
+    return withVision(manager, 'posecheck', () =>
+      evaluator.refinePose({
+        ...payload,
+        poseData,
+        bones,
+        boneHierarchy,
+        modelDescription,
+      }),
+    );
   });
   ipcMain.handle('avatar:trigger-behavior', async (_event, cue: string) => {
     const value = typeof cue === 'string' ? cue.trim() : '';

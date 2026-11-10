@@ -3,7 +3,7 @@
  * the LLM (llama-server, Qwen Flash-Next), speech-to-text (llama-server, Qwen3-ASR), the speech
  * service (Kokoro TTS), the motion service (ARDY), the memory engine (with PostgreSQL in a container), the coding
  * runner (services/coder) and, when web search uses it, SearXNG (a container). The coder's own
- * llama-server (Qwen3-Coder-Next) is not started here: the app starts it when a coding task needs it. A server that already
+ * llama-server (Qwen3-Coder-Next) and the vision model's (Qwen3-VL) are not started here: the app starts them when a job needs them. A server that already
  * answers is left alone, so one slopcore or another terminal started is reused. A missing one is started with
  * its own start script in a hidden console of its own, logging to .dev-home/logs/<id>.log
  * (and <id>.err.log), and keeps running after the app and the terminal close. Nothing waits for models to finish loading: the app polls each service and
@@ -98,9 +98,10 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
     tts: [ttsLocal ? 'local-speech' : 'openai'],
     motion: [motionLocal ? 'local-motion' : 'openai'],
     search: searchProviders.map((name) => (name === 'searxng' ? 'local-searxng' : name)),
-    describe: ['openai'],
+    // The vision model (local-vision) is started by the app when a job needs it, never here.
+    describe: ['local-vision'],
     posegen: ['openai'],
-    posecheck: ['openai'],
+    posecheck: ['local-vision'],
     // Animation clips follow Thinking too, but only as Moving's fallback, so they don't start anything.
     clips: ['openai'],
     // Idle thoughts follow Thinking until routed elsewhere; with the OpenAI Realtime engine they do not

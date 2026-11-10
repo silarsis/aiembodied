@@ -19,6 +19,7 @@ import type { ModelsBridge } from '../preload-api.js';
 import { CodingSettings } from './coding-settings.js';
 import { ModelDownloads } from './model-downloads.js';
 import { ThinkingDownloads } from './thinking-downloads.js';
+import { VisionDownload } from './vision-download.js';
 import type { AvatarBridge } from '../avatar/types.js';
 import { useCharacterModels } from '../avatar/use-character-models.js';
 import { useImageModels } from '../avatar/use-image-models.js';
@@ -44,7 +45,7 @@ export const MODEL_USES: UseInfo[] = [
   { id: 'search', group: 'Talking', name: 'Web search', what: 'The web_search tool the assistant can call.' },
   { id: 'image', group: 'Creating an avatar', name: 'Concept image', what: 'Draws the character from the description, repaints textures and makes backgrounds.' },
   { id: 'mesh', group: 'Creating an avatar', name: '3D model', what: 'Turns the approved image into a textured mesh. Rigging runs in Blender on this PC.' },
-  { id: 'describe', group: 'Helpers', name: 'Describe the avatar', what: 'Looks at a screenshot of the avatar and writes a short character description that guides animation. Needs a model that reads images.' },
+  { id: 'describe', group: 'Helpers', name: 'Describe the avatar', what: 'Looks at a screenshot of the avatar and writes a short character description that guides animation. Needs a model that reads images; it starts out on a small one that runs on this PC.' },
   // Nothing in the app makes or checks poses since the sidebar pose controls went (they come back
   // built on the motion service), so these routes stay in the config but are not shown.
   { id: 'posegen', group: 'Helpers', name: 'Make poses', what: 'Writes bone rotations for a pose from a text prompt.', hidden: true },
@@ -390,6 +391,7 @@ export function ModelsDialog({ api, avatarApi, codingApi, engine, onClose, onCha
         api={api}
       />
       {page.use === 'llm' ? <ThinkingDownloads api={api} busy={busy} onView={setView} /> : null}
+      {page.use === 'describe' && view.routes.describe.server === BUILT_IN_SERVER_IDS.vision ? <VisionDownload api={api} busy={busy} /> : null}
       </>
     );
   } else if (view && page.kind === 'servers') {

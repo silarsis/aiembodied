@@ -119,6 +119,7 @@ export const BUILT_IN_SERVER_IDS = {
   memory: 'local-memory',
   coderRunner: 'local-coder-runner',
   coderLlm: 'local-coder-llm',
+  vision: 'local-vision',
   openai: 'openai',
   anthropic: 'anthropic',
   github: 'github',
@@ -134,6 +135,9 @@ export const DEFAULT_CODER_RUNNER_URL = 'http://127.0.0.1:8195';
 /** The llama-server that runs Qwen3-Coder-Next while a coding task needs it. */
 export const DEFAULT_CODER_LLM_URL = 'http://127.0.0.1:1236/v1';
 export const DEFAULT_CODER_MODEL = 'qwen3-coder-next';
+/** The llama-server that reads images (Qwen3-VL) while Describe the avatar needs it. */
+export const DEFAULT_VISION_URL = 'http://127.0.0.1:1237/v1';
+export const DEFAULT_VISION_MODEL = 'qwen3-vl';
 export const BRAVE_BASE_URL = 'https://api.search.brave.com';
 export const CIVITAI_BASE_URL = 'https://civitai.com';
 export const HUGGINGFACE_BASE_URL = 'https://huggingface.co';
@@ -218,6 +222,7 @@ export function builtInServers({ providers, comfyUiBaseUrl, searxngUrl, coderRun
     local(BUILT_IN_SERVER_IDS.memory, 'Memory database on this PC', 'memory', LOCAL_MEMORY_DATABASE_URL),
     local(BUILT_IN_SERVER_IDS.coderRunner, 'Coding runner on this PC', 'coder', coderRunnerUrl || DEFAULT_CODER_RUNNER_URL),
     local(BUILT_IN_SERVER_IDS.coderLlm, 'Qwen3-Coder-Next (coding)', 'chat', coderLlmUrl || DEFAULT_CODER_LLM_URL),
+    local(BUILT_IN_SERVER_IDS.vision, 'Vision model on this PC', 'chat', DEFAULT_VISION_URL),
     { id: BUILT_IN_SERVER_IDS.openai, name: 'OpenAI', type: 'openai', url: OPENAI_BASE_URL, builtIn: true, managed: false },
     { id: BUILT_IN_SERVER_IDS.anthropic, name: 'Anthropic', type: 'anthropic', url: ANTHROPIC_BASE_URL, builtIn: true, managed: false },
     { id: BUILT_IN_SERVER_IDS.github, name: 'GitHub', type: 'github', url: GITHUB_API_URL, builtIn: true, managed: false },
@@ -268,9 +273,10 @@ export function defaultRoutes(providers: ProviderSettings, webSearchProvider = '
       : { server: '' },
     image: { server: BUILT_IN_SERVER_IDS.comfy },
     mesh: { server: BUILT_IN_SERVER_IDS.comfy },
-    describe: { server: openai, model: DEFAULT_HELPER_MODELS.describe },
+    // Reading an image runs on the small local vision model, started only while a job needs it.
+    describe: { server: BUILT_IN_SERVER_IDS.vision, model: DEFAULT_VISION_MODEL },
     posegen: { server: openai, model: DEFAULT_HELPER_MODELS.posegen },
-    posecheck: { server: openai, model: DEFAULT_HELPER_MODELS.posecheck },
+    posecheck: { server: BUILT_IN_SERVER_IDS.vision, model: DEFAULT_VISION_MODEL },
     // Only a fallback: Moving uses the motion service (ARDY) whenever it runs.
     clips: { ...llm },
     idle: { ...llm },
