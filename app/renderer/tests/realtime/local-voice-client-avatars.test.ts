@@ -201,7 +201,7 @@ describe('LocalVoiceClient with several avatars', () => {
     expect(fake.sources.every((source) => source.stop.mock.calls.length === 0)).toBe(true);
   });
 
-  it('does not set activity for chatter while a turn is going on', async () => {
+  it('holds chatter, and its activity, while a turn is going on', async () => {
     let release: (() => void) | null = null;
     const { emit, ask, activity, callbacks } = await setup(
       (request) =>
@@ -214,9 +214,76 @@ describe('LocalVoiceClient with several avatars', () => {
     const before = activity.length;
     emit(sentence('chatter-2-rex', 'rex', 'Interjecting.'));
     await vi.advanceTimersByTimeAsync(100);
-    expect(callbacks.onTextContent).toHaveBeenCalledWith('Interjecting.', 'rex');
+    expect(callbacks.onTextContent).not.toHaveBeenCalledWith('Interjecting.', 'rex');
     expect(activity.slice(before).some((entry) => entry.detail === 'Avatar chatter')).toBe(false);
     (release as (() => void) | null)?.();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(callbacks.onTextContent).toHaveBeenCalledWith('Interjecting.', 'rex');
+  });
+
+  it('holds chatter while the own request is still transcribing, before any turn audio exists', async () => {
+    let transcribed: (() => void) | null = null;
+    const { bridge, emit, ask, callbacks, fake } = await setup(async () => ({ text: 'Hi.', cancelled: false, avatarId: 'echo' }));
+    bridge.transcribe = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          transcribed = () => resolve({ text: 'Hey Jarvis, what time is it?' });
+        }),
+    ) as unknown as LocalVoiceBridge['transcribe'];
+    await ask();
+    expect(bridge.transcribe).toHaveBeenCalled();
+    expect(bridge.respond).not.toHaveBeenCalled();
+    emit(sentence('chatter-t', 'sage', 'Too early.'));
+    await vi.advanceTimersByTimeAsync(500);
+    expect(callbacks.onTextContent).not.toHaveBeenCalledWith('Too early.', 'sage');
+    expect(fake.sources).toHaveLength(0);
+    (transcribed as (() => void) | null)?.();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(bridge.respond).toHaveBeenCalledTimes(1);
+    expect(callbacks.onTextContent).toHaveBeenCalledWith('Too early.', 'sage');
+  });
+
+  it('holds chatter while the own request is thinking, with no turn audio yet', async () => {
+    let finish: (() => void) | null = null;
+    const { emit, ask, callbacks } = await setup(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve({ text: 'Answer.', cancelled: false, avatarId: 'echo' });
+        }),
+    );
+    await ask();
+    emit(sentence('chatter-u', 'sage', 'Not yet.'));
+    await vi.advanceTimersByTimeAsync(500);
+    expect(callbacks.onTextContent).not.toHaveBeenCalledWith('Not yet.', 'sage');
+    (finish as (() => void) | null)?.();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(callbacks.onTextContent).toHaveBeenCalledWith('Not yet.', 'sage');
+  });
+
+  it('lets chatter proceed when the own request fails or is cancelled', async () => {
+    const failing = await setup(async () => {
+      throw new Error('model down');
+    });
+    await failing.ask();
+    failing.emit(sentence('chatter-v', 'sage', 'After failure.'));
+    await vi.advanceTimersByTimeAsync(500);
+    expect(failing.callbacks.onTextContent).toHaveBeenCalledWith('After failure.', 'sage');
+
+    const cancelled = await setup(async () => ({ text: '', cancelled: true, avatarId: 'echo' }));
+    await cancelled.ask();
+    cancelled.emit(sentence('chatter-w', 'sage', 'After cancel.'));
+    await vi.advanceTimersByTimeAsync(500);
+    expect(cancelled.callbacks.onTextContent).toHaveBeenCalledWith('After cancel.', 'sage');
+  });
+
+  it('drops chatter that waited for the own request when Kevin talks again', async () => {
+    const { client, emit, ask, callbacks } = await setup(() => new Promise(() => undefined));
+    await ask();
+    emit(sentence('chatter-x', 'sage', 'Waiting.'));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(client.stopChatter()).toBe(true);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(callbacks.onTextContent).not.toHaveBeenCalledWith('Waiting.', 'sage');
   });
 
   it('stops chatter with stopChatter() and when Kevin talks', async () => {
@@ -287,9 +354,13 @@ describe('LocalVoiceClient with several avatars', () => {
     await vi.advanceTimersByTimeAsync(200);
     expect(fake.sources).toHaveLength(own);
     expect(callbacks.onTextContent).not.toHaveBeenCalledWith('Wait.', 'sage');
+    // Its audio is over but the request is not, so chatter still waits.
     await vi.advanceTimersByTimeAsync(5000);
-    expect(fake.sources).toHaveLength(own + 1);
+    expect(fake.sources).toHaveLength(own);
     (finish as (() => void) | null)?.();
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(fake.sources).toHaveLength(own + 1);
+    expect(callbacks.onTextContent).toHaveBeenCalledWith('Wait.', 'sage');
   });
 
   it('drops waiting chatter turns with stopChatter()', async () => {

@@ -112,10 +112,36 @@ export class LocalVoiceClient {
   private readonly systemReady = new Set<string>();
   private statusTimer: number | null = null;
   private connectionId = 0;
-  private busy = false;
+  /**
+   * True from the moment the client's own request starts (transcribing, thinking, speaking, the
+   * playback tail) until it is over, however it ends. Setting it false always releases `busyIdle`.
+   */
+  private busyState = false;
+  private busyRelease: (() => void) | null = null;
+  /** Resolves once the client's own request (if any) has fully finished. */
+  private busyIdlePromise: Promise<void> = Promise.resolve();
   private lastWakeAt = Number.NEGATIVE_INFINITY;
   private awakeUntil = Number.NEGATIVE_INFINITY;
   private turn: Turn | null = null;
+  private get busy(): boolean {
+    return this.busyState;
+  }
+
+  private set busy(value: boolean) {
+    if (value === this.busyState) {
+      return;
+    }
+    this.busyState = value;
+    if (value) {
+      this.busyIdlePromise = new Promise<void>((resolve) => {
+        this.busyRelease = resolve;
+      });
+    } else {
+      this.busyRelease?.();
+      this.busyRelease = null;
+    }
+  }
+
   private disposed = false;
   private activity: VoiceActivity;
   private awakeTimer: number | null = null;
@@ -764,8 +790,9 @@ export class LocalVoiceClient {
       if (!output) {
         return;
       }
-      // It starts once the client's own turn and every earlier chatter turn have played out.
-      const after = Promise.all([this.turn?.idle(), this.playbackTail]);
+      // It starts once the client's own request (from transcribing to the end of its playback) and
+      // every earlier chatter turn are over. A failed or cancelled request still releases the wait.
+      const after = Promise.all([this.busyIdlePromise, this.turn?.idle(), this.playbackTail]);
       const created = new Turn(event.requestId, this.context, output, after);
       created.avatarId = avatarId;
       created.routed = true;
