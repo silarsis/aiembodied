@@ -106,7 +106,10 @@ export async function generateRoomLayout(description: string, options: RoomLayou
       }
     }
     try {
-      return validateLayout(extractJson(reply));
+      const notes: string[] = [];
+      const layout = validateLayout(extractJson(reply), notes);
+      if (notes.length) options.logger?.warn('Room layout reply had parts that were left out.', { notes });
+      return layout;
     } catch (error) {
       if (!(error instanceof LayoutError)) throw error;
       problem = error.message;
