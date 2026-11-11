@@ -1067,6 +1067,45 @@ body {
 .kiosk[data-drawer-open='true'] .kiosk__avatar canvas {
   transform: scale(0.9);
 }
+/* Several avatars side by side (2D): the canvas is one portrait frame wide per avatar. */
+.kiosk__avatar[data-avatar-count='2'] {
+  width: min(117vh, 1320px, 100%);
+}
+.kiosk__avatar[data-avatar-count='3'] {
+  width: min(175.5vh, 1980px, 100%);
+}
+.kiosk__avatar[data-avatar-count='2'] canvas {
+  aspect-ratio: 3 / 2;
+}
+.kiosk__avatar[data-avatar-count='3'] canvas {
+  aspect-ratio: 9 / 4;
+}
+.stageAvatarLabels {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0;
+  pointer-events: none;
+}
+.stageAvatarLabel {
+  position: absolute;
+  top: 6px;
+  transform: translateX(-50%);
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.stageAvatarLabel[data-speaking='true'] {
+  color: #fff;
+  background: rgba(70, 150, 255, 0.75);
+}
 /* 3D rooms: the canvas is the whole stage, so none of the 2D foot-anchoring applies. */
 .kiosk__avatar[data-stage-mode='3d'] {
   inset: 0;

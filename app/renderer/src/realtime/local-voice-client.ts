@@ -14,9 +14,20 @@ import type { LocalVoiceEvent, LocalVoiceStatus } from '../../../main/src/local-
 import type { RealtimeClientCallbacks, RealtimeClientOptions, RealtimeClientState } from './realtime-client.js';
 import type { VoiceActivity, VoicePhase } from './voice-activity.js';
 
+/** The avatar that answers when an event or result names none. */
+export const DEFAULT_SPEAKER_ID = 'echo';
+
 export interface LocalVoiceClientCallbacks extends RealtimeClientCallbacks {
+  /** For the speaker's lines `avatarId` is passed only when it is not `echo`. */
+  onTextContent?: (content: string, avatarId?: string) => void;
+  onFirstAudioFrame?: (avatarId?: string) => void;
   onUserTranscript?: (text: string) => void;
-  onAssistantTranscript?: (text: string) => void;
+  onAssistantTranscript?: (text: string, avatarId?: string) => void;
+  /**
+   * An avatar other than `echo` got its own audio output (created when it first speaks). Echo's
+   * stream goes to `onRemoteStream`, as before.
+   */
+  onAvatarStream?: (avatarId: string, stream: MediaStream) => void;
   /** A system turn (an update from the coding agent) ran: the note the model was given, marked as not from the user. */
   onSystemNote?: (text: string) => void;
   /** An urgent update was announced while no conversation was running: the note given to the model and its spoken reply. */
@@ -77,7 +88,13 @@ export class LocalVoiceClient {
   private source: MediaStreamAudioSourceNode | null = null;
   private processor: ScriptProcessorNode | null = null;
   private sink: GainNode | null = null;
-  private output: MediaStreamAudioDestinationNode | null = null;
+  /** One audio output per avatar, created lazily; `echo` is created at connect. */
+  private readonly outputs = new Map<string, MediaStreamAudioDestinationNode>();
+  /** Out-loud chatter from avatars (requests this client did not start), by request id. */
+  private readonly chatterTurns = new Map<string, Turn>();
+  /** Request ids this client started, so a late event of one is never mistaken for chatter. */
+  private readonly ownRequestIds: string[] = [];
+  private chatterPhaseBefore: VoicePhase | null = null;
   private remoteAudioElement: HTMLAudioElement | null = null;
   private outputDeviceId: string | null = null;
   private unsubscribeEvents: (() => void) | null = null;
@@ -126,6 +143,48 @@ export class LocalVoiceClient {
     return this.output?.stream ?? null;
   }
 
+  /** Echo's output node (the one that has always existed). */
+  private get output(): MediaStreamAudioDestinationNode | null {
+    return this.outputs.get(DEFAULT_SPEAKER_ID) ?? null;
+  }
+
+  /** The audio output of `avatarId`, created on first use; `onAvatarStream` hears of a new non-echo one. */
+  private outputFor(avatarId: string): MediaStreamAudioDestinationNode | null {
+    const existing = this.outputs.get(avatarId);
+    if (existing) {
+      return existing;
+    }
+    const context = this.context;
+    if (!context || avatarId === DEFAULT_SPEAKER_ID) {
+      return avatarId === DEFAULT_SPEAKER_ID ? this.output : null;
+    }
+    const created = context.createMediaStreamDestination();
+    this.outputs.set(avatarId, created);
+    this.callbacks.onAvatarStream?.(avatarId, created.stream);
+    return created;
+  }
+
+  private newRequestId(prefix: string): string {
+    const requestId = `${prefix}-${this.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    this.ownRequestIds.push(requestId);
+    if (this.ownRequestIds.length > 64) {
+      this.ownRequestIds.shift();
+    }
+    return requestId;
+  }
+
+  /** Stop avatar chatter that is playing (Kevin is speaking, or the conversation ended). */
+  stopChatter(): void {
+    if (this.chatterTurns.size === 0) {
+      return;
+    }
+    for (const turn of this.chatterTurns.values()) {
+      turn.stop();
+    }
+    this.chatterTurns.clear();
+    this.restoreAfterChatter();
+  }
+
   bindRemoteAudioElement(element: HTMLAudioElement | null): void {
     this.remoteAudioElement = element;
     void this.applyOutputDevice();
@@ -170,6 +229,7 @@ export class LocalVoiceClient {
     const connectionId = this.connectionId;
     const previousPhase = this.activity.phase;
     const turn = new Turn(`preview-${this.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, context, output);
+    this.ownRequestIds.push(turn.requestId);
     turn.onSentenceStart = (sentence, first) => {
       if (first) {
         this.setActivity('responding', 'Voice preview');
@@ -218,6 +278,7 @@ export class LocalVoiceClient {
     if (this.state.status !== 'connected') {
       return;
     }
+    this.stopChatter();
     if (this.turn) {
       this.log('info', 'Reply interrupted to talk');
       void this.getBridge()?.cancel(this.turn.requestId);
@@ -269,7 +330,7 @@ export class LocalVoiceClient {
     this.source = source;
     this.processor = processor;
     this.sink = sink;
-    this.output = output;
+    this.outputs.set(DEFAULT_SPEAKER_ID, output);
     this.unsubscribeEvents = bridge.onEvent((event) => this.handleEvent(event));
     this.unsubscribeSystemReady =
       bridge.onSystemReady?.(() => {
@@ -344,7 +405,7 @@ export class LocalVoiceClient {
       }
       const output = context.createMediaStreamDestination();
       this.context = context;
-      this.output = output;
+      this.outputs.set(DEFAULT_SPEAKER_ID, output);
       this.unsubscribeEvents = bridge.onEvent((event) => this.handleEvent(event));
       this.callbacks.onRemoteStream?.(output.stream);
       await this.respond(bridge, '', connectionId, true, true);
@@ -355,9 +416,9 @@ export class LocalVoiceClient {
       if (connectionId === this.connectionId) {
         this.unsubscribeEvents?.();
         this.unsubscribeEvents = null;
-        this.output?.disconnect();
+        this.stopChatter();
+        this.disconnectOutputs();
         this.context = null;
-        this.output = null;
         this.turn = null;
         this.busy = false;
         this.setActivity('off');
@@ -506,6 +567,8 @@ export class LocalVoiceClient {
         utterance = admitted;
       }
 
+      // Kevin is speaking: avatar chatter gives way.
+      this.stopChatter();
       this.setActivity('transcribing');
       const transcript = await bridge.transcribe(encodeWav(utterance.samples, utterance.sampleRate));
       if (connectionId !== this.connectionId) {
@@ -552,13 +615,17 @@ export class LocalVoiceClient {
     if (!context || !output) {
       return false;
     }
-    const turn = new Turn(`local-${this.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, context, output);
+    const turn = new Turn(this.newRequestId('local'), context, output);
     turn.onSentenceStart = (sentence, first) => {
       if (first) {
-        this.callbacks.onFirstAudioFrame?.();
+        if (turn.avatarId === DEFAULT_SPEAKER_ID) {
+          this.callbacks.onFirstAudioFrame?.();
+        } else {
+          this.callbacks.onFirstAudioFrame?.(turn.avatarId);
+        }
         this.setActivity('responding');
       }
-      this.callbacks.onTextContent?.(sentence);
+      this.emitText(sentence, turn.avatarId);
     };
     this.turn = turn;
 
@@ -592,17 +659,48 @@ export class LocalVoiceClient {
       this.callbacks.onSystemNote?.(result.note);
     }
     if (result.text && !result.cancelled) {
-      this.callbacks.onAssistantTranscript?.(result.text);
+      // The result names who answered (the floor may have routed it elsewhere); events name it too.
+      const speaker = result.avatarId || turn.avatarId;
+      if (speaker === DEFAULT_SPEAKER_ID) {
+        this.callbacks.onAssistantTranscript?.(result.text);
+      } else {
+        this.callbacks.onAssistantTranscript?.(result.text, speaker);
+      }
     }
     return true;
+  }
+
+  private emitText(sentence: string, avatarId: string): void {
+    if (avatarId === DEFAULT_SPEAKER_ID) {
+      this.callbacks.onTextContent?.(sentence);
+    } else {
+      this.callbacks.onTextContent?.(sentence, avatarId);
+    }
+  }
+
+  /** The turn's sentences play on the speaker's output, chosen when the first one arrives. */
+  private routeTurn(turn: Turn, avatarId: string): void {
+    if (turn.routed) {
+      return;
+    }
+    turn.avatarId = avatarId;
+    if (avatarId !== DEFAULT_SPEAKER_ID) {
+      const output = this.outputFor(avatarId);
+      if (output) {
+        turn.output = output;
+      }
+    }
+    turn.routed = true;
   }
 
   private handleEvent(event: LocalVoiceEvent): void {
     const turn = this.turn;
     if (!turn || event.requestId !== turn.requestId) {
+      this.handleChatterEvent(event);
       return;
     }
     if (event.type === 'sentence') {
+      this.routeTurn(turn, event.avatarId || DEFAULT_SPEAKER_ID);
       turn.enqueue(event.text, event.wav, (error) => this.log('warn', 'Failed to decode reply audio', describe(error)));
     } else if (event.type === 'error') {
       this.log('error', 'Local voice reply error', { message: event.message });
@@ -614,6 +712,79 @@ export class LocalVoiceClient {
       });
       this.callbacks.onToolCall?.(event);
     }
+  }
+
+  /**
+   * Speech of an avatar this client did not ask for (out-loud back-channel talk, or a second
+   * avatar answering Kevin after the first): play it on that avatar's output. It never touches the
+   * microphone or the busy state.
+   */
+  private handleChatterEvent(event: LocalVoiceEvent): void {
+    if (event.type !== 'sentence' || !this.context || this.disposed || this.state.status !== 'connected') {
+      return;
+    }
+    if (this.ownRequestIds.includes(event.requestId)) {
+      return;
+    }
+    const avatarId = event.avatarId || DEFAULT_SPEAKER_ID;
+    let turn = this.chatterTurns.get(event.requestId);
+    let isNew = false;
+    if (!turn) {
+      const output = this.outputFor(avatarId);
+      if (!output) {
+        return;
+      }
+      const created = new Turn(event.requestId, this.context, output);
+      created.avatarId = avatarId;
+      created.routed = true;
+      created.onSentenceStart = (sentence, first) => {
+        if (first) {
+          if (avatarId === DEFAULT_SPEAKER_ID) {
+            this.callbacks.onFirstAudioFrame?.();
+          } else {
+            this.callbacks.onFirstAudioFrame?.(avatarId);
+          }
+          if (!this.busy && this.chatterPhaseBefore === null && (this.activity.phase === 'waiting' || this.activity.phase === 'listening')) {
+            this.chatterPhaseBefore = this.activity.phase;
+            this.setActivity('responding', 'Avatar chatter');
+          }
+        }
+        this.emitText(sentence, avatarId);
+      };
+      this.chatterTurns.set(event.requestId, created);
+      turn = created;
+      isNew = true;
+    }
+    turn.enqueue(event.text, event.wav, (error) => this.log('warn', 'Failed to decode chatter audio', describe(error)));
+    if (isNew) {
+      const tracked = turn;
+      // Forget the turn once what is queued has played (its next sentence, if any, starts a new one).
+      void tracked.idle().then(() => {
+        if (this.chatterTurns.get(tracked.requestId) === tracked) {
+          this.chatterTurns.delete(tracked.requestId);
+          this.restoreAfterChatter();
+        }
+      });
+    }
+  }
+
+  /** Chatter is over: give back the activity it took, if nothing else has changed it. */
+  private restoreAfterChatter(): void {
+    if (this.chatterTurns.size > 0 || this.chatterPhaseBefore === null) {
+      return;
+    }
+    const before = this.chatterPhaseBefore;
+    this.chatterPhaseBefore = null;
+    if (!this.busy && this.activity.phase === 'responding' && this.activity.detail === 'Avatar chatter') {
+      this.setActivity(before);
+    }
+  }
+
+  private disconnectOutputs(): void {
+    for (const node of this.outputs.values()) {
+      node.disconnect();
+    }
+    this.outputs.clear();
   }
 
   /**
@@ -688,6 +859,7 @@ export class LocalVoiceClient {
       this.turn.stop();
       this.turn = null;
     }
+    this.stopChatter();
     this.unsubscribeEvents?.();
     this.unsubscribeEvents = null;
     this.unsubscribeSystemReady?.();
@@ -698,7 +870,7 @@ export class LocalVoiceClient {
     this.source?.disconnect();
     this.processor?.disconnect();
     this.sink?.disconnect();
-    this.output?.disconnect();
+    this.disconnectOutputs();
     if (this.context) {
       void this.context.close().catch(() => undefined);
     }
@@ -706,7 +878,6 @@ export class LocalVoiceClient {
     this.source = null;
     this.processor = null;
     this.sink = null;
-    this.output = null;
     this.busy = false;
     this.segmenter.reset();
   }
@@ -781,12 +952,27 @@ class Turn {
   private readonly timers = new Set<number>();
   private started = false;
   private stopped = false;
+  /** Who speaks this turn; set from the first sentence event (default echo). */
+  avatarId = DEFAULT_SPEAKER_ID;
+  /** The output was chosen from the first sentence event. */
+  routed = false;
 
   constructor(
     readonly requestId: string,
     private readonly context: AudioContext,
-    private readonly output: AudioNode,
+    /** Replaced by the speaker's output when the first sentence arrives (see LocalVoiceClient.routeTurn). */
+    public output: AudioNode,
   ) {}
+
+  /** Resolves when what is queued has played (or the turn was stopped). */
+  async idle(): Promise<void> {
+    let seen: Promise<void> | null = null;
+    // New sentences may be queued while waiting, so loop until nothing more was added.
+    while (seen !== this.decoding && !this.stopped) {
+      seen = this.decoding;
+      await this.finished();
+    }
+  }
 
   enqueue(text: string, wav: Uint8Array, onError: (error: unknown) => void): void {
     this.decoding = this.decoding.then(async () => {

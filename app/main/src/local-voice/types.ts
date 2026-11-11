@@ -67,6 +67,8 @@ export interface LocalVoiceRespondResult {
   requestId: string;
   text: string;
   cancelled: boolean;
+  /** The avatar that answered (set by main on every `local-voice:respond` result; a missing id means `echo`). */
+  avatarId?: string;
   /** For a system turn: the note the model was given, so the conversation record can keep it, marked. */
   note?: string;
 }
@@ -99,7 +101,7 @@ export type LocalVoiceEvent = (
       detail?: string;
     }
 ) & {
-  /** The avatar the event is for; absent for Echo. */
+  /** The avatar the event is for; main always sets it (a missing id means `echo`). */
   avatarId?: string;
 };
 

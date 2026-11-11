@@ -19,6 +19,7 @@ import { SwitchboardMirror } from './switchboard/mirror.js';
 import { AvatarRegistry, DEFAULT_AVATAR_ID, type AvatarProfile } from './avatars/avatar-registry.js';
 import { AvatarSettingsKeys } from './avatars/avatar-settings.js';
 import { VoiceServices } from './avatars/voice-services.js';
+import { tagEvent, tagResult } from './avatars/speaker.js';
 import dotenv from 'dotenv';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
@@ -888,12 +889,12 @@ async function runVoiceTurn(
   try {
     const result = await voiceService.respond(payload, (voiceEvent) => {
       if (!sender.isDestroyed()) {
-        sender.send('local-voice:event', avatarId === DEFAULT_AVATAR_ID ? voiceEvent : { ...voiceEvent, avatarId });
+        sender.send('local-voice:event', tagEvent(voiceEvent, avatarId));
       }
     });
     if (!payload.preview) mirror?.turnFinished(payload.requestId, { text: result.text, cancelled: result.cancelled });
     if (!payload.preview && result.text) presence.update({ lastAssistantSpokeAt: Date.now() });
-    return result;
+    return tagResult(result, avatarId);
   } catch (error) {
     if (!payload.preview) mirror?.turnFinished(payload.requestId, { text: '', error: error instanceof Error ? error.message : String(error) });
     throw error;
@@ -2085,7 +2086,7 @@ function registerIpcHandlers(
     if (ownTurn && codingService?.swapReclaiming()) {
       const message = 'Hang on, I’m busy, be with you in a sec…';
       const send = (voiceEvent: LocalVoiceEvent) => {
-        if (!sender.isDestroyed()) sender.send('local-voice:event', voiceEvent);
+        if (!sender.isDestroyed()) sender.send('local-voice:event', tagEvent(voiceEvent, avatarId));
       };
       if (!sender.isDestroyed()) sender.send('coding:busy', { busy: true, message });
       try {
@@ -2554,8 +2555,8 @@ app.whenReady().then(async () => {
         if (!voiceService || !floorSender) throw new Error('Local voice service is unavailable.');
         return runVoiceTurn(floorSender, request, voiceService);
       },
-      emitChatter: (_avatarId, voiceEvent) => {
-        if (floorSender && !floorSender.isDestroyed()) floorSender.send('local-voice:event', voiceEvent);
+      emitChatter: (chatterAvatarId, voiceEvent) => {
+        if (floorSender && !floorSender.isDestroyed()) floorSender.send('local-voice:event', tagEvent(voiceEvent, chatterAvatarId));
       },
       saveLine: (line) =>
         conversationManager?.appendToRecentSession([{ role: 'assistant', content: line.content, speaker: line.speaker, ts: line.ts }]),
