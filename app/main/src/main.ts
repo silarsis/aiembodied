@@ -10,6 +10,7 @@ import type { RoomGenerationService } from './rooms/room-generation.js';
 import { SwitchboardClient, makeEventId } from './switchboard/client.js';
 import { LocalOnlyBus, type SwitchboardBus } from './switchboard/bus.js';
 import { AvatarInbox } from './switchboard/inbox.js';
+import { DecisionLog } from './switchboard/decisions.js';
 import { deliberate } from './switchboard/deliberate.js';
 import { PresenceTracker, isVoicePhase } from './presence/presence.js';
 import { FloorController } from './floor/index.js';
@@ -345,6 +346,8 @@ let codingNudger: CodingNudger | null = null;
 let switchboardClient: SwitchboardClient | null = null;
 // Where events go: the client, or a local-only bus when the switchboard is off. Always set once the app is ready.
 let switchboardBus: SwitchboardBus | null = null;
+/** The last inbox decisions of all avatars, for the Status panel. */
+const decisionLog = new DecisionLog(10);
 /** Each avatar's mirror (its events on the bus) and inbox (what it does with events addressed to it). */
 const avatarPlumbing = new Map<string, { mirror: SwitchboardMirror; inbox: AvatarInbox }>();
 /** Whether Kevin is around, for the inbox's decision step. Do-not-disturb is saved in the memory store. */
@@ -833,6 +836,7 @@ function startAvatarPlumbing(profile: AvatarProfile, manager: ConfigManager): vo
       ]);
     },
     doNotDisturb: () => presence.doNotDisturb,
+    onDecision: (decision) => decisionLog.record(decision),
     logger,
   });
   avatarPlumbing.set(avatarId, { mirror, inbox });
@@ -2223,6 +2227,7 @@ function registerIpcHandlers(
     connected: switchboardBus?.connected() === true,
     url: switchboardClient ? process.env.SWITCHBOARD_URL?.trim() || 'http://127.0.0.1:8196' : null,
     openTxns: ((await switchboardClient?.openTxns(20)) ?? null)?.map((t) => ({ id: t.id, title: t.title ?? null, state: t.state, opened_by: t.opened_by ?? null, owner: t.owner ?? null, updated_at: t.updated_at ?? null })) ?? null,
+    decisions: decisionLog.recent().map((decision) => ({ ...decision, avatarName: avatarRegistry?.get(decision.avatarId)?.name ?? decision.avatarId })),
   }));
   ipcMain.handle('local-voice:system-status', (_event, avatarId?: unknown) =>
     getVoiceService(avatarIdArg(avatarId))?.systemStatus() ?? { pending: 0, ready: false, texts: [], urgent: false },

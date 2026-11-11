@@ -128,7 +128,7 @@ choice is not applied to extra avatars' audio (nor is it to Echo's element today
 
 Status and diagnostics has an **Avatars** panel (`app/renderer/src/status/avatar-manager.tsx`) next to "Hear avatar chatter". It lists every avatar and lets Kevin add one (name, optional body from the installed VRM models, optional prompt), rename it, change its body, edit its prompt (empty clears it) and remove it after a confirm. Echo has no Remove and follows the body chosen in the character settings.
 
-Main process: `avatars:add`, `avatars:update`, `avatars:remove` (`app/main/src/main.ts`). The id is a slug of the name (`a-z0-9_-`), made unique with `-2`, `-3`. Names are at most 80 characters, prompts at most 4000. Adding starts the avatar's switchboard plumbing; removing stops its inbox and drops its voice service. The last avatar and Echo cannot be removed. The renderer re-reads the list right after each change. When a 3D room is active with 2+ avatars the panel notes that the other avatars stand still beside Echo. `AIEMBODIED_EXTRA_AVATARS` still works as a dev shortcut.
+Main process: `avatars:add`, `avatars:update`, `avatars:remove` (`app/main/src/main.ts`). The id is a slug of the name (`a-z0-9_-`), made unique with `-2`, `-3`. Names are at most 80 characters, prompts at most 4000. Adding starts the avatar's switchboard plumbing; removing stops its inbox and drops its voice service. The last avatar and Echo cannot be removed. The renderer re-reads the list right after each change. When a 3D room is active with 2+ avatars the panel notes that every avatar walks, gestures, keeps clear of the others and wanders when idle. `AIEMBODIED_EXTRA_AVATARS` still works as a dev shortcut.
 
 ## Step 4b: companions in 3D rooms
 

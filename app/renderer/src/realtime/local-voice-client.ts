@@ -103,6 +103,12 @@ export class LocalVoiceClient {
   /** Request ids this client started, so a late event of one is never mistaken for chatter. */
   private readonly ownRequestIds: string[] = [];
   private chatterPhaseBefore: VoicePhase | null = null;
+  /**
+   * The microphone is ignored while chatter plays and for PLAYBACK_TAIL_MS after it, exactly as it
+   * is during the client's own turn (see handleAudio), so the avatars' voices are not heard as Kevin.
+   */
+  private micGuardUntil = Number.NEGATIVE_INFINITY;
+  private micGuarded = false;
   private remoteAudioElement: HTMLAudioElement | null = null;
   private outputDeviceId: string | null = null;
   private unsubscribeEvents: (() => void) | null = null;
@@ -112,10 +118,36 @@ export class LocalVoiceClient {
   private readonly systemReady = new Set<string>();
   private statusTimer: number | null = null;
   private connectionId = 0;
-  private busy = false;
+  /**
+   * True from the moment the client's own request starts (transcribing, thinking, speaking, the
+   * playback tail) until it is over, however it ends. Setting it false always releases `busyIdle`.
+   */
+  private busyState = false;
+  private busyRelease: (() => void) | null = null;
+  /** Resolves once the client's own request (if any) has fully finished. */
+  private busyIdlePromise: Promise<void> = Promise.resolve();
   private lastWakeAt = Number.NEGATIVE_INFINITY;
   private awakeUntil = Number.NEGATIVE_INFINITY;
   private turn: Turn | null = null;
+  private get busy(): boolean {
+    return this.busyState;
+  }
+
+  private set busy(value: boolean) {
+    if (value === this.busyState) {
+      return;
+    }
+    this.busyState = value;
+    if (value) {
+      this.busyIdlePromise = new Promise<void>((resolve) => {
+        this.busyRelease = resolve;
+      });
+    } else {
+      this.busyRelease?.();
+      this.busyRelease = null;
+    }
+  }
+
   private disposed = false;
   private activity: VoiceActivity;
   private awakeTimer: number | null = null;
@@ -284,6 +316,10 @@ export class LocalVoiceClient {
   notifyWake(timestamp = this.now()): void {
     this.lastWakeAt = timestamp;
     this.awakeUntil = Math.max(this.awakeUntil, timestamp + this.wakeWindowMs);
+    if (this.state.status === 'connected') {
+      // Kevin called: avatar chatter gives way (this does not touch the client's own turn).
+      this.yieldToKevin();
+    }
     if (this.state.status === 'connected' && !this.busy) {
       this.listen('Wake word heard');
     }
@@ -556,6 +592,16 @@ export class LocalVoiceClient {
     if (this.state.status !== 'connected' || this.busy) {
       return;
     }
+    // Same guard as an own turn: no speech detection at all while avatars are talking out loud.
+    // Push-to-talk, a tap and the wake word still reach yieldToKevin() and open the microphone.
+    if (this.chatterTurns.size > 0 || this.now() < this.micGuardUntil) {
+      this.micGuarded = true;
+      return;
+    }
+    if (this.micGuarded) {
+      this.micGuarded = false;
+      this.segmenter.reset();
+    }
     const utterance = this.segmenter.push(samples, sampleRate, this.now());
     if (utterance) {
       void this.handleUtterance(utterance);
@@ -764,8 +810,9 @@ export class LocalVoiceClient {
       if (!output) {
         return;
       }
-      // It starts once the client's own turn and every earlier chatter turn have played out.
-      const after = Promise.all([this.turn?.idle(), this.playbackTail]);
+      // It starts once the client's own request (from transcribing to the end of its playback) and
+      // every earlier chatter turn are over. A failed or cancelled request still releases the wait.
+      const after = Promise.all([this.busyIdlePromise, this.turn?.idle(), this.playbackTail]);
       const created = new Turn(event.requestId, this.context, output, after);
       created.avatarId = avatarId;
       created.routed = true;
@@ -795,6 +842,9 @@ export class LocalVoiceClient {
       this.playbackTail = tracked.idle().then(() => {
         if (this.chatterTurns.get(tracked.requestId) === tracked) {
           this.chatterTurns.delete(tracked.requestId);
+          if (this.chatterTurns.size === 0) {
+            this.micGuardUntil = this.now() + PLAYBACK_TAIL_MS;
+          }
           this.restoreAfterChatter();
         }
       });

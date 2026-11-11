@@ -54,7 +54,7 @@ export interface VrmAvatarRendererProps {
   model: AvatarModelSummary | null | undefined;
   /**
    * The avatars on the stage, side by side (2D only). Absent means one `echo` avatar made of the
-   * `model` and `frame` props, exactly as before. In a 3D room the others stand still beside Echo.
+   * `model` and `frame` props, exactly as before. In a 3D room the others are placed by the room scene controller.
    */
   avatars?: VrmStageAvatar[];
   onStatusChange?: (status: VrmRendererStatus) => void;

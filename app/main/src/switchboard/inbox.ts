@@ -6,6 +6,7 @@
  */
 import type { SwitchboardBus } from './bus.js';
 import type { Decision } from './deliberate.js';
+import type { DecisionRecord } from './decisions.js';
 import type { SwitchboardEvent } from './types.js';
 
 type Logger = {
@@ -42,6 +43,9 @@ export function lookupRule(policy: Record<string, InboxRule>, type: string): Inb
   return best ? policy[best] : policy['*'];
 }
 
+/** A rule-based save of the same text within this time is skipped (sensor floods). */
+const REMEMBER_REPEAT_MS = 60_000;
+
 export interface AvatarInboxOptions {
   avatarId: string;
   bus: SwitchboardBus;
@@ -55,11 +59,14 @@ export interface AvatarInboxOptions {
   remember?: (event: SwitchboardEvent, text: string) => void;
   /** True while do-not-disturb is on. */
   doNotDisturb?: () => boolean;
+  /** Told of every decision that is journalled, whether or not the bus reaches the switchboard. */
+  onDecision?: (decision: DecisionRecord) => void;
 }
 
 export class AvatarInbox {
   private readonly options: AvatarInboxOptions;
   private unsubscribe: (() => void) | null = null;
+  private lastSaved: { text: string; at: number } | null = null;
 
   constructor(options: AvatarInboxOptions) {
     this.options = options;
@@ -91,11 +98,32 @@ export class AvatarInbox {
       });
       return;
     }
-    if (action === 'ignore' || action === 'remember') {
-      logger?.debug?.(`Inbox: ${action}`, { type: event.type, id: event.id });
+    if (action === 'ignore') {
+      logger?.debug?.('Inbox: ignore', { type: event.type, id: event.id });
+      return;
+    }
+    if (action === 'remember') {
+      this.rememberByRule(event, rule, now);
       return;
     }
     this.speak(event, rule, action === 'speak-urgent');
+  }
+
+  /** A static `remember` rule: save the text quietly and journal it, unless the same text was just saved. */
+  private rememberByRule(event: SwitchboardEvent, rule: InboxRule | undefined, now: number): void {
+    const text = this.textOf(event);
+    if (!text) {
+      this.options.logger?.debug?.('Inbox: remember skipped, no text', { type: event.type, id: event.id });
+      return;
+    }
+    if (this.lastSaved && this.lastSaved.text === text && now - this.lastSaved.at < REMEMBER_REPEAT_MS) {
+      this.options.logger?.debug?.('Inbox: remember skipped, same text just saved', { type: event.type, id: event.id });
+      return;
+    }
+    this.lastSaved = { text, at: now };
+    this.options.logger?.debug?.('Inbox: remember', { type: event.type, id: event.id });
+    this.save(event, rule);
+    this.journal(event, 'remember', 'rule', 0, false, false);
   }
 
   private textOf(event: SwitchboardEvent): string {
@@ -170,6 +198,21 @@ export class AvatarInbox {
 
   /** Fire-and-forget record of a decision on the bus (private, nobody addressed). Never throws. */
   private journal(event: SwitchboardEvent, action: string, reason: string, ms: number, fallback: boolean, doNotDisturb: boolean): void {
+    try {
+      this.options.onDecision?.({
+        at: new Date((this.options.now ?? Date.now)()).toISOString(),
+        avatarId: this.options.avatarId,
+        event: event.id,
+        type: event.type,
+        action,
+        reason,
+        ms,
+        fallback,
+        doNotDisturb,
+      });
+    } catch {
+      // A listener must never disturb the inbox.
+    }
     try {
       const txnId = event.txn?.id ?? `decision:${event.id}`;
       this.options.bus.publish({
