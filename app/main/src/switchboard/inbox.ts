@@ -42,6 +42,9 @@ export function lookupRule(policy: Record<string, InboxRule>, type: string): Inb
   return best ? policy[best] : policy['*'];
 }
 
+/** A rule-based save of the same text within this time is skipped (sensor floods). */
+const REMEMBER_REPEAT_MS = 60_000;
+
 export interface AvatarInboxOptions {
   avatarId: string;
   bus: SwitchboardBus;
@@ -60,6 +63,7 @@ export interface AvatarInboxOptions {
 export class AvatarInbox {
   private readonly options: AvatarInboxOptions;
   private unsubscribe: (() => void) | null = null;
+  private lastSaved: { text: string; at: number } | null = null;
 
   constructor(options: AvatarInboxOptions) {
     this.options = options;
@@ -91,11 +95,32 @@ export class AvatarInbox {
       });
       return;
     }
-    if (action === 'ignore' || action === 'remember') {
-      logger?.debug?.(`Inbox: ${action}`, { type: event.type, id: event.id });
+    if (action === 'ignore') {
+      logger?.debug?.('Inbox: ignore', { type: event.type, id: event.id });
+      return;
+    }
+    if (action === 'remember') {
+      this.rememberByRule(event, rule, now);
       return;
     }
     this.speak(event, rule, action === 'speak-urgent');
+  }
+
+  /** A static `remember` rule: save the text quietly and journal it, unless the same text was just saved. */
+  private rememberByRule(event: SwitchboardEvent, rule: InboxRule | undefined, now: number): void {
+    const text = this.textOf(event);
+    if (!text) {
+      this.options.logger?.debug?.('Inbox: remember skipped, no text', { type: event.type, id: event.id });
+      return;
+    }
+    if (this.lastSaved && this.lastSaved.text === text && now - this.lastSaved.at < REMEMBER_REPEAT_MS) {
+      this.options.logger?.debug?.('Inbox: remember skipped, same text just saved', { type: event.type, id: event.id });
+      return;
+    }
+    this.lastSaved = { text, at: now };
+    this.options.logger?.debug?.('Inbox: remember', { type: event.type, id: event.id });
+    this.save(event, rule);
+    this.journal(event, 'remember', 'rule', 0, false, false);
   }
 
   private textOf(event: SwitchboardEvent): string {
