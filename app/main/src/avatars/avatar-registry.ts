@@ -15,6 +15,11 @@ export interface AvatarProfile {
   name: string;
   /** The body (VRM model) this avatar wears, or null when it has none of its own yet. */
   vrmModelId: string | null;
+  /**
+   * System prompt for this avatar when no prompt is saved for its own VRM model (avatars sharing
+   * Echo's body must not borrow Echo's saved prompt). Set for avatars made from the environment.
+   */
+  prompt?: string;
 }
 
 export interface AvatarRegistryStore {
@@ -33,7 +38,7 @@ export interface AvatarRegistryOptions {
   defaultName?: string;
 }
 
-export type AvatarProfileInput = { id: string; name?: string; vrmModelId?: string | null };
+export type AvatarProfileInput = { id: string; name?: string; vrmModelId?: string | null; prompt?: string };
 export type AvatarProfileUpdate = { name?: string; vrmModelId?: string | null };
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -47,13 +52,14 @@ function parseProfiles(raw: string | null): AvatarProfile[] | null {
     const profiles: AvatarProfile[] = [];
     for (const item of parsed) {
       if (!item || typeof item !== 'object') continue;
-      const { id, name, vrmModelId } = item as Record<string, unknown>;
+      const { id, name, vrmModelId, prompt } = item as Record<string, unknown>;
       if (typeof id !== 'string' || !id || seen.has(id)) continue;
       seen.add(id);
       profiles.push({
         id,
         name: typeof name === 'string' && name.trim() ? name.trim() : id,
         vrmModelId: typeof vrmModelId === 'string' && vrmModelId ? vrmModelId : null,
+        ...(typeof prompt === 'string' && prompt.trim() ? { prompt: prompt.trim() } : {}),
       });
     }
     return profiles.length > 0 ? profiles : null;
@@ -121,7 +127,12 @@ export class AvatarRegistry {
     if (profiles.some((profile) => profile.id === id)) {
       throw new Error(`Avatar "${id}" already exists.`);
     }
-    const profile: AvatarProfile = { id, name: input.name?.trim() || id, vrmModelId: input.vrmModelId ?? null };
+    const profile: AvatarProfile = {
+      id,
+      name: input.name?.trim() || id,
+      vrmModelId: input.vrmModelId ?? null,
+      ...(input.prompt?.trim() ? { prompt: input.prompt.trim() } : {}),
+    };
     this.save([...profiles, profile]);
     return this.resolve(profile);
   }

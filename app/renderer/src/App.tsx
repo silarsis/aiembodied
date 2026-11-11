@@ -33,6 +33,7 @@ import type { VoiceActivity } from './realtime/voice-activity.js';
 import { GpuMemoryPanel } from './status/gpu-memory-bar.js';
 import { SwitchboardStatusLine } from './status/switchboard-status.js';
 import { DoNotDisturbToggle } from './status/dnd-toggle.js';
+import { HearChatterToggle } from './status/hear-chatter-toggle.js';
 import { usePresenceReporter } from './presence/use-presence-reporter.js';
 import { CodingStatusLine } from './status/coding-status.js';
 import { ApprovalsCard } from './status/approvals-card.js';
@@ -3028,6 +3029,7 @@ export default function App() {
             <CodingTasksPanel api={activeBridge?.codingTasks} codingApi={activeBridge?.coding} localVoice={activeBridge?.localVoice} active={panel === 'status'} />
             <SwitchboardStatusLine api={activeBridge?.switchboard} active={panel === 'status'} />
             <DoNotDisturbToggle api={activeBridge?.presence} />
+            <HearChatterToggle api={activeBridge?.floor} />
             <GpuMemoryPanel api={activeBridge?.gpuMemory} active={panel === 'status'} />
           </PanelDialog>
 

@@ -56,6 +56,11 @@ export interface LocalVoiceRespondRequest {
    * LocalVoiceService.notify() (for example from the coding agent). Nothing is said as Kevin.
    */
   system?: boolean;
+  /**
+   * Run the whole turn (LLM, history, memory, tools) without speech: no text-to-speech call is made
+   * and 'sentence' events carry an empty `wav`. Used for back-channel talk between avatars.
+   */
+  silent?: boolean;
 }
 
 export interface LocalVoiceRespondResult {
@@ -79,7 +84,7 @@ export interface LocalVoiceSystemStatus {
 }
 
 /** Streamed from main to the renderer on `local-voice:event` while a reply is generated. */
-export type LocalVoiceEvent =
+export type LocalVoiceEvent = (
   /** One spoken sentence: its raw text (avatar tags included) and its audio as 16-bit WAV. */
   | { requestId: string; type: 'sentence'; index: number; text: string; wav: Uint8Array }
   | { requestId: string; type: 'error'; message: string }
@@ -92,7 +97,11 @@ export type LocalVoiceEvent =
       label: string;
       status: 'started' | 'done' | 'failed';
       detail?: string;
-    };
+    }
+) & {
+  /** The avatar the event is for; absent for Echo. */
+  avatarId?: string;
+};
 
 /** The voices a character can pick for the engine that speaks now (Character → Voice). */
 export interface SpeakingVoiceOptions {

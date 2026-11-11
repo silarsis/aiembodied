@@ -321,6 +321,7 @@ export class LocalVoiceService {
     const { requestId } = request;
     const preview = request.preview === true;
     const system = request.system === true && !preview;
+    const silent = request.silent === true;
     let inputText = request.text;
     let systemNote: string | undefined;
     let restoreNotes: (() => void) | undefined;
@@ -334,7 +335,7 @@ export class LocalVoiceService {
       inputText = taken.text;
     }
     try {
-      return await this.runTurn(request, emit, { requestId, preview, system, inputText, systemNote, restoreNotes });
+      return await this.runTurn(request, emit, { requestId, preview, system, silent, inputText, systemNote, restoreNotes });
     } catch (error) {
       restoreNotes?.();
       throw error;
@@ -344,9 +345,11 @@ export class LocalVoiceService {
   private async runTurn(
     request: LocalVoiceRespondRequest,
     emit: (event: LocalVoiceEvent) => void,
-    turn: { requestId: string; preview: boolean; system: boolean; inputText: string; systemNote?: string; restoreNotes?: () => void },
+    turn: { requestId: string; preview: boolean; system: boolean; silent?: boolean; inputText: string; systemNote?: string; restoreNotes?: () => void },
   ): Promise<LocalVoiceRespondResult> {
     const { requestId, preview, system, inputText, systemNote, restoreNotes } = turn;
+    // A silent turn runs the whole LLM turn (history, memory, tools) but makes no speech.
+    const silent = turn.silent === true && !preview;
     this.cancel();
     const controller = new AbortController();
     this.active = { requestId, controller };
@@ -414,7 +417,7 @@ export class LocalVoiceService {
     ];
 
     const { llm, tts } = this;
-    const voice = await Promise.resolve(this.voiceFor?.()).catch(() => undefined);
+    const voice = silent ? undefined : await Promise.resolve(this.voiceFor?.()).catch(() => undefined);
     const splitter = new SentenceSplitter();
     let index = 0;
     let speaking = Promise.resolve();
@@ -431,7 +434,7 @@ export class LocalVoiceService {
           return;
         }
         try {
-          const wav = spoken ? await tts.synthesize(spoken, { signal, ...(voice ? { voice } : {}) }) : new Uint8Array(0);
+          const wav = spoken && !silent ? await tts.synthesize(spoken, { signal, ...(voice ? { voice } : {}) }) : new Uint8Array(0);
           if (!signal.aborted) {
             emit({ requestId, type: 'sentence', index: sentenceIndex, text: sentence, wav });
           }

@@ -145,6 +145,30 @@ describe('LocalVoiceService', () => {
     ]);
   });
 
+  it('runs a silent turn without any text-to-speech, keeping the history', async () => {
+    const { service, requests } = makeService(['Sounds good to me. ', 'Shall we start?']);
+    const events: LocalVoiceEvent[] = [];
+    const result = await service.respond(
+      { requestId: 'c1', text: '[Sage said to you, not Kevin: "Let us start."]', silent: true },
+      (event) => events.push(event),
+    );
+    expect(result).toEqual({ requestId: 'c1', text: 'Sounds good to me. Shall we start?', cancelled: false });
+    expect(requests.some((r) => r.url.endsWith('/v1/tts'))).toBe(false);
+    const sentences = events.filter((e): e is Extract<LocalVoiceEvent, { type: 'sentence' }> => e.type === 'sentence');
+    expect(sentences.map((e) => [e.text, e.wav.length])).toEqual([
+      ['Sounds good to me.', 0],
+      ['Shall we start?', 0],
+    ]);
+
+    await service.respond({ requestId: 'c2', text: 'And now?', silent: true }, () => undefined);
+    const chats = requests.filter((r) => r.url.endsWith('/chat/completions'));
+    expect((chats[1]?.body as { messages: Array<{ role: string; content: string }> }).messages.slice(1, 4)).toEqual([
+      { role: 'user', content: '[Sage said to you, not Kevin: "Let us start."]' },
+      { role: 'assistant', content: 'Sounds good to me. Shall we start?' },
+      { role: 'user', content: 'And now?' },
+    ]);
+  });
+
   it('remembers earlier turns and forgets them after a long pause', async () => {
     let now = 1_000_000;
     const { service, requests } = makeService(['Sure thing.'], { now: () => now });
