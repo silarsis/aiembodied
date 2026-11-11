@@ -763,6 +763,11 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
   },
   avatars: {
     list: () => ipcRenderer.invoke('avatars:list') as Promise<AvatarProfile[]>,
+    add: (input) => ipcRenderer.invoke('avatars:add', input) as Promise<AvatarProfile>,
+    update: (id, changes) => ipcRenderer.invoke('avatars:update', id, changes) as Promise<AvatarProfile>,
+    remove: async (id) => {
+      await ipcRenderer.invoke('avatars:remove', id);
+    },
   },
   presence: {
     update: (payload) => ipcRenderer.invoke('presence:update', payload),

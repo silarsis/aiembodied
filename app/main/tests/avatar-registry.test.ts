@@ -90,6 +90,17 @@ describe('AvatarSettingsKeys', () => {
     state.active = 'vrm-2';
     expect(keys.prompt()).toBe('avatar.prompt.vrm-2');
   });
+
+  it('update sets, trims and clears the prompt', () => {
+    const { registry } = makeRegistry();
+    registry.add({ id: 'sage', name: 'Sage' });
+    expect(registry.update('sage', { prompt: '  Be calm.  ' }).prompt).toBe('Be calm.');
+    expect(registry.get('sage')?.prompt).toBe('Be calm.');
+    expect(registry.update('sage', { name: 'Sagey' }).prompt).toBe('Be calm.');
+    const cleared = registry.update('sage', { prompt: '' });
+    expect(cleared.prompt).toBeUndefined();
+    expect('prompt' in (registry.get('sage') ?? {})).toBe(false);
+  });
 });
 
 function makeRegistryKeys(active: string | null) {

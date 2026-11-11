@@ -39,7 +39,8 @@ export interface AvatarRegistryOptions {
 }
 
 export type AvatarProfileInput = { id: string; name?: string; vrmModelId?: string | null; prompt?: string };
-export type AvatarProfileUpdate = { name?: string; vrmModelId?: string | null };
+/** `prompt`: an empty string clears it. */
+export type AvatarProfileUpdate = { name?: string; vrmModelId?: string | null; prompt?: string };
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
@@ -147,6 +148,11 @@ export class AvatarRegistry {
       name: changes.name !== undefined ? changes.name.trim() || current.name : current.name,
       vrmModelId: changes.vrmModelId !== undefined ? changes.vrmModelId : current.vrmModelId,
     };
+    if (changes.prompt !== undefined) {
+      const prompt = changes.prompt.trim();
+      if (prompt) next.prompt = prompt;
+      else delete next.prompt;
+    }
     profiles[index] = next;
     this.save(profiles);
     return this.resolve(next);

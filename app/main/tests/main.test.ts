@@ -1437,6 +1437,23 @@ describe('main process bootstrap', () => {
       respondSpy.mockRestore();
     });
 
+    it('adds, updates and removes avatars over IPC', async () => {
+      const { handlers, respondSpy } = await boot();
+      const call = (channel: string, ...args: unknown[]) => handlers.get(channel)?.({}, ...args) as unknown;
+      const sage = call('avatars:add', { name: 'Sage!', prompt: 'Be calm.' }) as { id: string; prompt?: string };
+      expect(sage).toMatchObject({ id: 'sage', name: 'Sage!', prompt: 'Be calm.' });
+      expect(call('avatars:add', { name: 'Sage' })).toMatchObject({ id: 'sage-2' });
+      expect(() => call('avatars:add', { name: '  ' })).toThrow(/name/i);
+      expect(() => call('avatars:add', { name: 'x'.repeat(81) })).toThrow(/80/);
+      expect(() => call('avatars:add', { name: 'Ok', prompt: 'p'.repeat(4001) })).toThrow(/4000/);
+      expect(call('avatars:update', 'sage', { name: 'Sagey', prompt: '' })).toMatchObject({ id: 'sage', name: 'Sagey' });
+      expect((call('avatars:list') as Array<{ id: string; prompt?: string }>).find((p) => p.id === 'sage')?.prompt).toBeUndefined();
+      expect(() => call('avatars:remove', 'echo')).toThrow(/Echo/);
+      call('avatars:remove', 'sage');
+      expect((call('avatars:list') as Array<{ id: string }>).map((p) => p.id)).toEqual(['echo', 'sage-2']);
+      respondSpy.mockRestore();
+    });
+
     it('creates env avatars and routes by name, host and explicit avatar id', async () => {
       const { served, respond, respondSpy, handlers } = await boot('Sage,Rex');
       expect((handlers.get('avatars:list')?.({}) as Array<{ id: string; prompt?: string }>).map((p) => p.id)).toEqual(['echo', 'sage', 'rex']);

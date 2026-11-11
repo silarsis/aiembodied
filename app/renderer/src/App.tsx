@@ -33,6 +33,7 @@ import type { VoiceActivity } from './realtime/voice-activity.js';
 import { GpuMemoryPanel } from './status/gpu-memory-bar.js';
 import { SwitchboardStatusLine } from './status/switchboard-status.js';
 import { DoNotDisturbToggle } from './status/dnd-toggle.js';
+import { AvatarManager } from './status/avatar-manager.js';
 import { HearChatterToggle } from './status/hear-chatter-toggle.js';
 import { usePresenceReporter } from './presence/use-presence-reporter.js';
 import { CodingStatusLine } from './status/coding-status.js';
@@ -1713,6 +1714,10 @@ export default function App() {
     }
   }, [realtimeState.status, disposeAvatarVoices]);
 
+  const refreshAvatarsRef = useRef<(() => Promise<void>) | null>(null);
+  const refreshAvatars = useCallback(async () => {
+    await refreshAvatarsRef.current?.();
+  }, []);
   // Which avatars share the stage: the registry's list and the models they wear. Only read further
   // while there is more than one avatar, so a single avatar costs one `avatars:list` call.
   useEffect(() => {
@@ -1722,18 +1727,20 @@ export default function App() {
     }
     let cancelled = false;
     let timer: ReturnType<typeof setInterval> | null = null;
-    const refresh = async () => {
+    const refresh = async (forceModels = false) => {
       try {
         const list = await avatarsApi.list();
         if (cancelled) {
           return;
         }
         setAvatarProfiles((previous) => (JSON.stringify(previous) === JSON.stringify(list) ? previous : list));
-        if (list.length > 1) {
+        if (list.length > 1 || forceModels) {
           const models = await resolveApi()?.avatar?.listModels?.();
           if (!cancelled && models) {
             setVrmModels((previous) => (JSON.stringify(previous) === JSON.stringify(models) ? previous : models));
           }
+        }
+        if (list.length > 1) {
           if (timer === null && !cancelled) {
             timer = setInterval(() => void refresh(), 5000);
           }
@@ -1748,8 +1755,10 @@ export default function App() {
     const onFocus = () => void refresh();
     window.addEventListener('focus', onFocus);
     void refresh();
+    refreshAvatarsRef.current = () => refresh(true);
     return () => {
       cancelled = true;
+      refreshAvatarsRef.current = null;
       window.removeEventListener('focus', onFocus);
       if (timer !== null) {
         clearInterval(timer);
@@ -3174,6 +3183,13 @@ export default function App() {
             <SwitchboardStatusLine api={activeBridge?.switchboard} active={panel === 'status'} />
             <DoNotDisturbToggle api={activeBridge?.presence} />
             <HearChatterToggle api={activeBridge?.floor} />
+            <AvatarManager
+              api={activeBridge?.avatars}
+              profiles={avatarProfiles}
+              models={vrmModels}
+              roomActive={Boolean(backgrounds.activeRoom)}
+              onChanged={refreshAvatars}
+            />
             <GpuMemoryPanel api={activeBridge?.gpuMemory} active={panel === 'status'} />
           </PanelDialog>
 
