@@ -41,6 +41,8 @@ export interface LocalVoiceTranscribeResult {
 
 export interface LocalVoiceRespondRequest {
   requestId: string;
+  /** The avatar that answers (default 'echo'): its own history, notes and voice. */
+  avatarId?: string;
   text: string;
   /** System prompt for the turn (the same session instructions the Realtime backend gets). */
   instructions?: string;

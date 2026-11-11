@@ -231,3 +231,41 @@ describe('MemoryStore', () => {
     expect(store.listVrmAnimations()).toHaveLength(0);
   });
 });
+
+describe('MemoryStore speaker column', () => {
+  it('stores and returns the speaker of a message, null for older rows', async () => {
+    const store = await createStore();
+    store.createSession({ id: 's', startedAt: 1, title: null });
+    store.appendMessage({ id: 'm1', sessionId: 's', role: 'user', ts: 1, content: 'hi', audioPath: null, speaker: 'user' });
+    store.appendMessage({ id: 'm2', sessionId: 's', role: 'assistant', ts: 2, content: 'hello', audioPath: null, speaker: 'echo' });
+    store.appendMessage({ id: 'm3', sessionId: 's', role: 'system', ts: 3, content: 'note', audioPath: null });
+    const messages = store.listMessages('s');
+    expect(messages.map((m) => m.speaker)).toEqual(['user', 'echo', undefined]);
+    const exported = store.exportData();
+    expect(exported.messages.map((m) => m.speaker)).toEqual(['user', 'echo', undefined]);
+    store.importData({ ...exported, messages: exported.messages }, 'replace');
+    expect(store.listMessages('s').map((m) => m.speaker)).toEqual(['user', 'echo', undefined]);
+  });
+
+  it('migrates a version 8 database by adding a nullable speaker column and keeping messages', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'memory-store-migrate-'));
+    tempDirs.push(directory);
+    const filePath = path.join(directory, 'memory.db');
+    const first = new MemoryStore({ filePath });
+    first.createSession({ id: 's', startedAt: 1, title: null });
+    first.appendMessage({ id: 'old', sessionId: 's', role: 'user', ts: 1, content: 'before', audioPath: null });
+    // Put the database back as version 8 left it: no speaker column.
+    first.database.exec('ALTER TABLE messages DROP COLUMN speaker;');
+    first.database.pragma('user_version = 8');
+    first.dispose();
+
+    const store = new MemoryStore({ filePath });
+    stores.push(store);
+    expect(Number(store.database.pragma('user_version', { simple: true }))).toBe(9);
+    const columns = store.database.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string; notnull: number }>;
+    expect(columns.find((c) => c.name === 'speaker')).toMatchObject({ notnull: 0 });
+    expect(store.listMessages('s')).toEqual([{ id: 'old', sessionId: 's', role: 'user', ts: 1, content: 'before', audioPath: null }]);
+    store.appendMessage({ id: 'new', sessionId: 's', role: 'assistant', ts: 2, content: 'after', audioPath: null, speaker: 'echo' });
+    expect(store.listMessages('s')[1]?.speaker).toBe('echo');
+  });
+});

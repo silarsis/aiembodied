@@ -1,4 +1,5 @@
 import type { SwitchboardBridge } from '../../main/src/switchboard/bridge-types.js';
+import type { AvatarsBridge } from '../../main/src/avatars/bridge-types.js';
 import type { PresenceBridge } from '../../main/src/presence/bridge-types.js';
 import type { GpuMemoryBridge } from '../../main/src/diagnostics/gpu-memory.js';
 import type { CodingBridge, CodingBusyBridge, CodingTasksBridge } from '../../main/src/coding/bridge-types.js';
@@ -138,12 +139,13 @@ export interface LocalVoiceBridge {
   transcribe(wav: ArrayBuffer): Promise<LocalVoiceTranscribeResult>;
   /** Generate and speak a reply; sentences arrive through onEvent before this resolves. */
   respond(request: LocalVoiceRespondRequest): Promise<LocalVoiceRespondResult>;
-  cancel(requestId?: string): Promise<void>;
-  resetHistory(): Promise<void>;
+  /** `avatarId` picks whose reply is stopped (default: echo). */
+  cancel(requestId?: string, avatarId?: string): Promise<void>;
+  resetHistory(avatarId?: string): Promise<void>;
   /** The voices the active character can pick for the engine that speaks now. */
   getVoiceOptions?(): Promise<SpeakingVoiceOptions>;
   /** Updates for Echo that are waiting to be spoken (from the coding agent). */
-  systemStatus?(): Promise<LocalVoiceSystemStatus>;
+  systemStatus?(avatarId?: string): Promise<LocalVoiceSystemStatus>;
   /** An update is ready: run a system turn if the conversation is idle. */
   onSystemReady?(listener: (info?: { urgent: boolean }) => void): () => void;
   onEvent(listener: (event: LocalVoiceEvent) => void): () => void;
@@ -166,6 +168,7 @@ export interface PreloadApi {
   gpuMemory?: GpuMemoryBridge;
   switchboard?: SwitchboardBridge;
   presence?: PresenceBridge;
+  avatars?: AvatarsBridge;
   coding?: CodingBridge;
   codingTasks?: CodingTasksBridge;
   codingBusy?: CodingBusyBridge;

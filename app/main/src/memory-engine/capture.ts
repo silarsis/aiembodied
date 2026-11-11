@@ -26,6 +26,8 @@ export interface CapturedMessage {
   role: string;
   content: string;
   ts: number;
+  /** Who said it: an avatar id or 'user' (see ConversationMessage.speaker). */
+  speaker?: string | null;
 }
 
 export interface CapturedToolCall {
@@ -40,7 +42,7 @@ export interface CapturedToolCall {
 /** What the importer needs from the app's SQLite conversation archive. */
 export interface ConversationArchive {
   listSessions(options?: { limit?: number }): Array<{ id: string; startedAt: number; title: string | null }>;
-  listMessages(sessionId: string): Array<{ id: string; sessionId: string; role: string; ts: number; content: string }>;
+  listMessages(sessionId: string): Array<{ id: string; sessionId: string; role: string; ts: number; content: string; speaker?: string | null }>;
   getValue(key: string): string | null;
   setValue(key: string, value: string): void;
 }
@@ -52,7 +54,8 @@ type Logger = {
 
 export interface MemoryCaptureOptions {
   outbox: { enqueue(item: OutboxItem): void };
-  agent: () => CaptureAgent;
+  /** The character, by avatar id when one is given; no id means the default avatar. */
+  agent: (avatarId?: string) => CaptureAgent;
   channel?: string;
   logger?: Logger;
 }
@@ -68,7 +71,7 @@ function iso(ms: number): string {
 export class MemoryCapture {
   private readonly outbox: MemoryCaptureOptions['outbox'];
 
-  private readonly agent: () => CaptureAgent;
+  private readonly agent: (avatarId?: string) => CaptureAgent;
 
   private readonly channel: string;
 
@@ -98,6 +101,8 @@ export class MemoryCapture {
         role: message.role as MemoryEngineMessage['role'],
         content: message.content,
         created_at: iso(message.ts),
+        // The engine labels user lines with `speaker ?? 'User'`, so the plain user is sent as none.
+        ...(message.speaker && message.speaker !== 'user' ? { speaker: message.speaker } : {}),
       },
     });
   }

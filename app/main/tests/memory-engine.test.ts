@@ -224,6 +224,15 @@ describe('MemoryCapture', () => {
     ]);
   });
 
+  it('passes the speaker through, leaving the plain user to the engine\'s default label', () => {
+    const { memory, items } = capture();
+    memory.recordMessage({ id: 'u', sessionId: 's', role: 'user', content: 'hi', ts: 0, speaker: 'user' });
+    memory.recordMessage({ id: 'a', sessionId: 's', role: 'assistant', content: 'hello', ts: 0, speaker: 'sage' });
+    const messages = items.map((item) => (item as { message: MemoryEngineMessage }).message);
+    expect(messages[0]).not.toHaveProperty('speaker');
+    expect(messages[1]?.speaker).toBe('sage');
+  });
+
   it('records sessions with the character, and tool calls with their result', () => {
     const { memory, items } = capture();
     memory.recordSession({ id: 's', startedAt: 0, title: null });
@@ -285,5 +294,29 @@ describe('setupMemoryEngine', () => {
     expect(
       setupMemoryEngine({ settings: { enabled: false, url: 'x' }, store, conversations: new ConversationManager({ store }), logger: quiet }),
     ).toBeNull();
+  });
+});
+
+describe('setupMemoryEngine avatars', () => {
+  it('asks for the agent by avatar id', async () => {
+    const store = await createStore();
+    const conversations = new ConversationManager({ store });
+    const seen: Array<string | undefined> = [];
+    const runtime = setupMemoryEngine({
+      settings: { enabled: true, url: 'http://engine' },
+      store,
+      conversations,
+      agentFor: (avatarId) => {
+        seen.push(avatarId);
+        return { name: avatarId === 'sage' ? 'Sage' : 'Echo', id: null };
+      },
+      fetchFn: (async () => new Response('{}', { status: 200 })) as unknown as typeof fetch,
+    });
+    expect(runtime).not.toBeNull();
+    expect(runtime?.voiceFor('sage')).toBe(runtime?.voiceFor('sage'));
+    expect(runtime?.voiceFor('sage')).not.toBe(runtime?.voice);
+    conversations.startSession({ startedAt: 1 });
+    expect(seen).toContain(undefined);
+    runtime?.stop();
   });
 });

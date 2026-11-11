@@ -11,7 +11,10 @@ import { LocalOnlyBus, type SwitchboardBus } from './switchboard/bus.js';
 import { AvatarInbox } from './switchboard/inbox.js';
 import { deliberate } from './switchboard/deliberate.js';
 import { PresenceTracker, isVoicePhase } from './presence/presence.js';
-import { DEFAULT_AVATAR_ID, SwitchboardMirror } from './switchboard/mirror.js';
+import { SwitchboardMirror } from './switchboard/mirror.js';
+import { AvatarRegistry, DEFAULT_AVATAR_ID, type AvatarProfile } from './avatars/avatar-registry.js';
+import { AvatarSettingsKeys } from './avatars/avatar-settings.js';
+import { VoiceServices } from './avatars/voice-services.js';
 import dotenv from 'dotenv';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
@@ -69,6 +72,7 @@ import { ServerManager } from './server/server-manager.js';
 import { LocalVoiceService } from './local-voice/local-voice-service.js';
 import {
   activeAgent,
+  type CaptureAgent,
   createMemoryTools,
   memoryEngineSettings,
   registerMemoryEngineIpc,
@@ -136,7 +140,7 @@ import { CodingMemoryWriter } from './coding/memory-writer.js';
 import { CodingNudger } from './coding/nudger.js';
 import { registerCodingTaskIpc } from './coding/task-ipc.js';
 import { CODING_SERVER_ID, CODING_TOOL_IDS, createCodingTools } from './coding/tools.js';
-import { ApprovalBroker, type PendingApproval } from './tools/approvals.js';
+import { ApprovalBroker, type ApprovalOutcome, type PendingApproval } from './tools/approvals.js';
 import { registerApprovalsIpc } from './tools/approvals-ipc.js';
 import { lookupHuggingFace, parseHuggingFaceRef } from './local-llm/huggingface.js';
 import { LlmLibrary } from './local-llm/llm-library.js';
@@ -286,7 +290,14 @@ const poseControlInstaller: PoseControlInstaller = {
 let avatarCharacterModels: AvatarCharacterModelService | undefined;
 let avatarGenerationService: AvatarGenerationService | null = null;
 let localMotionService: LocalMotionGenerationService | null = null;
+/** Echo's voice service, kept for the code and tests that only know one avatar. */
 let localVoiceService: LocalVoiceService | null = null;
+/** One LocalVoiceService per avatar id, sharing the engines below. Null until provider settings are applied. */
+let voiceServices: VoiceServices | null = null;
+let voiceEngines: ReturnType<typeof buildVoiceEngines> | null = null;
+let voiceConfigManager: ConfigManager | null = null;
+let avatarRegistry: AvatarRegistry | null = null;
+let avatarSettingsKeys: AvatarSettingsKeys | null = null;
 let memoryEngine: MemoryEngineRuntime | null = null;
 let memoryStorageSync: MemoryStorageSync | null = null;
 let homeServerSync: HomeServerSync | null = null;
@@ -319,17 +330,17 @@ let approvalBroker: ApprovalBroker | null = null;
 let codingNudger: CodingNudger | null = null;
 // Copies app events onto the switchboard (services/switchboard). Phase 1: mirror only; null when off.
 let switchboardClient: SwitchboardClient | null = null;
-let switchboardMirror: SwitchboardMirror | null = null;
 // Where events go: the client, or a local-only bus when the switchboard is off. Always set once the app is ready.
 let switchboardBus: SwitchboardBus | null = null;
-let avatarInbox: AvatarInbox | null = null;
+/** Each avatar's mirror (its events on the bus) and inbox (what it does with events addressed to it). */
+const avatarPlumbing = new Map<string, { mirror: SwitchboardMirror; inbox: AvatarInbox }>();
 /** Whether Kevin is around, for the inbox's decision step. Do-not-disturb is saved in the memory store. */
 const presence = new PresenceTracker({
   getValue: (key) => memoryStore?.getValue(key) ?? null,
   setValue: (key, value) => memoryStore?.setValue(key, value),
 });
-/** The voice turn being answered now, so tool results can name their turn. */
-let activeVoiceRequestId: string | undefined;
+/** The voice turn each avatar is answering now, so tool results can name their turn. */
+const activeVoiceRequests = new Map<string, string>();
 const seenApprovalIds = new Set<string>();
 let codingToolsSignature: string | null = null;
 
@@ -675,31 +686,28 @@ function startWakeWordService(wakeWord: WakeWordConfig): WakeWordService {
 }
 
 /**
- * Where the active character's voice for an engine is kept. Each engine has its own voices, so a
- * character keeps one per engine; OpenAI's is the one it always had (also used by the Realtime
- * conversation engine).
+ * Where an avatar's voice for an engine is kept. Each engine has its own voices, so a character
+ * keeps one per engine; OpenAI's is the one it always had (also used by the Realtime conversation
+ * engine). Settings are still saved under the VRM model id; the avatar's profile says which.
+ * Without an avatar id: the avatar of the active VRM model.
  */
-function characterVoiceKey(engine: SpeakingEngineId | 'openai'): string | null {
-  const activeModel = avatarModelService?.getActiveModel?.() || null;
-  if (!activeModel?.id) return null;
-  return engine === 'openai' ? `avatar.voice.${activeModel.id}` : `avatar.voice.${activeModel.id}.${engine}`;
+function characterVoiceKey(engine: SpeakingEngineId | 'openai', avatarId?: string): string | null {
+  return avatarSettingsKeys?.voice(engine, avatarId) ?? null;
 }
 
-/** Where the active character's idle habits (what they do when nobody is talking) are kept. */
-function characterIdleHabitsKey(): string | null {
-  const activeModel = avatarModelService?.getActiveModel?.() || null;
-  return activeModel?.id ? `avatar.idleHabits.${activeModel.id}` : null;
+/** Where an avatar's idle habits (what they do when nobody is talking) are kept. */
+function characterIdleHabitsKey(avatarId?: string): string | null {
+  return avatarSettingsKeys?.idleHabits(avatarId) ?? null;
 }
 
-/** Where the active character's personality prompt is kept. */
-function characterPromptKey(): string | null {
-  const activeModel = avatarModelService?.getActiveModel?.() || null;
-  return activeModel?.id ? `avatar.prompt.${activeModel.id}` : null;
+/** Where an avatar's personality prompt is kept. */
+function characterPromptKey(avatarId?: string): string | null {
+  return avatarSettingsKeys?.prompt(avatarId) ?? null;
 }
 
-function characterVoice(engine: SpeakingEngineId | 'openai' | null): string | null {
+function characterVoice(engine: SpeakingEngineId | 'openai' | null, avatarId?: string): string | null {
   if (!engine || !memoryStore) return null;
-  const key = characterVoiceKey(engine);
+  const key = characterVoiceKey(engine, avatarId);
   return key ? memoryStore.getValue(key) ?? null : null;
 }
 
@@ -750,43 +758,132 @@ async function speakingVoiceOptions(manager: ConfigManager): Promise<SpeakingVoi
  * at startup and after every change on the Settings page, so a change applies without a restart
  * (except the local motion model, which the launcher picks when it starts services/motion).
  */
+/** The avatar id an IPC call names; Echo when it names none. */
+function avatarIdArg(value: unknown): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : DEFAULT_AVATAR_ID;
+}
+
+/** For settings: no avatar id means the avatar of the active VRM model (what the screens always meant). */
+function settingsAvatarArg(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+/** Who an avatar is to long-term memory: the name of its VRM model, as the memory engine has always been told. */
+function avatarAgent(
+  store: Pick<MemoryStore, 'getActiveVrmModelId' | 'getVrmModel'>,
+  registry: Pick<AvatarRegistry, 'get'> | null,
+  avatarId?: string,
+): CaptureAgent {
+  if (!avatarId || avatarId === DEFAULT_AVATAR_ID) return activeAgent(store);
+  const profile = registry?.get(avatarId);
+  if (!profile) return activeAgent(store);
+  try {
+    const model = profile.vrmModelId ? store.getVrmModel(profile.vrmModelId) : null;
+    const name = model?.name?.trim() || profile.name.trim();
+    if (name) return { name, id: profile.vrmModelId };
+  } catch {
+    // Fall through to the generic name.
+  }
+  return { name: profile.name || 'assistant', id: null };
+}
+
 /**
- * A note for Echo goes onto the bus as avatar.inbox; the inbox (below) hands it to
- * LocalVoiceService.notify, over the switchboard or, when it is not connected, straight back.
- * Before the bus exists (very early) it goes to Echo directly.
+ * A note for an avatar goes onto the bus as avatar.inbox; its inbox (below) hands it to that
+ * avatar's LocalVoiceService.notify, over the switchboard or, when it is not connected, straight
+ * back. Before the bus exists (very early) it goes to the avatar's service directly.
  */
-function notifyEcho(text: string, urgent: boolean): void {
-  if (switchboardMirror) switchboardMirror.noteQueued(text, urgent);
-  else localVoiceService?.notify(text, { urgent });
+function notifyAvatar(avatarId: string, text: string, urgent: boolean): void {
+  const mirror = avatarPlumbing.get(avatarId)?.mirror;
+  if (mirror) mirror.noteQueued(text, urgent);
+  else getVoiceService(avatarId)?.notify(text, { urgent });
+}
+
+/**
+ * Give an avatar its switchboard presence: a mirror (its events on the bus) and an inbox (what it
+ * does with events addressed to it). Adding an avatar later is one call to this with its profile.
+ */
+function startAvatarPlumbing(profile: AvatarProfile, manager: ConfigManager): void {
+  if (!switchboardBus || avatarPlumbing.has(profile.id)) return;
+  const avatarId = profile.id;
+  const mirror = new SwitchboardMirror({ client: switchboardBus, avatarId });
+  const inbox = new AvatarInbox({
+    avatarId,
+    bus: switchboardBus,
+    notify: (text, options) => getVoiceService(avatarId)?.notify(text, options),
+    deliberate: (event) =>
+      deliberate(event, presence, { routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger }),
+    remember: (event, text) => {
+      const source = typeof event.payload.source === 'string' ? event.payload.source : `${event.producer.kind}:${event.producer.id}`;
+      conversationManager?.appendToRecentSession([
+        { role: 'system', content: `[Update from ${source}, not from Kevin, saved quietly] ${text}`, ts: Date.now() },
+      ]);
+    },
+    doNotDisturb: () => presence.doNotDisturb,
+    logger,
+  });
+  avatarPlumbing.set(avatarId, { mirror, inbox });
+  inbox.start();
+}
+
+/** The avatar's mirror, Echo's when no id is given. */
+function mirrorFor(avatarId: string = DEFAULT_AVATAR_ID): SwitchboardMirror | undefined {
+  return avatarPlumbing.get(avatarId)?.mirror;
+}
+
+/** The avatar a switchboard address such as `avatar:echo` names (Echo for anything else). */
+function avatarIdOfAddress(address: string | undefined): string {
+  return address?.startsWith('avatar:') ? address.slice('avatar:'.length) || DEFAULT_AVATAR_ID : DEFAULT_AVATAR_ID;
+}
+
+/**
+ * The voice service for an avatar, made on first use with that avatar's own history and notes
+ * and the shared engines. Null until provider settings have been applied.
+ */
+function getVoiceService(avatarId: string = DEFAULT_AVATAR_ID): LocalVoiceService | null {
+  return voiceServices ? voiceServices.get(avatarId) : null;
+}
+
+function createVoiceService(avatarId: string): LocalVoiceService {
+  const manager = voiceConfigManager;
+  if (!voiceEngines || !manager) throw new Error('Voice engines are not configured yet.');
+  return new LocalVoiceService({
+    ...voiceEngines,
+    avatarId,
+    tools: toolRegistry ?? undefined,
+    approvals: approvalBroker?.forAvatar(avatarId),
+    extraInstructions: () => codingBrief(manager),
+    onSystemReady: () =>
+      broadcastToWindows('local-voice:system-ready', {
+        urgent: getVoiceService(avatarId)?.systemStatus().urgent === true,
+        ...(avatarId === DEFAULT_AVATAR_ID ? {} : { avatarId }),
+      }),
+    logger,
+    onToolResult: (record) => {
+      memoryEngine?.recordToolCall(record);
+      mirrorFor(avatarId)?.toolResult(record, activeVoiceRequests.get(avatarId));
+    },
+    voiceFor: () => characterVoice(speakingVoiceKey(manager.getConfig().models), avatarId) ?? undefined,
+    // Through memoryEngine at call time: it is set up after this service.
+    memory: {
+      brief: () => memoryEngine?.voiceFor(avatarId).brief() ?? Promise.resolve(null),
+      recall: (text, recalled) => memoryEngine?.voiceFor(avatarId).recall(text, recalled) ?? Promise.resolve(null),
+      activity: (busy) => memoryEngine?.voiceFor(avatarId).activity?.(busy),
+    },
+  });
 }
 
 async function applyProviderSettings(manager: ConfigManager): Promise<void> {
   const config = manager.getConfig();
   const { providers, models } = config;
   const engines = buildVoiceEngines(models, (id) => manager.getServerKey(id), { logger, llmOverride: codingService?.chatOverride() });
-  if (localVoiceService) {
-    localVoiceService.configure(engines);
+  voiceEngines = engines;
+  voiceConfigManager = manager;
+  if (voiceServices) {
+    voiceServices.configure(engines);
   } else {
-    localVoiceService = new LocalVoiceService({
-      ...engines,
-      tools: toolRegistry ?? undefined,
-      approvals: approvalBroker ?? undefined,
-      extraInstructions: () => codingBrief(manager),
-      onSystemReady: () => broadcastToWindows('local-voice:system-ready', { urgent: localVoiceService?.systemStatus().urgent === true }),
-      logger,
-      onToolResult: (record) => {
-        memoryEngine?.recordToolCall(record);
-        switchboardMirror?.toolResult(record, activeVoiceRequestId);
-      },
-      voiceFor: () => characterVoice(speakingVoiceKey(manager.getConfig().models)) ?? undefined,
-      // Through memoryEngine at call time: it is set up after this service.
-      memory: {
-        brief: () => memoryEngine?.voice.brief() ?? Promise.resolve(null),
-        recall: (text, recalled) => memoryEngine?.voice.recall(text, recalled) ?? Promise.resolve(null),
-        activity: (busy) => memoryEngine?.voice.activity?.(busy),
-      },
-    });
+    voiceServices = new VoiceServices({ create: createVoiceService });
   }
+  localVoiceService = voiceServices.get(DEFAULT_AVATAR_ID);
 
   const motionServer = localMotionServer(manager);
   const motionUrl = motionServer?.url ?? providers.motion.localServiceUrl;
@@ -935,30 +1032,33 @@ function getCodingService(manager: ConfigManager): CodingService {
       }),
     onOverrideChange: () => applyProviderSettings(manager),
     gpuMemory: gpuMemoryReader,
-    notify: (text, options) => notifyEcho(text, options?.urgent === true),
+    notify: (text, options) => notifyAvatar(CODING_NUDGE_AVATAR_ID, text, options?.urgent === true),
     logger,
   });
   const service = codingService;
   const workspaceName = (id: string | undefined) => manager.getCoding().workspaces.find((ws) => ws.id === id)?.name ?? id ?? 'a workspace';
   codingNudger = new CodingNudger({
-    notify: (text, options) => notifyEcho(text, options?.urgent === true),
+    notify: (text, options) => notifyAvatar(CODING_NUDGE_AVATAR_ID, text, options?.urgent === true),
     getTask: (id) => service.runnerClient()?.getTask(id).catch(() => null) ?? Promise.resolve(null),
     workspaceName,
     logger,
   });
   service.onRunnerEvent((event) => void codingNudger?.handleEvent(event));
-  service.onRunnerEvent((event) => switchboardMirror?.runnerEvent(event));
+  service.onRunnerEvent((event) => mirrorFor(CODING_NUDGE_AVATAR_ID)?.runnerEvent(event));
   // Finished tasks become memories. The memory engine is set up later, so it is read at call time.
   const memoryWriter = new CodingMemoryWriter({
     getTask: (id) => service.runnerClient()?.getTask(id).catch(() => null) ?? Promise.resolve(null),
     workspaceName,
     post: (task) => memoryEngine?.outbox.enqueue({ kind: 'coding_task', task }),
-    agentName: () => (memoryStore ? activeAgent(memoryStore).name : null),
+    agentName: () => (memoryStore ? avatarAgent(memoryStore, avatarRegistry, CODING_NUDGE_AVATAR_ID).name : null),
     logger,
   });
   service.onRunnerEvent((event) => void memoryWriter.handleEvent(event));
   return codingService;
 }
+
+/** Coding updates (task questions, reviews, nudges) go to this avatar until tasks can be handed to others. */
+const CODING_NUDGE_AVATAR_ID = DEFAULT_AVATAR_ID;
 
 /** Echo's coding tools exist while workspaces are set up. Re-registered when the list changes. */
 function applyCodingTools(manager: ConfigManager): void {
@@ -1894,6 +1994,7 @@ function registerIpcHandlers(
       motionStreamControllers.get(streamId)?.abort();
     }
   });
+  ipcMain.handle('avatars:list', () => avatarRegistry?.list() ?? []);
   ipcMain.handle('local-voice:status', async () => {
     if (!localVoiceService) {
       throw new Error('Local voice service is unavailable.');
@@ -1908,12 +2009,14 @@ function registerIpcHandlers(
     return localVoiceService.transcribe(wav);
   });
   ipcMain.handle('local-voice:respond', async (event, payload: LocalVoiceRespondRequest) => {
-    if (!localVoiceService) {
+    const voiceService = getVoiceService(avatarIdArg(payload?.avatarId));
+    if (!voiceService) {
       throw new Error('Local voice service is unavailable.');
     }
     if (!payload || typeof payload.requestId !== 'string' || typeof payload.text !== 'string') {
       throw new Error('Invalid local voice request payload received.');
     }
+    const avatarId = voiceService.avatarId;
 
     // Kevin's own speech or typing (not a system update or a preview): the coder model gives way to it.
     const ownTurn = !payload.system && !payload.preview;
@@ -1927,29 +2030,30 @@ function registerIpcHandlers(
       };
       if (!sender.isDestroyed()) sender.send('coding:busy', { busy: true, message });
       try {
-        await localVoiceService.speakOnly(payload.requestId, message, send);
+        await voiceService.speakOnly(payload.requestId, message, send);
         await codingService.waitForEcho(15 * 60_000);
       } finally {
         if (!sender.isDestroyed()) sender.send('coding:busy', { busy: false });
       }
     }
-    switchboardMirror?.turnStarted(payload.requestId, { text: payload.text, system: payload.system === true, preview: payload.preview === true });
-    activeVoiceRequestId = payload.requestId;
+    const mirror = mirrorFor(avatarId);
+    mirror?.turnStarted(payload.requestId, { text: payload.text, system: payload.system === true, preview: payload.preview === true });
+    activeVoiceRequests.set(avatarId, payload.requestId);
     if (!payload.preview && !payload.system) presence.update({ lastUserSpeechAt: Date.now() });
     try {
-      const result = await localVoiceService.respond(payload, (voiceEvent) => {
+      const result = await voiceService.respond(payload, (voiceEvent) => {
         if (!sender.isDestroyed()) {
           sender.send('local-voice:event', voiceEvent);
         }
       });
-      if (!payload.preview) switchboardMirror?.turnFinished(payload.requestId, { text: result.text, cancelled: result.cancelled });
+      if (!payload.preview) mirror?.turnFinished(payload.requestId, { text: result.text, cancelled: result.cancelled });
       if (!payload.preview && result.text) presence.update({ lastAssistantSpokeAt: Date.now() });
       return result;
     } catch (error) {
-      if (!payload.preview) switchboardMirror?.turnFinished(payload.requestId, { text: '', error: error instanceof Error ? error.message : String(error) });
+      if (!payload.preview) mirror?.turnFinished(payload.requestId, { text: '', error: error instanceof Error ? error.message : String(error) });
       throw error;
     } finally {
-      if (activeVoiceRequestId === payload.requestId) activeVoiceRequestId = undefined;
+      if (activeVoiceRequests.get(avatarId) === payload.requestId) activeVoiceRequests.delete(avatarId);
     }
   });
   ipcMain.handle('presence:update', (_event, payload: unknown) => {
@@ -1968,8 +2072,8 @@ function registerIpcHandlers(
     presence.update({ doNotDisturb: enabled === true });
     return presence.doNotDisturb;
   });
-  ipcMain.handle('local-voice:cancel', (_event, requestId?: string) => {
-    localVoiceService?.cancel(typeof requestId === 'string' ? requestId : undefined);
+  ipcMain.handle('local-voice:cancel', (_event, requestId?: string, avatarId?: unknown) => {
+    getVoiceService(avatarIdArg(avatarId))?.cancel(typeof requestId === 'string' ? requestId : undefined);
     return true;
   });
   ipcMain.handle('switchboard:status', async () => ({
@@ -1978,9 +2082,11 @@ function registerIpcHandlers(
     url: switchboardClient ? process.env.SWITCHBOARD_URL?.trim() || 'http://127.0.0.1:8196' : null,
     openTxns: ((await switchboardClient?.openTxns(20)) ?? null)?.map((t) => ({ id: t.id, title: t.title ?? null, state: t.state, opened_by: t.opened_by ?? null, owner: t.owner ?? null, updated_at: t.updated_at ?? null })) ?? null,
   }));
-  ipcMain.handle('local-voice:system-status', () => localVoiceService?.systemStatus() ?? { pending: 0, ready: false, texts: [], urgent: false });
-  ipcMain.handle('local-voice:reset', () => {
-    localVoiceService?.resetHistory();
+  ipcMain.handle('local-voice:system-status', (_event, avatarId?: unknown) =>
+    getVoiceService(avatarIdArg(avatarId))?.systemStatus() ?? { pending: 0, ready: false, texts: [], urgent: false },
+  );
+  ipcMain.handle('local-voice:reset', (_event, avatarId?: unknown) => {
+    getVoiceService(avatarIdArg(avatarId))?.resetHistory();
     return true;
   });
   ipcMain.handle('avatar-animation:delete', async (_event, animationId: string) => {
@@ -2194,16 +2300,16 @@ function registerIpcHandlers(
     typeof engine === 'string' && (SPEAKING_ENGINES as readonly string[]).includes(engine) ? (engine as SpeakingEngineId) : 'openai';
 
   // Without an engine: the OpenAI voice (the Realtime conversation engine's), as before.
-  ipcMain.handle('avatar:voice:get-preference', (_event, engine?: unknown) => {
+  ipcMain.handle('avatar:voice:get-preference', (_event, engine?: unknown, avatarId?: unknown) => {
     if (!memoryStore) {
       logger.warn('Memory store unavailable for avatar voice preference');
       return null;
     }
-    const key = characterVoiceKey(voiceEngine(engine));
+    const key = characterVoiceKey(voiceEngine(engine), settingsAvatarArg(avatarId));
     return key ? memoryStore.getValue(key) : null;
   });
 
-  ipcMain.handle('avatar:voice:set-preference', (_event, voice: unknown, engine?: unknown) => {
+  ipcMain.handle('avatar:voice:set-preference', (_event, voice: unknown, engine?: unknown, avatarId?: unknown) => {
     // An empty voice for an engine clears the character's pick (back to the engine's default).
     if (typeof voice !== 'string' || (!voice && engine === undefined)) {
       logger.warn('Invalid voice preference:', voice);
@@ -2213,7 +2319,7 @@ function registerIpcHandlers(
       logger.warn('Memory store unavailable for avatar voice preference');
       return;
     }
-    const key = characterVoiceKey(voiceEngine(engine));
+    const key = characterVoiceKey(voiceEngine(engine), settingsAvatarArg(avatarId));
     if (!key) {
       logger.warn('No active avatar model to set voice preference');
       return;
@@ -2224,19 +2330,19 @@ function registerIpcHandlers(
 
   // Per-character personality prompt. Null means the character has none of its own yet, so the
   // renderer falls back to the global prompt (what every character used before this existed).
-  ipcMain.handle('avatar:prompt:get-preference', () => {
-    const key = characterPromptKey();
+  ipcMain.handle('avatar:prompt:get-preference', (_event, avatarId?: unknown) => {
+    const key = characterPromptKey(settingsAvatarArg(avatarId));
     if (!key || !memoryStore) return null;
     const stored = memoryStore.getValue(key);
     return typeof stored === 'string' && stored.length > 0 ? stored : null;
   });
 
-  ipcMain.handle('avatar:prompt:set-preference', (_event, prompt: unknown) => {
+  ipcMain.handle('avatar:prompt:set-preference', (_event, prompt: unknown, avatarId?: unknown) => {
     if (typeof prompt !== 'string') {
       logger.warn('Invalid personality prompt');
       return;
     }
-    const key = characterPromptKey();
+    const key = characterPromptKey(settingsAvatarArg(avatarId));
     if (!key || !memoryStore) {
       logger.warn('No active avatar model to save the personality prompt for');
       return;
@@ -2245,18 +2351,18 @@ function registerIpcHandlers(
     logger.info('Avatar personality prompt saved', { key, length: prompt.trim().length });
   });
 
-  ipcMain.handle('avatar:idle-habits:get', () => {
-    const key = characterIdleHabitsKey();
+  ipcMain.handle('avatar:idle-habits:get', (_event, avatarId?: unknown) => {
+    const key = characterIdleHabitsKey(settingsAvatarArg(avatarId));
     if (!key || !memoryStore) return '';
     return normalizeIdleHabits(memoryStore.getValue(key));
   });
 
-  ipcMain.handle('avatar:idle-habits:set', (_event, habits: unknown) => {
+  ipcMain.handle('avatar:idle-habits:set', (_event, habits: unknown, avatarId?: unknown) => {
     if (typeof habits !== 'string') {
       logger.warn('Invalid idle habits');
       return;
     }
-    const key = characterIdleHabitsKey();
+    const key = characterIdleHabitsKey(settingsAvatarArg(avatarId));
     if (!key || !memoryStore) {
       logger.warn('No active avatar model to save idle habits for');
       return;
@@ -2349,23 +2455,6 @@ app.whenReady().then(async () => {
     } else {
       switchboardBus = new LocalOnlyBus(makeEventId);
     }
-    switchboardMirror = new SwitchboardMirror({ client: switchboardBus });
-    avatarInbox = new AvatarInbox({
-      avatarId: DEFAULT_AVATAR_ID,
-      bus: switchboardBus,
-      notify: (text, options) => localVoiceService?.notify(text, options),
-      deliberate: (event) =>
-        deliberate(event, presence, { routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger }),
-      remember: (event, text) => {
-        const source = typeof event.payload.source === 'string' ? event.payload.source : `${event.producer.kind}:${event.producer.id}`;
-        conversationManager?.appendToRecentSession([
-          { role: 'system', content: `[Update from ${source}, not from Kevin, saved quietly] ${text}`, ts: Date.now() },
-        ]);
-      },
-      doNotDisturb: () => presence.doNotDisturb,
-      logger,
-    });
-    avatarInbox.start();
   }
 
   try {
@@ -2390,26 +2479,37 @@ app.whenReady().then(async () => {
       store: memoryStore,
       logger,
     });
+    const registryModels = avatarModelService;
+    avatarRegistry = new AvatarRegistry({
+      store: memoryStore,
+      activeVrmModelId: () => registryModels.getActiveModel?.()?.id ?? null,
+    });
+    avatarSettingsKeys = new AvatarSettingsKeys(avatarRegistry);
+    const registry = avatarRegistry;
+    const agentStore = memoryStore;
     memoryEngine = setupMemoryEngine({
       settings: memoryEngineSettings(),
       store: memoryStore,
       conversations: conversationManager,
+      agentFor: (avatarId) => avatarAgent(agentStore, registry, avatarId),
       logger,
     });
+    // One mirror and inbox for each avatar (just Echo for now).
+    for (const profile of avatarRegistry.peek()) startAvatarPlumbing(profile, manager);
     // Provider settings may have been applied before the engine existed.
     syncMemoryStorage();
 
     // Initialize MCP tool registry and manager
     toolRegistry = new ToolRegistry();
-    approvalBroker = new ApprovalBroker({ registry: toolRegistry, logger });
+    approvalBroker = new ApprovalBroker({ registry: toolRegistry, avatarId: DEFAULT_AVATAR_ID, logger });
     approvalBroker.on('outcome', (outcome) => codingNudger?.handleApproval(outcome));
-    approvalBroker.on('outcome', (outcome) => switchboardMirror?.approvalOutcome(outcome));
+    approvalBroker.on('outcome', (outcome: ApprovalOutcome) => mirrorFor(avatarIdOfAddress(outcome.approval.requestedBy))?.approvalOutcome(outcome));
     // 'changed' lists everything pending; only ids not seen before are new requests.
     approvalBroker.on('changed', (pending: PendingApproval[]) => {
       for (const approval of pending) {
         if (seenApprovalIds.has(approval.id)) continue;
         seenApprovalIds.add(approval.id);
-        switchboardMirror?.approvalRequested(approval);
+        mirrorFor(avatarIdOfAddress(approval.requestedBy))?.approvalRequested(approval);
       }
     });
     if (memoryEngine) {
@@ -2419,7 +2519,7 @@ app.whenReady().then(async () => {
         client: memoryEngine.client,
         outbox: memoryEngine.outbox,
         currentSessionId: () => conversations.getCurrentSessionId(),
-        agentName: () => activeAgent(store).name,
+        agentName: () => avatarAgent(store, avatarRegistry).name,
         modelName: () => conversationModelName(),
       })) {
         toolRegistry.register(tool);
@@ -2626,8 +2726,10 @@ app.whenReady().then(async () => {
         logger,
         currentSessionId: () => conversationManager?.getCurrentSessionId() ?? null,
         leaveCurrentSession: () => {
-          localVoiceService?.cancel();
-          localVoiceService?.resetHistory();
+          for (const [, service] of voiceServices?.entries() ?? []) {
+            service.cancel();
+            service.resetHistory();
+          }
           conversationManager?.startSession({ startedAt: Date.now() });
         },
       });
@@ -2730,7 +2832,7 @@ app.on('before-quit', async (event) => {
   wakeWordTrainer?.dispose();
   codingService?.stop();
   approvalBroker?.dispose();
-  avatarInbox?.stop();
+  for (const { inbox } of avatarPlumbing.values()) inbox.stop();
   void switchboardClient?.stop();
 
   // Stop the local servers this app started, as hibernation does.
