@@ -509,23 +509,34 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   }, [actor, animationVersion]);
 
   // The canvas is one portrait frame wide per avatar (2D only), so avatars side by side keep their size.
-  useEffect(() => {
+  // Applied whenever the number of frames changes and again when a room hands the canvas back (the room
+  // controller restores the single-frame size when it stops), so the drawing size, camera aspect and the
+  // CSS box always agree.
+  const applyStageSizeRef = useRef<() => void>(() => undefined);
+  applyStageSizeRef.current = () => {
     const renderer = rendererRef.current;
     const canvas = canvasRef.current;
     const camera = cameraRef.current;
-    if (!rendererReady || !renderer || !canvas || !camera || stageUnitsAppliedRef.current === stageUnits) {
+    if (!renderer || !canvas || !camera || roomRef.current) {
       return;
     }
-    stageUnitsAppliedRef.current = stageUnits;
     const pixelRatio = typeof window !== 'undefined' ? window.devicePixelRatio ?? 1 : 1;
     const width = VRM_CANVAS_WIDTH * stageUnits;
     canvas.width = Math.floor(width * pixelRatio);
     canvas.height = Math.floor(VRM_CANVAS_HEIGHT * pixelRatio);
     canvas.style.width = `${width}px`;
+    canvas.style.height = `${VRM_CANVAS_HEIGHT}px`;
     renderer.setSize(width, VRM_CANVAS_HEIGHT, false);
     camera.aspect = width / VRM_CANVAS_HEIGHT;
     camera.updateProjectionMatrix();
     relayoutRef.current();
+  };
+  useEffect(() => {
+    if (!rendererReady) {
+      return;
+    }
+    stageUnitsAppliedRef.current = stageUnits;
+    applyStageSizeRef.current();
   }, [stageUnits, rendererReady]);
 
   // The other avatars (never Echo, who has the effects above): one actor each, loaded from its own model.
@@ -627,7 +638,12 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       actor.cancelAnimations();
       sceneActions?.reset();
     }
-    void controller.setRoom(room);
+    void controller.setRoom(room).then(() => {
+      // Leaving a room restores the single-frame canvas size; set it back for the avatars on stage.
+      if (roomRef.current === null) {
+        applyStageSizeRef.current();
+      }
+    });
   }, [room, rendererReady, actor, sceneActions]);
 
   useEffect(() => {
