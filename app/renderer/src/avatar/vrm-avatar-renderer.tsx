@@ -54,8 +54,7 @@ export interface VrmAvatarRendererProps {
   model: AvatarModelSummary | null | undefined;
   /**
    * The avatars on the stage, side by side (2D only). Absent means one `echo` avatar made of the
-   * `model` and `frame` props, exactly as before. TODO(step 4): rooms stay single-body, so in a 3D
-   * room only the first avatar (Echo) is shown.
+   * `model` and `frame` props, exactly as before. In a 3D room the others stand still beside Echo.
    */
   avatars?: VrmStageAvatar[];
   onStatusChange?: (status: VrmRendererStatus) => void;
@@ -154,10 +153,9 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   const echoEntry = avatars ? avatars.find((entry) => entry.id === DEFAULT_AVATAR_ID) : undefined;
   const model = avatars ? echoEntry?.model : modelProp;
   const echoFrame = avatars ? (echoEntry?.frame ?? null) : frame;
-  // Rooms are single-body for now: only Echo is shown there.
   const extraEntries = useMemo(
-    () => (room || !avatars ? [] : avatars.filter((entry) => entry.id !== DEFAULT_AVATAR_ID).slice(0, MAX_STAGE_AVATARS - 1)),
-    [avatars, room],
+    () => (avatars ? avatars.filter((entry) => entry.id !== DEFAULT_AVATAR_ID).slice(0, MAX_STAGE_AVATARS - 1) : []),
+    [avatars],
   );
   const extraKey = extraEntries.map((entry) => `${entry.id}:${entry.model?.id ?? ''}:${entry.model?.fileSha ?? ''}`).join('|');
   const stageUnits = 1 + extraEntries.length;
@@ -357,7 +355,10 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       const now = Date.now();
       for (const frameActor of actors.values()) {
         // The room controller steps between the mixer and the rest of the actor's update.
-        frameActor.update(delta, now, { afterMixer: () => roomControllerRef.current?.step(delta) });
+        // Only Echo's body drives the room (walking, physics); companions just stand.
+        frameActor.update(delta, now, {
+          afterMixer: frameActor === actor ? () => roomControllerRef.current?.step(delta) : () => undefined,
+        });
       }
 
       rendererInstance.render(sceneInstance, cameraInstance);
@@ -554,7 +555,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       if (id === DEFAULT_AVATAR_ID || wanted.has(id)) {
         continue;
       }
-      other.unload({ parent: scene });
+      other.unload({ parent: scene, onDetach: () => roomControllerRef.current?.detachCompanion(id) });
       other.dispose();
       actors.delete(id);
       boundsRef.current.delete(id);
@@ -575,7 +576,8 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       }
       loadedModelRef.current.delete(entry.id);
       boundsRef.current.delete(entry.id);
-      other.unload({ parent: scene });
+      const detach = () => roomControllerRef.current?.detachCompanion(entry.id);
+      other.unload({ parent: scene, onDetach: detach });
       if (!entry.model) {
         relayoutRef.current();
         return;
@@ -591,6 +593,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
           parent: scene,
           isCancelled: () => cancelled,
           // The camera is fitted to all avatars together in relayout.
+          onAttached: ({ vrm }) => roomControllerRef.current?.attachCompanion(entry.id, vrm.scene),
           onBounds: (bounds) => {
             if (bounds) {
               boundsRef.current.set(entry.id, { size: bounds.size.clone(), center: bounds.center.clone() });
@@ -605,7 +608,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         relayoutRef.current();
       } catch (error) {
         console.error('[vrm-avatar-renderer] failed to load VRM model for avatar', entry.id, error);
-        other.unload({ parent: scene });
+        other.unload({ parent: scene, onDetach: () => roomControllerRef.current?.detachCompanion(entry.id) });
       }
     };
     for (const entry of extraEntries) {
@@ -665,7 +668,8 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   }, [showWalkableArea, rendererReady, room]);
 
   const canvasElement = <canvas ref={canvasRef} className={className} data-renderer="vrm" />;
-  if (extraEntries.length === 0) {
+  if (extraEntries.length === 0 || room) {
+    // In a room the avatars stand in the scene; the 2D name labels don't apply.
     return canvasElement;
   }
   // Two or more avatars: a small name label under each (the speaking one is marked).
