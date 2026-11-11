@@ -80,8 +80,13 @@ describe('LocalVoiceClient with several avatars', () => {
     vi.useRealTimers();
   });
 
-  async function setup(respond: Parameters<typeof createBridge>[0]) {
+  async function setup(respond: Parameters<typeof createBridge>[0], extra: { interruptFloor?: () => Promise<void> } = {}) {
     const { bridge, emit } = createBridge(respond);
+    let systemListener: ((info?: { urgent: boolean; avatarId?: string }) => void) | null = null;
+    bridge.onSystemReady = (next) => {
+      systemListener = next;
+      return () => undefined;
+    };
     const fake = createFakeContext();
     const activity: VoiceActivity[] = [];
     const callbacks = {
@@ -98,6 +103,7 @@ describe('LocalVoiceClient with several avatars', () => {
       createAudioContext: () => fake.context,
       now: () => now,
       callbacks,
+      ...extra,
     });
     await client.connect({ inputStream: {} as MediaStream });
     const ask = async () => {
@@ -112,7 +118,8 @@ describe('LocalVoiceClient with several avatars', () => {
       }
       await vi.advanceTimersByTimeAsync(2000);
     };
-    return { client, bridge, emit, fake, callbacks, activity, ask };
+    const emitSystemReady = (info: { urgent: boolean; avatarId?: string }) => systemListener?.(info);
+    return { client, bridge, emit, fake, callbacks, activity, ask, emitSystemReady };
   }
 
   it('keeps the echo path as it was: one output, the same stream, callbacks without an avatar id', async () => {
@@ -244,5 +251,88 @@ describe('LocalVoiceClient with several avatars', () => {
     emit(sentence(requestId, 'echo', 'Late.'));
     await vi.advanceTimersByTimeAsync(100);
     expect(fake.sources).toHaveLength(count);
+  });
+  it('plays a second chatter turn only after the first has finished', async () => {
+    const { emit, fake, callbacks } = await setup(async () => ({ text: '', cancelled: false }));
+    (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ duration: 1 });
+    emit(sentence('chatter-a', 'sage', 'First.'));
+    emit(sentence('chatter-b', 'rex', 'Second.'));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(fake.sources).toHaveLength(1);
+    expect(callbacks.onTextContent).toHaveBeenCalledWith('First.', 'sage');
+    expect(callbacks.onTextContent).not.toHaveBeenCalledWith('Second.', 'rex');
+    // A later sentence of the first request stays in its turn and does not jump the queue.
+    emit(sentence('chatter-a', 'sage', 'First again.'));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(fake.sources).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(callbacks.onTextContent).toHaveBeenCalledWith('Second.', 'rex');
+    expect(fake.sources).toHaveLength(3);
+  });
+
+  it('holds chatter while the client own turn is still playing', async () => {
+    let finish: (() => void) | null = null;
+    const { emit, fake, callbacks, ask } = await setup(async (request, emitEvent) => {
+      emitEvent(sentence(request.requestId, 'echo', 'Own.'));
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      return { text: 'Own.', cancelled: false, avatarId: 'echo' };
+    });
+    (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ duration: 2 });
+    await ask();
+    const own = fake.sources.length;
+    expect(own).toBe(1);
+    emit(sentence('chatter-c', 'sage', 'Wait.'));
+    await vi.advanceTimersByTimeAsync(200);
+    expect(fake.sources).toHaveLength(own);
+    expect(callbacks.onTextContent).not.toHaveBeenCalledWith('Wait.', 'sage');
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(fake.sources).toHaveLength(own + 1);
+    (finish as (() => void) | null)?.();
+  });
+
+  it('drops waiting chatter turns with stopChatter()', async () => {
+    const { client, emit, fake, callbacks } = await setup(async () => ({ text: '', cancelled: false }));
+    (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ duration: 5 });
+    emit(sentence('chatter-d', 'sage', 'Playing.'));
+    emit(sentence('chatter-e', 'rex', 'Waiting.'));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(fake.sources).toHaveLength(1);
+    expect(client.stopChatter()).toBe(true);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fake.sources).toHaveLength(1);
+    expect(callbacks.onTextContent).not.toHaveBeenCalledWith('Waiting.', 'rex');
+    expect(client.stopChatter()).toBe(false);
+  });
+
+  it('runs the system turn for the avatar main names, and for echo without an avatarId', async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const { bridge, emitSystemReady } = await setup(async (request) => {
+      requests.push(request as Record<string, unknown>);
+      return { text: '', cancelled: false, note: 'n', avatarId: 'sage' };
+    });
+    emitSystemReady({ urgent: false, avatarId: 'sage' });
+    await vi.advanceTimersByTimeAsync(1500);
+    emitSystemReady({ urgent: false });
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(bridge.respond).toHaveBeenCalledTimes(2);
+    expect(requests[0]).toMatchObject({ system: true, avatarId: 'sage' });
+    expect(requests[1]).toMatchObject({ system: true });
+    expect(requests[1]).not.toHaveProperty('avatarId');
+  });
+
+  it('tells main about a barge-in only when chatter was active', async () => {
+    const interruptFloor = vi.fn(async () => undefined);
+    const { client, emit, fake } = await setup(async () => ({ text: '', cancelled: false }), { interruptFloor });
+    client.talk();
+    expect(interruptFloor).not.toHaveBeenCalled();
+    (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ duration: 5 });
+    emit(sentence('chatter-f', 'sage', 'Hmm.'));
+    await vi.advanceTimersByTimeAsync(100);
+    client.talk();
+    expect(interruptFloor).toHaveBeenCalledTimes(1);
+    client.talk();
+    expect(interruptFloor).toHaveBeenCalledTimes(1);
   });
 });

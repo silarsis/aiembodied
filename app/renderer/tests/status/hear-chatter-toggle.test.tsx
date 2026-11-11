@@ -4,7 +4,7 @@ import { HearChatterToggle } from '../../src/status/hear-chatter-toggle.js';
 
 describe('HearChatterToggle', () => {
   it('reads the saved state and saves a change', async () => {
-    const api = { getHearChatter: vi.fn(async () => true), setHearChatter: vi.fn(async (v: boolean) => v) };
+    const api = { getHearChatter: vi.fn(async () => true), setHearChatter: vi.fn(async (v: boolean) => v), interrupt: vi.fn(async () => undefined) };
     render(<HearChatterToggle api={api} />);
     const box = (await screen.findByRole('checkbox')) as HTMLInputElement;
     await waitFor(() => expect(box.checked).toBe(true));
@@ -13,7 +13,7 @@ describe('HearChatterToggle', () => {
     await waitFor(() => expect(box.checked).toBe(false));
   });
   it('goes back when saving fails', async () => {
-    const api = { getHearChatter: vi.fn(async () => false), setHearChatter: vi.fn(async () => Promise.reject(new Error('no'))) };
+    const api = { getHearChatter: vi.fn(async () => false), setHearChatter: vi.fn(async () => Promise.reject(new Error('no'))), interrupt: vi.fn(async () => undefined) };
     render(<HearChatterToggle api={api} />);
     const box = (await screen.findByRole('checkbox')) as HTMLInputElement;
     await waitFor(() => expect(box.disabled).toBe(false));

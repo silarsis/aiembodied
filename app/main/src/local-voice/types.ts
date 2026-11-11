@@ -61,6 +61,8 @@ export interface LocalVoiceRespondRequest {
    * and 'sentence' events carry an empty `wav`. Used for back-channel talk between avatars.
    */
   silent?: boolean;
+  /** Offer the model no tools and skip the approvals prompt block (back-channel chatter). */
+  noTools?: boolean;
 }
 
 export interface LocalVoiceRespondResult {

@@ -56,6 +56,8 @@ export interface LocalVoiceClientOptions {
   statusPollMs?: number;
   createAudioContext?: () => AudioContext;
   now?: () => number;
+  /** Tell the main process that Kevin barged in on avatar chatter (the floor drops its queued turns). */
+  interruptFloor?: () => Promise<void> | void;
 }
 
 type SessionConfig = NonNullable<RealtimeClientOptions['sessionConfig']>;
@@ -81,6 +83,7 @@ export class LocalVoiceClient {
   private readonly statusPollMs: number;
   private readonly createAudioContext: () => AudioContext;
   private readonly now: () => number;
+  private readonly interruptFloor: (() => Promise<void> | void) | undefined;
   private readonly segmenter: UtteranceSegmenter;
   private state: RealtimeClientState = { status: 'idle' };
   private sessionConfig: SessionConfig = {};
@@ -92,6 +95,11 @@ export class LocalVoiceClient {
   private readonly outputs = new Map<string, MediaStreamAudioDestinationNode>();
   /** Out-loud chatter from avatars (requests this client did not start), by request id. */
   private readonly chatterTurns = new Map<string, Turn>();
+  /**
+   * Resolves when every chatter turn started so far has played out. A new chatter turn also waits
+   * for the client's own turn, so only one voice is heard at a time, in order of arrival.
+   */
+  private playbackTail: Promise<void> = Promise.resolve();
   /** Request ids this client started, so a late event of one is never mistaken for chatter. */
   private readonly ownRequestIds: string[] = [];
   private chatterPhaseBefore: VoicePhase | null = null;
@@ -100,8 +108,8 @@ export class LocalVoiceClient {
   private unsubscribeEvents: (() => void) | null = null;
   private unsubscribeSystemReady: (() => void) | null = null;
   private unsubscribeWatch: (() => void) | null = null;
-  /** Main said an update for the assistant is ready; it runs as soon as the conversation is idle. */
-  private systemReady = false;
+  /** Avatars with an update ready to be spoken; each runs as soon as the conversation is idle. */
+  private readonly systemReady = new Set<string>();
   private statusTimer: number | null = null;
   private connectionId = 0;
   private busy = false;
@@ -123,6 +131,7 @@ export class LocalVoiceClient {
     this.statusPollMs = options.statusPollMs ?? 5000;
     this.createAudioContext = options.createAudioContext ?? (() => new AudioContext());
     this.now = options.now ?? Date.now;
+    this.interruptFloor = options.interruptFloor;
     this.segmenter = new UtteranceSegmenter({
       silenceMs: options.silenceMs ?? 700,
       minSpeechMs: this.minSpeechMs,
@@ -174,15 +183,28 @@ export class LocalVoiceClient {
   }
 
   /** Stop avatar chatter that is playing (Kevin is speaking, or the conversation ended). */
-  stopChatter(): void {
+  stopChatter(): boolean {
     if (this.chatterTurns.size === 0) {
-      return;
+      return false;
     }
+    // Waiting turns are dropped with the playing one.
     for (const turn of this.chatterTurns.values()) {
       turn.stop();
     }
     this.chatterTurns.clear();
     this.restoreAfterChatter();
+    return true;
+  }
+
+  /** Kevin is speaking: stop chatter and, if there was any, tell main to drop what it has queued. */
+  private yieldToKevin(): void {
+    if (this.stopChatter()) {
+      try {
+        void Promise.resolve(this.interruptFloor?.()).catch(() => undefined);
+      } catch {
+        // Barge-in is best effort.
+      }
+    }
   }
 
   bindRemoteAudioElement(element: HTMLAudioElement | null): void {
@@ -278,7 +300,7 @@ export class LocalVoiceClient {
     if (this.state.status !== 'connected') {
       return;
     }
-    this.stopChatter();
+    this.yieldToKevin();
     if (this.turn) {
       this.log('info', 'Reply interrupted to talk');
       void this.getBridge()?.cancel(this.turn.requestId);
@@ -333,8 +355,8 @@ export class LocalVoiceClient {
     this.outputs.set(DEFAULT_SPEAKER_ID, output);
     this.unsubscribeEvents = bridge.onEvent((event) => this.handleEvent(event));
     this.unsubscribeSystemReady =
-      bridge.onSystemReady?.(() => {
-        this.systemReady = true;
+      bridge.onSystemReady?.((info) => {
+        this.systemReady.add(info?.avatarId || DEFAULT_SPEAKER_ID);
         void this.maybeRunSystemTurn();
       }) ?? null;
     this.log('info', 'Local voice capture started', { sampleRate: context.sampleRate });
@@ -362,10 +384,10 @@ export class LocalVoiceClient {
     let active = true;
     const unsubscribe = bridge.onSystemReady?.((info) => {
       if (this.state.status === 'connected') {
-        this.systemReady = true;
+        this.systemReady.add(info?.avatarId || DEFAULT_SPEAKER_ID);
         void this.maybeRunSystemTurn();
       } else if (info?.urgent === true) {
-        void this.announce();
+        void this.announce(info.avatarId || DEFAULT_SPEAKER_ID);
       }
     });
     this.unsubscribeWatch = () => {
@@ -389,7 +411,7 @@ export class LocalVoiceClient {
   }
 
   /** Output-only system turn while no conversation is running. State stays idle and the mic stays closed. */
-  private async announce(): Promise<void> {
+  private async announce(avatarId: string = DEFAULT_SPEAKER_ID): Promise<void> {
     const bridge = this.getBridge();
     if (!bridge || this.disposed || this.busy || this.state.status !== 'idle') {
       return;
@@ -407,8 +429,13 @@ export class LocalVoiceClient {
       this.context = context;
       this.outputs.set(DEFAULT_SPEAKER_ID, output);
       this.unsubscribeEvents = bridge.onEvent((event) => this.handleEvent(event));
-      this.callbacks.onRemoteStream?.(output.stream);
-      await this.respond(bridge, '', connectionId, true, true);
+      if (avatarId === DEFAULT_SPEAKER_ID) {
+        this.callbacks.onRemoteStream?.(output.stream);
+      } else {
+        // The default output stays unused; the speaker gets its own, announced to the app.
+        this.outputFor(avatarId);
+      }
+      await this.respond(bridge, '', connectionId, true, true, avatarId);
     } catch (error) {
       const failure = describe(error);
       this.log('error', 'Local voice announcement failed', failure);
@@ -476,7 +503,7 @@ export class LocalVoiceClient {
       .systemStatus?.()
       .then((status) => {
         if (status.ready && connectionId === this.connectionId) {
-          this.systemReady = true;
+          this.systemReady.add(DEFAULT_SPEAKER_ID);
           void this.maybeRunSystemTurn();
         }
       })
@@ -490,15 +517,16 @@ export class LocalVoiceClient {
    */
   private async maybeRunSystemTurn(): Promise<void> {
     const bridge = this.getBridge();
-    if (!this.systemReady || !bridge || this.state.status !== 'connected' || this.busy || this.segmenter.inProgress) {
+    if (this.systemReady.size === 0 || !bridge || this.state.status !== 'connected' || this.busy || this.segmenter.inProgress) {
       return;
     }
-    this.systemReady = false;
+    const avatarId = this.systemReady.values().next().value as string;
+    this.systemReady.delete(avatarId);
     this.busy = true;
     const connectionId = this.connectionId;
     const previousPhase = this.activity.phase;
     try {
-      const spoke = await this.respond(bridge, '', connectionId, true);
+      const spoke = await this.respond(bridge, '', connectionId, true, false, avatarId);
       if (connectionId !== this.connectionId) {
         return;
       }
@@ -568,7 +596,7 @@ export class LocalVoiceClient {
       }
 
       // Kevin is speaking: avatar chatter gives way.
-      this.stopChatter();
+      this.yieldToKevin();
       this.setActivity('transcribing');
       const transcript = await bridge.transcribe(encodeWav(utterance.samples, utterance.sampleRate));
       if (connectionId !== this.connectionId) {
@@ -609,6 +637,7 @@ export class LocalVoiceClient {
     connectionId: number,
     system: boolean,
     announcement = false,
+    systemAvatarId?: string,
   ): Promise<boolean> {
     const context = this.context;
     const output = this.output;
@@ -636,7 +665,8 @@ export class LocalVoiceClient {
       requestId: turn.requestId,
       text,
       instructions: this.sessionConfig.instructions,
-      ...(system ? { system: true } : {}),
+      // Only a system turn names its avatar; Kevin's own turns go through the floor.
+      ...(system ? { system: true, ...(systemAvatarId && systemAvatarId !== DEFAULT_SPEAKER_ID ? { avatarId: systemAvatarId } : {}) } : {}),
     });
     await turn.finished();
     if (connectionId !== this.connectionId) {
@@ -734,7 +764,9 @@ export class LocalVoiceClient {
       if (!output) {
         return;
       }
-      const created = new Turn(event.requestId, this.context, output);
+      // It starts once the client's own turn and every earlier chatter turn have played out.
+      const after = Promise.all([this.turn?.idle(), this.playbackTail]);
+      const created = new Turn(event.requestId, this.context, output, after);
       created.avatarId = avatarId;
       created.routed = true;
       created.onSentenceStart = (sentence, first) => {
@@ -759,7 +791,8 @@ export class LocalVoiceClient {
     if (isNew) {
       const tracked = turn;
       // Forget the turn once what is queued has played (its next sentence, if any, starts a new one).
-      void tracked.idle().then(() => {
+      // The tail includes the forgetting, so a later turn never starts before it.
+      this.playbackTail = tracked.idle().then(() => {
         if (this.chatterTurns.get(tracked.requestId) === tracked) {
           this.chatterTurns.delete(tracked.requestId);
           this.restoreAfterChatter();
@@ -950,6 +983,7 @@ class Turn {
   private decoding: Promise<void> = Promise.resolve();
   private readonly sources = new Set<AudioBufferSourceNode>();
   private readonly timers = new Set<number>();
+  private readonly stopSignal = deferred();
   private started = false;
   private stopped = false;
   /** Who speaks this turn; set from the first sentence event (default echo). */
@@ -962,7 +996,13 @@ class Turn {
     private readonly context: AudioContext,
     /** Replaced by the speaker's output when the first sentence arrives (see LocalVoiceClient.routeTurn). */
     public output: AudioNode,
-  ) {}
+    /** Sentences are buffered, and only decoded and scheduled, once this settles (or the turn is stopped). */
+    after?: Promise<unknown>,
+  ) {
+    if (after) {
+      this.decoding = Promise.race([after.then(noop, noop), this.stopSignal.promise]);
+    }
+  }
 
   /** Resolves when what is queued has played (or the turn was stopped). */
   async idle(): Promise<void> {
@@ -1015,12 +1055,14 @@ class Turn {
     await this.decoding;
     const remainingMs = (this.nextStartAt - this.context.currentTime) * 1000;
     if (remainingMs > 0 && !this.stopped) {
-      await wait(remainingMs);
+      // A stop ends the wait at once, so what follows this turn is not held up by audio that was cut.
+      await Promise.race([wait(remainingMs), this.stopSignal.promise]);
     }
   }
 
   stop(): void {
     this.stopped = true;
+    this.stopSignal.resolve();
     for (const source of this.sources) {
       try {
         source.stop();
@@ -1211,6 +1253,16 @@ function copyBuffer(bytes: Uint8Array): ArrayBuffer {
   const copy = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(copy).set(bytes);
   return copy;
+}
+
+function noop(): void {}
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve: () => void = noop;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
 }
 
 function wait(ms: number): Promise<void> {

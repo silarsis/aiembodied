@@ -103,6 +103,18 @@ describe('FloorManager: avatar chatter', () => {
     expect(self.speakers).toEqual([]);
   });
 
+  it('keeps an answer to Kevin to itself unless it names an avatar or Kevin asked them to talk', async () => {
+    const { manager, bid } = make({ bids: [{ avatarId: 'rex', want: 0.9, reason: '' }] });
+    const quiet = await manager.route({ ...avatar('echo', 'Interesting question.'), toPerson: true });
+    expect(quiet.speakers).toEqual([]);
+    expect(quiet.trace).toEqual(['avatar: answer to Kevin; others only overhear']);
+    expect(bid).not.toHaveBeenCalled();
+    const named = await manager.route({ ...avatar('echo', 'Rex, you decide.'), toPerson: true });
+    expect(named.speakers).toEqual([{ avatarId: 'rex', reason: 'addressed' }]);
+    const other = await manager.route(avatar('echo', 'Interesting question.'));
+    expect(other.speakers).toEqual([{ avatarId: 'rex', reason: 'bid' }]);
+  });
+
   it('reports the channel from the Hear avatar chatter setting', async () => {
     expect((await make({ hear: true }).manager.route(avatar('echo', 'Sage?'))).channel).toBe('aloud');
   });

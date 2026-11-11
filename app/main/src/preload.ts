@@ -294,7 +294,7 @@ export interface LocalVoiceBridge {
   /** Updates for Echo that are waiting to be spoken (from the coding agent). */
   systemStatus?(avatarId?: string): Promise<LocalVoiceSystemStatus>;
   /** An update is ready: run a system turn if the conversation is idle. */
-  onSystemReady?(listener: (info?: { urgent: boolean }) => void): () => void;
+  onSystemReady?(listener: (info?: { urgent: boolean; avatarId?: string }) => void): () => void;
   onEvent(listener: (event: LocalVoiceEvent) => void): () => void;
 }
 
@@ -473,7 +473,11 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
         : ipcRenderer.invoke('local-voice:system-status', avatarId)) as Promise<LocalVoiceSystemStatus>,
     onSystemReady: (listener) => {
       const channel = 'local-voice:system-ready';
-      const handler = (_event: unknown, info?: { urgent?: boolean }) => listener({ urgent: info?.urgent === true });
+      const handler = (_event: unknown, info?: { urgent?: boolean; avatarId?: string }) =>
+        listener({
+          urgent: info?.urgent === true,
+          ...(typeof info?.avatarId === 'string' && info.avatarId ? { avatarId: info.avatarId } : {}),
+        });
       ipcRenderer.on(channel, handler);
       return () => {
         ipcRenderer.removeListener(channel, handler);
@@ -777,6 +781,9 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
   floor: {
     getHearChatter: () => ipcRenderer.invoke('floor:get-hear-chatter'),
     setHearChatter: (enabled) => ipcRenderer.invoke('floor:set-hear-chatter', enabled),
+    interrupt: async () => {
+      await ipcRenderer.invoke('floor:interrupt');
+    },
   },
   gpuMemory: {
     read: () => ipcRenderer.invoke('diagnostics:gpu-memory'),

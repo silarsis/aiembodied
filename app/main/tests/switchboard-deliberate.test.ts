@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PresenceTracker } from '../src/presence/presence.js';
-import { DELIBERATE_SYSTEM_PROMPT, deliberate, parseDecision } from '../src/switchboard/deliberate.js';
+import { DELIBERATE_SYSTEM_PROMPT, deliberate, deliberateSystemPrompt, parseDecision } from '../src/switchboard/deliberate.js';
 import type { ChatClient } from '../src/local-voice/voice-engines.js';
 import type { SwitchboardEvent } from '../src/switchboard/types.js';
 
@@ -52,6 +52,14 @@ describe('deliberate', () => {
     expect(user).toContain('priority: normal');
     expect(user).toContain('text: Tests passed');
     expect(DELIBERATE_SYSTEM_PROMPT).toContain('ignore (noise)');
+  });
+
+  it('names the deciding avatar in the prompt (Echo by default)', async () => {
+    expect(deliberateSystemPrompt()).toContain('You are Echo,');
+    expect(deliberateSystemPrompt('Sage')).toContain('You are Sage,');
+    const { client, calls } = fake('{"action":"ignore","reason":""}');
+    await deliberate(event(), presence, { clients: [client], avatarName: 'Sage' });
+    expect(calls[0].messages[0].content).toContain('You are Sage,');
   });
 
   it('flags urgent events', async () => {

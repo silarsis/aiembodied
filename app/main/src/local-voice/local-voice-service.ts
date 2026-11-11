@@ -58,6 +58,10 @@ interface QueuedNote {
   source: string;
 }
 
+/** Lines of room talk kept for an avatar, and the longest one. */
+const HEARD_LINES_KEPT = 12;
+const HEARD_LINE_LIMIT = 400;
+
 /** One marker per run of updates from the same source; with only the default source it is the old single marker. */
 function systemNoteText(notes: QueuedNote[]): string {
   const parts: string[] = [];
@@ -142,6 +146,8 @@ export class LocalVoiceService {
   private readonly extraInstructions?: LocalVoiceServiceOptions['extraInstructions'];
   private readonly onSystemReady?: () => void;
   private notes: QueuedNote[] = [];
+  /** Lines said in the room to others, waiting to be put in front of this avatar's next turn. */
+  private heard: string[] = [];
   private lastSystemTurnAt = Number.NEGATIVE_INFINITY;
   private systemTimer: ReturnType<typeof setTimeout> | null = null;
   private active: { requestId: string; controller: AbortController } | null = null;
@@ -295,7 +301,17 @@ export class LocalVoiceService {
     };
   }
 
+  /** Remember a line said in the room (not to this avatar); no model call. Shown in front of the next turn. */
+  overhear(line: { from: string; text: string }): void {
+    const text = line.text.replace(/\s+/g, ' ').trim();
+    if (!text) return;
+    const clipped = text.length <= HEARD_LINE_LIMIT ? text : `${text.slice(0, HEARD_LINE_LIMIT)}…`;
+    this.heard.push(`${line.from.replace(/\s+/g, ' ').trim()}: ${clipped}`);
+    if (this.heard.length > HEARD_LINES_KEPT) this.heard = this.heard.slice(-HEARD_LINES_KEPT);
+  }
+
   resetHistory(): void {
+    this.heard = [];
     this.history = [];
     this.brief = null;
     this.recalledIds = [];
@@ -356,7 +372,10 @@ export class LocalVoiceService {
     const { signal } = controller;
 
     if (!preview && this.now() - this.lastTurnAt > this.historyIdleResetMs) {
+      // Lines heard in the room are fresh even when this avatar itself was idle.
+      const heard = this.heard;
       this.resetHistory();
+      this.heard = heard;
     }
 
     // A preview stays out of long-term memory entirely.
@@ -382,10 +401,17 @@ export class LocalVoiceService {
     // The recalled block rides in the user message (Qwen's template wants one system message,
     // first) and stays in the history as sent, so later turns keep the same prefix.
     let userContent = recalled ? `${recalled.block}\n\n${inputText}` : inputText;
+    // What was said in the room since this avatar last spoke goes in front, as context only.
+    let heardTaken: string[] = [];
+    if (!preview && !system && this.heard.length > 0) {
+      heardTaken = this.heard;
+      this.heard = [];
+      userContent = `[Heard in the room since you last spoke, for context only; do not answer these lines:\n${heardTaken.join('\n')}]\n\n${userContent}`;
+    }
 
     // A pending approval: a clear yes or no settles it before the model hears anything, and the
     // model is told what happened. Anything else goes to the model as normal.
-    if (!preview && !system && this.approvals) {
+    if (!preview && !system && !request.noTools && this.approvals) {
       const outcome = await this.approvals.resolveSpoken(inputText).catch(() => null);
       if (outcome) {
         userContent = `${userContent}\n\n[Approval handled: ${describeOutcome(outcome)} Tell Kevin in one short sentence.]`;
@@ -395,7 +421,7 @@ export class LocalVoiceService {
 
     // Tools that need approval ("confirm") are offered when there is a broker to ask Kevin;
     // forbidden ones ("block") never are, and a call to one is refused as an unknown tool.
-    const tools = (preview ? [] : (this.tools?.list() ?? [])).filter(
+    const tools = (preview || request.noTools ? [] : (this.tools?.list() ?? [])).filter(
       (tool) =>
         tool.confirmationLevel === 'none' ||
         tool.confirmationLevel === 'notify' ||
@@ -499,6 +525,7 @@ export class LocalVoiceService {
         cancelled = true;
       } else {
         const message = error instanceof Error ? error.message : String(error);
+        this.heard = [...heardTaken, ...this.heard].slice(-HEARD_LINES_KEPT);
         this.logger?.error('Local voice: reply failed', { message });
         emit({ requestId, type: 'error', message });
         throw error;

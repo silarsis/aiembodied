@@ -38,6 +38,8 @@ export interface FloorUtterance {
   text: string;
   /** ms since epoch. */
   at: number;
+  /** An avatar's answer to Kevin: others only overhear it unless it names one of them or Kevin asked them to talk. */
+  toPerson?: boolean;
 }
 
 export interface FloorDecision {
@@ -256,6 +258,10 @@ export class FloorManager {
       const next = order[(order.indexOf(senderId) + 1) % order.length];
       trace.push(`avatar: chat Kevin asked for -> ${next} answers`);
       return take(next, 'addressed');
+    }
+    if (utterance.toPerson) {
+      trace.push('avatar: answer to Kevin; others only overhear');
+      return none();
     }
     trace.push('avatar: no name, asking for bids');
     const bids = await this.collectBids(others, trace);
