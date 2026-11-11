@@ -235,3 +235,34 @@ describe('parseBids', () => {
     expect(parseBids('{"answer": 1}', candidates)).toBeNull();
   });
 });
+
+describe('FloorManager: wake word and talking to each other', () => {
+  it('"hey echo" makes the host the listener again, even right after talking with Sage', async () => {
+    const { manager } = make({ ids: ['echo', 'sage'] });
+    await manager.route(kevin('Sage, what do you think?', 1_000));
+    manager.listenTo('echo', 2_000);
+    expect(ids(await manager.route(kevin('what is the weather', 3_000)))).toEqual(['echo']);
+  });
+
+  it('"talk to each other" starts out loud, passes the turn on without bids, and ends when Kevin speaks', async () => {
+    const { manager, bid } = make({ ids: ['echo', 'sage'] });
+    const start = await manager.route(kevin('Echo and Sage, talk to each other about dinner', 1_000));
+    expect(ids(start)).toEqual(['echo']);
+    const reply = await manager.route(avatar('echo', 'What do you fancy for dinner?', 2_000));
+    expect(ids(reply)).toEqual(['sage']);
+    expect(reply.channel).toBe('aloud');
+    expect(bid).not.toHaveBeenCalled();
+    expect(ids(await manager.route(avatar('sage', 'Pasta, maybe.', 3_000)))).toEqual(['echo']);
+    await manager.route(kevin('thanks', 4_000));
+    expect((await manager.route(avatar('echo', 'Anyone?', 5_000))).channel).toBe('back');
+  });
+
+  it('a talk chat stops at the longer turn budget', async () => {
+    const { manager } = make({ ids: ['echo', 'sage'] });
+    await manager.route(kevin('have a chat', 1_000));
+    let last = await manager.route(avatar('echo', 'hi', 2_000));
+    for (let i = 0; i < 8; i += 1) last = await manager.route(avatar(i % 2 ? 'echo' : 'sage', 'more', 3_000 + i));
+    expect(last.speakers).toEqual([]);
+    expect(last.budget?.kind).toBe('turns');
+  });
+});

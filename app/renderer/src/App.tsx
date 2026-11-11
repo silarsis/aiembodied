@@ -21,7 +21,7 @@ import { ModelsDialog } from './settings/models-dialog.js';
 import type { UseId } from '../../main/src/config/model-routing.js';
 import type { PushToTalkStatus } from '../../main/src/talk/types.js';
 import { isTalkTapTarget } from './talk/tap-to-talk.js';
-import { VrmAvatarRenderer, type VrmRendererStatus } from './avatar/vrm-avatar-renderer.js';
+import { VrmAvatarRenderer, type VrmRendererStatus, type VrmStageAvatar } from './avatar/vrm-avatar-renderer.js';
 import { AnimationBusProvider, createAvatarAnimationBus } from './avatar/animation-bus.js';
 import { BehaviorCueProvider } from './avatar/behavior-cues.js';
 import { getAvatarRestSkeleton } from './avatar/rest-skeleton.js';
@@ -54,6 +54,7 @@ import { LocalVoiceClient, playPreviewReply } from './realtime/local-voice-clien
 import { LatencyTracker, type LatencySnapshot } from './metrics/latency-tracker.js';
 import type { LatencyMetricName } from '../../main/src/metrics/types.js';
 import type { AvatarModelSummary, AvatarMotionStatus, AvatarPoseSummary } from './avatar/types.js';
+import type { AvatarProfile } from '../../main/src/avatars/bridge-types.js';
 import type { LocalVoiceStatus, SpeakingVoiceOptions } from '../../main/src/local-voice/types.js';
 import { describeModels } from './status/model-status.js';
 import { extractAvatarTags, extractMotionTags, toAnimationSlug } from './avatar/animation-tags.js';
@@ -87,6 +88,8 @@ interface TranscriptEntry {
   speaker: TranscriptSpeaker;
   text: string;
   timestamp: number;
+  /** The avatar that said an assistant line, when it was not Echo. */
+  avatarId?: string;
 }
 
 const REQUIRED_BRIDGE_KEYS: (keyof PreloadApi)[] = ['config', 'wakeWord', 'ping'];
@@ -598,8 +601,10 @@ function useIdleCursor(enabled: boolean) {
 
 function TranscriptOverlay({
   entries,
+  avatarNames,
 }: {
   entries: TranscriptEntry[];
+  avatarNames?: Record<string, string>;
 }) {
   if (entries.length === 0) {
     return (
@@ -620,7 +625,7 @@ function TranscriptOverlay({
         return (
           <li key={entry.id} className={`transcript__item transcript__item--${entry.speaker}`}>
             <div className="transcript__meta">
-              <span className="transcript__speaker">{entry.speaker}</span>
+              <span className="transcript__speaker">{entry.speaker === 'assistant' && entry.avatarId ? (avatarNames?.[entry.avatarId] ?? entry.avatarId) : entry.speaker}</span>
               <span className="transcript__time">{label}</span>
             </div>
             <p className="transcript__text">{entry.text}</p>
@@ -646,6 +651,10 @@ export default function App() {
   const [realtimeState, setRealtimeState] = useState<RealtimeClientState>({ status: 'idle' });
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [visemeFrame, setVisemeFrame] = useState<VisemeFrame | null>(null);
+  /** Lip-sync frames of the avatars other than echo (echo keeps `visemeFrame`), by avatar id. */
+  const [visemeFrames, setVisemeFrames] = useState<Record<string, VisemeFrame | null>>({});
+  const [avatarProfiles, setAvatarProfiles] = useState<AvatarProfile[]>([]);
+  const [vrmModels, setVrmModels] = useState<AvatarModelSummary[]>([]);
   const [voiceActivity, setVoiceActivity] = useState<VoiceActivity>(() => ({ phase: 'off', since: Date.now() }));
   const [wakeScore, setWakeScore] = useState<WakeScore | null>(null);
   const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
@@ -997,6 +1006,7 @@ export default function App() {
         speaker,
         text: message.content,
         timestamp: message.ts,
+        ...(speaker === 'assistant' && message.speaker && message.speaker !== 'echo' && message.speaker !== 'user' ? { avatarId: message.speaker } : {}),
       });
       seen.add(message.id);
     }
@@ -1015,12 +1025,16 @@ export default function App() {
       text,
       timestamp = Date.now(),
       persist = true,
+      avatarId,
     }: {
       speaker: TranscriptSpeaker;
       text: string;
       timestamp?: number;
       persist?: boolean;
+      /** Who said an assistant line; absent or echo means Echo. */
+      avatarId?: string;
     }) => {
+      const speakerAvatar = speaker === 'assistant' && avatarId && avatarId !== 'echo' ? avatarId : undefined;
       // Realtime turns never pass through local-voice:respond, so presence learns of them here.
       if (speaker === 'user' || speaker === 'assistant') {
         void Promise.resolve((api ?? getPreloadApi())?.presence?.update(speaker === 'user' ? { userSpokeAt: timestamp } : { assistantSpokeAt: timestamp })).catch(() => undefined);
@@ -1038,6 +1052,7 @@ export default function App() {
               role: speaker,
               content: text,
               ts: timestamp,
+              ...(speakerAvatar ? { speaker: speakerAvatar } : {}),
             });
             entryId = message.id;
             messageIdsRef.current.add(message.id);
@@ -1049,7 +1064,7 @@ export default function App() {
 
       setTranscriptEntries((previous) => {
         const filtered = previous.filter((entry) => entry.id !== entryId);
-        const next = [...filtered, { id: entryId, speaker, text, timestamp }];
+        const next = [...filtered, { id: entryId, speaker, text, timestamp, ...(speakerAvatar ? { avatarId: speakerAvatar } : {}) }];
         next.sort((a, b) => a.timestamp - b.timestamp);
         return next.slice(-MAX_TRANSCRIPT_ENTRIES);
       });
@@ -1214,18 +1229,21 @@ export default function App() {
     () => new Set(availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0)),
     [availablePoses],
   );
-  const animationTextHandlerRef = useRef<(text: string) => void>(() => undefined);
+  const animationTextHandlerRef = useRef<(text: string, avatarId?: string) => void>(() => undefined);
   const moveRequestFilterRef = useRef(new MoveRequestFilter());
   const sceneActionFilterRef = useRef(new MoveRequestFilter());
   const activeRoomRef = useRef(backgrounds.activeRoom);
   useEffect(() => { activeRoomRef.current = backgrounds.activeRoom; }, [backgrounds.activeRoom]);
   const handleRealtimeTextContent = useCallback(
-    (content: string) => {
+    (content: string, avatarId?: string) => {
       if (!content) {
         return;
       }
+      // Tags in another avatar's reply drive only that avatar. Echo (no id) is handled exactly as before.
+      const speaker = avatarId && avatarId !== 'echo' ? avatarId : undefined;
       const streamMotion = resolveApi()?.avatar?.streamMotion;
-      if (liveMotionReady && streamMotion) {
+      // TODO(step 4): {move:...} streams and scene actions are Echo's body only; other avatars ignore them for now.
+      if (!speaker && liveMotionReady && streamMotion) {
         const room = activeRoomRef.current;
         // In a room the tags run in the order written; a {move:} waits for the scene actions before it.
         const pendingActions: SceneAction[] = [];
@@ -1289,7 +1307,12 @@ export default function App() {
             const bridge = resolveApi();
             bridge?.avatar?.loadPose(pose.id).then((poseData) => {
               if (poseData && typeof poseData === 'object') {
-                animationBus.applyPose(poseData as Record<string, { rotation: number[]; position?: number[] }>, 'realtime-text');
+                const pose = poseData as Record<string, { rotation: number[]; position?: number[] }>;
+                if (speaker) {
+                  animationBus.applyPose(pose, 'realtime-text', undefined, undefined, speaker);
+                } else {
+                  animationBus.applyPose(pose, 'realtime-text');
+                }
               }
               setToolCalls((calls) => finishToolCall(calls, callId, 'done', Date.now()));
             }).catch((error) => {
@@ -1299,7 +1322,7 @@ export default function App() {
             });
           }
         } else {
-          animationBus.enqueue({ slug: tag.slug, intent: 'play', source: 'realtime-text' });
+          animationBus.enqueue({ slug: tag.slug, intent: 'play', source: 'realtime-text', ...(speaker ? { avatarId: speaker } : {}) });
           setToolCalls((calls) =>
             addToolCall(calls, {
               id: callId,
@@ -1323,6 +1346,55 @@ export default function App() {
 
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const visemeDriverRef = useRef<VisemeDriver | null>(null);
+  /** A lip-sync driver and a speaker element per avatar other than echo, created when its audio output appears. */
+  const avatarVoicesRef = useRef(new Map<string, { driver: VisemeDriver; audio: HTMLAudioElement | null }>());
+  const disposeAvatarVoice = useCallback((avatarId: string) => {
+    const voice = avatarVoicesRef.current.get(avatarId);
+    if (!voice) {
+      return;
+    }
+    avatarVoicesRef.current.delete(avatarId);
+    void voice.driver.destroy();
+    if (voice.audio) {
+      voice.audio.pause();
+      voice.audio.srcObject = null;
+    }
+  }, []);
+  const disposeAvatarVoices = useCallback(() => {
+    for (const avatarId of [...avatarVoicesRef.current.keys()]) {
+      disposeAvatarVoice(avatarId);
+    }
+    setVisemeFrames({});
+  }, [disposeAvatarVoice]);
+  const avatarStreamHandlerRef = useRef<(avatarId: string, stream: MediaStream) => void>(() => undefined);
+  avatarStreamHandlerRef.current = (avatarId, stream) => {
+    disposeAvatarVoice(avatarId);
+    const driver = new VisemeDriver({
+      onFrame: (frame) => {
+        setVisemeFrames((previous) => ({ ...previous, [avatarId]: frame }));
+      },
+      onError: (error) => {
+        console.error('Viseme driver error', avatarId, error);
+      },
+    });
+    let audio: HTMLAudioElement | null = null;
+    if (typeof Audio !== 'undefined') {
+      audio = new Audio();
+      audio.srcObject = stream;
+      audio.autoplay = true;
+      try {
+        void Promise.resolve(audio.play()).catch((error: unknown) => {
+          console.error('Failed to play avatar audio', avatarId, error);
+        });
+      } catch (error) {
+        console.error('Failed to play avatar audio', avatarId, error);
+      }
+    }
+    avatarVoicesRef.current.set(avatarId, { driver, audio });
+    driver.attachToStream(stream).catch((error: unknown) => {
+      console.error('Failed to attach viseme driver', avatarId, error);
+    });
+  };
   const [playbackIssue, setPlaybackIssue] = useState<string | null>(null);
   const recordTranscriptEntryRef = useRef(recordTranscriptEntry);
   useEffect(() => {
@@ -1383,16 +1455,17 @@ export default function App() {
         wakePhrase,
         callbacks: {
           onStateChange: setRealtimeState,
-          onTextContent: (content) => {
-            animationTextHandlerRef.current?.(content);
+          onTextContent: (content, avatarId) => {
+            animationTextHandlerRef.current?.(content, avatarId);
           },
           onRemoteStream: playRemoteStream,
+          onAvatarStream: (avatarId, stream) => avatarStreamHandlerRef.current(avatarId, stream),
           onFirstAudioFrame: recordFirstAudio,
           onUserTranscript: (text) => {
             void recordTranscriptEntryRef.current({ speaker: 'user', text });
           },
-          onAssistantTranscript: (text) => {
-            void recordTranscriptEntryRef.current({ speaker: 'assistant', text });
+          onAssistantTranscript: (text, avatarId) => {
+            void recordTranscriptEntryRef.current({ speaker: 'assistant', text, avatarId });
           },
           onSystemNote: (text) => {
             void recordTranscriptEntryRef.current({ speaker: 'system', text });
@@ -1602,8 +1675,9 @@ export default function App() {
 
     return () => {
       void realtimeClient.destroy();
+      disposeAvatarVoices();
     };
-  }, [realtimeClient]);
+  }, [realtimeClient, disposeAvatarVoices]);
 
   useEffect(() => {
     const driver = visemeDriverRef.current;
@@ -1633,8 +1707,76 @@ export default function App() {
   useEffect(() => {
     if (realtimeState.status === 'idle' || realtimeState.status === 'error') {
       setRemoteStream(null);
+      if (avatarVoicesRef.current.size > 0) {
+        disposeAvatarVoices();
+      }
     }
-  }, [realtimeState.status]);
+  }, [realtimeState.status, disposeAvatarVoices]);
+
+  // Which avatars share the stage: the registry's list and the models they wear. Only read further
+  // while there is more than one avatar, so a single avatar costs one `avatars:list` call.
+  useEffect(() => {
+    const avatarsApi = resolveApi()?.avatars;
+    if (!avatarsApi?.list) {
+      return undefined;
+    }
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const refresh = async () => {
+      try {
+        const list = await avatarsApi.list();
+        if (cancelled) {
+          return;
+        }
+        setAvatarProfiles((previous) => (JSON.stringify(previous) === JSON.stringify(list) ? previous : list));
+        if (list.length > 1) {
+          const models = await resolveApi()?.avatar?.listModels?.();
+          if (!cancelled && models) {
+            setVrmModels((previous) => (JSON.stringify(previous) === JSON.stringify(models) ? previous : models));
+          }
+          if (timer === null && !cancelled) {
+            timer = setInterval(() => void refresh(), 5000);
+          }
+        } else if (timer !== null) {
+          clearInterval(timer);
+          timer = null;
+        }
+      } catch (error) {
+        console.warn('Failed to read the avatar list.', error);
+      }
+    };
+    const onFocus = () => void refresh();
+    window.addEventListener('focus', onFocus);
+    void refresh();
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', onFocus);
+      if (timer !== null) {
+        clearInterval(timer);
+      }
+    };
+  }, [resolveApi, activeVrmModel?.id]);
+
+  const stageAvatars = useMemo((): VrmStageAvatar[] | undefined => {
+    if (avatarProfiles.length < 2) {
+      return undefined;
+    }
+    return avatarProfiles.map((profile) => {
+      const own = profile.vrmModelId ? vrmModels.find((candidate) => candidate.id === profile.vrmModelId) : undefined;
+      const isEcho = profile.id === 'echo';
+      return {
+        id: profile.id,
+        name: profile.name,
+        // Echo follows the active model; a shared or unknown body is Echo's model, loaded once per actor.
+        model: isEcho ? activeVrmModel : profile.vrmModelId === activeVrmModel?.id ? activeVrmModel : (own ?? activeVrmModel),
+        frame: isEcho ? visemeFrame : (visemeFrames[profile.id] ?? null),
+      };
+    });
+  }, [avatarProfiles, vrmModels, activeVrmModel, visemeFrame, visemeFrames]);
+  const avatarNames = useMemo(
+    () => Object.fromEntries(avatarProfiles.map((profile) => [profile.id, profile.name])),
+    [avatarProfiles],
+  );
 
   useEffect(() => {
     const bridge = resolveApi();
@@ -2579,11 +2721,13 @@ export default function App() {
                 data-state={visemeSummary.status.toLowerCase()}
                 data-avatar-mode="vrm"
                 data-stage-mode={backgrounds.activeKind}
+                {...(stageAvatars && !backgrounds.activeRoom ? { 'data-avatar-count': Math.min(stageAvatars.length, 3) } : {})}
               >
                 <VrmAvatarRenderer
                   key={activeVrmModel?.id ?? 'vrm'}
                   frame={visemeFrame}
                   model={activeVrmModel}
+                  {...(stageAvatars ? { avatars: stageAvatars } : {})}
                   onStatusChange={handleVrmStatusChange}
                   onGroundPositionChange={setAvatarFootY}
                   animationVersion={0}
@@ -3091,7 +3235,7 @@ export default function App() {
               aria-label="Transcript overlay"
               data-testid="transcript-overlay"
             >
-              <TranscriptOverlay entries={transcriptEntries} />
+              <TranscriptOverlay entries={transcriptEntries} avatarNames={avatarNames} />
             </aside>
           ) : null}
 

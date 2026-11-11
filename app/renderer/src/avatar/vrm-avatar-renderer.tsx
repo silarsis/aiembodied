@@ -38,9 +38,26 @@ export interface VrmRendererStatus {
   message?: string;
 }
 
+/** One avatar on the 2D stage. */
+export interface VrmStageAvatar {
+  id: string;
+  /** Shown under the avatar when two or more share the stage. */
+  name?: string;
+  /** The body to wear (null while it is not known; the caller resolves shared bodies to Echo's model). */
+  model: AvatarModelSummary | null;
+  /** This avatar's own lip-sync frame. */
+  frame: VisemeFrame | null;
+}
+
 export interface VrmAvatarRendererProps {
   frame: VisemeFrame | null;
   model: AvatarModelSummary | null | undefined;
+  /**
+   * The avatars on the stage, side by side (2D only). Absent means one `echo` avatar made of the
+   * `model` and `frame` props, exactly as before. TODO(step 4): rooms stay single-body, so in a 3D
+   * room only the first avatar (Echo) is shown.
+   */
+  avatars?: VrmStageAvatar[];
   onStatusChange?: (status: VrmRendererStatus) => void;
   onGroundPositionChange?: (fraction: number) => void;
   className?: string;
@@ -61,10 +78,41 @@ const CAMERA_HEIGHT = 1.35;
 const CAMERA_FOV = 35;
 const VRM_CANVAS_WIDTH = 480;
 const VRM_CANVAS_HEIGHT = 640;
+/** Gap between neighbouring avatars, as a fraction of the wider one's width. */
+const AVATAR_GAP_FRACTION = 0.15;
+const MAX_STAGE_AVATARS = 3;
+/** A frame this open counts as the avatar speaking (name label highlight). */
+const SPEAKING_INTENSITY = 0.05;
+
+interface ActorBounds {
+  size: THREE.Vector3;
+  center: THREE.Vector3;
+}
+
+/**
+ * Side-by-side x offsets, symmetric around the centre, for models of these widths (in order).
+ * One model stays where the loader put it (offset 0).
+ */
+export function layoutOffsets(widths: number[]): number[] {
+  if (widths.length <= 1) {
+    return widths.map(() => 0);
+  }
+  const widest = Math.max(...widths, 0.1);
+  const gap = widest * AVATAR_GAP_FRACTION;
+  const total = widths.reduce((sum, width) => sum + width, 0) + gap * (widths.length - 1);
+  const offsets: number[] = [];
+  let cursor = -total / 2;
+  for (const width of widths) {
+    offsets.push(cursor + width / 2);
+    cursor += width + gap;
+  }
+  return offsets;
+}
 
 export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   frame,
-  model,
+  model: modelProp,
+  avatars,
   onStatusChange,
   onGroundPositionChange,
   className,
@@ -102,7 +150,85 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   const actor = actors.get(DEFAULT_AVATAR_ID) as AvatarActor;
   const [rendererReady, setRendererReady] = useState(false);
 
-  actor.setVisemeFrame(frame);
+  // Without `avatars` the stage is the one echo avatar of the model and frame props.
+  const echoEntry = avatars ? avatars.find((entry) => entry.id === DEFAULT_AVATAR_ID) : undefined;
+  const model = avatars ? echoEntry?.model : modelProp;
+  const echoFrame = avatars ? (echoEntry?.frame ?? null) : frame;
+  // Rooms are single-body for now: only Echo is shown there.
+  const extraEntries = useMemo(
+    () => (room || !avatars ? [] : avatars.filter((entry) => entry.id !== DEFAULT_AVATAR_ID).slice(0, MAX_STAGE_AVATARS - 1)),
+    [avatars, room],
+  );
+  const extraKey = extraEntries.map((entry) => `${entry.id}:${entry.model?.id ?? ''}:${entry.model?.fileSha ?? ''}`).join('|');
+  const stageUnits = 1 + extraEntries.length;
+  /** Rest-pose bounds of each loaded body (before it is placed), by avatar id. */
+  const boundsRef = useRef(new Map<string, ActorBounds>());
+  const loadedModelRef = useRef(new Map<string, string>());
+  const laidOutMultiRef = useRef(false);
+  const stageUnitsAppliedRef = useRef(1);
+  const [labelPositions, setLabelPositions] = useState<Array<{ id: string; leftPct: number }>>([]);
+  const relayoutRef = useRef<() => void>(() => undefined);
+  relayoutRef.current = () => {
+    const camera = cameraRef.current;
+    if (!camera || !sceneRef.current || roomRef.current) {
+      return;
+    }
+    const ids = [DEFAULT_AVATAR_ID, ...extraEntries.map((entry) => entry.id)].filter(
+      (id) => actors.get(id)?.getVrm() && boundsRef.current.has(id),
+    );
+    if (ids.length <= 1) {
+      if (laidOutMultiRef.current) {
+        // Back to one avatar: stand where the loader put it and frame it alone, as a fresh load does.
+        laidOutMultiRef.current = false;
+        groundMeasuredRef.current = false;
+        setLabelPositions([]);
+        const own = boundsRef.current.get(DEFAULT_AVATAR_ID);
+        if (actor.getVrm()) {
+          actor.placeAt(0, 0, 0);
+        }
+        if (own) {
+          camera.aspect = VRM_CANVAS_WIDTH / VRM_CANVAS_HEIGHT;
+          fitCameraToBounds(camera, own);
+        }
+      }
+      return;
+    }
+    const widths = ids.map((id) => (boundsRef.current.get(id) as ActorBounds).size.x);
+    const offsets = layoutOffsets(widths);
+    const min = { x: Infinity, y: Infinity, z: Infinity };
+    const max = { x: -Infinity, y: -Infinity, z: -Infinity };
+    ids.forEach((id, index) => {
+      const bounds = boundsRef.current.get(id) as ActorBounds;
+      const offset = offsets[index] ?? 0;
+      actors.get(id)?.placeAt(offset, 0, 0);
+      min.x = Math.min(min.x, bounds.center.x - bounds.size.x / 2 + offset);
+      max.x = Math.max(max.x, bounds.center.x + bounds.size.x / 2 + offset);
+      min.y = Math.min(min.y, bounds.center.y - bounds.size.y / 2);
+      max.y = Math.max(max.y, bounds.center.y + bounds.size.y / 2);
+      min.z = Math.min(min.z, bounds.center.z - bounds.size.z / 2);
+      max.z = Math.max(max.z, bounds.center.z + bounds.size.z / 2);
+    });
+    // The canvas is as many portrait frames wide as there are avatars (see the canvas size effect).
+    camera.aspect = (VRM_CANVAS_WIDTH * stageUnits) / VRM_CANVAS_HEIGHT;
+    // fitCameraToBounds frames the largest dimension in the vertical field of view; a wide
+    // group is scaled down by the aspect so its width fits too.
+    fitCameraToBounds(camera, {
+      size: new THREE.Vector3((max.x - min.x) / camera.aspect, max.y - min.y, max.z - min.z),
+      center: new THREE.Vector3((min.x + max.x) / 2, (min.y + max.y) / 2, (min.z + max.z) / 2),
+    });
+    laidOutMultiRef.current = true;
+    groundMeasuredRef.current = false;
+    const distance = camera.position.z - (min.z + max.z) / 2;
+    const visibleWidth = 2 * distance * Math.tan((CAMERA_FOV * Math.PI) / 360) * camera.aspect;
+    setLabelPositions(
+      ids.map((id, index) => ({ id, leftPct: 50 + (((offsets[index] ?? 0) + (boundsRef.current.get(id)?.center.x ?? 0) - camera.position.x) / visibleWidth) * 100 })),
+    );
+  };
+
+  actor.setVisemeFrame(echoFrame);
+  for (const entry of extraEntries) {
+    actors.get(entry.id)?.setVisemeFrame(entry.frame);
+  }
   actor.setIdleOptions(idleOptions);
 
   const handleBehaviorCue = useCallback(
@@ -286,6 +412,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
 
     const unload = () => {
       groundMeasuredRef.current = false;
+      boundsRef.current.delete(DEFAULT_AVATAR_ID);
       actor.unload({
         parent: scene,
         onDetach: () => roomControllerRef.current?.attachAvatar(null),
@@ -315,6 +442,11 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
           parent: scene,
           isCancelled: () => cancelled,
           onBounds: (renderableBounds) => {
+            if (renderableBounds) {
+              boundsRef.current.set(DEFAULT_AVATAR_ID, { size: renderableBounds.size.clone(), center: renderableBounds.center.clone() });
+            } else {
+              boundsRef.current.delete(DEFAULT_AVATAR_ID);
+            }
             if (renderableBounds && cameraRef.current) {
               // In a room the camera belongs to the room; fit a copy so leaving the room restores this view.
               const controller = roomControllerRef.current;
@@ -334,6 +466,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         if (!loaded) {
           return;
         }
+        relayoutRef.current();
         setStatus({ status: 'ready' });
       } catch (error) {
         const message =
@@ -360,7 +493,13 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
 
   useEffect(() => {
     actor.applyIdleOptions(idleOptions);
-  }, [actor, idleOptions]);
+    for (const other of actors.values()) {
+      if (other !== actor) {
+        other.setIdleOptions(idleOptions);
+        other.applyIdleOptions(idleOptions);
+      }
+    }
+  }, [actor, actors, idleOptions]);
 
   useEffect(() => {
     if (animationVersion === undefined) {
@@ -368,6 +507,123 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     }
     return actor.reloadClipRegistry();
   }, [actor, animationVersion]);
+
+  // The canvas is one portrait frame wide per avatar (2D only), so avatars side by side keep their size.
+  // Applied whenever the number of frames changes and again when a room hands the canvas back (the room
+  // controller restores the single-frame size when it stops), so the drawing size, camera aspect and the
+  // CSS box always agree.
+  const applyStageSizeRef = useRef<() => void>(() => undefined);
+  applyStageSizeRef.current = () => {
+    const renderer = rendererRef.current;
+    const canvas = canvasRef.current;
+    const camera = cameraRef.current;
+    if (!renderer || !canvas || !camera || roomRef.current) {
+      return;
+    }
+    const pixelRatio = typeof window !== 'undefined' ? window.devicePixelRatio ?? 1 : 1;
+    const width = VRM_CANVAS_WIDTH * stageUnits;
+    canvas.width = Math.floor(width * pixelRatio);
+    canvas.height = Math.floor(VRM_CANVAS_HEIGHT * pixelRatio);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${VRM_CANVAS_HEIGHT}px`;
+    renderer.setSize(width, VRM_CANVAS_HEIGHT, false);
+    camera.aspect = width / VRM_CANVAS_HEIGHT;
+    camera.updateProjectionMatrix();
+    relayoutRef.current();
+  };
+  useEffect(() => {
+    if (!rendererReady) {
+      return;
+    }
+    stageUnitsAppliedRef.current = stageUnits;
+    applyStageSizeRef.current();
+  }, [stageUnits, rendererReady]);
+
+  // The other avatars (never Echo, who has the effects above): one actor each, loaded from its own model.
+  useEffect(() => {
+    if (!rendererReady) {
+      return;
+    }
+    const scene = sceneRef.current;
+    if (!scene) {
+      return;
+    }
+    let cancelled = false;
+    const wanted = new Set(extraEntries.map((entry) => entry.id));
+    for (const [id, other] of [...actors.entries()]) {
+      if (id === DEFAULT_AVATAR_ID || wanted.has(id)) {
+        continue;
+      }
+      other.unload({ parent: scene });
+      other.dispose();
+      actors.delete(id);
+      boundsRef.current.delete(id);
+      loadedModelRef.current.delete(id);
+    }
+    relayoutRef.current();
+
+    const loadOne = async (entry: VrmStageAvatar) => {
+      let other = actors.get(entry.id);
+      if (!other) {
+        other = new AvatarActor({ id: entry.id, hasRoom: () => roomRef.current !== null });
+        other.setIdleOptions(idleOptions);
+        actors.set(entry.id, other);
+      }
+      const wantedKey = `${entry.model?.id ?? ''}:${entry.model?.fileSha ?? ''}`;
+      if (loadedModelRef.current.get(entry.id) === wantedKey) {
+        return;
+      }
+      loadedModelRef.current.delete(entry.id);
+      boundsRef.current.delete(entry.id);
+      other.unload({ parent: scene });
+      if (!entry.model) {
+        relayoutRef.current();
+        return;
+      }
+      try {
+        const binary = await getPreloadApi()?.avatar?.loadModelBinary(entry.model.id);
+        if (!binary) {
+          throw new Error('VRM binary payload is unavailable.');
+        }
+        const loaded = await other.load({
+          binary,
+          modelId: entry.model.id,
+          parent: scene,
+          isCancelled: () => cancelled,
+          // The camera is fitted to all avatars together in relayout.
+          onBounds: (bounds) => {
+            if (bounds) {
+              boundsRef.current.set(entry.id, { size: bounds.size.clone(), center: bounds.center.clone() });
+            }
+          },
+        });
+        if (!loaded || cancelled) {
+          return;
+        }
+        loadedModelRef.current.set(entry.id, wantedKey);
+        other.applyIdleOptions(idleOptions);
+        relayoutRef.current();
+      } catch (error) {
+        console.error('[vrm-avatar-renderer] failed to load VRM model for avatar', entry.id, error);
+        other.unload({ parent: scene });
+      }
+    };
+    for (const entry of extraEntries) {
+      void loadOne(entry);
+    }
+    return () => {
+      cancelled = true;
+    };
+    // extraKey stands for the entries' ids and models; frames change every tick and are applied in render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rendererReady, extraKey, actors]);
+
+  // After the extras went away (a room, or they left), put Echo back where a single avatar stands.
+  useEffect(() => {
+    if (rendererReady && extraEntries.length === 0) {
+      relayoutRef.current();
+    }
+  }, [rendererReady, extraEntries.length]);
 
   useEffect(() => {
     const controller = roomControllerRef.current;
@@ -382,7 +638,12 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       actor.cancelAnimations();
       sceneActions?.reset();
     }
-    void controller.setRoom(room);
+    void controller.setRoom(room).then(() => {
+      // Leaving a room restores the single-frame canvas size; set it back for the avatars on stage.
+      if (roomRef.current === null) {
+        applyStageSizeRef.current();
+      }
+    });
   }, [room, rendererReady, actor, sceneActions]);
 
   useEffect(() => {
@@ -403,5 +664,34 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     roomControllerRef.current?.setDebugNavmesh(showWalkableArea);
   }, [showWalkableArea, rendererReady, room]);
 
-  return <canvas ref={canvasRef} className={className} data-renderer="vrm" />;
+  const canvasElement = <canvas ref={canvasRef} className={className} data-renderer="vrm" />;
+  if (extraEntries.length === 0) {
+    return canvasElement;
+  }
+  // Two or more avatars: a small name label under each (the speaking one is marked).
+  const shown = [DEFAULT_AVATAR_ID, ...extraEntries.map((entry) => entry.id)];
+  const frames = new Map<string, VisemeFrame | null>([[DEFAULT_AVATAR_ID, echoFrame], ...extraEntries.map((entry) => [entry.id, entry.frame] as const)]);
+  const names = new Map<string, string>([[DEFAULT_AVATAR_ID, echoEntry?.name ?? 'Echo'], ...extraEntries.map((entry) => [entry.id, entry.name ?? entry.id] as const)]);
+  return (
+    <>
+      {canvasElement}
+      <div className="stageAvatarLabels" aria-hidden="true">
+        {shown.map((id, index) => {
+          const frameOfAvatar = frames.get(id) ?? null;
+          const position = labelPositions.find((item) => item.id === id);
+          return (
+            <span
+              key={id}
+              className="stageAvatarLabel"
+              data-avatar-id={id}
+              data-speaking={frameOfAvatar !== null && frameOfAvatar.intensity > SPEAKING_INTENSITY ? 'true' : 'false'}
+              style={{ left: `${position?.leftPct ?? ((index + 0.5) / shown.length) * 100}%` }}
+            >
+              {names.get(id)}
+            </span>
+          );
+        })}
+      </div>
+    </>
+  );
 });

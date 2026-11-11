@@ -332,7 +332,8 @@ export class AvatarActor {
       vrm.humanoid?.getNormalizedBoneNode('leftHand'),
       vrm.humanoid?.getNormalizedBoneNode('rightHand'),
     ]);
-    setAvatarRestSkeleton(restSkeleton);
+    // The module-level slot serves the single body that `{move:...}` streams are calibrated for: Echo's.
+    if (this.id === DEFAULT_AVATAR_ID) setAvatarRestSkeleton(restSkeleton);
     this.expressionManager = vrm.expressionManager ?? null;
     this.expressionManager?.resetValues();
     const mixer = createMixerForVrm(vrm);
@@ -393,7 +394,7 @@ export class AvatarActor {
     this.jumpDetector.track(null, null, []);
     this.poseBlend.cancel();
     for (const stopHandedOver of this.handedOver.splice(0)) stopHandedOver();
-    setAvatarRestSkeleton(null);
+    if (this.id === DEFAULT_AVATAR_ID) setAvatarRestSkeleton(null);
     try {
       this.mixer?.stopAllAction();
     } catch (error) {
@@ -435,7 +436,7 @@ export class AvatarActor {
     this.vrm = null;
     this.parent = null;
     this.restSkeleton = null;
-    setAvatarRestSkeleton(null);
+    if (this.id === DEFAULT_AVATAR_ID) setAvatarRestSkeleton(null);
     this.visemeState = createDefaultVisemeState();
     this.blinkState = createDefaultBlinkState();
   }

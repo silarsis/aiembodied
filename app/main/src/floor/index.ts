@@ -99,6 +99,11 @@ export class FloorController {
     return this.hearChatter();
   }
 
+  /** The wake word was heard: the host listens next, whoever Kevin spoke with before. */
+  wakeWordHeard(): void {
+    this.manager.listenTo(this.manager.scene().hostId, this.now());
+  }
+
   isMulti(): boolean {
     return this.manager.isMulti();
   }

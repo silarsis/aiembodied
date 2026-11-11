@@ -14,6 +14,9 @@ export const PARTNER_WINDOW_MS = 5 * 60_000;
 export const BID_THRESHOLD = 0.5;
 export const CHATTER_MAX_TURNS = 4;
 export const CHATTER_MAX_MS = 60_000;
+/** A chat Kevin asked for ("talk to each other") runs longer than ordinary chatter. */
+export const TALK_MAX_TURNS = 8;
+export const TALK_MAX_MS = 180_000;
 export const BID_TIMEOUT_MS = 6_000;
 export const DEFAULT_SCENE_ID = 'default';
 export const PERSON_SPEAKER = 'person:kevin';
@@ -86,6 +89,10 @@ export interface FloorManagerOptions {
 
 const GROUP_PATTERN = /\b(?:you two|you both|both of you|both|everyone|everybody|all of you|you all|y'all)\b/i;
 
+/** "Talk to each other", "have a chat", "discuss it between you": Kevin wants the avatars to converse out loud. */
+const TALK_PATTERN =
+  /\b(?:talk|chat|speak|converse|discuss|debate|argue)\b[^.?!]{0,40}\b(?:to each other|with each other|among yourselves|between yourselves|together|between you)\b|\b(?:have|hold) a (?:chat|conversation|discussion|debate)\b|\b(?:you two|you both|both of you)\b[^.?!]{0,20}\b(?:talk|chat|discuss|debate)\b/i;
+
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -112,6 +119,8 @@ export class FloorManager {
   private speaking: string | null = null;
   private queue: string[] = [];
   private recent: FloorLine[] = [];
+  /** Set while a chat Kevin asked for runs: avatar lines go to the next avatar, out loud, within the longer budget. */
+  private talking = false;
 
   constructor(options: FloorManagerOptions) {
     this.options = options;
@@ -154,6 +163,7 @@ export class FloorManager {
     // Kevin spoke: the chatter budget starts over.
     this.chatterTurns = 0;
     this.chatterStartedAt = null;
+    this.talking = false;
     const done = (speakers: FloorDecision['speakers']): FloorDecision => {
       if (speakers[0]) this.partner = { avatarId: speakers[0].avatarId, at: utterance.at };
       return { speakers, channel: 'aloud', trace };
@@ -166,11 +176,17 @@ export class FloorManager {
       trace.push(`person: one avatar in scene -> ${scene.avatarIds[0]}`);
       return done([{ avatarId: scene.avatarIds[0], reason: 'host' }]);
     }
+    const named = this.namedIn(utterance.text, scene.avatarIds);
+    if (TALK_PATTERN.test(utterance.text)) {
+      this.talking = true;
+      const first = named[0] ?? (this.partner && scene.avatarIds.includes(this.partner.avatarId) ? this.partner.avatarId : scene.hostId);
+      trace.push(`person: asked them to talk to each other -> ${first} starts, out loud`);
+      return done([{ avatarId: first, reason: named.length > 0 ? 'addressed' : 'host' }]);
+    }
     if (GROUP_PATTERN.test(utterance.text)) {
       trace.push('person: addressed everyone -> all avatars in scene order');
       return done(scene.avatarIds.map((avatarId) => ({ avatarId, reason: 'all' as const })));
     }
-    const named = this.namedIn(utterance.text, scene.avatarIds);
     if (named.length > 0) {
       trace.push(`person: addressed by name -> ${named.join(', ')}`);
       return done(named.map((avatarId) => ({ avatarId, reason: 'addressed' as const })));
@@ -199,7 +215,7 @@ export class FloorManager {
 
   private async routeAvatar(utterance: FloorUtterance): Promise<FloorDecision> {
     const scene = this.scene();
-    const channel: FloorChannel = this.options.hearChatter?.() ? 'aloud' : 'back';
+    const channel: FloorChannel = this.talking || this.options.hearChatter?.() ? 'aloud' : 'back';
     const trace: string[] = [];
     const none = (extra: Partial<FloorDecision> = {}): FloorDecision => ({ speakers: [], channel, trace, ...extra });
     const senderId = utterance.from.slice('avatar:'.length);
@@ -213,12 +229,14 @@ export class FloorManager {
       return none();
     }
     // Budgets: turns and time since Kevin last spoke.
+    const maxTurns = this.talking ? TALK_MAX_TURNS : this.chatterMaxTurns;
+    const maxMs = this.talking ? TALK_MAX_MS : this.chatterMaxMs;
     const elapsed = this.chatterStartedAt === null ? 0 : utterance.at - this.chatterStartedAt;
-    if (this.chatterTurns >= this.chatterMaxTurns) {
+    if (this.chatterTurns >= maxTurns) {
       trace.push(`avatar: chatter budget used up (${this.chatterTurns} turns)`);
       return none({ budget: { kind: 'turns', turns: this.chatterTurns, ms: elapsed } });
     }
-    if (this.chatterStartedAt !== null && elapsed >= this.chatterMaxMs) {
+    if (this.chatterStartedAt !== null && elapsed >= maxMs) {
       trace.push(`avatar: chatter budget used up (${Math.round(elapsed / 1000)} s)`);
       return none({ budget: { kind: 'time', turns: this.chatterTurns, ms: elapsed } });
     }
@@ -231,6 +249,13 @@ export class FloorManager {
     if (named.length > 0) {
       trace.push(`avatar: ${senderId} addressed ${named[0]} by name`);
       return take(named[0], 'addressed');
+    }
+    if (this.talking) {
+      // Kevin asked them to talk: the next avatar in scene order answers, no bidding.
+      const order = scene.avatarIds;
+      const next = order[(order.indexOf(senderId) + 1) % order.length];
+      trace.push(`avatar: chat Kevin asked for -> ${next} answers`);
+      return take(next, 'addressed');
     }
     trace.push('avatar: no name, asking for bids');
     const bids = await this.collectBids(others, trace);
@@ -303,6 +328,11 @@ export class FloorManager {
     return this.speaking;
   }
 
+  /** "Hey Echo" was said: the host is the one listening, whoever Kevin spoke with last. */
+  listenTo(avatarId: string, at: number): void {
+    if (this.scene().avatarIds.includes(avatarId)) this.partner = { avatarId, at };
+  }
+
   /** Kevin speaks: clear the queue, free the slot, reset the chatter budget. Returns the avatars to cancel. */
   bargeIn(): string[] {
     const cancel = this.speaking === null ? [] : [this.speaking];
@@ -310,6 +340,7 @@ export class FloorManager {
     this.queue = [];
     this.chatterTurns = 0;
     this.chatterStartedAt = null;
+    this.talking = false;
     return cancel;
   }
 }
