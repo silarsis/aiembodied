@@ -708,6 +708,16 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sceneExecutors, rendererReady, extraKey]);
 
+  // Names for the reasons avatars hear ("Sage is sitting on the sofa").
+  const stageNames = (avatars ?? []).map((entry) => `${entry.id}\u0000${entry.name ?? ''}`).join('\u0001');
+  useEffect(() => {
+    const names: Record<string, string> = {};
+    for (const entry of avatars ?? []) if (entry.name) names[entry.id] = entry.name;
+    roomControllerRef.current?.occupancy.setNames(names);
+    // stageNames stands for the ids and names.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stageNames, rendererReady]);
+
   useEffect(() => {
     roomControllerRef.current?.setDebugNavmesh(showWalkableArea);
   }, [showWalkableArea, rendererReady, room]);

@@ -70,6 +70,7 @@ vi.mock('../../src/rooms/room-scene-controller.js', () => ({
     }
     sceneEnv = {};
     envFor = vi.fn(() => null);
+    occupancy = { setNames: vi.fn() };
     attachAvatar = vi.fn();
     attachCompanion = vi.fn();
     detachCompanion = vi.fn();

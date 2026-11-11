@@ -89,6 +89,7 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 
 ## Recent Updates
 
+- 2026-11-11 — Multi-avatar movement phase C: `RoomOccupancy` (`rooms/room-occupancy.ts`) keeps avatars in a room off the same spot, seat and object and lets only one walk at a time (goal nudging, path side-step, claims released by the executor); the scene text says where the others are. Nothing changes with one avatar. See `docs/features/multi-avatar-movement.md`.
 - 2026-11-11 — Multi-avatar movement phase B: avatars other than Echo walk, sit, look and carry in 3D rooms (`MovementRigs` executors, `RoomSceneController.envFor`/`attachCompanion`, per-avatar physics capsules, scene text in their prompts via `avatars:set-tag-instructions`). No collision avoidance or idle wandering for them yet. See `docs/features/multi-avatar-movement.md`.
 - 2026-11-11 — Multi-avatar movement phase A: `{move:}` gestures work for every avatar (`MovementRigs` in `rooms/movement-rig.ts`, per-avatar rest skeletons, `avatarId` on motion chunks, `avatars:set-tag-instructions` adds the tag instructions to other avatars' prompts). Scene tags stay Echo-only. See `docs/features/multi-avatar-movement.md`.
 - 2026-11-11 — Floor review fixes: answers to Kevin no longer start avatar chatter (`toPerson`), avatars overhear the room (`LocalVoiceService.overhear`, `FloorController.heard`), chatter turns get no tools (`noTools`), the decision prompt uses the avatar's name, and `floor:interrupt` handles barge-in (see `services/switchboard/README.md`).

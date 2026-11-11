@@ -1,6 +1,6 @@
 # Movement for every avatar (phase 3 step 4c): design
 
-Status: design, written 2026-11-11. Phase A is built (see the note under the phases). Phases are listed at the end with what has been built.
+Status: design, written 2026-11-11. Phases A, B and C are built (see the notes under the phases). Phases are listed at the end with what has been built.
 
 ## Where we are
 
@@ -146,3 +146,16 @@ Avatars other than Echo walk, sit, look and carry in 3D rooms from the scene tag
 - Prompts: `avatars:set-tag-instructions` also carries `scene` (the room text without Echo's idle note; absent in 2D) and `sceneFor` (the same text per avatar, with "<Name> is in the room with you." for each other avatar on stage). Main appends it after the tag instructions. Echo's own scene text gets the same lines. Positions come with phase C.
 - `{come}` takes a companion to the room's home spot, which is where Echo stands; claims and side-steps (phase C) are what keep them apart.
 
+
+### Built: phase C (2026-11-11)
+
+Avatars in a 3D room no longer stand on the same spot, sit on the same seat, pick the same object or walk at the same time. With one avatar nothing changes: `PlanWorld.occupancy` and `others` stay `undefined`, so there is no waiting, no goal nudging and the plans are identical. What differs from the design above:
+
+- `rooms/room-occupancy.ts` (`RoomOccupancy`, one per `RoomSceneController`, cleared on a room change; a companion leaving calls `forget`): standing spots and claimed goals, `freeSpotNear` (8 directions at 0.5 m and 1 m, snapped with `closestWalkable`, nearest free one wins), seat/object claims (`claim`/`release`/`holder`/`keepOnly`/`releaseAll`), and the FIFO walking mutex (`acquireWalk`, 15 s timeout, then it proceeds with a no-op release; `cancelWalk` drops a queue place on interrupt). `forAvatar(id)` gives the `AvatarOccupancy` handle that is put on `PlanWorld.occupancy`. Names for the reasons come from `occupancy.setNames` (set by the avatar renderer from the stage avatars).
+- `RoomSceneEnv` takes `occupancy?()` and `avatarId?` from its host. Echo's env only gets the occupancy while a companion is attached. Each env writes its own avatar's position to the occupancy in `planWorld`, `setRootPose` and `step`, so `standing` is always current.
+- Planner (`scene-actions.ts`): walk goals (go, come, goto, and the approach of sit) go through `freeSpotNear`; none free means skip with "someone is standing there"; the goal is claimed when the walk is planned. `sideStepPath` inserts one waypoint (left of the segment, then right, 0.6 m from the spot, kept if walkable and clear of it) where a segment passes within 0.45 m of another avatar's standing spot, ignoring spots near the goal. Sit claims the seat and pick the object; a refusal is a skip reason "Sage is sitting on the sofa" / "Sage has it".
+- Executor: a stream with a path awaits `acquireWalk` before it starts and releases when it ends, fails or is cancelled. After every stream it drops the goal claim and keeps only the seat it sits on and the object it holds (`keepOnly`). `interrupt` calls `cancelWalk` (seat and held object stay), `reset` calls `releaseAll`. Looks, gestures and in-place actions never wait.
+- A seated avatar counts as standing at its approach spot (where it will stand up to).
+- `{come}` for a companion ends beside Echo's home spot through the same nudging.
+- Prompts: `buildSceneInstructions` takes `{ name, where }` entries; `describeAvatarWhere` gives "sitting on the <object>" or "standing near the <nearest listed object within 3 m>"; otherwise the phase B line stays. App builds each avatar's lines from `executor.getState()` and `executor.world()` and refreshes them when any executor reports an action done or failed (a counter), not every frame. Until the first action ends after a room opens, the lines are still the phase B ones.
+- Not done: two avatars already walking (they cannot, by the mutex) and the physics capsules still do not collide with each other.

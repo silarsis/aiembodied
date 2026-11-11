@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildAnimationInstructions } from '../../src/avatar/animation-instructions.js';
-import { buildSceneInstructions, objectAffordances } from '../../src/rooms/scene-instructions.js';
+import { buildSceneInstructions, describeAvatarWhere, objectAffordances } from '../../src/rooms/scene-instructions.js';
 import { builtInRoom } from './fixtures.js';
 
 describe('scene instructions', () => {
@@ -16,6 +16,26 @@ describe('scene instructions', () => {
     // Objects with nothing to do are left out.
     expect(text).not.toContain('rug');
     expect(text).not.toContain('floor lamp');
+  });
+
+  it('says where the others are when it is known, else keeps the plain line', () => {
+    const text = buildSceneInstructions(room, true, '', [
+      { name: 'Sage', where: 'sitting on the sofa' },
+      { name: 'Rex', where: null },
+      'Ada',
+    ]);
+    expect(text).toContain('Sage is sitting on the sofa. Rex is in the room with you. Ada is in the room with you.');
+    expect(buildSceneInstructions(room, true, '', [{ name: 'Sage' }])).toBe(buildSceneInstructions(room, true, '', ['Sage']));
+  });
+
+  it('describes where an avatar is from its seat or the nearest listed object', () => {
+    expect(describeAvatarWhere(room, { seatedOn: 'sofa' })).toBe('sitting on the sofa');
+    expect(describeAvatarWhere(room, { position: { x: -2.6, z: -0.5 } })).toBe('standing near the bookshelf');
+    // The lamp and the rug have nothing to do, so they are never "near".
+    expect(describeAvatarWhere(room, { position: { x: -2.55, z: -2.15 } })).not.toContain('lamp');
+    expect(describeAvatarWhere(room, { position: { x: 40, z: 40 } })).toBeNull();
+    expect(describeAvatarWhere(room, {})).toBeNull();
+    expect(describeAvatarWhere(null, { seatedOn: 'sofa' })).toBeNull();
   });
 
   it('explains the tags in a couple of sentences, with the example and the ordering rules', () => {

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { RoomFile } from '../../../main/src/rooms/types.js';
 import { DEFAULT_ROOM_AVATAR_HEIGHT, measureAvatarHeight, measureSoleLift, placeAtHome } from './avatar-placement.js';
 import { RoomCompanions } from './room-companions.js';
+import { RoomOccupancy } from './room-occupancy.js';
 import { RoomStage } from './room-stage.js';
 import { createModelLoader } from './room-model-loader.js';
 import { RoomSceneEnv, type AvatarRig } from './scene-env.js';
@@ -61,7 +62,16 @@ export class RoomSceneController {
   private rig: AvatarRig | null = null;
   private body: THREE.Object3D | null = null;
   /** What scene actions use to reach the room and the avatar; stable for the controller's life. */
-  readonly sceneEnv = new RoomSceneEnv({ stage: () => this.stage, rig: () => this.rig, aspect: () => this.deps.camera.aspect });
+  /** Spots, seats, objects and the walking turn shared by the avatars in the room. */
+  readonly occupancy = new RoomOccupancy();
+  readonly sceneEnv = new RoomSceneEnv({
+    stage: () => this.stage,
+    rig: () => this.rig,
+    aspect: () => this.deps.camera.aspect,
+    avatarId: 'echo',
+    // Echo only takes part while a companion is attached; alone she plans exactly as before.
+    occupancy: () => (this.companionEnvs.size > 0 ? this.occupancy : null),
+  });
 
   /** Scene action envs of the companions, by avatar id; each lives as long as its companion stays attached. */
   private readonly companionEnvs = new Map<string, RoomSceneEnv>();
@@ -115,6 +125,7 @@ export class RoomSceneController {
       return;
     }
     const wasActive = this.stage !== null;
+    if (!reload) this.occupancy.clear();
     this.disposeStage();
     this.stage = next;
     this.deps.scene.add(next.group);
@@ -167,7 +178,13 @@ export class RoomSceneController {
     if (humanoid && !this.companionEnvs.has(id)) {
       this.companionEnvs.set(
         id,
-        new RoomSceneEnv({ stage: () => this.stage, rig: () => this.companions.rigOf(id), aspect: () => this.deps.camera.aspect }),
+        new RoomSceneEnv({
+          stage: () => this.stage,
+          rig: () => this.companions.rigOf(id),
+          aspect: () => this.deps.camera.aspect,
+          avatarId: id,
+          occupancy: () => this.occupancy,
+        }),
       );
     } else if (!humanoid) {
       this.companionEnvs.delete(id);
@@ -178,6 +195,7 @@ export class RoomSceneController {
   detachCompanion(id: string): void {
     this.companionEnvs.get(id)?.releaseHeld();
     this.companionEnvs.delete(id);
+    this.occupancy.forget(id);
     this.companions.detach(id);
     this.stage?.removeAvatar(id);
     // The others keep their slots and stay where they are.
@@ -227,6 +245,7 @@ export class RoomSceneController {
     this.companions.restore();
     this.companions.clear();
     this.companionEnvs.clear();
+    this.occupancy.clear();
     this.disposeStage();
     this.observer?.disconnect();
     this.observer = null;
@@ -242,6 +261,7 @@ export class RoomSceneController {
     this.room = null;
     this.restoreAvatar();
     this.companions.restore();
+    this.occupancy.clear();
     this.disposeStage();
     if (!wasActive) return;
     const { camera, renderer, canvas, legacySize } = this.deps;

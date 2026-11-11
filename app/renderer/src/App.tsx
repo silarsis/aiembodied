@@ -69,7 +69,7 @@ import { MovementRigs } from './rooms/movement-rig.js';
 import { MoveRequestFilter, enqueueMotionChunk } from './avatar/live-motion.js';
 import { SceneActionExecutor, type SceneActivity } from './rooms/scene-executor.js';
 import { tagToAction, type SceneAction } from './rooms/scene-actions.js';
-import { buildSceneInstructions } from './rooms/scene-instructions.js';
+import { buildSceneInstructions, describeAvatarWhere, type OtherAvatarEntry } from './rooms/scene-instructions.js';
 import { useIdleDirector } from './rooms/use-idle-director.js';
 import { useIdleHabits } from './avatar/use-idle-habits.js';
 
@@ -1265,15 +1265,41 @@ export default function App() {
     () => (avatarProfiles.length < 2 ? [] : [...avatarProfiles.filter((profile) => profile.id === 'echo'), ...avatarProfiles.filter((profile) => profile.id !== 'echo').slice(0, 2)]),
     [avatarProfiles],
   );
+  // Bumped when any avatar's action ends, so the scene text says where the others are now (not every frame).
+  const [sceneTick, setSceneTick] = useState(0);
+  useEffect(() => {
+    const bump = (activity: SceneActivity) => {
+      if (activity.type === 'done' || activity.type === 'failed') setSceneTick((tick) => tick + 1);
+    };
+    const offEcho = sceneActions.onActivity(bump);
+    const offOthers = rigs.onOtherActivity((_avatarId, activity) => bump(activity));
+    return () => {
+      offEcho();
+      offOthers();
+    };
+  }, [sceneActions, rigs]);
+  /** What each avatar on stage would be told about the others in the room, with where they are when known. */
+  const othersFor = useCallback(
+    (forId: string): OtherAvatarEntry[] =>
+      stageNames
+        .filter((profile) => profile.id !== forId)
+        .map((profile) => {
+          const executor = rigs.get(profile.id).executor;
+          const seat = executor.getState().seat;
+          const world = executor.world();
+          const where = describeAvatarWhere(backgrounds.activeRoom, {
+            seatedOn: seat?.objectId ?? null,
+            position: world ? { x: world.frame.origin.x, z: world.frame.origin.z } : null,
+          });
+          return { name: profile.name, where };
+        }),
+    [stageNames, rigs, backgrounds.activeRoom],
+  );
   const sceneInstructions = useMemo(
-    () =>
-      buildSceneInstructions(
-        backgrounds.activeRoom,
-        liveMotionReady,
-        idleNote,
-        stageNames.filter((profile) => profile.id !== 'echo').map((profile) => profile.name),
-      ),
-    [backgrounds.activeRoom, liveMotionReady, idleNote, stageNames],
+    () => buildSceneInstructions(backgrounds.activeRoom, liveMotionReady, idleNote, othersFor('echo')),
+    // sceneTick: where the others are changes when an action ends.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [backgrounds.activeRoom, liveMotionReady, idleNote, othersFor, sceneTick],
   );
   const sessionInstructions = useMemo(
     () => {
@@ -1876,7 +1902,7 @@ export default function App() {
         .filter((profile) => profile.id !== 'echo')
         .map((profile) => [
           profile.id,
-          buildSceneInstructions(room, liveMotionReady, undefined, stageNames.filter((other) => other.id !== profile.id).map((other) => other.name)),
+          buildSceneInstructions(room, liveMotionReady, undefined, othersFor(profile.id)),
         ]),
     );
     return {
@@ -1884,7 +1910,9 @@ export default function App() {
       moveOnly: buildMoveOnlyInstructions(liveMotionReady),
       ...(scene ? { scene, sceneFor } : {}),
     };
-  }, [avatarProfiles.length, availableAnimationSlugs, availablePoses, liveMotionReady, backgrounds.activeRoom, stageNames]);
+    // sceneTick: where the others are changes when an action ends.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avatarProfiles.length, availableAnimationSlugs, availablePoses, liveMotionReady, backgrounds.activeRoom, stageNames, othersFor, sceneTick]);
   useEffect(() => {
     if (!avatarTagInstructions) return;
     const setTagInstructions = resolveApi()?.avatars?.setTagInstructions;
