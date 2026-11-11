@@ -51,6 +51,7 @@ runTests('tests/auto-launch*.test.ts', 'Auto Launch');
 runTests('tests/app-diagnostics.test.ts', 'App Diagnostics');
 runTests('tests/gpu-memory.test.ts', 'GPU Memory');
 runTests('tests/switchboard*.test.ts', 'Switchboard');
+runTests('tests/floor-*.test.ts', 'Floor');
 runTests('tests/metrics/*.test.ts', 'Metrics');
 runTests('tests/run-dev-*.test.ts', 'Run Dev');
 runTests('tests/local-llm*.test.ts', 'Local LLM');

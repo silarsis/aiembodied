@@ -3,7 +3,7 @@ import type { IpcMainInvokeEvent } from 'electron';
 import type { ConfigSecretKey } from '../src/config/config-manager.js';
 import { DEFAULT_PROVIDER_SETTINGS } from '../src/config/provider-settings.js';
 import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/config/model-routing.js';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -1373,6 +1373,109 @@ describe('main process bootstrap', () => {
     } finally {
       Object.defineProperty(process, 'platform', { value: originalPlatform });
     }
+  });
+
+  describe('floor routing', () => {
+    afterEach(() => {
+      delete process.env.SWITCHBOARD_ENABLED;
+      delete process.env.AIEMBODIED_EXTRA_AVATARS;
+    });
+
+    async function boot(extraAvatars?: string) {
+      // Without the switchboard the app keeps its bus in-process; spy on what is published to it.
+      process.env.SWITCHBOARD_ENABLED = '0';
+      const { LocalOnlyBus } = await import('../src/switchboard/bus.js');
+      const published: Array<{ type: string; txn?: { id: string }; payload: Record<string, unknown> }> = [];
+      vi.spyOn(LocalOnlyBus.prototype, 'publish').mockImplementation((event) => {
+        published.push(event as (typeof published)[number]);
+        return null;
+      });
+      const kv = new Map<string, string>();
+      getValueMock.mockImplementation((key: string) => kv.get(key) ?? null);
+      setValueMock.mockImplementation((key: string, value: string) => void kv.set(key, value));
+      if (extraAvatars) process.env.AIEMBODIED_EXTRA_AVATARS = extraAvatars;
+      else delete process.env.AIEMBODIED_EXTRA_AVATARS;
+      const config = {
+        realtimeApiKey: 'rt-key',
+        comfyUiBaseUrl: 'http://127.0.0.1:8188',
+        conversationBackend: 'local',
+        providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
+        webSearch: { provider: 'off' },
+        models: testRouting(),
+        audioInputDeviceId: undefined,
+        audioOutputDeviceId: undefined,
+        featureFlags: {},
+        wakeWord: { model: 'hey_jarvis', keywordLabel: 'Hey Jarvis', threshold: 0.5, cooldownMs: 900, deviceIndex: 1 },
+        metrics: { enabled: false, host: '127.0.0.1', port: 9477, path: '/metrics' },
+      } as const;
+      loadMock.mockResolvedValue(config);
+      getConfigMock.mockReturnValue(config);
+      getRendererConfigMock.mockReturnValue({ hasRealtimeApiKey: true });
+      await import('../src/main.js');
+      whenReadyDeferred.resolve();
+      await whenReadyDeferred.promise;
+      await flushPromises();
+      await waitForExpect(() => expect(createdWindows).toHaveLength(1));
+      const handlers = new Map(ipcMainMock.handle.mock.calls.map(([channel, handler]) => [channel, handler]));
+      const sender = { isDestroyed: () => false, send: vi.fn() };
+      const { LocalVoiceService } = await import('../src/local-voice/local-voice-service.js');
+      const served: Array<{ avatarId: string; requestId: string; instructions?: string; silent?: boolean }> = [];
+      const respondSpy = vi.spyOn(LocalVoiceService.prototype, 'respond').mockImplementation(async function (this: { avatarId: string }, request) {
+        served.push({ avatarId: this.avatarId, requestId: request.requestId, instructions: request.instructions, silent: request.silent });
+        return { requestId: request.requestId, text: '', cancelled: false };
+      });
+      const respond = (payload: Record<string, unknown>) => handlers.get('local-voice:respond')?.({ sender }, payload);
+      return { handlers, served, respond, respondSpy, sender, published };
+    }
+
+    it('keeps one avatar exactly as before and never asks the floor', async () => {
+      const { served, respond, respondSpy, handlers } = await boot();
+      await respond({ requestId: 'r1', text: 'Sage, hello', instructions: 'You are Echo.' });
+      expect(served).toEqual([{ avatarId: 'echo', requestId: 'r1', instructions: 'You are Echo.', silent: undefined }]);
+      expect(handlers.get('avatars:list')?.({})).toHaveLength(1);
+      expect(mockLogger.info).not.toHaveBeenCalledWith('Created extra avatars from AIEMBODIED_EXTRA_AVATARS.', expect.anything());
+      respondSpy.mockRestore();
+    });
+
+    it('creates env avatars and routes by name, host and explicit avatar id', async () => {
+      const { served, respond, respondSpy, handlers } = await boot('Sage,Rex');
+      expect((handlers.get('avatars:list')?.({}) as Array<{ id: string; prompt?: string }>).map((p) => p.id)).toEqual(['echo', 'sage', 'rex']);
+      expect((handlers.get('avatars:list')?.({}) as Array<{ id: string; prompt?: string }>)[1].prompt).toContain('You are Sage');
+
+      await respond({ requestId: 'r1', text: 'Sage, what do you think?', instructions: 'You are Echo.' });
+      expect(served).toEqual([expect.objectContaining({ avatarId: 'sage', requestId: 'r1', instructions: expect.stringContaining('You are Sage') })]);
+
+      // A system turn, a preview and an explicit avatar id never go through the floor.
+      await respond({ requestId: 'r2', text: 'x', system: true });
+      await respond({ requestId: 'r3', text: 'Rex, hi', preview: true });
+      await respond({ requestId: 'r4', text: 'Sage, hi', avatarId: 'echo' });
+      expect(served.slice(1).map((s) => [s.avatarId, s.requestId])).toEqual([['echo', 'r2'], ['echo', 'r3'], ['echo', 'r4']]);
+
+      // No name and no partner for long enough: the host answers.
+      await respond({ requestId: 'r5', text: 'Rex and Echo, settle it' });
+      await waitForExpect(() => expect(served.map((s) => s.requestId)).toContain('r5:echo'));
+      expect(served.filter((s) => s.requestId.startsWith('r5')).map((s) => [s.avatarId, s.requestId])).toEqual([['rex', 'r5'], ['echo', 'r5:echo']]);
+      respondSpy.mockRestore();
+    });
+
+    it('journals floor events on the switchboard bus', async () => {
+      const { respond, respondSpy, published } = await boot('Sage');
+      await respond({ requestId: 'r1', text: 'Sage?' });
+      const decision = published.find((event) => event.type === 'floor.decision');
+      expect(decision).toMatchObject({ txn: { id: 'turn:r1' }, payload: { speakers: [{ avatarId: 'sage', reason: 'addressed' }] } });
+      expect(published.map((event) => event.type)).toEqual(expect.arrayContaining(['floor.grant', 'floor.release']));
+      respondSpy.mockRestore();
+    });
+
+    it('saves and reads the Hear avatar chatter setting', async () => {
+      const { handlers, respondSpy } = await boot();
+      expect(await handlers.get('floor:get-hear-chatter')?.({})).toBe(false);
+      expect(await handlers.get('floor:set-hear-chatter')?.({}, true)).toBe(true);
+      expect(setValueMock).toHaveBeenCalledWith('floor.hearChatter', '1');
+      expect(await handlers.get('floor:get-hear-chatter')?.({})).toBe(true);
+      expect(await handlers.get('floor:set-hear-chatter')?.({}, 'yes')).toBe(false);
+      respondSpy.mockRestore();
+    });
   });
 
 });

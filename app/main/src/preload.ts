@@ -76,6 +76,7 @@ import type { SwitchboardBridge } from './switchboard/bridge-types.js';
 import type { AvatarProfile } from './avatars/avatar-registry.js';
 import type { AvatarsBridge } from './avatars/bridge-types.js';
 import type { PresenceBridge } from './presence/bridge-types.js';
+import type { FloorBridge } from './floor/bridge-types.js';
 import type { GpuMemoryBridge } from './diagnostics/gpu-memory.js';
 import type { CodingBridge, CodingBusy, CodingBusyBridge, CodingTasksBridge, RunnerEvent } from './coding/bridge-types.js';
 import type { CodingStatus, CodingView } from './coding/coding-service.js';
@@ -229,6 +230,7 @@ export interface PreloadApi {
   gpuMemory?: GpuMemoryBridge;
   switchboard?: SwitchboardBridge;
   presence?: PresenceBridge;
+  floor?: FloorBridge;
   avatars?: AvatarsBridge;
   coding?: CodingBridge;
   codingTasks?: CodingTasksBridge;
@@ -766,6 +768,10 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     update: (payload) => ipcRenderer.invoke('presence:update', payload),
     getDoNotDisturb: () => ipcRenderer.invoke('presence:get-dnd'),
     setDoNotDisturb: (enabled) => ipcRenderer.invoke('presence:set-dnd', enabled),
+  },
+  floor: {
+    getHearChatter: () => ipcRenderer.invoke('floor:get-hear-chatter'),
+    setHearChatter: (enabled) => ipcRenderer.invoke('floor:set-hear-chatter', enabled),
   },
   gpuMemory: {
     read: () => ipcRenderer.invoke('diagnostics:gpu-memory'),

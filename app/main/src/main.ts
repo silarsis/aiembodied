@@ -3,6 +3,7 @@ import { RoomService } from './rooms/room-service.js';
 import { pickIdleActions } from './rooms/idle-thoughts.js';
 import { MAX_IDLE_HABITS_LENGTH, normalizeIdleHabits } from './rooms/idle-habits.js';
 import { app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain, powerMonitor, protocol } from 'electron';
+import type { WebContents } from 'electron';
 import { ASSET_SCHEME, ASSET_SCHEME_PRIVILEGES, registerAssetProtocol } from './rooms/asset-protocol.js';
 import { ASSET_FOLDER, createRoomGenerationService, objectMakingAvailable, pickSingleImageGeometry } from './rooms/room-generation-setup.js';
 import type { RoomGenerationService } from './rooms/room-generation.js';
@@ -11,6 +12,9 @@ import { LocalOnlyBus, type SwitchboardBus } from './switchboard/bus.js';
 import { AvatarInbox } from './switchboard/inbox.js';
 import { deliberate } from './switchboard/deliberate.js';
 import { PresenceTracker, isVoicePhase } from './presence/presence.js';
+import { FloorController } from './floor/index.js';
+import { createModelBid } from './floor/bid.js';
+import { ensureExtraAvatars } from './avatars/extra-avatars.js';
 import { SwitchboardMirror } from './switchboard/mirror.js';
 import { AvatarRegistry, DEFAULT_AVATAR_ID, type AvatarProfile } from './avatars/avatar-registry.js';
 import { AvatarSettingsKeys } from './avatars/avatar-settings.js';
@@ -85,7 +89,7 @@ import {
 } from './memory-engine/index.js';
 import { buildVoiceEngines, DEFAULT_OPENAI_MODELS } from './local-voice/voice-engines.js';
 import { describeProviders, type ProviderSettingsPatch } from './config/provider-settings.js';
-import type { LocalVoiceEvent, LocalVoiceRespondRequest, SpeakingVoiceOptions } from './local-voice/types.js';
+import type { LocalVoiceEvent, LocalVoiceRespondRequest, LocalVoiceRespondResult, SpeakingVoiceOptions } from './local-voice/types.js';
 import { SpeechServiceClient } from './local-voice/speech-service-client.js';
 import type {
   AvatarModelSummary,
@@ -298,6 +302,12 @@ let voiceEngines: ReturnType<typeof buildVoiceEngines> | null = null;
 let voiceConfigManager: ConfigManager | null = null;
 let avatarRegistry: AvatarRegistry | null = null;
 let avatarSettingsKeys: AvatarSettingsKeys | null = null;
+/** Who speaks when several avatars share the scene (phase 3). Inert with one avatar. */
+let floor: FloorController | null = null;
+/** The window that sent the latest message of Kevin's; floor-queued answers and chatter reach it. */
+let floorSender: WebContents | null = null;
+/** The latest session instructions the renderer sent for Echo, reused when Echo takes a back-channel turn. */
+let lastEchoInstructions: string | undefined;
 let memoryEngine: MemoryEngineRuntime | null = null;
 let memoryStorageSync: MemoryStorageSync | null = null;
 let homeServerSync: HomeServerSync | null = null;
@@ -841,6 +851,55 @@ function avatarIdOfAddress(address: string | undefined): string {
  */
 function getVoiceService(avatarId: string = DEFAULT_AVATAR_ID): LocalVoiceService | null {
   return voiceServices ? voiceServices.get(avatarId) : null;
+}
+
+/**
+ * The system prompt for an avatar's turn. Echo uses what the renderer sent (or the last it sent,
+ * or her saved prompt). Another avatar uses the prompt saved for its own VRM model, if it has a
+ * model of its own, else its profile's prompt; avatars wearing Echo's body never borrow her prompt.
+ */
+function avatarInstructions(avatarId: string, sessionInstructions?: string): string | undefined {
+  if (avatarId === DEFAULT_AVATAR_ID) {
+    if (sessionInstructions?.trim()) return sessionInstructions;
+    if (lastEchoInstructions) return lastEchoInstructions;
+    const key = characterPromptKey(DEFAULT_AVATAR_ID);
+    return (key ? memoryStore?.getValue(key) : null)?.trim() || undefined;
+  }
+  const profile = avatarRegistry?.get(avatarId);
+  const echo = avatarRegistry?.get(DEFAULT_AVATAR_ID);
+  const ownModel = Boolean(profile?.vrmModelId) && profile?.vrmModelId !== echo?.vrmModelId;
+  const key = ownModel ? characterPromptKey(avatarId) : null;
+  const saved = key ? memoryStore?.getValue(key)?.trim() : '';
+  return saved || profile?.prompt || undefined;
+}
+
+/** One voice turn for an avatar: the mirror, presence and the renderer's events around LocalVoiceService.respond. */
+async function runVoiceTurn(
+  sender: WebContents,
+  request: LocalVoiceRespondRequest,
+  voiceService: LocalVoiceService,
+): Promise<LocalVoiceRespondResult> {
+  const avatarId = voiceService.avatarId;
+  const payload = avatarId === DEFAULT_AVATAR_ID ? request : { ...request, instructions: avatarInstructions(avatarId, request.instructions) ?? request.instructions };
+  const mirror = mirrorFor(avatarId);
+  mirror?.turnStarted(payload.requestId, { text: payload.text, system: payload.system === true, preview: payload.preview === true });
+  activeVoiceRequests.set(avatarId, payload.requestId);
+  if (!payload.preview && !payload.system) presence.update({ lastUserSpeechAt: Date.now() });
+  try {
+    const result = await voiceService.respond(payload, (voiceEvent) => {
+      if (!sender.isDestroyed()) {
+        sender.send('local-voice:event', avatarId === DEFAULT_AVATAR_ID ? voiceEvent : { ...voiceEvent, avatarId });
+      }
+    });
+    if (!payload.preview) mirror?.turnFinished(payload.requestId, { text: result.text, cancelled: result.cancelled });
+    if (!payload.preview && result.text) presence.update({ lastAssistantSpokeAt: Date.now() });
+    return result;
+  } catch (error) {
+    if (!payload.preview) mirror?.turnFinished(payload.requestId, { text: '', error: error instanceof Error ? error.message : String(error) });
+    throw error;
+  } finally {
+    if (activeVoiceRequests.get(avatarId) === payload.requestId) activeVoiceRequests.delete(avatarId);
+  }
 }
 
 function createVoiceService(avatarId: string): LocalVoiceService {
@@ -2036,25 +2095,15 @@ function registerIpcHandlers(
         if (!sender.isDestroyed()) sender.send('coding:busy', { busy: false });
       }
     }
-    const mirror = mirrorFor(avatarId);
-    mirror?.turnStarted(payload.requestId, { text: payload.text, system: payload.system === true, preview: payload.preview === true });
-    activeVoiceRequests.set(avatarId, payload.requestId);
-    if (!payload.preview && !payload.system) presence.update({ lastUserSpeechAt: Date.now() });
-    try {
-      const result = await voiceService.respond(payload, (voiceEvent) => {
-        if (!sender.isDestroyed()) {
-          sender.send('local-voice:event', voiceEvent);
-        }
-      });
-      if (!payload.preview) mirror?.turnFinished(payload.requestId, { text: result.text, cancelled: result.cancelled });
-      if (!payload.preview && result.text) presence.update({ lastAssistantSpokeAt: Date.now() });
-      return result;
-    } catch (error) {
-      if (!payload.preview) mirror?.turnFinished(payload.requestId, { text: '', error: error instanceof Error ? error.message : String(error) });
-      throw error;
-    } finally {
-      if (activeVoiceRequests.get(avatarId) === payload.requestId) activeVoiceRequests.delete(avatarId);
+    if (!payload.preview && !payload.system && avatarId === DEFAULT_AVATAR_ID && payload.instructions?.trim()) {
+      lastEchoInstructions = payload.instructions;
     }
+    // Several avatars and Kevin named none: the floor manager decides who answers.
+    if (floor && ownTurn && !payload.avatarId?.trim() && floor.isMulti()) {
+      floorSender = sender;
+      return floor.respondToPerson(payload);
+    }
+    return runVoiceTurn(sender, payload, voiceService);
   });
   ipcMain.handle('presence:update', (_event, payload: unknown) => {
     const p = (typeof payload === 'object' && payload !== null ? payload : {}) as Record<string, unknown>;
@@ -2067,6 +2116,8 @@ function registerIpcHandlers(
     });
     return true;
   });
+  ipcMain.handle('floor:get-hear-chatter', () => floor?.hearChatter() ?? false);
+  ipcMain.handle('floor:set-hear-chatter', (_event, enabled: unknown) => floor?.setHearChatter(enabled === true) ?? false);
   ipcMain.handle('presence:get-dnd', () => presence.doNotDisturb);
   ipcMain.handle('presence:set-dnd', (_event, enabled: unknown) => {
     presence.update({ doNotDisturb: enabled === true });
@@ -2486,6 +2537,38 @@ app.whenReady().then(async () => {
     });
     avatarSettingsKeys = new AvatarSettingsKeys(avatarRegistry);
     const registry = avatarRegistry;
+    try {
+      // Dev way to try several avatars: AIEMBODIED_EXTRA_AVATARS=Sage,Rex.
+      const made = ensureExtraAvatars(avatarRegistry, () => registryModels.getActiveModel?.()?.id ?? null);
+      if (made.length > 0) logger.info('Created extra avatars from AIEMBODIED_EXTRA_AVATARS.', { avatars: made.map((profile) => profile.id) });
+    } catch (error) {
+      logger.warn('Could not create the extra avatars.', { message: error instanceof Error ? error.message : String(error) });
+    }
+    const floorStore = memoryStore;
+    floor = new FloorController({
+      registry,
+      store: floorStore,
+      voice: (avatarId) => getVoiceService(avatarId),
+      runPersonTurn: (avatarId, request) => {
+        const voiceService = getVoiceService(avatarId);
+        if (!voiceService || !floorSender) throw new Error('Local voice service is unavailable.');
+        return runVoiceTurn(floorSender, request, voiceService);
+      },
+      emitChatter: (_avatarId, voiceEvent) => {
+        if (floorSender && !floorSender.isDestroyed()) floorSender.send('local-voice:event', voiceEvent);
+      },
+      saveLine: (line) =>
+        conversationManager?.appendToRecentSession([{ role: 'assistant', content: line.content, speaker: line.speaker, ts: line.ts }]),
+      instructionsFor: (avatarId) => avatarInstructions(avatarId),
+      bus: () => switchboardBus,
+      bid: createModelBid({
+        routing: () => manager.getConfig().models,
+        keyFor: (id) => manager.getServerKey(id),
+        nameOfSpeaker: (from) => (from.startsWith('avatar:') ? (registry.get(from.slice('avatar:'.length))?.name ?? from) : 'Kevin'),
+        logger,
+      }),
+      logger,
+    });
     const agentStore = memoryStore;
     memoryEngine = setupMemoryEngine({
       settings: memoryEngineSettings(),

@@ -66,6 +66,27 @@ engines are shared; `avatars/voice-services.ts`), and approvals it asks for are 
 `avatar:<id>`. `notifyAvatar(avatarId, text, urgent)` puts a note on that avatar's inbox. Presence stays single:
 it describes Kevin, not an avatar.
 
+## Who speaks: the floor (phase 3 step 2)
+
+With more than one avatar in the scene, `app/main/src/floor/` decides who answers. Rules first, then bids:
+
+- **Kevin speaks** (`local-voice:respond` without an `avatarId`): the avatars he names ("Sage, what do you think?", "hey Sage", any case) in the order named; "you two", "both", "everyone", "all of you" mean every avatar in scene order (the first speaks, the rest are queued); otherwise the avatar he last talked with if that was within 5 minutes; otherwise the host (`echo`). His speech always wins: it cancels avatar speech and clears the queue.
+- **An avatar speaks** (its finished reply is routed again): only another avatar may answer. A name in the text picks that avatar; otherwise one call to the `idle` model route (6 s) returns a `want` 0..1 per candidate and the highest at 0.5 or more wins (ties go to scene order; a failure or timeout means silence). At most 4 avatar-to-avatar turns and 60 s since Kevin last spoke; then silence until he speaks.
+- One avatar speaks at a time (a slot and a FIFO queue).
+- The reply to another avatar is a normal turn of that avatar's own `LocalVoiceService` (own history, memory, tools) whose input is `[<Name> said to you, not Kevin: "<text>"]`. **Hear avatar chatter** (Status panel, KV `floor.hearChatter`, default off) decides whether it is spoken (`silent: false`, events carry `avatarId`) or a text back channel (`silent: true`: no speech is synthesised). Out-loud chatter is not audible until the renderer plays several voices (step 3). The reply is saved in the conversation with `speaker` set to the replying avatar.
+
+Journal (private, fire-and-forget; in Kevin's turn txn `turn:<requestId>` when there is one, else `chatter:<time>:<n>`): `floor.decision` (payload `from`, `text`, `speakers`, `channel`, `trace`), `floor.grant` and `floor.release` (`avatar`, `reason`/`next`), `floor.budget` (when chatter is cut off: `kind`, `turns`, `ms`).
+
+Try it with extra avatars (they wear the active VRM and have separate histories; each gets a short persona prompt):
+
+```powershell
+$env:AIEMBODIED_EXTRA_AVATARS = "Sage,Rex"; pnpm dev:run
+# in another terminal
+python -m switchboard tail --type "floor.*"
+```
+
+Say "Sage, what do you think?" and watch `floor.decision` (trace shows the name rule), `floor.grant` and `floor.release`. Sage's reply is then routed to Echo or Rex through a bid; turn on "Hear avatar chatter" to have those turns spoken (inaudible until step 3).
+
 ## Code
 
 `models.py` envelope and settings, `store.py` SQLite, `ledger.py` transaction rules, `hub.py` publishing and
