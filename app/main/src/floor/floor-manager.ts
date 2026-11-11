@@ -50,6 +50,8 @@ export interface FloorDecision {
   trace: string[];
   /** Set when chatter was cut off by a budget. */
   budget?: { kind: 'turns' | 'time'; turns: number; ms: number };
+  /** Kevin asked `from` to pass a question to `to`; `to` is not a speaker until `from` has spoken. */
+  relay?: { from: string; to: string };
 }
 
 export interface FloorBid {
@@ -107,6 +109,22 @@ export function findName(text: string, name: string): number {
   return pattern.exec(text)?.index ?? -1;
 }
 
+const RELAY_PHRASES = '(?:ask|tell|check with|find out from|see if|see whether|let|remind|say to|pass (?:it |this |that )?on to)';
+
+/** Ids of avatars whose name comes right after a relay phrase ("ask Echo", "tell Sage"), in the order named. */
+export function relayTargets(text: string, candidates: string[], nameOf: (avatarId: string) => string): string[] {
+  return candidates
+    .map((avatarId) => {
+      const name = nameOf(avatarId).trim();
+      if (!name) return { avatarId, at: -1 };
+      const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])${RELAY_PHRASES}\\s+${escapeRegExp(name)}(?![\\p{L}\\p{N}_])`, 'iu');
+      return { avatarId, at: pattern.exec(text)?.index ?? -1 };
+    })
+    .filter((entry) => entry.at >= 0)
+    .sort((a, b) => a.at - b.at)
+    .map((entry) => entry.avatarId);
+}
+
 export class FloorManager {
   private readonly options: FloorManagerOptions;
   private readonly partnerWindowMs: number;
@@ -123,6 +141,8 @@ export class FloorManager {
   private recent: FloorLine[] = [];
   /** Set while a chat Kevin asked for runs: avatar lines go to the next avatar, out loud, within the longer budget. */
   private talking = false;
+  /** Set while Kevin's "ask Echo ..." waits for the asked avatar to pass it on. */
+  private relay: { from: string; to: string } | null = null;
 
   constructor(options: FloorManagerOptions) {
     this.options = options;
@@ -166,9 +186,10 @@ export class FloorManager {
     this.chatterTurns = 0;
     this.chatterStartedAt = null;
     this.talking = false;
-    const done = (speakers: FloorDecision['speakers']): FloorDecision => {
+    this.relay = null;
+    const done = (speakers: FloorDecision['speakers'], extra: Partial<FloorDecision> = {}): FloorDecision => {
       if (speakers[0]) this.partner = { avatarId: speakers[0].avatarId, at: utterance.at };
-      return { speakers, channel: 'aloud', trace };
+      return { speakers, channel: 'aloud', trace, ...extra };
     };
     if (scene.avatarIds.length === 0) {
       trace.push('person: no avatars in scene');
@@ -188,6 +209,26 @@ export class FloorManager {
     if (GROUP_PATTERN.test(utterance.text)) {
       trace.push('person: addressed everyone -> all avatars in scene order');
       return done(scene.avatarIds.map((avatarId) => ({ avatarId, reason: 'all' as const })));
+    }
+    const relayed = relayTargets(utterance.text, scene.avatarIds, this.options.nameOf);
+    if (relayed.length > 0) {
+      // "Sage, ask Echo ...": Sage answers Kevin and passes the question on; Echo is not a speaker yet.
+      let answerers = named.filter((id) => !relayed.includes(id));
+      if (answerers.length === 0) {
+        const partnerId = this.partner?.avatarId;
+        const partnerOk =
+          partnerId !== undefined && scene.avatarIds.includes(partnerId) && utterance.at - (this.partner?.at ?? 0) <= this.partnerWindowMs && !relayed.includes(partnerId);
+        const pick = partnerOk ? partnerId : !relayed.includes(scene.hostId) ? scene.hostId : scene.avatarIds.find((id) => !relayed.includes(id));
+        answerers = pick ? [pick] : [];
+      }
+      if (answerers.length > 0) {
+        this.relay = { from: answerers[0], to: relayed[0] };
+        trace.push(`person: ${answerers[0]} is asked to pass a question to ${relayed[0]} -> ${answerers[0]} answers`);
+        return done(
+          answerers.map((id) => ({ avatarId: id, reason: named.includes(id) ? ('addressed' as const) : ('host' as const) })),
+          { relay: { ...this.relay } },
+        );
+      }
     }
     if (named.length > 0) {
       trace.push(`person: addressed by name -> ${named.join(', ')}`);
@@ -242,11 +283,18 @@ export class FloorManager {
       trace.push(`avatar: chatter budget used up (${Math.round(elapsed / 1000)} s)`);
       return none({ budget: { kind: 'time', turns: this.chatterTurns, ms: elapsed } });
     }
-    const take = (avatarId: string, reason: SpeakerReason): FloorDecision => {
+    const take = (avatarId: string, reason: SpeakerReason, aloud: FloorChannel = channel): FloorDecision => {
       this.chatterTurns += 1;
       this.chatterStartedAt ??= utterance.at;
-      return { speakers: [{ avatarId, reason }], channel, trace };
+      return { speakers: [{ avatarId, reason }], channel: aloud, trace };
     };
+    if (this.relay && this.relay.from === senderId && others.includes(this.relay.to)) {
+      // Kevin asked for this, so he hears it even when chatter is off.
+      const to = this.relay.to;
+      this.relay = null;
+      trace.push(`avatar: ${senderId} passes Kevin's question to ${to}`);
+      return { ...take(to, 'addressed', 'aloud'), relay: { from: senderId, to } };
+    }
     const named = this.namedIn(utterance.text, others);
     if (named.length > 0) {
       trace.push(`avatar: ${senderId} addressed ${named[0]} by name`);
@@ -347,6 +395,7 @@ export class FloorManager {
     this.chatterTurns = 0;
     this.chatterStartedAt = null;
     this.talking = false;
+    this.relay = null;
     return cancel;
   }
 }

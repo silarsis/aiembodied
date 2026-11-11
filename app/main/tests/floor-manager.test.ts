@@ -6,6 +6,7 @@ import {
   FloorManager,
   PARTNER_WINDOW_MS,
   findName,
+  relayTargets,
   type BidFunction,
   type FloorBid,
   type Scene,
@@ -88,6 +89,60 @@ describe('FloorManager: Kevin speaks', () => {
     for (const text of ['hello', 'Sage?', 'everyone']) {
       expect(ids(await manager.route(kevin(text)))).toEqual(['echo']);
     }
+  });
+});
+
+describe('relayTargets', () => {
+  const at = (text: string) => relayTargets(text, ['echo', 'sage', 'rex'], (id) => NAMES[id]);
+  it('finds names right after a relay phrase, in order', () => {
+    expect(at('Can you ask Echo what they are doing?')).toEqual(['echo']);
+    expect(at('tell rex and then check with Sage')).toEqual(['rex', 'sage']);
+    expect(at('please pass it on to Echo')).toEqual(['echo']);
+    expect(at('tell me, Echo')).toEqual([]);
+    expect(at('Echo, ask Sagely things')).toEqual([]);
+  });
+});
+
+describe('FloorManager: relay', () => {
+  it('has the asked avatar answer Kevin and pass the question on, then routes its line to the target aloud', async () => {
+    const { manager } = make({ ids: ['echo', 'sage'] });
+    const decision = await manager.route(kevin("Sage, can you ask Echo what they're doing?"));
+    expect(ids(decision)).toEqual(['sage']);
+    expect(decision.relay).toEqual({ from: 'sage', to: 'echo' });
+    const passed = await manager.route({ ...avatar('sage', 'lenha, what are you up to right now?'), toPerson: true });
+    expect(ids(passed)).toEqual(['echo']);
+    expect(passed.speakers[0].reason).toBe('addressed');
+    expect(passed.channel).toBe('aloud');
+    expect(passed.relay).toEqual({ from: 'sage', to: 'echo' });
+    const again = await manager.route({ ...avatar('sage', 'lenha, what are you up to right now?'), toPerson: true });
+    expect(ids(again)).toEqual([]);
+  });
+
+  it('uses the last partner, or the host, when Kevin does not call the asker by name', async () => {
+    const a = make({ ids: ['echo', 'sage'] });
+    await a.manager.route(kevin('Sage, hello', 1_000));
+    const viaPartner = await a.manager.route(kevin("Ask Echo what she's doing", 2_000));
+    expect(ids(viaPartner)).toEqual(['sage']);
+    expect(viaPartner.relay).toEqual({ from: 'sage', to: 'echo' });
+    const b = make({ ids: ['echo', 'sage'] });
+    const viaHost = await b.manager.route(kevin("Ask Echo what she's doing"));
+    expect(ids(viaHost)).toEqual(['sage']);
+    expect(viaHost.relay).toEqual({ from: 'sage', to: 'echo' });
+  });
+
+  it('does not relay when everyone is addressed or no relay phrase is used, and a new Kevin turn clears it', async () => {
+    const { manager } = make({ ids: ['echo', 'sage'] });
+    const both = await manager.route(kevin('Sage and Echo, what do you think?'));
+    expect(ids(both)).toEqual(['sage', 'echo']);
+    expect(both.relay).toBeUndefined();
+    expect((await manager.route(kevin('tell me, Echo'))).relay).toBeUndefined();
+    await manager.route(kevin('Sage, ask Echo something'));
+    await manager.route(kevin('Rex who?'));
+    const late = await manager.route({ ...avatar('sage', 'Echo, hi'), toPerson: true });
+    expect(late.relay).toBeUndefined();
+    await manager.route(kevin('Sage, ask Echo something'));
+    manager.bargeIn();
+    expect((await manager.route({ ...avatar('sage', 'Echo, hi'), toPerson: true })).relay).toBeUndefined();
   });
 });
 
