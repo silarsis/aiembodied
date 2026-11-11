@@ -16,4 +16,24 @@ describe('SwitchboardView', () => {
     rerender(<SwitchboardView now={0} status={{ enabled: true, connected: false, url: 'u', openTxns: null }} />);
     expect(screen.getByTestId('switchboard-dot').getAttribute('data-state')).toBe('down');
   });
+  it('lists recent decisions under a label, with a clipped reason and age', () => {
+    const now = Date.parse('2026-01-01T00:05:00Z');
+    const long = 'x'.repeat(200);
+    const decision = (over: object) => ({ at: '2026-01-01T00:03:00Z', avatarId: 'echo', avatarName: 'Echo', event: 'e1', type: 'avatar.inbox', action: 'say', reason: 'Kevin is here', ms: 12, fallback: false, doNotDisturb: false, ...over });
+    render(<SwitchboardView now={now} status={{ enabled: true, connected: false, url: 'u', openTxns: null, decisions: [decision({}), decision({ avatarId: 'sage', avatarName: 'Sage', event: 'e2', type: 'home.change', action: 'remember', reason: long })] }} />);
+    expect(screen.getByText('Recent decisions')).toBeTruthy();
+    const items = screen.getByTestId('switchboard-decisions').querySelectorAll('li');
+    expect(items).toHaveLength(2);
+    expect(items[0].textContent).toBe('Echo: say avatar.inbox (Kevin is here), 2m ago');
+    expect(items[1].textContent).toContain('Sage: remember home.change (');
+    expect(items[1].textContent).toContain('…');
+    expect(items[1].textContent).not.toContain(long);
+  });
+  it('shows nothing for an empty or missing list', () => {
+    const { rerender } = render(<SwitchboardView now={0} status={{ enabled: true, connected: true, url: 'u', openTxns: [], decisions: [] }} />);
+    expect(screen.queryByText('Recent decisions')).toBeNull();
+    expect(screen.queryByTestId('switchboard-decisions')).toBeNull();
+    rerender(<SwitchboardView now={0} status={{ enabled: true, connected: true, url: 'u', openTxns: [] }} />);
+    expect(screen.queryByText('Recent decisions')).toBeNull();
+  });
 });

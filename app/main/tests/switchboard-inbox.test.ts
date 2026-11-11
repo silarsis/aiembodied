@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocalOnlyBus } from '../src/switchboard/bus.js';
 import { SwitchboardClient, makeEventId, type WebSocketLike } from '../src/switchboard/client.js';
 import type { Decision } from '../src/switchboard/deliberate.js';
+import { DecisionLog } from '../src/switchboard/decisions.js';
 import { AvatarInbox, DEFAULT_INBOX_POLICY, lookupRule } from '../src/switchboard/inbox.js';
 import { SwitchboardMirror } from '../src/switchboard/mirror.js';
 import type { SwitchboardEvent, SwitchboardEventInput } from '../src/switchboard/types.js';
@@ -183,6 +184,33 @@ describe('static remember rule', () => {
     new AvatarInbox({ avatarId: 'echo', bus, notify: vi.fn(), remember, logger: warn }).handle({ ...change(), type: 'speech.heard' });
     expect(remember).not.toHaveBeenCalled();
     expect(publish).not.toHaveBeenCalled();
+  });
+});
+
+describe('decision log', () => {
+  it('keeps the newest ten, newest first', () => {
+    const log = new DecisionLog(10);
+    for (let i = 0; i < 12; i += 1) log.record({ at: `t${i}`, avatarId: 'echo', event: `e${i}`, type: 'x', action: 'say', reason: '', ms: 0, fallback: false, doNotDisturb: false });
+    expect(log.recent()).toHaveLength(10);
+    expect(log.recent()[0].event).toBe('e11');
+    expect(log.recent()[9].event).toBe('e2');
+  });
+
+  it('is fed by the inbox with the bus down, for rule and decision-step outcomes', async () => {
+    const bus = new LocalOnlyBus(makeEventId);
+    const log = new DecisionLog();
+    const inbox = new AvatarInbox({ avatarId: 'sage', bus, notify: vi.fn(), remember: vi.fn(), onDecision: (d) => log.record(d), deliberate: async () => ({ action: 'ignore', reason: 'noise', urgent: false }), now: () => Date.parse('2026-01-01T00:00:00Z'), logger: warn });
+    inbox.start();
+    bus.publish(ev('home.change', { to: ['avatar:sage'] }));
+    bus.publish(ev('avatar.inbox', { to: ['avatar:sage'], payload: { text: 'other' } }));
+    await flush();
+    await flush();
+    const recent = log.recent();
+    expect(recent.map((d) => [d.avatarId, d.type, d.action, d.reason])).toEqual([
+      ['sage', 'avatar.inbox', 'ignore', 'noise'],
+      ['sage', 'home.change', 'remember', 'rule'],
+    ]);
+    expect(recent[0].at).toBe('2026-01-01T00:00:00.000Z');
   });
 });
 

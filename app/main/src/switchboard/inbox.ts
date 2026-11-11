@@ -6,6 +6,7 @@
  */
 import type { SwitchboardBus } from './bus.js';
 import type { Decision } from './deliberate.js';
+import type { DecisionRecord } from './decisions.js';
 import type { SwitchboardEvent } from './types.js';
 
 type Logger = {
@@ -58,6 +59,8 @@ export interface AvatarInboxOptions {
   remember?: (event: SwitchboardEvent, text: string) => void;
   /** True while do-not-disturb is on. */
   doNotDisturb?: () => boolean;
+  /** Told of every decision that is journalled, whether or not the bus reaches the switchboard. */
+  onDecision?: (decision: DecisionRecord) => void;
 }
 
 export class AvatarInbox {
@@ -195,6 +198,21 @@ export class AvatarInbox {
 
   /** Fire-and-forget record of a decision on the bus (private, nobody addressed). Never throws. */
   private journal(event: SwitchboardEvent, action: string, reason: string, ms: number, fallback: boolean, doNotDisturb: boolean): void {
+    try {
+      this.options.onDecision?.({
+        at: new Date((this.options.now ?? Date.now)()).toISOString(),
+        avatarId: this.options.avatarId,
+        event: event.id,
+        type: event.type,
+        action,
+        reason,
+        ms,
+        fallback,
+        doNotDisturb,
+      });
+    } catch {
+      // A listener must never disturb the inbox.
+    }
     try {
       const txnId = event.txn?.id ?? `decision:${event.id}`;
       this.options.bus.publish({
