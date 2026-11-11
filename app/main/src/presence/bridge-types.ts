@@ -4,6 +4,9 @@ export interface PresenceUpdatePayload {
   voicePhase?: 'off' | 'waiting' | 'listening' | 'transcribing' | 'thinking' | 'responding' | 'error';
   /** ms since epoch of the latest camera sighting of a face. */
   faceSeenAt?: number;
+  /** ms since epoch of the latest user or assistant turn seen by the renderer (Realtime backend). */
+  userSpokeAt?: number;
+  assistantSpokeAt?: number;
 }
 
 export interface PresenceBridge {
