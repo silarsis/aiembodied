@@ -193,3 +193,25 @@ describe('ApprovalBroker', () => {
     expect(approval.summary).toBe('start coding task {"goal":"x"}');
   });
 });
+
+describe('ApprovalBroker requestedBy', () => {
+  it('defaults to avatar:echo, takes the broker avatar, and a per-request or forAvatar avatar', async () => {
+    const { tool } = setup();
+    const registry = new ToolRegistry();
+    registry.register(tool);
+    const plain = new ApprovalBroker({ registry });
+    expect((await plain.request(tool, { goal: 'a' })).requestedBy).toBe('avatar:echo');
+    const sage = new ApprovalBroker({ registry, avatarId: 'sage' });
+    expect((await sage.request(tool, { goal: 'a' })).requestedBy).toBe('avatar:sage');
+    expect((await sage.request(tool, { goal: 'b' }, 'echo')).requestedBy).toBe('avatar:echo');
+    expect((await plain.forAvatar('sage').request(tool, { goal: 'c' })).requestedBy).toBe('avatar:sage');
+  });
+
+  it('does not merge identical pending requests from different avatars', async () => {
+    const { broker, tool } = setup();
+    const a = await broker.request(tool, { goal: 'same' }, 'echo');
+    const b = await broker.request(tool, { goal: 'same' }, 'sage');
+    expect(b.id).not.toBe(a.id);
+    expect((await broker.request(tool, { goal: 'same' }, 'sage')).id).toBe(b.id);
+  });
+});

@@ -214,3 +214,24 @@ describe('ConversationManager', () => {
     });
   });
 });
+
+describe('ConversationManager speakers', () => {
+  it('defaults the speaker by role, keeps an explicit one, and reports it in events and history', () => {
+    const { store } = createStoreDouble();
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const manager = new ConversationManager({ store, logger });
+    manager.startSession({ id: 's1', startedAt: 1 });
+    const events: ConversationMessage[] = [];
+    manager.on('message-appended', (message) => events.push(message));
+
+    const user = manager.appendMessage({ role: 'user', content: 'hi', ts: 1 });
+    const assistant = manager.appendMessage({ role: 'assistant', content: 'hello', ts: 2 });
+    const other = manager.appendMessage({ role: 'assistant', content: 'hey', ts: 3, speaker: 'sage' });
+    const system = manager.appendMessage({ role: 'system', content: 'note', ts: 4 });
+
+    expect([user.speaker, assistant.speaker, other.speaker, system.speaker]).toEqual(['user', 'echo', 'sage', undefined]);
+    expect(events.map((m) => m.speaker)).toEqual(['user', 'echo', 'sage', undefined]);
+    const history = manager.getHistory();
+    expect(history.sessions[0]?.messages.map((m) => m.speaker)).toEqual(['user', 'echo', 'sage', undefined]);
+  });
+});

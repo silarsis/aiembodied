@@ -55,6 +55,8 @@ export interface ApprovalBrokerOptions {
   ttlMs?: number;
   now?: () => number;
   makeId?: () => string;
+  /** The avatar that asks when a request names none (default 'echo'). */
+  avatarId?: string;
 }
 
 const YES = /^(yes|yeah|yep|yup|sure|ok|okay|approve|approved|go ahead|go|do it|please do|yes please|ok go|okay go|go for it|sounds good|that's fine|that is fine|confirmed|confirm)$/;
@@ -101,11 +103,12 @@ export class ApprovalBroker extends EventEmitter {
   }
 
   /** Record a call that needs approval. The same tool with the same arguments, still pending, is not added twice. */
-  async request(tool: RegisteredTool, params: unknown): Promise<PendingApproval> {
+  async request(tool: RegisteredTool, params: unknown, avatarId?: string): Promise<PendingApproval> {
     this.expireOld();
     const key = JSON.stringify(params ?? null);
+    const requestedBy = `avatar:${avatarId || this.options.avatarId || 'echo'}`;
     for (const existing of this.pending.values()) {
-      if (existing.toolId === tool.id && JSON.stringify(existing.params ?? null) === key) return existing;
+      if (existing.toolId === tool.id && existing.requestedBy === requestedBy && JSON.stringify(existing.params ?? null) === key) return existing;
     }
     let cardOnly = false;
     try {
@@ -129,7 +132,7 @@ export class ApprovalBroker extends EventEmitter {
       expiresAt: createdAt + this.ttlMs,
       source: 'voice',
       cardOnly,
-      requestedBy: 'avatar:echo',
+      requestedBy,
       approvers: ['person:kevin'],
     };
     this.pending.set(approval.id, approval);
@@ -139,6 +142,15 @@ export class ApprovalBroker extends EventEmitter {
     this.options.logger?.info('Approval requested', { id: approval.id, tool: approval.toolName, summary: approval.summary, cardOnly, source: approval.source });
     this.changed();
     return approval;
+  }
+
+  /** The broker as one avatar sees it: its requests are made in that avatar's name. */
+  forAvatar(avatarId: string): Pick<ApprovalBroker, 'request' | 'waitingMessage' | 'resolveSpoken'> {
+    return {
+      request: (tool, params) => this.request(tool, params, avatarId),
+      waitingMessage: (approval) => this.waitingMessage(approval),
+      resolveSpoken: (text) => this.resolveSpoken(text),
+    };
   }
 
   /** What the voice model is told when it calls a tool that needs approval. */

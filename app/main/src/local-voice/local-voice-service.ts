@@ -73,6 +73,8 @@ function systemNoteText(notes: QueuedNote[]): string {
 }
 
 export interface LocalVoiceServiceOptions {
+  /** The avatar this service speaks for (default 'echo'). */
+  avatarId?: string;
   llm: ChatClient;
   /** services/speech: checked for status, and the STT and TTS engine unless others are given. */
   speech: SpeechServiceClient;
@@ -119,6 +121,8 @@ export class LocalVoiceService {
   private speech: SpeechServiceClient;
   private stt: SpeechToTextEngine;
   private tts: TextToSpeechEngine;
+  /** The avatar this service talks as. Each avatar has its own service, history and queued notes. */
+  readonly avatarId: string;
   private readonly tools?: Pick<ToolRegistry, 'list' | 'execute'>;
   private readonly logger?: Logger;
   private readonly maxHistoryMessages: number;
@@ -143,6 +147,7 @@ export class LocalVoiceService {
   private active: { requestId: string; controller: AbortController } | null = null;
 
   constructor(options: LocalVoiceServiceOptions) {
+    this.avatarId = options.avatarId ?? 'echo';
     this.llm = options.llm;
     this.speech = options.speech;
     this.tools = options.tools;
@@ -164,17 +169,21 @@ export class LocalVoiceService {
    * Swap engines after a settings change. The conversation so far is kept; a reply in progress
    * finishes with the engines it started with.
    */
-  configure(engines: {
-    llm?: ChatClient;
-    speech?: SpeechServiceClient;
-    stt?: SpeechToTextEngine;
-    tts?: TextToSpeechEngine;
-  }): void {
+  configure(
+    engines: {
+      llm?: ChatClient;
+      speech?: SpeechServiceClient;
+      stt?: SpeechToTextEngine;
+      tts?: TextToSpeechEngine;
+    },
+    options: { closeOldTts?: boolean } = {},
+  ): void {
     this.llm = engines.llm ?? this.llm;
     this.speech = engines.speech ?? this.speech;
     this.stt = engines.stt ?? this.stt;
     if (engines.tts && engines.tts !== this.tts) {
-      this.tts.close?.();
+      // Services that share one engine: only the first to switch closes the old one.
+      if (options.closeOldTts !== false) this.tts.close?.();
       this.tts = engines.tts;
     }
   }

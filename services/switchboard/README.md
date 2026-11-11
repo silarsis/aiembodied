@@ -57,6 +57,15 @@ call. If the model fails or times out, the event is spoken when idle, as before.
 private `avatar.decision` event (payload: event, type, action, reason, ms, fallback, doNotDisturb) and closes
 the event's transaction.
 
+## Avatars in the app
+
+The app knows its avatars through `app/main/src/avatars/avatar-registry.ts` (profiles `{ id, name, vrmModelId }`
+in the memory store key `avatars.profiles`; today just `echo`). Each avatar gets its own mirror and inbox
+(`startAvatarPlumbing(profile)` in `main.ts`), its own `LocalVoiceService` (own history, brief and queued notes;
+engines are shared; `avatars/voice-services.ts`), and approvals it asks for are published as
+`avatar:<id>`. `notifyAvatar(avatarId, text, urgent)` puts a note on that avatar's inbox. Presence stays single:
+it describes Kevin, not an avatar.
+
 ## Code
 
 `models.py` envelope and settings, `store.py` SQLite, `ledger.py` transaction rules, `hub.py` publishing and

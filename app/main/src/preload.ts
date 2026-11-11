@@ -73,6 +73,8 @@ import type {
 import type { OpenAIFunction } from './tools/tool-registry.js';
 import type { MemoryEngineBridge } from './memory-engine/bridge-types.js';
 import type { SwitchboardBridge } from './switchboard/bridge-types.js';
+import type { AvatarProfile } from './avatars/avatar-registry.js';
+import type { AvatarsBridge } from './avatars/bridge-types.js';
 import type { PresenceBridge } from './presence/bridge-types.js';
 import type { GpuMemoryBridge } from './diagnostics/gpu-memory.js';
 import type { CodingBridge, CodingBusy, CodingBusyBridge, CodingTasksBridge, RunnerEvent } from './coding/bridge-types.js';
@@ -227,6 +229,7 @@ export interface PreloadApi {
   gpuMemory?: GpuMemoryBridge;
   switchboard?: SwitchboardBridge;
   presence?: PresenceBridge;
+  avatars?: AvatarsBridge;
   coding?: CodingBridge;
   codingTasks?: CodingTasksBridge;
   codingBusy?: CodingBusyBridge;
@@ -281,12 +284,13 @@ export interface LocalVoiceBridge {
   transcribe(wav: ArrayBuffer): Promise<LocalVoiceTranscribeResult>;
   /** Generate and speak a reply; sentences arrive through onEvent before this resolves. */
   respond(request: LocalVoiceRespondRequest): Promise<LocalVoiceRespondResult>;
-  cancel(requestId?: string): Promise<void>;
-  resetHistory(): Promise<void>;
+  /** `avatarId` picks whose reply is stopped (default: echo). */
+  cancel(requestId?: string, avatarId?: string): Promise<void>;
+  resetHistory(avatarId?: string): Promise<void>;
   /** The voices the active character can pick for the engine that speaks now. */
   getVoiceOptions?(): Promise<SpeakingVoiceOptions>;
   /** Updates for Echo that are waiting to be spoken (from the coding agent). */
-  systemStatus?(): Promise<LocalVoiceSystemStatus>;
+  systemStatus?(avatarId?: string): Promise<LocalVoiceSystemStatus>;
   /** An update is ready: run a system turn if the conversation is idle. */
   onSystemReady?(listener: (info?: { urgent: boolean }) => void): () => void;
   onEvent(listener: (event: LocalVoiceEvent) => void): () => void;
@@ -303,14 +307,14 @@ export interface AvatarBridge {
   updateModelDescription(modelId: string, description: string): Promise<AvatarModelSummary | null>;
   generateModelDescription(thumbnailDataUrl: string): Promise<string>;
   /** The character's voice for `engine` (kokoro, kitten, piper); without one, its OpenAI voice. */
-  getVoicePreference(engine?: string): Promise<string | null>;
-  setVoicePreference(voice: string, engine?: string): Promise<void>;
+  getVoicePreference(engine?: string, avatarId?: string): Promise<string | null>;
+  setVoicePreference(voice: string, engine?: string, avatarId?: string): Promise<void>;
   /** The character's own personality prompt; null until it has one. */
-  getPromptPreference(): Promise<string | null>;
-  setPromptPreference(prompt: string): Promise<void>;
+  getPromptPreference(avatarId?: string): Promise<string | null>;
+  setPromptPreference(prompt: string, avatarId?: string): Promise<void>;
   /** What the character likes to do when nobody is talking (at most 500 characters); empty until set. */
-  getIdleHabits(): Promise<string>;
-  setIdleHabits(habits: string): Promise<void>;
+  getIdleHabits(avatarId?: string): Promise<string>;
+  setIdleHabits(habits: string, avatarId?: string): Promise<void>;
   listAnimations(): Promise<AvatarAnimationSummary[]>;
   uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult>;
   generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;
@@ -452,14 +456,19 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     getStatus: () => ipcRenderer.invoke('local-voice:status') as Promise<LocalVoiceStatus>,
     transcribe: (wav) => ipcRenderer.invoke('local-voice:transcribe', wav) as Promise<LocalVoiceTranscribeResult>,
     respond: (request) => ipcRenderer.invoke('local-voice:respond', request) as Promise<LocalVoiceRespondResult>,
-    cancel: async (requestId) => {
-      await ipcRenderer.invoke('local-voice:cancel', requestId);
+    cancel: async (requestId, avatarId) => {
+      await (avatarId === undefined
+        ? ipcRenderer.invoke('local-voice:cancel', requestId)
+        : ipcRenderer.invoke('local-voice:cancel', requestId, avatarId));
     },
-    resetHistory: async () => {
-      await ipcRenderer.invoke('local-voice:reset');
+    resetHistory: async (avatarId) => {
+      await (avatarId === undefined ? ipcRenderer.invoke('local-voice:reset') : ipcRenderer.invoke('local-voice:reset', avatarId));
     },
     getVoiceOptions: () => ipcRenderer.invoke('local-voice:voice-options') as Promise<SpeakingVoiceOptions>,
-    systemStatus: () => ipcRenderer.invoke('local-voice:system-status') as Promise<LocalVoiceSystemStatus>,
+    systemStatus: (avatarId) =>
+      (avatarId === undefined
+        ? ipcRenderer.invoke('local-voice:system-status')
+        : ipcRenderer.invoke('local-voice:system-status', avatarId)) as Promise<LocalVoiceSystemStatus>,
     onSystemReady: (listener) => {
       const channel = 'local-voice:system-ready';
       const handler = (_event: unknown, info?: { urgent?: boolean }) => listener({ urgent: info?.urgent === true });
@@ -597,12 +606,30 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     getActiveModel: () => ipcRenderer.invoke('avatar-model:get-active') as Promise<AvatarModelSummary | null>,
     setActiveModel: (modelId) =>
       ipcRenderer.invoke('avatar-model:set-active', modelId) as Promise<AvatarModelSummary | null>,
-    getVoicePreference: (engine) => ipcRenderer.invoke('avatar:voice:get-preference', engine) as Promise<string | null>,
-    setVoicePreference: (voice, engine) => ipcRenderer.invoke('avatar:voice:set-preference', voice, engine) as Promise<void>,
-    getPromptPreference: () => ipcRenderer.invoke('avatar:prompt:get-preference') as Promise<string | null>,
-    setPromptPreference: (prompt) => ipcRenderer.invoke('avatar:prompt:set-preference', prompt) as Promise<void>,
-    getIdleHabits: () => ipcRenderer.invoke('avatar:idle-habits:get') as Promise<string>,
-    setIdleHabits: (habits) => ipcRenderer.invoke('avatar:idle-habits:set', habits) as Promise<void>,
+    getVoicePreference: (engine, avatarId) =>
+      (avatarId === undefined
+        ? ipcRenderer.invoke('avatar:voice:get-preference', engine)
+        : ipcRenderer.invoke('avatar:voice:get-preference', engine, avatarId)) as Promise<string | null>,
+    setVoicePreference: (voice, engine, avatarId) =>
+      (avatarId === undefined
+        ? ipcRenderer.invoke('avatar:voice:set-preference', voice, engine)
+        : ipcRenderer.invoke('avatar:voice:set-preference', voice, engine, avatarId)) as Promise<void>,
+    getPromptPreference: (avatarId) =>
+      (avatarId === undefined
+        ? ipcRenderer.invoke('avatar:prompt:get-preference')
+        : ipcRenderer.invoke('avatar:prompt:get-preference', avatarId)) as Promise<string | null>,
+    setPromptPreference: (prompt, avatarId) =>
+      (avatarId === undefined
+        ? ipcRenderer.invoke('avatar:prompt:set-preference', prompt)
+        : ipcRenderer.invoke('avatar:prompt:set-preference', prompt, avatarId)) as Promise<void>,
+    getIdleHabits: (avatarId) =>
+      (avatarId === undefined
+        ? ipcRenderer.invoke('avatar:idle-habits:get')
+        : ipcRenderer.invoke('avatar:idle-habits:get', avatarId)) as Promise<string>,
+    setIdleHabits: (habits, avatarId) =>
+      (avatarId === undefined
+        ? ipcRenderer.invoke('avatar:idle-habits:set', habits)
+        : ipcRenderer.invoke('avatar:idle-habits:set', habits, avatarId)) as Promise<void>,
     uploadModel: (payload) =>
       ipcRenderer.invoke('avatar-model:upload', payload) as Promise<AvatarModelUploadResult>,
     deleteModel: async (modelId) => {
@@ -731,6 +758,9 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
   },
   switchboard: {
     status: () => ipcRenderer.invoke('switchboard:status'),
+  },
+  avatars: {
+    list: () => ipcRenderer.invoke('avatars:list') as Promise<AvatarProfile[]>,
   },
   presence: {
     update: (payload) => ipcRenderer.invoke('presence:update', payload),

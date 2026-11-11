@@ -21,6 +21,8 @@ export interface MessageRecord {
   ts: number;
   content: string;
   audioPath: string | null;
+  /** Who said it: an avatar id, or 'user'. Null/absent for rows written before speakers were recorded and for system notes. */
+  speaker?: string | null;
 }
 
 export interface SessionWithMessages extends SessionRecord {
@@ -90,6 +92,7 @@ interface MessageRow {
   ts: number;
   content: string;
   audioPath: string | null;
+  speaker: string | null;
 }
 
 interface VrmModelRow {
@@ -287,6 +290,11 @@ const MIGRATIONS: readonly Migration[] = [
       );`,
     ],
   },
+  {
+    // Who said each message: an avatar id or 'user'. Nullable: older rows and system notes have none.
+    version: 9,
+    statements: [`ALTER TABLE messages ADD COLUMN speaker TEXT NULL;`],
+  },
 ];
 
 function runMigrations(db: SqliteDatabase) {
@@ -323,6 +331,15 @@ function normalizeAudioPath(audioPath: string | null | undefined): string | null
   }
 
   const trimmed = audioPath.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeSpeaker(speaker: string | null | undefined): string | null {
+  if (typeof speaker !== 'string') {
+    return null;
+  }
+
+  const trimmed = speaker.trim();
   return trimmed.length > 0 ? trimmed : null;
 }
 
@@ -482,7 +499,7 @@ export class MemoryStore {
     this.ensureOpen();
 
     const stmt = this.db.prepare<[string], MessageRow>(
-      `SELECT id, session_id as sessionId, role, ts, content, audio_path as audioPath
+      `SELECT id, session_id as sessionId, role, ts, content, audio_path as audioPath, speaker
        FROM messages WHERE session_id = ?
        ORDER BY ts ASC, id ASC;`,
     );
@@ -496,6 +513,7 @@ export class MemoryStore {
       ts: Number(row.ts),
       content: String(row.content),
       audioPath: typeof row.audioPath === 'string' ? row.audioPath : null,
+      ...(typeof row.speaker === 'string' ? { speaker: row.speaker } : {}),
     }));
   }
 
@@ -503,8 +521,8 @@ export class MemoryStore {
     this.ensureOpen();
 
     const stmt = this.db.prepare<MessageRecord>(
-      `INSERT INTO messages (id, session_id, role, ts, content, audio_path)
-       VALUES (@id, @sessionId, @role, @ts, @content, @audioPath);`,
+      `INSERT INTO messages (id, session_id, role, ts, content, audio_path, speaker)
+       VALUES (@id, @sessionId, @role, @ts, @content, @audioPath, @speaker);`,
     );
 
     stmt.run({
@@ -514,6 +532,7 @@ export class MemoryStore {
       ts: message.ts,
       content: message.content,
       audioPath: normalizeAudioPath(message.audioPath),
+      speaker: normalizeSpeaker(message.speaker),
     });
   }
 
@@ -889,7 +908,7 @@ export class MemoryStore {
       `SELECT id, started_at as startedAt, title FROM sessions ORDER BY started_at ASC, id ASC;`,
     );
     const messagesStmt = this.db.prepare<[], MessageRow>(
-      `SELECT id, session_id as sessionId, role, ts, content, audio_path as audioPath
+      `SELECT id, session_id as sessionId, role, ts, content, audio_path as audioPath, speaker
        FROM messages ORDER BY ts ASC, id ASC;`,
     );
     const vrmModelsStmt = this.db.prepare<[], VrmModelRow>(
@@ -927,6 +946,7 @@ export class MemoryStore {
       ts: Number(row.ts),
       content: String(row.content),
       audioPath: typeof row.audioPath === 'string' ? row.audioPath : null,
+      ...(typeof row.speaker === 'string' ? { speaker: row.speaker } : {}),
     }));
 
     const vrmModels: SerializedVrmModel[] = vrmModelRows.map((row) => ({
@@ -997,14 +1017,15 @@ export class MemoryStore {
       }
 
       const insertMessage = this.db.prepare<MessageRecord>(
-        `INSERT INTO messages (id, session_id, role, ts, content, audio_path)
-         VALUES (@id, @sessionId, @role, @ts, @content, @audioPath)
+        `INSERT INTO messages (id, session_id, role, ts, content, audio_path, speaker)
+         VALUES (@id, @sessionId, @role, @ts, @content, @audioPath, @speaker)
          ON CONFLICT(id) DO UPDATE SET
            session_id = excluded.session_id,
            role = excluded.role,
            ts = excluded.ts,
            content = excluded.content,
-           audio_path = excluded.audio_path;`,
+           audio_path = excluded.audio_path,
+           speaker = excluded.speaker;`,
       );
 
       for (const message of data.messages) {
@@ -1015,6 +1036,7 @@ export class MemoryStore {
           ts: message.ts,
           content: message.content,
           audioPath: normalizeAudioPath(message.audioPath),
+          speaker: normalizeSpeaker(message.speaker),
         });
       }
 

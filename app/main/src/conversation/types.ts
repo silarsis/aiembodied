@@ -13,6 +13,8 @@ export interface ConversationMessage {
   ts: number;
   content: string;
   audioPath: string | null;
+  /** Who said it: an avatar id, or 'user'. Unset for system notes and for messages saved before speakers were recorded. */
+  speaker?: string;
 }
 
 export interface ConversationSessionWithMessages extends ConversationSession {
@@ -31,4 +33,6 @@ export interface ConversationAppendMessagePayload {
   ts?: number;
   audioPath?: string | null;
   id?: string;
+  /** An avatar id or 'user'. Defaults to 'user' for user messages, 'echo' for assistant messages, unset for system. */
+  speaker?: string;
 }

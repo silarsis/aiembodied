@@ -50,6 +50,27 @@ function sortMessagesAscending(messages: MessageRecord[]): MessageRecord[] {
   });
 }
 
+/** The default avatar, who speaks assistant messages that name no one. */
+const DEFAULT_SPEAKER_AVATAR = 'echo';
+
+function defaultSpeaker(role: string): string | undefined {
+  if (role === 'user') return 'user';
+  if (role === 'assistant') return DEFAULT_SPEAKER_AVATAR;
+  return undefined;
+}
+
+function toConversationMessage(message: MessageRecord): ConversationMessage {
+  return {
+    id: message.id,
+    sessionId: message.sessionId,
+    role: toConversationRole(message.role),
+    ts: message.ts,
+    content: message.content,
+    audioPath: message.audioPath,
+    ...(message.speaker ? { speaker: message.speaker } : {}),
+  };
+}
+
 function toConversationRole(role: string): ConversationRole {
   if (role === 'system' || role === 'user' || role === 'assistant') {
     return role;
@@ -113,14 +134,7 @@ export class ConversationManager extends EventEmitter {
         id: loaded.id,
         startedAt: loaded.startedAt,
         title: loaded.title,
-        messages: loaded.messages.map((message) => ({
-          id: message.id,
-          sessionId: message.sessionId,
-          role: toConversationRole(message.role),
-          ts: message.ts,
-          content: message.content,
-          audioPath: message.audioPath,
-        })),
+        messages: loaded.messages.map(toConversationMessage),
       });
     }
 
@@ -169,27 +183,15 @@ export class ConversationManager extends EventEmitter {
       ts: payload.ts ?? Date.now(),
       content: payload.content,
       audioPath: payload.audioPath ?? null,
+      speaker: payload.speaker?.trim() || defaultSpeaker(payload.role) || null,
     };
 
     this.store.appendMessage(message);
     this.pruneMessages(sessionId);
-    this.emit('message-appended', {
-      id: message.id,
-      sessionId: message.sessionId,
-      role: toConversationRole(message.role),
-      ts: message.ts,
-      content: message.content,
-      audioPath: message.audioPath,
-    });
+    const appended = toConversationMessage(message);
+    this.emit('message-appended', appended);
 
-    return {
-      id: message.id,
-      sessionId: message.sessionId,
-      role: toConversationRole(message.role),
-      ts: message.ts,
-      content: message.content,
-      audioPath: message.audioPath,
-    };
+    return { ...appended };
   }
 
   /**

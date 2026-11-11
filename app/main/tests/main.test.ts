@@ -982,6 +982,33 @@ describe('main process bootstrap', () => {
     expect(replacementWindow.restore).toHaveBeenCalledTimes(1);
     expect(replacementWindow.focus).toHaveBeenCalledTimes(2);
 
+    // Avatar-aware routing: no avatarId is Echo, an avatarId picks that avatar's own service.
+    const avatarsListHandler = handleEntries.get('avatars:list');
+    expect(typeof avatarsListHandler).toBe('function');
+    expect(avatarsListHandler?.({})).toEqual([expect.objectContaining({ id: 'echo', name: 'Echo' })]);
+    const { LocalVoiceService } = await import('../src/local-voice/local-voice-service.js');
+    const seenAvatars: string[] = [];
+    const statusSpy = vi.spyOn(LocalVoiceService.prototype, 'systemStatus').mockImplementation(function (this: { avatarId: string }) {
+      seenAvatars.push(this.avatarId);
+      return { pending: 0, ready: false, texts: [], urgent: false };
+    });
+    const resetSpy = vi.spyOn(LocalVoiceService.prototype, 'resetHistory').mockImplementation(function (this: { avatarId: string }) {
+      seenAvatars.push(`reset:${this.avatarId}`);
+    });
+    const cancelSpy = vi.spyOn(LocalVoiceService.prototype, 'cancel').mockImplementation(function (this: { avatarId: string }) {
+      seenAvatars.push(`cancel:${this.avatarId}`);
+    });
+    await handleEntries.get('local-voice:system-status')?.({});
+    await handleEntries.get('local-voice:system-status')?.({}, 'sage');
+    await handleEntries.get('local-voice:reset')?.({});
+    await handleEntries.get('local-voice:reset')?.({}, 'sage');
+    await handleEntries.get('local-voice:cancel')?.({}, 'r1');
+    await handleEntries.get('local-voice:cancel')?.({}, 'r2', 'sage');
+    expect(seenAvatars).toEqual(['echo', 'sage', 'reset:echo', 'reset:sage', 'cancel:echo', 'cancel:sage']);
+    statusSpy.mockRestore();
+    resetSpy.mockRestore();
+    cancelSpy.mockRestore();
+
     getAllWindowsResult = [];
     appEmitter.emit('activate');
     expect(BrowserWindowMock).toHaveBeenCalledTimes(3);

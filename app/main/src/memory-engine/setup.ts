@@ -22,6 +22,8 @@ export interface MemoryEngineRuntime {
   capture: MemoryCapture;
   /** The session brief and auto-recall, for the voice pipeline. */
   voice: VoiceMemory;
+  /** The session brief and auto-recall for one avatar (the agent name it asks with); no id is the default avatar, `voice`. */
+  voiceFor(avatarId?: string): VoiceMemory;
   /** Record a local-voice tool call against the current conversation. */
   recordToolCall(call: { name: string; arguments: unknown; result: string; ok: boolean; at: number }): void;
   stop(): void;
@@ -33,6 +35,8 @@ export interface SetupMemoryEngineOptions {
   conversations: Pick<ConversationManager, 'on' | 'off' | 'getCurrentSessionId'>;
   logger?: Logger;
   fetchFn?: typeof fetch;
+  /** Who the agent is for an avatar id; no id is the default avatar. Defaults to the active VRM model (activeAgent). */
+  agentFor?: (avatarId?: string) => CaptureAgent;
 }
 
 /** The active character: the VRM model's name, or a generic one. */
@@ -58,7 +62,8 @@ export function setupMemoryEngine(options: SetupMemoryEngineOptions): MemoryEngi
 
   const client = new MemoryEngineClient({ baseUrl: settings.url, apiToken: settings.apiToken, fetchFn: options.fetchFn });
   const outbox = new MemoryOutbox({ store, client, logger });
-  const capture = new MemoryCapture({ outbox, agent: () => activeAgent(store), logger });
+  const agentFor = options.agentFor ?? (() => activeAgent(store));
+  const capture = new MemoryCapture({ outbox, agent: agentFor, logger });
 
   const onSession = (session: ConversationSession) => capture.recordSession(session);
   const onMessage = (message: ConversationMessage) => capture.recordMessage(message);
@@ -75,20 +80,31 @@ export function setupMemoryEngine(options: SetupMemoryEngineOptions): MemoryEngi
   outbox.start();
   logger?.info('Long-term memory writes go to the memory engine', { url: settings.url, pending: outbox.status().pending });
 
-  const voice = createVoiceMemory({
-    client,
-    currentSessionId: () => conversations.getCurrentSessionId(),
-    agentName: () => activeAgent(store).name,
-    brief: settings.brief,
-    autoRecall: settings.autoRecall,
-    logger,
-  });
+  const voices = new Map<string, VoiceMemory>();
+  const voiceFor = (avatarId?: string): VoiceMemory => {
+    const key = avatarId ?? '';
+    let memory = voices.get(key);
+    if (!memory) {
+      memory = createVoiceMemory({
+        client,
+        currentSessionId: () => conversations.getCurrentSessionId(),
+        agentName: () => agentFor(avatarId).name,
+        brief: settings.brief,
+        autoRecall: settings.autoRecall,
+        logger,
+      });
+      voices.set(key, memory);
+    }
+    return memory;
+  };
+  const voice = voiceFor();
 
   return {
     client,
     outbox,
     capture,
     voice,
+    voiceFor,
     recordToolCall(call) {
       const sessionId = conversations.getCurrentSessionId();
       if (sessionId) {
