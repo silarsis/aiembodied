@@ -15,13 +15,20 @@ export function objectAffordances(object: RoomObject): string[] {
  * The part of the model's instructions that describes the room and the scene tags. Empty in 2D or
  * when live motion is unavailable, so the instructions are then exactly what they were.
  */
-export function buildSceneInstructions(room: RoomFile | null | undefined, motionAvailable: boolean, idleNote = ''): string {
+export function buildSceneInstructions(
+  room: RoomFile | null | undefined,
+  motionAvailable: boolean,
+  idleNote = '',
+  /** Names of the other avatars standing in the room with this one. */
+  others: readonly string[] = [],
+): string {
   if (!room || !motionAvailable) return '';
   const objects = room.objects
     .map((object) => ({ object, uses: objectAffordances(object) }))
     .filter((entry) => entry.uses.length > 0)
     .map(({ object, uses }) => `${object.name} (${uses.join(', ')})`);
   if (objects.length === 0) return '';
+  const othersLines = others.map((name) => name.trim()).filter(Boolean).map((name) => `${name} is in the room with you.`);
   const idleLine = idleNote.trim() ? `Just before this, while idle, you: ${idleNote.trim()}.` : '';
   return [
     `You are standing in a 3D room, the ${room.name}. Things in it: ${objects.join('; ')}.`,
@@ -30,6 +37,7 @@ export function buildSceneInstructions(room: RoomFile | null | undefined, motion
     'naming the object as listed above.',
     'Use these only when they fit the conversation. They happen one after another, in the order written, and each takes a few seconds.',
     'For example: `{go:bookshelf}{move:runs a finger along the book spines}`.',
+    ...othersLines,
     idleLine,
   ]
     .filter(Boolean)

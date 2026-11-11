@@ -63,7 +63,16 @@ export class RoomSceneController {
   /** What scene actions use to reach the room and the avatar; stable for the controller's life. */
   readonly sceneEnv = new RoomSceneEnv({ stage: () => this.stage, rig: () => this.rig, aspect: () => this.deps.camera.aspect });
 
+  /** Scene action envs of the companions, by avatar id; each lives as long as its companion stays attached. */
+  private readonly companionEnvs = new Map<string, RoomSceneEnv>();
+
   constructor(private readonly deps: Deps) {}
+
+  /** The env scene actions of this avatar run in: Echo's `sceneEnv`, a companion's own, or null when it has none (yet). */
+  envFor(avatarId: string): RoomSceneEnv | null {
+    if (avatarId === 'echo') return this.sceneEnv;
+    return this.companionEnvs.get(avatarId) ?? null;
+  }
 
   /** True once a room has been requested; the 2D camera fit must not run while this is set. */
   get active(): boolean {
@@ -142,14 +151,36 @@ export class RoomSceneController {
   }
 
   /** An extra avatar (not Echo) was added to the scene, or removed with a null root. It stands beside Echo in rooms. */
-  attachCompanion(id: string, root: THREE.Object3D | null): void {
-    this.companions.attach(id, root);
-    this.placeCompanions();
+  attachCompanion(
+    id: string,
+    root: THREE.Object3D | null,
+    humanoid?: AvatarRig['humanoid'] | null,
+    restHipsHeight = 0,
+  ): void {
+    if (!root) {
+      this.detachCompanion(id);
+      return;
+    }
+    // A reloaded model: whatever the old body carried goes back before the rig changes.
+    this.companionEnvs.get(id)?.releaseHeld();
+    this.companions.attach(id, root, humanoid, restHipsHeight);
+    if (humanoid && !this.companionEnvs.has(id)) {
+      this.companionEnvs.set(
+        id,
+        new RoomSceneEnv({ stage: () => this.stage, rig: () => this.companions.rigOf(id), aspect: () => this.deps.camera.aspect }),
+      );
+    } else if (!humanoid) {
+      this.companionEnvs.delete(id);
+    }
+    this.placeCompanions(false);
   }
 
   detachCompanion(id: string): void {
+    this.companionEnvs.get(id)?.releaseHeld();
+    this.companionEnvs.delete(id);
     this.companions.detach(id);
-    this.placeCompanions();
+    this.stage?.removeAvatar(id);
+    // The others keep their slots and stay where they are.
   }
 
   /**
@@ -181,7 +212,8 @@ export class RoomSceneController {
   /** Call once per frame after the animation mixer has run. */
   step(dt: number): void {
     this.sceneEnv.step(dt);
-    this.stage?.step(dt, this.body ?? this.avatar);
+    for (const env of this.companionEnvs.values()) env.step(dt);
+    this.stage?.step(dt, this.body ?? this.avatar, this.companions.bodies());
   }
 
   setDebugNavmesh(on: boolean): void {
@@ -194,6 +226,7 @@ export class RoomSceneController {
     if (this.avatar && this.avatarBase) this.restoreAvatar();
     this.companions.restore();
     this.companions.clear();
+    this.companionEnvs.clear();
     this.disposeStage();
     this.observer?.disconnect();
     this.observer = null;
@@ -232,6 +265,7 @@ export class RoomSceneController {
 
   private disposeStage(): void {
     this.sceneEnv.releaseHeld();
+    for (const env of this.companionEnvs.values()) env.releaseHeld();
     if (!this.stage) return;
     this.deps.scene.remove(this.stage.group);
     this.stage.dispose();
@@ -293,8 +327,8 @@ export class RoomSceneController {
     this.avatar.updateWorldMatrix(true, true);
   }
 
-  private placeCompanions(): void {
-    if (this.room && this.stage) this.companions.place(this.room.home, this.targetHeight);
+  private placeCompanions(all = true): void {
+    if (this.room && this.stage) this.companions.place(this.room.home, this.targetHeight, all);
   }
 
   private restoreAvatar(): void {

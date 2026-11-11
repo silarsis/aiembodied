@@ -70,6 +70,11 @@ export interface VrmAvatarRendererProps {
   showWalkableArea?: boolean;
   /** Runs scene actions (walk, sit, pick up) in the room; it is given the room's env while this renders. */
   sceneActions?: SceneActionExecutor | null;
+  /**
+   * The scene action executor of each avatar other than Echo (null when it has none). Each is given that avatar's
+   * env while the avatar is on stage, and reset when the room changes.
+   */
+  sceneExecutors?: ((avatarId: string) => SceneActionExecutor | null) | null;
 }
 
 const CAMERA_DISTANCE = 1.45;
@@ -121,7 +126,10 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   roomAvatarHeight,
   showWalkableArea = false,
   sceneActions = null,
+  sceneExecutors = null,
 }: VrmAvatarRendererProps) {
+  const sceneExecutorsRef = useRef(sceneExecutors);
+  useEffect(() => { sceneExecutorsRef.current = sceneExecutors; }, [sceneExecutors]);
   const roomRef = useRef<RoomFile | null>(room);
   roomRef.current = room;
   const roomControllerRef = useRef<RoomSceneController | null>(null);
@@ -540,6 +548,12 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     applyStageSizeRef.current();
   }, [stageUnits, rendererReady]);
 
+  /** An extra avatar left the stage: its executor stops (no env) and the room forgets its body. */
+  const detachExtra = (id: string) => {
+    sceneExecutorsRef.current?.(id)?.setEnv(null);
+    roomControllerRef.current?.detachCompanion(id);
+  };
+
   // The other avatars (never Echo, who has the effects above): one actor each, loaded from its own model.
   useEffect(() => {
     if (!rendererReady) {
@@ -555,7 +569,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       if (id === DEFAULT_AVATAR_ID || wanted.has(id)) {
         continue;
       }
-      other.unload({ parent: scene, onDetach: () => roomControllerRef.current?.detachCompanion(id) });
+      other.unload({ parent: scene, onDetach: () => detachExtra(id) });
       other.dispose();
       actors.delete(id);
       boundsRef.current.delete(id);
@@ -576,7 +590,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       }
       loadedModelRef.current.delete(entry.id);
       boundsRef.current.delete(entry.id);
-      const detach = () => roomControllerRef.current?.detachCompanion(entry.id);
+      const detach = () => detachExtra(entry.id);
       other.unload({ parent: scene, onDetach: detach });
       if (!entry.model) {
         relayoutRef.current();
@@ -593,7 +607,12 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
           parent: scene,
           isCancelled: () => cancelled,
           // The camera is fitted to all avatars together in relayout.
-          onAttached: ({ vrm }) => roomControllerRef.current?.attachCompanion(entry.id, vrm.scene),
+          onAttached: ({ vrm, restSkeleton }) => {
+            const controller = roomControllerRef.current;
+            controller?.attachCompanion(entry.id, vrm.scene, vrm.humanoid, restSkeleton?.hips[1]);
+            // The avatar's executor starts working in the room's env as soon as the avatar is there.
+            sceneExecutorsRef.current?.(entry.id)?.setEnv(controller?.envFor(entry.id) ?? null);
+          },
           onBounds: (bounds) => {
             if (bounds) {
               boundsRef.current.set(entry.id, { size: bounds.size.clone(), center: bounds.center.clone() });
@@ -608,7 +627,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         relayoutRef.current();
       } catch (error) {
         console.error('[vrm-avatar-renderer] failed to load VRM model for avatar', entry.id, error);
-        other.unload({ parent: scene, onDetach: () => roomControllerRef.current?.detachCompanion(entry.id) });
+        other.unload({ parent: scene, onDetach: () => detachExtra(entry.id) });
       }
     };
     for (const entry of extraEntries) {
@@ -640,6 +659,11 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     if (!reload) {
       actor.cancelAnimations();
       sceneActions?.reset();
+      for (const [id, other] of actors) {
+        if (id === DEFAULT_AVATAR_ID) continue;
+        other.cancelAnimations();
+        sceneExecutorsRef.current?.(id)?.reset();
+      }
     }
     void controller.setRoom(room).then(() => {
       // Leaving a room restores the single-frame canvas size; set it back for the avatars on stage.
@@ -662,6 +686,27 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     sceneActions.setEnv(controller.sceneEnv);
     return () => sceneActions.setEnv(null);
   }, [sceneActions, rendererReady]);
+
+  // Executors handed over after their avatar loaded (or swapped) get the env of that avatar.
+  useEffect(() => {
+    const controller = roomControllerRef.current;
+    if (!sceneExecutors || !rendererReady || !controller) {
+      return;
+    }
+    const bound: Array<SceneActionExecutor> = [];
+    for (const entry of extraEntries) {
+      const executor = sceneExecutors(entry.id);
+      const env = controller.envFor(entry.id);
+      if (!executor || !env) continue;
+      executor.setEnv(env);
+      bound.push(executor);
+    }
+    return () => {
+      for (const executor of bound) executor.setEnv(null);
+    };
+    // extraKey stands for the entries' ids and models.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sceneExecutors, rendererReady, extraKey]);
 
   useEffect(() => {
     roomControllerRef.current?.setDebugNavmesh(showWalkableArea);

@@ -120,7 +120,7 @@ export class RoomStage {
   }
 
   /** Advances physics. The avatar's capsule follows the avatar root's world position. */
-  step(dt: number, avatarRoot?: THREE.Object3D | null): void {
+  step(dt: number, avatarRoot?: THREE.Object3D | null, others: ReadonlyArray<{ id: string; root: THREE.Object3D }> = []): void {
     if (!this.physics) return;
     for (const [id, node] of this.built.objectNodes) {
       if (!this.physics.isHeld(id)) continue;
@@ -133,7 +133,16 @@ export class RoomStage {
       avatarRoot.getWorldPosition(TMP);
       this.physics.setAvatarPosition(TMP.x, TMP.z);
     }
+    for (const other of others) {
+      other.root.getWorldPosition(TMP);
+      this.physics.setAvatarPosition(TMP.x, TMP.z, other.id);
+    }
     this.physics.step(dt);
+  }
+
+  /** An extra avatar left: its physics capsule goes with it. */
+  removeAvatar(id: string): void {
+    this.physics?.removeAvatar(id);
   }
 
   setDebugNavmesh(on: boolean): void {

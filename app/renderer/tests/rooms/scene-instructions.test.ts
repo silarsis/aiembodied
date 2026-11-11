@@ -28,6 +28,16 @@ describe('scene instructions', () => {
     expect(text).toContain('`{go:bookshelf}{move:runs a finger along the book spines}`');
   });
 
+  it('names the other avatars in the room, and is unchanged without any', () => {
+    const plain = buildSceneInstructions(room, true, 'sat down');
+    expect(buildSceneInstructions(room, true, 'sat down', [])).toBe(plain);
+    expect(buildSceneInstructions(room, true)).toBe(buildSceneInstructions(room, true, '', []));
+    const withOthers = buildSceneInstructions(room, true, '', ['Sage', 'Rex']);
+    expect(withOthers).toContain('Sage is in the room with you. Rex is in the room with you.');
+    expect(withOthers.startsWith(buildSceneInstructions(room, true).replace(/\.$/, ''))).toBe(true);
+    expect(buildSceneInstructions(null, true, '', ['Sage'])).toBe('');
+  });
+
   it('is empty in 2D or without the motion service', () => {
     expect(buildSceneInstructions(null, true)).toBe('');
     expect(buildSceneInstructions(undefined, true)).toBe('');
