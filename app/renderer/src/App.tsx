@@ -1248,15 +1248,36 @@ export default function App() {
   usePresenceReporter(activeBridge?.presence, activeBridge?.camera, { listening: isListeningEnabled, voicePhase: displayedActivity.phase });
   // The avatar wanders on its own in a 3D room when nobody has talked for a while (rooms/idle-director.ts).
   const idleHabits = useIdleHabits(activeBridge?.avatar, activeVrmModel?.id);
+  // Latest voice activity per avatar, read when the idle director picks who acts (not a render dependency).
+  const speakingRef = useRef({ echo: visemeFrame, others: visemeFrames });
+  useEffect(() => {
+    speakingRef.current = { echo: visemeFrame, others: visemeFrames };
+  }, [visemeFrame, visemeFrames]);
   const { idleNote } = useIdleDirector({
     executor: sceneActions,
+    // Several avatars on stage: the one idle director picks who acts (rooms/idle-picker.ts). Habits are saved per body.
+    avatars: () =>
+      stageNames.map((profile) => {
+        const isEcho = profile.id === 'echo';
+        const frame = isEcho ? speakingRef.current.echo : (speakingRef.current.others[profile.id] ?? null);
+        const sharesBody = !profile.vrmModelId || profile.vrmModelId === activeVrmModel?.id;
+        return {
+          id: profile.id,
+          name: profile.name,
+          executor: rigs.get(profile.id).executor,
+          speaking: frame !== null && frame.intensity > 0.05,
+          personality: profile.prompt ?? '',
+          // An avatar with a body of its own has habits we have not loaded here: none.
+          habits: sharesBody ? idleHabits.habits : '',
+        };
+      }),
     room: backgrounds.activeRoom,
     settings: backgrounds.idleSettings,
     motionReady: liveMotionReady,
     persona: { name: activeVrmModel?.name ?? '', personality: basePrompt, habits: idleHabits.habits },
     phase: voiceActivity.phase,
     pick: async (context) => (await activeBridge?.backgrounds?.pickIdle?.(context)) ?? null,
-    run: (text) => animationTextHandlerRef.current(text),
+    run: (text, avatarId) => animationTextHandlerRef.current(text, avatarId),
   });
   // Describes the active 3D room (and the scene tags) to the model; empty in 2D. Part of the session
   // instructions, so a room change reaches both the local voice and Realtime sessions.

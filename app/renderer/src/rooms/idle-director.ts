@@ -10,9 +10,25 @@
  * the whole thing runs in tests with fakes.
  */
 import type { IdlePickContext, IdlePickResult, RoomFile } from '../../../main/src/rooms/types.js';
-import { RESTLESSNESS_MEAN_SECONDS, type IdleSettings } from '../../../main/src/rooms/idle-settings.js';
-import { describeIdleTags, fallbackIdleTags, idleTagsToText, idleTargets, parseIdleReply } from './idle-actions.js';
+import {
+  RESTLESSNESS_MEAN_SECONDS,
+  type IdleSettings,
+} from '../../../main/src/rooms/idle-settings.js';
+import {
+  describeIdleTags,
+  fallbackIdleTags,
+  idleTagsToText,
+  idleTargets,
+  parseIdleReply,
+} from './idle-actions.js';
 import { buildIdlePrompt } from './idle-prompt.js';
+import {
+  createIdlePickerState,
+  ECHO_ID,
+  pickIdleActor,
+  type IdleCandidate,
+} from './idle-picker.js';
+import { describeAvatarWhere } from './scene-instructions.js';
 import type { IdleInput, IdleTag } from './idle-types.js';
 import { talkStartActions } from './idle-talk.js';
 import type { AvatarState, PlanWorld } from './scene-actions.js';
@@ -46,8 +62,27 @@ export interface IdlePersona {
   habits: string;
 }
 
-export interface IdleDirectorDeps {
+/** An avatar standing in the room (Echo included) that may act on its own. */
+export interface IdleAvatar {
+  id: string;
+  name: string;
+  /** Its executor; Echo's is always `IdleDirectorDeps.executor`. */
   executor: IdleExecutor;
+  /** Its voice is playing right now. */
+  speaking?: boolean;
+  /** For avatars other than Echo: what the idle prompt says about them. */
+  personality?: string;
+  habits?: string;
+}
+
+export interface IdleDirectorDeps {
+  /** Echo's executor. */
+  executor: IdleExecutor;
+  /**
+   * Every avatar in the room, Echo included. Absent, or with fewer than two, the director works for Echo
+   * alone, exactly as it did before there were several.
+   */
+  avatars?(): readonly IdleAvatar[];
   now(): number;
   setTimer(fn: () => void, ms: number): unknown;
   clearTimer(handle: unknown): void;
@@ -60,7 +95,7 @@ export interface IdleDirectorDeps {
   /** Asks the Idle thoughts model; null on any failure. */
   pick(context: IdlePickContext): Promise<IdlePickResult | null>;
   /** Runs tags like the assistant's own: `{go:bookshelf}{move:browses the books}`. */
-  run(text: string): void;
+  run(text: string, avatarId?: string): void;
   /**
    * The "just before this, while idle, you…" note for the conversation changed. It only changes while
    * the assistant is not working on a turn.
@@ -93,6 +128,12 @@ export class IdleDirector {
   /** An idle action started since the user last talked, so the avatar may be somewhere else now. */
   private wandered = false;
   private recentTargets: string[] = [];
+  /** Log and recent targets of the avatars other than Echo (Echo's are above; the note is hers alone). */
+  private readonly otherTracks = new Map<string, { log: IdleLogEntry[]; targets: string[] }>();
+  private readonly pickerState = createIdlePickerState();
+  private readonly lastActed = new Map<string, number>();
+  /** Avatars that did something idle since the user last talked. */
+  private readonly wanderers = new Set<string>();
   private readonly log: IdleLogEntry[] = [];
   private conversationBusy = false;
   private publishedNote = '';
@@ -122,6 +163,9 @@ export class IdleDirector {
       this.roomId = roomId;
       this.log.length = 0;
       this.recentTargets = [];
+      this.otherTracks.clear();
+      this.lastActed.clear();
+      this.wanderers.clear();
       this.wandered = false;
       if (this.active) this.deactivate();
     }
@@ -212,7 +256,9 @@ export class IdleDirector {
   }
 
   private dueAt(): number {
-    return this.chain ? this.lastIdleEnd + this.nextInterval : this.lastActivity + FIRST_ACTION_DELAY_MS;
+    return this.chain
+      ? this.lastIdleEnd + this.nextInterval
+      : this.lastActivity + FIRST_ACTION_DELAY_MS;
   }
 
   private drawInterval(): number {
@@ -241,36 +287,85 @@ export class IdleDirector {
       this.schedule();
       return;
     }
-    if (this.deps.executor.busy) {
+    const actor = this.pickActor();
+    if (!actor) {
       this.timer = this.deps.setTimer(() => {
         this.timer = null;
         this.tick();
       }, RETRY_MS);
       return;
     }
-    void this.act();
+    void this.act(actor);
+  }
+
+  /** The avatars in the room; just Echo when the app does not say or says there is only one. */
+  private roster(): readonly IdleAvatar[] {
+    const avatars = this.deps.avatars?.() ?? [];
+    return avatars.length >= 2 ? avatars : [];
+  }
+
+  /** Who acts now: Echo alone as before, else the picker's choice. Null when nobody can act yet. */
+  private pickActor(): IdleAvatar | null {
+    const roster = this.roster();
+    if (roster.length === 0) {
+      return this.deps.executor.busy
+        ? null
+        : { id: ECHO_ID, name: '', executor: this.deps.executor };
+    }
+    const candidates: IdleCandidate[] = roster.map((avatar) => ({
+      id: avatar.id,
+      busy: this.executorOf(avatar).busy,
+      speaking: Boolean(avatar.speaking),
+      lastActedAt: this.lastActed.get(avatar.id),
+    }));
+    const id = pickIdleActor(candidates, this.deps.now(), this.pickerState);
+    return roster.find((avatar) => avatar.id === id) ?? null;
+  }
+
+  private executorOf(avatar: IdleAvatar): IdleExecutor {
+    return avatar.id === ECHO_ID ? this.deps.executor : avatar.executor;
   }
 
   // -- Choosing and doing ----------------------------------------------------------------------
 
-  private input(): IdleInput | null {
+  private input(actor: IdleAvatar): IdleInput | null {
     const room = this.deps.room();
-    const world = this.deps.executor.world();
+    const executor = this.executorOf(actor);
+    const world = executor.world();
     if (!room || !world) return null;
-    const persona = this.deps.persona();
+    const isEcho = actor.id === ECHO_ID;
+    const persona = isEcho
+      ? this.deps.persona()
+      : { name: actor.name, personality: actor.personality ?? '', habits: actor.habits ?? '' };
+    const log = isEcho ? this.log : (this.otherTracks.get(actor.id)?.log ?? []);
+    const others = this.roster()
+      .filter((avatar) => avatar.id !== actor.id)
+      .map((avatar) => {
+        const other = this.executorOf(avatar);
+        const otherWorld = other.world();
+        const where = describeAvatarWhere(room, {
+          seatedOn: other.getState().seat?.objectId ?? null,
+          position: otherWorld
+            ? { x: otherWorld.frame.origin.x, z: otherWorld.frame.origin.z }
+            : null,
+        });
+        return { name: avatar.name, where };
+      });
     return {
       ...persona,
       room,
       visible: visibleObjects(room, world.cameraAspect ?? DEFAULT_ASPECT),
-      state: this.deps.executor.getState(),
+      state: executor.getState(),
       position: [world.frame.origin.x, 0, world.frame.origin.z],
-      recent: this.log.map((entry) => entry.text),
+      recent: log.map((entry) => entry.text),
       now: new Date(this.deps.now()),
+      ...(others.length > 0 ? { others } : {}),
     };
   }
 
-  private async act(): Promise<void> {
-    const input = this.input();
+  private async act(actor: IdleAvatar): Promise<void> {
+    const isEcho = actor.id === ECHO_ID;
+    const input = this.input(actor);
     if (!input) {
       this.timer = this.deps.setTimer(() => {
         this.timer = null;
@@ -290,22 +385,41 @@ export class IdleDirector {
     this.picking = false;
 
     // The scene may have moved on while the model thought; judge the answer against it now.
-    const now = this.input() ?? input;
+    const now = this.input(actor) ?? input;
+    const targets = isEcho ? this.recentTargets : (this.otherTracks.get(actor.id)?.targets ?? []);
     let tags: IdleTag[] = reply ? parseIdleReply(reply.text, now) : [];
-    if (tags.length === 0) tags = fallbackIdleTags(now, () => this.deps.random(), this.recentTargets);
+    if (tags.length === 0) tags = fallbackIdleTags(now, () => this.deps.random(), targets);
     const first = tags[0];
     if (!first || first.type === 'wait') {
       this.finish();
       return;
     }
-    this.record(tags, now.room);
+    this.record(tags, now.room, actor.id);
     this.wandered = true;
-    this.deps.run(idleTagsToText(tags));
-    this.watch();
+    this.wanderers.add(actor.id);
+    this.lastActed.set(actor.id, this.deps.now());
+    // Only the action tags run (the reply is parsed into tags); spoken remarks are Echo's alone.
+    if (isEcho) this.deps.run(idleTagsToText(tags));
+    else this.deps.run(idleTagsToText(tags), actor.id);
+    this.watch(actor);
   }
 
-  private record(tags: readonly IdleTag[], room: RoomFile): void {
+  private record(tags: readonly IdleTag[], room: RoomFile, actorId: string): void {
     const text = describeIdleTags(tags, room);
+    if (actorId !== ECHO_ID) {
+      // Others' actions never reach Echo's conversation note.
+      let track = this.otherTracks.get(actorId);
+      if (!track) {
+        track = { log: [], targets: [] };
+        this.otherTracks.set(actorId, track);
+      }
+      if (text) {
+        track.log.push({ at: this.deps.now(), text });
+        while (track.log.length > LOG_SIZE) track.log.shift();
+      }
+      track.targets = [...track.targets, ...idleTargets(tags)].slice(-4);
+      return;
+    }
     if (text) {
       this.log.push({ at: this.deps.now(), text });
       while (this.log.length > LOG_SIZE) this.log.shift();
@@ -315,13 +429,13 @@ export class IdleDirector {
   }
 
   /** Waits for the executor to finish what was handed to it, then starts the next wait. */
-  private watch(): void {
+  private watch(actor: IdleAvatar): void {
     this.clearTimer('watchTimer');
     const epoch = this.epoch;
     this.watchTimer = this.deps.setTimer(() => {
       this.watchTimer = null;
       if (epoch !== this.epoch || !this.active) return;
-      if (this.deps.executor.busy) this.watch();
+      if (this.executorOf(actor).busy) this.watch(actor);
       else this.finish();
     }, WATCH_MS);
   }
@@ -340,7 +454,20 @@ export class IdleDirector {
     if (!this.wandered || !this.active) return;
     this.wandered = false;
     const mode = this.deps.settings().onTalk;
-    this.deps.executor.submitPlan('turn to the user', (world, state) => talkStartActions(mode, world, state));
+    const roster = this.roster();
+    const wanderers = [...this.wanderers];
+    this.wanderers.clear();
+    // Echo as before; any other avatar that wandered off turns to the user too.
+    this.deps.executor.submitPlan('turn to the user', (world, state) =>
+      talkStartActions(mode, world, state),
+    );
+    for (const id of wanderers) {
+      const avatar = roster.find((entry) => entry.id === id);
+      if (!avatar || id === ECHO_ID) continue;
+      avatar.executor.submitPlan('turn to the user', (world, state) =>
+        talkStartActions(mode, world, state),
+      );
+    }
   }
 }
 
@@ -351,7 +478,9 @@ export interface IdleDirectorInputs {
   motionReady: boolean;
   persona: IdlePersona;
   pick(context: IdlePickContext): Promise<IdlePickResult | null>;
-  run(text: string): void;
+  run(text: string, avatarId?: string): void;
+  /** The avatars in the room, Echo included; fewer than two means Echo alone. */
+  avatars?(): readonly IdleAvatar[];
 }
 
 const NO_INPUTS: IdleDirectorInputs = {
@@ -383,7 +512,8 @@ export function createIdleDirector(
     motionReady: () => latest.motionReady,
     persona: () => latest.persona,
     pick: (context) => latest.pick(context),
-    run: (text) => latest.run(text),
+    avatars: () => latest.avatars?.() ?? [],
+    run: (text, avatarId) => (avatarId ? latest.run(text, avatarId) : latest.run(text)),
     onNoteChange,
   });
   return {

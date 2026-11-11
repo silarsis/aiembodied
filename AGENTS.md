@@ -89,6 +89,7 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 
 ## Recent Updates
 
+- 2026-11-11 — Multi-avatar movement phase D: one idle director picks who wanders (`rooms/idle-picker.ts`: round-robin, Echo twice as often, skips busy/speaking/recently acted avatars); the idle prompt lists where the others are; idle talk and the idle note stay Echo's. Nothing changes with one avatar. See `docs/features/multi-avatar-movement.md`.
 - 2026-11-11 — Multi-avatar movement phase C: `RoomOccupancy` (`rooms/room-occupancy.ts`) keeps avatars in a room off the same spot, seat and object and lets only one walk at a time (goal nudging, path side-step, claims released by the executor); the scene text says where the others are. Nothing changes with one avatar. See `docs/features/multi-avatar-movement.md`.
 - 2026-11-11 — Multi-avatar movement phase B: avatars other than Echo walk, sit, look and carry in 3D rooms (`MovementRigs` executors, `RoomSceneController.envFor`/`attachCompanion`, per-avatar physics capsules, scene text in their prompts via `avatars:set-tag-instructions`). No collision avoidance or idle wandering for them yet. See `docs/features/multi-avatar-movement.md`.
 - 2026-11-11 — Multi-avatar movement phase A: `{move:}` gestures work for every avatar (`MovementRigs` in `rooms/movement-rig.ts`, per-avatar rest skeletons, `avatarId` on motion chunks, `avatars:set-tag-instructions` adds the tag instructions to other avatars' prompts). Scene tags stay Echo-only. See `docs/features/multi-avatar-movement.md`.

@@ -1,6 +1,6 @@
 # Movement for every avatar (phase 3 step 4c): design
 
-Status: design, written 2026-11-11. Phases A, B and C are built (see the notes under the phases). Phases are listed at the end with what has been built.
+Status: design, written 2026-11-11. All four phases (A to D) are built, untested on hardware (see the notes under the phases). Phases are listed at the end with what has been built.
 
 ## Where we are
 
@@ -159,3 +159,15 @@ Avatars in a 3D room no longer stand on the same spot, sit on the same seat, pic
 - `{come}` for a companion ends beside Echo's home spot through the same nudging.
 - Prompts: `buildSceneInstructions` takes `{ name, where }` entries; `describeAvatarWhere` gives "sitting on the <object>" or "standing near the <nearest listed object within 3 m>"; otherwise the phase B line stays. App builds each avatar's lines from `executor.getState()` and `executor.world()` and refreshes them when any executor reports an action done or failed (a counter), not every frame. Until the first action ends after a room opens, the lines are still the phase B ones.
 - Not done: two avatars already walking (they cannot, by the mutex) and the physics capsules still do not collide with each other.
+
+### Built: phase D (2026-11-11)
+
+One idle director picks who acts. With one avatar (no `avatars` in the director's deps, or fewer than two) the code path, timing, prompts and calls are what they were. What differs from the design above:
+
+- `rooms/idle-picker.ts`: `pickIdleActor(candidates, now, state, { cooldownMs = 20 s, rng? })` over `{ id, busy, speaking, lastActedAt }`. The rotation is echo, a, echo, b, ... walked by `state.turn`; busy, speaking and recently acted avatars are skipped; null when nobody is eligible. A lone `echo` ignores the cooldown. The director only uses it with two or more avatars.
+- `IdleDirectorDeps.avatars()` lists the avatars in the room (Echo included; App passes the stage avatars with each `rigs.get(id).executor`, whether its viseme frame is speaking, and persona/habits). `run(text, avatarId?)` runs the tags through App's text handler for that avatar's executor (Echo's call is unchanged). The global gates stay global (conversation busy, the 45 s / restlessness timing, settings); a tick with nobody eligible retries after 3 s, like a busy Echo did.
+- Prompt: `IdleInput.others` (`{ name, where }`, from `describeAvatarWhere` on each executor's state and world) adds "Others in the room:" lines. It is absent with no others, so Echo's prompt is byte-identical. For a non-Echo actor the persona is that avatar's (name, `AvatarProfile.prompt`, habits), so the existing "You decide what <Name> does" wording names it.
+- Habits: an avatar sharing Echo's body (or with no body yet) uses the habits App has loaded; one with its own body gets none, because only the active model's habits are loaded in the renderer (no new IPC).
+- Idle talk: the idle model's reply is parsed into action tags only, so no spoken remark exists to drop; non-Echo actors run their tags and nothing else. `talkStartActions` after Kevin speaks now also runs for every avatar that wandered. The idle note (`recentSummary`, `idleNote`) and the log feeding Echo's prompt are Echo's own; others keep separate logs and recent targets.
+- Not verified on hardware: how it feels with two or three avatars left idle for minutes.
+

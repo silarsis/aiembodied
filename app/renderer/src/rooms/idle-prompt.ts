@@ -36,18 +36,31 @@ export function idleSystemPrompt(name: string): string {
 /** "evening, 19:40" */
 export function timeOfDay(now: Date): string {
   const hour = now.getHours();
-  const part = hour < 5 ? 'night' : hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
+  const part =
+    hour < 5
+      ? 'night'
+      : hour < 12
+        ? 'morning'
+        : hour < 17
+          ? 'afternoon'
+          : hour < 21
+            ? 'evening'
+            : 'night';
   const pad = (value: number) => String(value).padStart(2, '0');
   return `${part}, ${pad(hour)}:${pad(now.getMinutes())}`;
 }
 
 /** The nearest object within `NEAR_DISTANCE` of the point, among objects a person can stand next to. */
-export function nearestObject(objects: readonly RoomObject[], position: readonly [number, number, number]): RoomObject | null {
+export function nearestObject(
+  objects: readonly RoomObject[],
+  position: readonly [number, number, number],
+): RoomObject | null {
   let best: { object: RoomObject; distance: number } | null = null;
   for (const object of objects) {
     if (object.collider === 'none') continue;
     const distance = Math.hypot(object.position[0] - position[0], object.position[2] - position[2]);
-    if (distance <= NEAR_DISTANCE && (!best || distance < best.distance)) best = { object, distance };
+    if (distance <= NEAR_DISTANCE && (!best || distance < best.distance))
+      best = { object, distance };
   }
   return best?.object ?? null;
 }
@@ -74,7 +87,9 @@ function describeObject(object: RoomObject): string {
 export function buildIdlePrompt(input: IdleInput): IdlePickContext {
   const { room } = input;
   const personality = input.personality.replace(/\s+/g, ' ').trim().slice(0, PERSONALITY_CHARS);
-  const things = input.visible.filter((object) => objectAffordances(object).length > 0 || object.tags?.idle);
+  const things = input.visible.filter(
+    (object) => objectAffordances(object).length > 0 || object.tags?.idle,
+  );
   const recent = input.recent.slice(-RECENT_IN_PROMPT);
   const lines = [
     `Character: ${input.name || 'the character'}`,
@@ -84,7 +99,14 @@ export function buildIdlePrompt(input: IdleInput): IdlePickContext {
     'Things they can see and reach:',
     ...(things.length > 0 ? things.map(describeObject) : ['- nothing in particular']),
     `Right now: ${describeState(input)}`,
-    recent.length > 0 ? `What they did recently:\n${recent.map((line) => `- ${line}`).join('\n')}` : 'What they did recently: nothing yet',
+    ...(input.others && input.others.length > 0
+      ? [
+          `Others in the room:\n${input.others.map((other) => `- ${other.name || 'someone'} is ${other.where ?? 'in the room'}`).join('\n')}`,
+        ]
+      : []),
+    recent.length > 0
+      ? `What they did recently:\n${recent.map((line) => `- ${line}`).join('\n')}`
+      : 'What they did recently: nothing yet',
     `Time: ${timeOfDay(input.now)}`,
     'Prefer variety. Use {wait} to stay as you are.',
   ];
