@@ -59,7 +59,13 @@ import type { AvatarProfile } from '../../main/src/avatars/bridge-types.js';
 import type { LocalVoiceStatus, SpeakingVoiceOptions } from '../../main/src/local-voice/types.js';
 import { describeModels } from './status/model-status.js';
 import { extractAvatarTags, extractMotionTags, toAnimationSlug } from './avatar/animation-tags.js';
-import { ANIMATION_INSTRUCTION_PREFIX, buildAnimationInstructions } from './avatar/animation-instructions.js';
+import {
+  ANIMATION_INSTRUCTION_PREFIX,
+  buildAnimationInstructions,
+  buildAvatarTagInstructions,
+  buildMoveOnlyInstructions,
+} from './avatar/animation-instructions.js';
+import { MovementRigs } from './rooms/movement-rig.js';
 import { MoveRequestFilter, enqueueMotionChunk } from './avatar/live-motion.js';
 import { SceneActionExecutor } from './rooms/scene-executor.js';
 import { tagToAction, type SceneAction } from './rooms/scene-actions.js';
@@ -773,17 +779,21 @@ export default function App() {
 
   // Runs {go:}, {sit:}, {pick:} and the other scene tags in a 3D room (see rooms/scene-executor.ts).
   const sceneActions = useMemo(() => new SceneActionExecutor(), []);
+  // Which avatar each live-motion stream belongs to, and each avatar's repeat filter (rooms/movement-rig.ts).
+  const rigs = useMemo(() => new MovementRigs(), []);
   useEffect(() => {
     const avatar = resolveApi()?.avatar;
     if (!avatar?.onMotionChunk) {
       return;
     }
     return avatar.onMotionChunk((chunk) => {
-      if (!sceneActions.handleChunk(chunk)) {
-        enqueueMotionChunk(animationBus, chunk);
+      if (sceneActions.handleChunk(chunk)) {
+        return;
       }
+      const owner = rigs.avatarForStream(chunk.streamId);
+      enqueueMotionChunk(animationBus, chunk, {}, owner);
     });
-  }, [animationBus, resolveApi, sceneActions]);
+  }, [animationBus, resolveApi, sceneActions, rigs]);
   useEffect(() => {
     const avatar = resolveApi()?.avatar;
     const streamMotion = avatar?.streamMotion;
@@ -800,6 +810,15 @@ export default function App() {
     });
     return () => sceneActions.setBridge(null);
   }, [animationBus, resolveApi, sceneActions]);
+  // Kevin spoke: drop what Echo still had queued and stop the gestures other avatars were generating.
+  const interruptMovement = useCallback(() => {
+    sceneActions.interrupt();
+    const avatar = resolveApi()?.avatar;
+    for (const streamId of rigs.streamIds()) {
+      void avatar?.cancelMotion?.(streamId)?.catch(() => undefined);
+      rigs.endStream(streamId);
+    }
+  }, [sceneActions, resolveApi, rigs]);
   useEffect(
     () =>
       sceneActions.onActivity((activity) => {
@@ -1243,7 +1262,39 @@ export default function App() {
       // Tags in another avatar's reply drive only that avatar. Echo (no id) is handled exactly as before.
       const speaker = avatarId && avatarId !== 'echo' ? avatarId : undefined;
       const streamMotion = resolveApi()?.avatar?.streamMotion;
-      // TODO(step 4): {move:...} streams and scene actions are Echo's body only; other avatars ignore them for now.
+      // Scene actions ({go:}, {sit:}...) from other avatars are still ignored: Phase B of docs/features/multi-avatar-movement.md.
+      // Another avatar's {move:} gestures play on its own body, straight away (no scene executor yet).
+      if (speaker && liveMotionReady && streamMotion) {
+        const speakerName = avatarProfiles.find((profile) => profile.id === speaker)?.name ?? speaker;
+        const filter = rigs.filterFor(speaker);
+        for (const tag of extractMotionTags(content)) {
+          if (tag.type !== 'move' || !filter.shouldStart(tag.text)) {
+            continue;
+          }
+          const move = tag;
+          void (async () => {
+            const streamId = Math.random().toString(36).slice(2, 10);
+            rigs.registerStream(streamId, speaker);
+            setToolCalls((calls) =>
+              addToolCall(calls, { id: streamId, kind: 'move', label: `${speakerName}: ${move.text}`, status: 'pending', startedAt: Date.now() }),
+            );
+            try {
+              const result = await streamMotion({ streamId, prompt: move.text, avatarRest: getAvatarRestSkeleton(speaker) ?? undefined });
+              const firstChunk = result.firstChunkMs === null ? '' : `, first after ${(result.firstChunkMs / 1000).toFixed(1)} s`;
+              setToolCalls((calls) =>
+                finishToolCall(calls, streamId, 'done', Date.now(), `${result.chunks} chunk${result.chunks === 1 ? '' : 's'}${firstChunk}`),
+              );
+            } catch (error: unknown) {
+              const message = error instanceof Error ? error.message : String(error);
+              console.error('[App] Live motion generation failed', { avatar: speaker, prompt: move.text, error: message });
+              setToolCalls((calls) => finishToolCall(calls, streamId, 'failed', Date.now(), message));
+            } finally {
+              // Chunks arrive as events before the request resolves; keep the id a moment for stragglers.
+              setTimeout(() => rigs.endStream(streamId), 5000);
+            }
+          })();
+        }
+      }
       if (!speaker && liveMotionReady && streamMotion) {
         const room = activeRoomRef.current;
         // In a room the tags run in the order written; a {move:} waits for the scene actions before it.
@@ -1338,7 +1389,7 @@ export default function App() {
         }
       }
     },
-    [animationBus, availableAnimationSlugSet, availablePoseSlugSet, availablePoses, liveMotionReady, resolveApi, sceneActions],
+    [animationBus, availableAnimationSlugSet, availablePoseSlugSet, availablePoses, avatarProfiles, liveMotionReady, resolveApi, rigs, sceneActions],
   );
 
   useEffect(() => {
@@ -1787,6 +1838,21 @@ export default function App() {
     () => Object.fromEntries(avatarProfiles.map((profile) => [profile.id, profile.name])),
     [avatarProfiles],
   );
+  // The animation, pose and {move:} instructions for the other avatars' prompts (main adds them to their personas).
+  // They share Echo's lists when they wear her body; an avatar with a body of its own only gets {move:}.
+  const avatarTagInstructions = useMemo(() => {
+    if (avatarProfiles.length < 2) return null;
+    const poseSlugs = availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0);
+    return {
+      shared: buildAvatarTagInstructions(availableAnimationSlugs, poseSlugs, liveMotionReady),
+      moveOnly: buildMoveOnlyInstructions(liveMotionReady),
+    };
+  }, [avatarProfiles.length, availableAnimationSlugs, availablePoses, liveMotionReady]);
+  useEffect(() => {
+    if (!avatarTagInstructions) return;
+    const setTagInstructions = resolveApi()?.avatars?.setTagInstructions;
+    void setTagInstructions?.(avatarTagInstructions)?.catch?.((error: unknown) => console.warn('Failed to send avatar tag instructions.', error));
+  }, [avatarTagInstructions, resolveApi]);
 
   useEffect(() => {
     const bridge = resolveApi();
@@ -1968,7 +2034,7 @@ export default function App() {
     const wasActive = previousSpeechActiveRef.current;
     if (!wasActive && audioGraph.isActive) {
       // The user started speaking (not the avatar's own voice coming back): drop what it still had queued to do.
-      if (voicePhaseRef.current !== 'responding') sceneActions.interrupt();
+      if (voicePhaseRef.current !== 'responding') interruptMovement();
       const snapshot = latencyTrackerRef.current.recordCapture(Date.now(), activeSessionIdRef.current);
       if (snapshot) {
         setLatencySnapshot((previous) => ({ ...(previous ?? {}), ...snapshot }));
@@ -1976,7 +2042,7 @@ export default function App() {
       }
     }
     previousSpeechActiveRef.current = audioGraph.isActive;
-  }, [audioGraph.isActive, pushLatency, sceneActions]);
+  }, [audioGraph.isActive, pushLatency, interruptMovement]);
 
   useEffect(() => {
     if (!realtimeClient) {
@@ -2108,7 +2174,7 @@ export default function App() {
 
     const unsubscribe = bridge.wakeWord.onWake((event) => {
       if (!acceptsWakeRef.current) return;
-      sceneActions.interrupt();
+      interruptMovement();
       const client = conversationClientRef.current;
       if (client instanceof LocalVoiceClient) {
         client.notifyWake(event.timestamp);
@@ -2156,13 +2222,13 @@ export default function App() {
       }
       unsubscribe?.();
     };
-  }, [api, resolveApi, recordTranscriptEntry, sceneActions]);
+  }, [api, resolveApi, recordTranscriptEntry, interruptMovement]);
 
   // Push-to-talk and tap-to-talk skip the wake word. With listening off they turn it on, and the
   // local client starts listening once it has connected.
   const startTalking = useCallback(
     (source: 'shortcut' | 'tap') => {
-      sceneActions.interrupt();
+      interruptMovement();
       setListeningEnabled(true);
       const client = conversationClientRef.current;
       if (client instanceof LocalVoiceClient) {
@@ -2170,7 +2236,7 @@ export default function App() {
       }
       console.info(`[talk] ${source === 'shortcut' ? 'Push-to-talk key' : 'Screen tap'}`);
     },
-    [setListeningEnabled, sceneActions],
+    [setListeningEnabled, interruptMovement],
   );
 
   const [pushToTalkStatus, setPushToTalkStatus] = useState<PushToTalkStatus | null>(null);

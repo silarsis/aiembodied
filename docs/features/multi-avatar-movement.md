@@ -1,6 +1,6 @@
 # Movement for every avatar (phase 3 step 4c): design
 
-Status: design, written 2026-11-11. Phases are listed at the end with what has been built.
+Status: design, written 2026-11-11. Phase A is built (see the note under the phases). Phases are listed at the end with what has been built.
 
 ## Where we are
 
@@ -122,3 +122,15 @@ One `IdleDirector` per avatar would triple the idle LLM calls and fill the room 
 | D | Idle director picks among avatars | Leave them idle for a few minutes |
 
 Risks to watch on bija: rest-skeleton differences between bodies (arm offsets are per avatar already; verify on a non-default body), `JumpDetector` warnings when a companion is first moved by its executor, and seams when two streams are generated back to back (the service keeps sessions per stream, so this should hold).
+
+### Built: phase A (2026-11-11)
+
+Gestures work for every avatar. What differs from the design above:
+
+- `rooms/movement-rig.ts` holds a small `MovementRigs` with only what phase A needs: `registerStream`/`avatarForStream`/`endStream` (capped at 64 streams, ids kept 5 s after the request resolves so late chunks still route), `filterFor(avatarId)` (one `MoveRequestFilter` per avatar), `streamIds()` and `drop()`. There are no executors or envs yet; phase B adds them next to the filter map. Echo keeps its own `sceneActions` executor and filter in `App.tsx`.
+- `getAvatarRestSkeleton(avatarId = 'echo')` / `setAvatarRestSkeleton(skeleton, avatarId = 'echo')` keep one skeleton per avatar; every `AvatarActor` publishes under its own id.
+- `enqueueMotionChunk(bus, chunk, hooks, avatarId?)` adds `avatarId` to the bus request unless it is Echo. `onMotionChunk` tries Echo's executor first, then the stream's registered avatar.
+- A non-Echo speaker's `{move:}` starts a stream straight away (also standing in a room; no executor), with the label "Sage: waves". Its scene tags are still ignored (phase B).
+- Prompts: the renderer sends `{ shared, moveOnly }` over `avatars:set-tag-instructions` (`avatars.setTagInstructions`) when there are 2+ avatars. `shared` is the animation, pose and `{move:}` text (no scene tags) for avatars wearing Echo's body; `moveOnly` is for avatars with a body of their own. Main composes persona + tags in `avatars/tag-instructions.ts` (`composeAvatarPrompt`); with no persona it uses "You are <name>, an AI character who shares a room with Kevin and Echo."
+- Barge-in (`interruptMovement` in `App.tsx`) also cancels the registered non-Echo streams.
+

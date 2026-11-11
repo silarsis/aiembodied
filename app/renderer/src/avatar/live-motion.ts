@@ -28,7 +28,13 @@ export interface MotionChunkHooks {
   onEnd?: () => ClipEndAction;
 }
 
-export function enqueueMotionChunk(bus: AvatarAnimationBus, chunk: AvatarMotionChunkEvent, hooks: MotionChunkHooks = {}): void {
+/** `avatarId` routes the chunk to that avatar's actor; Echo (or none) is the default actor. */
+export function enqueueMotionChunk(
+  bus: AvatarAnimationBus,
+  chunk: AvatarMotionChunkEvent,
+  hooks: MotionChunkHooks = {},
+  avatarId?: string,
+): void {
   const { onStart } = hooks;
   bus.enqueue({
     slug: liveMotionSlug(chunk.streamId, chunk.index),
@@ -38,6 +44,7 @@ export function enqueueMotionChunk(bus: AvatarAnimationBus, chunk: AvatarMotionC
     ...(onStart ? { timing: { onStart: () => onStart() } } : {}),
     ...(hooks.onEnd ? { onEnd: hooks.onEnd } : {}),
     ...(hooks.continuation ? { continuation: true } : {}),
+    ...(avatarId && avatarId !== 'echo' ? { avatarId } : {}),
   });
 }
 

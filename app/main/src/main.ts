@@ -18,6 +18,8 @@ import { avatarIdForName, ensureExtraAvatars } from './avatars/extra-avatars.js'
 import { SwitchboardMirror } from './switchboard/mirror.js';
 import { AvatarRegistry, DEFAULT_AVATAR_ID, type AvatarProfile } from './avatars/avatar-registry.js';
 import { AvatarSettingsKeys } from './avatars/avatar-settings.js';
+import { composeAvatarPrompt, readTagInstructions } from './avatars/tag-instructions.js';
+import type { AvatarTagInstructions } from './avatars/bridge-types.js';
 import { VoiceServices } from './avatars/voice-services.js';
 import { tagEvent, tagResult } from './avatars/speaker.js';
 import dotenv from 'dotenv';
@@ -889,10 +891,14 @@ function getVoiceService(avatarId: string = DEFAULT_AVATAR_ID): LocalVoiceServic
   return voiceServices ? voiceServices.get(avatarId) : null;
 }
 
+/** Movement tag instructions the renderer sent for the avatars other than Echo (empty until it sends them). */
+let avatarTagInstructions: AvatarTagInstructions = { shared: '', moveOnly: '' };
+
 /**
  * The system prompt for an avatar's turn. Echo uses what the renderer sent (or the last it sent,
  * or her saved prompt). Another avatar uses the prompt saved for its own VRM model, if it has a
  * model of its own, else its profile's prompt; avatars wearing Echo's body never borrow her prompt.
+ * The movement tag instructions from the renderer follow the persona.
  */
 function avatarInstructions(avatarId: string, sessionInstructions?: string): string | undefined {
   if (avatarId === DEFAULT_AVATAR_ID) {
@@ -906,7 +912,12 @@ function avatarInstructions(avatarId: string, sessionInstructions?: string): str
   const ownModel = Boolean(profile?.vrmModelId) && profile?.vrmModelId !== echo?.vrmModelId;
   const key = ownModel ? characterPromptKey(avatarId) : null;
   const saved = key ? memoryStore?.getValue(key)?.trim() : '';
-  return saved || profile?.prompt || undefined;
+  return composeAvatarPrompt({
+    name: profile?.name ?? avatarId,
+    persona: saved || profile?.prompt || undefined,
+    ownModel,
+    tags: avatarTagInstructions,
+  });
 }
 
 /** One voice turn for an avatar: the mirror, presence and the renderer's events around LocalVoiceService.respond. */
@@ -2110,6 +2121,9 @@ function registerIpcHandlers(
     const registry = requireAvatarRegistry();
     if (typeof id !== 'string' || !id) throw new Error('Avatar id is required.');
     return registry.update(id, readAvatarFields(changes, false));
+  });
+  ipcMain.handle('avatars:set-tag-instructions', (_event, instructions: unknown) => {
+    avatarTagInstructions = readTagInstructions(instructions);
   });
   ipcMain.handle('avatars:remove', (_event, id: unknown) => {
     const registry = requireAvatarRegistry();

@@ -89,6 +89,7 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 
 ## Recent Updates
 
+- 2026-11-11 — Multi-avatar movement phase A: `{move:}` gestures work for every avatar (`MovementRigs` in `rooms/movement-rig.ts`, per-avatar rest skeletons, `avatarId` on motion chunks, `avatars:set-tag-instructions` adds the tag instructions to other avatars' prompts). Scene tags stay Echo-only. See `docs/features/multi-avatar-movement.md`.
 - 2026-11-11 — Floor review fixes: answers to Kevin no longer start avatar chatter (`toPerson`), avatars overhear the room (`LocalVoiceService.overhear`, `FloorController.heard`), chatter turns get no tools (`noTools`), the decision prompt uses the avatar's name, and `floor:interrupt` handles barge-in (see `services/switchboard/README.md`).
 - 2026-11-11 — Phase 3 step 4b: in a 3D room the non-Echo avatars now stand beside Echo (`companionHome`, `RoomSceneController.attachCompanion`, `rooms/room-companions.ts`); no walking or collisions for them. See `docs/features/avatar-actor.md`.
 - 2025-02-14 — Realtime voice preference changes now emit explicit console instrumentation (`[RealtimeClient] Voice change …`) before disconnecting and after reconnecting. Watch for these logs when validating that a new session was negotiated for a voice swap.
