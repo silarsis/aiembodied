@@ -161,18 +161,20 @@ Design and decisions: [Echo event bus Claude Doc](https://claude.ai/artifact/5zm
 
 ### Event bus (switchboard)
 
-- **Today:** every path (voice, tools, approvals, coding runner, Home
-  Assistant) is a separate link through the Electron main process, with no
-  avatar id, person id or link between a request and its outcome.
+- **Today:** the app's events (voice, tools, approvals, coding runner, Home
+  Assistant) are copied onto one bus, and each avatar reads the events
+  addressed to it through its own inbox.
 - **Decided (2026-11-09):** a Python "switchboard" service on :8196 with one
   event envelope (producer, addressees, transaction, audience), a SQLite
   journal and transaction ledger, and a floor manager per scene using rules
   first, then bids. Audio and motion stay on their direct paths.
-- **Built (phase 1, mirror only):** `services/switchboard` and the app's mirror
-  (`app/main/src/switchboard`) copy voice turns, tool results, approvals,
-  coding events and queued updates onto the bus; app behaviour is unchanged.
-- **To do:** build it locally in phases: mirror today's events, make Echo an
-  actor with an inbox policy, then several local avatars.
+- **Built:** `services/switchboard` with the journal and transaction ledger,
+  and the app's mirror (`app/main/src/switchboard`). Each avatar has an inbox
+  with a decision step (ignore, remember or say) that knows who is around and
+  whether do-not-disturb is on. The app keeps working when the switchboard is
+  down.
+- **To do:** other outputs besides the avatar speaking on this PC: Home
+  Assistant speakers and the phone companion.
 
 ### Several avatars in one scene
 
@@ -181,6 +183,14 @@ Design and decisions: [Echo event bus Claude Doc](https://claude.ai/artifact/5zm
   voice and so on. An avatar may instead use a remote server option (for
   example one on ChatGPT, one local). Avatars talk to each other out loud and
   over a back channel, with a toggle for whether Kevin hears their chatter.
+- **Built:** several local avatars share the models and each has its own
+  prompt and voice (Avatars panel). A floor manager decides who speaks, using
+  rules first, then bids. Avatars chat out loud and over a back channel, with
+  a "Hear avatar chatter" toggle, and overhear the room. Every avatar gestures and
+  walks in rooms, keeps clear of the others and wanders when idle (see
+  `docs/features/multi-avatar-movement.md`).
+- **Not yet tested on hardware:** everything built since the 2D check.
+- **To do:** remote avatars (see the AvChat section below).
 
 ### Voice ID
 

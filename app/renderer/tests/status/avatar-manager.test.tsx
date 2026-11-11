@@ -66,7 +66,7 @@ describe('AvatarManager', () => {
 
   it('notes that others stand beside Echo when a room is active with 2+ avatars', () => {
     const { rerender } = render(<AvatarManager api={makeApi()} profiles={[echo, sage]} models={models} roomActive />);
-    expect(screen.getByRole('note').textContent).toContain('stand still beside Echo');
+    expect(screen.getByRole('note').textContent).toContain('every avatar walks, gestures, keeps clear of the others and wanders when idle');
     rerender(<AvatarManager api={makeApi()} profiles={[echo]} models={models} roomActive />);
     expect(screen.queryByRole('note')).toBeNull();
   });
