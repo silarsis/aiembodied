@@ -141,7 +141,7 @@ export function AvatarManager({ api, profiles, models, roomActive = false, onCha
     <div className="kiosk__helper" data-testid="avatar-manager">
       <strong>Avatars</strong>
       {roomActive && profiles.length >= 2 ? (
-        <p role="note">Rooms show only Echo for now. Switch to 2D to see everyone.</p>
+        <p role="note">Other avatars stand still beside Echo in rooms for now.</p>
       ) : null}
         <ul style={{ listStyle: 'none', padding: 0 }}>
           {profiles.map((profile) => (

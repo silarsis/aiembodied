@@ -70,6 +70,8 @@ vi.mock('../../src/rooms/room-scene-controller.js', () => ({
     }
     sceneEnv = {};
     attachAvatar = vi.fn();
+    attachCompanion = vi.fn();
+    detachCompanion = vi.fn();
     dispose = vi.fn();
     setRoom = vi.fn(async () => undefined);
     setAvatarHeight = vi.fn();
@@ -216,7 +218,7 @@ describe('VrmAvatarRenderer with several avatars', () => {
     expect(loadModelBinary.mock.calls.map(([id]) => id).sort()).toEqual(['m1', 'm2']);
   });
 
-  it('shows only the first avatar in a 3D room', async () => {
+  it('loads the other avatars in a 3D room and hands them to the room as companions', async () => {
     const room = { id: 'room-1' } as unknown as RoomFile;
     const { container } = render(
       <VrmAvatarRenderer
@@ -229,10 +231,8 @@ describe('VrmAvatarRenderer with several avatars', () => {
         ]}
       />,
     );
-    await waitFor(() => expect(state.vrms).toHaveLength(1));
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    expect(state.vrms).toHaveLength(1);
-    expect(loadModelBinary).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(state.vrms).toHaveLength(2));
+    expect(loadModelBinary).toHaveBeenCalledTimes(2);
     expect(container.querySelector('.stageAvatarLabels')).toBeNull();
   });
 });

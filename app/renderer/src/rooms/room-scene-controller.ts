@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { RoomFile } from '../../../main/src/rooms/types.js';
 import { DEFAULT_ROOM_AVATAR_HEIGHT, measureAvatarHeight, measureSoleLift, placeAtHome } from './avatar-placement.js';
+import { RoomCompanions } from './room-companions.js';
 import { RoomStage } from './room-stage.js';
 import { createModelLoader } from './room-model-loader.js';
 import { RoomSceneEnv, type AvatarRig } from './scene-env.js';
@@ -53,6 +54,7 @@ export class RoomSceneController {
   private targetHeight = DEFAULT_ROOM_AVATAR_HEIGHT;
   /** The room scale applied to the avatar now (1 outside rooms). */
   private currentScale = 1;
+  private readonly companions = new RoomCompanions();
   private observer: ResizeObserver | null = null;
   private debugNavmesh = false;
   private saved2d: CameraState | null = null;
@@ -111,7 +113,10 @@ export class RoomSceneController {
     if (!wasActive) this.enterCanvasMode();
     this.applyCamera(room);
     this.deps.renderer.setClearColor(room.shell.outside?.color ?? NEUTRAL_CLEAR, 1);
-    if (!reload) this.placeAvatar();
+    if (!reload) {
+      this.placeAvatar();
+      this.placeCompanions();
+    }
   }
 
   /**
@@ -136,6 +141,17 @@ export class RoomSceneController {
     if (root && this.stage) this.placeAvatar();
   }
 
+  /** An extra avatar (not Echo) was added to the scene, or removed with a null root. It stands beside Echo in rooms. */
+  attachCompanion(id: string, root: THREE.Object3D | null): void {
+    this.companions.attach(id, root);
+    this.placeCompanions();
+  }
+
+  detachCompanion(id: string): void {
+    this.companions.detach(id);
+    this.placeCompanions();
+  }
+
   /**
    * How tall the avatar should stand in rooms, in metres. The 2D stage sizes avatars to fill the
    * frame, which makes them giants next to real-size furniture. Applied at once if in a room,
@@ -144,6 +160,7 @@ export class RoomSceneController {
   setAvatarHeight(metres: number): void {
     if (!(metres > 0) || metres === this.targetHeight) return;
     this.targetHeight = metres;
+    this.placeCompanions();
     if (!this.avatar || !this.avatarBase || !this.room) return;
     const before = this.currentScale;
     const factor = this.roomScaleFor(metres);
@@ -175,6 +192,8 @@ export class RoomSceneController {
   dispose(): void {
     this.ticket += 1;
     if (this.avatar && this.avatarBase) this.restoreAvatar();
+    this.companions.restore();
+    this.companions.clear();
     this.disposeStage();
     this.observer?.disconnect();
     this.observer = null;
@@ -189,6 +208,7 @@ export class RoomSceneController {
     const wasActive = this.room !== null;
     this.room = null;
     this.restoreAvatar();
+    this.companions.restore();
     this.disposeStage();
     if (!wasActive) return;
     const { camera, renderer, canvas, legacySize } = this.deps;
@@ -271,6 +291,10 @@ export class RoomSceneController {
     this.avatar.position.set(...placed.position);
     this.avatar.rotation.y = placed.rotationY;
     this.avatar.updateWorldMatrix(true, true);
+  }
+
+  private placeCompanions(): void {
+    if (this.room && this.stage) this.companions.place(this.room.home, this.targetHeight);
   }
 
   private restoreAvatar(): void {

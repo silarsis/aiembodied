@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { RoomSceneController } from '../../src/rooms/room-scene-controller.js';
+import { companionHome } from '../../src/rooms/avatar-placement.js';
 import { builtInRoom } from './fixtures.js';
 
 function controller() {
@@ -136,6 +137,45 @@ describe('RoomSceneController avatar height', () => {
     await instance.setRoom(null);
     expect(avatar.scale.x).toBeCloseTo(1);
     expect(avatar.position.y).toBeCloseTo(-0.02);
+    instance.dispose();
+  });
+});
+
+describe('RoomSceneController companions', () => {
+  it('stands companions beside home in a room and puts them back when it ends', async () => {
+    const { instance } = controller();
+    const rex = new THREE.Group();
+    rex.position.set(0.5, 0, 0);
+    const sage = new THREE.Group();
+    instance.attachCompanion('rex', rex);
+    instance.attachCompanion('sage', sage);
+    const room = builtInRoom('reading-room');
+    await instance.setRoom(room);
+    const right = companionHome(room.home, 0);
+    const left = companionHome(room.home, 1);
+    expect(rex.position.x).toBeCloseTo(right.position[0] + 0.5 * Math.cos((room.home.facing * Math.PI) / 180), 3);
+    expect(sage.position.x).toBeCloseTo(left.position[0]);
+    expect(sage.position.z).toBeCloseTo(left.position[2]);
+    expect(sage.rotation.y).toBeCloseTo((room.home.facing * Math.PI) / 180);
+
+    await instance.setRoom(null);
+    expect(rex.position.x).toBeCloseTo(0.5);
+    expect(sage.position.x).toBeCloseTo(0);
+    expect(sage.rotation.y).toBeCloseTo(0);
+    instance.dispose();
+  });
+
+  it('places a companion that loads while a room is showing and re-slots the rest when one leaves', async () => {
+    const { instance } = controller();
+    const room = builtInRoom('reading-room');
+    await instance.setRoom(room);
+    const a = new THREE.Group();
+    const b = new THREE.Group();
+    instance.attachCompanion('a', a);
+    instance.attachCompanion('b', b);
+    expect(b.position.x).toBeCloseTo(companionHome(room.home, 1).position[0]);
+    instance.detachCompanion('a');
+    expect(b.position.x).toBeCloseTo(companionHome(room.home, 0).position[0]);
     instance.dispose();
   });
 });

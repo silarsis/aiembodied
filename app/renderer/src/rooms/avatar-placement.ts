@@ -24,6 +24,27 @@ export function placeAtHome(base: AvatarBaseTransform, home: { position: Vec3; f
   };
 }
 
+/** Default gap between neighbours standing beside the home point, in metres. */
+export const COMPANION_SPACING = 0.8;
+
+/**
+ * Where companion `index` (0-based) stands: beside the home point, alternating to the right (0, 2, 4...)
+ * and left (1, 3, 5...) of the facing direction, each pair one `spacing` further out. They face the same
+ * way as the home point. Facing is in degrees (0 = +Z); the right-hand side of facing `a` is (-cos a, 0, sin a).
+ */
+export function companionHome(
+  home: { position: Vec3; facing: number },
+  index: number,
+  spacing: number = COMPANION_SPACING,
+): { position: Vec3; facing: number } {
+  const angle = (home.facing * Math.PI) / 180;
+  const offset = (Math.floor(index / 2) + 1) * spacing * (index % 2 === 0 ? 1 : -1);
+  return {
+    position: [home.position[0] - Math.cos(angle) * offset, home.position[1], home.position[2] + Math.sin(angle) * offset],
+    facing: home.facing,
+  };
+}
+
 /** How tall the avatar stands in a room by default, in metres, sole to crown. */
 export const DEFAULT_ROOM_AVATAR_HEIGHT = DEFAULT_IDLE_SETTINGS.avatarHeight;
 

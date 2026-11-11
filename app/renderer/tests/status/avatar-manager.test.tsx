@@ -64,9 +64,9 @@ describe('AvatarManager', () => {
     expect((await screen.findByRole('alert')).textContent).toBe('Cannot remove the last avatar.');
   });
 
-  it('notes that rooms show only Echo when a room is active with 2+ avatars', () => {
+  it('notes that others stand beside Echo when a room is active with 2+ avatars', () => {
     const { rerender } = render(<AvatarManager api={makeApi()} profiles={[echo, sage]} models={models} roomActive />);
-    expect(screen.getByRole('note').textContent).toContain('Rooms show only Echo for now');
+    expect(screen.getByRole('note').textContent).toContain('stand still beside Echo');
     rerender(<AvatarManager api={makeApi()} profiles={[echo]} models={models} roomActive />);
     expect(screen.queryByRole('note')).toBeNull();
   });
