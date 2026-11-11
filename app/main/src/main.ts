@@ -14,7 +14,7 @@ import { deliberate } from './switchboard/deliberate.js';
 import { PresenceTracker, isVoicePhase } from './presence/presence.js';
 import { FloorController } from './floor/index.js';
 import { createModelBid } from './floor/bid.js';
-import { ensureExtraAvatars } from './avatars/extra-avatars.js';
+import { avatarIdForName, ensureExtraAvatars } from './avatars/extra-avatars.js';
 import { SwitchboardMirror } from './switchboard/mirror.js';
 import { AvatarRegistry, DEFAULT_AVATAR_ID, type AvatarProfile } from './avatars/avatar-registry.js';
 import { AvatarSettingsKeys } from './avatars/avatar-settings.js';
@@ -835,6 +835,40 @@ function startAvatarPlumbing(profile: AvatarProfile, manager: ConfigManager): vo
   });
   avatarPlumbing.set(avatarId, { mirror, inbox });
   inbox.start();
+}
+
+function requireAvatarRegistry(): AvatarRegistry {
+  if (!avatarRegistry) throw new Error('Avatars are not available yet.');
+  return avatarRegistry;
+}
+
+/** Lowercase a-z0-9_- slug of an avatar name; "avatar" when nothing usable is left. */
+function slugifyAvatarName(name: string): string {
+  return avatarIdForName(name).slice(0, 60) || 'avatar';
+}
+
+/** Validate the renderer's add/update fields (name <= 80, prompt <= 4000). */
+function readAvatarFields(input: unknown, requireName: boolean): { name?: string; vrmModelId?: string | null; prompt?: string } {
+  if (!input || typeof input !== 'object') throw new Error('Avatar details are required.');
+  const { name, vrmModelId, prompt } = input as Record<string, unknown>;
+  const out: { name?: string; vrmModelId?: string | null; prompt?: string } = {};
+  if (name !== undefined || requireName) {
+    if (typeof name !== 'string' || !name.trim()) throw new Error('Give the avatar a name.');
+    if (name.trim().length > 80) throw new Error('The name can be at most 80 characters.');
+    out.name = name.trim();
+  }
+  if (vrmModelId !== undefined && vrmModelId !== null) {
+    if (typeof vrmModelId !== 'string' || vrmModelId.length > 200) throw new Error('Invalid body.');
+    out.vrmModelId = vrmModelId || null;
+  } else if (vrmModelId === null) {
+    out.vrmModelId = null;
+  }
+  if (prompt !== undefined) {
+    if (typeof prompt !== 'string') throw new Error('The prompt must be text.');
+    if (prompt.length > 4000) throw new Error('The prompt can be at most 4000 characters.');
+    out.prompt = prompt;
+  }
+  return out;
 }
 
 /** The avatar's mirror, Echo's when no id is given. */
@@ -2056,6 +2090,36 @@ function registerIpcHandlers(
     }
   });
   ipcMain.handle('avatars:list', () => avatarRegistry?.list() ?? []);
+  ipcMain.handle('avatars:add', (_event, input: unknown) => {
+    const registry = requireAvatarRegistry();
+    const fields = readAvatarFields(input, true);
+    const base = slugifyAvatarName(fields.name ?? '');
+    const taken = new Set(registry.list().map((profile) => profile.id));
+    let id = base;
+    for (let n = 2; taken.has(id); n += 1) id = `${base.slice(0, 60)}-${n}`;
+    const profile = registry.add({
+      id,
+      ...(fields.name ? { name: fields.name } : {}),
+      ...(fields.vrmModelId !== undefined ? { vrmModelId: fields.vrmModelId } : {}),
+      ...(fields.prompt ? { prompt: fields.prompt } : {}),
+    });
+    startAvatarPlumbing(profile, manager);
+    return profile;
+  });
+  ipcMain.handle('avatars:update', (_event, id: unknown, changes: unknown) => {
+    const registry = requireAvatarRegistry();
+    if (typeof id !== 'string' || !id) throw new Error('Avatar id is required.');
+    return registry.update(id, readAvatarFields(changes, false));
+  });
+  ipcMain.handle('avatars:remove', (_event, id: unknown) => {
+    const registry = requireAvatarRegistry();
+    if (typeof id !== 'string' || !id) throw new Error('Avatar id is required.');
+    if (id === DEFAULT_AVATAR_ID) throw new Error('Echo cannot be removed.');
+    registry.remove(id);
+    avatarPlumbing.get(id)?.inbox.stop();
+    avatarPlumbing.delete(id);
+    voiceServices?.delete(id);
+  });
   ipcMain.handle('local-voice:status', async () => {
     if (!localVoiceService) {
       throw new Error('Local voice service is unavailable.');
