@@ -56,13 +56,18 @@ function round(value: number): number {
   return Math.round(value * 1e5) / 1e5;
 }
 
-let current: AvatarRestSkeleton | null = null;
+const DEFAULT_REST_AVATAR_ID = 'echo';
+const skeletons = new Map<string, AvatarRestSkeleton>();
 
-/** The skeleton of the avatar on screen, or null before one loads (or when it could not be measured). */
-export function getAvatarRestSkeleton(): AvatarRestSkeleton | null {
-  return current;
+/** The skeleton of an avatar on screen (Echo's by default), or null before it loads (or when it could not be measured). */
+export function getAvatarRestSkeleton(avatarId: string = DEFAULT_REST_AVATAR_ID): AvatarRestSkeleton | null {
+  return skeletons.get(avatarId) ?? null;
 }
 
-export function setAvatarRestSkeleton(skeleton: AvatarRestSkeleton | null): void {
-  current = skeleton;
+export function setAvatarRestSkeleton(skeleton: AvatarRestSkeleton | null, avatarId: string = DEFAULT_REST_AVATAR_ID): void {
+  if (skeleton) {
+    skeletons.set(avatarId, skeleton);
+  } else {
+    skeletons.delete(avatarId);
+  }
 }

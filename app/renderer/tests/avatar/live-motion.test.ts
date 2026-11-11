@@ -60,6 +60,21 @@ describe('enqueueMotionChunk', () => {
     expect(new TextDecoder().decode(event.request.vrmaBinary)).toBe('glTF');
   });
 
+  it('routes the chunk to another avatar, and leaves Echo and unnamed requests alone', () => {
+    const bus = createAvatarAnimationBus();
+    const requests: Array<Record<string, unknown>> = [];
+    bus.subscribe((event) => {
+      if (event.type === 'enqueue') requests.push(event.request as unknown as Record<string, unknown>);
+    });
+    const chunk = { streamId: 'abc', index: 0, start: 0, name: 'wave-0', duration: 2, data: 'AAEC' };
+    enqueueMotionChunk(bus, chunk, {}, 'sage');
+    enqueueMotionChunk(bus, chunk, {}, 'echo');
+    enqueueMotionChunk(bus, chunk);
+    expect(requests[0]).toMatchObject({ avatarId: 'sage' });
+    expect(requests[1]).not.toHaveProperty('avatarId');
+    expect(requests[2]).not.toHaveProperty('avatarId');
+  });
+
   it('decodes base64 into bytes', () => {
     expect(Array.from(new Uint8Array(base64ToArrayBuffer('AAEC')))).toEqual([0, 1, 2]);
   });

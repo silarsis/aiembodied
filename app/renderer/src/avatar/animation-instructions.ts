@@ -4,6 +4,34 @@
  */
 export const ANIMATION_INSTRUCTION_PREFIX = 'Available animations:';
 
+const MOVE_INSTRUCTION_LINES = [
+  'For any other body movement, include `{move:<short description of the movement>}`',
+  '(e.g. `{move:shrugs with both shoulders}`); it is generated on the fly and starts within about a second.',
+];
+
+/**
+ * Only the `{move:}` usage, for avatars whose body has no animation or pose list of its own here.
+ * Empty while live motion is not available.
+ */
+export function buildMoveOnlyInstructions(liveMotionAvailable: boolean): string {
+  if (!liveMotionAvailable) return '';
+  return [
+    'You have a 3D body you can control.',
+    'To move it, include `{move:<short description of the movement>}` in your response',
+    '(e.g. `{move:waves hello with the right hand}`); it is generated on the fly and starts within about a second.',
+    'Multiple tags are allowed.',
+  ].join(' ');
+}
+
+/** The tag instructions for avatars other than Echo: animations, poses and `{move:}`, without any scene tags. */
+export function buildAvatarTagInstructions(
+  availableAnimations: string[],
+  availablePoses: string[],
+  liveMotionAvailable = false,
+): string {
+  return buildAnimationInstructions(availableAnimations, availablePoses, liveMotionAvailable);
+}
+
 export function buildAnimationInstructions(
   availableAnimations: string[],
   availablePoses: string[],
@@ -13,10 +41,7 @@ export function buildAnimationInstructions(
   const animList = availableAnimations.length > 0 ? availableAnimations.join(', ') : 'none';
   const poseList = availablePoses.length > 0 ? availablePoses.join(', ') : 'none';
   const moveInstructions = liveMotionAvailable
-    ? [
-        'For any other body movement, include `{move:<short description of the movement>}`',
-        '(e.g. `{move:shrugs with both shoulders}`); it is generated on the fly and starts within about a second.',
-      ]
+    ? MOVE_INSTRUCTION_LINES
     : [];
   return [
     `${ANIMATION_INSTRUCTION_PREFIX} ${animList}.`,

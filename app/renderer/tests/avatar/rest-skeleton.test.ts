@@ -55,4 +55,18 @@ describe('measureRestSkeleton', () => {
     setAvatarRestSkeleton(null);
     expect(getAvatarRestSkeleton()).toBeNull();
   });
+
+  it('keeps one skeleton per avatar', () => {
+    const echo = measureRestSkeleton(fakeVrm(positions));
+    const sage = measureRestSkeleton(fakeVrm(positions));
+    setAvatarRestSkeleton(echo);
+    setAvatarRestSkeleton(sage, 'sage');
+    expect(getAvatarRestSkeleton('echo')).toBe(echo);
+    expect(getAvatarRestSkeleton('sage')).toBe(sage);
+    expect(getAvatarRestSkeleton('rex')).toBeNull();
+    setAvatarRestSkeleton(null, 'sage');
+    expect(getAvatarRestSkeleton('sage')).toBeNull();
+    expect(getAvatarRestSkeleton()).toBe(echo);
+    setAvatarRestSkeleton(null);
+  });
 });

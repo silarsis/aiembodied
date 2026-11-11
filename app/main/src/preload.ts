@@ -772,6 +772,9 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     remove: async (id) => {
       await ipcRenderer.invoke('avatars:remove', id);
     },
+    setTagInstructions: async (instructions) => {
+      await ipcRenderer.invoke('avatars:set-tag-instructions', instructions);
+    },
   },
   presence: {
     update: (payload) => ipcRenderer.invoke('presence:update', payload),

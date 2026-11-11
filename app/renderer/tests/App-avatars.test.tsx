@@ -172,4 +172,95 @@ describe('App with several avatars (local backend)', () => {
     });
     expect(console.error).not.toHaveBeenCalledWith('Failed to attach viseme driver', 'sage', expect.anything());
   });
+
+  it('plays a {move:} from another avatar on that avatar, and tells main the tag instructions', async () => {
+    const avatarsList = vi.fn().mockResolvedValue([
+      { id: 'echo', name: 'Echo', vrmModelId: 'm1' },
+      { id: 'sage', name: 'Sage', vrmModelId: 'm1' },
+    ]);
+    const setTagInstructions = vi.fn().mockResolvedValue(undefined);
+    let finishStream: (value: { chunks: number; firstChunkMs: number | null }) => void = () => undefined;
+    const streamMotion = vi.fn(
+      () => new Promise<{ chunks: number; firstChunkMs: number | null }>((resolve) => { finishStream = resolve; }),
+    );
+    const cancelMotion = vi.fn().mockResolvedValue(undefined);
+    const config = {
+      audioInputDeviceId: '',
+      audioOutputDeviceId: '',
+      featureFlags: { transcriptOverlay: true },
+      hasRealtimeApiKey: false,
+      conversationBackend: 'local',
+      providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
+      realtimeVoice: 'shimmer',
+      metrics: { enabled: false, host: '127.0.0.1', port: 9090, path: '/metrics' },
+      wakeWord: { model: 'hey_jarvis', keywordLabel: 'Hey Jarvis', threshold: 0.5, cooldownMs: 1500, deviceIndex: undefined },
+    };
+    (window as unknown as { aiembodied: unknown }).aiembodied = {
+      ping: () => 'pong',
+      config: {
+        get: vi.fn().mockResolvedValue(config),
+        getSecret: vi.fn().mockResolvedValue(null),
+        setAudioDevicePreferences: vi.fn().mockResolvedValue(config),
+      },
+      wakeWord: { onWake: () => () => undefined },
+      avatars: { list: avatarsList, setTagInstructions },
+      avatar: new Proxy(
+        {
+          listModels: vi.fn().mockResolvedValue([model('m1')]),
+          getActiveModel: vi.fn().mockResolvedValue(model('m1')),
+          loadModelBinary: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
+          getMotionStatus: vi.fn().mockResolvedValue({ ready: true }),
+          streamMotion,
+          cancelMotion,
+        },
+        {
+          get: (target, key) => {
+            if (key in target) return (target as Record<string | symbol, unknown>)[key];
+            return typeof key === 'string' && /^on[A-Z]/.test(key) ? () => () => undefined : vi.fn().mockResolvedValue([]);
+          },
+        },
+      ),
+      models: {
+        get: vi.fn(async () => ({
+          servers: builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }).map((server) => ({ ...server, hasKey: false })),
+          routes: defaultRoutes(DEFAULT_PROVIDER_SETTINGS),
+        })),
+        probe: vi.fn(async () => ({ status: 'up', models: {}, checkedAt: 0 })),
+      },
+      conversation: {
+        getHistory: vi.fn().mockResolvedValue({ currentSessionId: 'session-1', sessions: [{ id: 'session-1', startedAt: 1, title: null, messages: [] }] }),
+        appendMessage: vi.fn(),
+        onSessionStarted: () => () => undefined,
+        onMessageAppended: () => () => undefined,
+      },
+      __bridgeReady: true,
+      __bridgeVersion: '1.0.0',
+    };
+
+    render(<App />);
+    await waitFor(() => expect(localClients.length).toBeGreaterThan(0));
+    await waitFor(() => expect(setTagInstructions).toHaveBeenCalled());
+    await waitFor(() => {
+      const last = setTagInstructions.mock.calls.at(-1)?.[0] as { shared: string; moveOnly: string };
+      expect(last.shared).toContain('{move:');
+    });
+    const sent = setTagInstructions.mock.calls.at(-1)?.[0] as { shared: string; moveOnly: string };
+    expect(sent.shared).not.toContain('{go:');
+    expect(sent.moveOnly).toContain('{move:');
+
+    const callbacks = localClients.at(-1)?.callbacks as FakeCallbacks;
+    await act(async () => {
+      callbacks.onTextContent?.('Hi! {move:waves hello}', 'sage');
+    });
+    await waitFor(() => expect(streamMotion).toHaveBeenCalledTimes(1));
+    expect(streamMotion).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'waves hello' }));
+    // The same tag seen again (delta, then the completed message) starts no second stream.
+    await act(async () => {
+      callbacks.onTextContent?.('Hi! {move:waves hello}', 'sage');
+    });
+    expect(streamMotion).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finishStream({ chunks: 2, firstChunkMs: 800 });
+    });
+  });
 });
