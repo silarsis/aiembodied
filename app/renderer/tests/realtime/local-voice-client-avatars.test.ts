@@ -363,6 +363,65 @@ describe('LocalVoiceClient with several avatars', () => {
     expect(callbacks.onTextContent).toHaveBeenCalledWith('Wait.', 'sage');
   });
 
+  describe('microphone during chatter', () => {
+    const speak = (fake: ReturnType<typeof createFakeContext>, loud: boolean, frames: number) => {
+      for (let i = 0; i < frames; i += 1) {
+        now += FRAME_MS;
+        fake.processor.onaudioprocess?.({ inputBuffer: { getChannelData: () => new Float32Array(FRAME).fill(loud ? 0.2 : 0) } });
+      }
+    };
+
+    it('does not hear the avatars as Kevin: loud mic input while chatter plays is dropped', async () => {
+      const { client, bridge, emit, fake } = await setup(async () => ({ text: '', cancelled: false }));
+      client.notifyWake(now); // awake, so speech would be answered
+      (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ duration: 5 });
+      emit(sentence('chatter-m1', 'sage', 'Loud talk.'));
+      await vi.advanceTimersByTimeAsync(50);
+      expect(fake.sources).toHaveLength(1);
+      speak(fake, true, 8);
+      speak(fake, false, 8);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(bridge.transcribe).not.toHaveBeenCalled();
+      expect(fake.sources[0]?.stop).not.toHaveBeenCalled();
+    });
+
+    it('keeps ignoring the mic for the playback tail, then listens again with a clean buffer', async () => {
+      const { client, bridge, emit, fake } = await setup(async () => ({ text: '', cancelled: false }));
+      client.notifyWake(now);
+      (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ duration: 0.5 });
+      emit(sentence('chatter-m2', 'sage', 'Short.'));
+      await vi.advanceTimersByTimeAsync(50);
+      speak(fake, true, 2); // ignored: chatter is playing
+      await vi.advanceTimersByTimeAsync(1000); // chatter ends, now() has not moved: still inside the tail
+      speak(fake, true, 1);
+      expect(bridge.transcribe).not.toHaveBeenCalled();
+      now += 1000;
+      client.notifyWake(now);
+      speak(fake, true, 8);
+      speak(fake, false, 8);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(bridge.transcribe).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets the wake word, push-to-talk and a tap interrupt chatter', async () => {
+      const interruptFloor = vi.fn(async () => undefined);
+      const { client, emit, fake } = await setup(async () => ({ text: '', cancelled: false }), { interruptFloor });
+      (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ duration: 5 });
+      emit(sentence('chatter-m3', 'sage', 'Chat.'));
+      await vi.advanceTimersByTimeAsync(50);
+      client.notifyWake(now);
+      expect(fake.sources[0]?.stop).toHaveBeenCalled();
+      expect(interruptFloor).toHaveBeenCalledTimes(1);
+      // The microphone is open again at once, without a tail.
+      expect(client.getActivity().phase).toBe('listening');
+      emit(sentence('chatter-m4', 'sage', 'More.'));
+      await vi.advanceTimersByTimeAsync(50);
+      client.talk();
+      expect(fake.sources[1]?.stop).toHaveBeenCalled();
+      expect(interruptFloor).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('drops waiting chatter turns with stopChatter()', async () => {
     const { client, emit, fake, callbacks } = await setup(async () => ({ text: '', cancelled: false }));
     (fake.context.decodeAudioData as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ duration: 5 });

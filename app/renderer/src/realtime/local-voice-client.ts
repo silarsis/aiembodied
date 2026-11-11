@@ -103,6 +103,12 @@ export class LocalVoiceClient {
   /** Request ids this client started, so a late event of one is never mistaken for chatter. */
   private readonly ownRequestIds: string[] = [];
   private chatterPhaseBefore: VoicePhase | null = null;
+  /**
+   * The microphone is ignored while chatter plays and for PLAYBACK_TAIL_MS after it, exactly as it
+   * is during the client's own turn (see handleAudio), so the avatars' voices are not heard as Kevin.
+   */
+  private micGuardUntil = Number.NEGATIVE_INFINITY;
+  private micGuarded = false;
   private remoteAudioElement: HTMLAudioElement | null = null;
   private outputDeviceId: string | null = null;
   private unsubscribeEvents: (() => void) | null = null;
@@ -310,6 +316,10 @@ export class LocalVoiceClient {
   notifyWake(timestamp = this.now()): void {
     this.lastWakeAt = timestamp;
     this.awakeUntil = Math.max(this.awakeUntil, timestamp + this.wakeWindowMs);
+    if (this.state.status === 'connected') {
+      // Kevin called: avatar chatter gives way (this does not touch the client's own turn).
+      this.yieldToKevin();
+    }
     if (this.state.status === 'connected' && !this.busy) {
       this.listen('Wake word heard');
     }
@@ -582,6 +592,16 @@ export class LocalVoiceClient {
     if (this.state.status !== 'connected' || this.busy) {
       return;
     }
+    // Same guard as an own turn: no speech detection at all while avatars are talking out loud.
+    // Push-to-talk, a tap and the wake word still reach yieldToKevin() and open the microphone.
+    if (this.chatterTurns.size > 0 || this.now() < this.micGuardUntil) {
+      this.micGuarded = true;
+      return;
+    }
+    if (this.micGuarded) {
+      this.micGuarded = false;
+      this.segmenter.reset();
+    }
     const utterance = this.segmenter.push(samples, sampleRate, this.now());
     if (utterance) {
       void this.handleUtterance(utterance);
@@ -822,6 +842,9 @@ export class LocalVoiceClient {
       this.playbackTail = tracked.idle().then(() => {
         if (this.chatterTurns.get(tracked.requestId) === tracked) {
           this.chatterTurns.delete(tracked.requestId);
+          if (this.chatterTurns.size === 0) {
+            this.micGuardUntil = this.now() + PLAYBACK_TAIL_MS;
+          }
           this.restoreAfterChatter();
         }
       });
