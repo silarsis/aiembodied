@@ -134,3 +134,17 @@ describe('RoomStage carrying', () => {
     stage.dispose();
   });
 });
+
+describe('RoomStage extra avatars', () => {
+  it('feeds each extra avatar\'s body position to physics and drops it again', async () => {
+    const stage = await RoomStage.create(builtInRoom('reading-room'));
+    const sage = new THREE.Group();
+    sage.position.set(1, 0, 1);
+    stage.step(1 / 60, null, [{ id: 'sage', root: sage }]);
+    const physics = (stage as unknown as { physics: { avatarIds: string[] } }).physics;
+    expect(physics.avatarIds).toEqual(['sage']);
+    stage.removeAvatar('sage');
+    expect(physics.avatarIds).toEqual([]);
+    stage.dispose();
+  });
+});

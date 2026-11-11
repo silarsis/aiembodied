@@ -29,6 +29,8 @@ interface DynamicBody {
 export class RoomPhysics {
   private readonly world: RAPIER.World;
   private readonly avatar: RAPIER.RigidBody;
+  /** Capsules of the other avatars in the room, by id (made on first use). Kinematic: they never collide with each other. */
+  private readonly otherAvatars = new Map<string, RAPIER.RigidBody>();
   private readonly dynamics: DynamicBody[] = [];
   private readonly bodies = new Map<string, RAPIER.RigidBody>();
   private readonly held = new Set<string>();
@@ -78,9 +80,14 @@ export class RoomPhysics {
     }
 
     // The avatar is driven by animation, so it is a kinematic capsule that can shove props.
+    this.avatar = this.createAvatarBody();
+  }
+
+  private createAvatarBody(): RAPIER.RigidBody {
     const halfSegment = Math.max(0.01, (AVATAR_HEIGHT - 2 * AVATAR_RADIUS) / 2);
-    this.avatar = this.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, AVATAR_HEIGHT / 2, 0));
-    this.world.createCollider(RAPIER.ColliderDesc.capsule(halfSegment, AVATAR_RADIUS), this.avatar);
+    const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, AVATAR_HEIGHT / 2, 0));
+    this.world.createCollider(RAPIER.ColliderDesc.capsule(halfSegment, AVATAR_RADIUS), body);
+    return body;
   }
 
   static async create(room: RoomFile, nodes: Map<string, THREE.Object3D>): Promise<RoomPhysics> {
@@ -88,10 +95,31 @@ export class RoomPhysics {
     return new RoomPhysics(room, nodes);
   }
 
-  /** Where the avatar stands, from the hips' horizontal position; y is the floor. */
-  setAvatarPosition(x: number, z: number): void {
+  /**
+   * Where an avatar stands, from the hips' horizontal position; y is the floor. Echo (the default id)
+   * has the capsule made with the world; any other id gets its own, made on first use.
+   */
+  setAvatarPosition(x: number, z: number, id = 'echo'): void {
     if (this.disposed) return;
-    this.avatar.setNextKinematicTranslation({ x, y: AVATAR_HEIGHT / 2, z });
+    let body = id === 'echo' ? this.avatar : this.otherAvatars.get(id);
+    if (!body) {
+      body = this.createAvatarBody();
+      this.otherAvatars.set(id, body);
+    }
+    body.setNextKinematicTranslation({ x, y: AVATAR_HEIGHT / 2, z });
+  }
+
+  /** Takes an extra avatar's capsule out of the world (it left). Echo's stays. */
+  removeAvatar(id: string): void {
+    const body = this.otherAvatars.get(id);
+    if (!body || this.disposed) return;
+    this.world.removeRigidBody(body);
+    this.otherAvatars.delete(id);
+  }
+
+  /** Ids of the extra avatars that have a capsule. */
+  get avatarIds(): string[] {
+    return [...this.otherAvatars.keys()];
   }
 
   step(dt: number): void {
@@ -177,6 +205,7 @@ export class RoomPhysics {
     this.disposed = true;
     this.dynamics.length = 0;
     this.bodies.clear();
+    this.otherAvatars.clear();
     this.world.free();
   }
 }

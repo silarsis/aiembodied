@@ -165,7 +165,7 @@ describe('RoomSceneController companions', () => {
     instance.dispose();
   });
 
-  it('places a companion that loads while a room is showing and re-slots the rest when one leaves', async () => {
+  it('places a companion that loads while a room is showing and leaves the others where they are', async () => {
     const { instance } = controller();
     const room = builtInRoom('reading-room');
     await instance.setRoom(room);
@@ -174,8 +174,87 @@ describe('RoomSceneController companions', () => {
     instance.attachCompanion('a', a);
     instance.attachCompanion('b', b);
     expect(b.position.x).toBeCloseTo(companionHome(room.home, 1).position[0]);
+    // b has walked off; a leaving and c arriving must not pull b back to a slot.
+    b.position.x += 2;
+    const walked = b.position.x;
     instance.detachCompanion('a');
-    expect(b.position.x).toBeCloseTo(companionHome(room.home, 0).position[0]);
+    expect(b.position.x).toBeCloseTo(walked);
+    const c = new THREE.Group();
+    instance.attachCompanion('c', c);
+    expect(c.position.x).toBeCloseTo(companionHome(room.home, 0).position[0]);
+    expect(b.position.x).toBeCloseTo(walked);
+    instance.dispose();
+  });
+});
+
+describe('RoomSceneController scene envs', () => {
+  const humanoid = (hand: THREE.Object3D) => ({
+    getNormalizedBoneNode: (name: string) => (name === 'rightHand' ? hand : null),
+  });
+
+  it('hands Echo her own sceneEnv, a companion its own, and null for an unknown or humanoid-less avatar', () => {
+    const { instance } = controller();
+    expect(instance.envFor('echo')).toBe(instance.sceneEnv);
+    expect(instance.envFor('sage')).toBeNull();
+    const sage = new THREE.Group();
+    instance.attachCompanion('sage', sage, humanoid(new THREE.Object3D()), 0.9);
+    instance.attachCompanion('rex', new THREE.Group());
+    expect(instance.envFor('sage')).not.toBeNull();
+    expect(instance.envFor('sage')).not.toBe(instance.sceneEnv);
+    expect(instance.envFor('rex')).toBeNull();
+    // The env stays the same object when the model reloads.
+    const env = instance.envFor('sage');
+    instance.attachCompanion('sage', new THREE.Group(), humanoid(new THREE.Object3D()), 0.9);
+    expect(instance.envFor('sage')).toBe(env);
+    instance.detachCompanion('sage');
+    expect(instance.envFor('sage')).toBeNull();
+    instance.dispose();
+  });
+
+  it('moves the companion\'s root, not Echo\'s, when its env bakes a pose; it stands at its home until then', async () => {
+    const { instance, avatar } = controller();
+    const sage = new THREE.Group();
+    sage.rotation.y = Math.PI;
+    instance.attachCompanion('sage', sage, humanoid(new THREE.Object3D()), 0.9);
+    const room = builtInRoom('reading-room');
+    await instance.setRoom(room);
+    const home = companionHome(room.home, 0);
+    expect(sage.position.x).toBeCloseTo(home.position[0]);
+    const env = instance.envFor('sage')!;
+    const world = env.planWorld()!;
+    expect(world.frame.origin.x).toBeCloseTo(home.position[0]);
+    const echoAt = avatar.position.clone();
+    env.setRootPose({ x: 0.4, z: -0.3, yaw: 0.5 });
+    expect(sage.position.x).toBe(0.4);
+    expect(sage.position.z).toBe(-0.3);
+    expect(sage.rotation.y).toBeCloseTo(Math.PI + 0.5);
+    expect(avatar.position.equals(echoAt)).toBe(true);
+    // Stepping the controller feeds the companion's body to physics without error.
+    instance.step(1 / 60);
+    // Leaving the room puts it back.
+    await instance.setRoom(null);
+    expect(sage.rotation.y).toBeCloseTo(Math.PI);
+    expect(sage.position.x).toBeCloseTo(0);
+    instance.dispose();
+  });
+
+  it('puts a companion\'s carried object back when the room goes away', async () => {
+    const { instance } = controller();
+    const hand = new THREE.Object3D();
+    const sage = new THREE.Group();
+    sage.add(hand);
+    instance.attachCompanion('sage', sage, humanoid(hand), 0.9);
+    const room = builtInRoom('reading-room');
+    await instance.setRoom(room);
+    const env = instance.envFor('sage')!;
+    const stage = instance.currentStage!;
+    const origin = stage.objectPosition('mug')!;
+    expect(env.attach('mug', 'right')).toBe(true);
+    expect(env.carriedIds).toEqual(['mug']);
+    hand.position.set(0, 1, 0.2);
+    await instance.setRoom(null);
+    expect(env.carriedIds).toEqual([]);
+    expect(origin).toBeTruthy();
     instance.dispose();
   });
 });

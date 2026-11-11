@@ -67,9 +67,9 @@ import {
 } from './avatar/animation-instructions.js';
 import { MovementRigs } from './rooms/movement-rig.js';
 import { MoveRequestFilter, enqueueMotionChunk } from './avatar/live-motion.js';
-import { SceneActionExecutor } from './rooms/scene-executor.js';
+import { SceneActionExecutor, type SceneActivity } from './rooms/scene-executor.js';
 import { tagToAction, type SceneAction } from './rooms/scene-actions.js';
-import { buildSceneInstructions } from './rooms/scene-instructions.js';
+import { buildSceneInstructions, describeAvatarWhere, type OtherAvatarEntry } from './rooms/scene-instructions.js';
 import { useIdleDirector } from './rooms/use-idle-director.js';
 import { useIdleHabits } from './avatar/use-idle-habits.js';
 
@@ -780,20 +780,23 @@ export default function App() {
   // Runs {go:}, {sit:}, {pick:} and the other scene tags in a 3D room (see rooms/scene-executor.ts).
   const sceneActions = useMemo(() => new SceneActionExecutor(), []);
   // Which avatar each live-motion stream belongs to, and each avatar's repeat filter (rooms/movement-rig.ts).
-  const rigs = useMemo(() => new MovementRigs(), []);
+  // Echo's executor is `sceneActions` itself; the others get an executor of their own on first use.
+  const rigs = useMemo(() => new MovementRigs(sceneActions), [sceneActions]);
+  const sceneExecutorFor = useCallback((avatarId: string) => rigs.get(avatarId).executor, [rigs]);
   useEffect(() => {
     const avatar = resolveApi()?.avatar;
     if (!avatar?.onMotionChunk) {
       return;
     }
     return avatar.onMotionChunk((chunk) => {
-      if (sceneActions.handleChunk(chunk)) {
+      // Every executor is offered the chunk (Echo's first); gestures belong to the avatar the stream was registered for.
+      if (rigs.handleChunk(chunk)) {
         return;
       }
       const owner = rigs.avatarForStream(chunk.streamId);
       enqueueMotionChunk(animationBus, chunk, {}, owner);
     });
-  }, [animationBus, resolveApi, sceneActions, rigs]);
+  }, [animationBus, resolveApi, rigs]);
   useEffect(() => {
     const avatar = resolveApi()?.avatar;
     const streamMotion = avatar?.streamMotion;
@@ -808,45 +811,72 @@ export default function App() {
       playChunk: (chunk, hooks) => enqueueMotionChunk(animationBus, chunk, hooks),
       avatarRest: () => getAvatarRestSkeleton() ?? undefined,
     });
-    return () => sceneActions.setBridge(null);
-  }, [animationBus, resolveApi, sceneActions]);
-  // Kevin spoke: drop what Echo still had queued and stop the gestures other avatars were generating.
+    // The other avatars share the motion service; their chunks play on their own actor and rest skeleton.
+    rigs.setBridgeFactory((avatarId) => ({
+      streamMotion: (request) => streamMotion.call(avatar, request),
+      cancelMotion: (streamId) => {
+        void avatar.cancelMotion?.(streamId)?.catch(() => undefined);
+      },
+      playChunk: (chunk, hooks) => enqueueMotionChunk(animationBus, chunk, hooks, avatarId),
+      avatarRest: () => getAvatarRestSkeleton(avatarId) ?? undefined,
+    }));
+    return () => {
+      sceneActions.setBridge(null);
+      rigs.setBridgeFactory(null);
+    };
+  }, [animationBus, resolveApi, sceneActions, rigs]);
+  // Kevin spoke: drop what every avatar still had queued and stop the gestures that were generating.
   const interruptMovement = useCallback(() => {
-    sceneActions.interrupt();
+    rigs.interruptAll();
     const avatar = resolveApi()?.avatar;
     for (const streamId of rigs.streamIds()) {
       void avatar?.cancelMotion?.(streamId)?.catch(() => undefined);
       rigs.endStream(streamId);
     }
-  }, [sceneActions, resolveApi, rigs]);
+  }, [resolveApi, rigs]);
+  // Tool-call rows for scene actions; rows of another avatar carry its name.
+  const applySceneActivity = useCallback((activity: SceneActivity, owner?: string) => {
+    const now = Date.now();
+    const named = (label: string) => (owner ? `${owner}: ${label}` : label);
+    if (activity.type === 'start') {
+      setToolCalls((calls) =>
+        addToolCall(calls, { id: activity.id, kind: 'move', label: named(activity.label), status: 'pending', startedAt: now }),
+      );
+    } else if (activity.type === 'done') {
+      setToolCalls((calls) => finishToolCall(calls, activity.id, 'done', now, activity.detail));
+    } else if (activity.type === 'failed') {
+      setToolCalls((calls) => finishToolCall(calls, activity.id, 'failed', now, activity.message));
+    } else {
+      const id = Math.random().toString(36).slice(2, 10);
+      setToolCalls((calls) =>
+        addToolCall(calls, {
+          id,
+          kind: 'move',
+          label: named(activity.label),
+          status: 'failed',
+          startedAt: now,
+          finishedAt: now,
+          detail: `skipped: ${activity.reason}`,
+        }),
+      );
+    }
+  }, []);
+  useEffect(() => sceneActions.onActivity((activity) => applySceneActivity(activity)), [sceneActions, applySceneActivity]);
+  const avatarProfilesRef = useRef<Array<{ id: string; name: string }>>([]);
+  useEffect(() => { avatarProfilesRef.current = avatarProfiles; }, [avatarProfiles]);
+  // An avatar that was removed takes its executor, filters and streams with it.
+  useEffect(() => {
+    const present = new Set(avatarProfiles.map((profile) => profile.id));
+    for (const id of rigs.avatarIds()) {
+      if (id !== 'echo' && !present.has(id)) rigs.drop(id);
+    }
+  }, [avatarProfiles, rigs]);
   useEffect(
     () =>
-      sceneActions.onActivity((activity) => {
-        const now = Date.now();
-        if (activity.type === 'start') {
-          setToolCalls((calls) =>
-            addToolCall(calls, { id: activity.id, kind: 'move', label: activity.label, status: 'pending', startedAt: now }),
-          );
-        } else if (activity.type === 'done') {
-          setToolCalls((calls) => finishToolCall(calls, activity.id, 'done', now, activity.detail));
-        } else if (activity.type === 'failed') {
-          setToolCalls((calls) => finishToolCall(calls, activity.id, 'failed', now, activity.message));
-        } else {
-          const id = Math.random().toString(36).slice(2, 10);
-          setToolCalls((calls) =>
-            addToolCall(calls, {
-              id,
-              kind: 'move',
-              label: activity.label,
-              status: 'failed',
-              startedAt: now,
-              finishedAt: now,
-              detail: `skipped: ${activity.reason}`,
-            }),
-          );
-        }
-      }),
-    [sceneActions],
+      rigs.onOtherActivity((avatarId, activity) =>
+        applySceneActivity(activity, avatarProfilesRef.current.find((profile) => profile.id === avatarId)?.name ?? avatarId),
+      ),
+    [rigs, applySceneActivity],
   );
   const [isListeningEnabled, setListeningEnabled] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -1218,21 +1248,79 @@ export default function App() {
   usePresenceReporter(activeBridge?.presence, activeBridge?.camera, { listening: isListeningEnabled, voicePhase: displayedActivity.phase });
   // The avatar wanders on its own in a 3D room when nobody has talked for a while (rooms/idle-director.ts).
   const idleHabits = useIdleHabits(activeBridge?.avatar, activeVrmModel?.id);
+  // Latest voice activity per avatar, read when the idle director picks who acts (not a render dependency).
+  const speakingRef = useRef({ echo: visemeFrame, others: visemeFrames });
+  useEffect(() => {
+    speakingRef.current = { echo: visemeFrame, others: visemeFrames };
+  }, [visemeFrame, visemeFrames]);
   const { idleNote } = useIdleDirector({
     executor: sceneActions,
+    // Several avatars on stage: the one idle director picks who acts (rooms/idle-picker.ts). Habits are saved per body.
+    avatars: () =>
+      stageNames.map((profile) => {
+        const isEcho = profile.id === 'echo';
+        const frame = isEcho ? speakingRef.current.echo : (speakingRef.current.others[profile.id] ?? null);
+        const sharesBody = !profile.vrmModelId || profile.vrmModelId === activeVrmModel?.id;
+        return {
+          id: profile.id,
+          name: profile.name,
+          executor: rigs.get(profile.id).executor,
+          speaking: frame !== null && frame.intensity > 0.05,
+          personality: profile.prompt ?? '',
+          // An avatar with a body of its own has habits we have not loaded here: none.
+          habits: sharesBody ? idleHabits.habits : '',
+        };
+      }),
     room: backgrounds.activeRoom,
     settings: backgrounds.idleSettings,
     motionReady: liveMotionReady,
     persona: { name: activeVrmModel?.name ?? '', personality: basePrompt, habits: idleHabits.habits },
     phase: voiceActivity.phase,
     pick: async (context) => (await activeBridge?.backgrounds?.pickIdle?.(context)) ?? null,
-    run: (text) => animationTextHandlerRef.current(text),
+    run: (text, avatarId) => animationTextHandlerRef.current(text, avatarId),
   });
   // Describes the active 3D room (and the scene tags) to the model; empty in 2D. Part of the session
   // instructions, so a room change reaches both the local voice and Realtime sessions.
+  // The other avatars on stage (as many as the renderer shows beside Echo), named in each avatar's scene text.
+  const stageNames = useMemo(
+    () => (avatarProfiles.length < 2 ? [] : [...avatarProfiles.filter((profile) => profile.id === 'echo'), ...avatarProfiles.filter((profile) => profile.id !== 'echo').slice(0, 2)]),
+    [avatarProfiles],
+  );
+  // Bumped when any avatar's action ends, so the scene text says where the others are now (not every frame).
+  const [sceneTick, setSceneTick] = useState(0);
+  useEffect(() => {
+    const bump = (activity: SceneActivity) => {
+      if (activity.type === 'done' || activity.type === 'failed') setSceneTick((tick) => tick + 1);
+    };
+    const offEcho = sceneActions.onActivity(bump);
+    const offOthers = rigs.onOtherActivity((_avatarId, activity) => bump(activity));
+    return () => {
+      offEcho();
+      offOthers();
+    };
+  }, [sceneActions, rigs]);
+  /** What each avatar on stage would be told about the others in the room, with where they are when known. */
+  const othersFor = useCallback(
+    (forId: string): OtherAvatarEntry[] =>
+      stageNames
+        .filter((profile) => profile.id !== forId)
+        .map((profile) => {
+          const executor = rigs.get(profile.id).executor;
+          const seat = executor.getState().seat;
+          const world = executor.world();
+          const where = describeAvatarWhere(backgrounds.activeRoom, {
+            seatedOn: seat?.objectId ?? null,
+            position: world ? { x: world.frame.origin.x, z: world.frame.origin.z } : null,
+          });
+          return { name: profile.name, where };
+        }),
+    [stageNames, rigs, backgrounds.activeRoom],
+  );
   const sceneInstructions = useMemo(
-    () => buildSceneInstructions(backgrounds.activeRoom, liveMotionReady, idleNote),
-    [backgrounds.activeRoom, liveMotionReady, idleNote],
+    () => buildSceneInstructions(backgrounds.activeRoom, liveMotionReady, idleNote, othersFor('echo')),
+    // sceneTick: where the others are changes when an action ends.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [backgrounds.activeRoom, liveMotionReady, idleNote, othersFor, sceneTick],
   );
   const sessionInstructions = useMemo(
     () => {
@@ -1262,77 +1350,61 @@ export default function App() {
       // Tags in another avatar's reply drive only that avatar. Echo (no id) is handled exactly as before.
       const speaker = avatarId && avatarId !== 'echo' ? avatarId : undefined;
       const streamMotion = resolveApi()?.avatar?.streamMotion;
-      // Scene actions ({go:}, {sit:}...) from other avatars are still ignored: Phase B of docs/features/multi-avatar-movement.md.
-      // Another avatar's {move:} gestures play on its own body, straight away (no scene executor yet).
-      if (speaker && liveMotionReady && streamMotion) {
-        const speakerName = avatarProfiles.find((profile) => profile.id === speaker)?.name ?? speaker;
-        const filter = rigs.filterFor(speaker);
-        for (const tag of extractMotionTags(content)) {
-          if (tag.type !== 'move' || !filter.shouldStart(tag.text)) {
-            continue;
-          }
-          const move = tag;
-          void (async () => {
-            const streamId = Math.random().toString(36).slice(2, 10);
-            rigs.registerStream(streamId, speaker);
-            setToolCalls((calls) =>
-              addToolCall(calls, { id: streamId, kind: 'move', label: `${speakerName}: ${move.text}`, status: 'pending', startedAt: Date.now() }),
-            );
-            try {
-              const result = await streamMotion({ streamId, prompt: move.text, avatarRest: getAvatarRestSkeleton(speaker) ?? undefined });
-              const firstChunk = result.firstChunkMs === null ? '' : `, first after ${(result.firstChunkMs / 1000).toFixed(1)} s`;
-              setToolCalls((calls) =>
-                finishToolCall(calls, streamId, 'done', Date.now(), `${result.chunks} chunk${result.chunks === 1 ? '' : 's'}${firstChunk}`),
-              );
-            } catch (error: unknown) {
-              const message = error instanceof Error ? error.message : String(error);
-              console.error('[App] Live motion generation failed', { avatar: speaker, prompt: move.text, error: message });
-              setToolCalls((calls) => finishToolCall(calls, streamId, 'failed', Date.now(), message));
-            } finally {
-              // Chunks arrive as events before the request resolves; keep the id a moment for stragglers.
-              setTimeout(() => rigs.endStream(streamId), 5000);
-            }
-          })();
-        }
-      }
-      if (!speaker && liveMotionReady && streamMotion) {
+      // One loop for every speaker: scene tags go to that avatar's executor, {move:} gestures wait their turn in a
+      // room and start straight away otherwise. Echo keeps her own filters and her executor (`sceneActions`).
+      if (liveMotionReady && streamMotion) {
         const room = activeRoomRef.current;
+        const executor = speaker ? rigs.get(speaker).executor : sceneActions;
+        const moveFilter = speaker ? rigs.filterFor(speaker) : moveRequestFilterRef.current;
+        const sceneFilter = speaker ? rigs.sceneFilterFor(speaker) : sceneActionFilterRef.current;
+        const speakerName = speaker ? (avatarProfiles.find((profile) => profile.id === speaker)?.name ?? speaker) : '';
         // In a room the tags run in the order written; a {move:} waits for the scene actions before it.
         const pendingActions: SceneAction[] = [];
         const flushActions = () => {
-          if (pendingActions.length > 0) sceneActions.submit(pendingActions.splice(0));
+          if (pendingActions.length > 0) executor.submit(pendingActions.splice(0));
         };
         for (const tag of extractMotionTags(content)) {
           if (tag.type !== 'move') {
-            if (!room || !sceneActionFilterRef.current.shouldStart(JSON.stringify(tag))) continue;
+            if (!room || !sceneFilter.shouldStart(JSON.stringify(tag))) continue;
             const action = tagToAction(room, tag);
             if (action) pendingActions.push(action);
             continue;
           }
           const move = tag;
-          if (!moveRequestFilterRef.current.shouldStart(move.text)) {
+          if (!moveFilter.shouldStart(move.text)) {
             continue;
           }
           const startMove = async () => {
             const streamId = Math.random().toString(36).slice(2, 10);
+            // Chunks of another avatar's gesture play on its own actor.
+            if (speaker) rigs.registerStream(streamId, speaker);
             setToolCalls((calls) =>
-              addToolCall(calls, { id: streamId, kind: 'move', label: move.text, status: 'pending', startedAt: Date.now() }),
+              addToolCall(calls, {
+                id: streamId,
+                kind: 'move',
+                label: speaker ? `${speakerName}: ${move.text}` : move.text,
+                status: 'pending',
+                startedAt: Date.now(),
+              }),
             );
             try {
-              const result = await streamMotion({ streamId, prompt: move.text, avatarRest: getAvatarRestSkeleton() ?? undefined });
+              const result = await streamMotion({ streamId, prompt: move.text, avatarRest: getAvatarRestSkeleton(speaker ?? 'echo') ?? undefined });
               const firstChunk = result.firstChunkMs === null ? '' : `, first after ${(result.firstChunkMs / 1000).toFixed(1)} s`;
               setToolCalls((calls) =>
                 finishToolCall(calls, streamId, 'done', Date.now(), `${result.chunks} chunk${result.chunks === 1 ? '' : 's'}${firstChunk}`),
               );
             } catch (error: unknown) {
               const message = error instanceof Error ? error.message : String(error);
-              console.error('[App] Live motion generation failed', { prompt: move.text, error: message });
+              console.error('[App] Live motion generation failed', { ...(speaker ? { avatar: speaker } : {}), prompt: move.text, error: message });
               setToolCalls((calls) => finishToolCall(calls, streamId, 'failed', Date.now(), message));
+            } finally {
+              // Chunks arrive as events before the request resolves; keep the id a moment for stragglers.
+              if (speaker) setTimeout(() => rigs.endStream(streamId), 5000);
             }
           };
           if (room) {
             flushActions();
-            sceneActions.submitGesture(move.text, startMove);
+            executor.submitGesture(move.text, startMove);
           } else {
             void startMove();
           }
@@ -1843,11 +1915,25 @@ export default function App() {
   const avatarTagInstructions = useMemo(() => {
     if (avatarProfiles.length < 2) return null;
     const poseSlugs = availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0);
+    // The scene text has no idle note; each avatar on stage also hears who else is in the room.
+    const room = backgrounds.activeRoom;
+    const scene = buildSceneInstructions(room, liveMotionReady, undefined);
+    const sceneFor = Object.fromEntries(
+      stageNames
+        .filter((profile) => profile.id !== 'echo')
+        .map((profile) => [
+          profile.id,
+          buildSceneInstructions(room, liveMotionReady, undefined, othersFor(profile.id)),
+        ]),
+    );
     return {
       shared: buildAvatarTagInstructions(availableAnimationSlugs, poseSlugs, liveMotionReady),
       moveOnly: buildMoveOnlyInstructions(liveMotionReady),
+      ...(scene ? { scene, sceneFor } : {}),
     };
-  }, [avatarProfiles.length, availableAnimationSlugs, availablePoses, liveMotionReady]);
+    // sceneTick: where the others are changes when an action ends.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avatarProfiles.length, availableAnimationSlugs, availablePoses, liveMotionReady, backgrounds.activeRoom, stageNames, othersFor, sceneTick]);
   useEffect(() => {
     if (!avatarTagInstructions) return;
     const setTagInstructions = resolveApi()?.avatars?.setTagInstructions;
@@ -2811,6 +2897,7 @@ export default function App() {
                   roomAvatarHeight={backgrounds.idleSettings.avatarHeight}
                   showWalkableArea={showDeveloperHud && showWalkableArea}
                   sceneActions={sceneActions}
+                  sceneExecutors={sceneExecutorFor}
                 />
               </div>
             </section>

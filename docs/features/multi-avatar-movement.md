@@ -1,6 +1,6 @@
 # Movement for every avatar (phase 3 step 4c): design
 
-Status: design, written 2026-11-11. Phase A is built (see the note under the phases). Phases are listed at the end with what has been built.
+Status: design, written 2026-11-11. All four phases (A to D) are built, untested on hardware (see the notes under the phases). Phases are listed at the end with what has been built.
 
 ## Where we are
 
@@ -133,4 +133,41 @@ Gestures work for every avatar. What differs from the design above:
 - A non-Echo speaker's `{move:}` starts a stream straight away (also standing in a room; no executor), with the label "Sage: waves". Its scene tags are still ignored (phase B).
 - Prompts: the renderer sends `{ shared, moveOnly }` over `avatars:set-tag-instructions` (`avatars.setTagInstructions`) when there are 2+ avatars. `shared` is the animation, pose and `{move:}` text (no scene tags) for avatars wearing Echo's body; `moveOnly` is for avatars with a body of their own. Main composes persona + tags in `avatars/tag-instructions.ts` (`composeAvatarPrompt`); with no persona it uses "You are <name>, an AI character who shares a room with Kevin and Echo."
 - Barge-in (`interruptMovement` in `App.tsx`) also cancels the registered non-Echo streams.
+
+### Built: phase B (2026-11-11)
+
+Avatars other than Echo walk, sit, look and carry in 3D rooms from the scene tags in their own replies. What differs from the design above:
+
+- `MovementRigs(echoExecutor)` owns one `SceneActionExecutor` per avatar (`get(id)` makes it on first use; Echo's is the injected `sceneActions`, so her executor, bridge and env are the ones used before). `setBridgeFactory` gives every other executor its own `SceneBridge` (shared `streamMotion`/`cancelMotion`, `playChunk` on the bus with that avatar's id, `avatarRest` from `getAvatarRestSkeleton(id)`). `handleChunk` offers a chunk to every executor (Echo's first), then App falls back to the stream map. `interruptAll`, `resetAll`, `drop`, `sceneFilterFor` and `onOtherActivity` (tool-call rows labelled "Sage: ...") are there too. App drops the rig of a removed avatar. There is no `env` field on `MovementRig`: the avatar renderer binds the env to the executor (`executor.setEnv(controller.envFor(id))`), as it does for Echo.
+- `RoomSceneController.attachCompanion(id, root, humanoid?, restHipsHeight?)` builds an `AvatarRig` and a `RoomSceneEnv` per companion (kept while it stays attached, also across a model reload). `envFor(id)` returns `sceneEnv` for Echo, the companion's env, or null. `step` steps all envs; `releaseHeld` runs for every env on room change, detach and dispose. A companion stands at its `companionHome` slot until its executor moves it. Re-slotting (another companion arriving or leaving, or the height setting changing) still puts every companion back at its slot, so a moved companion jumps home then.
+- `VrmAvatarRenderer` has a `sceneExecutors(avatarId)` prop next to `sceneActions`; it binds/unbinds each extra's env when the extra loads or unloads and resets their executors on a room change.
+- `RoomPhysics.setAvatarPosition(x, z, id = 'echo')` makes a kinematic capsule per extra avatar on first use; `removeAvatar(id)` removes it. `RoomStage.step(dt, root, others)` feeds each companion's hips.
+- `handleRealtimeTextContent` is one loop for every speaker, parameterised by that avatar's executor and filters. A non-Echo `{move:}` in a room now waits behind its scene actions (`submitGesture`); outside a room it starts straight away, as in phase A.
+- Prompts: `avatars:set-tag-instructions` also carries `scene` (the room text without Echo's idle note; absent in 2D) and `sceneFor` (the same text per avatar, with "<Name> is in the room with you." for each other avatar on stage). Main appends it after the tag instructions. Echo's own scene text gets the same lines. Positions come with phase C.
+- `{come}` takes a companion to the room's home spot, which is where Echo stands; claims and side-steps (phase C) are what keep them apart.
+
+
+### Built: phase C (2026-11-11)
+
+Avatars in a 3D room no longer stand on the same spot, sit on the same seat, pick the same object or walk at the same time. With one avatar nothing changes: `PlanWorld.occupancy` and `others` stay `undefined`, so there is no waiting, no goal nudging and the plans are identical. What differs from the design above:
+
+- `rooms/room-occupancy.ts` (`RoomOccupancy`, one per `RoomSceneController`, cleared on a room change; a companion leaving calls `forget`): standing spots and claimed goals, `freeSpotNear` (8 directions at 0.5 m and 1 m, snapped with `closestWalkable`, nearest free one wins), seat/object claims (`claim`/`release`/`holder`/`keepOnly`/`releaseAll`), and the FIFO walking mutex (`acquireWalk`, 15 s timeout, then it proceeds with a no-op release; `cancelWalk` drops a queue place on interrupt). `forAvatar(id)` gives the `AvatarOccupancy` handle that is put on `PlanWorld.occupancy`. Names for the reasons come from `occupancy.setNames` (set by the avatar renderer from the stage avatars).
+- `RoomSceneEnv` takes `occupancy?()` and `avatarId?` from its host. Echo's env only gets the occupancy while a companion is attached. Each env writes its own avatar's position to the occupancy in `planWorld`, `setRootPose` and `step`, so `standing` is always current.
+- Planner (`scene-actions.ts`): walk goals (go, come, goto, and the approach of sit) go through `freeSpotNear`; none free means skip with "someone is standing there"; the goal is claimed when the walk is planned. `sideStepPath` inserts one waypoint (left of the segment, then right, 0.6 m from the spot, kept if walkable and clear of it) where a segment passes within 0.45 m of another avatar's standing spot, ignoring spots near the goal. Sit claims the seat and pick the object; a refusal is a skip reason "Sage is sitting on the sofa" / "Sage has it".
+- Executor: a stream with a path awaits `acquireWalk` before it starts and releases when it ends, fails or is cancelled. After every stream it drops the goal claim and keeps only the seat it sits on and the object it holds (`keepOnly`). `interrupt` calls `cancelWalk` (seat and held object stay), `reset` calls `releaseAll`. Looks, gestures and in-place actions never wait.
+- A seated avatar counts as standing at its approach spot (where it will stand up to).
+- `{come}` for a companion ends beside Echo's home spot through the same nudging.
+- Prompts: `buildSceneInstructions` takes `{ name, where }` entries; `describeAvatarWhere` gives "sitting on the <object>" or "standing near the <nearest listed object within 3 m>"; otherwise the phase B line stays. App builds each avatar's lines from `executor.getState()` and `executor.world()` and refreshes them when any executor reports an action done or failed (a counter), not every frame. Until the first action ends after a room opens, the lines are still the phase B ones.
+- Not done: two avatars already walking (they cannot, by the mutex) and the physics capsules still do not collide with each other.
+
+### Built: phase D (2026-11-11)
+
+One idle director picks who acts. With one avatar (no `avatars` in the director's deps, or fewer than two) the code path, timing, prompts and calls are what they were. What differs from the design above:
+
+- `rooms/idle-picker.ts`: `pickIdleActor(candidates, now, state, { cooldownMs = 20 s, rng? })` over `{ id, busy, speaking, lastActedAt }`. The rotation is echo, a, echo, b, ... walked by `state.turn`; busy, speaking and recently acted avatars are skipped; null when nobody is eligible. A lone `echo` ignores the cooldown. The director only uses it with two or more avatars.
+- `IdleDirectorDeps.avatars()` lists the avatars in the room (Echo included; App passes the stage avatars with each `rigs.get(id).executor`, whether its viseme frame is speaking, and persona/habits). `run(text, avatarId?)` runs the tags through App's text handler for that avatar's executor (Echo's call is unchanged). The global gates stay global (conversation busy, the 45 s / restlessness timing, settings); a tick with nobody eligible retries after 3 s, like a busy Echo did.
+- Prompt: `IdleInput.others` (`{ name, where }`, from `describeAvatarWhere` on each executor's state and world) adds "Others in the room:" lines. It is absent with no others, so Echo's prompt is byte-identical. For a non-Echo actor the persona is that avatar's (name, `AvatarProfile.prompt`, habits), so the existing "You decide what <Name> does" wording names it.
+- Habits: an avatar sharing Echo's body (or with no body yet) uses the habits App has loaded; one with its own body gets none, because only the active model's habits are loaded in the renderer (no new IPC).
+- Idle talk: the idle model's reply is parsed into action tags only, so no spoken remark exists to drop; non-Echo actors run their tags and nothing else. `talkStartActions` after Kevin speaks now also runs for every avatar that wandered. The idle note (`recentSummary`, `idleNote`) and the log feeding Echo's prompt are Echo's own; others keep separate logs and recent targets.
+- Not verified on hardware: how it feels with two or three avatars left idle for minutes.
 

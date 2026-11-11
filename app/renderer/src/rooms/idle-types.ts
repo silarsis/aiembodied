@@ -27,4 +27,6 @@ export interface IdleInput {
   /** The last few idle actions, newest last, as written for the log. */
   recent: string[];
   now: Date;
+  /** The other avatars in the room and where they are; absent when this one is alone. */
+  others?: Array<{ name: string; where: string | null }>;
 }

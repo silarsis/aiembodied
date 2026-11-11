@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { RoomStage } from '../../src/rooms/room-stage.js';
+import { RoomOccupancy } from '../../src/rooms/room-occupancy.js';
 import { RoomSceneEnv, type AvatarRig } from '../../src/rooms/scene-env.js';
 import { surfaceSpec } from '../../src/rooms/scene-actions.js';
 import { builtInRoom } from './fixtures.js';
@@ -45,6 +46,30 @@ describe('RoomSceneEnv', () => {
     expect(world.frame.scale).toBe(1.25);
     expect(world.restHipsHeight).toBe(0.9);
     expect(world.room.id).toBe(room.id);
+  });
+
+  it('leaves others and occupancy undefined while the avatar is alone', () => {
+    const alone = new RoomSceneEnv({ stage: () => stage, rig: () => rig, avatarId: 'echo', occupancy: () => null });
+    const world = alone.planWorld()!;
+    expect(world.others).toBeUndefined();
+    expect(world.occupancy).toBeUndefined();
+    expect(env.planWorld()!.occupancy).toBeUndefined();
+  });
+
+  it('fills the other avatars and a bound occupancy handle when the room is shared', () => {
+    const occupancy = new RoomOccupancy();
+    occupancy.standing('sage', { x: 1, z: -1 });
+    rig.scene.position.set(0, 0, -0.3);
+    const shared = new RoomSceneEnv({ stage: () => stage, rig: () => rig, avatarId: 'echo', occupancy: () => occupancy });
+    const world = shared.planWorld()!;
+    expect(world.others).toEqual([{ id: 'sage', x: 1, z: -1 }]);
+    expect(world.occupancy).toBeDefined();
+    // Its own spot is recorded for the others, and kept up to date by root poses.
+    expect(occupancy.others('sage')).toEqual([{ id: 'echo', x: 0, z: -0.3 }]);
+    shared.setRootPose({ x: 2, z: 1, yaw: 0 });
+    expect(occupancy.others('sage')).toEqual([{ id: 'echo', x: 2, z: 1 }]);
+    world.occupancy!.claim('seat', 'sofa');
+    expect(occupancy.holder('seat', 'sofa')).toBe('echo');
   });
 
   it('has no world without a room or an avatar', () => {

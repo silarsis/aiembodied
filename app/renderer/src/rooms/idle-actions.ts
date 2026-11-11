@@ -181,7 +181,8 @@ function candidates(input: IdleInput): Candidate[] {
   const found: Candidate[] = [];
   for (const object of input.visible) {
     const tags = object.tags ?? {};
-    if (tags.sit) found.push({ tags: [{ type: 'sit', object: object.id }], weight: 1, targets: [object.id] });
+    if (tags.sit)
+      found.push({ tags: [{ type: 'sit', object: object.id }], weight: 1, targets: [object.id] });
     if (tags.stand || tags.look) {
       found.push({
         tags: [
@@ -215,7 +216,11 @@ function candidates(input: IdleInput): Candidate[] {
  * from what the visible objects allow, avoiding the last two targets. Seated, it mostly stays put.
  * Returns `[{ type: 'wait' }]` when there is nothing to do.
  */
-export function fallbackIdleTags(input: IdleInput, random: () => number, recentTargets: readonly string[] = []): IdleTag[] {
+export function fallbackIdleTags(
+  input: IdleInput,
+  random: () => number,
+  recentTargets: readonly string[] = [],
+): IdleTag[] {
   if (input.state.posture === 'seated') {
     return random() < STAY_SEATED ? [{ type: 'wait' }] : [{ type: 'stand' }];
   }

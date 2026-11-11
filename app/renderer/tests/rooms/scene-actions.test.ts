@@ -18,6 +18,8 @@ import {
 } from '../../src/rooms/scene-actions.js';
 import type { AvatarMotionTarget } from '../../src/avatar/types.js';
 import { motionToWorld, worldToMotion, type MotionFrame } from '../../src/rooms/scene-frames.js';
+import { RoomOccupancy } from '../../src/rooms/room-occupancy.js';
+import { sideStepPath } from '../../src/rooms/scene-actions.js';
 import { builtInRoom } from './fixtures.js';
 
 const REST_HIPS = 0.95;
@@ -437,5 +439,81 @@ describe('footprints', () => {
   it('keeps world-to-motion consistent with the planner', () => {
     const frame = worldAt(1, 1, 90).frame;
     expect(worldToMotion(frame, 1, 3)[0]).toBeCloseTo(-2, 6);
+  });
+});
+
+describe('planning with other avatars (occupancy)', () => {
+  function withOthers(base: PlanWorld, occupancy: RoomOccupancy, id = 'echo'): PlanWorld {
+    return { ...base, others: occupancy.others(id), occupancy: occupancy.forAvatar(id) };
+  }
+
+  it('plans exactly as before when nobody else is in the room', () => {
+    const alone = planAction(worldAt(0, -0.3, 0), INITIAL_STATE, { kind: 'go', objectId: 'bookshelf' });
+    const crowded = new RoomOccupancy();
+    const same = planAction(withOthers(worldAt(0, -0.3, 0), crowded), INITIAL_STATE, { kind: 'go', objectId: 'bookshelf' });
+    expect(same).toEqual(alone);
+  });
+
+  it('moves the goal off another avatar standing there and claims the new spot', () => {
+    const stand = stage.worldTag('bookshelf', 'stand')!;
+    const occupancy = new RoomOccupancy();
+    occupancy.standing('sage', { x: stand.position[0], z: stand.position[2] });
+    const plan = planAction(withOthers(worldAt(0, -0.3, 0), occupancy), INITIAL_STATE, { kind: 'go', objectId: 'bookshelf' });
+    expect(plan.type).toBe('stream');
+    const goal = occupancy.others('sage')[0]!.goal!;
+    expect(Math.hypot(goal.x - stand.position[0], goal.z - stand.position[2])).toBeGreaterThanOrEqual(0.45);
+    expect(Math.hypot(goal.x - stand.position[0], goal.z - stand.position[2])).toBeLessThanOrEqual(1.0001);
+  });
+
+  it('skips when there is no free spot near the goal', () => {
+    const stand = stage.worldTag('bookshelf', 'stand')!;
+    const occupancy = new RoomOccupancy();
+    occupancy.standing('sage', { x: stand.position[0], z: stand.position[2] });
+    const world = withOthers(worldAt(0, -0.3, 0), occupancy);
+    world.closestWalkable = () => [stand.position[0], 0, stand.position[2]];
+    expect(planAction(world, INITIAL_STATE, { kind: 'go', objectId: 'bookshelf' })).toEqual({
+      type: 'skip',
+      reason: 'someone is standing there',
+    });
+  });
+
+  it('inserts one side-step waypoint when the path passes close to a standing avatar', () => {
+    const world = worldAt(0, -0.3, 0);
+    const occupancy = new RoomOccupancy();
+    occupancy.standing('sage', { x: -1.4, z: -0.4 });
+    const crowded = withOthers(world, occupancy);
+    const direct = stage.findPath([0, 0, -0.3], [-2.2, 0, -0.5])!;
+    const stepped = sideStepPath(crowded, direct);
+    expect(stepped.length).toBe(direct.length + 1);
+    const waypoint = stepped.find((p) => !direct.some((q) => q[0] === p[0] && q[2] === p[2]))!;
+    expect(Math.hypot(waypoint[0] + 1.4, waypoint[2] + 0.4)).toBeGreaterThanOrEqual(0.45);
+    // Without others the path is untouched, and a standing avatar at the goal is not walked around.
+    expect(sideStepPath(world, direct)).toBe(direct);
+    const atGoal = new RoomOccupancy();
+    atGoal.standing('sage', { x: -2.2, z: -0.5 });
+    expect(sideStepPath(withOthers(world, atGoal), direct)).toEqual(direct);
+  });
+
+  it('refuses a seat another avatar holds, naming the holder, and claims a free one', () => {
+    const occupancy = new RoomOccupancy();
+    occupancy.setNames({ sage: 'Sage' });
+    occupancy.claim('seat', 'sofa', 'sage');
+    const plan = planAction(withOthers(worldAt(0, -0.3, 0), occupancy), INITIAL_STATE, { kind: 'sit', objectId: 'sofa' });
+    expect(plan).toEqual({ type: 'skip', reason: 'Sage is sitting on the sofa' });
+    const free = planAction(withOthers(worldAt(0, -0.3, 0), occupancy), INITIAL_STATE, { kind: 'sit', objectId: 'armchair' });
+    expect(free.type).toBe('stream');
+    expect(occupancy.holder('seat', 'armchair')).toBe('echo');
+  });
+
+  it('refuses an object another avatar holds ("<Name> has it")', () => {
+    const occupancy = new RoomOccupancy();
+    occupancy.setNames({ sage: 'Sage' });
+    occupancy.claim('object', 'mug', 'sage');
+    const plan = planAction(withOthers(worldAt(1.1, -0.45, 0), occupancy), INITIAL_STATE, { kind: 'pick', objectId: 'mug' });
+    expect(plan).toEqual({ type: 'skip', reason: 'Sage has it' });
+    occupancy.release('object', 'mug', 'sage');
+    const ok = planAction(withOthers(worldAt(1.1, -0.45, 0), occupancy), INITIAL_STATE, { kind: 'pick', objectId: 'mug' });
+    expect(ok.type).toBe('stream');
+    expect(occupancy.holder('object', 'mug')).toBe('echo');
   });
 });

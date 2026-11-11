@@ -24,6 +24,7 @@ import {
   type SceneAction,
   type StreamEvent,
 } from './scene-actions.js';
+import type { AvatarOccupancy } from './room-occupancy.js';
 import { bakedRootPose, type RootPose } from './scene-frames.js';
 
 export type { ClipEndAction };
@@ -121,6 +122,8 @@ export class SceneActionExecutor {
   private queue: QueueItem[] = [];
   private streams = new Map<string, RunningStream>();
   private running = false;
+  /** This avatar's claims in the room, from the last plan's world; null with a single avatar. */
+  private occupancy: AvatarOccupancy | null = null;
   /** Bumped by `reset`; work that started under an older generation stops touching state. */
   private generation = 0;
   /** Bumped by `interrupt`; the rest of an interrupted action chain is dropped. */
@@ -214,6 +217,7 @@ export class SceneActionExecutor {
   interrupt(): void {
     this.epoch += 1;
     this.queue.length = 0;
+    this.occupancy?.cancelWalk();
     for (const stream of this.streams.values()) {
       if (stream.interruptible && !stream.cancelled) this.cancelStream(stream);
     }
@@ -246,6 +250,12 @@ export class SceneActionExecutor {
       console.warn('[scene-actions] could not put the held object down', error);
     }
     this.state = { ...INITIAL_STATE };
+    try {
+      this.occupancy?.releaseAll();
+    } catch (error) {
+      console.warn('[scene-actions] could not release the room claims', error);
+    }
+    this.occupancy = null;
   }
 
   /** Takes a motion chunk if it belongs to a scene stream; returns false for any other stream. */
@@ -323,6 +333,7 @@ export class SceneActionExecutor {
       console.warn('[scene-actions] the avatar is not ready for', action.kind);
       return;
     }
+    this.occupancy = world.occupancy ?? null;
     let plan: ActionPlan;
     try {
       plan = planAction(world, this.state, action);
@@ -344,12 +355,31 @@ export class SceneActionExecutor {
       await this.runAction(action, generation, epoch, depth + 1);
       return;
     }
-    await this.runStream(plan.stream, generation);
+    await this.runStream(plan.stream, generation, epoch);
   }
 
   // -- Streams --------------------------------------------------------------------------------
 
-  private async runStream(planned: PlannedStream, generation: number): Promise<void> {
+  private async runStream(planned: PlannedStream, generation: number, epoch: number): Promise<void> {
+    // Only one avatar walks at a time; gestures, looks and in-place actions never wait.
+    const occupancy = this.occupancy;
+    let releaseWalk: (() => void) | null = null;
+    if (occupancy && planned.request.path) {
+      releaseWalk = await occupancy.acquireWalk();
+      if (this.stale(generation, epoch)) {
+        releaseWalk();
+        this.syncClaims();
+        return;
+      }
+    }
+    try {
+      await this.runStreamNow(planned, generation);
+    } finally {
+      releaseWalk?.();
+    }
+  }
+
+  private async runStreamNow(planned: PlannedStream, generation: number): Promise<void> {
     const bridge = this.bridge;
     if (!bridge) return;
     const id = this.newId();
@@ -489,8 +519,24 @@ export class SceneActionExecutor {
         verdict = 'release';
       }
     }
+    this.syncClaims();
     stream.done.resolve();
     return verdict;
+  }
+
+  /** Between actions nothing is claimed beyond where the avatar sits and what it holds. */
+  private syncClaims(): void {
+    const occupancy = this.occupancy;
+    if (!occupancy) return;
+    try {
+      occupancy.releaseSpot();
+      occupancy.keepOnly({
+        ...(this.state.posture === 'seated' && this.state.seat ? { seat: this.state.seat.objectId } : {}),
+        ...(this.state.held ? { object: this.state.held.objectId } : {}),
+      });
+    } catch (error) {
+      console.warn('[scene-actions] could not update the room claims', error);
+    }
   }
 
   private cancelStream(stream: RunningStream): void {

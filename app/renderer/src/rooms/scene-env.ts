@@ -5,6 +5,7 @@ import type { Hand, PlanWorld, StreamEvent } from './scene-actions.js';
 import type { SceneEnv } from './scene-executor.js';
 import type { RootPose } from './scene-frames.js';
 import type { RoomStage } from './room-stage.js';
+import type { RoomOccupancy } from './room-occupancy.js';
 
 /** The parts of the loaded avatar that scene actions need. */
 export interface AvatarRig {
@@ -22,6 +23,13 @@ export interface SceneEnvHost {
   rig(): AvatarRig | null;
   /** Width over height of the room view. */
   aspect?(): number;
+  /**
+   * The room's occupancy while there is more than one avatar in it; null or absent when this avatar is
+   * alone, which keeps planning exactly as it is for a single avatar.
+   */
+  occupancy?(): RoomOccupancy | null;
+  /** This avatar's id in the occupancy (default 'echo'). */
+  avatarId?: string;
 }
 
 interface Carried {
@@ -48,6 +56,9 @@ export class RoomSceneEnv implements SceneEnv {
     const stage = this.host.stage();
     const rig = this.host.rig();
     if (!stage || !rig) return null;
+    const occupancy = this.occupancyOf();
+    const id = this.host.avatarId ?? 'echo';
+    if (occupancy) occupancy.standing(id, { x: rig.scene.position.x, z: rig.scene.position.z });
     return {
       room: stage.room,
       hasNavigation: stage.hasNavigation,
@@ -60,7 +71,12 @@ export class RoomSceneEnv implements SceneEnv {
       },
       restHipsHeight: rig.restHipsHeight > 0 ? rig.restHipsHeight : FALLBACK_HIPS_HEIGHT,
       cameraAspect: this.host.aspect?.(),
+      ...(occupancy ? { others: occupancy.others(id), occupancy: occupancy.forAvatar(id) } : {}),
     };
+  }
+
+  private occupancyOf(): RoomOccupancy | null {
+    return this.host.occupancy?.() ?? null;
   }
 
   setRootPose(pose: RootPose): void {
@@ -70,6 +86,7 @@ export class RoomSceneEnv implements SceneEnv {
     rig.scene.position.z = pose.z;
     rig.scene.rotation.y = rig.baseRotationY + pose.yaw;
     rig.scene.updateWorldMatrix(true, true);
+    this.occupancyOf()?.standing(this.host.avatarId ?? 'echo', { x: pose.x, z: pose.z });
   }
 
   attach(objectId: string, hand: Hand): boolean {
@@ -120,6 +137,9 @@ export class RoomSceneEnv implements SceneEnv {
 
   /** Advances the grip blend. Call once per frame after the animation mixer has run. */
   step(deltaSeconds: number): void {
+    const rig = this.host.rig();
+    const occupancy = this.occupancyOf();
+    if (rig && occupancy) occupancy.standing(this.host.avatarId ?? 'echo', { x: rig.scene.position.x, z: rig.scene.position.z });
     for (const grip of this.grips.values()) if (grip.active) grip.update(deltaSeconds);
   }
 

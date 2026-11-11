@@ -917,6 +917,7 @@ function avatarInstructions(avatarId: string, sessionInstructions?: string): str
     persona: saved || profile?.prompt || undefined,
     ownModel,
     tags: avatarTagInstructions,
+    avatarId,
   });
 }
 

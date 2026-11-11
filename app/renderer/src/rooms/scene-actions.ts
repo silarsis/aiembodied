@@ -8,6 +8,7 @@ import type { RoomFile, RoomObject, Vec3 } from '../../../main/src/rooms/types.j
 import type { AvatarMotionPhase, AvatarMotionPath, AvatarMotionTarget } from '../avatar/types.js';
 import type { SceneTag } from '../avatar/animation-tags.js';
 import { degToRad } from './room-geometry.js';
+import type { AvatarOccupancy } from './room-occupancy.js';
 import { worldTag } from './room-tags.js';
 import { heightToMotion, worldToMotion, worldYawToMotion, yawToward, type MotionFrame } from './scene-frames.js';
 
@@ -65,6 +66,10 @@ export interface PlanWorld {
   restHipsHeight: number;
   /** Width over height of the room view, for judging what the camera can see. */
   cameraAspect?: number;
+  /** Other avatars in the room: where they stand now and where they are heading. Set only with 2+ avatars. */
+  others?: Array<{ id: string; x: number; z: number; goal?: { x: number; z: number } }>;
+  /** This avatar's claims on spots, seats, objects and the walking turn. Set only with 2+ avatars. */
+  occupancy?: AvatarOccupancy;
 }
 
 export interface StreamEvent {
@@ -347,6 +352,79 @@ function skip(reason: string): ActionPlan {
   return { type: 'skip', reason };
 }
 
+/** Another avatar's standing spot this close to a path segment makes the walk step around it. */
+const SIDE_STEP_CLEARANCE = 0.45;
+/** How far from the other avatar's spot the side-step waypoint is put. */
+const SIDE_STEP_OFFSET = 0.6;
+
+function distanceToSegment(px: number, pz: number, a: Vec3, b: Vec3): number {
+  const dx = b[0] - a[0];
+  const dz = b[2] - a[2];
+  const lengthSq = dx * dx + dz * dz;
+  const t = lengthSq < 1e-9 ? 0 : Math.max(0, Math.min(1, ((px - a[0]) * dx + (pz - a[2]) * dz) / lengthSq));
+  return Math.hypot(px - (a[0] + t * dx), pz - (a[2] + t * dz));
+}
+
+/**
+ * One pass over the path: where a segment passes within 0.45 m of another avatar's standing spot (the
+ * goal's own neighbourhood does not count), a waypoint is inserted beside the spot, left of the
+ * segment first, then right, whichever is walkable and clears the spot. When neither is, the
+ * segment is left as it is.
+ */
+export function sideStepPath(world: PlanWorld, path: Vec3[]): Vec3[] {
+  const others = world.others;
+  if (!world.occupancy || !others || others.length === 0 || path.length < 2) return path;
+  const goal = path[path.length - 1];
+  if (!goal) return path;
+  const result: Vec3[] = [];
+  for (let i = 0; i < path.length - 1; i += 1) {
+    const a = path[i];
+    const b = path[i + 1];
+    if (!a || !b) continue;
+    result.push(a);
+    const inserts: Array<{ along: number; point: Vec3 }> = [];
+    for (const other of others) {
+      if (Math.hypot(other.x - goal[0], other.z - goal[2]) < SIDE_STEP_CLEARANCE) continue;
+      if (distanceToSegment(other.x, other.z, a, b) >= SIDE_STEP_CLEARANCE) continue;
+      const dx = b[0] - a[0];
+      const dz = b[2] - a[2];
+      const length = Math.hypot(dx, dz);
+      if (length < 1e-6) continue;
+      const leftX = -dz / length;
+      const leftZ = dx / length;
+      for (const side of [1, -1]) {
+        const wanted: Vec3 = [other.x + side * leftX * SIDE_STEP_OFFSET, 0, other.z + side * leftZ * SIDE_STEP_OFFSET];
+        const snapped = world.closestWalkable(wanted);
+        const moved = Math.hypot(snapped[0] - wanted[0], snapped[2] - wanted[2]);
+        const clears = Math.hypot(snapped[0] - other.x, snapped[2] - other.z) >= SIDE_STEP_CLEARANCE;
+        if (moved > 0.2 || !clears) continue;
+        inserts.push({ along: (other.x - a[0]) * dx / length + (other.z - a[2]) * dz / length, point: [snapped[0], a[1], snapped[2]] });
+        break;
+      }
+    }
+    inserts.sort((first, second) => first.along - second.along);
+    for (const insert of inserts) result.push(insert.point);
+  }
+  const last = path[path.length - 1];
+  if (last) result.push(last);
+  return result;
+}
+
+/**
+ * The goal of a walk, moved to a free spot when another avatar stands or is heading there. Null when
+ * there is no free spot near it. Without occupancy (one avatar) the goal is returned as it is.
+ */
+function freeGoal(world: PlanWorld, target: Vec3): Vec3 | null {
+  if (!world.occupancy) return target;
+  const free = world.occupancy.freeSpotNear({ x: target[0], z: target[2] }, (p) => {
+    const snapped = world.closestWalkable([p.x, 0, p.z]);
+    return { x: snapped[0], z: snapped[2] };
+  });
+  return free ? [free.x, target[1], free.z] : null;
+}
+
+const OCCUPIED_SPOT = 'someone is standing there';
+
 function walkPlan(
   world: PlanWorld,
   target: Vec3,
@@ -355,8 +433,11 @@ function walkPlan(
   prompt = WALK_PROMPT,
 ): ActionPlan {
   if (!world.hasNavigation) return skip('navigation is unavailable in this room');
-  const path = world.findPath(rootWorld(world), target);
-  if (!path) return skip(`no walkable path to ${label}`);
+  const goal = freeGoal(world, target);
+  if (!goal) return skip(OCCUPIED_SPOT);
+  const found = world.findPath(rootWorld(world), goal);
+  if (!found) return skip(`no walkable path to ${label}`);
+  const path = sideStepPath(world, found);
   const points = pathInMotionFrame(world, path);
   const length = polylineLength(points);
   const headingOf = (yaw: number) => worldYawToMotion(world.frame, yaw);
@@ -373,6 +454,7 @@ function walkPlan(
   const end = points[points.length - 1] ?? [0, 0];
   const lastLeg = points[points.length - 2] ?? [0, 0];
   const heading = faceYaw === null ? Math.atan2(end[0] - lastLeg[0], end[1] - lastLeg[1]) : headingOf(faceYaw);
+  world.occupancy?.claimSpot({ x: goal[0], z: goal[2] });
   const targets: AvatarMotionTarget[] = [
     ...start.targets,
     ...(faceYaw === null
@@ -455,8 +537,11 @@ function planSit(world: PlanWorld, object: RoomObject): ActionPlan {
   let points: Array<[number, number]> | null = null;
   if (horizontal(approach, ideal) >= MIN_WALK) {
     if (!world.hasNavigation) return skip('navigation is unavailable in this room');
-    const path = world.findPath(approach, ideal);
-    if (!path) return skip(`no walkable path to ${object.name}`);
+    const goal = freeGoal(world, ideal);
+    if (!goal) return skip(OCCUPIED_SPOT);
+    const found = world.findPath(approach, goal);
+    if (!found) return skip(`no walkable path to ${object.name}`);
+    const path = sideStepPath(world, found);
     const converted = pathInMotionFrame(world, path);
     if (polylineLength(converted) >= MIN_WALK) {
       points = converted;
@@ -469,6 +554,12 @@ function planSit(world: PlanWorld, object: RoomObject): ActionPlan {
   const phaseStart = points ? Math.ceil(arrival / CHUNK_SECONDS - 1e-9) * CHUNK_SECONDS : 0;
   const duration = roundMs(phaseStart + 4);
   if (duration > MAX_DURATION) return skip(`${object.name} is too far to walk to in one go`);
+  const occupancy = world.occupancy;
+  if (occupancy && !occupancy.claim('seat', object.id)) {
+    const holder = occupancy.holder('seat', object.id);
+    return skip(`${holder ? occupancy.nameOf(holder) : 'Someone'} is sitting on the ${object.name}`);
+  }
+  if (points) occupancy?.claimSpot({ x: approach[0], z: approach[2] });
   const root = worldToMotion(frame, seat[0], seat[2]);
   const heading = worldYawToMotion(frame, facing);
   const target: AvatarMotionTarget = {
@@ -590,6 +681,11 @@ function planPick(world: PlanWorld, state: AvatarState, object: RoomObject): Act
   if (!point) return skip(`${object.name} cannot be picked up`);
   if (horizontal(rootWorld(world), point) > REACH_DISTANCE) {
     return { type: 'insert', actions: [{ kind: 'goto', position: world.closestWalkable(point), faceToward: point }] };
+  }
+  const occupancy = world.occupancy;
+  if (occupancy && !occupancy.claim('object', object.id)) {
+    const holder = occupancy.holder('object', object.id);
+    return skip(`${holder ? occupancy.nameOf(holder) : 'Someone'} has it`);
   }
   const hand = nearerHand(world.frame, point);
   const low = point[1] < LOW_OBJECT;

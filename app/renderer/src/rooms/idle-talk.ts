@@ -12,7 +12,11 @@ export const HOME_DISTANCE = 1.0;
 /** "Turn to me" only turns when the avatar faces further than this (radians) away from the camera. */
 export const TURN_THRESHOLD = (30 * Math.PI) / 180;
 
-export function talkStartActions(mode: OnTalk, world: PlanWorld, state: AvatarState): SceneAction[] {
+export function talkStartActions(
+  mode: OnTalk,
+  world: PlanWorld,
+  state: AvatarState,
+): SceneAction[] {
   const root: [number, number, number] = [world.frame.origin.x, 0, world.frame.origin.z];
   if (mode === 'come-back') {
     const home = world.room.home.position;
@@ -24,5 +28,7 @@ export function talkStartActions(mode: OnTalk, world: PlanWorld, state: AvatarSt
   if (state.posture === 'seated') return [];
   const camera = world.room.camera.position;
   const away = Math.abs(wrapRadians(yawToward(root, camera) - world.frame.origin.yaw));
-  return away > TURN_THRESHOLD ? [{ kind: 'lookAtPoint', position: camera, label: 'the camera' }] : [];
+  return away > TURN_THRESHOLD
+    ? [{ kind: 'lookAtPoint', position: camera, label: 'the camera' }]
+    : [];
 }

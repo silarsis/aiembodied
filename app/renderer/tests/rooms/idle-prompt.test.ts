@@ -78,4 +78,18 @@ describe('idle prompt', () => {
       'standing in the middle of the room, holding the mug',
     );
   });
+
+  it('lists where the other avatars are, and leaves the prompt as it was with none', () => {
+    const base = buildIdlePrompt(input());
+    expect(buildIdlePrompt(input({ others: [] }))).toEqual(base);
+    expect(base.user).not.toContain('Others in the room');
+    const { user } = buildIdlePrompt(input({ others: [{ name: 'Echo', where: 'sitting on the sofa' }, { name: 'Rex', where: null }] }));
+    expect(user).toContain('Others in the room:\n- Echo is sitting on the sofa\n- Rex is in the room');
+  });
+
+  it('names the avatar it decides for', () => {
+    const { system, user } = buildIdlePrompt(input({ name: 'Sage' }));
+    expect(system).toContain('You decide what Sage does on their own');
+    expect(user).toContain('Character: Sage');
+  });
 });
