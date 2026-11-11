@@ -642,6 +642,7 @@ function startWakeWordService(wakeWord: WakeWordConfig): WakeWordService {
       confidence: event.confidence,
     });
 
+    floor?.wakeWordHeard();
     let sessionId: string | null = null;
     if (conversationManager) {
       try {
