@@ -111,7 +111,7 @@ export class PresenceTracker {
     const p = this.snapshot(now);
     const lines = [
       p.secondsSinceUserSpoke === null ? 'Kevin has not spoken since the app started' : `Kevin last spoke ${span(p.secondsSinceUserSpoke)} ago`,
-      p.secondsSinceAssistantSpoke === null ? 'Echo has not spoken yet' : `Echo last spoke ${span(p.secondsSinceAssistantSpoke)} ago`,
+      p.secondsSinceAssistantSpoke === null ? 'No avatar has spoken yet' : `An avatar last spoke ${span(p.secondsSinceAssistantSpoke)} ago`,
       `microphone ${p.listening ? 'on' : 'off'}; voice state: ${p.voicePhase}`,
       p.secondsSinceFaceSeen === null ? 'camera has not seen a face' : `camera saw a face ${span(p.secondsSinceFaceSeen)} ago`,
       `do not disturb: ${p.doNotDisturb ? 'on' : 'off'}`,

@@ -35,6 +35,8 @@ export interface FloorStore {
 export interface FloorVoice {
   respond(request: LocalVoiceRespondRequest, emit: (event: LocalVoiceEvent) => void): Promise<LocalVoiceRespondResult>;
   cancel(requestId?: string): void;
+  /** Remember a line said in the room; no model call. */
+  overhear?(line: { from: string; text: string }): void;
 }
 
 export interface FloorControllerOptions {
@@ -55,8 +57,11 @@ export interface FloorControllerOptions {
   logger?: Pick<Console, 'warn' | 'debug'>;
 }
 
+/** What the avatar that just finished had been given, so the room can overhear it. */
+type Input = { kind: 'person'; text: string; participants: string[] } | { kind: 'chatter'; from: string; text: string };
+
 type Job =
-  | { kind: 'kevin'; requestId: string; payload: LocalVoiceRespondRequest; txn: string }
+  | { kind: 'kevin'; requestId: string; payload: LocalVoiceRespondRequest; txn: string; participants: string[] }
   | { kind: 'chatter'; from: string; text: string; channel: FloorChannel; txn: string };
 
 /** The note an avatar's line reaches another avatar as, in the same style as system notes. */
@@ -121,19 +126,21 @@ export class FloorController {
     const [first, ...rest] = decision.speakers;
     if (!first) return { requestId: payload.requestId, text: '', cancelled: true };
     this.grant(first.avatarId, first.reason, { id: txn });
+    const participants = decision.speakers.map((speaker) => speaker.avatarId);
+    const input: Input = { kind: 'person', text: payload.text, participants };
     for (const speaker of rest) {
       if (this.manager.request(speaker.avatarId) === 'queued') {
-        this.jobs.set(speaker.avatarId, { kind: 'kevin', requestId: `${payload.requestId}:${speaker.avatarId}`, payload, txn });
+        this.jobs.set(speaker.avatarId, { kind: 'kevin', requestId: `${payload.requestId}:${speaker.avatarId}`, payload, txn, participants });
       }
     }
     let result: LocalVoiceRespondResult;
     try {
       result = await this.options.runPersonTurn(first.avatarId, { ...payload, avatarId: first.avatarId });
     } catch (error) {
-      this.continueFrom(first.avatarId, { requestId: payload.requestId, text: '', cancelled: true }, epoch, txn);
+      this.continueFrom(first.avatarId, { requestId: payload.requestId, text: '', cancelled: true }, epoch, txn, input);
       throw error;
     }
-    this.continueFrom(first.avatarId, result, epoch, txn);
+    this.continueFrom(first.avatarId, result, epoch, txn, input);
     return result;
   }
 
@@ -151,19 +158,21 @@ export class FloorController {
     return this.epoch;
   }
 
-  private continueFrom(avatarId: string, result: LocalVoiceRespondResult, epoch: number, txn: string): void {
-    void this.advance(avatarId, result, epoch, txn).catch((error) => {
+  private continueFrom(avatarId: string, result: LocalVoiceRespondResult, epoch: number, txn: string, input: Input): void {
+    void this.advance(avatarId, result, epoch, txn, input).catch((error) => {
       this.options.logger?.warn('Floor: continuing after a turn failed', { message: error instanceof Error ? error.message : String(error) });
     });
   }
 
   /** After `avatarId` finished: route its words to the other avatars, free the slot, run whoever is next. */
-  private async advance(avatarId: string, result: LocalVoiceRespondResult, epoch: number, txn: string): Promise<void> {
-    let current = { avatarId, result, txn };
+  private async advance(avatarId: string, result: LocalVoiceRespondResult, epoch: number, txn: string, input: Input): Promise<void> {
+    let current: { avatarId: string; result: LocalVoiceRespondResult; txn: string; input: Input } = { avatarId, result, txn, input };
     while (epoch === this.epoch) {
       if (current.result.text.trim() && !current.result.cancelled) {
-        await this.queueChatter(current.avatarId, current.result.text, epoch);
+        // An avatar's answer to Kevin does not open chatter by itself; its other lines may.
+        const next = await this.queueChatter(current.avatarId, current.result.text, epoch, current.input.kind === 'person');
         if (epoch !== this.epoch) return;
+        this.shareWithRoom(current.avatarId, current.result.text, current.input, next);
       }
       const next = this.manager.release(current.avatarId);
       this.journal('floor.release', current.avatarId, { avatar: current.avatarId, next }, current.txn, current.txn.startsWith('turn:') ? undefined : 'done');
@@ -172,7 +181,7 @@ export class FloorController {
       this.jobs.delete(next);
       if (!job) {
         // Nothing to run for this avatar (it was dropped); hand the slot on.
-        current = { avatarId: next, result: { requestId: '', text: '', cancelled: true }, txn: current.txn };
+        current = { avatarId: next, result: { requestId: '', text: '', cancelled: true }, txn: current.txn, input: current.input };
         continue;
       }
       this.journal('floor.grant', next, { avatar: next, reason: job.kind === 'kevin' ? 'queued' : 'bid' }, job.txn);
@@ -184,26 +193,67 @@ export class FloorController {
         outcome = { requestId: '', text: '', cancelled: true };
       }
       // A chatter turn's reply is saved in execute(); a turn answering Kevin is saved by the renderer.
-      current = { avatarId: next, result: outcome, txn: job.txn };
+      current = {
+        avatarId: next,
+        result: outcome,
+        txn: job.txn,
+        input: job.kind === 'kevin' ? { kind: 'person', text: job.payload.text, participants: job.participants } : { kind: 'chatter', from: job.from, text: job.text },
+      };
     }
   }
 
-  private async queueChatter(fromId: string, text: string, epoch: number): Promise<void> {
-    const decision = await this.manager.route({ from: `avatar:${fromId}`, text, at: this.now() });
-    if (epoch !== this.epoch) return;
+  /** Returns the avatar queued to answer, if any. */
+  private async queueChatter(fromId: string, text: string, epoch: number, toPerson: boolean): Promise<string | null> {
+    const decision = await this.manager.route({ from: `avatar:${fromId}`, text, at: this.now(), ...(toPerson ? { toPerson: true } : {}) });
+    if (epoch !== this.epoch) return null;
     const txn = `chatter:${this.now()}:${++this.serial}`;
     this.journalDecision(`avatar:${fromId}`, text, decision, { id: txn, title: clip(text) });
     if (decision.budget) {
       this.journal('floor.budget', fromId, { kind: decision.budget.kind, turns: decision.budget.turns, ms: decision.budget.ms }, txn, 'done');
     }
     const speaker = decision.speakers[0];
-    if (!speaker) return;
+    if (!speaker) return null;
     const status = this.manager.request(speaker.avatarId);
     if (status === 'queued') {
       this.jobs.set(speaker.avatarId, { kind: 'chatter', from: fromId, text, channel: decision.channel, txn });
-    } else if (status === 'granted') {
+      return speaker.avatarId;
+    }
+    if (status === 'granted') {
       // The sender still holds the slot, so this cannot happen; do not strand a slot if it does.
       this.manager.release(speaker.avatarId);
+    }
+    return null;
+  }
+
+  /** After `avatarId` answered `input`: let the avatars that did not get these lines as their own input overhear them. */
+  private shareWithRoom(avatarId: string, reply: string, input: Input, next: string | null): void {
+    if (input.kind === 'person') {
+      this.heard('person', input.text, avatarId, input.participants);
+    } else {
+      this.heard(input.from, input.text, avatarId, [input.from]);
+    }
+    this.heard(avatarId, reply, undefined, next ? [next] : []);
+  }
+
+  /**
+   * A line said in the room: every other avatar in the scene overhears it (a buffered note, no model
+   * call). `addressedTo` is named in the line and skipped as a listener (it got the line as its own
+   * input); so are the speaker and anyone in `exclude`.
+   */
+  heard(speakerId: string | 'person', text: string, addressedTo?: string, exclude: string[] = []): void {
+    const clean = text.replace(/\s+/g, ' ').trim();
+    if (!clean) return;
+    const nameOf = (id: string) => this.options.registry.get(id)?.name ?? id;
+    const from = speakerId === 'person' ? 'Kevin' : nameOf(speakerId);
+    const label = addressedTo ? `${from} (to ${nameOf(addressedTo)})` : from;
+    const skip = new Set([speakerId, ...(addressedTo ? [addressedTo] : []), ...exclude]);
+    for (const id of this.manager.scene().avatarIds) {
+      if (skip.has(id)) continue;
+      try {
+        this.options.voice(id)?.overhear?.({ from: label, text: clean });
+      } catch (error) {
+        this.options.logger?.warn('Floor: an avatar could not overhear', { avatarId: id, message: error instanceof Error ? error.message : String(error) });
+      }
     }
   }
 
@@ -223,6 +273,7 @@ export class FloorController {
         text: chatterNote(fromName, job.text),
         instructions: this.options.instructionsFor?.(avatarId),
         silent: !aloud,
+        noTools: true,
       },
       (event) => {
         if (aloud) this.options.emitChatter?.(avatarId, { ...event, avatarId });

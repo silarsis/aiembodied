@@ -116,6 +116,14 @@ describe('LocalLlmClient tool calls', () => {
 });
 
 describe('LocalVoiceService tools', () => {
+  it('offers no tools to a noTools turn, and does to an ordinary one', async () => {
+    const { service, chats } = makeService([]);
+    await service.respond({ requestId: 'r1', text: 'hello', noTools: true }, () => {});
+    await service.respond({ requestId: 'r2', text: 'hello' }, () => {});
+    expect(chats[0].tools).toBeUndefined();
+    expect(Array.isArray(chats[1].tools) && chats[1].tools.length).toBeGreaterThan(0);
+  });
+
   it('reports each finished tool call, with its full result, for long-term memory', async () => {
     const records: Array<Record<string, unknown>> = [];
     const failing = makeService([searchCall, [{ content: 'Sorry.' }]], new FakeSearch(true), [], (r) => records.push(r));

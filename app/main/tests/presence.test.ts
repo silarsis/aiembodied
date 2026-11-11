@@ -20,7 +20,7 @@ describe('PresenceTracker', () => {
     expect(text).toContain('camera saw a face 5 min ago');
     expect(text).toContain('do not disturb: off');
     expect(text).toContain('local time Tue 21:40');
-    expect(text).toContain('Echo has not spoken yet');
+    expect(text).toContain('No avatar has spoken yet');
   });
 
   it('ignores invalid updates', () => {

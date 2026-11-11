@@ -20,6 +20,8 @@ function harness(options: { replies?: Record<string, string[]>; bids?: FloorBid[
   const saved: Array<{ speaker: string; content: string }> = [];
   const forwarded: LocalVoiceEvent[] = [];
   const cancelled: string[] = [];
+  const heard: Array<{ to: string; from: string; text: string }> = [];
+  const bidCalls = vi.fn();
   const replies = new Map(Object.entries(options.replies ?? {}));
   const gates = new Map<string, () => void>();
   const hold = new Set<string>();
@@ -34,16 +36,20 @@ function harness(options: { replies?: Record<string, string[]>; bids?: FloorBid[
   const controller = new FloorController({
     registry: { list: () => options.profiles ?? PROFILES, get: (id) => (options.profiles ?? PROFILES).find((p) => p.id === id) ?? null },
     store: { getValue: (key) => kv.get(key) ?? null, setValue: (key, value) => void kv.set(key, value) },
-    voice: (avatarId) => ({ respond: respond(avatarId), cancel: () => void cancelled.push(avatarId) }),
+    voice: (avatarId) => ({
+      respond: respond(avatarId),
+      cancel: () => void cancelled.push(avatarId),
+      overhear: (line) => void heard.push({ to: avatarId, ...line }),
+    }),
     runPersonTurn: (avatarId, request) => respond(avatarId)(request, () => undefined),
     emitChatter: (_id, event) => void forwarded.push(event),
     saveLine: (line) => void saved.push(line),
     instructionsFor: (avatarId) => `You are ${avatarId}.`,
     bus: () => ({ publish: (event) => (published.push(event), null), subscribe: () => () => undefined, connected: () => false }),
-    bid: async () => options.bids ?? [],
+    bid: async () => (bidCalls(), options.bids ?? []),
     now: () => 1_000,
   });
-  return { controller, kv, published, turns, saved, forwarded, cancelled, hold, gates };
+  return { controller, kv, published, turns, saved, forwarded, cancelled, hold, gates, heard, bidCalls };
 }
 const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
 const types = (published: SwitchboardEventInput[]) => published.map((e) => e.type);
@@ -136,15 +142,102 @@ describe('FloorController', () => {
     expect((h.forwarded[0] as { wav: Uint8Array }).wav.length).toBeGreaterThan(0);
   });
 
-  it('uses a bid when nobody is named, and says nothing when no bid wins', async () => {
-    const won = harness({ replies: { echo: ['Interesting question.'], rex: ['Hm.'] }, bids: [{ avatarId: 'rex', want: 0.9, reason: 'curious' }] });
-    await won.controller.respondToPerson({ requestId: 'r1', text: 'what is time?' });
+  it('uses a bid for chatter when nobody is named, and says nothing when no bid wins', async () => {
+    const won = harness({ replies: { echo: ['Sage, what is time?'], sage: ['Interesting question.'], rex: ['Hm.'] }, bids: [{ avatarId: 'rex', want: 0.9, reason: 'curious' }] });
+    await won.controller.respondToPerson({ requestId: 'r1', text: 'Echo, what is time?' });
     await settle();
-    expect(won.turns.map((t) => t.avatarId)).toEqual(['echo', 'rex']);
-    const quiet = harness({ replies: { echo: ['Interesting question.'] }, bids: [{ avatarId: 'rex', want: 0.1, reason: '' }] });
-    await quiet.controller.respondToPerson({ requestId: 'r1', text: 'what is time?' });
+    expect(won.turns.map((t) => t.avatarId)).toEqual(['echo', 'sage', 'rex']);
+    const quiet = harness({ replies: { echo: ['Sage, what is time?'], sage: ['Interesting question.'] }, bids: [{ avatarId: 'rex', want: 0.1, reason: '' }] });
+    await quiet.controller.respondToPerson({ requestId: 'r1', text: 'Echo, what is time?' });
     await settle();
-    expect(quiet.turns.map((t) => t.avatarId)).toEqual(['echo']);
+    expect(quiet.turns.map((t) => t.avatarId)).toEqual(['echo', 'sage']);
+  });
+
+  it('does not open chatter or ask for bids after an answer to Kevin that names nobody', async () => {
+    const h = harness({ replies: { echo: ['Interesting question.'] }, bids: [{ avatarId: 'rex', want: 0.9, reason: '' }] });
+    await h.controller.respondToPerson({ requestId: 'r1', text: 'what is time?' });
+    await settle();
+    expect(h.turns.map((t) => t.avatarId)).toEqual(['echo']);
+    expect(h.bidCalls).not.toHaveBeenCalled();
+    const decisions = h.published.filter((e) => e.type === 'floor.decision');
+    expect(decisions[1].payload.trace).toContain('avatar: answer to Kevin; others only overhear');
+  });
+
+  it('still lets an answer to Kevin that names another avatar reach that avatar', async () => {
+    const h = harness({ replies: { echo: ['Rex, what do you think?'], rex: ['Fine.'] } });
+    await h.controller.respondToPerson({ requestId: 'r1', text: 'what is time?' });
+    await settle();
+    expect(h.turns.map((t) => t.avatarId)).toEqual(['echo', 'rex']);
+  });
+
+  it('gives chatter turns no tools', async () => {
+    const h = harness({ replies: { echo: ['Sage, do you agree?'], sage: ['Yes.'] } });
+    await h.controller.respondToPerson({ requestId: 'r1', text: 'Echo, any thoughts?' });
+    await settle();
+    expect(h.turns.find((t) => t.avatarId === 'sage')?.request.noTools).toBe(true);
+    expect(h.turns.find((t) => t.avatarId === 'echo')?.request.noTools).toBeUndefined();
+  });
+
+  it('lets the other avatars overhear Kevin and the answer, but not the addressee twice', async () => {
+    const h = harness({ replies: { sage: ['I think so.'] } });
+    await h.controller.respondToPerson({ requestId: 'r1', text: 'Sage, what do you think?' });
+    await settle();
+    expect(h.heard).toEqual([
+      { to: 'echo', from: 'Kevin (to Sage)', text: 'Sage, what do you think?' },
+      { to: 'rex', from: 'Kevin (to Sage)', text: 'Sage, what do you think?' },
+      { to: 'echo', from: 'Sage', text: 'I think so.' },
+      { to: 'rex', from: 'Sage', text: 'I think so.' },
+    ]);
+  });
+
+  it('does not overhear cancelled or empty replies', async () => {
+    const h = harness({ replies: { sage: [''] } });
+    await h.controller.respondToPerson({ requestId: 'r1', text: 'Sage, hello' });
+    await settle();
+    expect(h.heard).toEqual([]);
+  });
+
+  it('chatter: bystanders hear both lines; the sender hears the reply unless it gets it as input', async () => {
+    const h = harness({ replies: { echo: ['Sage, do you agree?'], sage: ['Yes, I do.'] } });
+    await h.controller.respondToPerson({ requestId: 'r1', text: 'Echo, any thoughts?' });
+    await settle();
+    const toRex = h.heard.filter((l) => l.to === 'rex').map((l) => `${l.from}: ${l.text}`);
+    expect(toRex).toEqual([
+      'Kevin (to Echo): Echo, any thoughts?',
+      'Echo: Sage, do you agree?',
+      'Echo (to Sage): Sage, do you agree?',
+      'Sage: Yes, I do.',
+    ]);
+    // Echo gets Sage's reply only as overheard text (nobody is named in it, so no chatter input).
+    expect(h.heard.filter((l) => l.to === 'echo').map((l) => l.from)).toEqual(['Sage']);
+    expect(h.heard.some((l) => l.to === 'sage' && l.from.startsWith('Echo'))).toBe(false);
+  });
+
+  it('chatter: the sender does not overhear a reply that comes back to it as its own input', async () => {
+    const h = harness({ replies: { echo: ['Sage, agree?', 'Fine.'], sage: ['Echo, yes.'] } });
+    await h.controller.respondToPerson({ requestId: 'r1', text: 'Echo, any thoughts?' });
+    await settle();
+    expect(h.heard.some((l) => l.to === 'echo' && l.from === 'Sage')).toBe(false);
+  });
+
+  it('heard() skips the speaker and the addressee and ignores empty text', () => {
+    const h = harness();
+    h.controller.heard('echo', '  ', 'sage');
+    h.controller.heard('echo', 'a  b', 'sage');
+    expect(h.heard).toEqual([{ to: 'rex', from: 'Echo (to Sage)', text: 'a b' }]);
+  });
+
+  it('interrupt() during a person turn leaves that turn\'s own result intact', async () => {
+    const h = harness({ replies: { echo: ['Done.'] } });
+    h.hold.add('echo');
+    const pending = h.controller.respondToPerson({ requestId: 'r1', text: 'Echo, hi' });
+    await settle();
+    h.controller.interrupt();
+    h.gates.get('echo')?.();
+    await expect(pending).resolves.toMatchObject({ text: 'Done.' });
+    await settle();
+    expect(h.controller.manager.state().speaking).toBeNull();
+    expect(h.heard).toEqual([]);
   });
 
   it('cuts chatter off after the turn budget and journals floor.budget', async () => {

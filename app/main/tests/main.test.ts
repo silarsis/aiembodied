@@ -1484,6 +1484,35 @@ describe('main process bootstrap', () => {
       respondSpy.mockRestore();
     });
 
+    it('lets the other avatars overhear a turn that names an avatar directly', async () => {
+      const { respond, respondSpy } = await boot('Sage,Rex');
+      const { LocalVoiceService } = await import('../src/local-voice/local-voice-service.js');
+      respondSpy.mockImplementation(async (request) => ({ requestId: request.requestId, text: 'Fine by me.', cancelled: false }));
+      const overheard = vi.spyOn(LocalVoiceService.prototype, 'overhear').mockImplementation(function (this: { avatarId: string }, line) {
+        heard.push(`${this.avatarId}<${line.from}: ${line.text}`);
+      });
+      const heard: string[] = [];
+      await respond({ requestId: 'r1', text: 'how are you', avatarId: 'sage' });
+      expect(heard).toEqual([
+        'echo<Kevin (to Sage): how are you',
+        'rex<Kevin (to Sage): how are you',
+        'echo<Sage: Fine by me.',
+        'rex<Sage: Fine by me.',
+      ]);
+      heard.length = 0;
+      await respond({ requestId: 'r2', text: 'sample', avatarId: 'sage', preview: true });
+      await respond({ requestId: 'r3', text: 'x', avatarId: 'sage', system: true });
+      expect(heard).toEqual([]);
+      overheard.mockRestore();
+      respondSpy.mockRestore();
+    });
+
+    it('registers floor:interrupt and is safe to call when nothing runs', async () => {
+      const { handlers, respondSpy } = await boot('Sage');
+      expect(await handlers.get('floor:interrupt')?.({})).toBeUndefined();
+      respondSpy.mockRestore();
+    });
+
     it('saves and reads the Hear avatar chatter setting', async () => {
       const { handlers, respondSpy } = await boot();
       expect(await handlers.get('floor:get-hear-chatter')?.({})).toBe(false);

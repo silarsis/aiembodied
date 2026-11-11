@@ -23,15 +23,20 @@ export const DELIBERATE_MAX_TOKENS = 120;
 export const DELIBERATE_TEMPERATURE = 0.2;
 const MAX_TEXT_CHARS = 1500;
 
-export const DELIBERATE_SYSTEM_PROMPT = [
-  'You are Echo, a friendly embodied assistant who lives in a room with Kevin and sees what is going on around him.',
+export const deliberateSystemPrompt = (name = 'Echo'): string => [
+  `You are ${name}, a friendly embodied assistant who lives in a room with Kevin and sees what is going on around him.`,
   'You get a message that arrived while Kevin may or may not be around.',
   'Decide: ignore (noise), remember (worth knowing later, not worth interrupting), say (Kevin would want to hear it now).',
   'Consider whether Kevin is talking, absent, or asleep.',
   'Answer with one JSON object {"action": "ignore|remember|say", "reason": "..."} and nothing else.',
 ].join(' ');
 
+/** The decision prompt for the default avatar. */
+export const DELIBERATE_SYSTEM_PROMPT = deliberateSystemPrompt();
+
 export interface DeliberateOptions {
+  /** The avatar deciding (its name goes in the prompt). Default 'Echo'. */
+  avatarName?: string;
   routing?: ModelRouting;
   keyFor?: ServerKeyLookup;
   fetchFn?: typeof fetch;
@@ -93,7 +98,7 @@ export async function deliberate(event: SwitchboardEvent, presence: PresenceTrac
     const run = (async () => {
       for await (const part of chat.streamChat(
         [
-          { role: 'system', content: DELIBERATE_SYSTEM_PROMPT },
+          { role: 'system', content: deliberateSystemPrompt(options.avatarName) },
           { role: 'user', content: buildDeliberateUser(event, presence, now) },
         ],
         { signal },

@@ -1453,6 +1453,7 @@ export default function App() {
     if (isLocalBackend) {
       return new LocalVoiceClient({
         getBridge: () => getPreloadApi()?.localVoice,
+        interruptFloor: () => getPreloadApi()?.floor?.interrupt(),
         wakePhrase,
         callbacks: {
           onStateChange: setRealtimeState,

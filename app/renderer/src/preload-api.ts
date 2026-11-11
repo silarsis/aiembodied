@@ -148,7 +148,7 @@ export interface LocalVoiceBridge {
   /** Updates for Echo that are waiting to be spoken (from the coding agent). */
   systemStatus?(avatarId?: string): Promise<LocalVoiceSystemStatus>;
   /** An update is ready: run a system turn if the conversation is idle. */
-  onSystemReady?(listener: (info?: { urgent: boolean }) => void): () => void;
+  onSystemReady?(listener: (info?: { urgent: boolean; avatarId?: string }) => void): () => void;
   onEvent(listener: (event: LocalVoiceEvent) => void): () => void;
 }
 

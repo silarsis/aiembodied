@@ -823,7 +823,7 @@ function startAvatarPlumbing(profile: AvatarProfile, manager: ConfigManager): vo
     bus: switchboardBus,
     notify: (text, options) => getVoiceService(avatarId)?.notify(text, options),
     deliberate: (event) =>
-      deliberate(event, presence, { routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger }),
+      deliberate(event, presence, { avatarName: avatarRegistry?.get(avatarId)?.name ?? profile.name, routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger }),
     remember: (event, text) => {
       const source = typeof event.payload.source === 'string' ? event.payload.source : `${event.producer.kind}:${event.producer.id}`;
       conversationManager?.appendToRecentSession([
@@ -2169,7 +2169,13 @@ function registerIpcHandlers(
       floorSender = sender;
       return floor.respondToPerson(payload);
     }
-    return runVoiceTurn(sender, payload, voiceService);
+    const result = await runVoiceTurn(sender, payload, voiceService);
+    // Kevin named an avatar directly: the others in the scene overhear the exchange.
+    if (floor && ownTurn && payload.avatarId?.trim() && floor.isMulti() && !result.cancelled && result.text.trim()) {
+      floor.heard('person', payload.text, avatarId);
+      floor.heard(avatarId, result.text);
+    }
+    return result;
   });
   ipcMain.handle('presence:update', (_event, payload: unknown) => {
     const p = (typeof payload === 'object' && payload !== null ? payload : {}) as Record<string, unknown>;
@@ -2181,6 +2187,10 @@ function registerIpcHandlers(
       lastAssistantSpokeAt: typeof p.assistantSpokeAt === 'number' ? p.assistantSpokeAt : undefined,
     });
     return true;
+  });
+  // Kevin started speaking over the avatars: cancel what they say and drop what waits.
+  ipcMain.handle('floor:interrupt', () => {
+    floor?.interrupt();
   });
   ipcMain.handle('floor:get-hear-chatter', () => floor?.hearChatter() ?? false);
   ipcMain.handle('floor:set-hear-chatter', (_event, enabled: unknown) => floor?.setHearChatter(enabled === true) ?? false);
