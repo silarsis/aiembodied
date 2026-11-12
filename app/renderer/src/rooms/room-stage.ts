@@ -9,8 +9,6 @@ const TMP = new THREE.Vector3();
 const TMP_ORIGIN = new THREE.Vector3();
 const TMP_ORIENTATION = new THREE.Quaternion();
 
-const SURFACE_RAY = new THREE.Raycaster();
-const SURFACE_DOWN = new THREE.Vector3(0, -1, 0);
 /** How far above or below a tag height a measured surface may be (metres): keeps backrests and arms out. */
 const SURFACE_BAND = 0.25;
 
@@ -102,8 +100,8 @@ export class RoomStage {
     const boxTop = object.position[1] + object.size[1];
     const from = nearY !== undefined ? nearY + band : boxTop + 0.5;
     node.updateWorldMatrix(true, true);
-    SURFACE_RAY.set(new THREE.Vector3(x, from, z), SURFACE_DOWN);
-    const hit = SURFACE_RAY.intersectObject(node, true).find((candidate) => candidate.object instanceof THREE.Mesh);
+    const ray = new THREE.Raycaster(new THREE.Vector3(x, from, z), new THREE.Vector3(0, -1, 0));
+    const hit = ray.intersectObject(node, true).find((candidate) => candidate.object instanceof THREE.Mesh);
     if (nearY !== undefined) return hit && hit.point.y >= nearY - band ? hit.point.y : null;
     return hit ? hit.point.y : boxTop;
   }
