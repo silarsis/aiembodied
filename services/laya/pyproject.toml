@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aiembodied-laya"
+version = "0.1.0"
+description = "Quick-decision model server for aiembodied: Laya (System 1) behind /v1/systemone"
+requires-python = ">=3.10"
+# `laya[serve]` brings the server (FastAPI, uvicorn) and the model runtime (torch, transformers).
+# The CPU build of torch is plenty for a 512-token state; set LAYA_DEVICE=cuda to use a GPU.
+dependencies = [
+  "laya[serve]>=0.4.31",
+]
+
+# This folder only pins and starts the dependency; it has no Python code of its own.
+[tool.setuptools]
+packages = []

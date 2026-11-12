@@ -6,6 +6,9 @@ import {
   FloorManager,
   PARTNER_WINDOW_MS,
   findName,
+  relayTargets,
+  type AddresseeFunction,
+  type AddresseeResult,
   type BidFunction,
   type FloorBid,
   type Scene,
@@ -14,14 +17,27 @@ import { parseBids } from '../src/floor/bid.js';
 
 const NAMES: Record<string, string> = { echo: 'Echo', sage: 'Sage', rex: 'Rex' };
 
-function make(options: { ids?: string[]; bids?: FloorBid[] | Error; hear?: boolean; scene?: Scene } = {}) {
+function make(options: { ids?: string[]; bids?: FloorBid[] | Error; hear?: boolean; scene?: Scene; addressee?: AddresseeResult | Error | 'hang' } = {}) {
   const ids = options.ids ?? ['echo', 'sage', 'rex'];
   const bid = vi.fn<BidFunction>(async () => {
     if (options.bids instanceof Error) throw options.bids;
     return options.bids ?? [];
   });
-  const manager = new FloorManager({ avatarIds: () => ids, nameOf: (id) => NAMES[id] ?? id, bid, hearChatter: () => options.hear === true, scene: options.scene ? () => options.scene as Scene : undefined });
-  return { manager, bid };
+  const addressee = vi.fn<AddresseeFunction>(async () => {
+    if (options.addressee instanceof Error) throw options.addressee;
+    if (options.addressee === 'hang') return new Promise<AddresseeResult>(() => undefined);
+    return options.addressee ?? { avatarId: null, confidence: 0 };
+  });
+  const manager = new FloorManager({
+    avatarIds: () => ids,
+    nameOf: (id) => NAMES[id] ?? id,
+    bid,
+    addressee: options.addressee === undefined ? undefined : addressee,
+    addresseeTimeoutMs: 50,
+    hearChatter: () => options.hear === true,
+    scene: options.scene ? () => options.scene as Scene : undefined,
+  });
+  return { manager, bid, addressee };
 }
 const kevin = (text: string, at = 1_000) => ({ from: 'person:kevin' as const, text, at });
 const avatar = (id: string, text: string, at = 1_000) => ({ from: `avatar:${id}` as const, text, at });
@@ -88,6 +104,60 @@ describe('FloorManager: Kevin speaks', () => {
     for (const text of ['hello', 'Sage?', 'everyone']) {
       expect(ids(await manager.route(kevin(text)))).toEqual(['echo']);
     }
+  });
+});
+
+describe('relayTargets', () => {
+  const at = (text: string) => relayTargets(text, ['echo', 'sage', 'rex'], (id) => NAMES[id]);
+  it('finds names right after a relay phrase, in order', () => {
+    expect(at('Can you ask Echo what they are doing?')).toEqual(['echo']);
+    expect(at('tell rex and then check with Sage')).toEqual(['rex', 'sage']);
+    expect(at('please pass it on to Echo')).toEqual(['echo']);
+    expect(at('tell me, Echo')).toEqual([]);
+    expect(at('Echo, ask Sagely things')).toEqual([]);
+  });
+});
+
+describe('FloorManager: relay', () => {
+  it('has the asked avatar answer Kevin and pass the question on, then routes its line to the target aloud', async () => {
+    const { manager } = make({ ids: ['echo', 'sage'] });
+    const decision = await manager.route(kevin("Sage, can you ask Echo what they're doing?"));
+    expect(ids(decision)).toEqual(['sage']);
+    expect(decision.relay).toEqual({ from: 'sage', to: 'echo' });
+    const passed = await manager.route({ ...avatar('sage', 'lenha, what are you up to right now?'), toPerson: true });
+    expect(ids(passed)).toEqual(['echo']);
+    expect(passed.speakers[0].reason).toBe('addressed');
+    expect(passed.channel).toBe('aloud');
+    expect(passed.relay).toEqual({ from: 'sage', to: 'echo' });
+    const again = await manager.route({ ...avatar('sage', 'lenha, what are you up to right now?'), toPerson: true });
+    expect(ids(again)).toEqual([]);
+  });
+
+  it('uses the last partner, or the host, when Kevin does not call the asker by name', async () => {
+    const a = make({ ids: ['echo', 'sage'] });
+    await a.manager.route(kevin('Sage, hello', 1_000));
+    const viaPartner = await a.manager.route(kevin("Ask Echo what she's doing", 2_000));
+    expect(ids(viaPartner)).toEqual(['sage']);
+    expect(viaPartner.relay).toEqual({ from: 'sage', to: 'echo' });
+    const b = make({ ids: ['echo', 'sage'] });
+    const viaHost = await b.manager.route(kevin("Ask Echo what she's doing"));
+    expect(ids(viaHost)).toEqual(['sage']);
+    expect(viaHost.relay).toEqual({ from: 'sage', to: 'echo' });
+  });
+
+  it('does not relay when everyone is addressed or no relay phrase is used, and a new Kevin turn clears it', async () => {
+    const { manager } = make({ ids: ['echo', 'sage'] });
+    const both = await manager.route(kevin('Sage and Echo, what do you think?'));
+    expect(ids(both)).toEqual(['sage', 'echo']);
+    expect(both.relay).toBeUndefined();
+    expect((await manager.route(kevin('tell me, Echo'))).relay).toBeUndefined();
+    await manager.route(kevin('Sage, ask Echo something'));
+    await manager.route(kevin('Rex who?'));
+    const late = await manager.route({ ...avatar('sage', 'Echo, hi'), toPerson: true });
+    expect(late.relay).toBeUndefined();
+    await manager.route(kevin('Sage, ask Echo something'));
+    manager.bargeIn();
+    expect((await manager.route({ ...avatar('sage', 'Echo, hi'), toPerson: true })).relay).toBeUndefined();
   });
 });
 
@@ -276,5 +346,78 @@ describe('FloorManager: wake word and talking to each other', () => {
     for (let i = 0; i < 8; i += 1) last = await manager.route(avatar(i % 2 ? 'echo' : 'sage', 'more', 3_000 + i));
     expect(last.speakers).toEqual([]);
     expect(last.budget?.kind).toBe('turns');
+  });
+});
+
+describe('FloorManager: addressee check', () => {
+  it('lets one confident avatar answer when Kevin names two', async () => {
+    const { manager, addressee } = make({ addressee: { avatarId: 'sage', confidence: 0.9 } });
+    const decision = await manager.route(kevin('Echo and Sage, Sage knows about plants, right?'));
+    expect(decision.speakers).toEqual([{ avatarId: 'sage', reason: 'addressed' }]);
+    expect(decision.trace.join(' ')).toContain('addressee check -> only sage');
+    const input = addressee.mock.calls[0][0];
+    expect(input.candidates.map((c) => c.avatarId)).toEqual(['echo', 'sage']);
+    expect(input.includePerson).toBe(false);
+    expect(input.recent).toEqual([]);
+  });
+
+  it('keeps both named avatars when it says all, is unsure, fails, hangs or is absent', async () => {
+    for (const addressee of [{ avatarId: 'all', confidence: 0.95 }, { avatarId: 'sage', confidence: 0.3 }, { avatarId: null, confidence: 0.9 }, new Error('down'), 'hang' as const, undefined]) {
+      const { manager } = make({ addressee });
+      const decision = await manager.route(kevin('Echo and Sage, what do you think?'));
+      expect(ids(decision)).toEqual(['echo', 'sage']);
+    }
+  });
+
+  it('is not asked when a rule already decides (one name, relay, group, talk)', async () => {
+    const { manager, addressee } = make({ addressee: { avatarId: 'rex', confidence: 0.99 } });
+    await manager.route(kevin('Sage, hello'));
+    await manager.route(kevin('Sage, ask Echo what he thinks'));
+    await manager.route(kevin('Echo and Sage, everyone listen'));
+    await manager.route(kevin('Echo and Sage, talk to each other'));
+    expect(addressee).not.toHaveBeenCalled();
+  });
+
+  it('makes an avatar line without a name go to the avatar it is aimed at', async () => {
+    const { manager, addressee, bid } = make({ addressee: { avatarId: 'rex', confidence: 0.8 } });
+    const decision = await manager.route(avatar('echo', 'what are you up to?'));
+    expect(decision.speakers).toEqual([{ avatarId: 'rex', reason: 'addressed' }]);
+    expect(decision.trace.join(' ')).toContain('addressee check -> rex');
+    expect(addressee.mock.calls[0][0]).toMatchObject({ speaker: 'avatar:echo', includePerson: true });
+    expect(addressee.mock.calls[0][0].candidates.map((c) => c.avatarId)).toEqual(['sage', 'rex']);
+    expect(bid).not.toHaveBeenCalled();
+  });
+
+  it('ends an avatar line aimed at Kevin when it was an answer to him, else goes on to bids', async () => {
+    const toKevin = make({ addressee: { avatarId: 'person', confidence: 0.9 } });
+    expect((await toKevin.manager.route({ ...avatar('echo', 'Here you go.'), toPerson: true })).speakers).toEqual([]);
+    expect(toKevin.bid).not.toHaveBeenCalled();
+    const chatter = make({ addressee: { avatarId: 'person', confidence: 0.9 }, bids: [{ avatarId: 'sage', want: 0.8, reason: 'x' }] });
+    expect(ids(await chatter.manager.route(avatar('echo', 'Kevin, what do you think?')))).toEqual(['sage']);
+    expect(chatter.bid).toHaveBeenCalled();
+  });
+
+  it('falls back to bids when unsure, failing, or when it names an avatar not in the scene', async () => {
+    for (const addressee of [{ avatarId: 'rex', confidence: 0.2 }, { avatarId: 'all', confidence: 0.9 }, { avatarId: 'ghost', confidence: 0.9 }, new Error('down'), 'hang' as const]) {
+      const { manager, bid } = make({ addressee, bids: [{ avatarId: 'sage', want: 0.8, reason: 'x' }] });
+      const decision = await manager.route(avatar('echo', 'what are you up to?'));
+      expect(ids(decision)).toEqual(['sage']);
+      expect(decision.speakers[0].reason).toBe('bid');
+      expect(bid).toHaveBeenCalledOnce();
+    }
+  });
+
+  it('is skipped for a named line, a pending relay and a chat Kevin asked for', async () => {
+    const named = make({ addressee: { avatarId: 'rex', confidence: 0.9 } });
+    await named.manager.route(avatar('echo', 'Sage, look at this'));
+    const relay = make({ addressee: { avatarId: 'rex', confidence: 0.9 } });
+    await relay.manager.route(kevin('Echo, ask Sage what she thinks'));
+    await relay.manager.route(avatar('echo', 'Sage, Kevin wants to know'));
+    const talk = make({ addressee: { avatarId: 'rex', confidence: 0.9 } });
+    await talk.manager.route(kevin('Echo and Sage, talk to each other'));
+    await talk.manager.route(avatar('echo', 'so what do you think?'));
+    expect(named.addressee).not.toHaveBeenCalled();
+    expect(relay.addressee).not.toHaveBeenCalled();
+    expect(talk.addressee).not.toHaveBeenCalled();
   });
 });

@@ -15,6 +15,8 @@ import { deliberate } from './switchboard/deliberate.js';
 import { PresenceTracker, isVoicePhase } from './presence/presence.js';
 import { FloorController } from './floor/index.js';
 import { createModelBid } from './floor/bid.js';
+import { createSystemOne } from './decide/system-one.js';
+import { createSystemOneAddressee, createSystemOneBid } from './floor/system-one-floor.js';
 import { avatarIdForName, ensureExtraAvatars } from './avatars/extra-avatars.js';
 import { SwitchboardMirror } from './switchboard/mirror.js';
 import { AvatarRegistry, DEFAULT_AVATAR_ID, type AvatarProfile } from './avatars/avatar-registry.js';
@@ -2657,12 +2659,30 @@ app.whenReady().then(async () => {
         conversationManager?.appendToRecentSession([{ role: 'assistant', content: line.content, speaker: line.speaker, ts: line.ts }]),
       instructionsFor: (avatarId) => avatarInstructions(avatarId),
       bus: () => switchboardBus,
-      bid: createModelBid({
-        routing: () => manager.getConfig().models,
-        keyFor: (id) => manager.getServerKey(id),
-        nameOfSpeaker: (from) => (from.startsWith('avatar:') ? (registry.get(from.slice('avatar:'.length))?.name ?? from) : 'Kevin'),
-        logger,
-      }),
+      // Quick decisions (Laya) answer first; the clients are built per call so a changed route applies at once.
+      // When the route is off or fails, bids go to the Idle thoughts model and the addressee check is skipped.
+      addressee: (input, signal) => {
+        const client = createSystemOne({ routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger });
+        if (!client) return Promise.reject(new Error('Quick decisions are off'));
+        return createSystemOneAddressee(client, (id) => registry.get(id)?.name ?? id)(input, signal);
+      },
+      bid: async (candidates, recentLines, signal) => {
+        const nameOfSpeaker = (from: string) => (from.startsWith('avatar:') ? (registry.get(from.slice('avatar:'.length))?.name ?? from) : 'Kevin');
+        const client = createSystemOne({ routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger });
+        if (client) {
+          try {
+            return await createSystemOneBid(client, nameOfSpeaker)(candidates, recentLines, signal);
+          } catch (error) {
+            logger.warn('Quick-decision bids failed; asking the Idle thoughts model.', { message: error instanceof Error ? error.message : String(error) });
+          }
+        }
+        return createModelBid({
+          routing: () => manager.getConfig().models,
+          keyFor: (id) => manager.getServerKey(id),
+          nameOfSpeaker,
+          logger,
+        })(candidates, recentLines, signal);
+      },
       logger,
     });
     const agentStore = memoryStore;

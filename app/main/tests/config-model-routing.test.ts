@@ -88,6 +88,29 @@ describe('model routing', () => {
     });
   });
 
+  it('routes Quick decisions to Laya by default, loads old saved configs without them, and can turn them off', () => {
+    const base = defaultRoutes(DEFAULT_PROVIDER_SETTINGS);
+    expect(base.decide).toEqual({ server: 'local-laya' });
+    expect(USE_SERVER_TYPES.decide).toEqual(['systemone']);
+    expect(ADDABLE_SERVER_TYPES).toContain('systemone');
+    const old = resolveModelRouting(builtIns(), base, { routes: { llm: { server: 'openai', model: 'gpt-4.1' } } });
+    expect(routeTargets(old, 'decide').map(({ server }) => [server.id, server.type, server.url])).toEqual([
+      ['local-laya', 'systemone', 'http://127.0.0.1:8197'],
+    ]);
+    const off = resolveModelRouting(builtIns(), base, { routes: { decide: { server: '' } } });
+    expect(routeTargets(off, 'decide')).toEqual([]);
+    const wrong = resolveModelRouting(builtIns(), base, { routes: { decide: { server: 'local-llm' } } });
+    expect(wrong.routes.decide).toEqual({ server: 'local-laya' });
+    const moved = resolveModelRouting(builtIns(), base, {
+      servers: [{ id: 'local-laya', url: 'http://gpu:9000/' }, { id: 'laya2', type: 'systemone', url: 'http://other:8197' }],
+      routes: { decide: { server: 'local-laya', model: 'multilingual', backups: [{ server: 'laya2' }, { server: 'openai' }] } },
+    });
+    expect(routeTargets(moved, 'decide').map(({ server, model }) => [server.url, model])).toEqual([
+      ['http://gpu:9000', 'multilingual'],
+      ['http://other:8197', 'multilingual'],
+    ]);
+  });
+
   it('gives a backup the first server model only when it is the same kind of server', () => {
     const routing = resolveModelRouting(builtIns(), defaultRoutes(DEFAULT_PROVIDER_SETTINGS), {
       servers: [{ id: 'gpu', type: 'chat', url: 'http://gpu:8000/v1' }],
@@ -324,6 +347,17 @@ describe('probing model servers', () => {
     await expect(probeModelServer({ type: 'chat', url: 'http://gpu:8000/v1' }, 'k', fetchFn)).resolves.toMatchObject({
       status: 'up',
       models: { chat: ['qwen', 'gemma'] },
+    });
+  });
+
+  it('checks a quick-decision server on /health and lists the checkpoints it has loaded', async () => {
+    const fetchFn = vi.fn(async (url: string | URL | Request) => {
+      expect(String(url)).toBe('http://127.0.0.1:8197/health');
+      return json({ status: 'ok', loaded: ['english'] });
+    }) as unknown as typeof fetch;
+    await expect(probeModelServer({ type: 'systemone', url: 'http://127.0.0.1:8197' }, undefined, fetchFn)).resolves.toMatchObject({
+      status: 'up',
+      models: { decide: ['english'] },
     });
   });
 

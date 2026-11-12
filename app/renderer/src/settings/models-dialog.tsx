@@ -60,7 +60,13 @@ export const MODEL_USES: UseInfo[] = [
     id: 'idle',
     group: 'Rooms',
     name: 'Idle thoughts',
-    what: 'Picks what the avatar does next on its own in a 3D room when nobody is talking. It starts out on the same model as Thinking; a small, fast model is enough.',
+    what: 'Picks what the avatar does next on its own in a 3D room when nobody is talking. It is also the fallback for Quick decisions when Laya is off or not answering. It starts out on the same model as Thinking; a small, fast model is enough.',
+  },
+  {
+    id: 'decide',
+    group: 'Helpers',
+    name: 'Quick decisions',
+    what: 'A small, fast decision model (Laya) that answers quick questions such as who a line is aimed at and which avatar wants to reply. When it is off or not answering, those checks use the Idle thoughts model.',
   },
   {
     id: 'scenelayout',
@@ -99,6 +105,7 @@ export const SERVER_TYPE_LABELS: Record<ServerType, string> = {
   memory: 'Memory database (PostgreSQL)',
   homeassistant: 'Home Assistant',
   coder: 'Coding runner',
+  systemone: 'Quick decision server (Laya)',
   openai: 'OpenAI',
   anthropic: 'Anthropic',
   github: 'GitHub',
@@ -122,6 +129,10 @@ const SERVER_TYPE_HINTS: Partial<Record<ServerType, { hint: string; example: str
     hint: 'services/coder from this repo, running on another PC. It runs the pi coding agent in git worktrees on that PC. Pick it on the Coding page.',
     example: 'http://192.168.1.20:8195',
   },
+  systemone: {
+    hint: 'services/laya from this repo, or any server that speaks the same /v1/systemone API, running on another PC.',
+    example: 'http://192.168.1.20:8197',
+  },
   homeassistant: {
     hint: 'A long-lived access token from your Home Assistant profile. Tag entities with the label aiembodied to have them remembered.',
     example: 'http://homeassistant.local:8123',
@@ -137,6 +148,7 @@ function roleFor(use: UseId, type: ServerType): ModelRole | null {
   if (use === 'stt') return 'transcribe';
   if (use === 'tts') return type === 'speech' ? 'voices' : 'realtime';
   if (use === 'motion') return type === 'motion' ? 'motion' : null;
+  if (use === 'decide') return 'decide';
   return null;
 }
 

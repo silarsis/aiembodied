@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { FloorController, HEAR_CHATTER_KEY, chatterNote } from '../src/floor/index.js';
+import { FloorController, HEAR_CHATTER_KEY, chatterNote, relayChatterNote, relayNote } from '../src/floor/index.js';
 import type { FloorBid } from '../src/floor/floor-manager.js';
 import type { LocalVoiceEvent, LocalVoiceRespondRequest, LocalVoiceRespondResult } from '../src/local-voice/types.js';
 import type { SwitchboardEventInput } from '../src/switchboard/types.js';
@@ -313,5 +313,34 @@ describe('extra avatars from the environment', () => {
     expect(registry.list().map((p) => p.id)).toEqual(['echo', 'sage', 'rex']);
     expect(ensureExtraAvatars(registry, () => 'vrm-1', env)).toEqual([]);
     expect(registry.peek().find((p) => p.id === 'sage')?.prompt).toContain('Sage');
+  });
+
+  it('passes Kevin\'s question on: the asker is told to name the target, the target answers aloud and does not open more chatter', async () => {
+    const h = harness({ replies: { sage: ['Echo, what are you up to right now?'], echo: ['Just tidying up.'] } });
+    await h.controller.respondToPerson({ requestId: 'r1', text: "Sage, can you ask Echo what they're doing?" });
+    await settle();
+    expect(h.turns.map((t) => t.avatarId)).toEqual(['sage', 'echo']);
+    expect(h.turns[0].request.text).toBe(`Sage, can you ask Echo what they're doing?\n\n${relayNote('Echo')}`);
+    expect(h.turns[1].request).toMatchObject({
+      avatarId: 'echo',
+      silent: false,
+      text: relayChatterNote('Sage', 'Echo, what are you up to right now?'),
+    });
+    expect(h.forwarded.length).toBeGreaterThan(0);
+    expect(h.saved).toEqual([{ speaker: 'echo', content: 'Just tidying up.', ts: 1_000 }]);
+    expect(h.published.find((e) => e.type === 'floor.decision')?.payload).toMatchObject({ relay: { from: 'sage', to: 'echo' } });
+  });
+
+  it('forgets a pending relay when Kevin speaks again', async () => {
+    const h = harness({ replies: { sage: ['Echo, what are you up to?'] } });
+    h.hold.add('sage');
+    const first = h.controller.respondToPerson({ requestId: 'r1', text: 'Sage, ask Echo what they do' });
+    await settle();
+    await h.controller.respondToPerson({ requestId: 'r2', text: 'Rex, hello' });
+    h.hold.delete('sage');
+    h.gates.get('sage')?.();
+    await first;
+    await settle();
+    expect(h.turns.map((t) => t.avatarId)).not.toContain('echo');
   });
 });

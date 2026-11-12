@@ -17,6 +17,7 @@ import type { SwitchboardEventInput } from '../switchboard/types.js';
 import {
   FloorManager,
   PERSON_SPEAKER,
+  type AddresseeFunction,
   type BidFunction,
   type FloorChannel,
   type FloorDecision,
@@ -53,20 +54,32 @@ export interface FloorControllerOptions {
   instructionsFor?: (avatarId: string) => string | undefined;
   bus?: () => SwitchboardBus | null;
   bid?: BidFunction;
+  /** A quick check of who a line is aimed at. */
+  addressee?: AddresseeFunction;
   now?: () => number;
   logger?: Pick<Console, 'warn' | 'debug'>;
 }
 
 /** What the avatar that just finished had been given, so the room can overhear it. */
-type Input = { kind: 'person'; text: string; participants: string[] } | { kind: 'chatter'; from: string; text: string };
+type Input = { kind: 'person'; text: string; participants: string[]; relay?: undefined } | { kind: 'chatter'; from: string; text: string; relay?: boolean };
 
 type Job =
   | { kind: 'kevin'; requestId: string; payload: LocalVoiceRespondRequest; txn: string; participants: string[] }
-  | { kind: 'chatter'; from: string; text: string; channel: FloorChannel; txn: string };
+  | { kind: 'chatter'; from: string; text: string; channel: FloorChannel; txn: string; relay?: boolean };
 
 /** The note an avatar's line reaches another avatar as, in the same style as system notes. */
 export function chatterNote(fromName: string, text: string): string {
   return `[${fromName} said to you, not Kevin: "${text.replace(/\s+/g, ' ').trim()}"]`;
+}
+
+/** Added to Kevin's words for the avatar he asked to pass a question on. */
+export function relayNote(name: string): string {
+  return `[${name} is here in the room and hears you. Say it to ${name} directly, using the name ${name}; ${name} will answer out loud.]`;
+}
+
+/** The note the avatar that was asked gets: Kevin wanted this passed on, so it answers out loud. */
+export function relayChatterNote(fromName: string, text: string): string {
+  return `[${fromName} is asking you this for Kevin: "${text.replace(/\s+/g, ' ').trim()}". Answer out loud; Kevin and ${fromName} both hear you.]`;
 }
 
 const clip = (text: string): string => (text.length <= TEXT_LIMIT ? text : `${text.slice(0, TEXT_LIMIT)}…`);
@@ -87,6 +100,7 @@ export class FloorController {
       avatarIds: () => options.registry.list().map((profile) => profile.id),
       nameOf: (avatarId) => options.registry.get(avatarId)?.name ?? avatarId,
       bid: options.bid,
+      addressee: options.addressee,
       hearChatter: () => this.hearChatter(),
     });
   }
@@ -135,7 +149,9 @@ export class FloorController {
     }
     let result: LocalVoiceRespondResult;
     try {
-      result = await this.options.runPersonTurn(first.avatarId, { ...payload, avatarId: first.avatarId });
+      const toName = decision.relay && decision.relay.from === first.avatarId ? (this.options.registry.get(decision.relay.to)?.name ?? decision.relay.to) : null;
+      const text = toName ? `${payload.text}\n\n${relayNote(toName)}` : payload.text;
+      result = await this.options.runPersonTurn(first.avatarId, { ...payload, text, avatarId: first.avatarId });
     } catch (error) {
       this.continueFrom(first.avatarId, { requestId: payload.requestId, text: '', cancelled: true }, epoch, txn, input);
       throw error;
@@ -170,7 +186,7 @@ export class FloorController {
     while (epoch === this.epoch) {
       if (current.result.text.trim() && !current.result.cancelled) {
         // An avatar's answer to Kevin does not open chatter by itself; its other lines may.
-        const next = await this.queueChatter(current.avatarId, current.result.text, epoch, current.input.kind === 'person');
+        const next = await this.queueChatter(current.avatarId, current.result.text, epoch, current.input.kind === 'person' || current.input.relay === true);
         if (epoch !== this.epoch) return;
         this.shareWithRoom(current.avatarId, current.result.text, current.input, next);
       }
@@ -197,7 +213,7 @@ export class FloorController {
         avatarId: next,
         result: outcome,
         txn: job.txn,
-        input: job.kind === 'kevin' ? { kind: 'person', text: job.payload.text, participants: job.participants } : { kind: 'chatter', from: job.from, text: job.text },
+        input: job.kind === 'kevin' ? { kind: 'person', text: job.payload.text, participants: job.participants } : { kind: 'chatter', from: job.from, text: job.text, ...(job.relay ? { relay: true } : {}) },
       };
     }
   }
@@ -215,7 +231,7 @@ export class FloorController {
     if (!speaker) return null;
     const status = this.manager.request(speaker.avatarId);
     if (status === 'queued') {
-      this.jobs.set(speaker.avatarId, { kind: 'chatter', from: fromId, text, channel: decision.channel, txn });
+      this.jobs.set(speaker.avatarId, { kind: 'chatter', from: fromId, text, channel: decision.channel, txn, ...(decision.relay ? { relay: true } : {}) });
       return speaker.avatarId;
     }
     if (status === 'granted') {
@@ -270,7 +286,7 @@ export class FloorController {
       {
         requestId,
         avatarId,
-        text: chatterNote(fromName, job.text),
+        text: job.relay ? relayChatterNote(fromName, job.text) : chatterNote(fromName, job.text),
         instructions: this.options.instructionsFor?.(avatarId),
         silent: !aloud,
         noTools: true,
@@ -294,7 +310,7 @@ export class FloorController {
     this.journal(
       'floor.decision',
       from.startsWith('avatar:') ? from.slice('avatar:'.length) : null,
-      { from, text: clip(text), speakers: decision.speakers, channel: decision.channel, trace: decision.trace },
+      { from, text: clip(text), speakers: decision.speakers, channel: decision.channel, trace: decision.trace, ...(decision.relay ? { relay: decision.relay } : {}) },
       txn.id,
       undefined,
       txn.title,

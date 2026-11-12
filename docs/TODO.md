@@ -152,8 +152,20 @@ more depth and are linked where they apply.
   arrival, mention a due reminder, react to weather or a Home Assistant event,
   bring up a remembered anniversary. Needs a cheap appropriateness check first
   (is anyone there, are they busy or on a call, is it quiet hours, how long
-  since it last spoke). Kevin suggested "laya" for this check; still to be
-  identified. Small actions (a glance, a stretch) can happen without speech.
+  since it last spoke). Kevin suggested "laya" for this check; it is now in
+  the app as Quick decisions (see below). Small actions (a glance, a stretch) can happen without speech.
+
+## Quick decisions (Laya)
+
+- **Today:** Laya (Convai, Apache-2.0, `services/laya`, port 8197) is the app's
+  small "System 1" decision model, a route called Quick decisions in Models and
+  servers. The floor uses it for two things: who a line is aimed at (so "lenha,
+  what are you up to?" reaches Lenha, and "Echo and Sage, ..." can pick one) and
+  how much each avatar wants to reply (bids). When it is off or fails, bids go to
+  the Idle thoughts model and the addressee check is skipped.
+- **To do:** use it for the switchboard's deliberate step (what an avatar does
+  about an event), and for the appropriateness check above. Compare against a
+  newer small model if one beats it.
 
 ## Avatars together
 
