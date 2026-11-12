@@ -123,6 +123,30 @@ describe('lenient validation', () => {
   });
 });
 
+describe('seat size clamp', () => {
+  const read = (entry: object) =>
+    validateLayout({ ...good, objects: [{ category: 'seat', size: [1, 0.9, 1], ...entry }] }).objects[0];
+  it('limits armchair width and depth and the seat height, keeping the back height', () => {
+    const chair = read({ name: 'armchair', size: [1.8, 1.2, 1.6], seat_height: 0.7 });
+    expect(chair.size).toEqual([1, 1.2, 0.95]);
+    expect(chair.seatHeight).toBe(0.55);
+    expect(read({ name: 'chair', size: [0.5, 0.9, 0.5], seat_height: 0.2 }).seatHeight).toBe(0.35);
+  });
+  it('lets sofas, couches and benches be wide, up to 2.4 m', () => {
+    expect(read({ name: 'big sofa', size: [3.5, 0.9, 1.4] }).size).toEqual([2.4, 0.9, 0.95]);
+    expect(read({ name: 'Park Bench', size: [1.8, 0.8, 0.5] }).size).toEqual([1.8, 0.8, 0.5]);
+  });
+  it('leaves an absent seat height absent and other categories alone', () => {
+    expect(read({ name: 'stool' }).seatHeight).toBeNull();
+    const bed = validateLayout({ ...good, objects: [{ name: 'bed', category: 'bed', size: [2, 0.6, 2.2], seat_height: 0.6 }] }).objects[0];
+    expect(bed.size).toEqual([2, 0.6, 2.2]);
+    expect(bed.seatHeight).toBe(0.6);
+  });
+  it('is part of the prompt', () => {
+    expect(buildLayoutPrompt('a room').system).toContain('seat height about 0.45 m');
+  });
+});
+
 describe('prompt and palette', () => {
   it('lists the categories, the lighting presets, the limit and a complete example', () => {
     const { system, user } = buildLayoutPrompt('  a messy attic ');

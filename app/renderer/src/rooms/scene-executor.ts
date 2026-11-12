@@ -54,6 +54,10 @@ export interface SceneEnv {
   detach(event: StreamEvent): void;
   /** Puts every carried object back where it came from (the room is going away). */
   releaseHeld(): void;
+  /** The avatar sat down on this object and its sit clip is held: fit the pelvis onto the seat surface. */
+  setSeat?(objectId: string): void;
+  /** The avatar is standing (or getting up): let the seat fit ease away. */
+  clearSeat?(): void;
 }
 
 export type SceneActivity =
@@ -249,6 +253,7 @@ export class SceneActionExecutor {
     } catch (error) {
       console.warn('[scene-actions] could not put the held object down', error);
     }
+    this.env?.clearSeat?.();
     this.state = { ...INITIAL_STATE };
     try {
       this.occupancy?.releaseAll();
@@ -400,6 +405,8 @@ export class SceneActionExecutor {
       done: deferred(),
     };
     this.streams.set(id, stream);
+    // Getting up (or walking off) starts from the plain floor, so the seat fit eases out first.
+    if (this.state.posture === 'seated') this.env?.clearSeat?.();
     this.emit({ type: 'start', id, label: planned.label });
 
     const rest = bridge.avatarRest?.();
@@ -508,6 +515,7 @@ export class SceneActionExecutor {
       }
       if (outcome.posture === 'seated' && session) {
         this.state = { ...this.state, posture: 'seated', seat: { ...outcome.seat, session } };
+        env.setSeat?.(outcome.seat.objectId);
         verdict = 'hold';
       } else {
         if (endPose) {
@@ -516,6 +524,7 @@ export class SceneActionExecutor {
           console.warn('[scene-actions] the motion service reported no end pose; the avatar returns to where it started');
         }
         this.state = { ...this.state, posture: 'standing', seat: undefined };
+        env.clearSeat?.();
         verdict = 'release';
       }
     }

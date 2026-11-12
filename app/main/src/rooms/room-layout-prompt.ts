@@ -72,7 +72,7 @@ export function buildLayoutPrompt(description: string): { system: string; user: 
     `- objects: at most ${MAX_LAYOUT_OBJECTS}, each with id (short lowercase slug), name, search (2 or 3 words to look it up in a library of free 3D models), category (one of ${OBJECT_CATEGORIES.join(', ')}; if none fits, any short word such as rug or aquarium, which is treated as a prop), size [width, height, depth] in metres, color (a plain colour word for the simple fallback shape), place, and optionally seat_height (metres, seats and beds), grabbable (small props the character can pick up: mugs, books, cups), surface (tables, counters and shelves that things can stand on) and idle (what the character does there, a few words).`,
     '- place: {against: a wall name or null, near: the id of another object or null, on: the id of a surface object or null, facing: "center" or an object id or null, corner: true or false}. Leave place fields null to let the layout pick a free spot. Use "against" for big furniture, "near" for things that belong together (chair near desk), and "on" for small props on tables.',
     '',
-    'Rules: sizes are real-world sizes. Never place objects on top of each other except with "on". Keep the middle of the room open for walking. Give every seat a clear place to sit, and include a few things to pick up if it suits the room.',
+    'Rules: sizes are real-world sizes; size seats like real furniture (seat height about 0.45 m, an armchair about 0.85 m wide and 0.85 m deep). Never place objects on top of each other except with "on". Keep the middle of the room open for walking. Give every seat a clear place to sit, and include a few things to pick up if it suits the room.',
     '',
     'Example:',
     JSON.stringify(EXAMPLE),

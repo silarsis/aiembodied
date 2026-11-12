@@ -6,6 +6,7 @@ import type { SceneEnv } from './scene-executor.js';
 import type { RootPose } from './scene-frames.js';
 import type { RoomStage } from './room-stage.js';
 import type { RoomOccupancy } from './room-occupancy.js';
+import { easeOffset, seatOffsetTarget, seatedContactY } from './seat-fit.js';
 
 /** The parts of the loaded avatar that scene actions need. */
 export interface AvatarRig {
@@ -37,9 +38,19 @@ interface Carried {
   /** Where the object was picked up from, so it can be put back. */
   origin: Vec3;
   yaw: number;
+  /** Where the object's node is easing to in the hand bone's space, so its grab point sits in the palm. */
+  snap?: THREE.Vector3;
 }
 
 const FALLBACK_HIPS_HEIGHT = 0.95;
+/** The palm centre is this fraction of the way from the hand bone to the middle finger's knuckle. */
+const PALM_FRACTION = 0.5;
+/** Easing rate of the object into the palm, 1/seconds (settles in about 0.2 s). */
+const GRIP_SNAP_RATE = 15;
+/** The snap is finished when the node is closer than this to its place (metres). */
+const GRIP_SNAP_EPSILON = 0.0005;
+const TMP_A = new THREE.Vector3();
+const TMP_B = new THREE.Vector3();
 
 /**
  * The real `SceneEnv`: the avatar's root, hands and grip, and the props of the active room. The
@@ -49,6 +60,11 @@ export class RoomSceneEnv implements SceneEnv {
   private readonly carried = new Map<string, Carried>();
   private readonly grips = new Map<Side, GripPose>();
   private gripRig: AvatarRig | null = null;
+  /** The object the avatar sits on while its sit clip is held; the fit below keeps the pelvis above it. */
+  private seatId: string | null = null;
+  /** The vertical offset currently added to the avatar root's y by the seat fit (metres). */
+  private seatOffset = 0;
+  private seatRig: AvatarRig | null = null;
 
   constructor(private readonly host: SceneEnvHost) {}
 
@@ -65,6 +81,10 @@ export class RoomSceneEnv implements SceneEnv {
       findPath: (from, to) => stage.findPath(from, to),
       closestWalkable: (p) => stage.closestWalkable(p),
       objectPosition: (id) => stage.objectPosition(id),
+      seatSurfaceY: (objectId, x, z) => {
+        const tag = stage.worldTag(objectId, 'sit');
+        return tag ? stage.surfaceHeightAt(objectId, x, z, tag.position[1]) : null;
+      },
       frame: {
         origin: { x: rig.scene.position.x, z: rig.scene.position.z, yaw: rig.scene.rotation.y - rig.baseRotationY },
         scale: rig.scene.scale.x || 1,
@@ -101,7 +121,45 @@ export class RoomSceneEnv implements SceneEnv {
     bone.attach(node); // keeps its world transform, then follows the hand
     stage.setHeld(objectId, true);
     this.grip(rig, hand).setGripped(true);
+    const entry = this.carried.get(objectId);
+    const snap = entry ? this.palmSnap(stage, rig, bone, node, objectId, hand) : null;
+    if (entry && snap) entry.snap = snap;
     return true;
+  }
+
+  /**
+   * Where the carried node should sit, in the hand bone's space, to put its grab point (the `grab` tag, or
+   * the middle of its bounding box) in the palm. Null when it already does.
+   */
+  private palmSnap(
+    stage: RoomStage,
+    rig: AvatarRig,
+    bone: THREE.Object3D,
+    node: THREE.Object3D,
+    objectId: string,
+    hand: Hand,
+  ): THREE.Vector3 | null {
+    const palm = bone.getWorldPosition(TMP_A);
+    const knuckle = rig.humanoid.getNormalizedBoneNode(`${hand}MiddleProximal`);
+    if (knuckle) {
+      knuckle.updateWorldMatrix(true, false);
+      palm.lerp(knuckle.getWorldPosition(TMP_B), PALM_FRACTION);
+    }
+    node.updateWorldMatrix(true, true);
+    const tag = stage.room.objects.find((object) => object.id === objectId)?.tags?.grab;
+    const grab = tag
+      ? node.localToWorld(new THREE.Vector3(tag.position[0], tag.position[1], tag.position[2]))
+      : new THREE.Box3().setFromObject(node).getCenter(new THREE.Vector3());
+    const target = bone.worldToLocal(node.getWorldPosition(new THREE.Vector3()).add(palm.sub(grab)));
+    return target.distanceTo(node.position) < GRIP_SNAP_EPSILON ? null : target;
+  }
+
+  setSeat(objectId: string): void {
+    this.seatId = objectId;
+  }
+
+  clearSeat(): void {
+    this.seatId = null;
   }
 
   detach(event: StreamEvent): void {
@@ -141,6 +199,55 @@ export class RoomSceneEnv implements SceneEnv {
     const occupancy = this.occupancyOf();
     if (rig && occupancy) occupancy.standing(this.host.avatarId ?? 'echo', { x: rig.scene.position.x, z: rig.scene.position.z });
     for (const grip of this.grips.values()) if (grip.active) grip.update(deltaSeconds);
+    this.easeCarried(deltaSeconds);
+    this.fitSeat(rig, deltaSeconds);
+  }
+
+  /** Eases each freshly grabbed object into the palm. */
+  private easeCarried(deltaSeconds: number): void {
+    const stage = this.host.stage();
+    for (const [objectId, entry] of this.carried) {
+      const node = entry.snap ? stage?.objectNode(objectId) : undefined;
+      if (!entry.snap || !node) continue;
+      node.position.lerp(entry.snap, 1 - Math.exp(-GRIP_SNAP_RATE * Math.max(0, deltaSeconds)));
+      if (node.position.distanceTo(entry.snap) < GRIP_SNAP_EPSILON) {
+        node.position.copy(entry.snap);
+        entry.snap = undefined;
+      }
+    }
+  }
+
+  /**
+   * While seated, lifts or lowers the avatar root so its lowest seated contact rests on the measured seat
+   * surface under the pelvis (see seat-fit.ts); eases back to the plain floor when the seat is cleared. The
+   * offset is applied to the root's y as a delta, so everything else (walking, standing up) sees the floor.
+   */
+  private fitSeat(rig: AvatarRig | null, deltaSeconds: number): void {
+    if (this.seatRig !== rig) {
+      this.seatRig = rig;
+      this.seatOffset = 0;
+    }
+    if (!rig) return;
+    let target = 0;
+    if (this.seatId) {
+      const stage = this.host.stage();
+      const hips = rig.humanoid.getNormalizedBoneNode('hips');
+      const tag = stage?.worldTag(this.seatId, 'sit');
+      if (!stage || !hips || !tag) return;
+      rig.scene.updateWorldMatrix(true, true);
+      const p = hips.getWorldPosition(TMP_A);
+      const surface = stage.surfaceHeightAt(this.seatId, p.x, p.z, tag.position[1]);
+      if (surface === null) return;
+      const contact = seatedContactY(p.y, rig.restHipsHeight, rig.scene.scale.x || 1);
+      target = seatOffsetTarget(contact, surface, this.seatOffset);
+    } else if (this.seatOffset === 0) {
+      return;
+    }
+    const next = easeOffset(this.seatOffset, target, deltaSeconds);
+    if (next === this.seatOffset) return;
+    rig.scene.position.y += next - this.seatOffset;
+    this.seatOffset = next;
+    rig.scene.updateWorldMatrix(true, true);
   }
 
   get carriedIds(): string[] {
