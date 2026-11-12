@@ -57,6 +57,8 @@ export interface AvatarInboxOptions {
   deliberate?: (event: SwitchboardEvent) => Promise<Decision | null>;
   /** Saves an update quietly (a system message in the recent session). */
   remember?: (event: SwitchboardEvent, text: string) => void;
+  /** Told of the text of every quiet save (rule or decision), for things like the proactive tick. */
+  onRemembered?: (text: string) => void;
   /** True while do-not-disturb is on. */
   doNotDisturb?: () => boolean;
   /** Told of every decision that is journalled, whether or not the bus reaches the switchboard. */
@@ -124,6 +126,7 @@ export class AvatarInbox {
     this.options.logger?.debug?.('Inbox: remember', { type: event.type, id: event.id });
     this.save(event, rule);
     this.journal(event, 'remember', 'rule', 0, false, false);
+    this.noteRemembered(text);
   }
 
   private textOf(event: SwitchboardEvent): string {
@@ -164,6 +167,7 @@ export class AvatarInbox {
     let action: 'ignore' | 'remember' | 'say' | 'speak-urgent' | 'speak-idle';
     let reason = '';
     let fallback = false;
+    let engine: string | undefined;
     if (dnd) {
       action = event.priority === 'urgent' ? 'speak-urgent' : 'remember';
       reason = 'do not disturb';
@@ -177,6 +181,7 @@ export class AvatarInbox {
       if (decision) {
         action = decision.action;
         reason = decision.reason;
+        engine = decision.engine;
       } else {
         action = 'speak-idle';
         reason = 'deliberation failed; speaking when idle';
@@ -184,20 +189,31 @@ export class AvatarInbox {
       }
     }
     const ms = Math.max(0, nowFn() - startedAt);
-    this.journal(event, action, reason, ms, fallback, dnd);
+    this.journal(event, action, reason, ms, fallback, dnd, engine);
     if (event.expires && Date.parse(event.expires) < nowFn()) {
       logger?.debug?.('Inbox: event expired while deliberating', { type: event.type, id: event.id });
       return;
     }
     logger?.debug?.(`Inbox: deliberated ${action}`, { type: event.type, id: event.id, reason });
     if (action === 'ignore') return;
-    if (action === 'remember') this.save(event, rule);
-    else if (action === 'say') this.speak(event, rule, true);
+    if (action === 'remember') {
+      this.save(event, rule);
+      this.noteRemembered(this.textOf(event));
+    } else if (action === 'say') this.speak(event, rule, true);
     else this.speak(event, rule, action === 'speak-urgent');
   }
 
   /** Fire-and-forget record of a decision on the bus (private, nobody addressed). Never throws. */
-  private journal(event: SwitchboardEvent, action: string, reason: string, ms: number, fallback: boolean, doNotDisturb: boolean): void {
+  private noteRemembered(text: string): void {
+    if (!text) return;
+    try {
+      this.options.onRemembered?.(text);
+    } catch {
+      // A listener must never disturb the inbox.
+    }
+  }
+
+  private journal(event: SwitchboardEvent, action: string, reason: string, ms: number, fallback: boolean, doNotDisturb: boolean, engine?: string): void {
     try {
       this.options.onDecision?.({
         at: new Date((this.options.now ?? Date.now)()).toISOString(),
@@ -209,6 +225,7 @@ export class AvatarInbox {
         ms,
         fallback,
         doNotDisturb,
+        ...(engine ? { engine } : {}),
       });
     } catch {
       // A listener must never disturb the inbox.
@@ -221,7 +238,7 @@ export class AvatarInbox {
         to: [],
         audience: 'private',
         txn: event.txn ? { id: txnId, state: 'done' } : { id: txnId, parent: undefined, cause: event.id, state: 'done', title: `Decision on ${event.type}` },
-        payload: { event: event.id, type: event.type, action, reason, ms, fallback, doNotDisturb },
+        payload: { event: event.id, type: event.type, action, reason, ms, fallback, doNotDisturb, ...(engine ? { engine } : {}) },
       });
     } catch {
       // Journaling must never disturb the inbox.

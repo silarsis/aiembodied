@@ -143,17 +143,19 @@ more depth and are linked where they apply.
 
 ### Spontaneous reactions and speech
 
-- **Today:** none. The avatar only speaks when spoken to.
+- **Today:** a first version. A tick (every minute, `PROACTIVE_TICK_MS`; off
+  with `PROACTIVE_ENABLED=0`) greets Kevin when he comes back after 30 minutes
+  or more away, or mentions things the inbox saved quietly since Echo last
+  spoke. Hard rules run first (do-not-disturb, voice turn, recent speech,
+  quiet hours 22-7, 20 minute gap), then Laya decides; if it is off, the tick
+  stays quiet. Code: `app/main/src/presence/proactive-tick.ts`.
 - **Akari:** "speaks unprompted" is on the later roadmap, as are anniversary
   callbacks.
 - **Dipal:** reacts to music and time of day, comforts you when you seem down,
   waves when you look at it.
-- **To do:** on each tick, decide whether to say or do anything: greet on
-  arrival, mention a due reminder, react to weather or a Home Assistant event,
-  bring up a remembered anniversary. Needs a cheap appropriateness check first
-  (is anyone there, are they busy or on a call, is it quiet hours, how long
-  since it last spoke). Kevin suggested "laya" for this check; it is now in
-  the app as Quick decisions (see below). Small actions (a glance, a stretch) can happen without speech.
+- **To do:** still missing: mention a due reminder, react to weather or a Home Assistant event,
+  bring up a remembered anniversary. The appropriateness check is Laya
+  (Quick decisions, see below). Small actions (a glance, a stretch) can happen without speech.
 
 ## Quick decisions (Laya)
 
@@ -163,9 +165,13 @@ more depth and are linked where they apply.
   what are you up to?" reaches Lenha, and "Echo and Sage, ..." can pick one) and
   how much each avatar wants to reply (bids). When it is off or fails, bids go to
   the Idle thoughts model and the addressee check is skipped.
-- **To do:** use it for the switchboard's deliberate step (what an avatar does
-  about an event), and for the appropriateness check above. Compare against a
-  newer small model if one beats it.
+- **Done:** the switchboard decide step (ignore / remember / say, plus urgent)
+  asks Laya first and falls back to the chat model when it is unsure (top
+  action under 0.6), off or failing. The proactive tick uses it as its
+  appropriateness check. Guide: [Quick decisions](features/quick-decisions.md).
+- **Next candidates:** gate memory recall; a "was that meant for us?" speech
+  check; decline-only spoken approvals (it may decline, never approve alone).
+  Compare against a newer small model if one beats it.
 
 ## Avatars together
 

@@ -9,6 +9,8 @@ export interface DecisionRecord {
   ms: number;
   fallback: boolean;
   doNotDisturb: boolean;
+  /** Which engine decided: 'system-one' (Laya), 'llm', or absent for rules. */
+  engine?: string;
 }
 
 export class DecisionLog {

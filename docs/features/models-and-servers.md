@@ -4,6 +4,8 @@
 
 Controls → Voice & engine → **Open models and servers** opens one pop-up that covers every job a model does in the app. Each job says which server runs it, which model it asks for, and which servers to try if that one is busy or down. Changes apply straight away; there is no Save button.
 
+See also [Quick decisions](quick-decisions.md) for what the `decide` use is for and when to use it.
+
 ## Jobs
 
 | Group | Job | Server kinds | Backups | Notes |

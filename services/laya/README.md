@@ -5,7 +5,10 @@ a few typed questions about a short piece of text in one fast pass, with no text
 quick decisions where asking a chat model would be slow and heavy:
 
 - who a line is aimed at (an avatar, Kevin, or everyone), so "lenha, what are you up to?" reaches Lenha;
-- how much each avatar wants to reply, for the floor's bids.
+- how much each avatar wants to reply, for the floor's bids;
+- what to do with an incoming message (ignore, remember or say), and whether it is a good moment to speak unprompted.
+
+See `docs/features/quick-decisions.md` for the API and when to use it.
 
 This folder only installs and starts it. The app talks to its `/v1/systemone` API
 (`app/main/src/decide/system-one.ts`) through the **Quick decisions** use in Models and servers. When that use is
@@ -20,6 +23,8 @@ off, or Laya is not answering, the checks use the Idle thoughts model (bids) or 
 `pnpm dev:run` starts it for you while Quick decisions use it (turn off with `LAYA_ENABLED=0` or `LAYA_AUTOSTART=0`).
 The first start installs `laya[serve]` into `.venv` and **downloads the checkpoint from Hugging Face**; the server
 answers `/health` straight away and takes questions once the checkpoint has loaded.
+
+Check it is working: `pnpm laya:check` from the repo root prints answers and timings for a few known situations.
 
 ## Settings
 

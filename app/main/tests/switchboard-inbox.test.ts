@@ -289,3 +289,21 @@ describe('approvals and task parentage', () => {
     expect(events[2].txn).toMatchObject({ id: 'task:T-1', parent: 'tool:r1:1' });
   });
 });
+
+describe('inbox onRemembered and engine', () => {
+  it('reports quiet saves and journals the engine', async () => {
+    const bus = new LocalOnlyBus(makeEventId);
+    const seen: string[] = [];
+    const decisions = new DecisionLog();
+    const deliberate = vi.fn(async (): Promise<Decision> => ({ action: 'remember', reason: 'quick decision (remember 0.90)', urgent: false, engine: 'system-one' }));
+    new AvatarInbox({
+      avatarId: 'echo', bus, notify: vi.fn(), remember: vi.fn(), deliberate, onRemembered: (t) => seen.push(t), onDecision: (d) => decisions.record(d), logger: warn,
+    }).start();
+    bus.publish(ev('avatar.inbox', { payload: { text: 'later one' } }));
+    bus.publish(ev('home.change', { payload: { text: 'door opened' } }));
+    await flush();
+    await flush();
+    expect([...seen].sort()).toEqual(['door opened', 'later one']);
+    expect(decisions.recent().map((d) => d.engine)).toContain('system-one');
+  });
+});
