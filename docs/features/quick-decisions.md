@@ -49,7 +49,7 @@ if (client) {
 
 | Caller | Question | Threshold | If off, unsure or failing |
 | --- | --- | --- | --- |
-| Floor addressee check (`floor/system-one-floor.ts`) | `choice`: who a line is for | confidence from the floor controller | skipped, old name rules |
+| Floor addressee check (`floor/system-one-floor.ts`) | `choice`: who a line is for | confidence from the floor controller | skipped, old name rules. Not asked when a conversation-with, talk, group or relay rule already decided, nor in a pair conversation Kevin asked for |
 | Floor bids (same file) | one `score` per avatar: want to reply | none, bids are ranked | Idle thoughts model |
 | Switchboard decide step (`switchboard/deliberate-system-one.ts`) | `choice` ignore / remember / say, `noul` urgent | top action >= 0.6; urgent needs `say` and >= 0.85, never under do-not-disturb | chat-model `deliberate`, then speak when idle (a Home Assistant change is remembered instead) |
 | Proactive tick (`presence/proactive-tick.ts`) | `noul` act, `choice` what to say | act >= 0.75 and top choice >= 0.6 | do nothing (quiet is the safe default) |

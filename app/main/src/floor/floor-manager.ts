@@ -3,20 +3,20 @@
  * with each utterance (`at`, from the caller's injected clock) and bids from an injected function.
  *
  * Rules first, then bids. Kevin (the person) always wins: his speech cancels avatar speech and
- * clears the queue (`bargeIn`). For Kevin's words: avatars he names (or "you two", "everyone"),
- * else the avatar he last talked with if that was recent, else the host. For an avatar's words
- * (chatter): only the other avatars of the scene may answer; the one addressed by name, else the
- * one that bids highest above the threshold, else nobody. Chatter is capped by turns and time
- * since Kevin last spoke. One avatar speaks at a time: a speaking slot and a FIFO queue.
+ * clears the queue (`bargeIn`). For Kevin's words, in this order: a request to converse WITH a named
+ * avatar ("talk to Sage": Sage is the target, someone else starts), "talk to each other", "you two" /
+ * "everyone", a question to relay ("ask Echo ..."), the avatars he names, the avatar he last talked
+ * with if that was recent, the host. For an avatar's words (chatter): only the other avatars of the
+ * scene may answer; in a chat Kevin asked for, the other one of the pair; else the one addressed by
+ * name, else the one that bids highest above the threshold, else nobody. A chat Kevin asked for has
+ * no limit and runs until he speaks; spontaneous chatter stops after a time since Kevin last spoke.
+ * One avatar speaks at a time: a speaking slot and a FIFO queue.
  */
 
 export const PARTNER_WINDOW_MS = 5 * 60_000;
 export const BID_THRESHOLD = 0.5;
-export const CHATTER_MAX_TURNS = 4;
-export const CHATTER_MAX_MS = 60_000;
-/** A chat Kevin asked for ("talk to each other") runs longer than ordinary chatter. */
-export const TALK_MAX_TURNS = 8;
-export const TALK_MAX_MS = 180_000;
+/** Spontaneous chatter (nobody asked for it) stops this long after it started. A chat Kevin asked for has no limit. */
+export const CHATTER_MAX_MS = 5 * 60_000;
 export const BID_TIMEOUT_MS = 6_000;
 /** The addressee check is a quick decision; past this the old rules go on without it. */
 export const ADDRESSEE_TIMEOUT_MS = 1_500;
@@ -52,8 +52,12 @@ export interface FloorDecision {
   channel: FloorChannel;
   /** What ran, in order, for the journal. */
   trace: string[];
-  /** Set when chatter was cut off by a budget. */
-  budget?: { kind: 'turns' | 'time'; turns: number; ms: number };
+  /** Set when spontaneous chatter was cut off by the time limit. */
+  budget?: { kind: 'time'; ms: number };
+  /** Kevin asked `starter` to have a conversation with `target`; the two alternate until he speaks. */
+  converse?: { starter: string; target: string };
+  /** This chatter line is part of a chat Kevin asked for (out loud, no limit). */
+  talk?: boolean;
   /** Kevin asked `from` to pass a question to `to`; `to` is not a speaker until `from` has spoken. */
   relay?: { from: string; to: string };
 }
@@ -113,7 +117,6 @@ export interface FloorManagerOptions {
   hearChatter?: () => boolean;
   partnerWindowMs?: number;
   bidThreshold?: number;
-  chatterMaxTurns?: number;
   chatterMaxMs?: number;
   bidTimeoutMs?: number;
   addresseeTimeoutMs?: number;
@@ -154,24 +157,68 @@ export function relayTargets(text: string, candidates: string[], nameOf: (avatar
     .map((entry) => entry.avatarId);
 }
 
+const NOT_A_NAME = '(?:me|us|myself|each|other|another|one|you|yourselves|everyone|everybody|both|all)';
+/** Up to three words between the preposition and the name ("talk to my friend Sage"), none of which may be a pronoun for Kevin or the group. */
+const BETWEEN = `(?:(?!${NOT_A_NAME}(?![\\p{L}\\p{N}_]))[\\p{L}\\p{N}'\u2019-]+\\s+){0,3}`;
+const CHAT_NOUN = '(?:conversation|chat|discussion|debate|talk)';
+
+/** Ways to ask for a conversation WITH someone; `@NAME@` is the name. `kevin` templates are skipped when Kevin is the one who would talk ("I want to talk to Sage"). */
+const CONVERSE_TEMPLATES: Array<{ pattern: string; kevin: boolean }> = [
+  { pattern: `(?:talk|chat|speak|converse)\\s+(?:to|with)\\s+${BETWEEN}@NAME@`, kevin: true },
+  { pattern: `(?:strike up|start|have|hold|begin|get into)\\s+(?:a|an|the|some)\\s+(?:[\\p{L}-]+\\s+)?${CHAT_NOUN}\\s+(?:with|to)\\s+${BETWEEN}@NAME@`, kevin: true },
+  { pattern: `say\\s+(?:hi|hello|hey|howdy)\\s+to\\s+${BETWEEN}@NAME@`, kevin: true },
+  { pattern: `get\\s+to\\s+know\\s+@NAME@`, kevin: true },
+  { pattern: `introduce\\s+yourself\\s+to\\s+@NAME@`, kevin: true },
+  { pattern: `you\\s+and\\s+@NAME@\\s+(?:(?:should|could|can|might|must|will|to|both|need to|ought to)\\s+)?(?:talk|chat|speak|converse)`, kevin: false },
+  { pattern: `(?:argue|debate|discuss)\\b[^.?!]{0,40}?\\bwith\\s+${BETWEEN}@NAME@`, kevin: true },
+];
+
+/** The words before a match are Kevin's own ("I want to", "can I", "let's"): he is the one who would talk, not an avatar. */
+function kevinIsTheSpeaker(prefix: string): boolean {
+  const clause = prefix.split(/[.?!,;]/).pop() ?? '';
+  return /(?<![\p{L}\p{N}_])(?:i|we|me|us|let[\u2019']s)(?![\p{L}\p{N}_])/iu.test(clause) && !/(?<![\p{L}\p{N}_])you(?![\p{L}\p{N}_])/iu.test(clause);
+}
+
+/**
+ * The avatar Kevin wants a conversation WITH ("talk to Sage", "strike up a conversation with Echo",
+ * "you and Sage should chat"), or null. When several are named, the one named first after the phrase.
+ */
+export function converseTarget(text: string, candidates: string[], nameOf: (avatarId: string) => string): string | null {
+  let best: { avatarId: string; end: number } | null = null;
+  for (const avatarId of candidates) {
+    const name = nameOf(avatarId).trim();
+    if (!name) continue;
+    for (const template of CONVERSE_TEMPLATES) {
+      const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])${template.pattern.replace('@NAME@', () => `${escapeRegExp(name)}(?![\\p{L}\\p{N}_])`)}`, 'iu');
+      const match = pattern.exec(text);
+      if (!match) continue;
+      if (template.kevin && kevinIsTheSpeaker(text.slice(0, match.index))) continue;
+      const end = match.index + match[0].length;
+      if (!best || end < best.end) best = { avatarId, end };
+    }
+  }
+  return best?.avatarId ?? null;
+}
+
 export class FloorManager {
   private readonly options: FloorManagerOptions;
   private readonly partnerWindowMs: number;
   private readonly bidThreshold: number;
-  private readonly chatterMaxTurns: number;
   private readonly chatterMaxMs: number;
   private readonly bidTimeoutMs: number;
   private readonly addresseeTimeoutMs: number;
   private readonly addresseeThreshold: number;
 
   private partner: { avatarId: string; at: number } | null = null;
-  private chatterTurns = 0;
   private chatterStartedAt: number | null = null;
   private speaking: string | null = null;
   private queue: string[] = [];
   private recent: FloorLine[] = [];
-  /** Set while a chat Kevin asked for runs: avatar lines go to the next avatar, out loud, within the longer budget. */
-  private talking = false;
+  /**
+   * Set while a chat Kevin asked for runs: out loud, no limit. With a `pair`, the two alternate whatever
+   * the lines say and anyone else only overhears; without one, lines go to the next avatar in scene order.
+   */
+  private talk: { pair: [string, string] | null } | null = null;
   /** Set while Kevin's "ask Echo ..." waits for the asked avatar to pass it on. */
   private relay: { from: string; to: string } | null = null;
 
@@ -179,7 +226,6 @@ export class FloorManager {
     this.options = options;
     this.partnerWindowMs = options.partnerWindowMs ?? PARTNER_WINDOW_MS;
     this.bidThreshold = options.bidThreshold ?? BID_THRESHOLD;
-    this.chatterMaxTurns = options.chatterMaxTurns ?? CHATTER_MAX_TURNS;
     this.chatterMaxMs = options.chatterMaxMs ?? CHATTER_MAX_MS;
     this.bidTimeoutMs = options.bidTimeoutMs ?? BID_TIMEOUT_MS;
     this.addresseeTimeoutMs = options.addresseeTimeoutMs ?? ADDRESSEE_TIMEOUT_MS;
@@ -198,8 +244,8 @@ export class FloorManager {
   }
 
   /** Who holds the speaking slot and who waits, for tests and the journal. */
-  state(): { speaking: string | null; queue: string[]; chatterTurns: number; partner: string | null } {
-    return { speaking: this.speaking, queue: [...this.queue], chatterTurns: this.chatterTurns, partner: this.partner?.avatarId ?? null };
+  state(): { speaking: string | null; queue: string[]; talking: boolean; partner: string | null } {
+    return { speaking: this.speaking, queue: [...this.queue], talking: this.talk !== null, partner: this.partner?.avatarId ?? null };
   }
 
   async route(utterance: FloorUtterance): Promise<FloorDecision> {
@@ -215,10 +261,9 @@ export class FloorManager {
   private async routePerson(utterance: FloorUtterance): Promise<FloorDecision> {
     const scene = this.scene();
     const trace: string[] = [];
-    // Kevin spoke: the chatter budget starts over.
-    this.chatterTurns = 0;
+    // Kevin spoke: the chatter time limit starts over and any chat he asked for ends.
     this.chatterStartedAt = null;
-    this.talking = false;
+    this.talk = null;
     this.relay = null;
     const done = (speakers: FloorDecision['speakers'], extra: Partial<FloorDecision> = {}): FloorDecision => {
       if (speakers[0]) this.partner = { avatarId: speakers[0].avatarId, at: utterance.at };
@@ -233,17 +278,48 @@ export class FloorManager {
       return done([{ avatarId: scene.avatarIds[0], reason: 'host' }]);
     }
     const named = this.namedIn(utterance.text, scene.avatarIds);
+    const relayed = relayTargets(utterance.text, scene.avatarIds, this.options.nameOf);
+    const converse = converseTarget(utterance.text, scene.avatarIds, this.options.nameOf);
+    if (converse) {
+      // "Talk to Sage": Sage is who the conversation is with, so someone else starts it.
+      const target = converse;
+      const starterNamed = [...relayed.filter((id) => id !== target), ...named.filter((id) => id !== target)][0];
+      const partnerId = this.partner?.avatarId;
+      const partnerOk =
+        partnerId !== undefined &&
+        partnerId !== target &&
+        scene.avatarIds.includes(partnerId) &&
+        utterance.at - (this.partner?.at ?? 0) <= this.partnerWindowMs;
+      let starter: string;
+      let reason: SpeakerReason;
+      if (starterNamed) {
+        starter = starterNamed;
+        reason = 'addressed';
+      } else if (partnerOk && partnerId) {
+        starter = partnerId;
+        reason = 'last-partner';
+      } else if (scene.hostId !== target && scene.avatarIds.includes(scene.hostId)) {
+        starter = scene.hostId;
+        reason = 'host';
+      } else {
+        starter = scene.avatarIds.find((id) => id !== target) ?? scene.hostId;
+        reason = 'host';
+      }
+      this.talk = { pair: [starter, target] };
+      trace.push(`person: asked ${starter} to have a conversation with ${target} (${reason}) -> ${starter} starts, ${starter} and ${target} alternate, out loud`);
+      return done([{ avatarId: starter, reason }], { converse: { starter, target } });
+    }
     if (TALK_PATTERN.test(utterance.text)) {
-      this.talking = true;
       const first = named[0] ?? (this.partner && scene.avatarIds.includes(this.partner.avatarId) ? this.partner.avatarId : scene.hostId);
-      trace.push(`person: asked them to talk to each other -> ${first} starts, out loud`);
-      return done([{ avatarId: first, reason: named.length > 0 ? 'addressed' : 'host' }]);
+      const second = scene.avatarIds.length === 2 ? scene.avatarIds.find((id) => id !== first) : undefined;
+      this.talk = { pair: second ? [first, second] : null };
+      trace.push(`person: asked them to talk to each other -> ${first} starts, out loud${second ? `, ${first} and ${second} alternate` : ', in scene order'}`);
+      return done([{ avatarId: first, reason: named.length > 0 ? 'addressed' : 'host' }], second ? { converse: { starter: first, target: second } } : {});
     }
     if (GROUP_PATTERN.test(utterance.text)) {
       trace.push('person: addressed everyone -> all avatars in scene order');
       return done(scene.avatarIds.map((avatarId) => ({ avatarId, reason: 'all' as const })));
     }
-    const relayed = relayTargets(utterance.text, scene.avatarIds, this.options.nameOf);
     if (relayed.length > 0) {
       // "Sage, ask Echo ...": Sage answers Kevin and passes the question on; Echo is not a speaker yet.
       let answerers = named.filter((id) => !relayed.includes(id));
@@ -303,7 +379,10 @@ export class FloorManager {
 
   private async routeAvatar(utterance: FloorUtterance): Promise<FloorDecision> {
     const scene = this.scene();
-    const channel: FloorChannel = this.talking || this.options.hearChatter?.() ? 'aloud' : 'back';
+    const senderOf = utterance.from.slice('avatar:'.length);
+    // A chat Kevin asked for covers its pair (or everyone, when no pair was fixed); a third avatar only overhears.
+    const talk = this.talk && (!this.talk.pair || this.talk.pair.includes(senderOf)) ? this.talk : null;
+    const channel: FloorChannel = talk || this.options.hearChatter?.() ? 'aloud' : 'back';
     const trace: string[] = [];
     const none = (extra: Partial<FloorDecision> = {}): FloorDecision => ({ speakers: [], channel, trace, ...extra });
     const senderId = utterance.from.slice('avatar:'.length);
@@ -316,22 +395,15 @@ export class FloorManager {
       trace.push('avatar: nobody else in the scene');
       return none();
     }
-    // Budgets: turns and time since Kevin last spoke.
-    const maxTurns = this.talking ? TALK_MAX_TURNS : this.chatterMaxTurns;
-    const maxMs = this.talking ? TALK_MAX_MS : this.chatterMaxMs;
+    // Spontaneous chatter stops after a time limit; a chat Kevin asked for has none.
     const elapsed = this.chatterStartedAt === null ? 0 : utterance.at - this.chatterStartedAt;
-    if (this.chatterTurns >= maxTurns) {
-      trace.push(`avatar: chatter budget used up (${this.chatterTurns} turns)`);
-      return none({ budget: { kind: 'turns', turns: this.chatterTurns, ms: elapsed } });
-    }
-    if (this.chatterStartedAt !== null && elapsed >= maxMs) {
-      trace.push(`avatar: chatter budget used up (${Math.round(elapsed / 1000)} s)`);
-      return none({ budget: { kind: 'time', turns: this.chatterTurns, ms: elapsed } });
+    if (!talk && this.chatterStartedAt !== null && elapsed >= this.chatterMaxMs) {
+      trace.push(`avatar: chatter time limit reached (${Math.round(elapsed / 1000)} s)`);
+      return none({ budget: { kind: 'time', ms: elapsed } });
     }
     const take = (avatarId: string, reason: SpeakerReason, aloud: FloorChannel = channel): FloorDecision => {
-      this.chatterTurns += 1;
       this.chatterStartedAt ??= utterance.at;
-      return { speakers: [{ avatarId, reason }], channel: aloud, trace };
+      return { speakers: [{ avatarId, reason }], channel: aloud, trace, ...(talk ? { talk: true } : {}) };
     };
     if (this.relay && this.relay.from === senderId && others.includes(this.relay.to)) {
       // Kevin asked for this, so he hears it even when chatter is off.
@@ -340,12 +412,20 @@ export class FloorManager {
       trace.push(`avatar: ${senderId} passes Kevin's question to ${to}`);
       return { ...take(to, 'addressed', 'aloud'), relay: { from: senderId, to } };
     }
+    if (talk?.pair) {
+      // Kevin asked these two to talk: the other one of the pair answers, whatever the line says.
+      const next = talk.pair.find((id) => id !== senderId);
+      if (next && others.includes(next)) {
+        trace.push(`avatar: conversation Kevin asked for -> ${next} answers`);
+        return take(next, 'addressed');
+      }
+    }
     const named = this.namedIn(utterance.text, others);
     if (named.length > 0) {
       trace.push(`avatar: ${senderId} addressed ${named[0]} by name`);
       return take(named[0], 'addressed');
     }
-    if (this.talking) {
+    if (talk) {
       // Kevin asked them to talk: the next avatar in scene order answers, no bidding.
       const order = scene.avatarIds;
       const next = order[(order.indexOf(senderId) + 1) % order.length];
@@ -489,14 +569,13 @@ export class FloorManager {
     if (this.scene().avatarIds.includes(avatarId)) this.partner = { avatarId, at };
   }
 
-  /** Kevin speaks: clear the queue, free the slot, reset the chatter budget. Returns the avatars to cancel. */
+  /** Kevin speaks: clear the queue, free the slot, reset the chatter time limit and end any chat. Returns the avatars to cancel. */
   bargeIn(): string[] {
     const cancel = this.speaking === null ? [] : [this.speaking];
     this.speaking = null;
     this.queue = [];
-    this.chatterTurns = 0;
     this.chatterStartedAt = null;
-    this.talking = false;
+    this.talk = null;
     this.relay = null;
     return cancel;
   }
