@@ -1,9 +1,10 @@
 /** Switchboard in Status and diagnostics: is it connected, and which transactions are open. */
 import { useEffect, useState } from 'react';
-import type { SwitchboardBridge, SwitchboardOpenTxn, SwitchboardStatus } from '../../../main/src/switchboard/bridge-types.js';
+import type { SwitchboardBridge, SwitchboardDecision, SwitchboardOpenTxn, SwitchboardStatus } from '../../../main/src/switchboard/bridge-types.js';
 
 export const SWITCHBOARD_POLL_MS = 5000;
 const MAX_SHOWN = 10;
+const MAX_DECISIONS = 10;
 
 export function describeSwitchboard(status: SwitchboardStatus | null): { dot: 'connected' | 'down' | 'off' | 'checking'; label: string } {
   if (!status) return { dot: 'checking', label: 'Checking…' };
@@ -21,11 +22,25 @@ export function formatAge(updatedAt: string | null, now: number): string {
   return `${Math.floor(seconds / 86_400)}d`;
 }
 
+const MAX_REASON = 60;
+
+function clip(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+function describeDecision(decision: SwitchboardDecision, now: number): string {
+  const age = formatAge(decision.at, now);
+  const reason = clip(decision.reason, MAX_REASON);
+  return `${decision.avatarName}: ${decision.action} ${decision.type}${reason ? ` (${reason})` : ''}${age ? `, ${age} ago` : ''}`;
+}
+
 const DOT_COLOUR = { connected: '#34d399', down: '#f87171', off: '#64748b', checking: '#fbbf24' };
 
 export function SwitchboardView({ status, now }: { status: SwitchboardStatus | null; now: number }) {
   const { dot, label } = describeSwitchboard(status);
   const txns: SwitchboardOpenTxn[] = status?.openTxns ?? [];
+  const decisions: SwitchboardDecision[] = status?.decisions ?? [];
   return (
     <div data-testid="switchboard-status">
       <p className="kiosk__helper">
@@ -42,6 +57,18 @@ export function SwitchboardView({ status, now }: { status: SwitchboardStatus | n
           ))}
           {txns.length > MAX_SHOWN ? <li>…and {txns.length - MAX_SHOWN} more</li> : null}
         </ul>
+      ) : null}
+      {decisions.length > 0 ? (
+        <>
+          <p className="kiosk__helper">
+            <b>Recent decisions</b>
+          </p>
+          <ul className="kiosk__helper" data-testid="switchboard-decisions">
+            {decisions.slice(0, MAX_DECISIONS).map((decision) => (
+              <li key={`${decision.event}:${decision.avatarId}:${decision.at}`}>{describeDecision(decision, now)}</li>
+            ))}
+          </ul>
+        </>
       ) : null}
     </div>
   );
