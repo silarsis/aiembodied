@@ -2,15 +2,24 @@
 /**
  * An experiment: can a decision model work out, from Kevin's sentence alone, who should speak next
  * and what Kevin wants, well enough to replace the hand-written rules in
- * app/main/src/floor/floor-manager.ts (routePerson)? Every case is put to two back ends:
- *  - the Quick decisions server (Laya): three choice questions in one call, plus the app's
- *    current "who is Kevin speaking to" question for comparison;
- *  - a chat model on an OpenAI-compatible server, answering with one small JSON object.
+ * app/main/src/floor/floor-manager.ts (routePerson)? Every case is put to:
+ *  - a chat model on an OpenAI-compatible server, in four prompt/request variants (--variants):
+ *      a  baseline: one JSON object {speaker, intent, target}
+ *      b  a, with a JSON schema that only allows the legal values
+ *      c  reframed fields {addressed, wants, other} + schema; the app-side code picks the speaker
+ *         when the line names no listener
+ *      d  c plus six worked examples from another room
+ *  - the Quick decisions server (Laya): a diagnosis on a subset of cases, asked in several request
+ *    shapes, printing the full probability vectors (--laya-probes, on by default). The full
+ *    54-case Laya run of round 1 is off unless --laya-main is given.
  *
  *   pnpm floor:check
- *   pnpm floor:check -- --only laya --json out.json --md report.md
+ *   pnpm floor:check -- --variants c,d --no-laya-probes --md report.md
+ *   pnpm floor:check -- --only laya --json out.json --verbose
  *   LAYA_URL=http://other:8197 LLM_URL=http://other:1234 LLM_MODEL=name pnpm floor:check
  *
+ * Flags: --only laya|llm, --variants a,b,c,d, --laya-main, --no-laya-probes, --json file,
+ * --md file, --verbose (per-case tables on the console; --json always has them).
  * A back end that does not answer its health probe is skipped. Exits 1 only when both are down.
  */
 import { writeFileSync } from 'node:fs';
@@ -20,9 +29,20 @@ const flag = (name) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
 };
+const has = (name) => args.includes(name);
 const only = flag('--only');
 const jsonPath = flag('--json');
 const mdPath = flag('--md');
+const verbose = has('--verbose');
+const layaMain = has('--laya-main') && !has('--skip-laya-main');
+const layaProbes = !has('--no-laya-probes');
+const ALL_VARIANTS = ['a', 'b', 'c', 'd'];
+const variantIds = (flag('--variants') ?? ALL_VARIANTS.join(',')).split(',').map((v) => v.trim().toLowerCase()).filter(Boolean);
+const badVariant = variantIds.find((v) => !ALL_VARIANTS.includes(v));
+if (badVariant || variantIds.length === 0) {
+  console.error(`Unknown variant "${badVariant}"; use a comma list of ${ALL_VARIANTS.join(', ')}.`);
+  process.exit(2);
+}
 const layaBase = (process.env.LAYA_URL || 'http://127.0.0.1:8197').replace(/\/+$/, '');
 const layaModel = process.env.LAYA_CHECK_MODEL || 'english';
 const llmBase = (process.env.LLM_URL || 'http://127.0.0.1:1234').replace(/\/+$/, '');
@@ -101,9 +121,18 @@ const show = (v) => accepted(v).join('|');
 const median = (xs) => (xs.length ? [...xs].sort((a, b) => a - b)[Math.floor((xs.length - 1) / 2)] : 0);
 const clip = (s, n) => (s.length <= n ? s : `${s.slice(0, n - 1)}~`);
 const names = (c) => c.scene.map(lower);
+const errText = (e) => (e instanceof Error ? e.message : String(e));
 
 /** Judge one field: `v` is the model's value, `p` its probability (1 when the back end gives none). */
 const judge = (c, field, v, p = 1) => ({ v, p, ok: v !== undefined && accepted(c[field]).includes(v), sure: p >= CONFIDENT });
+
+/** A reply value as a lower-case trimmed string; undefined when absent. Unknown values are kept (and fail). */
+const clean = (v) => (v === undefined || v === null ? undefined : lower(String(v).trim()));
+/** An "other avatar" value: null, missing or empty means none. */
+const orNone = (v) => {
+  const s = clean(v);
+  return s === undefined || s === '' ? 'none' : s;
+};
 
 async function post(url, body) {
   const started = performance.now();
@@ -113,6 +142,18 @@ async function post(url, body) {
 }
 
 // ---- Quick decisions server (Laya) ----
+// Wire format (services/laya is only a pin of the `laya[serve]` package; the contract is in
+// services/laya/README.md and app/main/src/decide/system-one.ts): POST /v1/systemone
+// {model, state, questions} -> {answers: {<key>: {probabilities: {<option>: p}} | {noul: p} | {score: n}}}.
+// The app reads answers[key].probabilities[option] for every option key of the question (missing ->
+// 0, clamped to 0..1, not renormalised) and answers[key].noul; top() below reads the same field.
+let firstLaya = null;
+async function layaCall(body) {
+  const result = await post(`${layaBase}/v1/systemone`, body);
+  firstLaya ??= { body, json: result.json };
+  return result;
+}
+
 function layaRequest(c) {
   const options = names(c);
   const speaker = { everyone: 'Every avatar should answer in turn.' };
@@ -166,31 +207,166 @@ async function askLaya(c) {
   const r = { case: c };
   try {
     const { body } = layaRequest(c);
-    const main = await post(`${layaBase}/v1/systemone`, body);
+    const main = await layaCall(body);
     r.ms = main.ms;
     r.raw = main.json;
     for (const f of FIELDS) {
       const t = top(main.json.answers?.[f]);
       r[f] = judge(c, f, t.v, t.p);
     }
-    const cur = await post(`${layaBase}/v1/systemone`, currentRequest(c));
+    const cur = await layaCall(currentRequest(c));
     const t = top(cur.json.answers?.who);
     r.current = judge(c, 'speaker', t.v, t.p);
     r.currentMs = cur.ms;
   } catch (error) {
-    r.error = error instanceof Error ? error.message : String(error);
+    r.error = errText(error);
   }
   return r;
 }
 
+// ---- Laya probes: does any request shape move the answers off uniform? ----
+const PROBE_TEXTS = [
+  'Sage, what time is it?', 'Echo, talk to Sage.', 'Sage, ask Echo what time it is.', 'Hello everybody.',
+  'Can you strike up a conversation with Sage, please?', 'Hey Echo, talk to Sage', 'Echo, what do you think of Sage?', 'Tell Sage I said hello.',
+  'Not you, Echo. Sage, what do you think?', 'Sage, tell Echo she should talk to Rex.', 'Echo, stop talking to Sage and talk to me.', 'echo talk to sage',
+];
+const probeCases = () => PROBE_TEXTS.map((t) => cases.find((c) => c.text === t)).filter(Boolean);
+
+const capital = (s) => s[0].toUpperCase() + s.slice(1);
+const roomText = (c) => c.scene.map((n, i) => (i === 0 ? `${n} (host)` : n)).join(', ');
+const conversationLines = (c) => [...c.recent.map(([w, t]) => `${w}: ${t}`), `Kevin: ${c.text}`];
+const flatState = (c) => ({ conversation: conversationLines(c).join('\n'), room: roomText(c), last_spoke_with: c.last ?? 'nobody' });
+
+function probeBodies(shape, c) {
+  const qs = layaRequest(c).body.questions;
+  const flat = flatState(c);
+  const mk = (state, questions) => ({ model: layaModel, state, questions });
+  if (shape === 'p0') return [mk(layaRequest(c).body.state, qs)];
+  if (shape === 'p1') return [mk(flat, qs)];
+  if (shape === 'p2') return Object.entries(qs).map(([k, q]) => mk(flat, { [k]: q }));
+  if (shape === 'p3') {
+    const questions = {};
+    for (const n of c.scene) questions[`to_${lower(n)}`] = { type: 'noul', instructions: `Is Kevin speaking to ${n} in this line?` };
+    for (const n of c.scene) questions[`go_${lower(n)}`] = { type: 'noul', instructions: `Does Kevin want ${n} to go and talk with another avatar?` };
+    return [mk(flat, questions)];
+  }
+  // p4: the style of scripts/laya-check.mjs and the app's own addressee question: capitalised
+  // option keys, "<Name> is the one being spoken to.", recent as "Name: text" strings.
+  const criteria = {};
+  for (const n of c.scene) criteria[n] = `${n} is the one being spoken to.`;
+  criteria.everyone = 'Everyone in the room is being spoken to, or no one in particular.';
+  const state = { ...(c.recent.length ? { recent: c.recent.map(([w, t]) => `${w}: ${t}`) } : {}), line: { speaker: 'Kevin', text: c.text } };
+  return [mk(state, { who: { type: 'choice', instructions: 'Who is Kevin speaking to in their last line?', criteria } })];
+}
+
+/** Every answered question of a probe: choice -> full vector, noul -> probability of yes. */
+function collect(body, json, out) {
+  for (const [key, q] of Object.entries(body.questions)) {
+    const a = json.answers?.[key];
+    if (q.type === 'choice') out.push({ key, vec: a?.probabilities && typeof a.probabilities === 'object' ? a.probabilities : null, rawA: a });
+    else out.push({ key, yes: typeof a?.noul === 'number' ? a.noul : null, rawA: a });
+  }
+}
+
+async function probeShape(shape, c) {
+  const res = { shape, qs: [], ms: [] };
+  try {
+    for (const body of probeBodies(shape, c)) {
+      const { json, ms } = await layaCall(body);
+      res.ms.push(ms);
+      collect(body, json, res.qs);
+    }
+  } catch (error) {
+    res.error = errText(error);
+  }
+  return res;
+}
+
+const vecText = (vec) => (vec ? Object.entries(vec).sort((a, b) => b[1] - a[1]).map(([k, p]) => `${k} ${Number(p).toFixed(2)}`).join(' ') : '(no probabilities)');
+const topOf = (vec) => (vec ? Object.entries(vec).sort((a, b) => b[1] - a[1])[0] : undefined);
+
+/** Right/wrong for one probe result, where the shape allows it. */
+function probeGrade(res, c) {
+  const g = { speaker: undefined, intent: undefined, target: undefined };
+  if (res.error) return g;
+  const choice = (key) => topOf(res.qs.find((q) => q.key === key)?.vec)?.[0];
+  if (['p0', 'p1', 'p2'].includes(res.shape)) for (const f of FIELDS) g[f] = choice(f) === undefined ? false : accepted(c[f]).includes(lower(choice(f)));
+  if (res.shape === 'p4') g.speaker = choice('who') === undefined ? false : accepted(c.speaker).includes(lower(choice('who')));
+  if (res.shape === 'p3') {
+    const yes = c.scene.map((n) => [lower(n), res.qs.find((q) => q.key === `to_${lower(n)}`)?.yes ?? 0]).sort((a, b) => b[1] - a[1]);
+    const pick = yes[0][1] < 0.5 ? 'everyone' : yes[0][0];
+    g.speaker = accepted(c.speaker).includes(pick);
+  }
+  return g;
+}
+
+const SHAPES = [
+  ['p0', 'current shape (round 1)'],
+  ['p1', 'flat text state, same three questions'],
+  ['p2', 'flat text state, one question per call'],
+  ['p3', 'yes/no questions, flat state'],
+  ['p4', 'documented style (capitalised keys, "Name: text" recent), who question'],
+];
+
+function probeLine(res) {
+  if (res.error) return `${res.shape} error: ${clip(res.error, 90)}`;
+  const parts = res.qs.map((q) => (q.vec !== undefined && 'vec' in q ? `${q.key}[${vecText(q.vec)}]` : `${q.key}=${q.yes === null ? '?' : q.yes.toFixed(2)}`));
+  return `${res.shape} ${parts.join(' ')}  (${median(res.ms)} ms${res.ms.length > 1 ? ` x${res.ms.length}` : ''})`;
+}
+
+async function sanityChecks() {
+  const out = [];
+  const questions = {
+    emergency: { type: 'noul', instructions: 'Is this an emergency?' },
+    sky: { type: 'choice', instructions: 'What colour is the sky on a clear day?', criteria: { blue: 'The sky is blue.', green: 'The sky is green.', red: 'The sky is red.' } },
+  };
+  for (const [label, state] of [['state.line as a string', { line: 'The kitchen is on fire!' }], ['state.line as {speaker, text}', { line: { speaker: 'Kevin', text: 'The kitchen is on fire!' } }]]) {
+    try {
+      const { json, ms } = await layaCall({ model: layaModel, state, questions });
+      out.push(`${label} (${ms} ms): ${JSON.stringify(json)}`);
+    } catch (error) {
+      out.push(`${label}: error ${clip(errText(error), 120)}`);
+    }
+  }
+  return out;
+}
+
+async function runProbes() {
+  const rows = [];
+  for (const c of probeCases()) {
+    const shapes = [];
+    for (const [shape] of SHAPES) shapes.push(await probeShape(shape, c));
+    rows.push({ case: c, shapes, grades: shapes.map((s) => probeGrade(s, c)) });
+  }
+  const sanity = await sanityChecks();
+  return { rows, sanity };
+}
+
+function probeSummary(rows) {
+  return SHAPES.map(([shape, label]) => {
+    const all = rows.map((r) => ({ res: r.shapes.find((s) => s.shape === shape), g: r.grades[SHAPES.findIndex(([s]) => s === shape)] }));
+    const ok = all.filter((x) => !x.res.error);
+    const n = ok.length;
+    const cnt = (f) => (ok.some((x) => x.g[f] !== undefined) ? `${ok.filter((x) => x.g[f]).length}/${n}` : '-');
+    const all3 = ['p0', 'p1', 'p2'].includes(shape) ? `${ok.filter((x) => FIELDS.every((f) => x.g[f])).length}/${n}` : '-';
+    const tops = ok.flatMap((x) => x.res.qs.map((q) => (q.vec ? topOf(q.vec)?.[1] : q.yes))).filter((v) => typeof v === 'number');
+    const mean = tops.length ? (tops.reduce((a, b) => a + b, 0) / tops.length).toFixed(2) : '-';
+    const spread = tops.length ? `${Math.min(...tops).toFixed(2)}-${Math.max(...tops).toFixed(2)}` : '-';
+    return [shape, label, cnt('speaker'), cnt('intent'), cnt('target'), all3, mean, spread, String(median(ok.flatMap((x) => x.res.ms)))];
+  });
+}
+
 // ---- Chat model ----
-function systemPrompt(c) {
+const idList = (c) => names(c);
+const ctx = (c) => `${c.scene.map((n, i) => (i === 0 ? `${n} (host)` : n)).join(', ')}. Kevin last spoke with ${c.last ?? 'nobody yet'}.`;
+
+function promptBaseline(c) {
   const host = c.scene[0];
   const people = c.scene.join(', ');
   return [
     `Kevin is a person in a room with these avatars: ${people}. ${host} is the host. Kevin last spoke with ${c.last ?? 'nobody yet'}.`,
     'From Kevin\'s last line alone, decide three things:',
-    `"speaker": who speaks next, one of ${c.scene.map((n) => lower(n)).join(', ')}, or everyone (every avatar answers in turn).`,
+    `"speaker": who speaks next, one of ${idList(c).join(', ')}, or everyone (every avatar answers in turn).`,
     '"intent": answer (the speaker replies to Kevin), converse (the speaker starts a conversation with another avatar), or relay (the speaker passes a question or message on to another avatar, and/or reports back).',
     '"target": the other avatar involved in converse or relay, else none.',
     'A name in the line can be the one spoken to, or the one to be talked to or about. "Hey <name>" calls that avatar. With no name, the one Kevin last spoke with answers, otherwise the host.',
@@ -198,32 +374,111 @@ function systemPrompt(c) {
   ].join('\n');
 }
 
+const REFRAMED_RULES = [
+  'Kevin is talking to avatars in a room. Read his last line and fill in three fields.',
+  '"addressed": the avatar Kevin is speaking TO in this line, the one who should act on it. It is NOT the avatar he wants them to go and talk to, ask, or talk about. Use "everyone" when he speaks to all of them. Use "unclear" when the line names no one as the listener (then the app picks).',
+  '"wants": "answer" = just reply to Kevin; "converse" = go and have a conversation with another avatar; "relay" = ask or tell another avatar something for Kevin.',
+  '"other": that other avatar when wants is converse or relay, else "none".',
+];
+const reframedAnswer = '{"addressed": "...", "wants": "...", "other": "..."}';
+const reframedValues = (c) => [
+  `Allowed values, lower case: addressed = ${[...idList(c), 'everyone', 'unclear'].join(' | ')}; wants = answer | converse | relay; other = ${[...idList(c), 'none'].join(' | ')}.`,
+  `Reply with only a JSON object: ${reframedAnswer}`,
+];
+
+function promptReframed(c) {
+  return [REFRAMED_RULES[0], `The room: ${ctx(c)}`, ...REFRAMED_RULES.slice(1), ...reframedValues(c)].join('\n');
+}
+
+/** Worked examples in a made-up room; none of them is a test sentence. */
+const EXAMPLES = [
+  ['Tobin, did you sleep well?', 'tobin', 'answer', 'none'],
+  ['Is it cold out?', 'unclear', 'answer', 'none'],
+  ['Mira, go and chat with Tobin for a bit.', 'mira', 'converse', 'tobin'],
+  ['Why not have a natter with Tobin?', 'unclear', 'converse', 'tobin'],
+  ['Tobin, find out if Mira is hungry.', 'tobin', 'relay', 'mira'],
+  ['Mira, is Tobin always this grumpy?', 'mira', 'answer', 'none'],
+];
+
+function promptExamples(c) {
+  return [
+    REFRAMED_RULES[0],
+    ...REFRAMED_RULES.slice(1),
+    'Examples from another room (avatars: Mira (host), Tobin):',
+    ...EXAMPLES.map(([text, a, w, o]) => `Kevin: "${text}" -> {"addressed": "${a}", "wants": "${w}", "other": "${o}"}`),
+    `Now the actual room: ${ctx(c)}`,
+    ...reframedValues(c),
+  ].join('\n');
+}
+
+const enumProp = (values) => ({ type: 'string', enum: values });
+const schemaOf = (properties) => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
+const schemaBaseline = (c) => schemaOf({ speaker: enumProp([...idList(c), 'everyone']), intent: enumProp(['answer', 'converse', 'relay']), target: enumProp([...idList(c), 'none']) });
+const schemaReframed = (c) => schemaOf({ addressed: enumProp([...idList(c), 'everyone', 'unclear']), wants: enumProp(['answer', 'converse', 'relay']), other: enumProp([...idList(c), 'none']) });
+
+const readBaseline = (o) => ({ speaker: clean(o.speaker), intent: clean(o.intent), target: orNone(o.target) });
+
+/** Variants c and d: the fallback for "unclear" is done here. */
+function readReframed(o, c) {
+  const other = orNone(o.other);
+  const ids = idList(c);
+  let speaker = clean(o.addressed);
+  if (speaker === 'unclear') {
+    const last = c.last ? lower(c.last) : null;
+    if (last && ids.includes(last) && last !== other) speaker = last;
+    else if (ids[0] !== other) speaker = ids[0];
+    else speaker = ids.find((id) => id !== other) ?? ids[0];
+  }
+  return { speaker, intent: clean(o.wants), target: other };
+}
+
+const VARIANTS = {
+  a: { label: 'baseline', prompt: promptBaseline, schema: null, read: readBaseline },
+  b: { label: 'constrained', prompt: promptBaseline, schema: schemaBaseline, read: readBaseline },
+  c: { label: 'reframed + constrained', prompt: promptReframed, schema: schemaReframed, read: readReframed },
+  d: { label: 'reframed + constrained + examples', prompt: promptExamples, schema: schemaReframed, read: readReframed },
+};
+
 function parseJson(text) {
   const m = /\{[\s\S]*?\}/.exec(text ?? '');
   if (!m) throw new Error(`no JSON in reply: ${clip(String(text), 80)}`);
-  const o = JSON.parse(m[0]);
-  const get = (k) => (typeof o[k] === 'string' ? lower(o[k].trim()) : undefined);
-  return { speaker: get('speaker'), intent: get('intent'), target: get('target') };
+  return JSON.parse(m[0]);
 }
 
-async function askLlm(c, model) {
+function chatBody(model, c, variant, format) {
+  return {
+    model,
+    messages: [{ role: 'system', content: variant.prompt(c) }, { role: 'user', content: conversationLines(c).join('\n') }],
+    temperature: 0,
+    max_tokens: 60,
+    stream: false,
+    // As the app's own small calls do (local-llm-client.ts): answer directly instead of thinking first.
+    chat_template_kwargs: { enable_thinking: false },
+    ...(format ? { response_format: format } : {}),
+  };
+}
+
+async function askLlm(c, model, id) {
+  const variant = VARIANTS[id];
   const r = { case: c };
   try {
-    const { json, ms } = await post(`${llmBase}/v1/chat/completions`, {
-      model,
-      messages: [{ role: 'system', content: systemPrompt(c) }, { role: 'user', content: `${[...c.recent.map(([w, t]) => `${w}: ${t}`), `Kevin: ${c.text}`].join('\n')}` }],
-      temperature: 0,
-      max_tokens: 60,
-      stream: false,
-      // As the app's own small calls do (local-llm-client.ts): answer directly instead of thinking first.
-      chat_template_kwargs: { enable_thinking: false },
-    });
-    r.ms = ms;
-    r.raw = json;
-    const got = parseJson(json.choices?.[0]?.message?.content);
+    let result;
+    if (variant.schema) {
+      try {
+        result = await post(`${llmBase}/v1/chat/completions`, chatBody(model, c, variant, { type: 'json_schema', json_schema: { name: 'floor_intent', strict: true, schema: variant.schema(c) } }));
+      } catch (error) {
+        if (!/^HTTP 400/.test(errText(error))) throw error;
+        r.downgraded = true;
+        result = await post(`${llmBase}/v1/chat/completions`, chatBody(model, c, variant, { type: 'json_object' }));
+      }
+    } else result = await post(`${llmBase}/v1/chat/completions`, chatBody(model, c, variant, null));
+    r.ms = result.ms;
+    r.raw = result.json;
+    r.reply = result.json.choices?.[0]?.message?.content;
+    const got = variant.read(parseJson(r.reply), c);
     for (const f of FIELDS) r[f] = judge(c, f, got[f]);
   } catch (error) {
-    r.error = error instanceof Error ? error.message : String(error);
+    r.error = errText(error);
   }
   return r;
 }
@@ -248,24 +503,19 @@ function rowsFor(name, results) {
   return { head, rows };
 }
 
-function summaryFor(name, results) {
-  const laya = name === 'laya';
-  const head = ['grade', 'n', 'speaker', 'intent', 'target', 'all three', ...(laya ? ['all three >=0.6', 'current question'] : [])];
-  const pct = (a, n) => (n ? `${Math.round((100 * a) / n)}% (${a}/${n})` : '-');
-  const rows = [];
-  for (const grade of [...GRADES, 'all']) {
+const pct = (a, n) => (n ? `${Math.round((100 * a) / n)}% (${a}/${n})` : '-');
+/** Rows of the comparison table for one result set: one per grade plus all. */
+function gradeRows(label, results) {
+  return [...GRADES, 'all'].map((grade) => {
     const rs = results.filter((r) => (grade === 'all' || r.case.grade === grade) && !r.case.debatable);
     const n = rs.length;
     const each = (f) => rs.filter((r) => r[f]?.ok).length;
-    const row = [grade, String(n), ...FIELDS.map((f) => pct(each(f), n)), pct(rs.filter((r) => FIELDS.every((f) => r[f]?.ok)).length, n)];
-    if (laya) row.push(pct(rs.filter((r) => FIELDS.every((f) => r[f]?.ok && r[f].sure)).length, n), pct(rs.filter((r) => r.current?.ok).length, n));
-    rows.push(row);
-  }
-  const ms = results.filter((r) => r.ms !== undefined).map((r) => r.ms);
-  const failed = results.filter((r) => !r.case.debatable && (r.error || !FIELDS.every((f) => r[f]?.ok)));
-  const extra = laya ? ' Top-1 regardless of probability in the field columns; "all three >=0.6" also needs every top option at 0.60 or more.' : '';
-  return { head, rows, ms: ms.length ? `latency: median ${median(ms)} ms, max ${Math.max(...ms)} ms` : 'latency: no answers', failed, extra };
+    const ms = rs.filter((r) => r.ms !== undefined).map((r) => r.ms);
+    return [label, grade, String(n), ...FIELDS.map((f) => pct(each(f), n)), pct(rs.filter((r) => FIELDS.every((f) => r[f]?.ok)).length, n), ms.length ? String(median(ms)) : '-'];
+  });
 }
+const failedOf = (results) => results.filter((r) => !r.case.debatable && (r.error || !FIELDS.every((f) => r[f]?.ok)));
+const failLine = (r) => `[${r.case.grade}] ${r.case.text}  ${r.error ? `(${clip(r.error, 90)})` : FIELDS.filter((f) => !r[f]?.ok).map((f) => `${f}: want ${show(r.case[f])} got ${r[f]?.v ?? '?'}`).join('; ')}`;
 
 const pad = (rows, widths) => rows.map((row) => row.map((v, i) => String(v).padEnd(widths[i])).join('  ').trimEnd());
 function text(head, rows) {
@@ -275,18 +525,54 @@ function text(head, rows) {
 }
 const md = (head, rows) => [head, head.map(() => '---'), ...rows].map((r) => `| ${r.map((v) => String(v).replace(/\|/g, '/')).join(' | ')} |`).join('\n');
 
-function report(sections) {
-  const out = [];
-  const mdOut = ['# Floor intent check', '', 'Rows marked * are debatable and not scored.', ''];
-  for (const { title, name, results } of sections) {
-    const t = rowsFor(name, results);
-    const s = summaryFor(name, results);
-    out.push(`\n== ${title} ==\n`, text(t.head, t.rows), '\nSummary (debatable excluded)', text(s.head, s.rows), s.ms + s.extra);
-    out.push('Failed cases:', ...(s.failed.length ? s.failed.map((r) => `  [${r.case.grade}] ${r.case.text}  ${r.error ? `(${r.error})` : FIELDS.filter((f) => !r[f]?.ok).map((f) => `${f}: want ${show(r.case[f])} got ${r[f]?.v}`).join('; ')}`) : ['  none']));
-    mdOut.push(`## ${title}`, '', md(t.head, t.rows), '', '### Summary', '', md(s.head, s.rows), '', s.ms + s.extra, '', '### Failed cases', '', ...(s.failed.length ? s.failed.map((r) => `- [${r.case.grade}] ${r.case.text} (${r.error ? r.error : FIELDS.filter((f) => !r[f]?.ok).map((f) => `${f}: want ${show(r.case[f])}, got ${r[f]?.v}`).join('; ')})`) : ['- none']), '');
+/** `fmt` is 'text' (console) or 'md'. The Markdown report has no per-case tables. */
+function render(fmt, data) {
+  const o = [];
+  const M = fmt === 'md';
+  const H = (t) => o.push(M ? `\n## ${t}\n` : `\n== ${t} ==\n`);
+  const T = (head, rows) => o.push(M ? md(head, rows) : text(head, rows));
+  const list = (lines) => o.push(M ? lines.map((l) => `- ${l}`).join('\n') : lines.map((l) => `  ${l}`).join('\n'));
+  const code = (lines) => o.push(M ? ['```', ...lines, '```'].join('\n') : lines.map((l) => `  ${l}`).join('\n'));
+  if (M) o.push('# Floor intent check', '', 'Debatable cases (marked * in the case list) are not scored. "all three" needs speaker, intent and target right.');
+  const sets = [...data.variants.map((v) => ({ label: `${v.id} ${VARIANTS[v.id].label}`, results: v.results, v })), ...(data.laya ? [{ label: 'laya (main)', results: data.laya, laya: true }] : [])];
+  if (sets.length) {
+    H('Comparison (debatable cases excluded; ms = median)');
+    T(['variant', 'grade', 'n', 'speaker', 'intent', 'target', 'all three', 'ms'], sets.flatMap((s) => gradeRows(s.label, s.results)));
+    for (const s of sets) {
+      const down = s.v ? s.results.filter((r) => r.downgraded).length : 0;
+      if (down) o.push(`${M ? '- ' : '* '}${s.label}: the server rejected json_schema (HTTP 400) on ${down} of ${s.results.length} requests; those were retried with json_object.`);
+    }
+    H('Failed cases (want vs got)');
+    for (const s of sets) {
+      const failed = failedOf(s.results);
+      o.push(M ? `### ${s.label}: ${failed.length} failed\n` : `-- ${s.label}: ${failed.length} failed`);
+      if (failed.length) list(failed.map(failLine));
+    }
   }
-  console.log(out.join('\n'));
-  if (mdPath) writeFileSync(mdPath, `${mdOut.join('\n')}\n`);
+  if (!M && verbose) for (const s of sets) {
+    H(`Per case: ${s.label}`);
+    const t = rowsFor(s.laya ? 'laya' : 'llm', s.results);
+    T(t.head, t.rows);
+  }
+  if (data.probes) {
+    const p = data.probes;
+    H(`Laya probes (${p.rows.length} cases, model ${layaModel})`);
+    T(['shape', 'what', 'speaker', 'intent', 'target', 'all three', 'mean top p', 'top p range', 'ms'], probeSummary(p.rows));
+    o.push('\nFull vectors per case (truth in brackets: speaker/intent/target):');
+    const lines = [];
+    for (const r of p.rows) {
+      lines.push(`[${r.case.grade}] ${r.case.text}  (${show(r.case.speaker)}/${show(r.case.intent)}/${show(r.case.target)})`);
+      for (const s of r.shapes) lines.push(`  ${probeLine(s)}`);
+    }
+    code(lines);
+    o.push('\nSanity questions in the documented style (raw responses):');
+    code(p.sanity);
+    if (firstLaya) {
+      o.push('\nFirst Laya call, raw response, read as answers.<question>.probabilities (choice) / .noul (yes-no), the same fields as app/main/src/decide/system-one.ts readAnswer:');
+      code([`request: ${JSON.stringify(firstLaya.body)}`, `response: ${JSON.stringify(firstLaya.json)}`]);
+    }
+  }
+  return o.join('\n');
 }
 
 async function probe(url) {
@@ -295,20 +581,24 @@ async function probe(url) {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
   } catch (error) {
-    return { unreachable: error instanceof Error ? error.message : String(error) };
+    return { unreachable: errText(error) };
   }
 }
 
 async function main() {
-  const sections = [];
+  const data = { variants: [], laya: null, probes: null };
+  let reachable = 0;
   if (only !== 'llm') {
     const health = await probe(`${layaBase}/health`);
     if (health.unreachable) console.log(`Laya at ${layaBase}: skipped (${health.unreachable})`);
     else {
+      reachable += 1;
       console.log(`Laya at ${layaBase}: ${JSON.stringify(health)}, model ${layaModel}`);
-      const results = [];
-      for (const c of cases) results.push(await askLaya(c));
-      sections.push({ title: 'Quick decisions server (Laya)', name: 'laya', results });
+      if (layaMain) {
+        data.laya = [];
+        for (const c of cases) data.laya.push(await askLaya(c));
+      }
+      if (layaProbes) data.probes = await runProbes();
     }
   }
   if (only !== 'laya') {
@@ -317,18 +607,25 @@ async function main() {
     if (models.unreachable) console.log(`Chat model at ${llmBase}: skipped (${models.unreachable})`);
     else if (!model) console.log(`Chat model at ${llmBase}: skipped (no model listed; set LLM_MODEL)`);
     else {
-      console.log(`Chat model at ${llmBase}: ${model}`);
-      const results = [];
-      for (const c of cases) results.push(await askLlm(c, model));
-      sections.push({ title: `Chat model (${model})`, name: 'llm', results });
+      reachable += 1;
+      console.log(`Chat model at ${llmBase}: ${model}, variants ${variantIds.join(',')}`);
+      for (const id of variantIds) {
+        const results = [];
+        for (const c of cases) results.push(await askLlm(c, model, id));
+        data.variants.push({ id, model, results });
+      }
     }
   }
-  if (sections.length === 0) {
+  if (reachable === 0) {
     console.error('Neither back end answered; nothing to check.');
     process.exit(1);
   }
-  report(sections);
-  if (jsonPath) writeFileSync(jsonPath, JSON.stringify(sections.map((s) => ({ ...s, results: s.results.map((r) => ({ ...r, case: r.case })) })), null, 2));
+  console.log(render('text', data));
+  if (mdPath) writeFileSync(mdPath, `${render('md', data)}\n`);
+  if (jsonPath) {
+    const full = { variants: data.variants, laya: data.laya, probes: data.probes, firstLayaCall: firstLaya };
+    writeFileSync(jsonPath, JSON.stringify(full, null, 2));
+  }
 }
 
 void main();
