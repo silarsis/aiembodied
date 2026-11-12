@@ -26,6 +26,7 @@ import { AnimationBusProvider, createAvatarAnimationBus } from './avatar/animati
 import { BehaviorCueProvider } from './avatar/behavior-cues.js';
 import { getAvatarRestSkeleton } from './avatar/rest-skeleton.js';
 import { AvatarConfigurator } from './avatar/avatar-configurator.js';
+import { SceneCast } from './avatar/scene-cast.js';
 import { AudioGraph } from './audio/audio-graph.js';
 import { useWakeWordListening } from './audio/use-wake-word-listening.js';
 import { VisemeDriver, type VisemeFrame } from './audio/viseme-driver.js';
@@ -33,7 +34,6 @@ import type { VoiceActivity } from './realtime/voice-activity.js';
 import { GpuMemoryPanel } from './status/gpu-memory-bar.js';
 import { SwitchboardStatusLine } from './status/switchboard-status.js';
 import { DoNotDisturbToggle } from './status/dnd-toggle.js';
-import { AvatarManager } from './status/avatar-manager.js';
 import { HearChatterToggle } from './status/hear-chatter-toggle.js';
 import { usePresenceReporter } from './presence/use-presence-reporter.js';
 import { CodingStatusLine } from './status/coding-status.js';
@@ -1842,6 +1842,12 @@ export default function App() {
   const refreshAvatars = useCallback(async () => {
     await refreshAvatarsRef.current?.();
   }, []);
+  // The Characters pop-up lists the library next to the scene, so read it each time the pop-up opens.
+  useEffect(() => {
+    if (panel === 'character') {
+      void refreshAvatars();
+    }
+  }, [panel, refreshAvatars]);
   // Which avatars share the stage: the registry's list and the models they wear. Only read further
   // while there is more than one avatar, so a single avatar costs one `avatars:list` call.
   useEffect(() => {
@@ -2943,7 +2949,7 @@ export default function App() {
           <ControlsDrawer open={drawerOpen} onOpenChange={setDrawerOpen}>
             <ControlButton
               id="character"
-              title="Character"
+              title="Characters"
               summary={activeAvatarName}
               keywords="avatar model vrm upload choose select personality base prompt"
               onOpen={() => setPanel('character')}
@@ -3117,7 +3123,14 @@ export default function App() {
             )}
           />
 
-          <PanelDialog id="character" title="Character" subtitle="Pick an avatar and set its personality." open={panel === 'character'} onClose={closePanel}>
+          <PanelDialog id="character" title="Characters" subtitle="Choose who is in the scene and set each character's personality." open={panel === 'character'} onClose={closePanel}>
+            <SceneCast
+              api={activeBridge?.avatars}
+              profiles={avatarProfiles}
+              models={vrmModels}
+              roomActive={Boolean(backgrounds.activeRoom)}
+              onChanged={refreshAvatars}
+            />
             <AvatarConfigurator
               avatarApi={activeBridge?.avatar}
               onActiveModelChange={setActiveVrmModel}
@@ -3337,13 +3350,6 @@ export default function App() {
             <SwitchboardStatusLine api={activeBridge?.switchboard} active={panel === 'status'} />
             <DoNotDisturbToggle api={activeBridge?.presence} />
             <HearChatterToggle api={activeBridge?.floor} />
-            <AvatarManager
-              api={activeBridge?.avatars}
-              profiles={avatarProfiles}
-              models={vrmModels}
-              roomActive={Boolean(backgrounds.activeRoom)}
-              onChanged={refreshAvatars}
-            />
             <GpuMemoryPanel api={activeBridge?.gpuMemory} active={panel === 'status'} />
           </PanelDialog>
 

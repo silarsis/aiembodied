@@ -417,10 +417,10 @@ describe('App component', () => {
     const stage = screen.getByRole('region', { name: 'Avatar stage' });
     const renderer = stage.querySelector('[data-renderer]');
     expect(screen.queryByRole('complementary', { name: 'Controls' })).not.toBeInTheDocument();
-    await openGroup(/Character/i);
+    await openGroup(/Characters/i);
     expect(document.getElementById('panel-character')).toHaveAttribute('open');
     expect(screen.getByLabelText(/Base prompt/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Close character' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close characters' }));
     expect(document.getElementById('panel-character')).not.toHaveAttribute('open');
     expect(await openModels()).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Close models and servers' }));
@@ -457,7 +457,7 @@ describe('App component', () => {
     const prompt = screen.getByLabelText(/Base prompt/i);
     expect(document.getElementById('panel-character')).not.toHaveAttribute('open');
     expect(document.getElementById('controls-drawer')).toHaveAttribute('inert');
-    await openGroup(/Character/i);
+    await openGroup(/Characters/i);
     expect(document.getElementById('panel-character')).toHaveAttribute('open');
     expect(screen.getByLabelText(/Base prompt/i)).toBe(prompt);
     expect(document.getElementById('panel-devices')).not.toHaveAttribute('open');
@@ -1205,7 +1205,7 @@ describe('App component', () => {
 
     render(<App />);
 
-    await openGroup(/Character/i);
+    await openGroup(/Characters/i);
 
     const textarea = (await screen.findByLabelText(/Base prompt/i)) as HTMLTextAreaElement;
 
@@ -1265,7 +1265,7 @@ describe('App component', () => {
     } as unknown as PreloadWindow['aiembodied'];
 
     render(<App />);
-    await openGroup(/Character/i);
+    await openGroup(/Characters/i);
 
     const textarea = (await screen.findByLabelText(/Base prompt/i)) as HTMLTextAreaElement;
     await waitFor(() => expect(textarea.value).toBe('Mei is gentle and curious.'));
@@ -1309,7 +1309,7 @@ describe('App component', () => {
     } as unknown as PreloadWindow['aiembodied'];
 
     render(<App />);
-    await openGroup(/Character/i);
+    await openGroup(/Characters/i);
 
     const textarea = (await screen.findByLabelText(/Idle habits/i)) as HTMLTextAreaElement;
     await waitFor(() => expect(textarea.value).toBe('Sits by the window with tea.'));

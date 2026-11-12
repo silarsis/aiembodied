@@ -78,7 +78,7 @@ clips, entering and leaving a room, swapping models, and the ground-anchor callb
 
 ## Step 3b: several avatars on the 2D stage
 
-With two or more avatars in the registry (for example `AIEMBODIED_EXTRA_AVATARS=Sage`), the 2D stage shows them side
+With two or more avatars in the registry (for example after adding Sage in Controls > Characters), the 2D stage shows them side
 by side, each lip-syncs to its own voice, and animation tags drive only the speaker. With one avatar nothing changes:
 App passes no `avatars` prop and the old `model`/`frame` path runs untouched.
 
@@ -116,7 +116,7 @@ App passes no `avatars` prop and the old `model`/`frame` path runs untouched.
 ### Not verifiable here (3b)
 
 Nothing ran under WebGL or real audio. Unit suites cover the client routing (fake `AudioContext`), the actor/layout
-logic with mocked three, and App wiring with a fake client. Check in the running app with `AIEMBODIED_EXTRA_AVATARS=Sage`:
+logic with mocked three, and App wiring with a fake client. Check in the running app after adding a second character in Controls > Characters:
 both avatars appear without overlapping and the feet sit on the ground line, each mouth moves only with its own voice,
 Kevin saying "Sage, ..." plays on Sage's side, "Hear avatar chatter" chatter is audible from the right avatar and stops
 when Kevin speaks, the name labels follow the avatars, the foot-anchor re-measures after the second avatar loads, and
@@ -124,12 +124,15 @@ entering a 3D room (and leaving it) restores a single centred Echo. Known limits
 queued audio has played, so a long pause between its sentences restarts its activity bookkeeping; the output device
 choice is not applied to extra avatars' audio (nor is it to Echo's element today).
 
-## Managing avatars from the UI
+## Choosing who is in the scene
 
-Status and diagnostics has an **Avatars** panel (`app/renderer/src/status/avatar-manager.tsx`) next to "Hear avatar chatter". It lists every avatar and lets Kevin add one (name, optional body from the installed VRM models, optional prompt), rename it, change its body, edit its prompt (empty clears it) and remove it after a confirm. Echo has no Remove and follows the body chosen in the character settings.
+The scene is every profile in the avatar registry. Controls > Characters has an **In the scene** section at the top of the pop-up (`app/renderer/src/avatar/scene-cast.tsx`). It replaces the old Avatars list in Status and diagnostics, which now only keeps "Hear avatar chatter".
 
-Main process: `avatars:add`, `avatars:update`, `avatars:remove` (`app/main/src/main.ts`). The id is a slug of the name (`a-z0-9_-`), made unique with `-2`, `-3`. Names are at most 80 characters, prompts at most 4000. Adding starts the avatar's switchboard plumbing; removing stops its inbox and drops its voice service. The last avatar and Echo cannot be removed. The renderer re-reads the list right after each change. When a 3D room is active with 2+ avatars the panel notes that every avatar walks, gestures, keeps clear of the others and wanders when idle. `AIEMBODIED_EXTRA_AVATARS` still works as a dev shortcut.
+- **Cast.** One card per avatar in scene order, with the body's thumbnail, the name, a Host badge on Echo, and "Shares Echo's body" for an avatar without a body of its own. Every card except Echo has a Remove button; it asks once ("Remove Sage from the scene?", Confirm or Cancel).
+- **Edit.** The Edit toggle on a card shows the name, the body (a library character or "Shares Echo's body") and the prompt. Changes save when the field loses focus. Echo's body is fixed because Echo wears the active character picked further down the pop-up. The prompt is used when the avatar's body has no saved personality of its own; a library character that has a saved personality and voice uses those. Names are at most 80 characters, prompts at most 4000.
+- **Add a character.** Library characters that nobody in the scene wears are shown as tiles. "Add to scene" adds one in a single click, wearing that body and carrying its name. "Add by name" (a name and an optional prompt) makes a character that shares Echo's body.
+- **Errors** from the main process appear under the section and the stage updates right after each change.
 
-## Step 4b: companions in 3D rooms
+Main process: `avatars:add`, `avatars:update`, `avatars:remove` (`app/main/src/main.ts`). The id is a slug of the name (`a-z0-9_-`, see `app/main/src/avatars/avatar-id.ts`), made unique with `-2`, `-3`. Adding starts the avatar's switchboard plumbing; removing stops its inbox and drops its voice service. The last avatar and Echo cannot be removed. When a 3D room is active with 2+ avatars the section notes that every avatar walks, gestures, keeps clear of the others and wanders when idle.
 
-With a room active, the other avatars (never Echo) are loaded as before and stand beside Echo instead of being hidden. `RoomSceneController.attachCompanion(id, root)` / `detachCompanion(id)` (the bookkeeping lives in `rooms/room-companions.ts`) record each body's 2D transform, sole lift and natural height, and place it at `companionHome(room.home, index)` (`rooms/avatar-placement.ts`: alternating right/left of the home facing, 0.8 m apart, same facing) at the same real-world height as Echo. Leaving the room restores each body's 2D transform and the usual side-by-side relayout runs. Companions do not walk or collide; they idle-animate and lip-sync through their own actors, and only Echo's body drives `RoomSceneController.step`. The 2D name labels are not shown in rooms. Not verified in WebGL: visual placement and overlap with furniture.
+The old `AIEMBODIED_EXTRA_AVATARS` variable no longer exists. Profiles it created earlier stay as ordinary profiles in the registry and can be edited or removed here.

@@ -79,10 +79,10 @@ With more than one avatar in the scene, `app/main/src/floor/` decides who answer
 
 Journal (private, fire-and-forget; in Kevin's turn txn `turn:<requestId>` when there is one, else `chatter:<time>:<n>`): `floor.decision` (payload `from`, `text`, `speakers`, `channel`, `trace`), `floor.grant` and `floor.release` (`avatar`, `reason`/`next`), `floor.budget` (when chatter is cut off: `kind`, `turns`, `ms`).
 
-Try it with extra avatars (they wear the active VRM and have separate histories; each gets a short persona prompt):
+Try it with several avatars: open Controls > Characters and add Sage and Rex under "In the scene" (each gets its own history; "Add by name" makes a character that shares Echo's body). Then watch the journal.
 
 ```powershell
-$env:AIEMBODIED_EXTRA_AVATARS = "Sage,Rex"; pnpm dev:run
+pnpm dev:run
 # in another terminal
 python -m switchboard tail --type "floor.*"
 ```

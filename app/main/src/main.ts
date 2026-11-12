@@ -19,7 +19,7 @@ import { FloorController } from './floor/index.js';
 import { createModelBid } from './floor/bid.js';
 import { createSystemOne } from './decide/system-one.js';
 import { createSystemOneAddressee, createSystemOneBid } from './floor/system-one-floor.js';
-import { avatarIdForName, ensureExtraAvatars } from './avatars/extra-avatars.js';
+import { avatarIdForName } from './avatars/avatar-id.js';
 import { SwitchboardMirror } from './switchboard/mirror.js';
 import { AvatarRegistry, DEFAULT_AVATAR_ID, type AvatarProfile } from './avatars/avatar-registry.js';
 import { AvatarSettingsKeys } from './avatars/avatar-settings.js';
@@ -2646,13 +2646,6 @@ app.whenReady().then(async () => {
     });
     avatarSettingsKeys = new AvatarSettingsKeys(avatarRegistry);
     const registry = avatarRegistry;
-    try {
-      // Dev way to try several avatars: AIEMBODIED_EXTRA_AVATARS=Sage,Rex.
-      const made = ensureExtraAvatars(avatarRegistry, () => registryModels.getActiveModel?.()?.id ?? null);
-      if (made.length > 0) logger.info('Created extra avatars from AIEMBODIED_EXTRA_AVATARS.', { avatars: made.map((profile) => profile.id) });
-    } catch (error) {
-      logger.warn('Could not create the extra avatars.', { message: error instanceof Error ? error.message : String(error) });
-    }
     const floorStore = memoryStore;
     floor = new FloorController({
       registry,

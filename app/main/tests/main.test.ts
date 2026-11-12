@@ -1378,10 +1378,10 @@ describe('main process bootstrap', () => {
   describe('floor routing', () => {
     afterEach(() => {
       delete process.env.SWITCHBOARD_ENABLED;
-      delete process.env.AIEMBODIED_EXTRA_AVATARS;
     });
 
-    async function boot(extraAvatars?: string) {
+    /** Starts the app; `avatarNames` are added to the scene over `avatars:add`, as the Characters pop-up does. */
+    async function boot(avatarNames: string[] = []) {
       // Without the switchboard the app keeps its bus in-process; spy on what is published to it.
       process.env.SWITCHBOARD_ENABLED = '0';
       const { LocalOnlyBus } = await import('../src/switchboard/bus.js');
@@ -1393,8 +1393,6 @@ describe('main process bootstrap', () => {
       const kv = new Map<string, string>();
       getValueMock.mockImplementation((key: string) => kv.get(key) ?? null);
       setValueMock.mockImplementation((key: string, value: string) => void kv.set(key, value));
-      if (extraAvatars) process.env.AIEMBODIED_EXTRA_AVATARS = extraAvatars;
-      else delete process.env.AIEMBODIED_EXTRA_AVATARS;
       const config = {
         realtimeApiKey: 'rt-key',
         comfyUiBaseUrl: 'http://127.0.0.1:8188',
@@ -1424,6 +1422,9 @@ describe('main process bootstrap', () => {
         served.push({ avatarId: this.avatarId, requestId: request.requestId, instructions: request.instructions, silent: request.silent });
         return { requestId: request.requestId, text: '', cancelled: false };
       });
+      for (const name of avatarNames) {
+        await handlers.get('avatars:add')?.({}, { name, prompt: `You are ${name}, another AI in the room with Echo and Kevin.` });
+      }
       const respond = (payload: Record<string, unknown>) => handlers.get('local-voice:respond')?.({ sender }, payload);
       return { handlers, served, respond, respondSpy, sender, published };
     }
@@ -1433,7 +1434,6 @@ describe('main process bootstrap', () => {
       await respond({ requestId: 'r1', text: 'Sage, hello', instructions: 'You are Echo.' });
       expect(served).toEqual([{ avatarId: 'echo', requestId: 'r1', instructions: 'You are Echo.', silent: undefined }]);
       expect(handlers.get('avatars:list')?.({})).toHaveLength(1);
-      expect(mockLogger.info).not.toHaveBeenCalledWith('Created extra avatars from AIEMBODIED_EXTRA_AVATARS.', expect.anything());
       respondSpy.mockRestore();
     });
 
@@ -1454,8 +1454,8 @@ describe('main process bootstrap', () => {
       respondSpy.mockRestore();
     });
 
-    it('creates env avatars and routes by name, host and explicit avatar id', async () => {
-      const { served, respond, respondSpy, handlers } = await boot('Sage,Rex');
+    it('routes by name, host and explicit avatar id', async () => {
+      const { served, respond, respondSpy, handlers } = await boot(['Sage', 'Rex']);
       expect((handlers.get('avatars:list')?.({}) as Array<{ id: string; prompt?: string }>).map((p) => p.id)).toEqual(['echo', 'sage', 'rex']);
       expect((handlers.get('avatars:list')?.({}) as Array<{ id: string; prompt?: string }>)[1].prompt).toContain('You are Sage');
 
@@ -1476,7 +1476,7 @@ describe('main process bootstrap', () => {
     });
 
     it('journals floor events on the switchboard bus', async () => {
-      const { respond, respondSpy, published } = await boot('Sage');
+      const { respond, respondSpy, published } = await boot(['Sage']);
       await respond({ requestId: 'r1', text: 'Sage?' });
       const decision = published.find((event) => event.type === 'floor.decision');
       expect(decision).toMatchObject({ txn: { id: 'turn:r1' }, payload: { speakers: [{ avatarId: 'sage', reason: 'addressed' }] } });
@@ -1485,7 +1485,7 @@ describe('main process bootstrap', () => {
     });
 
     it('lets the other avatars overhear a turn that names an avatar directly', async () => {
-      const { respond, respondSpy } = await boot('Sage,Rex');
+      const { respond, respondSpy } = await boot(['Sage', 'Rex']);
       const { LocalVoiceService } = await import('../src/local-voice/local-voice-service.js');
       respondSpy.mockImplementation(async (request) => ({ requestId: request.requestId, text: 'Fine by me.', cancelled: false }));
       const overheard = vi.spyOn(LocalVoiceService.prototype, 'overhear').mockImplementation(function (this: { avatarId: string }, line) {
@@ -1508,7 +1508,7 @@ describe('main process bootstrap', () => {
     });
 
     it('registers floor:interrupt and is safe to call when nothing runs', async () => {
-      const { handlers, respondSpy } = await boot('Sage');
+      const { handlers, respondSpy } = await boot(['Sage']);
       expect(await handlers.get('floor:interrupt')?.({})).toBeUndefined();
       respondSpy.mockRestore();
     });

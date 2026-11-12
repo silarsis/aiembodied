@@ -3,7 +3,7 @@ import { FloorController, HEAR_CHATTER_KEY, chatterNote, relayChatterNote, relay
 import type { FloorBid } from '../src/floor/floor-manager.js';
 import type { LocalVoiceEvent, LocalVoiceRespondRequest, LocalVoiceRespondResult } from '../src/local-voice/types.js';
 import type { SwitchboardEventInput } from '../src/switchboard/types.js';
-import { avatarIdForName, ensureExtraAvatars, parseExtraAvatarNames, defaultPersonaPrompt } from '../src/avatars/extra-avatars.js';
+import { avatarIdForName } from '../src/avatars/avatar-id.js';
 import { AvatarRegistry } from '../src/avatars/avatar-registry.js';
 
 const PROFILES = [
@@ -292,29 +292,27 @@ describe('chatterNote', () => {
   });
 });
 
-describe('extra avatars from the environment', () => {
-  it('parses names and ids', () => {
-    expect(parseExtraAvatarNames(' Sage, Rex ,,sage')).toEqual(['Sage', 'Rex']);
-    expect(parseExtraAvatarNames(undefined)).toEqual([]);
+describe('avatars added through the registry', () => {
+  it('makes ids from names', () => {
+    expect(avatarIdForName(' Sage ')).toBe('sage');
     expect(avatarIdForName('Dr. Who?')).toBe('dr-who');
   });
 
-  it('creates missing profiles on the active VRM with a default persona, once', () => {
+  it('keeps scene order and each profile\'s body and prompt', () => {
     const kv = new Map<string, string>();
     const registry = new AvatarRegistry({
       store: { getValue: (k) => kv.get(k) ?? null, setValue: (k, v) => void kv.set(k, v) },
       activeVrmModelId: () => 'vrm-1',
     });
-    const env = { AIEMBODIED_EXTRA_AVATARS: 'Sage,Rex' };
-    const made = ensureExtraAvatars(registry, () => 'vrm-1', env);
-    expect(made.map((p) => [p.id, p.name, p.vrmModelId])).toEqual([['sage', 'Sage', 'vrm-1'], ['rex', 'Rex', 'vrm-1']]);
-    expect(registry.get('sage')?.prompt).toBe(defaultPersonaPrompt('Sage'));
-    expect(defaultPersonaPrompt('Sage')).toContain('another AI in the room with Echo and Kevin');
-    expect(registry.list().map((p) => p.id)).toEqual(['echo', 'sage', 'rex']);
-    expect(ensureExtraAvatars(registry, () => 'vrm-1', env)).toEqual([]);
+    registry.add({ id: 'sage', name: 'Sage', vrmModelId: 'vrm-1', prompt: 'You are Sage.' });
+    registry.add({ id: 'rex', name: 'Rex', vrmModelId: 'vrm-1' });
+    expect(registry.list().map((p) => [p.id, p.name, p.vrmModelId])).toEqual([['echo', 'Echo', 'vrm-1'], ['sage', 'Sage', 'vrm-1'], ['rex', 'Rex', 'vrm-1']]);
+    expect(registry.get('sage')?.prompt).toBe('You are Sage.');
     expect(registry.peek().find((p) => p.id === 'sage')?.prompt).toContain('Sage');
   });
+});
 
+describe('floor with several avatars', () => {
   it('passes Kevin\'s question on: the asker is told to name the target, the target answers aloud and does not open more chatter', async () => {
     const h = harness({ replies: { sage: ['Echo, what are you up to right now?'], echo: ['Just tidying up.'] } });
     await h.controller.respondToPerson({ requestId: 'r1', text: "Sage, can you ask Echo what they're doing?" });
