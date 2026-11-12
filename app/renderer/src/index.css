@@ -2169,6 +2169,19 @@ body {
 .sceneCard__confirm span { flex: 1 1 auto; }
 .sceneCard__edit { display: grid; gap: 0.6rem; }
 .sceneCard__field { display: grid; gap: 4px; font-size: 0.8rem; color: #cbd5e1; }
+.sceneCard__pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
+.characterSettings { display: grid; gap: 0.6rem; }
+.sceneCard__edit .control { min-width: 0; gap: 4px; font-size: 0.8rem; }
+.sceneCard__edit .control label { font-size: 0.8rem; font-weight: 400; color: #cbd5e1; }
+.sceneCard__edit .control textarea,
+.sceneCard__edit .control select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  font-size: inherit;
+}
+.sceneCard__edit .control textarea { resize: vertical; }
 .sceneCard__field input,
 .sceneCard__field select,
 .sceneCard__field textarea,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AVATAR_PROFILES_KEY, AvatarRegistry, DEFAULT_AVATAR_ID } from '../src/avatars/avatar-registry.js';
-import { AvatarSettingsKeys } from '../src/avatars/avatar-settings.js';
+import { AvatarSettingsKeys, avatarOnlyKeys, pseudoModelIdForAvatar } from '../src/avatars/avatar-settings.js';
 
 function makeRegistry(active: string | null = 'vrm-1') {
   const kv = new Map<string, string>();
@@ -81,6 +81,40 @@ describe('AvatarSettingsKeys', () => {
     expect(keys.prompt('bare')).toBeNull();
     expect(keys.prompt('ghost')).toBeNull();
     expect(makeRegistryKeys(null).prompt()).toBeNull();
+  });
+
+  it('gives an avatar sharing Echo\'s body its own voice and idle habits keys, and no prompt key', () => {
+    const { registry } = makeRegistry('vrm-1');
+    registry.add({ id: 'sage', prompt: 'Be calm.' });
+    registry.add({ id: 'twin', vrmModelId: 'vrm-1' });
+    const keys = new AvatarSettingsKeys(registry);
+    expect(pseudoModelIdForAvatar('sage')).toBe('avatar:sage');
+    expect(keys.voice('openai', 'sage')).toBe('avatar.voice.avatar:sage');
+    expect(keys.voice('kokoro', 'sage')).toBe('avatar.voice.avatar:sage.kokoro');
+    expect(keys.idleHabits('sage')).toBe('avatar.idleHabits.avatar:sage');
+    expect(keys.prompt('sage')).toBeNull();
+    expect(keys.sharesEchoBody('sage')).toBe(true);
+    // Wearing the very model Echo wears is sharing her body: nothing of hers is borrowed.
+    expect(keys.idleHabits('twin')).toBe('avatar.idleHabits.avatar:twin');
+    expect(keys.prompt('twin')).toBeNull();
+    // Echo and library characters keep the model keys.
+    expect(keys.idleHabits('echo')).toBe('avatar.idleHabits.vrm-1');
+    expect(keys.sharesEchoBody('echo')).toBe(false);
+    registry.add({ id: 'luna', vrmModelId: 'vrm-2' });
+    expect(keys.idleHabits('luna')).toBe('avatar.idleHabits.vrm-2');
+    expect(keys.voice('piper', 'luna')).toBe('avatar.voice.vrm-2.piper');
+    expect(keys.prompt('luna')).toBe('avatar.prompt.vrm-2');
+    expect(keys.sharesEchoBody('luna')).toBe(false);
+    expect(keys.sharesEchoBody('ghost')).toBe(false);
+  });
+
+  it('lists the keys that go when an avatar is removed', () => {
+    expect(avatarOnlyKeys('sage', ['kokoro', 'piper'])).toEqual([
+      'avatar.idleHabits.avatar:sage',
+      'avatar.voice.avatar:sage',
+      'avatar.voice.avatar:sage.kokoro',
+      'avatar.voice.avatar:sage.piper',
+    ]);
   });
 
   it('no avatar id means the avatar of the active model', () => {

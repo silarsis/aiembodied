@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import type { CharacterSettingsControls } from '../../src/avatar/character-settings.js';
 import { SceneCast } from '../../src/avatar/scene-cast.js';
+import type { CharacterSettingsContext } from '../../src/avatar/use-character-settings.js';
 
 const echo = { id: 'echo', name: 'Echo', vrmModelId: 'm1' };
 const sage = { id: 'sage', name: 'Sage', vrmModelId: null, prompt: 'Be calm.' };
@@ -75,7 +77,7 @@ describe('SceneCast', () => {
     expect(api.add).not.toHaveBeenCalled();
   });
 
-  it('edits name, body and prompt (empty clears it)', async () => {
+  it('edits name and body on one row, with no settings until the app supplies them', async () => {
     const api = makeApi();
     render(<SceneCast api={api} profiles={[echo, sage]} models={models} />);
     expect(screen.queryByLabelText('Name of Sage')).toBeNull();
@@ -88,11 +90,8 @@ describe('SceneCast', () => {
     await waitFor(() => expect(api.update).toHaveBeenCalledWith('sage', { vrmModelId: 'm3' }));
     fireEvent.change(screen.getByLabelText('Body of Sage'), { target: { value: '' } });
     await waitFor(() => expect(api.update).toHaveBeenCalledWith('sage', { vrmModelId: null }));
-    expect(screen.getByText("Used when this character's body has no saved personality of its own.")).toBeInTheDocument();
-    const prompt = screen.getByLabelText('Prompt of Sage');
-    fireEvent.change(prompt, { target: { value: '' } });
-    fireEvent.blur(prompt);
-    await waitFor(() => expect(api.update).toHaveBeenCalledWith('sage', { prompt: '' }));
+    expect(name.closest('.sceneCard__pair')).toBe(screen.getByLabelText('Body of Sage').closest('.sceneCard__pair'));
+    expect(screen.queryByLabelText('Prompt of Sage')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Edit Sage' }));
     expect(screen.queryByLabelText('Name of Sage')).toBeNull();
   });
@@ -152,5 +151,170 @@ describe('SceneCast', () => {
     expect(container.firstChild).toBeNull();
     rerender(<SceneCast api={{} as never} profiles={[]} models={[]} />);
     expect(container.firstChild).toBeNull();
+  });
+
+  describe('settings in the Edit panel', () => {
+    const voiceOptions = (selected: string | null) => ({ engine: 'kokoro' as const, label: 'Kokoro', voices: ['af_heart', 'am_adam'], defaultVoice: 'af_heart', selected });
+
+    function makeContext(overrides: Partial<CharacterSettingsContext> = {}) {
+      const echoControls: CharacterSettingsControls = {
+        prompt: { value: 'Echo prompt', onChange: vi.fn(), onBlur: vi.fn() },
+        habits: { value: 'Echo habits', onChange: vi.fn(), onBlur: vi.fn(), maxLength: 500 },
+        voice: { kind: 'engine', options: voiceOptions('af_heart'), onChange: vi.fn() },
+      };
+      const avatarApi = {
+        getVoicePreference: vi.fn(async () => null as string | null),
+        setVoicePreference: vi.fn(async () => undefined),
+        getPromptPreference: vi.fn(async (): Promise<string | null> => null),
+        setPromptPreference: vi.fn(async () => undefined),
+        getIdleHabits: vi.fn(async () => 'Hums.'),
+        setIdleHabits: vi.fn(async () => undefined),
+      };
+      const getVoiceOptions = vi.fn(async () => voiceOptions('am_adam'));
+      const context: CharacterSettingsContext = {
+        avatarApi,
+        getVoiceOptions,
+        isLocalBackend: true,
+        realtimeVoices: ['alloy', 'ash'],
+        echo: echoControls,
+        ...overrides,
+      };
+      return { context, echoControls, avatarApi, getVoiceOptions };
+    }
+
+    it('Echo\'s card shows the controls the app hands over and never calls the per-avatar API for her', () => {
+      const { context, echoControls, avatarApi, getVoiceOptions } = makeContext();
+      render(<SceneCast api={makeApi()} profiles={[echo, sage]} models={models} settings={context} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Edit Echo' }));
+      const prompt = screen.getByLabelText('Prompt of Echo') as HTMLTextAreaElement;
+      expect(prompt.value).toBe('Echo prompt');
+      fireEvent.change(prompt, { target: { value: 'More' } });
+      expect(echoControls.prompt.onChange).toHaveBeenCalledWith('More');
+      fireEvent.blur(prompt);
+      expect(echoControls.prompt.onBlur).toHaveBeenCalled();
+      const habits = screen.getByLabelText('Idle habits of Echo') as HTMLTextAreaElement;
+      expect(habits.value).toBe('Echo habits');
+      expect(habits.maxLength).toBe(500);
+      fireEvent.blur(habits);
+      expect(echoControls.habits.onBlur).toHaveBeenCalled();
+      const voice = screen.getByLabelText('Voice of Echo') as HTMLSelectElement;
+      expect(voice.value).toBe('af_heart');
+      fireEvent.change(voice, { target: { value: 'am_adam' } });
+      expect(echoControls.voice.onChange).toHaveBeenCalledWith('am_adam');
+      expect(avatarApi.getIdleHabits).not.toHaveBeenCalled();
+      expect(getVoiceOptions).not.toHaveBeenCalled();
+    });
+
+    it('a character sharing Echo\'s body edits its profile prompt and its own habits and voice', async () => {
+      const api = makeApi();
+      const onChanged = vi.fn();
+      const { context, avatarApi, getVoiceOptions } = makeContext();
+      render(<SceneCast api={api} profiles={[echo, sage]} models={models} settings={context} onChanged={onChanged} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Edit Sage' }));
+      const prompt = screen.getByLabelText('Prompt of Sage') as HTMLTextAreaElement;
+      expect(prompt.value).toBe('Be calm.');
+      expect(avatarApi.getPromptPreference).not.toHaveBeenCalled();
+      fireEvent.blur(prompt);
+      expect(api.update).not.toHaveBeenCalled();
+      fireEvent.change(prompt, { target: { value: 'Be bold.' } });
+      fireEvent.blur(prompt);
+      await waitFor(() => expect(api.update).toHaveBeenCalledWith('sage', { prompt: 'Be bold.' }));
+      await waitFor(() => expect(onChanged).toHaveBeenCalled());
+      fireEvent.change(prompt, { target: { value: '' } });
+      fireEvent.blur(prompt);
+      await waitFor(() => expect(api.update).toHaveBeenCalledWith('sage', { prompt: '' }));
+      expect(avatarApi.setPromptPreference).not.toHaveBeenCalled();
+
+      const habits = screen.getByLabelText('Idle habits of Sage') as HTMLTextAreaElement;
+      await waitFor(() => expect(habits.value).toBe('Hums.'));
+      expect(avatarApi.getIdleHabits).toHaveBeenCalledWith('sage');
+      fireEvent.blur(habits);
+      expect(avatarApi.setIdleHabits).not.toHaveBeenCalled();
+      fireEvent.change(habits, { target: { value: '  Naps.  ' } });
+      fireEvent.blur(habits);
+      await waitFor(() => expect(avatarApi.setIdleHabits).toHaveBeenCalledWith('Naps.', 'sage'));
+
+      const voice = screen.getByLabelText('Voice of Sage') as HTMLSelectElement;
+      await waitFor(() => expect(voice.value).toBe('am_adam'));
+      expect(getVoiceOptions).toHaveBeenCalledWith('sage');
+      fireEvent.change(voice, { target: { value: '' } });
+      await waitFor(() => expect(avatarApi.setVoicePreference).toHaveBeenCalledWith('', 'kokoro', 'sage'));
+    });
+
+    it('a character with a body of its own saves its prompt for that body and shows the profile prompt only as a starting point', async () => {
+      const api = makeApi();
+      const { context, avatarApi } = makeContext();
+      const withFallback = { ...luna, prompt: 'Fallback.' };
+      const { rerender } = render(<SceneCast api={api} profiles={[echo, withFallback]} models={models} settings={context} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Edit Luna' }));
+      const prompt = screen.getByLabelText('Prompt of Luna') as HTMLTextAreaElement;
+      await waitFor(() => expect(prompt.value).toBe('Fallback.'));
+      expect(avatarApi.getPromptPreference).toHaveBeenCalledWith('luna');
+      fireEvent.change(prompt, { target: { value: 'Luna is shy.' } });
+      fireEvent.blur(prompt);
+      await waitFor(() => expect(avatarApi.setPromptPreference).toHaveBeenCalledWith('Luna is shy.', 'luna'));
+      expect(api.update).not.toHaveBeenCalled();
+
+      // A saved prompt wins over the fallback.
+      avatarApi.getPromptPreference.mockResolvedValue('Saved for the body.');
+      rerender(<SceneCast api={api} profiles={[echo, { ...luna, prompt: 'Fallback.' }, { id: 'rex', name: 'Rex', vrmModelId: 'm3' }]} models={models} settings={context} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Edit Rex' }));
+      await waitFor(() => expect((screen.getByLabelText('Prompt of Rex') as HTMLTextAreaElement).value).toBe('Saved for the body.'));
+    });
+
+    it('a character wearing the very body Echo wears keeps a profile prompt like one sharing it', async () => {
+      const api = makeApi();
+      const { context, avatarApi } = makeContext();
+      render(<SceneCast api={api} profiles={[echo, { id: 'twin', name: 'Twin', vrmModelId: 'm1', prompt: 'Twin.' }]} models={models} settings={context} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Edit Twin' }));
+      const prompt = screen.getByLabelText('Prompt of Twin') as HTMLTextAreaElement;
+      expect(prompt.value).toBe('Twin.');
+      fireEvent.change(prompt, { target: { value: 'Twin two.' } });
+      fireEvent.blur(prompt);
+      await waitFor(() => expect(api.update).toHaveBeenCalledWith('twin', { prompt: 'Twin two.' }));
+      expect(avatarApi.setPromptPreference).not.toHaveBeenCalled();
+    });
+
+    it('labels every field with the character\'s name so two open cards never clash', () => {
+      const { context } = makeContext();
+      render(<SceneCast api={makeApi()} profiles={[echo, sage, luna]} models={models} settings={context} />);
+      for (const name of ['Echo', 'Sage', 'Luna']) fireEvent.click(screen.getByRole('button', { name: `Edit ${name}` }));
+      const ids = new Set<string>();
+      for (const name of ['Echo', 'Sage', 'Luna']) {
+        for (const label of ['Prompt', 'Idle habits', 'Voice']) {
+          const field = screen.getByLabelText(`${label} of ${name}`);
+          expect(field.id).not.toBe('');
+          expect(ids.has(field.id)).toBe(false);
+          ids.add(field.id);
+          expect(document.querySelector(`label[for="${CSS.escape(field.id)}"]`)?.textContent).toBe(label);
+        }
+      }
+    });
+
+    it('offers the OpenAI backend\'s voices when the app does not speak locally', async () => {
+      const { context, avatarApi, getVoiceOptions } = makeContext({ isLocalBackend: false });
+      avatarApi.getVoicePreference.mockResolvedValue('ash');
+      render(<SceneCast api={makeApi()} profiles={[echo, sage]} models={models} settings={context} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Edit Sage' }));
+      const voice = screen.getByLabelText('Voice of Sage') as HTMLSelectElement;
+      await waitFor(() => expect(voice.value).toBe('ash'));
+      expect(avatarApi.getVoicePreference).toHaveBeenCalledWith(undefined, 'sage');
+      expect(getVoiceOptions).not.toHaveBeenCalled();
+      expect([...voice.options].map((option) => option.value)).toEqual(['alloy', 'ash']);
+      fireEvent.change(voice, { target: { value: 'alloy' } });
+      await waitFor(() => expect(avatarApi.setVoicePreference).toHaveBeenCalledWith('alloy', undefined, 'sage'));
+    });
+
+    it('shows a readable error when a save fails', async () => {
+      const { context, avatarApi } = makeContext();
+      avatarApi.setIdleHabits.mockRejectedValueOnce(new Error("Error invoking remote method 'avatar:idle-habits:set': Error: Nope."));
+      render(<SceneCast api={makeApi()} profiles={[echo, sage]} models={models} settings={context} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Edit Sage' }));
+      const habits = screen.getByLabelText('Idle habits of Sage');
+      await waitFor(() => expect((habits as HTMLTextAreaElement).value).toBe('Hums.'));
+      fireEvent.change(habits, { target: { value: 'x' } });
+      fireEvent.blur(habits);
+      expect((await screen.findByRole('alert')).textContent).toBe('Nope.');
+    });
   });
 });

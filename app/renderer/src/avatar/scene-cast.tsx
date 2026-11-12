@@ -1,6 +1,8 @@
 /** "In the scene" at the top of the Characters pop-up: who is in the scene, add from the library or by name, edit, remove. */
 import { useState } from 'react';
 import type { AvatarProfile, AvatarsBridge } from '../../../main/src/avatars/bridge-types.js';
+import { CharacterSettings } from './character-settings.js';
+import { useCharacterSettings, type CharacterSettingsContext, type Run } from './use-character-settings.js';
 
 export interface SceneCastModel {
   id: string;
@@ -20,9 +22,9 @@ interface Props {
   roomActive?: boolean;
   /** Called after any successful change so the app can re-read the list at once. */
   onChanged?: () => void | Promise<void>;
+  /** How to read and save each character's prompt, idle habits and voice. Without it Edit has only name and body. */
+  settings?: CharacterSettingsContext;
 }
-
-type Run = (action: () => Promise<unknown>) => Promise<boolean>;
 
 function message(error: unknown): string {
   const text = error instanceof Error ? error.message : String(error);
@@ -37,70 +39,80 @@ function Thumbnail({ url, name }: { url: string | null | undefined; name: string
   );
 }
 
-/** The edit fields. Remounted when the saved name or prompt changes, so the drafts follow the saved values. */
-function CardEditor({ api, profile, models, run }: {
+/** Settings of a character other than Echo, read and saved under its avatar id. */
+function OtherSettings({ context, api, profile, ownBody, run }: {
+  context: CharacterSettingsContext;
+  api: AvatarsBridge;
+  profile: AvatarProfile;
+  ownBody: boolean;
+  run: Run;
+}) {
+  const controls = useCharacterSettings({ context, avatarsApi: api, profile, ownBody, run });
+  return <CharacterSettings name={profile.name} controls={controls} />;
+}
+
+/** The edit fields: name and body on one row, then the character's own settings. */
+function CardEditor({ api, profile, models, ownBody, settings, run }: {
   api: AvatarsBridge;
   profile: AvatarProfile;
   models: SceneCastModel[];
+  ownBody: boolean;
+  settings?: CharacterSettingsContext;
   run: Run;
 }) {
   const [name, setName] = useState(profile.name);
-  const [prompt, setPrompt] = useState(profile.prompt ?? '');
   const isEcho = profile.id === ECHO_ID;
   return (
     <div className="sceneCard__edit">
-      <label className="sceneCard__field">
-        <span>Name</span>
-        <input
-          aria-label={`Name of ${profile.name}`}
-          value={name}
-          maxLength={NAME_MAX}
-          onChange={(event) => setName(event.target.value)}
-          onBlur={() => {
-            const next = name.trim();
-            if (next && next !== profile.name) void run(() => api.update(profile.id, { name: next }));
-            else setName(profile.name);
-          }}
-        />
-      </label>
-      <label className="sceneCard__field">
-        <span>Body</span>
-        <select
-          aria-label={`Body of ${profile.name}`}
-          value={profile.vrmModelId ?? ''}
-          disabled={isEcho}
-          onChange={(event) => void run(() => api.update(profile.id, { vrmModelId: event.target.value || null }))}
-        >
-          <option value="">{isEcho ? 'Active character' : "Shares Echo's body"}</option>
-          {models.map((model) => (
-            <option key={model.id} value={model.id}>{model.name}</option>
-          ))}
-        </select>
-        {isEcho ? <small className="kiosk__helper">Echo wears the active character picked below.</small> : null}
-      </label>
-      <label className="sceneCard__field">
-        <span>Prompt</span>
-        <textarea
-          aria-label={`Prompt of ${profile.name}`}
-          value={prompt}
-          maxLength={PROMPT_MAX}
-          rows={4}
-          onChange={(event) => setPrompt(event.target.value)}
-          onBlur={() => {
-            if (prompt.trim() !== (profile.prompt ?? '')) void run(() => api.update(profile.id, { prompt }));
-          }}
-        />
-        <small className="kiosk__helper">Used when this character&apos;s body has no saved personality of its own.</small>
-      </label>
+      <div className="sceneCard__pair">
+        <label className="sceneCard__field">
+          <span>Name</span>
+          <input
+            aria-label={`Name of ${profile.name}`}
+            value={name}
+            maxLength={NAME_MAX}
+            onChange={(event) => setName(event.target.value)}
+            onBlur={() => {
+              const next = name.trim();
+              if (next && next !== profile.name) void run(() => api.update(profile.id, { name: next }));
+              else setName(profile.name);
+            }}
+          />
+        </label>
+        <label className="sceneCard__field">
+          <span>Body</span>
+          <select
+            aria-label={`Body of ${profile.name}`}
+            value={profile.vrmModelId ?? ''}
+            disabled={isEcho}
+            onChange={(event) => void run(() => api.update(profile.id, { vrmModelId: event.target.value || null }))}
+          >
+            <option value="">{isEcho ? 'Active character' : "Shares Echo's body"}</option>
+            {models.map((model) => (
+              <option key={model.id} value={model.id}>{model.name}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {isEcho ? <small className="kiosk__helper">Echo wears the active character picked below.</small> : null}
+      {settings ? (
+        isEcho ? (
+          <CharacterSettings name={profile.name} controls={settings.echo} />
+        ) : (
+          // Another body means other saved settings, so the editor starts over.
+          <OtherSettings key={profile.vrmModelId ?? ''} context={settings} api={api} profile={profile} ownBody={ownBody} run={run} />
+        )
+      ) : null}
     </div>
-  
   );
 }
 
-function CastCard({ api, profile, models, run }: {
+function CastCard({ api, profile, models, echoModelId, settings, run }: {
   api: AvatarsBridge;
   profile: AvatarProfile;
   models: SceneCastModel[];
+  echoModelId: string | null;
+  settings?: CharacterSettingsContext;
   run: Run;
 }) {
   const [editing, setEditing] = useState(false);
@@ -108,6 +120,8 @@ function CastCard({ api, profile, models, run }: {
   const isEcho = profile.id === ECHO_ID;
   const body = profile.vrmModelId ? models.find((model) => model.id === profile.vrmModelId) : undefined;
   const ownsBody = Boolean(profile.vrmModelId);
+  // A character wearing the very body Echo wears shares it, and so shares nothing saved for that body.
+  const ownBody = ownsBody && profile.vrmModelId !== echoModelId;
 
   return (
     <li className="sceneCard" data-testid={`scene-card-${profile.id}`}>
@@ -153,12 +167,12 @@ function CastCard({ api, profile, models, run }: {
           <button type="button" aria-label={`Cancel removing ${profile.name}`} onClick={() => setConfirming(false)}>Cancel</button>
         </div>
       ) : null}
-      {editing ? <CardEditor key={`${profile.name}:${profile.prompt ?? ''}`} api={api} profile={profile} models={models} run={run} /> : null}
+      {editing ? <CardEditor api={api} profile={profile} models={models} ownBody={ownBody} settings={settings} run={run} /> : null}
     </li>
   );
 }
 
-export function SceneCast({ api, profiles, models, roomActive = false, onChanged }: Props) {
+export function SceneCast({ api, profiles, models, roomActive = false, onChanged, settings }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const [newPrompt, setNewPrompt] = useState('');
@@ -176,6 +190,7 @@ export function SceneCast({ api, profiles, models, roomActive = false, onChanged
     }
   };
 
+  const echoModelId = profiles.find((profile) => profile.id === ECHO_ID)?.vrmModelId ?? null;
   const worn = new Set(profiles.map((profile) => profile.vrmModelId).filter((id): id is string => Boolean(id)));
   const available = models.filter((model) => !worn.has(model.id));
 
@@ -203,7 +218,7 @@ export function SceneCast({ api, profiles, models, roomActive = false, onChanged
       ) : null}
       <ul className="sceneCast__list" aria-label="Characters in the scene">
         {profiles.map((profile) => (
-          <CastCard api={api} key={profile.id} profile={profile} models={models} run={run} />
+          <CastCard api={api} key={profile.id} profile={profile} models={models} echoModelId={echoModelId} settings={settings} run={run} />
         ))}
       </ul>
 
@@ -237,7 +252,7 @@ export function SceneCast({ api, profiles, models, roomActive = false, onChanged
         }}
       >
         <h3 className="faces__heading">Add by name</h3>
-        <p className="kiosk__helper">A new character who shares Echo&apos;s body.</p>
+        <p className="kiosk__helper">A new character who shares Echo&apos;s body. Give it its own voice and habits with Edit.</p>
         <div className="sceneCast__byNameRow">
           <input aria-label="New character name" placeholder="Name" value={newName} maxLength={NAME_MAX} onChange={(event) => setNewName(event.target.value)} />
           <button type="submit">Add character</button>

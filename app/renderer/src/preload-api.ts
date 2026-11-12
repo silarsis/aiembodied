@@ -143,8 +143,8 @@ export interface LocalVoiceBridge {
   /** `avatarId` picks whose reply is stopped (default: echo). */
   cancel(requestId?: string, avatarId?: string): Promise<void>;
   resetHistory(avatarId?: string): Promise<void>;
-  /** The voices the active character can pick for the engine that speaks now. */
-  getVoiceOptions?(): Promise<SpeakingVoiceOptions>;
+  /** The voices a character can pick for the engine that speaks now; `selected` is the named avatar's pick (the active character's without one). */
+  getVoiceOptions?(avatarId?: string): Promise<SpeakingVoiceOptions>;
   /** Updates for Echo that are waiting to be spoken (from the coding agent). */
   systemStatus?(avatarId?: string): Promise<LocalVoiceSystemStatus>;
   /** An update is ready: run a system turn if the conversation is idle. */

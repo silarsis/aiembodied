@@ -72,6 +72,8 @@ import { tagToAction, type SceneAction } from './rooms/scene-actions.js';
 import { buildSceneInstructions, describeAvatarWhere, type OtherAvatarEntry } from './rooms/scene-instructions.js';
 import { useIdleDirector } from './rooms/use-idle-director.js';
 import { useIdleHabits } from './avatar/use-idle-habits.js';
+import type { CharacterSettingsControls } from './avatar/character-settings.js';
+import type { CharacterSettingsContext } from './avatar/use-character-settings.js';
 
 const CURSOR_IDLE_TIMEOUT_MS = 3000;
 const WAKE_ACTIVE_DURATION_MS = 4000;
@@ -1248,6 +1250,51 @@ export default function App() {
   usePresenceReporter(activeBridge?.presence, activeBridge?.camera, { listening: isListeningEnabled, voicePhase: displayedActivity.phase });
   // The avatar wanders on its own in a 3D room when nobody has talked for a while (rooms/idle-director.ts).
   const idleHabits = useIdleHabits(activeBridge?.avatar, activeVrmModel?.id);
+  // The other avatars' personality and idle habits, as saved for them (Echo's are above). Read again
+  // when the list changes and after any save in the Characters pop-up.
+  const [personaRevision, setPersonaRevision] = useState(0);
+  const [stagePersonas, setStagePersonas] = useState<Record<string, { personality: string; habits: string }>>({});
+  useEffect(() => {
+    const avatarsApi = resolveApi()?.avatars;
+    if (!avatarsApi?.idlePersonas || avatarProfiles.length < 2) return undefined;
+    let cancelled = false;
+    avatarsApi
+      .idlePersonas()
+      .then((personas) => {
+        if (!cancelled) setStagePersonas(personas);
+      })
+      .catch((error: unknown) => console.warn('Could not read the avatars\' idle habits', error));
+    return () => {
+      cancelled = true;
+    };
+  }, [resolveApi, avatarProfiles, personaRevision]);
+  // What Echo's card in the Characters pop-up edits: the same prompt, idle habits and voice state the
+  // session instructions, the idle persona and the voice preference are built from.
+  const echoControls: CharacterSettingsControls = {
+    prompt: { value: basePrompt, onChange: setBasePrompt, onBlur: () => void handlePromptBlur(), disabled: loadingConfig },
+    habits: {
+      value: idleHabits.habits,
+      onChange: idleHabits.setHabits,
+      onBlur: () => void idleHabits.save(),
+      maxLength: idleHabits.maxLength,
+      disabled: loadingConfig || !idleHabits.available,
+    },
+    voice: isLocalBackend
+      ? { kind: 'engine', options: speakingVoices, onChange: handleSpeakingVoiceChange, disabled: loadingConfig }
+      : { kind: 'list', voices: availableVoices, value: selectedVoice, onChange: setSelectedVoice, disabled: loadingConfig },
+  };
+  const getVoiceOptionsFor = useCallback(
+    (avatarId?: string) => getPreloadApi()?.localVoice?.getVoiceOptions?.(avatarId) ?? Promise.reject(new Error('The voices are unavailable.')),
+    [],
+  );
+  const characterSettings: CharacterSettingsContext = {
+    avatarApi: activeBridge?.avatar,
+    getVoiceOptions: getVoiceOptionsFor,
+    isLocalBackend,
+    realtimeVoices: availableVoices,
+    echo: echoControls,
+  };
+
   // Latest voice activity per avatar, read when the idle director picks who acts (not a render dependency).
   const speakingRef = useRef({ echo: visemeFrame, others: visemeFrames });
   useEffect(() => {
@@ -1255,20 +1302,19 @@ export default function App() {
   }, [visemeFrame, visemeFrames]);
   const { idleNote } = useIdleDirector({
     executor: sceneActions,
-    // Several avatars on stage: the one idle director picks who acts (rooms/idle-picker.ts). Habits are saved per body.
+    // Several avatars on stage: the one idle director picks who acts (rooms/idle-picker.ts). Each avatar has its own habits.
     avatars: () =>
       stageNames.map((profile) => {
         const isEcho = profile.id === 'echo';
         const frame = isEcho ? speakingRef.current.echo : (speakingRef.current.others[profile.id] ?? null);
-        const sharesBody = !profile.vrmModelId || profile.vrmModelId === activeVrmModel?.id;
+        const persona = stagePersonas[profile.id];
         return {
           id: profile.id,
           name: profile.name,
           executor: rigs.get(profile.id).executor,
           speaking: frame !== null && frame.intensity > 0.05,
-          personality: profile.prompt ?? '',
-          // An avatar with a body of its own has habits we have not loaded here: none.
-          habits: sharesBody ? idleHabits.habits : '',
+          personality: persona?.personality ?? profile.prompt ?? '',
+          habits: persona?.habits ?? '',
         };
       }),
     room: backgrounds.activeRoom,
@@ -3129,7 +3175,11 @@ export default function App() {
               profiles={avatarProfiles}
               models={vrmModels}
               roomActive={Boolean(backgrounds.activeRoom)}
-              onChanged={refreshAvatars}
+              onChanged={async () => {
+                setPersonaRevision((revision) => revision + 1);
+                await refreshAvatars();
+              }}
+              settings={characterSettings}
             />
             <AvatarConfigurator
               avatarApi={activeBridge?.avatar}
@@ -3137,93 +3187,9 @@ export default function App() {
               studio={{ open: studioOpen, onClose: () => setStudioOpen(false) }}
               compact
             >
-              <section className="kiosk__realtime" aria-labelledby="kiosk-realtime-title">
-                <h2 id="kiosk-realtime-title">Personality</h2>
-                <p className="kiosk__helper">
-                  Configure how this character behaves. Each avatar keeps its own prompt.
-                </p>
-                <div className="control">
-                  <label htmlFor="base-prompt">Base prompt</label>
-                  <textarea
-                    id="base-prompt"
-                    placeholder="Stay in English and be concise. Add personality here…"
-                    rows={4}
-                    value={basePrompt}
-                    onChange={(e) => setBasePrompt(e.target.value)}
-                    onBlur={handlePromptBlur}
-                    disabled={loadingConfig}
-                    style={{ width: '100%' }}
-                  />
-                </div>
-                <div className="control">
-                  <label htmlFor="idle-habits">Idle habits</label>
-                  <textarea
-                    id="idle-habits"
-                    placeholder="Sits by the window with tea; tidies when bored."
-                    rows={2}
-                    maxLength={idleHabits.maxLength}
-                    value={idleHabits.habits}
-                    onChange={(e) => idleHabits.setHabits(e.target.value)}
-                    onBlur={() => void idleHabits.save()}
-                    disabled={loadingConfig || !idleHabits.available}
-                    style={{ width: '100%' }}
-                  />
-                  <p className="kiosk__helper">
-                    What they like to do when nobody is talking, e.g. sits by the window with tea; tidies when bored.
-                  </p>
-                </div>
-              </section>
-              <section className="kiosk__realtime" aria-labelledby="kiosk-voice-title">
-                <h2 id="kiosk-voice-title">Voice</h2>
-                {isLocalBackend ? (
-                  <>
-                    <p className="kiosk__helper">
-                      {speakingVoices?.engine
-                        ? `Replies are spoken by ${speakingVoices.label}. Pick this avatar’s voice; the engine is set in Models and servers → Speaking.`
-                        : speakingVoices
-                          ? 'Nothing is set to speak. Pick a server in Models and servers → Speaking.'
-                          : 'Reading the voices…'}
-                    </p>
-                    <div className="control">
-                      <label htmlFor="character-voice">Voice</label>
-                      <select
-                        id="character-voice"
-                        value={speakingVoices?.selected ?? ''}
-                        onChange={(e) => handleSpeakingVoiceChange(e.target.value)}
-                        disabled={loadingConfig || !speakingVoices?.engine}
-                      >
-                        <option value="">Default{speakingVoices?.defaultVoice ? ` (${speakingVoices.defaultVoice})` : ''}</option>
-                        {speakingVoices?.selected && !speakingVoices.voices.includes(speakingVoices.selected) ? (
-                          <option value={speakingVoices.selected}>{speakingVoices.selected} (not available)</option>
-                        ) : null}
-                        {(speakingVoices?.voices ?? []).map((voice) => (
-                          <option key={voice} value={voice}>
-                            {voice}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <p className="kiosk__helper">Select the voice for this avatar.</p>
-                    <div className="control">
-                      <label htmlFor="character-voice">Voice</label>
-                      <select
-                        id="character-voice"
-                        value={selectedVoice}
-                        onChange={(e) => setSelectedVoice(e.target.value)}
-                        disabled={loadingConfig || !availableVoices.length}
-                      >
-                        {availableVoices.map((voice) => (
-                          <option key={voice} value={voice}>
-                            {voice}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </>
-                )}
+              <section className="kiosk__realtime" aria-labelledby="kiosk-test-title">
+                <h2 id="kiosk-test-title">Try the voice</h2>
+                <p className="kiosk__helper">Plays a short reply in the active character&apos;s voice.</p>
                 <div className="control">
                   <button
                     type="button"

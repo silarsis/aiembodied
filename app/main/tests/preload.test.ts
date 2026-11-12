@@ -375,6 +375,28 @@ it('exposes the per-character idle habits through the avatar bridge', async () =
   expect(invoke).toHaveBeenCalledWith('avatar:idle-habits:get');
   await api.avatar.setIdleHabits('sits by the window');
   expect(invoke).toHaveBeenCalledWith('avatar:idle-habits:set', 'sits by the window');
+  await api.avatar.getIdleHabits('sage');
+  expect(invoke).toHaveBeenCalledWith('avatar:idle-habits:get', 'sage');
+  await api.avatar.setIdleHabits('hums', 'sage');
+  expect(invoke).toHaveBeenCalledWith('avatar:idle-habits:set', 'hums', 'sage');
+});
+
+it('passes an avatar id to the prompt, voice and voice options calls, and leaves it out otherwise', async () => {
+  vi.resetModules();
+  await import('../src/preload.js');
+  const api = exposeInMainWorld.mock.calls.at(-1)![1];
+  await api.avatar.getPromptPreference();
+  expect(invoke).toHaveBeenLastCalledWith('avatar:prompt:get-preference');
+  await api.avatar.setPromptPreference('calm', 'sage');
+  expect(invoke).toHaveBeenLastCalledWith('avatar:prompt:set-preference', 'calm', 'sage');
+  await api.avatar.setVoicePreference('b', 'kokoro', 'sage');
+  expect(invoke).toHaveBeenLastCalledWith('avatar:voice:set-preference', 'b', 'kokoro', 'sage');
+  await api.localVoice.getVoiceOptions();
+  expect(invoke).toHaveBeenLastCalledWith('local-voice:voice-options');
+  await api.localVoice.getVoiceOptions('sage');
+  expect(invoke).toHaveBeenLastCalledWith('local-voice:voice-options', 'sage');
+  await api.avatars.idlePersonas();
+  expect(invoke).toHaveBeenLastCalledWith('avatars:idle-personas');
 });
 
 it('exposes app.quit through the bridge', async () => {
