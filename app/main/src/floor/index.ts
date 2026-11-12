@@ -17,6 +17,7 @@ import type { SwitchboardEventInput } from '../switchboard/types.js';
 import {
   FloorManager,
   PERSON_SPEAKER,
+  type AddresseeFunction,
   type BidFunction,
   type FloorChannel,
   type FloorDecision,
@@ -53,6 +54,8 @@ export interface FloorControllerOptions {
   instructionsFor?: (avatarId: string) => string | undefined;
   bus?: () => SwitchboardBus | null;
   bid?: BidFunction;
+  /** A quick check of who a line is aimed at. */
+  addressee?: AddresseeFunction;
   now?: () => number;
   logger?: Pick<Console, 'warn' | 'debug'>;
 }
@@ -97,6 +100,7 @@ export class FloorController {
       avatarIds: () => options.registry.list().map((profile) => profile.id),
       nameOf: (avatarId) => options.registry.get(avatarId)?.name ?? avatarId,
       bid: options.bid,
+      addressee: options.addressee,
       hearChatter: () => this.hearChatter(),
     });
   }

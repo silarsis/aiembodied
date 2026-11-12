@@ -2,7 +2,7 @@
  * Make sure the local model servers the app talks to are running before the dev app starts:
  * the LLM (llama-server, Qwen Flash-Next), speech-to-text (llama-server, Qwen3-ASR), the speech
  * service (Kokoro TTS), the motion service (ARDY), the memory engine (with PostgreSQL in a container), the coding
- * runner (services/coder) and, when web search uses it, SearXNG (a container). The coder's own
+ * runner (services/coder), the quick-decision model (Laya, services/laya; switch off with LAYA_ENABLED=0 or LAYA_AUTOSTART=0) and, when web search uses it, SearXNG (a container). The coder's own
  * llama-server (Qwen3-Coder-Next) and the vision model's (Qwen3-VL) are not started here: the app starts them when a job needs them. A server that already
  * answers is left alone, so one slopcore or another terminal started is reused. A missing one is started with
  * its own start script in a hidden console of its own, logging to .dev-home/logs/<id>.log
@@ -10,7 +10,7 @@
  * picks it up once it reports ready.
  *
  * Settings come from the environment or .env: the same URLs the app uses (LOCAL_LLM_BASE_URL,
- * STT_URL, SPEECH_SERVICE_URL, MOTION_SERVICE_URL, MEMORY_SERVICE_URL, SEARXNG_URL, CODING_RUNNER_URL) plus the paths the start scripts need
+ * STT_URL, SPEECH_SERVICE_URL, MOTION_SERVICE_URL, MEMORY_SERVICE_URL, SEARXNG_URL, CODING_RUNNER_URL, LAYA_URL) plus the paths the start scripts need
  * (KOKORO_DIR, MOTION_VENV, TEXT_ENCODERS_DIR, LOCAL_LLM_SLOTS, LOCAL_LLM_CONTEXT (per slot), ...). What the user saved on the
  * app's Settings page wins over the environment, as it does in the app: a part switched to OpenAI
  * needs no local server, and the motion model picked there is the one services/motion starts with.
@@ -125,6 +125,8 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
     // Idle thoughts follow Thinking until routed elsewhere; with the OpenAI Realtime engine they do not
     // keep this PC's model running by themselves.
     idle: pipeline ? [llmLocal ? 'local-llm' : 'openai'] : [],
+    // Quick decisions run on Laya (services/laya) unless pointed elsewhere or turned off.
+    decide: ['local-laya'],
   };
   const serversFor = (use) => {
     const route = routes[use];
@@ -152,6 +154,7 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
   const motionUrl = trimSlash(builtInUrl('local-motion') || providers.motion?.localServiceUrl || env.MOTION_SERVICE_URL || 'http://127.0.0.1:8190');
   const searxngUrl = trimSlash(builtInUrl('local-searxng') || env.SEARXNG_URL || 'http://127.0.0.1:8888');
   const switchboardUrl = trimSlash(env.SWITCHBOARD_URL || 'http://127.0.0.1:8196');
+  const layaUrl = trimSlash(builtInUrl('local-laya') || env.LAYA_URL || 'http://127.0.0.1:8197');
   const memoryUrl = trimSlash(env.MEMORY_SERVICE_URL || 'http://127.0.0.1:8194');
   // The coding runner: the built-in server, unless the app points coding at a runner on another machine.
   const coderServer = typeof saved.coding?.runner === 'string' && saved.coding.runner ? saved.coding.runner : 'local-coder-runner';
@@ -257,6 +260,16 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
       probe: `${switchboardUrl}/health`,
       script: 'services/switchboard/scripts/start.ps1',
       args: portArgs(switchboardUrl),
+    },
+    {
+      id: 'laya',
+      label: 'Laya quick-decision model (services/laya)',
+      enabled: isOn(env.LAYA_ENABLED, true) && isOn(env.LAYA_AUTOSTART, true) && usedBy('local-laya', ['decide']),
+      url: layaUrl,
+      // GET /health answers {"status": "ok", ...} once the server is up, even while a checkpoint loads.
+      probe: `${layaUrl}/health`,
+      script: 'services/laya/scripts/start.ps1',
+      args: portArgs(layaUrl),
     },
   ];
 

@@ -53,7 +53,7 @@ describe('local services', () => {
       MOTION_VENV: 'C:\\venv',
       STT_URL: 'http://127.0.0.1:1240/v1/',
     });
-    expect(services.map((s: { id: string }) => s.id)).toEqual(['llm', 'asr', 'speech', 'motion', 'memory', 'searxng', 'coder', 'switchboard']);
+    expect(services.map((s: { id: string }) => s.id)).toEqual(['llm', 'asr', 'speech', 'motion', 'memory', 'searxng', 'coder', 'switchboard', 'laya']);
     const byId = Object.fromEntries(services.map((s: { id: string }) => [s.id, s]));
     expect(byId.asr.probe).toBe('http://127.0.0.1:1240/v1/models');
     expect(byId.asr.args).toEqual(['-Port', '1240']);
@@ -103,7 +103,7 @@ describe('local services', () => {
       });
       const results = await ensureLocalServices(
         repoRoot,
-        { KOKORO_DIR: 'C:\\kokoro', WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', SWITCHBOARD_AUTOSTART: '0' },
+        { KOKORO_DIR: 'C:\\kokoro', WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', SWITCHBOARD_AUTOSTART: '0', LAYA_AUTOSTART: '0' },
         { fetchFn, spawnSyncFn: launcher, platform: 'win32', log: quiet },
       );
       const byId = Object.fromEntries(results.map((r: { id: string }) => [r.id, r]));
@@ -127,7 +127,7 @@ describe('local services', () => {
       });
       const results = await ensureLocalServices(
         repoRoot,
-        { WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', SWITCHBOARD_AUTOSTART: '0', LLM_PROVIDER: 'openai', STT_PROVIDER: 'openai', TTS_PROVIDER: 'openai' },
+        { WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', SWITCHBOARD_AUTOSTART: '0', LAYA_AUTOSTART: '0', LLM_PROVIDER: 'openai', STT_PROVIDER: 'openai', TTS_PROVIDER: 'openai' },
         { fetchFn, spawnSyncFn: launcher, platform: 'win32', log: quiet },
       );
       expect(results.find((r: { id: string }) => r.id === 'motion')).toMatchObject({ status: 'failed' });
@@ -141,7 +141,7 @@ describe('local services', () => {
       const launcher = fakeLauncher();
       const results = await ensureLocalServices(
         repoRoot,
-        { KOKORO_DIR: 'C:\\kokoro', WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', SWITCHBOARD_AUTOSTART: '0' },
+        { KOKORO_DIR: 'C:\\kokoro', WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', SWITCHBOARD_AUTOSTART: '0', LAYA_AUTOSTART: '0' },
         {
           fetchFn: fakeFetch(['http://127.0.0.1:1234', 'http://127.0.0.1:8192']),
           spawnSyncFn: launcher,
@@ -159,6 +159,7 @@ describe('local services', () => {
         ['searxng', 'skipped'],
         ['coder', 'skipped'],
         ['switchboard', 'skipped'],
+        ['laya', 'skipped'],
       ]);
       expect(launcher).toHaveBeenCalledTimes(2);
       const [command, args, options] = launcher.mock.calls[0] as unknown as [string, string[], Record<string, unknown>];
@@ -204,6 +205,19 @@ describe('local services', () => {
     expect(coder({}, { coding: { runner: 'server-abc' } }).enabled).toBe(false);
   });
 
+  it('starts Laya on its port while Quick decisions use it, unless it is turned off', () => {
+    const laya = (env: Record<string, string>, saved: object = {}) =>
+      describeLocalServices('/repo', env, saved).find((s: { id: string }) => s.id === 'laya');
+    const local = laya({});
+    expect(local).toMatchObject({ enabled: true, url: 'http://127.0.0.1:8197', probe: 'http://127.0.0.1:8197/health', args: ['-Port', '8197'] });
+    expect(local.script).toBe(resolve('/repo', 'services/laya/scripts/start.ps1'));
+    expect(laya({ LAYA_URL: 'http://127.0.0.1:8297' })).toMatchObject({ args: ['-Port', '8297'] });
+    expect(laya({ LAYA_ENABLED: '0' }).enabled).toBe(false);
+    expect(laya({ LAYA_AUTOSTART: '0' }).enabled).toBe(false);
+    expect(laya({}, { models: { routes: { decide: { server: '' } } } }).enabled).toBe(false);
+    expect(laya({}, { models: { routes: { decide: { server: 'other-laya' } } } }).enabled).toBe(false);
+  });
+
   it('starts the switchboard on its port unless it is turned off', () => {
     const switchboard = (env: Record<string, string>) =>
       describeLocalServices('/repo', env).find((s: { id: string }) => s.id === 'switchboard');
@@ -211,15 +225,15 @@ describe('local services', () => {
     expect(local).toMatchObject({ enabled: true, url: 'http://127.0.0.1:8196', probe: 'http://127.0.0.1:8196/health', args: ['-Port', '8196'] });
     expect(local.script).toBe(resolve('/repo', 'services/switchboard/scripts/start.ps1'));
     expect(switchboard({ SWITCHBOARD_URL: 'http://127.0.0.1:8296' })).toMatchObject({ args: ['-Port', '8296'] });
-    expect(switchboard({ SWITCHBOARD_ENABLED: '0' }).enabled).toBe(false);
-    expect(switchboard({ SWITCHBOARD_AUTOSTART: '0' }).enabled).toBe(false);
+    expect(switchboard({ SWITCHBOARD_ENABLED: '0', LAYA_ENABLED: '0' }).enabled).toBe(false);
+    expect(switchboard({ SWITCHBOARD_AUTOSTART: '0', LAYA_AUTOSTART: '0' }).enabled).toBe(false);
   });
 
   it('skips what the configuration does not need or cannot start', async () => {
     const launcher = fakeLauncher();
     const results = await ensureLocalServices(
       '/repo',
-      { CONVERSATION_BACKEND: 'openai', MOTION_SERVICE_URL: 'http://gpu-box:8190', WEB_SEARCH_PROVIDER: 'off', MEMORY_ENABLED: '0', CODER_ENABLED: '0', SWITCHBOARD_ENABLED: '0' },
+      { CONVERSATION_BACKEND: 'openai', MOTION_SERVICE_URL: 'http://gpu-box:8190', WEB_SEARCH_PROVIDER: 'off', MEMORY_ENABLED: '0', CODER_ENABLED: '0', SWITCHBOARD_ENABLED: '0', LAYA_ENABLED: '0' },
       { fetchFn: fakeFetch([]), spawnSyncFn: launcher, platform: 'win32', log: quiet },
     );
     expect(results.map((r: { id: string; status: string }) => [r.id, r.status])).toEqual([
@@ -231,6 +245,7 @@ describe('local services', () => {
       ['searxng', 'skipped'],
       ['coder', 'skipped'],
       ['switchboard', 'skipped'],
+      ['laya', 'skipped'],
     ]);
     expect(results[3].reason).toContain('not on this machine');
     expect(launcher).not.toHaveBeenCalled();
@@ -240,7 +255,7 @@ describe('local services', () => {
     const launcher = fakeLauncher();
     const results = await ensureLocalServices(
       '/repo',
-      { STT_ENGINE: 'whisper', DEV_START_MOTION: '0', WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', SWITCHBOARD_AUTOSTART: '0' },
+      { STT_ENGINE: 'whisper', DEV_START_MOTION: '0', WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', SWITCHBOARD_AUTOSTART: '0', LAYA_AUTOSTART: '0' },
       { fetchFn: fakeFetch(['http://127.0.0.1:1234']), spawnSyncFn: launcher, platform: 'win32', log: quiet },
     );
     const byId = Object.fromEntries(results.map((r: { id: string }) => [r.id, r]));
@@ -293,7 +308,7 @@ describe('local services', () => {
     const enabled = (saved: object, env: Record<string, string> = {}) =>
       Object.fromEntries(
         describeLocalServices('/repo', { KOKORO_DIR: 'C:\\k', ...env }, saved)
-          .filter((s: { id: string }) => s.id !== 'searxng' && s.id !== 'memory' && s.id !== 'coder' && s.id !== 'switchboard')
+          .filter((s: { id: string }) => s.id !== 'searxng' && s.id !== 'memory' && s.id !== 'coder' && s.id !== 'switchboard' && s.id !== 'laya')
           .map((s: { id: string; enabled: boolean }) => [s.id, s.enabled]),
       );
 

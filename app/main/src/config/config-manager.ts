@@ -533,6 +533,7 @@ export class ConfigManager {
       searxngUrl: this.env.SEARXNG_URL?.trim() || undefined,
       coderRunnerUrl: this.env.CODING_RUNNER_URL?.trim() || undefined,
       coderLlmUrl: this.env.CODER_LLM_URL?.trim() || undefined,
+      layaUrl: this.env.LAYA_URL?.trim() || undefined,
     });
     const defaults = defaultRoutes(providers, this.env.WEB_SEARCH_PROVIDER?.trim() || DEFAULT_WEB_SEARCH_PROVIDER);
     return resolveModelRouting(builtIns, defaults, this.storedModels);

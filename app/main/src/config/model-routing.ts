@@ -29,9 +29,10 @@ export type ServerType =
   | 'homeassistant'
   | 'anthropic'
   | 'github'
-  | 'coder';
+  | 'coder'
+  | 'systemone';
 export const SERVER_TYPES: readonly ServerType[] = [
-  'chat', 'transcribe', 'speech', 'motion', 'comfy', 'search', 'memory', 'homeassistant', 'coder', 'openai', 'anthropic', 'github', 'brave', 'civitai', 'huggingface',
+  'chat', 'transcribe', 'speech', 'motion', 'comfy', 'search', 'memory', 'homeassistant', 'coder', 'systemone', 'openai', 'anthropic', 'github', 'brave', 'civitai', 'huggingface',
 ];
 /**
  * Types a user can add more servers of. OpenAI, Brave, Civitai and Hugging Face are one account each; Civitai and
@@ -39,9 +40,9 @@ export const SERVER_TYPES: readonly ServerType[] = [
  * Home Assistant runs no job either: the memory engine watches the homes listed here.
  * Anthropic and GitHub are one account each (GitHub holds the token for pull requests). A coding
  * runner runs no job as such: the Coding page picks which one takes the tasks, so one on another
- * machine can be added.
+ * machine can be added. A quick-decision server (Laya) runs the Quick decisions use, so one on another machine can be added.
  */
-export const ADDABLE_SERVER_TYPES: readonly ServerType[] = ['chat', 'transcribe', 'speech', 'motion', 'comfy', 'search', 'memory', 'homeassistant', 'coder'];
+export const ADDABLE_SERVER_TYPES: readonly ServerType[] = ['chat', 'transcribe', 'speech', 'motion', 'comfy', 'search', 'memory', 'homeassistant', 'coder', 'systemone'];
 
 export type UseId =
   | 'llm'
@@ -56,6 +57,7 @@ export type UseId =
   | 'posecheck'
   | 'clips'
   | 'idle'
+  | 'decide'
   | 'scenelayout'
   | 'memory'
   | 'memorymirror'
@@ -73,13 +75,14 @@ export const USE_IDS: readonly UseId[] = [
   'posecheck',
   'clips',
   'idle',
+  'decide',
   'scenelayout',
   'memory',
   'memorymirror',
   'coding',
 ];
 /** Uses that can be turned off (no server). */
-export const USES_THAT_CAN_BE_OFF: readonly UseId[] = ['search', 'memorymirror'];
+export const USES_THAT_CAN_BE_OFF: readonly UseId[] = ['search', 'memorymirror', 'decide'];
 
 /** The server types that can do each use. */
 export const USE_SERVER_TYPES: Record<UseId, readonly ServerType[]> = {
@@ -96,6 +99,8 @@ export const USE_SERVER_TYPES: Record<UseId, readonly ServerType[]> = {
   clips: ['chat', 'openai'],
   // What the avatar does on its own in a 3D room (app/main/src/rooms/idle-thoughts.ts).
   idle: ['chat', 'openai'],
+  // Quick decisions: who a line is aimed at, which avatar wants to reply (app/main/src/decide/system-one.ts).
+  decide: ['systemone'],
   // Writes a 3D room layout from a description (app/main/src/rooms/room-layout-llm.ts).
   scenelayout: ['chat', 'openai'],
   // Long-term memory: the PostgreSQL database the memory engine keeps everything in, and an
@@ -106,7 +111,7 @@ export const USE_SERVER_TYPES: Record<UseId, readonly ServerType[]> = {
   coding: ['chat', 'openai', 'anthropic'],
 };
 /** Uses that try backup servers when the first one fails. The others use only their first server. */
-export const USES_WITH_BACKUPS: readonly UseId[] = ['llm', 'stt', 'tts', 'search', 'image', 'mesh', 'idle', 'scenelayout'];
+export const USES_WITH_BACKUPS: readonly UseId[] = ['llm', 'stt', 'tts', 'search', 'image', 'mesh', 'idle', 'decide', 'scenelayout'];
 /** Uses that can send each job to whichever of their servers is least busy. */
 export const USES_WITH_SPREAD: readonly UseId[] = ['image', 'mesh'];
 
@@ -119,6 +124,7 @@ export const BUILT_IN_SERVER_IDS = {
   memory: 'local-memory',
   coderRunner: 'local-coder-runner',
   coderLlm: 'local-coder-llm',
+  laya: 'local-laya',
   vision: 'local-vision',
   openai: 'openai',
   anthropic: 'anthropic',
@@ -131,6 +137,8 @@ export const BUILT_IN_SERVER_IDS = {
 export const OPENAI_BASE_URL = 'https://api.openai.com/v1';
 export const ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
 export const GITHUB_API_URL = 'https://api.github.com';
+/** The Laya server (services/laya) that answers quick decisions. */
+export const DEFAULT_LAYA_URL = 'http://127.0.0.1:8197';
 export const DEFAULT_CODER_RUNNER_URL = 'http://127.0.0.1:8195';
 /** The llama-server that runs Qwen3-Coder-Next while a coding task needs it. */
 export const DEFAULT_CODER_LLM_URL = 'http://127.0.0.1:1236/v1';
@@ -194,6 +202,8 @@ export interface BuiltInServerSources {
   coderRunnerUrl?: string;
   /** CODER_LLM_URL. */
   coderLlmUrl?: string;
+  /** LAYA_URL. */
+  layaUrl?: string;
 }
 
 export const DEFAULT_SEARXNG_URL = 'http://127.0.0.1:8888';
@@ -204,7 +214,7 @@ export const DEFAULT_HELPER_MODELS: Record<'describe' | 'posegen' | 'posecheck',
   posecheck: 'gpt-4o',
 };
 
-export function builtInServers({ providers, comfyUiBaseUrl, searxngUrl, coderRunnerUrl, coderLlmUrl }: BuiltInServerSources): ModelServer[] {
+export function builtInServers({ providers, comfyUiBaseUrl, searxngUrl, coderRunnerUrl, coderLlmUrl, layaUrl }: BuiltInServerSources): ModelServer[] {
   const local = (id: string, name: string, type: ServerType, url: string): ModelServer => ({
     id,
     name,
@@ -222,6 +232,7 @@ export function builtInServers({ providers, comfyUiBaseUrl, searxngUrl, coderRun
     local(BUILT_IN_SERVER_IDS.memory, 'Memory database on this PC', 'memory', LOCAL_MEMORY_DATABASE_URL),
     local(BUILT_IN_SERVER_IDS.coderRunner, 'Coding runner on this PC', 'coder', coderRunnerUrl || DEFAULT_CODER_RUNNER_URL),
     local(BUILT_IN_SERVER_IDS.coderLlm, 'Qwen3-Coder-Next (coding)', 'chat', coderLlmUrl || DEFAULT_CODER_LLM_URL),
+    local(BUILT_IN_SERVER_IDS.laya, 'Quick decisions (Laya) on this PC', 'systemone', layaUrl || DEFAULT_LAYA_URL),
     local(BUILT_IN_SERVER_IDS.vision, 'Vision model on this PC', 'chat', DEFAULT_VISION_URL),
     { id: BUILT_IN_SERVER_IDS.openai, name: 'OpenAI', type: 'openai', url: OPENAI_BASE_URL, builtIn: true, managed: false },
     { id: BUILT_IN_SERVER_IDS.anthropic, name: 'Anthropic', type: 'anthropic', url: ANTHROPIC_BASE_URL, builtIn: true, managed: false },
@@ -280,6 +291,8 @@ export function defaultRoutes(providers: ProviderSettings, webSearchProvider = '
     // Only a fallback: Moving uses the motion service (ARDY) whenever it runs.
     clips: { ...llm },
     idle: { ...llm },
+    // Quick decisions run on Laya, a small model on this PC; when it is off or fails the floor asks Idle thoughts.
+    decide: { server: BUILT_IN_SERVER_IDS.laya },
     scenelayout: { ...llm },
     memory: { server: BUILT_IN_SERVER_IDS.memory },
     memorymirror: { server: '' },

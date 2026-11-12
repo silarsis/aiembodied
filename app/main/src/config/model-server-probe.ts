@@ -7,7 +7,7 @@ import { SpeechServiceClient } from '../local-voice/speech-service-client.js';
 import type { ModelServer } from './model-routing.js';
 
 /** Which list of models a use reads from a server. */
-export type ModelRole = 'chat' | 'transcribe' | 'voices' | 'realtime' | 'motion' | 'image' | 'mesh';
+export type ModelRole = 'chat' | 'transcribe' | 'voices' | 'realtime' | 'motion' | 'image' | 'mesh' | 'decide';
 
 export type ProbeStatus = 'up' | 'down' | 'needs-key' | 'error';
 
@@ -127,6 +127,11 @@ export async function probeModelServer(
           return { status: 'error', message: 'The runner is up, but it cannot find pi. Install it with: npm install -g @earendil-works/pi-coding-agent', models: {}, checkedAt };
         }
         return { status: 'up', models: {}, checkedAt };
+      }
+      case 'systemone': {
+        // Laya's /health answers {"status": "ok", "loaded": [...]}; the checkpoints it has loaded are its models.
+        const body = (await getJson(`${server.url}/health`, key, fetchFn)) as { loaded?: unknown };
+        return { status: 'up', models: { decide: strings(body.loaded) }, checkedAt };
       }
       case 'huggingface':
         // Optional too: only gated and private models need a token.

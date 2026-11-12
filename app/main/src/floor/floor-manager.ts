@@ -18,6 +18,10 @@ export const CHATTER_MAX_MS = 60_000;
 export const TALK_MAX_TURNS = 8;
 export const TALK_MAX_MS = 180_000;
 export const BID_TIMEOUT_MS = 6_000;
+/** The addressee check is a quick decision; past this the old rules go on without it. */
+export const ADDRESSEE_TIMEOUT_MS = 1_500;
+/** How sure the check must be before its answer is used. */
+export const ADDRESSEE_THRESHOLD = 0.6;
 export const DEFAULT_SCENE_ID = 'default';
 export const PERSON_SPEAKER = 'person:kevin';
 const RECENT_LINES_LIMIT = 8;
@@ -74,6 +78,27 @@ export interface FloorLine {
 /** Asks the avatars how much each wants to answer. Rejecting means no bids. */
 export type BidFunction = (candidates: BidCandidate[], recentLines: FloorLine[], signal: AbortSignal) => Promise<FloorBid[]>;
 
+/** What the addressee check is asked: who is this line aimed at? */
+export interface AddresseeInput {
+  /** The avatar id or 'person:kevin' who spoke. */
+  speaker: string;
+  text: string;
+  recent: FloorLine[];
+  candidates: BidCandidate[];
+  /** Kevin is a possible addressee too. */
+  includePerson: boolean;
+}
+
+/** An avatar id, 'person' (Kevin), 'all' (everyone), or null when it cannot tell. */
+export interface AddresseeResult {
+  avatarId: string | 'person' | 'all' | null;
+  /** 0..1 */
+  confidence: number;
+}
+
+/** Decides who a line is aimed at. Rejecting means no answer. */
+export type AddresseeFunction = (input: AddresseeInput, signal: AbortSignal) => Promise<AddresseeResult>;
+
 export interface FloorManagerOptions {
   /** The scene in use. Default: every avatar in `avatarIds()`, the first one hosting. */
   scene?: () => Scene;
@@ -82,6 +107,8 @@ export interface FloorManagerOptions {
   /** The spoken name of an avatar (AvatarProfile.name). */
   nameOf: (avatarId: string) => string;
   bid?: BidFunction;
+  /** A quick check of who a line is aimed at, used where the name rules find no one clear. */
+  addressee?: AddresseeFunction;
   /** True when avatar-to-avatar talk should be out loud. */
   hearChatter?: () => boolean;
   partnerWindowMs?: number;
@@ -89,6 +116,8 @@ export interface FloorManagerOptions {
   chatterMaxTurns?: number;
   chatterMaxMs?: number;
   bidTimeoutMs?: number;
+  addresseeTimeoutMs?: number;
+  addresseeThreshold?: number;
 }
 
 const GROUP_PATTERN = /\b(?:you two|you both|both of you|both|everyone|everybody|all of you|you all|y'all)\b/i;
@@ -132,6 +161,8 @@ export class FloorManager {
   private readonly chatterMaxTurns: number;
   private readonly chatterMaxMs: number;
   private readonly bidTimeoutMs: number;
+  private readonly addresseeTimeoutMs: number;
+  private readonly addresseeThreshold: number;
 
   private partner: { avatarId: string; at: number } | null = null;
   private chatterTurns = 0;
@@ -151,6 +182,8 @@ export class FloorManager {
     this.chatterMaxTurns = options.chatterMaxTurns ?? CHATTER_MAX_TURNS;
     this.chatterMaxMs = options.chatterMaxMs ?? CHATTER_MAX_MS;
     this.bidTimeoutMs = options.bidTimeoutMs ?? BID_TIMEOUT_MS;
+    this.addresseeTimeoutMs = options.addresseeTimeoutMs ?? ADDRESSEE_TIMEOUT_MS;
+    this.addresseeThreshold = options.addresseeThreshold ?? ADDRESSEE_THRESHOLD;
   }
 
   scene(): Scene {
@@ -179,7 +212,7 @@ export class FloorManager {
     if (this.recent.length > RECENT_LINES_LIMIT) this.recent = this.recent.slice(-RECENT_LINES_LIMIT);
   }
 
-  private routePerson(utterance: FloorUtterance): FloorDecision {
+  private async routePerson(utterance: FloorUtterance): Promise<FloorDecision> {
     const scene = this.scene();
     const trace: string[] = [];
     // Kevin spoke: the chatter budget starts over.
@@ -228,6 +261,18 @@ export class FloorManager {
           answerers.map((id) => ({ avatarId: id, reason: named.includes(id) ? ('addressed' as const) : ('host' as const) })),
           { relay: { ...this.relay } },
         );
+      }
+    }
+    if (named.length > 1) {
+      // Two or more names and no rule decided: ask who should answer.
+      const picked = await this.askAddressee(
+        { speaker: utterance.from, text: utterance.text, recent: this.recentBefore(), candidates: this.candidatesOf(named), includePerson: false },
+        trace,
+        'person',
+      );
+      if (picked && picked !== 'person' && picked !== 'all' && named.includes(picked)) {
+        trace.push(`person: addressee check -> only ${picked} answers`);
+        return done([{ avatarId: picked, reason: 'addressed' }]);
       }
     }
     if (named.length > 0) {
@@ -307,6 +352,23 @@ export class FloorManager {
       trace.push(`avatar: chat Kevin asked for -> ${next} answers`);
       return take(next, 'addressed');
     }
+    const relayWaiting = this.relay !== null && this.relay.from === senderId;
+    if (!relayWaiting) {
+      // No name, no relay, no chat Kevin asked for: ask who the line is aimed at ("lenha, what are you up to?").
+      const picked = await this.askAddressee(
+        { speaker: utterance.from, text: utterance.text, recent: this.recentBefore(), candidates: this.candidatesOf(others), includePerson: true },
+        trace,
+        'avatar',
+      );
+      if (picked && picked !== 'person' && picked !== 'all' && others.includes(picked)) {
+        trace.push(`avatar: addressee check -> ${picked}`);
+        return take(picked, 'addressed');
+      }
+      if (picked === 'person' && utterance.toPerson) {
+        trace.push('avatar: addressee check -> Kevin; others only overhear');
+        return none();
+      }
+    }
     if (utterance.toPerson) {
       trace.push('avatar: answer to Kevin; others only overhear');
       return none();
@@ -323,6 +385,46 @@ export class FloorManager {
     }
     trace.push(`avatar: ${best.avatarId} wins with ${best.want.toFixed(2)}${best.reason ? ` (${best.reason})` : ''}`);
     return take(best.avatarId, 'bid');
+  }
+
+  private candidatesOf(avatarIds: string[]): BidCandidate[] {
+    return avatarIds.map((avatarId) => ({ avatarId, name: this.options.nameOf(avatarId) }));
+  }
+
+  /** The lines said before the one being routed. */
+  private recentBefore(): FloorLine[] {
+    return this.recent.slice(0, -1);
+  }
+
+  /**
+   * Ask the addressee check, if there is one. Returns the confident answer ('person', 'all' or an
+   * avatar id), or null when there is no check, it failed or timed out, or it was not sure enough.
+   */
+  private async askAddressee(input: AddresseeInput, trace: string[], label: 'person' | 'avatar'): Promise<string | null> {
+    const ask = this.options.addressee;
+    if (!ask) return null;
+    const signal = AbortSignal.timeout(this.addresseeTimeoutMs);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Addressee check timed out')), this.addresseeTimeoutMs);
+        timer.unref?.();
+      });
+      const run = ask(input, signal);
+      run.catch(() => undefined);
+      const result = await Promise.race([run, timeout]);
+      const confidence = Number.isFinite(result?.confidence) ? result.confidence : 0;
+      if (!result || result.avatarId === null || confidence < this.addresseeThreshold) {
+        trace.push(`${label}: addressee check not sure${result?.avatarId ? ` (${result.avatarId} ${confidence.toFixed(2)})` : ''}`);
+        return null;
+      }
+      return result.avatarId;
+    } catch (error) {
+      trace.push(`${label}: addressee check failed (${error instanceof Error ? error.message : String(error)})`);
+      return null;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   private async collectBids(candidates: string[], trace: string[]): Promise<FloorBid[]> {
