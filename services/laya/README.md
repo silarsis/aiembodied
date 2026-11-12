@@ -5,7 +5,10 @@ a few typed questions about a short piece of text in one fast pass, with no text
 quick decisions where asking a chat model would be slow and heavy:
 
 - who a line is aimed at (an avatar, Kevin, or everyone), so "lenha, what are you up to?" reaches Lenha;
-- how much each avatar wants to reply, for the floor's bids.
+- how much each avatar wants to reply, for the floor's bids;
+- what to do with an incoming message (ignore, remember or say), and whether it is a good moment to speak unprompted.
+
+See `docs/features/quick-decisions.md` for the API and when to use it.
 
 This folder only installs and starts it. The app talks to its `/v1/systemone` API
 (`app/main/src/decide/system-one.ts`) through the **Quick decisions** use in Models and servers. When that use is

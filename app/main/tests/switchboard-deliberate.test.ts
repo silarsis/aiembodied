@@ -43,7 +43,7 @@ describe('deliberate', () => {
   it('sends presence and the event, and returns the decision', async () => {
     const { client, calls } = fake('{"action":"say","reason":"he is here"}');
     const result = await deliberate(event(), presence, { clients: [client], now: () => 13_000 });
-    expect(result).toEqual({ action: 'say', reason: 'he is here', urgent: false });
+    expect(result).toEqual({ action: 'say', reason: 'he is here', urgent: false, engine: 'llm' });
     expect(calls[0].messages[0]).toEqual({ role: 'system', content: DELIBERATE_SYSTEM_PROMPT });
     const user = calls[0].messages[1].content;
     expect(user).toContain('Kevin last spoke 12 s ago');

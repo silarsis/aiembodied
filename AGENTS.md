@@ -65,6 +65,9 @@ Refer to `plan.md`, `archspec.md`, and `prd.md` for the authoritative product an
 - Conversation turns and audio metadata are appended to the SQLite memory store so transcript overlays and future sessions can restore context on launch.
 - Renderer voice selection must use the baked-in voice list. Tests in `app/renderer/tests/App.test.tsx` assert the dropdown renders the static options and that no network fetch is attempted on mount; update the list and expectations together when adding or removing voices.
 
+### Fast decisions (System 1)
+- A new need for a fast, fixed-option or yes/no judgement (routing, triage, gating an LLM call) goes through the Quick decisions route and `SystemOneClient` (`app/main/src/decide/system-one.ts`), not a new LLM prompt. Pick a threshold, keep a fallback, and never let it alone approve anything risky. See [docs/features/quick-decisions.md](docs/features/quick-decisions.md).
+
 ### Rendering & avatar
 - The initial avatar implementation is a Canvas/WebGL sprite renderer mapping viseme intensity to discrete mouth shapes and idle animations. Future Unity integration will consume the same `VisemeFrame` stream via IPC without altering upstream audio or persistence layers.
 - When using the OpenAI Images API from the avatar face service, always convert base64 source portraits to a `File` with `toFile` from `openai/uploads` and pass that `File` to `images.edit`/`images.edits.create` so uploads are handled as media payloads.

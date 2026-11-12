@@ -12,6 +12,8 @@ import { LocalOnlyBus, type SwitchboardBus } from './switchboard/bus.js';
 import { AvatarInbox } from './switchboard/inbox.js';
 import { DecisionLog } from './switchboard/decisions.js';
 import { deliberate } from './switchboard/deliberate.js';
+import { deliberateFast } from './switchboard/deliberate-system-one.js';
+import { ProactiveTick, proactiveSettingsFromEnv } from './presence/proactive-tick.js';
 import { PresenceTracker, isVoicePhase } from './presence/presence.js';
 import { FloorController } from './floor/index.js';
 import { createModelBid } from './floor/bid.js';
@@ -310,6 +312,7 @@ let avatarRegistry: AvatarRegistry | null = null;
 let avatarSettingsKeys: AvatarSettingsKeys | null = null;
 /** Who speaks when several avatars share the scene (phase 3). Inert with one avatar. */
 let floor: FloorController | null = null;
+let proactiveTick: ProactiveTick | null = null;
 /** The window that sent the latest message of Kevin's; floor-queued answers and chatter reach it. */
 let floorSender: WebContents | null = null;
 /** The latest session instructions the renderer sent for Echo, reused when Echo takes a back-channel turn. */
@@ -829,8 +832,17 @@ function startAvatarPlumbing(profile: AvatarProfile, manager: ConfigManager): vo
     avatarId,
     bus: switchboardBus,
     notify: (text, options) => getVoiceService(avatarId)?.notify(text, options),
-    deliberate: (event) =>
-      deliberate(event, presence, { avatarName: avatarRegistry?.get(avatarId)?.name ?? profile.name, routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger }),
+    // Quick decisions (Laya) first, built per call so a changed route applies at once; the chat model when it is off, fails or is unsure.
+    deliberate: (event) => {
+      const avatarName = avatarRegistry?.get(avatarId)?.name ?? profile.name;
+      return deliberateFast(event, presence, {
+        makeClient: () => createSystemOne({ routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger }),
+        fallback: (e) => deliberate(e, presence, { avatarName, routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger }),
+        avatarName,
+        logger,
+      });
+    },
+    onRemembered: (text) => proactiveTick?.noteRemembered(text),
     remember: (event, text) => {
       const source = typeof event.payload.source === 'string' ? event.payload.source : `${event.producer.kind}:${event.producer.id}`;
       conversationManager?.appendToRecentSession([
@@ -2695,6 +2707,18 @@ app.whenReady().then(async () => {
     });
     // One mirror and inbox for each avatar (just Echo for now).
     for (const profile of avatarRegistry.peek()) startAvatarPlumbing(profile, manager);
+    // The proactive tick: Echo may greet Kevin or mention quiet saves, when Laya says the moment is right.
+    proactiveTick?.stop();
+    proactiveTick = new ProactiveTick({
+      ...proactiveSettingsFromEnv(process.env),
+      presence,
+      makeClient: () => createSystemOne({ routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger }),
+      notify: (text, options) => getVoiceService(DEFAULT_AVATAR_ID)?.notify(text, options),
+      avatarName: () => avatarRegistry?.get(DEFAULT_AVATAR_ID)?.name ?? 'Echo',
+      bus: () => switchboardBus,
+      logger,
+    });
+    proactiveTick.start();
     // Provider settings may have been applied before the engine existed.
     syncMemoryStorage();
 
@@ -3031,6 +3055,7 @@ app.on('before-quit', async (event) => {
   wakeWordTrainer?.dispose();
   codingService?.stop();
   approvalBroker?.dispose();
+  proactiveTick?.stop();
   for (const { inbox } of avatarPlumbing.values()) inbox.stop();
   void switchboardClient?.stop();
 

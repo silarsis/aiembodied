@@ -16,6 +16,8 @@ export interface Decision {
   action: DeliberateAction;
   reason: string;
   urgent: boolean;
+  /** Which engine decided: the quick model (Laya) or the chat model. */
+  engine?: 'system-one' | 'llm';
 }
 
 export const DELIBERATE_TIMEOUT_MS = 6_000;
@@ -119,7 +121,7 @@ export async function deliberate(event: SwitchboardEvent, presence: PresenceTrac
       options.logger?.warn('Deliberation gave no usable answer.');
       return null;
     }
-    return { ...parsed, urgent: event.priority === 'urgent' };
+    return { ...parsed, urgent: event.priority === 'urgent', engine: 'llm' };
   } catch (error) {
     options.logger?.warn('Deliberation failed.', { message: error instanceof Error ? error.message : String(error) });
     return null;
