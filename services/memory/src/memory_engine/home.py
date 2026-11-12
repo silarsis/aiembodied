@@ -53,6 +53,7 @@ NO_VALUE = {"unavailable", "unknown"}
 # What makes a change an alarm for the switchboard (a narrower set than ALERT_DEVICE_CLASSES).
 # An alarm older than this when it is published (found while catching up) is not spoken.
 ALERT_FRESH = timedelta(minutes=2)
+CHANGE_FRESH = timedelta(minutes=10)
 BUS_ALARM_CLASSES = {"smoke", "gas", "carbon_monoxide", "moisture", "safety", "tamper"}
 
 
@@ -519,10 +520,12 @@ def _store_event(
 
 
 def _publish(home_id, home_name, entity_id, name, area, domain, device_class, old, new, text, at: datetime) -> None:
-    """Tell the switchboard about a real change: home.change for observers, and home.alert to Echo
-    when it is an alarm. Events carry the time of the change, and an alert expires ALERT_FRESH
-    after it, so one found while catching up after a reconnect is not announced as news. The
-    labels of an entity are not kept, so the "aiembodied-alert" label is not looked at. Never raises."""
+    """Tell the switchboard about a real change. An ordinary change is sent as home.change to Echo,
+    who decides whether to ignore, remember or say it. An alarm is sent as home.alert to Echo, and
+    its home.change goes to nobody (the journal only), so Echo does not get the same change twice.
+    Events carry the time of the change, and expire CHANGE_FRESH (a change) or ALERT_FRESH (an
+    alert) after it, so one found while catching up after a reconnect is not announced as news.
+    The labels of an entity are not kept, so the "aiembodied-alert" label is not looked at. Never raises."""
     try:
         if old == new or old is None or old in NO_VALUE or new in NO_VALUE:
             return
@@ -531,11 +534,13 @@ def _publish(home_id, home_name, entity_id, name, area, domain, device_class, ol
         producer = {"kind": "sensor", "id": f"ha:{home_id}"}
         when = at.astimezone(timezone.utc)
         stamp = when.isoformat().replace("+00:00", "Z")
-        bus.publish({"type": "home.change", "producer": producer, "to": [], "audience": "private",
-                     "priority": "low", "at": stamp, "payload": payload})
-        if (domain == "binary_sensor" and device_class in BUS_ALARM_CLASSES and new == "on") or (
+        is_alarm = (domain == "binary_sensor" and device_class in BUS_ALARM_CLASSES and new == "on") or (
             domain == "alarm_control_panel" and new == "triggered"
-        ):
+        )
+        bus.publish({"type": "home.change", "producer": producer, "to": [] if is_alarm else ["avatar:echo"],
+                     "audience": "private", "priority": "low", "at": stamp,
+                     "expires": (when + CHANGE_FRESH).isoformat().replace("+00:00", "Z"), "payload": payload})
+        if is_alarm:
             bus.publish({"type": "home.alert", "producer": producer, "to": ["avatar:echo"], "audience": "private",
                          "priority": "urgent", "at": stamp,
                          "expires": (when + ALERT_FRESH).isoformat().replace("+00:00", "Z"), "payload": payload})

@@ -20,7 +20,7 @@ describe('inbox policy', () => {
     expect(inboxAction({ priority: 'normal' } as SwitchboardEvent)).toBe('deliberate');
     expect(inboxAction({ priority: 'high' } as SwitchboardEvent)).toBe('speak-urgent');
     expect(inboxAction({ priority: 'urgent' } as SwitchboardEvent)).toBe('speak-urgent');
-    expect(lookupRule(DEFAULT_INBOX_POLICY, 'home.change')?.action).toBe('remember');
+    expect(lookupRule(DEFAULT_INBOX_POLICY, 'home.change')).toEqual({ action: 'deliberate', source: 'Home Assistant', fallback: 'remember' });
     expect(lookupRule(DEFAULT_INBOX_POLICY, 'speech.heard')?.action).toBe('ignore');
     expect(lookupRule({ 'home.*': { action: 'speak-idle' }, '*': { action: 'ignore' } }, 'home.door')?.action).toBe('speak-idle');
   });
@@ -140,6 +140,7 @@ describe('inbox decision step', () => {
 });
 
 describe('static remember rule', () => {
+  const policy = { 'home.change': { action: 'remember' as const }, '*': { action: 'ignore' as const } };
   function setup() {
     const bus = new LocalOnlyBus(makeEventId);
     const remember = vi.fn();
@@ -150,7 +151,7 @@ describe('static remember rule', () => {
       return originalPublish(input);
     };
     let clock = 1_000_000;
-    const inbox = new AvatarInbox({ avatarId: 'echo', bus, notify: vi.fn(), remember, now: () => clock, logger: warn });
+    const inbox = new AvatarInbox({ avatarId: 'echo', bus, notify: vi.fn(), remember, now: () => clock, policy, logger: warn });
     return { inbox, remember, journal, advance: (ms: number) => { clock += ms; } };
   }
   const change = (text = 'Door opened'): SwitchboardEvent => ({ ...ev('home.change', { payload: { text } }), id: 'E1', v: 1, at: '', to: ['avatar:echo'], payload: { text } }) as SwitchboardEvent;
@@ -181,7 +182,7 @@ describe('static remember rule', () => {
     const bus = new LocalOnlyBus(makeEventId);
     const remember = vi.fn();
     const publish = vi.spyOn(bus, 'publish');
-    new AvatarInbox({ avatarId: 'echo', bus, notify: vi.fn(), remember, logger: warn }).handle({ ...change(), type: 'speech.heard' });
+    new AvatarInbox({ avatarId: 'echo', bus, notify: vi.fn(), remember, policy, logger: warn }).handle({ ...change(), type: 'speech.heard' });
     expect(remember).not.toHaveBeenCalled();
     expect(publish).not.toHaveBeenCalled();
   });
@@ -199,7 +200,7 @@ describe('decision log', () => {
   it('is fed by the inbox with the bus down, for rule and decision-step outcomes', async () => {
     const bus = new LocalOnlyBus(makeEventId);
     const log = new DecisionLog();
-    const inbox = new AvatarInbox({ avatarId: 'sage', bus, notify: vi.fn(), remember: vi.fn(), onDecision: (d) => log.record(d), deliberate: async () => ({ action: 'ignore', reason: 'noise', urgent: false }), now: () => Date.parse('2026-01-01T00:00:00Z'), logger: warn });
+    const inbox = new AvatarInbox({ avatarId: 'sage', bus, notify: vi.fn(), remember: vi.fn(), onDecision: (d) => log.record(d), deliberate: async () => ({ action: 'ignore', reason: 'noise', urgent: false }), now: () => Date.parse('2026-01-01T00:00:00Z'), policy: { 'home.change': { action: 'remember' }, 'avatar.inbox': { action: 'deliberate' } }, logger: warn });
     inbox.start();
     bus.publish(ev('home.change', { to: ['avatar:sage'] }));
     bus.publish(ev('avatar.inbox', { to: ['avatar:sage'], payload: { text: 'other' } }));
@@ -305,5 +306,68 @@ describe('inbox onRemembered and engine', () => {
     await flush();
     expect([...seen].sort()).toEqual(['door opened', 'later one']);
     expect(decisions.recent().map((d) => d.engine)).toContain('system-one');
+  });
+});
+
+describe('home.change deliberation', () => {
+  function setup(decision: Decision | null | 'throw') {
+    const bus = new LocalOnlyBus(makeEventId);
+    const notify = vi.fn();
+    const remember = vi.fn();
+    const decisions = new DecisionLog();
+    let clock = 1_000_000;
+    const deliberate = vi.fn(async () => {
+      if (decision === 'throw') throw new Error('down');
+      return decision;
+    });
+    new AvatarInbox({ avatarId: 'echo', bus, notify, remember, deliberate, onDecision: (d) => decisions.record(d), now: () => clock, logger: warn }).start();
+    return { bus, notify, remember, decisions, advance: (ms: number) => { clock += ms; } };
+  }
+
+  it('remembers with the Home Assistant source and never speaks when the decision step fails', async () => {
+    for (const decision of [null, 'throw'] as const) {
+      const t = setup(decision);
+      t.bus.publish(ev('home.change', { payload: { text: 'Bedroom curtain opened' } }));
+      await flush();
+      await flush();
+      expect(t.notify).not.toHaveBeenCalled();
+      expect(t.remember).toHaveBeenCalledTimes(1);
+      expect(t.remember.mock.calls[0][1]).toBe('Bedroom curtain opened');
+      expect(t.remember.mock.calls[0][2]).toBe('Home Assistant');
+      expect(t.decisions.recent()[0]).toMatchObject({ action: 'remember', reason: 'deliberation failed; remembering', fallback: true });
+    }
+  });
+
+  it('says a home change only when the decision says so', async () => {
+    const t = setup({ action: 'say', reason: 'door', urgent: false });
+    t.bus.publish(ev('home.change', { payload: { text: 'Front door opened' } }));
+    await flush();
+    await flush();
+    expect(t.notify).toHaveBeenCalledWith('Front door opened', { urgent: true, source: 'Home Assistant' });
+    expect(t.remember).not.toHaveBeenCalled();
+  });
+
+  it('skips a deliberated remember of the same text within 60 seconds', async () => {
+    const t = setup({ action: 'remember', reason: 'fyi', urgent: false });
+    const publish = async (text: string) => {
+      t.bus.publish(ev('home.change', { payload: { text } }));
+      await flush();
+      await flush();
+    };
+    await publish('Lamp on');
+    t.advance(30_000);
+    await publish('Lamp on');
+    expect(t.remember).toHaveBeenCalledTimes(1);
+    t.advance(61_000);
+    await publish('Lamp on');
+    expect(t.remember).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the old source for other events', async () => {
+    const t = setup({ action: 'remember', reason: 'fyi', urgent: false });
+    t.bus.publish(ev('avatar.inbox', { payload: { text: 'x', source: 'coding' } }));
+    await flush();
+    await flush();
+    expect(t.remember.mock.calls[0][2]).toBe('coding');
   });
 });

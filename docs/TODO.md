@@ -131,7 +131,11 @@ more depth and are linked where they apply.
   Assistants over WebSocket, keeps their events apart from conversation, and
   offers a `home_history` tool (#364). Homes are managed in Models and servers
   (#365). The avatar cannot control anything or speak on HA speakers yet. The
-  design is in the Home Assistant Claude Doc.
+  design is in the Home Assistant Claude Doc. Ordinary state changes of watched
+  entities now reach Echo's inbox (they expire after 10 minutes, so a catch-up
+  after a reconnect is not news). Echo decides to ignore, remember or say each
+  one, and if the decide step fails the change is remembered, never spoken.
+  Alarms are still spoken at once.
 - **Akari:** Home Assistant is next on the roadmap, then HomeKit and Matter.
   Also drives GPIO, Arduino and ESP32 boards directly, with six safety checks,
   spoken confirmation for risky actions and a Stop All button.
@@ -153,7 +157,7 @@ more depth and are linked where they apply.
   callbacks.
 - **Dipal:** reacts to music and time of day, comforts you when you seem down,
   waves when you look at it.
-- **To do:** still missing: mention a due reminder, react to weather or a Home Assistant event,
+- **To do:** still missing: mention a due reminder, react to weather,
   bring up a remembered anniversary. The appropriateness check is Laya
   (Quick decisions, see below). Small actions (a glance, a stretch) can happen without speech.
 
@@ -190,7 +194,8 @@ Design and decisions: [Echo event bus Claude Doc](https://claude.ai/artifact/5zm
   and the app's mirror (`app/main/src/switchboard`). Each avatar has an inbox
   with a decision step (ignore, remember or say) that knows who is around and
   whether do-not-disturb is on. The app keeps working when the switchboard is
-  down.
+  down. Home Assistant state changes go through the same decide step; if it
+  fails they are remembered, not spoken.
 - **To do:** other outputs besides the avatar speaking on this PC: Home
   Assistant speakers and the phone companion.
 

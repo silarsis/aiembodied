@@ -843,8 +843,7 @@ function startAvatarPlumbing(profile: AvatarProfile, manager: ConfigManager): vo
       });
     },
     onRemembered: (text) => proactiveTick?.noteRemembered(text),
-    remember: (event, text) => {
-      const source = typeof event.payload.source === 'string' ? event.payload.source : `${event.producer.kind}:${event.producer.id}`;
+    remember: (_event, text, source) => {
       conversationManager?.appendToRecentSession([
         { role: 'system', content: `[Update from ${source}, not from Kevin, saved quietly] ${text}`, ts: Date.now() },
       ]);
