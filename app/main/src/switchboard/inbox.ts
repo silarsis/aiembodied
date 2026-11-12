@@ -3,6 +3,9 @@
  * policy (this table is the one place to change it); speaking goes through LocalVoiceService.notify,
  * which batches updates and waits for the conversation to be idle. Works the same with the
  * switchboard up or down, because the bus delivers locally when it is not connected.
+ *
+ * Home Assistant changes (`home.change`, addressed to Echo) go through the decide step, and when it
+ * fails they are remembered quietly, never spoken. Alarms (`home.alert`) are spoken at once.
  */
 import type { SwitchboardBus } from './bus.js';
 import type { Decision } from './deliberate.js';
@@ -24,13 +27,15 @@ export interface InboxRule {
   prefix?: string;
   /** Who the update is from; LocalVoiceService names it in the note's marker. */
   source?: string;
+  /** What `deliberate` does when the decision step fails. Default `speak-idle`. */
+  fallback?: 'speak-idle' | 'remember';
 }
 
 /** Exact types and families (`home.*`); `*` is the fallback. The longest match wins. */
 export const DEFAULT_INBOX_POLICY: Record<string, InboxRule> = {
   'avatar.inbox': { action: (event) => (event.priority === 'high' || event.priority === 'urgent' ? 'speak-urgent' : 'deliberate') },
   'home.alert': { action: 'speak-urgent', source: 'Home Assistant' },
-  'home.change': { action: 'remember' },
+  'home.change': { action: 'deliberate', source: 'Home Assistant', fallback: 'remember' },
   '*': { action: 'ignore' },
 };
 
@@ -53,10 +58,10 @@ export interface AvatarInboxOptions {
   logger?: Logger;
   policy?: Record<string, InboxRule>;
   now?: () => number;
-  /** The decision step; null means it failed and the inbox falls back to speaking when idle. */
+  /** The decision step; null means it failed and the inbox uses the rule's fallback (speaking when idle by default). */
   deliberate?: (event: SwitchboardEvent) => Promise<Decision | null>;
-  /** Saves an update quietly (a system message in the recent session). */
-  remember?: (event: SwitchboardEvent, text: string) => void;
+  /** Saves an update quietly (a system message in the recent session). `source` is who the update is from. */
+  remember?: (event: SwitchboardEvent, text: string, source: string) => void;
   /** Told of the text of every quiet save (rule or decision), for things like the proactive tick. */
   onRemembered?: (text: string) => void;
   /** True while do-not-disturb is on. */
@@ -118,15 +123,21 @@ export class AvatarInbox {
       this.options.logger?.debug?.('Inbox: remember skipped, no text', { type: event.type, id: event.id });
       return;
     }
-    if (this.lastSaved && this.lastSaved.text === text && now - this.lastSaved.at < REMEMBER_REPEAT_MS) {
-      this.options.logger?.debug?.('Inbox: remember skipped, same text just saved', { type: event.type, id: event.id });
-      return;
-    }
-    this.lastSaved = { text, at: now };
+    if (this.isRepeat(event, text, now)) return;
     this.options.logger?.debug?.('Inbox: remember', { type: event.type, id: event.id });
     this.save(event, rule);
     this.journal(event, 'remember', 'rule', 0, false, false);
     this.noteRemembered(text);
+  }
+
+  /** True when the same text was saved within REMEMBER_REPEAT_MS; otherwise notes this save. */
+  private isRepeat(event: SwitchboardEvent, text: string, now: number): boolean {
+    if (this.lastSaved && this.lastSaved.text === text && now - this.lastSaved.at < REMEMBER_REPEAT_MS) {
+      this.options.logger?.debug?.('Inbox: remember skipped, same text just saved', { type: event.type, id: event.id });
+      return true;
+    }
+    this.lastSaved = { text, at: now };
+    return false;
   }
 
   private textOf(event: SwitchboardEvent): string {
@@ -154,7 +165,7 @@ export class AvatarInbox {
     if (!text) return;
     const source = rule?.source ?? (typeof event.payload.source === 'string' ? event.payload.source : `${event.producer.kind}:${event.producer.id}`);
     try {
-      this.options.remember?.(event, text);
+      this.options.remember?.(event, text, source);
     } catch (error) {
       logger?.warn('Inbox: remember failed', { source, message: error instanceof Error ? error.message : String(error) });
     }
@@ -183,8 +194,13 @@ export class AvatarInbox {
         reason = decision.reason;
         engine = decision.engine;
       } else {
-        action = 'speak-idle';
-        reason = 'deliberation failed; speaking when idle';
+        if (rule?.fallback === 'remember') {
+          action = 'remember';
+          reason = 'deliberation failed; remembering';
+        } else {
+          action = 'speak-idle';
+          reason = 'deliberation failed; speaking when idle';
+        }
         fallback = true;
       }
     }
@@ -197,8 +213,11 @@ export class AvatarInbox {
     logger?.debug?.(`Inbox: deliberated ${action}`, { type: event.type, id: event.id, reason });
     if (action === 'ignore') return;
     if (action === 'remember') {
-      this.save(event, rule);
-      this.noteRemembered(this.textOf(event));
+      const text = this.textOf(event);
+      if (text && !this.isRepeat(event, text, nowFn())) {
+        this.save(event, rule);
+        this.noteRemembered(text);
+      }
     } else if (action === 'say') this.speak(event, rule, true);
     else this.speak(event, rule, action === 'speak-urgent');
   }

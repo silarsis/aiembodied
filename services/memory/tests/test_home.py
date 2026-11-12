@@ -677,7 +677,8 @@ def test_change_publishes_home_change(client, db, fake_bus):
     assert fake_bus.types() == ["home.change"]
     event_ = fake_bus.events[0]
     assert event_["producer"] == {"kind": "sensor", "id": "ha:home"}
-    assert event_["to"] == [] and event_["audience"] == "private" and event_["priority"] == "low"
+    assert event_["to"] == ["avatar:echo"] and event_["audience"] == "private" and event_["priority"] == "low"
+    assert event_["expires"] == (datetime.fromisoformat(event_["at"].replace("Z", "+00:00")) + home.CHANGE_FRESH).isoformat().replace("+00:00", "Z")
     payload = event_["payload"]
     assert payload["entity_id"] == "binary_sensor.front_door" and payload["old"] == "off" and payload["new"] == "on"
     assert payload["home_id"] == "home" and payload["area"] == "Hallway" and payload["domain"] == "binary_sensor"
@@ -690,10 +691,13 @@ def test_smoke_on_also_publishes_home_alert(client, db, fake_bus):
     alert = fake_bus.events[1]
     assert alert["to"] == ["avatar:echo"] and alert["priority"] == "urgent" and alert["audience"] == "private"
     assert alert["payload"] == fake_bus.events[0]["payload"]
+    # Echo gets the alarm once: its home.change is for the journal only.
+    assert fake_bus.events[0]["to"] == []
     # Turning it off again is a change, not an alert.
     fake_bus.events.clear()
     handle(db, entity_state("binary_sensor.smoke", "off", 120, friendly_name="Hall smoke alarm", device_class="smoke"))
     assert fake_bus.types() == ["home.change"]
+    assert fake_bus.events[0]["to"] == ["avatar:echo"]
 
 
 def test_unknown_to_on_is_not_published(client, db, fake_bus):
