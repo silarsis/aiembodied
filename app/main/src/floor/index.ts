@@ -23,6 +23,7 @@ import {
   type FloorChannel,
   type FloorDecision,
   type FloorSpeaker,
+  type IntentFunction,
 } from './floor-manager.js';
 
 export const HEAR_CHATTER_KEY = 'floor.hearChatter';
@@ -57,6 +58,8 @@ export interface FloorControllerOptions {
   bid?: BidFunction;
   /** A quick check of who a line is aimed at. */
   addressee?: AddresseeFunction;
+  /** Reads the lines of Kevin's the name rules are not sure about. */
+  intent?: IntentFunction;
   now?: () => number;
   logger?: Pick<Console, 'warn' | 'debug'>;
 }
@@ -115,6 +118,7 @@ export class FloorController {
       nameOf: (avatarId) => options.registry.get(avatarId)?.name ?? avatarId,
       bid: options.bid,
       addressee: options.addressee,
+      intent: options.intent,
       hearChatter: () => this.hearChatter(),
     });
   }
@@ -332,7 +336,7 @@ export class FloorController {
     this.journal(
       'floor.decision',
       from.startsWith('avatar:') ? from.slice('avatar:'.length) : null,
-      { from, text: clip(text), speakers: decision.speakers, channel: decision.channel, trace: decision.trace, ...(decision.relay ? { relay: decision.relay } : {}) },
+      { from, text: clip(text), speakers: decision.speakers, channel: decision.channel, trace: decision.trace, ...(decision.decidedBy ? { decidedBy: decision.decidedBy } : {}), ...(decision.relay ? { relay: decision.relay } : {}) },
       txn.id,
       undefined,
       txn.title,

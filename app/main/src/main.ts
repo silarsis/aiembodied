@@ -16,6 +16,7 @@ import { deliberateFast } from './switchboard/deliberate-system-one.js';
 import { ProactiveTick, proactiveSettingsFromEnv } from './presence/proactive-tick.js';
 import { PresenceTracker, isVoicePhase } from './presence/presence.js';
 import { FloorController } from './floor/index.js';
+import { createIntentRouter } from './floor/intent-router.js';
 import { createModelBid } from './floor/bid.js';
 import { createSystemOne } from './decide/system-one.js';
 import { createSystemOneAddressee, createSystemOneBid } from './floor/system-one-floor.js';
@@ -2696,12 +2697,19 @@ app.whenReady().then(async () => {
       instructionsFor: (avatarId) => avatarInstructions(avatarId),
       bus: () => switchboardBus,
       // Quick decisions (Laya) answer first; the clients are built per call so a changed route applies at once.
-      // When the route is off or fails, bids go to the Idle thoughts model and the addressee check is skipped.
+      // When the route is off or fails, bids go to the Idle thoughts model and the addressee check (avatar lines only) is skipped.
       addressee: (input, signal) => {
         const client = createSystemOne({ routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger });
         if (!client) return Promise.reject(new Error('Quick decisions are off'));
         return createSystemOneAddressee(client, (id) => registry.get(id)?.name ?? id)(input, signal);
       },
+      // Kevin's lines the name rules are not sure about go to the Idle thoughts model; a failure leaves them to the rules.
+      intent: createIntentRouter({
+        routing: () => manager.getConfig().models,
+        keyFor: (id) => manager.getServerKey(id),
+        nameOf: (id) => registry.get(id)?.name ?? id,
+        logger,
+      }),
       bid: async (candidates, recentLines, signal) => {
         const nameOfSpeaker = (from: string) => (from.startsWith('avatar:') ? (registry.get(from.slice('avatar:'.length))?.name ?? from) : 'Kevin');
         const client = createSystemOne({ routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger });

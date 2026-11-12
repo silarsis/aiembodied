@@ -49,10 +49,18 @@ if (client) {
 
 | Caller | Question | Threshold | If off, unsure or failing |
 | --- | --- | --- | --- |
-| Floor addressee check (`floor/system-one-floor.ts`) | `choice`: who a line is for | confidence from the floor controller | skipped, old name rules. Not asked when a conversation-with, talk, group or relay rule already decided, nor in a pair conversation Kevin asked for |
+| Floor addressee check (`floor/system-one-floor.ts`) | `choice`: who an avatar's line is for | confidence from the floor controller | skipped, old name rules. Avatar chatter only; not asked when a name, relay or pair conversation already decides |
 | Floor bids (same file) | one `score` per avatar: want to reply | none, bids are ranked | Idle thoughts model |
 | Switchboard decide step (`switchboard/deliberate-system-one.ts`) | `choice` ignore / remember / say, `noul` urgent | top action >= 0.6; urgent needs `say` and >= 0.85, never under do-not-disturb | chat-model `deliberate`, then speak when idle (a Home Assistant change is remembered instead) |
 | Proactive tick (`presence/proactive-tick.ts`) | `noul` act, `choice` what to say | act >= 0.75 and top choice >= 0.6 | do nothing (quiet is the safe default) |
+
+### Kevin's lines no longer use the addressee check
+
+The floor used to ask this check who Kevin's line was for when it named two avatars. It was removed from that path. Measured on
+the user's machine (`pnpm floor:check`), the server ignored the line and answered near-uniformly when the state's `line` was an
+object, so its top choice carried no information. Kevin's ambiguous lines now go to a small chat model on the Idle thoughts route (`floor/intent-router.ts`,
+see `services/switchboard/README.md`), and the name rules decide when it fails. The check still serves avatar chatter, where a
+failed or unsure answer leads to bids.
 
 ## When to use it
 

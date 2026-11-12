@@ -2,7 +2,7 @@
  * The floor manager decides who speaks in a scene. It is pure: no Electron, no I/O, time comes in
  * with each utterance (`at`, from the caller's injected clock) and bids from an injected function.
  *
- * Rules first, then bids. Kevin (the person) always wins: his speech cancels avatar speech and
+ * Rules first, then a model for the lines the rules are unsure of, then bids. Kevin (the person) always wins: his speech cancels avatar speech and
  * clears the queue (`bargeIn`). For Kevin's words, in this order: a request to converse WITH a named
  * avatar ("talk to Sage": Sage is the target, someone else starts), "talk to each other", "you two" /
  * "everyone", a question to relay ("ask Echo ..."), the avatars he names, the avatar he last talked
@@ -13,6 +13,8 @@
  * One avatar speaks at a time: a speaking slot and a FIFO queue.
  */
 
+import { classifyPersonLine, namedIn, type PersonClass } from './person-rules.js';
+
 export const PARTNER_WINDOW_MS = 5 * 60_000;
 export const BID_THRESHOLD = 0.5;
 /** Spontaneous chatter (nobody asked for it) stops this long after it started. A chat Kevin asked for has no limit. */
@@ -22,6 +24,8 @@ export const BID_TIMEOUT_MS = 6_000;
 export const ADDRESSEE_TIMEOUT_MS = 1_500;
 /** How sure the check must be before its answer is used. */
 export const ADDRESSEE_THRESHOLD = 0.6;
+/** The intent model is asked only about lines the rules are not sure of; past this the rules decide. */
+export const INTENT_TIMEOUT_MS = 2_500;
 export const DEFAULT_SCENE_ID = 'default';
 export const PERSON_SPEAKER = 'person:kevin';
 const RECENT_LINES_LIMIT = 8;
@@ -60,6 +64,42 @@ export interface FloorDecision {
   talk?: boolean;
   /** Kevin asked `from` to pass a question to `to`; `to` is not a speaker until `from` has spoken. */
   relay?: { from: string; to: string };
+  /** For Kevin's lines: the rules were sure, the intent model decided, or the model failed and the rules decided. */
+  decidedBy?: 'rules' | 'model' | 'rules-fallback';
+}
+
+/** What the intent check is asked about one of Kevin's lines. */
+export interface IntentInput {
+  text: string;
+  /** The lines said before this one, oldest first. */
+  recent: FloorLine[];
+  /** The avatars in the scene, in scene order. */
+  candidates: BidCandidate[];
+  hostId: string;
+  /** The avatar Kevin last talked with, when that was within the partner window. */
+  partnerId: string | null;
+}
+
+/** What the intent check says Kevin means. */
+export interface IntentResult {
+  /** The avatar Kevin speaks TO, 'everyone', or 'unclear' when the line names no listener. */
+  addressed: string | 'everyone' | 'unclear';
+  wants: 'answer' | 'converse' | 'relay';
+  /** The other avatar when `wants` is converse or relay. */
+  other: string | null;
+}
+
+/** Reads one of Kevin's lines and says who should act on it and what he wants. Rejecting means no answer. */
+export type IntentFunction = (input: IntentInput, signal: AbortSignal) => Promise<IntentResult>;
+
+/** What a routing step decided, before it is committed to the manager's state. */
+interface PersonPlan {
+  speakers: FloorDecision['speakers'];
+  trace: string[];
+  converse?: { starter: string; target: string };
+  relay?: { from: string; to: string };
+  /** Set to start (or, with null, clear) a chat Kevin asked for. */
+  talk?: { pair: [string, string] | null } | null;
 }
 
 export interface FloorBid {
@@ -113,6 +153,8 @@ export interface FloorManagerOptions {
   bid?: BidFunction;
   /** A quick check of who a line is aimed at, used where the name rules find no one clear. */
   addressee?: AddresseeFunction;
+  /** Reads Kevin's lines the rules are not sure about (several names, a name inside a longer sentence). */
+  intent?: IntentFunction;
   /** True when avatar-to-avatar talk should be out loud. */
   hearChatter?: () => boolean;
   partnerWindowMs?: number;
@@ -121,84 +163,10 @@ export interface FloorManagerOptions {
   bidTimeoutMs?: number;
   addresseeTimeoutMs?: number;
   addresseeThreshold?: number;
+  intentTimeoutMs?: number;
 }
 
-const GROUP_PATTERN = /\b(?:you two|you both|both of you|both|everyone|everybody|all of you|you all|y'all)\b/i;
-
-/** "Talk to each other", "have a chat", "discuss it between you": Kevin wants the avatars to converse out loud. */
-const TALK_PATTERN =
-  /\b(?:talk|chat|speak|converse|discuss|debate|argue)\b[^.?!]{0,40}\b(?:to each other|with each other|among yourselves|between yourselves|together|between you)\b|\b(?:have|hold) a (?:chat|conversation|discussion|debate)\b|\b(?:you two|you both|both of you)\b[^.?!]{0,20}\b(?:talk|chat|discuss|debate)\b/i;
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/** Where the name first appears as a whole word (any case, "hey Sage" and "ok Sage" included), or -1. */
-export function findName(text: string, name: string): number {
-  const trimmed = name.trim();
-  if (!trimmed) return -1;
-  const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRegExp(trimmed)}(?![\\p{L}\\p{N}_])`, 'iu');
-  return pattern.exec(text)?.index ?? -1;
-}
-
-const RELAY_PHRASES = '(?:ask|tell|check with|find out from|see if|see whether|let|remind|say to|pass (?:it |this |that )?on to)';
-
-/** Ids of avatars whose name comes right after a relay phrase ("ask Echo", "tell Sage"), in the order named. */
-export function relayTargets(text: string, candidates: string[], nameOf: (avatarId: string) => string): string[] {
-  return candidates
-    .map((avatarId) => {
-      const name = nameOf(avatarId).trim();
-      if (!name) return { avatarId, at: -1 };
-      const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])${RELAY_PHRASES}\\s+${escapeRegExp(name)}(?![\\p{L}\\p{N}_])`, 'iu');
-      return { avatarId, at: pattern.exec(text)?.index ?? -1 };
-    })
-    .filter((entry) => entry.at >= 0)
-    .sort((a, b) => a.at - b.at)
-    .map((entry) => entry.avatarId);
-}
-
-const NOT_A_NAME = '(?:me|us|myself|each|other|another|one|you|yourselves|everyone|everybody|both|all)';
-/** Up to three words between the preposition and the name ("talk to my friend Sage"), none of which may be a pronoun for Kevin or the group. */
-const BETWEEN = `(?:(?!${NOT_A_NAME}(?![\\p{L}\\p{N}_]))[\\p{L}\\p{N}'\u2019-]+\\s+){0,3}`;
-const CHAT_NOUN = '(?:conversation|chat|discussion|debate|talk)';
-
-/** Ways to ask for a conversation WITH someone; `@NAME@` is the name. `kevin` templates are skipped when Kevin is the one who would talk ("I want to talk to Sage"). */
-const CONVERSE_TEMPLATES: Array<{ pattern: string; kevin: boolean }> = [
-  { pattern: `(?:talk|chat|speak|converse)\\s+(?:to|with)\\s+${BETWEEN}@NAME@`, kevin: true },
-  { pattern: `(?:strike up|start|have|hold|begin|get into)\\s+(?:a|an|the|some)\\s+(?:[\\p{L}-]+\\s+)?${CHAT_NOUN}\\s+(?:with|to)\\s+${BETWEEN}@NAME@`, kevin: true },
-  { pattern: `say\\s+(?:hi|hello|hey|howdy)\\s+to\\s+${BETWEEN}@NAME@`, kevin: true },
-  { pattern: `get\\s+to\\s+know\\s+@NAME@`, kevin: true },
-  { pattern: `introduce\\s+yourself\\s+to\\s+@NAME@`, kevin: true },
-  { pattern: `you\\s+and\\s+@NAME@\\s+(?:(?:should|could|can|might|must|will|to|both|need to|ought to)\\s+)?(?:talk|chat|speak|converse)`, kevin: false },
-  { pattern: `(?:argue|debate|discuss)\\b[^.?!]{0,40}?\\bwith\\s+${BETWEEN}@NAME@`, kevin: true },
-];
-
-/** The words before a match are Kevin's own ("I want to", "can I", "let's"): he is the one who would talk, not an avatar. */
-function kevinIsTheSpeaker(prefix: string): boolean {
-  const clause = prefix.split(/[.?!,;]/).pop() ?? '';
-  return /(?<![\p{L}\p{N}_])(?:i|we|me|us|let[\u2019']s)(?![\p{L}\p{N}_])/iu.test(clause) && !/(?<![\p{L}\p{N}_])you(?![\p{L}\p{N}_])/iu.test(clause);
-}
-
-/**
- * The avatar Kevin wants a conversation WITH ("talk to Sage", "strike up a conversation with Echo",
- * "you and Sage should chat"), or null. When several are named, the one named first after the phrase.
- */
-export function converseTarget(text: string, candidates: string[], nameOf: (avatarId: string) => string): string | null {
-  let best: { avatarId: string; end: number } | null = null;
-  for (const avatarId of candidates) {
-    const name = nameOf(avatarId).trim();
-    if (!name) continue;
-    for (const template of CONVERSE_TEMPLATES) {
-      const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])${template.pattern.replace('@NAME@', () => `${escapeRegExp(name)}(?![\\p{L}\\p{N}_])`)}`, 'iu');
-      const match = pattern.exec(text);
-      if (!match) continue;
-      if (template.kevin && kevinIsTheSpeaker(text.slice(0, match.index))) continue;
-      const end = match.index + match[0].length;
-      if (!best || end < best.end) best = { avatarId, end };
-    }
-  }
-  return best?.avatarId ?? null;
-}
+export { converseTarget, findName, relayTargets } from './person-rules.js';
 
 export class FloorManager {
   private readonly options: FloorManagerOptions;
@@ -208,6 +176,7 @@ export class FloorManager {
   private readonly bidTimeoutMs: number;
   private readonly addresseeTimeoutMs: number;
   private readonly addresseeThreshold: number;
+  private readonly intentTimeoutMs: number;
 
   private partner: { avatarId: string; at: number } | null = null;
   private chatterStartedAt: number | null = null;
@@ -221,6 +190,9 @@ export class FloorManager {
   private talk: { pair: [string, string] | null } | null = null;
   /** Set while Kevin's "ask Echo ..." waits for the asked avatar to pass it on. */
   private relay: { from: string; to: string } | null = null;
+  /** Counts Kevin's lines; an intent answer for an older one is dropped. */
+  private personSeq = 0;
+  private pendingIntent: AbortController | null = null;
 
   constructor(options: FloorManagerOptions) {
     this.options = options;
@@ -230,6 +202,7 @@ export class FloorManager {
     this.bidTimeoutMs = options.bidTimeoutMs ?? BID_TIMEOUT_MS;
     this.addresseeTimeoutMs = options.addresseeTimeoutMs ?? ADDRESSEE_TIMEOUT_MS;
     this.addresseeThreshold = options.addresseeThreshold ?? ADDRESSEE_THRESHOLD;
+    this.intentTimeoutMs = options.intentTimeoutMs ?? INTENT_TIMEOUT_MS;
   }
 
   scene(): Scene {
@@ -261,120 +234,218 @@ export class FloorManager {
   private async routePerson(utterance: FloorUtterance): Promise<FloorDecision> {
     const scene = this.scene();
     const trace: string[] = [];
-    // Kevin spoke: the chatter time limit starts over and any chat he asked for ends.
+    // Kevin spoke: the chatter time limit starts over, any chat he asked for ends, and an intent call still pending for an earlier line is dropped.
     this.chatterStartedAt = null;
     this.talk = null;
     this.relay = null;
-    const done = (speakers: FloorDecision['speakers'], extra: Partial<FloorDecision> = {}): FloorDecision => {
-      if (speakers[0]) this.partner = { avatarId: speakers[0].avatarId, at: utterance.at };
-      return { speakers, channel: 'aloud', trace, ...extra };
+    this.pendingIntent?.abort();
+    this.pendingIntent = null;
+    const seq = ++this.personSeq;
+    const finish = (plan: PersonPlan, decidedBy: NonNullable<FloorDecision['decidedBy']>): FloorDecision => {
+      trace.push(...plan.trace);
+      if (plan.talk !== undefined) this.talk = plan.talk;
+      if (plan.relay) this.relay = { ...plan.relay };
+      if (plan.speakers[0]) this.partner = { avatarId: plan.speakers[0].avatarId, at: utterance.at };
+      return {
+        speakers: plan.speakers,
+        channel: 'aloud',
+        trace,
+        decidedBy,
+        ...(plan.converse ? { converse: plan.converse } : {}),
+        ...(plan.relay ? { relay: { ...plan.relay } } : {}),
+      };
     };
     if (scene.avatarIds.length === 0) {
       trace.push('person: no avatars in scene');
       return { speakers: [], channel: 'aloud', trace };
     }
     if (scene.avatarIds.length === 1) {
-      trace.push(`person: one avatar in scene -> ${scene.avatarIds[0]}`);
-      return done([{ avatarId: scene.avatarIds[0], reason: 'host' }]);
+      return finish({ speakers: [{ avatarId: scene.avatarIds[0], reason: 'host' }], trace: [`person: one avatar in scene -> ${scene.avatarIds[0]}`] }, 'rules');
     }
-    const named = this.namedIn(utterance.text, scene.avatarIds);
-    const relayed = relayTargets(utterance.text, scene.avatarIds, this.options.nameOf);
-    const converse = converseTarget(utterance.text, scene.avatarIds, this.options.nameOf);
-    if (converse) {
+    const rule = classifyPersonLine(utterance.text, scene.avatarIds, this.options.nameOf);
+    const byRules = this.planByRules(rule, utterance, scene);
+    if (rule.clear) {
+      trace.push(`person: clear rule (${rule.label})`);
+      return finish(byRules, 'rules');
+    }
+    const intent = this.options.intent;
+    if (!intent) {
+      trace.push(`person: not clear (${rule.label}) and no intent model -> rules`);
+      return finish(byRules, 'rules');
+    }
+    trace.push(`person: not clear (${rule.label}) -> asking the intent model`);
+    const started = Date.now();
+    try {
+      const result = await this.askIntent(intent, utterance, scene);
+      if (seq !== this.personSeq) return this.superseded(trace);
+      const ms = Date.now() - started;
+      trace.push(`person: intent model -> ${result.addressed} ${result.wants}${result.other ? ` ${result.other}` : ''} (${ms} ms)`);
+      return finish(this.planFromIntent(result, utterance, scene), 'model');
+    } catch (error) {
+      if (seq !== this.personSeq) return this.superseded(trace);
+      trace.push(`person: intent model failed (${error instanceof Error ? error.message : String(error)}) -> rules`);
+      return finish(byRules, 'rules-fallback');
+    }
+  }
+
+  private superseded(trace: string[]): FloorDecision {
+    trace.push('person: Kevin spoke again before the intent model answered; dropped');
+    return { speakers: [], channel: 'aloud', trace };
+  }
+
+  /** One call to the intent function, bounded by `intentTimeoutMs` and dropped when Kevin speaks again. */
+  private async askIntent(intent: IntentFunction, utterance: FloorUtterance, scene: Scene): Promise<IntentResult> {
+    const controller = new AbortController();
+    this.pendingIntent = controller;
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(this.intentTimeoutMs)]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Intent model timed out')), this.intentTimeoutMs);
+        timer.unref?.();
+      });
+      const run = intent(
+        {
+          text: utterance.text,
+          recent: this.recentBefore(),
+          candidates: this.candidatesOf(scene.avatarIds),
+          hostId: scene.hostId,
+          partnerId: this.freshPartner(scene, utterance.at),
+        },
+        signal,
+      );
+      run.catch(() => undefined);
+      const result = await Promise.race([run, timeout]);
+      const valid =
+        result &&
+        (result.addressed === 'everyone' || result.addressed === 'unclear' || scene.avatarIds.includes(result.addressed)) &&
+        (result.wants === 'answer' || result.wants === 'converse' || result.wants === 'relay') &&
+        (result.other === null || scene.avatarIds.includes(result.other));
+      if (!valid) throw new Error('The intent answer was not usable');
+      return result;
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (this.pendingIntent === controller) this.pendingIntent = null;
+    }
+  }
+
+  /** The last partner when it is in the scene and spoke with Kevin within the window, else null. */
+  private freshPartner(scene: Scene, at: number): string | null {
+    const partner = this.partner;
+    return partner && scene.avatarIds.includes(partner.avatarId) && at - partner.at <= this.partnerWindowMs ? partner.avatarId : null;
+  }
+
+  /** Who speaks when the line says nobody: the last partner, else the host, else the first avatar; never `exclude`. */
+  private fallbackSpeaker(scene: Scene, at: number, exclude: string | null): { avatarId: string; reason: SpeakerReason } | null {
+    const partner = this.freshPartner(scene, at);
+    if (partner && partner !== exclude) return { avatarId: partner, reason: 'last-partner' };
+    if (scene.avatarIds.includes(scene.hostId) && scene.hostId !== exclude) return { avatarId: scene.hostId, reason: 'host' };
+    const other = scene.avatarIds.find((id) => id !== exclude);
+    return other ? { avatarId: other, reason: 'host' } : null;
+  }
+
+  /** Someone to start a conversation with `target`: `preferred` (the avatar Kevin spoke to) if it is not the target, else the fallback. */
+  private starterFor(target: string, preferred: string | null, scene: Scene, at: number): { starter: string; reason: SpeakerReason } {
+    if (preferred && preferred !== target && scene.avatarIds.includes(preferred)) return { starter: preferred, reason: 'addressed' };
+    const fallback = this.fallbackSpeaker(scene, at, target);
+    return { starter: fallback?.avatarId ?? scene.hostId, reason: fallback?.reason ?? 'host' };
+  }
+
+  private conversePlan(target: string, preferred: string | null, scene: Scene, at: number): PersonPlan {
+    const { starter, reason } = this.starterFor(target, preferred, scene, at);
+    return {
+      speakers: [{ avatarId: starter, reason }],
+      converse: { starter, target },
+      talk: { pair: [starter, target] },
+      trace: [`person: asked ${starter} to have a conversation with ${target} (${reason}) -> ${starter} starts, ${starter} and ${target} alternate, out loud`],
+    };
+  }
+
+  private relayPlan(from: string, to: string, reason: SpeakerReason): PersonPlan {
+    return {
+      speakers: [{ avatarId: from, reason }],
+      relay: { from, to },
+      trace: [`person: ${from} is asked to pass a question to ${to} -> ${from} answers`],
+    };
+  }
+
+  /** What the rules decide for a line (the fallback when the model cannot be asked). Reads state, changes none. */
+  private planByRules(rule: PersonClass, utterance: FloorUtterance, scene: Scene): PersonPlan {
+    const at = utterance.at;
+    const { named, relayed } = rule;
+    if (rule.converse && rule.kind === 'converse') {
       // "Talk to Sage": Sage is who the conversation is with, so someone else starts it.
-      const target = converse;
-      const starterNamed = [...relayed.filter((id) => id !== target), ...named.filter((id) => id !== target)][0];
-      const partnerId = this.partner?.avatarId;
-      const partnerOk =
-        partnerId !== undefined &&
-        partnerId !== target &&
-        scene.avatarIds.includes(partnerId) &&
-        utterance.at - (this.partner?.at ?? 0) <= this.partnerWindowMs;
-      let starter: string;
-      let reason: SpeakerReason;
-      if (starterNamed) {
-        starter = starterNamed;
-        reason = 'addressed';
-      } else if (partnerOk && partnerId) {
-        starter = partnerId;
-        reason = 'last-partner';
-      } else if (scene.hostId !== target && scene.avatarIds.includes(scene.hostId)) {
-        starter = scene.hostId;
-        reason = 'host';
-      } else {
-        starter = scene.avatarIds.find((id) => id !== target) ?? scene.hostId;
-        reason = 'host';
-      }
-      this.talk = { pair: [starter, target] };
-      trace.push(`person: asked ${starter} to have a conversation with ${target} (${reason}) -> ${starter} starts, ${starter} and ${target} alternate, out loud`);
-      return done([{ avatarId: starter, reason }], { converse: { starter, target } });
+      const target = rule.converse;
+      const preferred = [...relayed.filter((id) => id !== target), ...named.filter((id) => id !== target)][0] ?? null;
+      return this.conversePlan(target, preferred, scene, at);
     }
-    if (TALK_PATTERN.test(utterance.text)) {
-      const first = named[0] ?? (this.partner && scene.avatarIds.includes(this.partner.avatarId) ? this.partner.avatarId : scene.hostId);
+    if (rule.kind === 'talk-each-other') {
+      const partner = this.partner && scene.avatarIds.includes(this.partner.avatarId) ? this.partner.avatarId : scene.hostId;
+      const first = named[0] ?? partner;
       const second = scene.avatarIds.length === 2 ? scene.avatarIds.find((id) => id !== first) : undefined;
-      this.talk = { pair: second ? [first, second] : null };
-      trace.push(`person: asked them to talk to each other -> ${first} starts, out loud${second ? `, ${first} and ${second} alternate` : ', in scene order'}`);
-      return done([{ avatarId: first, reason: named.length > 0 ? 'addressed' : 'host' }], second ? { converse: { starter: first, target: second } } : {});
+      return {
+        speakers: [{ avatarId: first, reason: named.length > 0 ? 'addressed' : 'host' }],
+        ...(second ? { converse: { starter: first, target: second } } : {}),
+        talk: { pair: second ? [first, second] : null },
+        trace: [`person: asked them to talk to each other -> ${first} starts, out loud${second ? `, ${first} and ${second} alternate` : ', in scene order'}`],
+      };
     }
-    if (GROUP_PATTERN.test(utterance.text)) {
-      trace.push('person: addressed everyone -> all avatars in scene order');
-      return done(scene.avatarIds.map((avatarId) => ({ avatarId, reason: 'all' as const })));
+    if (rule.kind === 'group') {
+      return { speakers: scene.avatarIds.map((avatarId) => ({ avatarId, reason: 'all' as const })), trace: ['person: addressed everyone -> all avatars in scene order'] };
     }
     if (relayed.length > 0) {
       // "Sage, ask Echo ...": Sage answers Kevin and passes the question on; Echo is not a speaker yet.
-      let answerers = named.filter((id) => !relayed.includes(id));
+      let answerers = rule.vocative && !relayed.includes(rule.vocative) ? [rule.vocative] : named.filter((id) => !relayed.includes(id));
       if (answerers.length === 0) {
-        const partnerId = this.partner?.avatarId;
-        const partnerOk =
-          partnerId !== undefined && scene.avatarIds.includes(partnerId) && utterance.at - (this.partner?.at ?? 0) <= this.partnerWindowMs && !relayed.includes(partnerId);
-        const pick = partnerOk ? partnerId : !relayed.includes(scene.hostId) ? scene.hostId : scene.avatarIds.find((id) => !relayed.includes(id));
+        const partnerId = this.freshPartner(scene, at);
+        const pick = partnerId && !relayed.includes(partnerId) ? partnerId : !relayed.includes(scene.hostId) ? scene.hostId : scene.avatarIds.find((id) => !relayed.includes(id));
         answerers = pick ? [pick] : [];
       }
       if (answerers.length > 0) {
-        this.relay = { from: answerers[0], to: relayed[0] };
-        trace.push(`person: ${answerers[0]} is asked to pass a question to ${relayed[0]} -> ${answerers[0]} answers`);
-        return done(
-          answerers.map((id) => ({ avatarId: id, reason: named.includes(id) ? ('addressed' as const) : ('host' as const) })),
-          { relay: { ...this.relay } },
-        );
+        const plan = this.relayPlan(answerers[0], relayed[0], named.includes(answerers[0]) ? 'addressed' : 'host');
+        return { ...plan, speakers: answerers.map((id) => ({ avatarId: id, reason: named.includes(id) ? ('addressed' as const) : ('host' as const) })) };
       }
     }
-    if (named.length > 1) {
-      // Two or more names and no rule decided: ask who should answer.
-      const picked = await this.askAddressee(
-        { speaker: utterance.from, text: utterance.text, recent: this.recentBefore(), candidates: this.candidatesOf(named), includePerson: false },
-        trace,
-        'person',
-      );
-      if (picked && picked !== 'person' && picked !== 'all' && named.includes(picked)) {
-        trace.push(`person: addressee check -> only ${picked} answers`);
-        return done([{ avatarId: picked, reason: 'addressed' }]);
-      }
+    if (rule.kind === 'kevin-talks-to' && rule.kevinWants) {
+      return { speakers: [{ avatarId: rule.kevinWants, reason: 'addressed' }], trace: [`person: Kevin wants to talk to ${rule.kevinWants} himself -> ${rule.kevinWants} answers Kevin`] };
     }
     if (named.length > 0) {
-      trace.push(`person: addressed by name -> ${named.join(', ')}`);
-      return done(named.map((avatarId) => ({ avatarId, reason: 'addressed' as const })));
+      return { speakers: named.map((avatarId) => ({ avatarId, reason: 'addressed' as const })), trace: [`person: addressed by name -> ${named.join(', ')}`] };
     }
-    trace.push('person: no name');
+    const trace = ['person: no name'];
     if (this.partner && scene.avatarIds.includes(this.partner.avatarId)) {
-      const age = utterance.at - this.partner.at;
+      const age = at - this.partner.at;
       if (age <= this.partnerWindowMs) {
         trace.push(`person: last partner ${this.partner.avatarId} ${Math.round(age / 1000)} s ago -> ${this.partner.avatarId}`);
-        return done([{ avatarId: this.partner.avatarId, reason: 'last-partner' }]);
+        return { speakers: [{ avatarId: this.partner.avatarId, reason: 'last-partner' }], trace };
       }
       trace.push(`person: last partner ${this.partner.avatarId} too long ago (${Math.round(age / 1000)} s)`);
     }
     trace.push(`person: host -> ${scene.hostId}`);
-    return done([{ avatarId: scene.hostId, reason: 'host' }]);
+    return { speakers: [{ avatarId: scene.hostId, reason: 'host' }], trace };
   }
 
-  /** Ids of scene avatars whose names appear in the text, in the order named. */
+  /** The decision the intent model's answer stands for. Answers that do not hang together count as a plain answer by the addressed avatar. */
+  private planFromIntent(result: IntentResult, utterance: FloorUtterance, scene: Scene): PersonPlan {
+    const at = utterance.at;
+    const other = result.other && scene.avatarIds.includes(result.other) ? result.other : null;
+    const concrete = result.addressed !== 'everyone' && result.addressed !== 'unclear' ? result.addressed : null;
+    const consistent = result.wants === 'answer' || (other !== null && other !== concrete);
+    if (result.wants === 'converse' && other && consistent) return this.conversePlan(other, concrete, scene, at);
+    if (result.wants === 'relay' && other && consistent) {
+      const from = concrete ?? this.fallbackSpeaker(scene, at, other)?.avatarId;
+      if (from) return this.relayPlan(from, other, concrete ? 'addressed' : (this.fallbackSpeaker(scene, at, other)?.reason ?? 'host'));
+    }
+    if (result.addressed === 'everyone' && (result.wants === 'answer' || !consistent)) {
+      return { speakers: scene.avatarIds.map((avatarId) => ({ avatarId, reason: 'all' as const })), trace: ['person: addressed everyone -> all avatars in scene order'] };
+    }
+    if (concrete) return { speakers: [{ avatarId: concrete, reason: 'addressed' }], trace: [`person: addressed by the intent model -> ${concrete}`] };
+    const fallback = this.fallbackSpeaker(scene, at, result.wants === 'answer' ? other : null) ?? { avatarId: scene.hostId, reason: 'host' as const };
+    return { speakers: [{ avatarId: fallback.avatarId, reason: fallback.reason }], trace: [`person: the intent model named no one -> ${fallback.avatarId} (${fallback.reason})`] };
+  }
+
   private namedIn(text: string, candidates: string[]): string[] {
-    return candidates
-      .map((avatarId) => ({ avatarId, at: findName(text, this.options.nameOf(avatarId)) }))
-      .filter((entry) => entry.at >= 0)
-      .sort((a, b) => a.at - b.at)
-      .map((entry) => entry.avatarId);
+    return namedIn(text, candidates, this.options.nameOf);
   }
 
   private async routeAvatar(utterance: FloorUtterance): Promise<FloorDecision> {
@@ -577,6 +648,9 @@ export class FloorManager {
     this.chatterStartedAt = null;
     this.talk = null;
     this.relay = null;
+    this.personSeq += 1;
+    this.pendingIntent?.abort();
+    this.pendingIntent = null;
     return cancel;
   }
 }

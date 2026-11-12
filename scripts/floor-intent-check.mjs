@@ -20,6 +20,8 @@
  *
  * Flags: --only laya|llm, --variants a,b,c,d, --laya-main, --no-laya-probes, --json file,
  * --md file, --verbose (per-case tables on the console; --json always has them).
+ * The code half of the hybrid router (which lines the rules decide) is replayed with these same cases in
+ * app/main/tests/floor-intent-replay.test.ts; the table lives in app/main/tests/fixtures/floor-intent-cases.ts.
  * A back end that does not answer its health probe is skipped. Exits 1 only when both are down.
  */
 import { writeFileSync } from 'node:fs';
@@ -55,6 +57,7 @@ const S2 = ['Echo', 'Sage'];
 const S3 = ['Echo', 'Sage', 'Rex'];
 /** Truth values: a string, or an array of accepted strings. `d` marks a debatable case (printed, not scored). */
 const C = (grade, text, speaker, intent, target, o = {}) => ({ grade, text, speaker, intent, target, scene: o.scene ?? S2, last: o.last ?? null, recent: o.recent ?? [], debatable: !!o.d });
+// Keep in step with app/main/tests/fixtures/floor-intent-cases.ts (the same 54 cases, replayed by the floor tests).
 const cases = [
   // simple
   C('simple', 'Sage, what time is it?', 'sage', 'answer', 'none'),

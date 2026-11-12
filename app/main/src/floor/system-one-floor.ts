@@ -27,7 +27,7 @@ function stateFor(recent: FloorLine[], line: { speaker: string; text: string } |
 }
 
 /** A key per candidate that the model can read: their name, made unique when two share one. */
-function optionKeys(candidates: BidCandidate[], taken: string[]): Map<string, BidCandidate> {
+export function optionKeys(candidates: BidCandidate[], taken: string[]): Map<string, BidCandidate> {
   const used = new Set(taken);
   const keys = new Map<string, BidCandidate>();
   for (const candidate of candidates) {

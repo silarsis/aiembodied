@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FloorController, HEAR_CHATTER_KEY, chatterNote, converseNote, relayChatterNote, relayNote } from '../src/floor/index.js';
-import type { FloorBid } from '../src/floor/floor-manager.js';
+import type { FloorBid, IntentFunction } from '../src/floor/floor-manager.js';
 import type { LocalVoiceEvent, LocalVoiceRespondRequest, LocalVoiceRespondResult } from '../src/local-voice/types.js';
 import type { SwitchboardEventInput } from '../src/switchboard/types.js';
 import { avatarIdForName } from '../src/avatars/avatar-id.js';
@@ -12,7 +12,7 @@ const PROFILES = [
   { id: 'rex', name: 'Rex', vrmModelId: 'm1' },
 ];
 
-function harness(options: { replies?: Record<string, string[]>; bids?: FloorBid[]; hear?: boolean; profiles?: typeof PROFILES } = {}) {
+function harness(options: { replies?: Record<string, string[]>; bids?: FloorBid[]; hear?: boolean; profiles?: typeof PROFILES; intent?: IntentFunction } = {}) {
   const kv = new Map<string, string>();
   if (options.hear) kv.set(HEAR_CHATTER_KEY, '1');
   const published: SwitchboardEventInput[] = [];
@@ -47,6 +47,7 @@ function harness(options: { replies?: Record<string, string[]>; bids?: FloorBid[
     instructionsFor: (avatarId) => `You are ${avatarId}.`,
     bus: () => ({ publish: (event) => (published.push(event), null), subscribe: () => () => undefined, connected: () => false }),
     bid: async () => (bidCalls(), options.bids ?? []),
+    intent: options.intent,
     now: () => 1_000,
   });
   return { controller, kv, published, turns, saved, forwarded, cancelled, hold, gates, heard, bidCalls };
@@ -428,5 +429,85 @@ describe('a conversation Kevin asks for', () => {
     h.gates.get('sage')?.();
     await flush();
     expect(h.turns.map((t) => t.avatarId)).toEqual(['echo', 'sage', 'rex']);
+  });
+});
+
+describe('lines the intent model decides', () => {
+  const flush = async () => {
+    for (let i = 0; i < 6; i += 1) await settle();
+  };
+
+  it('tells the starter of a model-made conversation what to do, and journals who decided', async () => {
+    const intent = vi.fn<IntentFunction>(async () => ({ addressed: 'echo', wants: 'converse', other: 'sage' }));
+    const h = harness({
+      profiles: PROFILES.slice(0, 2),
+      intent,
+      replies: { echo: ['Hello over there, how is your day going?'], sage: ['Quiet, thanks.'] },
+    });
+    await h.controller.respondToPerson({ requestId: 'r1', text: 'Hey Eko, have a word with Sage.' });
+    await flush();
+    expect(intent).toHaveBeenCalledOnce();
+    expect(h.turns[0]).toMatchObject({ avatarId: 'echo' });
+    expect(h.turns[0].request.text).toBe(`Hey Eko, have a word with Sage.\n\n${converseNote('Sage')}`);
+    expect(h.turns[1]).toMatchObject({ avatarId: 'sage' });
+    expect(h.turns[1].request).toMatchObject({ silent: false, text: chatterNote('Echo', 'Hello over there, how is your day going?', { talk: true }) });
+    const decision = h.published.find((e) => e.type === 'floor.decision');
+    expect(decision?.payload).toMatchObject({ decidedBy: 'model', speakers: [{ avatarId: 'echo', reason: 'addressed' }] });
+    expect((decision?.payload.trace as string[]).join(' ')).toMatch(/intent model -> echo converse sage \(\d+ ms\)/);
+  });
+
+  it('tells the asked avatar of a model-made relay to name the target, then the target answers aloud', async () => {
+    const intent = vi.fn<IntentFunction>(async () => ({ addressed: 'sage', wants: 'relay', other: 'echo' }));
+    const h = harness({ intent, replies: { sage: ['Echo, what are you up to right now?'], echo: ['Just tidying up.'] } });
+    await h.controller.respondToPerson({ requestId: 'r1', text: 'Not you, Echo. Sage, find out what Echo is doing.' });
+    await settle();
+    expect(h.turns.map((t) => t.avatarId)).toEqual(['sage', 'echo']);
+    expect(h.turns[0].request.text).toBe(`Not you, Echo. Sage, find out what Echo is doing.\n\n${relayNote('Echo')}`);
+    expect(h.turns[1].request).toMatchObject({ avatarId: 'echo', silent: false, text: relayChatterNote('Sage', 'Echo, what are you up to right now?') });
+    expect(h.published.find((e) => e.type === 'floor.decision')?.payload).toMatchObject({ decidedBy: 'model', relay: { from: 'sage', to: 'echo' } });
+  });
+
+  it('does not call the model for a clear line and journals rules', async () => {
+    const intent = vi.fn<IntentFunction>(async () => ({ addressed: 'rex', wants: 'answer', other: null }));
+    const h = harness({ intent, replies: { sage: ['I think so.'] } });
+    await h.controller.respondToPerson({ requestId: 'r1', text: 'Sage, what do you think?' });
+    expect(intent).not.toHaveBeenCalled();
+    expect(h.published.find((e) => e.type === 'floor.decision')?.payload).toMatchObject({ decidedBy: 'rules' });
+  });
+
+  it('falls back to the rules and journals it when the model fails', async () => {
+    const h = harness({ intent: async () => Promise.reject(new Error('down')), replies: { echo: ['Hi.'], sage: ['Hello.'] } });
+    await h.controller.respondToPerson({ requestId: 'r1', text: 'Echo, what do you think of Sage?' });
+    await settle();
+    expect(h.turns.map((t) => t.avatarId)).toEqual(['echo', 'sage']);
+    const payload = h.published.find((e) => e.type === 'floor.decision')?.payload;
+    expect(payload).toMatchObject({ decidedBy: 'rules-fallback' });
+    expect((payload?.trace as string[]).join(' ')).toContain('intent model failed (down) -> rules');
+  });
+
+  it('drops a pending intent call when Kevin speaks again: no turn runs for the old line, the new one is unaffected', async () => {
+    let release: (value: { addressed: string; wants: 'answer' | 'converse' | 'relay'; other: string | null }) => void = () => undefined;
+    let aborted = false;
+    const intent = vi.fn<IntentFunction>((input, signal) => {
+      if (input.text.startsWith('Tell me')) {
+        signal.addEventListener('abort', () => (aborted = true));
+        return new Promise((resolve) => (release = resolve));
+      }
+      return Promise.resolve({ addressed: 'unclear', wants: 'answer', other: null });
+    });
+    const h = harness({ intent, replies: { rex: ['Rex here.'], sage: ['Sage here.'] } });
+    const first = h.controller.respondToPerson({ requestId: 'r1', text: 'Tell me about Sage.' });
+    await settle();
+    expect(intent).toHaveBeenCalledOnce();
+    const second = await h.controller.respondToPerson({ requestId: 'r2', text: 'Rex, are you there?' });
+    expect(aborted).toBe(true);
+    release({ addressed: 'sage', wants: 'converse', other: 'echo' });
+    expect(await first).toEqual({ requestId: 'r1', text: '', cancelled: true });
+    await flush();
+    expect(second.text).toBe('Rex here.');
+    expect(h.turns.map((t) => [t.avatarId, t.request.requestId])).toEqual([['rex', 'r2']]);
+    // The late answer did not start a conversation or change who Kevin last talked with.
+    expect(h.controller.manager.state()).toMatchObject({ talking: false, partner: 'rex' });
+    expect(h.published.filter((e) => e.type === 'floor.decision' && e.payload.from === 'person:kevin').map((e) => e.payload.text)).toEqual(['Rex, are you there?']);
   });
 });

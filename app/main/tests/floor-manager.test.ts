@@ -364,22 +364,13 @@ describe('FloorManager: wake word and talking to each other', () => {
 });
 
 describe('FloorManager: addressee check', () => {
-  it('lets one confident avatar answer when Kevin names two', async () => {
-    const { manager, addressee } = make({ addressee: { avatarId: 'sage', confidence: 0.9 } });
-    const decision = await manager.route(kevin('Echo and Sage, Sage knows about plants, right?'));
-    expect(decision.speakers).toEqual([{ avatarId: 'sage', reason: 'addressed' }]);
-    expect(decision.trace.join(' ')).toContain('addressee check -> only sage');
-    const input = addressee.mock.calls[0][0];
-    expect(input.candidates.map((c) => c.avatarId)).toEqual(['echo', 'sage']);
-    expect(input.includePerson).toBe(false);
-    expect(input.recent).toEqual([]);
-  });
-
-  it('keeps both named avatars when it says all, is unsure, fails, hangs or is absent', async () => {
-    for (const addressee of [{ avatarId: 'all', confidence: 0.95 }, { avatarId: 'sage', confidence: 0.3 }, { avatarId: null, confidence: 0.9 }, new Error('down'), 'hang' as const, undefined]) {
-      const { manager } = make({ addressee });
-      const decision = await manager.route(kevin('Echo and Sage, what do you think?'));
+  it('is not used for Kevin: two names with no intent model keep both answering', async () => {
+    for (const addressee of [{ avatarId: 'sage', confidence: 0.99 }, { avatarId: 'all', confidence: 0.95 }, new Error('down'), 'hang' as const, undefined]) {
+      const { manager, addressee: check } = make({ addressee });
+      const decision = await manager.route(kevin('Echo and Sage, Sage knows about plants, right?'));
       expect(ids(decision)).toEqual(['echo', 'sage']);
+      expect(decision.decidedBy).toBe('rules');
+      expect(check).not.toHaveBeenCalled();
     }
   });
 
@@ -534,7 +525,7 @@ describe('FloorManager: a conversation Kevin asks for', () => {
   it('keeps the old rules for lines that are not a conversation with an avatar', async () => {
     const lines: Array<[string, string[], boolean]> = [
       ['Sage, ask Echo what time it is', ['sage'], false],
-      // Two names and no rule: both answer unless the quick addressee check picks one (next test lines).
+      // Two names and no rule: both answer unless the intent model picks one (see the intent tests).
       ["Echo, what do you think of Sage?", ['echo', 'sage'], false],
       ['tell me about Sage', ['sage'], false],
       ['Sage, talk to me', ['sage'], false],
@@ -548,11 +539,6 @@ describe('FloorManager: a conversation Kevin asks for', () => {
       expect([line, ids(decision)]).toEqual([line, expected]);
       expect([line, decision.converse, manager.state().talking]).toEqual([line, undefined, talking]);
     }
-    const checked = make({ ids: ['echo', 'sage'], addressee: { avatarId: 'echo', confidence: 0.9 } });
-    const question = await checked.manager.route(kevin('Echo, what do you think of Sage?'));
-    expect(ids(question)).toEqual(['echo']);
-    expect(question.converse).toBeUndefined();
-    expect(checked.manager.state().talking).toBe(false);
     const relay = await make({ ids: ['echo', 'sage'] }).manager.route(kevin('Sage, ask Echo what time it is'));
     expect(relay.relay).toEqual({ from: 'sage', to: 'echo' });
   });
