@@ -148,3 +148,45 @@ describe('RoomStage extra avatars', () => {
     stage.dispose();
   });
 });
+
+describe('RoomStage surfaceHeightAt', () => {
+  const room = builtInRoom('reading-room');
+
+  async function stageWithMeshes() {
+    const stage = await RoomStage.create(room);
+    const sofa = room.objects.find((object) => object.id === 'sofa')!;
+    const node = stage.objectNode('sofa')!;
+    node.clear();
+    // A cushion 0.4 m high with a backrest rising to 0.9 m behind it, in the node's local space.
+    const cushion = new THREE.Mesh(new THREE.BoxGeometry(1, 0.4, 1), new THREE.MeshBasicMaterial());
+    cushion.position.set(0, 0.2, 0);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(1, 0.9, 0.2), new THREE.MeshBasicMaterial());
+    back.position.set(0, 0.45, -0.6);
+    node.add(cushion, back);
+    node.updateMatrixWorld(true);
+    return { stage, sofa };
+  }
+
+  it('measures the rendered top under a point', async () => {
+    const { stage, sofa } = await stageWithMeshes();
+    const [x, y, z] = sofa.position;
+    expect(stage.surfaceHeightAt('sofa', x, z, y + 0.45)).toBeCloseTo(y + 0.4, 6);
+    expect(stage.surfaceHeightAt('sofa', x, z)).toBeCloseTo(y + 0.4, 6);
+  });
+
+  it('rejects a backrest outside the band around the tag height, and misses', async () => {
+    const { stage, sofa } = await stageWithMeshes();
+    const [x, y, z] = sofa.position;
+    // Under the backrest the ray starts inside it (tag + band is below its top), so it is not taken for a seat.
+    expect(stage.surfaceHeightAt('sofa', x, z - 0.6, y + 0.45)).toBeNull(); // top at 0.9 is above the ray start
+    expect(stage.surfaceHeightAt('sofa', x + 5, z, y + 0.45)).toBeNull();
+    expect(stage.surfaceHeightAt('nothing', x, z)).toBeNull();
+  });
+
+  it('falls back to the box top without meshes when no height hint is given', async () => {
+    const stage = await RoomStage.create(room);
+    const sofa = room.objects.find((object) => object.id === 'sofa')!;
+    stage.objectNode('sofa')!.clear();
+    expect(stage.surfaceHeightAt('sofa', sofa.position[0], sofa.position[2])).toBeCloseTo(sofa.position[1] + sofa.size[1], 6);
+  });
+});

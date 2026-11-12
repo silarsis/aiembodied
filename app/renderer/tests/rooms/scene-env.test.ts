@@ -178,4 +178,107 @@ describe('RoomSceneEnv', () => {
     for (let i = 0; i < 20; i += 1) env.step(0.05);
     expect(fingers.get('rightIndexProximal')!.quaternion.angleTo(new THREE.Quaternion())).toBe(0);
   });
+
+  describe('seat fit', () => {
+    function seatRig(hipsY: number) {
+      const hips = new THREE.Object3D();
+      hips.position.set(0, hipsY, 0);
+      rig.scene.add(hips);
+      const bones = new Map<string, THREE.Object3D>([['hips', hips], ['leftHand', rig.hands.left], ['rightHand', rig.hands.right]]);
+      rig.humanoid.getNormalizedBoneNode = (name) => bones.get(name) ?? null;
+      return hips;
+    }
+
+    function cushionedSofa() {
+      const node = stage.objectNode('sofa')!;
+      node.clear();
+      const cushion = new THREE.Mesh(new THREE.BoxGeometry(2, 0.4, 2), new THREE.MeshBasicMaterial());
+      cushion.position.y = 0.2;
+      node.add(cushion);
+      node.updateMatrixWorld(true);
+      return stage.worldTag('sofa', 'sit')!;
+    }
+
+    it('lowers a floating pelvis and lifts a sunken one onto the surface, then eases back when cleared', () => {
+      const tag = cushionedSofa();
+      const surface = stage.room.objects.find((o) => o.id === 'sofa')!.position[1] + 0.4;
+      // The tag is a guess; the cushion is the truth.
+      expect(tag.position[1]).toBeGreaterThan(surface - 0.25);
+      rig.scene.scale.setScalar(1);
+      rig.scene.rotation.y = 0;
+      rig.scene.position.set(tag.position[0], 0, tag.position[2]);
+      const hips = seatRig(surface - 0.05); // contact is 0.14 m below the surface
+      rig.scene.updateWorldMatrix(true, true);
+      env.setSeat('sofa');
+      for (let i = 0; i < 120; i += 1) env.step(1 / 60);
+      const contact = hips.getWorldPosition(new THREE.Vector3()).y - 0.09 * (0.9 / 0.95);
+      expect(contact).toBeCloseTo(surface, 3);
+      const fitted = rig.scene.position.y;
+      expect(fitted).toBeGreaterThan(0.1);
+      // Steady: more frames do not drift or accumulate.
+      for (let i = 0; i < 60; i += 1) env.step(1 / 60);
+      expect(rig.scene.position.y).toBeCloseTo(fitted, 6);
+      env.clearSeat();
+      for (let i = 0; i < 120; i += 1) env.step(1 / 60);
+      expect(rig.scene.position.y).toBeCloseTo(0, 6);
+    });
+
+    it('never moves the root further than the clamp', () => {
+      const tag = cushionedSofa();
+      rig.scene.scale.setScalar(1);
+      rig.scene.rotation.y = 0;
+      rig.scene.position.set(tag.position[0], 0, tag.position[2]);
+      seatRig(0.1);
+      env.setSeat('sofa');
+      for (let i = 0; i < 300; i += 1) env.step(1 / 60);
+      expect(rig.scene.position.y).toBeLessThanOrEqual(0.3 + 1e-9);
+    });
+
+    it('exposes the measured surface to planning', () => {
+      const tag = cushionedSofa();
+      const y = env.planWorld()!.seatSurfaceY!('sofa', tag.position[0], tag.position[2]);
+      expect(y).toBeCloseTo(stage.room.objects.find((o) => o.id === 'sofa')!.position[1] + 0.4, 6);
+    });
+  });
+
+  describe('grip snap', () => {
+    it('eases the grab point into the palm and still puts the object down', () => {
+      const mug = stage.objectNode('mug')!;
+      rig.scene.scale.setScalar(1);
+      rig.scene.rotation.y = 0;
+      rig.scene.position.set(0, 0, 0);
+      rig.hands.right.position.set(0.7, 1.3, 0.5); // well away from the mug
+      rig.scene.updateWorldMatrix(true, true);
+      expect(env.attach('mug', 'right')).toBe(true);
+      for (let i = 0; i < 60; i += 1) env.step(1 / 60);
+      const centre = new THREE.Box3().setFromObject(mug).getCenter(new THREE.Vector3());
+      const tag = room.objects.find((o) => o.id === 'mug')!.tags?.grab;
+      const grab = tag ? mug.localToWorld(new THREE.Vector3(tag.position[0], tag.position[1], tag.position[2])) : centre;
+      const palm = rig.hands.right.getWorldPosition(new THREE.Vector3());
+      expect(grab.distanceTo(palm)).toBeLessThan(1e-3);
+      env.detach({ t: 1, kind: 'detach', objectId: 'mug', hand: 'right' });
+      expect(mug.parent).toBe(stage.propParent);
+      expect(env.carriedIds).toEqual([]);
+    });
+
+    it('aims at the middle of the palm when the hand has a middle finger', () => {
+      const knuckle = new THREE.Object3D();
+      knuckle.position.set(0, 0, 0.1);
+      rig.hands.right.add(knuckle);
+      const bones = new Map<string, THREE.Object3D>([['rightHand', rig.hands.right], ['rightMiddleProximal', knuckle]]);
+      rig.humanoid.getNormalizedBoneNode = (name) => bones.get(name) ?? null;
+      rig.scene.scale.setScalar(1);
+      rig.scene.rotation.y = 0;
+      rig.scene.position.set(0, 0, 0);
+      rig.hands.right.position.set(0.7, 1.3, 0.5);
+      rig.scene.updateWorldMatrix(true, true);
+      env.attach('mug', 'right');
+      for (let i = 0; i < 60; i += 1) env.step(1 / 60);
+      const mug = stage.objectNode('mug')!;
+      const tag = room.objects.find((o) => o.id === 'mug')!.tags?.grab;
+      const grab = tag ? mug.localToWorld(new THREE.Vector3(tag.position[0], tag.position[1], tag.position[2])) : new THREE.Box3().setFromObject(mug).getCenter(new THREE.Vector3());
+      const palm = rig.hands.right.localToWorld(new THREE.Vector3(0, 0, 0.05));
+      expect(grab.distanceTo(palm)).toBeLessThan(1e-3);
+    });
+  });
 });

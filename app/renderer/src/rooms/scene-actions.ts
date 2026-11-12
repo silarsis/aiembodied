@@ -62,6 +62,11 @@ export interface PlanWorld {
   objectPosition(id: string): Vec3 | null;
   /** The motion frame a fresh stream would use: origin = the avatar's root now. */
   frame: MotionFrame;
+  /**
+   * The measured top of a seat object at world (x, z), near the height of its sit tag; null or absent when
+   * it cannot be measured (the tag height is used then).
+   */
+  seatSurfaceY?(objectId: string, x: number, z: number): number | null;
   /** Standing pelvis height in avatar metres (the rest skeleton's hips height). */
   restHipsHeight: number;
   /** Width over height of the room view, for judging what the camera can see. */
@@ -562,11 +567,13 @@ function planSit(world: PlanWorld, object: RoomObject): ActionPlan {
   if (points) occupancy?.claimSpot({ x: approach[0], z: approach[2] });
   const root = worldToMotion(frame, seat[0], seat[2]);
   const heading = worldYawToMotion(frame, facing);
+  // The tag height is a guess (an LLM's, or a default); the rendered surface at the anchor is the truth.
+  const surfaceY = world.seatSurfaceY?.(object.id, seat[0], seat[2]) ?? seat[1];
   const target: AvatarMotionTarget = {
     t: roundMs(phaseStart + 2),
     until: roundMs(duration - 0.1),
     root,
-    height: heightToMotion(frame, seat[1] + SEAT_HEIGHT_OFFSET),
+    height: heightToMotion(frame, surfaceY + SEAT_HEIGHT_OFFSET),
     heading,
     revealS: phaseStart,
   };

@@ -291,6 +291,31 @@ describe('sit and stand', () => {
     expect(stream.request.targets![0]!.t).toBe(2);
   });
 
+  it('aims the hips at the measured seat surface instead of the tag height when the world can measure it', () => {
+    const sit = stage.worldTag('sofa', 'sit')!;
+    const f = ((sit.facing ?? 0) * Math.PI) / 180;
+    const base = worldAt(sit.position[0] + 0.45 * Math.sin(f), sit.position[2] + 0.45 * Math.cos(f), 180);
+    const tagged = streamOf(planAction(base, INITIAL_STATE, { kind: 'sit', objectId: 'sofa' })).request.targets![0]!;
+    const seen: unknown[] = [];
+    const measured = streamOf(
+      planAction(
+        {
+          ...base,
+          seatSurfaceY: (id, x, z) => {
+            seen.push([id, x, z]);
+            return sit.position[1] + 0.12;
+          },
+        },
+        INITIAL_STATE,
+        { kind: 'sit', objectId: 'sofa' },
+      ),
+    ).request.targets![0]!;
+    expect(seen).toEqual([['sofa', sit.position[0], sit.position[2]]]);
+    expect(measured.height! - tagged.height!).toBeCloseTo(0.12, 6);
+    const unmeasured = streamOf(planAction({ ...base, seatSurfaceY: () => null }, INITIAL_STATE, { kind: 'sit', objectId: 'sofa' }));
+    expect(unmeasured.request.targets![0]!.height).toBe(tagged.height);
+  });
+
   it('skips things that cannot be sat on', () => {
     expect(planAction(worldAt(0, 0, 0), INITIAL_STATE, { kind: 'sit', objectId: 'rug' }).type).toBe('skip');
   });

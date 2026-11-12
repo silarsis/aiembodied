@@ -239,6 +239,28 @@ export function validateLayout(raw: unknown, notes?: string[]): RoomLayout {
   };
 }
 
+/** Seats are sized like real furniture: the character is about 1.6 m tall, and an oversized seat swallows it. */
+export const SEAT_HEIGHT_RANGE: readonly [number, number] = [0.35, 0.55];
+const SEAT_MAX_DEPTH = 0.95;
+const SEAT_MAX_WIDTH = 1.0;
+const BENCH_MAX_WIDTH = 2.4;
+const BENCH_WORDS = /\b(sofa|couch|bench|loveseat|love seat|settee)\b/i;
+
+/** Clamps a requested seat size (never its height, which is the back height) and seat height; other categories pass through. */
+export function clampSeat(
+  category: string,
+  name: string,
+  size: [number, number, number],
+  seatHeight: number | null,
+): { size: [number, number, number]; seatHeight: number | null } {
+  if (category !== 'seat') return { size, seatHeight };
+  const maxWidth = BENCH_WORDS.test(name) ? BENCH_MAX_WIDTH : SEAT_MAX_WIDTH;
+  return {
+    size: [Math.min(size[0], maxWidth), size[1], Math.min(size[2], SEAT_MAX_DEPTH)],
+    seatHeight: seatHeight === null ? null : clamp(seatHeight, SEAT_HEIGHT_RANGE[0], SEAT_HEIGHT_RANGE[1]),
+  };
+}
+
 /** One object of the layout; throws a LayoutError when it cannot be used at all. */
 function readObject(entry: unknown, where: string, index: number, ids: Set<string>): LayoutObject {
   if (!isRecord(entry)) fail(`${where} must be an object`);
@@ -258,16 +280,17 @@ function readObject(entry: unknown, where: string, index: number, ids: Set<strin
   };
   const seatHeightRaw = entry.seat_height ?? entry.seatHeight;
   const seatHeight = seatHeightRaw === undefined || seatHeightRaw === null || seatHeightRaw === '' ? NaN : Number(seatHeightRaw);
+  const fitted = clampSeat(category, name, size, Number.isFinite(seatHeight) ? clamp(seatHeight, 0.15, 0.9) : null);
   return {
     id,
     name,
     search: optionalText(entry.search, 80) ?? name,
     category,
     ...(label ? { label } : {}),
-    size,
+    size: fitted.size,
     place,
     color: optionalText(entry.color, 40),
-    seatHeight: Number.isFinite(seatHeight) ? clamp(seatHeight, 0.15, 0.9) : null,
+    seatHeight: fitted.seatHeight,
     grabbable: entry.grabbable === true,
     surface: entry.surface === true,
     idle: optionalText(entry.idle, 80),

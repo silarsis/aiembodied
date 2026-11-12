@@ -9,6 +9,9 @@ const TMP = new THREE.Vector3();
 const TMP_ORIGIN = new THREE.Vector3();
 const TMP_ORIENTATION = new THREE.Quaternion();
 
+/** How far above or below a tag height a measured surface may be (metres): keeps backrests and arms out. */
+const SURFACE_BAND = 0.25;
+
 /**
  * Everything a loaded room needs at run time: scene objects, physics and a navmesh. It never
  * touches a WebGL renderer, so it can be created and stepped in tests. If the physics or navmesh
@@ -78,6 +81,29 @@ export class RoomStage {
   /** The scene node of a room object, or undefined. */
   objectNode(id: string): THREE.Object3D | undefined {
     return this.built.objectNodes.get(id);
+  }
+
+  /**
+   * The height of an object's rendered top surface at world (x, z), measured by casting a ray straight
+   * down onto the object's own meshes (nothing else, so an avatar on it is ignored).
+   *
+   * With `nearY` (a tag height such as a seat's) the ray starts `band` above it and a hit more than `band`
+   * below it is rejected, so a backrest or an armrest cannot be taken for the cushion; the result is null
+   * when nothing is hit in that band. Without `nearY` the ray starts above the whole bounding box and the
+   * first hit wins, falling back to the box top (position.y + size[1]) when the object has no meshes or
+   * the point misses them.
+   */
+  surfaceHeightAt(id: string, x: number, z: number, nearY?: number, band = SURFACE_BAND): number | null {
+    const node = this.built.objectNodes.get(id);
+    const object = this.room.objects.find((candidate) => candidate.id === id);
+    if (!node || !object) return null;
+    const boxTop = object.position[1] + object.size[1];
+    const from = nearY !== undefined ? nearY + band : boxTop + 0.5;
+    node.updateWorldMatrix(true, true);
+    const ray = new THREE.Raycaster(new THREE.Vector3(x, from, z), new THREE.Vector3(0, -1, 0));
+    const hit = ray.intersectObject(node, true).find((candidate) => candidate.object instanceof THREE.Mesh);
+    if (nearY !== undefined) return hit && hit.point.y >= nearY - band ? hit.point.y : null;
+    return hit ? hit.point.y : boxTop;
   }
 
   /** Where an object's floor-contact origin is in the world right now (it may have been moved or carried). */
