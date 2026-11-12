@@ -87,7 +87,7 @@ function CardEditor({ api, profile, models, ownBody, settings, run }: {
             disabled={isEcho}
             onChange={(event) => void run(() => api.update(profile.id, { vrmModelId: event.target.value || null }))}
           >
-            <option value="">{isEcho ? 'Active character' : "Shares Echo's body"}</option>
+            <option value="">{isEcho ? 'Active character' : "Same look as Echo"}</option>
             {models.map((model) => (
               <option key={model.id} value={model.id}>{model.name}</option>
             ))}
@@ -135,7 +135,7 @@ function CastCard({ api, profile, models, echoModelId, settings, run }: {
           {isEcho || ownsBody ? (
             body ? <p className="sceneCard__meta">{body.name}</p> : null
           ) : (
-            <p className="sceneCard__meta">Shares Echo&apos;s body</p>
+            <p className="sceneCard__meta">Looks like Echo (its own copy)</p>
           )}
         </div>
         <div className="sceneCard__actions">
@@ -252,7 +252,7 @@ export function SceneCast({ api, profiles, models, roomActive = false, onChanged
         }}
       >
         <h3 className="faces__heading">Add by name</h3>
-        <p className="kiosk__helper">A new character who shares Echo&apos;s body. Give it its own voice and habits with Edit.</p>
+        <p className="kiosk__helper">A new character who looks like Echo, as its own figure on stage. Give it its own voice and habits with Edit.</p>
         <div className="sceneCast__byNameRow">
           <input aria-label="New character name" placeholder="Name" value={newName} maxLength={NAME_MAX} onChange={(event) => setNewName(event.target.value)} />
           <button type="submit">Add character</button>

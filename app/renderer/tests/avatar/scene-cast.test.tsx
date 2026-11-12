@@ -31,9 +31,9 @@ describe('SceneCast', () => {
     expect(cards.map((card) => card.getAttribute('data-testid'))).toEqual(['scene-card-echo', 'scene-card-sage', 'scene-card-luna']);
     expect(within(cards[0]).getByText('Host')).toBeInTheDocument();
     expect(within(cards[1]).queryByText('Host')).toBeNull();
-    expect(within(cards[1]).getByText("Shares Echo's body")).toBeInTheDocument();
-    expect(within(cards[0]).queryByText("Shares Echo's body")).toBeNull();
-    expect(within(cards[2]).queryByText("Shares Echo's body")).toBeNull();
+    expect(within(cards[1]).getByText("Looks like Echo (its own copy)")).toBeInTheDocument();
+    expect(within(cards[0]).queryByText("Looks like Echo (its own copy)")).toBeNull();
+    expect(within(cards[2]).queryByText("Looks like Echo (its own copy)")).toBeNull();
     expect(cards[0].querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,AAA');
     expect(cards[2].querySelector('img')).toBeNull();
   });
