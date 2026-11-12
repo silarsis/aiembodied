@@ -2077,3 +2077,128 @@ body {
 .backgroundCard__room {
   background: linear-gradient(135deg, #3b4252, #5b6475);
 }
+
+/* ===== Characters pop-up: "In the scene" ===== */
+.sceneCast {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-bottom: 1.25rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+}
+.sceneCast h2 { margin: 0; }
+.sceneCast__list,
+.sceneCast__tiles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+.sceneCast__tiles {
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+}
+.panelDialog .sceneCast__tiles .faceCard__preview { max-height: 96px; }
+.sceneCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.5);
+}
+.sceneCard__row { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
+.sceneCard__thumb {
+  flex: 0 0 52px;
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 10px;
+  background: rgba(30, 41, 59, 0.6);
+  color: rgba(148, 163, 184, 0.85);
+  font-weight: 700;
+}
+.sceneCard__thumb img { width: 100%; height: 100%; object-fit: contain; }
+.sceneCard__info { flex: 1 1 auto; min-width: 0; }
+.sceneCard__name { margin: 0; font-size: 0.95rem; color: #f8fafc; display: flex; align-items: center; gap: 0.5rem; }
+.sceneCard__badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(59, 130, 246, 0.6);
+  background: rgba(59, 130, 246, 0.18);
+  color: #bfdbfe;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.sceneCard__meta { margin: 2px 0 0; font-size: 0.8rem; color: rgba(148, 163, 184, 0.85); }
+.sceneCard__actions { display: flex; gap: 0.4rem; flex: 0 0 auto; }
+.sceneCard button,
+.sceneCast__byName button {
+  padding: 0.4rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.6);
+  color: #e2e8f0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sceneCard button:hover:not(:disabled),
+.sceneCast__byName button:hover:not(:disabled) { background: rgba(51, 65, 85, 0.7); border-color: rgba(148, 163, 184, 0.5); }
+.sceneCard button:disabled { opacity: 0.5; cursor: default; }
+.sceneCard button:focus-visible,
+.sceneCast__byName button:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
+.sceneCard__remove { color: #fecaca; }
+.sceneCard__confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 10px;
+  background: rgba(127, 29, 29, 0.25);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  font-size: 0.85rem;
+  color: #fecaca;
+}
+.sceneCard__confirm span { flex: 1 1 auto; }
+.sceneCard__edit { display: grid; gap: 0.6rem; }
+.sceneCard__field { display: grid; gap: 4px; font-size: 0.8rem; color: #cbd5e1; }
+.sceneCard__pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
+.characterSettings { display: grid; gap: 0.6rem; }
+.sceneCard__edit .control { min-width: 0; gap: 4px; font-size: 0.8rem; }
+.sceneCard__edit .control label { font-size: 0.8rem; font-weight: 400; color: #cbd5e1; }
+.sceneCard__edit .control textarea,
+.sceneCard__edit .control select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  font-size: inherit;
+}
+.sceneCard__edit .control textarea { resize: vertical; }
+.sceneCard__field input,
+.sceneCard__field select,
+.sceneCard__field textarea,
+.sceneCast__byName input,
+.sceneCast__byName textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.7);
+  color: #e2e8f0;
+  font: inherit;
+}
+.sceneCard__field select:disabled { opacity: 0.6; }
+.sceneCast__byName { display: grid; gap: 0.5rem; padding-top: 0.25rem; }
+.sceneCast__byName .faces__heading { font-size: 0.9rem; }
+.sceneCast__byNameRow { display: flex; gap: 0.5rem; }
+.sceneCast__byNameRow input { flex: 1 1 auto; }
+.sceneCast__byNameRow button { flex: 0 0 auto; white-space: nowrap; }

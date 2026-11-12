@@ -107,7 +107,7 @@ When nobody has talked for a while, the avatar in a 3D room does things on its o
 - *Restlessness*: Calm, Normal (default) or Restless, a mean wait between idle actions of 180, 90 or 40 seconds. Each wait is drawn uniformly from 60 % to 140 % of the mean.
 - *When I start talking*: **Turn to me where it is** (default) or **Come back to me**.
 
-**Idle habits.** Controls → Character has an *Idle habits* text (at most 500 characters) under the personality prompt, kept per avatar (`avatar:idle-habits:get` / `:set`, stored under `avatar.idleHabits.<model id>` like the personality prompt). It goes into the idle prompt, e.g. "sits by the window with tea; tidies when bored".
+**Idle habits.** Controls → Characters, in a character's card under *Edit*, has an *Idle habits* text (at most 500 characters) beside its prompt and voice, kept per avatar (`avatar:idle-habits:get` / `:set`, stored under `avatar.idleHabits.<model id>`, or `avatar.idleHabits.avatar:<id>` for an avatar that shares Echo's body). The idle director reads every avatar's own habits and personality through `avatars:idle-personas`. It goes into the idle prompt, e.g. "sits by the window with tea; tidies when bored".
 
 **When it acts** (`rooms/idle-director.ts`). The avatar counts as idle when there is no user speech, wake word, tap or push-to-talk, the assistant is not transcribing, thinking or responding, and no scene action is queued or running. The first idle action comes 45 s after the last activity; each later one after the restlessness interval, counted from the end of the previous idle action. Any conversation activity throws away a decision still being made and goes back to the 45 s rule.
 

@@ -399,13 +399,13 @@ export interface AvatarBridge {
   redrawAvatarViews?(jobId: string): Promise<void>;
   listAvatarCharacterModels?(): Promise<AvatarCharacterModelSelection>;
   setAvatarCharacterModel?(stage: 'geometry' | 'rig', id: string): Promise<void>;
-  /** The character's voice for `engine` (kokoro, kitten, piper); without one, its OpenAI voice. */
-  getVoicePreference(engine?: string): Promise<string | null>;
-  setVoicePreference(voice: string, engine?: string): Promise<void>;
+  /** The character's voice for `engine` (kokoro, kitten, piper); without one, its OpenAI voice. Without an `avatarId` these (and the prompt and habits below) mean the active character. */
+  getVoicePreference(engine?: string, avatarId?: string): Promise<string | null>;
+  setVoicePreference(voice: string, engine?: string, avatarId?: string): Promise<void>;
   /** The character's own personality prompt; null until it has one (the global prompt applies). */
-  getPromptPreference?(): Promise<string | null>;
-  setPromptPreference?(prompt: string): Promise<void>;
+  getPromptPreference?(avatarId?: string): Promise<string | null>;
+  setPromptPreference?(prompt: string, avatarId?: string): Promise<void>;
   /** What the character likes to do when nobody is talking (at most 500 characters). */
-  getIdleHabits?(): Promise<string>;
-  setIdleHabits?(habits: string): Promise<void>;
+  getIdleHabits?(avatarId?: string): Promise<string>;
+  setIdleHabits?(habits: string, avatarId?: string): Promise<void>;
 }

@@ -1378,10 +1378,10 @@ describe('main process bootstrap', () => {
   describe('floor routing', () => {
     afterEach(() => {
       delete process.env.SWITCHBOARD_ENABLED;
-      delete process.env.AIEMBODIED_EXTRA_AVATARS;
     });
 
-    async function boot(extraAvatars?: string) {
+    /** Starts the app; `avatarNames` are added to the scene over `avatars:add`, as the Characters pop-up does. */
+    async function boot(avatarNames: string[] = []) {
       // Without the switchboard the app keeps its bus in-process; spy on what is published to it.
       process.env.SWITCHBOARD_ENABLED = '0';
       const { LocalOnlyBus } = await import('../src/switchboard/bus.js');
@@ -1393,8 +1393,6 @@ describe('main process bootstrap', () => {
       const kv = new Map<string, string>();
       getValueMock.mockImplementation((key: string) => kv.get(key) ?? null);
       setValueMock.mockImplementation((key: string, value: string) => void kv.set(key, value));
-      if (extraAvatars) process.env.AIEMBODIED_EXTRA_AVATARS = extraAvatars;
-      else delete process.env.AIEMBODIED_EXTRA_AVATARS;
       const config = {
         realtimeApiKey: 'rt-key',
         comfyUiBaseUrl: 'http://127.0.0.1:8188',
@@ -1424,6 +1422,9 @@ describe('main process bootstrap', () => {
         served.push({ avatarId: this.avatarId, requestId: request.requestId, instructions: request.instructions, silent: request.silent });
         return { requestId: request.requestId, text: '', cancelled: false };
       });
+      for (const name of avatarNames) {
+        await handlers.get('avatars:add')?.({}, { name, prompt: `You are ${name}, another AI in the room with Echo and Kevin.` });
+      }
       const respond = (payload: Record<string, unknown>) => handlers.get('local-voice:respond')?.({ sender }, payload);
       return { handlers, served, respond, respondSpy, sender, published };
     }
@@ -1433,7 +1434,6 @@ describe('main process bootstrap', () => {
       await respond({ requestId: 'r1', text: 'Sage, hello', instructions: 'You are Echo.' });
       expect(served).toEqual([{ avatarId: 'echo', requestId: 'r1', instructions: 'You are Echo.', silent: undefined }]);
       expect(handlers.get('avatars:list')?.({})).toHaveLength(1);
-      expect(mockLogger.info).not.toHaveBeenCalledWith('Created extra avatars from AIEMBODIED_EXTRA_AVATARS.', expect.anything());
       respondSpy.mockRestore();
     });
 
@@ -1454,8 +1454,104 @@ describe('main process bootstrap', () => {
       respondSpy.mockRestore();
     });
 
-    it('creates env avatars and routes by name, host and explicit avatar id', async () => {
-      const { served, respond, respondSpy, handlers } = await boot('Sage,Rex');
+    describe('per-character prompt, idle habits and voice', () => {
+      const call = (handlers: Map<string, unknown>, channel: string, ...args: unknown[]) =>
+        (handlers.get(channel) as ((...a: unknown[]) => unknown) | undefined)?.({}, ...args);
+
+      it('keeps a body-sharing avatar\'s idle habits and voice under its own id, apart from Echo\'s', async () => {
+        const { handlers, respondSpy } = await boot(['Sage', 'Rex']);
+        await call(handlers, 'avatar:idle-habits:set', '  Hums.  ', 'sage');
+        await call(handlers, 'avatar:idle-habits:set', 'Reads.', 'rex');
+        expect(setValueMock).toHaveBeenCalledWith('avatar.idleHabits.avatar:sage', 'Hums.');
+        expect(setValueMock).toHaveBeenCalledWith('avatar.idleHabits.avatar:rex', 'Reads.');
+        expect(await call(handlers, 'avatar:idle-habits:get', 'sage')).toBe('Hums.');
+        expect(await call(handlers, 'avatar:idle-habits:get', 'rex')).toBe('Reads.');
+
+        await call(handlers, 'avatar:voice:set-preference', 'am_adam', 'kokoro', 'sage');
+        await call(handlers, 'avatar:voice:set-preference', 'alloy', undefined, 'sage');
+        expect(setValueMock).toHaveBeenCalledWith('avatar.voice.avatar:sage.kokoro', 'am_adam');
+        expect(setValueMock).toHaveBeenCalledWith('avatar.voice.avatar:sage', 'alloy');
+        expect(await call(handlers, 'avatar:voice:get-preference', 'kokoro', 'sage')).toBe('am_adam');
+        expect(await call(handlers, 'avatar:voice:get-preference', 'kokoro', 'rex')).toBeNull();
+        // An empty voice for an engine clears the pick.
+        await call(handlers, 'avatar:voice:set-preference', '', 'kokoro', 'sage');
+        expect(await call(handlers, 'avatar:voice:get-preference', 'kokoro', 'sage')).toBe('');
+        respondSpy.mockRestore();
+      });
+
+      it('keeps a library character\'s settings under its VRM model and a body-sharing avatar\'s prompt in its profile', async () => {
+        const { handlers, served, respond, respondSpy } = await boot(['Sage']);
+        const luna = call(handlers, 'avatars:add', { name: 'Luna', vrmModelId: 'm-luna', prompt: 'Fallback Luna.' }) as { id: string };
+        expect(luna.id).toBe('luna');
+        await call(handlers, 'avatar:idle-habits:set', 'Paints.', 'luna');
+        await call(handlers, 'avatar:voice:set-preference', 'b', 'kokoro', 'luna');
+        expect(setValueMock).toHaveBeenCalledWith('avatar.idleHabits.m-luna', 'Paints.');
+        expect(setValueMock).toHaveBeenCalledWith('avatar.voice.m-luna.kokoro', 'b');
+
+        // Her prompt is saved for her body; the profile's fallback is retired so one prompt remains.
+        expect(await call(handlers, 'avatar:prompt:get-preference', 'luna')).toBeNull();
+        await call(handlers, 'avatar:prompt:set-preference', ' Luna is shy. ', 'luna');
+        expect(setValueMock).toHaveBeenCalledWith('avatar.prompt.m-luna', 'Luna is shy.');
+        expect(await call(handlers, 'avatar:prompt:get-preference', 'luna')).toBe('Luna is shy.');
+        expect((call(handlers, 'avatars:list') as Array<{ id: string; prompt?: string }>).find((p) => p.id === 'luna')?.prompt).toBeUndefined();
+
+        // A body-sharing avatar has no prompt key: its prompt is the profile's.
+        await call(handlers, 'avatar:prompt:set-preference', 'Ignored.', 'sage');
+        expect(setValueMock).not.toHaveBeenCalledWith(expect.stringContaining('avatar.prompt.avatar:'), expect.anything());
+        expect(await call(handlers, 'avatar:prompt:get-preference', 'sage')).toBeNull();
+
+        await respond({ requestId: 'r1', text: 'x', avatarId: 'luna' });
+        await respond({ requestId: 'r2', text: 'x', avatarId: 'sage' });
+        expect(served.find((s) => s.requestId === 'r1')?.instructions).toBe('Luna is shy.');
+        expect(served.find((s) => s.requestId === 'r2')?.instructions).toContain('You are Sage');
+        respondSpy.mockRestore();
+      });
+
+      it('tells the idle director each avatar\'s personality and habits, as main uses them', async () => {
+        const { handlers, respondSpy } = await boot(['Sage']);
+        call(handlers, 'avatars:add', { name: 'Luna', vrmModelId: 'm-luna' });
+        await call(handlers, 'avatar:prompt:set-preference', 'Luna is shy.', 'luna');
+        await call(handlers, 'avatar:idle-habits:set', 'Paints.', 'luna');
+        await call(handlers, 'avatar:idle-habits:set', 'Hums.', 'sage');
+        expect(await call(handlers, 'avatars:idle-personas')).toEqual({
+          sage: { personality: expect.stringContaining('You are Sage'), habits: 'Hums.' },
+          luna: { personality: 'Luna is shy.', habits: 'Paints.' },
+        });
+        respondSpy.mockRestore();
+      });
+
+      it('reads the named avatar\'s voice for the speaking voice options', async () => {
+        const { handlers, respondSpy } = await boot(['Sage']);
+        await call(handlers, 'avatar:voice:set-preference', 'am_adam', 'kokoro', 'sage');
+        expect(await call(handlers, 'local-voice:voice-options', 'sage')).toMatchObject({ engine: 'kokoro', selected: 'am_adam' });
+        // Without an avatar id it is the active character's (Echo has no body here, so no pick), and another avatar has none.
+        expect(await call(handlers, 'local-voice:voice-options')).toMatchObject({ engine: 'kokoro', selected: null });
+        expect(await call(handlers, 'local-voice:voice-options', 'rex')).toMatchObject({ selected: null });
+        respondSpy.mockRestore();
+      });
+
+      it('clears an avatar\'s own settings when it is removed, and leaves a library character\'s alone', async () => {
+        const { handlers, respondSpy } = await boot(['Sage']);
+        call(handlers, 'avatars:add', { name: 'Luna', vrmModelId: 'm-luna' });
+        deleteValueMock.mockClear();
+        call(handlers, 'avatars:remove', 'sage');
+        const deleted = deleteValueMock.mock.calls.map(([key]) => key as string);
+        expect(deleted).toEqual(expect.arrayContaining([
+          'avatar.idleHabits.avatar:sage',
+          'avatar.voice.avatar:sage',
+          'avatar.voice.avatar:sage.kokoro',
+          'avatar.voice.avatar:sage.kitten',
+          'avatar.voice.avatar:sage.piper',
+        ]));
+        deleteValueMock.mockClear();
+        call(handlers, 'avatars:remove', 'luna');
+        expect(deleteValueMock.mock.calls.map(([key]) => key as string).filter((key) => key.includes('m-luna'))).toEqual([]);
+        respondSpy.mockRestore();
+      });
+    });
+
+    it('routes by name, host and explicit avatar id', async () => {
+      const { served, respond, respondSpy, handlers } = await boot(['Sage', 'Rex']);
       expect((handlers.get('avatars:list')?.({}) as Array<{ id: string; prompt?: string }>).map((p) => p.id)).toEqual(['echo', 'sage', 'rex']);
       expect((handlers.get('avatars:list')?.({}) as Array<{ id: string; prompt?: string }>)[1].prompt).toContain('You are Sage');
 
@@ -1476,7 +1572,7 @@ describe('main process bootstrap', () => {
     });
 
     it('journals floor events on the switchboard bus', async () => {
-      const { respond, respondSpy, published } = await boot('Sage');
+      const { respond, respondSpy, published } = await boot(['Sage']);
       await respond({ requestId: 'r1', text: 'Sage?' });
       const decision = published.find((event) => event.type === 'floor.decision');
       expect(decision).toMatchObject({ txn: { id: 'turn:r1' }, payload: { speakers: [{ avatarId: 'sage', reason: 'addressed' }] } });
@@ -1485,7 +1581,7 @@ describe('main process bootstrap', () => {
     });
 
     it('lets the other avatars overhear a turn that names an avatar directly', async () => {
-      const { respond, respondSpy } = await boot('Sage,Rex');
+      const { respond, respondSpy } = await boot(['Sage', 'Rex']);
       const { LocalVoiceService } = await import('../src/local-voice/local-voice-service.js');
       respondSpy.mockImplementation(async (request) => ({ requestId: request.requestId, text: 'Fine by me.', cancelled: false }));
       const overheard = vi.spyOn(LocalVoiceService.prototype, 'overhear').mockImplementation(function (this: { avatarId: string }, line) {
@@ -1508,7 +1604,7 @@ describe('main process bootstrap', () => {
     });
 
     it('registers floor:interrupt and is safe to call when nothing runs', async () => {
-      const { handlers, respondSpy } = await boot('Sage');
+      const { handlers, respondSpy } = await boot(['Sage']);
       expect(await handlers.get('floor:interrupt')?.({})).toBeUndefined();
       respondSpy.mockRestore();
     });

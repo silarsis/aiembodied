@@ -12,6 +12,12 @@ export interface AvatarTagInstructions {
   sceneFor?: Record<string, string>;
 }
 
+/** What the idle director is told about an avatar other than Echo. */
+export interface AvatarIdlePersona {
+  personality: string;
+  habits: string;
+}
+
 export interface AvatarsBridge {
   list(): Promise<AvatarProfile[]>;
   /** Make an avatar; its id is a slug of the name. */
@@ -26,4 +32,6 @@ export interface AvatarsBridge {
    * describe the room they stand in. Each at most 20000 characters.
    */
   setTagInstructions?(instructions: AvatarTagInstructions): Promise<void>;
+  /** Personality and idle habits of every avatar except Echo, by avatar id, as saved now. */
+  idlePersonas?(): Promise<Record<string, AvatarIdlePersona>>;
 }

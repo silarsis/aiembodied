@@ -10,6 +10,7 @@ import { builtInServers, defaultRoutes } from '../../main/src/config/model-routi
 import { BASE_POSES } from '../../main/src/avatar/base-poses.js';
 import { DEFAULT_PROVIDER_SETTINGS } from '../../main/src/config/provider-settings.js';
 import type { WakeWordDetectionEvent } from '../../main/src/wake-word/types.js';
+import type { AvatarProfile, AvatarsBridge } from '../../main/src/avatars/bridge-types.js';
 import type { AvatarBridge } from '../src/avatar/types.js';
 import type { ModelsBridge } from '../src/preload-api.js';
 
@@ -242,6 +243,17 @@ afterAll(() => {
   }
 });
 
+/** Echo is the only avatar, so the Characters pop-up shows her card (the home of her prompt, idle habits and voice). */
+function createAvatarsBridgeMock(): AvatarsBridge {
+  const echo = { id: 'echo', name: 'Echo', vrmModelId: 'mei' };
+  return {
+    list: vi.fn(async () => [echo]),
+    add: vi.fn(async (input) => ({ id: 'new', name: input.name, vrmModelId: null })),
+    update: vi.fn(async (id, changes) => ({ ...echo, id, ...changes }) as AvatarProfile),
+    remove: vi.fn(async () => undefined),
+  };
+}
+
 function createModelsBridgeMock(overrides: Partial<ModelsBridge> = {}): ModelsBridge {
   let view: ModelRoutingView = {
     servers: builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }).map((server) => ({
@@ -383,6 +395,12 @@ describe('App component', () => {
     return button;
   };
 
+  /** Opens Characters and Echo's card, which holds her prompt, idle habits and voice. */
+  const openEchoSettings = async () => {
+    await openGroup(/Characters/i);
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Echo' }));
+  };
+
   const openModels = async () => {
     await openGroup(/Models and servers/i);
     return screen.findByRole('dialog', { name: 'Models and servers' });
@@ -407,6 +425,7 @@ describe('App component', () => {
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: { onWake: () => () => { } },
       avatar: createAvatarBridgeMock(),
+      avatars: createAvatarsBridgeMock(),
       models: createModelsBridgeMock(),
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
@@ -417,10 +436,10 @@ describe('App component', () => {
     const stage = screen.getByRole('region', { name: 'Avatar stage' });
     const renderer = stage.querySelector('[data-renderer]');
     expect(screen.queryByRole('complementary', { name: 'Controls' })).not.toBeInTheDocument();
-    await openGroup(/Character/i);
+    await openEchoSettings();
     expect(document.getElementById('panel-character')).toHaveAttribute('open');
-    expect(screen.getByLabelText(/Base prompt/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Close character' }));
+    expect(await screen.findByLabelText('Prompt of Echo')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close characters' }));
     expect(document.getElementById('panel-character')).not.toHaveAttribute('open');
     expect(await openModels()).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Close models and servers' }));
@@ -447,6 +466,7 @@ describe('App component', () => {
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: { onWake: () => () => { } },
       avatar: createAvatarBridgeMock(),
+      avatars: createAvatarsBridgeMock(),
       models: createModelsBridgeMock(),
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
@@ -454,12 +474,14 @@ describe('App component', () => {
 
     render(<App />);
 
-    const prompt = screen.getByLabelText(/Base prompt/i);
+    const card = await screen.findByTestId('scene-card-echo');
     expect(document.getElementById('panel-character')).not.toHaveAttribute('open');
     expect(document.getElementById('controls-drawer')).toHaveAttribute('inert');
-    await openGroup(/Character/i);
+    await openGroup(/Characters/i);
     expect(document.getElementById('panel-character')).toHaveAttribute('open');
-    expect(screen.getByLabelText(/Base prompt/i)).toBe(prompt);
+    expect(screen.getByTestId('scene-card-echo')).toBe(card);
+    fireEvent.click(within(card).getByRole('button', { name: 'Edit Echo' }));
+    expect(await within(card).findByLabelText('Prompt of Echo')).toBeInTheDocument();
     expect(document.getElementById('panel-devices')).not.toHaveAttribute('open');
   });
 
@@ -1190,6 +1212,7 @@ describe('App component', () => {
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
       wakeWord: { onWake: () => () => { } },
       avatar: createAvatarBridgeMock(),
+      avatars: createAvatarsBridgeMock(),
       models: createModelsBridgeMock(),
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
@@ -1205,9 +1228,9 @@ describe('App component', () => {
 
     render(<App />);
 
-    await openGroup(/Character/i);
+    await openEchoSettings();
 
-    const textarea = (await screen.findByLabelText(/Base prompt/i)) as HTMLTextAreaElement;
+    const textarea = (await screen.findByLabelText('Prompt of Echo')) as HTMLTextAreaElement;
 
     await waitFor(() => {
       expect(textarea.value).toBe('Persisted instructions from config');
@@ -1259,15 +1282,16 @@ describe('App component', () => {
         getPromptPreference,
         setPromptPreference,
       }),
+      avatars: createAvatarsBridgeMock(),
       models: createModelsBridgeMock(),
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
 
     render(<App />);
-    await openGroup(/Character/i);
+    await openEchoSettings();
 
-    const textarea = (await screen.findByLabelText(/Base prompt/i)) as HTMLTextAreaElement;
+    const textarea = (await screen.findByLabelText('Prompt of Echo')) as HTMLTextAreaElement;
     await waitFor(() => expect(textarea.value).toBe('Mei is gentle and curious.'));
 
     fireEvent.change(textarea, { target: { value: 'Mei is now bold.' } });
@@ -1303,22 +1327,65 @@ describe('App component', () => {
         getIdleHabits,
         setIdleHabits,
       }),
+      avatars: createAvatarsBridgeMock(),
       models: createModelsBridgeMock(),
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
     } as unknown as PreloadWindow['aiembodied'];
 
     render(<App />);
-    await openGroup(/Character/i);
+    await openEchoSettings();
 
-    const textarea = (await screen.findByLabelText(/Idle habits/i)) as HTMLTextAreaElement;
+    const textarea = (await screen.findByLabelText('Idle habits of Echo')) as HTMLTextAreaElement;
     await waitFor(() => expect(textarea.value).toBe('Sits by the window with tea.'));
     expect(textarea.maxLength).toBe(500);
-    expect(screen.getByText(/What they like to do when nobody is talking/i)).toBeInTheDocument();
+    expect(screen.getByText(/What they do when nobody is talking/i)).toBeInTheDocument();
 
     fireEvent.change(textarea, { target: { value: 'Tidies when bored.' } });
     fireEvent.blur(textarea);
     await waitFor(() => expect(setIdleHabits).toHaveBeenCalledWith('Tidies when bored.'));
+  });
+
+  it('Echo\'s card picks the OpenAI voice and saves it for the active character', async () => {
+    const setVoicePreference = vi.fn().mockResolvedValue(undefined);
+    (window as PreloadWindow).aiembodied = {
+      ping: () => 'pong',
+      config: {
+        get: vi.fn().mockResolvedValue({
+          audioInputDeviceId: '',
+          audioOutputDeviceId: '',
+          featureFlags: {},
+          hasRealtimeApiKey: true,
+          conversationBackend: 'openai',
+          realtimeVoice: 'shimmer',
+          wakeWord: { model: 'hey_jarvis', keywordLabel: 'Hey Jarvis', threshold: 0.5, cooldownMs: 1500, deviceIndex: undefined },
+        }),
+        getSecret: vi.fn().mockResolvedValue('secret'),
+        setAudioDevicePreferences: setAudioDevicePreferencesMock,
+        setSecret: setSecretMock,
+        testSecret: testSecretMock,
+      },
+      realtime: { mintEphemeralToken: mintEphemeralTokenMock },
+      wakeWord: { onWake: () => () => { } },
+      avatar: createAvatarBridgeMock({
+        getActiveModel: vi.fn().mockResolvedValue({ id: 'mei', name: 'Mei' }),
+        setVoicePreference,
+      }),
+      avatars: createAvatarsBridgeMock(),
+      models: createModelsBridgeMock(),
+      __bridgeReady: true,
+      __bridgeVersion: '1.0.0',
+    } as unknown as PreloadWindow['aiembodied'];
+
+    render(<App />);
+    await openEchoSettings();
+
+    const select = (await screen.findByLabelText('Voice of Echo')) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('shimmer'));
+    expect([...select.options].map((option) => option.value)).toContain('ash');
+    fireEvent.change(select, { target: { value: 'ash' } });
+    await waitFor(() => expect(setVoicePreference).toHaveBeenCalledWith('ash'));
+    expect((screen.getByLabelText('Voice of Echo') as HTMLSelectElement).value).toBe('ash');
   });
 
   it('surfaces configuration errors when preload bridge is unavailable', async () => {

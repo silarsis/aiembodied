@@ -19,10 +19,10 @@ import { FloorController } from './floor/index.js';
 import { createModelBid } from './floor/bid.js';
 import { createSystemOne } from './decide/system-one.js';
 import { createSystemOneAddressee, createSystemOneBid } from './floor/system-one-floor.js';
-import { avatarIdForName, ensureExtraAvatars } from './avatars/extra-avatars.js';
+import { avatarIdForName } from './avatars/avatar-id.js';
 import { SwitchboardMirror } from './switchboard/mirror.js';
 import { AvatarRegistry, DEFAULT_AVATAR_ID, type AvatarProfile } from './avatars/avatar-registry.js';
-import { AvatarSettingsKeys } from './avatars/avatar-settings.js';
+import { AvatarSettingsKeys, avatarOnlyKeys } from './avatars/avatar-settings.js';
 import { composeAvatarPrompt, readTagInstructions } from './avatars/tag-instructions.js';
 import type { AvatarTagInstructions } from './avatars/bridge-types.js';
 import { VoiceServices } from './avatars/voice-services.js';
@@ -733,8 +733,8 @@ function characterVoice(engine: SpeakingEngineId | 'openai' | null, avatarId?: s
   return key ? memoryStore.getValue(key) ?? null : null;
 }
 
-/** The voices the character can pick for whatever speaks now, and the one it has. */
-async function speakingVoiceOptions(manager: ConfigManager): Promise<SpeakingVoiceOptions> {
+/** The voices the character can pick for whatever speaks now, and the one it has (the active character's without an avatar id). */
+async function speakingVoiceOptions(manager: ConfigManager, avatarId?: string): Promise<SpeakingVoiceOptions> {
   const routing = manager.getConfig().models;
   const target = routeTargets(routing, 'tts')[0];
   const engine = speakingVoiceKey(routing);
@@ -748,7 +748,7 @@ async function speakingVoiceOptions(manager: ConfigManager): Promise<SpeakingVoi
       label: 'OpenAI',
       voices: [...OPENAI_TTS_VOICES],
       defaultVoice: route.voice || 'alloy',
-      selected: characterVoice(engine),
+      selected: characterVoice(engine, avatarId),
     };
   }
   const parsed = parseSpeakingModel(target.model);
@@ -771,7 +771,7 @@ async function speakingVoiceOptions(manager: ConfigManager): Promise<SpeakingVoi
     label: found?.label ?? engine,
     voices,
     defaultVoice: parsed.legacyVoice || route.voice || fallback || voices[0] || null,
-    selected: characterVoice(engine),
+    selected: characterVoice(engine, avatarId),
   };
 }
 
@@ -912,6 +912,19 @@ function getVoiceService(avatarId: string = DEFAULT_AVATAR_ID): LocalVoiceServic
 let avatarTagInstructions: AvatarTagInstructions = { shared: '', moveOnly: '' };
 
 /**
+ * The personality text of an avatar other than Echo: the prompt saved for its own VRM model when
+ * it wears one, else the profile's prompt. An avatar sharing Echo's body (no model, or the one Echo
+ * wears) never borrows her saved prompt. The Characters pop-up shows exactly this text.
+ */
+function avatarPersona(avatarId: string): { persona: string | undefined; ownModel: boolean } {
+  const profile = avatarRegistry?.get(avatarId);
+  const ownModel = Boolean(profile?.vrmModelId) && !avatarSettingsKeys?.sharesEchoBody(avatarId);
+  const key = ownModel ? characterPromptKey(avatarId) : null;
+  const saved = key ? memoryStore?.getValue(key)?.trim() : '';
+  return { persona: saved || profile?.prompt || undefined, ownModel };
+}
+
+/**
  * The system prompt for an avatar's turn. Echo uses what the renderer sent (or the last it sent,
  * or her saved prompt). Another avatar uses the prompt saved for its own VRM model, if it has a
  * model of its own, else its profile's prompt; avatars wearing Echo's body never borrow her prompt.
@@ -925,13 +938,10 @@ function avatarInstructions(avatarId: string, sessionInstructions?: string): str
     return (key ? memoryStore?.getValue(key) : null)?.trim() || undefined;
   }
   const profile = avatarRegistry?.get(avatarId);
-  const echo = avatarRegistry?.get(DEFAULT_AVATAR_ID);
-  const ownModel = Boolean(profile?.vrmModelId) && profile?.vrmModelId !== echo?.vrmModelId;
-  const key = ownModel ? characterPromptKey(avatarId) : null;
-  const saved = key ? memoryStore?.getValue(key)?.trim() : '';
+  const { persona, ownModel } = avatarPersona(avatarId);
   return composeAvatarPrompt({
     name: profile?.name ?? avatarId,
-    persona: saved || profile?.prompt || undefined,
+    persona,
     ownModel,
     tags: avatarTagInstructions,
     avatarId,
@@ -2140,6 +2150,19 @@ function registerIpcHandlers(
     if (typeof id !== 'string' || !id) throw new Error('Avatar id is required.');
     return registry.update(id, readAvatarFields(changes, false));
   });
+  // What the idle director needs for the avatars other than Echo: their personality and idle habits, as saved.
+  ipcMain.handle('avatars:idle-personas', () => {
+    const personas: Record<string, { personality: string; habits: string }> = {};
+    for (const profile of avatarRegistry?.list() ?? []) {
+      if (profile.id === DEFAULT_AVATAR_ID) continue;
+      const habitsKey = characterIdleHabitsKey(profile.id);
+      personas[profile.id] = {
+        personality: avatarPersona(profile.id).persona ?? '',
+        habits: habitsKey && memoryStore ? normalizeIdleHabits(memoryStore.getValue(habitsKey)) : '',
+      };
+    }
+    return personas;
+  });
   ipcMain.handle('avatars:set-tag-instructions', (_event, instructions: unknown) => {
     avatarTagInstructions = readTagInstructions(instructions);
   });
@@ -2151,6 +2174,9 @@ function registerIpcHandlers(
     avatarPlumbing.get(id)?.inbox.stop();
     avatarPlumbing.delete(id);
     voiceServices?.delete(id);
+    // Its own voice and idle habits go with it, so a later avatar with the same id starts clean.
+    // Settings saved under a library character's VRM model id stay: that character is still in the library.
+    for (const key of avatarOnlyKeys(id, SPEAKING_ENGINES)) memoryStore?.deleteValue(key);
   });
   ipcMain.handle('local-voice:status', async () => {
     if (!localVoiceService) {
@@ -2509,6 +2535,12 @@ function registerIpcHandlers(
     }
     memoryStore.setValue(key, prompt.trim());
     logger.info('Avatar personality prompt saved', { key, length: prompt.trim().length });
+    // A prompt saved for the character's own body replaces the profile's fallback prompt, so the
+    // text shown in the Characters pop-up and the text used for its turns are always the same one.
+    const named = settingsAvatarArg(avatarId) ?? avatarRegistry?.activeAvatarId();
+    if (named && named !== DEFAULT_AVATAR_ID && avatarRegistry?.get(named)?.prompt) {
+      avatarRegistry.update(named, { prompt: '' });
+    }
   });
 
   ipcMain.handle('avatar:idle-habits:get', (_event, avatarId?: unknown) => {
@@ -2532,7 +2564,7 @@ function registerIpcHandlers(
     logger.info('Avatar idle habits saved', { key, length: saved.length, max: MAX_IDLE_HABITS_LENGTH });
   });
 
-  ipcMain.handle('local-voice:voice-options', () => speakingVoiceOptions(manager));
+  ipcMain.handle('local-voice:voice-options', (_event, avatarId?: unknown) => speakingVoiceOptions(manager, settingsAvatarArg(avatarId)));
 
   // Register MCP handlers
   if (toolRegistry && mcpManager) {
@@ -2646,13 +2678,6 @@ app.whenReady().then(async () => {
     });
     avatarSettingsKeys = new AvatarSettingsKeys(avatarRegistry);
     const registry = avatarRegistry;
-    try {
-      // Dev way to try several avatars: AIEMBODIED_EXTRA_AVATARS=Sage,Rex.
-      const made = ensureExtraAvatars(avatarRegistry, () => registryModels.getActiveModel?.()?.id ?? null);
-      if (made.length > 0) logger.info('Created extra avatars from AIEMBODIED_EXTRA_AVATARS.', { avatars: made.map((profile) => profile.id) });
-    } catch (error) {
-      logger.warn('Could not create the extra avatars.', { message: error instanceof Error ? error.message : String(error) });
-    }
     const floorStore = memoryStore;
     floor = new FloorController({
       registry,

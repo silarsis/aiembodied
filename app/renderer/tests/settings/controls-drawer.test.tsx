@@ -8,7 +8,7 @@ function Fixture({ onOpenCharacter = () => undefined }: { onOpenCharacter?: () =
   const [open, setOpen] = useState(false);
   return (
     <ControlsDrawer open={open} onOpenChange={setOpen}>
-      <ControlButton id="character" title="Character" keywords="avatar model" onOpen={onOpenCharacter} />
+      <ControlButton id="character" title="Characters" keywords="avatar model" onOpen={onOpenCharacter} />
       <ControlButton id="devices" title="Devices and wake words" keywords="microphone threshold" onOpen={() => undefined} />
     </ControlsDrawer>
   );
@@ -35,10 +35,10 @@ describe('stage controls drawer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Controls' }));
     const search = screen.getByRole('searchbox');
     fireEvent.change(search, { target: { value: 'threshold' } });
-    expect(screen.queryByRole('button', { name: /Character/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Characters/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Devices/ })).toBeVisible();
     fireEvent.change(search, { target: { value: '' } });
-    fireEvent.click(screen.getByRole('button', { name: /Character/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Characters/ }));
     expect(onOpenCharacter).toHaveBeenCalledTimes(1);
   });
 });
@@ -57,7 +57,7 @@ describe('settings pop-up', () => {
           <button type="button" onClick={() => setOpen(true)}>
             Open character
           </button>
-          <PanelDialog id="character" title="Character" open={open} onClose={() => setOpen(false)}>
+          <PanelDialog id="character" title="Characters" open={open} onClose={() => setOpen(false)}>
             <Child />
           </PanelDialog>
         </>
@@ -69,7 +69,7 @@ describe('settings pop-up', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open character' }));
     const dialog = document.getElementById('panel-character');
     expect(dialog).toHaveAttribute('open');
-    fireEvent.click(screen.getByRole('button', { name: 'Close character' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close characters' }));
     expect(dialog).not.toHaveAttribute('open');
     expect(screen.getByLabelText('Base prompt')).toBe(prompt);
     expect(prompt).toHaveValue('A new personality');

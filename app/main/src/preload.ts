@@ -74,7 +74,7 @@ import type { OpenAIFunction } from './tools/tool-registry.js';
 import type { MemoryEngineBridge } from './memory-engine/bridge-types.js';
 import type { SwitchboardBridge } from './switchboard/bridge-types.js';
 import type { AvatarProfile } from './avatars/avatar-registry.js';
-import type { AvatarsBridge } from './avatars/bridge-types.js';
+import type { AvatarIdlePersona, AvatarsBridge } from './avatars/bridge-types.js';
 import type { PresenceBridge } from './presence/bridge-types.js';
 import type { FloorBridge } from './floor/bridge-types.js';
 import type { GpuMemoryBridge } from './diagnostics/gpu-memory.js';
@@ -290,7 +290,8 @@ export interface LocalVoiceBridge {
   cancel(requestId?: string, avatarId?: string): Promise<void>;
   resetHistory(avatarId?: string): Promise<void>;
   /** The voices the active character can pick for the engine that speaks now. */
-  getVoiceOptions?(): Promise<SpeakingVoiceOptions>;
+  /** The voices the speaking engine offers; `selected` is the named avatar's pick (the active character's without one). */
+  getVoiceOptions?(avatarId?: string): Promise<SpeakingVoiceOptions>;
   /** Updates for Echo that are waiting to be spoken (from the coding agent). */
   systemStatus?(avatarId?: string): Promise<LocalVoiceSystemStatus>;
   /** An update is ready: run a system turn if the conversation is idle. */
@@ -466,7 +467,8 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     resetHistory: async (avatarId) => {
       await (avatarId === undefined ? ipcRenderer.invoke('local-voice:reset') : ipcRenderer.invoke('local-voice:reset', avatarId));
     },
-    getVoiceOptions: () => ipcRenderer.invoke('local-voice:voice-options') as Promise<SpeakingVoiceOptions>,
+    getVoiceOptions: (avatarId) =>
+      (avatarId ? ipcRenderer.invoke('local-voice:voice-options', avatarId) : ipcRenderer.invoke('local-voice:voice-options')) as Promise<SpeakingVoiceOptions>,
     systemStatus: (avatarId) =>
       (avatarId === undefined
         ? ipcRenderer.invoke('local-voice:system-status')
@@ -775,6 +777,7 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     setTagInstructions: async (instructions) => {
       await ipcRenderer.invoke('avatars:set-tag-instructions', instructions);
     },
+    idlePersonas: () => ipcRenderer.invoke('avatars:idle-personas') as Promise<Record<string, AvatarIdlePersona>>,
   },
   presence: {
     update: (payload) => ipcRenderer.invoke('presence:update', payload),
