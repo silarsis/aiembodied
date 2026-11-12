@@ -20,6 +20,7 @@ never with text.
   `LAYA_ENABLED=0` or `LAYA_AUTOSTART=0` stops `pnpm dev:run` starting it. Details: `services/laya/README.md`.
 - `GET /health` says what is loaded. `POST /v1/systemone` takes `{model, state, questions}`.
 - The English checkpoint reads about 512 tokens. Keep `state` small: clip text, send only the last few lines.
+- `pnpm laya:check` (optionally `-- http://host:8197`) sends a few known situations asked the way the app asks them ("lenha", two names, bids, home events, an arrival) and prints the answers, timings and any answer the app would not want. Run it after installing or changing the checkpoint.
 
 ## The route and the client
 

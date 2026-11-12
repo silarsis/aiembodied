@@ -24,6 +24,8 @@ off, or Laya is not answering, the checks use the Idle thoughts model (bids) or 
 The first start installs `laya[serve]` into `.venv` and **downloads the checkpoint from Hugging Face**; the server
 answers `/health` straight away and takes questions once the checkpoint has loaded.
 
+Check it is working: `pnpm laya:check` from the repo root prints answers and timings for a few known situations.
+
 ## Settings
 
 | Variable | Meaning | Default |
