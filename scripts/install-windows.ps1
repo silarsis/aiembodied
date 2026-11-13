@@ -392,6 +392,15 @@ function Install-MotionRepo([string]$Name) {
 
 function Step-Motion {
     $motion = Join-Path $repoRoot 'services\motion'
+    # The text encoder alone needs ~16.5 GB of GPU or system memory (and ~32 GB to build), so a
+    # small PC runs without the motion service: saved clips still play, live {move:} gestures and
+    # idle wandering in rooms are off. Point MOTION_SERVICE_URL at a bigger PC's motion service to get them.
+    $ram = 0
+    try { $ram = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB } catch { }
+    if ($ram -gt 0 -and $ram -lt 30 -and -not $Force) {
+        if (-not (Get-Setting 'MOTION_SERVICE_URL')) { Set-EnvDefault 'DEV_START_MOTION' '0' }
+        return New-Result 'skipped' ("{0:N0} GB RAM (motion needs ~32): DEV_START_MOTION=0. Set MOTION_SERVICE_URL to a bigger PC's motion service, or -Force to install anyway." -f $ram)
+    }
     $changed = $false
     $nvidia = Test-Nvidia
     if ($nvidia) {
@@ -442,13 +451,6 @@ function Step-Motion {
         return New-Result 'already present'
     }
     $out = if ($encoders) { $encoders } else { Join-Path $InstallRoot 'text_encoders_merged' }
-    $ram = 0
-    try { $ram = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB } catch { }
-    if ($ram -gt 0 -and $ram -lt 30 -and -not $Force) {
-        # Building it merges an 8B model in memory, and running it needs ~16.5 GB of GPU or system
-        # memory, so a small PC should use the motion service on a bigger machine instead.
-        return New-Result 'skipped' ("text encoder not built: {0:N0} GB RAM (needs ~32). Point MOTION_SERVICE_URL at a motion service on a bigger PC, or set DEV_START_MOTION=0; -Force tries anyway." -f $ram)
-    }
     Write-Host '  Building the motion text encoder needs about 32 GB of RAM and 15 GB of disk.'
     $kimodoPython = Get-VenvPython (Join-Path $motion '.venv-kimodo')
     if (-not (Test-Path $kimodoPython)) { throw 'The Kimodo venv is missing, so the text encoder cannot be built.' }
