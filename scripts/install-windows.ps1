@@ -238,23 +238,35 @@ function Step-LlamaCpp {
     $backend = $LlamaBackend
     if ($backend -eq 'auto') { $backend = if (Test-Nvidia) { 'cuda' } else { 'vulkan' } }
 
-    $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest'
-    $tag = $release.tag_name
-    $assets = @($release.assets)
+    # releases/latest can point at a tagged release with no binaries (v0.9.0 in Nov 2026), so walk
+    # the recent releases and take the newest one that has the Windows build we want.
+    # Piped so Windows PowerShell 5.1 enumerates the JSON array instead of passing it as one object.
+    $releases = @(Invoke-RestMethod -Uri 'https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=30' | ForEach-Object { $_ })
+    $tag = $null
     $zips = @()
-    if ($backend -eq 'vulkan') {
-        $zips += $assets | Where-Object { $_.name -match 'bin-win-vulkan-x64\.zip$' } | Select-Object -First 1
+    foreach ($release in $releases) {
+        $assets = @($release.assets)
+        $found = @()
+        if ($backend -eq 'vulkan') {
+            $found += $assets | Where-Object { $_.name -match '^llama-.*-bin-win-vulkan-x64\.zip$' } | Select-Object -First 1
+        }
+        else {
+            # The newest CUDA build (RTX 50-series needs CUDA 12.8+); its cudart zip must match.
+            # Older drivers: pass -LlamaBackend vulkan instead.
+            $pattern = '-bin-win-cuda-(\d+\.\d+)-x64\.zip$'
+            $main = $assets | Where-Object { $_.name -match "^llama-.*$pattern" } |
+                Sort-Object { [Version]([regex]::Match($_.name, $pattern).Groups[1].Value) } -Descending | Select-Object -First 1
+            if ($main) {
+                $cuda = [regex]::Match($main.name, $pattern).Groups[1].Value
+                $runtime = $assets | Where-Object { $_.name -eq "cudart-llama-bin-win-cuda-$cuda-x64.zip" } | Select-Object -First 1
+                $found += $main
+                if ($runtime) { $found += $runtime }
+            }
+        }
+        $found = @($found | Where-Object { $_ })
+        if ($found.Count -gt 0) { $tag = $release.tag_name; $zips = $found; break }
     }
-    else {
-        $pattern = 'bin-win-cuda-(12\.\d+)-x64\.zip$'
-        $main = $assets | Where-Object { $_.name -match "^llama-.*$pattern" } |
-            Sort-Object { [Version]([regex]::Match($_.name, $pattern).Groups[1].Value) } -Descending | Select-Object -First 1
-        $runtime = $assets | Where-Object { $_.name -match "^cudart-llama-$pattern" } |
-            Sort-Object { [Version]([regex]::Match($_.name, $pattern).Groups[1].Value) } -Descending | Select-Object -First 1
-        if ($main) { $zips += $main }
-        if ($runtime) { $zips += $runtime }
-    }
-    if ($zips.Count -eq 0 -or -not $zips[0]) { throw "No Windows $backend x64 asset in llama.cpp release $tag." }
+    if (-not $tag) { throw "No Windows $backend x64 build in the last $($releases.Count) llama.cpp releases." }
 
     $target = Join-Path $InstallRoot "llama.cpp\$tag-$backend"
     $exe = Get-ChildItem -Path $target -Recurse -Filter 'llama-server.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -415,7 +427,10 @@ function Step-Motion {
             $installArgs += @('--override', $overrides)
         }
         $installArgs += @($torch, '-e', $spec, '-e', "${motion}[test]")
-        Invoke-Native 'uv' $installArgs
+        # Kimodo's setup.py builds its optional motion_correction C++ extension with CMake and a
+        # compiler; the motion service and the text encoder build don't use it, so skip it.
+        $env:SKIP_MOTION_CORRECTION_IN_SETUP = '1'
+        try { Invoke-Native 'uv' $installArgs } finally { Remove-Item Env:SKIP_MOTION_CORRECTION_IN_SETUP -ErrorAction SilentlyContinue }
         if (-not (Test-Native $python @('-c', "import torch, $($b.Module)"))) { throw "$($b.Name) venv installed, but 'import torch, $($b.Module)' fails." }
         $changed = $true
     }
