@@ -250,6 +250,11 @@ export class RoomHub {
   }
 
   private async closeServers(addresses: string[]): Promise<void> {
+    // A WebSocket that was upgraded still counts as a connection, so `server.close` would wait for it forever:
+    // when every server is going away, hang up on the satellites first.
+    if (addresses.length > 0 && addresses.length >= this.servers.size) {
+      for (const conn of [...this.sockets]) conn.ws.terminate();
+    }
     for (const address of addresses) {
       const server = this.servers.get(address);
       if (!server) continue;

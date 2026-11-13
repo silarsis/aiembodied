@@ -19,6 +19,10 @@ import { FloorController } from './floor/index.js';
 import { HOME_PLACE_ID, PlaceManager, placesNote, scopedPlaces } from './places/place-manager.js';
 import { PlacePresence } from './presence/place-presence.js';
 import { createPlaceDelivery, type EventSink } from './places/place-delivery.js';
+import { createAppWindow } from './window/app-window.js';
+import { Satellite } from './satellite/satellite.js';
+import { KeychainTokenStore } from './satellite/token-store.js';
+import { SATELLITE_FILE, SatelliteSettingsStore, detectSatelliteRole, userDataOverride } from './satellite/settings.js';
 import { RoomHub } from './room-hub/room-hub.js';
 import { RoomDeviceRegistry } from './room-hub/room-devices.js';
 import { createTailscaleLookup } from './room-hub/tailscale.js';
@@ -128,11 +132,6 @@ import type {
   AvatarGenerationConfirmation,
   AvatarGenerationAcceptance,
 } from './avatar/types.js';
-import {
-  resolvePreloadScriptPath,
-  resolveRendererEntryPoint,
-  RuntimeResourceNotFoundError,
-} from './runtime-paths.js';
 import { getOpenAIClient } from './openai/client.js';
 import type OpenAI from 'openai';
 import { createChatCompletionsResponsesClient } from './openai/chat-completions-responses.js';
@@ -199,6 +198,15 @@ if (!isProduction) {
   const repoRoot = path.resolve(__dirname, '../../..');
   dotenv.config({ path: path.join(repoRoot, '.env') });
 }
+
+// A second copy of the app on one PC (a satellite next to the full app, for testing) needs its own userData folder;
+// the single-instance lock below is per userData folder, so the two do not fight over it.
+const userDataFolder = userDataOverride(process.env);
+if (userDataFolder) app.setPath('userData', userDataFolder);
+/** A satellite draws one room of bija's world and runs nothing else (docs/features/satellite.md). */
+const satelliteMode = detectSatelliteRole(process.env, app.getPath('userData'));
+const satelliteSettings = satelliteMode ? new SatelliteSettingsStore(path.join(app.getPath('userData'), SATELLITE_FILE)) : null;
+let satellite: Satellite | null = null;
 
 const secretStore = isProduction ? new KeytarSecretStore('aiembodied') : new InMemorySecretStore();
 const { logger } = initializeLogger();
@@ -445,105 +453,7 @@ function emitCameraDetection(event: CameraDetectionEventPayload): boolean {
 }
 
 const createWindow = () => {
-  let preloadPath: string;
-  let rendererEntryPath: string;
-
-  try {
-    const preloadResolution = resolvePreloadScriptPath(__dirname);
-    preloadPath = preloadResolution.path;
-    logger.info('Resolved renderer preload script path.', {
-      path: preloadPath,
-      attempted: preloadResolution.attempted,
-      usedFallback: preloadResolution.usedIndex > 0,
-    });
-
-    const rendererResolution = resolveRendererEntryPoint(__dirname);
-    rendererEntryPath = rendererResolution.path;
-    logger.info('Resolved renderer bundle entry point.', {
-      path: rendererEntryPath,
-      attempted: rendererResolution.attempted,
-      usedFallback: rendererResolution.usedIndex > 0,
-    });
-  } catch (error) {
-    const attempted = error instanceof RuntimeResourceNotFoundError ? error.attempted : undefined;
-    const message = error instanceof Error ? error.message : String(error);
-    logger.error('Failed to resolve renderer resources.', {
-      message,
-      ...(attempted ? { attempted } : {}),
-    });
-    throw error;
-  }
-
-  const window = new BrowserWindow({
-    width: 1920,
-    height: 1080,
-    kiosk: isProduction,
-    fullscreen: !isProduction,
-    fullscreenable: true,
-    autoHideMenuBar: true,
-    backgroundColor: '#020617',
-    webPreferences: {
-      contextIsolation: true,
-      preload: preloadPath,
-      sandbox: false,
-    },
-  });
-
-  diagnostics.trackWindow(window);
-
-  // Harden renderer: disallow new windows and external navigation.
-  try {
-    const wc: unknown = window.webContents as unknown;
-    const anyWc = wc as { setWindowOpenHandler?: (handler: () => { action: 'deny' | 'allow' }) => void; on?: (event: string, listener: (...args: unknown[]) => void) => void };
-    if (typeof anyWc.setWindowOpenHandler === 'function') {
-      anyWc.setWindowOpenHandler(() => {
-        logger.warn('Blocked attempt to open a new window from renderer.');
-        return { action: 'deny' } as const;
-      });
-    } else {
-      logger.debug('webContents.setWindowOpenHandler unavailable; skipping handler attach.');
-    }
-    if (typeof anyWc.on === 'function') {
-      anyWc.on('will-navigate', (event: unknown, url: unknown) => {
-        try {
-          (event as { preventDefault?: () => void })?.preventDefault?.();
-        } catch (err) {
-          // Swallow errors from stubbed event objects in tests
-          void err;
-        }
-        logger.warn('Blocked renderer navigation attempt.', { url });
-      });
-    } else {
-      logger.debug('webContents.on unavailable; skipping will-navigate attach.');
-    }
-  } catch (err) {
-    // Avoid noisy warnings in test environments where webContents may be a stub
-    void err;
-  }
-
-  if (!isProduction) {
-    window.webContents.on('before-input-event', (event, input) => {
-      if (input.type === 'keyDown' && input.key === 'Escape') {
-        event.preventDefault();
-        window.setFullScreen(false);
-      }
-    });
-  }
-
-  window
-    .loadFile(rendererEntryPath)
-    .then(() => {
-      logger.info('Renderer bundle loaded successfully.');
-    })
-    .catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      const stack = error instanceof Error ? error.stack : undefined;
-      logger.error('Failed to load renderer bundle', { message, stack });
-    });
-
-  window.on('ready-to-show', () => {
-    logger.info('Main window ready to show.');
-  });
+  const window = createAppWindow({ logger, diagnostics, baseDir: __dirname, isProduction, satellite: satelliteSettings ?? undefined });
 
   window.on('closed', () => {
     void wakeWordListening.setEnabled(false).catch((error: unknown) => logger.error('Failed to stop listening after window close', { message: String(error) }));
@@ -2757,6 +2667,44 @@ function focusExistingWindow() {
   mainWindow.focus();
 }
 
+/** Starts this PC as a satellite: pairing, the link to bija, the asset cache, and the window. */
+async function startSatelliteMode(settings: SatelliteSettingsStore): Promise<void> {
+  const runtime = new Satellite({
+    settings,
+    tokens: new KeychainTokenStore(async () => (await import('keytar')).default),
+    cacheDir: path.join(app.getPath('userData'), 'cache', 'assets'),
+    appVersion: app.getVersion(),
+    hostname: os.hostname(),
+    getWindow: () => mainWindow,
+    quit: () => app.quit(),
+    logger: {
+      debug: (message, meta) => logger.debug(String(message), meta),
+      info: (message, meta) => logger.info(String(message), meta),
+      warn: (message, meta) => logger.warn(String(message), meta),
+    },
+  });
+  satellite = runtime;
+  await runtime.start(ipcMain, protocol);
+  logger.info('Running as a satellite PC.', { hub: settings.get().hubUrl });
+  let window: BrowserWindow;
+  try {
+    window = createWindow();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown renderer bootstrap error occurred while creating the window.';
+    logger.error('Failed to create main window.', { message });
+    dialog.showErrorBox('Window Creation Error', message);
+    app.quit();
+    return;
+  }
+  crashGuard.watch(window);
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      const newWindow = createWindow();
+      crashGuard.watch(newWindow);
+    }
+  });
+}
+
 const gotLock = app.requestSingleInstanceLock();
 
 if (!gotLock) {
@@ -2770,6 +2718,11 @@ if (!gotLock) {
 }
 
 app.whenReady().then(async () => {
+  if (satelliteMode && satelliteSettings) {
+    // No services, models, speech, memory or hub: just the window, the link to bija and the room files.
+    await startSatelliteMode(satelliteSettings);
+    return;
+  }
   // Initialize server manager for hibernation support
   // pnpm dev:run writes a pid file for each server it starts (.dev-home/logs); the app writes its
   // own for llama-server restarts and ComfyUI (<userData>/logs).
@@ -3309,6 +3262,7 @@ app.on('before-quit', async (event) => {
   approvalBroker?.dispose();
   proactiveTick?.stop();
   void roomHub?.stop();
+  satellite?.stop();
   for (const { inbox } of avatarPlumbing.values()) inbox.stop();
   void switchboardClient?.stop();
 
