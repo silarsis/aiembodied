@@ -48,6 +48,21 @@ export class RoomCompanions {
     return this.entries.get(id)?.rig ?? null;
   }
 
+  /**
+   * Stands the avatar at a world point turned to a world yaw (radians), as the executor's bake does. It counts
+   * as placed, so a later `place(..., false)` does not pull it back to its slot.
+   */
+  placeAtPoint(id: string, x: number, z: number, yaw: number): boolean {
+    const entry = this.entries.get(id);
+    if (!entry) return false;
+    entry.placed = true;
+    entry.root.position.x = x;
+    entry.root.position.z = z;
+    entry.root.rotation.y = entry.base.rotationY + yaw;
+    entry.root.updateWorldMatrix(true, true);
+    return true;
+  }
+
   has(id: string): boolean {
     return this.entries.has(id);
   }

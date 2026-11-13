@@ -399,6 +399,29 @@ it('passes an avatar id to the prompt, voice and voice options calls, and leaves
   expect(invoke).toHaveBeenLastCalledWith('avatars:idle-personas');
 });
 
+it('exposes the places bridge', async () => {
+  vi.resetModules();
+  await import('../src/preload.js');
+  const api = exposeInMainWorld.mock.calls.at(-1)![1];
+  await api.places.snapshot();
+  expect(invoke).toHaveBeenLastCalledWith('places:snapshot');
+  await api.places.move('sage', 'next door');
+  expect(invoke).toHaveBeenLastCalledWith('places:move', 'sage', 'next door');
+  await api.places.move('sage', 'the lounge', 'called');
+  expect(invoke).toHaveBeenLastCalledWith('places:move', 'sage', 'the lounge', 'called');
+  await api.places.arrived('sage');
+  expect(invoke).toHaveBeenLastCalledWith('places:arrived', 'sage');
+
+  const listener = vi.fn();
+  const off = api.places.onChanged(listener);
+  const [channel, handler] = on.mock.calls.at(-1)!;
+  expect(channel).toBe('places:changed');
+  handler({}, { localPlaceId: 'home' });
+  expect(listener).toHaveBeenCalledWith({ localPlaceId: 'home' });
+  off();
+  expect(removeListener).toHaveBeenCalledWith('places:changed', handler);
+});
+
 it('exposes app.quit through the bridge', async () => {
   vi.resetModules();
   await import('../src/preload.js');

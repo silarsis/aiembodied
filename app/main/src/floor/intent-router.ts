@@ -74,13 +74,14 @@ export function intentSchema(keys: string[]): Record<string, unknown> {
 
 /** The system and user text for one line, the option keys and the answer schema. `nameOfSpeaker` shows a line's speaker as a name. */
 export function buildIntentPrompt(input: IntentInput, nameOfSpeaker: (from: string) => string): IntentPrompt {
-  const keys = optionKeys(input.candidates, [EVERYONE, UNCLEAR, NONE]);
+  const away = input.away ?? [];
+  const keys = optionKeys([...input.candidates, ...away], [EVERYONE, UNCLEAR, NONE]);
   const keyOf = new Map([...keys].map(([key, candidate]) => [candidate.avatarId, key] as const));
-  const room = input.candidates.map((candidate) => {
+  const labelOf = (candidate: BidCandidate): string => {
     const key = keyOf.get(candidate.avatarId) ?? candidate.name;
-    const label = key === (candidate.name.trim() || candidate.avatarId).toLowerCase() ? candidate.name.trim() || candidate.avatarId : key;
-    return candidate.avatarId === input.hostId ? `${label} (host)` : label;
-  });
+    return key === (candidate.name.trim() || candidate.avatarId).toLowerCase() ? candidate.name.trim() || candidate.avatarId : key;
+  };
+  const room = input.candidates.map((candidate) => (candidate.avatarId === input.hostId ? `${labelOf(candidate)} (host)` : labelOf(candidate)));
   const partnerKey = input.partnerId ? keyOf.get(input.partnerId) : undefined;
   const partner = partnerKey ? (keys.get(partnerKey)?.name.trim() || partnerKey) : 'nobody yet';
   const names = [...keys.keys()];
@@ -89,7 +90,7 @@ export function buildIntentPrompt(input: IntentInput, nameOfSpeaker: (from: stri
     ...RULES.slice(1),
     'Examples from another room (avatars: Mira (host), Tobin):',
     ...EXAMPLES.map(([text, addressed, wants, other]) => `Kevin: "${text}" -> {"addressed": "${addressed}", "wants": "${wants}", "other": "${other}"}`),
-    `Now the actual room: ${room.join(', ')}. Kevin last spoke with ${partner}.`,
+    `Now the actual room: ${room.join(', ')}.${away.length > 0 ? ` In another place right now, and Kevin can call them over: ${away.map(labelOf).join(', ')}. When a line is aimed at one of them, they are the one addressed.` : ''} Kevin last spoke with ${partner}.`,
     `Allowed values, lower case: addressed = ${[...names, EVERYONE, UNCLEAR].join(' | ')}; wants = ${WANTS.join(' | ')}; other = ${[...names, NONE].join(' | ')}.`,
     'Reply with only a JSON object: {"addressed": "...", "wants": "...", "other": "..."}',
   ].join('\n');

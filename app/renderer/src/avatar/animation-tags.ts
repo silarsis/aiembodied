@@ -46,15 +46,17 @@ export type SceneTag =
   | { type: 'look'; object: string }
   | { type: 'pick'; object: string }
   | { type: 'put'; object: string; surface: string }
-  | { type: 'come' };
+  | { type: 'come' }
+  /** Leave for another place: `{room:next door}`. The name is as written; main matches it against the places. */
+  | { type: 'room'; place: string };
 
 /** A tag in the order it was written: a free-text movement or a scene action. */
 export type MotionTag = AvatarMoveTag | SceneTag;
 
 /** Tag names that are never animation slugs, so the legacy `{slug}` form must skip them. */
-const SCENE_TAG_NAMES = new Set(['go', 'sit', 'stand', 'look', 'pick', 'put', 'come']);
+const SCENE_TAG_NAMES = new Set(['go', 'sit', 'stand', 'look', 'pick', 'put', 'come', 'room']);
 
-const MOTION_TAG_PATTERN = /\{(move|go|sit|stand|look|pick|put|come)(?::([^}]*))?\}/gi;
+const MOTION_TAG_PATTERN = /\{(move|go|sit|stand|look|pick|put|come|room)(?::([^}]*))?\}/gi;
 const MAX_OBJECT_REF_LENGTH = 60;
 
 function cleanRef(value: string | undefined): string {
@@ -74,7 +76,8 @@ function splitPut(argument: string): { object: string; surface: string } | null 
 /**
  * Extract the tags that move the body, in the order they were written: {move:<text>} plus the
  * scene tags {go:<object>}, {sit:<object>}, {stand}, {look:<object>}, {pick:<object>},
- * {put:<object>@<surface>} (or "{put:<object> on <surface>}") and {come}. Object names are
+ * {put:<object>@<surface>} (or "{put:<object> on <surface>}"), {come} and {room:<place>} (walk out to
+ * another place). Object names are
  * returned as written; match them against a room with `resolveObjectRef`.
  */
 export function extractMotionTags(text: string): MotionTag[] {
@@ -87,6 +90,9 @@ export function extractMotionTags(text: string): MotionTag[] {
       if (description) results.push({ type: 'move', text: description });
     } else if (name === 'stand' || name === 'come') {
       if (argument === undefined) results.push({ type: name });
+    } else if (name === 'room') {
+      const place = cleanRef(argument);
+      if (place) results.push({ type: 'room', place });
     } else if (name === 'put') {
       const put = argument === undefined ? null : splitPut(argument);
       if (put) results.push({ type: 'put', ...put });

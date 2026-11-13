@@ -1106,6 +1106,64 @@ body {
   color: #fff;
   background: rgba(70, 150, 255, 0.75);
 }
+/* Who is not on stage ("Echo is next door") with a button to call them back. */
+.elsewhereChip {
+  position: absolute;
+  top: 18px;
+  left: 28px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: min(320px, calc(100% - 56px));
+  padding: 8px 14px 10px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  backdrop-filter: blur(14px);
+  color: rgba(226, 232, 240, 0.88);
+  font-size: 13px;
+}
+.elsewhereChip__title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.6);
+}
+.elsewhereChip__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.elsewhereChip__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.elsewhereChip__call {
+  padding: 3px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(70, 150, 255, 0.35);
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.elsewhereChip__call:hover:not(:disabled),
+.elsewhereChip__call:focus-visible {
+  background: rgba(70, 150, 255, 0.6);
+}
+.elsewhereChip__call:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 /* 3D rooms: the canvas is the whole stage, so none of the 2D foot-anchoring applies. */
 .kiosk__avatar[data-stage-mode='3d'] {
   inset: 0;

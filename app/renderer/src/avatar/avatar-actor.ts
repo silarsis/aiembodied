@@ -165,6 +165,8 @@ export class AvatarActor {
   private baseZ = 0;
   private baseYaw = 0;
   private lastUpdateAt = 0;
+  /** The avatar is somewhere else: its body stays loaded but is not drawn. */
+  private hidden = false;
 
   constructor(options: AvatarActorOptions = {}) {
     this.id = options.id ?? DEFAULT_AVATAR_ID;
@@ -172,6 +174,19 @@ export class AvatarActor {
   }
 
   // ---- accessors -----------------------------------------------------------------------------
+
+  /**
+   * Hides the body (the avatar is in another place) or shows it again. The model stays loaded, and the
+   * choice also applies to a model loaded later.
+   */
+  setHidden(hidden: boolean): void {
+    this.hidden = hidden;
+    if (this.vrm) this.vrm.scene.visible = !hidden;
+  }
+
+  isHidden(): boolean {
+    return this.hidden;
+  }
 
   /** The loaded model's root, or null before a model is loaded. */
   getObject3D(): THREE.Object3D | null {
@@ -328,6 +343,8 @@ export class AvatarActor {
     this.baseZ = vrm.scene.position.z;
     this.baseYaw = vrm.scene.rotation.y;
     options.onAttached?.({ actor: this, vrm, restSkeleton });
+    // After the attach callback: the room measures the body while it is still visible.
+    vrm.scene.visible = !this.hidden;
     this.jumpDetector.track(vrm.scene, vrm.humanoid?.getNormalizedBoneNode('hips'), [
       vrm.humanoid?.getNormalizedBoneNode('leftHand'),
       vrm.humanoid?.getNormalizedBoneNode('rightHand'),

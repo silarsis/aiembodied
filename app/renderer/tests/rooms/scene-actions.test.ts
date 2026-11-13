@@ -3,6 +3,7 @@ import type { RoomFile, Vec3 } from '../../../main/src/rooms/types.js';
 import { RoomStage } from '../../src/rooms/room-stage.js';
 import {
   INITIAL_STATE,
+  doorEntry,
   frontOfFace,
   nearestFootprintPoint,
   pathStartHeading,
@@ -540,5 +541,80 @@ describe('planning with other avatars (occupancy)', () => {
     const ok = planAction(withOthers(worldAt(1.1, -0.45, 0), occupancy), INITIAL_STATE, { kind: 'pick', objectId: 'mug' });
     expect(ok.type).toBe('stream');
     expect(occupancy.holder('object', 'mug')).toBe('echo');
+  });
+});
+
+describe('leaving by the door', () => {
+  /** The reading room with its openings replaced, to put the door on each wall. */
+  const withOpenings = (openings: NonNullable<RoomFile['shell']['openings']>): RoomFile => ({ ...room, shell: { ...room.shell, openings } });
+  const door = (wall: 'north' | 'south' | 'east' | 'west', offset: number) => ({ wall, kind: 'door' as const, offset, width: 0.95, height: 2.1 });
+
+  it('finds the door in each wall and stands the avatar just inside it', () => {
+    // The floor is 6 wide (x) and 5 deep (z), centred on the origin.
+    const cases: Array<{ wall: 'north' | 'south' | 'east' | 'west'; offset: number; door: Vec3; inside: Vec3; into: number }> = [
+      { wall: 'north', offset: 1, door: [1, 0, -2.5], inside: [1, 0, -2.15], into: 0 },
+      { wall: 'south', offset: -1, door: [-1, 0, 2.5], inside: [-1, 0, 2.15], into: Math.PI },
+      { wall: 'east', offset: 1.2, door: [3, 0, 1.2], inside: [2.65, 0, 1.2], into: -Math.PI / 2 },
+      { wall: 'west', offset: -0.5, door: [-3, 0, -0.5], inside: [-2.65, 0, -0.5], into: Math.PI / 2 },
+    ];
+    for (const expected of cases) {
+      const entry = doorEntry(withOpenings([door(expected.wall, expected.offset)]));
+      expect(entry, expected.wall).not.toBeNull();
+      expect(entry?.door).toEqual(expected.door);
+      expect(entry?.inside[0]).toBeCloseTo(expected.inside[0]);
+      expect(entry?.inside[2]).toBeCloseTo(expected.inside[2]);
+      expect(Math.cos(entry?.intoRoom ?? 0)).toBeCloseTo(Math.cos(expected.into));
+      expect(Math.sin(entry?.intoRoom ?? 0)).toBeCloseTo(Math.sin(expected.into));
+      // Facing the door is the opposite of facing into the room.
+      expect(Math.cos(entry?.towardDoor ?? 0)).toBeCloseTo(-Math.cos(entry?.intoRoom ?? 0));
+      expect(Math.sin(entry?.towardDoor ?? 0)).toBeCloseTo(-Math.sin(entry?.intoRoom ?? 0));
+    }
+  });
+
+  it('skips windows and uses the first door', () => {
+    const entry = doorEntry(withOpenings([{ wall: 'north', kind: 'window', offset: 0, width: 1, height: 1, sill: 1 }, door('west', 0), door('east', 0)]));
+    expect(entry?.door).toEqual([-3, 0, 0]);
+  });
+
+  it('snaps the spot inside the door onto the floor it can walk on', () => {
+    const entry = doorEntry(withOpenings([door('east', 0)]), () => [2.5, 0, 0.1]);
+    expect(entry?.inside).toEqual([2.5, 0, 0.1]);
+  });
+
+  it('has no entry for a room without a door', () => {
+    expect(doorEntry(withOpenings([]))).toBeNull();
+    expect(doorEntry(withOpenings([{ wall: 'north', kind: 'window', offset: 0, width: 1, height: 1 }]))).toBeNull();
+  });
+
+  it('plans a walk to the door, facing it', () => {
+    const plan = planAction(worldAt(0, -0.3, 0), INITIAL_STATE, { kind: 'exit' });
+    const stream = streamOf(plan);
+    expect(stream.label).toBe('the door');
+    const entry = doorEntry(room, (p) => stage.closestWalkable(p));
+    // The walk ends at the spot inside the door, turned to face the door.
+    const end = stream.expectedEnd;
+    const [ex, ez] = motionToWorld(stream.frame, end.root[0], end.root[1]);
+    expect(Math.hypot(ex - (entry?.inside[0] ?? 0), ez - (entry?.inside[2] ?? 0))).toBeLessThan(0.7);
+    expect(stream.outcome).toEqual({ posture: 'standing' });
+    expect(stream.request.path).toBeDefined();
+  });
+
+  it('skips with "no door" when the room has none', () => {
+    const noDoor = { ...worldAt(0, -0.3, 0), room: withOpenings([]) };
+    expect(planAction(noDoor, INITIAL_STATE, { kind: 'exit' })).toEqual({ type: 'skip', reason: 'no door' });
+  });
+
+  it('skips with "no door" when the room cannot be walked', () => {
+    const blind = { ...worldAt(0, -0.3, 0), hasNavigation: false };
+    expect(planAction(blind, INITIAL_STATE, { kind: 'exit' })).toEqual({ type: 'skip', reason: 'no door' });
+  });
+
+  it('stands up first when seated', () => {
+    const seated: AvatarState = { posture: 'seated', held: null, seat: { objectId: 'sofa', session: 's', frame: worldAt(0, 0, 0).frame, approach: [0, 0, 0], facing: 0 } };
+    expect(planAction(worldAt(0, 0, 0), seated, { kind: 'exit' })).toEqual({ type: 'insert', actions: [{ kind: 'stand' }] });
+  });
+
+  it('turns a {room:} tag into the walk to the door', () => {
+    expect(tagToAction(room, { type: 'room', place: 'next door' })).toEqual({ kind: 'exit' });
   });
 });

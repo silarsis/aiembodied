@@ -16,6 +16,8 @@ import { deliberateFast } from './switchboard/deliberate-system-one.js';
 import { ProactiveTick, proactiveSettingsFromEnv } from './presence/proactive-tick.js';
 import { PresenceTracker, isVoicePhase } from './presence/presence.js';
 import { FloorController } from './floor/index.js';
+import { PlaceManager, placesNote } from './places/place-manager.js';
+import { chooseSummon, summon } from './places/summon.js';
 import { createIntentRouter } from './floor/intent-router.js';
 import { createModelBid } from './floor/bid.js';
 import { createSystemOne } from './decide/system-one.js';
@@ -313,6 +315,8 @@ let avatarRegistry: AvatarRegistry | null = null;
 let avatarSettingsKeys: AvatarSettingsKeys | null = null;
 /** Who speaks when several avatars share the scene (phase 3). Inert with one avatar. */
 let floor: FloorController | null = null;
+/** Who is where (this PC's place and the places avatars can walk to). */
+let placeManager: PlaceManager | null = null;
 let proactiveTick: ProactiveTick | null = null;
 /** The window that sent the latest message of Kevin's; floor-queued answers and chatter reach it. */
 let floorSender: WebContents | null = null;
@@ -857,6 +861,11 @@ function startAvatarPlumbing(profile: AvatarProfile, manager: ConfigManager): vo
   inbox.start();
 }
 
+function requirePlaces(): PlaceManager {
+  if (!placeManager) throw new Error('Places are not available yet.');
+  return placeManager;
+}
+
 function requireAvatarRegistry(): AvatarRegistry {
   if (!avatarRegistry) throw new Error('Avatars are not available yet.');
   return avatarRegistry;
@@ -926,6 +935,17 @@ function avatarPersona(avatarId: string): { persona: string | undefined; ownMode
 }
 
 /**
+ * Adds the places paragraph (where the avatar is, who is where, the {room:} tag) to an avatar's system prompt.
+ * Every turn gets it, chatter included; a preview turn does not.
+ */
+function withPlacesNote(instructions: string | undefined, preview = false): string | undefined {
+  if (preview || !placeManager) return instructions;
+  const note = placesNote(placeManager, (id) => avatarRegistry?.get(id)?.name ?? id);
+  if (!note) return instructions;
+  return instructions?.trim() ? `${instructions.trim()}\n\n${note}` : note;
+}
+
+/**
  * The system prompt for an avatar's turn. Echo uses what the renderer sent (or the last it sent,
  * or her saved prompt). Another avatar uses the prompt saved for its own VRM model, if it has a
  * model of its own, else its profile's prompt; avatars wearing Echo's body never borrow her prompt.
@@ -956,7 +976,9 @@ async function runVoiceTurn(
   voiceService: LocalVoiceService,
 ): Promise<LocalVoiceRespondResult> {
   const avatarId = voiceService.avatarId;
-  const payload = avatarId === DEFAULT_AVATAR_ID ? request : { ...request, instructions: avatarInstructions(avatarId, request.instructions) ?? request.instructions };
+  const baseInstructions = avatarId === DEFAULT_AVATAR_ID ? request.instructions : (avatarInstructions(avatarId, request.instructions) ?? request.instructions);
+  const instructions = withPlacesNote(baseInstructions, request.preview === true);
+  const payload = instructions === request.instructions ? request : { ...request, ...(instructions !== undefined ? { instructions } : {}) };
   const mirror = mirrorFor(avatarId);
   mirror?.turnStarted(payload.requestId, { text: payload.text, system: payload.system === true, preview: payload.preview === true });
   activeVoiceRequests.set(avatarId, payload.requestId);
@@ -2130,6 +2152,21 @@ function registerIpcHandlers(
     }
   });
   ipcMain.handle('avatars:list', () => avatarRegistry?.list() ?? []);
+  // Places: who is where. The renderer follows the snapshot, asks avatars to walk to another place and confirms arrivals.
+  ipcMain.handle('places:snapshot', () => requirePlaces().snapshot());
+  ipcMain.handle('places:move', (_event, avatarId: unknown, placeRef: unknown, reason: unknown) => {
+    const places = requirePlaces();
+    if (typeof avatarId !== 'string' || !avatarId || typeof placeRef !== 'string' || !placeRef.trim()) {
+      return { ok: false, reason: 'invalid request' };
+    }
+    const place = places.resolvePlace(placeRef);
+    if (!place) return { ok: false, reason: 'unknown place' };
+    const result = places.startMove(avatarId, place.id, reason === 'called' ? 'called' : 'chose to');
+    return result.ok ? { ok: true } : { ok: false, reason: result.reason };
+  });
+  ipcMain.handle('places:arrived', (_event, avatarId: unknown) => {
+    if (typeof avatarId === 'string' && avatarId) requirePlaces().arrived(avatarId);
+  });
   ipcMain.handle('avatars:add', (_event, input: unknown) => {
     const registry = requireAvatarRegistry();
     const fields = readAvatarFields(input, true);
@@ -2192,7 +2229,8 @@ function registerIpcHandlers(
     const wav = audio instanceof Uint8Array ? audio : new Uint8Array(audio);
     return localVoiceService.transcribe(wav);
   });
-  ipcMain.handle('local-voice:respond', async (event, payload: LocalVoiceRespondRequest) => {
+  ipcMain.handle('local-voice:respond', async (event, request: LocalVoiceRespondRequest) => {
+    let payload = request;
     const voiceService = getVoiceService(avatarIdArg(payload?.avatarId));
     if (!voiceService) {
       throw new Error('Local voice service is unavailable.');
@@ -2223,16 +2261,49 @@ function registerIpcHandlers(
     if (!payload.preview && !payload.system && avatarId === DEFAULT_AVATAR_ID && payload.instructions?.trim()) {
       lastEchoInstructions = payload.instructions;
     }
-    // Several avatars and Kevin named none: the floor manager decides who answers.
-    if (floor && ownTurn && !payload.avatarId?.trim() && floor.isMulti()) {
+    // Places: an avatar that is somewhere else walks in first, then answers.
+    let turnService = voiceService;
+    let turnAvatarId = avatarId;
+    const places = placeManager;
+    if (places && floor && ownTurn) {
+      floorSender = sender;
+      const named = payload.avatarId?.trim() ? avatarId : null;
+      let callId: string | null = null;
+      if (named && !places.isPresent(named)) {
+        callId = named;
+      } else if (!named && places.avatarsAt(places.localPlaceId()).length === 0) {
+        // Nobody is here: call the avatar Kevin last talked with, else Echo, else the first one.
+        callId = chooseSummon(floor.recentPartner(), (avatarRegistry?.list() ?? []).map((profile) => profile.id));
+      }
+      if (callId) {
+        const came = await summon(places, callId, 'summoned');
+        if (!came) {
+          const name = avatarRegistry?.get(callId)?.name ?? callId;
+          if (!sender.isDestroyed()) {
+            sender.send('local-voice:event', tagEvent({ requestId: payload.requestId, type: 'error', message: `${name} did not come over.` }, callId));
+          }
+          return tagResult({ requestId: payload.requestId, text: '', cancelled: true }, callId);
+        }
+        // Kevin named nobody: the avatar that came answers (alone, so there is nothing for the floor to decide).
+        if (!named) {
+          const summoned = getVoiceService(callId);
+          if (!summoned) throw new Error('Local voice service is unavailable.');
+          turnService = summoned;
+          turnAvatarId = callId;
+          payload = { ...payload, avatarId: callId };
+        }
+      }
+    }
+    // Several avatars here, or some away, and Kevin named none: the floor manager decides who answers.
+    if (floor && ownTurn && !payload.avatarId?.trim() && (floor.isMulti() || floor.hasAway())) {
       floorSender = sender;
       return floor.respondToPerson(payload);
     }
-    const result = await runVoiceTurn(sender, payload, voiceService);
+    const result = await runVoiceTurn(sender, payload, turnService);
     // Kevin named an avatar directly: the others in the scene overhear the exchange.
     if (floor && ownTurn && payload.avatarId?.trim() && floor.isMulti() && !result.cancelled && result.text.trim()) {
-      floor.heard('person', payload.text, avatarId);
-      floor.heard(avatarId, result.text);
+      floor.heard('person', payload.text, turnAvatarId);
+      floor.heard(turnAvatarId, result.text);
     }
     return result;
   });
@@ -2680,8 +2751,17 @@ app.whenReady().then(async () => {
     avatarSettingsKeys = new AvatarSettingsKeys(avatarRegistry);
     const registry = avatarRegistry;
     const floorStore = memoryStore;
+    const places = new PlaceManager({ store: memoryStore, registry, bus: () => switchboardBus, logger });
+    placeManager = places;
+    places.onChanged((snapshot) => broadcastToWindows('places:changed', snapshot));
     floor = new FloorController({
       registry,
+      places,
+      // Kevin's line picked an avatar that is somewhere else: it walks in, and its turn waits for it.
+      summon: (avatarId, reason) => summon(places, avatarId, reason),
+      reportError: (avatarId, requestId, message) => {
+        if (floorSender && !floorSender.isDestroyed()) floorSender.send('local-voice:event', tagEvent({ requestId, type: 'error', message }, avatarId));
+      },
       store: floorStore,
       voice: (avatarId) => getVoiceService(avatarId),
       runPersonTurn: (avatarId, request) => {
@@ -2694,7 +2774,7 @@ app.whenReady().then(async () => {
       },
       saveLine: (line) =>
         conversationManager?.appendToRecentSession([{ role: 'assistant', content: line.content, speaker: line.speaker, ts: line.ts }]),
-      instructionsFor: (avatarId) => avatarInstructions(avatarId),
+      instructionsFor: (avatarId) => withPlacesNote(avatarInstructions(avatarId)),
       bus: () => switchboardBus,
       // Quick decisions (Laya) answer first; the clients are built per call so a changed route applies at once.
       // When the route is off or fails, bids go to the Idle thoughts model and the addressee check (avatar lines only) is skipped.

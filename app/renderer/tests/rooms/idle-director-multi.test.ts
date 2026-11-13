@@ -39,7 +39,7 @@ class Fake implements IdleExecutor {
   }
 }
 
-function setup(replyFor: (context: IdlePickContext) => string = () => '{go:bookshelf}{say:hello there}', solo = false) {
+function setup(replyFor: (context: IdlePickContext) => string = () => '{go:bookshelf}{say:hello there}', solo = false, here: 'all' | 'sage-only' | 'nobody' = 'all') {
   const notes: string[] = [];
   let time = 1_000_000;
   let timers: Array<{ id: number; at: number; fn: () => void }> = [];
@@ -54,7 +54,8 @@ function setup(replyFor: (context: IdlePickContext) => string = () => '{go:books
   ];
   const director = new IdleDirector({
     executor: echo,
-    avatars: () => (solo ? roster.slice(0, 1) : roster),
+    avatars: () => (here === 'sage-only' ? roster.slice(1) : here === 'nobody' ? [] : solo ? roster.slice(0, 1) : roster),
+    nobodyHere: () => here === 'nobody',
     now: () => time,
     setTimer: (fn, ms) => {
       timers.push({ id: next, at: time + ms, fn });
@@ -161,5 +162,23 @@ describe('IdleDirector with several avatars', () => {
     await s.advance(3_000 + 130_000);
     expect(s.runs.every(([, id]) => id === undefined)).toBe(true);
     expect(s.runs).toHaveLength(2);
+  });
+});
+
+describe('IdleDirector when avatars are in another place', () => {
+  it('lets a lone avatar other than Echo act, and never Echo', async () => {
+    const s = setup(() => '{go:bookshelf}', false, 'sage-only');
+    s.director.start();
+    await s.advance(FIRST_ACTION_DELAY_MS);
+    expect(s.runs).toEqual([['{go:bookshelf}', 'sage']]);
+    expect(s.picks[0]?.user).not.toContain('Others in the room');
+  });
+
+  it('does nothing in an empty room', async () => {
+    const s = setup(() => '{go:bookshelf}', false, 'nobody');
+    s.director.start();
+    await s.advance(FIRST_ACTION_DELAY_MS + 200_000);
+    expect(s.picks).toHaveLength(0);
+    expect(s.runs).toHaveLength(0);
   });
 });

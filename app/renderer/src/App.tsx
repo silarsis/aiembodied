@@ -58,7 +58,7 @@ import type { AvatarModelSummary, AvatarMotionStatus, AvatarPoseSummary } from '
 import type { AvatarProfile } from '../../main/src/avatars/bridge-types.js';
 import type { LocalVoiceStatus, SpeakingVoiceOptions } from '../../main/src/local-voice/types.js';
 import { describeModels } from './status/model-status.js';
-import { extractAvatarTags, extractMotionTags, toAnimationSlug } from './avatar/animation-tags.js';
+import { extractAvatarTags, extractMotionTags, toAnimationSlug, type MotionTag } from './avatar/animation-tags.js';
 import {
   ANIMATION_INSTRUCTION_PREFIX,
   buildAnimationInstructions,
@@ -71,6 +71,9 @@ import { SceneActionExecutor, type SceneActivity } from './rooms/scene-executor.
 import { tagToAction, type SceneAction } from './rooms/scene-actions.js';
 import { buildSceneInstructions, describeAvatarWhere, type OtherAvatarEntry } from './rooms/scene-instructions.js';
 import { useIdleDirector } from './rooms/use-idle-director.js';
+import { usePlaces } from './places/use-places.js';
+import { estimateSpeechMs, stagePresence } from './places/stage-presence.js';
+import { ElsewhereChip } from './places/elsewhere-chip.js';
 import { useIdleHabits } from './avatar/use-idle-habits.js';
 import type { CharacterSettingsControls } from './avatar/character-settings.js';
 import type { CharacterSettingsContext } from './avatar/use-character-settings.js';
@@ -663,6 +666,12 @@ export default function App() {
   /** Lip-sync frames of the avatars other than echo (echo keeps `visemeFrame`), by avatar id. */
   const [visemeFrames, setVisemeFrames] = useState<Record<string, VisemeFrame | null>>({});
   const [avatarProfiles, setAvatarProfiles] = useState<AvatarProfile[]>([]);
+  // Where each avatar is (main keeps the truth). Without the bridge everybody is on screen.
+  const placesSnapshot = usePlaces(resolveApi()?.places);
+  const presence = useMemo(
+    () => stagePresence(placesSnapshot, ['echo', ...avatarProfiles.map((profile) => profile.id).filter((id) => id !== 'echo')]),
+    [placesSnapshot, avatarProfiles],
+  );
   const [vrmModels, setVrmModels] = useState<AvatarModelSummary[]>([]);
   const [voiceActivity, setVoiceActivity] = useState<VoiceActivity>(() => ({ phase: 'off', since: Date.now() }));
   const [wakeScore, setWakeScore] = useState<WakeScore | null>(null);
@@ -1317,6 +1326,8 @@ export default function App() {
           habits: persona?.habits ?? '',
         };
       }),
+    // Every avatar is in another place: nobody wanders in an empty room.
+    nobodyHere: () => presence.present.length === 0,
     room: backgrounds.activeRoom,
     settings: backgrounds.idleSettings,
     motionReady: liveMotionReady,
@@ -1328,10 +1339,12 @@ export default function App() {
   // Describes the active 3D room (and the scene tags) to the model; empty in 2D. Part of the session
   // instructions, so a room change reaches both the local voice and Realtime sessions.
   // The other avatars on stage (as many as the renderer shows beside Echo), named in each avatar's scene text.
-  const stageNames = useMemo(
-    () => (avatarProfiles.length < 2 ? [] : [...avatarProfiles.filter((profile) => profile.id === 'echo'), ...avatarProfiles.filter((profile) => profile.id !== 'echo').slice(0, 2)]),
-    [avatarProfiles],
-  );
+  // Only the avatars that are here: one in another place is neither on stage nor part of the room text.
+  const stageNames = useMemo(() => {
+    if (avatarProfiles.length < 2) return [];
+    const here = avatarProfiles.filter((profile) => presence.present.includes(profile.id));
+    return [...here.filter((profile) => profile.id === 'echo'), ...here.filter((profile) => profile.id !== 'echo').slice(0, 2)];
+  }, [avatarProfiles, presence.present]);
   // Bumped when any avatar's action ends, so the scene text says where the others are now (not every frame).
   const [sceneTick, setSceneTick] = useState(0);
   useEffect(() => {
@@ -1388,6 +1401,20 @@ export default function App() {
   const sceneActionFilterRef = useRef(new MoveRequestFilter());
   const activeRoomRef = useRef(backgrounds.activeRoom);
   useEffect(() => { activeRoomRef.current = backgrounds.activeRoom; }, [backgrounds.activeRoom]);
+  // An avatar's {room:} tag, once it has walked to the door (or finished speaking): ask main to move it.
+  const moveAvatarToPlace = useCallback(
+    (avatarId: string, place: string) => {
+      const bridge = resolveApi()?.places;
+      if (!bridge) return;
+      bridge
+        .move(avatarId, place, 'chose to')
+        .then((result) => {
+          if (!result.ok) console.warn(`[places] ${avatarId} cannot go to "${place}": ${result.reason ?? 'no reason given'}`);
+        })
+        .catch((error: unknown) => console.warn('[places] the move failed', error));
+    },
+    [resolveApi],
+  );
   const handleRealtimeTextContent = useCallback(
     (content: string, avatarId?: string) => {
       if (!content) {
@@ -1396,6 +1423,11 @@ export default function App() {
       // Tags in another avatar's reply drive only that avatar. Echo (no id) is handled exactly as before.
       const speaker = avatarId && avatarId !== 'echo' ? avatarId : undefined;
       const streamMotion = resolveApi()?.avatar?.streamMotion;
+      // {room:<place>}: the avatar leaves for another place. Each tag is acted on once per reply (the same repeat filter as the scene tags).
+      const roomFilter = speaker ? rigs.sceneFilterFor(speaker) : sceneActionFilterRef.current;
+      const roomTags = extractMotionTags(content).filter((tag): tag is Extract<MotionTag, { type: 'room' }> => tag.type === 'room' && roomFilter.shouldStart(JSON.stringify(tag)));
+      const freshRoomTags = new Set(roomTags.map((tag) => JSON.stringify(tag)));
+      const walkedOut = new Set<string>();
       // One loop for every speaker: scene tags go to that avatar's executor, {move:} gestures wait their turn in a
       // room and start straight away otherwise. Echo keeps her own filters and her executor (`sceneActions`).
       if (liveMotionReady && streamMotion) {
@@ -1410,6 +1442,15 @@ export default function App() {
           if (pendingActions.length > 0) executor.submit(pendingActions.splice(0));
         };
         for (const tag of extractMotionTags(content)) {
+          if (tag.type === 'room') {
+            // Leaving: walk to the door (if the room has one), then ask main to move the avatar. Without a room it is handled below.
+            if (!room || !freshRoomTags.has(JSON.stringify(tag))) continue;
+            walkedOut.add(JSON.stringify(tag));
+            pendingActions.push({ kind: 'exit' });
+            flushActions();
+            executor.submitAfter(`leave for ${tag.place}`, () => moveAvatarToPlace(speaker ?? 'echo', tag.place));
+            continue;
+          }
           if (tag.type !== 'move') {
             if (!room || !sceneFilter.shouldStart(JSON.stringify(tag))) continue;
             const action = tagToAction(room, tag);
@@ -1456,6 +1497,11 @@ export default function App() {
           }
         }
         flushActions();
+      }
+      // In 2D (or with no live motion) there is no door to walk to: the avatar leaves once its speech is over.
+      for (const tag of roomTags) {
+        if (walkedOut.has(JSON.stringify(tag))) continue;
+        window.setTimeout(() => moveAvatarToPlace(speaker ?? 'echo', tag.place), estimateSpeechMs(content));
       }
       const tags = extractAvatarTags(content, {
         allowedAnimationSlugs: availableAnimationSlugSet,
@@ -1507,7 +1553,7 @@ export default function App() {
         }
       }
     },
-    [animationBus, availableAnimationSlugSet, availablePoseSlugSet, availablePoses, avatarProfiles, liveMotionReady, resolveApi, rigs, sceneActions],
+    [animationBus, availableAnimationSlugSet, availablePoseSlugSet, availablePoses, avatarProfiles, liveMotionReady, moveAvatarToPlace, resolveApi, rigs, sceneActions],
   );
 
   useEffect(() => {
@@ -1946,7 +1992,9 @@ export default function App() {
     if (avatarProfiles.length < 2) {
       return undefined;
     }
-    return avatarProfiles.map((profile) => {
+    // On stage: the avatars here, those walking in (their body loads out of sight), and Echo, whose body stays loaded.
+    const onStage = avatarProfiles.filter((profile) => profile.id === 'echo' || presence.present.includes(profile.id) || presence.incoming.includes(profile.id));
+    return onStage.map((profile) => {
       const own = profile.vrmModelId ? vrmModels.find((candidate) => candidate.id === profile.vrmModelId) : undefined;
       const isEcho = profile.id === 'echo';
       return {
@@ -1957,7 +2005,68 @@ export default function App() {
         frame: isEcho ? visemeFrame : (visemeFrames[profile.id] ?? null),
       };
     });
-  }, [avatarProfiles, vrmModels, activeVrmModel, visemeFrame, visemeFrames]);
+  }, [avatarProfiles, presence, vrmModels, activeVrmModel, visemeFrame, visemeFrames]);
+  // Bodies that are loaded but not on this screen: Echo while she is in another place, and avatars walking in.
+  const hiddenIds = useMemo(() => {
+    const hidden = [...presence.incoming.filter((id) => id !== 'echo')];
+    if (!presence.present.includes('echo')) hidden.push('echo');
+    return hidden;
+  }, [presence]);
+  // Walking in. An avatar on its way here stays out of sight until its body is loaded; then main is told so it
+  // can let it in (the renderer puts it at the room's door), and it walks to its spot.
+  const readyBodiesRef = useRef(new Set<string>());
+  const [readyVersion, setReadyVersion] = useState(0);
+  const handleBodyReady = useCallback((avatarId: string) => {
+    if (readyBodiesRef.current.has(avatarId)) return;
+    readyBodiesRef.current.add(avatarId);
+    setReadyVersion((version) => version + 1);
+  }, []);
+  useEffect(() => {
+    // A body that left the stage is unloaded; it has to load again the next time.
+    const onStage = new Set(stageAvatars?.map((entry) => entry.id) ?? ['echo']);
+    for (const id of [...readyBodiesRef.current]) if (id !== 'echo' && !onStage.has(id)) readyBodiesRef.current.delete(id);
+  }, [stageAvatars]);
+  const arrivalSentRef = useRef(new Set<string>());
+  useEffect(() => {
+    const bridge = resolveApi()?.places;
+    if (!bridge) return;
+    const sent = arrivalSentRef.current;
+    for (const id of [...sent]) if (!presence.incoming.includes(id)) sent.delete(id);
+    for (const id of presence.incoming) {
+      if (sent.has(id)) continue;
+      // Nothing to load for an avatar without a body; otherwise wait for the renderer to say the body is ready.
+      const entry = stageAvatars?.find((candidate) => candidate.id === id);
+      const bodyless = stageAvatars ? entry?.model == null : id === 'echo' && activeVrmModel == null;
+      if (!readyBodiesRef.current.has(id) && !bodyless) continue;
+      sent.add(id);
+      bridge.arrived(id).catch((error: unknown) => console.warn('[places] could not report an arrival', error));
+    }
+  }, [presence.incoming, readyVersion, stageAvatars, activeVrmModel, resolveApi]);
+  // Once it is let in, the avatar walks from the door to its spot (3D rooms with live motion; in 2D it is simply there).
+  const walkInRef = useRef<{ present: string[]; incoming: string[] } | null>(null);
+  useEffect(() => {
+    const before = walkInRef.current;
+    walkInRef.current = { present: presence.present, incoming: presence.incoming };
+    if (!before || !backgrounds.activeRoom || !liveMotionReady) return;
+    for (const id of presence.present) {
+      if (!before.incoming.includes(id) || before.present.includes(id)) continue;
+      (id === 'echo' ? sceneActions : rigs.get(id).executor).submit([{ kind: 'come' }]);
+    }
+  }, [presence, backgrounds.activeRoom, liveMotionReady, rigs, sceneActions]);
+  const callAvatar = useCallback(
+    (avatarId: string) => {
+      const bridge = resolveApi()?.places;
+      const here = placesSnapshot?.localPlaceId;
+      if (!bridge || !here) return;
+      bridge
+        .move(avatarId, here, 'called')
+        .then((result) => {
+          if (!result.ok) console.warn(`[places] could not call ${avatarId}: ${result.reason ?? 'no reason given'}`);
+        })
+        .catch((error: unknown) => console.warn('[places] the call failed', error));
+    },
+    [placesSnapshot?.localPlaceId, resolveApi],
+  );
   const avatarNames = useMemo(
     () => Object.fromEntries(avatarProfiles.map((profile) => [profile.id, profile.name])),
     [avatarProfiles],
@@ -2935,7 +3044,7 @@ export default function App() {
                 data-state={visemeSummary.status.toLowerCase()}
                 data-avatar-mode="vrm"
                 data-stage-mode={backgrounds.activeKind}
-                {...(stageAvatars && !backgrounds.activeRoom ? { 'data-avatar-count': Math.min(stageAvatars.length, 3) } : {})}
+                {...(stageAvatars && !backgrounds.activeRoom ? { 'data-avatar-count': Math.min(Math.max(1, stageAvatars.filter((entry) => presence.present.includes(entry.id)).length), 3) } : {})}
               >
                 <VrmAvatarRenderer
                   key={activeVrmModel?.id ?? 'vrm'}
@@ -2950,8 +3059,17 @@ export default function App() {
                   showWalkableArea={showDeveloperHud && showWalkableArea}
                   sceneActions={sceneActions}
                   sceneExecutors={sceneExecutorFor}
+                  {...(placesSnapshot ? { hiddenIds, onBodyReady: handleBodyReady } : {})}
                 />
               </div>
+              {placesSnapshot && presence.absent.length > 0 ? (
+                <ElsewhereChip
+                  absent={presence.absent}
+                  snapshot={placesSnapshot}
+                  nameOf={(avatarId) => avatarProfiles.find((profile) => profile.id === avatarId)?.name ?? avatarId}
+                  onCall={callAvatar}
+                />
+              ) : null}
             </section>
           </section>
           <div className="stageToolbar">

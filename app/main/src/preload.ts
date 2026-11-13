@@ -77,6 +77,7 @@ import type { AvatarProfile } from './avatars/avatar-registry.js';
 import type { AvatarIdlePersona, AvatarsBridge } from './avatars/bridge-types.js';
 import type { PresenceBridge } from './presence/bridge-types.js';
 import type { FloorBridge } from './floor/bridge-types.js';
+import type { PlacesBridge, PlacesSnapshot } from './places/bridge-types.js';
 import type { GpuMemoryBridge } from './diagnostics/gpu-memory.js';
 import type { CodingBridge, CodingBusy, CodingBusyBridge, CodingTasksBridge, RunnerEvent } from './coding/bridge-types.js';
 import type { CodingStatus, CodingView } from './coding/coding-service.js';
@@ -231,6 +232,7 @@ export interface PreloadApi {
   switchboard?: SwitchboardBridge;
   presence?: PresenceBridge;
   floor?: FloorBridge;
+  places?: PlacesBridge;
   avatars?: AvatarsBridge;
   coding?: CodingBridge;
   codingTasks?: CodingTasksBridge;
@@ -789,6 +791,22 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     setHearChatter: (enabled) => ipcRenderer.invoke('floor:set-hear-chatter', enabled),
     interrupt: async () => {
       await ipcRenderer.invoke('floor:interrupt');
+    },
+  },
+  places: {
+    snapshot: () => ipcRenderer.invoke('places:snapshot') as Promise<PlacesSnapshot>,
+    onChanged: (listener) => {
+      const channel = 'places:changed';
+      const handler = (_event: unknown, snapshot: PlacesSnapshot) => listener(snapshot);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
+    move: (avatarId, placeRef, reason) =>
+      (reason === undefined ? ipcRenderer.invoke('places:move', avatarId, placeRef) : ipcRenderer.invoke('places:move', avatarId, placeRef, reason)) as Promise<{ ok: boolean; reason?: string }>,
+    arrived: async (avatarId) => {
+      await ipcRenderer.invoke('places:arrived', avatarId);
     },
   },
   gpuMemory: {

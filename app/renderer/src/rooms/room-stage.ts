@@ -17,6 +17,9 @@ const SURFACE_BAND = 0.25;
  * touches a WebGL renderer, so it can be created and stepped in tests. If the physics or navmesh
  * WASM fails to start the room still renders and that feature is simply off.
  */
+/** Far outside any room; where a capsule waits while its avatar is away. */
+const PARKED_AT = 10_000;
+
 export class RoomStage {
   private debugOn = false;
 
@@ -164,6 +167,11 @@ export class RoomStage {
       this.physics.setAvatarPosition(TMP.x, TMP.z, other.id);
     }
     this.physics.step(dt);
+  }
+
+  /** Echo is in another place: her capsule (which cannot be removed) waits far outside the room, out of everyone's way. */
+  parkEcho(): void {
+    this.physics?.setAvatarPosition(PARKED_AT, PARKED_AT);
   }
 
   /** An extra avatar left: its physics capsule goes with it. */

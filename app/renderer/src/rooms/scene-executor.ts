@@ -113,7 +113,7 @@ export type PlanBuilder = (world: PlanWorld, state: AvatarState) => SceneAction[
 
 type QueueItem =
   | { type: 'action'; action: SceneAction }
-  | { type: 'task'; label: string; run: () => Promise<unknown> }
+  | { type: 'task'; label: string; run: () => Promise<unknown>; always?: boolean }
   | { type: 'plan'; label: string; build: PlanBuilder };
 
 const MAX_INSERT_DEPTH = 4;
@@ -214,6 +214,16 @@ export class SceneActionExecutor {
   }
 
   /**
+   * Queues a callback behind everything queued so far; it runs whatever the avatar is doing (also when the
+   * action before it was skipped or failed). Like anything queued, it is dropped when the user interrupts.
+   * Used to leave for another place once the walk to the door is over.
+   */
+  submitAfter(label: string, run: () => unknown): void {
+    this.queue.push({ type: 'task', label, run: async () => run(), always: true });
+    void this.pump();
+  }
+
+  /**
    * The user spoke, woke the avatar or tapped: forget what was queued and stop a walk or turn in
    * progress where the avatar is. Sitting, standing up, picking up and putting down finish, and a
    * seated avatar stays seated.
@@ -292,7 +302,7 @@ export class SceneActionExecutor {
         const epoch = this.epoch;
         try {
           if (item.type === 'task') {
-            if (this.state.posture === 'seated') {
+            if (this.state.posture === 'seated' && !item.always) {
               console.warn(`[scene-actions] skipping "${item.label}" while seated`);
               this.emit({ type: 'skipped', label: item.label, reason: 'the avatar is seated' });
             } else {

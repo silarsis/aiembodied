@@ -87,6 +87,8 @@ With more than one avatar in the scene, `app/main/src/floor/` decides who answer
 
 Journal (private, fire-and-forget; in Kevin's turn txn `turn:<requestId>` when there is one, else `chatter:<time>:<n>`): `floor.decision` (payload `from`, `text`, `speakers`, `channel`, `trace`), `floor.grant` and `floor.release` (`avatar`, `reason`/`next`), `floor.budget` (when spontaneous chatter is cut off by the time limit: `kind: 'time'`, `ms`).
 
+Places: the app journals each avatar move as one transaction `move:<avatarId>:<time>:<n>` of `avatar.move` events (`scene` = the target place id, producer `avatar:<id>`, payload `avatarId`, `from`, `to`, `reason`). The txn is `open` at the start, `done` on arrival and `failed` (payload reason "not confirmed in time") at the 10 s deadline. See `docs/features/places.md`.
+
 Try it with several avatars: open Controls > Characters and add Sage and Rex under "In the scene" (each gets its own history; "Add by name" makes a character that shares Echo's body). Then watch the journal.
 
 ```powershell

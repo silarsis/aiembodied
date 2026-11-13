@@ -1429,12 +1429,93 @@ describe('main process bootstrap', () => {
       return { handlers, served, respond, respondSpy, sender, published };
     }
 
+    /** Every prompt ends with this paragraph while everybody is at home. */
+    const PLACES_NOTE_ALONE =
+      'You are in the lounge. Other places: next door (nobody is there). To go to another place, write {room:<place name>} at the end of what you say: you finish speaking, walk out, and arrive a few seconds later. You only hear and see what happens in the place you are in.';
+
     it('keeps one avatar exactly as before and never asks the floor', async () => {
       const { served, respond, respondSpy, handlers } = await boot();
       await respond({ requestId: 'r1', text: 'Sage, hello', instructions: 'You are Echo.' });
-      expect(served).toEqual([{ avatarId: 'echo', requestId: 'r1', instructions: 'You are Echo.', silent: undefined }]);
+      // Her prompt gets the places paragraph at the end, and nothing else.
+      expect(served).toEqual([{ avatarId: 'echo', requestId: 'r1', instructions: `You are Echo.\n\n${PLACES_NOTE_ALONE}`, silent: undefined }]);
       expect(handlers.get('avatars:list')?.({})).toHaveLength(1);
       respondSpy.mockRestore();
+    });
+
+    describe('places', () => {
+      /** Like waitForExpect, but the assertion may be async (it reads state over IPC). */
+      const untilAsync = async (assertion: () => Promise<void>, timeoutMs = 3000): Promise<void> => {
+        const deadline = Date.now() + timeoutMs;
+        for (;;) {
+          try {
+            await assertion();
+            return;
+          } catch (error) {
+            if (Date.now() > deadline) throw error;
+            await new Promise((resolve) => setTimeout(resolve, 5));
+          }
+        }
+      };
+      const call = (handlers: Map<string, unknown>, channel: string, ...args: unknown[]) =>
+        (handlers.get(channel) as ((...a: unknown[]) => unknown) | undefined)?.({}, ...args);
+
+      it('moves an avatar next door over IPC, journals it and pushes the change', async () => {
+        const { handlers, respondSpy, published } = await boot(['Sage']);
+        const before = (await call(handlers, 'places:snapshot')) as { locations: Record<string, string>; transit: unknown[] };
+        expect(before.locations).toEqual({ echo: 'home', sage: 'home' });
+        expect(await call(handlers, 'places:move', 'sage', 'Next Door')).toEqual({ ok: true });
+        expect(await call(handlers, 'places:move', 'sage', 'next door')).toEqual({ ok: false, reason: 'already moving' });
+        expect(await call(handlers, 'places:move', 'sage', 'the moon')).toEqual({ ok: false, reason: 'unknown place' });
+        expect(await call(handlers, 'places:move', 'sage', '')).toEqual({ ok: false, reason: 'invalid request' });
+        expect(((await call(handlers, 'places:snapshot')) as { transit: unknown[] }).transit).toHaveLength(1);
+        await waitForExpect(() => expect(published.some((event) => event.type === 'avatar.move' && (event as { txn?: { state?: string } }).txn?.state === 'done')).toBe(true), 3000);
+        expect(((await call(handlers, 'places:snapshot')) as { locations: Record<string, string> }).locations.sage).toBe('next-door');
+        expect(published.filter((event) => event.type === 'avatar.move')).toHaveLength(2);
+        respondSpy.mockRestore();
+      });
+
+      it('lists where the other avatars are in each prompt', async () => {
+        const { handlers, respondSpy, respond, served } = await boot(['Sage']);
+        await call(handlers, 'places:move', 'sage', 'next door');
+        await untilAsync(async () => expect(((await call(handlers, 'places:snapshot')) as { transit: unknown[] }).transit).toHaveLength(0), 3000);
+        await respond({ requestId: 'r1', text: 'hi', avatarId: 'echo', instructions: 'You are Echo.' });
+        expect(served.find((turn) => turn.requestId === 'r1')?.instructions).toContain('next door (Sage is there)');
+        respondSpy.mockRestore();
+      });
+
+      it('leaves the places paragraph out of a preview turn', async () => {
+        const { respondSpy, respond, served } = await boot();
+        await respond({ requestId: 'p1', text: 'hi', preview: true, instructions: 'You are Echo.' });
+        expect(served.find((turn) => turn.requestId === 'p1')?.instructions).toBe('You are Echo.');
+        respondSpy.mockRestore();
+      });
+
+      it('calls an avatar over before it answers when Kevin names it', async () => {
+        const { handlers, respondSpy, respond, served } = await boot(['Sage']);
+        await call(handlers, 'places:move', 'sage', 'next door');
+        await untilAsync(async () => expect(((await call(handlers, 'places:snapshot')) as { transit: unknown[] }).transit).toHaveLength(0), 3000);
+        const answered = respond({ requestId: 'r1', text: 'Sage, come here', avatarId: 'sage' });
+        await untilAsync(async () => expect(((await call(handlers, 'places:snapshot')) as { transit: unknown[] }).transit).toEqual([{ avatarId: 'sage', from: 'next-door', to: 'home' }]));
+        // The turn waits for the renderer to let her in.
+        expect(served.filter((turn) => turn.requestId === 'r1')).toHaveLength(0);
+        await call(handlers, 'places:arrived', 'sage');
+        await answered;
+        expect(served.filter((turn) => turn.requestId === 'r1')).toHaveLength(1);
+        expect(served.find((turn) => turn.requestId === 'r1')?.avatarId).toBe('sage');
+        respondSpy.mockRestore();
+      });
+
+      it('calls Echo back when nobody is here and Kevin names no one', async () => {
+        const { handlers, respondSpy, respond, served } = await boot();
+        await call(handlers, 'places:move', 'echo', 'next door');
+        await untilAsync(async () => expect(((await call(handlers, 'places:snapshot')) as { transit: unknown[] }).transit).toHaveLength(0), 3000);
+        const answered = respond({ requestId: 'r1', text: 'Anyone there?' });
+        await untilAsync(async () => expect(((await call(handlers, 'places:snapshot')) as { transit: unknown[] }).transit).toHaveLength(1));
+        await call(handlers, 'places:arrived', 'echo');
+        await answered;
+        expect(served.map((turn) => [turn.avatarId, turn.requestId])).toEqual([['echo', 'r1']]);
+        respondSpy.mockRestore();
+      });
     });
 
     it('adds, updates and removes avatars over IPC', async () => {
@@ -1502,7 +1583,7 @@ describe('main process bootstrap', () => {
 
         await respond({ requestId: 'r1', text: 'x', avatarId: 'luna' });
         await respond({ requestId: 'r2', text: 'x', avatarId: 'sage' });
-        expect(served.find((s) => s.requestId === 'r1')?.instructions).toBe('Luna is shy.');
+        expect(served.find((s) => s.requestId === 'r1')?.instructions).toBe(`Luna is shy.\n\n${PLACES_NOTE_ALONE}`);
         expect(served.find((s) => s.requestId === 'r2')?.instructions).toContain('You are Sage');
         respondSpy.mockRestore();
       });
