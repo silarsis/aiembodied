@@ -24,6 +24,7 @@ import {
   type FloorDecision,
   type FloorSpeaker,
   type IntentFunction,
+  type QuickIntentFunction,
 } from './floor-manager.js';
 
 export const HEAR_CHATTER_KEY = 'floor.hearChatter';
@@ -58,7 +59,9 @@ export interface FloorControllerOptions {
   bid?: BidFunction;
   /** A quick check of who a line is aimed at. */
   addressee?: AddresseeFunction;
-  /** Reads the lines of Kevin's the name rules are not sure about. */
+  /** Reads the chat-model fallback for Kevin's lines. */
+  /** Reads Kevin's lines first (the fine-tuned quick model). */
+  quickIntent?: QuickIntentFunction;
   intent?: IntentFunction;
   now?: () => number;
   logger?: Pick<Console, 'warn' | 'debug'>;
@@ -118,6 +121,7 @@ export class FloorController {
       nameOf: (avatarId) => options.registry.get(avatarId)?.name ?? avatarId,
       bid: options.bid,
       addressee: options.addressee,
+      quickIntent: options.quickIntent,
       intent: options.intent,
       hearChatter: () => this.hearChatter(),
     });

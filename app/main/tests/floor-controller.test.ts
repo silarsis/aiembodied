@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FloorController, HEAR_CHATTER_KEY, chatterNote, converseNote, relayChatterNote, relayNote } from '../src/floor/index.js';
-import type { FloorBid, IntentFunction } from '../src/floor/floor-manager.js';
+import type { FloorBid, IntentFunction, IntentResult, QuickIntentFunction } from '../src/floor/floor-manager.js';
 import type { LocalVoiceEvent, LocalVoiceRespondRequest, LocalVoiceRespondResult } from '../src/local-voice/types.js';
 import type { SwitchboardEventInput } from '../src/switchboard/types.js';
 import { avatarIdForName } from '../src/avatars/avatar-id.js';
@@ -11,6 +11,34 @@ const PROFILES = [
   { id: 'sage', name: 'Sage', vrmModelId: 'm1' },
   { id: 'rex', name: 'Rex', vrmModelId: 'm1' },
 ];
+
+const say = (addressed: string, wants: IntentResult['wants'] = 'answer', other: string | null = null): IntentResult => ({ addressed, wants, other });
+/** What the fake quick model says for each of Kevin's lines; an unlisted line makes it fail, so the default (partner or host) answers. */
+const QUICK_SCRIPT: Record<string, IntentResult> = {
+  'Sage, what do you think?': say('sage'),
+  'Rex and Sage, settle this': say('everyone'),
+  'you two': say('everyone'),
+  'Echo, any thoughts?': say('echo'),
+  'Echo, what is time?': say('echo'),
+  'Sage, hello': say('sage'),
+  'Echo, hi': say('echo'),
+  'Echo, go': say('echo'),
+  'Rex, wait': say('rex'),
+  echo: say('echo'),
+  "Sage, can you ask Echo what they're doing?": say('sage', 'relay', 'echo'),
+  'Sage, ask Echo what they do': say('sage', 'relay', 'echo'),
+  'Rex, hello': say('rex'),
+  "I'd like you to talk to Sage.": say('unclear', 'converse', 'sage'),
+  'Echo, talk to Sage': say('echo', 'converse', 'sage'),
+  'Rex, are you there?': say('rex'),
+  'Echo, what do you think of Sage?': say('echo'),
+  'Tell me about Sage.': say('sage'),
+};
+const quickFromScript: QuickIntentFunction = async (input) => {
+  const answer = QUICK_SCRIPT[input.text];
+  if (!answer) throw new Error('no script for this line');
+  return { ...answer, confidence: 0.95 };
+};
 
 function harness(options: { replies?: Record<string, string[]>; bids?: FloorBid[]; hear?: boolean; profiles?: typeof PROFILES; intent?: IntentFunction } = {}) {
   const kv = new Map<string, string>();
@@ -47,6 +75,7 @@ function harness(options: { replies?: Record<string, string[]>; bids?: FloorBid[
     instructionsFor: (avatarId) => `You are ${avatarId}.`,
     bus: () => ({ publish: (event) => (published.push(event), null), subscribe: () => () => undefined, connected: () => false }),
     bid: async () => (bidCalls(), options.bids ?? []),
+    quickIntent: options.intent ? undefined : quickFromScript,
     intent: options.intent,
     now: () => 1_000,
   });
@@ -83,16 +112,16 @@ describe('FloorController', () => {
   });
 
   it('runs the first named avatar now and queues the rest in order, each with its own request id', async () => {
-    const h = harness({ replies: { rex: ['Rex here.'] } });
-    h.hold.add('rex');
+    const h = harness({ replies: { echo: ['Echo here.'] } });
+    h.hold.add('echo');
     const first = h.controller.respondToPerson({ requestId: 'r1', text: 'Rex and Sage, settle this' });
     await settle();
-    expect(h.turns.map((t) => t.avatarId)).toEqual(['rex']);
-    h.hold.delete('rex');
-    h.gates.get('rex')?.();
+    expect(h.turns.map((t) => t.avatarId)).toEqual(['echo']);
+    h.hold.delete('echo');
+    h.gates.get('echo')?.();
     await first;
     await settle();
-    expect(h.turns.map((t) => [t.avatarId, t.request.requestId])).toEqual([['rex', 'r1'], ['sage', 'r1:sage']]);
+    expect(h.turns.map((t) => [t.avatarId, t.request.requestId])).toEqual([['echo', 'r1'], ['sage', 'r1:sage'], ['rex', 'r1:rex']]);
     expect(types(h.published)).toContain('floor.release');
   });
 
@@ -453,7 +482,7 @@ describe('lines the intent model decides', () => {
     expect(h.turns[1].request).toMatchObject({ silent: false, text: chatterNote('Echo', 'Hello over there, how is your day going?', { talk: true }) });
     const decision = h.published.find((e) => e.type === 'floor.decision');
     expect(decision?.payload).toMatchObject({ decidedBy: 'model', speakers: [{ avatarId: 'echo', reason: 'addressed' }] });
-    expect((decision?.payload.trace as string[]).join(' ')).toMatch(/intent model -> echo converse sage \(\d+ ms\)/);
+    expect((decision?.payload.trace as string[]).join(' ')).toMatch(/chat model decided -> echo converse sage \(\d+ ms\)/);
   });
 
   it('tells the asked avatar of a model-made relay to name the target, then the target answers aloud', async () => {
@@ -467,22 +496,20 @@ describe('lines the intent model decides', () => {
     expect(h.published.find((e) => e.type === 'floor.decision')?.payload).toMatchObject({ decidedBy: 'model', relay: { from: 'sage', to: 'echo' } });
   });
 
-  it('does not call the model for a clear line and journals rules', async () => {
-    const intent = vi.fn<IntentFunction>(async () => ({ addressed: 'rex', wants: 'answer', other: null }));
-    const h = harness({ intent, replies: { sage: ['I think so.'] } });
+  it('journals quick when the quick model is sure', async () => {
+    const h = harness({ replies: { sage: ['I think so.'] } });
     await h.controller.respondToPerson({ requestId: 'r1', text: 'Sage, what do you think?' });
-    expect(intent).not.toHaveBeenCalled();
-    expect(h.published.find((e) => e.type === 'floor.decision')?.payload).toMatchObject({ decidedBy: 'rules' });
+    expect(h.published.find((e) => e.type === 'floor.decision')?.payload).toMatchObject({ decidedBy: 'quick' });
   });
 
-  it('falls back to the rules and journals it when the model fails', async () => {
-    const h = harness({ intent: async () => Promise.reject(new Error('down')), replies: { echo: ['Hi.'], sage: ['Hello.'] } });
+  it('answers with the host and journals default when both models fail', async () => {
+    const h = harness({ intent: async () => Promise.reject(new Error('down')), replies: { echo: ['Hi.'] } });
     await h.controller.respondToPerson({ requestId: 'r1', text: 'Echo, what do you think of Sage?' });
     await settle();
-    expect(h.turns.map((t) => t.avatarId)).toEqual(['echo', 'sage']);
+    expect(h.turns.map((t) => t.avatarId)).toEqual(['echo']);
     const payload = h.published.find((e) => e.type === 'floor.decision')?.payload;
-    expect(payload).toMatchObject({ decidedBy: 'rules-fallback' });
-    expect((payload?.trace as string[]).join(' ')).toContain('intent model failed (down) -> rules');
+    expect(payload).toMatchObject({ decidedBy: 'default' });
+    expect((payload?.trace as string[]).join(' ')).toContain('chat model failed (down)');
   });
 
   it('drops a pending intent call when Kevin speaks again: no turn runs for the old line, the new one is unaffected', async () => {
@@ -493,7 +520,7 @@ describe('lines the intent model decides', () => {
         signal.addEventListener('abort', () => (aborted = true));
         return new Promise((resolve) => (release = resolve));
       }
-      return Promise.resolve({ addressed: 'unclear', wants: 'answer', other: null });
+      return Promise.resolve({ addressed: 'rex', wants: 'answer', other: null });
     });
     const h = harness({ intent, replies: { rex: ['Rex here.'], sage: ['Sage here.'] } });
     const first = h.controller.respondToPerson({ requestId: 'r1', text: 'Tell me about Sage.' });

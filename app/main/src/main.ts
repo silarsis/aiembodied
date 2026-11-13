@@ -19,7 +19,7 @@ import { FloorController } from './floor/index.js';
 import { createIntentRouter } from './floor/intent-router.js';
 import { createModelBid } from './floor/bid.js';
 import { createSystemOne } from './decide/system-one.js';
-import { createSystemOneAddressee, createSystemOneBid } from './floor/system-one-floor.js';
+import { createSystemOneAddressee, createSystemOneBid, createSystemOneIntent } from './floor/system-one-floor.js';
 import { avatarIdForName } from './avatars/avatar-id.js';
 import { SwitchboardMirror } from './switchboard/mirror.js';
 import { AvatarRegistry, DEFAULT_AVATAR_ID, type AvatarProfile } from './avatars/avatar-registry.js';
@@ -2703,7 +2703,13 @@ app.whenReady().then(async () => {
         if (!client) return Promise.reject(new Error('Quick decisions are off'));
         return createSystemOneAddressee(client, (id) => registry.get(id)?.name ?? id)(input, signal);
       },
-      // Kevin's lines the name rules are not sure about go to the Idle thoughts model; a failure leaves them to the rules.
+      // Kevin's lines go to the fine-tuned quick model first (the decide route must serve the floor checkpoint, e.g. laya-floor-v1);
+      // when it is unsure or fails the Idle thoughts chat model reads the line, then the recent partner or the host.
+      quickIntent: (input, signal) => {
+        const client = createSystemOne({ routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger });
+        if (!client) return Promise.reject(new Error('Quick decisions are off'));
+        return createSystemOneIntent(client, (id) => registry.get(id)?.name ?? id)(input, signal);
+      },
       intent: createIntentRouter({
         routing: () => manager.getConfig().models,
         keyFor: (id) => manager.getServerKey(id),

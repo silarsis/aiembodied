@@ -4,7 +4,7 @@
  * reject on any failure, so the caller falls back to the Idle thoughts model or the old rules.
  */
 import type { SystemOneClient } from '../decide/system-one.js';
-import type { AddresseeFunction, BidCandidate, BidFunction, FloorLine } from './floor-manager.js';
+import type { AddresseeFunction, BidCandidate, BidFunction, FloorLine, IntentInput, QuickIntentFunction, QuickIntentResult } from './floor-manager.js';
 
 const RECENT_LINES = 4;
 const LINE_CHARS = 200;
@@ -81,5 +81,99 @@ export function createSystemOneBid(client: SystemOneClient, nameOfSpeaker: (from
       want: answers[`bid${index}`] ?? 0,
       reason: 'quick decision',
     }));
+  };
+}
+
+/** The prompt the floor model was trained on (services/laya/training/floor_prompt.py). Keep the strings identical. */
+const TRAINED_RECENT_LINES = 4;
+const TRAINED_LINE_CHARS = 200;
+
+const trainedClip = (text: string): string => text.replace(/\s+/g, ' ').trim().slice(0, TRAINED_LINE_CHARS);
+
+const displayName = (candidate: BidCandidate): string => candidate.name.trim() || candidate.avatarId;
+
+/** Mirrors `build_state`: a plain string, one fact per line, ending with Kevin's line. */
+export function buildFloorState(input: IntentInput, speakerName: (from: string) => string): string {
+  const nameById = new Map(input.candidates.map((candidate) => [candidate.avatarId, displayName(candidate)] as const));
+  const room = input.candidates.map((candidate) => (candidate.avatarId === input.hostId ? `${displayName(candidate)} (host)` : displayName(candidate)));
+  const partner = input.partnerId ? nameById.get(input.partnerId) : undefined;
+  return [
+    `Avatars in the room: ${room.join(', ')}.`,
+    `Kevin last spoke with: ${partner ?? 'nobody'}.`,
+    ...input.recent.slice(-TRAINED_RECENT_LINES).map((line) => `${speakerName(line.from)}: ${trainedClip(line.text)}`),
+    `Kevin: ${input.text}`,
+  ].join('\n');
+}
+
+type ChoiceQuestions = Record<'addressed' | 'wants' | 'other', { type: 'choice'; instructions: string; criteria: Record<string, string> }>;
+
+/** Mirrors `build_questions`. Returns the option keys too, to map the answers back to avatars. */
+export function buildFloorQuestions(candidates: BidCandidate[]): { questions: ChoiceQuestions; keys: Map<string, BidCandidate> } {
+  const keys = optionKeys(candidates, [ALL_KEY, 'unclear', 'none']);
+  const addressed: Record<string, string> = {};
+  const other: Record<string, string> = {};
+  for (const [key, candidate] of keys) {
+    addressed[key] = `Kevin is speaking to ${displayName(candidate)}`;
+    other[key] = displayName(candidate);
+  }
+  addressed[ALL_KEY] = 'Kevin is speaking to all the avatars';
+  addressed.unclear = 'The line does not say which avatar he is speaking to';
+  other.none = 'no other avatar is involved';
+  return {
+    keys,
+    questions: {
+      addressed: { type: 'choice', instructions: 'Which avatar is Kevin speaking to in his last line, the one who should act on it?', criteria: addressed },
+      wants: {
+        type: 'choice',
+        instructions: 'What does Kevin want that avatar to do?',
+        criteria: {
+          answer: 'reply to Kevin or do what he asks',
+          converse: 'go and have a conversation with another avatar',
+          relay: 'ask or tell another avatar something for Kevin',
+        },
+      },
+      other: { type: 'choice', instructions: 'Which other avatar should they talk to or pass the message to?', criteria: other },
+    },
+  };
+}
+
+const topOf = (probabilities: Record<string, number>): { key: string; p: number } | null => {
+  let best: { key: string; p: number } | null = null;
+  for (const [key, p] of Object.entries(probabilities)) if (!best || p > best.p) best = { key, p };
+  return best;
+};
+
+/**
+ * Kevin's line on the fine-tuned floor model, in exactly the format it was trained on. The confidence is the
+ * lowest top probability of the questions that matter (`other` only counts for converse and relay).
+ * Rejects on any failure, so the floor manager asks the chat model instead.
+ */
+export function createSystemOneIntent(client: SystemOneClient, nameOf: (avatarId: string) => string): QuickIntentFunction {
+  const speakerName = (from: string): string => (from.startsWith('avatar:') ? nameOf(from.slice('avatar:'.length)) : 'Kevin');
+  return async (input, signal) => {
+    const state = buildFloorState(input, speakerName);
+    const { questions, keys } = buildFloorQuestions(input.candidates);
+    const answers = await client.ask(state, questions, { signal });
+    const addressedTop = topOf(answers.addressed);
+    const wantsTop = topOf(answers.wants);
+    const otherTop = topOf(answers.other);
+    if (!addressedTop || !wantsTop || !otherTop) throw new Error('The quick intent answer was incomplete.');
+    const wants = wantsTop.key as QuickIntentResult['wants'];
+    if (wants !== 'answer' && wants !== 'converse' && wants !== 'relay') throw new Error('The quick intent answer made no sense.');
+    let addressed: string;
+    if (addressedTop.key === ALL_KEY || addressedTop.key === 'unclear') addressed = addressedTop.key;
+    else {
+      const candidate = keys.get(addressedTop.key);
+      if (!candidate) throw new Error('The quick intent answer made no sense.');
+      addressed = candidate.avatarId;
+    }
+    let other: string | null = null;
+    if (otherTop.key !== 'none') {
+      const candidate = keys.get(otherTop.key);
+      if (!candidate) throw new Error('The quick intent answer made no sense.');
+      other = candidate.avatarId;
+    }
+    const confidence = Math.min(addressedTop.p, wantsTop.p, wants === 'answer' ? 1 : otherTop.p);
+    return { addressed, wants, other, confidence };
   };
 }

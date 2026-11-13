@@ -2,18 +2,38 @@
  * The floor manager decides who speaks in a scene. It is pure: no Electron, no I/O, time comes in
  * with each utterance (`at`, from the caller's injected clock) and bids from an injected function.
  *
- * Rules first, then a model for the lines the rules are unsure of, then bids. Kevin (the person) always wins: his speech cancels avatar speech and
- * clears the queue (`bargeIn`). For Kevin's words, in this order: a request to converse WITH a named
- * avatar ("talk to Sage": Sage is the target, someone else starts), "talk to each other", "you two" /
- * "everyone", a question to relay ("ask Echo ..."), the avatars he names, the avatar he last talked
- * with if that was recent, the host. For an avatar's words (chatter): only the other avatars of the
- * scene may answer; in a chat Kevin asked for, the other one of the pair; else the one addressed by
- * name, else the one that bids highest above the threshold, else nobody. A chat Kevin asked for has
- * no limit and runs until he speaks; spontaneous chatter stops after a time since Kevin last spoke.
+ * Kevin (the person) always wins: his speech cancels avatar speech and clears the queue (`bargeIn`).
+ * With one avatar in the scene that avatar answers. With two or more, Kevin's line is read by the
+ * fine-tuned quick model (`quickIntent`); when it is unsure, fails or times out the chat model
+ * (`intent`) reads it; when that fails too a low-confidence quick answer is used, else the avatar he
+ * last talked with, else the host. No code looks at the words of his line. For an avatar's words
+ * (chatter): only the other avatars of the scene may answer; in a chat Kevin asked for, the other one
+ * of the pair; else the one addressed by name, else the one that bids highest above the threshold,
+ * else nobody. A chat Kevin asked for has no limit and runs until he speaks; spontaneous chatter
+ * stops after a time since Kevin last spoke.
  * One avatar speaks at a time: a speaking slot and a FIFO queue.
  */
 
-import { classifyPersonLine, namedIn, type PersonClass } from './person-rules.js';
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Where the name first appears as a whole word (any case), or -1. Used for avatars' own lines only. */
+function findName(text: string, name: string): number {
+  const trimmed = name.trim();
+  if (!trimmed) return -1;
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRegExp(trimmed)}(?![\\p{L}\\p{N}_])`, 'iu');
+  return pattern.exec(text)?.index ?? -1;
+}
+
+/** Ids of scene avatars whose names appear in the text, in the order named. */
+function namedIn(text: string, candidates: string[], nameOf: (avatarId: string) => string): string[] {
+  return candidates
+    .map((avatarId) => ({ avatarId, at: findName(text, nameOf(avatarId)) }))
+    .filter((entry) => entry.at >= 0)
+    .sort((a, b) => a.at - b.at)
+    .map((entry) => entry.avatarId);
+}
 
 export const PARTNER_WINDOW_MS = 5 * 60_000;
 export const BID_THRESHOLD = 0.5;
@@ -24,8 +44,12 @@ export const BID_TIMEOUT_MS = 6_000;
 export const ADDRESSEE_TIMEOUT_MS = 1_500;
 /** How sure the check must be before its answer is used. */
 export const ADDRESSEE_THRESHOLD = 0.6;
-/** The intent model is asked only about lines the rules are not sure of; past this the rules decide. */
+/** The chat-model intent call is the fallback for the quick model; past this it counts as failed. */
 export const INTENT_TIMEOUT_MS = 2_500;
+/** The quick (fine-tuned) intent call; past this the chat model is asked. */
+export const QUICK_INTENT_TIMEOUT_MS = 1_500;
+/** How sure the quick model must be (lowest of the questions that matter) before its answer is used. */
+export const QUICK_INTENT_THRESHOLD = 0.8;
 export const DEFAULT_SCENE_ID = 'default';
 export const PERSON_SPEAKER = 'person:kevin';
 const RECENT_LINES_LIMIT = 8;
@@ -64,8 +88,12 @@ export interface FloorDecision {
   talk?: boolean;
   /** Kevin asked `from` to pass a question to `to`; `to` is not a speaker until `from` has spoken. */
   relay?: { from: string; to: string };
-  /** For Kevin's lines: the rules were sure, the intent model decided, or the model failed and the rules decided. */
-  decidedBy?: 'rules' | 'model' | 'rules-fallback';
+  /**
+   * For Kevin's lines: 'quick' (the fine-tuned model was confident), 'model' (the chat model decided),
+   * 'quick-low' (both failed, the quick model's unsure answer was used) or 'default' (partner or host;
+   * also the only avatar in a one-avatar scene).
+   */
+  decidedBy?: 'quick' | 'model' | 'quick-low' | 'default';
 }
 
 /** What the intent check is asked about one of Kevin's lines. */
@@ -91,6 +119,12 @@ export interface IntentResult {
 
 /** Reads one of Kevin's lines and says who should act on it and what he wants. Rejecting means no answer. */
 export type IntentFunction = (input: IntentInput, signal: AbortSignal) => Promise<IntentResult>;
+
+/** The quick model's reading of a line, with how sure it is (0..1). */
+export type QuickIntentResult = IntentResult & { confidence: number };
+
+/** Reads one of Kevin's lines on the fine-tuned quick model. Rejecting means no answer. */
+export type QuickIntentFunction = (input: IntentInput, signal: AbortSignal) => Promise<QuickIntentResult>;
 
 /** What a routing step decided, before it is committed to the manager's state. */
 interface PersonPlan {
@@ -153,7 +187,9 @@ export interface FloorManagerOptions {
   bid?: BidFunction;
   /** A quick check of who a line is aimed at, used where the name rules find no one clear. */
   addressee?: AddresseeFunction;
-  /** Reads Kevin's lines the rules are not sure about (several names, a name inside a longer sentence). */
+  /** Reads Kevin's lines first (the fine-tuned quick model). */
+  quickIntent?: QuickIntentFunction;
+  /** Reads Kevin's lines when the quick model is unsure or fails (the chat model). */
   intent?: IntentFunction;
   /** True when avatar-to-avatar talk should be out loud. */
   hearChatter?: () => boolean;
@@ -164,9 +200,9 @@ export interface FloorManagerOptions {
   addresseeTimeoutMs?: number;
   addresseeThreshold?: number;
   intentTimeoutMs?: number;
+  quickIntentTimeoutMs?: number;
+  quickIntentThreshold?: number;
 }
-
-export { converseTarget, findName, relayTargets } from './person-rules.js';
 
 export class FloorManager {
   private readonly options: FloorManagerOptions;
@@ -177,6 +213,8 @@ export class FloorManager {
   private readonly addresseeTimeoutMs: number;
   private readonly addresseeThreshold: number;
   private readonly intentTimeoutMs: number;
+  private readonly quickIntentTimeoutMs: number;
+  private readonly quickIntentThreshold: number;
 
   private partner: { avatarId: string; at: number } | null = null;
   private chatterStartedAt: number | null = null;
@@ -203,6 +241,8 @@ export class FloorManager {
     this.addresseeTimeoutMs = options.addresseeTimeoutMs ?? ADDRESSEE_TIMEOUT_MS;
     this.addresseeThreshold = options.addresseeThreshold ?? ADDRESSEE_THRESHOLD;
     this.intentTimeoutMs = options.intentTimeoutMs ?? INTENT_TIMEOUT_MS;
+    this.quickIntentTimeoutMs = options.quickIntentTimeoutMs ?? QUICK_INTENT_TIMEOUT_MS;
+    this.quickIntentThreshold = options.quickIntentThreshold ?? QUICK_INTENT_THRESHOLD;
   }
 
   scene(): Scene {
@@ -260,48 +300,72 @@ export class FloorManager {
       return { speakers: [], channel: 'aloud', trace };
     }
     if (scene.avatarIds.length === 1) {
-      return finish({ speakers: [{ avatarId: scene.avatarIds[0], reason: 'host' }], trace: [`person: one avatar in scene -> ${scene.avatarIds[0]}`] }, 'rules');
+      return finish({ speakers: [{ avatarId: scene.avatarIds[0], reason: 'host' }], trace: [`person: one avatar in scene -> ${scene.avatarIds[0]}`] }, 'default');
     }
-    const rule = classifyPersonLine(utterance.text, scene.avatarIds, this.options.nameOf);
-    const byRules = this.planByRules(rule, utterance, scene);
-    if (rule.clear) {
-      trace.push(`person: clear rule (${rule.label})`);
-      return finish(byRules, 'rules');
+    const describe = (result: IntentResult): string => `${result.addressed} ${result.wants}${result.other ? ` ${result.other}` : ''}`;
+    const reason = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+    // Step 1: the fine-tuned quick model.
+    let quickLow: QuickIntentResult | null = null;
+    if (this.options.quickIntent) {
+      const started = Date.now();
+      try {
+        const result = await this.ask(this.options.quickIntent, utterance, scene, this.quickIntentTimeoutMs, 'Quick intent');
+        if (seq !== this.personSeq) return this.superseded(trace);
+        const ms = Date.now() - started;
+        const confidence = Number.isFinite(result.confidence) ? result.confidence : 0;
+        if (confidence >= this.quickIntentThreshold) {
+          trace.push(`person: quick intent decided -> ${describe(result)} (confidence ${confidence.toFixed(2)}, ${ms} ms)`);
+          return finish(this.planFromIntent(result, utterance, scene), 'quick');
+        }
+        quickLow = { ...result, confidence };
+        trace.push(`person: quick intent unsure -> ${describe(result)} (confidence ${confidence.toFixed(2)} < ${this.quickIntentThreshold}, ${ms} ms)`);
+      } catch (error) {
+        if (seq !== this.personSeq) return this.superseded(trace);
+        trace.push(`person: quick intent failed (${reason(error)})`);
+      }
+    } else {
+      trace.push('person: no quick intent');
     }
-    const intent = this.options.intent;
-    if (!intent) {
-      trace.push(`person: not clear (${rule.label}) and no intent model -> rules`);
-      return finish(byRules, 'rules');
+    // Step 2: the chat model.
+    if (this.options.intent) {
+      const started = Date.now();
+      try {
+        const result = await this.ask(this.options.intent, utterance, scene, this.intentTimeoutMs, 'Intent model');
+        if (seq !== this.personSeq) return this.superseded(trace);
+        trace.push(`person: chat model decided -> ${describe(result)} (${Date.now() - started} ms)`);
+        return finish(this.planFromIntent(result, utterance, scene), 'model');
+      } catch (error) {
+        if (seq !== this.personSeq) return this.superseded(trace);
+        trace.push(`person: chat model failed (${reason(error)})`);
+      }
+    } else {
+      trace.push('person: no chat-model intent');
     }
-    trace.push(`person: not clear (${rule.label}) -> asking the intent model`);
-    const started = Date.now();
-    try {
-      const result = await this.askIntent(intent, utterance, scene);
-      if (seq !== this.personSeq) return this.superseded(trace);
-      const ms = Date.now() - started;
-      trace.push(`person: intent model -> ${result.addressed} ${result.wants}${result.other ? ` ${result.other}` : ''} (${ms} ms)`);
-      return finish(this.planFromIntent(result, utterance, scene), 'model');
-    } catch (error) {
-      if (seq !== this.personSeq) return this.superseded(trace);
-      trace.push(`person: intent model failed (${error instanceof Error ? error.message : String(error)}) -> rules`);
-      return finish(byRules, 'rules-fallback');
+    // Step 3: the quick model's unsure answer beats a blind default.
+    if (quickLow) {
+      trace.push(`person: using the unsure quick answer -> ${describe(quickLow)} (confidence ${quickLow.confidence.toFixed(2)})`);
+      return finish(this.planFromIntent(quickLow, utterance, scene), 'quick-low');
     }
+    // Step 4: no text analysis; the recent partner, else the host.
+    const fallback = this.fallbackSpeaker(scene, utterance.at, null) ?? { avatarId: scene.hostId, reason: 'host' as const };
+    trace.push(`person: default -> ${fallback.avatarId} (${fallback.reason})`);
+    return finish({ speakers: [{ avatarId: fallback.avatarId, reason: fallback.reason }], trace: [] }, 'default');
   }
 
   private superseded(trace: string[]): FloorDecision {
-    trace.push('person: Kevin spoke again before the intent model answered; dropped');
+    trace.push('person: Kevin spoke again before the intent answered; dropped');
     return { speakers: [], channel: 'aloud', trace };
   }
 
-  /** One call to the intent function, bounded by `intentTimeoutMs` and dropped when Kevin speaks again. */
-  private async askIntent(intent: IntentFunction, utterance: FloorUtterance, scene: Scene): Promise<IntentResult> {
+  /** One call to an intent function, bounded by `timeoutMs` and dropped when Kevin speaks again. */
+  private async ask<R extends IntentResult>(intent: (input: IntentInput, signal: AbortSignal) => Promise<R>, utterance: FloorUtterance, scene: Scene, timeoutMs: number, label: string): Promise<R> {
     const controller = new AbortController();
     this.pendingIntent = controller;
-    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(this.intentTimeoutMs)]);
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)]);
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const timeout = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('Intent model timed out')), this.intentTimeoutMs);
+        timer = setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs);
         timer.unref?.();
       });
       const run = intent(
@@ -321,7 +385,7 @@ export class FloorManager {
         (result.addressed === 'everyone' || result.addressed === 'unclear' || scene.avatarIds.includes(result.addressed)) &&
         (result.wants === 'answer' || result.wants === 'converse' || result.wants === 'relay') &&
         (result.other === null || scene.avatarIds.includes(result.other));
-      if (!valid) throw new Error('The intent answer was not usable');
+      if (!valid) throw new Error(`${label} gave an answer that was not usable`);
       return result;
     } finally {
       if (timer) clearTimeout(timer);
@@ -367,62 +431,6 @@ export class FloorManager {
       relay: { from, to },
       trace: [`person: ${from} is asked to pass a question to ${to} -> ${from} answers`],
     };
-  }
-
-  /** What the rules decide for a line (the fallback when the model cannot be asked). Reads state, changes none. */
-  private planByRules(rule: PersonClass, utterance: FloorUtterance, scene: Scene): PersonPlan {
-    const at = utterance.at;
-    const { named, relayed } = rule;
-    if (rule.converse && rule.kind === 'converse') {
-      // "Talk to Sage": Sage is who the conversation is with, so someone else starts it.
-      const target = rule.converse;
-      const preferred = [...relayed.filter((id) => id !== target), ...named.filter((id) => id !== target)][0] ?? null;
-      return this.conversePlan(target, preferred, scene, at);
-    }
-    if (rule.kind === 'talk-each-other') {
-      const partner = this.partner && scene.avatarIds.includes(this.partner.avatarId) ? this.partner.avatarId : scene.hostId;
-      const first = named[0] ?? partner;
-      const second = scene.avatarIds.length === 2 ? scene.avatarIds.find((id) => id !== first) : undefined;
-      return {
-        speakers: [{ avatarId: first, reason: named.length > 0 ? 'addressed' : 'host' }],
-        ...(second ? { converse: { starter: first, target: second } } : {}),
-        talk: { pair: second ? [first, second] : null },
-        trace: [`person: asked them to talk to each other -> ${first} starts, out loud${second ? `, ${first} and ${second} alternate` : ', in scene order'}`],
-      };
-    }
-    if (rule.kind === 'group') {
-      return { speakers: scene.avatarIds.map((avatarId) => ({ avatarId, reason: 'all' as const })), trace: ['person: addressed everyone -> all avatars in scene order'] };
-    }
-    if (relayed.length > 0) {
-      // "Sage, ask Echo ...": Sage answers Kevin and passes the question on; Echo is not a speaker yet.
-      let answerers = rule.vocative && !relayed.includes(rule.vocative) ? [rule.vocative] : named.filter((id) => !relayed.includes(id));
-      if (answerers.length === 0) {
-        const partnerId = this.freshPartner(scene, at);
-        const pick = partnerId && !relayed.includes(partnerId) ? partnerId : !relayed.includes(scene.hostId) ? scene.hostId : scene.avatarIds.find((id) => !relayed.includes(id));
-        answerers = pick ? [pick] : [];
-      }
-      if (answerers.length > 0) {
-        const plan = this.relayPlan(answerers[0], relayed[0], named.includes(answerers[0]) ? 'addressed' : 'host');
-        return { ...plan, speakers: answerers.map((id) => ({ avatarId: id, reason: named.includes(id) ? ('addressed' as const) : ('host' as const) })) };
-      }
-    }
-    if (rule.kind === 'kevin-talks-to' && rule.kevinWants) {
-      return { speakers: [{ avatarId: rule.kevinWants, reason: 'addressed' }], trace: [`person: Kevin wants to talk to ${rule.kevinWants} himself -> ${rule.kevinWants} answers Kevin`] };
-    }
-    if (named.length > 0) {
-      return { speakers: named.map((avatarId) => ({ avatarId, reason: 'addressed' as const })), trace: [`person: addressed by name -> ${named.join(', ')}`] };
-    }
-    const trace = ['person: no name'];
-    if (this.partner && scene.avatarIds.includes(this.partner.avatarId)) {
-      const age = at - this.partner.at;
-      if (age <= this.partnerWindowMs) {
-        trace.push(`person: last partner ${this.partner.avatarId} ${Math.round(age / 1000)} s ago -> ${this.partner.avatarId}`);
-        return { speakers: [{ avatarId: this.partner.avatarId, reason: 'last-partner' }], trace };
-      }
-      trace.push(`person: last partner ${this.partner.avatarId} too long ago (${Math.round(age / 1000)} s)`);
-    }
-    trace.push(`person: host -> ${scene.hostId}`);
-    return { speakers: [{ avatarId: scene.hostId, reason: 'host' }], trace };
   }
 
   /** The decision the intent model's answer stands for. Answers that do not hang together count as a plain answer by the addressed avatar. */

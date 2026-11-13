@@ -50,17 +50,14 @@ if (client) {
 | Caller | Question | Threshold | If off, unsure or failing |
 | --- | --- | --- | --- |
 | Floor addressee check (`floor/system-one-floor.ts`) | `choice`: who an avatar's line is for | confidence from the floor controller | skipped, old name rules. Avatar chatter only; not asked when a name, relay or pair conversation already decides |
+| Floor intent for Kevin's lines (`createSystemOneIntent`, same file) | three `choice` questions in the trained format: who he speaks to, what he wants, the other avatar | lowest top probability >= 0.8 | Idle thoughts chat model (`floor/intent-router.ts`), then an unsure quick answer, then the last partner or the host |
 | Floor bids (same file) | one `score` per avatar: want to reply | none, bids are ranked | Idle thoughts model |
 | Switchboard decide step (`switchboard/deliberate-system-one.ts`) | `choice` ignore / remember / say, `noul` urgent | top action >= 0.6; urgent needs `say` and >= 0.85, never under do-not-disturb | chat-model `deliberate`, then speak when idle (a Home Assistant change is remembered instead) |
 | Proactive tick (`presence/proactive-tick.ts`) | `noul` act, `choice` what to say | act >= 0.75 and top choice >= 0.6 | do nothing (quiet is the safe default) |
 
-### Kevin's lines no longer use the addressee check
+### Kevin's lines are decided by the quick model
 
-The floor used to ask this check who Kevin's line was for when it named two avatars. It was removed from that path. Measured on
-the user's machine (`pnpm floor:check`), the server ignored the line and answered near-uniformly when the state's `line` was an
-object, so its top choice carried no information. Kevin's ambiguous lines now go to a small chat model on the Idle thoughts route (`floor/intent-router.ts`,
-see `services/switchboard/README.md`), and the name rules decide when it fails. The check still serves avatar chatter, where a
-failed or unsure answer leads to bids.
+With two or more avatars, Kevin's lines go to the quick model first, then to the chat model (`floor/intent-router.ts`) when it is unsure, fails or times out. No code analyses his sentences. The prompt must be exactly the one in `services/laya/training/floor_prompt.py` (it is mirrored in `createSystemOneIntent` and checked by a test). This only works when the `decide` route's model is the fine-tuned floor checkpoint (for example `laya-floor-v1`, served through `LAYA_EXTRA_MODELS`): the stock checkpoint is near chance, so most lines fall through to the chat model. The addressee check above still serves avatar chatter only. See `services/switchboard/README.md`.
 
 ## When to use it
 

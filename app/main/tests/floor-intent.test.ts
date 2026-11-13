@@ -25,20 +25,17 @@ const avatar = (id: string, text: string, at = 1_000) => ({ from: `avatar:${id}`
 const ids = (decision: { speakers: Array<{ avatarId: string }> }) => decision.speakers.map((s) => s.avatarId);
 const NOT_CLEAR = 'Tell me about Sage.';
 
-describe('FloorManager: the intent model', () => {
-  it('is asked about lines the rules are not sure of, with the scene, the recent lines, the host and the partner', async () => {
+describe('FloorManager: the chat-model intent (fallback for the quick model)', () => {
+  it('is asked with the scene, the recent lines, the host and the partner', async () => {
     const { manager, intent } = make({ intent: { addressed: 'sage', wants: 'answer', other: null } });
-    await manager.route(kevin('Rex, hello', 0));
+    manager.listenTo('rex', 0);
     await manager.route(avatar('rex', 'Hi Kevin.', 500));
     const decision = await manager.route(kevin('Not you, Echo. Sage, what do you think?', 60_000));
     expect(intent).toHaveBeenCalledOnce();
     const [input, signal] = intent.mock.calls[0];
     expect(input).toEqual({
       text: 'Not you, Echo. Sage, what do you think?',
-      recent: [
-        { from: 'person:kevin', text: 'Rex, hello' },
-        { from: 'avatar:rex', text: 'Hi Kevin.' },
-      ],
+      recent: [{ from: 'avatar:rex', text: 'Hi Kevin.' }],
       candidates: [
         { avatarId: 'echo', name: 'Echo' },
         { avatarId: 'sage', name: 'Sage' },
@@ -50,53 +47,14 @@ describe('FloorManager: the intent model', () => {
     expect(signal).toBeInstanceOf(AbortSignal);
     expect(decision.speakers).toEqual([{ avatarId: 'sage', reason: 'addressed' }]);
     expect(decision.decidedBy).toBe('model');
-    expect(decision.trace.join(' ')).toMatch(/person: intent model -> sage answer \(\d+ ms\)/);
+    expect(decision.trace.join(' ')).toMatch(/person: no quick intent.*person: chat model decided -> sage answer \(\d+ ms\)/);
   });
 
   it('gives no partner when the last talk was too long ago', async () => {
     const { manager, intent } = make();
-    await manager.route(kevin('Rex, hello', 0));
+    manager.listenTo('rex', 0);
     await manager.route(kevin(NOT_CLEAR, 10 * 60_000));
     expect(intent.mock.calls[0][0].partnerId).toBeNull();
-  });
-
-  it('is not asked about clear lines, and says the rules decided', async () => {
-    const { manager, intent } = make();
-    const lines = [
-      'Sage, what time is it?',
-      'Hey Echo, how are you?',
-      'What is the weather like?',
-      'You two, introduce yourselves.',
-      'Hello everybody.',
-      'Both of you, say hello.',
-      'Everyone, what do you think?',
-      'Echo and Sage, talk to each other',
-      'Sage, ask Echo what time it is.',
-      'Echo, talk to Sage.',
-      'I want to talk to Sage.',
-      'Sage, tell Echo she should talk to Rex.',
-    ];
-    for (const line of lines) {
-      const decision = await manager.route(kevin(line));
-      expect([line, decision.decidedBy, decision.trace[0]]).toEqual([line, 'rules', expect.stringContaining('person: clear rule')]);
-    }
-    expect(intent).not.toHaveBeenCalled();
-  });
-
-  it('has its own trace line when Kevin talks to the avatar himself', async () => {
-    const { manager } = make();
-    const decision = await manager.route(kevin('I want to talk to Sage.'));
-    expect(decision.speakers).toEqual([{ avatarId: 'sage', reason: 'addressed' }]);
-    expect(decision.trace).toEqual(['person: clear rule (Kevin talks to the avatar himself)', 'person: Kevin wants to talk to sage himself -> sage answers Kevin']);
-  });
-
-  it('lets the opening avatar pass a question on even when the line also says "talk to"', async () => {
-    const { manager } = make();
-    const decision = await manager.route(kevin('Sage, tell Echo she should talk to Rex.'));
-    expect(decision.speakers).toEqual([{ avatarId: 'sage', reason: 'addressed' }]);
-    expect(decision.relay).toEqual({ from: 'sage', to: 'echo' });
-    expect(decision.converse).toBeUndefined();
-    expect(manager.state().talking).toBe(false);
   });
 
   it('is not asked with one avatar in the scene', async () => {
@@ -123,7 +81,7 @@ describe('FloorManager: the intent model', () => {
       expect(decision.converse).toEqual({ starter: 'echo', target: 'sage' });
       expect(decision.channel).toBe('aloud');
       expect(decision.decidedBy).toBe('model');
-      expect(decision.trace.join(' ')).toMatch(/intent model -> echo converse sage/);
+      expect(decision.trace.join(' ')).toMatch(/chat model decided -> echo converse sage/);
       expect(manager.state().talking).toBe(true);
       const reply = await manager.route({ ...avatar('echo', 'Hello over there.', 2_000), toPerson: true });
       expect(ids(reply)).toEqual(['sage']);
@@ -134,12 +92,12 @@ describe('FloorManager: the intent model', () => {
     it('converse: the target is never the starter; an unclear listener falls back to the partner, then the host', async () => {
       const unclear: IntentResult = { addressed: 'unclear', wants: 'converse', other: 'sage' };
       const fresh = make({ intent: unclear });
-      await fresh.manager.route(kevin('Rex, hi', 0));
+      fresh.manager.listenTo('rex', 0);
       const viaPartner = await fresh.manager.route(kevin(NOT_CLEAR, 1_000));
       expect(viaPartner.converse).toEqual({ starter: 'rex', target: 'sage' });
       expect(viaPartner.speakers[0].reason).toBe('last-partner');
       const targetIsPartner = make({ intent: unclear });
-      await targetIsPartner.manager.route(kevin('Sage, hi', 0));
+      targetIsPartner.manager.listenTo('sage', 0);
       const viaHost = await targetIsPartner.manager.route(kevin(NOT_CLEAR, 1_000));
       expect(viaHost.converse).toEqual({ starter: 'echo', target: 'sage' });
       expect(viaHost.speakers[0].reason).toBe('host');
@@ -170,13 +128,13 @@ describe('FloorManager: the intent model', () => {
 
     it('unclear: the partner if recent, else the host, never the other avatar', async () => {
       const partner = make({ intent: { addressed: 'unclear', wants: 'answer', other: null } });
-      await partner.manager.route(kevin('Sage, hi', 0));
+      partner.manager.listenTo('sage', 0);
       expect((await partner.manager.route(kevin(NOT_CLEAR, 1_000))).speakers).toEqual([{ avatarId: 'sage', reason: 'last-partner' }]);
       const stale = make({ intent: { addressed: 'unclear', wants: 'answer', other: null } });
-      await stale.manager.route(kevin('Sage, hi', 0));
+      stale.manager.listenTo('sage', 0);
       expect((await stale.manager.route(kevin(NOT_CLEAR, 10 * 60_000))).speakers).toEqual([{ avatarId: 'echo', reason: 'host' }]);
       const partnerIsOther = make({ intent: { addressed: 'unclear', wants: 'answer', other: 'sage' } });
-      await partnerIsOther.manager.route(kevin('Sage, hi', 0));
+      partnerIsOther.manager.listenTo('sage', 0);
       expect((await partnerIsOther.manager.route(kevin(NOT_CLEAR, 1_000))).speakers).toEqual([{ avatarId: 'echo', reason: 'host' }]);
       const hostIsOther = make({ intent: { addressed: 'unclear', wants: 'answer', other: 'echo' } });
       expect((await hostIsOther.manager.route(kevin(NOT_CLEAR))).speakers).toEqual([{ avatarId: 'sage', reason: 'host' }]);
@@ -201,24 +159,18 @@ describe('FloorManager: the intent model', () => {
     });
   });
 
-  describe('falls back to the rules', () => {
+  describe('when the chat model cannot answer', () => {
     it.each([
-      ['a timeout', 'hang' as const, /intent model failed \(Intent model timed out\) -> rules/],
-      ['an error', new Error('server down'), /intent model failed \(server down\) -> rules/],
-      ['an answer outside the scene', 'garbage' as const, /intent model failed \(The intent answer was not usable\) -> rules/],
-    ])('on %s', async (_label, intent, trace) => {
+      ['a timeout', 'hang' as const, /chat model failed \(Intent model timed out\)/],
+      ['an error', new Error('server down'), /chat model failed \(server down\)/],
+      ['an answer outside the scene', 'garbage' as const, /chat model failed \(Intent model gave an answer that was not usable\)/],
+    ])('on %s the host answers (no text analysis)', async (_label, intent, trace) => {
       const { manager } = make({ intent });
       const decision = await manager.route(kevin('Echo, what do you think of Sage?'));
-      expect(ids(decision)).toEqual(['echo', 'sage']);
-      expect(decision.decidedBy).toBe('rules-fallback');
+      expect(decision.speakers).toEqual([{ avatarId: 'echo', reason: 'host' }]);
+      expect(decision.decidedBy).toBe('default');
       expect(decision.trace.join(' ')).toMatch(trace);
       expect(manager.state().talking).toBe(false);
-    });
-
-    it('uses the old rules for a buried group word and for a name inside the line', async () => {
-      const { manager } = make({ intent: new Error('down') });
-      expect(ids(await manager.route(kevin('I wonder what you both think of the new sofa in the living room')))).toEqual(['echo', 'sage', 'rex']);
-      expect(ids(await manager.route(kevin(NOT_CLEAR)))).toEqual(['sage']);
     });
 
     it('does not wait longer than the timeout', async () => {
