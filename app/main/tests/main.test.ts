@@ -77,10 +77,13 @@ const ConfigManagerMock = vi.fn(function () {
 });
 
 function testRouting() {
-  return resolveModelRouting(
+  const routing = resolveModelRouting(
     builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }),
     defaultRoutes(DEFAULT_PROVIDER_SETTINGS, 'off'),
   );
+  // A routing checkpoint on the decide route, so Kevin's lines are offered to the (faked) quick model.
+  routing.routes.decide = { ...routing.routes.decide, model: 'laya-floor-v1' };
+  return routing;
 }
 
 class ConfigValidationErrorMock extends Error {
