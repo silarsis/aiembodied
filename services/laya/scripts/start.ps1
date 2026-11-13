@@ -74,7 +74,7 @@ if ($floorRepo -ne 'off') {
       $listed = @($env:LAYA_MODELS -split '[,\s]+' | Where-Object { $_ })
       if ($listed -notcontains 'laya-floor-v1') { $env:LAYA_MODELS = (@($listed) + 'laya-floor-v1') -join ',' }
     }
-    elseif (-not (Test-Path (Join-Path $floorDir 'config.json'))) {
+    elseif (-not (Test-Path (Join-Path $floorDir 'model.safetensors'))) {
       Write-Host "Downloading the floor model $floorRepo to $floorDir (about 850 MB, first start only)"
       $ErrorActionPreference = 'Continue'
       & $python -c "import huggingface_hub" 2>$null
@@ -91,7 +91,7 @@ if ($floorRepo -ne 'off') {
       else { Write-Warning "Could not download $floorRepo; continuing without the floor model (the chat model decides)." }
     }
     $ErrorActionPreference = 'Stop'
-    if ((-not $explicit) -and (Test-Path (Join-Path $floorDir 'config.json'))) {
+    if ((-not $explicit) -and (Test-Path (Join-Path $floorDir 'model.safetensors'))) {
       # Keep any existing LAYA_EXTRA_MODELS entries; an explicit laya-floor-v1 entry wins.
       $extra = [ordered]@{}
       if ($env:LAYA_EXTRA_MODELS) {
