@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { getPreloadApi, type PreloadApi } from '../preload-api.js';
 import { SatelliteContext } from './satellite-context.js';
 import { ConnectScreen } from './connect-screen.js';
@@ -65,15 +65,16 @@ export function SatelliteGate({ children }: { children: ReactNode }) {
   const { role, api } = useRole();
   const bridge = role === 'satellite' ? api?.satellite : undefined;
   const status = useSatelliteStatus(bridge);
-  const everOnline = useRef(false);
-  if (!status?.paired) everOnline.current = false;
-  else if (status.link === 'online') everOnline.current = true;
+  // Set while rendering (React's way of deriving state from a change): true from the first online link until unpaired.
+  const [everOnline, setEverOnline] = useState(false);
+  if (!status?.paired && everOnline) setEverOnline(false);
+  else if (status?.paired && status.link === 'online' && !everOnline) setEverOnline(true);
 
   if (role === 'loading') return null;
   if (role === 'full') return <>{children}</>;
   if (!bridge || !status) return null;
   if (!status.paired) return <ConnectScreen bridge={bridge} status={status} />;
-  if (!everOnline.current) return <Waiting status={status} bridge={bridge} />;
+  if (!everOnline) return <Waiting status={status} bridge={bridge} />;
   return (
     <SatelliteContext.Provider value={{ status, bridge }} key={`${status.hubUrl}|${status.deviceName}`}>
       {children}

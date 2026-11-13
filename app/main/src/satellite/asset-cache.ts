@@ -80,7 +80,8 @@ export class AssetCache {
       const parsed = JSON.parse(meta) as { key?: unknown; mime?: unknown };
       if (parsed.key !== key) return null;
       const time = new Date(this.now());
-      index.get(name)!.usedAt = time.getTime();
+      const entry = index.get(name);
+      if (entry) entry.usedAt = time.getTime();
       void utimes(this.dataPath(name), time, time).catch(() => undefined);
       return { mime: typeof parsed.mime === 'string' ? parsed.mime : 'application/octet-stream', data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength) };
     } catch {

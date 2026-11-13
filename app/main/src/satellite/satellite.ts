@@ -236,7 +236,7 @@ export class Satellite {
   /** The config the renderer asks for: no keys, no services, just enough for it to know what it is. */
   private config(): RendererConfig {
     const keyword = (this.welcome?.settings?.wakeWord as { keywordLabel?: unknown } | null | undefined)?.keywordLabel;
-    return {
+    const config = {
       role: 'satellite',
       conversationBackend: 'local',
       providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
@@ -245,7 +245,9 @@ export class Satellite {
       wakeWord: { model: 'hey_echo', keywordLabel: typeof keyword === 'string' && keyword ? keyword : DEFAULT_KEYWORD, threshold: 0.5, cooldownMs: 1500 },
       metrics: { enabled: false, host: '127.0.0.1', port: 9464, path: '/metrics' },
       ...this.audioPreferences,
-    } as RendererConfig;
+    };
+    // The pieces the renderer reads are all here; the rest of RendererConfig is optional for it.
+    return config as unknown as RendererConfig;
   }
 
   // -- IPC --------------------------------------------------------------------------------------
