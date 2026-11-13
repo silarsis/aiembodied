@@ -64,6 +64,7 @@ runTests('tests/server-manager.test.ts', 'Server Manager');
 runTests('tests/coding-*.test.ts', 'Coding');
 runTests('tests/rooms-*.test.ts', 'Rooms');
 runTests('tests/places/*.test.ts', 'Places');
+runTests('tests/room-hub/*.test.ts', 'Room Hub');
 
 console.log('\n' + '='.repeat(70));
 console.log('✅ All test groups passed!');

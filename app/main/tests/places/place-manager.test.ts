@@ -58,7 +58,8 @@ describe('PlaceManager', () => {
       expect(list.map((place) => place.id)).toEqual(['home', 'next-door', 'attic']);
       // A built-in keeps its node; only the name can change.
       expect(list[0]).toEqual({ id: 'home', name: 'Living room', node: 'local' });
-      expect(list[2]).toEqual({ id: 'attic', name: 'the attic', node: 'pc-2' });
+      // A place drawn by another PC says whether that PC is connected (not yet, after a start-up).
+      expect(list[2]).toEqual({ id: 'attic', name: 'the attic', node: 'pc-2', online: false });
     });
 
     it('survives garbage in the store', () => {
@@ -170,6 +171,7 @@ describe('PlaceManager', () => {
     it('puts a failed move away from this PC back on screen', () => {
       // A place drawn by another PC that never confirms: the avatar is back in the room it left.
       const { manager } = setup({ kv: { [PLACES_KEY]: JSON.stringify([{ id: 'attic', name: 'the attic', node: 'pc-2' }]) } });
+      manager.setOnline('attic', true);
       manager.startMove('sage', 'attic', 'chose to');
       expect(manager.isPresent('sage')).toBe(false);
       vi.advanceTimersByTime(MOVE_DEADLINE_MS);

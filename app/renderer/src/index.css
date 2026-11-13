@@ -1902,6 +1902,19 @@ body {
 .panelDialog__header button { margin-left: auto; padding: 5px 11px; border: 1px solid #334155; border-radius: 8px; background: #18253a; color: inherit; font: inherit; cursor: pointer; }
 .panelDialog__body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; scrollbar-width: thin; scrollbar-color: #334155 transparent; }
 .panelDialog .faces__grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.placesPanel { display: flex; flex-direction: column; gap: 22px; }
+.placesPanel__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; width: 100%; }
+.placesPanel__place { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid #22324a; border-radius: 12px; background: #111a2e; }
+.placesPanel__place p { margin: 0; }
+.placesPanel__header { display: flex; align-items: center; gap: 10px; }
+.placesPanel__header input { flex: 1; min-width: 0; }
+.placesPanel__dot { width: 10px; height: 10px; border-radius: 50%; background: #64748b; flex: none; }
+.placesPanel__dot[data-online='true'] { background: #4ade80; }
+.placesPanel__device { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.placesPanel__pairing { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.placesPanel__code { font-size: 2.2rem; letter-spacing: .3em; font-variant-numeric: tabular-nums; }
+.placesPanel__urls { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.placesPanel__urls code { color: #7dd3fc; }
 .toolsSettings { display: flex; flex-direction: column; gap: 22px; }
 .toolsSettings__section { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
 .toolsSettings__section h3 { margin: 0; font-size: 15px; }

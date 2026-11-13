@@ -74,6 +74,7 @@ import { useIdleDirector } from './rooms/use-idle-director.js';
 import { usePlaces } from './places/use-places.js';
 import { estimateSpeechMs, stagePresence } from './places/stage-presence.js';
 import { ElsewhereChip } from './places/elsewhere-chip.js';
+import { PlacesPanel } from './places/places-panel.js';
 import { useIdleHabits } from './avatar/use-idle-habits.js';
 import type { CharacterSettingsControls } from './avatar/character-settings.js';
 import type { CharacterSettingsContext } from './avatar/use-character-settings.js';
@@ -894,7 +895,7 @@ export default function App() {
   const [modelsOpen, setModelsOpen] = useState(false);
   const [modelsInitialUse, setModelsInitialUse] = useState<UseId | undefined>(undefined);
   /** Which settings pop-up is open (the avatar studio and models pop-ups have their own state). */
-  const [panel, setPanel] = useState<'character' | 'backgrounds' | 'devices' | 'tools' | 'memory' | 'status' | null>(null);
+  const [panel, setPanel] = useState<'character' | 'backgrounds' | 'devices' | 'places' | 'tools' | 'memory' | 'status' | null>(null);
   const [studioOpen, setStudioOpen] = useState(false);
   const closePanel = useCallback(() => setPanel(null), []);
   const openModels = useCallback((use?: UseId) => {
@@ -3149,6 +3150,14 @@ export default function App() {
               onOpen={() => setPanel('devices')}
             />
             <ControlButton
+              id="places"
+              title="Places"
+              summary={placesSnapshot && placesSnapshot.places.length > 1 ? `${placesSnapshot.places.length} places` : 'This PC'}
+              keywords="places rooms desktop room pair satellite second pc tailscale next door lounge revoke"
+              disabled={!activeBridge?.places}
+              onOpen={() => setPanel('places')}
+            />
+            <ControlButton
               id="tools"
               title="Tools / MCP"
               summary="Web search · MCP"
@@ -3334,6 +3343,15 @@ export default function App() {
             <BackgroundControls
               backgrounds={backgrounds}
               walkableArea={showDeveloperHud ? { shown: showWalkableArea, onChange: setShowWalkableArea } : undefined}
+            />
+          </PanelDialog>
+
+          <PanelDialog id="places" title="Places" subtitle="Where the characters can be, and the desktops that show a room." open={panel === 'places'} onClose={closePanel}>
+            <PlacesPanel
+              roomHub={activeBridge?.roomHub}
+              snapshot={placesSnapshot}
+              nameOf={(avatarId) => avatarProfiles.find((profile) => profile.id === avatarId)?.name ?? avatarId}
+              active={panel === 'places'}
             />
           </PanelDialog>
 

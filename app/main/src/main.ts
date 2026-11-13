@@ -17,6 +17,10 @@ import { ProactiveTick, proactiveSettingsFromEnv } from './presence/proactive-ti
 import { PresenceTracker, isVoicePhase } from './presence/presence.js';
 import { FloorController } from './floor/index.js';
 import { PlaceManager, placesNote } from './places/place-manager.js';
+import { RoomHub } from './room-hub/room-hub.js';
+import { RoomDeviceRegistry } from './room-hub/room-devices.js';
+import { createTailscaleLookup } from './room-hub/tailscale.js';
+import { rememberIpcHandler } from './room-hub/ipc-registry.js';
 import { chooseSummon, summon } from './places/summon.js';
 import { createIntentRouter } from './floor/intent-router.js';
 import { createModelBid } from './floor/bid.js';
@@ -317,6 +321,8 @@ let avatarSettingsKeys: AvatarSettingsKeys | null = null;
 let floor: FloorController | null = null;
 /** Who is where (this PC's place and the places avatars can walk to). */
 let placeManager: PlaceManager | null = null;
+/** The link to desktops that draw other rooms (paired with a code, reached over Tailscale). */
+let roomHub: RoomHub | null = null;
 let proactiveTick: ProactiveTick | null = null;
 /** The window that sent the latest message of Kevin's; floor-queued answers and chatter reach it. */
 let floorSender: WebContents | null = null;
@@ -859,6 +865,15 @@ function startAvatarPlumbing(profile: AvatarProfile, manager: ConfigManager): vo
   });
   avatarPlumbing.set(avatarId, { mirror, inbox });
   inbox.start();
+}
+
+/**
+ * `ipcMain.handle`, plus a note of the handler so the room hub can run the same function for a desktop room's
+ * `call` (docs/features/room-link-protocol.md).
+ */
+function handleIpc(channel: string, listener: Parameters<typeof ipcMain.handle>[1]): void {
+  rememberIpcHandler(channel, listener as Parameters<typeof rememberIpcHandler>[1]);
+  ipcMain.handle(channel, listener);
 }
 
 function requirePlaces(): PlaceManager {
@@ -1452,7 +1467,7 @@ function registerIpcHandlers(
     };
 
     try {
-      ipcMain.handle(channel, instrumentedHandler);
+      handleIpc(channel, instrumentedHandler);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const stack = error instanceof Error ? error.stack : undefined;
@@ -1499,7 +1514,7 @@ function registerIpcHandlers(
     [BUILT_IN_SERVER_IDS.coderLlm]: 'Coding model',
     [BUILT_IN_SERVER_IDS.vision]: 'Vision model',
   };
-  ipcMain.handle('diagnostics:gpu-memory', () => {
+  handleIpc('diagnostics:gpu-memory', () => {
     const servers: GpuMemoryServer[] = [];
     const seen = new Set<number>();
     const add = (id: string, name: string, url: string | undefined) => {
@@ -1517,19 +1532,19 @@ function registerIpcHandlers(
     return gpuMemoryReader.read(servers);
   });
   // Coding page of the Models and servers pop-up, and the coding line in Status and diagnostics.
-  ipcMain.handle('coding:get', () => codingView(manager));
-  ipcMain.handle('coding:status', () => getCodingService(manager).status());
-  ipcMain.handle('coding:set', async (_event, next: unknown) => {
+  handleIpc('coding:get', () => codingView(manager));
+  handleIpc('coding:status', () => getCodingService(manager).status());
+  handleIpc('coding:set', async (_event, next: unknown) => {
     await manager.setCoding(next);
     await applyProviderSettings(manager);
     return codingView(manager);
   });
-  ipcMain.handle('coding:pick-gguf', async () => {
+  handleIpc('coding:pick-gguf', async () => {
     const options = { title: 'Choose the Qwen3-Coder-Next file', properties: ['openFile' as const], filters: [{ name: 'GGUF model', extensions: ['gguf'] }] };
     const result = mainWindow && !mainWindow.isDestroyed() ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
-  ipcMain.handle('coding:pick-folder', async () => {
+  handleIpc('coding:pick-folder', async () => {
     const options = { title: 'Choose a git repository', properties: ['openDirectory' as const] };
     const result = mainWindow && !mainWindow.isDestroyed() ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
     return result.canceled ? null : (result.filePaths[0] ?? null);
@@ -1543,15 +1558,15 @@ function registerIpcHandlers(
   if (approvalBroker) {
     registerApprovalsIpc({ ipcMain, broker: approvalBroker, broadcast: broadcastToWindows });
   }
-  ipcMain.handle('coding:suggest-checks', async (_event, id: unknown) => {
+  handleIpc('coding:suggest-checks', async (_event, id: unknown) => {
     if (typeof id !== 'string') throw new Error('Choose a workspace first.');
     const service = getCodingService(manager);
     await service.apply();
     return service.suggestChecks(id);
   });
   // Models and servers pop-up. Keys go in, never out: the view only says whether one is set.
-  ipcMain.handle('models:get', () => manager.getModelRoutingView());
-  ipcMain.handle('models:probe', async (_event, payload: { serverId?: unknown; draft?: { type?: unknown; url?: unknown; key?: unknown } }) => {
+  handleIpc('models:get', () => manager.getModelRoutingView());
+  handleIpc('models:probe', async (_event, payload: { serverId?: unknown; draft?: { type?: unknown; url?: unknown; key?: unknown } }) => {
     if (typeof payload?.serverId === 'string') {
       const server = manager.getConfig().models.servers.find((entry) => entry.id === payload.serverId);
       if (!server) throw new Error('That server no longer exists.');
@@ -1580,7 +1595,7 @@ function registerIpcHandlers(
     }
     return probeModelServer({ type, url: serverUrl(type, url) }, typeof draft.key === 'string' ? draft.key : undefined);
   });
-  ipcMain.handle(
+  handleIpc(
     'models:save-server',
     async (_event, payload: { id?: unknown; name?: unknown; type?: unknown; url?: unknown; key?: unknown }) => {
       const id = await manager.saveModelServer({
@@ -1594,13 +1609,13 @@ function registerIpcHandlers(
       return { id, models: manager.getModelRoutingView() };
     },
   );
-  ipcMain.handle('models:remove-server', async (_event, id: unknown) => {
+  handleIpc('models:remove-server', async (_event, id: unknown) => {
     if (typeof id !== 'string') throw new Error('Choose a server to remove.');
     await manager.removeModelServer(id);
     await applyProviderSettings(manager);
     return manager.getModelRoutingView();
   });
-  ipcMain.handle('models:set-route', async (_event, payload: { use?: unknown; route?: unknown }) => {
+  handleIpc('models:set-route', async (_event, payload: { use?: unknown; route?: unknown }) => {
     const use = payload?.use as UseId;
     if (typeof use !== 'string' || !(use in USE_SERVER_TYPES)) throw new Error('Unknown model use.');
     await manager.setModelRoute(use, (payload?.route ?? {}) as ModelRoute);
@@ -1612,7 +1627,7 @@ function registerIpcHandlers(
     if (!server || server.type !== 'comfy') throw new Error('Choose a ComfyUI server.');
     return server;
   };
-  ipcMain.handle('models:civitai-lookup', async (_event, payload: { ref?: unknown; versionId?: unknown }) => {
+  handleIpc('models:civitai-lookup', async (_event, payload: { ref?: unknown; versionId?: unknown }) => {
     const ref = parseCivitaiRef(typeof payload?.ref === 'string' ? payload.ref : '');
     if (!ref) throw new Error('Paste a Civitai link (civitai.com, .green or .red: a model page or download link) or an AIR (urn:air:…:civitai:123@456).');
     const model = await lookupCivitai(ref, manager.getServerKey(BUILT_IN_SERVER_IDS.civitai));
@@ -1622,7 +1637,7 @@ function registerIpcHandlers(
       plan: planCivitaiDownload(model, versionId, ref.fileId),
     };
   });
-  ipcMain.handle('models:download', async (_event, payload: { serverId?: unknown; ref?: unknown; versionId?: unknown }) => {
+  handleIpc('models:download', async (_event, payload: { serverId?: unknown; ref?: unknown; versionId?: unknown }) => {
     const server = comfyServer(payload?.serverId);
     const ref = parseCivitaiRef(typeof payload?.ref === 'string' ? payload.ref : '');
     if (!ref) throw new Error('Paste a Civitai model link or AIR.');
@@ -1634,14 +1649,14 @@ function registerIpcHandlers(
     }
     return modelDownloads.start(server, plan, key);
   });
-  ipcMain.handle('models:downloads', () => modelDownloads.list());
+  handleIpc('models:downloads', () => modelDownloads.list());
   const speechServerClient = (serverId: unknown) => {
     const server = manager.getConfig().models.servers.find((entry) => entry.id === serverId && entry.type === 'speech');
     if (!server) throw new Error('That is not a speech service.');
     return new SpeechServiceClient({ baseUrl: server.url });
   };
-  ipcMain.handle('models:speech-engines', (_event, serverId: unknown) => speechServerClient(serverId).ttsEngines());
-  ipcMain.handle('models:speech-download', async (_event, payload: { serverId?: unknown; engine?: unknown; model?: unknown }) => {
+  handleIpc('models:speech-engines', (_event, serverId: unknown) => speechServerClient(serverId).ttsEngines());
+  handleIpc('models:speech-download', async (_event, payload: { serverId?: unknown; engine?: unknown; model?: unknown }) => {
     if (typeof payload?.engine !== 'string' || typeof payload.model !== 'string') {
       throw new Error('Pick a model to download.');
     }
@@ -1649,11 +1664,11 @@ function registerIpcHandlers(
     await client.downloadTtsModel(payload.engine, payload.model);
     return client.ttsEngines();
   });
-  ipcMain.handle('models:cancel-download', (_event, id: unknown) => {
+  handleIpc('models:cancel-download', (_event, id: unknown) => {
     if (typeof id === 'string') modelDownloads.cancel(id);
     return modelDownloads.list();
   });
-  ipcMain.handle('models:comfy-addon', async (_event, serverId: unknown) => {
+  handleIpc('models:comfy-addon', async (_event, serverId: unknown) => {
     const server = comfyServer(serverId);
     return { installed: await modelDownloads.hasAddon(server), folder: comfyAddonDirectory };
   });
@@ -1663,12 +1678,12 @@ function registerIpcHandlers(
     const { library } = getLocalLlmTools(manager);
     return { ...(await library.read()), folder: library.modelsDirectory, settings: await library.settings() };
   };
-  ipcMain.handle('models:hf-lookup', async (_event, ref: unknown) => {
+  handleIpc('models:hf-lookup', async (_event, ref: unknown) => {
     const parsed = parseHuggingFaceRef(typeof ref === 'string' ? ref : '');
     if (!parsed) throw new Error('Paste a Hugging Face link or repo name (such as unsloth/Qwen3-8B-GGUF), or type words to search for.');
     return lookupHuggingFace(parsed, hfToken());
   });
-  ipcMain.handle('models:hf-download', async (_event, payload: { repo?: unknown; quant?: unknown; use?: unknown }) => {
+  handleIpc('models:hf-download', async (_event, payload: { repo?: unknown; quant?: unknown; use?: unknown }) => {
     if (typeof payload?.repo !== 'string' || typeof payload.quant !== 'string') throw new Error('Pick a model and size first.');
     // Read the repo again here rather than trusting file names from the page.
     const lookup = await lookupHuggingFace({ repo: payload.repo }, hfToken());
@@ -1680,56 +1695,56 @@ function registerIpcHandlers(
       ...(lookup.contextLength ? { contextLength: lookup.contextLength } : {}),
     });
   });
-  ipcMain.handle('models:hf-downloads', () => getLocalLlmTools(manager).library.list());
-  ipcMain.handle('models:hf-cancel', (_event, id: unknown) => {
+  handleIpc('models:hf-downloads', () => getLocalLlmTools(manager).library.list());
+  handleIpc('models:hf-cancel', (_event, id: unknown) => {
     const { library } = getLocalLlmTools(manager);
     if (typeof id === 'string') library.cancel(id);
     return library.list();
   });
   // The vision model (Qwen3-VL) for Describe the avatar: download status and progress.
-  ipcMain.handle('models:vision-status', () => getVisionTools(manager).model.status());
-  ipcMain.handle('models:vision-download', async (_event, ref: unknown) => {
+  handleIpc('models:vision-status', () => getVisionTools(manager).model.status());
+  handleIpc('models:vision-download', async (_event, ref: unknown) => {
     const { model } = getVisionTools(manager);
     await model.download(typeof ref === 'string' ? ref : undefined);
     return model.status();
   });
-  ipcMain.handle('models:vision-cancel', async () => {
+  handleIpc('models:vision-cancel', async () => {
     const { model } = getVisionTools(manager);
     model.cancel();
     return model.status();
   });
-  ipcMain.handle('models:local-llms', () => localLlmList());
-  ipcMain.handle('models:use-local-llm', async (_event, id: unknown, settings: unknown) => {
+  handleIpc('models:local-llms', () => localLlmList());
+  handleIpc('models:use-local-llm', async (_event, id: unknown, settings: unknown) => {
     const given = settings && typeof settings === 'object' ? (settings as Partial<LocalLlmSettings>) : undefined;
     const message = await useLocalLlm(manager, typeof id === 'string' && id ? id : null, given);
     return { message, library: await localLlmList(), models: manager.getModelRoutingView() };
   });
-  ipcMain.handle('models:delete-local-llm', async (_event, id: unknown) => {
+  handleIpc('models:delete-local-llm', async (_event, id: unknown) => {
     if (typeof id === 'string') await getLocalLlmTools(manager).library.remove(id);
     return localLlmList();
   });
-  ipcMain.handle('models:set-key', async (_event, payload: { serverId?: unknown; key?: unknown }) => {
+  handleIpc('models:set-key', async (_event, payload: { serverId?: unknown; key?: unknown }) => {
     if (typeof payload?.serverId !== 'string') throw new Error('Choose a server.');
     await manager.setServerKey(payload.serverId, typeof payload.key === 'string' ? payload.key : '');
     await applyProviderSettings(manager);
     return manager.getModelRoutingView();
   });
-  ipcMain.handle('talk:get-shortcut-status', () => pushToTalk.getStatus());
-  ipcMain.handle('wake-word:list', () => listWakeWords(trainedWakeWordDirectory()));
-  ipcMain.handle('wake-word:set-listening', (_event, enabled: unknown) => {
+  handleIpc('talk:get-shortcut-status', () => pushToTalk.getStatus());
+  handleIpc('wake-word:list', () => listWakeWords(trainedWakeWordDirectory()));
+  handleIpc('wake-word:set-listening', (_event, enabled: unknown) => {
     if (typeof enabled !== 'boolean') throw new Error('Listening must be enabled or disabled.');
     return wakeWordListening.setEnabled(enabled);
   });
-  ipcMain.handle('wake-word:get-training-status', () =>
+  handleIpc('wake-word:get-training-status', () =>
     wakeWordTrainer ? wakeWordTrainer.getStatus() : { available: false, reason: 'Training is not set up.', job: null },
   );
-  ipcMain.handle('wake-word:train', (_event, payload: { phrase?: unknown; quick?: unknown }) => {
+  handleIpc('wake-word:train', (_event, payload: { phrase?: unknown; quick?: unknown }) => {
     if (!wakeWordTrainer) {
       throw new Error('Wake word training is not set up.');
     }
     return wakeWordTrainer.start(typeof payload?.phrase === 'string' ? payload.phrase : '', { quick: payload?.quick === true });
   });
-  ipcMain.handle('wake-word:cancel-training', () =>
+  handleIpc('wake-word:cancel-training', () =>
     wakeWordTrainer ? wakeWordTrainer.cancel() : { available: false, reason: 'Training is not set up.', job: null },
   );
   registerConfigHandler('config:test-secret', (_event, key: ConfigSecretKey) => manager.testSecret(key));
@@ -1737,7 +1752,7 @@ function registerIpcHandlers(
     manager.setAudioDevicePreferences(preferences),
   );
 
-  ipcMain.handle('realtime:mint-ephemeral-token', async (_event, payload: RealtimeEphemeralTokenRequest) => {
+  handleIpc('realtime:mint-ephemeral-token', async (_event, payload: RealtimeEphemeralTokenRequest) => {
     if (!payload || typeof payload !== 'object' || !payload.session || typeof payload.session !== 'object') {
       throw new Error('Invalid realtime token request payload received.');
     }
@@ -1843,19 +1858,19 @@ function registerIpcHandlers(
   logger.info('Configuration bridge IPC handlers registered.', {
     channels: [...configChannels],
   });
-  ipcMain.handle('conversation:get-history', () => {
+  handleIpc('conversation:get-history', () => {
     if (!conversation) {
       throw new Error('Conversation manager is not initialized.');
     }
     return conversation.getHistory();
   });
-  ipcMain.handle('conversation:append-message', (_event, payload: ConversationAppendMessagePayload) => {
+  handleIpc('conversation:append-message', (_event, payload: ConversationAppendMessagePayload) => {
     if (!conversation) {
       throw new Error('Conversation manager is not initialized.');
     }
     return conversation.appendMessage(payload);
   });
-  ipcMain.handle('conversation:announce', (_event, payload: { note?: string; reply?: string; ts?: number }) => {
+  handleIpc('conversation:announce', (_event, payload: { note?: string; reply?: string; ts?: number }) => {
     if (!conversation) {
       throw new Error('Conversation manager is not initialized.');
     }
@@ -1865,7 +1880,7 @@ function registerIpcHandlers(
     if (payload?.reply?.trim()) messages.push({ role: 'assistant', content: payload.reply, ts });
     return messages.length > 0 ? conversation.appendToRecentSession(messages) : [];
   });
-  ipcMain.handle('metrics:observe-latency', (_event, payload: LatencyObservation) => {
+  handleIpc('metrics:observe-latency', (_event, payload: LatencyObservation) => {
     if (!metrics) {
       return false;
     }
@@ -1877,35 +1892,35 @@ function registerIpcHandlers(
     metrics.observeLatency(payload.metric, payload.valueMs);
     return true;
   });
-  ipcMain.handle('avatar-model:list', async () => {
+  handleIpc('avatar-model:list', async () => {
     if (!avatarModels) {
       return [] as AvatarModelSummary[];
     }
 
     return avatarModels.listModels();
   });
-  ipcMain.handle('avatar-model:get-active', async () => {
+  handleIpc('avatar-model:get-active', async () => {
     if (!avatarModels) {
       return null;
     }
 
     return avatarModels.getActiveModel();
   });
-  ipcMain.handle('avatar-model:set-active', async (_event, modelId: string | null) => {
+  handleIpc('avatar-model:set-active', async (_event, modelId: string | null) => {
     if (!avatarModels) {
       throw new Error('Avatar model service is unavailable.');
     }
 
     return avatarModels.setActiveModel(modelId);
   });
-  ipcMain.handle('avatar-model:upload', async (_event, payload: AvatarModelUploadRequest) => {
+  handleIpc('avatar-model:upload', async (_event, payload: AvatarModelUploadRequest) => {
     if (!avatarModels) {
       throw new Error('Avatar model service is unavailable.');
     }
 
     return avatarModels.uploadModel(payload) as Promise<AvatarModelUploadResult>;
   });
-  ipcMain.handle('avatar-model:delete', async (_event, modelId: string) => {
+  handleIpc('avatar-model:delete', async (_event, modelId: string) => {
     if (!avatarModels) {
       throw new Error('Avatar model service is unavailable.');
     }
@@ -1913,7 +1928,7 @@ function registerIpcHandlers(
     await avatarModels.deleteModel(modelId);
     return true;
   });
-  ipcMain.handle('avatar-model:load', async (_event, modelId: string) => {
+  handleIpc('avatar-model:load', async (_event, modelId: string) => {
     if (!avatarModels) {
       throw new Error('Avatar model service is unavailable.');
     }
@@ -1928,42 +1943,42 @@ function registerIpcHandlers(
     if (!backgroundService) throw new Error('Backgrounds are unavailable.');
     return backgroundService;
   };
-  ipcMain.handle('background:list', () => requireBackgrounds().list());
-  ipcMain.handle('background:get-active', () => requireBackgrounds().getActive());
-  ipcMain.handle('background:set-active', (_event, id: string | null) => requireBackgrounds().setActive(id));
-  ipcMain.handle('background:load', (_event, id: string) => requireBackgrounds().load(id));
-  ipcMain.handle('background:generate', (_event, prompt: string) => requireBackgrounds().generate(prompt));
-  ipcMain.handle('background:delete', (_event, id: string) => requireBackgrounds().delete(id));
-  ipcMain.handle('background:list-rooms', () => requireRooms().list());
-  ipcMain.handle('background:load-room', (_event, id: string) => requireRooms().load(id));
+  handleIpc('background:list', () => requireBackgrounds().list());
+  handleIpc('background:get-active', () => requireBackgrounds().getActive());
+  handleIpc('background:set-active', (_event, id: string | null) => requireBackgrounds().setActive(id));
+  handleIpc('background:load', (_event, id: string) => requireBackgrounds().load(id));
+  handleIpc('background:generate', (_event, prompt: string) => requireBackgrounds().generate(prompt));
+  handleIpc('background:delete', (_event, id: string) => requireBackgrounds().delete(id));
+  handleIpc('background:list-rooms', () => requireRooms().list());
+  handleIpc('background:load-room', (_event, id: string) => requireRooms().load(id));
   const requireGeneration = (): RoomGenerationService => {
     if (!roomGeneration) throw new Error('Room building is unavailable.');
     return roomGeneration;
   };
-  ipcMain.handle('rooms:generate', (_event, description: unknown) =>
+  handleIpc('rooms:generate', (_event, description: unknown) =>
     requireGeneration().generate(String(description ?? ''), (progress) => broadcastToWindows('rooms:generate-progress', progress)),
   );
-  ipcMain.handle('rooms:cancel-generate', () => requireGeneration().cancel());
-  ipcMain.handle('rooms:making', () => requireGeneration().making);
+  handleIpc('rooms:cancel-generate', () => requireGeneration().cancel());
+  handleIpc('rooms:making', () => requireGeneration().making);
   const objectSettingsView = () => ({
     ...requireBackgrounds().getObjectSettings(),
     available: objectMakingAvailable(manager.getConfig().models),
   });
-  ipcMain.handle('rooms:object-settings:get', () => objectSettingsView());
-  ipcMain.handle('rooms:object-settings:set', (_event, settings: unknown) => {
+  handleIpc('rooms:object-settings:get', () => objectSettingsView());
+  handleIpc('rooms:object-settings:set', (_event, settings: unknown) => {
     requireBackgrounds().setObjectSettings(settings);
     return objectSettingsView();
   });
-  ipcMain.handle('rooms:generated:list', () => requireGeneration().listGenerated());
-  ipcMain.handle('rooms:generated:delete', (_event, id: unknown) => requireGeneration().deleteGenerated(String(id ?? '')));
-  ipcMain.handle('rooms:delete', async (_event, id: string) => {
+  handleIpc('rooms:generated:list', () => requireGeneration().listGenerated());
+  handleIpc('rooms:generated:delete', (_event, id: unknown) => requireGeneration().deleteGenerated(String(id ?? '')));
+  handleIpc('rooms:delete', async (_event, id: string) => {
     await requireGeneration().delete(id);
     if (backgroundService && (await backgroundService.getActive()) === id) await backgroundService.setActive(null);
   });
-  ipcMain.handle('rooms:idle-settings:get', () => requireBackgrounds().getIdleSettings());
-  ipcMain.handle('rooms:idle-settings:set', (_event, settings: unknown) => requireBackgrounds().setIdleSettings(settings));
+  handleIpc('rooms:idle-settings:get', () => requireBackgrounds().getIdleSettings());
+  handleIpc('rooms:idle-settings:set', (_event, settings: unknown) => requireBackgrounds().setIdleSettings(settings));
   // The "Idle thoughts" job: what the avatar does next on its own. Null on any failure; the renderer then picks at random.
-  ipcMain.handle('rooms:idle-pick', (_event, context: unknown) =>
+  handleIpc('rooms:idle-pick', (_event, context: unknown) =>
     pickIdleActions(context as { system: string; user: string }, {
       routing: manager.getConfig().models,
       keyFor: (id) => manager.getServerKey(id),
@@ -1976,14 +1991,14 @@ function registerIpcHandlers(
     }
     return avatarGenerationService;
   };
-  ipcMain.handle('avatar:image-models', async () => { if (!avatarImageModels) throw new Error('Image models are unavailable.'); return avatarImageModels.list(); });
-  ipcMain.handle('avatar:image-model-select', async (_event, id: string) => { if (!avatarImageModels) throw new Error('Image models are unavailable.'); await avatarImageModels.select(id); });
-  ipcMain.handle('avatar:image-loras-select', async (_event, choices: unknown) => {
+  handleIpc('avatar:image-models', async () => { if (!avatarImageModels) throw new Error('Image models are unavailable.'); return avatarImageModels.list(); });
+  handleIpc('avatar:image-model-select', async (_event, id: string) => { if (!avatarImageModels) throw new Error('Image models are unavailable.'); await avatarImageModels.select(id); });
+  handleIpc('avatar:image-loras-select', async (_event, choices: unknown) => {
     if (!avatarImageModels) throw new Error('Image models are unavailable.');
     avatarImageModels.selectLoras(Array.isArray(choices) ? choices : []);
   });
   // Popular Civitai checkpoints for a LoRA's base model, sized against the image server's GPU.
-  ipcMain.handle('avatar:base-model-suggestions', async (_event, payload: { baseModel?: unknown; family?: unknown }) => {
+  handleIpc('avatar:base-model-suggestions', async (_event, payload: { baseModel?: unknown; family?: unknown }) => {
     const server = avatarComfyPool?.primary('image');
     if (!server) throw new Error('No ComfyUI server is set for the image step.');
     const baseModel =
@@ -2004,35 +2019,35 @@ function registerIpcHandlers(
     const result: BaseModelSuggestions = { serverId: server.id, serverName: server.name, baseModel, vramBytes, suggestions };
     return result;
   });
-  ipcMain.handle('avatar:character-models', async () => { if (!avatarCharacterModels) throw new Error('3D avatar models are unavailable.'); return avatarCharacterModels.list(); });
-  ipcMain.handle('avatar:character-model-select', async (_event, stage: 'geometry' | 'rig', id: string) => { if (!avatarCharacterModels) throw new Error('3D avatar models are unavailable.'); await avatarCharacterModels.select(stage, id); });
-  ipcMain.handle('avatar:generation-list', async (): Promise<AvatarGenerationStatus[]> => requireAvatarGeneration().listJobs());
-  ipcMain.handle('avatar:generation-cancel', async (_event, jobId: string): Promise<void> => requireAvatarGeneration().cancel(jobId));
-  ipcMain.handle(
+  handleIpc('avatar:character-models', async () => { if (!avatarCharacterModels) throw new Error('3D avatar models are unavailable.'); return avatarCharacterModels.list(); });
+  handleIpc('avatar:character-model-select', async (_event, stage: 'geometry' | 'rig', id: string) => { if (!avatarCharacterModels) throw new Error('3D avatar models are unavailable.'); await avatarCharacterModels.select(stage, id); });
+  handleIpc('avatar:generation-list', async (): Promise<AvatarGenerationStatus[]> => requireAvatarGeneration().listJobs());
+  handleIpc('avatar:generation-cancel', async (_event, jobId: string): Promise<void> => requireAvatarGeneration().cancel(jobId));
+  handleIpc(
     'avatar:generation-start',
     async (_event, payload: AvatarGenerationRequest): Promise<AvatarGenerationJob> =>
       requireAvatarGeneration().startJob(payload),
   );
-  ipcMain.handle('avatar:generation-remove-background', async (_event, jobId: string) => requireAvatarGeneration().removeConceptBackground(jobId));
-  ipcMain.handle('avatar:generation-restore-background', async (_event, jobId: string) => requireAvatarGeneration().restoreConceptBackground(jobId));
-  ipcMain.handle('avatar:generation-redraw-views', async (_event, jobId: string) => requireAvatarGeneration().redrawViews(jobId));
-  ipcMain.handle('avatar:generation-confirm-concept', async (_event, jobId: string, confirmation?: AvatarGenerationConfirmation): Promise<void> => requireAvatarGeneration().confirmConcept(jobId, confirmation));
-  ipcMain.handle(
+  handleIpc('avatar:generation-remove-background', async (_event, jobId: string) => requireAvatarGeneration().removeConceptBackground(jobId));
+  handleIpc('avatar:generation-restore-background', async (_event, jobId: string) => requireAvatarGeneration().restoreConceptBackground(jobId));
+  handleIpc('avatar:generation-redraw-views', async (_event, jobId: string) => requireAvatarGeneration().redrawViews(jobId));
+  handleIpc('avatar:generation-confirm-concept', async (_event, jobId: string, confirmation?: AvatarGenerationConfirmation): Promise<void> => requireAvatarGeneration().confirmConcept(jobId, confirmation));
+  handleIpc(
     'avatar:generation-status',
     async (_event, jobId: string): Promise<AvatarGenerationStatus> => requireAvatarGeneration().getStatus(jobId),
   );
-  ipcMain.handle(
+  handleIpc(
     'avatar:generation-preview',
     async (_event, jobId: string): Promise<Buffer> => requireAvatarGeneration().loadPreview(jobId),
   );
-  ipcMain.handle(
+  handleIpc(
     'avatar:generation-accept',
     async (_event, jobId: string): Promise<AvatarGenerationAcceptance> => requireAvatarGeneration().accept(jobId),
   );
-  ipcMain.handle('avatar:generation-reject', async (_event, jobId: string): Promise<void> =>
+  handleIpc('avatar:generation-reject', async (_event, jobId: string): Promise<void> =>
     requireAvatarGeneration().reject(jobId),
   );
-  ipcMain.handle(
+  handleIpc(
     'avatar-model:update-thumbnail',
     async (_event, payload: { modelId: string; thumbnailDataUrl: string }) => {
       if (!avatarModels) {
@@ -2042,7 +2057,7 @@ function registerIpcHandlers(
       return avatarModels.updateThumbnail(payload.modelId, payload.thumbnailDataUrl);
     },
   );
-  ipcMain.handle(
+  handleIpc(
     'avatar-model:update-description',
     async (_event, payload: { modelId: string; description: string }) => {
       if (!avatarModels) {
@@ -2052,7 +2067,7 @@ function registerIpcHandlers(
       return avatarModels.updateDescription(payload.modelId, payload.description);
     },
   );
-  ipcMain.handle(
+  handleIpc(
     'avatar-model:generate-description',
     async (_event, payload: { thumbnailDataUrl: string }) => {
       if (!avatarDescriptionService) {
@@ -2066,21 +2081,21 @@ function registerIpcHandlers(
       return withVision(manager, 'describe', () => service.generateDescription(payload.thumbnailDataUrl));
     },
   );
-  ipcMain.handle('avatar-animation:list', async () => {
+  handleIpc('avatar-animation:list', async () => {
     if (!avatarAnimations) {
       return [] as AvatarAnimationSummary[];
     }
 
     return avatarAnimations.listAnimations();
   });
-  ipcMain.handle('avatar-animation:upload', async (_event, payload: AvatarAnimationUploadRequest) => {
+  handleIpc('avatar-animation:upload', async (_event, payload: AvatarAnimationUploadRequest) => {
     if (!avatarAnimations) {
       throw new Error('Avatar animation service is unavailable.');
     }
 
     return avatarAnimations.uploadAnimation(payload) as Promise<AvatarAnimationUploadResult>;
   });
-  ipcMain.handle('avatar-animation:generate', async (_event, payload: AvatarAnimationGenerationRequest) => {
+  handleIpc('avatar-animation:generate', async (_event, payload: AvatarAnimationGenerationRequest) => {
     const useLocalMotion = localMotionServer(manager) !== null;
     if (useLocalMotion && localMotionService && (await localMotionService.isReady())) {
       return localMotionService.generateAnimation(payload);
@@ -2103,7 +2118,7 @@ function registerIpcHandlers(
     return vrmaGenerationService.generateAnimation({ ...payload, bones, modelDescription });
   });
   const motionStreamControllers = new Map<string, AbortController>();
-  ipcMain.handle('avatar-motion:status', async (): Promise<AvatarMotionStatus> => {
+  handleIpc('avatar-motion:status', async (): Promise<AvatarMotionStatus> => {
     if (!localMotionServer(manager)) {
       const clips = routeTargets(manager.getConfig().models, 'clips')[0];
       return {
@@ -2124,7 +2139,7 @@ function registerIpcHandlers(
       device: health?.device ?? null,
     };
   });
-  ipcMain.handle('avatar-motion:stream', async (event, payload: AvatarMotionStreamRequest) => {
+  handleIpc('avatar-motion:stream', async (event, payload: AvatarMotionStreamRequest) => {
     if (!localMotionService || !localMotionServer(manager)) {
       throw new Error('Local motion service is unavailable.');
     }
@@ -2146,15 +2161,15 @@ function registerIpcHandlers(
       motionStreamControllers.delete(payload.streamId);
     }
   });
-  ipcMain.handle('avatar-motion:cancel', (_event, streamId: unknown) => {
+  handleIpc('avatar-motion:cancel', (_event, streamId: unknown) => {
     if (typeof streamId === 'string') {
       motionStreamControllers.get(streamId)?.abort();
     }
   });
-  ipcMain.handle('avatars:list', () => avatarRegistry?.list() ?? []);
+  handleIpc('avatars:list', () => avatarRegistry?.list() ?? []);
   // Places: who is where. The renderer follows the snapshot, asks avatars to walk to another place and confirms arrivals.
-  ipcMain.handle('places:snapshot', () => requirePlaces().snapshot());
-  ipcMain.handle('places:move', (_event, avatarId: unknown, placeRef: unknown, reason: unknown) => {
+  handleIpc('places:snapshot', () => requirePlaces().snapshot());
+  handleIpc('places:move', (_event, avatarId: unknown, placeRef: unknown, reason: unknown) => {
     const places = requirePlaces();
     if (typeof avatarId !== 'string' || !avatarId || typeof placeRef !== 'string' || !placeRef.trim()) {
       return { ok: false, reason: 'invalid request' };
@@ -2164,10 +2179,24 @@ function registerIpcHandlers(
     const result = places.startMove(avatarId, place.id, reason === 'called' ? 'called' : 'chose to');
     return result.ok ? { ok: true } : { ok: false, reason: result.reason };
   });
-  ipcMain.handle('places:arrived', (_event, avatarId: unknown) => {
+  handleIpc('places:arrived', (_event, avatarId: unknown) => {
     if (typeof avatarId === 'string' && avatarId) requirePlaces().arrived(avatarId);
   });
-  ipcMain.handle('avatars:add', (_event, input: unknown) => {
+  // Settings > Places: desktop rooms (pairing, who is connected, rename, revoke).
+  const requireRoomHub = (): RoomHub => {
+    if (!roomHub) throw new Error('Desktop rooms are not available yet.');
+    return roomHub;
+  };
+  handleIpc('room-hub:status', () => requireRoomHub().status());
+  handleIpc('room-hub:start-pairing', (_event, placeName: unknown) => requireRoomHub().startPairing(typeof placeName === 'string' ? placeName : undefined));
+  handleIpc('room-hub:cancel-pairing', async () => {
+    await requireRoomHub().cancelPairing();
+  });
+  handleIpc('room-hub:revoke', (_event, deviceId: unknown) => (typeof deviceId === 'string' ? requireRoomHub().revoke(deviceId) : false));
+  handleIpc('room-hub:rename', (_event, placeId: unknown, name: unknown) =>
+    typeof placeId === 'string' && typeof name === 'string' ? requirePlaces().rename(placeId, name) : null,
+  );
+  handleIpc('avatars:add', (_event, input: unknown) => {
     const registry = requireAvatarRegistry();
     const fields = readAvatarFields(input, true);
     const base = slugifyAvatarName(fields.name ?? '');
@@ -2183,13 +2212,13 @@ function registerIpcHandlers(
     startAvatarPlumbing(profile, manager);
     return profile;
   });
-  ipcMain.handle('avatars:update', (_event, id: unknown, changes: unknown) => {
+  handleIpc('avatars:update', (_event, id: unknown, changes: unknown) => {
     const registry = requireAvatarRegistry();
     if (typeof id !== 'string' || !id) throw new Error('Avatar id is required.');
     return registry.update(id, readAvatarFields(changes, false));
   });
   // What the idle director needs for the avatars other than Echo: their personality and idle habits, as saved.
-  ipcMain.handle('avatars:idle-personas', () => {
+  handleIpc('avatars:idle-personas', () => {
     const personas: Record<string, { personality: string; habits: string }> = {};
     for (const profile of avatarRegistry?.list() ?? []) {
       if (profile.id === DEFAULT_AVATAR_ID) continue;
@@ -2201,10 +2230,10 @@ function registerIpcHandlers(
     }
     return personas;
   });
-  ipcMain.handle('avatars:set-tag-instructions', (_event, instructions: unknown) => {
+  handleIpc('avatars:set-tag-instructions', (_event, instructions: unknown) => {
     avatarTagInstructions = readTagInstructions(instructions);
   });
-  ipcMain.handle('avatars:remove', (_event, id: unknown) => {
+  handleIpc('avatars:remove', (_event, id: unknown) => {
     const registry = requireAvatarRegistry();
     if (typeof id !== 'string' || !id) throw new Error('Avatar id is required.');
     if (id === DEFAULT_AVATAR_ID) throw new Error('Echo cannot be removed.');
@@ -2216,20 +2245,20 @@ function registerIpcHandlers(
     // Settings saved under a library character's VRM model id stay: that character is still in the library.
     for (const key of avatarOnlyKeys(id, SPEAKING_ENGINES)) memoryStore?.deleteValue(key);
   });
-  ipcMain.handle('local-voice:status', async () => {
+  handleIpc('local-voice:status', async () => {
     if (!localVoiceService) {
       throw new Error('Local voice service is unavailable.');
     }
     return localVoiceService.status();
   });
-  ipcMain.handle('local-voice:transcribe', async (_event, audio: ArrayBuffer | Uint8Array) => {
+  handleIpc('local-voice:transcribe', async (_event, audio: ArrayBuffer | Uint8Array) => {
     if (!localVoiceService) {
       throw new Error('Local voice service is unavailable.');
     }
     const wav = audio instanceof Uint8Array ? audio : new Uint8Array(audio);
     return localVoiceService.transcribe(wav);
   });
-  ipcMain.handle('local-voice:respond', async (event, request: LocalVoiceRespondRequest) => {
+  handleIpc('local-voice:respond', async (event, request: LocalVoiceRespondRequest) => {
     let payload = request;
     const voiceService = getVoiceService(avatarIdArg(payload?.avatarId));
     if (!voiceService) {
@@ -2307,7 +2336,7 @@ function registerIpcHandlers(
     }
     return result;
   });
-  ipcMain.handle('presence:update', (_event, payload: unknown) => {
+  handleIpc('presence:update', (_event, payload: unknown) => {
     const p = (typeof payload === 'object' && payload !== null ? payload : {}) as Record<string, unknown>;
     presence.update({
       listening: typeof p.listening === 'boolean' ? p.listening : undefined,
@@ -2319,35 +2348,35 @@ function registerIpcHandlers(
     return true;
   });
   // Kevin started speaking over the avatars: cancel what they say and drop what waits.
-  ipcMain.handle('floor:interrupt', () => {
+  handleIpc('floor:interrupt', () => {
     floor?.interrupt();
   });
-  ipcMain.handle('floor:get-hear-chatter', () => floor?.hearChatter() ?? false);
-  ipcMain.handle('floor:set-hear-chatter', (_event, enabled: unknown) => floor?.setHearChatter(enabled === true) ?? false);
-  ipcMain.handle('presence:get-dnd', () => presence.doNotDisturb);
-  ipcMain.handle('presence:set-dnd', (_event, enabled: unknown) => {
+  handleIpc('floor:get-hear-chatter', () => floor?.hearChatter() ?? false);
+  handleIpc('floor:set-hear-chatter', (_event, enabled: unknown) => floor?.setHearChatter(enabled === true) ?? false);
+  handleIpc('presence:get-dnd', () => presence.doNotDisturb);
+  handleIpc('presence:set-dnd', (_event, enabled: unknown) => {
     presence.update({ doNotDisturb: enabled === true });
     return presence.doNotDisturb;
   });
-  ipcMain.handle('local-voice:cancel', (_event, requestId?: string, avatarId?: unknown) => {
+  handleIpc('local-voice:cancel', (_event, requestId?: string, avatarId?: unknown) => {
     getVoiceService(avatarIdArg(avatarId))?.cancel(typeof requestId === 'string' ? requestId : undefined);
     return true;
   });
-  ipcMain.handle('switchboard:status', async () => ({
+  handleIpc('switchboard:status', async () => ({
     enabled: switchboardClient !== null,
     connected: switchboardBus?.connected() === true,
     url: switchboardClient ? process.env.SWITCHBOARD_URL?.trim() || 'http://127.0.0.1:8196' : null,
     openTxns: ((await switchboardClient?.openTxns(20)) ?? null)?.map((t) => ({ id: t.id, title: t.title ?? null, state: t.state, opened_by: t.opened_by ?? null, owner: t.owner ?? null, updated_at: t.updated_at ?? null })) ?? null,
     decisions: decisionLog.recent().map((decision) => ({ ...decision, avatarName: avatarRegistry?.get(decision.avatarId)?.name ?? decision.avatarId })),
   }));
-  ipcMain.handle('local-voice:system-status', (_event, avatarId?: unknown) =>
+  handleIpc('local-voice:system-status', (_event, avatarId?: unknown) =>
     getVoiceService(avatarIdArg(avatarId))?.systemStatus() ?? { pending: 0, ready: false, texts: [], urgent: false },
   );
-  ipcMain.handle('local-voice:reset', (_event, avatarId?: unknown) => {
+  handleIpc('local-voice:reset', (_event, avatarId?: unknown) => {
     getVoiceService(avatarIdArg(avatarId))?.resetHistory();
     return true;
   });
-  ipcMain.handle('avatar-animation:delete', async (_event, animationId: string) => {
+  handleIpc('avatar-animation:delete', async (_event, animationId: string) => {
     if (!avatarAnimations) {
       throw new Error('Avatar animation service is unavailable.');
     }
@@ -2355,35 +2384,35 @@ function registerIpcHandlers(
     await avatarAnimations.deleteAnimation(animationId);
     return true;
   });
-  ipcMain.handle('avatar-animation:rename', async (_event, animationId: string, newName: string) => {
+  handleIpc('avatar-animation:rename', async (_event, animationId: string, newName: string) => {
     if (!avatarAnimations) {
       throw new Error('Avatar animation service is unavailable.');
     }
 
     return avatarAnimations.renameAnimation(animationId, newName);
   });
-  ipcMain.handle('avatar-animation:load', async (_event, animationId: string) => {
+  handleIpc('avatar-animation:load', async (_event, animationId: string) => {
     if (!avatarAnimations) {
       throw new Error('Avatar animation service is unavailable.');
     }
 
     return avatarAnimations.loadAnimationBinary(animationId);
   });
-  ipcMain.handle('avatar-pose:list', async () => {
+  handleIpc('avatar-pose:list', async () => {
     if (!avatarPoses) {
       return [] as AvatarPoseSummary[];
     }
 
     return avatarPoses.listPoses();
   });
-  ipcMain.handle('avatar-pose:upload', async (_event, payload: AvatarPoseUploadRequest) => {
+  handleIpc('avatar-pose:upload', async (_event, payload: AvatarPoseUploadRequest) => {
     if (!avatarPoses) {
       throw new Error('Avatar pose service is unavailable.');
     }
 
     return avatarPoses.uploadPose(payload);
   });
-  ipcMain.handle('avatar-pose:generate', async (_event, payload: AvatarPoseGenerationRequest) => {
+  handleIpc('avatar-pose:generate', async (_event, payload: AvatarPoseGenerationRequest) => {
     if (!poseGenerationService) {
       await refreshPoseGenerationService(manager);
     }
@@ -2397,7 +2426,7 @@ function registerIpcHandlers(
     const modelDescription = activeModel?.description ?? undefined;
     return poseGenerationService.generatePose({ ...payload, bones, boneHierarchy, modelDescription });
   });
-  ipcMain.handle('avatar-pose:delete', async (_event, poseId: string) => {
+  handleIpc('avatar-pose:delete', async (_event, poseId: string) => {
     if (!avatarPoses) {
       throw new Error('Avatar pose service is unavailable.');
     }
@@ -2405,14 +2434,14 @@ function registerIpcHandlers(
     await avatarPoses.deletePose(poseId);
     return true;
   });
-  ipcMain.handle('avatar-pose:load', async (_event, poseId: string) => {
+  handleIpc('avatar-pose:load', async (_event, poseId: string) => {
     if (!avatarPoses) {
       throw new Error('Avatar pose service is unavailable.');
     }
 
     return avatarPoses.loadPose(poseId);
   });
-  ipcMain.handle('avatar-pose:evaluate', async (_event, payload: PoseEvaluationRequest) => {
+  handleIpc('avatar-pose:evaluate', async (_event, payload: PoseEvaluationRequest) => {
     if (!poseEvaluationService) {
       await refreshPoseEvaluationService(manager);
     }
@@ -2445,7 +2474,7 @@ function registerIpcHandlers(
       }),
     );
   });
-  ipcMain.handle('avatar-pose:refine', async (_event, payload: PoseEvaluationRequest) => {
+  handleIpc('avatar-pose:refine', async (_event, payload: PoseEvaluationRequest) => {
     if (!poseEvaluationService) {
       await refreshPoseEvaluationService(manager);
     }
@@ -2478,7 +2507,7 @@ function registerIpcHandlers(
       }),
     );
   });
-  ipcMain.handle('avatar:trigger-behavior', async (_event, cue: string) => {
+  handleIpc('avatar:trigger-behavior', async (_event, cue: string) => {
     const value = typeof cue === 'string' ? cue.trim() : '';
     if (!value) {
       throw new Error('Invalid avatar behavior cue received.');
@@ -2494,7 +2523,7 @@ function registerIpcHandlers(
     });
     return true;
   });
-  ipcMain.handle('camera:emit-detection', async (_event, payload: CameraDetectionEventPayload) => {
+  handleIpc('camera:emit-detection', async (_event, payload: CameraDetectionEventPayload) => {
     if (!payload || typeof payload.cue !== 'string') {
       throw new Error('Invalid camera detection payload received.');
     }
@@ -2516,13 +2545,13 @@ function registerIpcHandlers(
   });
 
   // Quit handler
-  ipcMain.handle('app:quit', () => {
+  handleIpc('app:quit', () => {
     logger.info('Quit requested via IPC');
     app.quit();
   });
 
   // Hibernate handler
-  ipcMain.handle('app:hibernate', async (): Promise<void> => {
+  handleIpc('app:hibernate', async (): Promise<void> => {
     logger.info('Hibernate requested via IPC');
     
     if (!serverManager) {
@@ -2558,7 +2587,7 @@ function registerIpcHandlers(
     typeof engine === 'string' && (SPEAKING_ENGINES as readonly string[]).includes(engine) ? (engine as SpeakingEngineId) : 'openai';
 
   // Without an engine: the OpenAI voice (the Realtime conversation engine's), as before.
-  ipcMain.handle('avatar:voice:get-preference', (_event, engine?: unknown, avatarId?: unknown) => {
+  handleIpc('avatar:voice:get-preference', (_event, engine?: unknown, avatarId?: unknown) => {
     if (!memoryStore) {
       logger.warn('Memory store unavailable for avatar voice preference');
       return null;
@@ -2567,7 +2596,7 @@ function registerIpcHandlers(
     return key ? memoryStore.getValue(key) : null;
   });
 
-  ipcMain.handle('avatar:voice:set-preference', (_event, voice: unknown, engine?: unknown, avatarId?: unknown) => {
+  handleIpc('avatar:voice:set-preference', (_event, voice: unknown, engine?: unknown, avatarId?: unknown) => {
     // An empty voice for an engine clears the character's pick (back to the engine's default).
     if (typeof voice !== 'string' || (!voice && engine === undefined)) {
       logger.warn('Invalid voice preference:', voice);
@@ -2588,14 +2617,14 @@ function registerIpcHandlers(
 
   // Per-character personality prompt. Null means the character has none of its own yet, so the
   // renderer falls back to the global prompt (what every character used before this existed).
-  ipcMain.handle('avatar:prompt:get-preference', (_event, avatarId?: unknown) => {
+  handleIpc('avatar:prompt:get-preference', (_event, avatarId?: unknown) => {
     const key = characterPromptKey(settingsAvatarArg(avatarId));
     if (!key || !memoryStore) return null;
     const stored = memoryStore.getValue(key);
     return typeof stored === 'string' && stored.length > 0 ? stored : null;
   });
 
-  ipcMain.handle('avatar:prompt:set-preference', (_event, prompt: unknown, avatarId?: unknown) => {
+  handleIpc('avatar:prompt:set-preference', (_event, prompt: unknown, avatarId?: unknown) => {
     if (typeof prompt !== 'string') {
       logger.warn('Invalid personality prompt');
       return;
@@ -2615,13 +2644,13 @@ function registerIpcHandlers(
     }
   });
 
-  ipcMain.handle('avatar:idle-habits:get', (_event, avatarId?: unknown) => {
+  handleIpc('avatar:idle-habits:get', (_event, avatarId?: unknown) => {
     const key = characterIdleHabitsKey(settingsAvatarArg(avatarId));
     if (!key || !memoryStore) return '';
     return normalizeIdleHabits(memoryStore.getValue(key));
   });
 
-  ipcMain.handle('avatar:idle-habits:set', (_event, habits: unknown, avatarId?: unknown) => {
+  handleIpc('avatar:idle-habits:set', (_event, habits: unknown, avatarId?: unknown) => {
     if (typeof habits !== 'string') {
       logger.warn('Invalid idle habits');
       return;
@@ -2636,7 +2665,7 @@ function registerIpcHandlers(
     logger.info('Avatar idle habits saved', { key, length: saved.length, max: MAX_IDLE_HABITS_LENGTH });
   });
 
-  ipcMain.handle('local-voice:voice-options', (_event, avatarId?: unknown) => speakingVoiceOptions(manager, settingsAvatarArg(avatarId)));
+  handleIpc('local-voice:voice-options', (_event, avatarId?: unknown) => speakingVoiceOptions(manager, settingsAvatarArg(avatarId)));
 
   // Register MCP handlers
   if (toolRegistry && mcpManager) {
@@ -2754,6 +2783,22 @@ app.whenReady().then(async () => {
     const places = new PlaceManager({ store: memoryStore, registry, bus: () => switchboardBus, logger });
     placeManager = places;
     places.onChanged((snapshot) => broadcastToWindows('places:changed', snapshot));
+    // Desktop rooms: a second PC that draws one place. The hub only listens when a PC is paired or a code is active.
+    const hub = new RoomHub({
+      registry: new RoomDeviceRegistry(path.join(app.getPath('userData'), 'room-devices.json')),
+      places,
+      tailscale: createTailscaleLookup(),
+      assetRoot: path.join(app.getPath('userData'), 'rooms', ASSET_FOLDER),
+      appVersion: app.getVersion(),
+      avatars: () => registry.list(),
+      settings: () => ({ wakeWord: manager.getRendererConfig().wakeWord ?? null, pushToTalk: pushToTalk.getStatus() }),
+      bus: () => switchboardBus,
+      logger,
+    });
+    roomHub = hub;
+    hub.onChanged(() => broadcastToWindows('room-hub:changed', hub.status()));
+    places.settleOffline();
+    void hub.start().catch((error) => logger.warn('Room hub failed to start', { message: error instanceof Error ? error.message : String(error) }));
     floor = new FloorController({
       registry,
       places,
@@ -3184,6 +3229,7 @@ app.on('before-quit', async (event) => {
   codingService?.stop();
   approvalBroker?.dispose();
   proactiveTick?.stop();
+  void roomHub?.stop();
   for (const { inbox } of avatarPlumbing.values()) inbox.stop();
   void switchboardClient?.stop();
 
