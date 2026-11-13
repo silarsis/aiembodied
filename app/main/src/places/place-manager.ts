@@ -15,6 +15,7 @@
  */
 import { EventEmitter } from 'node:events';
 import type { AvatarProfile } from '../avatars/avatar-registry.js';
+import { DEFAULT_DESKTOP_ROOM } from './default-room.js';
 import type { SwitchboardBus } from '../switchboard/bus.js';
 import type { SwitchboardEventInput } from '../switchboard/types.js';
 
@@ -43,8 +44,7 @@ export interface Place {
   room?: string;
 }
 
-/** A new desktop room starts in the built-in Studio flat. */
-export const DEFAULT_DESKTOP_ROOM = 'room:builtin:studio-flat';
+export { DEFAULT_DESKTOP_ROOM };
 
 const BUILT_IN_PLACES: Place[] = [
   { id: HOME_PLACE_ID, name: 'the lounge', node: 'local' },

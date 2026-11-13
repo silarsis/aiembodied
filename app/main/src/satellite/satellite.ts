@@ -29,6 +29,8 @@ export interface SatelliteStatus {
   linkCode: string | null;
   /** The last thing that went wrong, in words for Kevin (a failed pairing, a refusal, a keychain problem). */
   lastError: string | null;
+  /** This PC's name, offered as the device name on the connect screen. */
+  hostname: string;
 }
 
 export interface PairInput {
@@ -190,6 +192,7 @@ export class Satellite {
       link: this.linkStatus.state,
       linkCode: refused ? (this.linkStatus.code ?? null) : null,
       lastError: this.lastError ?? this.deps.tokens.lastError,
+      hostname: this.deps.hostname,
     };
   }
 

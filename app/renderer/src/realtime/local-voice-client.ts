@@ -655,12 +655,7 @@ export class LocalVoiceClient {
         this.listen('Wake word heard: say your request');
         return;
       }
-      this.callbacks.onUserTranscript?.(text);
-      this.setActivity('thinking', `“${text}”`);
-      await this.respond(bridge, text, connectionId, false);
-      if (connectionId === this.connectionId) {
-        this.listen('Follow-up: no wake word needed');
-      }
+      await this.takeText(bridge, text, connectionId);
     } catch (error) {
       const failure = describe(error);
       this.log('error', 'Local voice turn failed', failure);
@@ -674,6 +669,48 @@ export class LocalVoiceClient {
         void this.maybeRunSystemTurn();
       }
     }
+  }
+
+  /** What was said, from the transcript on: record it, run the turn, play the answer, then listen for a follow-up. */
+  private async takeText(bridge: LocalVoiceBridge, text: string, connectionId: number): Promise<void> {
+    this.callbacks.onUserTranscript?.(text);
+    this.setActivity('thinking', `“${text}”`);
+    await this.respond(bridge, text, connectionId, false);
+    if (connectionId === this.connectionId) {
+      this.listen('Follow-up: no wake word needed');
+    }
+  }
+
+  /**
+   * Typed text instead of speech: the same turn from the transcript on (playback, tags and lip sync are identical).
+   * False when it could not start: not connected, or a turn is already running.
+   */
+  async sendText(text: string): Promise<boolean> {
+    const bridge = this.getBridge();
+    const clean = text.trim();
+    if (!bridge || !clean || this.state.status !== 'connected' || this.busy) {
+      return false;
+    }
+    this.busy = true;
+    const connectionId = this.connectionId;
+    try {
+      // Kevin is "speaking": avatar chatter gives way.
+      this.yieldToKevin();
+      await this.takeText(bridge, clean, connectionId);
+    } catch (error) {
+      const failure = describe(error);
+      this.log('error', 'Local voice typed turn failed', failure);
+      if (connectionId === this.connectionId) {
+        this.setActivity('error', `Turn failed: ${failure.message}`);
+      }
+    } finally {
+      if (connectionId === this.connectionId) {
+        this.busy = false;
+        this.segmenter.reset();
+        void this.maybeRunSystemTurn();
+      }
+    }
+    return true;
   }
 
   /** Run one turn and play it. For a system turn `text` is empty; true if the assistant said something. */

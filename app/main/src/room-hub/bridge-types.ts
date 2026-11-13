@@ -16,5 +16,5 @@ export interface RoomHubBridge {
   /** Renames any place. Null when the name is empty or the place is unknown. */
   rename(placeId: string, name: string): Promise<Place | null>;
   /** Picks the room a desktop room draws: a 3D room id (`room:builtin:studio-flat`) or a background id. False when it is not a desktop room. */
-  setRoom(placeId: string, room: string): Promise<boolean>;
+  setRoom?(placeId: string, room: string): Promise<boolean>;
 }

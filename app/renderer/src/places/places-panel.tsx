@@ -27,16 +27,26 @@ function errorText(error: unknown, fallback: string): string {
  * and "Add a desktop room", which shows a one-time code to type on the other PC.
  * `active` is true while the pop-up is open, so the status is read each time it opens.
  */
+export interface RoomChoice {
+  id: string;
+  name: string;
+  /** '3D room' or 'Background'. */
+  kind: string;
+}
+
 export function PlacesPanel({
   roomHub,
   snapshot,
   nameOf,
   active,
+  roomChoices = [],
 }: {
   roomHub?: RoomHubBridge;
   snapshot: PlacesSnapshot | null;
   nameOf: (avatarId: string) => string;
   active: boolean;
+  /** The rooms and backgrounds this PC has, for a desktop room to pick what it draws. */
+  roomChoices?: RoomChoice[];
 }) {
   const [status, setStatus] = useState<RoomHubStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -153,6 +163,24 @@ export function PlacesPanel({
                 </div>
                 <p className="kiosk__helper">{here.length > 0 ? `Here: ${here.join(', ')}` : 'Nobody is here.'}</p>
                 {place.node !== 'local' && place.node !== 'offscreen' ? (
+                  <label className="placesPanel__room">
+                    <span className="kiosk__helper">Room shown there</span>
+                    <select
+                      aria-label={`Room shown in ${place.name}`}
+                      value={place.room ?? ''}
+                      disabled={!roomHub?.setRoom}
+                      onChange={(event) => void run(() => roomHub?.setRoom?.(place.id, event.target.value) ?? Promise.resolve(), 'Could not change the room.')}
+                    >
+                      {place.room && !roomChoices.some((choice) => choice.id === place.room) ? <option value={place.room}>{place.room}</option> : null}
+                      {roomChoices.map((choice) => (
+                        <option key={choice.id} value={choice.id}>
+                          {choice.name} ({choice.kind})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                {place.node !== 'local' && place.node !== 'offscreen' ? (
                   <div className="placesPanel__device">
                     <span className="kiosk__helper">
                       {device
@@ -178,7 +206,7 @@ export function PlacesPanel({
           <p className="kiosk__helper">Desktop rooms need a newer app build.</p>
         ) : showCode && pairing ? (
           <div className="placesPanel__pairing" data-testid="pairing-code">
-            <p className="kiosk__helper">On the other PC, choose “Connect to a main PC” and enter this code and address.</p>
+            <p className="kiosk__helper">On the other PC, start the app as a satellite (AIEMBODIED_ROLE=satellite) and enter this code and one of these addresses.</p>
             <strong className="placesPanel__code" aria-label="Pairing code">
               {pairing.code}
             </strong>
