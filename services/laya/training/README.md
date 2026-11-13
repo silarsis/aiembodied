@@ -12,7 +12,9 @@ Laya (PyPI package `laya`) is a small classifier that routes a person's spoken l
 - `floor_banks.py`: names, mishearing aliases and the content banks.
 - `floor_data.py`: the deterministic data generator.
 - `score.py`: scores a running Laya server against a JSONL file.
-- `test_floor_data.py`: unit tests.
+- `run_finetune.py`: the one-command fine-tuning pipeline (data, baseline, train, score, report).
+- `RUNBOOK.md`: how to run it, for a person or a small agent model.
+- `test_floor_data.py`, `test_run_finetune.py`: unit tests.
 
 ## The data
 
@@ -32,11 +34,13 @@ The hold-out test sentences are never used for training and never read when writ
 
 ## Train
 
-This is run on the user's PC, not here:
+One command trains, scores and reports, and keeps everything in one run folder. It runs on the NVIDIA PC, not here:
 
 ```
-laya-train --data train.jsonl --eval val.jsonl --base convaiinnovations/laya --out <dir> --shuffle-options
+python run_finetune.py --work DIR [--trial] [--precision auto|fp16|bf16|fp32] [--loss rlcd|soft-ce] [--math-attention]
 ```
+
+Start with `--trial` (200 rows, 1 epoch, prints a time estimate). `RUNBOOK.md` has the step-by-step instructions for Linux and Windows, the failure fixes and how to serve the checkpoint on the Windows PC. `run_finetune.py --help` lists every option. `test_run_finetune.py` tests it without torch.
 
 ## Score
 
