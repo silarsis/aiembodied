@@ -75,6 +75,14 @@ export interface VrmAvatarRendererProps {
    * env while the avatar is on stage, and reset when the room changes.
    */
   sceneExecutors?: ((avatarId: string) => SceneActionExecutor | null) | null;
+  /**
+   * Avatars that are in another place (or on their way in): their body stays loaded but is not drawn, takes no
+   * part in the 2D layout or the room (no capsule, no spot, no seat) and its executor stands still. Showing one
+   * again puts it just inside the room's door, if the room has one. Echo may be listed even with `avatars` unset.
+   */
+  hiddenIds?: string[];
+  /** An avatar's body finished loading (and is attached), so a place it is walking to can let it in. */
+  onBodyReady?: (avatarId: string) => void;
 }
 
 const CAMERA_DISTANCE = 1.45;
@@ -127,9 +135,18 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   showWalkableArea = false,
   sceneActions = null,
   sceneExecutors = null,
+  hiddenIds,
+  onBodyReady,
 }: VrmAvatarRendererProps) {
   const sceneExecutorsRef = useRef(sceneExecutors);
   useEffect(() => { sceneExecutorsRef.current = sceneExecutors; }, [sceneExecutors]);
+  const bodyReadyRef = useRef(onBodyReady);
+  useEffect(() => { bodyReadyRef.current = onBodyReady; }, [onBodyReady]);
+  // Who is not on this screen right now. Kept in a ref too, for the load callbacks.
+  const hiddenKey = (hiddenIds ?? []).slice().sort().join('|');
+  const hiddenRef = useRef<Set<string>>(new Set());
+  hiddenRef.current = new Set(hiddenKey ? hiddenKey.split('|') : []);
+  const echoHidden = hiddenRef.current.has(DEFAULT_AVATAR_ID);
   const roomRef = useRef<RoomFile | null>(room);
   roomRef.current = room;
   const roomControllerRef = useRef<RoomSceneController | null>(null);
@@ -166,7 +183,8 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     [avatars],
   );
   const extraKey = extraEntries.map((entry) => `${entry.id}:${entry.model?.id ?? ''}:${entry.model?.fileSha ?? ''}`).join('|');
-  const stageUnits = 1 + extraEntries.length;
+  // One portrait frame per avatar on screen; the ones in another place take no room.
+  const stageUnits = Math.max(1, (echoHidden ? 0 : 1) + extraEntries.filter((entry) => !hiddenRef.current.has(entry.id)).length);
   /** Rest-pose bounds of each loaded body (before it is placed), by avatar id. */
   const boundsRef = useRef(new Map<string, ActorBounds>());
   const loadedModelRef = useRef(new Map<string, string>());
@@ -180,9 +198,10 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       return;
     }
     const ids = [DEFAULT_AVATAR_ID, ...extraEntries.map((entry) => entry.id)].filter(
-      (id) => actors.get(id)?.getVrm() && boundsRef.current.has(id),
+      (id) => !hiddenRef.current.has(id) && actors.get(id)?.getVrm() && boundsRef.current.has(id),
     );
-    if (ids.length <= 1) {
+    // Echo alone (or nobody) is the plain one-avatar view; any other lone avatar is laid out like a group of one.
+    if (ids.length === 0 || (ids.length === 1 && ids[0] === DEFAULT_AVATAR_ID)) {
       if (laidOutMultiRef.current) {
         // Back to one avatar: stand where the loader put it and frame it alone, as a fresh load does.
         laidOutMultiRef.current = false;
@@ -373,7 +392,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       for (const frameActor of actors.values()) {
         frameActor.checkJump(roomControllerRef.current?.active ?? false);
       }
-      if (actor.getVrm() && !groundMeasuredRef.current && !roomControllerRef.current?.active) {
+      if (actor.getVrm() && !hiddenRef.current.has(DEFAULT_AVATAR_ID) && !groundMeasuredRef.current && !roomControllerRef.current?.active) {
         const fraction = renderedFootFraction(rendererInstance);
         if (fraction !== null) {
           groundMeasuredRef.current = true;
@@ -475,8 +494,10 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         if (!loaded) {
           return;
         }
+        applyHiddenRef.current();
         relayoutRef.current();
         setStatus({ status: 'ready' });
+        bodyReadyRef.current?.(DEFAULT_AVATAR_ID);
       } catch (error) {
         const message =
           error instanceof Error ? error.message : 'Unable to load VRM model. Please check the console logs.';
@@ -516,6 +537,27 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     }
     return actor.reloadClipRegistry();
   }, [actor, animationVersion]);
+
+  // Avatars in another place: the body is hidden, the room forgets it, and the 2D layout closes the gap. One that
+  // comes back is put at the room's door first (the caller walks it in). Also run after a body loads.
+  const applyHiddenRef = useRef<() => void>(() => undefined);
+  applyHiddenRef.current = () => {
+    const controller = roomControllerRef.current;
+    const hiddenNow = hiddenRef.current;
+    for (const [id, body] of actors) {
+      const hide = hiddenNow.has(id);
+      // Only a body that was hidden and is now shown counts as coming back.
+      const cameBack = !hide && body.isHidden();
+      body.setHidden(hide);
+      controller?.setHidden(id, hide);
+      if (cameBack && body.getVrm()) controller?.placeAtDoor(id);
+    }
+    relayoutRef.current();
+  };
+  useEffect(() => {
+    if (!rendererReady) return;
+    applyHiddenRef.current();
+  }, [hiddenKey, rendererReady, room]);
 
   // The canvas is one portrait frame wide per avatar (2D only), so avatars side by side keep their size.
   // Applied whenever the number of frames changes and again when a room hands the canvas back (the room
@@ -610,8 +652,8 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
           onAttached: ({ vrm, restSkeleton }) => {
             const controller = roomControllerRef.current;
             controller?.attachCompanion(entry.id, vrm.scene, vrm.humanoid, restSkeleton?.hips[1]);
-            // The avatar's executor starts working in the room's env as soon as the avatar is there.
-            sceneExecutorsRef.current?.(entry.id)?.setEnv(controller?.envFor(entry.id) ?? null);
+            // The avatar's executor starts working in the room's env as soon as the avatar is there (not while it is on its way in).
+            if (!hiddenRef.current.has(entry.id)) sceneExecutorsRef.current?.(entry.id)?.setEnv(controller?.envFor(entry.id) ?? null);
           },
           onBounds: (bounds) => {
             if (bounds) {
@@ -624,7 +666,9 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         }
         loadedModelRef.current.set(entry.id, wantedKey);
         other.applyIdleOptions(idleOptions);
+        applyHiddenRef.current();
         relayoutRef.current();
+        bodyReadyRef.current?.(entry.id);
       } catch (error) {
         console.error('[vrm-avatar-renderer] failed to load VRM model for avatar', entry.id, error);
         other.unload({ parent: scene, onDetach: () => detachExtra(entry.id) });
@@ -680,12 +724,13 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
 
   useEffect(() => {
     const controller = roomControllerRef.current;
-    if (!sceneActions || !rendererReady || !controller) {
+    // While Echo is in another place her executor has no env: whatever she was doing stops.
+    if (!sceneActions || !rendererReady || !controller || echoHidden) {
       return;
     }
     sceneActions.setEnv(controller.sceneEnv);
     return () => sceneActions.setEnv(null);
-  }, [sceneActions, rendererReady]);
+  }, [sceneActions, rendererReady, echoHidden]);
 
   // Executors handed over after their avatar loaded (or swapped) get the env of that avatar.
   useEffect(() => {
@@ -695,6 +740,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     }
     const bound: Array<SceneActionExecutor> = [];
     for (const entry of extraEntries) {
+      if (hiddenRef.current.has(entry.id)) continue;
       const executor = sceneExecutors(entry.id);
       const env = controller.envFor(entry.id);
       if (!executor || !env) continue;
@@ -706,7 +752,7 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
     };
     // extraKey stands for the entries' ids and models.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sceneExecutors, rendererReady, extraKey]);
+  }, [sceneExecutors, rendererReady, extraKey, hiddenKey]);
 
   // Names for the reasons avatars hear ("Sage is sitting on the sofa").
   const stageNames = (avatars ?? []).map((entry) => `${entry.id}\u0000${entry.name ?? ''}`).join('\u0001');
@@ -723,12 +769,14 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
   }, [showWalkableArea, rendererReady, room]);
 
   const canvasElement = <canvas ref={canvasRef} className={className} data-renderer="vrm" />;
-  if (extraEntries.length === 0 || room) {
+  // The avatars on screen: the ones in another place are not drawn and have no label.
+  const shown = [DEFAULT_AVATAR_ID, ...extraEntries.map((entry) => entry.id)].filter((id) => !hiddenRef.current.has(id));
+  const aloneEcho = shown.length === 1 && shown[0] === DEFAULT_AVATAR_ID;
+  if (extraEntries.length === 0 || room || shown.length === 0 || aloneEcho) {
     // In a room the avatars stand in the scene; the 2D name labels don't apply.
     return canvasElement;
   }
-  // Two or more avatars: a small name label under each (the speaking one is marked).
-  const shown = [DEFAULT_AVATAR_ID, ...extraEntries.map((entry) => entry.id)];
+  // Two or more avatars (or one that is not Echo): a small name label under each (the speaking one is marked).
   const frames = new Map<string, VisemeFrame | null>([[DEFAULT_AVATAR_ID, echoFrame], ...extraEntries.map((entry) => [entry.id, entry.frame] as const)]);
   const names = new Map<string, string>([[DEFAULT_AVATAR_ID, echoEntry?.name ?? 'Echo'], ...extraEntries.map((entry) => [entry.id, entry.name ?? entry.id] as const)]);
   return (

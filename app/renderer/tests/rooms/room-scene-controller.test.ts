@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { RoomSceneController } from '../../src/rooms/room-scene-controller.js';
 import { companionHome } from '../../src/rooms/avatar-placement.js';
@@ -255,6 +255,64 @@ describe('RoomSceneController scene envs', () => {
     await instance.setRoom(null);
     expect(env.carriedIds).toEqual([]);
     expect(origin).toBeTruthy();
+    instance.dispose();
+  });
+});
+
+describe('RoomSceneController places', () => {
+  const reading = builtInRoom('reading-room');
+  // The reading room's door is in the east wall (x = 3), 1.2 m along it.
+  const nearDoor = (x: number, z: number) => Math.hypot(x - 2.65, z - 1.2) < 0.5;
+
+  it('stands Echo just inside the door, facing into the room', async () => {
+    const { instance, avatar } = controller();
+    await instance.setRoom(reading);
+    expect(instance.placeAtDoor('echo')).toBe(true);
+    expect(nearDoor(avatar.position.x, avatar.position.z)).toBe(true);
+    // Into the room from the east wall is -x.
+    expect(avatar.rotation.y).toBeCloseTo(-Math.PI / 2);
+    instance.dispose();
+  });
+
+  it('stands a companion at the door too, and keeps it there', async () => {
+    const { instance } = controller();
+    const sage = new THREE.Group();
+    instance.attachCompanion('sage', sage);
+    await instance.setRoom(reading);
+    expect(instance.placeAtDoor('sage')).toBe(true);
+    expect(nearDoor(sage.position.x, sage.position.z)).toBe(true);
+    // Another companion arriving later does not pull Sage back to her slot.
+    instance.attachCompanion('rex', new THREE.Group());
+    expect(nearDoor(sage.position.x, sage.position.z)).toBe(true);
+    instance.dispose();
+  });
+
+  it('does nothing without a room, a door or a body', async () => {
+    const { instance } = controller();
+    expect(instance.placeAtDoor('echo')).toBe(false);
+    await instance.setRoom({ ...reading, shell: { ...reading.shell, openings: [] } });
+    expect(instance.placeAtDoor('echo')).toBe(false);
+    await instance.setRoom(reading);
+    expect(instance.placeAtDoor('ghost')).toBe(false);
+    instance.dispose();
+  });
+
+  it('forgets a hidden avatar: its spot is free and Echo stops following her body', async () => {
+    const { instance } = controller();
+    instance.attachCompanion('sage', new THREE.Group());
+    await instance.setRoom(reading);
+    instance.occupancy.standing('sage', { x: 1, z: 1 });
+    expect(instance.occupancy.others('echo').map((other) => other.id)).toEqual(['sage']);
+    instance.setHidden('sage', true);
+    expect(instance.occupancy.others('echo')).toEqual([]);
+    // Stepping with Echo hidden parks her capsule instead of following her body.
+    const park = instance.currentStage ? vi.spyOn(instance.currentStage, 'parkEcho') : null;
+    instance.setHidden('echo', true);
+    instance.step(1 / 60);
+    expect(park).not.toBeNull();
+    expect(park).toHaveBeenCalled();
+    instance.setHidden('echo', false);
+    instance.setHidden('sage', false);
     instance.dispose();
   });
 });

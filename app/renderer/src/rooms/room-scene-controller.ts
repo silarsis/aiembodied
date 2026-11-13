@@ -6,6 +6,7 @@ import { RoomOccupancy } from './room-occupancy.js';
 import { RoomStage } from './room-stage.js';
 import { createModelLoader } from './room-model-loader.js';
 import { RoomSceneEnv, type AvatarRig } from './scene-env.js';
+import { doorEntry } from './scene-actions.js';
 
 interface Deps {
   renderer: THREE.WebGLRenderer;
@@ -72,6 +73,9 @@ export class RoomSceneController {
     // Echo only takes part while a companion is attached; alone she plans exactly as before.
     occupancy: () => (this.companionEnvs.size > 0 ? this.occupancy : null),
   });
+
+  /** Avatars whose body is loaded but who are in another place: no capsule, no claims, not in the plans of the others. */
+  private readonly hiddenIds = new Set<string>();
 
   /** Scene action envs of the companions, by avatar id; each lives as long as its companion stays attached. */
   private readonly companionEnvs = new Map<string, RoomSceneEnv>();
@@ -192,7 +196,44 @@ export class RoomSceneController {
     this.placeCompanions(false);
   }
 
+  /**
+   * The avatar is in another place (hidden) or back. Hidden, it drops what it carried, gives up its spots and
+   * seats, and its physics capsule leaves the room, so the others can use its place. The caller hides the body
+   * itself and resets the avatar's executor.
+   */
+  setHidden(id: string, hidden: boolean): void {
+    if (!hidden) {
+      this.hiddenIds.delete(id);
+      return;
+    }
+    this.hiddenIds.add(id);
+    this.envFor(id)?.releaseHeld();
+    this.occupancy.forget(id);
+    if (id !== 'echo') this.stage?.removeAvatar(id);
+  }
+
+  /**
+   * Stands the avatar just inside the room's door, facing into the room, where it comes in from. False when
+   * there is no room, no door or no body (it then stays where it was).
+   */
+  placeAtDoor(id: string): boolean {
+    const stage = this.stage;
+    if (!stage || !this.room) return false;
+    const entry = doorEntry(this.room, (p) => stage.closestWalkable(p));
+    if (!entry) return false;
+    if (id === 'echo') {
+      if (!this.avatar || !this.avatarBase) return false;
+      this.avatar.position.x = entry.inside[0];
+      this.avatar.position.z = entry.inside[2];
+      this.avatar.rotation.y = this.avatarBase.rotationY + entry.intoRoom;
+      this.avatar.updateWorldMatrix(true, true);
+      return true;
+    }
+    return this.companions.placeAtPoint(id, entry.inside[0], entry.inside[2], entry.intoRoom);
+  }
+
   detachCompanion(id: string): void {
+    this.hiddenIds.delete(id);
     this.companionEnvs.get(id)?.releaseHeld();
     this.companionEnvs.delete(id);
     this.occupancy.forget(id);
@@ -231,7 +272,13 @@ export class RoomSceneController {
   step(dt: number): void {
     this.sceneEnv.step(dt);
     for (const env of this.companionEnvs.values()) env.step(dt);
-    this.stage?.step(dt, this.body ?? this.avatar, this.companions.bodies());
+    const echoHidden = this.hiddenIds.has('echo');
+    if (echoHidden) this.stage?.parkEcho();
+    this.stage?.step(
+      dt,
+      echoHidden ? null : (this.body ?? this.avatar),
+      this.hiddenIds.size === 0 ? this.companions.bodies() : this.companions.bodies().filter((body) => !this.hiddenIds.has(body.id)),
+    );
   }
 
   setDebugNavmesh(on: boolean): void {

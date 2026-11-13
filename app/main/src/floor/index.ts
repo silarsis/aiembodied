@@ -11,6 +11,7 @@
  * plays several voices (phase 3 step 3). The path and the setting are in place for that.
  */
 import type { AvatarRegistry } from '../avatars/avatar-registry.js';
+import type { PlaceManager } from '../places/place-manager.js';
 import { stripAvatarTags } from '../local-voice/avatar-tags.js';
 import type { LocalVoiceEvent, LocalVoiceRespondRequest, LocalVoiceRespondResult } from '../local-voice/types.js';
 import type { SwitchboardBus } from '../switchboard/bus.js';
@@ -45,6 +46,18 @@ export interface FloorVoice {
 
 export interface FloorControllerOptions {
   registry: Pick<AvatarRegistry, 'list' | 'get'>;
+  /**
+   * Who is where. The scene is the avatars present at this PC's place, so an avatar that is somewhere else
+   * neither overhears nor answers. Without it every avatar of the registry is in the scene.
+   */
+  places?: Pick<PlaceManager, 'avatarsAt' | 'localPlaceId' | 'awayFromLocal'>;
+  /**
+   * Calls an avatar over to this PC's place and resolves true once it is here (false: it did not come). Used when
+   * Kevin's line picks an avatar that is away.
+   */
+  summon?: (avatarId: string, reason: string) => Promise<boolean>;
+  /** Tells Kevin a turn could not start (the avatar did not come). */
+  reportError?: (avatarId: string, requestId: string, message: string) => void;
   store: FloorStore;
   voice: (avatarId: string) => FloorVoice | null;
   /** Runs one of Kevin's turns for an avatar (mirror, presence and renderer events included). */
@@ -116,8 +129,24 @@ export class FloorController {
   constructor(options: FloorControllerOptions) {
     this.options = options;
     this.now = options.now ?? Date.now;
+    const places = options.places;
     this.manager = new FloorManager({
       avatarIds: () => options.registry.list().map((profile) => profile.id),
+      // The scene is the place this PC shows. With everyone present it is what the default scene was.
+      ...(places
+        ? {
+            scene: () => {
+              const avatarIds = places.avatarsAt(places.localPlaceId());
+              const awayIds = places.awayFromLocal();
+              return {
+                id: places.localPlaceId(),
+                avatarIds,
+                hostId: avatarIds.includes('echo') ? 'echo' : (avatarIds[0] ?? 'echo'),
+                ...(awayIds.length > 0 ? { awayIds } : {}),
+              };
+            },
+          }
+        : {}),
       nameOf: (avatarId) => options.registry.get(avatarId)?.name ?? avatarId,
       bid: options.bid,
       addressee: options.addressee,
@@ -149,6 +178,35 @@ export class FloorController {
     return this.manager.isMulti();
   }
 
+  /** At least one avatar is somewhere else, so Kevin's line may be aimed at one that has to be called over. */
+  hasAway(): boolean {
+    return (this.manager.scene().awayIds?.length ?? 0) > 0;
+  }
+
+  /** The avatar Kevin last talked with, if that was recent, wherever it is now. */
+  recentPartner(): string | null {
+    return this.manager.recentPartner(this.now());
+  }
+
+  /** True when the avatar is in the scene (at this PC's place). */
+  isHere(avatarId: string): boolean {
+    return this.manager.scene().avatarIds.includes(avatarId);
+  }
+
+  /**
+   * Makes sure an avatar is here before its turn runs: calls it over when it is away. False when it did not
+   * come (the turn then does not run and Kevin is told).
+   */
+  private async ensureHere(avatarId: string, requestId: string): Promise<boolean> {
+    if (this.isHere(avatarId) || !this.options.summon) return true;
+    const came = await this.options.summon(avatarId, 'summoned');
+    if (!came) {
+      const name = this.options.registry.get(avatarId)?.name ?? avatarId;
+      this.options.reportError?.(avatarId, requestId, `${name} did not come over.`);
+    }
+    return came;
+  }
+
   /**
    * Kevin spoke without naming an avatar: stop whatever is being said, decide who answers, run
    * the first answerer now and queue the rest. Resolves with the first answerer's result.
@@ -171,6 +229,12 @@ export class FloorController {
     }
     let result: LocalVoiceRespondResult;
     try {
+      if (!(await this.ensureHere(first.avatarId, payload.requestId))) {
+        const cancelled = { requestId: payload.requestId, text: '', cancelled: true };
+        this.continueFrom(first.avatarId, cancelled, epoch, txn, input);
+        return cancelled;
+      }
+      if (epoch !== this.epoch) return { requestId: payload.requestId, text: '', cancelled: true };
       const nameOf = (id: string) => this.options.registry.get(id)?.name ?? id;
       const note =
         decision.relay && decision.relay.from === first.avatarId
@@ -305,6 +369,7 @@ export class FloorController {
 
   private async execute(avatarId: string, job: Job): Promise<LocalVoiceRespondResult> {
     if (job.kind === 'kevin') {
+      if (!(await this.ensureHere(avatarId, job.requestId))) return { requestId: job.requestId, text: '', cancelled: true };
       return this.options.runPersonTurn(avatarId, { ...job.payload, requestId: job.requestId, avatarId });
     }
     const voice = this.options.voice(avatarId);

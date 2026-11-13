@@ -316,6 +316,54 @@ describe('SceneActionExecutor', () => {
     expect(gesture).toHaveBeenCalledTimes(1);
   });
 
+  describe('leaving for another place', () => {
+    it('runs the callback once the walk to the door is over', async () => {
+      const leave = vi.fn();
+      executor.submit([{ kind: 'exit' }]);
+      executor.submitAfter('leave', leave);
+      await until(() => bridge.requests.length === 1);
+      expect(bridge.last.prompt).toBe('a person walks calmly');
+      expect(leave).not.toHaveBeenCalled();
+      await playStream(executor, bridge, 's1', [{ root: [0, 2], height: 0.95, heading: 1.5 }]);
+      await until(() => leave.mock.calls.length === 1);
+    });
+
+    it('still runs the callback when the room has no door to walk to', async () => {
+      const noDoor = { ...room, shell: { ...room.shell, openings: [] } };
+      const blind = new FakeEnv();
+      blind.planWorld = () => ({ ...FakeEnv.prototype.planWorld.call(blind), room: noDoor });
+      executor.setEnv(blind);
+      const leave = vi.fn();
+      executor.submit([{ kind: 'exit' }]);
+      executor.submitAfter('leave', leave);
+      await until(() => leave.mock.calls.length === 1);
+      expect(bridge.requests).toHaveLength(0);
+      expect(activity).toContainEqual({ type: 'skipped', label: 'exit', reason: 'no door' });
+    });
+
+    it('runs the callback whatever the posture', async () => {
+      (executor as unknown as { state: unknown }).state = {
+        posture: 'seated',
+        held: null,
+        seat: { objectId: 'sofa', session: 'x', frame: env.planWorld().frame, approach: [0, 0, 0], facing: 0 },
+      };
+      const leave = vi.fn();
+      executor.submitAfter('leave', leave);
+      await until(() => leave.mock.calls.length === 1);
+    });
+
+    it('drops the callback when the user interrupts', async () => {
+      const leave = vi.fn();
+      executor.submit([{ kind: 'exit' }]);
+      executor.submitAfter('leave', leave);
+      await until(() => bridge.requests.length === 1);
+      executor.interrupt();
+      await tick();
+      await tick();
+      expect(leave).not.toHaveBeenCalled();
+    });
+  });
+
   describe('interruptions', () => {
     it('drops the queue and stops a walk where it is', async () => {
       executor.submit([

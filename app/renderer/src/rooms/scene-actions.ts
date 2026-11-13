@@ -19,6 +19,8 @@ export type SceneAction =
   /** Walk to a world point; used to get near things for pick and put. */
   | { kind: 'goto'; position: Vec3; faceToward?: Vec3 }
   | { kind: 'come' }
+  /** Walk to the room's door, ready to leave for another place (`{room:}`). Never goes through it. */
+  | { kind: 'exit' }
   | { kind: 'look'; objectId: string }
   /** Turn on the spot to face a world point (the camera, when the user starts talking). Never stands up. */
   | { kind: 'lookAtPoint'; position: Vec3; label?: string }
@@ -213,6 +215,9 @@ export function tagToAction(room: RoomFile, tag: SceneTag): SceneAction | null {
     case 'stand':
     case 'come':
       return tag.type === 'stand' ? { kind: 'stand' } : { kind: 'come' };
+    case 'room':
+      // The walk to the door; leaving for the place the tag names is the caller's business.
+      return { kind: 'exit' };
     case 'go':
     case 'sit':
     case 'look':
@@ -349,6 +354,56 @@ export function walkStart(world: PlanWorld, points: Array<[number, number]>): { 
     startS: roundMs(turnS + TURN_SETTLE_S),
     targets: [{ t: turnS, root: [0, 0], height: world.restHipsHeight, heading: roundMs(heading) }],
   };
+}
+
+// -- Doors ------------------------------------------------------------------------------------
+
+/** How far inside the room, in metres, an avatar stands at the door before it leaves or after it has come in. */
+export const DOOR_STAND_OFF = 0.35;
+
+export interface DoorEntry {
+  /** The middle of the door in the wall (floor level). */
+  door: Vec3;
+  /** Where the avatar stands just inside the room, snapped onto the floor it can walk on. */
+  inside: Vec3;
+  /** World yaw that faces the door from inside. */
+  towardDoor: number;
+  /** World yaw that faces into the room from the door. */
+  intoRoom: number;
+}
+
+/**
+ * The room's first door: its point in the wall and the spot just inside it. The floor is centred on the origin
+ * (width along x, depth along z); a north wall is at z = -depth/2, south at +depth/2, east at x = +width/2 and
+ * west at -width/2, and `offset` runs along the wall (x on north and south, z on east and west). Null when the
+ * room has no door.
+ */
+export function doorEntry(room: RoomFile, closestWalkable: (p: Vec3) => Vec3 = (p) => p): DoorEntry | null {
+  const opening = (room.shell.openings ?? []).find((candidate) => candidate.kind === 'door');
+  if (!opening) return null;
+  const { width, depth } = room.shell;
+  let door: Vec3;
+  let inward: [number, number];
+  switch (opening.wall) {
+    case 'north':
+      door = [opening.offset, 0, -depth / 2];
+      inward = [0, 1];
+      break;
+    case 'south':
+      door = [opening.offset, 0, depth / 2];
+      inward = [0, -1];
+      break;
+    case 'east':
+      door = [width / 2, 0, opening.offset];
+      inward = [-1, 0];
+      break;
+    case 'west':
+      door = [-width / 2, 0, opening.offset];
+      inward = [1, 0];
+      break;
+  }
+  const inside = closestWalkable([door[0] + inward[0] * DOOR_STAND_OFF, 0, door[2] + inward[1] * DOOR_STAND_OFF]);
+  return { door, inside, towardDoor: yawToward(inside, door), intoRoom: Math.atan2(inward[0], inward[1]) };
 }
 
 // -- Plans ------------------------------------------------------------------------------------
@@ -517,6 +572,14 @@ function planGo(world: PlanWorld, object: RoomObject): ActionPlan {
   const target = stand ? ([stand.position[0], 0, stand.position[2]] as Vec3) : frontOfFace(world, object);
   const look = lookPoint(world.room, object, position);
   return walkPlan(world, target, yawToward(target, look), object.name);
+}
+
+/** Walk to the spot just inside the door and face it. The avatar leaves for the other place from there. */
+function planExit(world: PlanWorld): ActionPlan {
+  const entry = doorEntry(world.room, world.closestWalkable);
+  // Without navigation there is no walking to a door either; the avatar just leaves from where it stands.
+  if (!entry || !world.hasNavigation) return skip('no door');
+  return walkPlan(world, entry.inside, entry.towardDoor, 'the door');
 }
 
 function planCome(world: PlanWorld): ActionPlan {
@@ -761,7 +824,7 @@ function planGoto(world: PlanWorld, action: Extract<SceneAction, { kind: 'goto' 
 }
 
 /** Walking, looking, reaching and the like start from a standing avatar. */
-const NEEDS_STANDING = new Set<SceneAction['kind']>(['go', 'goto', 'come', 'look', 'pick', 'put']);
+const NEEDS_STANDING = new Set<SceneAction['kind']>(['go', 'goto', 'come', 'exit', 'look', 'pick', 'put']);
 
 export function planAction(world: PlanWorld, state: AvatarState, action: SceneAction): ActionPlan {
   if (action.kind === 'stand') return planStand(world, state);
@@ -773,6 +836,8 @@ export function planAction(world: PlanWorld, state: AvatarState, action: SceneAc
   switch (action.kind) {
     case 'come':
       return planCome(world);
+    case 'exit':
+      return planExit(world);
     case 'goto':
       return planGoto(world, action);
     case 'go':

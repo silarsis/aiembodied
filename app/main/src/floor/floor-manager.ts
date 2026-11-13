@@ -59,6 +59,12 @@ export interface Scene {
   /** In scene order. */
   avatarIds: string[];
   hostId: string;
+  /**
+   * Avatars that are somewhere else right now. They are never part of "everyone", never overhear and never
+   * answer by themselves; they are only offered to the chat-model intent step, so a line aimed at one of them
+   * ("Sage, come and look at this") can be understood and the avatar called over.
+   */
+  awayIds?: string[];
 }
 
 export type FloorSpeaker = 'person:kevin' | `avatar:${string}`;
@@ -106,6 +112,11 @@ export interface IntentInput {
   hostId: string;
   /** The avatar Kevin last talked with, when that was within the partner window. */
   partnerId: string | null;
+  /**
+   * Avatars not in the room right now, who can be called over. Set only for the chat-model step: the fine-tuned
+   * quick model was trained on "Avatars in the room" and never sees them.
+   */
+  away?: BidCandidate[];
 }
 
 /** What the intent check says Kevin means. */
@@ -299,14 +310,17 @@ export class FloorManager {
       trace.push('person: no avatars in scene');
       return { speakers: [], channel: 'aloud', trace };
     }
-    if (scene.avatarIds.length === 1) {
+    const away = scene.awayIds ?? [];
+    if (scene.avatarIds.length === 1 && away.length === 0) {
       return finish({ speakers: [{ avatarId: scene.avatarIds[0], reason: 'host' }], trace: [`person: one avatar in scene -> ${scene.avatarIds[0]}`] }, 'default');
     }
     const describe = (result: IntentResult): string => `${result.addressed} ${result.wants}${result.other ? ` ${result.other}` : ''}`;
     const reason = (error: unknown): string => (error instanceof Error ? error.message : String(error));
     // Step 1: the fine-tuned quick model.
     let quickLow: QuickIntentResult | null = null;
-    if (this.options.quickIntent) {
+    if (away.length > 0) {
+      trace.push('person: someone is away; the chat model reads the line');
+    } else if (this.options.quickIntent) {
       const started = Date.now();
       try {
         const result = await this.ask(this.options.quickIntent, utterance, scene, this.quickIntentTimeoutMs, 'Quick intent');
@@ -330,7 +344,7 @@ export class FloorManager {
     if (this.options.intent) {
       const started = Date.now();
       try {
-        const result = await this.ask(this.options.intent, utterance, scene, this.intentTimeoutMs, 'Intent model');
+        const result = await this.ask(this.options.intent, utterance, scene, this.intentTimeoutMs, 'Intent model', away.length > 0);
         if (seq !== this.personSeq) return this.superseded(trace);
         trace.push(`person: chat model decided -> ${describe(result)} (${Date.now() - started} ms)`);
         return finish(this.planFromIntent(result, utterance, scene), 'model');
@@ -358,7 +372,7 @@ export class FloorManager {
   }
 
   /** One call to an intent function, bounded by `timeoutMs` and dropped when Kevin speaks again. */
-  private async ask<R extends IntentResult>(intent: (input: IntentInput, signal: AbortSignal) => Promise<R>, utterance: FloorUtterance, scene: Scene, timeoutMs: number, label: string): Promise<R> {
+  private async ask<R extends IntentResult>(intent: (input: IntentInput, signal: AbortSignal) => Promise<R>, utterance: FloorUtterance, scene: Scene, timeoutMs: number, label: string, withAway = false): Promise<R> {
     const controller = new AbortController();
     this.pendingIntent = controller;
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)]);
@@ -375,22 +389,30 @@ export class FloorManager {
           candidates: this.candidatesOf(scene.avatarIds),
           hostId: scene.hostId,
           partnerId: this.freshPartner(scene, utterance.at),
+          ...(withAway && scene.awayIds?.length ? { away: this.candidatesOf(scene.awayIds) } : {}),
         },
         signal,
       );
       run.catch(() => undefined);
       const result = await Promise.race([run, timeout]);
+      const roster = withAway ? [...scene.avatarIds, ...(scene.awayIds ?? [])] : scene.avatarIds;
       const valid =
         result &&
-        (result.addressed === 'everyone' || result.addressed === 'unclear' || scene.avatarIds.includes(result.addressed)) &&
+        (result.addressed === 'everyone' || result.addressed === 'unclear' || roster.includes(result.addressed)) &&
         (result.wants === 'answer' || result.wants === 'converse' || result.wants === 'relay') &&
-        (result.other === null || scene.avatarIds.includes(result.other));
+        (result.other === null || roster.includes(result.other));
       if (!valid) throw new Error(`${label} gave an answer that was not usable`);
       return result;
     } finally {
       if (timer) clearTimeout(timer);
       if (this.pendingIntent === controller) this.pendingIntent = null;
     }
+  }
+
+  /** The avatar Kevin last talked with when that was within the partner window, wherever it is now. */
+  recentPartner(at: number): string | null {
+    const partner = this.partner;
+    return partner && at - partner.at <= this.partnerWindowMs ? partner.avatarId : null;
   }
 
   /** The last partner when it is in the scene and spoke with Kevin within the window, else null. */
@@ -437,6 +459,7 @@ export class FloorManager {
   private planFromIntent(result: IntentResult, utterance: FloorUtterance, scene: Scene): PersonPlan {
     const at = utterance.at;
     const other = result.other && scene.avatarIds.includes(result.other) ? result.other : null;
+    // The avatar addressed may be away (it is called over); `other` and "everyone" only ever mean avatars that are here.
     const concrete = result.addressed !== 'everyone' && result.addressed !== 'unclear' ? result.addressed : null;
     const consistent = result.wants === 'answer' || (other !== null && other !== concrete);
     if (result.wants === 'converse' && other && consistent) return this.conversePlan(other, concrete, scene, at);
@@ -444,7 +467,7 @@ export class FloorManager {
       const from = concrete ?? this.fallbackSpeaker(scene, at, other)?.avatarId;
       if (from) return this.relayPlan(from, other, concrete ? 'addressed' : (this.fallbackSpeaker(scene, at, other)?.reason ?? 'host'));
     }
-    if (result.wants === 'converse' && !other && (result.addressed === 'everyone' || (concrete && scene.avatarIds.length === 2))) {
+    if (result.wants === 'converse' && !other && (result.addressed === 'everyone' || (concrete && scene.avatarIds.includes(concrete) && scene.avatarIds.length === 2))) {
       // "You two, talk to each other" / "Echo, have a chat": a conversation with no one named, so the avatars talk among themselves.
       const partner = this.partner && scene.avatarIds.includes(this.partner.avatarId) ? this.partner.avatarId : scene.hostId;
       const first = concrete ?? partner;

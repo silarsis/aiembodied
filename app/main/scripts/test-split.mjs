@@ -63,6 +63,7 @@ runTests('tests/pose-*.test.ts', 'Pose Generation');
 runTests('tests/server-manager.test.ts', 'Server Manager');
 runTests('tests/coding-*.test.ts', 'Coding');
 runTests('tests/rooms-*.test.ts', 'Rooms');
+runTests('tests/places/*.test.ts', 'Places');
 
 console.log('\n' + '='.repeat(70));
 console.log('✅ All test groups passed!');

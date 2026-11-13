@@ -84,3 +84,28 @@ describe('scene tags', () => {
     expect(extractAnimationTags('{stand} {come} {wave}')).toEqual(['wave']);
   });
 });
+
+describe('room tag', () => {
+  it('parses the place name as written, in order with the other tags', () => {
+    expect(extractMotionTags('Fine, I will give you a minute. {move:waves}{room:next door}')).toEqual([
+      { type: 'move', text: 'waves' },
+      { type: 'room', place: 'next door' },
+    ]);
+    expect(extractSceneTags('{ROOM:The Lounge}')).toEqual([{ type: 'room', place: 'The Lounge' }]);
+  });
+
+  it('ignores a room tag with no place', () => {
+    expect(extractMotionTags('{room} {room:} {room:   }')).toEqual([]);
+  });
+
+  it('never treats it as an animation or a pose', () => {
+    const text = '{room:next door} {room} {anim:room} {pose:room-service}';
+    expect(extractAvatarTags(text)).toEqual([
+      { type: 'anim', slug: 'room' },
+      { type: 'pose', slug: 'room-service' },
+    ]);
+    // The bare and the argument forms are scene tags, not animations of that name.
+    expect(extractAvatarTags('{room:next door} {room}')).toEqual([]);
+    expect(extractAnimationTags('{room} {room:lounge} {wave}')).toEqual(['wave']);
+  });
+});

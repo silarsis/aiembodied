@@ -83,6 +83,10 @@ export interface IdleDirectorDeps {
    * alone, exactly as it did before there were several.
    */
   avatars?(): readonly IdleAvatar[];
+  /**
+   * Nobody is in this room (every avatar is in another place), so nobody acts. Absent means somebody is.
+   */
+  nobodyHere?(): boolean;
   now(): number;
   setTimer(fn: () => void, ms: number): unknown;
   clearTimer(handle: unknown): void;
@@ -298,14 +302,18 @@ export class IdleDirector {
     void this.act(actor);
   }
 
-  /** The avatars in the room; just Echo when the app does not say or says there is only one. */
+  /**
+   * The avatars in the room; just Echo when the app does not say or says there is only one (and that one is
+   * Echo). A lone avatar other than Echo (Echo is in another place) still counts as a roster of its own.
+   */
   private roster(): readonly IdleAvatar[] {
     const avatars = this.deps.avatars?.() ?? [];
-    return avatars.length >= 2 ? avatars : [];
+    return avatars.length >= 2 || (avatars.length === 1 && avatars[0]?.id !== ECHO_ID) ? avatars : [];
   }
 
   /** Who acts now: Echo alone as before, else the picker's choice. Null when nobody can act yet. */
   private pickActor(): IdleAvatar | null {
+    if (this.deps.nobodyHere?.()) return null;
     const roster = this.roster();
     if (roster.length === 0) {
       return this.deps.executor.busy
@@ -479,8 +487,10 @@ export interface IdleDirectorInputs {
   persona: IdlePersona;
   pick(context: IdlePickContext): Promise<IdlePickResult | null>;
   run(text: string, avatarId?: string): void;
-  /** The avatars in the room, Echo included; fewer than two means Echo alone. */
+  /** The avatars in the room, Echo included; fewer than two means Echo alone (unless the one is not Echo). */
   avatars?(): readonly IdleAvatar[];
+  /** Every avatar is in another place. */
+  nobodyHere?(): boolean;
 }
 
 const NO_INPUTS: IdleDirectorInputs = {
@@ -513,6 +523,7 @@ export function createIdleDirector(
     persona: () => latest.persona,
     pick: (context) => latest.pick(context),
     avatars: () => latest.avatars?.() ?? [],
+    nobodyHere: () => latest.nobodyHere?.() === true,
     run: (text, avatarId) => (avatarId ? latest.run(text, avatarId) : latest.run(text)),
     onNoteChange,
   });

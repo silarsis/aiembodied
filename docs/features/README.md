@@ -21,6 +21,7 @@ This directory contains design documents for potential future features of the Em
 | 03 | [Scheduled Actions](./03-scheduled-actions.md) | Medium | Draft | Reminders, routines, and time-based triggers |
 | — | [Quick decisions](./quick-decisions.md) | High | Shipped | Fast typed judgements from a small local model (Laya): routing, triage, gating |
 | — | [Models and servers](./models-and-servers.md) | High | Shipped | One pop-up for every model job: server, model, backups and keys |
+| — | [Places](./places.md) | High | In Progress | Every screen is a place; avatars walk out of one and into another (`{room:}`), and can be called back |
 
 ## Feature Dependencies
 
