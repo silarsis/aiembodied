@@ -53,8 +53,10 @@ def _poll(base: str, txn: Optional[str], since: Optional[str]) -> Iterator[dict[
 
 def run(url: str, types: list[str], txn: Optional[str], since: Optional[str]) -> int:
     base = url.rstrip("/").replace("ws", "http", 1) if url.startswith("ws") else url.rstrip("/")
+    closed: tuple[type[BaseException], ...] = ()
     try:
-        import websockets  # noqa: F401
+        from websockets.exceptions import ConnectionClosed
+        closed = (ConnectionClosed,)
         source = _stream(base, types, since)
     except ImportError:
         print("websockets is not installed; polling every second instead", file=sys.stderr)
@@ -67,6 +69,10 @@ def run(url: str, types: list[str], txn: Optional[str], since: Optional[str]) ->
                 continue
             print(format_event(ev), flush=True)
     except KeyboardInterrupt:
+        return 0
+    except closed:
+        # The switchboard went away (usually because the app quit): not an error for a tail.
+        print("switchboard closed", file=sys.stderr)
         return 0
     except OSError as e:
         print(f"lost the switchboard at {base}: {e}", file=sys.stderr)
