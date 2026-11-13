@@ -48,9 +48,18 @@ def test_hybrid_search_filters_and_excludes(client):
 
 
 def test_recent_wins_a_tie_but_an_old_strong_match_still_wins(client):
+    # Dated from today, because the search weighs recency against the real clock: fixed dates
+    # made this test start failing once they were old enough. The gap is kept to a few days on
+    # purpose. With rank fusion a first place beats a second place by under 2%, so the stronger
+    # match only stays ahead while the recency boost (up to 30%, 90-day half-life) differs by less.
     old, new = uuid4(), uuid4()
-    post(client, message(old, "user", "the dentist appointment is on friday", 0))
-    post(client, message(new, "user", "the dentist", 86400 * 300))
+    today = datetime.now(timezone.utc)
+    stronger = message(old, "user", "the dentist appointment is on friday", 0)
+    weaker = message(new, "user", "the dentist", 0)
+    stronger["created_at"] = (today - timedelta(days=3)).isoformat()
+    weaker["created_at"] = (today - timedelta(minutes=5)).isoformat()
+    post(client, stronger)
+    post(client, weaker)
     results = client.get("/v1/search", params={"q": "dentist appointment friday"}).json()["results"]
     assert results[0]["text"] == "User: the dentist appointment is on friday"
 

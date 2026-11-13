@@ -45,6 +45,8 @@ export interface LocalLlmClientOptions {
   healthTimeoutMs?: number;
   /** Ask the server for a JSON object reply (`response_format: {type: "json_object"}`). */
   jsonObject?: boolean;
+  /** A full `response_format` (for example a json_schema); takes the place of `jsonObject`. */
+  responseFormat?: Record<string, unknown>;
 }
 
 export class LocalLlmClient {
@@ -57,6 +59,7 @@ export class LocalLlmClient {
   private readonly maxTokens: number;
   private readonly healthTimeoutMs: number;
   private readonly jsonObject: boolean;
+  private readonly responseFormat?: Record<string, unknown>;
 
   constructor(options: LocalLlmClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
@@ -68,6 +71,7 @@ export class LocalLlmClient {
     this.maxTokens = options.maxTokens ?? 1024;
     this.healthTimeoutMs = options.healthTimeoutMs ?? 2000;
     this.jsonObject = options.jsonObject ?? false;
+    this.responseFormat = options.responseFormat;
   }
 
   /** True when the server answers /models. For OpenAI, true when there is a key (no request per poll). */
@@ -93,7 +97,7 @@ export class LocalLlmClient {
   ): AsyncGenerator<LlmStreamPart> {
     const tools = {
       ...(options.tools?.length ? { tools: options.tools } : {}),
-      ...(this.jsonObject ? { response_format: { type: 'json_object' } } : {}),
+      ...(this.responseFormat ? { response_format: this.responseFormat } : this.jsonObject ? { response_format: { type: 'json_object' } } : {}),
     };
     const response = await this.fetchFn(`${this.baseUrl}/chat/completions`, {
       method: 'POST',

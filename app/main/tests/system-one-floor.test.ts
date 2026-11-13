@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SystemOneClient } from '../src/decide/system-one.js';
-import { createSystemOneAddressee, createSystemOneBid } from '../src/floor/system-one-floor.js';
+import { buildFloorQuestions, buildFloorState, createSystemOneAddressee, createSystemOneBid, createSystemOneIntent } from '../src/floor/system-one-floor.js';
 
-const NAMES: Record<string, string> = { echo: 'Echo', lenha: 'Lenha' };
+const NAMES: Record<string, string> = { echo: 'Echo', lenha: 'Lenha', sage: 'Sage', rex: 'Rex' };
 const fake = (reply: unknown | Error) => {
   const ask = vi.fn(async (_state: unknown, _questions: unknown, _options?: unknown) => {
     if (reply instanceof Error) throw reply;
@@ -66,5 +66,69 @@ describe('createSystemOneBid', () => {
 
   it('rejects on failure so the caller can fall back', async () => {
     await expect(createSystemOneBid(fake(new Error('down')).client)([{ avatarId: 'echo', name: 'Echo' }], [], signal)).rejects.toThrow('down');
+  });
+});
+
+describe('the trained floor prompt', () => {
+  // The literals below are the output of services/laya/training/floor_prompt.py (build_state, build_questions) for this scene.
+  const candidates = [
+    { avatarId: 'echo', name: 'Echo' },
+    { avatarId: 'sage', name: 'Sage' },
+    { avatarId: 'rex', name: 'Rex' },
+  ];
+  const input = {
+    text: 'Not you, Echo. Sage, what do you think?',
+    recent: [
+      { from: 'person:kevin' as const, text: 'Hello there' },
+      { from: 'avatar:echo' as const, text: 'Hi Kevin.' },
+      { from: 'person:kevin' as const, text: 'Sage, how are you?' },
+      { from: 'avatar:sage' as const, text: 'Fine thanks.' },
+      { from: 'person:kevin' as const, text: 'Echo, tell me\n a joke' },
+      { from: 'avatar:echo' as const, text: 'x'.repeat(210) },
+    ],
+    candidates,
+    hostId: 'echo',
+    partnerId: 'sage',
+  };
+  const speakerName = (from: string) => (from.startsWith('avatar:') ? (NAMES[from.slice(7)] ?? from.slice(7)) : 'Kevin');
+
+  it('builds the state string exactly as floor_prompt.build_state does', () => {
+    expect(buildFloorState(input, (from) => (from === 'avatar:sage' ? 'Sage' : speakerName(from)))).toBe(
+      `Avatars in the room: Echo (host), Sage, Rex.\nKevin last spoke with: Sage.\nKevin: Sage, how are you?\nSage: Fine thanks.\nKevin: Echo, tell me a joke\nEcho: ${'x'.repeat(200)}\nKevin: Not you, Echo. Sage, what do you think?`,
+    );
+    expect(buildFloorState({ ...input, recent: [], partnerId: null, text: 'hi', candidates: candidates.slice(0, 2) }, speakerName)).toBe(
+      'Avatars in the room: Echo (host), Sage.\nKevin last spoke with: nobody.\nKevin: hi',
+    );
+  });
+
+  it('builds the questions exactly as floor_prompt.build_questions does', () => {
+    expect(JSON.stringify(buildFloorQuestions(candidates).questions)).toBe(
+      '{"addressed":{"type":"choice","instructions":"Which avatar is Kevin speaking to in his last line, the one who should act on it?","criteria":{"echo":"Kevin is speaking to Echo","sage":"Kevin is speaking to Sage","rex":"Kevin is speaking to Rex","everyone":"Kevin is speaking to all the avatars","unclear":"The line does not say which avatar he is speaking to"}},' +
+        '"wants":{"type":"choice","instructions":"What does Kevin want that avatar to do?","criteria":{"answer":"reply to Kevin or do what he asks","converse":"go and have a conversation with another avatar","relay":"ask or tell another avatar something for Kevin"}},' +
+        '"other":{"type":"choice","instructions":"Which other avatar should they talk to or pass the message to?","criteria":{"echo":"Echo","sage":"Sage","rex":"Rex","none":"no other avatar is involved"}}}',
+    );
+  });
+
+  it('picks the top option of each question, maps keys to avatars and takes the lowest relevant probability as confidence', async () => {
+    const { client, ask } = fake({
+      addressed: { echo: 0.02, sage: 0.93, rex: 0.01, everyone: 0.02, unclear: 0.02 },
+      wants: { answer: 0.05, converse: 0.9, relay: 0.05 },
+      other: { echo: 0.85, sage: 0.05, rex: 0.05, none: 0.05 },
+    });
+    const result = await createSystemOneIntent(client, (id) => NAMES[id] ?? id)(input, signal);
+    expect(result).toEqual({ addressed: 'sage', wants: 'converse', other: 'echo', confidence: 0.85 });
+    expect(typeof ask.mock.calls[0][0]).toBe('string');
+    expect(ask.mock.calls[0][2]).toEqual({ signal });
+    // For a plain answer the "other" question does not count.
+    const plain = fake({
+      addressed: { echo: 0.1, sage: 0.1, rex: 0.1, everyone: 0.6, unclear: 0.1 },
+      wants: { answer: 0.9, converse: 0.05, relay: 0.05 },
+      other: { echo: 0.3, sage: 0.3, rex: 0.2, none: 0.2 },
+    });
+    expect(await createSystemOneIntent(plain.client, (id) => NAMES[id] ?? id)(input, signal)).toEqual({ addressed: 'everyone', wants: 'answer', other: 'echo', confidence: 0.6 });
+  });
+
+  it('rejects when the server fails', async () => {
+    await expect(createSystemOneIntent(fake(new Error('down')).client, (id) => id)(input, signal)).rejects.toThrow('down');
   });
 });

@@ -1,6 +1,6 @@
 /**
  * Wires the floor manager into the app: who answers Kevin when several avatars share a scene,
- * the back channel between avatars, the "Hear avatar chatter" setting, and the journal on the
+ * the back channel between avatars (and the chats Kevin asks them to have), the "Hear avatar chatter" setting, and the journal on the
  * switchboard bus (`floor.decision`, `floor.grant`, `floor.release`, `floor.budget`).
  *
  * With one avatar in the scene none of this runs (`isMulti()` is false) and the app behaves as
@@ -11,6 +11,7 @@
  * plays several voices (phase 3 step 3). The path and the setting are in place for that.
  */
 import type { AvatarRegistry } from '../avatars/avatar-registry.js';
+import { stripAvatarTags } from '../local-voice/avatar-tags.js';
 import type { LocalVoiceEvent, LocalVoiceRespondRequest, LocalVoiceRespondResult } from '../local-voice/types.js';
 import type { SwitchboardBus } from '../switchboard/bus.js';
 import type { SwitchboardEventInput } from '../switchboard/types.js';
@@ -22,6 +23,8 @@ import {
   type FloorChannel,
   type FloorDecision,
   type FloorSpeaker,
+  type IntentFunction,
+  type QuickIntentFunction,
 } from './floor-manager.js';
 
 export const HEAR_CHATTER_KEY = 'floor.hearChatter';
@@ -56,6 +59,10 @@ export interface FloorControllerOptions {
   bid?: BidFunction;
   /** A quick check of who a line is aimed at. */
   addressee?: AddresseeFunction;
+  /** Reads the chat-model fallback for Kevin's lines. */
+  /** Reads Kevin's lines first (the fine-tuned quick model). */
+  quickIntent?: QuickIntentFunction;
+  intent?: IntentFunction;
   now?: () => number;
   logger?: Pick<Console, 'warn' | 'debug'>;
 }
@@ -65,11 +72,24 @@ type Input = { kind: 'person'; text: string; participants: string[]; relay?: und
 
 type Job =
   | { kind: 'kevin'; requestId: string; payload: LocalVoiceRespondRequest; txn: string; participants: string[] }
-  | { kind: 'chatter'; from: string; text: string; channel: FloorChannel; txn: string; relay?: boolean };
+  | { kind: 'chatter'; from: string; text: string; channel: FloorChannel; txn: string; relay?: boolean; talk?: boolean };
 
-/** The note an avatar's line reaches another avatar as, in the same style as system notes. */
-export function chatterNote(fromName: string, text: string): string {
-  return `[${fromName} said to you, not Kevin: "${text.replace(/\s+/g, ' ').trim()}"]`;
+/**
+ * The note another avatar's line reaches the receiving avatar as: who said it and to whom, and what to do
+ * with it. It is the receiver's whole input for the turn, so it must say plainly that the line is not the
+ * receiver's own and should be answered, not repeated. `talk` is a conversation Kevin asked for.
+ */
+export function chatterNote(fromName: string, text: string, options: { talk?: boolean } = {}): string {
+  const line = `${fromName} says to you, not Kevin: "${stripAvatarTags(text).replace(/\s+/g, ' ').trim()}"`;
+  const task = options.talk
+    ? `You are in a conversation with ${fromName} that Kevin asked for. Reply to ${fromName} in your own words in one or two sentences, do not repeat what was said, and keep the conversation moving.`
+    : 'Answer in your own words; do not repeat what was said.';
+  return `[${line} ${task}]`;
+}
+
+/** Added to Kevin's words for the avatar he asked to start a conversation with another avatar. */
+export function converseNote(name: string): string {
+  return `[Kevin wants you to have a conversation with ${name}. Speak to ${name} directly now, in a sentence or two, and keep it going; ${name} will answer out loud.]`;
 }
 
 /** Added to Kevin's words for the avatar he asked to pass a question on. */
@@ -79,7 +99,7 @@ export function relayNote(name: string): string {
 
 /** The note the avatar that was asked gets: Kevin wanted this passed on, so it answers out loud. */
 export function relayChatterNote(fromName: string, text: string): string {
-  return `[${fromName} is asking you this for Kevin: "${text.replace(/\s+/g, ' ').trim()}". Answer out loud; Kevin and ${fromName} both hear you.]`;
+  return `[${fromName} is asking you this for Kevin: "${stripAvatarTags(text).replace(/\s+/g, ' ').trim()}". Answer out loud; Kevin and ${fromName} both hear you.]`;
 }
 
 const clip = (text: string): string => (text.length <= TEXT_LIMIT ? text : `${text.slice(0, TEXT_LIMIT)}…`);
@@ -101,6 +121,8 @@ export class FloorController {
       nameOf: (avatarId) => options.registry.get(avatarId)?.name ?? avatarId,
       bid: options.bid,
       addressee: options.addressee,
+      quickIntent: options.quickIntent,
+      intent: options.intent,
       hearChatter: () => this.hearChatter(),
     });
   }
@@ -149,8 +171,14 @@ export class FloorController {
     }
     let result: LocalVoiceRespondResult;
     try {
-      const toName = decision.relay && decision.relay.from === first.avatarId ? (this.options.registry.get(decision.relay.to)?.name ?? decision.relay.to) : null;
-      const text = toName ? `${payload.text}\n\n${relayNote(toName)}` : payload.text;
+      const nameOf = (id: string) => this.options.registry.get(id)?.name ?? id;
+      const note =
+        decision.relay && decision.relay.from === first.avatarId
+          ? relayNote(nameOf(decision.relay.to))
+          : decision.converse && decision.converse.starter === first.avatarId
+            ? converseNote(nameOf(decision.converse.target))
+            : null;
+      const text = note ? `${payload.text}\n\n${note}` : payload.text;
       result = await this.options.runPersonTurn(first.avatarId, { ...payload, text, avatarId: first.avatarId });
     } catch (error) {
       this.continueFrom(first.avatarId, { requestId: payload.requestId, text: '', cancelled: true }, epoch, txn, input);
@@ -184,11 +212,13 @@ export class FloorController {
   private async advance(avatarId: string, result: LocalVoiceRespondResult, epoch: number, txn: string, input: Input): Promise<void> {
     let current: { avatarId: string; result: LocalVoiceRespondResult; txn: string; input: Input } = { avatarId, result, txn, input };
     while (epoch === this.epoch) {
-      if (current.result.text.trim() && !current.result.cancelled) {
-        // An avatar's answer to Kevin does not open chatter by itself; its other lines may.
-        const next = await this.queueChatter(current.avatarId, current.result.text, epoch, current.input.kind === 'person' || current.input.relay === true);
+      // Action tags ({move:...}) are for the body: other avatars never see them.
+      const said = stripAvatarTags(current.result.text).replace(/\s+/g, ' ').trim();
+      if (said && !current.result.cancelled) {
+        // An avatar's answer to Kevin does not open chatter by itself; its other lines may. In a chat Kevin asked for, the manager overrides that.
+        const next = await this.queueChatter(current.avatarId, said, epoch, current.input.kind === 'person' || current.input.relay === true);
         if (epoch !== this.epoch) return;
-        this.shareWithRoom(current.avatarId, current.result.text, current.input, next);
+        this.shareWithRoom(current.avatarId, said, current.input, next);
       }
       const next = this.manager.release(current.avatarId);
       this.journal('floor.release', current.avatarId, { avatar: current.avatarId, next }, current.txn, current.txn.startsWith('turn:') ? undefined : 'done');
@@ -225,13 +255,13 @@ export class FloorController {
     const txn = `chatter:${this.now()}:${++this.serial}`;
     this.journalDecision(`avatar:${fromId}`, text, decision, { id: txn, title: clip(text) });
     if (decision.budget) {
-      this.journal('floor.budget', fromId, { kind: decision.budget.kind, turns: decision.budget.turns, ms: decision.budget.ms }, txn, 'done');
+      this.journal('floor.budget', fromId, { kind: decision.budget.kind, ms: decision.budget.ms }, txn, 'done');
     }
     const speaker = decision.speakers[0];
     if (!speaker) return null;
     const status = this.manager.request(speaker.avatarId);
     if (status === 'queued') {
-      this.jobs.set(speaker.avatarId, { kind: 'chatter', from: fromId, text, channel: decision.channel, txn, ...(decision.relay ? { relay: true } : {}) });
+      this.jobs.set(speaker.avatarId, { kind: 'chatter', from: fromId, text, channel: decision.channel, txn, ...(decision.relay ? { relay: true } : {}), ...(decision.talk ? { talk: true } : {}) });
       return speaker.avatarId;
     }
     if (status === 'granted') {
@@ -257,7 +287,7 @@ export class FloorController {
    * input); so are the speaker and anyone in `exclude`.
    */
   heard(speakerId: string | 'person', text: string, addressedTo?: string, exclude: string[] = []): void {
-    const clean = text.replace(/\s+/g, ' ').trim();
+    const clean = stripAvatarTags(text).replace(/\s+/g, ' ').trim();
     if (!clean) return;
     const nameOf = (id: string) => this.options.registry.get(id)?.name ?? id;
     const from = speakerId === 'person' ? 'Kevin' : nameOf(speakerId);
@@ -286,7 +316,7 @@ export class FloorController {
       {
         requestId,
         avatarId,
-        text: job.relay ? relayChatterNote(fromName, job.text) : chatterNote(fromName, job.text),
+        text: job.relay ? relayChatterNote(fromName, job.text) : chatterNote(fromName, job.text, { talk: job.talk }),
         instructions: this.options.instructionsFor?.(avatarId),
         silent: !aloud,
         noTools: true,
@@ -310,7 +340,7 @@ export class FloorController {
     this.journal(
       'floor.decision',
       from.startsWith('avatar:') ? from.slice('avatar:'.length) : null,
-      { from, text: clip(text), speakers: decision.speakers, channel: decision.channel, trace: decision.trace, ...(decision.relay ? { relay: decision.relay } : {}) },
+      { from, text: clip(text), speakers: decision.speakers, channel: decision.channel, trace: decision.trace, ...(decision.decidedBy ? { decidedBy: decision.decidedBy } : {}), ...(decision.relay ? { relay: decision.relay } : {}) },
       txn.id,
       undefined,
       txn.title,

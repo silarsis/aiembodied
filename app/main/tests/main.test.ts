@@ -77,10 +77,13 @@ const ConfigManagerMock = vi.fn(function () {
 });
 
 function testRouting() {
-  return resolveModelRouting(
+  const routing = resolveModelRouting(
     builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }),
     defaultRoutes(DEFAULT_PROVIDER_SETTINGS, 'off'),
   );
+  // A routing checkpoint on the decide route, so Kevin's lines are offered to the (faked) quick model.
+  routing.routes.decide = { ...routing.routes.decide, model: 'laya-floor-v1' };
+  return routing;
 }
 
 class ConfigValidationErrorMock extends Error {
@@ -1550,7 +1553,32 @@ describe('main process bootstrap', () => {
       });
     });
 
+    /** A fake quick-decision server: answers Kevin's lines from `answers` (by the line's text); anything else fails. */
+    function fakeQuickModel(answers: Record<string, { addressed: string; wants?: string; other?: string }>) {
+      const real = globalThis.fetch;
+      const pick = (keys: string[], chosen: string) => Object.fromEntries(keys.map((key) => [key, key === chosen ? 0.97 : 0.01]));
+      vi.stubGlobal('fetch', async (url: string, init?: { body?: string }) => {
+        if (String(url).endsWith('/v1/systemone') && init?.body) {
+          const body = JSON.parse(init.body) as { state: unknown; questions: Record<string, { criteria: Record<string, string> }> };
+          const last = typeof body.state === 'string' ? body.state.split('\n').pop() ?? '' : '';
+          const answer = answers[last.replace(/^Kevin: /, '')];
+          if (answer && body.questions.addressed) {
+            const keys = (id: string) => Object.keys(body.questions[id].criteria);
+            const result = {
+              addressed: { probabilities: pick(keys('addressed'), answer.addressed) },
+              wants: { probabilities: pick(keys('wants'), answer.wants ?? 'answer') },
+              other: { probabilities: pick(keys('other'), answer.other ?? 'none') },
+            };
+            return new Response(JSON.stringify({ answers: result }), { status: 200, headers: { 'content-type': 'application/json' } });
+          }
+        }
+        return new Response('no', { status: 503 });
+      });
+      return () => vi.stubGlobal('fetch', real);
+    }
+
     it('routes by name, host and explicit avatar id', async () => {
+      const restore = fakeQuickModel({ 'Sage, what do you think?': { addressed: 'sage' } });
       const { served, respond, respondSpy, handlers } = await boot(['Sage', 'Rex']);
       expect((handlers.get('avatars:list')?.({}) as Array<{ id: string; prompt?: string }>).map((p) => p.id)).toEqual(['echo', 'sage', 'rex']);
       expect((handlers.get('avatars:list')?.({}) as Array<{ id: string; prompt?: string }>)[1].prompt).toContain('You are Sage');
@@ -1564,20 +1592,19 @@ describe('main process bootstrap', () => {
       await respond({ requestId: 'r4', text: 'Sage, hi', avatarId: 'echo' });
       expect(served.slice(1).map((s) => [s.avatarId, s.requestId])).toEqual([['echo', 'r2'], ['echo', 'r3'], ['echo', 'r4']]);
 
-      // No name and no partner for long enough: the host answers.
-      await respond({ requestId: 'r5', text: 'Rex and Echo, settle it' });
-      await waitForExpect(() => expect(served.map((s) => s.requestId)).toContain('r5:echo'));
-      expect(served.filter((s) => s.requestId.startsWith('r5')).map((s) => [s.avatarId, s.requestId])).toEqual([['rex', 'r5'], ['echo', 'r5:echo']]);
       respondSpy.mockRestore();
+      restore();
     });
 
     it('journals floor events on the switchboard bus', async () => {
+      const restore = fakeQuickModel({ 'Sage?': { addressed: 'sage' } });
       const { respond, respondSpy, published } = await boot(['Sage']);
       await respond({ requestId: 'r1', text: 'Sage?' });
       const decision = published.find((event) => event.type === 'floor.decision');
       expect(decision).toMatchObject({ txn: { id: 'turn:r1' }, payload: { speakers: [{ avatarId: 'sage', reason: 'addressed' }] } });
       expect(published.map((event) => event.type)).toEqual(expect.arrayContaining(['floor.grant', 'floor.release']));
       respondSpy.mockRestore();
+      restore();
     });
 
     it('lets the other avatars overhear a turn that names an avatar directly', async () => {

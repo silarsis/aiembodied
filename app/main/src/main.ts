@@ -16,9 +16,10 @@ import { deliberateFast } from './switchboard/deliberate-system-one.js';
 import { ProactiveTick, proactiveSettingsFromEnv } from './presence/proactive-tick.js';
 import { PresenceTracker, isVoicePhase } from './presence/presence.js';
 import { FloorController } from './floor/index.js';
+import { createIntentRouter } from './floor/intent-router.js';
 import { createModelBid } from './floor/bid.js';
-import { createSystemOne } from './decide/system-one.js';
-import { createSystemOneAddressee, createSystemOneBid } from './floor/system-one-floor.js';
+import { createSystemOne, DEFAULT_SYSTEM_ONE_MODEL } from './decide/system-one.js';
+import { createSystemOneAddressee, createSystemOneBid, createSystemOneIntent } from './floor/system-one-floor.js';
 import { avatarIdForName } from './avatars/avatar-id.js';
 import { SwitchboardMirror } from './switchboard/mirror.js';
 import { AvatarRegistry, DEFAULT_AVATAR_ID, type AvatarProfile } from './avatars/avatar-registry.js';
@@ -2696,12 +2697,29 @@ app.whenReady().then(async () => {
       instructionsFor: (avatarId) => avatarInstructions(avatarId),
       bus: () => switchboardBus,
       // Quick decisions (Laya) answer first; the clients are built per call so a changed route applies at once.
-      // When the route is off or fails, bids go to the Idle thoughts model and the addressee check is skipped.
+      // When the route is off or fails, bids go to the Idle thoughts model and the addressee check (avatar lines only) is skipped.
       addressee: (input, signal) => {
         const client = createSystemOne({ routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger });
         if (!client) return Promise.reject(new Error('Quick decisions are off'));
         return createSystemOneAddressee(client, (id) => registry.get(id)?.name ?? id)(input, signal);
       },
+      // Kevin's lines go to the fine-tuned quick model first (the decide route must serve the floor checkpoint, e.g. laya-floor-v1);
+      // when it is unsure or fails the Idle thoughts chat model reads the line, then the recent partner or the host.
+      quickIntent: (input, signal) => {
+        const client = createSystemOne({ routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger });
+        if (!client) return Promise.reject(new Error('Quick decisions are off'));
+        // The stock checkpoint is near chance at routing and often sure of a wrong answer: leave those lines to the chat model.
+        if (client.targets().every(({ model }) => !model || model === DEFAULT_SYSTEM_ONE_MODEL)) {
+          return Promise.reject(new Error('The quick-decision model is the stock checkpoint, not one trained for routing'));
+        }
+        return createSystemOneIntent(client, (id) => registry.get(id)?.name ?? id)(input, signal);
+      },
+      intent: createIntentRouter({
+        routing: () => manager.getConfig().models,
+        keyFor: (id) => manager.getServerKey(id),
+        nameOf: (id) => registry.get(id)?.name ?? id,
+        logger,
+      }),
       bid: async (candidates, recentLines, signal) => {
         const nameOfSpeaker = (from: string) => (from.startsWith('avatar:') ? (registry.get(from.slice('avatar:'.length))?.name ?? from) : 'Kevin');
         const client = createSystemOne({ routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger });

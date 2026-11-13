@@ -16,7 +16,8 @@
     "avatar:face:setup": "node scripts/setup-avatar-face.mjs",
     "avatar:paint:setup": "node scripts/setup-avatar-paint.mjs",
     "dist": "pnpm build && electron-builder --config electron-builder.yml",
-    "laya:check": "node scripts/laya-check.mjs"
+    "laya:check": "node scripts/laya-check.mjs",
+    "floor:check": "node scripts/floor-intent-check.mjs"
   },
   "dependencies": {
     "@pixiv/three-vrm": "^3.5.5",

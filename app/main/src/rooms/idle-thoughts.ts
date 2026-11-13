@@ -27,7 +27,7 @@ export interface IdleThoughtsOptions {
 /** The chat clients for the idle route, in failover order. */
 export function idleClients(
   { routing, keyFor, fetchFn }: Pick<IdleThoughtsOptions, 'routing' | 'keyFor' | 'fetchFn'>,
-  tuning: { temperature?: number; maxTokens?: number } = {},
+  tuning: { temperature?: number; maxTokens?: number; responseFormat?: Record<string, unknown> } = {},
 ): ChatClient[] {
   return routeTargets(routing, 'idle').map(
     ({ server, model }): ChatClient =>
@@ -38,6 +38,7 @@ export function idleClients(
         flavor: server.type === 'openai' ? 'openai' : 'llama-server',
         temperature: tuning.temperature ?? IDLE_PICK_TEMPERATURE,
         maxTokens: tuning.maxTokens ?? IDLE_PICK_MAX_TOKENS,
+        responseFormat: tuning.responseFormat,
         fetchFn,
       }),
   );

@@ -10,6 +10,7 @@ import type { RegisteredTool, ToolRegistry } from '../tools/tool-registry.js';
 import { describeOutcome, type ApprovalBroker } from '../tools/approvals.js';
 import type { VoiceMemory } from '../memory-engine/voice-memory.js';
 import type { SpeechServiceClient } from './speech-service-client.js';
+import { stripAvatarTags } from './avatar-tags.js';
 import {
   KokoroTts,
   SpeechServiceStt,
@@ -725,8 +726,7 @@ function findCut(text: string): number {
 
 /** The words to speak: avatar tags and markdown removed. Empty when nothing is left to say. */
 export function toSpeakableText(text: string): string {
-  const spoken = text
-    .replace(/\{[^}]*\}/g, ' ')
+  const spoken = stripAvatarTags(text)
     .replace(/<\/?think>/g, ' ')
     .replace(/[*_#`>~]+/g, ' ')
     .replace(/\s+/g, ' ')

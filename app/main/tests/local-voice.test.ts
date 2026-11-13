@@ -8,6 +8,7 @@ import {
   ThinkFilter,
   toSpeakableText,
 } from '../src/local-voice/local-voice-service.js';
+import { stripAvatarTags } from '../src/local-voice/avatar-tags.js';
 import type { LocalVoiceEvent } from '../src/local-voice/types.js';
 
 /** An SSE chat-completions stream whose bytes arrive in awkward pieces, splitting lines mid-way. */
@@ -89,6 +90,14 @@ describe('ThinkFilter', () => {
     const filter = new ThinkFilter();
     expect(filter.push('3 <')).toBe('3 ');
     expect(filter.push(' 4')).toBe('< 4');
+  });
+});
+
+describe('stripAvatarTags', () => {
+  it('removes every braced tag and tidies the gap', () => {
+    expect(stripAvatarTags('Hi {move:waves}, there {go:sofa}{static:smile} friend.')).toBe('Hi, there friend.');
+    expect(stripAvatarTags('{stand}{wait}')).toBe('');
+    expect(stripAvatarTags('plain text')).toBe('plain text');
   });
 });
 

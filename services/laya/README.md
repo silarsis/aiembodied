@@ -12,7 +12,7 @@ See `docs/features/quick-decisions.md` for the API and when to use it.
 
 This folder only installs and starts it. The app talks to its `/v1/systemone` API
 (`app/main/src/decide/system-one.ts`) through the **Quick decisions** use in Models and servers. When that use is
-off, or Laya is not answering, the checks use the Idle thoughts model (bids) or the older name rules (addressee).
+off, or Laya is not answering, the checks use the Idle thoughts model (bids) or the older name rules (addressee, avatar chatter only). Kevin's lines use the fine-tuned floor checkpoint (`laya-floor-v1`, via `LAYA_EXTRA_MODELS`) and fall back to the chat model.
 
 ## Run
 
