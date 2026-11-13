@@ -77,13 +77,10 @@ const ConfigManagerMock = vi.fn(function () {
 });
 
 function testRouting() {
-  const routing = resolveModelRouting(
+  return resolveModelRouting(
     builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }),
     defaultRoutes(DEFAULT_PROVIDER_SETTINGS, 'off'),
   );
-  // A routing checkpoint on the decide route, so Kevin's lines are offered to the (faked) quick model.
-  routing.routes.decide = { ...routing.routes.decide, model: 'laya-floor-v1' };
-  return routing;
 }
 
 class ConfigValidationErrorMock extends Error {
@@ -1559,10 +1556,11 @@ describe('main process bootstrap', () => {
       const pick = (keys: string[], chosen: string) => Object.fromEntries(keys.map((key) => [key, key === chosen ? 0.97 : 0.01]));
       vi.stubGlobal('fetch', async (url: string, init?: { body?: string }) => {
         if (String(url).endsWith('/v1/systemone') && init?.body) {
-          const body = JSON.parse(init.body) as { state: unknown; questions: Record<string, { criteria: Record<string, string> }> };
+          const body = JSON.parse(init.body) as { model?: string; state: unknown; questions: Record<string, { criteria: Record<string, string> }> };
           const last = typeof body.state === 'string' ? body.state.split('\n').pop() ?? '' : '';
           const answer = answers[last.replace(/^Kevin: /, '')];
-          if (answer && body.questions.addressed) {
+          // The floor asks for its own checkpoint, not the decide route's model.
+          if (answer && body.model === 'laya-floor-v1' && body.questions.addressed) {
             const keys = (id: string) => Object.keys(body.questions[id].criteria);
             const result = {
               addressed: { probabilities: pick(keys('addressed'), answer.addressed) },
