@@ -30,6 +30,8 @@ describe('avatar speaker stamping', () => {
       runPersonTurn: run,
       saveLine: () => undefined,
       bid: async () => [],
+      // The quick model (faked here) reads the line; no code parses names any more.
+      quickIntent: async () => ({ addressed: 'sage', wants: 'answer', other: null, confidence: 0.99 }),
       now: () => 1_000,
     });
     const result = await floor.respondToPerson({ requestId: 'q1', text: 'Sage, what do you think?' });
