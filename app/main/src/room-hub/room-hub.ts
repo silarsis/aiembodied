@@ -362,6 +362,17 @@ export class RoomHub {
     return conn?.ready ? this.send(conn, op) : false;
   }
 
+  /** Sends an op to the satellite that draws this place. False when none is connected there. */
+  sendToPlace(placeId: string, op: Op): boolean {
+    const deviceId = this.deviceForPlace(placeId);
+    return deviceId ? this.sendToDevice(deviceId, op) : false;
+  }
+
+  /** Sends an op to every connected satellite. */
+  sendToAll(op: Op): void {
+    for (const conn of this.byDevice.values()) if (conn.ready) this.send(conn, op);
+  }
+
   /** The device id of the satellite that draws this place, when connected. */
   deviceForPlace(placeId: string): string | null {
     for (const [deviceId, conn] of this.byDevice) if (conn.ready && conn.placeId === placeId) return deviceId;
@@ -671,6 +682,8 @@ export class RoomHub {
             isDestroyed: () => conn.closed,
           },
           senderFrame: null,
+          // Handlers that depend on where the caller is (who is present, which floor) read this.
+          placeId: conn.placeId,
         };
         value = await (handler as (event: unknown, ...rest: unknown[]) => unknown)(event, ...args);
       }

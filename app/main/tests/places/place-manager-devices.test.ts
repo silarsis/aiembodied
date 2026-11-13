@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { LOCATIONS_KEY, OFFLINE_GRACE_MS, PLACES_KEY, PlaceManager } from '../../src/places/place-manager.js';
+import { DEFAULT_DESKTOP_ROOM, LOCATIONS_KEY, OFFLINE_GRACE_MS, PLACES_KEY, PlaceManager, scopedPlaces } from '../../src/places/place-manager.js';
 import type { PlacesSnapshot } from '../../src/places/place-manager.js';
 import type { SwitchboardBus } from '../../src/switchboard/bus.js';
 import type { SwitchboardEventInput } from '../../src/switchboard/types.js';
@@ -26,10 +26,10 @@ describe('PlaceManager desktop rooms', () => {
 
   it('adds a desktop room, offline until it connects', () => {
     const { manager, data, snapshots } = setup();
-    expect(manager.addPlace({ id: 'study', name: 'the study', node: 'room-1' })).toEqual({ id: 'study', name: 'the study', node: 'room-1', online: false });
+    expect(manager.addPlace({ id: 'study', name: 'the study', node: 'room-1' })).toEqual({ id: 'study', name: 'the study', node: 'room-1', online: false, room: DEFAULT_DESKTOP_ROOM });
     expect(snapshots).toHaveLength(1);
     // `online` is never stored.
-    expect(JSON.parse(data.get(PLACES_KEY) as string)).toContainEqual({ id: 'study', name: 'the study', node: 'room-1' });
+    expect(JSON.parse(data.get(PLACES_KEY) as string)).toContainEqual({ id: 'study', name: 'the study', node: 'room-1', room: DEFAULT_DESKTOP_ROOM });
     const snapshot = manager.snapshot();
     expect(snapshot.places.find((place) => place.id === 'study')?.online).toBe(false);
     // Built-ins carry no online flag: always online.
@@ -62,7 +62,7 @@ describe('PlaceManager desktop rooms', () => {
     expect(manager.get('study')?.online).toBe(true);
     expect(snapshots.at(-1)?.places.find((place) => place.id === 'study')?.online).toBe(true);
     manager.rename('study', 'Kevin\'s study');
-    expect(manager.get('study')).toEqual({ id: 'study', name: "Kevin's study", node: 'room-1', online: true });
+    expect(manager.get('study')).toEqual({ id: 'study', name: "Kevin's study", node: 'room-1', online: true, room: DEFAULT_DESKTOP_ROOM });
     expect(data.get(PLACES_KEY)).not.toContain('online');
     // No change, no push.
     const count = snapshots.length;
@@ -139,5 +139,47 @@ describe('PlaceManager desktop rooms', () => {
     expect(manager.removePlace('study')).toBe(false);
     expect(manager.removePlace('home')).toBe(false);
     expect(manager.removePlace('next-door')).toBe(false);
+  });
+
+  it('a desktop room draws a room: the Studio flat until one is picked, and only desktop rooms can pick', () => {
+    const { manager, data, snapshots } = setup();
+    manager.addPlace({ id: 'study', name: 'the study', node: 'room-1' });
+    expect(manager.get('study')?.room).toBe(DEFAULT_DESKTOP_ROOM);
+    expect(manager.get('home')?.room).toBeUndefined();
+    expect(manager.setRoom('study', 'room:abc')).toBe(true);
+    expect(manager.get('study')?.room).toBe('room:abc');
+    expect(JSON.parse(data.get(PLACES_KEY) as string)).toContainEqual({ id: 'study', name: 'the study', node: 'room-1', room: 'room:abc' });
+    expect(snapshots.at(-1)?.places.find((place) => place.id === 'study')?.room).toBe('room:abc');
+    expect(manager.setRoom('home', 'room:abc')).toBe(false);
+    expect(manager.setRoom('next-door', 'room:abc')).toBe(false);
+    expect(manager.setRoom('study', '  ')).toBe(false);
+    expect(manager.setRoom('nowhere', 'room:abc')).toBe(false);
+  });
+
+  it('a desktop room saved before rooms could be picked gets the default room', () => {
+    const { manager } = setup({ [PLACES_KEY]: JSON.stringify([{ id: 'study', name: 'the study', node: 'room-1' }]) });
+    expect(manager.get('study')?.room).toBe(DEFAULT_DESKTOP_ROOM);
+  });
+
+  describe('as one place sees them', () => {
+    it('presence, away and waiting for an arrival are about that place', async () => {
+      const { manager } = setup();
+      manager.addPlace({ id: 'study', name: 'the study', node: 'room-1' });
+      manager.setOnline('study', true);
+      const study = scopedPlaces(manager, 'study');
+      expect(study.localPlaceId()).toBe('study');
+      expect(study.isPresent('echo')).toBe(false);
+      expect(study.awayFromLocal()).toEqual(['echo', 'sage']);
+      expect(manager.awayFromLocal()).toEqual([]);
+      expect(manager.startMove('echo', 'study', 'summoned').ok).toBe(true);
+      const arrived = study.waitForArrival('echo', 5000);
+      manager.arrived('echo');
+      await expect(arrived).resolves.toBe(true);
+      expect(study.isPresent('echo')).toBe(true);
+      expect(manager.isPresent('echo')).toBe(false);
+      expect(study.awayFromLocal()).toEqual(['sage']);
+      expect(study.snapshot().localPlaceId).toBe('study');
+      expect(manager.snapshot().localPlaceId).toBe('home');
+    });
   });
 });

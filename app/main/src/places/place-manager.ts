@@ -36,7 +36,15 @@ export interface Place {
   node: 'local' | 'offscreen' | string;
   /** Only on desktop rooms (a device id as `node`): whether that PC is connected. Absent means always online. */
   online?: boolean;
+  /**
+   * Only on desktop rooms: the room that PC draws. A 3D room id (`room:builtin:studio-flat`, `room:<id>`) or a
+   * 2D background id. The local place shows whatever the stage is set to, so it has none.
+   */
+  room?: string;
 }
+
+/** A new desktop room starts in the built-in Studio flat. */
+export const DEFAULT_DESKTOP_ROOM = 'room:builtin:studio-flat';
 
 const BUILT_IN_PLACES: Place[] = [
   { id: HOME_PLACE_ID, name: 'the lounge', node: 'local' },
@@ -102,7 +110,7 @@ function parsePlaces(raw: string | null): Place[] {
   if (Array.isArray(stored)) {
     for (const item of stored) {
       if (!item || typeof item !== 'object') continue;
-      const { id, name, node } = item as Record<string, unknown>;
+      const { id, name, node, room } = item as Record<string, unknown>;
       if (typeof id !== 'string' || !id || byId.has(id)) continue;
       const builtIn = BUILT_IN_PLACES.find((place) => place.id === id);
       byId.set(id, {
@@ -110,6 +118,7 @@ function parsePlaces(raw: string | null): Place[] {
         name: typeof name === 'string' && name.trim() ? name.trim() : (builtIn?.name ?? id),
         // A built-in place keeps its node: only its name can change.
         node: builtIn ? builtIn.node : typeof node === 'string' && node ? node : 'offscreen',
+        ...(typeof room === 'string' && room ? { room } : {}),
       });
     }
   }
@@ -149,7 +158,7 @@ export class PlaceManager {
   private readonly online = new Set<string>();
   private readonly graceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly transit = new Map<string, Pending>();
-  private waiters: Array<{ avatarId: string; resolve: (arrived: boolean) => void; timer: ReturnType<typeof setTimeout> | null; sawMove: boolean }> = [];
+  private waiters: Array<{ avatarId: string; placeId: string; resolve: (arrived: boolean) => void; timer: ReturnType<typeof setTimeout> | null; sawMove: boolean }> = [];
   private serial = 0;
 
   constructor(options: PlaceManagerOptions) {
@@ -169,7 +178,7 @@ export class PlaceManager {
   }
 
   private persist(places: Place[]): void {
-    this.options.store.setValue(PLACES_KEY, JSON.stringify(places.map(({ id, name, node }) => ({ id, name, node }))));
+    this.options.store.setValue(PLACES_KEY, JSON.stringify(places.map(({ id, name, node, room }) => ({ id, name, node, ...(room ? { room } : {}) }))));
   }
 
   private isDevicePlace(place: Place): boolean {
@@ -177,7 +186,10 @@ export class PlaceManager {
   }
 
   list(): Place[] {
-    return this.stored().map((place) => (this.isDevicePlace(place) ? { ...place, online: this.online.has(place.id) } : { ...place }));
+    // A desktop room always has a room: one saved before rooms could be picked gets the default.
+    return this.stored().map((place) =>
+      this.isDevicePlace(place) ? { ...place, room: place.room ?? DEFAULT_DESKTOP_ROOM, online: this.online.has(place.id) } : { ...place },
+    );
   }
 
   get(placeId: string): Place | null {
@@ -202,14 +214,26 @@ export class PlaceManager {
     return this.get(placeId);
   }
 
+  /** Picks the room a desktop room draws (Settings > Places). False when the place is not a desktop room or the id is empty. */
+  setRoom(placeId: string, room: string): boolean {
+    const trimmed = room.trim().slice(0, 200);
+    const places = this.stored();
+    const place = places.find((candidate) => candidate.id === placeId);
+    if (!trimmed || !place || !this.isDevicePlace(place)) return false;
+    place.room = trimmed;
+    this.persist(places);
+    this.changed();
+    return true;
+  }
+
   /** Adds a place drawn by another PC (`node` is that PC's device id). Null when the id is taken or invalid. */
-  addPlace(input: { id: string; name: string; node: string }): Place | null {
+  addPlace(input: { id: string; name: string; node: string; room?: string }): Place | null {
     const id = input.id.trim();
     const name = input.name.trim().slice(0, 80);
     if (!id || !name || !input.node || input.node === 'local' || input.node === 'offscreen') return null;
     const places = this.stored();
     if (places.some((place) => place.id === id)) return null;
-    places.push({ id, name, node: input.node });
+    places.push({ id, name, node: input.node, room: input.room?.trim() || DEFAULT_DESKTOP_ROOM });
     this.persist(places);
     this.changed();
     return this.get(id);
@@ -318,14 +342,18 @@ export class PlaceManager {
     return this.avatarIds().filter((avatarId) => !this.transit.has(avatarId) && this.locationOf(avatarId) === placeId);
   }
 
-  /** At the place this PC shows, and not walking between places. */
-  isPresent(avatarId: string): boolean {
-    return this.avatarIds().includes(avatarId) && !this.transit.has(avatarId) && this.locationOf(avatarId) === this.localPlaceId();
+  /** At the place (this PC's by default), and not walking between places. */
+  isPresent(avatarId: string, placeId: string = this.localPlaceId()): boolean {
+    return this.avatarIds().includes(avatarId) && !this.transit.has(avatarId) && this.locationOf(avatarId) === placeId;
   }
 
   /** Avatars (registry order) that are somewhere else or on their way, for the floor to offer as candidates. */
+  awayFrom(placeId: string): string[] {
+    return this.avatarIds().filter((avatarId) => !this.isPresent(avatarId, placeId));
+  }
+
   awayFromLocal(): string[] {
-    return this.avatarIds().filter((avatarId) => !this.isPresent(avatarId));
+    return this.awayFrom(this.localPlaceId());
   }
 
   /** Who is where. `forPlaceId` is the place the reader draws: this PC passes nothing, a desktop room passes its own place. */
@@ -394,14 +422,14 @@ export class PlaceManager {
     return true;
   }
 
-  /** Resolves true once the avatar is present at the local place, false when it is not there after `timeoutMs` or the move failed. */
-  waitForArrival(avatarId: string, timeoutMs: number): Promise<boolean> {
-    if (this.isPresent(avatarId)) return Promise.resolve(true);
+  /** Resolves true once the avatar is present at the place (the local one by default), false when it is not there after `timeoutMs` or the move failed. */
+  waitForArrival(avatarId: string, timeoutMs: number, placeId: string = this.localPlaceId()): Promise<boolean> {
+    if (this.isPresent(avatarId, placeId)) return Promise.resolve(true);
     return new Promise<boolean>((resolve) => {
-      const waiter: (typeof this.waiters)[number] = { avatarId, resolve, timer: null, sawMove: this.transit.has(avatarId) };
+      const waiter: (typeof this.waiters)[number] = { avatarId, placeId, resolve, timer: null, sawMove: this.transit.has(avatarId) };
       waiter.timer = this.timer(() => {
         this.waiters = this.waiters.filter((candidate) => candidate !== waiter);
-        resolve(this.isPresent(avatarId));
+        resolve(this.isPresent(avatarId, placeId));
       }, timeoutMs);
       this.waiters.push(waiter);
     });
@@ -409,7 +437,7 @@ export class PlaceManager {
 
   private releaseWaiters(): void {
     for (const waiter of [...this.waiters]) {
-      if (this.isPresent(waiter.avatarId)) {
+      if (this.isPresent(waiter.avatarId, waiter.placeId)) {
         this.waiters = this.waiters.filter((candidate) => candidate !== waiter);
         if (waiter.timer) clearTimeout(waiter.timer);
         waiter.resolve(true);
@@ -481,6 +509,31 @@ export class PlaceManager {
       // Journaling must never disturb a move.
     }
   }
+}
+
+/**
+ * The places as one place sees them: a desktop room's floor and summons ask "who is here" of their own place,
+ * not of this PC's. Every method answers for `placeId` where the manager would answer for the local place.
+ */
+export type ScopedPlaces = Pick<
+  PlaceManager,
+  'list' | 'get' | 'localPlaceId' | 'avatarsAt' | 'awayFromLocal' | 'isPresent' | 'waitForArrival' | 'startMove' | 'inTransit' | 'snapshot' | 'onChanged'
+>;
+
+export function scopedPlaces(places: PlaceManager, placeId: string): ScopedPlaces {
+  return {
+    list: () => places.list(),
+    get: (id) => places.get(id),
+    localPlaceId: () => placeId,
+    avatarsAt: (id) => places.avatarsAt(id),
+    awayFromLocal: () => places.awayFrom(placeId),
+    isPresent: (avatarId) => places.isPresent(avatarId, placeId),
+    waitForArrival: (avatarId, timeoutMs) => places.waitForArrival(avatarId, timeoutMs, placeId),
+    startMove: (avatarId, to, reason) => places.startMove(avatarId, to, reason),
+    inTransit: (avatarId) => places.inTransit(avatarId),
+    snapshot: (forPlaceId) => places.snapshot(forPlaceId ?? placeId),
+    onChanged: (listener) => places.onChanged(listener),
+  };
 }
 
 /**

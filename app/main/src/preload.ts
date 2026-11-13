@@ -827,6 +827,7 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     },
     revoke: (deviceId) => ipcRenderer.invoke('room-hub:revoke', deviceId) as Promise<boolean>,
     rename: (placeId, name) => ipcRenderer.invoke('room-hub:rename', placeId, name),
+    setRoom: (placeId, room) => ipcRenderer.invoke('room-hub:set-room', placeId, room) as Promise<boolean>,
   },
   gpuMemory: {
     read: () => ipcRenderer.invoke('diagnostics:gpu-memory'),

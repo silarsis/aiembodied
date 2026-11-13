@@ -393,6 +393,54 @@ describe('RoomHub', () => {
       expect(isAllowedChannel('coding:set')).toBe(false);
     });
 
+    it('runs a handler with the caller\'s place on the event, so the handler can answer for that place', async () => {
+      const seen: unknown[] = [];
+      const { hub } = await startHub({
+        handlers: {
+          'local-voice:respond': ((event: { placeId?: string }) => (seen.push(event.placeId), 'ok')) as never,
+          'avatars:set-tag-instructions': ((event: { placeId?: string }) => (seen.push(event.placeId), undefined)) as never,
+        },
+      });
+      const { json } = await pair(hub);
+      const client = await connect(hub, json);
+      await client.next((message) => message.op === 'welcome');
+      client.send({ op: 'call', ref: 'talk', channel: 'local-voice:respond', args: [{ requestId: 'r', text: 'hi' }] });
+      expect((await client.next((message) => message.ref === 'talk')).op).toMatchObject({ op: 'result', value: 'ok' });
+      client.send({ op: 'call', ref: 'tags', channel: 'avatars:set-tag-instructions', args: [{}] });
+      await client.next((message) => message.ref === 'tags');
+      expect(seen).toEqual(['study', 'study']);
+    });
+
+    it('allows what talking and moving need, and still no writes to settings, models, keys, avatars, coding or the app', () => {
+      for (const channel of [
+        'local-voice:respond', 'local-voice:cancel', 'local-voice:status', 'local-voice:system-status', 'local-voice:voice-options', 'local-voice:transcribe',
+        'avatar-motion:stream', 'avatar-motion:cancel', 'avatar-motion:status', 'floor:interrupt', 'avatars:set-tag-instructions', 'avatars:idle-personas',
+        'presence:update', 'presence:get-dnd', 'rooms:idle-pick', 'conversation:get-history',
+      ]) {
+        expect(isAllowedChannel(channel), channel).toBe(true);
+      }
+      for (const channel of [
+        'presence:set-dnd', 'floor:set-hear-chatter', 'local-voice:reset', 'config:set-providers', 'config:set-secret', 'config:get-secret', 'models:set-key', 'models:save-server',
+        'avatars:add', 'avatars:update', 'avatars:remove', 'avatar-model:upload', 'avatar-model:delete', 'avatar-model:set-active', 'background:set-active', 'background:generate',
+        'coding:start-task', 'coding:set', 'mcp:execute-tool', 'rooms:generate', 'rooms:delete', 'avatar:generation-start', 'avatar:prompt:set-preference', 'avatar:voice:set-preference',
+        'realtime:mint-ephemeral-token', 'app:quit', 'room-hub:revoke', 'room-hub:start-pairing', 'memory-engine:add-fact', 'approvals:approve',
+      ]) {
+        expect(isAllowedChannel(channel), channel).toBe(false);
+      }
+    });
+
+    it('pushes its own events to the satellite of a place, or to all of them', async () => {
+      const { hub } = await startHub();
+      const { json } = await pair(hub);
+      const client = await connect(hub, json);
+      await client.next((message) => message.op === 'welcome');
+      expect(hub.sendToPlace('study', { op: 'ipc', channel: 'local-voice:event', args: [{ requestId: 'c1', type: 'sentence' }] })).toBe(true);
+      expect((await client.next((message) => message.op === 'ipc' && message.channel === 'local-voice:event')).op.args).toEqual([{ requestId: 'c1', type: 'sentence' }]);
+      expect(hub.sendToPlace('home', { op: 'ipc', channel: 'x', args: [] })).toBe(false);
+      hub.sendToAll({ op: 'ipc', channel: 'rooms:updated', args: ['room:abc'] });
+      expect((await client.next((message) => message.channel === 'rooms:updated')).op.args).toEqual(['room:abc']);
+    });
+
     it('answers unknown ops and calls with no handler with an error', async () => {
       const { hub } = await startHub();
       const { json } = await pair(hub);
