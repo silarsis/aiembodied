@@ -483,7 +483,9 @@ export class RoomHub {
       paired = registry.addDevice({ id: deviceId, name: deviceName, placeId, tailscaleNode: node, tailscaleLogin: login });
     } catch (error) {
       places.removePlace(placeId);
-      reply(409, { error: 'too-many-devices', message: error instanceof Error ? error.message : String(error) });
+      // Log the reason here; the unauthenticated caller only gets a fixed message.
+      this.options.logger?.warn('Room hub could not add a device', { message: error instanceof Error ? error.message : String(error) });
+      reply(409, { error: 'too-many-devices', message: 'Too many desktop rooms are paired. Revoke one on bija first.' });
       return;
     }
     this.journal('place.paired', placeId, { kind: 'service', id: 'room-hub' }, { placeId, deviceId, address, node });
