@@ -422,6 +422,31 @@ it('exposes the places bridge', async () => {
   expect(removeListener).toHaveBeenCalledWith('places:changed', handler);
 });
 
+it('exposes the room hub bridge', async () => {
+  vi.resetModules();
+  await import('../src/preload.js');
+  const api = exposeInMainWorld.mock.calls.at(-1)![1];
+  await api.roomHub.status();
+  expect(invoke).toHaveBeenLastCalledWith('room-hub:status');
+  await api.roomHub.startPairing('the study');
+  expect(invoke).toHaveBeenLastCalledWith('room-hub:start-pairing', 'the study');
+  await api.roomHub.cancelPairing();
+  expect(invoke).toHaveBeenLastCalledWith('room-hub:cancel-pairing');
+  await api.roomHub.revoke('room-1');
+  expect(invoke).toHaveBeenLastCalledWith('room-hub:revoke', 'room-1');
+  await api.roomHub.rename('study', 'the attic');
+  expect(invoke).toHaveBeenLastCalledWith('room-hub:rename', 'study', 'the attic');
+
+  const listener = vi.fn();
+  const off = api.roomHub.onChanged(listener);
+  const [channel, handler] = on.mock.calls.at(-1)!;
+  expect(channel).toBe('room-hub:changed');
+  handler({}, { running: true });
+  expect(listener).toHaveBeenCalledWith({ running: true });
+  off();
+  expect(removeListener).toHaveBeenCalledWith('room-hub:changed', handler);
+});
+
 it('exposes app.quit through the bridge', async () => {
   vi.resetModules();
   await import('../src/preload.js');

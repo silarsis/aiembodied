@@ -3,6 +3,7 @@ import type { AvatarsBridge } from '../../main/src/avatars/bridge-types.js';
 import type { PresenceBridge } from '../../main/src/presence/bridge-types.js';
 import type { FloorBridge } from '../../main/src/floor/bridge-types.js';
 import type { PlacesBridge } from '../../main/src/places/bridge-types.js';
+import type { RoomHubBridge } from '../../main/src/room-hub/bridge-types.js';
 import type { GpuMemoryBridge } from '../../main/src/diagnostics/gpu-memory.js';
 import type { CodingBridge, CodingBusyBridge, CodingTasksBridge } from '../../main/src/coding/bridge-types.js';
 import type { ApprovalsBridge } from '../../main/src/tools/approvals-ipc.js';
@@ -172,6 +173,7 @@ export interface PreloadApi {
   presence?: PresenceBridge;
   floor?: FloorBridge;
   places?: PlacesBridge;
+  roomHub?: RoomHubBridge;
   avatars?: AvatarsBridge;
   coding?: CodingBridge;
   codingTasks?: CodingTasksBridge;

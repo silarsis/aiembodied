@@ -1,6 +1,6 @@
 # Places
 
-Status: In Progress (step 1 of the "every screen is a place" plan: bija alone).
+Status: In Progress (step 1: bija alone; step 2: the hub, pairing and the Places settings page for desktop rooms. The satellite app itself comes later).
 
 ## What a place is
 
@@ -13,7 +13,7 @@ Today there are two places:
 | `home` | the lounge | `local` | The room drawn on this PC's screen. |
 | `next-door` | next door | `offscreen` | A place nobody draws. Avatars can go there ("Sage, give us a minute"). |
 
-A later step adds places drawn by another desktop. Their `node` will be that PC's device id. The names can be changed (`PlaceManager.rename`); a Places settings page comes later.
+Places drawn by another desktop ("desktop rooms") have the device id of that PC as their `node`. See "Desktop rooms" below. Names can be changed in Settings > Places (`PlaceManager.rename`).
 
 An avatar that is not in the place on screen is not drawn. It does not hear what is said, and it does not answer by itself. It only comes back when it is called.
 
@@ -79,9 +79,62 @@ A summon is a move with the reason `summoned`. The **Call** button on the Elsewh
 
 Every avatar's system prompt ends with the places note (also chatter turns; never a preview turn). The paragraph is only added when at least two places exist.
 
+## Desktop rooms
+
+A second desktop can draw one place. It is paired once, then it keeps a WebSocket open to bija over Tailscale. The protocol is in [room-link-protocol.md](room-link-protocol.md). This step builds bija's side (`app/main/src/room-hub/`) and a test client (`scripts/room-link-client.mjs`); the satellite app comes later.
+
+### Pairing
+
+1. On bija: Settings > Places > **Add a desktop room**. Type the room's name (default "the study"). bija shows a 6-digit code, a 5-minute countdown and the address(es) to type on the other PC (`http://<bija or its Tailscale IP>:8791`), and a **Cancel** button.
+2. The other PC sends the code to `POST /v1/pair`. The code works once. Ten wrong codes from one address within a minute lock that address out for a minute.
+3. bija creates the device, a new place (`id` = a slug of the name, made unique; `node` = the device id) and a token. The token goes to the other PC once. bija keeps only its SHA-256 in `<userData>/room-devices.json`.
+4. **Revoke** (same page) stops the token, closes the link, removes the place and sends its avatars to the lounge.
+
+### Online and offline
+
+A desktop room is online from the moment its satellite says hello until the link drops (closed, or 6 s without traffic). The snapshot says so (`online` on desktop rooms only; the lounge and next door are always online). Moving to a closed room is refused ("the study is closed").
+
+When a room goes offline its avatars stay for 60 seconds, in case it was only a blip. After that they are sent home as a move with the reason `room closed`. The move is to the local place, so the lounge walks them in through the door like any arrival. At start-up no desktop room is connected, so the same 60 seconds apply to avatars left in one.
+
+An avatar walking to a desktop room is confirmed by that satellite with `places:arrived`, like the local renderer does for the lounge.
+
+### Journal
+
+The hub writes `place.paired`, `place.online`, `place.offline`, `place.revoked` and `place.refused` (payload `{ address, code }`, where `code` is `pairing-code`, `peer`, `auth` or `protocol`) to the switchboard. Fire and forget.
+
+### Security
+
+- The server listens only on `127.0.0.1` and on this PC's own Tailscale addresses (100.64.0.0/10). Never `0.0.0.0`. It checks again every 60 s, because Tailscale may come up after the app.
+- It runs only while a PC is paired or a code is active. `ROOM_HUB_ENABLED=1` keeps it on, `ROOM_HUB_ENABLED=0` keeps it off. `ROOM_HUB_PORT` changes the port (default 8791).
+- Every connection must send the device token. Only the SHA-256 is stored, and the compare takes constant time.
+- Every connection from another PC must also pass a Tailscale check (`tailscale whois --json <ip>`): the peer's node name must be the one recorded at pairing, and its login must be the login of bija's own node. If the Tailscale command is missing or fails, the peer is refused. A satellite on bija itself (127.0.0.1) skips the check, for testing.
+- A satellite can only call the channels in `room-hub/allowlist.ts`: read-only fetches for drawing a room and avatars, plus `places:*`. Settings, models, keys, coding, generation, uploads, deletes and `app:*` are never allowed.
+- Never expose the port with Tailscale Funnel or a router port forward.
+- A suggested Tailscale ACL: let only your own devices reach bija on port 8791.
+
+```json
+{
+  "acls": [
+    { "action": "accept", "src": ["autogroup:member"], "dst": ["tag:bija:8791"] }
+  ]
+}
+```
+
+(Tag bija as `tag:bija`, or use its Tailscale IP in `dst`. Use `src` with your own user or tag if other people share the tailnet.)
+
+### Trying it on one PC
+
+```
+node scripts/room-link-client.mjs pair http://127.0.0.1:8791 123456 "the study"
+node scripts/room-link-client.mjs connect http://127.0.0.1:8791
+```
+
+Make the code first in Settings > Places. `connect` prints the welcome and every message, and pings every 2 seconds. Add `--call <channel> '[args]'` or `--asset <url>` to try a request.
+
 ## Limits
 
 - The OpenAI Realtime conversation engine is Echo-only and not place-aware. Places work with the local voice engine.
-- A place has no devices yet. The microphone, camera and speakers stay with this PC. Per-place presence and devices come with satellite desktops.
+- A desktop room has no devices yet. The microphone, camera and speakers stay with this PC. Per-place presence and devices come with the satellite app.
 - Chatter between avatars happens only among avatars in the same place.
-- A move away from this PC that is never confirmed brings the avatar back on screen, but a body that was unloaded appears at its normal spot, not at the door. This can only happen once other desktops exist.
+- A move away from this PC that is never confirmed brings the avatar back on screen, but a body that was unloaded appears at its normal spot, not at the door.
+- Revoking a desktop room puts its avatars back in the lounge at once (they appear where they stand, without the door walk), because the place is gone.

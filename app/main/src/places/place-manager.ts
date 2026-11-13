@@ -26,12 +26,16 @@ export const NEXT_DOOR_PLACE_ID = 'next-door';
 export const HALLWAY_MS = 1500;
 /** A move that is not confirmed by then fails, and the avatar goes back. */
 export const MOVE_DEADLINE_MS = 10_000;
+/** How long avatars stay at a desktop room that went offline before they are sent home. */
+export const OFFLINE_GRACE_MS = 60_000;
 
 export interface Place {
   id: string;
   name: string;
   /** 'local' is the screen of this PC, 'offscreen' a place nobody draws, anything else is the device id of the PC that draws it. */
   node: 'local' | 'offscreen' | string;
+  /** Only on desktop rooms (a device id as `node`): whether that PC is connected. Absent means always online. */
+  online?: boolean;
 }
 
 const BUILT_IN_PLACES: Place[] = [
@@ -71,6 +75,7 @@ export interface PlaceManagerOptions {
   now?: () => number;
   hallwayMs?: number;
   deadlineMs?: number;
+  graceMs?: number;
   logger?: Pick<Console, 'warn' | 'debug'>;
 }
 
@@ -139,6 +144,10 @@ export class PlaceManager {
   private readonly now: () => number;
   private readonly hallwayMs: number;
   private readonly deadlineMs: number;
+  private readonly graceMs: number;
+  /** Desktop rooms that are connected right now. Never stored: after a restart every desktop room is offline. */
+  private readonly online = new Set<string>();
+  private readonly graceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly transit = new Map<string, Pending>();
   private waiters: Array<{ avatarId: string; resolve: (arrived: boolean) => void; timer: ReturnType<typeof setTimeout> | null; sawMove: boolean }> = [];
   private serial = 0;
@@ -148,13 +157,27 @@ export class PlaceManager {
     this.now = options.now ?? Date.now;
     this.hallwayMs = options.hallwayMs ?? HALLWAY_MS;
     this.deadlineMs = options.deadlineMs ?? MOVE_DEADLINE_MS;
+    this.graceMs = options.graceMs ?? OFFLINE_GRACE_MS;
     this.emitter.setMaxListeners(20);
   }
 
   // -- Places -----------------------------------------------------------------------------------
 
+  /** The places as stored (no `online`). */
+  private stored(): Place[] {
+    return parsePlaces(this.options.store.getValue(PLACES_KEY));
+  }
+
+  private persist(places: Place[]): void {
+    this.options.store.setValue(PLACES_KEY, JSON.stringify(places.map(({ id, name, node }) => ({ id, name, node }))));
+  }
+
+  private isDevicePlace(place: Place): boolean {
+    return place.node !== 'local' && place.node !== 'offscreen';
+  }
+
   list(): Place[] {
-    return parsePlaces(this.options.store.getValue(PLACES_KEY)).map((place) => ({ ...place }));
+    return this.stored().map((place) => (this.isDevicePlace(place) ? { ...place, online: this.online.has(place.id) } : { ...place }));
   }
 
   get(placeId: string): Place | null {
@@ -170,13 +193,96 @@ export class PlaceManager {
   rename(placeId: string, name: string): Place | null {
     const trimmed = name.trim();
     if (!trimmed) return null;
-    const places = this.list();
+    const places = this.stored();
     const place = places.find((candidate) => candidate.id === placeId);
     if (!place) return null;
     place.name = trimmed.slice(0, 80);
-    this.options.store.setValue(PLACES_KEY, JSON.stringify(places));
+    this.persist(places);
     this.changed();
-    return { ...place };
+    return this.get(placeId);
+  }
+
+  /** Adds a place drawn by another PC (`node` is that PC's device id). Null when the id is taken or invalid. */
+  addPlace(input: { id: string; name: string; node: string }): Place | null {
+    const id = input.id.trim();
+    const name = input.name.trim().slice(0, 80);
+    if (!id || !name || !input.node || input.node === 'local' || input.node === 'offscreen') return null;
+    const places = this.stored();
+    if (places.some((place) => place.id === id)) return null;
+    places.push({ id, name, node: input.node });
+    this.persist(places);
+    this.changed();
+    return this.get(id);
+  }
+
+  /**
+   * Removes a desktop room. Avatars there are put back at the local place at once (they appear where they
+   * stand: the door walk needs the room to still exist). A built-in place cannot be removed.
+   */
+  removePlace(placeId: string): boolean {
+    const places = this.stored();
+    const place = places.find((candidate) => candidate.id === placeId);
+    if (!place || !this.isDevicePlace(place)) return false;
+    this.clearGrace(placeId);
+    this.online.delete(placeId);
+    for (const pending of [...this.transit.values()]) {
+      if (pending.to === placeId || pending.from === placeId) this.cancelMove(pending);
+    }
+    const locations = this.storedLocations();
+    for (const [avatarId, at] of Object.entries(locations)) if (at === placeId) delete locations[avatarId];
+    this.options.store.setValue(LOCATIONS_KEY, JSON.stringify(locations));
+    this.persist(places.filter((candidate) => candidate.id !== placeId));
+    this.changed();
+    return true;
+  }
+
+  isOnline(placeId: string): boolean {
+    const place = this.get(placeId);
+    return Boolean(place) && (!this.isDevicePlace(place as Place) || this.online.has(placeId));
+  }
+
+  /**
+   * A desktop room connected or dropped. When it drops, its avatars get `graceMs` to come back (a Wi-Fi
+   * blip); after that they are sent home, as a move with the reason 'room closed'.
+   */
+  setOnline(placeId: string, online: boolean): void {
+    const place = this.get(placeId);
+    if (!place || !this.isDevicePlace(place)) return;
+    if (online) {
+      this.clearGrace(placeId);
+      if (this.online.has(placeId)) return;
+      this.online.add(placeId);
+      this.changed();
+      return;
+    }
+    const wasOnline = this.online.delete(placeId);
+    if (!this.graceTimers.has(placeId)) {
+      this.graceTimers.set(
+        placeId,
+        this.timer(() => {
+          this.graceTimers.delete(placeId);
+          this.sendHome(placeId);
+        }, this.graceMs),
+      );
+    }
+    if (wasOnline) this.changed();
+  }
+
+  /** At start-up no desktop room is connected yet: start the grace clock for each, so no avatar is stuck in one forever. */
+  settleOffline(): void {
+    for (const place of this.stored()) if (this.isDevicePlace(place) && !this.online.has(place.id)) this.setOnline(place.id, false);
+  }
+
+  private clearGrace(placeId: string): void {
+    const handle = this.graceTimers.get(placeId);
+    if (handle) clearTimeout(handle);
+    this.graceTimers.delete(placeId);
+  }
+
+  /** Grace is over and the room is still closed: everyone there walks in at the local place. */
+  private sendHome(placeId: string): void {
+    if (this.online.has(placeId)) return;
+    for (const avatarId of this.avatarsAt(placeId)) this.startMove(avatarId, this.localPlaceId(), 'room closed');
   }
 
   /** The place a name or id means: ignores case, "the", and hyphens or underscores against spaces. Null when none fits. */
@@ -222,8 +328,8 @@ export class PlaceManager {
     return this.avatarIds().filter((avatarId) => !this.isPresent(avatarId));
   }
 
-  /** Names of the avatars at each place, for prompts. */
-  snapshot(): PlacesSnapshot {
+  /** Who is where. `forPlaceId` is the place the reader draws: this PC passes nothing, a desktop room passes its own place. */
+  snapshot(forPlaceId: string = this.localPlaceId()): PlacesSnapshot {
     const stored = this.storedLocations();
     const places = this.list();
     const locations: Record<string, string> = {};
@@ -235,7 +341,7 @@ export class PlaceManager {
       places,
       locations,
       transit: [...this.transit.values()].map((move) => ({ avatarId: move.avatarId, from: move.from, to: move.to })),
-      localPlaceId: this.localPlaceId(),
+      localPlaceId: forPlaceId,
     };
   }
 
@@ -263,6 +369,7 @@ export class PlaceManager {
     if (!this.avatarIds().includes(avatarId)) return { ok: false, reason: 'unknown avatar' };
     const target = this.get(toPlaceId);
     if (!target) return { ok: false, reason: 'unknown place' };
+    if (target.online === false) return { ok: false, reason: `${target.name} is closed` };
     if (this.transit.has(avatarId)) return { ok: false, reason: 'already moving' };
     const from = this.locationOf(avatarId);
     if (from === target.id) return { ok: false, reason: 'already there' };
@@ -336,6 +443,13 @@ export class PlaceManager {
     this.options.store.setValue(LOCATIONS_KEY, JSON.stringify({ ...this.storedLocations(), [avatarId]: pending.to }));
     this.journal(pending, 'done', { avatarId, from: pending.from, to: pending.to, reason: pending.reason });
     this.changed();
+  }
+
+  /** Drops a move without a journal entry about arrival (the place it involved is gone). */
+  private cancelMove(pending: Pending): void {
+    this.clearTimers(pending);
+    this.transit.delete(pending.avatarId);
+    this.journal(pending, 'failed', { avatarId: pending.avatarId, from: pending.from, to: pending.to, reason: 'place removed' });
   }
 
   private fail(avatarId: string, txn: string): void {

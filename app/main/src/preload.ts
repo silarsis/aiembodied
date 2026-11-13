@@ -78,6 +78,7 @@ import type { AvatarIdlePersona, AvatarsBridge } from './avatars/bridge-types.js
 import type { PresenceBridge } from './presence/bridge-types.js';
 import type { FloorBridge } from './floor/bridge-types.js';
 import type { PlacesBridge, PlacesSnapshot } from './places/bridge-types.js';
+import type { RoomHubBridge, RoomHubStatus } from './room-hub/bridge-types.js';
 import type { GpuMemoryBridge } from './diagnostics/gpu-memory.js';
 import type { CodingBridge, CodingBusy, CodingBusyBridge, CodingTasksBridge, RunnerEvent } from './coding/bridge-types.js';
 import type { CodingStatus, CodingView } from './coding/coding-service.js';
@@ -233,6 +234,7 @@ export interface PreloadApi {
   presence?: PresenceBridge;
   floor?: FloorBridge;
   places?: PlacesBridge;
+  roomHub?: RoomHubBridge;
   avatars?: AvatarsBridge;
   coding?: CodingBridge;
   codingTasks?: CodingTasksBridge;
@@ -808,6 +810,23 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     arrived: async (avatarId) => {
       await ipcRenderer.invoke('places:arrived', avatarId);
     },
+  },
+  roomHub: {
+    status: () => ipcRenderer.invoke('room-hub:status') as Promise<RoomHubStatus>,
+    onChanged: (listener) => {
+      const channel = 'room-hub:changed';
+      const handler = (_event: unknown, status: RoomHubStatus) => listener(status);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
+    startPairing: (placeName) => ipcRenderer.invoke('room-hub:start-pairing', placeName),
+    cancelPairing: async () => {
+      await ipcRenderer.invoke('room-hub:cancel-pairing');
+    },
+    revoke: (deviceId) => ipcRenderer.invoke('room-hub:revoke', deviceId) as Promise<boolean>,
+    rename: (placeId, name) => ipcRenderer.invoke('room-hub:rename', placeId, name),
   },
   gpuMemory: {
     read: () => ipcRenderer.invoke('diagnostics:gpu-memory'),
