@@ -206,6 +206,16 @@ LAYA_EXTRA_MODELS='{"laya-floor-v1":"'$HOME'/laya-runs/run1/checkpoint"}' LAYA_M
 
 then, in another terminal, `python services/laya/training/score.py --data ~/laya-runs/run1/data/val.jsonl --model laya-floor-v1`. In PowerShell set the same variables with `$env:NAME = 'value'` first.
 
+## Publishing
+
+The checkpoint is published as the Hugging Face model repo `silarsis/laya-floor-v1`; `start.ps1` downloads it on first start. Log in with `hf auth login` (the token stays in `.env` and is never pasted into chat), copy the card into the checkpoint folder, then upload:
+
+```
+hf auth login
+cp services/laya/training/MODEL_CARD.md <checkpoint folder>/README.md     # PowerShell: Copy-Item
+hf upload silarsis/laya-floor-v1 <checkpoint folder> . --repo-type model
+```
+
 ## Memory note
 
 Training sends `--micro-batch` rows through the model at once (default 8) and accumulates gradients so the effective batch stays 64. A smaller micro-batch uses less GPU memory and gives the same learning, only slower. With under 8 GB use `--precision fp16 --micro-batch 4`; if it says out of memory try `--micro-batch 2`. Values must divide 64.
