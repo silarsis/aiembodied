@@ -34,6 +34,66 @@ def fake_results(floor, fresh, misses=()):
             "latency": {"device": "cuda", "device_median": 0.01, "cpu_median": 0.05}}
 
 
+class PlainLayerNormTests(unittest.TestCase):
+    def test_want_plain_layernorm(self):
+        self.assertTrue(rf.want_plain_layernorm("auto", "6.2.41"))
+        self.assertFalse(rf.want_plain_layernorm("auto", None))
+        self.assertFalse(rf.want_plain_layernorm("auto", ""))
+        self.assertTrue(rf.want_plain_layernorm("on", None))
+        self.assertFalse(rf.want_plain_layernorm("off", "6.2.41"))
+
+    def test_flag_parsing(self):
+        self.assertEqual(rf.parse_args(["--work", "w"]).plain_layernorm, "auto")
+        self.assertEqual(rf.parse_args(["--work", "w", "--plain-layernorm", "on"]).plain_layernorm, "on")
+        with self.assertRaises(SystemExit):
+            rf.parse_args(["--work", "w", "--plain-layernorm", "maybe"])
+
+    def test_matches_torch(self):
+        try:
+            import torch
+        except Exception:
+            self.skipTest("torch is not installed")
+        F = torch.nn.functional
+        for shape, affine, bias, dtype in (((2, 5, 8), True, True, torch.float32), ((3, 4), False, True, torch.float32),
+                                           ((4, 6), True, False, torch.float32), ((2, 3, 4), True, True, torch.float32),
+                                           ((2, 5, 8), True, True, torch.bfloat16)):
+            norm_shape = shape[-2:] if shape == (2, 3, 4) else shape[-1:]
+            kw = {"elementwise_affine": affine}
+            if affine:
+                kw["bias"] = bias
+            ln = torch.nn.LayerNorm(norm_shape, **kw).to(dtype)
+            if affine:
+                with torch.no_grad():
+                    ln.weight.normal_()
+                    if bias:
+                        ln.bias.normal_()
+            x1 = torch.randn(*shape, dtype=dtype, requires_grad=True)
+            x2 = x1.detach().clone().requires_grad_(True)
+            ref = F.layer_norm(x1, ln.normalized_shape, ln.weight, ln.bias, ln.eps)
+            out = rf.plain_layernorm_forward(ln, x2)
+            self.assertEqual(out.dtype, x1.dtype)
+            tol = 5e-2 if dtype == torch.bfloat16 else 1e-5
+            self.assertTrue(torch.allclose(out.float(), ref.float(), atol=tol, rtol=tol))
+            g = torch.randn_like(ref)
+            ref.backward(g)
+            gw = [p.grad.clone() for p in ln.parameters()]
+            for p in ln.parameters():
+                p.grad = None
+            out.backward(g)
+            self.assertTrue(torch.allclose(x1.grad.float(), x2.grad.float(), atol=tol * 5, rtol=tol * 5))
+            for a, p in zip(gw, ln.parameters()):
+                self.assertTrue(torch.allclose(a.float(), p.grad.float(), atol=tol * 5, rtol=tol * 5))
+
+    def test_apply_counts(self):
+        try:
+            import torch
+        except Exception:
+            self.skipTest("torch is not installed")
+        m = torch.nn.Sequential(torch.nn.Linear(4, 4), torch.nn.LayerNorm(4), torch.nn.LayerNorm(4, elementwise_affine=False))
+        self.assertEqual(rf.apply_plain_layernorm(m), 2)
+        m(torch.randn(2, 4))
+
+
 class ArgsTests(unittest.TestCase):
     def test_defaults(self):
         a = rf.parse_args(["--work", "w"])

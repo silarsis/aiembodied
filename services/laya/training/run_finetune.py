@@ -3,7 +3,7 @@
 
     python run_finetune.py --work DIR [--n 8000] [--seed 0] [--epochs 4]
         [--precision auto|fp16|bf16|fp32] [--loss rlcd|soft-ce] [--base convaiinnovations/laya]
-        [--device auto|cuda|cpu] [--math-attention] [--trial] [--skip-baseline] [--micro-batch 8]
+        [--device auto|cuda|cpu] [--math-attention] [--plain-layernorm auto|on|off] [--trial] [--skip-baseline] [--micro-batch 8]
 
 Everything is written under the run folder DIR:
 
@@ -34,6 +34,7 @@ import shutil
 import statistics
 import sys
 import time
+import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -109,6 +110,9 @@ def parse_args(argv=None):
     ap.add_argument("--device", choices=("auto", "cuda", "cpu"), default="auto")
     ap.add_argument("--math-attention", action="store_true",
                     help="force PyTorch's plain math attention kernel (slower; a fallback if training goes NaN)")
+    ap.add_argument("--plain-layernorm", choices=("auto", "on", "off"), default="auto",
+                    help="replace torch LayerNorm forward with plain ops; works around ROCm's wrong LayerNorm "
+                         "backward kernel. auto = on for ROCm (AMD) builds of torch, off otherwise")
     ap.add_argument("--trial", action="store_true",
                     help="train on %d rows for 1 epoch, print the time estimate, score it, then stop" % TRIAL_ROWS)
     ap.add_argument("--skip-baseline", action="store_true", help="do not score the untouched base model")
@@ -123,6 +127,15 @@ def parse_args(argv=None):
     if a.micro_batch < 1 or 64 % a.micro_batch:
         ap.error("--micro-batch must divide 64 (1, 2, 4, 8, 16, 32, 64)")
     return a
+
+
+def want_plain_layernorm(flag, hip_version):
+    """Decide whether to use the plain LayerNorm forward. `hip_version` is torch.version.hip (None off ROCm)."""
+    if flag == "on":
+        return True
+    if flag == "off":
+        return False
+    return bool(hip_version)
 
 
 def choose_precision(requested, cuda_available, bf16_supported):
@@ -426,6 +439,45 @@ def set_math_attention():
     print("math attention forced: " + ", ".join(done))
 
 
+def plain_layernorm_forward(module, x):
+    """LayerNorm written with plain ops, so autograd does not use the backend's LayerNorm backward kernel."""
+    import torch
+    n = len(module.normalized_shape)
+    dims = tuple(range(x.dim() - n, x.dim()))
+    out_dtype = x.dtype
+    if out_dtype in (torch.float16, torch.bfloat16):
+        x = x.float()
+    mean = x.mean(dim=dims, keepdim=True)
+    var = ((x - mean) ** 2).mean(dim=dims, keepdim=True)
+    y = (x - mean) * torch.rsqrt(var + module.eps)
+    weight = getattr(module, "weight", None)
+    bias = getattr(module, "bias", None)
+    if weight is not None:
+        y = y * (weight.float() if y.dtype != weight.dtype else weight)
+    if bias is not None:
+        y = y + (bias.float() if y.dtype != bias.dtype else bias)
+    return y.to(out_dtype)
+
+
+def apply_plain_layernorm(model):
+    """Patch every torch.nn.LayerNorm in `model` to use plain_layernorm_forward; returns the count."""
+    import torch
+    count = 0
+    for m in model.modules():
+        if isinstance(m, torch.nn.LayerNorm):
+            m.forward = types.MethodType(plain_layernorm_forward, m)
+            count += 1
+    return count
+
+
+def apply_plain_layernorm_to_agent(agent):
+    """Patch the model(s) held by a laya agent (or the agent itself if it is a module); returns the count."""
+    import torch
+    if isinstance(agent, torch.nn.Module):
+        return apply_plain_layernorm(agent)
+    return sum(apply_plain_layernorm(v) for v in vars(agent).values() if isinstance(v, torch.nn.Module))
+
+
 def nonfinite_grad_names(torch, params):
     """Names of parameters whose gradient holds NaN or infinity. `params` is an iterable of (name, tensor)."""
     return [n for n, p in params if p.grad is not None and not bool(torch.isfinite(p.grad).all())]
@@ -439,7 +491,7 @@ def first_nonfinite_param(torch, model):
 
 
 @contextlib.contextmanager
-def patched_training(lt, torch, precision, state):
+def patched_training(lt, torch, precision, state, plain_layernorm=False):
     """Install the precision choice and the non-finite guards into laya.train, and restore it after."""
     names = ("_forward", "soft_ce_loss", "rlcd_loss", "train_model")
     saved = {n: getattr(lt, n) for n in names}
@@ -546,6 +598,9 @@ def patched_training(lt, torch, precision, state):
 
     def guarded_train(model, tok, items, config, device, max_len, head_max_len, **kw):
         user_hook = kw.pop("on_epoch_end", None)
+        if plain_layernorm:
+            print("plain LayerNorm: patched %d modules in the model being trained" % apply_plain_layernorm(model),
+                  flush=True)
         state.update(epoch=1, step=0, depth=0, t0=time.perf_counter(), train_rows=len(items), model=model)
 
         def hook(epoch, mean):
@@ -692,6 +747,13 @@ def step_preflight(ctx):
     if a.precision not in ("auto", ctx["precision"]):
         print("note: --precision %s is not usable here, using %s" % (a.precision, ctx["precision"]))
     print("precision: %s%s" % (ctx["precision"], " (auto)" if a.precision == "auto" else ""))
+    hip = getattr(torch.version, "hip", None)
+    ctx["plain_layernorm"] = want_plain_layernorm(a.plain_layernorm, hip)
+    print("plain LayerNorm: %s (--plain-layernorm %s)" % ("on" if ctx["plain_layernorm"] else "off", a.plain_layernorm))
+    if hip:
+        print("ROCm build (HIP %s): the plain LayerNorm fix will be used, because ROCm's LayerNorm backward "
+              "kernel gives wrong weight and bias gradients for this model%s"
+              % (hip, "" if ctx["plain_layernorm"] else " (but --plain-layernorm off was given, so it is NOT used)"))
     os.makedirs(ctx["work"], exist_ok=True)
     free = shutil.disk_usage(ctx["work"]).free / 1e9
     print("free disk in %s: %.1f GB" % (ctx["work"], free))
@@ -749,6 +811,8 @@ def step_baseline(ctx):
                          % (a.base, e))
     print("base model folder: %s" % ctx["base_dir"])
     agent = laya.load(ctx["base_dir"], device=ctx["device"])
+    if ctx.get("plain_layernorm"):
+        print("plain LayerNorm: patched %d modules in the baseline model" % apply_plain_layernorm_to_agent(agent))
     try:
         baseline = score_all(agent_fetch(agent), ctx, "base ")
     except NonFiniteError as e:
@@ -816,7 +880,8 @@ def step_train(ctx):
           % (count_lines(ctx["fit_path"]), epochs, ctx["precision"], a.loss, cfg.micro_batch, cfg.grad_accum))
     log = os.path.join(ctx["work"], "train.log")
     try:
-        with tee_output(log), patched_training(lt, torch, ctx["precision"], state):
+        with tee_output(log), patched_training(lt, torch, ctx["precision"], state,
+                                                       ctx["plain_layernorm"]):
             summary = lt.finetune(ctx["fit_path"], ctx["base_dir"], ckpt, config=cfg, device=ctx["device"])
         for x in summary.get("epoch_loss", []):
             if not finite_number(x):
@@ -876,6 +941,8 @@ def step_score(ctx):
     results = {}
     try:
         agent = laya.load(ckpt, device=ctx["device"])
+        if ctx.get("plain_layernorm"):
+            print("plain LayerNorm: patched %d modules in the scored model" % apply_plain_layernorm_to_agent(agent))
         fetch = agent_fetch(agent)
         results = score_all(fetch, ctx, "tuned")
         dev_lat = time_lines(fetch, ctx["val_path"])
@@ -885,6 +952,8 @@ def step_score(ctx):
         cpu_lat = dev_lat
         if ctx["device"] != "cpu":
             cpu_agent = laya.load(ckpt, device="cpu")
+            if ctx.get("plain_layernorm"):
+                apply_plain_layernorm_to_agent(cpu_agent)
             cpu_lat = time_lines(agent_fetch(cpu_agent), ctx["val_path"])
             del cpu_agent
     except NonFiniteError as e:

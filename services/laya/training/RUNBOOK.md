@@ -216,7 +216,7 @@ A first attempt on an AMD card went to NaN (fp16 after about 250 steps; bf16 and
 
 ## Known problem: bija's AMD Radeon
 
-On bija's AMD Radeon (ROCm PyTorch) the backward pass gives wrong gradients for this model. The forward pass and the loss match the CPU, but the norm-layer gradients come out huge or infinite. It cannot be trained there. Serving a trained checkpoint on its CPU is fine. Train on an NVIDIA machine and copy the checkpoint over.
+On bija's AMD Radeon (ROCm PyTorch) the backward pass gave wrong gradients for this model (huge or infinite). The cause is ROCm's LayerNorm backward kernel, which computes wrong weight and bias gradients in fp16, bf16 and fp32. The script now works around it automatically on AMD cards (`--plain-layernorm auto`): it swaps LayerNorm for plain operations with the same maths, in training, baseline and scoring. With that, gradients matched the CPU within 1e-3, so the AMD PC can train. Use `--plain-layernorm on` or `off` to force it either way; the preflight prints which was chosen.
 
 ## Hand-made JSONL files on Windows
 
