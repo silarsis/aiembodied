@@ -442,12 +442,14 @@ function Step-Motion {
         return New-Result 'already present'
     }
     $out = if ($encoders) { $encoders } else { Join-Path $InstallRoot 'text_encoders_merged' }
-    Write-Host '  Building the motion text encoder needs about 32 GB of RAM and 15 GB of disk.'
-    try {
-        $ram = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB
-        if ($ram -lt 30) { Write-Warning ("This PC has {0:N0} GB of RAM; the text encoder build may fail." -f $ram) }
+    $ram = 0
+    try { $ram = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB } catch { }
+    if ($ram -gt 0 -and $ram -lt 30 -and -not $Force) {
+        # Building it merges an 8B model in memory, and running it needs ~16.5 GB of GPU or system
+        # memory, so a small PC should use the motion service on a bigger machine instead.
+        return New-Result 'skipped' ("text encoder not built: {0:N0} GB RAM (needs ~32). Point MOTION_SERVICE_URL at a motion service on a bigger PC, or set DEV_START_MOTION=0; -Force tries anyway." -f $ram)
     }
-    catch { }
+    Write-Host '  Building the motion text encoder needs about 32 GB of RAM and 15 GB of disk.'
     $kimodoPython = Get-VenvPython (Join-Path $motion '.venv-kimodo')
     if (-not (Test-Path $kimodoPython)) { throw 'The Kimodo venv is missing, so the text encoder cannot be built.' }
     Invoke-Native $kimodoPython @((Join-Path $motion 'scripts\build_text_encoder.py'), '--base', $TextEncoderBase, '--out', $out)
