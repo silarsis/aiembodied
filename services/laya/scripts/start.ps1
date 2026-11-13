@@ -61,12 +61,20 @@ if ($floorRepo -ne 'off') {
   try {
     $modelsDir = $env:LAYA_MODELS_DIR
     if (-not $modelsDir) {
-      $realHome = $env:USERPROFILE
+      # pnpm dev:run points USERPROFILE at .dev-home; models belong in the real home.
+      $realHome = $env:AIEMBODIED_HOST_USERPROFILE
+      if (-not $realHome) { $realHome = $env:USERPROFILE }
       if (-not $realHome) { $realHome = [Environment]::GetFolderPath('UserProfile') }
       $modelsDir = Join-Path $realHome '.cache\aiembodied\laya-models'
     }
     $floorDir = Join-Path $modelsDir 'laya-floor-v1'
-    if (-not (Test-Path (Join-Path $floorDir 'config.json'))) {
+    # A laya-floor-v1 entry already in LAYA_EXTRA_MODELS (a local checkpoint) needs no download.
+    $explicit = $env:LAYA_EXTRA_MODELS -and (($env:LAYA_EXTRA_MODELS | ConvertFrom-Json).PSObject.Properties.Name -contains 'laya-floor-v1')
+    if ($explicit) {
+      $listed = @($env:LAYA_MODELS -split '[,\s]+' | Where-Object { $_ })
+      if ($listed -notcontains 'laya-floor-v1') { $env:LAYA_MODELS = (@($listed) + 'laya-floor-v1') -join ',' }
+    }
+    elseif (-not (Test-Path (Join-Path $floorDir 'config.json'))) {
       Write-Host "Downloading the floor model $floorRepo to $floorDir (about 850 MB, first start only)"
       $ErrorActionPreference = 'Continue'
       & $python -c "import huggingface_hub" 2>$null
@@ -83,7 +91,7 @@ if ($floorRepo -ne 'off') {
       else { Write-Warning "Could not download $floorRepo; continuing without the floor model (the chat model decides)." }
     }
     $ErrorActionPreference = 'Stop'
-    if (Test-Path (Join-Path $floorDir 'config.json')) {
+    if ((-not $explicit) -and (Test-Path (Join-Path $floorDir 'config.json'))) {
       # Keep any existing LAYA_EXTRA_MODELS entries; an explicit laya-floor-v1 entry wins.
       $extra = [ordered]@{}
       if ($env:LAYA_EXTRA_MODELS) {
