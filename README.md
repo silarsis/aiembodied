@@ -59,6 +59,18 @@ The scripts verify existing installations of Node.js and pnpm, upgrading them wh
 necessary via the native package manager (`winget`/Chocolatey on Windows, Homebrew on
 macOS). When the checks pass you can continue with `pnpm install`.
 
+#### Windows: install the whole local stack
+
+`pnpm install:windows` (or `.\scripts\install-windows.ps1`) goes further than the bootstrap above:
+it sets up what `pnpm dev:run` needs for the local stack (uv and git, llama.cpp, Kokoro, the speech,
+memory, coder, switchboard and Laya venvs, Qwen3-ASR, the pi agent, the motion service, avatar face
+fitting). It is safe to re-run: whatever is already present is skipped, and `.env` is only ever
+appended to, never edited. Use `-Only a,b` or `-Skip a,b` to pick components, `-LlamaBackend
+vulkan|cuda`, and `-Force` to reinstall. `-With coder-model,avatar-paint` adds the opt-in components
+(the Qwen3-Coder-Next GGUF is about 45 GB; avatar paint needs ComfyUI's Python). It does not install
+the Thinking model or the vision model (pick them in Models and servers), Docker or wslc, or Comfy
+Desktop. See the header of the script for the full list.
+
 No C++ toolchain (Visual Studio Build Tools, Xcode, Python for node-gyp) is needed:
 better-sqlite3, keytar and the Picovoice packages all ship prebuilt N-API binaries that
 load in both Node and Electron.

@@ -13,6 +13,8 @@
   Two slots of 64K reserve 128K tokens of context in all. A larger model may want fewer or smaller.
   A model downloaded from Hugging Face in the app (Models and servers -> Thinking) is passed in as
   -Model and -Alias by the app and by pnpm dev:run.
+  -Device (default LLAMA_DEVICE, else Vulkan0) is the llama.cpp device: Vulkan0 or CUDA0.
+  scripts/install-windows.ps1 sets LLAMA_DEVICE in .env to match the llama.cpp build it installs.
 
 .EXAMPLE
   .\scripts\start-local-llm.ps1 -LlamaServer C:\...\llama-server.exe -Model C:\...\model-00001-of-00002.gguf
@@ -27,7 +29,7 @@ param(
   [int]$Slots = $(if ($env:LOCAL_LLM_SLOTS) { [int]$env:LOCAL_LLM_SLOTS } else { 2 }),
   # Context per slot. 64K costs only ~1.5 GB more commit than 16K: the ~86 GB is almost all weights.
   [int]$Context = $(if ($env:LOCAL_LLM_CONTEXT) { [int]$env:LOCAL_LLM_CONTEXT } else { 65536 }),
-  [string]$Device = 'Vulkan0'
+  [string]$Device = $(if ($env:LLAMA_DEVICE) { $env:LLAMA_DEVICE } else { 'Vulkan0' })
 )
 $ErrorActionPreference = 'Stop'
 if (-not (Test-Path $LlamaServer)) { throw "llama-server not found at $LlamaServer. Pass -LlamaServer or set LLAMA_SERVER_EXE." }

@@ -9,6 +9,8 @@
   Models and servers -> Describe the avatar; the app passes their paths as -Model and -Mmproj.
   The app reaches it at http://127.0.0.1:1237/v1 and asks for the model `qwen3-vl` (the --alias).
   llama-server comes from -LlamaServer, LLAMA_SERVER_EXE or the Unsloth build folder.
+  -Device (default LLAMA_DEVICE, else Vulkan0) is the llama.cpp device: Vulkan0 or CUDA0.
+  scripts/install-windows.ps1 sets LLAMA_DEVICE in .env to match the llama.cpp build it installs.
 
 .EXAMPLE
   .\scripts\start-local-vision.ps1 -Model C:\...\Qwen3-VL-8B-Instruct-Q4_K_M.gguf -Mmproj C:\...\mmproj-F16.gguf
@@ -22,7 +24,7 @@ param(
   [int]$Port = 1237,
   # An avatar screenshot is a few hundred image tokens plus a short prompt and reply.
   [int]$Context = 8192,
-  [string]$Device = 'Vulkan0'
+  [string]$Device = $(if ($env:LLAMA_DEVICE) { $env:LLAMA_DEVICE } else { 'Vulkan0' })
 )
 $ErrorActionPreference = 'Stop'
 if (-not (Test-Path $LlamaServer)) { throw "llama-server not found at $LlamaServer. Pass -LlamaServer or set LLAMA_SERVER_EXE." }

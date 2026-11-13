@@ -7,6 +7,8 @@
   moved or swapped on its own. The speech service reaches it through STT_URL (default
   http://127.0.0.1:1235/v1) and asks for STT_MODEL (default qwen3-asr, the --alias below).
   It needs ~1 GB and runs alongside Qwen Flash-Next without slowing it.
+  -Device (default LLAMA_DEVICE, else Vulkan0) is the llama.cpp device: Vulkan0 or CUDA0.
+  scripts/install-windows.ps1 sets LLAMA_DEVICE in .env to match the llama.cpp build it installs.
 
 .EXAMPLE
   .\scripts\start-local-asr.ps1
@@ -19,7 +21,7 @@ param(
   [string]$Mmproj = $env:LOCAL_ASR_MMPROJ,
   [string]$Alias = 'qwen3-asr',
   [int]$Port = 1235,
-  [string]$Device = 'Vulkan0'
+  [string]$Device = $(if ($env:LLAMA_DEVICE) { $env:LLAMA_DEVICE } else { 'Vulkan0' })
 )
 $ErrorActionPreference = 'Stop'
 if (-not (Test-Path $LlamaServer)) { throw "llama-server not found at $LlamaServer. Pass -LlamaServer or set LLAMA_SERVER_EXE." }
