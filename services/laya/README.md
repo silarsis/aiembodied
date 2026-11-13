@@ -48,3 +48,7 @@ Quick decisions model field (it must be in `LAYA_MODELS`).
   `choice.probabilities`, `score.score` (expected level index), `noul.noul` (probability of yes).
 
 The English checkpoint reads about 512 tokens, so the app sends only the last few clipped lines.
+
+## Fine-tuning
+
+The stock checkpoint is close to chance on the floor questions. To fine-tune it on an NVIDIA GPU and serve the result here, follow `finetune/README.md`. Training on bija's Radeon does not work: ROCm gives wrong gradients for this model.
