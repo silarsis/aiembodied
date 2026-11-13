@@ -12,6 +12,7 @@ test-results
 app/main/*.png
 app/images/*
 .dev-home/
+.dev-home-satellite/
 
 __pycache__/
 

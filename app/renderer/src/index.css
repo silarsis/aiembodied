@@ -2273,3 +2273,68 @@ body {
 .sceneCast__byNameRow { display: flex; gap: 0.5rem; }
 .sceneCast__byNameRow input { flex: 1 1 auto; }
 .sceneCast__byNameRow button { flex: 0 0 auto; white-space: nowrap; }
+
+/* Satellite PC: the room of one place, a typed message box, the connect screen and the "lost touch" banner. */
+.placesPanel__room { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.placesPanel__room select { min-width: 0; max-width: 100%; }
+.typedMessage { display: flex; align-items: center; gap: 8px; min-width: min(420px, 80vw); }
+.typedMessage__input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  backdrop-filter: blur(14px);
+  color: rgba(226, 232, 240, 0.95);
+  font: inherit;
+}
+.typedMessage__send { border-radius: 999px; }
+.satelliteBanner {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 18px;
+  border-radius: 999px;
+  background: rgba(120, 53, 15, 0.82);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  color: #fef3c7;
+  font-size: 14px;
+}
+.connectScreen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #020617;
+  color: #e2e8f0;
+  z-index: 50;
+}
+.connectScreen__card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(460px, calc(100vw - 48px));
+  padding: 28px 30px;
+  border-radius: 18px;
+  background: #0f172a;
+  border: 1px solid #22324a;
+}
+.connectScreen__card h1 { margin: 0; font-size: 24px; }
+.connectScreen__help { margin: 0; color: rgba(226, 232, 240, 0.7); font-size: 14px; }
+.connectScreen__field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: rgba(226, 232, 240, 0.75); }
+.connectScreen__field input { padding: 10px 12px; border-radius: 10px; border: 1px solid #334155; background: #0b1220; color: #f1f5f9; font: inherit; }
+.connectScreen__error { margin: 0; color: #fca5a5; font-size: 14px; }
+.satelliteStatus { display: flex; flex-direction: column; gap: 14px; }
+.satelliteStatus__rows { display: flex; flex-direction: column; gap: 8px; margin: 0; }
+.satelliteStatus__rows > div { display: flex; gap: 12px; }
+.satelliteStatus__rows dt { width: 90px; flex: none; color: rgba(226, 232, 240, 0.6); }
+.satelliteStatus__rows dd { margin: 0; }
+.satelliteStatus__confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.satelliteStatus__confirm p { margin: 0; flex-basis: 100%; }

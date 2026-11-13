@@ -149,3 +149,35 @@ describe('PlacesPanel', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Port is busy');
   });
 });
+
+describe('PlacesPanel room choice', () => {
+  const snapshot: PlacesSnapshot = {
+    ...SNAPSHOT,
+    places: [
+      { id: 'home', name: 'the lounge', node: 'local' },
+      { id: 'study', name: 'the study', node: 'room-1', online: true, room: 'room:builtin:studio-flat' },
+    ],
+  };
+
+  it('offers the rooms on desktop rooms only and saves the pick', async () => {
+    const setRoom = vi.fn().mockResolvedValue(null);
+    const { api } = bridge({ setRoom });
+    render(
+      <PlacesPanel
+        roomHub={api}
+        snapshot={snapshot}
+        nameOf={nameOf}
+        active
+        roomChoices={[
+          { id: 'room:builtin:studio-flat', name: 'Studio', kind: '3D room' },
+          { id: 'cabin', name: 'Cabin', kind: 'Background' },
+        ]}
+      />,
+    );
+    expect(screen.queryByLabelText('Room shown in the lounge')).toBeNull();
+    const select = screen.getByLabelText('Room shown in the study');
+    expect(select).toHaveValue('room:builtin:studio-flat');
+    fireEvent.change(select, { target: { value: 'cabin' } });
+    await waitFor(() => expect(setRoom).toHaveBeenCalledWith('study', 'cabin'));
+  });
+});

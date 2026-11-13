@@ -1,6 +1,6 @@
 # Places
 
-Status: In Progress (step 1: bija alone; step 2: the hub, pairing and the Places settings page for desktop rooms. The satellite app itself comes later).
+Status: In Progress (step 1: bija alone; step 2: the hub, pairing and the Places settings page for desktop rooms; step 3: the satellite app, see [satellite.md](satellite.md)).
 
 ## What a place is
 
@@ -79,9 +79,17 @@ A summon is a move with the reason `summoned`. The **Call** button on the Elsewh
 
 Every avatar's system prompt ends with the places note (also chatter turns; never a preview turn). The paragraph is only added when at least two places exist.
 
+## What each desktop room shows
+
+A place has an optional `room`: the id of the room or background its screen draws (`room:builtin:studio-flat`, `room:<id>`, or a plain background id). Places without one use `DEFAULT_DESKTOP_ROOM` (in `places/default-room.ts`). Change it in Settings > Places, "Room shown there" (`room-hub:set-room`, `PlaceManager.setRoom`). The lounge uses the active background of this PC as before.
+
+## One floor per place
+
+Each place has its own `FloorController`, so avatars talk to Kevin and to each other where they are. Chatter, summons and announcements go to the screen of the place the avatar is in. The tag instructions an avatar gets list only the places and people it can reach from its own place.
+
 ## Desktop rooms
 
-A second desktop can draw one place. It is paired once, then it keeps a WebSocket open to bija over Tailscale. The protocol is in [room-link-protocol.md](room-link-protocol.md). This step builds bija's side (`app/main/src/room-hub/`) and a test client (`scripts/room-link-client.mjs`); the satellite app comes later.
+A second desktop can draw one place. It is paired once, then it keeps a WebSocket open to bija over Tailscale. The protocol is in [room-link-protocol.md](room-link-protocol.md). bija's side is `app/main/src/room-hub/`; the satellite app is described in [satellite.md](satellite.md). `scripts/room-link-client.mjs` is still a small test client.
 
 ### Pairing
 
@@ -134,7 +142,7 @@ Make the code first in Settings > Places. `connect` prints the welcome and every
 ## Limits
 
 - The OpenAI Realtime conversation engine is Echo-only and not place-aware. Places work with the local voice engine.
-- A desktop room has no devices yet. The microphone, camera and speakers stay with this PC. Per-place presence and devices come with the satellite app.
+- A desktop room has no microphone or camera yet. It shows the room, plays the voices and takes typed messages. Its presence (idle or away) is kept per place in bija (`presence/place-presence.ts`).
 - Chatter between avatars happens only among avatars in the same place.
 - A move away from this PC that is never confirmed brings the avatar back on screen, but a body that was unloaded appears at its normal spot, not at the door.
 - Revoking a desktop room puts its avatars back in the lounge at once (they appear where they stand, without the door walk), because the place is gone.

@@ -50,6 +50,7 @@ import type {
   WakeWordTrainingStatus,
 } from './wake-word/types.js';
 import type { PushToTalkStatus, TalkTriggerEvent } from './talk/types.js';
+import type { SatelliteBridge, SatelliteStatus } from './satellite/bridge-types.js';
 import type { LatencyMetricName } from './metrics/types.js';
 import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from './realtime/types.js';
 import type {
@@ -235,6 +236,7 @@ export interface PreloadApi {
   floor?: FloorBridge;
   places?: PlacesBridge;
   roomHub?: RoomHubBridge;
+  satellite?: SatelliteBridge;
   avatars?: AvatarsBridge;
   coding?: CodingBridge;
   codingTasks?: CodingTasksBridge;
@@ -827,6 +829,20 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     },
     revoke: (deviceId) => ipcRenderer.invoke('room-hub:revoke', deviceId) as Promise<boolean>,
     rename: (placeId, name) => ipcRenderer.invoke('room-hub:rename', placeId, name),
+    setRoom: (placeId, room) => ipcRenderer.invoke('room-hub:set-room', placeId, room) as Promise<boolean>,
+  },
+  satellite: {
+    status: () => ipcRenderer.invoke('satellite:status') as Promise<SatelliteStatus>,
+    onStatus: (listener) => {
+      const channel = 'satellite:status';
+      const handler = (_event: unknown, status: SatelliteStatus) => listener(status);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
+    pair: (input) => ipcRenderer.invoke('satellite:pair', input) as Promise<SatelliteStatus>,
+    forget: () => ipcRenderer.invoke('satellite:forget') as Promise<SatelliteStatus>,
   },
   gpuMemory: {
     read: () => ipcRenderer.invoke('diagnostics:gpu-memory'),

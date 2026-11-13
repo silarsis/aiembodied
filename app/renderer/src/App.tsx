@@ -72,6 +72,11 @@ import { tagToAction, type SceneAction } from './rooms/scene-actions.js';
 import { buildSceneInstructions, describeAvatarWhere, type OtherAvatarEntry } from './rooms/scene-instructions.js';
 import { useIdleDirector } from './rooms/use-idle-director.js';
 import { usePlaces } from './places/use-places.js';
+import { useSatellite } from './satellite/satellite-context.js';
+import { SatelliteBanner } from './satellite/satellite-banner.js';
+import { SatelliteStatusPanel } from './satellite/satellite-status-panel.js';
+import { TypedMessage } from './satellite/typed-message.js';
+import { DEFAULT_DESKTOP_ROOM } from '../../main/src/places/default-room.js';
 import { estimateSpeechMs, stagePresence } from './places/stage-presence.js';
 import { ElsewhereChip } from './places/elsewhere-chip.js';
 import { PlacesPanel } from './places/places-panel.js';
@@ -651,6 +656,9 @@ function TranscriptOverlay({
 
 export default function App() {
   const { api, ping, resolveApi } = usePreloadBridge();
+  // A satellite PC draws one room of bija's world and has no microphone yet: the one flag every guard below reads.
+  const satellite = useSatellite();
+  const isSatellite = satellite !== null;
   const [config, setConfig] = useState<RendererConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
   const [loadingConfig, setLoadingConfig] = useState(true);
@@ -906,7 +914,9 @@ export default function App() {
   const wakeListening = useWakeWordListening(activeBridge?.wakeWord, isListeningEnabled && !loadingConfig);
   const acceptsWakeRef = useRef(false);
   useEffect(() => { acceptsWakeRef.current = isListeningEnabled && !loadingConfig; }, [isListeningEnabled, loadingConfig]);
-  const backgrounds = useBackgrounds(activeBridge?.backgrounds);
+  // A satellite shows the room of its own place, not the stage bija has active.
+  const satellitePlace = isSatellite && placesSnapshot ? placesSnapshot.places.find((place) => place.id === placesSnapshot.localPlaceId) : undefined;
+  const backgrounds = useBackgrounds(activeBridge?.backgrounds, isSatellite ? (satellitePlace ? (satellitePlace.room ?? DEFAULT_DESKTOP_ROOM) : null) : undefined);
   const [showWalkableArea, setShowWalkableArea] = useState(false);
   const [avatarFootY, setAvatarFootY] = useState(0.9);
 
@@ -2292,6 +2302,18 @@ export default function App() {
     previousSpeechActiveRef.current = audioGraph.isActive;
   }, [audioGraph.isActive, pushLatency, interruptMovement]);
 
+  // A satellite has no microphone yet: the conversation connects to a silent input, and Kevin types.
+  const [silentInput, setSilentInput] = useState<MediaStream | null>(null);
+  useEffect(() => {
+    if (!isSatellite || typeof AudioContext === 'undefined') return undefined;
+    const context = new AudioContext();
+    setSilentInput(context.createMediaStreamDestination().stream);
+    return () => {
+      setSilentInput(null);
+      void context.close().catch(() => undefined);
+    };
+  }, [isSatellite]);
+
   useEffect(() => {
     if (!realtimeClient) {
       return;
@@ -2301,12 +2323,13 @@ export default function App() {
       return;
     }
 
-    if (!isListeningEnabled || !audioGraph.upstreamStream || !canConnectConversation) {
+    const upstream = isSatellite ? silentInput : audioGraph.upstreamStream;
+    if (!(isSatellite || isListeningEnabled) || !upstream || !canConnectConversation) {
       void realtimeClient.disconnect();
       return;
     }
 
-    const inputStream = audioGraph.upstreamStream;
+    const inputStream = upstream;
     let cancelled = false;
     const connect = async () => {
       const stagedPayload = stagedSessionConfigRef.current;
@@ -2372,11 +2395,23 @@ export default function App() {
     realtimeToken,
     audioGraph.upstreamStream,
     isListeningEnabled,
+    isSatellite,
+    silentInput,
     loadingConfig,
     isSessionConfigReady,
     canConnectConversation,
     mintEphemeralToken,
   ]);
+
+  // Typed text (a satellite's only way to talk for now): Kevin interrupts the avatars' movement, then the turn runs as speech does.
+  const sendTypedMessage = useCallback(
+    async (text: string): Promise<boolean> => {
+      if (!(realtimeClient instanceof LocalVoiceClient)) return false;
+      interruptMovement();
+      return realtimeClient.sendText(text);
+    },
+    [realtimeClient, interruptMovement],
+  );
 
   useEffect(() => {
     if (!realtimeClient || !hasRealtimeApiKey) {
@@ -3073,8 +3108,12 @@ export default function App() {
               ) : null}
             </section>
           </section>
+          {satellite ? <SatelliteBanner status={satellite.status} bridge={satellite.bridge} /> : null}
           <div className="stageToolbar">
             {wakeListening.error ? <p className="kiosk__error" role="alert">{wakeListening.error}</p> : null}
+            {isSatellite ? (
+              <TypedMessage onSend={sendTypedMessage} disabled={satellite.status.link !== 'online' || realtimeState.status !== 'connected'} />
+            ) : (
             <button
               type="button"
               className="stageStatus"
@@ -3100,6 +3139,7 @@ export default function App() {
                           displayedActivity.phase.slice(1)}
               </span>
             </button>
+            )}
             <button
               type="button"
               className="stageTranscript"
@@ -3112,6 +3152,8 @@ export default function App() {
             </button>
           </div>
           <ControlsDrawer open={drawerOpen} onOpenChange={setDrawerOpen}>
+            {!isSatellite ? (
+              <>
             <ControlButton
               id="character"
               title="Characters"
@@ -3172,13 +3214,16 @@ export default function App() {
               disabled={!activeBridge?.memoryEngine}
               onOpen={() => setPanel('memory')}
             />
+              </>
+            ) : null}
             <ControlButton
               id="status"
               title="Status and diagnostics"
-              summary={isOnline ? 'Online' : 'Offline'}
+              summary={satellite ? (satellite.status.link === 'online' ? 'Connected to bija' : 'Lost touch with bija') : isOnline ? 'Online' : 'Offline'}
               keywords="status diagnostics network audio preload wake score tool calls models latency listening transcript meter"
               onOpen={() => setPanel('status')}
             />
+            {!isSatellite ? (
             <ControlButton
               id="quit"
               title="Quit"
@@ -3186,8 +3231,11 @@ export default function App() {
               keywords="quit exit close application"
               onOpen={handleQuit}
             />
+            ) : null}
           </ControlsDrawer>
 
+          {!isSatellite ? (
+            <>
           <ProviderSettingsPanel
             settings={config?.providers ?? null}
             onSave={handleProviderSettingsSave}
@@ -3352,6 +3400,10 @@ export default function App() {
               snapshot={placesSnapshot}
               nameOf={(avatarId) => avatarProfiles.find((profile) => profile.id === avatarId)?.name ?? avatarId}
               active={panel === 'places'}
+              roomChoices={[
+                ...backgrounds.rooms.map((room) => ({ id: room.id, name: room.name, kind: '3D room' })),
+                ...backgrounds.items.map((item) => ({ id: item.id, name: item.name, kind: 'Background' })),
+              ]}
             />
           </PanelDialog>
 
@@ -3367,7 +3419,14 @@ export default function App() {
           <PanelDialog id="memory" title="Memory" subtitle="What the assistant remembers, and what to correct or forget." open={panel === 'memory'} onClose={closePanel} wide>
             <MemoryPanel memory={activeBridge?.memoryEngine} active={panel === 'memory'} />
           </PanelDialog>
+            </>
+          ) : null}
 
+          {satellite ? (
+            <PanelDialog id="status" title="Status" subtitle="This room, and the link to bija." open={panel === 'status'} onClose={closePanel}>
+              <SatelliteStatusPanel status={satellite.status} bridge={satellite.bridge} />
+            </PanelDialog>
+          ) : (
           <PanelDialog id="status" title="Status and diagnostics" open={panel === 'status'} onClose={closePanel}>
             {playbackIssue ? (
               <div className="kiosk__helper" role="alert" style={{ marginTop: 8 }}>
@@ -3454,6 +3513,7 @@ export default function App() {
             <HearChatterToggle api={activeBridge?.floor} />
             <GpuMemoryPanel api={activeBridge?.gpuMemory} active={panel === 'status'} />
           </PanelDialog>
+          )}
 
           {modelsOpen && activeBridge?.models ? (
             <ModelsDialog

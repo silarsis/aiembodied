@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  DEFAULT_DESKTOP_ROOM,
   HALLWAY_MS,
   HOME_PLACE_ID,
   LOCATIONS_KEY,
@@ -59,7 +60,7 @@ describe('PlaceManager', () => {
       // A built-in keeps its node; only the name can change.
       expect(list[0]).toEqual({ id: 'home', name: 'Living room', node: 'local' });
       // A place drawn by another PC says whether that PC is connected (not yet, after a start-up).
-      expect(list[2]).toEqual({ id: 'attic', name: 'the attic', node: 'pc-2', online: false });
+      expect(list[2]).toEqual({ id: 'attic', name: 'the attic', node: 'pc-2', online: false, room: DEFAULT_DESKTOP_ROOM });
     });
 
     it('survives garbage in the store', () => {

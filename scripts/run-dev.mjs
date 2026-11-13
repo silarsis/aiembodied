@@ -83,9 +83,9 @@ export function prepareDevHomeEnv(
   repoRoot,
   baseEnv = process.env,
   platform = process.platform,
-  { pnpmStorePath } = {},
+  { pnpmStorePath, devHomeName = '.dev-home' } = {},
 ) {
-  const devHome = resolve(repoRoot, '.dev-home');
+  const devHome = resolve(repoRoot, devHomeName);
   const roamingAppData = join(devHome, 'AppData', 'Roaming');
   const localAppData = join(devHome, 'AppData', 'Local');
   const npmCache = join(devHome, '.npm-cache');
@@ -263,7 +263,11 @@ async function main() {
 
   // Start the local model servers that are down, with the user's real environment (they find
   // their models through USERPROFILE), before the isolated dev HOME is set up below.
-  if (shouldStartServices(process.argv, userEnv)) {
+  // A satellite is a second desktop that draws one room of bija's world: it has its own home and starts no services.
+  const satellite = process.argv.includes('--satellite');
+  if (satellite) {
+    console.log('[info] Satellite mode: own dev home (.dev-home-satellite), no local services.');
+  } else if (shouldStartServices(process.argv, userEnv)) {
     await ensureLocalServices(repoRoot, userEnv);
   } else {
     console.log('[info] Not starting local services (--no-services / DEV_START_SERVICES=0).');
@@ -276,8 +280,10 @@ async function main() {
   });
 
   // Force pnpm store to live inside the isolated dev HOME to avoid mismatches
-  const devHome = resolve(repoRoot, '.dev-home');
-  const isolatedStore = resolve(devHome, 'AppData', 'Local', 'pnpm', 'store', 'v3');
+  // The pnpm store is shared with the normal dev home so a satellite does not download everything twice.
+  const storeHome = resolve(repoRoot, '.dev-home');
+  const devHome = resolve(repoRoot, satellite ? '.dev-home-satellite' : '.dev-home');
+  const isolatedStore = resolve(storeHome, 'AppData', 'Local', 'pnpm', 'store', 'v3');
   try {
     mkdirSync(isolatedStore, { recursive: true });
   } catch { }
@@ -285,11 +291,15 @@ async function main() {
   console.log(`[info] Isolated pnpm store set to ${pnpmStorePath}`);
 
   // Prepare an isolated environment for all pnpm operations
-  const envIsolated = prepareDevHomeEnv(repoRoot, process.env, process.platform, { pnpmStorePath });
+  const envIsolated = prepareDevHomeEnv(repoRoot, process.env, process.platform, {
+    pnpmStorePath,
+    devHomeName: satellite ? '.dev-home-satellite' : '.dev-home',
+  });
 
   // Clean up stale Electron process if it exists
   const pidFile = resolve(repoRoot, '.electron-app.pid');
-  if (existsSync(pidFile)) {
+  // (Not for a satellite: it runs beside the normal app and must not stop it.)
+  if (!satellite && existsSync(pidFile)) {
     try {
       const pid = parseInt(readFileSync(pidFile, 'utf8').trim(), 10);
       if (!isNaN(pid)) {
@@ -383,7 +393,7 @@ async function main() {
 
   // Launch Electron with compiled main
   console.log('[info] Launching Electron...');
-  const env = { ...envIsolated, AIEMBODIED_ENABLE_DIAGNOSTICS: '1' };
+  const env = { ...envIsolated, AIEMBODIED_ENABLE_DIAGNOSTICS: '1', ...(satellite ? { AIEMBODIED_ROLE: 'satellite' } : {}) };
   const electronCli = resolveElectronCli(repoRoot);
   const electronEntrypoint = resolve(repoRoot, 'app/main/dist/main.js');
   await run(process.execPath, [electronCli, electronEntrypoint], {

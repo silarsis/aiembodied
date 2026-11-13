@@ -1,6 +1,6 @@
 # RoomLink protocol v1
 
-Status: the hub side (bija) is built. The satellite client comes in a later step; `scripts/room-link-client.mjs` is a small test client.
+Status: built on both sides. The hub is `app/main/src/room-hub/`; the satellite client is `app/main/src/satellite/room-link.ts` (see [satellite.md](satellite.md)). `scripts/room-link-client.mjs` is a small test client.
 
 The link between bija's RoomHub (`app/main/src/room-hub/`) and a satellite's RoomLink.
 
@@ -89,3 +89,12 @@ bija's window.
 - `presence`, `device.state` and `wake.heard` are accepted and handed to the owner of the hub (`onSatelliteMessage`); PR 3 gives them a meaning.
 - A satellite's place is offline until it says hello. When the link drops, its avatars stay for 60 s, then walk in at the local place as a move with the reason `room closed`.
 - The hub never sends `device.off` by itself yet; `RoomHub.deviceOff(deviceId, reason)` exists for later steps.
+
+## Notes on what is built (PR 3)
+
+- The allowlist also has the talk, move and getter channels a satellite needs, plus `conversation:append-message` and `conversation:announce` (so a turn on a satellite is saved in bija's history). Each call carries the satellite's place; handlers use it to pick the floor and the screen.
+- The hub fake event has a `placeId`. `RoomHub.sendToPlace` and `sendToAll` push an `ipc` event to one place or to every satellite.
+- Presence from a satellite is kept per place (`presence/place-presence.ts`).
+- `RoomHub.stop()` now terminates open sockets first. Before, a connected satellite kept it waiting for ever.
+- The satellite waits up to 6 s for the first connection before a call fails, and has no timeout on `local-voice:respond` and `avatar-motion:stream`. Other calls time out after 60 s.
+- Room assets and VRM bytes are cached on the satellite (see satellite.md).

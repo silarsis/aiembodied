@@ -16,7 +16,13 @@ import { deliberateFast } from './switchboard/deliberate-system-one.js';
 import { ProactiveTick, proactiveSettingsFromEnv } from './presence/proactive-tick.js';
 import { PresenceTracker, isVoicePhase } from './presence/presence.js';
 import { FloorController } from './floor/index.js';
-import { PlaceManager, placesNote } from './places/place-manager.js';
+import { HOME_PLACE_ID, PlaceManager, placesNote, scopedPlaces } from './places/place-manager.js';
+import { PlacePresence } from './presence/place-presence.js';
+import { createPlaceDelivery, type EventSink } from './places/place-delivery.js';
+import { createAppWindow } from './window/app-window.js';
+import { Satellite } from './satellite/satellite.js';
+import { KeychainTokenStore } from './satellite/token-store.js';
+import { SATELLITE_FILE, SatelliteSettingsStore, detectSatelliteRole, userDataOverride } from './satellite/settings.js';
 import { RoomHub } from './room-hub/room-hub.js';
 import { RoomDeviceRegistry } from './room-hub/room-devices.js';
 import { createTailscaleLookup } from './room-hub/tailscale.js';
@@ -126,11 +132,6 @@ import type {
   AvatarGenerationConfirmation,
   AvatarGenerationAcceptance,
 } from './avatar/types.js';
-import {
-  resolvePreloadScriptPath,
-  resolveRendererEntryPoint,
-  RuntimeResourceNotFoundError,
-} from './runtime-paths.js';
 import { getOpenAIClient } from './openai/client.js';
 import type OpenAI from 'openai';
 import { createChatCompletionsResponsesClient } from './openai/chat-completions-responses.js';
@@ -197,6 +198,15 @@ if (!isProduction) {
   const repoRoot = path.resolve(__dirname, '../../..');
   dotenv.config({ path: path.join(repoRoot, '.env') });
 }
+
+// A second copy of the app on one PC (a satellite next to the full app, for testing) needs its own userData folder;
+// the single-instance lock below is per userData folder, so the two do not fight over it.
+const userDataFolder = userDataOverride(process.env);
+if (userDataFolder) app.setPath('userData', userDataFolder);
+/** A satellite draws one room of bija's world and runs nothing else (docs/features/satellite.md). */
+const satelliteMode = detectSatelliteRole(process.env, app.getPath('userData'));
+const satelliteSettings = satelliteMode ? new SatelliteSettingsStore(path.join(app.getPath('userData'), SATELLITE_FILE)) : null;
+let satellite: Satellite | null = null;
 
 const secretStore = isProduction ? new KeytarSecretStore('aiembodied') : new InMemorySecretStore();
 const { logger } = initializeLogger();
@@ -324,10 +334,41 @@ let placeManager: PlaceManager | null = null;
 /** The link to desktops that draw other rooms (paired with a code, reached over Tailscale). */
 let roomHub: RoomHub | null = null;
 let proactiveTick: ProactiveTick | null = null;
+/** One floor per place that has had a turn: who answers is decided among the avatars at that place. The local one is `floor`. */
+const floors = new Map<string, FloorController>();
+/** Builds the floor for a place; set once the place manager and the floor's models exist. */
+let makeFloor: ((placeId: string) => FloorController) | null = null;
 /** The window that sent the latest message of Kevin's; floor-queued answers and chatter reach it. */
 let floorSender: WebContents | null = null;
-/** The latest session instructions the renderer sent for Echo, reused when Echo takes a back-channel turn. */
-let lastEchoInstructions: string | undefined;
+/** The latest session instructions the renderer of each place sent for Echo, reused when Echo takes a back-channel turn there. */
+const lastEchoInstructions = new Map<string, string>();
+/** What each desktop room's PC last said about itself (presence, devices). bija's own presence is `presence`. */
+const placePresence = new PlacePresence();
+
+/** The place a call came from: a desktop room's calls carry its place id on the fake event; bija's own window is the local place. */
+function placeOf(event: unknown): string {
+  const id = (event as { placeId?: unknown } | null | undefined)?.placeId;
+  return typeof id === 'string' && id ? id : (placeManager?.localPlaceId() ?? HOME_PLACE_ID);
+}
+
+/** The floor of a place, made on first use. Null before the app has finished starting. */
+function floorFor(placeId: string): FloorController | null {
+  const existing = floors.get(placeId);
+  if (existing) return existing;
+  const made = makeFloor?.(placeId) ?? null;
+  if (made) floors.set(placeId, made);
+  return made;
+}
+
+/** Where events for a place go: bija's window for the local place, the satellite's link for a desktop room, nowhere for an offscreen place. */
+const delivery = createPlaceDelivery({
+  places: () => placeManager,
+  hub: () => roomHub,
+  localSink: () => floorSender,
+  broadcastLocal: (channel, payload) => broadcastToWindows(channel, payload),
+});
+const sinkFor = delivery.sinkFor;
+const sendForAvatar = delivery.sendForAvatar;
 let memoryEngine: MemoryEngineRuntime | null = null;
 let memoryStorageSync: MemoryStorageSync | null = null;
 let homeServerSync: HomeServerSync | null = null;
@@ -412,105 +453,7 @@ function emitCameraDetection(event: CameraDetectionEventPayload): boolean {
 }
 
 const createWindow = () => {
-  let preloadPath: string;
-  let rendererEntryPath: string;
-
-  try {
-    const preloadResolution = resolvePreloadScriptPath(__dirname);
-    preloadPath = preloadResolution.path;
-    logger.info('Resolved renderer preload script path.', {
-      path: preloadPath,
-      attempted: preloadResolution.attempted,
-      usedFallback: preloadResolution.usedIndex > 0,
-    });
-
-    const rendererResolution = resolveRendererEntryPoint(__dirname);
-    rendererEntryPath = rendererResolution.path;
-    logger.info('Resolved renderer bundle entry point.', {
-      path: rendererEntryPath,
-      attempted: rendererResolution.attempted,
-      usedFallback: rendererResolution.usedIndex > 0,
-    });
-  } catch (error) {
-    const attempted = error instanceof RuntimeResourceNotFoundError ? error.attempted : undefined;
-    const message = error instanceof Error ? error.message : String(error);
-    logger.error('Failed to resolve renderer resources.', {
-      message,
-      ...(attempted ? { attempted } : {}),
-    });
-    throw error;
-  }
-
-  const window = new BrowserWindow({
-    width: 1920,
-    height: 1080,
-    kiosk: isProduction,
-    fullscreen: !isProduction,
-    fullscreenable: true,
-    autoHideMenuBar: true,
-    backgroundColor: '#020617',
-    webPreferences: {
-      contextIsolation: true,
-      preload: preloadPath,
-      sandbox: false,
-    },
-  });
-
-  diagnostics.trackWindow(window);
-
-  // Harden renderer: disallow new windows and external navigation.
-  try {
-    const wc: unknown = window.webContents as unknown;
-    const anyWc = wc as { setWindowOpenHandler?: (handler: () => { action: 'deny' | 'allow' }) => void; on?: (event: string, listener: (...args: unknown[]) => void) => void };
-    if (typeof anyWc.setWindowOpenHandler === 'function') {
-      anyWc.setWindowOpenHandler(() => {
-        logger.warn('Blocked attempt to open a new window from renderer.');
-        return { action: 'deny' } as const;
-      });
-    } else {
-      logger.debug('webContents.setWindowOpenHandler unavailable; skipping handler attach.');
-    }
-    if (typeof anyWc.on === 'function') {
-      anyWc.on('will-navigate', (event: unknown, url: unknown) => {
-        try {
-          (event as { preventDefault?: () => void })?.preventDefault?.();
-        } catch (err) {
-          // Swallow errors from stubbed event objects in tests
-          void err;
-        }
-        logger.warn('Blocked renderer navigation attempt.', { url });
-      });
-    } else {
-      logger.debug('webContents.on unavailable; skipping will-navigate attach.');
-    }
-  } catch (err) {
-    // Avoid noisy warnings in test environments where webContents may be a stub
-    void err;
-  }
-
-  if (!isProduction) {
-    window.webContents.on('before-input-event', (event, input) => {
-      if (input.type === 'keyDown' && input.key === 'Escape') {
-        event.preventDefault();
-        window.setFullScreen(false);
-      }
-    });
-  }
-
-  window
-    .loadFile(rendererEntryPath)
-    .then(() => {
-      logger.info('Renderer bundle loaded successfully.');
-    })
-    .catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      const stack = error instanceof Error ? error.stack : undefined;
-      logger.error('Failed to load renderer bundle', { message, stack });
-    });
-
-  window.on('ready-to-show', () => {
-    logger.info('Main window ready to show.');
-  });
+  const window = createAppWindow({ logger, diagnostics, baseDir: __dirname, isProduction, satellite: satelliteSettings ?? undefined });
 
   window.on('closed', () => {
     void wakeWordListening.setEnabled(false).catch((error: unknown) => logger.error('Failed to stop listening after window close', { message: String(error) }));
@@ -934,7 +877,8 @@ function getVoiceService(avatarId: string = DEFAULT_AVATAR_ID): LocalVoiceServic
 }
 
 /** Movement tag instructions the renderer sent for the avatars other than Echo (empty until it sends them). */
-let avatarTagInstructions: AvatarTagInstructions = { shared: '', moveOnly: '' };
+const avatarTagInstructionsByPlace = new Map<string, AvatarTagInstructions>();
+const NO_TAG_INSTRUCTIONS: AvatarTagInstructions = { shared: '', moveOnly: '' };
 
 /**
  * The personality text of an avatar other than Echo: the prompt saved for its own VRM model when
@@ -953,9 +897,10 @@ function avatarPersona(avatarId: string): { persona: string | undefined; ownMode
  * Adds the places paragraph (where the avatar is, who is where, the {room:} tag) to an avatar's system prompt.
  * Every turn gets it, chatter included; a preview turn does not.
  */
-function withPlacesNote(instructions: string | undefined, preview = false): string | undefined {
+function withPlacesNote(instructions: string | undefined, preview = false, placeId?: string): string | undefined {
   if (preview || !placeManager) return instructions;
-  const note = placesNote(placeManager, (id) => avatarRegistry?.get(id)?.name ?? id);
+  // "You are in ..." is told from the place the avatar is in.
+  const note = placesNote(scopedPlaces(placeManager, placeId ?? placeManager.localPlaceId()), (id) => avatarRegistry?.get(id)?.name ?? id);
   if (!note) return instructions;
   return instructions?.trim() ? `${instructions.trim()}\n\n${note}` : note;
 }
@@ -966,10 +911,11 @@ function withPlacesNote(instructions: string | undefined, preview = false): stri
  * model of its own, else its profile's prompt; avatars wearing Echo's body never borrow her prompt.
  * The movement tag instructions from the renderer follow the persona.
  */
-function avatarInstructions(avatarId: string, sessionInstructions?: string): string | undefined {
+function avatarInstructions(avatarId: string, sessionInstructions?: string, placeId: string = placeManager?.localPlaceId() ?? HOME_PLACE_ID): string | undefined {
   if (avatarId === DEFAULT_AVATAR_ID) {
     if (sessionInstructions?.trim()) return sessionInstructions;
-    if (lastEchoInstructions) return lastEchoInstructions;
+    const lastHere = lastEchoInstructions.get(placeId);
+    if (lastHere) return lastHere;
     const key = characterPromptKey(DEFAULT_AVATAR_ID);
     return (key ? memoryStore?.getValue(key) : null)?.trim() || undefined;
   }
@@ -979,25 +925,31 @@ function avatarInstructions(avatarId: string, sessionInstructions?: string): str
     name: profile?.name ?? avatarId,
     persona,
     ownModel,
-    tags: avatarTagInstructions,
+    tags: avatarTagInstructionsByPlace.get(placeId) ?? NO_TAG_INSTRUCTIONS,
     avatarId,
   });
 }
 
 /** One voice turn for an avatar: the mirror, presence and the renderer's events around LocalVoiceService.respond. */
 async function runVoiceTurn(
-  sender: WebContents,
+  sender: EventSink,
   request: LocalVoiceRespondRequest,
   voiceService: LocalVoiceService,
+  placeId: string = placeManager?.localPlaceId() ?? HOME_PLACE_ID,
 ): Promise<LocalVoiceRespondResult> {
   const avatarId = voiceService.avatarId;
-  const baseInstructions = avatarId === DEFAULT_AVATAR_ID ? request.instructions : (avatarInstructions(avatarId, request.instructions) ?? request.instructions);
-  const instructions = withPlacesNote(baseInstructions, request.preview === true);
+  const baseInstructions = avatarId === DEFAULT_AVATAR_ID ? request.instructions : (avatarInstructions(avatarId, request.instructions, placeId) ?? request.instructions);
+  const instructions = withPlacesNote(baseInstructions, request.preview === true, placeId);
   const payload = instructions === request.instructions ? request : { ...request, ...(instructions !== undefined ? { instructions } : {}) };
   const mirror = mirrorFor(avatarId);
   mirror?.turnStarted(payload.requestId, { text: payload.text, system: payload.system === true, preview: payload.preview === true });
   activeVoiceRequests.set(avatarId, payload.requestId);
-  if (!payload.preview && !payload.system) presence.update({ lastUserSpeechAt: Date.now() });
+  // bija's presence is about bija's room; a desktop room's own presence is kept apart.
+  const here = placeId === (placeManager?.localPlaceId() ?? HOME_PLACE_ID);
+  if (!payload.preview && !payload.system) {
+    if (here) presence.update({ lastUserSpeechAt: Date.now() });
+    else placePresence.update(placeId, { userSpokeAt: Date.now() });
+  }
   try {
     const result = await voiceService.respond(payload, (voiceEvent) => {
       if (!sender.isDestroyed()) {
@@ -1005,7 +957,10 @@ async function runVoiceTurn(
       }
     });
     if (!payload.preview) mirror?.turnFinished(payload.requestId, { text: result.text, cancelled: result.cancelled });
-    if (!payload.preview && result.text) presence.update({ lastAssistantSpokeAt: Date.now() });
+    if (!payload.preview && result.text) {
+      if (here) presence.update({ lastAssistantSpokeAt: Date.now() });
+      else placePresence.update(placeId, { assistantSpokeAt: Date.now() });
+    }
     return tagResult(result, avatarId);
   } catch (error) {
     if (!payload.preview) mirror?.turnFinished(payload.requestId, { text: '', error: error instanceof Error ? error.message : String(error) });
@@ -1024,8 +979,9 @@ function createVoiceService(avatarId: string): LocalVoiceService {
     tools: toolRegistry ?? undefined,
     approvals: approvalBroker?.forAvatar(avatarId),
     extraInstructions: () => codingBrief(manager),
+    // The update is spoken where the avatar is.
     onSystemReady: () =>
-      broadcastToWindows('local-voice:system-ready', {
+      sendForAvatar(avatarId, 'local-voice:system-ready', {
         urgent: getVoiceService(avatarId)?.systemStatus().urgent === true,
         ...(avatarId === DEFAULT_AVATAR_ID ? {} : { avatarId }),
       }),
@@ -2192,7 +2148,17 @@ function registerIpcHandlers(
   handleIpc('room-hub:cancel-pairing', async () => {
     await requireRoomHub().cancelPairing();
   });
-  handleIpc('room-hub:revoke', (_event, deviceId: unknown) => (typeof deviceId === 'string' ? requireRoomHub().revoke(deviceId) : false));
+  handleIpc('room-hub:revoke', async (_event, deviceId: unknown) => {
+    if (typeof deviceId !== 'string') return false;
+    const place = requireRoomHub().status().devices.find((device) => device.id === deviceId)?.placeId;
+    const revoked = await requireRoomHub().revoke(deviceId);
+    if (revoked && place) placePresence.forget(place);
+    return revoked;
+  });
+  // Which room a desktop room draws (a 3D room id or a background id).
+  handleIpc('room-hub:set-room', (_event, placeId: unknown, room: unknown) =>
+    typeof placeId === 'string' && typeof room === 'string' ? requirePlaces().setRoom(placeId, room) : false,
+  );
   handleIpc('room-hub:rename', (_event, placeId: unknown, name: unknown) =>
     typeof placeId === 'string' && typeof name === 'string' ? requirePlaces().rename(placeId, name) : null,
   );
@@ -2230,8 +2196,9 @@ function registerIpcHandlers(
     }
     return personas;
   });
-  handleIpc('avatars:set-tag-instructions', (_event, instructions: unknown) => {
-    avatarTagInstructions = readTagInstructions(instructions);
+  // Each place keeps its own: an avatar's prompt uses the instructions of the place it stands in.
+  handleIpc('avatars:set-tag-instructions', (event, instructions: unknown) => {
+    avatarTagInstructionsByPlace.set(placeOf(event), readTagInstructions(instructions));
   });
   handleIpc('avatars:remove', (_event, id: unknown) => {
     const registry = requireAvatarRegistry();
@@ -2260,6 +2227,10 @@ function registerIpcHandlers(
   });
   handleIpc('local-voice:respond', async (event, request: LocalVoiceRespondRequest) => {
     let payload = request;
+    // The caller's place: a desktop room's turns are decided among the avatars there, by that place's floor.
+    const placeId = placeOf(event);
+    const isLocalPlace = placeId === (placeManager?.localPlaceId() ?? HOME_PLACE_ID);
+    const floor = floorFor(placeId);
     const voiceService = getVoiceService(avatarIdArg(payload?.avatarId));
     if (!voiceService) {
       throw new Error('Local voice service is unavailable.');
@@ -2288,24 +2259,25 @@ function registerIpcHandlers(
       }
     }
     if (!payload.preview && !payload.system && avatarId === DEFAULT_AVATAR_ID && payload.instructions?.trim()) {
-      lastEchoInstructions = payload.instructions;
+      lastEchoInstructions.set(placeId, payload.instructions);
     }
     // Places: an avatar that is somewhere else walks in first, then answers.
     let turnService = voiceService;
     let turnAvatarId = avatarId;
     const places = placeManager;
-    if (places && floor && ownTurn) {
-      floorSender = sender;
+    const scoped = places ? scopedPlaces(places, placeId) : null;
+    if (places && scoped && floor && ownTurn) {
+      if (isLocalPlace) floorSender = sender;
       const named = payload.avatarId?.trim() ? avatarId : null;
       let callId: string | null = null;
-      if (named && !places.isPresent(named)) {
+      if (named && !scoped.isPresent(named)) {
         callId = named;
-      } else if (!named && places.avatarsAt(places.localPlaceId()).length === 0) {
+      } else if (!named && places.avatarsAt(placeId).length === 0) {
         // Nobody is here: call the avatar Kevin last talked with, else Echo, else the first one.
         callId = chooseSummon(floor.recentPartner(), (avatarRegistry?.list() ?? []).map((profile) => profile.id));
       }
       if (callId) {
-        const came = await summon(places, callId, 'summoned');
+        const came = await summon(scoped, callId, 'summoned');
         if (!came) {
           const name = avatarRegistry?.get(callId)?.name ?? callId;
           if (!sender.isDestroyed()) {
@@ -2325,10 +2297,10 @@ function registerIpcHandlers(
     }
     // Several avatars here, or some away, and Kevin named none: the floor manager decides who answers.
     if (floor && ownTurn && !payload.avatarId?.trim() && (floor.isMulti() || floor.hasAway())) {
-      floorSender = sender;
+      if (isLocalPlace) floorSender = sender;
       return floor.respondToPerson(payload);
     }
-    const result = await runVoiceTurn(sender, payload, turnService);
+    const result = await runVoiceTurn(sender, payload, turnService, placeId);
     // Kevin named an avatar directly: the others in the scene overhear the exchange.
     if (floor && ownTurn && payload.avatarId?.trim() && floor.isMulti() && !result.cancelled && result.text.trim()) {
       floor.heard('person', payload.text, turnAvatarId);
@@ -2336,8 +2308,14 @@ function registerIpcHandlers(
     }
     return result;
   });
-  handleIpc('presence:update', (_event, payload: unknown) => {
+  handleIpc('presence:update', (event, payload: unknown) => {
     const p = (typeof payload === 'object' && payload !== null ? payload : {}) as Record<string, unknown>;
+    // A desktop room reports its own presence; bija's is left alone.
+    const from = placeOf(event);
+    if (from !== (placeManager?.localPlaceId() ?? HOME_PLACE_ID)) {
+      placePresence.update(from, p);
+      return true;
+    }
     presence.update({
       listening: typeof p.listening === 'boolean' ? p.listening : undefined,
       voicePhase: isVoicePhase(p.voicePhase) ? p.voicePhase : undefined,
@@ -2348,8 +2326,8 @@ function registerIpcHandlers(
     return true;
   });
   // Kevin started speaking over the avatars: cancel what they say and drop what waits.
-  handleIpc('floor:interrupt', () => {
-    floor?.interrupt();
+  handleIpc('floor:interrupt', (event) => {
+    floors.get(placeOf(event))?.interrupt();
   });
   handleIpc('floor:get-hear-chatter', () => floor?.hearChatter() ?? false);
   handleIpc('floor:set-hear-chatter', (_event, enabled: unknown) => floor?.setHearChatter(enabled === true) ?? false);
@@ -2689,6 +2667,44 @@ function focusExistingWindow() {
   mainWindow.focus();
 }
 
+/** Starts this PC as a satellite: pairing, the link to bija, the asset cache, and the window. */
+async function startSatelliteMode(settings: SatelliteSettingsStore): Promise<void> {
+  const runtime = new Satellite({
+    settings,
+    tokens: new KeychainTokenStore(async () => (await import('keytar')).default),
+    cacheDir: path.join(app.getPath('userData'), 'cache', 'assets'),
+    appVersion: app.getVersion(),
+    hostname: os.hostname(),
+    getWindow: () => mainWindow,
+    quit: () => app.quit(),
+    logger: {
+      debug: (message, meta) => logger.debug(String(message), meta),
+      info: (message, meta) => logger.info(String(message), meta),
+      warn: (message, meta) => logger.warn(String(message), meta),
+    },
+  });
+  satellite = runtime;
+  await runtime.start(ipcMain, protocol);
+  logger.info('Running as a satellite PC.', { hub: settings.get().hubUrl });
+  let window: BrowserWindow;
+  try {
+    window = createWindow();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown renderer bootstrap error occurred while creating the window.';
+    logger.error('Failed to create main window.', { message });
+    dialog.showErrorBox('Window Creation Error', message);
+    app.quit();
+    return;
+  }
+  crashGuard.watch(window);
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      const newWindow = createWindow();
+      crashGuard.watch(newWindow);
+    }
+  });
+}
+
 const gotLock = app.requestSingleInstanceLock();
 
 if (!gotLock) {
@@ -2702,6 +2718,11 @@ if (!gotLock) {
 }
 
 app.whenReady().then(async () => {
+  if (satelliteMode && satelliteSettings) {
+    // No services, models, speech, memory or hub: just the window, the link to bija and the room files.
+    await startSatelliteMode(satelliteSettings);
+    return;
+  }
   // Initialize server manager for hibernation support
   // pnpm dev:run writes a pid file for each server it starts (.dev-home/logs); the app writes its
   // own for llama-server restarts and ComfyUI (<userData>/logs).
@@ -2793,33 +2814,39 @@ app.whenReady().then(async () => {
       avatars: () => registry.list(),
       settings: () => ({ wakeWord: manager.getRendererConfig().wakeWord ?? null, pushToTalk: pushToTalk.getStatus() }),
       bus: () => switchboardBus,
+      onSatelliteMessage: (from, op) => placePresence.onSatelliteOp(from.placeId, op),
       logger,
     });
     roomHub = hub;
     hub.onChanged(() => broadcastToWindows('room-hub:changed', hub.status()));
     places.settleOffline();
     void hub.start().catch((error) => logger.warn('Room hub failed to start', { message: error instanceof Error ? error.message : String(error) }));
-    floor = new FloorController({
+    // One floor per place: the scene is the avatars at that place, and what the floor starts (answers, chatter)
+    // is delivered where that place is drawn (this window, or a satellite's link).
+    makeFloor = (placeId) => new FloorController({
       registry,
-      places,
+      places: scopedPlaces(places, placeId),
       // Kevin's line picked an avatar that is somewhere else: it walks in, and its turn waits for it.
-      summon: (avatarId, reason) => summon(places, avatarId, reason),
+      summon: (avatarId, reason) => summon(scopedPlaces(places, placeId), avatarId, reason),
       reportError: (avatarId, requestId, message) => {
-        if (floorSender && !floorSender.isDestroyed()) floorSender.send('local-voice:event', tagEvent({ requestId, type: 'error', message }, avatarId));
+        const sink = sinkFor(placeId);
+        if (sink && !sink.isDestroyed()) sink.send('local-voice:event', tagEvent({ requestId, type: 'error', message }, avatarId));
       },
       store: floorStore,
       voice: (avatarId) => getVoiceService(avatarId),
       runPersonTurn: (avatarId, request) => {
         const voiceService = getVoiceService(avatarId);
-        if (!voiceService || !floorSender) throw new Error('Local voice service is unavailable.');
-        return runVoiceTurn(floorSender, request, voiceService);
+        const sink = sinkFor(placeId);
+        if (!voiceService || !sink) throw new Error('Local voice service is unavailable.');
+        return runVoiceTurn(sink, request, voiceService, placeId);
       },
       emitChatter: (chatterAvatarId, voiceEvent) => {
-        if (floorSender && !floorSender.isDestroyed()) floorSender.send('local-voice:event', tagEvent(voiceEvent, chatterAvatarId));
+        const sink = sinkFor(placeId);
+        if (sink && !sink.isDestroyed()) sink.send('local-voice:event', tagEvent(voiceEvent, chatterAvatarId));
       },
       saveLine: (line) =>
         conversationManager?.appendToRecentSession([{ role: 'assistant', content: line.content, speaker: line.speaker, ts: line.ts }]),
-      instructionsFor: (avatarId) => withPlacesNote(avatarInstructions(avatarId)),
+      instructionsFor: (avatarId) => withPlacesNote(avatarInstructions(avatarId, undefined, placeId), false, placeId),
       bus: () => switchboardBus,
       // Quick decisions (Laya) answer first; the clients are built per call so a changed route applies at once.
       // When the route is off or fails, bids go to the Idle thoughts model and the addressee check (avatar lines only) is skipped.
@@ -2870,6 +2897,7 @@ app.whenReady().then(async () => {
       },
       logger,
     });
+    floor = floorFor(places.localPlaceId());
     const agentStore = memoryStore;
     memoryEngine = setupMemoryEngine({
       settings: memoryEngineSettings(),
@@ -2999,7 +3027,11 @@ app.whenReady().then(async () => {
           return pickSingleImageGeometry(avatarCharacterModels);
         },
       },
-      onRoomUpdated: (roomId) => broadcastToWindows('rooms:updated', roomId),
+      onRoomUpdated: (roomId) => {
+        broadcastToWindows('rooms:updated', roomId);
+        // A desktop room may be showing that room.
+        roomHub?.sendToAll({ op: 'ipc', channel: 'rooms:updated', args: [roomId] });
+      },
     });
     backgroundService = new BackgroundService({
       store: memoryStore,
@@ -3230,6 +3262,7 @@ app.on('before-quit', async (event) => {
   approvalBroker?.dispose();
   proactiveTick?.stop();
   void roomHub?.stop();
+  satellite?.stop();
   for (const { inbox } of avatarPlumbing.values()) inbox.stop();
   void switchboardClient?.stop();
 

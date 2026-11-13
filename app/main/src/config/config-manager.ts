@@ -94,6 +94,8 @@ export interface MetricsConfig {
 export type RendererWakeWordConfig = WakeWordConfig;
 
 export type RendererConfig = Omit<AppConfig, 'realtimeApiKey' | 'wakeWord' | 'comfyUiBaseUrl' | 'webSearch' | 'models' | 'coding'> & {
+  /** 'satellite' on a second desktop that draws one room of bija's world; absent on the full app. */
+  role?: 'satellite';
   hasRealtimeApiKey: boolean;
   /** True when the key comes from an environment variable, which the Settings page cannot change. */
   realtimeApiKeyFromEnv?: boolean;

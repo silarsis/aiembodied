@@ -7,9 +7,14 @@ import type { RoomFile, RoomSummary } from '../../../main/src/rooms/types.js';
 
 export const isRoomId = (id: string | null): id is string => Boolean(id?.startsWith('room:'));
 
-export function useBackgrounds(api?: BackgroundBridge) {
+/**
+ * `forcedId` fixes the stage to one room or background instead of the one bija has active: a satellite shows the room
+ * of its place. `undefined` means not forced; `null` is forced but not known yet (nothing is shown until it is).
+ */
+export function useBackgrounds(api?: BackgroundBridge, forcedId?: string | null) {
   const [items, setItems] = useState<BackgroundSummary[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [storedActiveId, setActiveId] = useState<string | null>(null);
+  const activeId = forcedId !== undefined ? forcedId : storedActiveId;
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [loadedImage, setLoadedImage] = useState<{ id: string; url: string } | null>(null);
   const [loadedRoom, setLoadedRoom] = useState<{ id: string; room: RoomFile } | null>(null);

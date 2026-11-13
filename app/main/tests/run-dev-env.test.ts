@@ -46,4 +46,16 @@ describe('prepareDevHomeEnv', () => {
       rmSync(workspaceRoot, { recursive: true, force: true });
     }
   });
+
+  it('gives a satellite its own home so it can run beside the normal dev app', () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'aiembodied-run-dev-env-'));
+    const repoRoot = resolve(workspaceRoot, 'repo');
+    try {
+      const env = prepareDevHomeEnv(repoRoot, {}, 'linux', { devHomeName: '.dev-home-satellite' });
+      expect(env.HOME).toBe(resolve(repoRoot, '.dev-home-satellite'));
+      expect(existsSync(resolve(repoRoot, '.dev-home'))).toBe(false);
+    } finally {
+      rmSync(workspaceRoot, { recursive: true, force: true });
+    }
+  });
 });
