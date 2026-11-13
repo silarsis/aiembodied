@@ -164,6 +164,18 @@ describe('FloorManager: Kevin intent steps', () => {
     }
   });
 
+  it('a conversation with no one named starts the avatars talking among themselves', async () => {
+    const two = new FloorManager({
+      avatarIds: () => ['echo', 'sage'],
+      nameOf: (id) => NAMES[id],
+      quickIntent: answer(0.95, intent("everyone", "converse")),
+    });
+    const decision = await two.route(kevin('you two have a chat'));
+    expect(ids(decision)).toEqual(['echo']);
+    expect(decision.converse).toEqual({ starter: 'echo', target: 'sage' });
+    expect(two.state().talking).toBe(true);
+  });
+
   it('step 4: with no usable answer the recent partner, else the host, answers', async () => {
     const failing: IntentFunction = async () => {
       throw new Error('down');

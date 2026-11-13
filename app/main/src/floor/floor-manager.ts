@@ -444,6 +444,18 @@ export class FloorManager {
       const from = concrete ?? this.fallbackSpeaker(scene, at, other)?.avatarId;
       if (from) return this.relayPlan(from, other, concrete ? 'addressed' : (this.fallbackSpeaker(scene, at, other)?.reason ?? 'host'));
     }
+    if (result.wants === 'converse' && !other && (result.addressed === 'everyone' || (concrete && scene.avatarIds.length === 2))) {
+      // "You two, talk to each other" / "Echo, have a chat": a conversation with no one named, so the avatars talk among themselves.
+      const partner = this.partner && scene.avatarIds.includes(this.partner.avatarId) ? this.partner.avatarId : scene.hostId;
+      const first = concrete ?? partner;
+      const second = scene.avatarIds.length === 2 ? scene.avatarIds.find((id) => id !== first) : undefined;
+      return {
+        speakers: [{ avatarId: first, reason: concrete ? 'addressed' : 'host' }],
+        ...(second ? { converse: { starter: first, target: second } } : {}),
+        talk: { pair: second ? [first, second] : null },
+        trace: [`person: asked them to talk to each other -> ${first} starts, out loud${second ? `, ${first} and ${second} alternate` : ', in scene order'}`],
+      };
+    }
     if (result.addressed === 'everyone' && (result.wants === 'answer' || !consistent)) {
       return { speakers: scene.avatarIds.map((avatarId) => ({ avatarId, reason: 'all' as const })), trace: ['person: addressed everyone -> all avatars in scene order'] };
     }
