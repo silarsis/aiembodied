@@ -9,13 +9,13 @@ Everything is written under the run folder DIR:
 
     data/            train.jsonl and val.jsonl from floor_data.py (hold-out sentences excluded)
     baseline.json    the untouched base model scored on val (first 200 rows) and both hold-out files
-    checkpoint/      the fine-tuned model (checkpoint.FAILED if training went non-finite)
+    checkpoint/      the fine-tuned model (checkpoint.FAILED if training went non-finite or learned nothing)
     train.log        everything training printed
     results.json     the fine-tuned model scored the same way
     REPORT.md        a short plain-English report with a PASS / NEEDS WORK verdict
 
 Exit codes: 0 every step passed (a NEEDS WORK verdict is still 0); 1 a step failed; 2 preflight
-failed; 3 training or scoring produced non-finite numbers (the checkpoint is renamed to
+failed; 3 training or scoring produced non-finite numbers, or most updates had bad gradients (the checkpoint is renamed to
 checkpoint.FAILED).
 
 The hold-out files are only ever read as rows to exclude and to score; they are never written
@@ -70,7 +70,30 @@ class NonFiniteError(RuntimeError):
     """Raised the moment a loss, parameter or model output is NaN or infinite."""
 
 
+class BadGradientsError(NonFiniteError):
+    """Raised when too many optimizer updates had non-finite gradients (the run did not learn)."""
+
+
 # ------------------------------------------------------------------ pure helpers (no torch)
+
+def bad_run(updates, skipped, steps, bad_grad_steps, precision):
+    """A reason string when the gradients were bad on too many updates, else None.
+
+    fp16 uses a GradScaler, which silently skips an update whose gradients are infinite, so the
+    skipped count is the evidence. Without a scaler (fp32, bf16) bad gradients go into the weights,
+    so the count of steps with non-finite gradients is the evidence.
+    """
+    if precision == "fp16":
+        limit = max(5, updates // 10)
+        if skipped > limit:
+            return ("the GPU produced bad gradients on most updates: %d of %d updates were skipped "
+                    "(limit %d); the run did not learn" % (skipped, updates, limit))
+        return None
+    limit = max(5, steps // 10)
+    if bad_grad_steps > limit:
+        return ("the GPU produced bad gradients on most updates: %d of %d steps had non-finite "
+                "gradients (limit %d); the run did not learn" % (bad_grad_steps, steps, limit))
+    return None
 
 def parse_args(argv=None):
     ap = argparse.ArgumentParser(
@@ -311,6 +334,10 @@ def render_report(info):
         L.append("- %s: %s" % (name, fmt_duration(sec)))
     if info.get("epoch_seconds"):
         L.append("- Training epochs: %s" % ", ".join(fmt_duration(s) for s in info["epoch_seconds"]))
+    gh = info.get("grad_health") or {}
+    if gh.get("updates") is not None:
+        L.append("- Gradient health: %s scaler updates, %s skipped, %s steps with non-finite gradients"
+                 % (gh.get("updates"), gh.get("skipped"), gh.get("bad_grad_steps")))
     L += ["", "## Scores (higher is better)", ""]
     L += score_table(base, res)
     L += ["", "Hold-out rows marked debatable are shown in the miss list but not counted.", "",
@@ -399,6 +426,11 @@ def set_math_attention():
     print("math attention forced: " + ", ".join(done))
 
 
+def nonfinite_grad_names(torch, params):
+    """Names of parameters whose gradient holds NaN or infinity. `params` is an iterable of (name, tensor)."""
+    return [n for n, p in params if p.grad is not None and not bool(torch.isfinite(p.grad).all())]
+
+
 def first_nonfinite_param(torch, model):
     for name, p in model.named_parameters():
         if not bool(torch.isfinite(p).all()):
@@ -411,6 +443,70 @@ def patched_training(lt, torch, precision, state):
     """Install the precision choice and the non-finite guards into laya.train, and restore it after."""
     names = ("_forward", "soft_ce_loss", "rlcd_loss", "train_model")
     saved = {n: getattr(lt, n) for n in names}
+    state.update(updates=0, skipped=0, steps=0, bad_grad_steps=0, grads_checked=False, model=None)
+    scaler_cls = torch.amp.GradScaler
+    opt_cls = torch.optim.AdamW
+    # (class, attribute, original, was defined on the class itself)
+    class_saved = [(c, n, getattr(c, n), n in vars(c))
+                   for c, n in ((scaler_cls, "update"), (scaler_cls, "unscale_"), (opt_cls, "step"))]
+
+    def note_bad_grads():
+        model = state.get("model")
+        if model is None:
+            return
+        state["grads_checked"] = True
+        names = nonfinite_grad_names(torch, model.named_parameters())
+        if names:
+            state["bad_grad_steps"] += 1
+            k = state["bad_grad_steps"]
+            if k <= 5 or k % 100 == 0:
+                print("bad gradients (occurrence %d, step %d): %d parameters, first %d: %s"
+                      % (k, state["step"], len(names), min(10, len(names)), ", ".join(names[:10])), flush=True)
+
+    orig_update = scaler_cls.update
+    orig_unscale = scaler_cls.unscale_
+    orig_step = opt_cls.step
+
+    def update(self, *a, **kw):
+        found = 0
+        try:
+            found = sum(v.item() for st in self._per_optimizer_states.values()
+                        for v in st["found_inf_per_device"].values())
+        except Exception:
+            found = 0
+        state["updates"] += 1
+        if found > 0:
+            state["skipped"] += 1
+        out = orig_update(self, *a, **kw)
+        if state["updates"] % 50 == 0:
+            print("scaler: %d updates, %d skipped, scale %s"
+                  % (state["updates"], state["skipped"], self.get_scale()), flush=True)
+        return out
+
+    def unscale_(self, optimizer, *a, **kw):
+        out = orig_unscale(self, optimizer, *a, **kw)
+        note_bad_grads()
+        return out
+
+    def step(self, *a, **kw):
+        if not state["grads_checked"]:  # no scaler unscaled the gradients first (fp32, bf16)
+            note_bad_grads()
+        state["grads_checked"] = False
+        out = orig_step(self, *a, **kw)
+        state["steps"] += 1
+        model = state.get("model")
+        if model is not None:
+            bad = first_nonfinite_param(torch, model)
+            if bad:
+                raise NonFiniteError("parameter %s is not finite after optimizer step %d" % (bad, state["steps"]))
+            if precision != "fp16":
+                why = bad_run(state["updates"], state["skipped"], state["steps"], state["bad_grad_steps"], precision)
+                if why:
+                    raise BadGradientsError(why)
+        return out
+    scaler_cls.update = update
+    scaler_cls.unscale_ = unscale_
+    opt_cls.step = step
 
     if precision in ("bf16", "fp32"):
         dtype = torch.bfloat16 if precision == "bf16" else None
@@ -450,7 +546,7 @@ def patched_training(lt, torch, precision, state):
 
     def guarded_train(model, tok, items, config, device, max_len, head_max_len, **kw):
         user_hook = kw.pop("on_epoch_end", None)
-        state.update(epoch=1, step=0, depth=0, t0=time.perf_counter(), train_rows=len(items))
+        state.update(epoch=1, step=0, depth=0, t0=time.perf_counter(), train_rows=len(items), model=model)
 
         def hook(epoch, mean):
             now = time.perf_counter()
@@ -474,8 +570,14 @@ def patched_training(lt, torch, precision, state):
     try:
         yield
     finally:
+        state["model"] = None
         for n, v in saved.items():
             setattr(lt, n, v)
+        for c, n, orig, own in class_saved:
+            if own:
+                setattr(c, n, orig)
+            else:
+                delattr(c, n)
 
 
 def agent_fetch(agent):
@@ -666,10 +768,16 @@ def _fail_checkpoint(ctx, ckpt):
         print("the checkpoint was renamed to %s" % failed)
 
 
-def _explain_nonfinite(ctx, reason):
+def _explain_nonfinite(ctx, reason, bad_grads=False):
     a = ctx["args"]
-    print("NON-FINITE VALUES: %s" % reason)
+    print(("BAD GRADIENTS: %s" if bad_grads else "NON-FINITE VALUES: %s") % reason)
     print("precision used: %s, loss: %s, math attention: %s" % (ctx["precision"], a.loss, a.math_attention))
+    if bad_grads:
+        if ctx["precision"] != "fp32":
+            print("suggested next try (new --work folder): --precision fp32")
+        print("if fp32 also fails, this GPU's library computes wrong gradients for this model and "
+              "training must move to another machine (this is what happened on an AMD ROCm card).")
+        return
     nxt = next_try(ctx["precision"], a.math_attention, a.loss, ctx.get("bf16", True))
     if nxt:
         print("suggested next try (new --work folder): add or change to %s" % nxt)
@@ -713,11 +821,16 @@ def step_train(ctx):
         for x in summary.get("epoch_loss", []):
             if not finite_number(x):
                 raise NonFiniteError("epoch loss history holds %r" % (x,))
+        why = bad_run(state["updates"], state["skipped"], state["steps"], state["bad_grad_steps"],
+                      ctx["precision"])
+        if why:
+            raise BadGradientsError(why)
         _check_saved(torch, ckpt)
     except NonFiniteError as e:
-        _explain_nonfinite(ctx, str(e))
+        bad = isinstance(e, BadGradientsError)
+        _explain_nonfinite(ctx, str(e), bad)
         _fail_checkpoint(ctx, ckpt)
-        raise StepFailed("training went non-finite (%s)" % e, 3)
+        raise StepFailed(("training failed: %s" if bad else "training went non-finite (%s)") % e, 3)
     except StepFailed:
         _fail_checkpoint(ctx, ckpt)
         raise
@@ -731,7 +844,9 @@ def step_train(ctx):
     ctx["epoch_seconds"] = list(state["epoch_seconds"])
     ctx["train_summary"] = {"epoch_loss": summary.get("epoch_loss"), "train_items": summary.get("train_items"),
                             "calibration_items": summary.get("calibration_items"),
-                            "temperature": summary.get("temperature"), "epoch_seconds": ctx["epoch_seconds"]}
+                            "temperature": summary.get("temperature"), "epoch_seconds": ctx["epoch_seconds"],
+                            "updates": state["updates"], "skipped": state["skipped"],
+                            "bad_grad_steps": state["bad_grad_steps"]}
     write_json(os.path.join(ctx["work"], "train-summary.json"), ctx["train_summary"])
     if a.trial and state["epoch_seconds"]:
         per_epoch, total = estimate_full_run(state["epoch_seconds"][0], summary.get("train_items") or TRIAL_ROWS,
@@ -812,6 +927,7 @@ def step_report(ctx):
                  "math_attention": a.math_attention},
         "precision": ctx["precision"], "device_text": ctx.get("device_text"), "versions": ctx.get("versions"),
         "timings": {k: v for k, v in ctx["timings"].items()}, "epoch_seconds": ctx.get("epoch_seconds"),
+        "grad_health": {k: (ctx.get("train_summary") or {}).get(k) for k in ("updates", "skipped", "bad_grad_steps")},
         "baseline": ctx.get("baseline"), "results": ctx["results"], "worst": worst_misses(ctx["results"]),
         "checkpoint": {"path": ck, "size_mb": dir_size_mb(ck)},
     }

@@ -191,5 +191,25 @@ class MiscTests(unittest.TestCase):
                 self.assertIn("hello tee", f.read())
 
 
+class BadRunTests(unittest.TestCase):
+    def test_fp16_skips(self):
+        self.assertIsNone(rf.bad_run(100, 10, 100, 0, "fp16"))
+        self.assertIsNone(rf.bad_run(20, 5, 20, 0, "fp16"))
+        self.assertIn("bad gradients on most updates", rf.bad_run(100, 11, 100, 0, "fp16"))
+        self.assertIn("bad gradients", rf.bad_run(10, 6, 10, 0, "fp16"))
+
+    def test_fp16_ignores_bad_grad_steps(self):
+        self.assertIsNone(rf.bad_run(100, 0, 100, 50, "fp16"))
+
+    def test_fp32_bad_grad_steps(self):
+        self.assertIsNone(rf.bad_run(0, 0, 40, 5, "fp32"))
+        self.assertIsNone(rf.bad_run(0, 0, 100, 10, "fp32"))
+        self.assertIn("bad gradients", rf.bad_run(0, 0, 100, 11, "fp32"))
+        self.assertIn("bad gradients", rf.bad_run(0, 0, 10, 6, "bf16"))
+
+    def test_error_is_nonfinite(self):
+        self.assertTrue(issubclass(rf.BadGradientsError, rf.NonFiniteError))
+
+
 if __name__ == "__main__":
     unittest.main()

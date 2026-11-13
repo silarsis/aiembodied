@@ -24,7 +24,7 @@ HARD RULES (read first, obey always)
 1. Preflight: checks Python, PyTorch, laya, the GPU and the free disk space.
 2. Data: generates about 7,200 training rows and 800 validation rows of made-up room conversations. Any sentence that matches a hold-out sentence is dropped, so the hold-out sets stay unseen.
 3. Baseline: scores the untouched base model on validation and on both hold-out sets, so you can see what training changed.
-4. Train: fine-tunes the model (4 epochs). It stops at once, and renames the result to `checkpoint.FAILED`, if any number turns into NaN or infinity, so a broken model is never saved as good.
+4. Train: fine-tunes the model (4 epochs). It stops at once, and renames the result to `checkpoint.FAILED`, if any number turns into NaN or infinity, or if most updates had bad gradients (the run would not have learned), so a broken model is never saved as good.
 5. Score: scores the new model the same way and measures speed on the GPU and on the CPU.
 6. Report: writes `REPORT.md` with the score table, the 15 worst hold-out misses and a verdict: PASS (95% or better on all three answers together, on both hold-out sets) or NEEDS WORK.
 
@@ -133,6 +133,7 @@ On failure, find the first line starting with `FAILED:` and use this table.
 | `2`, "only N GB free" | Stop and report. Do not delete anything. |
 | "cannot get the base model" | Check the network (Hugging Face must be reachable). Run the same command once more. Then stop and report. |
 | `3`, "training went non-finite" or "non-finite answers" | The output lists "suggested next try". Run once with exactly that extra flag, in a new `--work` folder. The order is: `--precision bf16`, then `--precision fp32`, then add `--math-attention`, then add `--loss soft-ce`. Each flag is added to the previous ones. |
+| `3`, "the GPU produced bad gradients on most updates" | The run did not learn: the gradients went infinite while the loss stayed finite, and the fp16 scaler silently skipped those updates. Run once with `--precision fp32` in a new `--work` folder. If that also fails, this GPU's library computes wrong gradients for this model. Stop and report: training must move to another machine (this is what happened on an AMD ROCm card). |
 | "ran out of memory" | Re-run with `--micro-batch 4`; if it fails again `--micro-batch 2`. Then stop and report. |
 | anything else | Stop and report the last 40 lines of output. |
 
@@ -212,3 +213,11 @@ Training sends `--micro-batch` rows through the model at once (default 8) and ac
 ## Why the fallbacks exist
 
 A first attempt on an AMD card went to NaN (fp16 after about 250 steps; bf16 and fp32 later). NVIDIA should be fine. The pipeline checks the loss at every step and all weights after every epoch, so a bad run stops within one epoch and is renamed `checkpoint.FAILED`. The fallback order is: bf16, fp32, `--math-attention` (plain attention kernel), `--loss soft-ce` (simpler objective). A trial can pass and the full run can still go non-finite later; treat that as a normal failure and follow the table.
+
+## Known problem: bija's AMD Radeon
+
+On bija's AMD Radeon (ROCm PyTorch) the backward pass gives wrong gradients for this model. The forward pass and the loss match the CPU, but the norm-layer gradients come out huge or infinite. It cannot be trained there. Serving a trained checkpoint on its CPU is fine. Train on an NVIDIA machine and copy the checkpoint over.
+
+## Hand-made JSONL files on Windows
+
+Any JSONL file you write by hand on Windows must be UTF-8 without a byte-order mark. PowerShell 5's `Set-Content -Encoding utf8` adds a BOM, and laya-train then fails with "Unexpected UTF-8 BOM". The pipeline itself writes its files from Python, so it is not affected.
