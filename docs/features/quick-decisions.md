@@ -57,7 +57,7 @@ if (client) {
 
 ### Kevin's lines are decided by the quick model
 
-With two or more avatars, Kevin's lines go to the quick model first, then to the chat model (`floor/intent-router.ts`) when it is unsure, fails or times out. No code analyses his sentences. The prompt must be exactly the one in `services/laya/training/floor_prompt.py` (it is mirrored in `createSystemOneIntent` and checked by a test). This only works when the `decide` route's model is the fine-tuned floor checkpoint (for example `laya-floor-v1`, served through `LAYA_EXTRA_MODELS`): the stock checkpoint is near chance, so most lines fall through to the chat model. The addressee check above still serves avatar chatter only. See `services/switchboard/README.md`.
+With two or more avatars, Kevin's lines go to the quick model first, then to the chat model (`floor/intent-router.ts`) when it is unsure, fails or times out. No code analyses his sentences. The prompt must be exactly the one in `services/laya/training/floor_prompt.py` (it is mirrored in `createSystemOneIntent` and checked by a test). The floor asks the `decide` route's servers for its own checkpoint, `FLOOR_INTENT_MODEL` (default `laya-floor-v1`, served through `LAYA_EXTRA_MODELS`), whatever model the route names, so bids, the addressee check and the inbox step stay on the route's model. A server without that checkpoint fails fast and the chat model decides. The addressee check above still serves avatar chatter only. `services/laya/scripts/start.ps1` downloads that checkpoint from Hugging Face (`LAYA_FLOOR_REPO`, default `silarsis/laya-floor-v1`) on the first start and registers it, so it needs no manual setup. See `services/switchboard/README.md`.
 
 ## When to use it
 

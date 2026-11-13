@@ -12,7 +12,7 @@ See `docs/features/quick-decisions.md` for the API and when to use it.
 
 This folder only installs and starts it. The app talks to its `/v1/systemone` API
 (`app/main/src/decide/system-one.ts`) through the **Quick decisions** use in Models and servers. When that use is
-off, or Laya is not answering, the checks use the Idle thoughts model (bids) or the older name rules (addressee, avatar chatter only). Kevin's lines use the fine-tuned floor checkpoint (`laya-floor-v1`, via `LAYA_EXTRA_MODELS`) and fall back to the chat model.
+off, or Laya is not answering, the checks use the Idle thoughts model (bids) or the older name rules (addressee, avatar chatter only). Kevin's lines ask for the fine-tuned floor checkpoint by name (`FLOOR_INTENT_MODEL`, default `laya-floor-v1`) and fall back to the chat model. `start.ps1` downloads that checkpoint from Hugging Face (`silarsis/laya-floor-v1`, about 850 MB) on the first start and adds it to `LAYA_EXTRA_MODELS` and `LAYA_MODELS` itself, so no `.env` edits are needed. A download failure only prints a warning.
 
 ## Run
 
@@ -34,11 +34,13 @@ Check it is working: `pnpm laya:check` from the repo root prints answers and tim
 | `LAYA_DEVICE` | `cpu` or `cuda` | `cpu` (a 512-token state is quick on a CPU, and it keeps the GPU free) |
 | `LAYA_MODELS` | checkpoints to load at start: `english`, `multilingual`, `typed-decisions` | `english` |
 | `LAYA_DEFAULT_MODEL` | checkpoint used when a request names none | `english` |
+| `LAYA_FLOOR_REPO` | Hugging Face repo of the floor checkpoint, downloaded on first start; `off` skips the download and the registration | `silarsis/laya-floor-v1` |
+| `LAYA_MODELS_DIR` | where downloaded checkpoints are kept (the floor model goes in `laya-floor-v1` below it) | `%USERPROFILE%\.cache\aiembodied\laya-models` |
 | `LAYA_VENV` | virtualenv folder | `services/laya/.venv` |
 | `LAYA_API_KEY` | if set, requests need `Authorization: Bearer <it>`; add the same key to the server in the app | none |
 
 The server binds `127.0.0.1` only. `LAYA_PRELOAD=1` is always set. To use another checkpoint, put its name in the
-Quick decisions model field (it must be in `LAYA_MODELS`).
+Quick decisions model field (it must be in `LAYA_MODELS`). An existing `LAYA_EXTRA_MODELS` is kept, and an explicit `laya-floor-v1` entry there wins over the download.
 
 ## API used
 

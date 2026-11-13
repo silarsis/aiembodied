@@ -364,8 +364,8 @@ function Step-PythonServices {
             $failed += $service.Name
         }
     }
-    # Laya names no Hugging Face repo anywhere in services\laya, so its checkpoint is left to the first start.
-    $note = 'laya checkpoint downloads on first start'
+    # Laya's checkpoint and the floor model (silarsis/laya-floor-v1) both download from Hugging Face on the first start.
+    $note = 'laya checkpoint and floor model download on first start'
     if ($failed.Count -gt 0) { return New-Result 'failed' "$($failed -join ', ') failed" }
     if ($done.Count -gt 0) { return New-Result 'installed' "$($done -join ', '); $note" }
     return New-Result 'already present' $note

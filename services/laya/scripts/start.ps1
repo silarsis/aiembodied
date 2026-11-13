@@ -52,6 +52,64 @@ if (-not $env:LAYA_MODELS) { $env:LAYA_MODELS = 'english' }
 if (-not $env:LAYA_DEFAULT_MODEL) { $env:LAYA_DEFAULT_MODEL = 'english' }
 $env:LAYA_PRELOAD = '1'
 
+# The fine-tuned floor-routing checkpoint (laya-floor-v1) is public on Hugging Face. Fetch it on first start and
+# register it with the server. LAYA_FLOOR_REPO=off skips all of this; any failure only costs the floor model
+# (the app falls back to the chat model).
+$floorRepo = $env:LAYA_FLOOR_REPO
+if (-not $floorRepo) { $floorRepo = 'silarsis/laya-floor-v1' }
+if ($floorRepo -ne 'off') {
+  try {
+    $modelsDir = $env:LAYA_MODELS_DIR
+    if (-not $modelsDir) {
+      # pnpm dev:run points USERPROFILE at .dev-home; models belong in the real home.
+      $realHome = $env:AIEMBODIED_HOST_USERPROFILE
+      if (-not $realHome) { $realHome = $env:USERPROFILE }
+      if (-not $realHome) { $realHome = [Environment]::GetFolderPath('UserProfile') }
+      $modelsDir = Join-Path $realHome '.cache\aiembodied\laya-models'
+    }
+    $floorDir = Join-Path $modelsDir 'laya-floor-v1'
+    # A laya-floor-v1 entry already in LAYA_EXTRA_MODELS (a local checkpoint) needs no download.
+    $explicit = $env:LAYA_EXTRA_MODELS -and (($env:LAYA_EXTRA_MODELS | ConvertFrom-Json).PSObject.Properties.Name -contains 'laya-floor-v1')
+    if ($explicit) {
+      $listed = @($env:LAYA_MODELS -split '[,\s]+' | Where-Object { $_ })
+      if ($listed -notcontains 'laya-floor-v1') { $env:LAYA_MODELS = (@($listed) + 'laya-floor-v1') -join ',' }
+    }
+    elseif (-not (Test-Path (Join-Path $floorDir 'model.safetensors'))) {
+      Write-Host "Downloading the floor model $floorRepo to $floorDir (about 850 MB, first start only)"
+      $ErrorActionPreference = 'Continue'
+      & $python -c "import huggingface_hub" 2>$null
+      if ($LASTEXITCODE -ne 0) {
+        Write-Host 'Installing huggingface_hub'
+        if (Get-Command uv -ErrorAction SilentlyContinue) { uv pip install --python $python --quiet huggingface_hub }
+        else { & $python -m pip install --quiet huggingface_hub }
+      }
+      New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
+      & $python -c "import sys; from huggingface_hub import snapshot_download; snapshot_download(repo_id=sys.argv[1], local_dir=sys.argv[2])" $floorRepo $floorDir
+      $downloaded = ($LASTEXITCODE -eq 0)
+      $ErrorActionPreference = 'Stop'
+      if ($downloaded) { Write-Host 'Floor model downloaded.' }
+      else { Write-Warning "Could not download $floorRepo; continuing without the floor model (the chat model decides)." }
+    }
+    $ErrorActionPreference = 'Stop'
+    if ((-not $explicit) -and (Test-Path (Join-Path $floorDir 'model.safetensors'))) {
+      # Keep any existing LAYA_EXTRA_MODELS entries; an explicit laya-floor-v1 entry wins.
+      $extra = [ordered]@{}
+      if ($env:LAYA_EXTRA_MODELS) {
+        $parsed = $env:LAYA_EXTRA_MODELS | ConvertFrom-Json
+        foreach ($prop in $parsed.PSObject.Properties) { $extra[$prop.Name] = $prop.Value }
+      }
+      if (-not $extra.Contains('laya-floor-v1')) { $extra['laya-floor-v1'] = ($floorDir -replace '\\', '/') }
+      $env:LAYA_EXTRA_MODELS = ConvertTo-Json -InputObject $extra -Compress
+      $listed = @($env:LAYA_MODELS -split '[,\s]+' | Where-Object { $_ })
+      if ($listed -notcontains 'laya-floor-v1') { $env:LAYA_MODELS = (@($listed) + 'laya-floor-v1') -join ',' }
+    }
+  }
+  catch {
+    $ErrorActionPreference = 'Stop'
+    Write-Warning "Floor model unavailable: $($_.Exception.Message). Continuing without it."
+  }
+}
+
 Write-Host "Starting laya on http://${HostName}:$Port (device: $($env:LAYA_DEVICE), models: $($env:LAYA_MODELS), venv: $Venv)"
 $ErrorActionPreference = 'Continue'
 & $layaServe
