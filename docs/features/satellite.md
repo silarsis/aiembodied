@@ -157,7 +157,7 @@ For each spoken turn the renderer measures, from the end of speech: transcript b
 
 ## Web and phone rooms
 
-A room can also be a web page. bija serves the app at `http://<bija>:8791/app/`, the page pairs and talks to bija over the same `/v1/link` WebSocket as the desktop satellite, and it draws one room with its own mic, camera and speakers. The next update wraps the same page in an Android app (the phone room); this one is the page.
+A room can also be a web page. bija serves the app at `http://<bija>:8791/app/`, the page pairs and talks to bija over the same `/v1/link` WebSocket as the desktop satellite, and it draws one room with its own mic, camera and speakers. The Android app ("AI Embodied Room", `android-room/`) wraps the same page: see "Phone room" below.
 
 ### Open it
 
@@ -186,7 +186,7 @@ then open `https://<bija name>.<tailnet>.ts.net/app/`. `tailscale serve` forward
 - It boots the web satellite when there is no Electron preload bridge (`renderer/src/web-satellite/`). `window.aiembodied` is built by the same `createBridge` as the preload, so every call and event exists on both. The channels are sorted by the same `satellite/channels.ts`; the link, the pairing request, the config and the gate logic are shared code, not copies.
 - The token is kept in the page's `localStorage` (so is the closed switch and the speaker choice; the camera choice was already there). Anyone who can run script on that page's origin can read it, so only open the hub's page on devices you trust. "Forget this pairing" clears it. Revoke the room on bija to cancel a token for good.
 - The gate uses the same pure rules (`evaluateGate`). The facts: occupied (from bija's snapshot), unlocked = the page is visible (`document.visibilityState`), link up, open (the "Close this room" button in the Status panel, kept in `localStorage`), no full-screen app (always true, a page cannot tell), not held off by bija, and the room's camera setting. When any fact fails, the page stops every capture track at once and confirms it; if it does not, the page reloads itself. Unknown counts as off.
-- A plain browser enforces this in the page only, so it is as strong as the page. The Android app adds native enforcement next.
+- A plain browser enforces this in the page only, so it is as strong as the page. The Android app adds native enforcement (see "Phone room").
 - No wake word and no doorbell on the web: a browser has no wake word worker. Wake word is unavailable there; talk with the talk button or by typing.
 - No "Start when I sign in", no global shortcut, no native tray.
 
@@ -199,6 +199,16 @@ The shell sets `window.__AIEMBODIED_SHELL__` before the page loads; the page rea
 - `onGate(state)`: called after every change of the gate, so the shell can stop its own capture natively.
 
 The shell serves the page from `https://appassets.androidplatform.net` and proxies HTTP (`/app/`, `/v1/pair`, `/v1/asset`) to bija, so those are same-origin for the page. The WebSocket goes straight to `ws://<hub>/v1/link`.
+
+### Phone room (the Android app)
+
+`android-room/` is a small Kotlin WebView app (no AndroidX) around the page above. Its README has the build, install and pairing steps. In short:
+
+- Pairing is native: a setup screen (hub host `bija`, port 8791, the 6-digit code, room name "the phone", device name) posts `/v1/pair` with `kind: "phone"`. The token is encrypted with an Android Keystore AES key; the ciphertext sits in SharedPreferences. "Forget pairing" is in the app menu.
+- The page is served from `https://appassets.androidplatform.net/app/`. The shell answers every request on that origin by fetching `http://<hub>:8791/...` (only `GET /app/...` and `GET /v1/asset`, which gets the device token). The WebSocket goes direct to `ws://<hub>:8791/v1/link`, allowed by a network security config for `bija`, `*.ts.net` and `localhost`, and by mixed content being allowed in the WebView.
+- The shell script it adds to `index.html` sets `window.__AIEMBODIED_SHELL__` (see above) before boot. It needed no change on the page side. Closing the room natively is reported to the page as "not in the foreground".
+- The native gate: foreground = resumed + screen interactive + keyguard not locked, told to the page on every change. "Close this room" (always-visible button and menu) is kept across restarts. The mic and camera are granted only while the page's last gate report allows that device, the app is in front and the room is open; otherwise denied. On leaving the foreground or closing, the page must report the devices off within 1 second or the WebView is reloaded. No foreground service and no background listening.
+- No wake word, no doorbell, camera presence off unless the room's setting says on, avatars do not wander into the phone unprompted, and avatars walk home 2 minutes after the app closes (the hub side comes in the next update).
 
 ### Device kind
 

@@ -248,9 +248,9 @@ Design and decisions: [Echo event bus Claude Doc](https://claude.ai/artifact/5zm
 
 ### Phone app or interface
 
-- **Today:** draft PR #311 has an Android companion (a Kotlin WebView shell)
-  and a desktop hub on port 8790 with a pairing code and Tailscale for remote
-  use. It is waiting on a test on a real phone.
+- **Today:** `android-room/` is an Android shell around the web satellite
+  (pairs with bija's room hub over Tailscale, native mic and camera gate). It
+  is waiting on a test on a real phone. The old draft PR #311 is closed.
 - **Akari:** "one Akari, many surfaces" is on the later roadmap.
 - **Dipal:** a mobile app with the same ID, and the character can move to the
   phone.

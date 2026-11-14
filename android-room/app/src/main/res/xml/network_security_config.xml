@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  bija's room hub speaks plain http and ws on port 8791. On a tailnet that traffic is already encrypted by
+  Tailscale (WireGuard), but Android blocks cleartext by default, so it is allowed here, and only for the names
+  below, not for the whole internet:
+
+  - "bija": the short MagicDNS name of the hub PC (and anything under it).
+  - "ts.net": any MagicDNS full name (bija.tail1234.ts.net).
+  - "localhost" and "10.0.2.2": a hub on the same machine as the Android emulator.
+
+  The hub is reached by name. Android cannot allow the 100.64.0.0/10 Tailscale range as a range, so a bare
+  100.x.y.z address is NOT allowed. If your hub has another name (for example a PC called "study"), add a
+  <domain> line for it and build the APK again. Everything else stays https only.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">bija</domain>
+        <domain includeSubdomains="true">ts.net</domain>
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>
