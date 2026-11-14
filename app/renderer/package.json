@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",
+    "@mediapipe/tasks-vision": "^1.2.3",
     "@pixiv/three-vrm": "^3.5.5",
     "@recast-navigation/three": "^0.44.0",
     "react": "^19.3.1",

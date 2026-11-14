@@ -17,7 +17,9 @@ import { ProactiveTick, proactiveSettingsFromEnv } from './presence/proactive-ti
 import { PresenceTracker, isVoicePhase } from './presence/presence.js';
 import { FloorController } from './floor/index.js';
 import { HOME_PLACE_ID, PlaceManager, placesNote, scopedPlaces } from './places/place-manager.js';
-import { PlacePresence } from './presence/place-presence.js';
+import { PlacePresence, describePlaceLine } from './presence/place-presence.js';
+import { createArrivalGreeting } from './presence/arrival-greeting.js';
+import { cameraPresenceOn } from './places/camera-setting.js';
 import { createPlaceDelivery, type EventSink } from './places/place-delivery.js';
 import { createAppWindow } from './window/app-window.js';
 import { Satellite } from './satellite/satellite.js';
@@ -2183,6 +2185,10 @@ function registerIpcHandlers(
   handleIpc('room-hub:set-room', (_event, placeId: unknown, room: unknown) =>
     typeof placeId === 'string' && typeof room === 'string' ? requirePlaces().setRoom(placeId, room) : false,
   );
+  // "Camera presence" of a place: bija's own (off unless Kevin turns it on) or a desktop room's (on unless he turns it off).
+  handleIpc('room-hub:set-camera', (_event, placeId: unknown, on: unknown) =>
+    typeof placeId === 'string' && typeof on === 'boolean' ? requirePlaces().setCamera(placeId, on) : false,
+  );
   handleIpc('room-hub:rename', (_event, placeId: unknown, name: unknown) =>
     typeof placeId === 'string' && typeof name === 'string' ? requirePlaces().rename(placeId, name) : null,
   );
@@ -2337,7 +2343,8 @@ function registerIpcHandlers(
     // A desktop room reports its own presence; bija's is left alone.
     const from = placeOf(event);
     if (from !== (placeManager?.localPlaceId() ?? HOME_PLACE_ID)) {
-      placePresence.update(from, p);
+      // The face time is stamped with this PC's clock on arrival: a satellite's clock may differ, and the report is at most seconds old.
+      placePresence.update(from, typeof p.faceSeenAt === 'number' ? { ...p, faceSeenAt: Date.now() } : p);
       return true;
     }
     presence.update({
@@ -2858,6 +2865,35 @@ app.whenReady().then(async () => {
     const places = new PlaceManager({ store: memoryStore, registry, bus: () => switchboardBus, logger });
     placeManager = places;
     places.onChanged((snapshot) => broadcastToWindows('places:changed', snapshot));
+    // Camera presence across places: the decision step hears about each other place's camera and who is there, and an
+    // avatar that walks in where a face was just seen waves at it.
+    presence.setPlaceLines((now) =>
+      places
+        .list()
+        .filter((place) => place.node !== 'local' && place.node !== 'offscreen')
+        .map((place) =>
+          describePlaceLine(
+            {
+              name: place.name,
+              faceSeenAt: placePresence.get(place.id)?.faceSeenAt ?? null,
+              avatars: places.avatarsAt(place.id).map((avatarId) => registry.get(avatarId)?.name ?? avatarId),
+            },
+            now,
+          ),
+        ),
+    );
+    const greetOnArrival = createArrivalGreeting({
+      faceSeenAt: (placeId) =>
+        placeId === places.localPlaceId()
+          ? presence.faceSeenAt()
+          : cameraPresenceOn(places.get(placeId))
+            ? (placePresence.get(placeId)?.faceSeenAt ?? null)
+            : null,
+      send: (avatarId, payload) => delivery.sendForAvatar(avatarId, 'camera:detection', payload),
+    });
+    places.onArrived((avatarId, placeId) => {
+      if (greetOnArrival(avatarId, placeId)) logger.info('An avatar waved at a face on arrival.', { avatarId, placeId });
+    });
     // Desktop rooms: a second PC that draws one place. The hub only listens when a PC is paired or a code is active.
     const hub = new RoomHub({
       registry: new RoomDeviceRegistry(path.join(app.getPath('userData'), 'room-devices.json')),

@@ -262,18 +262,26 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
         return;
       }
 
-      const played = actor.playWave();
+      // A cue for a named avatar (a greeting on arrival) makes that avatar wave; one without a name is Echo's.
+      const target = event.avatarId ? actors.get(event.avatarId) : actor;
+      if (!target) {
+        return;
+      }
+
+      const played = target.playWave();
       if (!played) {
         console.warn('[vrm-avatar-renderer] Received greet_face cue but wave animation is unavailable.', {
           source: event.source,
+          avatarId: event.avatarId,
         });
       } else {
         console.info('[vrm-avatar-renderer] greet_face cue triggered wave animation.', {
           source: event.source,
+          avatarId: event.avatarId,
         });
       }
     },
-    [actor],
+    [actor, actors],
   );
 
   useBehaviorCues(handleBehaviorCue);

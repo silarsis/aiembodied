@@ -51,6 +51,9 @@ vi.mock('../src/avatar/vrm-avatar-renderer.js', async () => {
   };
 });
 
+// The real detector needs the model file and WebGL; the camera logic around it is what these tests are about.
+vi.mock('../src/camera/mediapipe-detector.js', () => ({ createMediapipeDetector: async () => ({ countFaces: () => 0, close: () => undefined }) }));
+
 import App from '../src/App.js';
 
 class MockMediaStream {
@@ -302,6 +305,61 @@ describe('App as a satellite', () => {
     install({ places: snapshot({}), gate: evaluateGate(GATE_FACTS) });
     renderSatellite(SATELLITE_STATUS);
     await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+  });
+
+  describe('camera presence', () => {
+    const videoCalls = () => vi.mocked(navigator.mediaDevices.getUserMedia).mock.calls.filter(([constraints]) => Boolean((constraints as MediaStreamConstraints | undefined)?.video));
+    function allowCamera() {
+      const track = { stop: vi.fn() };
+      vi.mocked(navigator.mediaDevices.getUserMedia).mockImplementation(async (constraints) =>
+        constraints?.video ? ({ getTracks: () => [track] } as unknown as MediaStream) : Promise.reject(new Error('no microphone in this test')),
+      );
+      return track;
+    }
+
+    it('never opens the camera while the room\'s setting is off, even with the mic live', async () => {
+      allowCamera();
+      install({ places: snapshot({}), gate: evaluateGate(GATE_FACTS) });
+      renderSatellite(SATELLITE_STATUS);
+      await waitFor(() => expect(screen.getByTestId('mic-dot')).toHaveAttribute('data-level', 'live'));
+      await act(async () => undefined);
+      expect(videoCalls()).toHaveLength(0);
+      expect(screen.getByTestId('camera-dot')).toHaveAttribute('data-level', 'off');
+    });
+
+    it('never opens the camera while the gate is closed, even when the setting is on', async () => {
+      allowCamera();
+      install({ places: snapshot({}), gate: evaluateGate({ ...GATE_FACTS, unlocked: false, cameraEnabled: true }) });
+      renderSatellite(SATELLITE_STATUS);
+      await screen.findByTestId('camera-dot');
+      await act(async () => undefined);
+      expect(videoCalls()).toHaveLength(0);
+    });
+
+    it('opens the camera when the gate says it may be live, and releases it the moment the gate closes', async () => {
+      const track = allowCamera();
+      const { pushGate, deviceGate } = install({ places: snapshot({}), gate: evaluateGate({ ...GATE_FACTS, cameraEnabled: true }) });
+      renderSatellite(SATELLITE_STATUS);
+      await waitFor(() => expect(videoCalls()).toHaveLength(1));
+      expect(videoCalls()[0][0]).toMatchObject({ audio: false, video: { width: { ideal: 640 }, height: { ideal: 360 } } });
+      await waitFor(() => expect(screen.getByTestId('camera-dot')).toHaveAttribute('data-level', 'live'));
+      deviceGate?.captureStopped.mockClear();
+      await pushGate(evaluateGate({ ...GATE_FACTS, unlocked: false, cameraEnabled: true }));
+      expect(track.stop).toHaveBeenCalled();
+      await waitFor(() => expect(deviceGate?.captureStopped).toHaveBeenCalled());
+      expect(screen.getByTestId('camera-dot')).toHaveAttribute('data-level', 'off');
+    });
+
+    it('releases only the camera when the room setting goes off, and says so', async () => {
+      const track = allowCamera();
+      const { pushGate } = install({ places: snapshot({}), gate: evaluateGate({ ...GATE_FACTS, cameraEnabled: true }) });
+      renderSatellite(SATELLITE_STATUS);
+      await waitFor(() => expect(screen.getByTestId('camera-dot')).toHaveAttribute('data-level', 'live'));
+      await pushGate(evaluateGate(GATE_FACTS));
+      expect(track.stop).toHaveBeenCalled();
+      expect(screen.getByTestId('mic-dot')).toHaveAttribute('data-level', 'live');
+      expect(screen.getByTestId('camera-dot')).toHaveAttribute('data-level', 'off');
+    });
   });
 
   it('push-to-talk with nobody in the room calls someone over and keeps the mic closed', async () => {

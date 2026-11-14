@@ -42,6 +42,11 @@ export interface Place {
    * 2D background id. The local place shows whatever the stage is set to, so it has none.
    */
   room?: string;
+  /**
+   * "Camera presence" for this place, saved only when Kevin changed it. Absent means the default: on for a desktop
+   * room, off for this PC (see camera-setting.ts).
+   */
+  camera?: boolean;
 }
 
 export { DEFAULT_DESKTOP_ROOM };
@@ -110,7 +115,7 @@ function parsePlaces(raw: string | null): Place[] {
   if (Array.isArray(stored)) {
     for (const item of stored) {
       if (!item || typeof item !== 'object') continue;
-      const { id, name, node, room } = item as Record<string, unknown>;
+      const { id, name, node, room, camera } = item as Record<string, unknown>;
       if (typeof id !== 'string' || !id || byId.has(id)) continue;
       const builtIn = BUILT_IN_PLACES.find((place) => place.id === id);
       byId.set(id, {
@@ -119,6 +124,7 @@ function parsePlaces(raw: string | null): Place[] {
         // A built-in place keeps its node: only its name can change.
         node: builtIn ? builtIn.node : typeof node === 'string' && node ? node : 'offscreen',
         ...(typeof room === 'string' && room ? { room } : {}),
+        ...(typeof camera === 'boolean' ? { camera } : {}),
       });
     }
   }
@@ -162,6 +168,7 @@ export class PlaceManager {
   private readonly transit = new Map<string, Pending>();
   private waiters: Array<{ avatarId: string; placeId: string; resolve: (arrived: boolean) => void; timer: ReturnType<typeof setTimeout> | null; sawMove: boolean }> = [];
   private serial = 0;
+  private readonly arrivalListeners = new Set<(avatarId: string, placeId: string) => void>();
 
   constructor(options: PlaceManagerOptions) {
     this.options = options;
@@ -180,7 +187,7 @@ export class PlaceManager {
   }
 
   private persist(places: Place[]): void {
-    this.options.store.setValue(PLACES_KEY, JSON.stringify(places.map(({ id, name, node, room }) => ({ id, name, node, ...(room ? { room } : {}) }))));
+    this.options.store.setValue(PLACES_KEY, JSON.stringify(places.map(({ id, name, node, room, camera }) => ({ id, name, node, ...(room ? { room } : {}), ...(typeof camera === 'boolean' ? { camera } : {}) }))));
   }
 
   private isDevicePlace(place: Place): boolean {
@@ -225,6 +232,19 @@ export class PlaceManager {
     place.room = trimmed;
     this.persist(places);
     this.changed();
+    return true;
+  }
+
+  /** Turns "Camera presence" on or off for a place (Settings > Places). False when the place is unknown or has no camera (offscreen). */
+  setCamera(placeId: string, on: boolean): boolean {
+    const places = this.stored();
+    const place = places.find((candidate) => candidate.id === placeId);
+    if (!place || place.node === 'offscreen') return false;
+    if (place.camera !== on) {
+      place.camera = on;
+      this.persist(places);
+      this.changed();
+    }
     return true;
   }
 
@@ -499,6 +519,26 @@ export class PlaceManager {
     this.options.store.setValue(LOCATIONS_KEY, JSON.stringify({ ...this.storedLocations(), [avatarId]: pending.to }));
     this.journal(pending, 'done', { avatarId, from: pending.from, to: pending.to, reason: pending.reason });
     this.changed();
+    this.announceArrival(avatarId, pending.to);
+  }
+
+  /** Tells the arrival listeners (a failing one never disturbs the move). */
+  private announceArrival(avatarId: string, placeId: string): void {
+    for (const listener of [...this.arrivalListeners]) {
+      try {
+        listener(avatarId, placeId);
+      } catch (error) {
+        this.options.logger?.warn('Places: an arrival listener threw', { message: error instanceof Error ? error.message : String(error) });
+      }
+    }
+  }
+
+  /** Called once each time an avatar has arrived at a place. Returns the unsubscribe function. */
+  onArrived(listener: (avatarId: string, placeId: string) => void): () => void {
+    this.arrivalListeners.add(listener);
+    return () => {
+      this.arrivalListeners.delete(listener);
+    };
   }
 
   /** Drops a move without a journal entry about arrival (the place it involved is gone). */

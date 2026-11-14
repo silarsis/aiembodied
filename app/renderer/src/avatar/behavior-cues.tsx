@@ -19,6 +19,8 @@ export interface BehaviorCueEvent {
   timestamp: number;
   confidence?: number;
   provider?: string;
+  /** The avatar the cue is for (a greeting on arrival). Without it the cue is for Echo, as before. */
+  avatarId?: string;
   raw: CameraDetectionEvent;
 }
 
@@ -70,6 +72,7 @@ function normalizeCameraEvent(event: CameraDetectionEvent | null | undefined): B
     timestamp,
     confidence: typeof event.confidence === 'number' ? event.confidence : undefined,
     provider: typeof event.provider === 'string' ? event.provider : undefined,
+    avatarId: typeof event.payload?.avatarId === 'string' && event.payload.avatarId ? event.payload.avatarId : undefined,
     raw: event,
   };
 }

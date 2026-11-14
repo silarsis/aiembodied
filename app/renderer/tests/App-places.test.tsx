@@ -44,6 +44,9 @@ vi.mock('../src/avatar/vrm-avatar-renderer.js', async () => {
   };
 });
 
+// The real detector needs the model file and WebGL; the camera logic around it is what these tests are about.
+vi.mock('../src/camera/mediapipe-detector.js', () => ({ createMediapipeDetector: async () => ({ countFaces: () => 0, close: () => undefined }) }));
+
 import App from '../src/App.js';
 
 class MockMediaStream {
@@ -209,6 +212,48 @@ describe('App with avatars in different places', () => {
     render(<App />);
     await waitFor(() => expect(stage.props?.hiddenIds).toEqual(['echo']));
     expect(stage.props?.avatars).toBeUndefined();
+  });
+
+  describe('camera presence on bija', () => {
+    const videoCalls = () => vi.mocked(navigator.mediaDevices.getUserMedia).mock.calls.filter(([constraints]) => Boolean((constraints as MediaStreamConstraints | undefined)?.video));
+    const withCamera = (locations: Record<string, string>, camera?: boolean): PlacesSnapshot => ({
+      ...snapshot(locations),
+      places: PLACES.map((place) => (place.id === 'home' && camera !== undefined ? { ...place, camera } : place)),
+    });
+
+    it('is off until Kevin opts in: nothing is filmed and no dot is shown', async () => {
+      install({ places: withCamera({}) });
+      render(<App />);
+      await waitFor(() => expect(stageIds()).toEqual(['echo', 'sage']));
+      await act(async () => undefined);
+      expect(videoCalls()).toHaveLength(0);
+      expect(screen.queryByTestId('camera-live-dot')).toBeNull();
+    });
+
+    it('runs, with a dot, while an avatar is here and the setting is on; stops when everyone has left', async () => {
+      const h = install({ places: withCamera({}, true) });
+      render(<App />);
+      await waitFor(() => expect(videoCalls()).toHaveLength(1));
+      await waitFor(() => expect(screen.getByTestId('camera-live-dot')).toBeInTheDocument());
+      await h.push(withCamera({ echo: 'next-door', sage: 'next-door' }, true));
+      await waitFor(() => expect(screen.queryByTestId('camera-live-dot')).toBeNull());
+    });
+
+    it('does not run with the setting on when nobody is at this screen', async () => {
+      install({ places: withCamera({ echo: 'next-door', sage: 'next-door' }, true) });
+      render(<App />);
+      await waitFor(() => expect(stage.props?.hiddenIds).toEqual(expect.arrayContaining(['echo'])));
+      await act(async () => undefined);
+      expect(videoCalls()).toHaveLength(0);
+    });
+
+    it('stops when Kevin turns the setting off', async () => {
+      const h = install({ places: withCamera({}, true) });
+      render(<App />);
+      await waitFor(() => expect(screen.getByTestId('camera-live-dot')).toBeInTheDocument());
+      await h.push(withCamera({}, false));
+      await waitFor(() => expect(screen.queryByTestId('camera-live-dot')).toBeNull());
+    });
   });
 
   it('follows the changes pushed by main', async () => {

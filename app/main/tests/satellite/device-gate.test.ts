@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CAPTURE_STOP_TIMEOUT_MS, DeviceGate, INITIAL_FACTS, avatarsHere, evaluateGate, guardMediaPermissions, type DeviceFacts } from '../../src/satellite/device-gate.js';
+import { CAPTURE_STOP_TIMEOUT_MS, DeviceGate, INITIAL_FACTS, avatarsHere, evaluateGate, guardMediaPermissions, mediaKind, type DeviceFacts } from '../../src/satellite/device-gate.js';
 
-const ALL_TRUE: DeviceFacts = { occupied: true, unlocked: true, linkUp: true, open: true, noFullscreenApp: true, notHeldOff: true };
+const ALL_TRUE = { occupied: true, unlocked: true, linkUp: true, open: true, noFullscreenApp: true, notHeldOff: true };
 const KEYS = Object.keys(ALL_TRUE) as Array<keyof DeviceFacts>;
 
 describe('evaluateGate (truth table)', () => {
@@ -192,5 +192,96 @@ describe('guardMediaPermissions', () => {
       expect(ask(permission)).toBe(true);
       expect(has(permission)).toBe(true);
     }
+  });
+});
+
+describe('the camera in the gate', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const WITH_CAMERA: DeviceFacts = { ...ALL_TRUE, cameraEnabled: true };
+
+  it('is live only when the mic is allowed and the room setting is on', () => {
+    expect(evaluateGate(WITH_CAMERA)).toMatchObject({ micAllowed: true, cameraAllowed: true, camera: 'live' });
+    // The setting is off (or not known yet): the mic is fine, the camera is not.
+    expect(evaluateGate({ ...WITH_CAMERA, cameraEnabled: false })).toMatchObject({ micAllowed: true, cameraAllowed: false, camera: 'off' });
+    expect(evaluateGate(ALL_TRUE)).toMatchObject({ micAllowed: true, cameraAllowed: false, camera: 'off' });
+    expect(INITIAL_FACTS.cameraEnabled).toBe(false);
+    // Each fact the mic needs closes the camera on its own, even with the setting on.
+    for (const key of Object.keys(ALL_TRUE) as Array<keyof typeof ALL_TRUE>) {
+      expect(evaluateGate({ ...WITH_CAMERA, [key]: false }).camera, key).toBe('off');
+    }
+  });
+
+  it('has no doorbell level: an empty room with the doorbell on keeps the camera off', () => {
+    expect(evaluateGate({ ...WITH_CAMERA, occupied: false }, true)).toMatchObject({ mic: 'doorbell', camera: 'off', cameraAllowed: false });
+  });
+
+  it('answers a media request by what it asks for', () => {
+    const open = new DeviceGate({ facts: WITH_CAMERA, reloadRenderer: vi.fn() });
+    expect([open.allowsMedia('audio'), open.allowsMedia('video'), open.allowsMedia('both')]).toEqual([true, true, true]);
+    const micOnly = new DeviceGate({ facts: ALL_TRUE, reloadRenderer: vi.fn() });
+    expect([micOnly.allowsMedia('audio'), micOnly.allowsMedia('video'), micOnly.allowsMedia('both'), micOnly.allowsMedia()]).toEqual([true, false, false, true]);
+    const closed = new DeviceGate({ facts: { ...WITH_CAMERA, unlocked: false }, reloadRenderer: vi.fn() });
+    expect([closed.allowsMedia('audio'), closed.allowsMedia('video'), closed.allowsMedia('both'), closed.allowsMedia()]).toEqual([false, false, false, false]);
+  });
+
+  it('reads what a permission asks for, and fails closed on an unclear one', () => {
+    expect(mediaKind('media', { mediaTypes: ['audio'] })).toBe('audio');
+    expect(mediaKind('media', { mediaTypes: ['video'] })).toBe('video');
+    expect(mediaKind('media', { mediaTypes: ['video', 'audio'] })).toBe('both');
+    expect(mediaKind('media', { mediaType: 'video' })).toBe('video');
+    expect(mediaKind('media', { mediaType: 'unknown' })).toBe('both');
+    expect(mediaKind('media', undefined)).toBe('both');
+    expect(mediaKind('videoCapture', undefined)).toBe('video');
+    expect(mediaKind('audioCapture', undefined)).toBe('audio');
+  });
+
+  it('refuses a camera request while only the mic may be live, and the other way round', () => {
+    const gate = new DeviceGate({ facts: ALL_TRUE, reloadRenderer: vi.fn() });
+    let request: ((webContents: unknown, permission: string, callback: (granted: boolean) => void, details?: unknown) => void) | null = null;
+    guardMediaPermissions(
+      { setPermissionRequestHandler: (handler) => void (request = handler as typeof request), setPermissionCheckHandler: () => undefined },
+      gate,
+    );
+    const ask = (details: unknown) => {
+      const callback = vi.fn();
+      (request as NonNullable<typeof request>)(null, 'media', callback, details);
+      return callback.mock.calls[0][0] as boolean;
+    };
+    expect(ask({ mediaTypes: ['audio'] })).toBe(true);
+    expect(ask({ mediaTypes: ['video'] })).toBe(false);
+    expect(ask({ mediaTypes: ['video', 'audio'] })).toBe(false);
+    gate.update({ cameraEnabled: true });
+    expect(ask({ mediaTypes: ['video'] })).toBe(true);
+    gate.update({ unlocked: false });
+    expect(ask({ mediaTypes: ['video'] })).toBe(false);
+    expect(ask({ mediaTypes: ['audio'] })).toBe(false);
+  });
+
+  it('reloads the page when the camera setting goes off and the page does not confirm, but not when it does', () => {
+    const reload = vi.fn();
+    const gate = new DeviceGate({ facts: WITH_CAMERA, reloadRenderer: reload });
+    gate.update({ cameraEnabled: false });
+    expect(gate.state()).toMatchObject({ micAllowed: true, camera: 'off' });
+    vi.advanceTimersByTime(CAPTURE_STOP_TIMEOUT_MS);
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    const confirmed = vi.fn();
+    const other = new DeviceGate({ facts: WITH_CAMERA, reloadRenderer: confirmed });
+    other.update({ cameraEnabled: false });
+    other.captureStopped();
+    vi.advanceTimersByTime(5000);
+    expect(confirmed).not.toHaveBeenCalled();
+  });
+
+  it('keeps waiting for the confirmation when an unrelated fact changes after the camera closed', () => {
+    const reload = vi.fn();
+    const gate = new DeviceGate({ facts: WITH_CAMERA, reloadRenderer: reload });
+    gate.update({ cameraEnabled: false });
+    gate.update({ noFullscreenApp: true });
+    gate.update({ notHeldOff: true });
+    vi.advanceTimersByTime(CAPTURE_STOP_TIMEOUT_MS);
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 });

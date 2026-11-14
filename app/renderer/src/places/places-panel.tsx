@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { Place, PlacesSnapshot } from '../../../main/src/places/place-manager.js';
+import { cameraPresenceOn } from '../../../main/src/places/camera-setting.js';
 import { deviceSummary } from './room-devices-status.js';
 import type { PairingStart, RoomHubBridge, RoomHubStatus } from '../../../main/src/room-hub/bridge-types.js';
 
@@ -163,6 +164,24 @@ export function PlacesPanel({
                   <span className="kiosk__helper">{kindOf(place)}</span>
                 </div>
                 <p className="kiosk__helper">{here.length > 0 ? `Here: ${here.join(', ')}` : 'Nobody is here.'}</p>
+                {place.node !== 'offscreen' ? (
+                  <label className="placesPanel__camera">
+                    <input
+                      type="checkbox"
+                      aria-label={`Camera presence in ${place.name}`}
+                      checked={cameraPresenceOn(place)}
+                      disabled={!roomHub?.setCamera}
+                      onChange={(event) => void run(() => roomHub?.setCamera?.(place.id, event.target.checked) ?? Promise.resolve(), 'Could not change camera presence.')}
+                    />{' '}
+                    Camera presence
+                    <span className="kiosk__helper">
+                      {' '}
+                      {place.node === 'local'
+                        ? 'Off unless you turn it on. The camera runs only while a character is on this screen, and only notes that a face is there.'
+                        : 'The camera runs only while a character is in the room, and only notes that a face is there.'}
+                    </span>
+                  </label>
+                ) : null}
                 {place.node !== 'local' && place.node !== 'offscreen' ? (
                   <label className="placesPanel__room">
                     <span className="kiosk__helper">Room shown there</span>

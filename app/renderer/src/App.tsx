@@ -49,6 +49,10 @@ import {
 } from './status/assistant-status.js';
 import type { ConversationSessionWithMessages } from '../../main/src/conversation/types.js';
 import { useAudioDevices } from './hooks/use-audio-devices.js';
+import { useCameraDevices } from './hooks/use-camera-devices.js';
+import { useFacePresence } from './camera/use-face-presence.js';
+import { CameraLiveDot } from './camera/camera-dot.js';
+import { cameraPresenceOn } from '../../main/src/places/camera-setting.js';
 import { getPreloadApi, type PreloadApi } from './preload-api.js';
 import { RealtimeClient, type RealtimeClientCallbacks, type RealtimeClientState } from './realtime/realtime-client.js';
 import { LocalVoiceClient, playPreviewReply } from './realtime/local-voice-client.js';
@@ -921,7 +925,16 @@ export default function App() {
   const [listeningState, setListeningState] = useState(false);
   const [satelliteHandOff, setSatelliteHandOff] = useState(false);
   const stopCaptureRef = useRef<() => Promise<void>>(async () => undefined);
-  const stopCapture = useCallback(() => stopCaptureRef.current(), []);
+  const stopCameraRef = useRef<() => Promise<void>>(async () => undefined);
+  // The gate says which device to stop: the mic's audio graph, the camera, or both. Each is stopped right away,
+  // before any render, and only then does the gate hear that capture stopped.
+  const stopCapture = useCallback(
+    async (scope: { audio: boolean; camera: boolean }) => {
+      const results = await Promise.allSettled([scope.audio ? stopCaptureRef.current() : undefined, scope.camera ? stopCameraRef.current() : undefined]);
+      for (const result of results) if (result.status === 'rejected') console.warn('Could not stop capture', result.reason);
+    },
+    [],
+  );
   const deviceGate = useDeviceGate(isSatellite ? resolveApi()?.deviceGate : undefined, stopCapture);
   const isListeningEnabled = isSatellite ? deviceGate?.micAllowed === true && !satelliteHandOff : listeningState;
   const setListeningEnabled = useCallback(
@@ -1302,7 +1315,16 @@ export default function App() {
     const phase = realtimeState.status === 'connected' ? 'listening' : realtimeState.status === 'error' ? 'error' : 'off';
     return { phase, detail: realtimeState.error, since: voiceActivity.since };
   }, [isLocalBackend, voiceActivity, realtimeState]);
-  usePresenceReporter(activeBridge?.presence, activeBridge?.camera, { listening: isListeningEnabled, voicePhase: displayedActivity.phase });
+  const { reportFace } = usePresenceReporter(activeBridge?.presence, activeBridge?.camera, { listening: isListeningEnabled, voicePhase: displayedActivity.phase });
+  // Camera presence ("a face was seen", nothing else). On a satellite the privacy gate decides; on bija the camera runs
+  // only while an avatar is here and Kevin turned it on for this PC (off by default).
+  const { deviceId: cameraDeviceId, setDeviceId: setCameraDeviceId, cameras } = useCameraDevices();
+  const localPlace = placesSnapshot?.places.find((place) => place.id === placesSnapshot.localPlaceId);
+  const cameraWanted = isSatellite ? deviceGate?.camera === 'live' : cameraPresenceOn(localPlace) && presence.present.length > 0;
+  const facePresence = useFacePresence({ enabled: cameraWanted && !loadingConfig, deviceId: cameraDeviceId, camera: activeBridge?.camera, onFaceSeen: reportFace });
+  useEffect(() => {
+    stopCameraRef.current = facePresence.stopNow;
+  }, [facePresence.stopNow]);
   // The avatar wanders on its own in a 3D room when nobody has talked for a while (rooms/idle-director.ts).
   const idleHabits = useIdleHabits(activeBridge?.avatar, activeVrmModel?.id);
   // The other avatars' personality and idle habits, as saved for them (Echo's are above). Read again
@@ -3201,7 +3223,7 @@ export default function App() {
             </section>
           </section>
           {satellite ? <SatelliteBanner status={satellite.status} bridge={satellite.bridge} /> : null}
-          {satellite ? <DeviceDots gate={deviceGate} /> : null}
+          {satellite ? <DeviceDots gate={deviceGate} /> : <CameraLiveDot live={facePresence.live} />}
           <div className="stageToolbar">
             {wakeListening.error ? <p className="kiosk__error" role="alert">{wakeListening.error}</p> : null}
             {isSatellite ? (
@@ -3383,6 +3405,20 @@ export default function App() {
                       ))}
                     </select>
                   </div>
+                  {!isSatellite ? (
+                    <div className="control">
+                      <label htmlFor="camera-device">Camera (for presence)</label>
+                      <select id="camera-device" value={cameraDeviceId} onChange={(event) => setCameraDeviceId(event.target.value)}>
+                        <option value="">System default</option>
+                        {cameras.map((device) => (
+                          <option key={device.deviceId} value={device.deviceId}>
+                            {device.label}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="kiosk__helper">The camera only notes that a face is there. Turn it on for this PC in Places.</p>
+                    </div>
+                  ) : null}
                   <div className="control">
                     <label>
                       <input
@@ -3534,6 +3570,10 @@ export default function App() {
                 selectedOutput={selectedOutput}
                 onOutputChange={(value) => void handleOutputChange({ target: { value } } as unknown as ChangeEvent<HTMLSelectElement>)}
                 lastTurn={lastTurnTiming}
+                cameras={cameras}
+                selectedCamera={cameraDeviceId}
+                onCameraChange={setCameraDeviceId}
+                cameraError={facePresence.error}
               />
             </PanelDialog>
           ) : (

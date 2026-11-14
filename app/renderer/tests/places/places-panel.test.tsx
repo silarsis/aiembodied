@@ -180,4 +180,29 @@ describe('PlacesPanel room choice', () => {
     fireEvent.change(select, { target: { value: 'cabin' } });
     await waitFor(() => expect(setRoom).toHaveBeenCalledWith('study', 'cabin'));
   });
+
+  it('shows Camera presence for this PC (off by default) and for a desktop room (on by default), and saves a change', async () => {
+    const setCamera = vi.fn().mockResolvedValue(true);
+    const { api } = bridge({ setCamera });
+    render(<PlacesPanel roomHub={api} snapshot={SNAPSHOT} nameOf={nameOf} active />);
+    const here = screen.getByRole('checkbox', { name: 'Camera presence in the lounge' }) as HTMLInputElement;
+    const study = screen.getByRole('checkbox', { name: 'Camera presence in the study' }) as HTMLInputElement;
+    expect(here.checked).toBe(false);
+    expect(study.checked).toBe(true);
+    // Nothing to film next door.
+    expect(screen.queryByRole('checkbox', { name: 'Camera presence in next door' })).toBeNull();
+    fireEvent.click(here);
+    await waitFor(() => expect(setCamera).toHaveBeenCalledWith('home', true));
+    fireEvent.click(study);
+    await waitFor(() => expect(setCamera).toHaveBeenCalledWith('study', false));
+  });
+
+  it('shows what Kevin saved, and cannot change it when the bridge has no setCamera', () => {
+    const saved: PlacesSnapshot = { ...SNAPSHOT, places: SNAPSHOT.places.map((place) => (place.id === 'home' ? { ...place, camera: true } : place.id === 'study' ? { ...place, camera: false } : place)) };
+    const { api } = bridge();
+    render(<PlacesPanel roomHub={api} snapshot={saved} nameOf={nameOf} active />);
+    expect((screen.getByRole('checkbox', { name: 'Camera presence in the lounge' }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('checkbox', { name: 'Camera presence in the study' }) as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByRole('checkbox', { name: 'Camera presence in the lounge' })).toBeDisabled();
+  });
 });

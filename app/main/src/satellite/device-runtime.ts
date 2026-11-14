@@ -9,6 +9,7 @@ import { DeviceGate, avatarsHere, guardMediaPermissions, type DeviceGateState, t
 import type { FullscreenWatcher } from './fullscreen-watch.js';
 import { stateIcon, trayRoomName, trayTooltip, type IconBitmap } from './tray-state.js';
 import type { SatelliteSettings } from './settings.js';
+import { cameraPresenceOn } from '../places/camera-setting.js';
 
 export const DEFAULT_CLOSE_SHORTCUT = 'Ctrl+Alt+Shift+R';
 
@@ -51,6 +52,16 @@ export interface DeviceRuntimeDeps {
   quit: () => void;
   captureTimeoutMs?: number;
   logger?: Pick<Console, 'warn' | 'info' | 'debug'>;
+}
+
+/** This room's camera setting from a places snapshot. A snapshot that cannot be read gives off (fail closed). */
+function cameraSettingHere(snapshot: unknown): boolean {
+  if (!snapshot || typeof snapshot !== 'object') return false;
+  const { places, localPlaceId } = snapshot as { places?: unknown; localPlaceId?: unknown };
+  if (!Array.isArray(places) || typeof localPlaceId !== 'string') return false;
+  const here = places.find((place) => (place as { id?: unknown } | null)?.id === localPlaceId) as { node?: unknown; camera?: unknown } | undefined;
+  if (!here || typeof here.node !== 'string') return false;
+  return cameraPresenceOn({ node: here.node, camera: typeof here.camera === 'boolean' ? here.camera : undefined });
 }
 
 export class DeviceRuntime {
@@ -112,10 +123,10 @@ export class DeviceRuntime {
     if (up) this.sendState(this.gate.state());
   }
 
-  /** A places snapshot: who stands in this room. */
+  /** A places snapshot: who stands in this room, and whether this room's camera presence is on. */
   setSnapshot(snapshot: unknown): void {
     this.present = avatarsHere(snapshot);
-    this.gate.update({ occupied: this.present.length > 0 });
+    this.gate.update({ occupied: this.present.length > 0, cameraEnabled: cameraSettingHere(snapshot) });
   }
 
   /** bija asked the devices off. It can never turn them on. */
@@ -157,7 +168,7 @@ export class DeviceRuntime {
   // -- Reacting to a change -------------------------------------------------------------------------
 
   private onChange(state: DeviceGateState, changed: string[]): void {
-    this.deps.logger?.info('Devices changed', { mic: state.mic, changed, summary: state.summary });
+    this.deps.logger?.info('Devices changed', { mic: state.mic, camera: state.camera, changed, summary: state.summary });
     this.sendToPage(state);
     this.sendState(state);
     this.refreshTray(state);

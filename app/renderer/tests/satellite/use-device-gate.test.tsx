@@ -6,8 +6,9 @@ import { useDeviceGate } from '../../src/satellite/use-device-gate.js';
 import { DeviceDots } from '../../src/satellite/device-dots.js';
 
 const FACTS = { occupied: true, unlocked: true, linkUp: true, open: true, noFullscreenApp: true, notHeldOff: true };
+const WITH_CAMERA = { ...FACTS, cameraEnabled: true };
 
-function Probe({ bridge, onClose }: { bridge: DeviceGateBridge; onClose: () => Promise<void> | void }) {
+function Probe({ bridge, onClose }: { bridge: DeviceGateBridge; onClose: (scope: { audio: boolean; camera: boolean }) => Promise<void> | void }) {
   const state = useDeviceGate(bridge, onClose);
   return <p>{state?.mic ?? 'unknown'}</p>;
 }
@@ -46,6 +47,28 @@ describe('useDeviceGate', () => {
     warn.mockRestore();
   });
 
+  it('stops audio and camera together when the whole gate closes', async () => {
+    const { bridge, push } = fakeBridge(evaluateGate(WITH_CAMERA));
+    const onClose = vi.fn();
+    render(<Probe bridge={bridge} onClose={onClose} />);
+    await waitFor(() => expect(bridge.get).toHaveBeenCalled());
+    await push(evaluateGate({ ...WITH_CAMERA, linkUp: false }));
+    expect(onClose).toHaveBeenCalledWith({ audio: true, camera: true });
+  });
+
+  it('stops only the camera when its setting goes off while the mic stays live, and confirms', async () => {
+    const { bridge, order, push } = fakeBridge(evaluateGate(WITH_CAMERA));
+    const onClose = vi.fn(async () => void order.push('stopped'));
+    render(<Probe bridge={bridge} onClose={onClose} />);
+    await waitFor(() => expect(bridge.get).toHaveBeenCalled());
+    await push(evaluateGate(FACTS));
+    expect(onClose).toHaveBeenCalledWith({ audio: false, camera: true });
+    await waitFor(() => expect(order).toEqual(['stopped', 'confirmed']));
+    // A later push with the camera still off has nothing more to stop.
+    await push(evaluateGate(FACTS));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('does not stop anything while the gate stays open', async () => {
     const { bridge, push } = fakeBridge(evaluateGate(FACTS));
     const onClose = vi.fn();
@@ -62,6 +85,9 @@ describe('DeviceDots', () => {
     expect(getByTestId('mic-dot')).toHaveAttribute('title', 'Microphone doorbell only');
     rerender(<DeviceDots gate={evaluateGate(FACTS)} />);
     expect(getByTestId('mic-dot')).toHaveAttribute('aria-label', 'Microphone live');
+    rerender(<DeviceDots gate={evaluateGate({ ...FACTS, cameraEnabled: true })} />);
+    expect(getByTestId('camera-dot')).toHaveAttribute('data-level', 'live');
+    expect(getByTestId('camera-dot')).toHaveAttribute('aria-label', 'Camera live');
     rerender(<DeviceDots gate={null} />);
     expect(getByTestId('mic-dot')).toHaveAttribute('data-level', 'off');
     expect(getByTestId('camera-dot')).toHaveAttribute('aria-label', 'Camera off');
