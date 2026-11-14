@@ -59,3 +59,15 @@ export function resolveRendererEntryPoint(baseDir: string): RuntimePathResolutio
     candidates,
   );
 }
+
+/**
+ * The folder with the renderer build (index.html), for serving the app to a browser at `/app/`. The same build the
+ * window loads. Null when there is none (the renderer was not built), and `/app/` then says so.
+ */
+export function webRootFor(baseDir: string): string | null {
+  try {
+    return path.dirname(resolveRendererEntryPoint(baseDir).path);
+  } catch {
+    return null;
+  }
+}

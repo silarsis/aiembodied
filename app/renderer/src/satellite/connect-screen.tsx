@@ -9,7 +9,9 @@ export const DEFAULT_ROOM_NAME = 'the study';
  * "Add a desktop room", and name this room and this PC. Errors from bija are shown under the form.
  */
 export function ConnectScreen({ bridge, status }: { bridge: SatelliteBridge; status: SatelliteStatus }) {
-  const [hubUrl, setHubUrl] = useState(DEFAULT_HUB_ADDRESS);
+  const web = status.deviceKind === 'browser';
+  // A page the hub served offers the hub's own address; the Electron app offers bija by name.
+  const [hubUrl, setHubUrl] = useState(status.suggestedHubUrl || DEFAULT_HUB_ADDRESS);
   const [code, setCode] = useState('');
   const [placeName, setPlaceName] = useState(DEFAULT_ROOM_NAME);
   const [deviceName, setDeviceName] = useState(status.hostname);
@@ -35,7 +37,7 @@ export function ConnectScreen({ bridge, status }: { bridge: SatelliteBridge; sta
       <form className="connectScreen__card" onSubmit={submit}>
         <h1>Connect to bija</h1>
         <p className="connectScreen__help">
-          This PC will show one room of bija&apos;s world. On bija, open Settings, Places, Add a desktop room, and type the code it shows.
+          {web ? 'This page will show one room of bija\u2019s world.' : 'This PC will show one room of bija\u2019s world.'} On bija, open Settings, Places, Add a desktop room, and type the code it shows.
         </p>
         <label className="connectScreen__field">
           <span>bija&apos;s address</span>
@@ -57,7 +59,7 @@ export function ConnectScreen({ bridge, status }: { bridge: SatelliteBridge; sta
           <input value={placeName} onChange={(event) => setPlaceName(event.target.value)} autoComplete="off" />
         </label>
         <label className="connectScreen__field">
-          <span>This PC&apos;s name</span>
+          <span>{web ? 'This browser\u2019s name' : 'This PC\u2019s name'}</span>
           <input value={deviceName} onChange={(event) => setDeviceName(event.target.value)} autoComplete="off" />
         </label>
         <button type="submit" className="btn" disabled={busy || code.trim().length !== 6 || !hubUrl.trim()}>

@@ -105,3 +105,25 @@ bija's window.
 - `device.state` also carries `fullscreen`. `room.close` / `room.open` are the kill switch: bija moves the avatars at that place home (reason `room closed`) and refuses moves to it until `room.open`. The `closed` flag of `device.state` has the same effect, so a restart of either side agrees.
 - Clocks on bija (`room-hub/place-devices.ts`): locked for 5 minutes and full screen for 2 minutes send the avatars home. Changes are journaled as `place.device`.
 - `places:summon` is allowlisted. The ping round trip is logged on the satellite every 30 seconds.
+
+## HTTP routes (web satellite)
+
+The same server also answers a few HTTP routes, so a browser can be a satellite (see [satellite.md](satellite.md), "Web and phone rooms").
+
+| route | what | auth |
+|---|---|---|
+| `POST /v1/pair` | as above; the body may carry `"kind": "desktop" \| "phone" \| "browser"` (default `desktop`) | the code |
+| `GET /app/...` | the renderer build (`/app` redirects to `/app/`; no listing; `index.html` for `/app/`) | none (public app shell); a non-loopback peer must still pass the Tailscale check |
+| `GET /v1/asset?url=<aiembodied-asset URL>` | a room file, with the type of the file | `Authorization: Bearer <device token>`, or `?k=<assetKey>` |
+
+- Any other method on these routes is `405`. A `Host` header that is a public name (not an IP, `localhost`, a single word or `*.ts.net`, nor in `ROOM_HUB_ALLOWED_HOSTS`) is `403` on `/app/` and `/v1/asset`, which defeats DNS rebinding.
+- `assetKey`: `welcome` carries a random key for that link. `/v1/asset?k=` accepts it while the link is open, from the address the link connected from. It is for loaders that cannot set a header (an `<img>`, a three.js loader). It is gone when the link closes.
+- No CORS headers are sent. The page is expected to be same-origin with the hub (or proxied by the Android shell).
+
+### Origin rule
+
+A browser always sends `Origin` on a WebSocket upgrade (and on a cross-site POST). The hub accepts: no `Origin` (a program such as the desktop satellite), `http(s)://127.0.0.1:<hub port>`, an origin whose host and port equal the request's `Host` (the page was loaded from this hub; the `Host` must be an acceptable one, as above), and `https://appassets.androidplatform.net`. Anything else gets `403` on the upgrade (and on `/v1/pair` and `/v1/asset`). The device token is still required.
+
+### Device kind
+
+`room-devices.json` records `kind` per device (`desktop` for older records). `room-hub:status` lists it per device. No behaviour depends on it yet.

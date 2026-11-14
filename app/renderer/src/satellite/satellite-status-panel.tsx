@@ -89,7 +89,7 @@ export function SatelliteStatusPanel({ status, bridge, gate = null, gateBridge, 
           <dd>{status.hubUrl ?? 'Not paired'}</dd>
         </div>
         <div>
-          <dt>This PC</dt>
+          <dt>{status.deviceKind === 'browser' ? 'This browser' : 'This PC'}</dt>
           <dd>{status.deviceName ?? status.hostname}</dd>
         </div>
         <div>
@@ -156,15 +156,19 @@ export function SatelliteStatusPanel({ status, bridge, gate = null, gateBridge, 
           {gate?.open === false ? 'Open this room' : 'Close this room'}
         </button>
       ) : null}
-      <p className="kiosk__helper">The microphone is live only while a character is in this room, the screen is unlocked, the link to bija is up, the room is open and no other app is full screen. Ctrl+Alt+Shift+R closes or opens the room from anywhere.</p>
+      <p className="kiosk__helper">The microphone is live only while a character is in this room, the screen is unlocked, the link to bija is up, the room is open and no other app is full screen. {status.deviceKind === 'browser' ? '' : 'Ctrl+Alt+Shift+R closes or opens the room from anywhere.'}</p>
       <p className="kiosk__helper">The camera follows the same rules and also needs Camera presence to be on for this room (set on bija, Settings, Places). It only notes that a face is there: no picture leaves this PC and nothing is stored.</p>
-      {startAtLogin !== null && bridge.setStartAtLogin ? (
+      {startAtLogin !== null && bridge.setStartAtLogin && status.deviceKind !== 'browser' ? (
         <label className="satelliteStatus__login">
           <input type="checkbox" checked={startAtLogin} onChange={(event) => void changeStartAtLogin(event.target.checked)} />
           Start when I sign in
         </label>
       ) : null}
-      <p className="kiosk__helper">F11 switches between a window and full screen.</p>
+      {status.deviceKind === 'browser' ? (
+        <p className="kiosk__helper">This is a web page, so the page itself keeps these rules: it stops the microphone and camera when the page is hidden or the room is closed. There is no wake word in a browser.</p>
+      ) : (
+        <p className="kiosk__helper">F11 switches between a window and full screen.</p>
+      )}
       {confirming ? (
         <div className="satelliteStatus__confirm">
           <p>Forget bija on this PC? You will need a new code to connect again.</p>

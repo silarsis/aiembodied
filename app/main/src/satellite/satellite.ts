@@ -6,13 +6,14 @@
  * pairs with bija once. Everything that needs Electron is passed in, so the tests run it against a real RoomHub.
  */
 import type { LinkState, LinkStatus, RoomLink, RoomLinkOptions, Welcome } from './room-link.js';
-import { LOST_TOUCH, RoomLink as RoomLinkClass, parseHubUrl } from './room-link.js';
+import { LOST_TOUCH, RoomLink as RoomLinkClass } from './room-link.js';
+import { requestPairing } from './pairing.js';
 import { AssetCache } from './asset-cache.js';
 import { NOT_ON_SATELLITE, channelKind, channelsOfKind, isDeliverableEvent } from './channels.js';
 import type { SatelliteSettings, SatelliteSettingsStore } from './settings.js';
 import type { TokenStore } from './token-store.js';
 import { ASSET_SCHEME, mimeFor, type ProtocolLike } from '../rooms/asset-protocol.js';
-import { DEFAULT_PROVIDER_SETTINGS } from '../config/provider-settings.js';
+import { EMPTY_LOCAL_ANSWERS, keywordOf, satelliteConfig } from './local-config.js';
 import type { RendererConfig } from '../config/config-manager.js';
 import type { AudioDevicePreferences } from '../config/preferences-store.js';
 import type { Op } from '../room-hub/frames.js';
@@ -34,6 +35,9 @@ export interface SatelliteStatus {
   lastError: string | null;
   /** This PC's name, offered as the device name on the connect screen. */
   hostname: string;
+  /** Only the web satellite sets these. The address to offer on the connect screen (the page's own origin when the hub served it), and what kind of device this is. */
+  suggestedHubUrl?: string | null;
+  deviceKind?: 'browser';
 }
 
 export interface PairInput {
@@ -95,8 +99,6 @@ export interface SatelliteDeps {
   startAtLogin?: { isEnabled(): Promise<boolean>; set(on: boolean): Promise<boolean> };
 }
 
-const DEFAULT_KEYWORD = 'Hey Echo';
-
 /** A Uint8Array that is a view into a bigger buffer is copied tight, so the renderer is sent only its own bytes. */
 function tighten(value: unknown): unknown {
   if (value instanceof Uint8Array) return value.byteLength === value.buffer.byteLength ? value : value.slice();
@@ -157,11 +159,7 @@ export class Satellite {
     this.local.set('device-gate:capture-stopped', () => this.devices?.captureStopped());
     this.local.set('device-gate:set-open', (args) => (this.devices ? this.devices.setOpen(args[0] === true) : this.deviceState()));
     this.local.set('satellite:turn-timing', (args) => this.noteTurn(args[0]));
-    this.local.set('wake-word:list', () => []);
-    this.local.set('wake-word:set-listening', () => undefined);
-    this.local.set('metrics:observe-latency', () => undefined);
-    this.local.set('approvals:list', () => []);
-    this.local.set('rooms:making', () => null);
+    for (const [channel, answer] of Object.entries(EMPTY_LOCAL_ANSWERS)) this.local.set(channel, answer);
     this.local.set('satellite:status', () => this.status());
     this.local.set('satellite:pair', (args) => this.pair((args[0] ?? {}) as PairInput));
     this.local.set('satellite:forget', () => this.forget());
@@ -359,19 +357,7 @@ export class Satellite {
 
   /** The config the renderer asks for: no keys, no services, just enough for it to know what it is. */
   private config(): RendererConfig {
-    const keyword = (this.welcome?.settings?.wakeWord as { keywordLabel?: unknown } | null | undefined)?.keywordLabel;
-    const config = {
-      role: 'satellite',
-      conversationBackend: 'local',
-      providers: structuredClone(DEFAULT_PROVIDER_SETTINGS),
-      hasRealtimeApiKey: false,
-      featureFlags: {},
-      wakeWord: { model: 'hey_echo', keywordLabel: typeof keyword === 'string' && keyword ? keyword : DEFAULT_KEYWORD, threshold: 0.5, cooldownMs: 1500 },
-      metrics: { enabled: false, host: '127.0.0.1', port: 9464, path: '/metrics' },
-      ...this.audioPreferences,
-    };
-    // The pieces the renderer reads are all here; the rest of RendererConfig is optional for it.
-    return config as unknown as RendererConfig;
+    return satelliteConfig({ keyword: keywordOf(this.welcome?.settings?.wakeWord), audioPreferences: this.audioPreferences });
   }
 
   // -- IPC --------------------------------------------------------------------------------------
@@ -485,36 +471,9 @@ export class Satellite {
 
   /** Pairs with bija using the 6-digit code, keeps the token in the keychain and the rest in satellite.json, then connects. */
   async pair(input: PairInput): Promise<SatelliteStatus> {
-    const hub = parseHubUrl(String(input.hubUrl ?? ''));
-    if (!hub) throw new Error('That is not a hub address. Try something like ws://bija:8791.');
-    const code = String(input.code ?? '').replace(/\s+/g, '');
-    if (!/^\d{6}$/.test(code)) throw new Error('The code is 6 digits.');
-    const deviceName = (input.deviceName ?? '').trim().slice(0, 60) || this.deps.hostname;
-    const placeName = (input.placeName ?? '').trim().slice(0, 60) || 'the study';
-    let response: Response;
-    try {
-      response = await (this.deps.fetchFn ?? fetch)(`${hub.http}/v1/pair`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, deviceName, placeName }),
-        signal: AbortSignal.timeout(10_000),
-      });
-    } catch (error) {
-      throw new Error(`Could not reach bija at ${hub.http.replace(/^https?:\/\//, '')}: ${describeError(error)}`);
-    }
-    if (!response.ok) {
-      const messages: Record<number, string> = {
-        401: 'That code is wrong or has expired. Make a new one on bija (Settings, Places, Add a desktop room).',
-        403: 'bija does not trust this PC. It must be on the same Tailscale network and account.',
-        409: 'bija already has the most desktop rooms it allows.',
-        429: 'Too many wrong codes. Wait a minute and try again.',
-      };
-      throw new Error(messages[response.status] ?? `bija answered ${response.status}.`);
-    }
-    const body = (await response.json().catch(() => null)) as { deviceId?: unknown; token?: unknown; placeId?: unknown } | null;
-    if (!body || typeof body.deviceId !== 'string' || typeof body.token !== 'string' || typeof body.placeId !== 'string') {
-      throw new Error('bija sent an answer this app does not understand.');
-    }
+    const paired = await requestPairing({ ...input, defaultDeviceName: this.deps.hostname, fetchFn: this.deps.fetchFn });
+    const { hub, deviceName, placeName } = paired;
+    const body = paired.body;
     const previous = this.deps.settings.get().hubUrl;
     if (previous && previous !== hub.ws) await this.deps.tokens.delete(previous);
     await this.deps.tokens.set(hub.ws, body.token);

@@ -5,9 +5,11 @@ import { describe, expect, it } from 'vitest';
 import { NOT_ON_SATELLITE, channelKind, channelsOfKind, isDeliverableEvent } from '../../src/satellite/channels.js';
 import { SATELLITE_CHANNELS } from '../../src/room-hub/allowlist.js';
 
-const preload = readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src/preload.ts'), 'utf8');
+const here = path.dirname(fileURLToPath(import.meta.url));
+// The bridge's channel list lives in bridge/create-bridge.ts (preload.ts only plugs ipcRenderer into it).
+const preload = ['../../src/preload.ts', '../../src/bridge/create-bridge.ts'].map((file) => readFileSync(path.resolve(here, file), 'utf8')).join('\n');
 
-/** Every channel name in preload.ts: a quoted `group:name` string. (`preload:bridge-exposed` is a log message, not a channel.) */
+/** Every channel name in preload.ts and the bridge it builds: a quoted `group:name` string. (`preload:bridge-exposed` is a log message, not a channel.) */
 const PRELOAD_CHANNELS = [...new Set([...preload.matchAll(/'([a-z][a-z0-9-]*(?::[a-z0-9-]+)+)'/g)].map((match) => match[1]))].filter((name) => name !== 'preload:bridge-exposed');
 
 describe('satellite channels', () => {

@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { RoomObject } from '../../../main/src/rooms/types.js';
+import { ASSET_SCHEME, resolveAssetUrl } from './asset-url.js';
 
-export const ASSET_SCHEME = 'aiembodied-asset';
+export { ASSET_SCHEME };
 
 export interface GltfLike {
   scene: THREE.Object3D;
@@ -23,7 +24,14 @@ export function modelUrl(object: Pick<RoomObject, 'model'>): string | null {
  * puts its footprint centre on the object origin with the bottom on the floor.
  */
 export function createModelLoader(deps: ModelLoaderDeps = {}): (object: RoomObject) => Promise<THREE.Object3D> {
-  const load = deps.load ?? ((url: string) => new GLTFLoader().loadAsync(url));
+  // The manager lets the web satellite turn asset URLs (the model's own and its textures') into hub URLs; in Electron it changes nothing.
+  const load =
+    deps.load ??
+    ((url: string) => {
+      const manager = new THREE.LoadingManager();
+      manager.setURLModifier(resolveAssetUrl);
+      return new GLTFLoader(manager).loadAsync(url);
+    });
   return async (object) => {
     const url = modelUrl(object);
     if (!url) throw new Error(`Object ${object.id} has no library model.`);

@@ -60,6 +60,16 @@ describe('PlacesPanel', () => {
     await waitFor(() => expect(study).toHaveTextContent("Kevin's desk · connected"));
   });
 
+  it('names what kind of device each room is: a desktop unless the hub says phone or browser', async () => {
+    const withKinds: RoomHubStatus = { ...STATUS, devices: [{ ...STATUS.devices[0], kind: 'browser' }] };
+    const { api } = bridge({ status: vi.fn().mockResolvedValue(withKinds) });
+    render(<PlacesPanel roomHub={api} snapshot={SNAPSHOT} nameOf={nameOf} active />);
+    expect(await screen.findByTestId('device-kind-study')).toHaveTextContent('Browser');
+    const plain = bridge({ status: vi.fn().mockResolvedValue(STATUS) });
+    render(<PlacesPanel roomHub={plain.api} snapshot={SNAPSHOT} nameOf={nameOf} active />);
+    await waitFor(() => expect(screen.getAllByTestId('device-kind-study').some((node) => node.textContent === 'Desktop')).toBe(true));
+  });
+
   it('shows the Windows firewall note when bija says so', async () => {
     const { api } = bridge({ status: vi.fn().mockResolvedValue({ ...STATUS, firewallNote: 'Allow private networks only.' }) });
     render(<PlacesPanel roomHub={api} snapshot={SNAPSHOT} nameOf={nameOf} active />);
