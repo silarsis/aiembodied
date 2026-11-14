@@ -15,7 +15,8 @@
  */
 import { EventEmitter } from 'node:events';
 import type { AvatarProfile } from '../avatars/avatar-registry.js';
-import { DEFAULT_DESKTOP_ROOM } from './default-room.js';
+import { DEFAULT_DESKTOP_ROOM, defaultRoomFor } from './default-room.js';
+import { cleanPlaceKind, type PlaceKind } from './place-kind.js';
 import { normalisePlaceName } from './wander.js';
 import type { SwitchboardBus } from '../switchboard/bus.js';
 import type { SwitchboardEventInput } from '../switchboard/types.js';
@@ -30,6 +31,8 @@ export const HALLWAY_MS = 1500;
 export const MOVE_DEADLINE_MS = 10_000;
 /** How long avatars stay at a desktop room that went offline before they are sent home. */
 export const OFFLINE_GRACE_MS = 60_000;
+/** The same for a phone room: a phone leaves the foreground often, so it gets longer to come back (2 minutes). */
+export const PHONE_OFFLINE_GRACE_MS = 2 * 60_000;
 
 export interface Place {
   id: string;
@@ -43,9 +46,11 @@ export interface Place {
    * 2D background id. The local place shows whatever the stage is set to, so it has none.
    */
   room?: string;
+  /** Only on device places, saved only when it is not a desktop: a phone or a browser (place-kind.ts). Absent means a desktop. */
+  kind?: PlaceKind;
   /**
    * "Camera presence" for this place, saved only when Kevin changed it. Absent means the default: on for a desktop
-   * room, off for this PC (see camera-setting.ts).
+   * room, off for this PC, a phone and a browser (see camera-setting.ts).
    */
   camera?: boolean;
   /**
@@ -103,6 +108,7 @@ export interface PlaceManagerOptions {
   hallwayMs?: number;
   deadlineMs?: number;
   graceMs?: number;
+  phoneGraceMs?: number;
   /** When someone last used the PC of a place (bija's clock); null when never. Shown in the snapshot. */
   activeAt?: (placeId: string) => number | null;
   logger?: Pick<Console, 'warn' | 'debug'>;
@@ -123,7 +129,7 @@ function parsePlaces(raw: string | null): Place[] {
   if (Array.isArray(stored)) {
     for (const item of stored) {
       if (!item || typeof item !== 'object') continue;
-      const { id, name, node, room, camera, doorbell } = item as Record<string, unknown>;
+      const { id, name, node, room, kind, camera, doorbell } = item as Record<string, unknown>;
       if (typeof id !== 'string' || !id || byId.has(id)) continue;
       const builtIn = BUILT_IN_PLACES.find((place) => place.id === id);
       byId.set(id, {
@@ -132,6 +138,7 @@ function parsePlaces(raw: string | null): Place[] {
         // A built-in place keeps its node: only its name can change.
         node: builtIn ? builtIn.node : typeof node === 'string' && node ? node : 'offscreen',
         ...(typeof room === 'string' && room ? { room } : {}),
+        ...(!builtIn && cleanPlaceKind(kind) !== 'desktop' ? { kind: cleanPlaceKind(kind) } : {}),
         ...(typeof camera === 'boolean' ? { camera } : {}),
         ...(typeof doorbell === 'boolean' ? { doorbell } : {}),
       });
@@ -169,6 +176,7 @@ export class PlaceManager {
   private readonly hallwayMs: number;
   private readonly deadlineMs: number;
   private readonly graceMs: number;
+  private readonly phoneGraceMs: number;
   /** Desktop rooms that are connected right now. Never stored: after a restart every desktop room is offline. */
   private readonly online = new Set<string>();
   /** Desktop rooms that Kevin closed (the kill switch on that PC). Moves into them are refused until they open again. */
@@ -187,6 +195,7 @@ export class PlaceManager {
     this.hallwayMs = options.hallwayMs ?? HALLWAY_MS;
     this.deadlineMs = options.deadlineMs ?? MOVE_DEADLINE_MS;
     this.graceMs = options.graceMs ?? OFFLINE_GRACE_MS;
+    this.phoneGraceMs = options.phoneGraceMs ?? PHONE_OFFLINE_GRACE_MS;
     this.emitter.setMaxListeners(20);
   }
 
@@ -201,11 +210,12 @@ export class PlaceManager {
     this.options.store.setValue(
       PLACES_KEY,
       JSON.stringify(
-        places.map(({ id, name, node, room, camera, doorbell }) => ({
+        places.map(({ id, name, node, room, kind, camera, doorbell }) => ({
           id,
           name,
           node,
           ...(room ? { room } : {}),
+          ...(kind && kind !== 'desktop' ? { kind } : {}),
           ...(typeof camera === 'boolean' ? { camera } : {}),
           ...(typeof doorbell === 'boolean' ? { doorbell } : {}),
         })),
@@ -220,7 +230,7 @@ export class PlaceManager {
   list(): Place[] {
     // A desktop room always has a room: one saved before rooms could be picked gets the default.
     return this.stored().map((place) =>
-      this.isDevicePlace(place) ? { ...place, room: place.room ?? DEFAULT_DESKTOP_ROOM, online: this.online.has(place.id) } : { ...place },
+      this.isDevicePlace(place) ? { ...place, room: place.room ?? defaultRoomFor(place.kind), online: this.online.has(place.id) } : { ...place },
     );
   }
 
@@ -284,14 +294,15 @@ export class PlaceManager {
     return true;
   }
 
-  /** Adds a place drawn by another PC (`node` is that PC's device id). Null when the id is taken or invalid. */
-  addPlace(input: { id: string; name: string; node: string; room?: string }): Place | null {
+  /** Adds a place drawn by another device (`node` is that device's id). Null when the id is taken or invalid. */
+  addPlace(input: { id: string; name: string; node: string; room?: string; kind?: PlaceKind }): Place | null {
     const id = input.id.trim();
     const name = input.name.trim().slice(0, 80);
     if (!id || !name || !input.node || input.node === 'local' || input.node === 'offscreen') return null;
     const places = this.stored();
     if (places.some((place) => place.id === id)) return null;
-    places.push({ id, name, node: input.node, room: input.room?.trim() || DEFAULT_DESKTOP_ROOM });
+    const kind = cleanPlaceKind(input.kind);
+    places.push({ id, name, node: input.node, room: input.room?.trim() || defaultRoomFor(kind), ...(kind !== 'desktop' ? { kind } : {}) });
     this.persist(places);
     this.changed();
     return this.get(id);
@@ -326,7 +337,7 @@ export class PlaceManager {
 
   /**
    * A desktop room connected or dropped. When it drops, its avatars get `graceMs` to come back (a Wi-Fi
-   * blip); after that they are sent home, as a move with the reason 'room closed'.
+   * blip; 2 minutes for a phone); after that they are sent home, as a move with the reason 'room closed'.
    */
   setOnline(placeId: string, online: boolean): void {
     const place = this.get(placeId);
@@ -345,7 +356,7 @@ export class PlaceManager {
         this.timer(() => {
           this.graceTimers.delete(placeId);
           this.sendHome(placeId);
-        }, this.graceMs),
+        }, place.kind === 'phone' ? this.phoneGraceMs : this.graceMs),
       );
     }
     if (wasOnline) this.changed();

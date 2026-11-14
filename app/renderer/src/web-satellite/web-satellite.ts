@@ -10,6 +10,7 @@ import type { RendererConfig } from '../../../main/src/config/config-manager.js'
 import type { Op } from '../../../main/src/room-hub/frames.js';
 import { createBridge, type BridgeTransport, type PreloadApi } from '../../../main/src/bridge/create-bridge.js';
 import { WebGate } from './web-gate.js';
+import { PageActivity, type PageActivityOptions } from './page-activity.js';
 import { WebStore } from './web-store.js';
 import type { ShellHook } from './shell-hook.js';
 
@@ -29,6 +30,8 @@ export interface WebSatelliteDeps {
   logger?: Pick<Console, 'warn' | 'info' | 'debug'>;
   linkOptions?: Partial<RoomLinkOptions>;
   captureTimeoutMs?: number;
+  /** Clock and timers for the activity report, for tests. */
+  activity?: Pick<PageActivityOptions, 'now' | 'throttleMs' | 'setInterval' | 'clearInterval'>;
 }
 
 type Listener = (...args: unknown[]) => void;
@@ -63,6 +66,7 @@ export class WebSatellite {
   readonly bridge: PreloadApi;
   private readonly store: WebStore;
   private readonly gate: WebGate;
+  private readonly activity: PageActivity;
   private link: RoomLinkCore | null = null;
   private linkStatus: LinkStatus = { state: 'idle' };
   private welcome: Welcome | null = null;
@@ -100,10 +104,19 @@ export class WebSatellite {
       logger: deps.logger,
     });
 
+    this.activity = new PageActivity({
+      isForeground: () => deps.isVisible() && this.shellForeground(),
+      send: (at) => this.sendOp({ op: 'presence', activeAt: at }),
+      ...deps.activity,
+    });
+
     this.registerLocal();
     this.bridge = createBridge(this.transport(), { logError: (message, meta) => deps.logger?.warn(message, meta) });
     if (typeof shell?.onForeground === 'function') {
-      const off = shell.onForeground(() => this.gate.checkForeground());
+      const off = shell.onForeground(() => {
+        this.gate.checkForeground();
+        this.activity.note();
+      });
       if (typeof off === 'function') this.offs.push(off);
     }
   }
@@ -125,14 +138,22 @@ export class WebSatellite {
   /** Connects when the page is already paired. */
   start(): void {
     this.connect();
+    this.activity.start();
+  }
+
+  /** A touch or a key on the page: opening and using the app counts as activity (throttled, foreground only). */
+  noteActivity(): void {
+    this.activity.note();
   }
 
   /** The page was shown or hidden (call from `visibilitychange`). */
   visibilityChanged(): void {
     this.gate.checkForeground();
+    this.activity.note();
   }
 
   stop(): void {
+    this.activity.stop();
     this.link?.stop();
     this.link = null;
     this.gate.setLinkUp(false);
@@ -222,6 +243,9 @@ export class WebSatellite {
     }
     // The page follows the snapshot: after a reconnect it must see the world as it is now.
     this.gate.setSnapshot(welcome.snapshot);
+    // bija's "locked" clock must not run on a stale fact: say how the gate is now, and that someone is here.
+    this.sendState(this.gate.state());
+    this.activity.note();
     this.emit('places:changed', welcome.snapshot);
     this.pushStatus();
   }

@@ -10,7 +10,7 @@ const DEFAULT_ROOM_NAME = 'the study';
 function kindOf(place: Place): string {
   if (place.node === 'local') return 'This PC';
   if (place.node === 'offscreen') return 'Next door';
-  return 'Desktop room';
+  return place.kind === 'phone' ? 'Phone room' : place.kind === 'browser' ? 'Browser room' : 'Desktop room';
 }
 
 function secondsLeft(expiresAt: number, now: number): number {
@@ -180,7 +180,7 @@ export function PlacesPanel({
                     Camera presence
                     <span className="kiosk__helper">
                       {' '}
-                      {place.node === 'local'
+                      {place.node === 'local' || place.kind === 'phone' || place.kind === 'browser'
                         ? 'Off unless you turn it on. The camera runs only while a character is on this screen, and only notes that a face is there.'
                         : 'The camera runs only while a character is in the room, and only notes that a face is there.'}
                     </span>

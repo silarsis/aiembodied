@@ -3,6 +3,7 @@
  * the web satellite's gate. No Electron, no Node.
  */
 import { cameraPresenceOn } from '../places/camera-setting.js';
+import { cleanPlaceKind } from '../places/place-kind.js';
 import { doorbellOn } from '../places/doorbell-setting.js';
 
 /** This room's camera setting from a places snapshot. A snapshot that cannot be read gives off (fail closed). */
@@ -10,9 +11,9 @@ export function cameraSettingHere(snapshot: unknown): boolean {
   if (!snapshot || typeof snapshot !== 'object') return false;
   const { places, localPlaceId } = snapshot as { places?: unknown; localPlaceId?: unknown };
   if (!Array.isArray(places) || typeof localPlaceId !== 'string') return false;
-  const here = places.find((place) => (place as { id?: unknown } | null)?.id === localPlaceId) as { node?: unknown; camera?: unknown } | undefined;
+  const here = places.find((place) => (place as { id?: unknown } | null)?.id === localPlaceId) as { node?: unknown; kind?: unknown; camera?: unknown } | undefined;
   if (!here || typeof here.node !== 'string') return false;
-  return cameraPresenceOn({ node: here.node, camera: typeof here.camera === 'boolean' ? here.camera : undefined });
+  return cameraPresenceOn({ node: here.node, kind: cleanPlaceKind(here.kind), camera: typeof here.camera === 'boolean' ? here.camera : undefined });
 }
 
 /**

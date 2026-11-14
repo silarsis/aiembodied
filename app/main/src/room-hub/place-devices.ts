@@ -5,7 +5,8 @@
  * - The state is kept per place (presence/place-presence.ts) and every change is journaled as `place.device`.
  * - A room Kevin closed sends its avatars home at once and takes no one until it opens again.
  * - A locked screen for 5 minutes, or a full-screen app for 2 minutes, sends the avatars home too (with a reason):
- *   a mic that is off for that long means nobody can talk to them there.
+ *   a mic that is off for that long means nobody can talk to them there. On a phone place "locked" also means the
+ *   app is not in the foreground, and the clock is 2 minutes.
  *
  * The satellite switches its own devices off first. Nothing here can turn a device on.
  */
@@ -16,12 +17,16 @@ import type { Op } from './frames.js';
 
 export const LOCKED_HOME_MS = 5 * 60_000;
 export const FULLSCREEN_HOME_MS = 2 * 60_000;
+/** A phone that is locked or not in the foreground sends its avatars home after this long (a phone leaves the foreground all the time). */
+export const PHONE_AWAY_HOME_MS = 2 * 60_000;
 
 export interface PlaceDevicesOptions {
-  places: Pick<PlaceManager, 'sendAllHome' | 'setClosed' | 'isClosed'>;
+  places: Pick<PlaceManager, 'sendAllHome' | 'setClosed' | 'isClosed' | 'get'>;
   presence: Pick<PlacePresence, 'onSatelliteOp' | 'deviceState' | 'forget'>;
   bus?: () => SwitchboardBus | null;
   lockedMs?: number;
+  /** The same clock for a phone place (2 minutes). */
+  phoneAwayMs?: number;
   fullscreenMs?: number;
   /** Called after any device state change, so the Status panel and the Places page can redraw. */
   onChanged?: (placeId: string) => void;
@@ -56,7 +61,8 @@ export class PlaceDevices {
     if (!after) return;
     // The PC is the authority on whether Kevin closed the room, including after a restart of either side.
     if (this.options.places.isClosed(placeId) !== after.closed) this.setClosed(placeId, after.closed);
-    this.watch(this.lockTimers, placeId, after.locked, this.options.lockedMs ?? LOCKED_HOME_MS, 'screen locked');
+    const phone = this.options.places.get(placeId)?.kind === 'phone';
+    this.watch(this.lockTimers, placeId, after.locked, phone ? (this.options.phoneAwayMs ?? PHONE_AWAY_HOME_MS) : (this.options.lockedMs ?? LOCKED_HOME_MS), phone ? 'phone not in use' : 'screen locked');
     this.watch(this.fullscreenTimers, placeId, after.fullscreen, this.options.fullscreenMs ?? FULLSCREEN_HOME_MS, 'full screen app');
     const changed = FIELDS.filter((field) => !before || before[field] !== after[field]);
     if (changed.length > 0) {

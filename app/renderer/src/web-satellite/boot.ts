@@ -33,6 +33,8 @@ export function bootWebSatellite(win: Window = window): WebSatellite | null {
   (win as unknown as { aiembodied?: PreloadApi }).aiembodied = satellite.bridge as unknown as PreloadApi;
   setAssetUrlResolver(hubAssetResolver(() => satellite.assetBase(), () => satellite.assetKey()));
   win.document.addEventListener('visibilitychange', () => satellite.visibilityChanged());
+  // Using the app counts as activity (wandering and urgent news look at it). Throttled inside; passive so scrolling is not held up.
+  for (const type of ['touchstart', 'pointerdown', 'keydown']) win.document.addEventListener(type, () => satellite.noteActivity(), { passive: true, capture: true });
   // Leaving the page drops the link, which closes the gate; stop capture first if anything is still running.
   win.addEventListener('pagehide', () => satellite.stop());
   // A page restored from the back/forward cache has a stopped satellite: start over.

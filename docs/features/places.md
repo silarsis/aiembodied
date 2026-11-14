@@ -145,7 +145,7 @@ Any place can note that a face is there. The camera only ever produces "a face w
 
 - The detector is MediaPipe's BlazeFace short-range model, run in the renderer at 2 frames a second on a hidden video (`app/renderer/src/camera/`). The model is in `app/renderer/public/models/` (Apache-2.0, see the README there). The WASM files are copied from `@mediapipe/tasks-vision` at build time. Nothing is fetched from the internet when the app runs, and the page's content policy would block it.
 - A face that appears after none was seen for 30 s sends the `greet_face` cue. While a face stays in view `faceSeenAt` is reported every 5 s.
-- **Setting.** Each place has "Camera presence" in Settings > Places. A desktop room defaults to on. This PC (bija's own place) defaults to off, because it films Kevin's main desk. An offscreen place has no camera. The value is saved in the place record only when Kevin changes it and goes to a satellite in its places snapshot.
+- **Setting.** Each place has "Camera presence" in Settings > Places. A desktop room defaults to on; a phone or browser room defaults to off. This PC (bija's own place) defaults to off, because it films Kevin's main desk. An offscreen place has no camera. The value is saved in the place record only when Kevin changes it and goes to a satellite in its places snapshot.
 - **When it runs on bija:** the setting is on and at least one avatar stands at this screen. A small green dot shows in the corner while it is live. Pick the camera in Devices and wake words.
 - **When it runs on a satellite:** only while the device gate says so (see [satellite.md](satellite.md)).
 - **Arrival.** When an avatar arrives at a place and a face was seen there in the last 30 s, it waves. Main sends `greet_face` with the avatar's id (`presence/arrival-greeting.ts`), so any avatar can wave, not only Echo.
@@ -183,6 +183,25 @@ A place's **Doorbell** (Settings > Places) says what its wake word does while no
 - **bija.** With an avatar at this screen the wake word listens when listening is on, as always. With nobody here and the doorbell on it still listens; hearing it calls an avatar (the recent partner, else Echo, else the first one, like the talk key) and the turn starts once it has arrived: only then does the renderer get the wake event and listen for the follow-up. With nobody here and the doorbell off the wake word stops and the microphone is released; it comes back when an avatar has arrived (walking in does not count). `WakeWordListeningController.setGate` does this without touching what the page asked for. See `places/doorbell.ts`.
 - **A satellite** runs the same openWakeWord worker in its own main process (`satellite/wake-runner.ts`), but only while the privacy gate allows it: an avatar is in the room and the gate is open (mic live), or the doorbell is on and every other gate fact is true (mic `doorbell`, amber). Anything else, or anything not yet known, and it is not running. In doorbell mode a wake sends `wake.heard` (model name and score) and bija calls an avatar into that place if its doorbell is on and nobody is there. Audio never leaves the satellite, and the page's own microphone stays closed in doorbell mode. With an avatar in the room the wake goes to that PC's own page, as on bija.
 - **Models.** Built-in models ship with the app. A trained model comes from bija: the satellite asks `wake-word:model` each time its worker starts and gets the settings picked on bija plus, for a trained model, the .onnx bytes (only from the trained folder, `.onnx`, up to 16 MB). It keeps the file by hash in `<userData>/wake-word-cache/`. bija's own microphone index is never used there.
+
+## Phone and browser rooms
+
+A place drawn by a phone or a browser has a kind (`Place.kind`: `phone` or `browser`; a desktop room has none). It is set when the device pairs (`kind` in the pair request) and shown in Settings > Places. Kevin's rules, by kind (`places/place-kind.ts`):
+
+| Rule | desktop | browser | phone |
+|---|---|---|---|
+| Doorbell default | off | off | off (the toggle stays) |
+| Camera presence default | on | off | off |
+| Wanders in unprompted | yes | yes | no |
+| Avatars go home after the link drops | 60 s | 60 s | 2 min |
+| Avatars go home after the screen is locked or the app is not in front | 5 min | 5 min | 2 min |
+| New room starts in | Studio flat (3D) | Studio flat (3D) | a 2D background (`builtin:garden`) |
+
+A saved Camera presence or Doorbell setting always wins over the default.
+
+- **No unprompted wandering into a phone.** The idle prompt does not list a phone room, `wanderRefusal` refuses a `wandered` move into one ("a phone is not for wandering"), and the next-door tick never picks one. A summon (the talk key, the doorbell), a `{room:}` in a conversation turn and urgent news still may go there. A browser room follows the desktop rules.
+- **Opening the app counts as activity.** A web page (browser or phone) reports `presence {activeAt}` while it is visible and in the foreground: once at start, then every 15 seconds, and on any touch, pointer or key (throttled to one per 15 seconds). Nothing is sent while the page is hidden. bija stamps it with its own clock, like a desktop's. So a phone someone is holding counts as "a PC in use" for wandering, and for urgent news (it is "active" if `activeAt` is within 2 minutes, the same as any place).
+- **Walking home.** When a phone's link goes offline (`PlaceManager.setOnline`, grace 2 minutes instead of 60 seconds), or its gate reports "locked" (the app is not in the foreground; `PlaceDevices`, 2 minutes instead of 5), its avatars walk home to bija. Both clocks stop if the phone comes back in time. The page sends its gate state again every time the link comes up, so a stale "locked" is cleared.
 
 ## Urgent news walks to Kevin
 
