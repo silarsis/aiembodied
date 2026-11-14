@@ -208,11 +208,15 @@ The shell serves the page from `https://appassets.androidplatform.net` and proxi
 - The page is served from `https://appassets.androidplatform.net/app/`. The shell answers every request on that origin by fetching `http://<hub>:8791/...` (only `GET /app/...` and `GET /v1/asset`, which gets the device token). The WebSocket goes direct to `ws://<hub>:8791/v1/link`, allowed by a network security config for `bija`, `*.ts.net` and `localhost`, and by mixed content being allowed in the WebView.
 - The shell script it adds to `index.html` sets `window.__AIEMBODIED_SHELL__` (see above) before boot. It needed no change on the page side. Closing the room natively is reported to the page as "not in the foreground".
 - The native gate: foreground = resumed + screen interactive + keyguard not locked, told to the page on every change. "Close this room" (always-visible button and menu) is kept across restarts. The mic and camera are granted only while the page's last gate report allows that device, the app is in front and the room is open; otherwise denied. On leaving the foreground or closing, the page must report the devices off within 1 second or the WebView is reloaded. No foreground service and no background listening.
-- No wake word, no doorbell, camera presence off unless the room's setting says on, avatars do not wander into the phone unprompted, and avatars walk home 2 minutes after the app closes (the hub side comes in the next update).
+- No wake word, no doorbell, camera presence off unless the room's setting says on, avatars do not wander into the phone unprompted, and avatars walk home 2 minutes after the app closes or leaves the foreground (bija's side is described under "Phone and browser rooms" in [places.md](places.md)).
 
 ### Device kind
 
-A pair request may say `kind: 'desktop' | 'phone' | 'browser'` (default `desktop`; anything else counts as desktop). It is stored with the device in `room-devices.json` and shown on the Places page. Nothing else depends on it yet.
+A pair request may say `kind: 'desktop' | 'phone' | 'browser'` (default `desktop`; anything else counts as desktop). It is stored with the device in `room-devices.json`, copied onto its place (`Place.kind`) and shown on the Places page. bija's rules by kind (camera default, no unprompted wandering into a phone, 2 minute walk home, 2D starting room for a phone) are in [places.md](places.md), "Phone and browser rooms".
+
+### Activity from a page
+
+A web page cannot read the system idle time, so opening the app counts. `web-satellite/page-activity.ts` sends `presence {activeAt}` while the page is visible and in the shell's foreground: at start, every 15 seconds, when the page comes back to the front, and on any touch, pointer or key (at most one per 15 seconds). Nothing goes out while the page is hidden. When the link comes up the page also sends `device.state` again, so bija's "locked" clock (2 minutes for a phone) never runs on a stale fact.
 
 ### Not on the web yet
 

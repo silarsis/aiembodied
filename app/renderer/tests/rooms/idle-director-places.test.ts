@@ -181,3 +181,30 @@ describe('IdleDirector wandering between places', () => {
     expect(s.asked).toEqual([]);
   });
 });
+
+describe('IdleDirector and phone rooms', () => {
+  const phoneView = (kind: 'phone' | 'browser' | 'desktop') =>
+    view({
+      places: [
+        { id: 'home', name: 'the lounge', node: 'local' },
+        { id: 'next-door', name: 'next door', node: 'offscreen' },
+        { id: 'study', name: 'the study', node: 'room-1', online: true, ...(kind === 'desktop' ? {} : { kind }) },
+      ],
+    });
+
+  it('does not offer a phone room, even when someone is using it and an avatar is there', async () => {
+    const s = setup(phoneView('phone'), true);
+    s.director.start();
+    await s.clock.advance(FIRST_ACTION_DELAY_MS);
+    expect(s.picks[0]?.user ?? '').not.toContain('the study');
+    expect(s.picks[0]?.system ?? '').not.toContain('{room:<place>}');
+    expect(s.asked).toEqual([]);
+  });
+
+  it.each(['browser', 'desktop'] as const)('still offers a %s room (desktop rules)', async (kind) => {
+    const s = setup(phoneView(kind), true);
+    s.director.start();
+    await s.clock.advance(FIRST_ACTION_DELAY_MS);
+    expect(s.picks[0]?.user).toContain('- the study:');
+  });
+});

@@ -8,6 +8,7 @@
  * Electron, no timers; the clock is in the snapshot.
  */
 import type { PlacesSnapshot } from './place-manager.js';
+import { isPhonePlace } from './place-kind.js';
 
 /** An avatar that moved (for any reason) less than this long ago does not wander. */
 export const WANDER_COOLDOWN_MS = 10 * 60_000;
@@ -62,7 +63,8 @@ export interface WanderContext {
  * Why an avatar may not wander to `targetRef` right now, or null when it may. Rules (all must hold):
  * (a) it has not changed place in the last 10 minutes; (b) the target is online and open; (c) someone used the
  * target PC in the last 10 minutes, or another avatar is there; (d) it is not speaking and not in a conversation
- * (Kevin spoke with it in the last 2 minutes).
+ * (Kevin spoke with it in the last 2 minutes); (e) the target is not a phone room: nobody wanders into a phone by
+ * themselves. Summons, a `{room:}` in a conversation turn and urgent news do not ask this function, so they still may.
  */
 export function wanderRefusal(view: WanderView, avatarId: string, targetRef: string, context: WanderContext = {}): string | null {
   const now = context.now ?? view.now ?? Date.now();
@@ -72,6 +74,7 @@ export function wanderRefusal(view: WanderView, avatarId: string, targetRef: str
   if ((view.locations[avatarId] ?? view.places[0]?.id) === target.id) return 'already there';
   const movedAt = view.movedAt?.[avatarId];
   if (typeof movedAt === 'number' && now - movedAt < WANDER_COOLDOWN_MS) return 'moved recently';
+  if (isPhonePlace(target)) return 'a phone is not for wandering';
   if (target.online === false || target.closed === true) return `${target.name} is closed`;
   if (!activeWithin(view, target.id, ACTIVE_WINDOW_MS, now) && othersAt(view, target.id, avatarId).length === 0) return 'nobody is there';
   if (context.speaking) return 'speaking';

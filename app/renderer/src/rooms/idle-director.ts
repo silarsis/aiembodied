@@ -31,6 +31,7 @@ import {
 import { describeAvatarWhere } from './scene-instructions.js';
 import type { IdleInput, IdlePlace, IdleTag } from './idle-types.js';
 import type { PlacesSnapshot } from '../../../main/src/places/place-manager.js';
+import { isPhonePlace } from '../../../main/src/places/place-kind.js';
 import { ACTIVE_WINDOW_MS, WANDER_COOLDOWN_MS, activeWithin, othersAt } from '../../../main/src/places/wander.js';
 import { talkStartActions } from './idle-talk.js';
 import type { AvatarState, PlanWorld } from './scene-actions.js';
@@ -394,7 +395,7 @@ export class IdleDirector {
   }
 
   /**
-   * The other places this avatar could walk to, for the prompt: open ones where someone used the PC in the last 10
+   * The other places this avatar could walk to, for the prompt (never a phone room): open ones where someone used the PC in the last 10
    * minutes or an avatar stands. Nothing when it moved in the last 10 minutes (it could not go anyway), so with one
    * place, or while nobody is anywhere else, the prompt is what it always was.
    */
@@ -406,7 +407,7 @@ export class IdleDirector {
     if (typeof movedAt === 'number' && now - movedAt < WANDER_COOLDOWN_MS) return [];
     const here = snapshot.locations[actor.id] ?? snapshot.localPlaceId;
     return snapshot.places
-      .filter((place) => place.id !== here && place.online !== false && place.closed !== true)
+      .filter((place) => place.id !== here && place.online !== false && place.closed !== true && !isPhonePlace(place))
       .map((place) => ({
         name: place.name,
         who: othersAt(snapshot, place.id, actor.id).map((id) => view.nameOf(id)),

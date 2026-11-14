@@ -673,7 +673,7 @@ export class RoomHub {
     this.pairingName = null;
     const deviceId = `room-${randomBytes(6).toString('hex')}`;
     const placeId = slugPlaceId(requested, places.list().map((place) => place.id));
-    const place = places.addPlace({ id: placeId, name: requested, node: deviceId });
+    const place = places.addPlace({ id: placeId, name: requested, node: deviceId, kind });
     if (!place) {
       reply(500, { error: 'failed' });
       return;
