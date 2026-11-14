@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { Place, PlacesSnapshot } from '../../../main/src/places/place-manager.js';
+import { deviceSummary } from './room-devices-status.js';
 import type { PairingStart, RoomHubBridge, RoomHubStatus } from '../../../main/src/room-hub/bridge-types.js';
 
 const DEFAULT_ROOM_NAME = 'the study';
@@ -187,6 +188,11 @@ export function PlacesPanel({
                         ? `${device.name} · ${device.online ? 'connected' : `last seen ${new Date(device.lastSeen).toLocaleString()}`}`
                         : 'This desktop room is not paired any more.'}
                     </span>
+                    {device?.online ? (
+                      <span className="kiosk__helper" data-testid={`devices-${place.id}`}>
+                        {deviceSummary(device.deviceState)}
+                      </span>
+                    ) : null}
                     {device ? (
                       <button type="button" onClick={() => void run(() => roomHub?.revoke(device.id) ?? Promise.resolve(), 'Could not revoke.')} aria-label={`Revoke ${place.name}`}>
                         Revoke

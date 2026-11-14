@@ -142,7 +142,8 @@ Make the code first in Settings > Places. `connect` prints the welcome and every
 ## Limits
 
 - The OpenAI Realtime conversation engine is Echo-only and not place-aware. Places work with the local voice engine.
-- A desktop room has no microphone or camera yet. It shows the room, plays the voices and takes typed messages. Its presence (idle or away) is kept per place in bija (`presence/place-presence.ts`).
+- A desktop room has a microphone (behind the privacy gate, see [satellite.md](satellite.md)) but no camera yet. Its presence and its device state (mic, camera, speakers, locked, closed, full screen) are kept per place in bija (`presence/place-presence.ts`) and shown in Settings > Places and the Status panel. A closed room, a screen locked for 5 minutes or a full-screen app for 2 minutes send its avatars home (`room-hub/place-devices.ts`).
+- `places:summon` (the talk key with nobody in the room) calls the recent partner, else Echo, else the first avatar to the caller's place. It works for bija's own window too.
 - Chatter between avatars happens only among avatars in the same place.
 - A move away from this PC that is never confirmed brings the avatar back on screen, but a body that was unloaded appears at its normal spot, not at the door.
 - Revoking a desktop room puts its avatars back in the lounge at once (they appear where they stand, without the door walk), because the place is gone.

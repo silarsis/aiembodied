@@ -2,7 +2,7 @@ import { BackgroundService } from './backgrounds/background-service.js';
 import { RoomService } from './rooms/room-service.js';
 import { pickIdleActions } from './rooms/idle-thoughts.js';
 import { MAX_IDLE_HABITS_LENGTH, normalizeIdleHabits } from './rooms/idle-habits.js';
-import { app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain, powerMonitor, protocol } from 'electron';
+import { Menu, Notification, app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain, nativeImage, powerMonitor, protocol, session } from 'electron';
 import type { WebContents } from 'electron';
 import { ASSET_SCHEME, ASSET_SCHEME_PRIVILEGES, registerAssetProtocol } from './rooms/asset-protocol.js';
 import { ASSET_FOLDER, createRoomGenerationService, objectMakingAvailable, pickSingleImageGeometry } from './rooms/room-generation-setup.js';
@@ -21,13 +21,17 @@ import { PlacePresence } from './presence/place-presence.js';
 import { createPlaceDelivery, type EventSink } from './places/place-delivery.js';
 import { createAppWindow } from './window/app-window.js';
 import { Satellite } from './satellite/satellite.js';
+import { DeviceRuntime } from './satellite/device-runtime.js';
+import { FullscreenWatcher } from './satellite/fullscreen-watch.js';
+import { stateIcon, toBgra } from './satellite/tray-state.js';
 import { KeychainTokenStore } from './satellite/token-store.js';
 import { SATELLITE_FILE, SatelliteSettingsStore, detectSatelliteRole, userDataOverride } from './satellite/settings.js';
 import { RoomHub } from './room-hub/room-hub.js';
 import { RoomDeviceRegistry } from './room-hub/room-devices.js';
 import { createTailscaleLookup } from './room-hub/tailscale.js';
 import { rememberIpcHandler } from './room-hub/ipc-registry.js';
-import { chooseSummon, summon } from './places/summon.js';
+import { callToPlace, chooseSummon, summon } from './places/summon.js';
+import { PlaceDevices } from './room-hub/place-devices.js';
 import { createIntentRouter } from './floor/intent-router.js';
 import { createModelBid } from './floor/bid.js';
 import { createSystemOne } from './decide/system-one.js';
@@ -207,6 +211,7 @@ if (userDataFolder) app.setPath('userData', userDataFolder);
 const satelliteMode = detectSatelliteRole(process.env, app.getPath('userData'));
 const satelliteSettings = satelliteMode ? new SatelliteSettingsStore(path.join(app.getPath('userData'), SATELLITE_FILE)) : null;
 let satellite: Satellite | null = null;
+let satelliteDevices: DeviceRuntime | null = null;
 
 const secretStore = isProduction ? new KeytarSecretStore('aiembodied') : new InMemorySecretStore();
 const { logger } = initializeLogger();
@@ -344,6 +349,14 @@ let floorSender: WebContents | null = null;
 const lastEchoInstructions = new Map<string, string>();
 /** What each desktop room's PC last said about itself (presence, devices). bija's own presence is `presence`. */
 const placePresence = new PlacePresence();
+/** The devices of each desktop room: their state, the kill switch, and the clocks that send avatars home. */
+let placeDevices: PlaceDevices | null = null;
+
+/** What the Places page and the Status panel show: each desktop room with what its PC says about its devices. */
+function roomHubStatus(hub: RoomHub) {
+  const status = hub.status();
+  return { ...status, devices: status.devices.map((device) => ({ ...device, deviceState: placePresence.deviceState(device.placeId) })) };
+}
 
 /** The place a call came from: a desktop room's calls carry its place id on the fake event; bija's own window is the local place. */
 function placeOf(event: unknown): string {
@@ -2138,12 +2151,23 @@ function registerIpcHandlers(
   handleIpc('places:arrived', (_event, avatarId: unknown) => {
     if (typeof avatarId === 'string' && avatarId) requirePlaces().arrived(avatarId);
   });
+  // The talk key with nobody in the room: call someone over (the recent partner, else Echo, else the first avatar).
+  // The same rule for bija's own window and for a desktop room; the answer says who is coming.
+  handleIpc('places:summon', (event) => {
+    const placeId = placeOf(event);
+    return callToPlace(
+      requirePlaces(),
+      placeId,
+      floorFor(placeId)?.recentPartner() ?? null,
+      (avatarRegistry?.list() ?? []).map((profile) => ({ id: profile.id, name: profile.name })),
+    );
+  });
   // Settings > Places: desktop rooms (pairing, who is connected, rename, revoke).
   const requireRoomHub = (): RoomHub => {
     if (!roomHub) throw new Error('Desktop rooms are not available yet.');
     return roomHub;
   };
-  handleIpc('room-hub:status', () => requireRoomHub().status());
+  handleIpc('room-hub:status', () => roomHubStatus(requireRoomHub()));
   handleIpc('room-hub:start-pairing', (_event, placeName: unknown) => requireRoomHub().startPairing(typeof placeName === 'string' ? placeName : undefined));
   handleIpc('room-hub:cancel-pairing', async () => {
     await requireRoomHub().cancelPairing();
@@ -2152,7 +2176,7 @@ function registerIpcHandlers(
     if (typeof deviceId !== 'string') return false;
     const place = requireRoomHub().status().devices.find((device) => device.id === deviceId)?.placeId;
     const revoked = await requireRoomHub().revoke(deviceId);
-    if (revoked && place) placePresence.forget(place);
+    if (revoked && place) placeDevices?.forget(place);
     return revoked;
   });
   // Which room a desktop room draws (a 3D room id or a background id).
@@ -2667,6 +2691,12 @@ function focusExistingWindow() {
   mainWindow.focus();
 }
 
+const satelliteLogger = {
+  debug: (message?: unknown, meta?: unknown) => logger.debug(String(message), meta),
+  info: (message?: unknown, meta?: unknown) => logger.info(String(message), meta),
+  warn: (message?: unknown, meta?: unknown) => logger.warn(String(message), meta),
+};
+
 /** Starts this PC as a satellite: pairing, the link to bija, the asset cache, and the window. */
 async function startSatelliteMode(settings: SatelliteSettingsStore): Promise<void> {
   const runtime = new Satellite({
@@ -2677,13 +2707,37 @@ async function startSatelliteMode(settings: SatelliteSettingsStore): Promise<voi
     hostname: os.hostname(),
     getWindow: () => mainWindow,
     quit: () => app.quit(),
-    logger: {
-      debug: (message, meta) => logger.debug(String(message), meta),
-      info: (message, meta) => logger.info(String(message), meta),
-      warn: (message, meta) => logger.warn(String(message), meta),
-    },
+    pushToTalk,
+    logger: satelliteLogger,
   });
   satellite = runtime;
+  // The privacy gate: the mic is live only while an avatar is here, the screen is unlocked, the link is up, the
+  // room is open and no other app is full screen. It lives here, in the main process, and fails closed.
+  const startIcon = stateIcon('off');
+  const tray = new Tray(nativeImage.createFromBitmap(toBgra(startIcon.data), { width: startIcon.width, height: startIcon.height, scaleFactor: 2 }));
+  const devices = new DeviceRuntime({
+    settings,
+    powerMonitor,
+    globalShortcut,
+    session: session.defaultSession,
+    getWindow: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
+    sendOp: (op) => runtime.sendOp(op),
+    tray,
+    makeImage: (icon) => nativeImage.createFromBitmap(toBgra(icon.data), { width: icon.width, height: icon.height, scaleFactor: 2 }),
+    makeMenu: (template) => Menu.buildFromTemplate(template),
+    makeWatcher: (onChange) => new FullscreenWatcher({ onChange, logger: satelliteLogger }),
+    notify: (title, body) => {
+      if (Notification.isSupported()) new Notification({ title, body }).show();
+    },
+    placeName: () => runtime.status().placeName,
+    avatarName: (avatarId) => runtime.avatarName(avatarId),
+    showWindow: () => focusExistingWindow(),
+    quit: () => app.quit(),
+    logger: satelliteLogger,
+  });
+  satelliteDevices = devices;
+  runtime.attachDevices(devices);
+  devices.start();
   await runtime.start(ipcMain, protocol);
   logger.info('Running as a satellite PC.', { hub: settings.get().hubUrl });
   let window: BrowserWindow;
@@ -2814,11 +2868,22 @@ app.whenReady().then(async () => {
       avatars: () => registry.list(),
       settings: () => ({ wakeWord: manager.getRendererConfig().wakeWord ?? null, pushToTalk: pushToTalk.getStatus() }),
       bus: () => switchboardBus,
-      onSatelliteMessage: (from, op) => placePresence.onSatelliteOp(from.placeId, op),
+      onSatelliteMessage: (from, op) => {
+        if (op.op === 'presence' || op.op === 'wake.heard') placePresence.onSatelliteOp(from.placeId, op);
+        else placeDevices?.onMessage(from.placeId, op);
+      },
       logger,
     });
     roomHub = hub;
-    hub.onChanged(() => broadcastToWindows('room-hub:changed', hub.status()));
+    const pushHubStatus = () => broadcastToWindows('room-hub:changed', roomHubStatus(hub));
+    placeDevices = new PlaceDevices({
+      places,
+      presence: placePresence,
+      bus: () => switchboardBus,
+      onChanged: pushHubStatus,
+      logger,
+    });
+    hub.onChanged(pushHubStatus);
     places.settleOffline();
     void hub.start().catch((error) => logger.warn('Room hub failed to start', { message: error instanceof Error ? error.message : String(error) }));
     // One floor per place: the scene is the avatars at that place, and what the floor starts (answers, chatter)
@@ -3263,6 +3328,7 @@ app.on('before-quit', async (event) => {
   proactiveTick?.stop();
   void roomHub?.stop();
   satellite?.stop();
+  satelliteDevices?.stop();
   for (const { inbox } of avatarPlumbing.values()) inbox.stop();
   void switchboardClient?.stop();
 

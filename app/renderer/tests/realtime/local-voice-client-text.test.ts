@@ -82,4 +82,25 @@ describe('LocalVoiceClient typed text', () => {
     expect(await client.sendText('   ')).toBe(false);
     expect(bridge.respond).not.toHaveBeenCalled();
   });
+
+  it('reports how long a typed turn took to start playing, with no transcript step', async () => {
+    const bridge = createBridge();
+    const { context } = createFakeContext();
+    let clock = 1000;
+    const timings: unknown[] = [];
+    const client = new LocalVoiceClient({
+      getBridge: () => bridge,
+      wakePhrase: 'Hey Jarvis',
+      createAudioContext: () => context,
+      now: () => (clock += 50),
+      callbacks: { onTurnTiming: (timing) => timings.push(timing) },
+    });
+    await client.connect({ inputStream: {} as MediaStream });
+    await client.sendText('what time is it?');
+    expect(timings).toHaveLength(1);
+    const timing = timings[0] as { transcriptMs: number | null; firstAudioMs: number | null; playbackMs: number };
+    expect(timing.transcriptMs).toBeNull();
+    expect(timing.firstAudioMs).toBeGreaterThan(0);
+    expect(timing.playbackMs).toBeGreaterThan(timing.firstAudioMs as number);
+  });
 });

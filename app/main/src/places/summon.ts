@@ -52,3 +52,40 @@ export function chooseSummon(partnerId: string | null, avatarIds: string[]): str
   if (avatarIds.includes('echo')) return 'echo';
   return avatarIds[0] ?? null;
 }
+
+export type CallResult =
+  | { ok: true; avatarId: string; name: string; /** Somebody is at the place already: nobody was called. */ alreadyHere: boolean }
+  | { ok: false; reason: string };
+
+type CallPlaces = Pick<PlaceManager, 'startMove' | 'avatarsAt' | 'snapshot'>;
+
+/**
+ * The push-to-talk key (or a tap) at a desktop room with nobody in it: call someone over. The recent partner
+ * comes first, else Echo, else the first avatar. The move starts here and the answer says who is coming; it
+ * does not wait for the walk. An avatar that is busy walking elsewhere is skipped for the next one.
+ */
+export function callToPlace(
+  places: CallPlaces,
+  placeId: string,
+  partnerId: string | null,
+  avatars: Array<{ id: string; name: string }>,
+): CallResult {
+  const here = places.avatarsAt(placeId);
+  const nameOf = (avatarId: string) => avatars.find((avatar) => avatar.id === avatarId)?.name ?? avatarId;
+  if (here.length > 0) return { ok: true, avatarId: here[0], name: nameOf(here[0]), alreadyHere: true };
+  const ids = avatars.map((avatar) => avatar.id);
+  const first = chooseSummon(partnerId, ids);
+  if (!first) return { ok: false, reason: 'nobody to call' };
+  const order = [first, ...(ids.includes('echo') ? ['echo'] : []), ...ids].filter((id, index, all) => all.indexOf(id) === index);
+  const coming = places.snapshot().transit.find((move) => move.to === placeId);
+  if (coming) return { ok: true, avatarId: coming.avatarId, name: nameOf(coming.avatarId), alreadyHere: false };
+  let failure = 'nobody to call';
+  for (const avatarId of order) {
+    const started = places.startMove(avatarId, placeId, 'summoned');
+    if (started.ok) return { ok: true, avatarId, name: nameOf(avatarId), alreadyHere: false };
+    failure = started.reason;
+    // Closed or unknown place: no other avatar will do better.
+    if (started.reason !== 'already moving' && started.reason !== 'already there' && started.reason !== 'unknown avatar') break;
+  }
+  return { ok: false, reason: failure };
+}

@@ -2338,3 +2338,37 @@ body {
 .satelliteStatus__rows dd { margin: 0; }
 .satelliteStatus__confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .satelliteStatus__confirm p { margin: 0; flex-basis: 100%; }
+
+/* Satellite: microphone and camera dots (green live, amber doorbell only, grey off). */
+.deviceDots {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 40;
+  display: flex;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.55);
+}
+.deviceDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+.deviceDot[data-level='live'] {
+  background: #22c55e;
+}
+.deviceDot[data-level='doorbell'] {
+  background: #f59e0b;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

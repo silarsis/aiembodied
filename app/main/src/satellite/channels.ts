@@ -60,6 +60,7 @@ const FORWARD = [
   'places:snapshot',
   'places:move',
   'places:arrived',
+  'places:summon',
 ] as const;
 
 /** Answered on this PC. */
@@ -81,6 +82,11 @@ const LOCAL = [
   'satellite:status',
   'satellite:pair',
   'satellite:forget',
+  // The privacy gate (device-gate.ts) and what the renderer reports back to it.
+  'device-gate:get',
+  'device-gate:capture-stopped',
+  'device-gate:set-open',
+  'satellite:turn-timing',
 ] as const;
 
 /** Events bija pushes (as `ipc`) that this PC's renderer listens for. */
@@ -228,7 +234,9 @@ const UNAVAILABLE = [
   'floor:get-hear-chatter',
   'floor:set-hear-chatter',
   'presence:set-dnd',
-  // The microphone side comes in a later step (PR 4); wake words are trained on bija.
+  // Wake words are trained and heard on bija. The talk key's events come from this PC's own main process, and so
+  // does the gate's: bija may ask devices off but never on, so it never gets to push `device-gate:changed`.
+  'device-gate:changed',
   'wake-word:cancel-training',
   'wake-word:event',
   'wake-word:get-training-status',

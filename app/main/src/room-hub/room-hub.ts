@@ -16,6 +16,7 @@ import os from 'node:os';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import type { PlaceManager } from '../places/place-manager.js';
+import type { PlaceDeviceState } from '../presence/place-presence.js';
 import type { SwitchboardBus } from '../switchboard/bus.js';
 import type { SwitchboardEventInput } from '../switchboard/types.js';
 import { mimeFor, resolveAssetPath } from '../rooms/asset-protocol.js';
@@ -51,7 +52,7 @@ export interface RoomHubOptions {
   bus?: () => SwitchboardBus | null;
   /** The handler main.ts registered for a channel. */
   handlerFor?: (channel: string) => IpcHandler | undefined;
-  /** `presence`, `device.state` and `wake.heard` from a satellite. */
+  /** `presence`, `device.state`, `room.close`, `room.open` and `wake.heard` from a satellite. */
   onSatelliteMessage?: (from: { deviceId: string; placeId: string }, op: Op) => void;
   env?: NodeJS.ProcessEnv;
   /** 0 picks a free port (tests). */
@@ -73,6 +74,8 @@ export interface RoomHubDeviceStatus {
   online: boolean;
   lastSeen: number;
   tailscaleNode: string | null;
+  /** What the PC last said about its mic, camera, speakers, lock, kill switch and full-screen apps. Added by main.ts. */
+  deviceState?: PlaceDeviceState | null;
 }
 
 export interface RoomHubStatus {
@@ -584,6 +587,8 @@ export class RoomHub {
         return;
       case 'presence':
       case 'device.state':
+      case 'room.close':
+      case 'room.open':
       case 'wake.heard':
         this.options.onSatelliteMessage?.({ deviceId: conn.deviceId, placeId: conn.placeId }, op);
         return;

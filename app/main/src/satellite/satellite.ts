@@ -15,6 +15,9 @@ import { ASSET_SCHEME, mimeFor, type ProtocolLike } from '../rooms/asset-protoco
 import { DEFAULT_PROVIDER_SETTINGS } from '../config/provider-settings.js';
 import type { RendererConfig } from '../config/config-manager.js';
 import type { AudioDevicePreferences } from '../config/preferences-store.js';
+import type { Op } from '../room-hub/frames.js';
+import { INITIAL_FACTS, evaluateGate, type DeviceGateState } from './device-gate.js';
+import type { PushToTalkStatus } from '../talk/types.js';
 
 export interface SatelliteStatus {
   role: 'satellite';
@@ -49,6 +52,26 @@ export interface WindowLike {
   webContents: { send(channel: string, ...args: unknown[]): void; isDestroyed?(): boolean };
 }
 
+/** What the satellite needs from its device runtime (device-runtime.ts); attached after both exist. */
+export interface DevicesLike {
+  state(): DeviceGateState;
+  setLinkUp(up: boolean): void;
+  setSnapshot(snapshot: unknown): void;
+  hubOff(reason: string): void;
+  setOpen(open: boolean): DeviceGateState;
+  captureStopped(): void;
+}
+
+/** How long one spoken turn took on this PC, measured from the end of speech (milliseconds). */
+export interface TurnTiming {
+  /** Until the transcript came back from bija. Null for a typed line. */
+  transcriptMs: number | null;
+  /** Until the first sentence of audio arrived. */
+  firstAudioMs: number | null;
+  /** Until the first sentence started playing. */
+  playbackMs: number | null;
+}
+
 export interface SatelliteDeps {
   settings: SatelliteSettingsStore;
   tokens: TokenStore;
@@ -64,6 +87,10 @@ export interface SatelliteDeps {
   /** Replaced in tests to speed up the link's timers. */
   linkOptions?: Partial<RoomLinkOptions>;
   makeLink?: (options: RoomLinkOptions) => RoomLink;
+  /** Push-to-talk lives in main; the satellite registers the key and reports its state. */
+  pushToTalk?: { apply(shortcut: string): PushToTalkStatus; getStatus(): PushToTalkStatus };
+  /** How often the ping round trip is logged. */
+  pingLogMs?: number;
 }
 
 const DEFAULT_KEYWORD = 'Hey Echo';
@@ -97,16 +124,37 @@ export class Satellite {
   private readonly modelSha = new Map<string, string>();
   private readonly local = new Map<string, (args: unknown[]) => unknown>();
   private starting: Promise<void> = Promise.resolve();
+  private devices: DevicesLike | null = null;
+  private rttMs: number | null = null;
+  private rttTimer: ReturnType<typeof setInterval> | null = null;
+  private lastTurn: TurnTiming | null = null;
 
   constructor(private readonly deps: SatelliteDeps) {
     this.cache = new AssetCache({ dir: deps.cacheDir, maxBytes: deps.cacheBytes });
+    const saved = deps.settings.get();
+    this.audioPreferences = {
+      ...(saved.audioInputDeviceId ? { audioInputDeviceId: saved.audioInputDeviceId } : {}),
+      ...(saved.audioOutputDeviceId ? { audioOutputDeviceId: saved.audioOutputDeviceId } : {}),
+    };
     this.local.set('app:quit', () => void deps.quit());
     this.local.set('config:get', () => this.config());
     this.local.set('config:set-audio-devices', (args) => {
-      this.audioPreferences = { ...this.audioPreferences, ...((args[0] as AudioDevicePreferences | undefined) ?? {}) };
+      const next = (args[0] as AudioDevicePreferences | undefined) ?? {};
+      this.audioPreferences = { ...this.audioPreferences, ...next };
+      // This PC's own microphone and speakers are kept here, in satellite.json, not on bija.
+      if ('audioInputDeviceId' in next || 'audioOutputDeviceId' in next) {
+        this.deps.settings.update({
+          audioInputDeviceId: this.audioPreferences.audioInputDeviceId || null,
+          audioOutputDeviceId: this.audioPreferences.audioOutputDeviceId || null,
+        });
+      }
       return this.config();
     });
-    this.local.set('talk:get-shortcut-status', () => ({ shortcut: '', registered: false }));
+    this.local.set('talk:get-shortcut-status', () => this.deps.pushToTalk?.getStatus() ?? { shortcut: '', registered: false });
+    this.local.set('device-gate:get', () => this.deviceState());
+    this.local.set('device-gate:capture-stopped', () => this.devices?.captureStopped());
+    this.local.set('device-gate:set-open', (args) => (this.devices ? this.devices.setOpen(args[0] === true) : this.deviceState()));
+    this.local.set('satellite:turn-timing', (args) => this.noteTurn(args[0]));
     this.local.set('wake-word:list', () => []);
     this.local.set('wake-word:set-listening', () => undefined);
     this.local.set('metrics:observe-latency', () => undefined);
@@ -127,6 +175,8 @@ export class Satellite {
       ipcMain.handle(channel, (_event, ...args) => this.invoke(channel, args));
     }
     protocol.handle(ASSET_SCHEME, (request) => this.serveAsset(request.url));
+    const talkKey = this.deps.settings.get().pushToTalk;
+    if (talkKey) this.deps.pushToTalk?.apply(talkKey);
     await this.connect();
   }
 
@@ -139,6 +189,7 @@ export class Satellite {
   private async doConnect(): Promise<void> {
     this.link?.stop();
     this.link = null;
+    this.linkDown();
     const { hubUrl, deviceId } = this.deps.settings.get();
     if (!hubUrl || !deviceId) {
       this.hasToken = false;
@@ -163,6 +214,10 @@ export class Satellite {
       onIpc: (channel, args) => this.deliver(channel, args),
       onStatus: (status) => this.onLinkStatus(status),
       onWelcome: (welcome) => this.onWelcome(welcome),
+      onDeviceOff: (reason) => this.devices?.hubOff(reason),
+      onPong: (rttMs) => {
+        this.rttMs = rttMs;
+      },
       ...this.deps.linkOptions,
     };
     const link = this.deps.makeLink ? this.deps.makeLink(options) : new RoomLinkClass(options);
@@ -175,6 +230,59 @@ export class Satellite {
   stop(): void {
     this.link?.stop();
     this.link = null;
+    this.linkDown();
+  }
+
+  // -- Devices ----------------------------------------------------------------------------------
+
+  /** The device runtime (the privacy gate) listens to the link and the places snapshot, and answers `device-gate:*`. */
+  attachDevices(devices: DevicesLike): void {
+    this.devices = devices;
+  }
+
+  /** The gate as it is now. Before the runtime is attached nothing is allowed. */
+  deviceState(): DeviceGateState {
+    return this.devices?.state() ?? evaluateGate(INITIAL_FACTS);
+  }
+
+  /** Sends an op to bija (`device.state`, `room.close`, ...). False when the link is down. */
+  sendOp(op: Op): boolean {
+    return this.link?.send(op) ?? false;
+  }
+
+  /** The last spoken turn's timings, as the renderer measured them. Logged here, so they are in the main log. */
+  private noteTurn(value: unknown): void {
+    const timing = (value ?? {}) as Partial<TurnTiming>;
+    const number = (input: unknown): number | null => (typeof input === 'number' && Number.isFinite(input) ? Math.round(input) : null);
+    this.lastTurn = { transcriptMs: number(timing.transcriptMs), firstAudioMs: number(timing.firstAudioMs), playbackMs: number(timing.playbackMs) };
+    this.deps.logger?.info('Satellite turn timing (ms from end of speech)', { ...this.lastTurn });
+  }
+
+  /** An avatar's name as bija's welcome gave it, else its id. */
+  avatarName(avatarId: string): string {
+    const found = (this.welcome?.avatars ?? []).find((avatar) => (avatar as { id?: unknown } | null)?.id === avatarId) as { name?: unknown } | undefined;
+    return typeof found?.name === 'string' && found.name ? found.name : avatarId;
+  }
+
+  lastTurnTiming(): TurnTiming | null {
+    return this.lastTurn ? { ...this.lastTurn } : null;
+  }
+
+  /** The link is gone: devices off, and the ping log stops. */
+  private linkDown(): void {
+    if (this.rttTimer) clearInterval(this.rttTimer);
+    this.rttTimer = null;
+    this.rttMs = null;
+    this.devices?.setLinkUp(false);
+  }
+
+  private linkUp(): void {
+    this.devices?.setLinkUp(true);
+    if (this.rttTimer) return;
+    this.rttTimer = setInterval(() => {
+      this.deps.logger?.info('Room link ping round trip', { rttMs: this.rttMs });
+    }, this.deps.pingLogMs ?? 30_000);
+    this.rttTimer.unref?.();
   }
 
   // -- Status -----------------------------------------------------------------------------------
@@ -202,6 +310,8 @@ export class Satellite {
 
   private onLinkStatus(status: LinkStatus): void {
     this.linkStatus = status;
+    if (status.state === 'online') this.linkUp();
+    else this.linkDown();
     if (status.state === 'online') this.lastError = null;
     if (status.state === 'refused') this.lastError = status.message ?? 'bija refused this PC.';
     this.pushStatus();
@@ -214,6 +324,10 @@ export class Satellite {
       this.deps.settings.update({ placeId: welcome.placeId, placeName: welcome.place?.name ?? settings.placeName });
     }
     // The renderer follows the snapshot: after a reconnect it must see the world as it is now.
+    this.devices?.setSnapshot(welcome.snapshot);
+    // Without a key of its own, this PC uses the push-to-talk key bija has.
+    const bijaKey = (welcome.settings?.pushToTalk as { shortcut?: unknown } | null | undefined)?.shortcut;
+    if (!settings.pushToTalk && typeof bijaKey === 'string' && bijaKey && this.deps.pushToTalk?.getStatus().shortcut !== bijaKey) this.deps.pushToTalk?.apply(bijaKey);
     this.sendToWindow('places:changed', welcome.snapshot);
     this.pushStatus();
   }
@@ -230,6 +344,8 @@ export class Satellite {
       this.deps.logger?.debug('Satellite: dropped an event from bija', { channel });
       return;
     }
+    // Who is in this room decides whether the mic may be on.
+    if (channel === 'places:changed') this.devices?.setSnapshot(args[0]);
     this.sendToWindow(channel, ...args);
   }
 
@@ -406,6 +522,7 @@ export class Satellite {
     this.hasToken = false;
     this.linkStatus = { state: 'idle' };
     this.lastError = null;
+    this.linkDown();
     this.pushStatus();
     return this.status();
   }

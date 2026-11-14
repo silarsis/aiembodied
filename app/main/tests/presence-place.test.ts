@@ -26,7 +26,7 @@ describe('PlacePresence', () => {
     presence.onSatelliteOp('study', { op: 'device.state', mic: 'live', camera: 'off', speakers: 'live', locked: false, closed: true });
     presence.onSatelliteOp('study', { op: 'wake.heard', model: 'hey_echo', score: 0.9 });
     expect(presence.get('study')?.listening).toBe(true);
-    expect(presence.deviceState('study')).toEqual({ mic: 'live', camera: 'off', speakers: 'live', locked: false, closed: true });
+    expect(presence.deviceState('study')).toEqual({ mic: 'live', camera: 'off', speakers: 'live', locked: false, closed: true, fullscreen: false });
     expect(presence.lastWake('study')).toEqual({ model: 'hey_echo', score: 0.9, at: 7 });
     presence.forget('study');
     expect(presence.get('study')).toBeNull();

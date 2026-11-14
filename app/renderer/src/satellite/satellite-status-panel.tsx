@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import type { SatelliteBridge, SatelliteStatus } from '../../../main/src/satellite/bridge-types.js';
+import type { DeviceGateBridge, DeviceGateState, SatelliteBridge, SatelliteStatus, TurnTiming } from '../../../main/src/satellite/bridge-types.js';
+import type { AudioDeviceSelection } from '../hooks/use-audio-devices.js';
 
 const LINK_WORDS: Record<SatelliteStatus['link'], string> = {
   idle: 'Not connected',
@@ -10,7 +11,21 @@ const LINK_WORDS: Record<SatelliteStatus['link'], string> = {
 };
 
 /** The satellite's Status page: the link, which room this is, which bija, the devices, and "Forget this pairing". */
-export function SatelliteStatusPanel({ status, bridge }: { status: SatelliteStatus; bridge: SatelliteBridge }) {
+export interface SatelliteStatusPanelProps {
+  status: SatelliteStatus;
+  bridge: SatelliteBridge;
+  gate?: DeviceGateState | null;
+  gateBridge?: DeviceGateBridge;
+  outputs?: AudioDeviceSelection[];
+  selectedOutput?: string;
+  onOutputChange?: (deviceId: string) => void;
+  lastTurn?: TurnTiming | null;
+}
+
+const LEVEL_WORDS = { live: 'live', doorbell: 'doorbell only', off: 'off' } as const;
+const seconds = (ms: number | null) => (ms === null ? 'n/a' : `${(ms / 1000).toFixed(2)} s`);
+
+export function SatelliteStatusPanel({ status, bridge, gate = null, gateBridge, outputs = [], selectedOutput = '', onOutputChange, lastTurn = null }: SatelliteStatusPanelProps) {
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const forget = async () => {
@@ -41,8 +56,38 @@ export function SatelliteStatusPanel({ status, bridge }: { status: SatelliteStat
           <dd>{status.deviceName ?? status.hostname}</dd>
         </div>
         <div>
-          <dt>Devices</dt>
-          <dd>Microphone off, camera off. They come in a later update; for now, type to the characters.</dd>
+          <dt>Microphone</dt>
+          <dd data-testid="satellite-mic">
+            {gate ? `${LEVEL_WORDS[gate.mic][0].toUpperCase()}${LEVEL_WORDS[gate.mic].slice(1)}${gate.mic === 'off' && gate.summary ? `: ${gate.summary}` : ''}` : 'Off'}
+          </dd>
+        </div>
+        <div>
+          <dt>Camera</dt>
+          <dd>Off</dd>
+        </div>
+        <div>
+          <dt>Speakers</dt>
+          <dd>
+            <label htmlFor="satellite-speakers" className="srOnly">
+              Speakers
+            </label>
+            <select id="satellite-speakers" value={selectedOutput} onChange={(event) => onOutputChange?.(event.target.value)} disabled={!onOutputChange}>
+              <option value="">System default</option>
+              {outputs.map((output) => (
+                <option key={output.deviceId} value={output.deviceId}>
+                  {output.label}
+                </option>
+              ))}
+            </select>
+          </dd>
+        </div>
+        <div>
+          <dt>Last turn</dt>
+          <dd data-testid="satellite-last-turn">
+            {lastTurn
+              ? `Transcript ${seconds(lastTurn.transcriptMs)} · audio arrived ${seconds(lastTurn.firstAudioMs)} · playing ${seconds(lastTurn.playbackMs)} after you stopped speaking`
+              : 'No turn yet'}
+          </dd>
         </div>
       </dl>
       {status.lastError ? (
@@ -50,6 +95,12 @@ export function SatelliteStatusPanel({ status, bridge }: { status: SatelliteStat
           {status.lastError}
         </p>
       ) : null}
+      {gateBridge ? (
+        <button type="button" className="btn btn--secondary" data-testid="satellite-kill-switch" onClick={() => void gateBridge.setOpen(gate?.open === false)}>
+          {gate?.open === false ? 'Open this room' : 'Close this room'}
+        </button>
+      ) : null}
+      <p className="kiosk__helper">The microphone is live only while a character is in this room, the screen is unlocked, the link to bija is up, the room is open and no other app is full screen. Ctrl+Alt+Shift+R closes or opens the room from anywhere.</p>
       <p className="kiosk__helper">F11 switches between a window and full screen.</p>
       {confirming ? (
         <div className="satelliteStatus__confirm">

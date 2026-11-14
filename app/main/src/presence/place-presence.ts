@@ -24,6 +24,8 @@ export interface PlaceDeviceState {
   speakers: string;
   locked: boolean;
   closed: boolean;
+  /** Another app is full screen on that PC, so its devices are off for now. */
+  fullscreen: boolean;
 }
 
 export interface PlaceWake {
@@ -82,6 +84,7 @@ export class PlacePresence {
         speakers: text(op.speakers, 'off'),
         locked: op.locked === true,
         closed: op.closed === true,
+        fullscreen: op.fullscreen === true,
       });
     } else if (op.op === 'wake.heard' && typeof op.model === 'string' && typeof op.score === 'number') {
       this.wakes.set(placeId, { model: op.model.slice(0, 80), score: op.score, at: this.now() });

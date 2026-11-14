@@ -57,7 +57,8 @@ Satellite -> hub:
 | `call` | ref, channel, args[] | `result` {ref, value} or `error` {ref, code, message} |
 | `asset.get` | ref, url (a room asset URL as the renderer's asset protocol sees it) | binary `asset` {ref, mime} or error |
 | `presence` | listening?, voicePhase?, faceSeenAt?, userSpokeAt?, assistantSpokeAt?, activeAt? | - |
-| `device.state` | mic, camera: 'off'\|'live'\|'doorbell'; speakers: 'off'\|'live'; locked: bool; closed: bool | - |
+| `device.state` | mic, camera: 'off'\|'live'\|'doorbell'; speakers: 'off'\|'live'; locked: bool; closed: bool; fullscreen: bool | - |
+| `room.close` / `room.open` | - (the kill switch) | - |
 | `wake.heard` | model, score | - |
 
 Hub -> satellite:
@@ -98,3 +99,9 @@ bija's window.
 - `RoomHub.stop()` now terminates open sockets first. Before, a connected satellite kept it waiting for ever.
 - The satellite waits up to 6 s for the first connection before a call fails, and has no timeout on `local-voice:respond` and `avatar-motion:stream`. Other calls time out after 60 s.
 - Room assets and VRM bytes are cached on the satellite (see satellite.md).
+
+## Notes on what is built (PR 4)
+
+- `device.state` also carries `fullscreen`. `room.close` / `room.open` are the kill switch: bija moves the avatars at that place home (reason `room closed`) and refuses moves to it until `room.open`. The `closed` flag of `device.state` has the same effect, so a restart of either side agrees.
+- Clocks on bija (`room-hub/place-devices.ts`): locked for 5 minutes and full screen for 2 minutes send the avatars home. Changes are journaled as `place.device`.
+- `places:summon` is allowlisted. The ping round trip is logged on the satellite every 30 seconds.

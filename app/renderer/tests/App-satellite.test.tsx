@@ -1,11 +1,12 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationSession } from '../../main/src/conversation/types.js';
 import { DEFAULT_PROVIDER_SETTINGS } from '../../main/src/config/provider-settings.js';
 import { builtInServers, defaultRoutes } from '../../main/src/config/model-routing.js';
 import type { PlacesSnapshot } from '../../main/src/places/place-manager.js';
 import { SatelliteContext } from '../src/satellite/satellite-context.js';
-import type { SatelliteBridge, SatelliteStatus } from '../../main/src/satellite/bridge-types.js';
+import type { DeviceGateState, SatelliteBridge, SatelliteStatus } from '../../main/src/satellite/bridge-types.js';
+import { evaluateGate } from '../../main/src/satellite/device-gate.js';
 import type { AvatarModelSummary } from '../src/avatar/types.js';
 
 interface FakeCallbacks {
@@ -80,7 +81,23 @@ const snapshot = (locations: Record<string, string>, transit: PlacesSnapshot['tr
   localPlaceId: 'home',
 });
 
-function install(options: { places?: PlacesSnapshot | null; profiles?: Array<{ id: string; name: string; vrmModelId: string }> } = {}) {
+const GATE_FACTS = { occupied: true, unlocked: true, linkUp: true, open: true, noFullscreenApp: true, notHeldOff: true };
+
+function install(options: { places?: PlacesSnapshot | null; profiles?: Array<{ id: string; name: string; vrmModelId: string }>; gate?: DeviceGateState } = {}) {
+  let pushGate: ((state: DeviceGateState) => void) | undefined;
+  let pressTalk: (() => void) | undefined;
+  const summon = vi.fn(async () => ({ ok: true as const, avatarId: 'echo', name: 'Echo', alreadyHere: false }));
+  const deviceGate = options.gate
+    ? {
+        get: vi.fn(async () => options.gate as DeviceGateState),
+        onChanged: vi.fn((listener: (state: DeviceGateState) => void) => {
+          pushGate = listener;
+          return () => undefined;
+        }),
+        captureStopped: vi.fn(async () => undefined),
+        setOpen: vi.fn(async () => options.gate as DeviceGateState),
+      }
+    : undefined;
   let changed: ((snapshot: PlacesSnapshot) => void) | undefined;
   const places = {
     snapshot: vi.fn(async () => options.places as PlacesSnapshot),
@@ -90,6 +107,7 @@ function install(options: { places?: PlacesSnapshot | null; profiles?: Array<{ i
     }),
     move: vi.fn(async () => ({ ok: true })),
     arrived: vi.fn(async () => undefined),
+    summon,
   };
   const config = {
     audioInputDeviceId: '',
@@ -116,6 +134,15 @@ function install(options: { places?: PlacesSnapshot | null; profiles?: Array<{ i
       setAudioDevicePreferences: vi.fn().mockResolvedValue(config),
     },
     wakeWord: { onWake: () => () => undefined },
+    ...(deviceGate ? { deviceGate } : {}),
+    talk: {
+      getShortcutStatus: vi.fn().mockResolvedValue({ shortcut: 'Ctrl+Space', registered: true }),
+      onShortcutStatus: () => () => undefined,
+      onTrigger: (listener: () => void) => {
+        pressTalk = listener;
+        return () => undefined;
+      },
+    },
     avatars: { list: avatarsList, setTagInstructions: vi.fn().mockResolvedValue(undefined) },
     ...(options.places === null ? {} : { places }),
     avatar: new Proxy(
@@ -143,7 +170,15 @@ function install(options: { places?: PlacesSnapshot | null; profiles?: Array<{ i
     __bridgeReady: true,
     __bridgeVersion: '1.0.0',
   };
-  return { places, push: (next: PlacesSnapshot) => act(async () => changed?.(next)), avatarsList };
+  return {
+    places,
+    push: (next: PlacesSnapshot) => act(async () => changed?.(next)),
+    avatarsList,
+    deviceGate,
+    summon,
+    pushGate: (state: DeviceGateState) => act(async () => pushGate?.(state)),
+    pressTalk: () => act(async () => pressTalk?.()),
+  };
 }
 
 
@@ -239,5 +274,65 @@ describe('App as a satellite', () => {
     const { bridge } = renderSatellite({ ...SATELLITE_STATUS, link: 'refused', lastError: 'This PC was removed.' });
     fireEvent.click(await screen.findByRole('button', { name: 'Forget this pairing' }));
     expect(bridge.forget).toHaveBeenCalled();
+  });
+
+  it('shows grey dots while the gate is closed, a green mic dot when it opens, and follows it back', async () => {
+    const closed = evaluateGate({ ...GATE_FACTS, occupied: false });
+    const { pushGate } = install({ places: snapshot({}), gate: closed });
+    renderSatellite(SATELLITE_STATUS);
+    await waitFor(() => expect(screen.getByTestId('mic-dot')).toHaveAttribute('data-level', 'off'));
+    expect(screen.getByTestId('camera-dot')).toHaveAttribute('data-level', 'off');
+    expect(screen.getByTestId('mic-dot')).toHaveAccessibleName(/Microphone off: Nobody is in this room/);
+    await pushGate(evaluateGate(GATE_FACTS));
+    expect(screen.getByTestId('mic-dot')).toHaveAttribute('data-level', 'live');
+    expect(screen.getByTestId('camera-dot')).toHaveAttribute('data-level', 'off');
+    await pushGate(evaluateGate({ ...GATE_FACTS, unlocked: false }));
+    expect(screen.getByTestId('mic-dot')).toHaveAttribute('data-level', 'off');
+  });
+
+  it('never opens the microphone while the gate is closed', async () => {
+    install({ places: snapshot({}), gate: evaluateGate({ ...GATE_FACTS, linkUp: false }) });
+    renderSatellite(SATELLITE_STATUS);
+    await screen.findByTestId('mic-dot');
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    expect(screen.getByTestId('listening-toggle')).toHaveTextContent(/Mic off/);
+  });
+
+  it('opens the microphone when the gate allows it', async () => {
+    install({ places: snapshot({}), gate: evaluateGate(GATE_FACTS) });
+    renderSatellite(SATELLITE_STATUS);
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+  });
+
+  it('push-to-talk with nobody in the room calls someone over and keeps the mic closed', async () => {
+    const { pressTalk, summon } = install({ places: snapshot({}), gate: evaluateGate({ ...GATE_FACTS, occupied: false }) });
+    renderSatellite(SATELLITE_STATUS);
+    await waitFor(() => expect(screen.getByTestId('mic-dot')).toHaveAccessibleName(/Nobody is in this room/));
+    await pressTalk();
+    await waitFor(() => expect(summon).toHaveBeenCalledTimes(1));
+    expect(await screen.findByTestId('calling-note')).toHaveTextContent('Calling Echo…');
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+  });
+
+  it('push-to-talk does not call anyone while the room is locked or closed', async () => {
+    const { pressTalk, summon } = install({ places: snapshot({}), gate: evaluateGate({ ...GATE_FACTS, occupied: false, open: false }) });
+    renderSatellite(SATELLITE_STATUS);
+    await waitFor(() => expect(screen.getByTestId('mic-dot')).toHaveAccessibleName(/This room is closed/));
+    await pressTalk();
+    expect(summon).not.toHaveBeenCalled();
+    expect(await screen.findByTestId('calling-note')).toHaveTextContent(/The mic is off: This room is closed/);
+  });
+
+  it('shows the last turn and the speaker picker in the Status panel', async () => {
+    install({ places: snapshot({}), gate: evaluateGate(GATE_FACTS) });
+    renderSatellite(SATELLITE_STATUS);
+    const handle = screen.queryByRole('button', { name: 'Controls' });
+    if (handle) fireEvent.click(handle);
+    const drawer = await screen.findByRole('complementary', { name: 'Controls' });
+    fireEvent.click(await within(drawer).findByRole('button', { name: /Status/ }));
+    expect(await screen.findByTestId('satellite-mic')).toHaveTextContent('Live');
+    expect(screen.getByLabelText('Speakers')).toBeInTheDocument();
+    expect(screen.getByTestId('satellite-last-turn')).toHaveTextContent('No turn yet');
+    expect(screen.getByTestId('satellite-kill-switch')).toHaveTextContent('Close this room');
   });
 });
