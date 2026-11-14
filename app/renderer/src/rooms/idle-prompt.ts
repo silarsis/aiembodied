@@ -5,7 +5,7 @@
 import type { IdlePickContext } from '../../../main/src/rooms/types.js';
 import type { RoomObject } from '../../../main/src/rooms/types.js';
 import { objectAffordances } from './scene-instructions.js';
-import type { IdleInput } from './idle-types.js';
+import type { IdleInput, IdlePlace } from './idle-types.js';
 
 export const PERSONALITY_CHARS = 300;
 export const RECENT_IN_PROMPT = 5;
@@ -24,13 +24,22 @@ export const IDLE_TAG_SYNTAX = [
   '{wait} do nothing this time',
 ].join('; ');
 
-export function idleSystemPrompt(name: string): string {
+/** Added to the tag list only when there are other places to go to. */
+export const IDLE_ROOM_TAG_SYNTAX = '{room:<place>} walk out to another place, as the last tag (rarely: only to find someone)';
+
+export function idleSystemPrompt(name: string, withPlaces = false): string {
   return [
     `You decide what ${name || 'the character'} does on their own in a room while nobody is talking to them.`,
     'Reply with only 1 to 3 action tags, nothing else.',
-    `Tags: ${IDLE_TAG_SYNTAX}.`,
+    `Tags: ${IDLE_TAG_SYNTAX}${withPlaces ? `; ${IDLE_ROOM_TAG_SYNTAX}` : ''}.`,
     'Name objects exactly as listed. Only use what each object allows.',
   ].join(' ');
+}
+
+/** "- the study: Sage is there; someone used that PC in the last 10 minutes" */
+function describePlace(place: IdlePlace): string {
+  const who = place.who.length === 0 ? 'nobody is there' : place.who.length === 1 ? `${place.who[0]} is there` : `${place.who.slice(0, -1).join(', ')} and ${place.who[place.who.length - 1]} are there`;
+  return `- ${place.name}: ${who}; ${place.recentlyUsed ? 'someone used that PC in the last 10 minutes' : 'nobody used that PC lately'}`;
 }
 
 /** "evening, 19:40" */
@@ -104,11 +113,14 @@ export function buildIdlePrompt(input: IdleInput): IdlePickContext {
           `Others in the room:\n${input.others.map((other) => `- ${other.name || 'someone'} is ${other.where ?? 'in the room'}`).join('\n')}`,
         ]
       : []),
+    ...(input.places && input.places.length > 0
+      ? [`Other places you could walk to (only go to find someone, never just for something to do):\n${input.places.map(describePlace).join('\n')}`]
+      : []),
     recent.length > 0
       ? `What they did recently:\n${recent.map((line) => `- ${line}`).join('\n')}`
       : 'What they did recently: nothing yet',
     `Time: ${timeOfDay(input.now)}`,
     'Prefer variety. Use {wait} to stay as you are.',
   ];
-  return { system: idleSystemPrompt(input.name), user: lines.filter(Boolean).join('\n') };
+  return { system: idleSystemPrompt(input.name, Boolean(input.places?.length)), user: lines.filter(Boolean).join('\n') };
 }

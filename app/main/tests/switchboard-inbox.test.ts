@@ -371,3 +371,29 @@ describe('home.change deliberation', () => {
     expect(t.remember.mock.calls[0][2]).toBe('coding');
   });
 });
+
+describe('inbox before urgent news', () => {
+  it('waits for beforeUrgent on urgent news only, and speaks even when it fails', async () => {
+    const bus = new LocalOnlyBus(makeEventId);
+    const notify = vi.fn();
+    let release: () => void = () => undefined;
+    const beforeUrgent = vi.fn(() => new Promise<void>((resolve) => (release = resolve)));
+    new AvatarInbox({ avatarId: 'echo', bus, notify, beforeUrgent, logger: warn }).start();
+    bus.publish(ev('avatar.inbox', { priority: 'high' }));
+    await flush();
+    await flush();
+    expect(beforeUrgent).toHaveBeenCalledTimes(1);
+    expect(notify).not.toHaveBeenCalled();
+    release();
+    await flush();
+    await flush();
+    expect(notify).toHaveBeenCalledWith('hello', { urgent: true, source: undefined });
+    // Without the hook nothing waits, and news that is not urgent never calls it.
+    const plain = vi.fn();
+    const plainBus = new LocalOnlyBus(makeEventId);
+    new AvatarInbox({ avatarId: 'echo', bus: plainBus, notify: plain, logger: warn }).start();
+    plainBus.publish(ev('home.alert'));
+    await flush();
+    expect(plain).toHaveBeenCalledTimes(1);
+  });
+});

@@ -205,4 +205,29 @@ describe('PlacesPanel room choice', () => {
     expect((screen.getByRole('checkbox', { name: 'Camera presence in the study' }) as HTMLInputElement).checked).toBe(false);
     expect(screen.getByRole('checkbox', { name: 'Camera presence in the lounge' })).toBeDisabled();
   });
+
+  it('shows the Doorbell for this PC (on by default) and for a desktop room (off by default), and saves a change', async () => {
+    const setDoorbell = vi.fn().mockResolvedValue(true);
+    const { api } = bridge({ setDoorbell });
+    render(<PlacesPanel roomHub={api} snapshot={SNAPSHOT} nameOf={nameOf} active />);
+    const here = screen.getByRole('checkbox', { name: 'Doorbell in the lounge' }) as HTMLInputElement;
+    const study = screen.getByRole('checkbox', { name: 'Doorbell in the study' }) as HTMLInputElement;
+    expect(here.checked).toBe(true);
+    expect(study.checked).toBe(false);
+    // Nobody hears anything next door.
+    expect(screen.queryByRole('checkbox', { name: 'Doorbell in next door' })).toBeNull();
+    fireEvent.click(here);
+    await waitFor(() => expect(setDoorbell).toHaveBeenCalledWith('home', false));
+    fireEvent.click(study);
+    await waitFor(() => expect(setDoorbell).toHaveBeenCalledWith('study', true));
+  });
+
+  it('shows what Kevin saved for the Doorbell', () => {
+    const saved: PlacesSnapshot = { ...SNAPSHOT, places: SNAPSHOT.places.map((place) => (place.id === 'home' ? { ...place, doorbell: false } : place.id === 'study' ? { ...place, doorbell: true } : place)) };
+    const { api } = bridge();
+    render(<PlacesPanel roomHub={api} snapshot={saved} nameOf={nameOf} active />);
+    expect((screen.getByRole('checkbox', { name: 'Doorbell in the lounge' }) as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole('checkbox', { name: 'Doorbell in the study' }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByRole('checkbox', { name: 'Doorbell in the lounge' })).toBeDisabled();
+  });
 });

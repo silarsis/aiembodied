@@ -810,8 +810,10 @@ describe('main process bootstrap', () => {
 
     const getActiveModelHandler = handleEntries.get('avatar-model:get-active');
     expect(typeof getActiveModelHandler).toBe('function');
+    // The avatar registry reads the active model too (every time something asks who is where), so count this call only.
+    const activeModelCallsBefore = vi.mocked(avatarModelService?.getActiveModel as () => unknown).mock.calls.length;
     await expect(getActiveModelHandler?.({})).resolves.toBeNull();
-    expect(avatarModelService?.getActiveModel).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(avatarModelService?.getActiveModel as () => unknown).mock.calls.length - activeModelCallsBefore).toBe(1);
 
     const setActiveModelHandler = handleEntries.get('avatar-model:set-active');
     expect(typeof setActiveModelHandler).toBe('function');

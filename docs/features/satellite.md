@@ -1,6 +1,6 @@
 # Satellite mode
 
-Status: Built (Places steps 3 and 4).
+Status: Built (Places steps 3, 4 and 6).
 
 A satellite is a second PC that shows one room of bija's world. bija stays the only brain: the models, the memory and the keys stay there. The satellite draws the room and the avatars that are in it, plays their voices, and lets Kevin type to them.
 
@@ -76,11 +76,34 @@ Tray menu "Close this room" / "Open this room", the same button in Status, or th
 
 ### Tray and notification
 
-The tray icon has a coloured dot and the tooltip says "Study: mic live", "Study: doorbell only" or "Study: off". The first time the mic goes live in a session Windows shows "Echo is here: the mic is on in the study". The doorbell is off by default (`doorbell` in `satellite.json`); only its state is shown for now.
+The tray icon has a coloured dot and the tooltip says "Study: mic live", "Study: doorbell only" or "Study: off". The first time the mic goes live in a session Windows shows "Echo is here: the mic is on in the study".
+
+### The doorbell and the wake word
+
+The doorbell is a setting of the place, kept on bija (Settings > Places, "Doorbell"; off by default for a desktop room). The satellite reads it from the places snapshot, and it is off until the first snapshot has arrived. The `doorbell` field of `satellite.json` is no longer read.
+
+The wake word worker (openWakeWord, the same service as on bija) runs in this PC's main process exactly when `gate.micAllowed || gate.doorbell`:
+
+| Avatar here | Doorbell on | Other gate facts | Worker | Mic dot |
+|---|---|---|---|---|
+| yes | any | all true | runs | green |
+| no | yes | all true | runs | amber (doorbell) |
+| no | no | all true | off | grey |
+| any | any | one is false | off | grey |
+
+It stops the moment the gate closes (events are thrown away at once; the microphone is released after). If the model cannot be had it does not listen and tries again every 30 seconds while the gate stays open (`satellite/wake-runner.ts`).
+
+- In doorbell mode a wake sends `wake.heard` (model name and score) and nothing else. bija calls an avatar into the room if its doorbell is on and nobody is there. The page's own microphone is not opened for the doorbell (`allowsMedia('audio')` is false), so audio never leaves this PC.
+- With an avatar in the room a wake goes to this PC's page like on bija. The satellite still does not require the wake word for a turn: while the mic is live anything said is a turn.
+- The model: a built-in one is on every PC. A trained one is fetched from bija (`wake-word:model`) each time the worker starts, and kept by hash in `<userData>/wake-word-cache/`.
+
+### Activity
+
+Every 15 seconds the PC checks `powerMonitor.getSystemIdleTime()`. When it is under 60 seconds the PC sends `presence` with `activeAt`. bija stamps it with its own clock. That is all it says: "someone used this PC". No microphone or camera is involved. It is what lets avatars wander here (see [places.md](places.md)).
 
 ### Voice on the satellite
 
-The satellite uses the same voice pipeline as bija: voice detection, end of speech, transcription on bija (forwarded `local-voice:transcribe`), answer. There is no wake word here yet, so while the gate is open anything said is a turn. Speakers are picked in Status and saved in `satellite.json`; every speech audio element uses them.
+The satellite uses the same voice pipeline as bija: voice detection, end of speech, transcription on bija (forwarded `local-voice:transcribe`), answer. While the mic is live anything said is a turn (the wake word is not required here, see above). Speakers are picked in Status and saved in `satellite.json`; every speech audio element uses them.
 
 ### Talk key and taps
 
@@ -100,4 +123,4 @@ For each spoken turn the renderer measures, from the end of speech: transcript b
 
 ## Not yet
 
-The doorbell listening (the state is there, listening is not), wake word on the satellite.
+Requiring the wake word for a turn on the satellite, and showing the wake word's score in its Status panel.

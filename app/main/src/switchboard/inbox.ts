@@ -68,6 +68,12 @@ export interface AvatarInboxOptions {
   doNotDisturb?: () => boolean;
   /** Told of every decision that is journalled, whether or not the bus reaches the switchboard. */
   onDecision?: (decision: DecisionRecord) => void;
+  /**
+   * Runs before urgent news is spoken (an urgent `avatar.inbox` event, a `home.alert`): the avatar may walk to where
+   * Kevin is first. The news is spoken when it resolves, or if it throws. Not used for anything that is not urgent,
+   * and absent means nothing waits.
+   */
+  beforeUrgent?: (event: SwitchboardEvent) => Promise<unknown> | unknown;
 }
 
 export class AvatarInbox {
@@ -152,11 +158,22 @@ export class AvatarInbox {
       return;
     }
     const payloadSource = typeof event.payload.source === 'string' && event.payload.source !== 'coding' ? event.payload.source : undefined;
-    try {
-      this.options.notify(`${rule?.prefix ?? ''}${text}`, { urgent, source: rule?.source ?? payloadSource });
-    } catch (error) {
-      logger?.warn('Inbox: notify failed', { message: error instanceof Error ? error.message : String(error) });
+    const say = (): void => {
+      try {
+        this.options.notify(`${rule?.prefix ?? ''}${text}`, { urgent, source: rule?.source ?? payloadSource });
+      } catch (error) {
+        logger?.warn('Inbox: notify failed', { message: error instanceof Error ? error.message : String(error) });
+      }
+    };
+    if (!urgent || !this.options.beforeUrgent) {
+      say();
+      return;
     }
+    // Urgent news may need the avatar to walk to Kevin first; it is said either way.
+    void Promise.resolve()
+      .then(() => this.options.beforeUrgent?.(event))
+      .catch((error: unknown) => logger?.warn('Inbox: the walk before urgent news failed', { message: error instanceof Error ? error.message : String(error) }))
+      .then(say);
   }
 
   private save(event: SwitchboardEvent, rule: InboxRule | undefined): void {

@@ -7,6 +7,11 @@ interface Detector {
 /** Main owns capture. An off request gates events immediately and awaits microphone release. */
 export class WakeWordListeningController {
   private requested = false;
+  /**
+   * A second reason to listen or not, set by whoever knows if anybody is there to hear it (the doorbell rule in
+   * places/doorbell.ts). Open by default, so nothing changes until something closes it.
+   */
+  private gateOpen = true;
   private disposed = false;
   private config: WakeWordConfig | null = null;
   private active: { key: string; detector: Detector } | null = null;
@@ -15,7 +20,7 @@ export class WakeWordListeningController {
   constructor(private readonly start: (config: WakeWordConfig) => Detector) {}
 
   get enabled(): boolean {
-    return this.requested && !this.disposed;
+    return this.requested && this.gateOpen && !this.disposed;
   }
 
   configure(config: WakeWordConfig): Promise<void> {
@@ -28,6 +33,16 @@ export class WakeWordListeningController {
     this.requested = enabled;
     // Every explicit off must release capture, even if an on arrives before it finishes.
     return this.enqueue(() => (enabled ? this.reconcile() : this.stop()));
+  }
+
+  /**
+   * Closing the gate gates events at once and releases the microphone; opening it resumes listening if it was
+   * asked for. The gate does not change what the page asked for.
+   */
+  setGate(open: boolean): Promise<void> {
+    if (open === this.gateOpen) return this.pending;
+    this.gateOpen = open;
+    return this.enqueue(() => this.reconcile());
   }
 
   dispose(): Promise<void> {

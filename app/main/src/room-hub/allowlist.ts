@@ -50,6 +50,10 @@ export const SATELLITE_CHANNELS: ReadonlySet<string> = new Set([
   'places:arrived',
   // Nobody is in the room and Kevin pressed the talk key: call someone over.
   'places:summon',
+  // Wandering: may this avatar go to that place on its own right now? (Answered by the same rules as the move.)
+  'places:can-wander',
+  // The wake word picked on bija, and for a trained one its file, for the satellite's own wake word worker. Read-only.
+  'wake-word:model',
 ]);
 
 export function isAllowedChannel(channel: unknown): channel is string {

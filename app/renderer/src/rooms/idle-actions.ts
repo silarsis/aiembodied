@@ -5,6 +5,7 @@
  */
 import type { RoomFile, RoomObject } from '../../../main/src/rooms/types.js';
 import { extractMotionTags } from '../avatar/animation-tags.js';
+import { normalisePlaceName } from '../../../main/src/places/wander.js';
 import { resolveObjectRef } from './scene-actions.js';
 import type { IdleInput, IdleTag } from './idle-types.js';
 
@@ -17,7 +18,7 @@ const FAR_FROM_HOME = 1.5;
 const COME_WEIGHT = 0.3;
 
 const WAIT_TAG = /\{\s*wait\s*\}/i;
-const FIRST_ACTION_TAG = /\{\s*(?:move|go|sit|stand|look|pick|put|come)\b/i;
+const FIRST_ACTION_TAG = /\{\s*(?:move|go|sit|stand|look|pick|put|come|room)\b/i;
 
 const find = (room: RoomFile, ref: string): RoomObject | null => resolveObjectRef(room, ref);
 
@@ -32,7 +33,9 @@ export function startsWithWait(text: string): boolean {
 /**
  * The tags of the model's reply that make sense right now: at most 3, in order. Only scene tags,
  * {move:} and {wait} count; objects must exist, be visible to the room camera and have the tag the
- * action needs. Objects come back as their ids.
+ * action needs. Objects come back as their ids. {room:<place>} counts only when the prompt offered that
+ * place, ends the list (nothing after walking out), and comes back with the place's name; the idle director
+ * checks the wandering rules on top (this only checks the words).
  */
 export function parseIdleReply(text: string, input: IdleInput): IdleTag[] {
   if (startsWithWait(text)) return [{ type: 'wait' }];
@@ -47,7 +50,14 @@ export function parseIdleReply(text: string, input: IdleInput): IdleTag[] {
   let held = state.held?.objectId ?? null;
   for (const tag of extractMotionTags(text)) {
     if (tags.length >= MAX_IDLE_TAGS) break;
+    if (tags.some((existing) => existing.type === 'room')) break;
     switch (tag.type) {
+      case 'room': {
+        const wanted = normalisePlaceName(tag.place);
+        const offered = (input.places ?? []).find((place) => normalisePlaceName(place.name) === wanted);
+        if (offered) tags.push({ type: 'room', place: offered.name });
+        break;
+      }
       case 'move':
         tags.push({ type: 'move', text: tag.text });
         break;
@@ -111,6 +121,8 @@ export function idleTagsToText(tags: readonly IdleTag[]): string {
           return `{${tag.type}}`;
         case 'move':
           return `{move:${tag.text.replace(/[{}]/g, '')}}`;
+        case 'room':
+          return `{room:${tag.place.replace(/[{}]/g, '')}}`;
         case 'put':
           return `{put:${tag.object}@${tag.surface}}`;
         default:
@@ -163,6 +175,9 @@ export function describeIdleTags(tags: readonly IdleTag[], room: RoomFile): stri
         else parts.push(text);
         break;
       }
+      case 'room':
+        parts.push(`went to ${tag.place}`);
+        break;
       case 'wait':
         break;
     }

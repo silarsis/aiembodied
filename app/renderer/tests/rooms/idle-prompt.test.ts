@@ -93,3 +93,28 @@ describe('idle prompt', () => {
     expect(user).toContain('Character: Sage');
   });
 });
+
+describe('idle prompt with other places', () => {
+  it('says nothing about places when there are none, so the prompt is what it was', () => {
+    const { system, user } = buildIdlePrompt(input());
+    expect(system).not.toContain('{room:');
+    expect(user).not.toContain('Other places');
+    expect(buildIdlePrompt(input({ places: [] }))).toEqual({ system, user });
+  });
+
+  it('lists the other places with who is there and whether the PC was used in the last 10 minutes, and adds the tag', () => {
+    const { system, user } = buildIdlePrompt(
+      input({
+        places: [
+          { name: 'the study', who: ['Sage'], recentlyUsed: true },
+          { name: 'the loft', who: ['Sage', 'Rex'], recentlyUsed: false },
+          { name: 'the shed', who: [], recentlyUsed: true },
+        ],
+      }),
+    );
+    expect(system).toContain('{room:<place>}');
+    expect(user).toContain('- the study: Sage is there; someone used that PC in the last 10 minutes');
+    expect(user).toContain('- the loft: Sage and Rex are there; nobody used that PC lately');
+    expect(user).toContain('- the shed: nobody is there; someone used that PC in the last 10 minutes');
+  });
+});

@@ -188,6 +188,11 @@ export class FloorController {
     return this.manager.recentPartner(this.now());
   }
 
+  /** How long ago Kevin last talked with the avatar (it was his last partner), else null. Wandering keeps an avatar in a conversation put. */
+  talkedAgoMs(avatarId: string): number | null {
+    return this.manager.partnerAgeMs(avatarId, this.now());
+  }
+
   /** True when the avatar is in the scene (at this PC's place). */
   isHere(avatarId: string): boolean {
     return this.manager.scene().avatarIds.includes(avatarId);
