@@ -48,6 +48,8 @@ export const SATELLITE_CHANNELS: ReadonlySet<string> = new Set([
   'places:snapshot',
   'places:move',
   'places:arrived',
+  // Nobody is in the room and Kevin pressed the talk key: call someone over.
+  'places:summon',
 ]);
 
 export function isAllowedChannel(channel: unknown): channel is string {

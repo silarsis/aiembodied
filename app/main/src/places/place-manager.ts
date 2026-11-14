@@ -156,6 +156,8 @@ export class PlaceManager {
   private readonly graceMs: number;
   /** Desktop rooms that are connected right now. Never stored: after a restart every desktop room is offline. */
   private readonly online = new Set<string>();
+  /** Desktop rooms that Kevin closed (the kill switch on that PC). Moves into them are refused until they open again. */
+  private readonly closedPlaces = new Set<string>();
   private readonly graceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly transit = new Map<string, Pending>();
   private waiters: Array<{ avatarId: string; placeId: string; resolve: (arrived: boolean) => void; timer: ReturnType<typeof setTimeout> | null; sawMove: boolean }> = [];
@@ -255,6 +257,7 @@ export class PlaceManager {
     const locations = this.storedLocations();
     for (const [avatarId, at] of Object.entries(locations)) if (at === placeId) delete locations[avatarId];
     this.options.store.setValue(LOCATIONS_KEY, JSON.stringify(locations));
+    this.closedPlaces.delete(placeId);
     this.persist(places.filter((candidate) => candidate.id !== placeId));
     this.changed();
     return true;
@@ -306,7 +309,32 @@ export class PlaceManager {
   /** Grace is over and the room is still closed: everyone there walks in at the local place. */
   private sendHome(placeId: string): void {
     if (this.online.has(placeId)) return;
-    for (const avatarId of this.avatarsAt(placeId)) this.startMove(avatarId, this.localPlaceId(), 'room closed');
+    this.sendAllHome(placeId, 'room closed');
+  }
+
+  /** Everyone at the place walks in at the local place, with `reason` journaled. */
+  sendAllHome(placeId: string, reason: string): void {
+    for (const avatarId of this.avatarsAt(placeId)) this.startMove(avatarId, this.localPlaceId(), reason);
+  }
+
+  /** Kevin closed this room on its PC (or opened it again). Closing sends everyone home and refuses moves into it until it opens. */
+  setClosed(placeId: string, closed: boolean): void {
+    const place = this.get(placeId);
+    if (!place || !this.isDevicePlace(place)) return;
+    if (!closed) {
+      if (this.closedPlaces.delete(placeId)) this.changed();
+      return;
+    }
+    const wasClosed = this.closedPlaces.has(placeId);
+    this.closedPlaces.add(placeId);
+    // Anyone still walking towards the room turns back: a closed room takes nobody.
+    for (const pending of [...this.transit.values()]) if (pending.to === placeId) this.cancelMove(pending, 'room closed');
+    this.sendAllHome(placeId, 'room closed');
+    if (!wasClosed) this.changed();
+  }
+
+  isClosed(placeId: string): boolean {
+    return this.closedPlaces.has(placeId);
   }
 
   /** The place a name or id means: ignores case, "the", and hyphens or underscores against spaces. Null when none fits. */
@@ -397,7 +425,7 @@ export class PlaceManager {
     if (!this.avatarIds().includes(avatarId)) return { ok: false, reason: 'unknown avatar' };
     const target = this.get(toPlaceId);
     if (!target) return { ok: false, reason: 'unknown place' };
-    if (target.online === false) return { ok: false, reason: `${target.name} is closed` };
+    if (target.online === false || this.closedPlaces.has(target.id)) return { ok: false, reason: `${target.name} is closed` };
     if (this.transit.has(avatarId)) return { ok: false, reason: 'already moving' };
     const from = this.locationOf(avatarId);
     if (from === target.id) return { ok: false, reason: 'already there' };
@@ -474,10 +502,10 @@ export class PlaceManager {
   }
 
   /** Drops a move without a journal entry about arrival (the place it involved is gone). */
-  private cancelMove(pending: Pending): void {
+  private cancelMove(pending: Pending, reason = 'place removed'): void {
     this.clearTimers(pending);
     this.transit.delete(pending.avatarId);
-    this.journal(pending, 'failed', { avatarId: pending.avatarId, from: pending.from, to: pending.to, reason: 'place removed' });
+    this.journal(pending, 'failed', { avatarId: pending.avatarId, from: pending.from, to: pending.to, reason });
   }
 
   private fail(avatarId: string, txn: string): void {
