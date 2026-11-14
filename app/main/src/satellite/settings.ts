@@ -26,9 +26,33 @@ export interface SatelliteSettings {
   placeId: string | null;
   placeName: string | null;
   bounds: WindowBounds | null;
+  /** Kevin closed this room with the kill switch. Kept, so a closed room stays closed after a restart. */
+  closed: boolean;
+  /** Accelerator for the kill switch; null means the default (Ctrl+Alt+Shift+R). */
+  closeShortcut: string | null;
+  /** Accelerator for push-to-talk on this PC; null means the one bija uses, if any. */
+  pushToTalk: string | null;
+  /** Whether the doorbell listens when nobody is in the room. Off by default on a satellite. */
+  doorbell: boolean;
+  /** This PC's own microphone and speakers (a satellite's devices are not bija's). */
+  audioInputDeviceId: string | null;
+  audioOutputDeviceId: string | null;
 }
 
-const EMPTY: SatelliteSettings = { hubUrl: null, deviceId: null, deviceName: null, placeId: null, placeName: null, bounds: null };
+const EMPTY: SatelliteSettings = {
+  hubUrl: null,
+  deviceId: null,
+  deviceName: null,
+  placeId: null,
+  placeName: null,
+  bounds: null,
+  closed: false,
+  closeShortcut: null,
+  pushToTalk: null,
+  doorbell: false,
+  audioInputDeviceId: null,
+  audioOutputDeviceId: null,
+};
 
 const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim().slice(0, 300) : null);
 const whole = (value: unknown): number | undefined => (typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : undefined);
@@ -63,6 +87,12 @@ export class SatelliteSettingsStore {
         placeId: text(record.placeId),
         placeName: text(record.placeName),
         bounds: readBounds(record.bounds),
+        closed: record.closed === true,
+        closeShortcut: text(record.closeShortcut),
+        pushToTalk: text(record.pushToTalk),
+        doorbell: record.doorbell === true,
+        audioInputDeviceId: text(record.audioInputDeviceId),
+        audioOutputDeviceId: text(record.audioOutputDeviceId),
       };
     } catch {
       return { ...EMPTY };

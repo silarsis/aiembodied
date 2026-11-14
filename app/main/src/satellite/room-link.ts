@@ -64,6 +64,8 @@ export interface RoomLinkOptions {
   onWelcome?: (welcome: Welcome) => void;
   /** Bija asked this PC's devices off. */
   onDeviceOff?: (reason: string) => void;
+  /** The round trip of a ping, in ms, each time bija answers one. */
+  onPong?: (rttMs: number) => void;
   pingMs?: number;
   timeoutMs?: number;
   backoffFirstMs?: number;
@@ -306,6 +308,7 @@ export class RoomLink {
         this.onWelcome(op as unknown as Welcome);
         return;
       case 'pong':
+        if (typeof op.t === 'number') this.options.onPong?.(Math.max(0, Date.now() - op.t));
         return;
       case 'result':
       case 'asset': {

@@ -50,7 +50,7 @@ import type {
   WakeWordTrainingStatus,
 } from './wake-word/types.js';
 import type { PushToTalkStatus, TalkTriggerEvent } from './talk/types.js';
-import type { SatelliteBridge, SatelliteStatus } from './satellite/bridge-types.js';
+import type { DeviceGateBridge, DeviceGateState, SatelliteBridge, SatelliteStatus } from './satellite/bridge-types.js';
 import type { LatencyMetricName } from './metrics/types.js';
 import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from './realtime/types.js';
 import type {
@@ -237,6 +237,7 @@ export interface PreloadApi {
   places?: PlacesBridge;
   roomHub?: RoomHubBridge;
   satellite?: SatelliteBridge;
+  deviceGate?: DeviceGateBridge;
   avatars?: AvatarsBridge;
   coding?: CodingBridge;
   codingTasks?: CodingTasksBridge;
@@ -812,6 +813,7 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     arrived: async (avatarId) => {
       await ipcRenderer.invoke('places:arrived', avatarId);
     },
+    summon: () => ipcRenderer.invoke('places:summon'),
   },
   roomHub: {
     status: () => ipcRenderer.invoke('room-hub:status') as Promise<RoomHubStatus>,
@@ -843,6 +845,24 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     },
     pair: (input) => ipcRenderer.invoke('satellite:pair', input) as Promise<SatelliteStatus>,
     forget: () => ipcRenderer.invoke('satellite:forget') as Promise<SatelliteStatus>,
+    reportTurn: async (timing) => {
+      await ipcRenderer.invoke('satellite:turn-timing', timing);
+    },
+  },
+  deviceGate: {
+    get: () => ipcRenderer.invoke('device-gate:get') as Promise<DeviceGateState>,
+    onChanged: (listener) => {
+      const channel = 'device-gate:changed';
+      const handler = (_event: unknown, state: DeviceGateState) => listener(state);
+      ipcRenderer.on(channel, handler);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    },
+    captureStopped: async () => {
+      await ipcRenderer.invoke('device-gate:capture-stopped');
+    },
+    setOpen: (open) => ipcRenderer.invoke('device-gate:set-open', open) as Promise<DeviceGateState>,
   },
   gpuMemory: {
     read: () => ipcRenderer.invoke('diagnostics:gpu-memory'),
