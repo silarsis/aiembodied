@@ -5,6 +5,9 @@
  * Over it the satellite asks for the data it needs to draw one room (a small allowlist of this app's IPC
  * channels, run through the very same handlers the local window uses), and this PC pushes events back.
  *
+ * The same server also hands a browser the app (`GET /app/`, the renderer build) and, to a paired browser, room files
+ * (`GET /v1/asset`). Those are what the web satellite needs (docs/features/satellite.md, "Web and phone rooms").
+ *
  * Safety, in short: the server listens only on 127.0.0.1 and on this PC's Tailscale addresses (never
  * 0.0.0.0), a token is checked on every connection (only its SHA-256 is stored), and a remote peer must be
  * the Tailscale node that paired, owned by the same login as this PC.
@@ -22,10 +25,11 @@ import type { PlaceDeviceState } from '../presence/place-presence.js';
 import type { SwitchboardBus } from '../switchboard/bus.js';
 import type { SwitchboardEventInput } from '../switchboard/types.js';
 import { mimeFor, resolveAssetPath } from '../rooms/asset-protocol.js';
+import { WEB_PREFIX, hostAllowed, originAllowed, serveStaticFile } from './web-serve.js';
 import { isAllowedChannel } from './allowlist.js';
 import { FrameError, MAX_FRAME_BYTES, decodeMessage, encodeBinaryFrame, encodeMessage, type Op } from './frames.js';
 import { getIpcHandler, type IpcHandler } from './ipc-registry.js';
-import type { RoomDeviceRegistry } from './room-devices.js';
+import { cleanKind, type DeviceKind, type RoomDeviceRegistry } from './room-devices.js';
 import type { TailscaleLookup } from './tailscale.js';
 
 export const PROTOCOL_VERSION = 1;
@@ -47,6 +51,8 @@ export interface RoomHubOptions {
   tailscale: TailscaleLookup;
   /** Folder the room asset protocol serves (`<userData>/rooms/assets`). */
   assetRoot: string;
+  /** The renderer build (the folder with index.html) that `GET /app/` serves to a browser. Null: the app is not built here. */
+  webRoot?: string | null;
   appVersion?: string;
   /** What `welcome` carries. */
   avatars: () => unknown[];
@@ -95,6 +101,8 @@ export function fileMarker(file: string): { has(): boolean; mark(): void } {
 export interface RoomHubDeviceStatus {
   id: string;
   name: string;
+  /** Shown on the Places page: a desktop, a phone or a browser. */
+  kind?: DeviceKind;
   placeId: string;
   online: boolean;
   lastSeen: number;
@@ -126,6 +134,8 @@ interface Connection {
   address: string;
   deviceId: string | null;
   placeId: string | null;
+  /** A random key for this link only. A page that cannot set headers (an <img>, a loader) passes it as `?k=` on /v1/asset. Gone when the link closes. */
+  assetKey: string | null;
   lastTraffic: number;
   helloTimer: ReturnType<typeof setTimeout> | null;
   auth: Promise<void> | null;
@@ -178,6 +188,7 @@ export class RoomHub {
   private readonly wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_BYTES });
   private readonly sockets = new Set<Connection>();
   private readonly byDevice = new Map<string, Connection>();
+  private readonly assetKeys = new Map<string, Connection>();
   private readonly listeners = new Set<() => void>();
   private boundPort: number | null = null;
   private pairingName: string | null = null;
@@ -329,6 +340,7 @@ export class RoomHub {
       devices: this.options.registry.list().map((device) => ({
         id: device.id,
         name: device.name,
+        kind: device.kind,
         placeId: device.placeId,
         online: this.byDevice.get(device.id)?.ready === true,
         lastSeen: device.lastSeen,
@@ -450,7 +462,20 @@ export class RoomHub {
     };
     try {
       const url = new URL(req.url ?? '/', 'http://hub');
+      if (url.pathname === '/app' || url.pathname.startsWith(WEB_PREFIX)) {
+        await this.handleWeb(req, res, url, reply);
+        return;
+      }
+      if (url.pathname === '/v1/asset') {
+        await this.handleAssetHttp(req, res, url, reply);
+        return;
+      }
       if (req.method === 'POST' && url.pathname === '/v1/pair') {
+        // A browser always says where the page came from; a page of another site must not pair through this PC.
+        if (!this.originOk(req)) {
+          reply(403, { error: 'origin' });
+          return;
+        }
         await this.handlePair(req, reply);
         return;
       }
@@ -459,6 +484,121 @@ export class RoomHub {
       this.options.logger?.warn('Room hub request failed', { message: error instanceof Error ? error.message : String(error) });
       if (!res.headersSent) reply(500, { error: 'failed' });
     }
+  }
+
+  private allowedHosts(): string[] {
+    return (this.env.ROOM_HUB_ALLOWED_HOSTS ?? '').split(',').map((name) => name.trim()).filter(Boolean);
+  }
+
+  /** The Origin rule for browsers (web-serve.ts): absent, the hub's own page, loopback on the hub's port, or the Android shell. */
+  private originOk(req: IncomingMessage): boolean {
+    return originAllowed(req.headers.origin, req.headers.host, this.port(), this.allowedHosts());
+  }
+
+  /** For a request that came over the network: it must come from a node of this PC's own Tailscale login. Loopback needs nothing. */
+  private async peerOk(address: string): Promise<boolean> {
+    if (!this.needsPeerCheck(address)) return true;
+    const [peer, self] = await Promise.all([this.options.tailscale.whois(address), this.options.tailscale.self()]);
+    return Boolean(peer && self && peer.login === self.login);
+  }
+
+  // -- HTTP: the app for a browser -----------------------------------------------------------------
+
+  /** `GET /app/...`: the renderer build, public (it is only the app shell; everything with data needs the device token). */
+  private async handleWeb(
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
+    reply: (status: number, body: Record<string, unknown>, headers?: Record<string, string>) => void,
+  ): Promise<void> {
+    if (req.method !== 'GET') {
+      reply(405, { error: 'method' }, { Allow: 'GET' });
+      return;
+    }
+    if (!hostAllowed(req.headers.host, this.allowedHosts())) {
+      reply(403, { error: 'host' });
+      return;
+    }
+    if (!(await this.peerOk(peerOf(req.socket)))) {
+      this.journal('place.refused', undefined, { kind: 'service', id: 'room-hub' }, { address: peerOf(req.socket), code: 'peer' });
+      reply(403, { error: 'peer' });
+      return;
+    }
+    if (url.pathname === '/app') {
+      res.writeHead(308, { Location: `${WEB_PREFIX}${url.search}`, 'Cache-Control': 'no-store', 'Content-Length': 0 });
+      res.end();
+      return;
+    }
+    const root = this.options.webRoot;
+    if (!root) {
+      reply(503, { error: 'not-built', message: 'This PC has no web build of the app. Run: pnpm --filter @aiembodied/renderer build' });
+      return;
+    }
+    await serveStaticFile(root, url.pathname, req, res);
+  }
+
+  // -- HTTP: room files ----------------------------------------------------------------------------
+
+  /**
+   * `GET /v1/asset?url=<aiembodied-asset URL>`: the same room files as the `asset.get` op, for a page that loads
+   * them with a URL. Needs the device token (`Authorization: Bearer`) or the key this link's welcome gave (`?k=`,
+   * valid only while that link is open and only from the address it connected from). The path rules are
+   * `resolveAssetPath`'s, the same as the asset protocol.
+   */
+  private async handleAssetHttp(
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
+    reply: (status: number, body: Record<string, unknown>, headers?: Record<string, string>) => void,
+  ): Promise<void> {
+    if (req.method !== 'GET') {
+      reply(405, { error: 'method' }, { Allow: 'GET' });
+      return;
+    }
+    if (!hostAllowed(req.headers.host, this.allowedHosts()) || !this.originOk(req)) {
+      reply(403, { error: 'origin' });
+      return;
+    }
+    const address = peerOf(req.socket);
+    if (!(await this.assetCallerOk(req, url, address))) {
+      reply(401, { error: 'auth' }, { 'WWW-Authenticate': 'Bearer' });
+      return;
+    }
+    const wanted = url.searchParams.get('url');
+    const file = wanted ? resolveAssetPath(this.options.assetRoot, wanted) : null;
+    if (!file) {
+      reply(404, { error: 'not-found' });
+      return;
+    }
+    try {
+      const data = await readFile(file);
+      res.writeHead(200, {
+        'Content-Type': mimeFor(file),
+        'Content-Length': data.byteLength,
+        'Cache-Control': 'private, no-cache',
+        'X-Content-Type-Options': 'nosniff',
+        'Cross-Origin-Resource-Policy': 'same-origin',
+      });
+      res.end(data);
+    } catch {
+      reply(404, { error: 'not-found' });
+    }
+  }
+
+  /** Who may fetch room files: a paired device (token, and the Tailscale node that paired when it is not on loopback) or its open link (key). */
+  private async assetCallerOk(req: IncomingMessage, url: URL, address: string): Promise<boolean> {
+    const header = req.headers.authorization;
+    const bearer = typeof header === 'string' && /^Bearer /i.test(header) ? header.slice(7).trim() : '';
+    if (bearer) {
+      const device = this.options.registry.findByToken(bearer);
+      if (!device) return false;
+      if (!this.needsPeerCheck(address)) return true;
+      const [peer, self] = await Promise.all([this.options.tailscale.whois(address), this.options.tailscale.self()]);
+      return Boolean(peer && self && device.tailscaleNode && peer.node === device.tailscaleNode && peer.login === self.login);
+    }
+    const key = url.searchParams.get('k');
+    const conn = key ? this.assetKeys.get(key) : undefined;
+    return Boolean(conn && conn.ready && !conn.closed && conn.address === address);
   }
 
   private readBody(req: IncomingMessage): Promise<string | null> {
@@ -527,7 +667,8 @@ export class RoomHub {
       reply(401, { error: 'bad-code' });
       return;
     }
-    const deviceName = typeof body.deviceName === 'string' && body.deviceName.trim() ? body.deviceName : 'Desktop room';
+    const kind = cleanKind(body.kind);
+    const deviceName = typeof body.deviceName === 'string' && body.deviceName.trim() ? body.deviceName : kind === 'phone' ? 'Phone room' : kind === 'browser' ? 'Browser room' : 'Desktop room';
     const requested = this.pairingName ?? (typeof body.placeName === 'string' && body.placeName.trim() ? body.placeName.trim().slice(0, 80) : 'the study');
     this.pairingName = null;
     const deviceId = `room-${randomBytes(6).toString('hex')}`;
@@ -539,7 +680,7 @@ export class RoomHub {
     }
     let paired;
     try {
-      paired = registry.addDevice({ id: deviceId, name: deviceName, placeId, tailscaleNode: node, tailscaleLogin: login });
+      paired = registry.addDevice({ id: deviceId, name: deviceName, kind, placeId, tailscaleNode: node, tailscaleLogin: login });
     } catch (error) {
       places.removePlace(placeId);
       // Log the reason here; the unauthenticated caller only gets a fixed message.
@@ -566,12 +707,20 @@ export class RoomHub {
       socket.destroy();
       return;
     }
+    // A web page always sends its Origin. Only the hub's own page, loopback on the hub's port and the Android shell
+    // may open the link (a page of another site on this PC's browser must not). The device token is still needed.
+    const origin = req.headers.origin;
+    if (!this.originOk(req) || (origin !== undefined && !hostAllowed(req.headers.host, this.allowedHosts()))) {
+      this.journal('place.refused', undefined, { kind: 'service', id: 'room-hub' }, { address: peerOf(req.socket), code: 'origin' });
+      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+      return;
+    }
     const address = peerOf(req.socket);
     this.wss.handleUpgrade(req, socket, head, (ws) => this.accept(ws, address));
   }
 
   private accept(ws: WebSocket, address: string): void {
-    const conn: Connection = { ws, address, deviceId: null, placeId: null, lastTraffic: Date.now(), helloTimer: null, auth: null, ready: false, closed: false };
+    const conn: Connection = { ws, address, deviceId: null, placeId: null, assetKey: null, lastTraffic: Date.now(), helloTimer: null, auth: null, ready: false, closed: false };
     this.sockets.add(conn);
     conn.helloTimer = setTimeout(() => {
       if (!conn.auth) {
@@ -675,6 +824,8 @@ export class RoomHub {
     const previous = this.byDevice.get(deviceId);
     conn.deviceId = deviceId;
     conn.placeId = place.id;
+    conn.assetKey = randomBytes(24).toString('base64url');
+    this.assetKeys.set(conn.assetKey, conn);
     this.byDevice.set(deviceId, conn);
     if (previous) {
       this.send(previous, { op: 'error', code: 'replaced', message: 'Another connection took over.' });
@@ -692,6 +843,8 @@ export class RoomHub {
       snapshot: places.snapshot(place.id),
       avatars: this.options.avatars(),
       settings: { wakeWord: settings.wakeWord ?? null, pushToTalk: settings.pushToTalk ?? null },
+      // For a web page that loads room files by URL: `/v1/asset?k=<this>`, good until this link closes.
+      assetKey: conn.assetKey,
     });
     conn.ready = true;
     this.journal('place.online', place.id, { kind: 'device', id: deviceId }, { placeId: place.id, deviceId, address: conn.address });
@@ -812,6 +965,7 @@ export class RoomHub {
     conn.closed = true;
     if (conn.helloTimer) clearTimeout(conn.helloTimer);
     this.sockets.delete(conn);
+    if (conn.assetKey) this.assetKeys.delete(conn.assetKey);
     if (!conn.deviceId || !conn.placeId || this.byDevice.get(conn.deviceId) !== conn) return;
     this.byDevice.delete(conn.deviceId);
     this.options.places.setOnline(conn.placeId, false);

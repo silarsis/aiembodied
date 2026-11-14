@@ -29,6 +29,7 @@ import { stateIcon, toBgra } from './satellite/tray-state.js';
 import { KeychainTokenStore } from './satellite/token-store.js';
 import { SATELLITE_FILE, SatelliteSettingsStore, detectSatelliteRole, userDataOverride } from './satellite/settings.js';
 import { RoomHub, fileMarker } from './room-hub/room-hub.js';
+import { webRootFor } from './runtime-paths.js';
 import { RoomDeviceRegistry } from './room-hub/room-devices.js';
 import { createTailscaleLookup } from './room-hub/tailscale.js';
 import { rememberIpcHandler } from './room-hub/ipc-registry.js';
@@ -3057,6 +3058,8 @@ app.whenReady().then(async () => {
       places,
       tailscale: createTailscaleLookup(),
       assetRoot: path.join(app.getPath('userData'), 'rooms', ASSET_FOLDER),
+      // The renderer build the window loads, also served to a browser at /app/ (web and phone rooms).
+      webRoot: webRootFor(__dirname),
       appVersion: app.getVersion(),
       firewallNoted: fileMarker(path.join(app.getPath('userData'), 'room-hub-firewall-noted')),
       avatars: () => registry.list(),

@@ -185,6 +185,7 @@ class RuntimeResourceNotFoundErrorDouble extends Error {
 vi.mock('../src/runtime-paths.js', () => ({
   resolvePreloadScriptPath: resolvePreloadScriptPathMock,
   resolveRendererEntryPoint: resolveRendererEntryPointMock,
+  webRootFor: () => null,
   RuntimeResourceNotFoundError: RuntimeResourceNotFoundErrorDouble,
 }));
 

@@ -15,9 +15,20 @@ export const LOCKOUT_WINDOW_MS = 60_000;
 export const LOCKOUT_REFUSAL_MS = 60_000;
 const MAX_DEVICES = 20;
 
+/** What kind of thing a paired device is. Only shown for now; later PRs give a phone and a browser their own rules. */
+export type DeviceKind = 'desktop' | 'phone' | 'browser';
+export const DEVICE_KINDS: readonly DeviceKind[] = ['desktop', 'phone', 'browser'];
+
+/** The kind a pair request asked for; anything else (or nothing) is a desktop. */
+export function cleanKind(value: unknown): DeviceKind {
+  return DEVICE_KINDS.includes(value as DeviceKind) ? (value as DeviceKind) : 'desktop';
+}
+
 export interface RoomDevice {
   id: string;
   name: string;
+  /** Older records have none: a desktop. */
+  kind: DeviceKind;
   placeId: string;
   /** SHA-256 of the token, hex. */
   tokenHash: string;
@@ -124,7 +135,7 @@ export class RoomDeviceRegistry {
     if (!this.filePath) return;
     try {
       const raw = JSON.parse(readFileSync(this.filePath, 'utf8')) as { devices?: unknown };
-      this.devices = Array.isArray(raw.devices) ? raw.devices.filter(isDevice).map((device) => ({ ...device })) : [];
+      this.devices = Array.isArray(raw.devices) ? raw.devices.filter(isDevice).map((device) => ({ ...device, kind: cleanKind((device as { kind?: unknown }).kind) })) : [];
     } catch {
       this.devices = [];
     }
@@ -159,6 +170,16 @@ export class RoomDeviceRegistry {
     return Boolean(device) && matches;
   }
 
+  /** The device a token belongs to (constant-time compare of hashes), or null. For requests that carry only the token. */
+  findByToken(token: string): RoomDevice | null {
+    if (!token) return null;
+    const hash = hashToken(token);
+    let found: RoomDevice | null = null;
+    // Every device is compared, so the time does not say which one matched.
+    for (const device of this.devices) if (!device.revoked && safeEqual(hash, device.tokenHash) && !found) found = device;
+    return found ? { ...found } : null;
+  }
+
   touch(id: string): void {
     const device = this.devices.find((candidate) => candidate.id === id);
     if (!device) return;
@@ -176,12 +197,13 @@ export class RoomDeviceRegistry {
   }
 
   /** Adds a device and returns it with its token (the only time the token exists in the clear). */
-  addDevice(input: { id: string; name: string; placeId: string; tailscaleNode: string | null; tailscaleLogin: string | null }): { device: RoomDevice; token: string } {
+  addDevice(input: { id: string; name: string; kind?: DeviceKind; placeId: string; tailscaleNode: string | null; tailscaleLogin: string | null }): { device: RoomDevice; token: string } {
     const token = makeToken();
     const time = this.now();
     const device: RoomDevice = {
       id: input.id,
       name: cleanName(input.name, 'Desktop room'),
+      kind: cleanKind(input.kind),
       placeId: input.placeId,
       tokenHash: hashToken(token),
       tailscaleNode: input.tailscaleNode,

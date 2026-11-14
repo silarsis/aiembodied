@@ -62,7 +62,7 @@ The window shows "Connect to bija": bija's address (default `ws://bija:8791`), t
 ## How it works
 
 - `satellite/satellite.ts` registers the IPC channels the renderer expects. `satellite/channels.ts` sorts each one: forwarded to bija, answered locally, unavailable, or an event from bija. A test checks that every preload channel is sorted.
-- `satellite/room-link.ts` is the client: it reconnects with a 1 s to 30 s backoff, pings every 2 s and treats 6 s of silence as a lost link. Refusals (bad token, removed, replaced, protocol) stop the retries.
+- `satellite/link-core.ts` is the client (`RoomLinkCore`): it reconnects with a 1 s to 30 s backoff, pings every 2 s and treats 6 s of silence as a lost link. Refusals (bad token, removed, replaced, protocol) stop the retries. It takes its socket from a factory: `room-link.ts` gives it the `ws` package, the web satellite gives it the browser's WebSocket. The one list of calls and events the page can use is `bridge/create-bridge.ts`; the preload builds it on `ipcRenderer`, the web satellite on the link.
 - Room files come through an asset protocol with an on-disk cache of up to 500 MB (oldest used leaves first). The cache is keyed by URL, so a room file that changes under the same URL is not refreshed until it leaves the cache. VRM bytes are cached by model id and file hash.
 - A few cheap channels (wake word list, approvals, metrics, talk shortcut) are answered locally with empty answers.
 - bija keeps one floor per place, so the avatars at a satellite talk there. See [places.md](places.md).
@@ -154,6 +154,59 @@ For each spoken turn the renderer measures, from the end of speech: transcript b
 - "Another app is full screen" with nothing full screen: the PowerShell check may be blocked. Look in the main log for "full-screen check".
 - A closed room stays closed after a restart. Use the tray menu or Ctrl+Alt+Shift+R.
 - The mic still stays off after all of this: the page may be refused the `media` permission while the gate was closed; reload with Ctrl+R.
+
+## Web and phone rooms
+
+A room can also be a web page. bija serves the app at `http://<bija>:8791/app/`, the page pairs and talks to bija over the same `/v1/link` WebSocket as the desktop satellite, and it draws one room with its own mic, camera and speakers. The next update wraps the same page in an Android app (the phone room); this one is the page.
+
+### Open it
+
+1. Build the app once: `pnpm --filter @aiembodied/renderer build`. `pnpm dev:run` and `pnpm satellite` already do. The hub serves the same `app/renderer/dist` the window loads (found the way `main.ts` finds it). If it is missing, `/app/` answers 503 and says so.
+2. On bija, open Settings > Places > "Add a desktop room" and note the 6-digit code. The hub listens while a code is active.
+3. On bija itself, open Chrome at `http://127.0.0.1:8791/app/`. Localhost counts as a secure context, so the mic and camera work.
+4. The page shows "Connect to bija" with its own address filled in. Type the code and a name for the room and press Connect. The device is listed on the Places page as a "Browser".
+
+On another machine on the tailnet, `http://bija:8791/app/` works for the display and for typed turns. A browser only allows the mic and camera on a secure origin (https or localhost), so for voice there put https in front of the hub with `tailscale serve` on bija:
+
+```
+tailscale serve --bg --https=443 http://127.0.0.1:8791
+```
+
+then open `https://<bija name>.<tailnet>.ts.net/app/`. `tailscale serve` forwards to the hub from loopback and keeps the tailnet name in the Host header, so the Origin rule below accepts the page because the page and the hub share that host. Behind `tailscale serve` every request looks like loopback to the hub, so the hub's own Tailscale login check does not run for them: who can reach the https address is then decided by your tailnet ACL, and the device token is still required for every piece of data. Names that are not `*.ts.net`, an IP or a single word are refused as a Host (a defence against DNS rebinding); list others in `ROOM_HUB_ALLOWED_HOSTS` (comma separated) if you need one.
+
+### What the hub serves
+
+- `GET /app/...`: the renderer build. Read-only, no directory listing, `index.html` for `/app/`, content types for `.wasm`, `.tflite`, `.vrm`, `.glb` and the rest. Paths are checked twice (the request path, then the real path, so a symlink cannot lead out of the folder). It needs no token: it is only the app shell. Over the network the peer must still be a node of bija's own Tailscale login. The copy of `index.html` it sends adds the hub's own address to the CSP `connect-src` for the WebSocket, and nothing else.
+- `GET /v1/asset?url=<aiembodied-asset URL>`: room files for a page that loads them by URL (three.js, images). It needs the device token (`Authorization: Bearer`) or the key from the link's `welcome` (`?k=`, valid only while that link is open and only from the address it connected from). The path rules are the asset protocol's.
+- The WebSocket upgrade checks `Origin`: none (the desktop satellite), the hub itself (`http(s)://127.0.0.1:<port>` or its own host), or `https://appassets.androidplatform.net`. Any other page is refused, so a web page in bija's own browser cannot drive the link. The device token is still needed after that.
+- The existing bind rules are unchanged: 127.0.0.1 and Tailscale addresses only, and the Tailscale peer check for everything that is not loopback.
+
+### What the page does differently
+
+- It boots the web satellite when there is no Electron preload bridge (`renderer/src/web-satellite/`). `window.aiembodied` is built by the same `createBridge` as the preload, so every call and event exists on both. The channels are sorted by the same `satellite/channels.ts`; the link, the pairing request, the config and the gate logic are shared code, not copies.
+- The token is kept in the page's `localStorage` (so is the closed switch and the speaker choice; the camera choice was already there). Anyone who can run script on that page's origin can read it, so only open the hub's page on devices you trust. "Forget this pairing" clears it. Revoke the room on bija to cancel a token for good.
+- The gate uses the same pure rules (`evaluateGate`). The facts: occupied (from bija's snapshot), unlocked = the page is visible (`document.visibilityState`), link up, open (the "Close this room" button in the Status panel, kept in `localStorage`), no full-screen app (always true, a page cannot tell), not held off by bija, and the room's camera setting. When any fact fails, the page stops every capture track at once and confirms it; if it does not, the page reloads itself. Unknown counts as off.
+- A plain browser enforces this in the page only, so it is as strong as the page. The Android app adds native enforcement next.
+- No wake word and no doorbell on the web: a browser has no wake word worker. Wake word is unavailable there; talk with the talk button or by typing.
+- No "Start when I sign in", no global shortcut, no native tray.
+
+### For the Android shell
+
+The shell sets `window.__AIEMBODIED_SHELL__` before the page loads; the page reads it once at boot (`web-satellite/shell-hook.ts`):
+
+- `hubUrl`, `deviceId`, `token`, `deviceName`: the pairing the shell already holds. With a token and device id the page never shows the connect screen, and never writes that token to storage. `kind: 'phone'` makes a pair request say phone.
+- `foreground` (a boolean or a function) and `onForeground(listener)`: the shell's own foreground fact. It is combined with the page's visibility.
+- `onGate(state)`: called after every change of the gate, so the shell can stop its own capture natively.
+
+The shell serves the page from `https://appassets.androidplatform.net` and proxies HTTP (`/app/`, `/v1/pair`, `/v1/asset`) to bija, so those are same-origin for the page. The WebSocket goes straight to `ws://<hub>/v1/link`.
+
+### Device kind
+
+A pair request may say `kind: 'desktop' | 'phone' | 'browser'` (default `desktop`; anything else counts as desktop). It is stored with the device in `room-devices.json` and shown on the Places page. Nothing else depends on it yet.
+
+### Not on the web yet
+
+Model bytes and room files are fetched again on every load (no disk cache like the desktop satellite's), the page cannot run the wake word, and an http page on another machine cannot use the mic or camera.
 
 ## Not yet
 

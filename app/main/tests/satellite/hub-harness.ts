@@ -15,6 +15,7 @@ type Handler = (event: { sender: { send: (channel: string, ...args: unknown[]) =
 export interface Harness {
   hub: RoomHub;
   places: PlaceManager;
+  registry: RoomDeviceRegistry;
   folder: string;
   handlers: Record<string, Handler>;
   /** Stops the hub and starts a new one on the same port with the same devices. */
@@ -29,7 +30,7 @@ export interface Harness {
 /** A real RoomHub on 127.0.0.1 with the handlers a test gives it, as main.ts would register them. */
 export async function startHarness(
   handlers: Record<string, Handler> = {},
-  extra: { onSatelliteMessage?: ConstructorParameters<typeof RoomHub>[0]['onSatelliteMessage'] } = {},
+  extra: { onSatelliteMessage?: ConstructorParameters<typeof RoomHub>[0]['onSatelliteMessage']; hubOptions?: Partial<ConstructorParameters<typeof RoomHub>[0]> } = {},
 ): Promise<Harness> {
   const folder = mkdtempSync(path.join(tmpdir(), 'satellite-test-'));
   const assetRoot = path.join(folder, 'assets');
@@ -54,6 +55,7 @@ export async function startHarness(
       listenAddresses: () => ['127.0.0.1'],
       helloTimeoutMs: 500,
       onSatelliteMessage: extra.onSatelliteMessage,
+      ...extra.hubOptions,
     });
   let hub = make();
   await hub.start();
@@ -61,6 +63,7 @@ export async function startHarness(
   const harness: Harness = {
     hub,
     places,
+    registry,
     folder,
     handlers,
     url: () => `ws://127.0.0.1:${port}`,

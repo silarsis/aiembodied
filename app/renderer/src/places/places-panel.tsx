@@ -30,6 +30,9 @@ function errorText(error: unknown, fallback: string): string {
  * and "Add a desktop room", which shows a one-time code to type on the other PC.
  * `active` is true while the pop-up is open, so the status is read each time it opens.
  */
+/** The device kind, as a word next to the room. */
+const KIND_WORDS = { desktop: 'Desktop', phone: 'Phone', browser: 'Browser' } as const;
+
 export interface RoomChoice {
   id: string;
   name: string;
@@ -221,6 +224,11 @@ export function PlacesPanel({
                 ) : null}
                 {place.node !== 'local' && place.node !== 'offscreen' ? (
                   <div className="placesPanel__device">
+                    {device ? (
+                      <span className="placesPanel__kind" data-testid={`device-kind-${place.id}`} title="What kind of device this room is">
+                        {KIND_WORDS[device.kind ?? 'desktop']}
+                      </span>
+                    ) : null}
                     <span className="kiosk__helper">
                       {device
                         ? `${device.name} · ${device.online ? 'connected' : `last seen ${new Date(device.lastSeen).toLocaleString()}`}`
