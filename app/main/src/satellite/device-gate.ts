@@ -1,7 +1,8 @@
 /**
  * The privacy gate of a satellite PC (docs/features/satellite.md).
  *
- * Kevin's rule: a room's mic and camera are live only while at least one avatar is in the room, the screen is
+ * Kevin's rule: a room's mic and camera are live only while at least one avatar is in the room (the camera also
+ * needs the room's "Camera presence" setting), the screen is
  * unlocked, the link to bija is up, the room is open (Kevin did not close it) and no other app is full screen.
  * The gate lives in the satellite's main process, not in the page, and it fails closed: a fact that is not known
  * yet counts as "no". bija can ask devices off (`device.off`); it can never turn them on.
@@ -23,7 +24,12 @@ export interface DeviceFacts {
   noFullscreenApp: boolean;
   /** bija has not asked the devices off. */
   notHeldOff: boolean;
+  /** This place's "Camera presence" setting, as bija last sent it. Not known yet counts as off. */
+  cameraEnabled: boolean;
 }
+
+/** Facts as callers may give them: the camera setting can be left out and then counts as off. */
+export type GateFacts = Omit<DeviceFacts, 'cameraEnabled'> & Partial<Pick<DeviceFacts, 'cameraEnabled'>>;
 
 export type DeviceLevel = 'off' | 'doorbell' | 'live';
 
@@ -33,8 +39,10 @@ export interface DeviceGateState extends DeviceFacts {
   /** Nobody is here but everything else is fine, and the room's doorbell setting is on: only the doorbell listens. */
   doorbell: boolean;
   mic: DeviceLevel;
-  /** Off until the camera comes (a later update). */
-  camera: 'off';
+  /** The camera may be live: every fact the mic needs is true, and the place's camera setting is on. */
+  cameraAllowed: boolean;
+  /** The camera never has a doorbell level: it is live or off. */
+  camera: 'off' | 'live';
   speakers: 'off' | 'live';
   /** The same facts the way `device.state` names them. */
   locked: boolean;
@@ -52,10 +60,12 @@ export const INITIAL_FACTS: DeviceFacts = {
   // Not known until the first check has answered: closed until then.
   noFullscreenApp: false,
   notHeldOff: true,
+  // Not known until bija's first snapshot has arrived: off until then.
+  cameraEnabled: false,
 };
 
 /** The first fact that is not true, in words. */
-function whyOff(facts: DeviceFacts): string {
+function whyOff(facts: GateFacts): string {
   if (!facts.open) return 'This room is closed';
   if (!facts.unlocked) return 'The screen is locked';
   if (!facts.noFullscreenApp) return 'Another app is full screen';
@@ -65,18 +75,27 @@ function whyOff(facts: DeviceFacts): string {
   return '';
 }
 
+/** Why the camera is off while the mic is live, in words for Kevin. Empty while it is live or when the mic is off too. */
+export function cameraWhyOff(facts: GateFacts): string {
+  return whyOff(facts) === '' && facts.cameraEnabled !== true ? 'Camera presence is off for this room' : '';
+}
+
 /** The result for a set of facts. Pure. */
-export function evaluateGate(facts: DeviceFacts, doorbellEnabled = false): DeviceGateState {
+export function evaluateGate(facts: GateFacts, doorbellEnabled = false): DeviceGateState {
   const others = facts.unlocked && facts.linkUp && facts.open && facts.noFullscreenApp && facts.notHeldOff;
   const micAllowed = facts.occupied && others;
   const doorbell = !facts.occupied && others && doorbellEnabled;
+  // The camera needs everything the mic needs (an avatar is here, nothing blocks the room) and the room's own setting.
+  const cameraAllowed = micAllowed && facts.cameraEnabled === true;
   const mic: DeviceLevel = micAllowed ? 'live' : doorbell ? 'doorbell' : 'off';
   return {
     ...facts,
+    cameraEnabled: facts.cameraEnabled === true,
     micAllowed,
     doorbell,
     mic,
-    camera: 'off',
+    cameraAllowed,
+    camera: cameraAllowed ? 'live' : 'off',
     speakers: facts.linkUp && facts.open ? 'live' : 'off',
     locked: !facts.unlocked,
     closed: !facts.open,
@@ -127,9 +146,17 @@ export class DeviceGate {
     return { ...this.current };
   }
 
-  /** What permission requests for the mic (and later the camera) are answered with. */
-  allowsMedia(): boolean {
-    return this.current.micAllowed || this.current.doorbell;
+  /**
+   * What permission requests for media are answered with. A request that includes video needs the camera to be
+   * allowed; an audio-only request needs the mic (or the doorbell); a request for both needs both. 'any' is for
+   * the advisory permission check, which cannot tell the devices apart: true while either may be live.
+   */
+  allowsMedia(kind: 'audio' | 'video' | 'both' | 'any' = 'any'): boolean {
+    const micOk = this.current.micAllowed || this.current.doorbell;
+    if (kind === 'audio') return micOk;
+    if (kind === 'video') return this.current.cameraAllowed;
+    if (kind === 'both') return micOk && this.current.cameraAllowed;
+    return micOk || this.current.cameraAllowed;
   }
 
   /** Sets facts. Nothing happens when nothing changed. */
@@ -151,9 +178,10 @@ export class DeviceGate {
   private recompute(changed: Array<keyof DeviceFacts>): DeviceGateState {
     const before = this.current;
     this.current = evaluateGate(this.facts, this.doorbellEnabled);
-    const closing = this.allowedIn(before) && !this.allowedIn(this.current);
+    // Closing the mic or the camera alone both need the page to confirm that its tracks stopped.
+    const closing = (this.allowedIn(before) && !this.allowedIn(this.current)) || (before.cameraAllowed && !this.current.cameraAllowed);
     if (closing) this.armWatchdog();
-    else if (this.allowedIn(this.current)) this.clearWatchdog();
+    else if (this.allowedIn(this.current) && !this.allowedIn(before)) this.clearWatchdog();
     this.options.onChange?.(this.state(), changed);
     return this.state();
   }
@@ -204,13 +232,33 @@ export interface PermissionSession {
 
 const MEDIA_PERMISSIONS = new Set(['media', 'audioCapture', 'videoCapture']);
 
+/** Which devices a media permission asks for. Anything that cannot be read counts as both (fail closed). */
+export function mediaKind(permission: string, details: unknown): 'audio' | 'video' | 'both' {
+  if (permission === 'audioCapture') return 'audio';
+  if (permission === 'videoCapture') return 'video';
+  const info = (details && typeof details === 'object' ? details : {}) as { mediaTypes?: unknown; mediaType?: unknown };
+  // A request lists `mediaTypes: ['video', 'audio']`; a check names one `mediaType`.
+  const types = Array.isArray(info.mediaTypes) ? info.mediaTypes : typeof info.mediaType === 'string' ? [info.mediaType] : [];
+  const video = types.includes('video');
+  const audio = types.includes('audio');
+  if (video && audio) return 'both';
+  if (video) return 'video';
+  if (audio) return 'audio';
+  return 'both';
+}
+
 /**
- * While the gate is closed the page cannot start a new capture: `getUserMedia` is refused at the source. Every
- * other permission is answered as before the gate existed (granted).
+ * While the gate is closed the page cannot start a new capture: `getUserMedia` is refused at the source, the mic
+ * and the camera each by their own rule. Every other permission is answered as before the gate existed (granted).
  */
 export function guardMediaPermissions(session: PermissionSession, gate: Pick<DeviceGate, 'allowsMedia'>): void {
-  session.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(MEDIA_PERMISSIONS.has(permission) ? gate.allowsMedia() : true);
+  session.setPermissionRequestHandler((_webContents, permission, callback, details) => {
+    callback(MEDIA_PERMISSIONS.has(permission) ? gate.allowsMedia(mediaKind(permission, details)) : true);
   });
-  session.setPermissionCheckHandler((_webContents, permission) => (MEDIA_PERMISSIONS.has(permission) ? gate.allowsMedia() : true));
+  // The check is advisory (real capture goes through the request above) and may not say which device it means.
+  session.setPermissionCheckHandler((_webContents, permission, _origin, details) => {
+    if (!MEDIA_PERMISSIONS.has(permission)) return true;
+    const kind = mediaKind(permission, details);
+    return gate.allowsMedia(kind === 'both' ? 'any' : kind);
+  });
 }

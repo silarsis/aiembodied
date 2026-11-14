@@ -16,7 +16,7 @@ function setup(settings: Partial<SatelliteSettings> = {}) {
   const tray = { setToolTip: vi.fn(), setImage: vi.fn(), setContextMenu: vi.fn(), destroy: vi.fn() };
   const menus: MenuItemLike[][] = [];
   const notify = vi.fn();
-  let permission: ((webContents: unknown, permission: string, callback: (granted: boolean) => void) => void) | null = null;
+  let permission: ((webContents: unknown, permission: string, callback: (granted: boolean) => void, details?: unknown) => void) | null = null;
   let fullscreen: (noFullscreenApp: boolean) => void = () => undefined;
   const watcher = { start: vi.fn(), stop: vi.fn() };
   const runtime = new DeviceRuntime({
@@ -51,9 +51,10 @@ function setup(settings: Partial<SatelliteSettings> = {}) {
     showWindow: vi.fn(),
     quit: vi.fn(),
   });
-  const ask = (name: string) => {
+  // Electron says which devices a `media` request wants; the mic's page asks for audio only.
+  const ask = (name: string, mediaTypes: string[] = ['audio']) => {
     const callback = vi.fn();
-    (permission as NonNullable<typeof permission>)(null, name, callback);
+    (permission as NonNullable<typeof permission>)(null, name, callback, { mediaTypes });
     return callback.mock.calls[0][0] as boolean;
   };
   return { runtime, store, ops, sent, reload, listeners, shortcuts, tray, menus, notify, ask, fullscreen: (value: boolean) => fullscreen(value), watcher };
@@ -247,5 +248,45 @@ describe('DeviceRuntime', () => {
     const before = t.ops.length;
     t.runtime.setLinkUp(true);
     expect(t.ops.length).toBe(before + 1);
+  });
+
+  it('turns the camera on only when the room\'s own setting says so, as bija sent it in the snapshot', () => {
+    const t = setup();
+    t.runtime.start();
+    t.fullscreen(true);
+    t.runtime.setLinkUp(true);
+    const study = (camera?: boolean) => ({
+      places: [{ id: 'study', name: 'the study', node: 'room-1', ...(camera === undefined ? {} : { camera }) }],
+      locations: { echo: 'study' },
+      transit: [],
+      localPlaceId: 'study',
+    });
+    // A desktop room defaults to on.
+    t.runtime.setSnapshot(study());
+    expect(t.runtime.state()).toMatchObject({ micAllowed: true, camera: 'live' });
+    expect(t.ops.at(-1)).toMatchObject({ op: 'device.state', mic: 'live', camera: 'live' });
+    t.runtime.setSnapshot(study(false));
+    expect(t.runtime.state()).toMatchObject({ micAllowed: true, camera: 'off' });
+    t.runtime.setSnapshot(study(true));
+    expect(t.runtime.state().camera).toBe('live');
+    // Anything unreadable, or a snapshot without this room in it, fails closed.
+    t.runtime.setSnapshot({ places: [], locations: { echo: 'study' }, transit: [], localPlaceId: 'study' });
+    expect(t.runtime.state()).toMatchObject({ micAllowed: true, camera: 'off' });
+    // The camera goes with the mic: nobody here, no camera.
+    t.runtime.setSnapshot(study(true));
+    t.runtime.setSnapshot({ ...study(true), locations: { echo: 'home' } });
+    expect(t.runtime.state()).toMatchObject({ micAllowed: false, camera: 'off' });
+  });
+
+  it('refuses a camera request unless the camera may be live, whatever the mic does', () => {
+    const t = setup();
+    t.runtime.start();
+    t.fullscreen(true);
+    t.runtime.setLinkUp(true);
+    t.runtime.setSnapshot({ places: [{ id: 'study', name: 'the study', node: 'room-1', camera: false }], locations: { echo: 'study' }, transit: [], localPlaceId: 'study' });
+    expect(t.runtime.gate.allowsMedia('audio')).toBe(true);
+    expect(t.runtime.gate.allowsMedia('video')).toBe(false);
+    expect(t.ask('media', ['video'])).toBe(false);
+    expect(t.ask('media', ['audio'])).toBe(true);
   });
 });

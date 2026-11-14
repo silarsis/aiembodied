@@ -139,10 +139,23 @@ node scripts/room-link-client.mjs connect http://127.0.0.1:8791
 
 Make the code first in Settings > Places. `connect` prints the welcome and every message, and pings every 2 seconds. Add `--call <channel> '[args]'` or `--asset <url>` to try a request.
 
+## Camera presence
+
+Any place can note that a face is there. The camera only ever produces "a face was seen at t". No frame leaves the PC and nothing is stored. There is no recognition: it does not know who it is.
+
+- The detector is MediaPipe's BlazeFace short-range model, run in the renderer at 2 frames a second on a hidden video (`app/renderer/src/camera/`). The model is in `app/renderer/public/models/` (Apache-2.0, see the README there). The WASM files are copied from `@mediapipe/tasks-vision` at build time. Nothing is fetched from the internet when the app runs, and the page's content policy would block it.
+- A face that appears after none was seen for 30 s sends the `greet_face` cue. While a face stays in view `faceSeenAt` is reported every 5 s.
+- **Setting.** Each place has "Camera presence" in Settings > Places. A desktop room defaults to on. This PC (bija's own place) defaults to off, because it films Kevin's main desk. An offscreen place has no camera. The value is saved in the place record only when Kevin changes it and goes to a satellite in its places snapshot.
+- **When it runs on bija:** the setting is on and at least one avatar stands at this screen. A small green dot shows in the corner while it is live. Pick the camera in Devices and wake words.
+- **When it runs on a satellite:** only while the device gate says so (see [satellite.md](satellite.md)).
+- **Arrival.** When an avatar arrives at a place and a face was seen there in the last 30 s, it waves. Main sends `greet_face` with the avatar's id (`presence/arrival-greeting.ts`), so any avatar can wave, not only Echo.
+- **Presence text.** A satellite's `faceSeenAt` is stored per place in bija, stamped with bija's clock when it arrives. The decision step's presence text gets one extra line per desktop room, for example "The study: a face was seen 2 min ago; Echo is there." Bija's own lines are unchanged, and with no desktop room nothing is added.
+- If the model file is missing or the camera cannot open, the camera stays off and the reason is logged (shown in the satellite's Status panel). Run `node scripts/fetch-face-model.mjs` to fetch the model again.
+
 ## Limits
 
 - The OpenAI Realtime conversation engine is Echo-only and not place-aware. Places work with the local voice engine.
-- A desktop room has a microphone (behind the privacy gate, see [satellite.md](satellite.md)) but no camera yet. Its presence and its device state (mic, camera, speakers, locked, closed, full screen) are kept per place in bija (`presence/place-presence.ts`) and shown in Settings > Places and the Status panel. A closed room, a screen locked for 5 minutes or a full-screen app for 2 minutes send its avatars home (`room-hub/place-devices.ts`).
+- A desktop room has a microphone and a camera (both behind the privacy gate, see [satellite.md](satellite.md); the camera is presence only, see below). Its presence and its device state (mic, camera, speakers, locked, closed, full screen) are kept per place in bija (`presence/place-presence.ts`) and shown in Settings > Places and the Status panel. A closed room, a screen locked for 5 minutes or a full-screen app for 2 minutes send its avatars home (`room-hub/place-devices.ts`).
 - `places:summon` (the talk key with nobody in the room) calls the recent partner, else Echo, else the first avatar to the caller's place. It works for bija's own window too.
 - Chatter between avatars happens only among avatars in the same place.
 - A move away from this PC that is never confirmed brings the avatar back on screen, but a body that was unloaded appears at its normal spot, not at the door.

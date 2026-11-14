@@ -50,6 +50,8 @@ function span(seconds: number): string {
 
 export class PresenceTracker {
   private state: PresenceState;
+  /** One line for each other place (a desktop room's camera and who is there). Empty with a single place. */
+  private placeLines: ((now: number) => string[]) | null = null;
 
   constructor(private readonly store?: PresenceStore) {
     this.state = { doNotDisturb: this.readDnd(), listening: false, voicePhase: 'off', lastUserSpeechAt: null, lastAssistantSpokeAt: null, faceSeenAt: null };
@@ -63,9 +65,19 @@ export class PresenceTracker {
     }
   }
 
+  /** Where the lines about other places come from. They are added after bija's own lines. */
+  setPlaceLines(provider: ((now: number) => string[]) | null): void {
+    this.placeLines = provider;
+  }
+
   /** Reads the saved do-not-disturb again, for a store that opens after the tracker is made. */
   hydrate(): void {
     this.state = { ...this.state, doNotDisturb: this.readDnd() };
+  }
+
+  /** ms since epoch of the latest face sighting at bija's own place, or null. */
+  faceSeenAt(): number | null {
+    return this.state.faceSeenAt;
   }
 
   get doNotDisturb(): boolean {
@@ -117,6 +129,11 @@ export class PresenceTracker {
       `do not disturb: ${p.doNotDisturb ? 'on' : 'off'}`,
       `local time ${p.localTime}`,
     ];
+    try {
+      lines.push(...(this.placeLines?.(now) ?? []));
+    } catch {
+      // Best effort: a failing provider must not take the rest of the picture away.
+    }
     return lines.join('\n');
   }
 }

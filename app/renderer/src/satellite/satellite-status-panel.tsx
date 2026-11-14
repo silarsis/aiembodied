@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { DeviceGateBridge, DeviceGateState, SatelliteBridge, SatelliteStatus, TurnTiming } from '../../../main/src/satellite/bridge-types.js';
 import type { AudioDeviceSelection } from '../hooks/use-audio-devices.js';
+import type { CameraChoice } from '../hooks/use-camera-devices.js';
 
 const LINK_WORDS: Record<SatelliteStatus['link'], string> = {
   idle: 'Not connected',
@@ -20,12 +21,24 @@ export interface SatelliteStatusPanelProps {
   selectedOutput?: string;
   onOutputChange?: (deviceId: string) => void;
   lastTurn?: TurnTiming | null;
+  cameras?: CameraChoice[];
+  selectedCamera?: string;
+  onCameraChange?: (deviceId: string) => void;
+  /** Why the camera could not start although it should be on. */
+  cameraError?: string | null;
 }
 
 const LEVEL_WORDS = { live: 'live', doorbell: 'doorbell only', off: 'off' } as const;
+/** The camera row. The camera follows the mic's rules, and also the room's own "Camera presence" setting (kept on bija). */
+function cameraWords(gate: DeviceGateState | null): string {
+  if (!gate) return 'Off';
+  if (gate.camera === 'live') return 'Live: it only notes that a face is there';
+  const why = gate.micAllowed ? 'Camera presence is off for this room (set on bija)' : gate.summary;
+  return why ? `Off: ${why}` : 'Off';
+}
 const seconds = (ms: number | null) => (ms === null ? 'n/a' : `${(ms / 1000).toFixed(2)} s`);
 
-export function SatelliteStatusPanel({ status, bridge, gate = null, gateBridge, outputs = [], selectedOutput = '', onOutputChange, lastTurn = null }: SatelliteStatusPanelProps) {
+export function SatelliteStatusPanel({ status, bridge, gate = null, gateBridge, outputs = [], selectedOutput = '', onOutputChange, lastTurn = null, cameras = [], selectedCamera = '', onCameraChange, cameraError = null }: SatelliteStatusPanelProps) {
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const forget = async () => {
@@ -63,7 +76,26 @@ export function SatelliteStatusPanel({ status, bridge, gate = null, gateBridge, 
         </div>
         <div>
           <dt>Camera</dt>
-          <dd>Off</dd>
+          <dd data-testid="satellite-camera">
+            {cameraWords(gate)}
+            {cameraError ? ` (${cameraError})` : ''}
+          </dd>
+        </div>
+        <div>
+          <dt>Camera to use</dt>
+          <dd>
+            <label htmlFor="satellite-camera-device" className="srOnly">
+              Camera to use
+            </label>
+            <select id="satellite-camera-device" value={selectedCamera} onChange={(event) => onCameraChange?.(event.target.value)} disabled={!onCameraChange}>
+              <option value="">System default</option>
+              {cameras.map((camera) => (
+                <option key={camera.deviceId} value={camera.deviceId}>
+                  {camera.label}
+                </option>
+              ))}
+            </select>
+          </dd>
         </div>
         <div>
           <dt>Speakers</dt>
@@ -101,6 +133,7 @@ export function SatelliteStatusPanel({ status, bridge, gate = null, gateBridge, 
         </button>
       ) : null}
       <p className="kiosk__helper">The microphone is live only while a character is in this room, the screen is unlocked, the link to bija is up, the room is open and no other app is full screen. Ctrl+Alt+Shift+R closes or opens the room from anywhere.</p>
+      <p className="kiosk__helper">The camera follows the same rules and also needs Camera presence to be on for this room (set on bija, Settings, Places). It only notes that a face is there: no picture leaves this PC and nothing is stored.</p>
       <p className="kiosk__helper">F11 switches between a window and full screen.</p>
       {confirming ? (
         <div className="satelliteStatus__confirm">

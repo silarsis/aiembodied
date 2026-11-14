@@ -97,6 +97,8 @@ const EVENT = [
   'places:changed',
   'rooms:updated',
   'coding:busy',
+  // A greeting for an avatar that just walked in where a face was seen (this PC's own camera cues are sent by its own main process).
+  'camera:detection',
 ] as const;
 
 /** Never run on a satellite: settings, models, keys, avatars, coding, generation, uploads, deletes, memory, tools, bija's own admin. */
@@ -245,7 +247,6 @@ const UNAVAILABLE = [
   'wake-word:training-status',
   'talk:shortcut-status',
   'talk:trigger',
-  'camera:detection',
   'camera:emit-detection',
   // Conversation events: the satellite's renderer keeps its own transcript from its own turns.
   'conversation:message-appended',
@@ -256,6 +257,7 @@ const UNAVAILABLE = [
   'room-hub:changed',
   'room-hub:rename',
   'room-hub:revoke',
+  'room-hub:set-camera',
   'room-hub:set-room',
   'room-hub:start-pairing',
   'room-hub:status',

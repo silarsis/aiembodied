@@ -221,7 +221,7 @@ describe('VrmAvatarRenderer behavior cues', () => {
   let originalRequestAnimationFrame: typeof window.requestAnimationFrame;
   let originalCancelAnimationFrame: typeof window.cancelAnimationFrame;
   let originalResizeObserver: typeof ResizeObserver | undefined;
-  let cameraListener: ((event: { cue: string; timestamp?: number }) => void) | undefined;
+  let cameraListener: ((event: { cue: string; timestamp?: number; payload?: Record<string, unknown> | null }) => void) | undefined;
   const defaultLoader = loaderState.createVrm;
 
   beforeEach(() => {
@@ -282,7 +282,7 @@ describe('VrmAvatarRenderer behavior cues', () => {
 
     (window as unknown as { aiembodied?: unknown }).aiembodied = {
       camera: {
-        onDetection: (listener: (event: { cue: string; timestamp?: number }) => void) => {
+        onDetection: (listener: (event: { cue: string; timestamp?: number; payload?: Record<string, unknown> | null }) => void) => {
           cameraListener = listener;
           return () => {
             cameraListener = undefined;
@@ -340,6 +340,26 @@ describe('VrmAvatarRenderer behavior cues', () => {
     const action = mixer?.actions.at(-1);
     expect(action?.reset).toHaveBeenCalled();
     expect(action?.play).toHaveBeenCalled();
+  });
+
+  it('does not make Echo wave for a greeting meant for another avatar that is not on stage', async () => {
+    const model: AvatarModelSummary = { id: 'vrm-1', name: 'Test', createdAt: Date.now(), version: '1.0', fileSha: 'abc', thumbnailDataUrl: null, description: null };
+    render(
+      <BehaviorCueProvider>
+        <VrmAvatarRenderer frame={null} model={model} />
+      </BehaviorCueProvider>,
+    );
+    await waitFor(() => {
+      expect(threeMockState.mixers[0]?.actions.length).toBeGreaterThan(0);
+      expect(typeof cameraListener).toBe('function');
+    });
+    const action = threeMockState.mixers[0]?.actions.at(-1);
+    const before = action?.play.mock.calls.length ?? 0;
+    cameraListener?.({ cue: 'greet_face', timestamp: Date.now(), payload: { avatarId: 'sage' } });
+    expect(action?.play.mock.calls.length ?? 0).toBe(before);
+    // The same cue named for Echo is Echo's wave.
+    cameraListener?.({ cue: 'greet_face', timestamp: Date.now(), payload: { avatarId: 'echo' } });
+    expect(threeMockState.mixers[0]?.actions.at(-1)?.play).toHaveBeenCalled();
   });
 });
 

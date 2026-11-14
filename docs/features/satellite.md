@@ -54,6 +54,16 @@ When the gate closes:
 
 Full-screen check: on Windows one long-lived PowerShell process answers once every 3 seconds (foreground window covers its monitor; our own window, the desktop and the shell are ignored). If it does not answer, the room counts as full screen until it does. Other systems are never "full screen".
 
+### The camera
+
+The camera follows the same gate as the mic, with one more fact: the room's "Camera presence" setting (kept on bija, on by default for a desktop room, shown read-only in the Status panel). The camera is live only when an avatar is in the room, the screen is unlocked, the link is up, the room is open, no other app is full screen, bija has not held the devices off, and the setting is on. A setting that has not arrived yet counts as off.
+
+- The camera dot is green only while that is true. There is no doorbell level for the camera.
+- `media` permission requests are answered by what they ask for: video needs the camera to be allowed, audio needs the mic, both need both. A request that cannot be read is refused.
+- When the camera closes (setting off, or the gate closes) the page stops and releases every track at once and tells main. If it does not confirm within 1 s, main reloads the page, the same as for the mic.
+- What is sent to bija: `device.state` (camera `live` or `off`), and `presence` with `faceSeenAt`. What is never sent: video, frames, pictures, or anything about who the face is. Nothing is stored on the satellite either.
+- Pick the camera in the Status panel. The choice is kept on this PC only.
+
 ### Kill switch
 
 Tray menu "Close this room" / "Open this room", the same button in Status, or the global shortcut Ctrl+Alt+Shift+R (set `closeShortcut` in `satellite.json` to change it). Closing sends `room.close`: bija moves every avatar there home (reason "room closed") and refuses moves to the room until `room.open`. A closed room stays closed after a restart (`closed` in `satellite.json`).
@@ -90,4 +100,4 @@ For each spoken turn the renderer measures, from the end of speech: transcript b
 
 ## Not yet
 
-Camera and the doorbell listening (the state is there, listening is not), wake word on the satellite.
+The doorbell listening (the state is there, listening is not), wake word on the satellite.

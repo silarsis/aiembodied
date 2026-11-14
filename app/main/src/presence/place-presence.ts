@@ -98,3 +98,35 @@ export class PlacePresence {
     this.wakes.delete(placeId);
   }
 }
+
+/** A face seen within this long ago counts as "there now": it greets an avatar that arrives, and it is what the prompt line says. */
+export const FACE_FRESH_MS = 30_000;
+
+/** What the decision step is told about one other place. */
+export interface PlaceLineInput {
+  name: string;
+  /** When a face was last seen there, on bija's clock; null when never. */
+  faceSeenAt: number | null;
+  /** Names of the avatars standing there. */
+  avatars: string[];
+}
+
+function ago(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  if (seconds < 120) return `${seconds} s`;
+  if (seconds < 7200) return `${Math.round(seconds / 60)} min`;
+  return `${Math.round(seconds / 3600)} h`;
+}
+
+/** "Study: a face was seen 2 min ago; Echo is there." One line per other place. Pure. */
+export function describePlaceLine(input: PlaceLineInput, now: number): string {
+  const name = input.name.charAt(0).toUpperCase() + input.name.slice(1);
+  const face = input.faceSeenAt === null ? 'no face has been seen' : `a face was seen ${ago(now - input.faceSeenAt)} ago`;
+  const who =
+    input.avatars.length === 0
+      ? 'nobody is there'
+      : input.avatars.length === 1
+        ? `${input.avatars[0]} is there`
+        : `${input.avatars.slice(0, -1).join(', ')} and ${input.avatars[input.avatars.length - 1]} are there`;
+  return `${name}: ${face}; ${who}.`;
+}

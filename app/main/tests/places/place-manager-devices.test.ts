@@ -182,4 +182,48 @@ describe('PlaceManager desktop rooms', () => {
       expect(manager.snapshot().localPlaceId).toBe('home');
     });
   });
+
+  it('saves "Camera presence" per place, and says nothing in the snapshot until it is changed', () => {
+    const { manager, data, snapshots } = setup();
+    manager.addPlace({ id: 'study', name: 'the study', node: 'room-1' });
+    expect(manager.get('study')).not.toHaveProperty('camera');
+    expect(manager.get('home')).not.toHaveProperty('camera');
+    snapshots.length = 0;
+    expect(manager.setCamera('study', false)).toBe(true);
+    expect(manager.setCamera('home', true)).toBe(true);
+    expect(manager.get('study')?.camera).toBe(false);
+    expect(manager.get('home')?.camera).toBe(true);
+    expect(snapshots).toHaveLength(2);
+    // Setting the same value again changes nothing and tells nobody.
+    manager.setCamera('home', true);
+    expect(snapshots).toHaveLength(2);
+    expect(JSON.parse(data.get(PLACES_KEY) as string)).toContainEqual({ id: 'study', name: 'the study', node: 'room-1', room: DEFAULT_DESKTOP_ROOM, camera: false });
+    // A new manager on the same store reads them back.
+    const again = new PlaceManager({ store: { getValue: (key) => data.get(key) ?? null, setValue: (key, value) => void data.set(key, value) }, registry: { list: () => PROFILES } });
+    expect(again.get('study')?.camera).toBe(false);
+    expect(again.get('home')?.camera).toBe(true);
+  });
+
+  it('has no camera setting for an offscreen place or an unknown one', () => {
+    const { manager } = setup();
+    expect(manager.setCamera('next-door', true)).toBe(false);
+    expect(manager.setCamera('nowhere', true)).toBe(false);
+  });
+
+  it('tells arrival listeners once per arrival, and survives one that throws', () => {
+    const { manager } = setup();
+    manager.addPlace({ id: 'study', name: 'the study', node: 'room-1' });
+    const seen: Array<[string, string]> = [];
+    manager.onArrived(() => {
+      throw new Error('bad listener');
+    });
+    const off = manager.onArrived((avatarId, placeId) => seen.push([avatarId, placeId]));
+    manager.startMove('echo', 'next-door', 'chose to');
+    vi.advanceTimersByTime(2000);
+    expect(seen).toEqual([['echo', 'next-door']]);
+    off();
+    manager.startMove('echo', 'home', 'chose to');
+    vi.advanceTimersByTime(2000);
+    expect(seen).toHaveLength(1);
+  });
 });

@@ -17,4 +17,6 @@ export interface RoomHubBridge {
   rename(placeId: string, name: string): Promise<Place | null>;
   /** Picks the room a desktop room draws: a 3D room id (`room:builtin:studio-flat`) or a background id. False when it is not a desktop room. */
   setRoom?(placeId: string, room: string): Promise<boolean>;
+  /** Turns "Camera presence" on or off for a place: a face seen, nothing more (no picture leaves the PC, nothing is stored). False for an unknown or offscreen place. */
+  setCamera?(placeId: string, on: boolean): Promise<boolean>;
 }
