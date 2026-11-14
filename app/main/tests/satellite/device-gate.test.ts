@@ -152,7 +152,26 @@ describe('DeviceGate', () => {
     expect(gate.state().mic).toBe('off');
     gate.setDoorbellEnabled(true);
     expect(gate.state()).toMatchObject({ mic: 'doorbell', doorbell: true });
-    expect(gate.allowsMedia()).toBe(true);
+  });
+
+  it('never opens the page\'s microphone for the doorbell: it listens in the main process, audio stays on the PC', () => {
+    const { gate } = setup({ ...ALL_TRUE, occupied: false });
+    gate.setDoorbellEnabled(true);
+    expect(gate.state().doorbell).toBe(true);
+    expect(gate.allowsMedia('audio')).toBe(false);
+    expect(gate.allowsMedia('any')).toBe(false);
+    expect(gate.allowsMedia('both')).toBe(false);
+    gate.update({ occupied: true });
+    expect(gate.allowsMedia('audio')).toBe(true);
+  });
+
+  it('waits for the page to confirm that capture stopped when the mic gives way to the doorbell', () => {
+    const { gate, reload } = setup({ ...ALL_TRUE });
+    gate.setDoorbellEnabled(true);
+    gate.update({ occupied: false });
+    expect(gate.state().mic).toBe('doorbell');
+    vi.advanceTimersByTime(CAPTURE_STOP_TIMEOUT_MS);
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 });
 

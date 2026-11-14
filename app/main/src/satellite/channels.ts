@@ -61,6 +61,9 @@ const FORWARD = [
   'places:move',
   'places:arrived',
   'places:summon',
+  'places:can-wander',
+  // The satellite's own main process asks for the wake word picked on bija (and a trained model's file). The page never calls it.
+  'wake-word:model',
 ] as const;
 
 /** Answered on this PC. */
@@ -258,6 +261,7 @@ const UNAVAILABLE = [
   'room-hub:rename',
   'room-hub:revoke',
   'room-hub:set-camera',
+  'room-hub:set-doorbell',
   'room-hub:set-room',
   'room-hub:start-pairing',
   'room-hub:status',

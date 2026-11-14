@@ -161,3 +161,29 @@ describe('fallbackIdleTags', () => {
     expect(fallbackIdleTags(input(), () => 0.3)).toEqual(fallbackIdleTags(input(), () => 0.3));
   });
 });
+
+describe('{room:} in an idle reply', () => {
+  const places = [
+    { name: 'the study', who: ['Sage'], recentlyUsed: true },
+    { name: 'next door', who: [], recentlyUsed: false },
+  ];
+
+  it('counts only for a place the prompt offered, comes back with its name, and ends the list', () => {
+    expect(parseIdleReply('{move:waves}{room:study}{go:bookshelf}', input({ places }))).toEqual([
+      { type: 'move', text: 'waves' },
+      { type: 'room', place: 'the study' },
+    ]);
+    expect(parseIdleReply('{room:The Study}', input({ places }))).toEqual([{ type: 'room', place: 'the study' }]);
+    expect(parseIdleReply('{room:the moon}', input({ places }))).toEqual([]);
+    // With no other places on offer the tag means nothing.
+    expect(parseIdleReply('{room:the study}', input())).toEqual([]);
+    expect(startsWithWait('{room:the study}{wait}')).toBe(false);
+  });
+
+  it('writes and describes the tag', () => {
+    const tags: IdleTag[] = [{ type: 'go', object: 'bookshelf' }, { type: 'room', place: 'the study' }];
+    expect(idleTagsToText(tags)).toBe('{go:bookshelf}{room:the study}');
+    expect(describeIdleTags(tags, room)).toBe('walked to the bookshelf and went to the study');
+    expect(idleTargets(tags)).toEqual(['bookshelf']);
+  });
+});

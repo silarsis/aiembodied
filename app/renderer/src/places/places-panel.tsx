@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { Place, PlacesSnapshot } from '../../../main/src/places/place-manager.js';
 import { cameraPresenceOn } from '../../../main/src/places/camera-setting.js';
+import { doorbellOn } from '../../../main/src/places/doorbell-setting.js';
 import { deviceSummary } from './room-devices-status.js';
 import type { PairingStart, RoomHubBridge, RoomHubStatus } from '../../../main/src/room-hub/bridge-types.js';
 
@@ -179,6 +180,24 @@ export function PlacesPanel({
                       {place.node === 'local'
                         ? 'Off unless you turn it on. The camera runs only while a character is on this screen, and only notes that a face is there.'
                         : 'The camera runs only while a character is in the room, and only notes that a face is there.'}
+                    </span>
+                  </label>
+                ) : null}
+                {place.node !== 'offscreen' ? (
+                  <label className="placesPanel__camera">
+                    <input
+                      type="checkbox"
+                      aria-label={`Doorbell in ${place.name}`}
+                      checked={doorbellOn(place)}
+                      disabled={!roomHub?.setDoorbell}
+                      onChange={(event) => void run(() => roomHub?.setDoorbell?.(place.id, event.target.checked) ?? Promise.resolve(), 'Could not change the doorbell.')}
+                    />{' '}
+                    Doorbell
+                    <span className="kiosk__helper">
+                      {' '}
+                      {place.node === 'local'
+                        ? 'While nobody is on this screen, the wake word still listens and calls a character over. Off: the microphone is released until someone arrives.'
+                        : 'While nobody is in the room, the wake word still listens on that PC and calls a character over. Off by default. Nothing is heard by bija: only that the wake word was said.'}
                     </span>
                   </label>
                 ) : null}

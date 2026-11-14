@@ -814,6 +814,7 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
       await ipcRenderer.invoke('places:arrived', avatarId);
     },
     summon: () => ipcRenderer.invoke('places:summon'),
+    canWander: (avatarId: string, placeRef: string, speaking?: boolean) => ipcRenderer.invoke('places:can-wander', avatarId, placeRef, speaking === true) as Promise<{ ok: boolean; reason?: string }>,
   },
   roomHub: {
     status: () => ipcRenderer.invoke('room-hub:status') as Promise<RoomHubStatus>,
@@ -833,6 +834,7 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     rename: (placeId, name) => ipcRenderer.invoke('room-hub:rename', placeId, name),
     setRoom: (placeId, room) => ipcRenderer.invoke('room-hub:set-room', placeId, room) as Promise<boolean>,
     setCamera: (placeId, on) => ipcRenderer.invoke('room-hub:set-camera', placeId, on) as Promise<boolean>,
+    setDoorbell: (placeId, on) => ipcRenderer.invoke('room-hub:set-doorbell', placeId, on) as Promise<boolean>,
   },
   satellite: {
     status: () => ipcRenderer.invoke('satellite:status') as Promise<SatelliteStatus>,

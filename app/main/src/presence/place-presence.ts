@@ -75,7 +75,8 @@ export class PlacePresence {
   /** A `presence`, `device.state` or `wake.heard` message from the satellite at `placeId`. */
   onSatelliteOp(placeId: string, op: Op): void {
     if (op.op === 'presence') {
-      this.update(placeId, op);
+      // "Someone used that PC" is stamped with this PC's clock on arrival: a satellite's clock may differ, and the report is at most seconds old.
+      this.update(placeId, typeof op.activeAt === 'number' ? { ...op, activeAt: this.now() } : op);
     } else if (op.op === 'device.state') {
       const text = (value: unknown, fallback: string) => (typeof value === 'string' && value.length <= 20 ? value : fallback);
       this.devices.set(placeId, {

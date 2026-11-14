@@ -1,12 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DeviceRuntime, DEFAULT_CLOSE_SHORTCUT, type MenuItemLike } from '../../src/satellite/device-runtime.js';
-import { CAPTURE_STOP_TIMEOUT_MS } from '../../src/satellite/device-gate.js';
+import { CAPTURE_STOP_TIMEOUT_MS, type DeviceGateState } from '../../src/satellite/device-gate.js';
 import type { SatelliteSettings } from '../../src/satellite/settings.js';
 import type { Op } from '../../src/room-hub/frames.js';
 
-const snapshot = (locations: Record<string, string>, transit: Array<{ avatarId: string; from: string; to: string }> = []) => ({ places: [], locations, transit, localPlaceId: 'study' });
+const snapshot = (locations: Record<string, string>, transit: Array<{ avatarId: string; from: string; to: string }> = [], study: { doorbell?: boolean } = {}) => ({
+  places: [{ id: 'study', name: 'the study', node: 'device-1', camera: false, ...study }],
+  locations,
+  transit,
+  localPlaceId: 'study',
+});
 
-function setup(settings: Partial<SatelliteSettings> = {}) {
+function setup(settings: Partial<SatelliteSettings> = {}, onGate?: (state: DeviceGateState) => void) {
   const store = { closed: false, closeShortcut: null, doorbell: false, ...settings } as SatelliteSettings;
   const ops: Op[] = [];
   const sent: Array<[string, unknown]> = [];
@@ -46,6 +51,7 @@ function setup(settings: Partial<SatelliteSettings> = {}) {
       return watcher;
     },
     notify,
+    onGate,
     placeName: () => 'the study',
     avatarName: (id) => (id === 'echo' ? 'Echo' : id),
     showWindow: vi.fn(),
@@ -218,14 +224,38 @@ describe('DeviceRuntime', () => {
       expect((t.menus.at(-1) ?? [])[0].label).toBe('Study: Nobody is in this room');
     });
 
-    it('says doorbell only when the setting is on and nobody is here', () => {
+    it('says doorbell only when the place\'s doorbell is on (a setting kept on bija) and nobody is here', () => {
+      const t = setup();
+      t.runtime.start();
+      t.fullscreen(true);
+      t.runtime.setLinkUp(true);
+      t.runtime.setSnapshot(snapshot({ echo: 'home' }, [], { doorbell: true }));
+      expect(t.tray.setToolTip).toHaveBeenLastCalledWith('Study: doorbell only');
+      // Kevin turns it off on bija: the next snapshot closes it.
+      t.runtime.setSnapshot(snapshot({ echo: 'home' }, [], { doorbell: false }));
+      expect(t.tray.setToolTip).toHaveBeenLastCalledWith('Study: off');
+    });
+
+    it('has no doorbell by default for a desktop room, and none from satellite.json', () => {
       const t = setup({ doorbell: true });
       t.runtime.start();
       t.fullscreen(true);
       t.runtime.setLinkUp(true);
       t.runtime.setSnapshot(snapshot({ echo: 'home' }));
-      expect(t.tray.setToolTip).toHaveBeenLastCalledWith('Study: doorbell only');
+      expect(t.runtime.state()).toMatchObject({ doorbell: false, mic: 'off' });
     });
+  });
+
+  it('tells the wake word worker about every change of the gate', () => {
+    const seen: Array<{ micAllowed: boolean; doorbell: boolean }> = [];
+    const t = setup({}, (state) => seen.push({ micAllowed: state.micAllowed, doorbell: state.doorbell }));
+    t.runtime.start();
+    t.fullscreen(true);
+    t.runtime.setLinkUp(true);
+    t.runtime.setSnapshot(snapshot({ echo: 'home' }, [], { doorbell: true }));
+    t.runtime.setSnapshot(snapshot({ echo: 'study' }, [], { doorbell: true }));
+    expect(seen.at(-1)).toEqual({ micAllowed: true, doorbell: false });
+    expect(seen).toContainEqual({ micAllowed: false, doorbell: true });
   });
 
   it('notifies the first time the mic goes live, and only then', () => {

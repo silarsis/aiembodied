@@ -31,7 +31,8 @@ export function useDeviceGate(bridge: DeviceGateBridge | undefined, onClose: (sc
       if (cancelled) return;
       pushed = true;
       setState(next);
-      const audio = !(next.micAllowed || next.doorbell);
+      // The doorbell listens in the main process; the page's own microphone is only for a room with an avatar in it.
+      const audio = !next.micAllowed;
       const camera = cameraWasLive && next.camera !== 'live';
       cameraWasLive = next.camera === 'live';
       // The mic closing closes the camera too (the camera needs everything the mic needs).

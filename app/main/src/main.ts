@@ -33,6 +33,13 @@ import { RoomDeviceRegistry } from './room-hub/room-devices.js';
 import { createTailscaleLookup } from './room-hub/tailscale.js';
 import { rememberIpcHandler } from './room-hub/ipc-registry.js';
 import { callToPlace, chooseSummon, summon } from './places/summon.js';
+import { createDoorbell, wakeShouldListen } from './places/doorbell.js';
+import { wanderRefusal } from './places/wander.js';
+import { NextDoorReturn } from './places/next-door-return.js';
+import { walkToKevin } from './places/urgent-walk.js';
+import { ActivityMonitor } from './presence/activity-monitor.js';
+import { SatelliteWakeRunner, type SharedWakeWord } from './satellite/wake-runner.js';
+import { readSharedWakeWord } from './wake-word/shared-model.js';
 import { PlaceDevices } from './room-hub/place-devices.js';
 import { createIntentRouter } from './floor/intent-router.js';
 import { createModelBid } from './floor/bid.js';
@@ -49,6 +56,8 @@ import { tagEvent, tagResult } from './avatars/speaker.js';
 import dotenv from 'dotenv';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
+import { mkdir, rename, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
@@ -65,6 +74,7 @@ import { initializeLogger } from './logging/logger.js';
 import { createAppDiagnostics } from './logging/app-diagnostics.js';
 import { CrashGuard } from './crash-guard.js';
 import { WakeWordService } from './wake-word/wake-word-service.js';
+import type { WakeWordDetectionEvent } from './wake-word/types.js';
 import { WakeWordListeningController } from './wake-word/listening-controller.js';
 import { WakeWordTrainer } from './wake-word/wake-word-trainer.js';
 import { listWakeWords } from './wake-word/wake-word-library.js';
@@ -214,6 +224,9 @@ const satelliteMode = detectSatelliteRole(process.env, app.getPath('userData'));
 const satelliteSettings = satelliteMode ? new SatelliteSettingsStore(path.join(app.getPath('userData'), SATELLITE_FILE)) : null;
 let satellite: Satellite | null = null;
 let satelliteDevices: DeviceRuntime | null = null;
+/** The satellite's own wake word worker, run only while its privacy gate allows (satellite/wake-runner.ts). */
+let satelliteWake: SatelliteWakeRunner | null = null;
+let satelliteActivity: ActivityMonitor | null = null;
 
 const secretStore = isProduction ? new KeytarSecretStore('aiembodied') : new InMemorySecretStore();
 const { logger } = initializeLogger();
@@ -353,6 +366,10 @@ const lastEchoInstructions = new Map<string, string>();
 const placePresence = new PlacePresence();
 /** The devices of each desktop room: their state, the kill switch, and the clocks that send avatars home. */
 let placeDevices: PlaceDevices | null = null;
+/** Once a minute, maybe brings an avatar back from next door to where someone is (places/next-door-return.ts). */
+let nextDoorReturn: NextDoorReturn | null = null;
+/** Polls how long ago anyone used this PC; the answer is what wandering between places goes by (presence/activity-monitor.ts). */
+let activityMonitor: ActivityMonitor | null = null;
 
 /** What the Places page and the Status panel show: each desktop room with what its PC says about its devices. */
 function roomHubStatus(hub: RoomHub) {
@@ -373,6 +390,16 @@ function floorFor(placeId: string): FloorController | null {
   const made = makeFloor?.(placeId) ?? null;
   if (made) floors.set(placeId, made);
   return made;
+}
+
+/** How long ago Kevin last talked with the avatar, in any place's floor; null when not lately. */
+function talkedAgoMs(avatarId: string): number | null {
+  let best: number | null = null;
+  for (const placeFloor of floors.values()) {
+    const age = placeFloor.talkedAgoMs(avatarId);
+    if (age !== null && (best === null || age < best)) best = age;
+  }
+  return best;
 }
 
 /** Where events for a place go: bija's window for the local place, the satellite's link for a desktop room, nowhere for an offscreen place. */
@@ -604,49 +631,55 @@ function resolveWakeWordTrainerDirectory(): string | null {
   return existsSync(path.join(candidate, 'train_wake_word.py')) ? candidate : null;
 }
 
+/** One doorbell per place: the wake word heard while nobody is there calls an avatar over (places/doorbell.ts). */
+const doorbells = new Map<string, ReturnType<typeof createDoorbell>>();
+
+function doorbellFor(placeId: string): ReturnType<typeof createDoorbell> | null {
+  const places = placeManager;
+  if (!places) return null;
+  let bell = doorbells.get(placeId);
+  if (!bell) {
+    bell = createDoorbell({
+      places: scopedPlaces(places, placeId),
+      placeId,
+      partner: () => floorFor(placeId)?.recentPartner() ?? null,
+      avatarIds: () => (avatarRegistry?.list() ?? []).map((profile) => profile.id),
+      logger,
+    });
+    doorbells.set(placeId, bell);
+  }
+  return bell;
+}
+
 /**
- * Create capture only after explicit enable; the listening controller serializes replacements.
+ * bija's wake word listens while an avatar is at this screen or the doorbell is on. With nobody here and the doorbell
+ * off the microphone is released, and it comes back when an avatar arrives. With one place and every avatar home
+ * nothing ever closes it.
  */
-function startWakeWordService(wakeWord: WakeWordConfig): WakeWordService {
+function syncWakeGate(): void {
+  const places = placeManager;
+  if (!places) return;
+  void wakeWordListening.setGate(wakeShouldListen(places, places.localPlaceId())).catch((error: unknown) => {
+    logger.warn('Could not change the wake word gate', { message: error instanceof Error ? error.message : String(error) });
+  });
+}
+
+/**
+ * Starts the openWakeWord worker (capture begins) and hands its detections to `handlers`. The one place the worker
+ * is built, for bija and for a satellite PC alike.
+ */
+function launchWakeWordService(
+  wakeWord: WakeWordConfig,
+  handlers: { onWake: (event: WakeWordDetectionEvent) => void; onPeak?: (event: WakeWordDetectionEvent) => void },
+): WakeWordService {
   const service = new WakeWordService({
     logger,
     cooldownMs: wakeWord.cooldownMs,
     minConfidence: wakeWord.threshold,
   });
 
-  service.on('wake', (event) => {
-    if (!wakeWordListening.enabled) return;
-    logger.info('Wake word detected in main process', {
-      keyword: event.keywordLabel,
-      confidence: event.confidence,
-    });
-
-    floor?.wakeWordHeard();
-    let sessionId: string | null = null;
-    if (conversationManager) {
-      try {
-        const session = conversationManager.startSession({ startedAt: event.timestamp });
-        sessionId = session.id;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger.error('Failed to start new conversation session', { message });
-      }
-    }
-
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('wake-word:event', {
-        ...event,
-        sessionId: sessionId ?? event.sessionId,
-      });
-    }
-  });
-
-  service.on('peak', (event) => {
-    if (!wakeWordListening.enabled) return;
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('wake-word:peak', event);
-    }
-  });
+  service.on('wake', handlers.onWake);
+  if (handlers.onPeak) service.on('peak', handlers.onPeak);
 
   service.on('error', (serviceError) => {
     logger.error('Wake word service error', {
@@ -674,6 +707,53 @@ function startWakeWordService(wakeWord: WakeWordConfig): WakeWordService {
     throw error;
   }
   return service;
+}
+
+/**
+ * Create capture only after explicit enable; the listening controller serializes replacements.
+ */
+function startWakeWordService(wakeWord: WakeWordConfig): WakeWordService {
+  return launchWakeWordService(wakeWord, {
+    onWake: (event) => {
+      if (!wakeWordListening.enabled) return;
+      logger.info('Wake word detected in main process', {
+        keyword: event.keywordLabel,
+        confidence: event.confidence,
+      });
+
+      // The wake word starts a turn with whoever is here to hear it. With nobody here (the doorbell) it calls an avatar
+      // over first, and the turn starts once it has arrived.
+      const deliver = () => {
+        floor?.wakeWordHeard();
+        let sessionId: string | null = null;
+        if (conversationManager) {
+          try {
+            const session = conversationManager.startSession({ startedAt: event.timestamp });
+            sessionId = session.id;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            logger.error('Failed to start new conversation session', { message });
+          }
+        }
+
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('wake-word:event', {
+            ...event,
+            sessionId: sessionId ?? event.sessionId,
+          });
+        }
+      };
+      const bell = placeManager ? doorbellFor(placeManager.localPlaceId()) : null;
+      if (bell) void bell.onWake(deliver);
+      else deliver();
+    },
+    onPeak: (event) => {
+      if (!wakeWordListening.enabled) return;
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('wake-word:peak', event);
+      }
+    },
+  });
 }
 
 /**
@@ -819,6 +899,8 @@ function startAvatarPlumbing(profile: AvatarProfile, manager: ConfigManager): vo
     },
     doNotDisturb: () => presence.doNotDisturb,
     onDecision: (decision) => decisionLog.record(decision),
+    // Urgent news walks to where someone is using a PC, when nobody is at this avatar's place (places/urgent-walk.ts).
+    beforeUrgent: () => (placeManager ? walkToKevin(placeManager, avatarId, undefined, logger) : undefined),
     logger,
   });
   avatarPlumbing.set(avatarId, { mirror, inbox });
@@ -1702,6 +1784,8 @@ function registerIpcHandlers(
   });
   handleIpc('talk:get-shortcut-status', () => pushToTalk.getStatus());
   handleIpc('wake-word:list', () => listWakeWords(trainedWakeWordDirectory()));
+  // A satellite PC runs its own wake word worker; it asks for the wake word picked here (and a trained model's file).
+  handleIpc('wake-word:model', () => readSharedWakeWord(manager.getRendererConfig().wakeWord, trainedWakeWordDirectory()));
   handleIpc('wake-word:set-listening', (_event, enabled: unknown) => {
     if (typeof enabled !== 'boolean') throw new Error('Listening must be enabled or disabled.');
     return wakeWordListening.setEnabled(enabled);
@@ -2147,8 +2231,19 @@ function registerIpcHandlers(
     }
     const place = places.resolvePlace(placeRef);
     if (!place) return { ok: false, reason: 'unknown place' };
-    const result = places.startMove(avatarId, place.id, reason === 'called' ? 'called' : 'chose to');
+    // An idle avatar that walked to the door to wander is checked again with fresh facts (it took a few seconds to get there).
+    if (reason === 'wandered') {
+      const refusal = wanderRefusal(places.snapshot(), avatarId, place.id, { talkedAgoMs: talkedAgoMs(avatarId) });
+      if (refusal) return { ok: false, reason: refusal };
+    }
+    const result = places.startMove(avatarId, place.id, reason === 'called' ? 'called' : reason === 'wandered' ? 'wandered' : 'chose to');
     return result.ok ? { ok: true } : { ok: false, reason: result.reason };
+  });
+  // The idle director asks before it lets an avatar walk to another place on its own (places/wander.ts has the rules).
+  handleIpc('places:can-wander', (_event, avatarId: unknown, placeRef: unknown, speaking: unknown) => {
+    if (typeof avatarId !== 'string' || !avatarId || typeof placeRef !== 'string' || !placeRef.trim()) return { ok: false, reason: 'invalid request' };
+    const refusal = wanderRefusal(requirePlaces().snapshot(), avatarId, placeRef, { speaking: speaking === true, talkedAgoMs: talkedAgoMs(avatarId) });
+    return refusal ? { ok: false, reason: refusal } : { ok: true };
   });
   handleIpc('places:arrived', (_event, avatarId: unknown) => {
     if (typeof avatarId === 'string' && avatarId) requirePlaces().arrived(avatarId);
@@ -2188,6 +2283,10 @@ function registerIpcHandlers(
   // "Camera presence" of a place: bija's own (off unless Kevin turns it on) or a desktop room's (on unless he turns it off).
   handleIpc('room-hub:set-camera', (_event, placeId: unknown, on: unknown) =>
     typeof placeId === 'string' && typeof on === 'boolean' ? requirePlaces().setCamera(placeId, on) : false,
+  );
+  // "Doorbell" of a place: with nobody there, the wake word still listens and calls an avatar over.
+  handleIpc('room-hub:set-doorbell', (_event, placeId: unknown, on: unknown) =>
+    typeof placeId === 'string' && typeof on === 'boolean' ? requirePlaces().setDoorbell(placeId, on) : false,
   );
   handleIpc('room-hub:rename', (_event, placeId: unknown, name: unknown) =>
     typeof placeId === 'string' && typeof name === 'string' ? requirePlaces().rename(placeId, name) : null,
@@ -2704,6 +2803,19 @@ const satelliteLogger = {
   warn: (message?: unknown, meta?: unknown) => logger.warn(String(message), meta),
 };
 
+/** Keeps a trained wake word model bija sent, named by what it holds, and gives its path. */
+async function storeSharedWakeModel(_name: string, bytes: Uint8Array): Promise<string> {
+  const directory = path.join(app.getPath('userData'), 'wake-word-cache');
+  await mkdir(directory, { recursive: true });
+  const file = path.join(directory, `${createHash('sha256').update(bytes).digest('hex').slice(0, 24)}.onnx`);
+  if (!existsSync(file)) {
+    const temporary = `${file}.tmp`;
+    await writeFile(temporary, bytes);
+    await rename(temporary, file);
+  }
+  return file;
+}
+
 /** Starts this PC as a satellite: pairing, the link to bija, the asset cache, and the window. */
 async function startSatelliteMode(settings: SatelliteSettingsStore): Promise<void> {
   const runtime = new Satellite({
@@ -2722,7 +2834,24 @@ async function startSatelliteMode(settings: SatelliteSettingsStore): Promise<voi
   // room is open and no other app is full screen. It lives here, in the main process, and fails closed.
   const startIcon = stateIcon('off');
   const tray = new Tray(nativeImage.createFromBitmap(toBgra(startIcon.data), { width: startIcon.width, height: startIcon.height, scaleFactor: 2 }));
+  // The wake word runs here too, but only while the gate allows it: with an avatar in the room, or as the doorbell
+  // (the room's setting) with nobody there. In doorbell mode a wake sends only its name and score to bija.
+  satelliteWake = new SatelliteWakeRunner({
+    fetchModel: async () => (await runtime.callHub('wake-word:model')) as SharedWakeWord | null,
+    storeModel: storeSharedWakeModel,
+    start: (config, onWake) => launchWakeWordService(config, { onWake }),
+    onWake: (event, mode) => {
+      logger.info('Wake word heard on a satellite', { keyword: event.keywordLabel, confidence: event.confidence, mode });
+      if (mode === 'doorbell') {
+        runtime.sendOp({ op: 'wake.heard', model: event.keywordLabel, score: event.confidence });
+      } else if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('wake-word:event', event);
+      }
+    },
+    logger: satelliteLogger,
+  });
   const devices = new DeviceRuntime({
+    onGate: (state) => satelliteWake?.setGate(state),
     settings,
     powerMonitor,
     globalShortcut,
@@ -2745,6 +2874,13 @@ async function startSatelliteMode(settings: SatelliteSettingsStore): Promise<voi
   satelliteDevices = devices;
   runtime.attachDevices(devices);
   devices.start();
+  // "Someone used this PC" goes to bija as it is: no mic and no camera are involved.
+  satelliteActivity = new ActivityMonitor({
+    idleSeconds: () => powerMonitor.getSystemIdleTime(),
+    onActive: (at) => void runtime.sendOp({ op: 'presence', activeAt: at }),
+    logger: satelliteLogger,
+  });
+  satelliteActivity.start();
   await runtime.start(ipcMain, protocol);
   logger.info('Running as a satellite PC.', { hub: settings.get().hubUrl });
   let window: BrowserWindow;
@@ -2862,9 +2998,12 @@ app.whenReady().then(async () => {
     avatarSettingsKeys = new AvatarSettingsKeys(avatarRegistry);
     const registry = avatarRegistry;
     const floorStore = memoryStore;
-    const places = new PlaceManager({ store: memoryStore, registry, bus: () => switchboardBus, logger });
+    const places = new PlaceManager({ store: memoryStore, registry, bus: () => switchboardBus, activeAt: (placeId) => placePresence.get(placeId)?.activeAt ?? null, logger });
     placeManager = places;
     places.onChanged((snapshot) => broadcastToWindows('places:changed', snapshot));
+    // The wake word holds the microphone only while an avatar is here or the doorbell is on.
+    places.onChanged(() => syncWakeGate());
+    syncWakeGate();
     // Camera presence across places: the decision step hears about each other place's camera and who is there, and an
     // avatar that walks in where a face was just seen waves at it.
     presence.setPlaceLines((now) =>
@@ -2907,6 +3046,8 @@ app.whenReady().then(async () => {
       onSatelliteMessage: (from, op) => {
         if (op.op === 'presence' || op.op === 'wake.heard') placePresence.onSatelliteOp(from.placeId, op);
         else placeDevices?.onMessage(from.placeId, op);
+        // The doorbell on a satellite heard its wake word with nobody in the room: call an avatar over (only a name and a score came, never audio).
+        if (op.op === 'wake.heard' && typeof op.score === 'number') void doorbellFor(from.placeId)?.onWake();
       },
       logger,
     });
@@ -2921,6 +3062,26 @@ app.whenReady().then(async () => {
     });
     hub.onChanged(pushHubStatus);
     places.settleOffline();
+    // Someone using bija's PC is "active" at its place (no mic or camera involved). Satellites report theirs over the link.
+    activityMonitor?.stop();
+    activityMonitor = new ActivityMonitor({
+      idleSeconds: () => powerMonitor.getSystemIdleTime(),
+      onActive: (at) => void placePresence.update(places.localPlaceId(), { activeAt: at }),
+      logger,
+    });
+    activityMonitor.start();
+    // Avatars next door have no screen, so they have no idle life: now and then one may come back to where someone is.
+    nextDoorReturn?.stop();
+    nextDoorReturn = new NextDoorReturn({
+      places,
+      restlessness: () => {
+        const idle = backgroundService?.getIdleSettings();
+        return idle?.enabled ? idle.restlessness : null;
+      },
+      talkedAgoMs,
+      logger,
+    });
+    nextDoorReturn.start();
     void hub.start().catch((error) => logger.warn('Room hub failed to start', { message: error instanceof Error ? error.message : String(error) }));
     // One floor per place: the scene is the avatars at that place, and what the floor starts (answers, chatter)
     // is delivered where that place is drawn (this window, or a satellite's link).
@@ -3362,6 +3523,10 @@ app.on('before-quit', async (event) => {
   codingService?.stop();
   approvalBroker?.dispose();
   proactiveTick?.stop();
+  activityMonitor?.stop();
+  satelliteActivity?.stop();
+  nextDoorReturn?.stop();
+  void satelliteWake?.dispose();
   void roomHub?.stop();
   satellite?.stop();
   satelliteDevices?.stop();

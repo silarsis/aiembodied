@@ -148,11 +148,14 @@ export class DeviceGate {
 
   /**
    * What permission requests for media are answered with. A request that includes video needs the camera to be
-   * allowed; an audio-only request needs the mic (or the doorbell); a request for both needs both. 'any' is for
-   * the advisory permission check, which cannot tell the devices apart: true while either may be live.
+   * allowed; an audio-only request needs the mic; a request for both needs both. 'any' is for the advisory
+   * permission check, which cannot tell the devices apart: true while either may be live.
+   *
+   * The doorbell does not open the page's microphone: it listens in the main process (the wake word worker), and
+   * audio never leaves the PC in doorbell mode.
    */
   allowsMedia(kind: 'audio' | 'video' | 'both' | 'any' = 'any'): boolean {
-    const micOk = this.current.micAllowed || this.current.doorbell;
+    const micOk = this.current.micAllowed;
     if (kind === 'audio') return micOk;
     if (kind === 'video') return this.current.cameraAllowed;
     if (kind === 'both') return micOk && this.current.cameraAllowed;
@@ -186,8 +189,9 @@ export class DeviceGate {
     return this.state();
   }
 
+  /** The page's own microphone may be live. The doorbell is not that: it listens in the main process. */
   private allowedIn(state: DeviceGateState): boolean {
-    return state.micAllowed || state.doorbell;
+    return state.micAllowed;
   }
 
   /**

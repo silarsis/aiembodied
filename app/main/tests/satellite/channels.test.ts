@@ -23,7 +23,7 @@ describe('satellite channels', () => {
   });
 
   it('lists no channel the preload script does not use, except the satellite ones', () => {
-    const known = new Set([...PRELOAD_CHANNELS, 'satellite:status', 'satellite:pair', 'satellite:forget']);
+    const known = new Set([...PRELOAD_CHANNELS, 'satellite:status', 'satellite:pair', 'satellite:forget', 'wake-word:model']);
     const stale = ['forward', 'local', 'unavailable', 'event'].flatMap((kind) => channelsOfKind(kind as 'forward')).filter((channel) => !known.has(channel));
     expect(stale).toEqual([]);
   });

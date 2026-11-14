@@ -32,7 +32,7 @@ export interface SatelliteSettings {
   closeShortcut: string | null;
   /** Accelerator for push-to-talk on this PC; null means the one bija uses, if any. */
   pushToTalk: string | null;
-  /** Whether the doorbell listens when nobody is in the room. Off by default on a satellite. */
+  /** No longer read: the doorbell is a setting of the place, kept on bija (Settings > Places) and read from the places snapshot. */
   doorbell: boolean;
   /** This PC's own microphone and speakers (a satellite's devices are not bija's). */
   audioInputDeviceId: string | null;

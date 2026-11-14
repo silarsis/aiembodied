@@ -29,7 +29,9 @@ import {
   type IdleCandidate,
 } from './idle-picker.js';
 import { describeAvatarWhere } from './scene-instructions.js';
-import type { IdleInput, IdleTag } from './idle-types.js';
+import type { IdleInput, IdlePlace, IdleTag } from './idle-types.js';
+import type { PlacesSnapshot } from '../../../main/src/places/place-manager.js';
+import { ACTIVE_WINDOW_MS, WANDER_COOLDOWN_MS, activeWithin, othersAt } from '../../../main/src/places/wander.js';
 import { talkStartActions } from './idle-talk.js';
 import type { AvatarState, PlanWorld } from './scene-actions.js';
 import type { PlanBuilder } from './scene-executor.js';
@@ -75,6 +77,13 @@ export interface IdleAvatar {
   habits?: string;
 }
 
+/** Where the avatars are right now, read fresh from bija each time the director is about to decide. */
+export interface IdlePlacesView {
+  snapshot: PlacesSnapshot;
+  /** An avatar's name, for who is in each place. */
+  nameOf(avatarId: string): string;
+}
+
 export interface IdleDirectorDeps {
   /** Echo's executor. */
   executor: IdleExecutor;
@@ -100,6 +109,17 @@ export interface IdleDirectorDeps {
   pick(context: IdlePickContext): Promise<IdlePickResult | null>;
   /** Runs tags like the assistant's own: `{go:bookshelf}{move:browses the books}`. */
   run(text: string, avatarId?: string): void;
+  /**
+   * Wandering between places: where everyone is, read fresh each time an avatar is about to act. Absent or null (no
+   * promise) means there is nowhere to go, and the prompt and the tags are exactly what they were before places.
+   */
+  places?(): Promise<IdlePlacesView | null> | null;
+  /**
+   * May this avatar walk to that place on its own right now? Bija decides (places/wander.ts: not moved in 10 minutes,
+   * the place is open, someone used it lately or another avatar is there, not in a conversation); `speaking` is
+   * what only this screen knows. Absent means no. A `{room:}` tag the answer refuses is dropped, whatever the model said.
+   */
+  canWander?(avatarId: string, place: string, speaking: boolean): Promise<boolean>;
   /**
    * The "just before this, while idle, you…" note for the conversation changed. It only changes while
    * the assistant is not working on a turn.
@@ -336,7 +356,7 @@ export class IdleDirector {
 
   // -- Choosing and doing ----------------------------------------------------------------------
 
-  private input(actor: IdleAvatar): IdleInput | null {
+  private input(actor: IdleAvatar, view: IdlePlacesView | null = null): IdleInput | null {
     const room = this.deps.room();
     const executor = this.executorOf(actor);
     const world = executor.world();
@@ -346,6 +366,7 @@ export class IdleDirector {
       ? this.deps.persona()
       : { name: actor.name, personality: actor.personality ?? '', habits: actor.habits ?? '' };
     const log = isEcho ? this.log : (this.otherTracks.get(actor.id)?.log ?? []);
+    const places = this.otherPlaces(actor, view);
     const others = this.roster()
       .filter((avatar) => avatar.id !== actor.id)
       .map((avatar) => {
@@ -368,12 +389,50 @@ export class IdleDirector {
       recent: log.map((entry) => entry.text),
       now: new Date(this.deps.now()),
       ...(others.length > 0 ? { others } : {}),
+      ...(places.length > 0 ? { places } : {}),
     };
+  }
+
+  /**
+   * The other places this avatar could walk to, for the prompt: open ones where someone used the PC in the last 10
+   * minutes or an avatar stands. Nothing when it moved in the last 10 minutes (it could not go anyway), so with one
+   * place, or while nobody is anywhere else, the prompt is what it always was.
+   */
+  private otherPlaces(actor: IdleAvatar, view: IdlePlacesView | null): IdlePlace[] {
+    if (!view || !this.deps.canWander) return [];
+    const { snapshot } = view;
+    const now = snapshot.now ?? this.deps.now();
+    const movedAt = snapshot.movedAt?.[actor.id];
+    if (typeof movedAt === 'number' && now - movedAt < WANDER_COOLDOWN_MS) return [];
+    const here = snapshot.locations[actor.id] ?? snapshot.localPlaceId;
+    return snapshot.places
+      .filter((place) => place.id !== here && place.online !== false && place.closed !== true)
+      .map((place) => ({
+        name: place.name,
+        who: othersAt(snapshot, place.id, actor.id).map((id) => view.nameOf(id)),
+        recentlyUsed: activeWithin(snapshot, place.id, ACTIVE_WINDOW_MS, now),
+      }))
+      // A place nobody used lately and nobody stands in is not worth offering: the rules would refuse it.
+      .filter((place) => place.recentlyUsed || place.who.length > 0);
   }
 
   private async act(actor: IdleAvatar): Promise<void> {
     const isEcho = actor.id === ECHO_ID;
-    const input = this.input(actor);
+    const epoch = this.epoch;
+    // With other places to go to, ask bija where everyone is and who used which PC, fresh, before deciding.
+    let view: IdlePlacesView | null = null;
+    const asking = this.deps.places?.() ?? null;
+    if (asking) {
+      this.picking = true;
+      try {
+        view = await asking;
+      } catch (error) {
+        console.warn('[idle] could not read where the avatars are', error);
+      }
+      if (epoch !== this.epoch || !this.active) return; // talking started meanwhile
+      this.picking = false;
+    }
+    const input = this.input(actor, view);
     if (!input) {
       this.timer = this.deps.setTimer(() => {
         this.timer = null;
@@ -381,7 +440,6 @@ export class IdleDirector {
       }, RETRY_MS);
       return;
     }
-    const epoch = this.epoch;
     this.picking = true;
     let reply: IdlePickResult | null = null;
     try {
@@ -393,9 +451,14 @@ export class IdleDirector {
     this.picking = false;
 
     // The scene may have moved on while the model thought; judge the answer against it now.
-    const now = this.input(actor) ?? input;
+    const now = this.input(actor, view) ?? input;
     const targets = isEcho ? this.recentTargets : (this.otherTracks.get(actor.id)?.targets ?? []);
     let tags: IdleTag[] = reply ? parseIdleReply(reply.text, now) : [];
+    // A {room:} tag only runs when bija's rules allow it right now; otherwise it is dropped, whatever the model wrote.
+    if (tags.some((tag) => tag.type === 'room')) {
+      tags = await this.dropRefusedRoomTags(tags, actor);
+      if (epoch !== this.epoch || !this.active) return; // talking started while bija was asked
+    }
     if (tags.length === 0) tags = fallbackIdleTags(now, () => this.deps.random(), targets);
     const first = tags[0];
     if (!first || first.type === 'wait') {
@@ -410,6 +473,26 @@ export class IdleDirector {
     if (isEcho) this.deps.run(idleTagsToText(tags));
     else this.deps.run(idleTagsToText(tags), actor.id);
     this.watch(actor);
+  }
+
+  /** Keeps a `{room:}` tag only when `canWander` says the avatar may go (it is the last tag, so the rest stay). */
+  private async dropRefusedRoomTags(tags: IdleTag[], actor: IdleAvatar): Promise<IdleTag[]> {
+    const speaking = Boolean(actor.speaking) || this.conversationBusy;
+    const kept: IdleTag[] = [];
+    for (const tag of tags) {
+      if (tag.type !== 'room') {
+        kept.push(tag);
+        continue;
+      }
+      let allowed = false;
+      try {
+        allowed = (await this.deps.canWander?.(actor.id, tag.place, speaking)) === true;
+      } catch (error) {
+        console.warn('[idle] could not ask whether to wander', error);
+      }
+      if (allowed) kept.push(tag);
+    }
+    return kept;
   }
 
   private record(tags: readonly IdleTag[], room: RoomFile, actorId: string): void {
@@ -491,6 +574,9 @@ export interface IdleDirectorInputs {
   avatars?(): readonly IdleAvatar[];
   /** Every avatar is in another place. */
   nobodyHere?(): boolean;
+  /** Wandering between places; see `IdleDirectorDeps`. */
+  places?(): Promise<IdlePlacesView | null> | null;
+  canWander?(avatarId: string, place: string, speaking: boolean): Promise<boolean>;
 }
 
 const NO_INPUTS: IdleDirectorInputs = {
@@ -524,6 +610,8 @@ export function createIdleDirector(
     pick: (context) => latest.pick(context),
     avatars: () => latest.avatars?.() ?? [],
     nobodyHere: () => latest.nobodyHere?.() === true,
+    places: () => latest.places?.() ?? null,
+    canWander: (avatarId, place, speaking) => latest.canWander?.(avatarId, place, speaking) ?? Promise.resolve(false),
     run: (text, avatarId) => (avatarId ? latest.run(text, avatarId) : latest.run(text)),
     onNoteChange,
   });

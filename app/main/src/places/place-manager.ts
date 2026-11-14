@@ -16,6 +16,7 @@
 import { EventEmitter } from 'node:events';
 import type { AvatarProfile } from '../avatars/avatar-registry.js';
 import { DEFAULT_DESKTOP_ROOM } from './default-room.js';
+import { normalisePlaceName } from './wander.js';
 import type { SwitchboardBus } from '../switchboard/bus.js';
 import type { SwitchboardEventInput } from '../switchboard/types.js';
 
@@ -47,6 +48,13 @@ export interface Place {
    * room, off for this PC (see camera-setting.ts).
    */
   camera?: boolean;
+  /**
+   * "Doorbell" for this place, saved only when changed. Absent means the default: on for this PC, off for a desktop
+   * room (see doorbell-setting.ts).
+   */
+  doorbell?: boolean;
+  /** Only in snapshots: Kevin closed this desktop room (the kill switch), so it takes nobody. */
+  closed?: boolean;
 }
 
 export { DEFAULT_DESKTOP_ROOM };
@@ -74,6 +82,12 @@ export interface PlacesSnapshot {
   locations: Record<string, string>;
   transit: Array<{ avatarId: string; from: string; to: string }>;
   localPlaceId: string;
+  /** bija's clock when the snapshot was made. The times below are on this clock, so a reader's own clock does not matter. */
+  now?: number;
+  /** When each avatar last arrived somewhere (since bija started). Absent for one that has not moved. */
+  movedAt?: Record<string, number>;
+  /** When someone last used the PC of each place (`powerMonitor` idle time under 60 s). Absent for a place never heard from. */
+  activeAt?: Record<string, number>;
 }
 
 export interface PlaceStore {
@@ -89,18 +103,12 @@ export interface PlaceManagerOptions {
   hallwayMs?: number;
   deadlineMs?: number;
   graceMs?: number;
+  /** When someone last used the PC of a place (bija's clock); null when never. Shown in the snapshot. */
+  activeAt?: (placeId: string) => number | null;
   logger?: Pick<Console, 'warn' | 'debug'>;
 }
 
-/** Lowercase, hyphens and underscores as spaces, no "the", one space between words. */
-function normalise(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[-_]+/g, ' ')
-    .replace(/\bthe\b/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+const normalise = normalisePlaceName;
 
 function parsePlaces(raw: string | null): Place[] {
   let stored: unknown = null;
@@ -115,7 +123,7 @@ function parsePlaces(raw: string | null): Place[] {
   if (Array.isArray(stored)) {
     for (const item of stored) {
       if (!item || typeof item !== 'object') continue;
-      const { id, name, node, room, camera } = item as Record<string, unknown>;
+      const { id, name, node, room, camera, doorbell } = item as Record<string, unknown>;
       if (typeof id !== 'string' || !id || byId.has(id)) continue;
       const builtIn = BUILT_IN_PLACES.find((place) => place.id === id);
       byId.set(id, {
@@ -125,6 +133,7 @@ function parsePlaces(raw: string | null): Place[] {
         node: builtIn ? builtIn.node : typeof node === 'string' && node ? node : 'offscreen',
         ...(typeof room === 'string' && room ? { room } : {}),
         ...(typeof camera === 'boolean' ? { camera } : {}),
+        ...(typeof doorbell === 'boolean' ? { doorbell } : {}),
       });
     }
   }
@@ -169,6 +178,8 @@ export class PlaceManager {
   private waiters: Array<{ avatarId: string; placeId: string; resolve: (arrived: boolean) => void; timer: ReturnType<typeof setTimeout> | null; sawMove: boolean }> = [];
   private serial = 0;
   private readonly arrivalListeners = new Set<(avatarId: string, placeId: string) => void>();
+  /** When each avatar last arrived at a place (this run only): wandering keeps 10 minutes between moves. */
+  private readonly movedAt = new Map<string, number>();
 
   constructor(options: PlaceManagerOptions) {
     this.options = options;
@@ -187,7 +198,19 @@ export class PlaceManager {
   }
 
   private persist(places: Place[]): void {
-    this.options.store.setValue(PLACES_KEY, JSON.stringify(places.map(({ id, name, node, room, camera }) => ({ id, name, node, ...(room ? { room } : {}), ...(typeof camera === 'boolean' ? { camera } : {}) }))));
+    this.options.store.setValue(
+      PLACES_KEY,
+      JSON.stringify(
+        places.map(({ id, name, node, room, camera, doorbell }) => ({
+          id,
+          name,
+          node,
+          ...(room ? { room } : {}),
+          ...(typeof camera === 'boolean' ? { camera } : {}),
+          ...(typeof doorbell === 'boolean' ? { doorbell } : {}),
+        })),
+      ),
+    );
   }
 
   private isDevicePlace(place: Place): boolean {
@@ -242,6 +265,19 @@ export class PlaceManager {
     if (!place || place.node === 'offscreen') return false;
     if (place.camera !== on) {
       place.camera = on;
+      this.persist(places);
+      this.changed();
+    }
+    return true;
+  }
+
+  /** Turns the "Doorbell" on or off for a place (Settings > Places). False when the place is unknown or offscreen (no mic). */
+  setDoorbell(placeId: string, on: boolean): boolean {
+    const places = this.stored();
+    const place = places.find((candidate) => candidate.id === placeId);
+    if (!place || place.node === 'offscreen') return false;
+    if (place.doorbell !== on) {
+      place.doorbell = on;
       this.persist(places);
       this.changed();
     }
@@ -407,7 +443,7 @@ export class PlaceManager {
   /** Who is where. `forPlaceId` is the place the reader draws: this PC passes nothing, a desktop room passes its own place. */
   snapshot(forPlaceId: string = this.localPlaceId()): PlacesSnapshot {
     const stored = this.storedLocations();
-    const places = this.list();
+    const places = this.list().map((place) => (this.closedPlaces.has(place.id) ? { ...place, closed: true } : place));
     const locations: Record<string, string> = {};
     for (const avatarId of this.avatarIds()) {
       const placeId = stored[avatarId];
@@ -418,6 +454,14 @@ export class PlaceManager {
       locations,
       transit: [...this.transit.values()].map((move) => ({ avatarId: move.avatarId, from: move.from, to: move.to })),
       localPlaceId: forPlaceId,
+      now: this.now(),
+      movedAt: Object.fromEntries(this.avatarIds().flatMap((avatarId) => (this.movedAt.has(avatarId) ? [[avatarId, this.movedAt.get(avatarId) as number]] : []))),
+      activeAt: Object.fromEntries(
+        places.flatMap((place) => {
+          const at = this.options.activeAt?.(place.id);
+          return typeof at === 'number' ? [[place.id, at]] : [];
+        }),
+      ),
     };
   }
 
@@ -516,6 +560,7 @@ export class PlaceManager {
     if (!pending || pending.txn !== txn) return;
     this.clearTimers(pending);
     this.transit.delete(avatarId);
+    this.movedAt.set(avatarId, this.now());
     this.options.store.setValue(LOCATIONS_KEY, JSON.stringify({ ...this.storedLocations(), [avatarId]: pending.to }));
     this.journal(pending, 'done', { avatarId, from: pending.from, to: pending.to, reason: pending.reason });
     this.changed();

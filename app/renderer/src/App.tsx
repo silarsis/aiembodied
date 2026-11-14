@@ -1402,7 +1402,21 @@ export default function App() {
     persona: { name: activeVrmModel?.name ?? '', personality: basePrompt, habits: idleHabits.habits },
     phase: voiceActivity.phase,
     pick: async (context) => (await activeBridge?.backgrounds?.pickIdle?.(context)) ?? null,
-    run: (text, avatarId) => animationTextHandlerRef.current(text, avatarId),
+    run: (text, avatarId) => animationTextHandlerRef.current(text, avatarId, 'idle'),
+    // Wandering between places: bija says where everyone is and who used which PC, and whether this avatar may go (places/wander.ts).
+    places: () => {
+      const bridge = resolveApi()?.places;
+      if (!bridge?.canWander || !placesSnapshot || placesSnapshot.places.length < 2) return null;
+      return bridge
+        .snapshot()
+        .then((snapshot) => ({ snapshot, nameOf: (id: string) => avatarProfiles.find((profile) => profile.id === id)?.name ?? id }))
+        .catch(() => null);
+    },
+    canWander: async (avatarId, place, speaking) => {
+      const bridge = resolveApi()?.places;
+      if (!bridge?.canWander) return false;
+      return (await bridge.canWander(avatarId, place, speaking)).ok;
+    },
   });
   // Describes the active 3D room (and the scene tags) to the model; empty in 2D. Part of the session
   // instructions, so a room change reaches both the local voice and Realtime sessions.
@@ -1464,18 +1478,18 @@ export default function App() {
     () => new Set(availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0)),
     [availablePoses],
   );
-  const animationTextHandlerRef = useRef<(text: string, avatarId?: string) => void>(() => undefined);
+  const animationTextHandlerRef = useRef<(text: string, avatarId?: string, origin?: 'idle') => void>(() => undefined);
   const moveRequestFilterRef = useRef(new MoveRequestFilter());
   const sceneActionFilterRef = useRef(new MoveRequestFilter());
   const activeRoomRef = useRef(backgrounds.activeRoom);
   useEffect(() => { activeRoomRef.current = backgrounds.activeRoom; }, [backgrounds.activeRoom]);
   // An avatar's {room:} tag, once it has walked to the door (or finished speaking): ask main to move it.
   const moveAvatarToPlace = useCallback(
-    (avatarId: string, place: string) => {
+    (avatarId: string, place: string, origin?: 'idle') => {
       const bridge = resolveApi()?.places;
       if (!bridge) return;
       bridge
-        .move(avatarId, place, 'chose to')
+        .move(avatarId, place, origin === 'idle' ? 'wandered' : 'chose to')
         .then((result) => {
           if (!result.ok) console.warn(`[places] ${avatarId} cannot go to "${place}": ${result.reason ?? 'no reason given'}`);
         })
@@ -1484,7 +1498,7 @@ export default function App() {
     [resolveApi],
   );
   const handleRealtimeTextContent = useCallback(
-    (content: string, avatarId?: string) => {
+    (content: string, avatarId?: string, origin?: 'idle') => {
       if (!content) {
         return;
       }
@@ -1516,7 +1530,7 @@ export default function App() {
             walkedOut.add(JSON.stringify(tag));
             pendingActions.push({ kind: 'exit' });
             flushActions();
-            executor.submitAfter(`leave for ${tag.place}`, () => moveAvatarToPlace(speaker ?? 'echo', tag.place));
+            executor.submitAfter(`leave for ${tag.place}`, () => moveAvatarToPlace(speaker ?? 'echo', tag.place, origin));
             continue;
           }
           if (tag.type !== 'move') {
@@ -1569,7 +1583,7 @@ export default function App() {
       // In 2D (or with no live motion) there is no door to walk to: the avatar leaves once its speech is over.
       for (const tag of roomTags) {
         if (walkedOut.has(JSON.stringify(tag))) continue;
-        window.setTimeout(() => moveAvatarToPlace(speaker ?? 'echo', tag.place), estimateSpeechMs(content));
+        window.setTimeout(() => moveAvatarToPlace(speaker ?? 'echo', tag.place, origin), estimateSpeechMs(content));
       }
       const tags = extractAvatarTags(content, {
         allowedAnimationSlugs: availableAnimationSlugSet,

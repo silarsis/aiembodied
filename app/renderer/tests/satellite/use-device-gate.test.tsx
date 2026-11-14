@@ -69,6 +69,16 @@ describe('useDeviceGate', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('stops the page\'s microphone when the room empties into doorbell mode: the doorbell listens in main, not here', async () => {
+    const { bridge, order, push } = fakeBridge(evaluateGate(FACTS, true));
+    const onClose = vi.fn(async () => void order.push('stopped'));
+    render(<Probe bridge={bridge} onClose={onClose} />);
+    await waitFor(() => expect(bridge.get).toHaveBeenCalled());
+    await push(evaluateGate({ ...FACTS, occupied: false }, true));
+    expect(onClose).toHaveBeenCalledWith({ audio: true, camera: true });
+    await waitFor(() => expect(order).toEqual(['stopped', 'confirmed']));
+  });
+
   it('does not stop anything while the gate stays open', async () => {
     const { bridge, push } = fakeBridge(evaluateGate(FACTS));
     const onClose = vi.fn();

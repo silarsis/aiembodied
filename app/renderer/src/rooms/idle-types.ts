@@ -11,7 +11,18 @@ export type IdleTag =
   | { type: 'pick'; object: string }
   | { type: 'put'; object: string; surface: string }
   | { type: 'move'; text: string }
+  /** Walk out to another place. Always the last tag; the idle director checks the rules in code before it runs. */
+  | { type: 'room'; place: string }
   | { type: 'wait' };
+
+/** Another place an idle avatar could walk to (only listed when it may leave at all). */
+export interface IdlePlace {
+  name: string;
+  /** Names of the avatars standing there. */
+  who: string[];
+  /** Someone used that PC in the last 10 minutes. */
+  recentlyUsed: boolean;
+}
 
 /** Everything the prompt and the fallback picker know about the moment. */
 export interface IdleInput {
@@ -29,4 +40,6 @@ export interface IdleInput {
   now: Date;
   /** The other avatars in the room and where they are; absent when this one is alone. */
   others?: Array<{ name: string; where: string | null }>;
+  /** The other places that exist, who is in each and whether that PC was used lately; absent with one place. */
+  places?: IdlePlace[];
 }

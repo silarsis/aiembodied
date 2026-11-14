@@ -1,6 +1,6 @@
 # Places
 
-Status: In Progress (step 1: bija alone; step 2: the hub, pairing and the Places settings page for desktop rooms; step 3: the satellite app, see [satellite.md](satellite.md)).
+Status: In Progress (step 1: bija alone; step 2: the hub, pairing and the Places settings page for desktop rooms; step 3: the satellite app, see [satellite.md](satellite.md); step 6: wandering, doorbell and urgent news).
 
 ## What a place is
 
@@ -151,6 +151,46 @@ Any place can note that a face is there. The camera only ever produces "a face w
 - **Arrival.** When an avatar arrives at a place and a face was seen there in the last 30 s, it waves. Main sends `greet_face` with the avatar's id (`presence/arrival-greeting.ts`), so any avatar can wave, not only Echo.
 - **Presence text.** A satellite's `faceSeenAt` is stored per place in bija, stamped with bija's clock when it arrives. The decision step's presence text gets one extra line per desktop room, for example "The study: a face was seen 2 min ago; Echo is there." Bija's own lines are unchanged, and with no desktop room nothing is added.
 - If the model file is missing or the camera cannot open, the camera stays off and the reason is logged (shown in the satellite's Status panel). Run `node scripts/fetch-face-model.mjs` to fetch the model again.
+
+## Activity: "someone used this PC"
+
+Each place reports when its PC was last used. `app/main/src/presence/activity-monitor.ts` reads Electron's `powerMonitor.getSystemIdleTime()` every 15 seconds; an idle time under 60 seconds means the PC is in use right now. bija keeps the time per place (`PlacePresence`, field `activeAt`): its own straight from its monitor, a satellite's through a `presence` message with `activeAt`. A satellite's value is stamped with bija's clock when it arrives, like `faceSeenAt`.
+
+No microphone or camera is involved, so this works for an empty place too. It is what makes wandering sensible: an avatar only goes where someone sits. The places snapshot carries `activeAt` per place, `movedAt` per avatar (when it last arrived anywhere, since bija started) and `now` (bija's clock), so a reader never compares clocks of two PCs.
+
+## Wandering between places
+
+An idle avatar may walk to another place on its own. All the rules live in `places/wander.ts` (`wanderRefusal`), and they are enforced in code, not only in the prompt:
+
+- **(a)** it has not changed place in the last 10 minutes (a summon, a call or a wander all count);
+- **(b)** the target is online and open (not closed with the kill switch);
+- **(c)** someone used that PC in the last 10 minutes, or another avatar is standing there;
+- **(d)** it is not speaking, and Kevin did not talk with it in the last 2 minutes (it was his last partner).
+
+How it runs:
+
+1. The idle prompt (`rooms/idle-prompt.ts`) gains the other places, who is in each, and whether that PC was used in the last 10 minutes, plus the tag `{room:<place>}`. Only open places where someone used the PC or an avatar stands are listed, and nothing is listed for an avatar that moved in the last 10 minutes. So with one place, or while nobody is anywhere else, the prompt is exactly what it was.
+2. The idle director reads a fresh snapshot from bija before it decides. `parseIdleReply` keeps a `{room:}` only for a place that was offered, and only as the last tag.
+3. Before running it the director asks bija (`places:can-wander`, with whether the avatar is speaking). A refused tag is dropped, whatever the model wrote, and the usual fallback picks something else.
+4. The avatar walks to the door like for any `{room:}` and the renderer calls `places:move` with the reason `wandered`. bija checks the rules once more with fresh facts, then moves it. The move is journaled with the reason `wandered`.
+
+**Next door.** An avatar next door has no screen, so no idle life. Every 60 seconds bija (`places/next-door-return.ts`) looks at the avatars there. If one may come back (the same rules) and the restlessness setting rolls it (calm 5 %, normal 10 %, restless 20 % per minute; nothing when idle wandering is switched off), it walks to the place used most recently. At most one avatar per roll.
+
+## Doorbell
+
+A place's **Doorbell** (Settings > Places) says what its wake word does while nobody is there. On for bija's own place by default, off for a desktop room, none for next door. It is saved in the place record only when Kevin changes it (`Place.doorbell`, `doorbellOn`).
+
+- **bija.** With an avatar at this screen the wake word listens when listening is on, as always. With nobody here and the doorbell on it still listens; hearing it calls an avatar (the recent partner, else Echo, else the first one, like the talk key) and the turn starts once it has arrived: only then does the renderer get the wake event and listen for the follow-up. With nobody here and the doorbell off the wake word stops and the microphone is released; it comes back when an avatar has arrived (walking in does not count). `WakeWordListeningController.setGate` does this without touching what the page asked for. See `places/doorbell.ts`.
+- **A satellite** runs the same openWakeWord worker in its own main process (`satellite/wake-runner.ts`), but only while the privacy gate allows it: an avatar is in the room and the gate is open (mic live), or the doorbell is on and every other gate fact is true (mic `doorbell`, amber). Anything else, or anything not yet known, and it is not running. In doorbell mode a wake sends `wake.heard` (model name and score) and bija calls an avatar into that place if its doorbell is on and nobody is there. Audio never leaves the satellite, and the page's own microphone stays closed in doorbell mode. With an avatar in the room the wake goes to that PC's own page, as on bija.
+- **Models.** Built-in models ship with the app. A trained model comes from bija: the satellite asks `wake-word:model` each time its worker starts and gets the settings picked on bija plus, for a trained model, the .onnx bytes (only from the trained folder, `.onnx`, up to 16 MB). It keeps the file by hash in `<userData>/wake-word-cache/`. bija's own microphone index is never used there.
+
+## Urgent news walks to Kevin
+
+When an urgent `avatar.inbox` event (priority high or urgent) or a `home.alert` is about to be spoken, and nobody used the PC at the avatar's place in the last 2 minutes while another place's PC was used in that time, the avatar walks there first (`places/urgent-walk.ts`, hooked into the inbox as `beforeUrgent`). The news waits for it to arrive, at most 10 seconds, then is spoken either way. The announcement is delivered to the screen that shows the avatar at that moment. Anything else is unchanged.
+
+## Rooms closing
+
+A room that is closed, a screen locked for 5 minutes, or a full-screen app for 2 minutes sends its avatars home (`PlaceDevices`). They are moves to the local place, so each avatar walks in through bija's door and the renderer confirms the arrival.
 
 ## Limits
 

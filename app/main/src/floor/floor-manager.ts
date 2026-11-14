@@ -415,6 +415,12 @@ export class FloorManager {
     return partner && at - partner.at <= this.partnerWindowMs ? partner.avatarId : null;
   }
 
+  /** How long ago Kevin last talked with this avatar, when it is the last partner; null when it is not (or he never did). */
+  partnerAgeMs(avatarId: string, at: number): number | null {
+    const partner = this.partner;
+    return partner && partner.avatarId === avatarId ? Math.max(0, at - partner.at) : null;
+  }
+
   /** The last partner when it is in the scene and spoke with Kevin within the window, else null. */
   private freshPartner(scene: Scene, at: number): string | null {
     const partner = this.partner;

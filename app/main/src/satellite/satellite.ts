@@ -383,6 +383,11 @@ export class Satellite {
     return tighten(value);
   }
 
+  /** A read-only call to bija made by this PC's main process itself (not for the page), for example `wake-word:model`. */
+  callHub(channel: string, args: unknown[] = []): Promise<unknown> {
+    return this.callBija(channel, args);
+  }
+
   private callBija(channel: string, args: unknown[]): Promise<unknown> {
     if (!this.link) return Promise.reject(new Error(LOST_TOUCH));
     return this.link.call(channel, args);
