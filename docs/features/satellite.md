@@ -1,6 +1,6 @@
 # Satellite mode
 
-Status: Built (Places step 3).
+Status: Built (Places steps 3 and 4).
 
 A satellite is a second PC that shows one room of bija's world. bija stays the only brain: the models, the memory and the keys stay there. The satellite draws the room and the avatars that are in it, plays their voices, and lets Kevin type to them.
 
@@ -20,7 +20,9 @@ The window shows "Connect to bija": bija's address (default `ws://bija:8791`), t
 - A typed box. It runs the same turn as speech: the answer is spoken, tagged and lip-synced.
 - Status, with the pairing and the link, and "Forget this pairing".
 - A banner when the link is down. The avatars keep their idle clips. When bija refuses this PC (removed there) the banner offers Forget.
-- No microphone, camera, settings, characters, rooms or tools. Quit is hidden too: use F11 for full screen and close the window to leave.
+- Two small dots in the top right corner: microphone and camera. Green is live, amber is doorbell only, grey is off. They have words for screen readers and a tooltip that says why the mic is off.
+- The listening button shows the gate ("Mic off · Nobody is in this room"). Kevin can still turn listening off by hand.
+- No camera yet, no settings, characters, rooms or tools. Quit is hidden too: use F11 for full screen and close the window to leave.
 - No OpenAI Realtime.
 
 ## How it works
@@ -31,6 +33,61 @@ The window shows "Connect to bija": bija's address (default `ws://bija:8791`), t
 - A few cheap channels (wake word list, approvals, metrics, talk shortcut) are answered locally with empty answers.
 - bija keeps one floor per place, so the avatars at a satellite talk there. See [places.md](places.md).
 
+## The microphone and the privacy rules
+
+The mic is live only while all of these are true:
+
+1. At least one avatar is in this room (in transit does not count).
+2. The screen is unlocked.
+3. The link to bija is up.
+4. The room is open (Kevin has not closed it).
+5. No other app is full screen on any monitor.
+
+The rule lives in the satellite's main process (`satellite/device-gate.ts`, wired in `device-runtime.ts`), not in the page, and it fails closed: a fact that is not known yet counts as "no". bija can ask devices off (`device.off`) but can never turn them on. The camera stays off until a later update.
+
+When the gate closes:
+
+- The page is told (`device-gate:changed`), stops every capture track at once and answers `device-gate:capture-stopped`.
+- If the page has not answered within 1 second, main reloads the page. That drops every media stream.
+- `media` permission requests are refused (and `getUserMedia` fails) while the gate is closed, so a new capture cannot start.
+- The tray icon, its tooltip and bija are updated (`device.state`).
+
+Full-screen check: on Windows one long-lived PowerShell process answers once every 3 seconds (foreground window covers its monitor; our own window, the desktop and the shell are ignored). If it does not answer, the room counts as full screen until it does. Other systems are never "full screen".
+
+### Kill switch
+
+Tray menu "Close this room" / "Open this room", the same button in Status, or the global shortcut Ctrl+Alt+Shift+R (set `closeShortcut` in `satellite.json` to change it). Closing sends `room.close`: bija moves every avatar there home (reason "room closed") and refuses moves to the room until `room.open`. A closed room stays closed after a restart (`closed` in `satellite.json`).
+
+### What bija does with the state
+
+- Locked for 5 minutes: the avatars there walk home (reason "screen locked").
+- A full-screen app for 2 minutes: the avatars walk home (reason "full screen app"). This is not saved.
+- Every change of mic, camera, speakers, lock, close or full screen is journaled as `place.device`. bija's Status panel and Settings > Places show each room's mic and camera.
+
+### Tray and notification
+
+The tray icon has a coloured dot and the tooltip says "Study: mic live", "Study: doorbell only" or "Study: off". The first time the mic goes live in a session Windows shows "Echo is here: the mic is on in the study". The doorbell is off by default (`doorbell` in `satellite.json`); only its state is shown for now.
+
+### Voice on the satellite
+
+The satellite uses the same voice pipeline as bija: voice detection, end of speech, transcription on bija (forwarded `local-voice:transcribe`), answer. There is no wake word here yet, so while the gate is open anything said is a turn. Speakers are picked in Status and saved in `satellite.json`; every speech audio element uses them.
+
+### Talk key and taps
+
+The global push-to-talk key (Settings on bija, or `pushToTalk` in `satellite.json`) and a tap on the screen work as on bija when a character is here. With nobody in the room (and everything else fine) they are a summons: the mic stays closed, bija moves the recent partner (else Echo, else the first avatar) to this room (`places:summon`) and the screen says "Calling Echo…". bija's own window uses the same call.
+
+### Latency
+
+For each spoken turn the renderer measures, from the end of speech: transcript back, first sentence of audio received, playback started. The numbers go to the main log ("Satellite turn timing") and the last turn is shown in Status. The link ping round trip is logged every 30 seconds.
+
+### If the mic does not work
+
+- Look at the dot and the listening button: the reason is written there ("The screen is locked", "Another app is full screen", "Nobody is in this room", ...).
+- "Nobody is in this room": call a character over from bija, or press the talk key.
+- "Another app is full screen" with nothing full screen: the PowerShell check may be blocked. Look in the main log for "full-screen check".
+- A closed room stays closed after a restart. Use the tray menu or Ctrl+Alt+Shift+R.
+- The mic still stays off after all of this: the page may be refused the `media` permission while the gate was closed; reload with Ctrl+R.
+
 ## Not yet
 
-Microphone, wake word, camera and speakers-as-devices on the satellite.
+Camera and the doorbell listening (the state is there, listening is not), wake word on the satellite.
