@@ -301,6 +301,40 @@ describe('satellite settings', () => {
   });
 });
 
+describe('Satellite devices', () => {
+  it('tells the device runtime about the link, the snapshot and bija asking devices off', async () => {
+    const { satellite, pairNow, harness } = await setup();
+    const calls: string[] = [];
+    satellite.attachDevices({
+      state: () => ({}) as never,
+      setLinkUp: (up) => void calls.push(`link:${up}`),
+      setSnapshot: (snapshot) => void calls.push(`snapshot:${(snapshot as { localPlaceId: string }).localPlaceId}`),
+      hubOff: (reason) => void calls.push(`off:${reason}`),
+      setOpen: () => ({}) as never,
+      captureStopped: () => undefined,
+    });
+    await pairNow();
+    await waitFor(() => calls.includes('link:true') && calls.includes('snapshot:study'), 5000, 'link and snapshot');
+    harness.hub.deviceOff(harness.hub.status().devices[0].id, 'test');
+    await waitFor(() => calls.includes('off:test'), 5000, 'device.off');
+    await satellite.forget();
+    expect(calls.at(-1)).toBe('link:false');
+  });
+
+  it('is closed until the runtime is attached, and sends ops only while online', async () => {
+    const { satellite, ipc } = await setup();
+    expect(((await ipc('device-gate:get')) as { micAllowed: boolean }).micAllowed).toBe(false);
+    expect(satellite.sendOp({ op: 'room.close' })).toBe(false);
+  });
+
+  it('keeps this PC\'s speakers in satellite.json and logs turn timings', async () => {
+    const { ipc, settings } = await setup();
+    await ipc('config:set-audio-devices', { audioOutputDeviceId: 'speaker-2' });
+    expect(settings.get().audioOutputDeviceId).toBe('speaker-2');
+    await ipc('satellite:turn-timing', { transcriptMs: 410.4, firstAudioMs: 900, playbackMs: 'x' });
+  });
+});
+
 describe('KeychainTokenStore', () => {
   it('keeps the token under the service and the hub URL', async () => {
     const calls: string[][] = [];

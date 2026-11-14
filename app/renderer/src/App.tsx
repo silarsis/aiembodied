@@ -76,10 +76,14 @@ import { useSatellite } from './satellite/satellite-context.js';
 import { SatelliteBanner } from './satellite/satellite-banner.js';
 import { SatelliteStatusPanel } from './satellite/satellite-status-panel.js';
 import { TypedMessage } from './satellite/typed-message.js';
+import { DeviceDots } from './satellite/device-dots.js';
+import { useDeviceGate } from './satellite/use-device-gate.js';
+import type { TurnTiming } from './realtime/local-voice-client.js';
 import { DEFAULT_DESKTOP_ROOM } from '../../main/src/places/default-room.js';
 import { estimateSpeechMs, stagePresence } from './places/stage-presence.js';
 import { ElsewhereChip } from './places/elsewhere-chip.js';
 import { PlacesPanel } from './places/places-panel.js';
+import { RoomDevicesStatus } from './places/room-devices-status.js';
 import { useIdleHabits } from './avatar/use-idle-habits.js';
 import type { CharacterSettingsControls } from './avatar/character-settings.js';
 import type { CharacterSettingsContext } from './avatar/use-character-settings.js';
@@ -198,6 +202,13 @@ function stripAnimationInstructions(instructions: string): string {
   return instructions.slice(0, index).trim();
 }
 
+/** Plays an element through the chosen speakers (a satellite's own output device). */
+function applySink(element: HTMLAudioElement | null | undefined, deviceId: string): void {
+  const target = element as (HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }) | null | undefined;
+  if (!target || typeof target.setSinkId !== 'function') return;
+  void target.setSinkId(deviceId).catch((error: unknown) => console.warn('Could not use that speaker', error));
+}
+
 function useAudioGraphState(inputDeviceId?: string, enabled = true) {
   const [internalState, setInternalState] = useState<AudioGraphState>({
     level: 0,
@@ -206,6 +217,11 @@ function useAudioGraphState(inputDeviceId?: string, enabled = true) {
     error: null,
   });
   const [internalUpstreamStream, setInternalUpstreamStream] = useState<MediaStream | null>(null);
+  const graphRef = useRef<AudioGraph | null>(null);
+  /** Stops every capture track now (the satellite's gate closed). Safe to call when nothing is running. */
+  const stopNow = useCallback(async () => {
+    await graphRef.current?.stop();
+  }, []);
 
   // Derive state based on enabled prop
   const state = enabled
@@ -230,6 +246,7 @@ function useAudioGraphState(inputDeviceId?: string, enabled = true) {
     });
 
     let disposed = false;
+    graphRef.current = graph;
 
     const startGraph = async () => {
       setInternalState((previous) => ({ ...previous, status: 'starting', error: null }));
@@ -256,12 +273,13 @@ function useAudioGraphState(inputDeviceId?: string, enabled = true) {
 
     return () => {
       disposed = true;
+      if (graphRef.current === graph) graphRef.current = null;
       setInternalUpstreamStream(null);
       void graph.stop();
     };
   }, [inputDeviceId, enabled]);
 
-  return { ...state, upstreamStream };
+  return { ...state, upstreamStream, stopNow };
 }
 
 function logRendererBridge(
@@ -898,7 +916,23 @@ export default function App() {
       ),
     [rigs, applySceneActivity],
   );
-  const [isListeningEnabled, setListeningEnabled] = useState(false);
+  // On a satellite the privacy gate (main process) is the outermost condition: listening is on only while the gate
+  // allows the mic, and Kevin can still turn it off by hand. On bija it is the toggle it always was.
+  const [listeningState, setListeningState] = useState(false);
+  const [satelliteHandOff, setSatelliteHandOff] = useState(false);
+  const stopCaptureRef = useRef<() => Promise<void>>(async () => undefined);
+  const stopCapture = useCallback(() => stopCaptureRef.current(), []);
+  const deviceGate = useDeviceGate(isSatellite ? resolveApi()?.deviceGate : undefined, stopCapture);
+  const isListeningEnabled = isSatellite ? deviceGate?.micAllowed === true && !satelliteHandOff : listeningState;
+  const setListeningEnabled = useCallback(
+    (next: boolean | ((previous: boolean) => boolean)) => {
+      if (isSatellite) setSatelliteHandOff((previous) => !(typeof next === 'function' ? next(!previous) : next));
+      else setListeningState(next);
+    },
+    [isSatellite],
+  );
+  const [lastTurnTiming, setLastTurnTiming] = useState<TurnTiming | null>(null);
+  const [callingNote, setCallingNote] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [modelsInitialUse, setModelsInitialUse] = useState<UseId | undefined>(undefined);
@@ -1148,6 +1182,7 @@ export default function App() {
 
   const [selectedInput, setSelectedInput] = useState('');
   const [selectedOutput, setSelectedOutput] = useState('');
+  const selectedOutputRef = useRef('');
   const DEFAULT_PROMPT =
     'You are echo, an AI assistant. You are slightly sarcastic, very blunt, but helpful in your own way.\n\nYou question assumptions, and aren\'t afraid to ask questions or challenge me. You have a sharp wit.\n\nYou are here to help me be a better person, but you don\'t put up with bullshit. You also have an Australian sensibility when it comes to swearing and language overall.\n\nYou are good-natured and good-humoured.';
   const [selectedVoice, setSelectedVoice] = useState<string>(DEFAULT_VOICE);
@@ -1607,6 +1642,7 @@ export default function App() {
     let audio: HTMLAudioElement | null = null;
     if (typeof Audio !== 'undefined') {
       audio = new Audio();
+      if (selectedOutputRef.current) applySink(audio, selectedOutputRef.current);
       audio.srcObject = stream;
       audio.autoplay = true;
       try {
@@ -1681,8 +1717,15 @@ export default function App() {
         getBridge: () => getPreloadApi()?.localVoice,
         interruptFloor: () => getPreloadApi()?.floor?.interrupt(),
         wakePhrase,
+        // A satellite has no wake word yet: while its gate is open the mic listens, as push-to-talk and taps also start it.
+        requireWakeWord: !isSatellite,
         callbacks: {
           onStateChange: setRealtimeState,
+          onTurnTiming: (timing) => {
+            if (!isSatellite) return;
+            setLastTurnTiming(timing);
+            void getPreloadApi()?.satellite?.reportTurn?.(timing)?.catch(() => undefined);
+          },
           onTextContent: (content, avatarId) => {
             animationTextHandlerRef.current?.(content, avatarId);
           },
@@ -1754,7 +1797,15 @@ export default function App() {
         onLog,
       },
     });
-  }, [hasRealtimeSupport, pushLatency, loadingConfig, isLocalBackend, wakePhrase, realtimeModel]);
+  }, [hasRealtimeSupport, pushLatency, loadingConfig, isLocalBackend, isSatellite, wakePhrase, realtimeModel]);
+
+  // A satellite plays speech through its own chosen speakers: the client's element and every avatar's element.
+  useEffect(() => {
+    selectedOutputRef.current = selectedOutput;
+    if (!isSatellite) return;
+    if (realtimeClient instanceof LocalVoiceClient) void realtimeClient.setOutputDeviceId(selectedOutput || undefined);
+    for (const voice of avatarVoicesRef.current.values()) if (selectedOutput) applySink(voice.audio, selectedOutput);
+  }, [isSatellite, selectedOutput, realtimeClient]);
 
   // Urgent updates are announced even when the conversation is not running.
   useEffect(() => {
@@ -2240,6 +2291,9 @@ export default function App() {
 
   const audioGraph = useAudioGraphState(selectedInput || undefined, isListeningEnabled && !loadingConfig && !wakeListening.error);
   const previousSpeechActiveRef = useRef(audioGraph.isActive);
+  useEffect(() => {
+    stopCaptureRef.current = audioGraph.stopNow;
+  }, [audioGraph.stopNow]);
   const voicePhaseRef = useRef(voiceActivity.phase);
   useEffect(() => { voicePhaseRef.current = voiceActivity.phase; }, [voiceActivity.phase]);
 
@@ -2323,7 +2377,7 @@ export default function App() {
       return;
     }
 
-    const upstream = isSatellite ? silentInput : audioGraph.upstreamStream;
+    const upstream = isSatellite ? (audioGraph.upstreamStream ?? silentInput) : audioGraph.upstreamStream;
     if (!(isSatellite || isListeningEnabled) || !upstream || !canConnectConversation) {
       void realtimeClient.disconnect();
       return;
@@ -2511,6 +2565,32 @@ export default function App() {
   // local client starts listening once it has connected.
   const startTalking = useCallback(
     (source: 'shortcut' | 'tap') => {
+      if (isSatellite) {
+        const gate = deviceGate;
+        if (!gate) return;
+        if (!gate.occupied) {
+          const roomIsFine = gate.unlocked && gate.linkUp && gate.open && gate.noFullscreenApp && gate.notHeldOff;
+          if (!roomIsFine) {
+            setCallingNote(`The mic is off: ${gate.summary || 'the room is not available'}.`);
+            return;
+          }
+          // Nobody is here: the key is a summons. The mic stays closed.
+          setCallingNote('Calling…');
+          void Promise.resolve(resolveApi()?.places?.summon?.())
+            .then((result) => {
+              if (!result) setCallingNote(null);
+              else if (!result.ok) setCallingNote(`Nobody came: ${result.reason}.`);
+              else if (result.alreadyHere) setCallingNote(null);
+              else setCallingNote(`Calling ${result.name}…`);
+            })
+            .catch((error: unknown) => setCallingNote(`Could not call: ${error instanceof Error ? error.message : String(error)}`));
+          return;
+        }
+        if (!gate.micAllowed) {
+          setCallingNote(`The mic is off: ${gate.summary}.`);
+          return;
+        }
+      }
       interruptMovement();
       setListeningEnabled(true);
       const client = conversationClientRef.current;
@@ -2519,8 +2599,20 @@ export default function App() {
       }
       console.info(`[talk] ${source === 'shortcut' ? 'Push-to-talk key' : 'Screen tap'}`);
     },
-    [setListeningEnabled, interruptMovement],
+    [setListeningEnabled, interruptMovement, isSatellite, deviceGate, resolveApi],
   );
+
+  // The note goes away on its own, and as soon as someone is in the room.
+  useEffect(() => {
+    if (!callingNote) return undefined;
+    const timer = setTimeout(() => setCallingNote(null), 6000);
+    return () => clearTimeout(timer);
+  }, [callingNote]);
+  const someoneHere = deviceGate?.occupied === true;
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (someoneHere) setCallingNote(null);
+  }, [someoneHere]);
 
   const [pushToTalkStatus, setPushToTalkStatus] = useState<PushToTalkStatus | null>(null);
   useEffect(() => {
@@ -2997,7 +3089,7 @@ export default function App() {
       acceptsWakeRef.current = !previous;
       return !previous;
     });
-  }, []);
+  }, [setListeningEnabled]);
 
   const listeningToggleLabel = useMemo(
     () => (isListeningEnabled ? 'Disable listening' : 'Enable listening'),
@@ -3109,11 +3201,17 @@ export default function App() {
             </section>
           </section>
           {satellite ? <SatelliteBanner status={satellite.status} bridge={satellite.bridge} /> : null}
+          {satellite ? <DeviceDots gate={deviceGate} /> : null}
           <div className="stageToolbar">
             {wakeListening.error ? <p className="kiosk__error" role="alert">{wakeListening.error}</p> : null}
             {isSatellite ? (
               <TypedMessage onSend={sendTypedMessage} disabled={satellite.status.link !== 'online' || realtimeState.status !== 'connected'} />
-            ) : (
+            ) : null}
+            {isSatellite && callingNote ? (
+              <p className="kiosk__helper" role="status" data-testid="calling-note">
+                {callingNote}
+              </p>
+            ) : null}
             <button
               type="button"
               className="stageStatus"
@@ -3127,6 +3225,10 @@ export default function App() {
               <span>
                 {wakeListening.error
                   ? 'Listening error'
+                  : isSatellite && deviceGate?.micAllowed !== true
+                  ? `Mic off${deviceGate?.summary ? ` · ${deviceGate.summary}` : ''}`
+                  : isSatellite && satelliteHandOff
+                  ? 'Listening is off'
                   : !isListeningEnabled
                   ? wakeListening.phase === 'off' ? 'Listening is off' : 'Stopping listening…'
                   : displayedActivity.phase === 'waiting'
@@ -3139,7 +3241,6 @@ export default function App() {
                           displayedActivity.phase.slice(1)}
               </span>
             </button>
-            )}
             <button
               type="button"
               className="stageTranscript"
@@ -3424,7 +3525,16 @@ export default function App() {
 
           {satellite ? (
             <PanelDialog id="status" title="Status" subtitle="This room, and the link to bija." open={panel === 'status'} onClose={closePanel}>
-              <SatelliteStatusPanel status={satellite.status} bridge={satellite.bridge} />
+              <SatelliteStatusPanel
+                status={satellite.status}
+                bridge={satellite.bridge}
+                gate={deviceGate}
+                gateBridge={resolveApi()?.deviceGate}
+                outputs={outputs}
+                selectedOutput={selectedOutput}
+                onOutputChange={(value) => void handleOutputChange({ target: { value } } as unknown as ChangeEvent<HTMLSelectElement>)}
+                lastTurn={lastTurnTiming}
+              />
             </PanelDialog>
           ) : (
           <PanelDialog id="status" title="Status and diagnostics" open={panel === 'status'} onClose={closePanel}>
@@ -3438,6 +3548,7 @@ export default function App() {
                 </button>
               </div>
             ) : null}
+            <RoomDevicesStatus roomHub={activeBridge?.roomHub} active={panel === 'status'} />
             <div className="kiosk__statusBar">
               <div
                 className={`statusChip statusChip--${wakeStatusVariant}`}

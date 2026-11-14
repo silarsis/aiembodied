@@ -136,7 +136,9 @@ export class DeviceGate {
   update(patch: Partial<DeviceFacts>): DeviceGateState {
     const changed = (Object.keys(patch) as Array<keyof DeviceFacts>).filter((key) => patch[key] !== undefined && patch[key] !== this.facts[key]);
     if (changed.length === 0) return this.state();
-    this.facts = { ...this.facts, ...patch } as DeviceFacts;
+    const next: DeviceFacts = { ...this.facts };
+    for (const key of changed) next[key] = patch[key] as boolean;
+    this.facts = next;
     return this.recompute(changed);
   }
 

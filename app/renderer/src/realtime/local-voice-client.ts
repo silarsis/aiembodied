@@ -36,6 +36,17 @@ export interface LocalVoiceClientCallbacks extends RealtimeClientCallbacks {
   onActivity?: (activity: VoiceActivity) => void;
   /** A tool the model called (web_search, MCP tools), as it starts and when it finishes. */
   onToolCall?: (event: LocalVoiceToolEvent) => void;
+  /** A spoken or typed turn started playing: how long each step took, from the end of speech (ms). */
+  onTurnTiming?: (timing: TurnTiming) => void;
+}
+
+export interface TurnTiming {
+  /** Until the transcript came back. Null for typed text. */
+  transcriptMs: number | null;
+  /** Until the first sentence of audio arrived from bija. */
+  firstAudioMs: number | null;
+  /** Until the first sentence started playing. */
+  playbackMs: number | null;
 }
 
 export type LocalVoiceToolEvent = Extract<LocalVoiceEvent, { type: 'tool' }>;
@@ -149,6 +160,8 @@ export class LocalVoiceClient {
   }
 
   private disposed = false;
+  /** When the current turn's speech ended, and when its transcript came back (for `onTurnTiming`). */
+  private timing: { endedAt: number; transcriptAt: number | null } | null = null;
   private activity: VoiceActivity;
   private awakeTimer: number | null = null;
 
@@ -644,10 +657,12 @@ export class LocalVoiceClient {
       // Kevin is speaking: avatar chatter gives way.
       this.yieldToKevin();
       this.setActivity('transcribing');
+      const endedAt = this.now();
       const transcript = await bridge.transcribe(encodeWav(utterance.samples, utterance.sampleRate));
       if (connectionId !== this.connectionId) {
         return;
       }
+      this.timing = { endedAt, transcriptAt: this.now() };
       const text = this.stripWakePhrase(transcript.text);
       this.log('info', 'Local voice transcript', { text: transcript.text, timings: transcript.timings });
       if (!text) {
@@ -696,6 +711,7 @@ export class LocalVoiceClient {
     try {
       // Kevin is "speaking": avatar chatter gives way.
       this.yieldToKevin();
+      this.timing = { endedAt: this.now(), transcriptAt: null };
       await this.takeText(bridge, clean, connectionId);
     } catch (error) {
       const failure = describe(error);
@@ -728,8 +744,19 @@ export class LocalVoiceClient {
       return false;
     }
     const turn = new Turn(this.newRequestId('local'), context, output);
+    turn.clock = this.now;
+    const timing = system ? null : this.timing;
+    this.timing = null;
     turn.onSentenceStart = (sentence, first) => {
       if (first) {
+        if (timing) {
+          const at = this.now();
+          this.callbacks.onTurnTiming?.({
+            transcriptMs: timing.transcriptAt === null ? null : timing.transcriptAt - timing.endedAt,
+            firstAudioMs: turn.firstAudioAt === null ? null : turn.firstAudioAt - timing.endedAt,
+            playbackMs: at - timing.endedAt,
+          });
+        }
         if (turn.avatarId === DEFAULT_SPEAKER_ID) {
           this.callbacks.onFirstAudioFrame?.();
         } else {
@@ -1077,6 +1104,10 @@ class Turn {
   avatarId = DEFAULT_SPEAKER_ID;
   /** The output was chosen from the first sentence event. */
   routed = false;
+  /** When the first sentence of audio reached this PC (a clock reading, for the latency numbers). */
+  firstAudioAt: number | null = null;
+  /** The client's clock. */
+  clock: () => number = Date.now;
 
   constructor(
     readonly requestId: string,
@@ -1102,6 +1133,7 @@ class Turn {
   }
 
   enqueue(text: string, wav: Uint8Array, onError: (error: unknown) => void): void {
+    this.firstAudioAt ??= this.clock();
     this.decoding = this.decoding.then(async () => {
       if (this.stopped) {
         return;
