@@ -1,0 +1,49 @@
+name: Android room
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android-room/**'
+      - '.github/workflows/android-room.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'android-room/**'
+      - '.github/workflows/android-room.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android-room
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+      - name: Unit tests and debug APK
+        run: ./gradlew --no-daemon test assembleDebug
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: aiembodied-room-test-report
+          path: android-room/app/build/reports/tests
+          if-no-files-found: ignore
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: aiembodied-room-debug-apk
+          path: android-room/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
