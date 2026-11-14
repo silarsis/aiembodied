@@ -13,7 +13,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-async function setup(handlers: Parameters<typeof startHarness>[0] = {}) {
+async function setup(handlers: Parameters<typeof startHarness>[0] = {}, extra: Partial<ConstructorParameters<typeof Satellite>[0]> = {}) {
   const harness = await startHarness(handlers);
   cleanups.push(() => harness.cleanup());
   const folder = mkdtempSync(path.join(tmpdir(), 'satellite-pc-'));
@@ -32,6 +32,7 @@ async function setup(handlers: Parameters<typeof startHarness>[0] = {}) {
     getWindow: () => window,
     quit,
     linkOptions: { pingMs: 50, timeoutMs: 600, backoffFirstMs: 30, backoffMaxMs: 100 },
+    ...extra,
   });
   const handlersByChannel = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
   let assetHandler: ((request: { url: string }) => Promise<Response> | Response) | null = null;
@@ -167,6 +168,20 @@ describe('Satellite', () => {
     const forgotten = (await ipc('satellite:forget')) as SatelliteStatus;
     expect(forgotten).toMatchObject({ paired: false, hubUrl: null, link: 'idle' });
     expect(await tokens.get(harness.url())).toBeNull();
+  });
+
+  it('reads and sets "Start when I sign in" through the helper, and says off when there is none', async () => {
+    let on = false;
+    const startAtLogin = { isEnabled: vi.fn(async () => on), set: vi.fn(async (next: boolean) => ((on = next), true)) };
+    const { ipc } = await setup({}, { startAtLogin });
+    expect(await ipc('satellite:start-at-login')).toBe(false);
+    expect(startAtLogin.set).not.toHaveBeenCalled();
+    expect(await ipc('satellite:start-at-login', true)).toBe(true);
+    expect(startAtLogin.set).toHaveBeenCalledWith(true);
+    expect(await ipc('satellite:start-at-login', false)).toBe(false);
+
+    const without = await setup();
+    expect(await without.ipc('satellite:start-at-login', true)).toBe(false);
   });
 
   it('a refusal (bija revoked this PC) is shown, with the reason', async () => {

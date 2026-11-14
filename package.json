@@ -14,6 +14,7 @@
     "dev:prepare": "node scripts/prepare-dev.mjs",
     "dev:run": "node scripts/run-dev.mjs",
     "dev:satellite": "node scripts/run-dev.mjs --satellite",
+    "satellite": "node scripts/run-dev.mjs --daily",
     "avatar:face:setup": "node scripts/setup-avatar-face.mjs",
     "avatar:paint:setup": "node scripts/setup-avatar-paint.mjs",
     "dist": "pnpm build && electron-builder --config electron-builder.yml",

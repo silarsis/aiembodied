@@ -79,6 +79,17 @@ export function resolvePnpmStorePath(env = process.env) {
   return storePath;
 }
 
+/**
+ * The environment Electron itself starts with. A dev satellite (`--satellite`) keeps the isolated dev home. `--daily`
+ * (`pnpm satellite`) is the satellite for everyday use: it is built here, but runs with the real environment, so the
+ * app's data (the pairing, the room files) lives in the normal userData folder and "Start when I sign in" finds the same data.
+ */
+export function electronLaunchEnv(argv, envIsolated, baseEnv = process.env) {
+  const satellite = argv.includes('--satellite') || argv.includes('--daily');
+  if (argv.includes('--daily')) return { ...baseEnv, AIEMBODIED_ROLE: 'satellite' };
+  return { ...envIsolated, AIEMBODIED_ENABLE_DIAGNOSTICS: '1', ...(satellite ? { AIEMBODIED_ROLE: 'satellite' } : {}) };
+}
+
 export function prepareDevHomeEnv(
   repoRoot,
   baseEnv = process.env,
@@ -264,9 +275,13 @@ async function main() {
   // Start the local model servers that are down, with the user's real environment (they find
   // their models through USERPROFILE), before the isolated dev HOME is set up below.
   // A satellite is a second desktop that draws one room of bija's world: it has its own home and starts no services.
-  const satellite = process.argv.includes('--satellite');
+  const satellite = process.argv.includes('--satellite') || process.argv.includes('--daily');
   if (satellite) {
-    console.log('[info] Satellite mode: own dev home (.dev-home-satellite), no local services.');
+    console.log(
+      process.argv.includes('--daily')
+        ? '[info] Satellite for daily use: normal app data, no local services.'
+        : '[info] Satellite mode: own dev home (.dev-home-satellite), no local services.',
+    );
   } else if (shouldStartServices(process.argv, userEnv)) {
     await ensureLocalServices(repoRoot, userEnv);
   } else {
@@ -393,7 +408,7 @@ async function main() {
 
   // Launch Electron with compiled main
   console.log('[info] Launching Electron...');
-  const env = { ...envIsolated, AIEMBODIED_ENABLE_DIAGNOSTICS: '1', ...(satellite ? { AIEMBODIED_ROLE: 'satellite' } : {}) };
+  const env = electronLaunchEnv(process.argv, envIsolated);
   const electronCli = resolveElectronCli(repoRoot);
   const electronEntrypoint = resolve(repoRoot, 'app/main/dist/main.js');
   await run(process.execPath, [electronCli, electronEntrypoint], {

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { SatelliteBridge, SatelliteStatus } from '../../../main/src/satellite/bridge-types.js';
 import { evaluateGate } from '../../../main/src/satellite/device-gate.js';
@@ -45,5 +45,30 @@ describe('SatelliteStatusPanel camera', () => {
     );
     fireEvent.change(screen.getByLabelText('Camera to use'), { target: { value: 'cam-1' } });
     expect(onCameraChange).toHaveBeenCalledWith('cam-1');
+  });
+});
+
+describe('SatelliteStatusPanel start at login', () => {
+  it('shows "Start when I sign in" off by default and turns it on', async () => {
+    const startAtLogin = vi.fn().mockResolvedValue(false);
+    const setStartAtLogin = vi.fn().mockResolvedValue(true);
+    render(<SatelliteStatusPanel status={status} bridge={{ forget: vi.fn(), startAtLogin, setStartAtLogin } as unknown as SatelliteBridge} gate={null} />);
+    const box = (await screen.findByLabelText('Start when I sign in')) as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    fireEvent.click(box);
+    await waitFor(() => expect(setStartAtLogin).toHaveBeenCalledWith(true));
+    await waitFor(() => expect(box.checked).toBe(true));
+  });
+
+  it('says so when Windows refused, and is not shown on a build that cannot do it', async () => {
+    const refused = vi.fn().mockResolvedValue(false);
+    const { unmount } = render(
+      <SatelliteStatusPanel status={status} bridge={{ forget: vi.fn(), startAtLogin: vi.fn().mockResolvedValue(false), setStartAtLogin: refused } as unknown as SatelliteBridge} gate={null} />,
+    );
+    fireEvent.click(await screen.findByLabelText('Start when I sign in'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('did not let the app change this');
+    unmount();
+    render(<SatelliteStatusPanel status={status} bridge={bridge} gate={null} />);
+    expect(screen.queryByLabelText('Start when I sign in')).toBeNull();
   });
 });

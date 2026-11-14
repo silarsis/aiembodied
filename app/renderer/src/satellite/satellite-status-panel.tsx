@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { DeviceGateBridge, DeviceGateState, SatelliteBridge, SatelliteStatus, TurnTiming } from '../../../main/src/satellite/bridge-types.js';
 import type { AudioDeviceSelection } from '../hooks/use-audio-devices.js';
 import type { CameraChoice } from '../hooks/use-camera-devices.js';
@@ -41,6 +41,30 @@ const seconds = (ms: number | null) => (ms === null ? 'n/a' : `${(ms / 1000).toF
 export function SatelliteStatusPanel({ status, bridge, gate = null, gateBridge, outputs = [], selectedOutput = '', onOutputChange, lastTurn = null, cameras = [], selectedCamera = '', onCameraChange, cameraError = null }: SatelliteStatusPanelProps) {
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // "Start when I sign in": off until Kevin turns it on. Hidden when this build cannot do it (not Windows).
+  const [startAtLogin, setStartAtLogin] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void bridge.startAtLogin?.().then(
+      (on) => {
+        if (!cancelled) setStartAtLogin(on);
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [bridge]);
+  const changeStartAtLogin = async (on: boolean) => {
+    setError(null);
+    try {
+      const now = (await bridge.setStartAtLogin?.(on)) ?? !on;
+      setStartAtLogin(now);
+      if (now !== on) setError('Windows did not let the app change this. Try again.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not change this.');
+    }
+  };
   const forget = async () => {
     setError(null);
     try {
@@ -134,6 +158,12 @@ export function SatelliteStatusPanel({ status, bridge, gate = null, gateBridge, 
       ) : null}
       <p className="kiosk__helper">The microphone is live only while a character is in this room, the screen is unlocked, the link to bija is up, the room is open and no other app is full screen. Ctrl+Alt+Shift+R closes or opens the room from anywhere.</p>
       <p className="kiosk__helper">The camera follows the same rules and also needs Camera presence to be on for this room (set on bija, Settings, Places). It only notes that a face is there: no picture leaves this PC and nothing is stored.</p>
+      {startAtLogin !== null && bridge.setStartAtLogin ? (
+        <label className="satelliteStatus__login">
+          <input type="checkbox" checked={startAtLogin} onChange={(event) => void changeStartAtLogin(event.target.checked)} />
+          Start when I sign in
+        </label>
+      ) : null}
       <p className="kiosk__helper">F11 switches between a window and full screen.</p>
       {confirming ? (
         <div className="satelliteStatus__confirm">

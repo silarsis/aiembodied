@@ -71,6 +71,10 @@ vulkan|cuda`, and `-Force` to reinstall. `-With coder-model,avatar-paint` adds t
 the Thinking model or the vision model (pick them in Models and servers), Docker or wslc, or Comfy
 Desktop. See the header of the script for the full list.
 
+A second desktop that only draws one room of bija's world (no models) installs with
+`.\scripts\install-windows.ps1 -Role satellite`, then starts with `pnpm satellite`. See
+[docs/features/satellite.md](docs/features/satellite.md#set-up-a-second-desktop).
+
 No C++ toolchain (Visual Studio Build Tools, Xcode, Python for node-gyp) is needed:
 better-sqlite3, keytar and the Picovoice packages all ship prebuilt N-API binaries that
 load in both Node and Electron.

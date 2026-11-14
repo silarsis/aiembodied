@@ -21,6 +21,10 @@
       avatar-face     scripts\setup-avatar-face.mjs (face landmarker, background removal)
       comfyui         check only: Comfy Desktop
 
+    -Role satellite (a second desktop that only draws one room and runs no models) runs just node and
+    tools (git only: no uv, no wslc/Docker check), then `pnpm install`, writes AIEMBODIED_ROLE=satellite to
+    .env when it is not set, checks Tailscale, and prints the next steps. Nothing else is installed.
+
     Opt-in (run only when named in -Only or -With):
       coder-model     Qwen3-Coder-Next Q4_K_M GGUF (about 45 GB or more)
       avatar-paint    scripts\setup-avatar-paint.mjs (needs ComfyUI's Python)
@@ -31,6 +35,8 @@
       - Docker / wslc (the memory engine and SearXNG need one; try `wsl --update` for wslc).
       - Comfy Desktop and its image models (https://www.comfy.org/download).
 
+.PARAMETER Role
+    full (default: everything above) or satellite (see above).
 .PARAMETER Only
     Run just these components (opt-in ones included).
 .PARAMETER Skip
@@ -53,6 +59,7 @@
     .\scripts\install-windows.ps1 -Skip motion -With coder-model
 #>
 param(
+    [ValidateSet('full', 'satellite')] [string]$Role = 'full',
     [string[]]$Only = @(),
     [string[]]$Skip = @(),
     [string[]]$With = @(),
@@ -213,19 +220,44 @@ function Install-WingetPackage([string]$Id) {
 
 function Step-Tools {
     $installed = @()
-    foreach ($tool in @(@{ Cmd = 'uv'; Id = 'astral-sh.uv' }, @{ Cmd = 'git'; Id = 'Git.Git' })) {
+    $tools = @(@{ Cmd = 'uv'; Id = 'astral-sh.uv' }, @{ Cmd = 'git'; Id = 'Git.Git' })
+    if ($Role -eq 'satellite') { $tools = @(@{ Cmd = 'git'; Id = 'Git.Git' }) }
+    foreach ($tool in $tools) {
         if (Test-Cmd $tool.Cmd) { continue }
         Install-WingetPackage $tool.Id
         if (-not (Test-Cmd $tool.Cmd)) { throw "$($tool.Cmd) is still not on PATH after installing $($tool.Id). Open a new shell and re-run." }
         $installed += $tool.Cmd
     }
     $detail = ''
-    if (-not ((Test-Cmd 'wslc') -or (Test-Cmd 'docker'))) {
+    if ($Role -ne 'satellite' -and -not ((Test-Cmd 'wslc') -or (Test-Cmd 'docker'))) {
         $detail = 'WARNING: neither wslc nor Docker found; the memory engine and SearXNG need one (try "wsl --update" for wslc).'
         Write-Warning $detail
     }
     if ($installed.Count -gt 0) { return New-Result 'installed' ("$($installed -join ', ') $detail").Trim() }
     return New-Result 'already present' $detail
+}
+
+# -Role satellite: install the packages, mark this PC as a satellite, check Tailscale and say what to do next.
+function Step-Satellite {
+    Push-Location $repoRoot
+    try { Invoke-Native 'pnpm' @('install') } finally { Pop-Location }
+    Set-EnvDefault 'AIEMBODIED_ROLE' 'satellite'
+    $detail = ''
+    if (-not (Test-Cmd 'tailscale')) {
+        $detail = 'WARNING: Tailscale is not installed (https://tailscale.com/download). The satellite reaches bija over it.'
+    }
+    elseif (-not (Test-Native 'tailscale' @('status'))) {
+        $detail = 'WARNING: Tailscale is not logged in. Open Tailscale and sign in to the same tailnet as bija.'
+    }
+    if ($detail) { Write-Warning $detail }
+    Write-Host ''
+    Write-Host 'Next steps:'
+    Write-Host '  1. pnpm satellite'
+    Write-Host '  2. On bija: Settings > Places > Add a desktop room. It shows a pairing code.'
+    Write-Host '  3. Here, enter the code and bija''s Tailscale name, for example ws://bija:8791'
+    Write-Host '  4. tailscale ping bija  -> look for "via <LAN address>" (direct), not a DERP relay.'
+    Write-Host '  5. Status panel > "Start when I sign in" if this PC should start the satellite itself.'
+    return New-Result 'installed' $detail
 }
 
 function Step-LlamaCpp {
@@ -502,6 +534,7 @@ function Step-CoderModel {
 $registry = [ordered]@{
     'node'            = { Step-Node }
     'tools'           = { Step-Tools }
+    'satellite'       = { Step-Satellite }
     'llama-cpp'       = { Step-LlamaCpp }
     'kokoro'          = { Step-Kokoro }
     'speech'          = { Step-Speech }
@@ -514,13 +547,14 @@ $registry = [ordered]@{
     'avatar-paint'    = { Step-AvatarPaint }
     'coder-model'     = { Step-CoderModel }
 }
-$optIn = @('coder-model', 'avatar-paint')
+$optIn = @('coder-model', 'avatar-paint', 'satellite')
 
 foreach ($name in @($Only) + @($Skip) + @($With)) {
     if ($name -and -not $registry.Contains($name)) { throw "Unknown component '$name'. Known: $($registry.Keys -join ', ')." }
 }
 $selected = @($registry.Keys | Where-Object {
-    if ($Only.Count -gt 0) { $Only -contains $_ }
+    if ($Role -eq 'satellite') { @('node', 'tools', 'satellite') -contains $_ }
+    elseif ($Only.Count -gt 0) { $Only -contains $_ }
     else { ($optIn -notcontains $_) -or ($With -contains $_) }
 })
 
@@ -551,6 +585,6 @@ foreach ($name in $registry.Keys) {
 Write-Host ""
 Write-Host '== Summary ==' -ForegroundColor Cyan
 $summary | Format-Table -AutoSize -Wrap | Out-Host
-Write-Host 'Not installed by design: the Thinking model (Models and servers -> Thinking), the vision model (Models and servers -> Describe the avatar), Docker/wslc, Comfy Desktop.'
+if ($Role -ne 'satellite') { Write-Host 'Not installed by design: the Thinking model (Models and servers -> Thinking), the vision model (Models and servers -> Describe the avatar), Docker/wslc, Comfy Desktop.' }
 if (@($summary | Where-Object { $_.Status -eq 'failed' }).Count -gt 0) { exit 1 }
 exit 0

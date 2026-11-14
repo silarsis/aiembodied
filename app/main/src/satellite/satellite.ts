@@ -91,6 +91,8 @@ export interface SatelliteDeps {
   pushToTalk?: { apply(shortcut: string): PushToTalkStatus; getStatus(): PushToTalkStatus };
   /** How often the ping round trip is logged. */
   pingLogMs?: number;
+  /** "Start when I sign in": whether this PC starts the satellite at login, and turning that on or off (false: it could not). */
+  startAtLogin?: { isEnabled(): Promise<boolean>; set(on: boolean): Promise<boolean> };
 }
 
 const DEFAULT_KEYWORD = 'Hey Echo';
@@ -163,6 +165,12 @@ export class Satellite {
     this.local.set('satellite:status', () => this.status());
     this.local.set('satellite:pair', (args) => this.pair((args[0] ?? {}) as PairInput));
     this.local.set('satellite:forget', () => this.forget());
+    this.local.set('satellite:start-at-login', async (args) => {
+      const login = deps.startAtLogin;
+      if (!login) return false;
+      if (typeof args[0] === 'boolean') await login.set(args[0]);
+      return login.isEnabled();
+    });
   }
 
   // -- Start and stop ---------------------------------------------------------------------------

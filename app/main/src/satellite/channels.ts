@@ -85,6 +85,8 @@ const LOCAL = [
   'satellite:status',
   'satellite:pair',
   'satellite:forget',
+  // "Start when I sign in": with no argument it reads the setting, with true or false it sets it; the answer is the setting.
+  'satellite:start-at-login',
   // The privacy gate (device-gate.ts) and what the renderer reports back to it.
   'device-gate:get',
   'device-gate:capture-stopped',

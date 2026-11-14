@@ -12,6 +12,10 @@ export interface SatelliteBridge {
   pair(input: PairInput): Promise<SatelliteStatus>;
   /** Forgets bija on this PC. */
   forget(): Promise<SatelliteStatus>;
+  /** Whether this PC starts the satellite when Kevin signs in. Off by default. */
+  startAtLogin?(): Promise<boolean>;
+  /** Turns "Start when I sign in" on or off. Resolves with the setting as it is afterwards (unchanged when Windows refused). */
+  setStartAtLogin?(on: boolean): Promise<boolean>;
   /** How long the last spoken turn took on this PC. The main process writes it to the log. */
   reportTurn?(timing: TurnTiming): Promise<void>;
 }

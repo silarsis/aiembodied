@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
-const { resolveElectronCli, ensureElectronBinary } = await import(
+const { resolveElectronCli, ensureElectronBinary, electronLaunchEnv } = await import(
   '../../../scripts/run-dev.mjs',
 );
 
@@ -87,5 +87,22 @@ describe('ensureElectronBinary', () => {
     } finally {
       rmSync(workspaceRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe('electronLaunchEnv', () => {
+  const isolated = { HOME: '/repo/.dev-home', APPDATA: '/repo/.dev-home/AppData/Roaming' };
+  const real = { HOME: '/home/kevin', APPDATA: '/home/kevin/AppData/Roaming' };
+
+  it('keeps the isolated dev home with diagnostics for the normal app', () => {
+    expect(electronLaunchEnv([], isolated, real)).toEqual({ ...isolated, AIEMBODIED_ENABLE_DIAGNOSTICS: '1' });
+  });
+
+  it('--satellite is a dev satellite: isolated home, role satellite', () => {
+    expect(electronLaunchEnv(['--satellite'], isolated, real)).toEqual({ ...isolated, AIEMBODIED_ENABLE_DIAGNOSTICS: '1', AIEMBODIED_ROLE: 'satellite' });
+  });
+
+  it('--daily (pnpm satellite) runs with the real environment, so the data is in the normal folder', () => {
+    expect(electronLaunchEnv(['--daily'], isolated, real)).toEqual({ ...real, AIEMBODIED_ROLE: 'satellite' });
   });
 });

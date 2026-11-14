@@ -60,6 +60,12 @@ describe('PlacesPanel', () => {
     await waitFor(() => expect(study).toHaveTextContent("Kevin's desk · connected"));
   });
 
+  it('shows the Windows firewall note when bija says so', async () => {
+    const { api } = bridge({ status: vi.fn().mockResolvedValue({ ...STATUS, firewallNote: 'Allow private networks only.' }) });
+    render(<PlacesPanel roomHub={api} snapshot={SNAPSHOT} nameOf={nameOf} active />);
+    expect(await screen.findByTestId('firewall-note')).toHaveTextContent('Allow private networks only.');
+  });
+
   it('shows an offline room with its last-seen time, and revokes it', async () => {
     const offline: RoomHubStatus = { ...STATUS, devices: [{ ...STATUS.devices[0], online: false }] };
     const snapshot: PlacesSnapshot = { ...SNAPSHOT, places: SNAPSHOT.places.map((place) => (place.id === 'study' ? { ...place, online: false } : place)) };
