@@ -28,7 +28,7 @@ import { FullscreenWatcher } from './satellite/fullscreen-watch.js';
 import { stateIcon, toBgra } from './satellite/tray-state.js';
 import { KeychainTokenStore } from './satellite/token-store.js';
 import { SATELLITE_FILE, SatelliteSettingsStore, detectSatelliteRole, userDataOverride } from './satellite/settings.js';
-import { RoomHub } from './room-hub/room-hub.js';
+import { RoomHub, fileMarker } from './room-hub/room-hub.js';
 import { RoomDeviceRegistry } from './room-hub/room-devices.js';
 import { createTailscaleLookup } from './room-hub/tailscale.js';
 import { rememberIpcHandler } from './room-hub/ipc-registry.js';
@@ -220,7 +220,8 @@ if (!isProduction) {
 const userDataFolder = userDataOverride(process.env);
 if (userDataFolder) app.setPath('userData', userDataFolder);
 /** A satellite draws one room of bija's world and runs nothing else (docs/features/satellite.md). */
-const satelliteMode = detectSatelliteRole(process.env, app.getPath('userData'));
+const SATELLITE_FLAG = '--satellite';
+const satelliteMode = detectSatelliteRole(process.argv.includes(SATELLITE_FLAG) ? { ...process.env, AIEMBODIED_ROLE: 'satellite' } : process.env, app.getPath('userData'));
 const satelliteSettings = satelliteMode ? new SatelliteSettingsStore(path.join(app.getPath('userData'), SATELLITE_FILE)) : null;
 let satellite: Satellite | null = null;
 let satelliteDevices: DeviceRuntime | null = null;
@@ -2816,6 +2817,22 @@ async function storeSharedWakeModel(_name: string, bytes: Uint8Array): Promise<s
   return file;
 }
 
+/**
+ * "Start when I sign in" for a satellite (Windows only; off until Kevin turns it on). A packaged app starts itself; a repo
+ * checkout (`pnpm satellite`) starts Electron on the built main.js. Both pass --satellite, so the role does not depend on
+ * the environment of a login start.
+ */
+function satelliteStartAtLogin(): { isEnabled(): Promise<boolean>; set(on: boolean): Promise<boolean> } | undefined {
+  if (process.platform !== 'win32') return undefined;
+  const manager = new AutoLaunchManager({
+    logger,
+    appName: `${APP_NAME} Satellite`,
+    appPath: app.getPath('exe'),
+    args: app.isPackaged ? [SATELLITE_FLAG] : [__filename, SATELLITE_FLAG],
+  });
+  return { isEnabled: () => manager.isEnabled(), set: (on) => manager.sync(on) };
+}
+
 /** Starts this PC as a satellite: pairing, the link to bija, the asset cache, and the window. */
 async function startSatelliteMode(settings: SatelliteSettingsStore): Promise<void> {
   const runtime = new Satellite({
@@ -2827,6 +2844,7 @@ async function startSatelliteMode(settings: SatelliteSettingsStore): Promise<voi
     getWindow: () => mainWindow,
     quit: () => app.quit(),
     pushToTalk,
+    startAtLogin: satelliteStartAtLogin(),
     logger: satelliteLogger,
   });
   satellite = runtime;
@@ -3040,6 +3058,7 @@ app.whenReady().then(async () => {
       tailscale: createTailscaleLookup(),
       assetRoot: path.join(app.getPath('userData'), 'rooms', ASSET_FOLDER),
       appVersion: app.getVersion(),
+      firewallNoted: fileMarker(path.join(app.getPath('userData'), 'room-hub-firewall-noted')),
       avatars: () => registry.list(),
       settings: () => ({ wakeWord: manager.getRendererConfig().wakeWord ?? null, pushToTalk: pushToTalk.getStatus() }),
       bus: () => switchboardBus,

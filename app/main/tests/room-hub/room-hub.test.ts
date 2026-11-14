@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import { PlaceManager } from '../../src/places/place-manager.js';
 import { RoomDeviceRegistry } from '../../src/room-hub/room-devices.js';
-import { RoomHub, isLoopback, isTailscaleAddress, slugPlaceId, tailscaleAddresses } from '../../src/room-hub/room-hub.js';
+import { FIREWALL_NOTE, RoomHub, fileMarker, isLoopback, isTailscaleAddress, slugPlaceId, tailscaleAddresses } from '../../src/room-hub/room-hub.js';
 import { isAllowedChannel } from '../../src/room-hub/allowlist.js';
 import { decodeMessage, encodeBinaryFrame, encodeMessage, type Op } from '../../src/room-hub/frames.js';
 import type { TailscaleIdentity, TailscaleLookup } from '../../src/room-hub/tailscale.js';
@@ -88,6 +88,8 @@ interface Options {
   tailscale?: TailscaleLookup;
   env?: NodeJS.ProcessEnv;
   trustLoopback?: boolean;
+  platform?: NodeJS.Platform;
+  firewallNoted?: { has(): boolean; mark(): void };
   handlers?: Record<string, (event: { sender: { send: (channel: string, ...args: unknown[]) => void; isDestroyed(): boolean } }, ...args: unknown[]) => unknown>;
 }
 
@@ -115,6 +117,8 @@ async function startHub(options: Options = {}) {
     handlerFor: (channel) => handlers[channel] as never,
     env: options.env ?? {},
     trustLoopback: options.trustLoopback,
+    platform: options.platform,
+    firewallNoted: options.firewallNoted,
     port: 0,
     listenAddresses: () => ['127.0.0.1'],
     heartbeatTimeoutMs: options.heartbeatTimeoutMs,
@@ -156,6 +160,21 @@ describe('RoomHub', () => {
     const off = await startHub({ env: { ROOM_HUB_ENABLED: '0' } });
     await off.hub.startPairing();
     expect(off.hub.status().running).toBe(false);
+  });
+
+  it('notes the Windows firewall question the first time the hub listens, once per PC', async () => {
+    const folder = mkdtempSync(path.join(tmpdir(), 'room-hub-firewall-'));
+    cleanups.push(() => rmSync(folder, { recursive: true, force: true }));
+    const marker = fileMarker(path.join(folder, 'noted'));
+    const first = await startHub({ platform: 'win32', firewallNoted: marker, env: { ROOM_HUB_ENABLED: '1' } });
+    expect(first.hub.status().firewallNote).toBe(FIREWALL_NOTE);
+    expect(marker.has()).toBe(true);
+    const later = await startHub({ platform: 'win32', firewallNoted: marker, env: { ROOM_HUB_ENABLED: '1' } });
+    expect(later.hub.status().firewallNote).toBeNull();
+    const linux = await startHub({ platform: 'linux', env: { ROOM_HUB_ENABLED: '1' } });
+    expect(linux.hub.status().firewallNote).toBeNull();
+    const idle = await startHub({ platform: 'win32' });
+    expect(idle.hub.status().firewallNote).toBeNull();
   });
 
   it('pairs with a code: makes a device and a place, once', async () => {

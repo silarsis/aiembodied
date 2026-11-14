@@ -1,6 +1,6 @@
 # Satellite mode
 
-Status: Built (Places steps 3, 4 and 6).
+Status: Built (Places steps 3, 4, 6 and 7).
 
 A satellite is a second PC that shows one room of bija's world. bija stays the only brain: the models, the memory and the keys stay there. The satellite draws the room and the avatars that are in it, plays their voices, and lets Kevin type to them.
 
@@ -8,7 +8,41 @@ A satellite is a second PC that shows one room of bija's world. bija stays the o
 
 - Set `AIEMBODIED_ROLE=satellite`, or put `{"role":"satellite"}` in `satellite.json` in the app's data folder. `AIEMBODIED_ROLE=full` forces the normal app.
 - `AIEMBODIED_USER_DATA=<folder>` moves the data folder, so two copies can run on one PC. The single-instance lock is kept per data folder.
+- `pnpm satellite` builds and starts a satellite for daily use (normal data folder, no local services). See "Set up a second desktop".
 - `pnpm dev:satellite` starts a satellite with its own home (`.dev-home-satellite`) and no local services. It can run beside `pnpm dev:run`.
+
+## Set up a second desktop
+
+Do this on the second PC (Windows). It runs no models.
+
+1. Install Tailscale from https://tailscale.com/download and sign in to the same tailnet as bija.
+2. Clone the repo, then in PowerShell from the repo folder: `.\scripts\install-windows.ps1 -Role satellite`. It installs Node.js, pnpm and git if they are missing, runs `pnpm install`, and writes `AIEMBODIED_ROLE=satellite` to `.env` if it is not set. It installs nothing else: no models, no Python services. It warns if Tailscale is missing or not logged in.
+3. On bija, open Settings > Places > "Add a desktop room". It shows a 6-digit code.
+4. On the second PC run `pnpm satellite`. It builds the app and starts it as a satellite, with the normal app data folder and no local services.
+5. Enter bija's Tailscale name, for example `ws://bija:8791`, the code, and a name for the room.
+6. Test the link: `tailscale ping bija`. Look for "via <LAN address>" (a direct connection). "via DERP(...)" means a relay: it works, but voices will lag more.
+7. Optional: Status panel > "Start when I sign in". It is off by default. On Windows it adds a per-user start-up entry (`HKCU\...\Run`, named "AI Embodied Assistant Satellite") that starts Electron on the built `app/main/dist/main.js` with `--satellite`, so run `pnpm satellite` once first and keep the repo where it is. Turn the checkbox off to remove the entry.
+
+`pnpm satellite` is for daily use. `pnpm dev:satellite` is for development: it has its own home (`.dev-home-satellite`).
+
+### Windows firewall on bija
+
+The first time the room hub listens on Windows, the log says so and the Places page shows a note: Windows may ask to allow Electron through the firewall. Allow private networks only, not public. The note comes once per PC (the marker is `room-hub-firewall-noted` in the data folder).
+
+### Suggested Tailscale ACL
+
+Let a satellite reach bija's room hub and nothing else. Tag the satellites (for example `tag:satellite`) and bija (`tag:bija`), then in the tailnet policy file:
+
+```json
+{
+  "tagOwners": { "tag:satellite": ["autogroup:admin"], "tag:bija": ["autogroup:admin"] },
+  "acls": [
+    { "action": "accept", "src": ["tag:satellite"], "dst": ["tag:bija:8791"] }
+  ]
+}
+```
+
+Your own PCs keep their usual access through your other rules. Replace 8791 if you set `ROOM_HUB_PORT`.
 
 ## First run
 

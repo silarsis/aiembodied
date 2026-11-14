@@ -9,7 +9,9 @@
  * 0.0.0.0), a token is checked on every connection (only its SHA-256 is stored), and a remote peer must be
  * the Tailscale node that paired, owned by the same login as this PC.
  */
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import os from 'node:os';
@@ -65,6 +67,29 @@ export interface RoomHubOptions {
   heartbeatTimeoutMs?: number;
   recheckMs?: number;
   logger?: Pick<Console, 'warn' | 'info' | 'debug'>;
+  /** Default `process.platform`. The firewall note is only for Windows. */
+  platform?: NodeJS.Platform;
+  /** Remembers that the firewall note was already shown on this PC, so it comes only the first time the hub listens. */
+  firewallNoted?: { has(): boolean; mark(): void };
+}
+
+/** Windows asks once whether Electron may use the network. For the hub the answer is Private only (never Public). */
+export const FIREWALL_NOTE =
+  'Windows may ask to allow Electron through the firewall the first time desktop rooms listen. Allow it on private networks only (not public). Tailscale traffic does not need more.';
+
+/** A marker file: `has()` is true once `mark()` ran (also in an earlier run of the app). */
+export function fileMarker(file: string): { has(): boolean; mark(): void } {
+  return {
+    has: () => existsSync(file),
+    mark: () => {
+      try {
+        mkdirSync(path.dirname(file), { recursive: true });
+        writeFileSync(file, new Date().toISOString());
+      } catch {
+        // Not being able to remember only means the note comes once more.
+      }
+    },
+  };
 }
 
 export interface RoomHubDeviceStatus {
@@ -83,6 +108,8 @@ export interface RoomHubStatus {
   port: number | null;
   /** Addresses the server listens on. */
   addresses: string[];
+  /** Set (on Windows) when the hub started listening for the first time on this PC; the Places page shows it. */
+  firewallNote?: string | null;
   pairing: { code: string; expiresAt: number; placeName: string | null } | null;
   devices: RoomHubDeviceStatus[];
 }
@@ -160,6 +187,7 @@ export class RoomHub {
   private offPlaces: (() => void) | null = null;
   private syncing: Promise<void> = Promise.resolve();
   private started = false;
+  private firewallNote: string | null = null;
 
   constructor(options: RoomHubOptions) {
     this.options = options;
@@ -250,6 +278,17 @@ export class RoomHub {
       this.servers.set(address, server);
     }
     if (this.servers.size === 0) this.boundPort = null;
+    else this.noteFirewall();
+  }
+
+  /** The first time the hub listens on Windows: say in the log, and on the Places page, which firewall answer to give. */
+  private noteFirewall(): void {
+    if (this.firewallNote !== null || (this.options.platform ?? process.platform) !== 'win32') return;
+    const noted = this.options.firewallNoted;
+    if (noted?.has()) return;
+    this.firewallNote = FIREWALL_NOTE;
+    this.options.logger?.info(FIREWALL_NOTE);
+    noted?.mark();
   }
 
   private async closeServers(addresses: string[]): Promise<void> {
@@ -285,6 +324,7 @@ export class RoomHub {
       running: this.servers.size > 0,
       port: this.port(),
       addresses: [...this.servers.keys()],
+      firewallNote: this.firewallNote,
       pairing: pairing ? { ...pairing, placeName: this.pairingName } : null,
       devices: this.options.registry.list().map((device) => ({
         id: device.id,

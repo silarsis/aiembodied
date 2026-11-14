@@ -246,11 +246,16 @@ export function PlacesPanel({
 
       <section aria-labelledby="places-add-title" className="toolsSettings__section">
         <h3 id="places-add-title">Add a desktop room</h3>
+        {status?.firewallNote ? (
+          <p className="kiosk__helper" data-testid="firewall-note">
+            {status.firewallNote}
+          </p>
+        ) : null}
         {!roomHub ? (
           <p className="kiosk__helper">Desktop rooms need a newer app build.</p>
         ) : showCode && pairing ? (
           <div className="placesPanel__pairing" data-testid="pairing-code">
-            <p className="kiosk__helper">On the other PC, start the app as a satellite (AIEMBODIED_ROLE=satellite) and enter this code and one of these addresses.</p>
+            <p className="kiosk__helper">On the other PC, install it with install-windows.ps1 -Role satellite, run pnpm satellite, and enter this code and one of these addresses.</p>
             <strong className="placesPanel__code" aria-label="Pairing code">
               {pairing.code}
             </strong>

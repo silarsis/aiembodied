@@ -848,6 +848,8 @@ const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     },
     pair: (input) => ipcRenderer.invoke('satellite:pair', input) as Promise<SatelliteStatus>,
     forget: () => ipcRenderer.invoke('satellite:forget') as Promise<SatelliteStatus>,
+    startAtLogin: () => ipcRenderer.invoke('satellite:start-at-login') as Promise<boolean>,
+    setStartAtLogin: (on) => ipcRenderer.invoke('satellite:start-at-login', on) as Promise<boolean>,
     reportTurn: async (timing) => {
       await ipcRenderer.invoke('satellite:turn-timing', timing);
     },
