@@ -31,8 +31,15 @@ export function CodingStatusLine({ api, active }: { api?: CodingBridge; active: 
   }, [api, active]);
   if (!api) return null;
   return (
-    <p className="kiosk__helper" data-testid="coding-status">
-      <b>Coding</b>: {describeCoding(status)}
-    </p>
+    <>
+      <p className="kiosk__helper" data-testid="coding-status">
+        <b>Coding</b>: {describeCoding(status)}
+      </p>
+      {status?.controller ? (
+        <p className="kiosk__helper" data-testid="controller-status">
+          {status.controller}
+        </p>
+      ) : null}
+    </>
   );
 }

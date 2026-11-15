@@ -33,6 +33,8 @@ export interface LocalLlmControlOptions {
    * second llama-server needs its own name. Default 'llm'.
    */
   fileName?: string;
+  /** True when the model controller (aicontroller) runs this server: nothing is started or stopped here. */
+  viaController?: () => boolean;
 }
 
 /** What a restart did, for the page to show. */
@@ -82,6 +84,7 @@ export class LocalLlmControl {
 
   /** True when the server was running and has stopped. */
   async stop(): Promise<boolean> {
+    if (this.options.viaController?.()) return false;
     const port = this.port();
     if (!port || !existsSync(this.script)) return false;
     const output = await this.run(
@@ -101,6 +104,9 @@ export class LocalLlmControl {
    * listening on the port is left alone, and the message says what to do instead.
    */
   async restart(): Promise<LocalLlmRestart> {
+    if (this.options.viaController?.()) {
+      return { restarted: false, message: 'The model controller runs the language model, so it was not restarted. Change the model in the controller’s config.' };
+    }
     const port = this.port();
     const model = await this.options.model?.().catch(() => null);
     const saved = await this.options.settings?.().catch(() => null);
@@ -131,6 +137,7 @@ export class LocalLlmControl {
 
   /** Starts the server in its own hidden console, the way pnpm dev:run does. Loading takes minutes. */
   async start(): Promise<void> {
+    if (this.options.viaController?.()) return;
     const port = this.port();
     if (!port) return;
     mkdirSync(this.options.logDirectory, { recursive: true });

@@ -111,6 +111,7 @@ import { AvatarCharacterModelService } from './avatar/generation/character-model
 import { LocalMotionClient } from './avatar/motion/local-motion-client.js';
 import { LocalMotionGenerationService } from './avatar/motion/local-motion-generation-service.js';
 import { ServerManager } from './server/server-manager.js';
+import { AicontrollerBridge, echoRouteOverride } from './aicontroller/bridge.js';
 import { LocalVoiceService } from './local-voice/local-voice-service.js';
 import {
   activeAgent,
@@ -290,6 +291,15 @@ let metricsCollector: PrometheusCollector | null = null;
 let autoLaunchManager: AutoLaunchManager | null = null;
 let developmentTray: Tray | null = null;
 let serverManager: ServerManager | null = null;
+/**
+ * The shared model controller. When it answers (AICONTROLLER_ENABLED, default auto) it runs Echo's
+ * language model and the coder: this app leases them instead of starting llama-server.
+ */
+const aicontroller = new AicontrollerBridge({
+  logger,
+  // A new lease URL (or none): rebuild Echo's engines.
+  onChange: () => (voiceConfigManager ? applyProviderSettings(voiceConfigManager) : undefined),
+});
 let avatarModelService: AvatarModelService | null = null;
 let avatarAnimationService: AvatarAnimationService | null = null;
 let avatarPoseService: AvatarPoseService | null = null;
@@ -1102,7 +1112,9 @@ function createVoiceService(avatarId: string): LocalVoiceService {
 async function applyProviderSettings(manager: ConfigManager): Promise<void> {
   const config = manager.getConfig();
   const { providers, models } = config;
-  const engines = buildVoiceEngines(models, (id) => manager.getServerKey(id), { logger, llmOverride: codingService?.chatOverride() });
+  // The coder model while a task has Echo's place, else Echo's model on the controller's lease URL.
+  const llmOverride = codingService?.chatOverride() ?? echoRouteOverride(models, aicontroller.echoUrl());
+  const engines = buildVoiceEngines(models, (id) => manager.getServerKey(id), { logger, llmOverride });
   voiceEngines = engines;
   voiceConfigManager = manager;
   if (voiceServices) {
@@ -1165,6 +1177,7 @@ function getLocalLlmTools(manager: ConfigManager): { library: LlmLibrary; contro
     logDirectory: path.join(app.getPath('userData'), 'logs'),
     model: () => library.selected(),
     settings: () => library.settings(),
+    viaController: () => aicontroller.inUse(),
   });
   localLlmTools = { library, control };
   return localLlmTools;
@@ -1256,7 +1269,10 @@ function getCodingService(manager: ConfigManager): CodingService {
         fileName: 'coder-llm',
         // The coder runs one job at a time, so it keeps one slot whatever Thinking is set to.
         slots: 1,
+        viaController: () => aicontroller.inUse(),
       }),
+    controller: aicontroller,
+    controllerLine: () => aicontroller.status().line,
     onOverrideChange: () => applyProviderSettings(manager),
     gpuMemory: gpuMemoryReader,
     notify: (text, options) => notifyAvatar(CODING_NUDGE_AVATAR_ID, text, options?.urgent === true),
@@ -2389,6 +2405,10 @@ function registerIpcHandlers(
         if (!sender.isDestroyed()) sender.send('coding:busy', { busy: false });
       }
     }
+    // The model controller may have taken Echo's lease back (a game, an eviction): lease it again, or fail the turn with the reason.
+    if (voiceConfigManager && routeTargets(voiceConfigManager.getConfig().models, 'llm')[0]?.server.id === BUILT_IN_SERVER_IDS.llm) {
+      await aicontroller.ensureEcho();
+    }
     if (!payload.preview && !payload.system && avatarId === DEFAULT_AVATAR_ID && payload.instructions?.trim()) {
       lastEchoInstructions.set(placeId, payload.instructions);
     }
@@ -2668,7 +2688,8 @@ function registerIpcHandlers(
       throw new Error('Server manager not initialized');
     }
 
-    // Stop all servers first
+    // Give the model controller its leases back, then stop the servers this app started.
+    await aicontroller.suspend().catch(() => undefined);
     try {
       await serverManager.hibernate();
     } catch (error: unknown) {
@@ -2945,7 +2966,10 @@ app.whenReady().then(async () => {
   serverManager = new ServerManager({
     logger,
     pidDirectories: [path.resolve(__dirname, '../../..', '.dev-home', 'logs'), path.join(app.getPath('userData'), 'logs')],
+    // The model controller owns the language-model servers it started: their pid files are skipped.
+    controllerInUse: () => aicontroller.inUse(),
   });
+  void aicontroller.start();
   logger.info('ServerManager initialized');
 
   // Register for system suspend/resume notifications
@@ -2953,6 +2977,7 @@ app.whenReady().then(async () => {
     // Windows: Use powerMonitor (cross-platform) with native fallback
     powerMonitor.on('suspend', async () => {
       logger.info('System suspend detected');
+      await aicontroller.suspend().catch(() => undefined);
       await serverManager?.suspend().catch((error) => {
         logger.warn('Failed to suspend servers', { message: error instanceof Error ? error.message : String(error) });
       });
@@ -2960,6 +2985,7 @@ app.whenReady().then(async () => {
 
     powerMonitor.on('resume', async () => {
       logger.info('System resume detected');
+      await aicontroller.resume().catch(() => undefined);
       await serverManager?.resume().catch((error) => {
         logger.warn('Failed to resume servers', { message: error instanceof Error ? error.message : String(error) });
       });
@@ -3554,6 +3580,11 @@ app.on('before-quit', async (event) => {
   satelliteDevices?.stop();
   for (const { inbox } of avatarPlumbing.values()) inbox.stop();
   void switchboardClient?.stop();
+
+  // Give the model controller its leases back.
+  await aicontroller.shutdown().catch((error) => {
+    logger.warn('Failed to release model controller leases during shutdown', { message: error instanceof Error ? error.message : String(error) });
+  });
 
   // Stop the local servers this app started, as hibernation does.
   if (serverManager) {

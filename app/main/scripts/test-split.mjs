@@ -62,6 +62,7 @@ runTests('tests/mcp/*.test.ts', 'MCP');
 runTests('tests/pose-*.test.ts', 'Pose Generation');
 runTests('tests/server-manager.test.ts', 'Server Manager');
 runTests('tests/coding-*.test.ts', 'Coding');
+runTests('tests/aicontroller*.test.ts', 'Model Controller');
 runTests('tests/rooms-*.test.ts', 'Rooms');
 runTests('tests/places/*.test.ts', 'Places');
 runTests('tests/presence-place.test.ts', 'Place Presence');

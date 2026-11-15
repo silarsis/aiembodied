@@ -23,6 +23,22 @@ describe('ServerManager', () => {
     expect(command).not.toContain(missing);
   });
 
+  it('leaves the language-model pid files alone when the model controller is in use', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'pids-'));
+    const powershell = vi.fn(async () => 'stopped:speech\r\n');
+    let controller = true;
+    const manager = new ServerManager({ logger, pidDirectories: [dir], platform: 'win32', powershell, controllerInUse: () => controller });
+    await manager.shutdown();
+    const [command] = powershell.mock.calls[0] as unknown as [string];
+    expect(command).toContain("@('llm', 'coder-llm') -contains $file.BaseName");
+    // Other servers (speech, motion, containers) are still stopped.
+    expect(command).toContain('taskkill.exe');
+    controller = false;
+    await manager.shutdown();
+    expect((powershell.mock.calls[1] as unknown as [string])[0]).not.toContain("'coder-llm'");
+    expect(buildStopCommand([dir])).not.toContain('-contains $file.BaseName');
+  });
+
   it('runs one stop at a time when quit and suspend overlap', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'pids-'));
     let finish: (value: string) => void = () => undefined;

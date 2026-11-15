@@ -13,6 +13,12 @@ const SERVICE_CONTAINERS: Record<string, string> = {
   searxng: 'aiembodied-searxng',
 };
 
+/**
+ * The pid files of the language-model servers (Echo's on :1234, the coder's on :1236). With the
+ * model controller (aicontroller) in use it owns those processes, so they are never stopped here.
+ */
+export const CONTROLLER_MANAGED_IDS: readonly string[] = ['llm', 'coder-llm'];
+
 export interface ServerManagerOptions {
   logger: Logger;
   /**
@@ -25,6 +31,8 @@ export interface ServerManagerOptions {
   platform?: string;
   /** Runs a PowerShell command and returns what it printed. */
   powershell?: (command: string, timeoutMs: number) => Promise<string>;
+  /** True when the model controller runs the language models: their pid files are then left alone. */
+  controllerInUse?: () => boolean;
   /** Longest wait for the stop, in ms. */
   timeoutMs?: number;
 }
@@ -39,7 +47,7 @@ function psQuote(value: string): string {
  * A pid is only acted on if that process started before its pid file was written, so a pid
  * Windows has since given to another program is never killed. Each pid file is removed.
  */
-export function buildStopCommand(directories: string[]): string {
+export function buildStopCommand(directories: string[], skipIds: readonly string[] = []): string {
   const containers = Object.entries(SERVICE_CONTAINERS)
     .map(([id, name]) => `${psQuote(id)} = ${psQuote(name)}`)
     .join('; ');
@@ -49,6 +57,7 @@ export function buildStopCommand(directories: string[]): string {
     `foreach ($dir in @(${directories.map(psQuote).join(', ')})) {`,
     '  if (-not (Test-Path -LiteralPath $dir)) { continue }',
     '  foreach ($file in Get-ChildItem -LiteralPath $dir -Filter *.pid -File) {',
+    ...(skipIds.length > 0 ? [`    if (@(${skipIds.map(psQuote).join(', ')}) -contains $file.BaseName) { continue }`] : []),
     '    $id = 0; [void][int]::TryParse(((Get-Content -LiteralPath $file.FullName -TotalCount 1) -as [string]).Trim(), [ref]$id);',
     '    $process = if ($id -gt 0) { Get-Process -Id $id } else { $null };',
     '    if ($process -and $process.StartTime -le $file.LastWriteTime.AddSeconds(5)) {',
@@ -96,6 +105,8 @@ export class ServerManager {
     if (directories.length === 0) {
       return [];
     }
+    const skipIds = this.options.controllerInUse?.() ? CONTROLLER_MANAGED_IDS : [];
+    if (skipIds.length > 0) this.logger.debug('ServerManager: the model controller runs the language models; leaving their servers alone');
     const startedAt = Date.now();
     const timeoutMs = this.options.timeoutMs ?? 15_000;
     const run =
@@ -106,7 +117,7 @@ export class ServerManager {
           timeout,
         }).then((result) => result.stdout));
     try {
-      const output = await run(buildStopCommand(directories), timeoutMs);
+      const output = await run(buildStopCommand(directories, skipIds), timeoutMs);
       const stopped = output
         .split(/\r?\n/)
         .map((line) => line.trim())
