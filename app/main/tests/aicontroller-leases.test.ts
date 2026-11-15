@@ -411,6 +411,17 @@ describe('aicontroller leases for the other GPU servers', () => {
       await b.shutdown();
     });
 
+    it('asks again when the controller restarted and forgot Echo’s lease', async () => {
+      const b = bridge({ watchMs: 15, echoRetryMs: 30 });
+      await b.start();
+      await b.ensureEcho();
+      expect(fake.active('echo-llm')).toHaveLength(1);
+      fake.leases.clear(); // the controller restarted: heartbeats now get 404
+      await until(() => fake.active('echo-llm').length === 1, 4000);
+      expect(fake.active('echo-llm')).toHaveLength(1);
+      await b.shutdown();
+    });
+
     it('does not take the GPU back from a game that revoked Echo, nor from a ComfyUI job still running', async () => {
       const b = bridge({ watchMs: 15, echoRetryMs: 30 });
       await b.start();

@@ -372,6 +372,8 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       this.echoLease = null;
       this.paused = `Local LLM paused by the model controller (${reason})`;
       this.logger.warn(this.paused);
+      // A lease the controller forgot (it restarted) is asked for again; a revoke (e.g. a game) waits for the next turn.
+      if (lease.lost && !lease.revoked) this.echoOwed = true;
       void Promise.resolve(this.onChange?.()).catch(() => undefined);
     }
     const motion = this.motionLease;
