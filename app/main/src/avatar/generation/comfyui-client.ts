@@ -9,8 +9,19 @@
 
 export type ComfyGraph = Record<string, { class_type: string; inputs: Record<string, unknown> }>;
 
+/** A shared lease on the model controller's comfyui backend (see aicontroller/bridge.ts). */
+export interface ComfyLeaseSource {
+  /** Holds the lease for one request; `done()` says the request is over. The lease itself is kept for a quiet spell. */
+  acquire(): Promise<{ url: string | null; done(): void }>;
+}
+
 export interface ComfyUIClientOptions {
   baseUrl: string;
+  /**
+   * With the model controller in use, ComfyUI is leased from it: each request holds the lease (so
+   * jobs in a row share one) and talks to the lease's URL, which replaces `baseUrl`.
+   */
+  lease?: ComfyLeaseSource;
   fetchFn?: typeof fetch;
   pollIntervalMs?: number;
   sleep?: (ms: number) => Promise<void>;
@@ -44,20 +55,39 @@ interface HistoryEntry {
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 
 export class ComfyUIClient {
-  readonly baseUrl: string;
+  /** The address in use: the lease's URL while ComfyUI is leased from the model controller. */
+  baseUrl: string;
+  private readonly lease?: ComfyLeaseSource;
   private readonly fetchFn: typeof fetch;
   private readonly pollIntervalMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(options: ComfyUIClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
+    this.lease = options.lease;
     this.fetchFn = options.fetchFn ?? fetch;
     this.pollIntervalMs = options.pollIntervalMs ?? 1000;
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
 
+  /** Runs one request with the controller's lease held, on the lease's URL. Without a lease source it just runs. */
+  private async leased<T>(request: () => Promise<T>): Promise<T> {
+    if (!this.lease) return request();
+    const handle = await this.lease.acquire();
+    if (handle.url) this.baseUrl = handle.url.replace(/\/+$/, '');
+    try {
+      return await request();
+    } finally {
+      handle.done();
+    }
+  }
+
   /** True when the server answers /system_stats. */
-  async isAvailable(): Promise<boolean> {
+  isAvailable(): Promise<boolean> {
+    return this.leased(() => this.probe()).catch(() => false);
+  }
+
+  private async probe(): Promise<boolean> {
     try {
       const response = await this.fetchFn(`${this.baseUrl}/system_stats`, {
         signal: AbortSignal.timeout(5000),
@@ -69,7 +99,11 @@ export class ComfyUIClient {
   }
 
   /** Upload a PNG into ComfyUI's input folder; returns the name LoadImage nodes should use. */
-  async uploadImage(fileName: string, png: Buffer, subfolder = 'aiembodied'): Promise<string> {
+  uploadImage(fileName: string, png: Buffer, subfolder = 'aiembodied'): Promise<string> {
+    return this.leased(() => this.upload(fileName, png, subfolder));
+  }
+
+  private async upload(fileName: string, png: Buffer, subfolder: string): Promise<string> {
     const form = new FormData();
     form.append('image', new Blob([new Uint8Array(png)], { type: 'image/png' }), fileName);
     form.append('subfolder', subfolder);
@@ -91,7 +125,11 @@ export class ComfyUIClient {
   }
 
   /** Queue `graph`, wait for it, and return the bytes of the first image it saved. */
-  async run(graph: ComfyGraph, options: ComfyRunOptions = {}): Promise<Buffer> {
+  run(graph: ComfyGraph, options: ComfyRunOptions = {}): Promise<Buffer> {
+    return this.leased(() => this.runGraph(graph, options));
+  }
+
+  private async runGraph(graph: ComfyGraph, options: ComfyRunOptions): Promise<Buffer> {
     if (options.signal?.aborted) throw new Error('ComfyUI job cancelled.');
     const promptId = await this.queue(graph);
     const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS);

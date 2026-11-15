@@ -3,9 +3,15 @@
  * for that stage: the first one that answers, or (with "spread") whichever answers with the
  * shortest queue. This PC's ComfyUI is started on demand, as before; other machines must already
  * be running.
+ *
+ * With the model controller (aicontroller) in use, this PC's server is the controller's comfyui
+ * backend instead: each request holds a shared lease and talks to the lease's URL, and the app
+ * neither starts nor kills ComfyUI. Other machines' servers are never touched. A controller without a
+ * comfyui backend leaves everything as above.
  */
 import { routeTargets, type ModelRouting, type ModelServer } from '../../config/model-routing.js';
 import { comfyQueueLength } from '../../config/model-server-probe.js';
+import type { SharedLeases } from '../../aicontroller/bridge.js';
 import { ComfyUIClient } from './comfyui-client.js';
 import { ComfyUIRuntime } from './comfyui-runtime.js';
 
@@ -13,6 +19,8 @@ export type ComfyStage = 'image' | 'mesh';
 
 interface Entry {
   url: string;
+  /** Leased from the model controller. */
+  leased: boolean;
   client: ComfyUIClient;
   runtime?: ComfyUIRuntime;
 }
@@ -24,10 +32,14 @@ export interface ComfyUIPoolOptions {
   /** Builds the on-demand launcher for this PC's server; tests replace it. */
   createRuntime?: (client: ComfyUIClient) => ComfyUIRuntime;
   logger?: Pick<Console, 'warn' | 'info'>;
+  /** The model controller, when this app has one. */
+  leases?: SharedLeases;
 }
 
 export class ComfyUIPool {
   private readonly entries = new Map<string, Entry>();
+  /** Servers whose ComfyUI the controller runs (it has a comfyui backend), found when they were last made ready. */
+  private readonly leasedIds = new Set<string>();
 
   constructor(private readonly options: ComfyUIPoolOptions) {}
 
@@ -56,6 +68,8 @@ export class ComfyUIPool {
     if (spread) {
       const loads = await Promise.all(
         servers.map(async (server) => {
+          // Probing would lease (start) the controller's ComfyUI; it is chosen below, with the others.
+          if (this.viaController(server)) return null;
           const entry = this.entry(server);
           if (!(await entry.client.isAvailable())) return null;
           return { server, entry, queue: await this.queue(entry) };
@@ -88,7 +102,22 @@ export class ComfyUIPool {
     );
   }
 
+  /** This PC's own server, with the model controller in use: the controller may run it. */
+  private viaController(server: ModelServer): boolean {
+    return server.managed && this.options.leases?.inUse() === true;
+  }
+
   private async ready(server: ModelServer): Promise<void> {
+    if (this.viaController(server)) {
+      // Leasing starts ComfyUI (the controller may need to make room first) and says where it is.
+      const handle = await this.options.leases?.acquire('comfyui');
+      if (handle) {
+        handle.done(); // the client holds it again for each request
+        this.leasedIds.add(server.id);
+        return;
+      }
+    }
+    this.leasedIds.delete(server.id);
     const entry = this.entry(server);
     if (entry.runtime) {
       await entry.runtime.ensureReady();
@@ -108,13 +137,29 @@ export class ComfyUIPool {
   }
 
   private entry(server: ModelServer): Entry {
+    const leased = this.leasedIds.has(server.id);
     const existing = this.entries.get(server.id);
-    if (existing && existing.url === server.url) return existing;
-    const client = new ComfyUIClient({ baseUrl: server.url, fetchFn: this.options.fetchFn });
-    const runtime = server.managed
+    if (existing && existing.url === server.url && existing.leased === leased) return existing;
+    const leases = this.options.leases;
+    const client = new ComfyUIClient({
+      baseUrl: server.url,
+      fetchFn: this.options.fetchFn,
+      ...(leased && leases
+        ? {
+            lease: {
+              acquire: async () => {
+                const handle = await leases.acquire('comfyui');
+                if (!handle) throw new Error('The model controller no longer has a comfyui backend.');
+                return handle;
+              },
+            },
+          }
+        : {}),
+    });
+    const runtime = server.managed && !leased
       ? (this.options.createRuntime ?? ((c) => new ComfyUIRuntime({ client: c, logDirectory: this.options.logDirectory })))(client)
       : undefined;
-    const entry = { url: server.url, client, runtime };
+    const entry = { url: server.url, leased, client, runtime };
     this.entries.set(server.id, entry);
     return entry;
   }

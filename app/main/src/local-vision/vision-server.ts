@@ -10,11 +10,16 @@
  * Callers that start at the same time share one start. A server that already answers is used as is
  * and left running; only one this class started is stopped. The pid file `vision.pid` in the logs
  * folder lets ServerManager stop the process when the app quits.
+ *
+ * With the model controller (aicontroller) in use, the vision backend is leased from it for each
+ * use instead (the controller keeps the lease for a quiet spell, so uses in a row share one) and
+ * the app starts and stops nothing. A controller without a vision backend leaves all of the above.
  */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { isLocalUrl, routeTargets, type ModelRouting, type ModelServer, type UseId } from '../config/model-routing.js';
+import type { SharedHandle, SharedLeases } from '../aicontroller/bridge.js';
 import type { VisionPick } from './vision-model.js';
 
 export const MISSING_VISION_MODEL = 'Download the vision model in Models and servers → Describe the avatar first.';
@@ -37,6 +42,8 @@ export interface VisionServerOptions {
   fetchFn?: typeof fetch;
   /** Starts a PowerShell command that outlives the app (default: spawn powershell.exe). */
   launch?: (command: string) => void;
+  /** The model controller, when this app has one. */
+  leases?: SharedLeases;
   /** Stops the llama-server on the port (default: none; main.ts passes LocalLlmControl.stop). */
   stop: () => Promise<unknown>;
   setTimer?: (callback: () => void, ms: number) => unknown;
@@ -55,6 +62,8 @@ export class VisionServer {
   private idleTimer: unknown = null;
   /** True when this class launched the running server, so it is the one to stop. */
   private owned = false;
+  /** One entry per job between ensureRunning and release that holds a controller lease. */
+  private readonly handles: SharedHandle[] = [];
 
   constructor(private readonly options: VisionServerOptions) {}
 
@@ -90,6 +99,18 @@ export class VisionServer {
     this.clearIdle();
     this.jobs += 1;
     try {
+      const leases = this.options.leases;
+      if (leases?.inUse()) {
+        const handle = await leases.acquire('vision');
+        if (handle) {
+          this.handles.push(handle);
+          const configured = this.options.baseUrl();
+          if (handle.url && configured && new URL(handle.url).origin !== new URL(configured).origin) {
+            this.options.logger?.warn('The controller’s vision backend is not at the address in Models and servers; set that address to the controller’s.', { leased: handle.url, configured });
+          }
+          return;
+        }
+      }
       await (this.starting ??= this.startOnce().finally(() => {
         this.starting = null;
       }));
@@ -102,6 +123,7 @@ export class VisionServer {
 
   /** A job is done; with none left, the server stops after ten quiet minutes. */
   release(): void {
+    this.handles.pop()?.done();
     if (this.jobs > 0) this.jobs -= 1;
     if (this.jobs === 0) this.armIdle();
   }

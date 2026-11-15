@@ -35,6 +35,12 @@ export interface LocalLlmControlOptions {
   fileName?: string;
   /** True when the model controller (aicontroller) runs this server: nothing is started or stopped here. */
   viaController?: () => boolean;
+  /**
+   * With the controller in use, restart() asks it to run the picked model instead (the controller
+   * loads it and Echo leases it again). Resolves with what happened, in words; throws when the
+   * controller doesn't have the model. Absent: the controller's own config says which model runs.
+   */
+  useModelViaController?: (model: { path: string; alias: string } | null) => Promise<string>;
 }
 
 /** What a restart did, for the page to show. */
@@ -105,7 +111,15 @@ export class LocalLlmControl {
    */
   async restart(): Promise<LocalLlmRestart> {
     if (this.options.viaController?.()) {
-      return { restarted: false, message: 'The model controller runs the language model, so it was not restarted. Change the model in the controller’s config.' };
+      if (!this.options.useModelViaController) {
+        return { restarted: false, message: 'The model controller runs this server, so the app did not restart it. Which model it runs is set in the controller’s config.' };
+      }
+      const picked = await this.options.model?.().catch(() => null);
+      try {
+        return { restarted: true, message: await this.options.useModelViaController(picked ? { path: picked.path, alias: picked.alias } : null) };
+      } catch (error) {
+        return { restarted: false, message: error instanceof Error ? error.message : String(error) };
+      }
     }
     const port = this.port();
     const model = await this.options.model?.().catch(() => null);
