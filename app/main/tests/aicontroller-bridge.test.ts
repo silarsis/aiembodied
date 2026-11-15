@@ -141,4 +141,63 @@ describe('AicontrollerBridge', () => {
     expect(fake.active('echo-llm')).toHaveLength(1);
     await b.shutdown();
   });
+
+  describe('a lease queued at the controller', () => {
+    const until = async (cond: () => boolean) => {
+      for (let i = 0; i < 100 && !cond(); i++) await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(cond()).toBe(true);
+    };
+
+    it('is dropped when the app suspends or quits, and does not delay start()', async () => {
+      fake.hold.add('motion');
+      const b = bridge();
+      await b.start();
+      b.setMotionWanted(true);
+      await until(() => fake.live('motion').length === 1);
+      expect(fake.live('motion')[0].state).toBe('queued');
+      await b.ensureMotion(); // returns at once instead of waiting for the queue
+      await b.ensureEcho();
+      expect(fake.active('echo-llm')).toHaveLength(1);
+      await b.shutdown();
+      await until(() => fake.live('motion').length === 0);
+      expect(fake.live('echo-llm')).toHaveLength(0);
+    });
+
+    it('is asked for again after resume', async () => {
+      fake.hold.add('motion');
+      const b = bridge();
+      await b.start();
+      b.setMotionWanted(true);
+      await until(() => fake.live('motion').length === 1);
+      await b.suspend();
+      await until(() => fake.live('motion').length === 0);
+      fake.hold.delete('motion');
+      await b.resume();
+      await until(() => fake.active('motion').length === 1);
+      await b.shutdown();
+      expect(fake.live('motion')).toHaveLength(0);
+    });
+
+    it('is deleted when the controller answers that it is still queued', async () => {
+      fake.stillQueued.add('motion');
+      const b = bridge();
+      await b.start();
+      b.setMotionWanted(true);
+      await until(() => fake.requests.some((r) => r.startsWith('DELETE /v1/leases/')));
+      expect(fake.live('motion')).toHaveLength(0);
+      await b.shutdown();
+    });
+
+    it('says motion waits for memory once it has taken a while', async () => {
+      fake.hold.add('motion');
+      const b = bridge();
+      await b.start();
+      b.setMotionWanted(true);
+      await until(() => fake.live('motion').length === 1);
+      vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_000);
+      expect(b.status().line).toContain('motion waiting for memory on the controller');
+      vi.restoreAllMocks();
+      await b.shutdown();
+    });
+  });
 });

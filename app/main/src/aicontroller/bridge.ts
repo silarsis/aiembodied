@@ -153,6 +153,9 @@ interface SharedState {
   timer: ReturnType<typeof setTimeout> | null;
 }
 
+/** A motion lease not ready after this long is described as waiting for memory. */
+const MOTION_WAITING_MS = 10_000;
+
 const normalPath = (value: string) => value.replace(/\\/g, '/').toLowerCase();
 
 export class AicontrollerBridge implements CoderLeases, SharedLeases {
@@ -188,6 +191,10 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
   private motionWanted = false;
   private motionLease: Lease | null = null;
   private motionPending: Promise<void> | null = null;
+  /** When the motion lease request began (ms), to say it is waiting when it takes long. */
+  private motionAskedAt = 0;
+  /** Aborts lease requests still waiting at the controller (queued for memory) when the app sleeps or quits. */
+  private abort = new AbortController();
   private motionPaused: string | null = null;
   private motionFailure: string | null = null;
   /** Backends the controller answered 404 for: the app runs its own server for them. */
@@ -358,7 +365,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
   private async acquireEcho(waitS: number): Promise<void> {
     try {
       const model = await this.echoModelForLease();
-      const lease = await this.controller.lease(ECHO_BACKEND, { waitS, ...(model ? { model } : {}) });
+      const lease = await this.controller.lease(ECHO_BACKEND, { waitS, signal: this.abort.signal, ...(model ? { model } : {}) });
       if (!this.want || this.coderBusy) {
         await lease.release(); // the app went to sleep, or a coding task took the GPU, while it loaded
         return;
@@ -369,6 +376,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       this.logger.info('Leased echo-llm.', { lease: lease.id, url: lease.url, model: lease.model ?? undefined });
       await this.onChange?.();
     } catch (error) {
+      if (this.abort.signal.aborted) return; // the app went to sleep or is quitting; nothing is left to report
       const missing = isNotFound(error) && this.echoPick ? new ControllerModelMissing(this.echoPick.alias) : null;
       this.failure = messageOf(missing ?? error);
       throw missing ?? error;
@@ -446,7 +454,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       await this.releaseEcho();
       await this.echoPending?.catch(() => undefined);
       await this.releaseEcho(); // a lease that was loading when we asked
-      this.coderLease = await this.controller.lease(CODER_BACKEND, { waitS: this.leaseWaitS });
+      this.coderLease = await this.controller.lease(CODER_BACKEND, { waitS: this.leaseWaitS, signal: this.abort.signal });
       this.logger.info('Leased coder-llm.', { lease: this.coderLease.id, url: this.coderLease.url });
       return { url: this.coderLease.url };
     } catch (error) {
@@ -488,6 +496,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
   async leaseMotion(): Promise<void> {
     if (!this.used || !this.want || !this.motionWanted || !this.managesBackend(MOTION_BACKEND)) return;
     if (this.motionLease && !this.motionLease.revoked && !this.motionLease.lost) return;
+    this.motionAskedAt = Date.now();
     this.motionPending ??= this.acquireMotion().finally(() => {
       this.motionPending = null;
     });
@@ -496,7 +505,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
 
   private async acquireMotion(): Promise<void> {
     try {
-      const lease = await this.controller.lease(MOTION_BACKEND, { waitS: this.leaseWaitS });
+      const lease = await this.controller.lease(MOTION_BACKEND, { waitS: this.leaseWaitS, signal: this.abort.signal });
       if (!this.want || !this.motionWanted) {
         await lease.release();
         return;
@@ -507,6 +516,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       this.logger.info('Leased motion.', { lease: lease.id, url: lease.url });
       await this.onChange?.();
     } catch (error) {
+      if (this.abort.signal.aborted) return; // aborted while queued at the controller
       if (isNotFound(error)) {
         this.noteUnknown(MOTION_BACKEND);
         return;
@@ -521,6 +531,8 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     await this.starting;
     this.check();
     if (this.motionLease || !this.used || !this.want || !this.motionWanted || !this.managesBackend(MOTION_BACKEND)) return;
+    // A request already waiting (queued at the controller) is not waited for again: callers poll, and the status says it waits.
+    if (this.motionPending) return;
     try {
       await this.leaseMotion();
     } catch (error) {
@@ -590,7 +602,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       await this.releaseEcho();
       await this.echoPending?.catch(() => undefined);
       await this.releaseEcho();
-      state.lease = await this.controller.lease(backend, { waitS: this.leaseWaitS });
+      state.lease = await this.controller.lease(backend, { waitS: this.leaseWaitS, signal: this.abort.signal });
       this.logger.info(`Leased ${backend}.`, { lease: state.lease.id, url: state.lease.url });
     } catch (error) {
       this.echoYield.delete(backend);
@@ -639,6 +651,9 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
   /** Suspend and hibernate: give every lease back so the GPU is free while the PC sleeps. */
   async suspend(): Promise<void> {
     this.want = false;
+    // A lease still queued at the controller (e.g. for memory) is not known by id here: aborting the request
+    // makes the client give it back. One that arrives after this point is released on arrival.
+    this.abort.abort();
     await this.releaseCoder().catch(() => undefined);
     await this.releaseMotion().catch(() => undefined);
     for (const [backend, state] of this.shared) await this.releaseShared(backend, state).catch(() => undefined);
@@ -649,6 +664,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
   /** After resume: look for the controller again and lease Echo's model (and motion) in the background. */
   async resume(): Promise<void> {
     if (this.mode === 'off') return;
+    if (this.abort.signal.aborted) this.abort = new AbortController();
     await this.detect();
     this.want = true;
     if (this.used) {
@@ -716,6 +732,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       notes.push(this.echoYield.size > 0 ? `Echo’s model is unloaded while ${[...this.echoYield].join(' and ')} uses the GPU.` : 'Leasing echo-llm (the model may be loading).');
     }
     if (this.motionPaused) notes.push(`${this.motionPaused}.`);
+    else if (this.motionWanted && !this.motionLease && this.motionPending && Date.now() - this.motionAskedAt > MOTION_WAITING_MS) notes.push('motion waiting for memory on the controller.');
     else if (this.motionFailure && !this.motionLease && this.motionWanted) notes.push(`motion lease failed: ${this.motionFailure}.`);
     if (own.length > 0) notes.push(`${own.join(', ')} not on the controller: the app runs its own.`);
     const summary = `Model controller: in use, ${leased.length > 0 ? `${leased.join(', ')} leased` : 'nothing leased'}${idle.length > 0 ? `; ${idle.join(', ')} idle` : ''}.`;

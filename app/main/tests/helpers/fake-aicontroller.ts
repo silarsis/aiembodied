@@ -6,7 +6,7 @@ export interface FakeLease {
   backend: string;
   client: string;
   model: string | null;
-  state: 'ready' | 'revoked' | 'released';
+  state: 'ready' | 'queued' | 'revoked' | 'released';
   url: string;
   error: string | null;
   ttl_s: number;
@@ -41,6 +41,14 @@ export class FakeAicontroller {
   readonly refuse = new Set<string>();
   /** Backends the controller doesn't have: lease requests answer 404 and GET /v1/status leaves them out. */
   readonly unknown = new Set<string>();
+  /**
+   * Backends whose lease request is held queued (as when the controller lacks memory): the POST stays
+   * open, and the lease is cancelled if the client hangs up. `grant(backend)` lets the waiting ones through.
+   */
+  readonly hold = new Set<string>();
+  /** Backends whose lease request answers 200 with state `queued` at once, as when wait_s ran out. */
+  readonly stillQueued = new Set<string>();
+  private readonly granters: (() => void)[] = [];
   /** Set false to make GET /v1/status fail, as a controller whose backend list can't be read. */
   statusWorks = true;
   /** The models GET /v1/models lists. A lease naming a model not in here answers 404. */
@@ -65,8 +73,19 @@ export class FakeAicontroller {
   }
 
   async stop(): Promise<void> {
+    this.server?.closeAllConnections();
     await new Promise<void>((resolve) => (this.server ? this.server.close(() => resolve()) : resolve()));
     this.server = null;
+  }
+
+  /** Lets the held lease requests (see `hold`) through to ready. */
+  grant(): void {
+    for (const go of this.granters.splice(0)) go();
+  }
+
+  /** Leases on a backend that still exist at the controller: queued or ready. */
+  live(backend: string): FakeLease[] {
+    return [...this.leases.values()].filter((lease) => lease.backend === backend && (lease.state === 'ready' || lease.state === 'queued'));
   }
 
   /** Active (not released, not revoked) leases on a backend. */
@@ -112,13 +131,30 @@ export class FakeAicontroller {
         ttl_s: this.ttlS,
       };
       this.leases.set(lease.id, lease);
+      if (this.stillQueued.has(body.backend)) {
+        lease.state = 'queued';
+        return send(200, lease);
+      }
+      if (this.hold.has(body.backend)) {
+        lease.state = 'queued';
+        await new Promise<void>((resolve) => {
+          const done = () => resolve();
+          this.granters.push(done);
+          req.socket.once('close', () => {
+            if (lease.state === 'queued') lease.state = 'released'; // the waiter hung up: the controller drops it
+            resolve();
+          });
+        });
+        if (lease.state !== 'queued') return;
+        lease.state = 'ready';
+      }
       return send(200, lease);
     }
     const match = /^\/v1\/leases\/([^/]+)(\/heartbeat)?$/.exec(path);
     const lease = match ? this.leases.get(match[1]) : undefined;
     if (!match || !lease) return send(404, { error: 'unknown lease' });
     if (method === 'DELETE') {
-      if (lease.state === 'ready') lease.state = 'released';
+      if (lease.state === 'ready' || lease.state === 'queued') lease.state = 'released';
       return send(200, lease);
     }
     if (match[2]) return lease.state === 'ready' ? send(200, lease) : send(410, { error: lease.error ?? 'lease is over' });
