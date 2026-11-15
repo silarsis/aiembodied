@@ -2051,13 +2051,16 @@ function registerIpcHandlers(
   handleIpc('rooms:idle-settings:get', () => requireBackgrounds().getIdleSettings());
   handleIpc('rooms:idle-settings:set', (_event, settings: unknown) => requireBackgrounds().setIdleSettings(settings));
   // The "Idle thoughts" job: what the avatar does next on its own. Null on any failure; the renderer then picks at random.
-  handleIpc('rooms:idle-pick', (_event, context: unknown) =>
-    pickIdleActions(context as { system: string; user: string }, {
-      routing: manager.getConfig().models,
+  handleIpc('rooms:idle-pick', async (_event, context: unknown) => {
+    const routing = manager.getConfig().models;
+    // Echo's model is still loading under the model controller: no request, the renderer picks at random.
+    if (aicontroller.echoWaiting() && routeTargets(routing, 'llm')[0]?.server.id === BUILT_IN_SERVER_IDS.llm) return null;
+    return pickIdleActions(context as { system: string; user: string }, {
+      routing,
       keyFor: (id) => manager.getServerKey(id),
       logger,
-    }),
-  );
+    });
+  });
   const requireAvatarGeneration = (): AvatarGenerationService => {
     if (!avatarGenerationService) {
       throw new Error('Avatar generation is unavailable.');

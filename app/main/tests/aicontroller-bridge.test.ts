@@ -29,8 +29,10 @@ describe('AicontrollerBridge', () => {
 
   it('uses the controller when it answers, and holds an echo-llm lease for client aiembodied', async () => {
     const b = bridge();
+    expect(b.echoWaiting()).toBe(false); // not started: nothing to wait for
     await b.start();
     await b.ensureEcho();
+    expect(b.echoWaiting()).toBe(false);
     expect(b.inUse()).toBe(true);
     expect(fake.active('echo-llm')).toHaveLength(1);
     expect(fake.active('echo-llm')[0]?.client).toBe('aiembodied');

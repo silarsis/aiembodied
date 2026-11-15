@@ -153,6 +153,11 @@ export class AicontrollerBridge implements CoderLeases {
     }
   }
 
+  /** True while the controller runs Echo's model but Echo has no lease yet (the model is still loading). */
+  echoWaiting(): boolean {
+    return this.used && this.want && !this.coderBusy && !this.echoLease;
+  }
+
   /** The base URL of Echo's lease, or null without one. */
   echoUrl(): string | null {
     return this.echoLease?.url ?? null;
