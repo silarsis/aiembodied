@@ -251,6 +251,26 @@ describe('local services', () => {
     expect(launcher).not.toHaveBeenCalled();
   });
 
+  it('does not start Echo’s llama-server when the model controller answers, and still starts the others', withTempRepo(async (repoRoot) => {
+    const launcher = fakeLauncher();
+    const info = vi.fn();
+    const fetchFn = vi.fn(async (url: string) => {
+      if (url === 'http://127.0.0.1:8200/health') return new Response(JSON.stringify({ ok: true, name: 'bija' }), { status: 200 });
+      throw new Error('ECONNREFUSED');
+    });
+    const env = { STT_ENGINE: 'whisper', DEV_START_MOTION: '0', WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', SWITCHBOARD_AUTOSTART: '0', LAYA_AUTOSTART: '0' };
+    const results = await ensureLocalServices(repoRoot, env, { fetchFn, spawnSyncFn: launcher, platform: 'win32', log: { info, warn: () => undefined } });
+    expect(results.find((r: { id: string }) => r.id === 'llm')).toMatchObject({ status: 'skipped', reason: 'using aicontroller' });
+    expect(info).toHaveBeenCalledWith(expect.stringContaining('using aicontroller'));
+    expect(fetchFn).not.toHaveBeenCalledWith(expect.stringContaining(':1234'), expect.anything());
+
+    // Not answering (auto), or switched off: the llama-server is handled as before.
+    const down = await ensureLocalServices(repoRoot, env, { fetchFn: fakeFetch(['http://127.0.0.1:1234']), spawnSyncFn: launcher, platform: 'win32', log: quiet });
+    expect(down.find((r: { id: string }) => r.id === 'llm')).toMatchObject({ status: 'running' });
+    const off = await ensureLocalServices(repoRoot, { ...env, AICONTROLLER_ENABLED: '0' }, { fetchFn, spawnSyncFn: launcher, platform: 'win32', log: quiet });
+    expect(off.find((r: { id: string }) => r.id === 'llm')?.reason).not.toBe('using aicontroller');
+  }));
+
   it('does not start the speech service without KOKORO_DIR, or ASR when whisper is chosen', async () => {
     const launcher = fakeLauncher();
     const results = await ensureLocalServices(

@@ -21,6 +21,13 @@
  * Windows only, and only when the Coding model is the built-in coder server (the app can start
  * and stop that one).
  *
+ * With the model controller in use (aicontroller/bridge.ts) the app stops and starts nothing: it
+ * gives Echo's lease on echo-llm up (a leased backend is never evicted), leases coder-llm (the
+ * controller evicts Echo's model if the two don't fit), and Echo chats on the coder's URL while the
+ * lease is held, as in swap mode. On the idle swap back it releases the coder lease and leases
+ * echo-llm again. The memory mode, the GGUF and the platform don't matter then: the controller
+ * owns the models.
+ *
  * Steps run one after another (a promise chain), so a quick change of mind never starts and stops
  * a model at the same time.
  */
@@ -35,6 +42,7 @@ import {
 } from '../config/model-routing.js';
 import { CODER_CONTEXT_LENGTH } from './types.js';
 import type { LocalLlmControl } from '../local-voice/local-llm-control.js';
+import type { CoderLeases } from '../aicontroller/bridge.js';
 
 export type CoderMemoryMode = 'auto' | 'side-by-side' | 'swap';
 
@@ -59,6 +67,8 @@ export interface CoderModelSwapOptions {
   echo: Pick<LocalLlmControl, 'stop' | 'start'>;
   /** Builds the control for the coder's llama-server (pid file coder-llm.pid). */
   coder: (model: { path: string; alias: string; contextLength: number }, baseUrl: string) => Pick<LocalLlmControl, 'stop' | 'start'>;
+  /** The model controller; when it is in use, leases replace starting and stopping llama-server. */
+  controller?: CoderLeases;
   /** True when something answers GET <url>/models. */
   isUp: (modelsUrl: string) => Promise<boolean>;
   /** Called whenever the chat override changes, so Echo's engines are rebuilt. */
@@ -298,11 +308,17 @@ export class CoderModelSwap {
 
   /** The coder server, when the Coding model is the built-in one on this PC and the app can run it. */
   private coderServer(): { server: ModelServer; alias: string } | null {
-    if ((this.options.platform ?? process.platform) !== 'win32') return null;
+    if (!this.controlled() && (this.options.platform ?? process.platform) !== 'win32') return null;
     const routing = this.options.routing();
     const target = routeTargets(routing, 'coding')[0];
     if (!target || target.server.id !== BUILT_IN_SERVER_IDS.coderLlm || !isLocalUrl(target.server.url)) return null;
     return { server: target.server, alias: target.model?.trim() || DEFAULT_CODER_MODEL };
+  }
+
+  /** The controller, when it runs the models. */
+  private controlled(): CoderLeases | null {
+    const controller = this.options.controller;
+    return controller?.inUse() ? controller : null;
   }
 
   private set(phase: SwapPhase, message: string): void {
@@ -321,6 +337,8 @@ export class CoderModelSwap {
       this.state = { phase: 'idle', message: 'The coding model is not run by this app, so nothing is swapped.' };
       return;
     }
+    const controller = this.controlled();
+    if (controller) return this.swapInViaController(controller, coder);
     const gguf = this.options.configuredGguf()?.trim() || this.options.detectGguf();
     if (!gguf) {
       const message = 'No Qwen3-Coder-Next GGUF found. Pick the file on the Coding page. Echo’s model was not stopped.';
@@ -392,8 +410,46 @@ export class CoderModelSwap {
     await this.hold(false);
   }
 
+  /** The controller version of swapIn: lease coder-llm (it evicts Echo's model if needed) and chat on its URL. */
+  private async swapInViaController(controller: CoderLeases, coder: { server: ModelServer; alias: string }): Promise<void> {
+    const echoTarget = routeTargets(this.options.routing(), 'llm')[0];
+    const echoId = echoTarget?.server.id === BUILT_IN_SERVER_IDS.llm ? echoTarget.server.id : null;
+    this.loadStartedAt = this.now();
+    this.loadMode = 'swap';
+    this.loadedServer = coder.server;
+    this.set('swapping-in', 'Asking the model controller for the coder model. It makes room by stopping Echo’s model. This takes a few minutes.');
+    // Echo's lease is given up first (a leased backend is never evicted) and taken again on the way back.
+    this.stoppedEcho = echoId !== null;
+    let url: string | null;
+    try {
+      ({ url } = await controller.leaseCoder());
+    } catch (error) {
+      this.options.logger.warn('The model controller did not lease the coder model.', { message: error instanceof Error ? error.message : String(error) });
+      this.retryAfter = this.now() + 10 * 60_000;
+      await this.restoreEcho('The model controller could not lease the coder model. Echo’s model is back; trying again in 10 minutes.');
+      return;
+    }
+    if (!this.needed) this.idleSince ??= this.now();
+    this.downChecks = 0;
+    this.needQuiet = false;
+    const server = url ? { ...coder.server, url: url.replace(/\/+$/, '') } : coder.server;
+    this.loadedServer = server;
+    await this.setOverride({ server, model: coder.alias, exclude: echoId ? [echoId] : [] });
+    this.set('coder-loaded', 'The coder model is loaded. Echo’s chat uses it until the tasks are done.');
+    await this.hold(false);
+  }
+
   /** While the coder model is loaded and needed: restart it if it stopped (the PC slept, or it crashed). */
   private async watch(): Promise<void> {
+    const controller = this.controlled();
+    if (controller) {
+      if (!controller.coderLost()) return;
+      this.options.logger.warn('The model controller took the coder model back; leasing it again.');
+      if (this.override) await this.setOverride(null);
+      await controller.releaseCoder().catch(() => undefined);
+      this.state = { phase: 'idle', message: 'The model controller took the coder model back.' };
+      return this.swapIn();
+    }
     const server = this.loadedServer;
     if (!server) return;
     if (await this.options.isUp(`${server.url}/models`).catch(() => false)) {
@@ -423,6 +479,8 @@ export class CoderModelSwap {
       this.loadMode === 'swap' ? 'Stopping the coder model and starting Echo’s model again.' : 'Stopping the coder model to free memory.',
     );
     if (this.override) await this.setOverride(null);
+    const controller = this.controlled();
+    if (controller) return this.restoreEchoViaController(controller, message);
     if (this.startedCoder) await this.coderControl?.stop().catch(() => false);
     this.startedCoder = false;
     if (this.stoppedEcho) await this.options.echo.start().catch((error) => {
@@ -435,6 +493,26 @@ export class CoderModelSwap {
     if (startedEcho && !(await this.waitForEchoModel())) {
       this.set('idle', 'Echo’s model didn’t answer yet; it may still be loading.');
       return;
+    }
+    this.set('idle', message);
+  }
+
+  /** The controller version of restoreEcho: release the coder lease and lease echo-llm again (ready when it resolves). */
+  private async restoreEchoViaController(controller: CoderLeases, message: string): Promise<void> {
+    await controller.releaseCoder().catch(() => undefined);
+    const leaseEcho = this.stoppedEcho;
+    this.stoppedEcho = false;
+    this.loadedServer = null;
+    if (leaseEcho) {
+      this.set('swapping-back', 'Asking the model controller for Echo’s model again…');
+      try {
+        await controller.leaseEcho();
+      } catch (error) {
+        const why = error instanceof Error ? error.message : String(error);
+        this.options.logger.warn('Echo’s model could not be leased again.', { message: why });
+        this.set('idle', `Echo’s model could not be leased again: ${why}`);
+        return;
+      }
     }
     this.set('idle', message);
   }

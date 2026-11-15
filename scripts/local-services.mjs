@@ -338,6 +338,29 @@ export function buildStartCommand({ script, args, cwd, logPath, errPath, pidPath
 }
 
 /**
+ * Whether the shared model controller (aicontroller) runs the language models. AICONTROLLER_URL
+ * (default http://127.0.0.1:8200); AICONTROLLER_ENABLED: 1 requires it, 0 never uses it, anything
+ * else (auto) uses it when GET /health answers {ok: true}. Mirrors app/main/src/aicontroller/bridge.ts.
+ */
+export async function controllerInUse(env, fetchFn = fetch, timeoutMs = 1500) {
+  const mode = String(env.AICONTROLLER_ENABLED ?? '').trim().toLowerCase();
+  if (['0', 'false', 'off', 'no'].includes(mode)) return false;
+  if (['1', 'true', 'on', 'yes', 'required'].includes(mode)) return true;
+  const url = trimSlash(env.AICONTROLLER_URL?.trim() || 'http://127.0.0.1:8200');
+  try {
+    const response = await fetchFn(`${url}/health`, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!response.ok) return false;
+    const body = await response.json();
+    return Boolean(body && typeof body === 'object' && body.ok === true);
+  } catch {
+    return false;
+  }
+}
+
+/** The services whose models the controller runs when it is in use (Echo's llama-server; the coder's is started by the app). */
+const CONTROLLER_SERVICE_IDS = new Set(['llm']);
+
+/**
  * Check each service and start the ones that are down. Returns one line per service:
  * running | started | restarted (it answered but its model had failed to load) | skipped | failed.
  */
@@ -350,7 +373,13 @@ export async function ensureLocalServices(repoRoot, env, {
   log = console,
 } = {}) {
   const results = [];
+  const controller = await controllerInUse(env, fetchFn, probeTimeoutMs);
   for (const service of describeLocalServices(repoRoot, env)) {
+    if (controller && service.enabled && CONTROLLER_SERVICE_IDS.has(service.id)) {
+      results.push({ id: service.id, status: 'skipped', reason: 'using aicontroller' });
+      log.info?.(`[info] using aicontroller: not starting ${service.label}.`);
+      continue;
+    }
     if (!service.enabled) {
       results.push({ id: service.id, status: 'skipped', reason: 'not needed with this configuration' });
       continue;

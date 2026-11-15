@@ -39,6 +39,15 @@ describe('LocalLlmControl', () => {
     expect(command[0]).toContain("ProcessName -eq 'llama-server'");
   });
 
+  it('starts, stops and restarts nothing when the model controller runs the server', async () => {
+    const { llm, powershell, launch } = await control({ viaController: () => true });
+    await expect(llm.stop()).resolves.toBe(false);
+    await llm.start();
+    await expect(llm.restart()).resolves.toMatchObject({ restarted: false });
+    expect(powershell).not.toHaveBeenCalled();
+    expect(launch).not.toHaveBeenCalled();
+  });
+
   it('reports false when nothing was stopped', async () => {
     const { llm } = await control({ powershell: async () => '' });
     await expect(llm.stop()).resolves.toBe(false);

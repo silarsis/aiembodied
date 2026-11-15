@@ -166,6 +166,12 @@ describe('Coding status line', () => {
     await waitFor(() => expect(screen.getByTestId('coding-status').textContent).toBe('Coding: Runner down. The coder model is loaded.'));
   });
 
+  it('shows the model controller line when there is one', async () => {
+    const api = { status: vi.fn(async () => status({ controller: 'Model controller: in use, echo-llm leased.' })) } as unknown as CodingBridge;
+    render(<CodingStatusLine api={api} active />);
+    await waitFor(() => expect(screen.getByTestId('controller-status').textContent).toBe('Model controller: in use, echo-llm leased.'));
+  });
+
   it('asks nothing while the panel is closed', () => {
     const api = { status: vi.fn() } as unknown as CodingBridge;
     render(<CodingStatusLine api={api} active={false} />);

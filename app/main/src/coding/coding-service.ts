@@ -13,6 +13,7 @@ import type { LocalLlmControl } from '../local-voice/local-llm-control.js';
 import type { CodingConfig } from './config.js';
 import { findCoderGguf } from './gguf-finder.js';
 import { CoderModelSwap, type SwapState } from './model-swap.js';
+import type { CoderLeases } from '../aicontroller/bridge.js';
 import { CodingRunnerClient, type RunnerCapabilities, type RunnerEvent } from './runner-client.js';
 import { buildCodingSyncPayload, CodingSync } from './sync.js';
 
@@ -27,6 +28,8 @@ export interface CodingStatus {
   detectedGguf: string | null;
   /** Why the runner refused the workspaces, if it did. */
   workspaceError: string | null;
+  /** The model controller's state, in words (whether it is in use and the lease state); absent without one. */
+  controller?: string | null;
 }
 
 /** What the Coding page shows. */
@@ -41,6 +44,10 @@ export interface CodingServiceOptions {
   settings: () => { models: ModelRouting; coding: CodingConfig };
   keyFor: (serverId: string) => string | undefined;
   echoControl: Pick<LocalLlmControl, 'stop' | 'start'>;
+  /** The model controller; with it in use, coding tasks lease coder-llm instead of starting llama-server. */
+  controller?: CoderLeases;
+  /** One line about the model controller for the status panel, or null without one. */
+  controllerLine?: () => string | null;
   coderControl: (model: { path: string; alias: string; contextLength: number }, baseUrl: string) => Pick<LocalLlmControl, 'stop' | 'start'>;
   /** Rebuild Echo's engines: the chat override changed. */
   onOverrideChange: () => void | Promise<void>;
@@ -74,6 +81,7 @@ export class CodingService {
       configuredGguf: () => options.settings().coding.coderGguf,
       detectGguf: () => this.detectGguf(),
       echo: options.echoControl,
+      controller: options.controller,
       coder: options.coderControl,
       isUp: (url) => this.answers(url),
       onOverrideChange: options.onOverrideChange,
@@ -165,6 +173,7 @@ export class CodingService {
       swap: this.swap.getState(),
       detectedGguf: this.detectGguf(),
       workspaceError: this.sync?.workspaceError ?? null,
+      controller: this.options.controllerLine?.() ?? null,
     };
   }
 
