@@ -128,6 +128,8 @@ export interface AicontrollerBridgeOptions {
   watchMs?: number;
   /** How long ComfyUI's and the vision model's leases are kept after their last use. Default 60 s. */
   sharedIdleMs?: number;
+  /** How long to wait before check() tries again to lease echo-llm that a per-use lease made it give back. Default 10 s. */
+  echoRetryMs?: number;
   /**
    * The Thinking model picked in the app, asked for when Echo's lease is made. `undefined`: not
    * known yet (asked again next time); `null`: none picked, so the controller's default model.
@@ -168,6 +170,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
   private readonly leaseWaitS: number;
   private readonly watchMs: number;
   private readonly sharedIdleMs: number;
+  private readonly echoRetryMs: number;
   private timer: ReturnType<typeof setInterval> | null = null;
   private used = false;
   private starting: Promise<void> | null = null;
@@ -186,6 +189,13 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
   private echoPickKnown = false;
   /** Backends leased per use hold Echo's lease back (the controller never evicts a leased backend) while they work. */
   private readonly echoYield = new Set<string>();
+  /**
+   * Echo's lease was given back for a per-use lease and has not been leased again yet. check() keeps
+   * asking until it is (or Echo is no longer wanted), so one failed hand-back (the controller busy
+   * or briefly unreachable) doesn't leave echo-llm loaded with nobody holding it until the next turn.
+   */
+  private echoOwed = false;
+  private echoRetryAt = 0;
   private readonly shared = new Map<SharedBackend, SharedState>();
   /** Motion is enabled in Models and servers and is this PC's own. */
   private motionWanted = false;
@@ -209,6 +219,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     this.onChange = options.onChange;
     this.leaseWaitS = options.leaseWaitS ?? 900;
     this.sharedIdleMs = options.sharedIdleMs ?? SHARED_IDLE_MS;
+    this.echoRetryMs = options.echoRetryMs ?? 10_000;
     this.mode = parseControllerMode(env.AICONTROLLER_ENABLED);
     this.url = (env.AICONTROLLER_URL?.trim() || DEFAULT_CONTROLLER_URL).replace(/\/+$/, '');
     // Never autostart: the controller is the tray's business.
@@ -324,6 +335,33 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       const lease = state.lease;
       if (lease && state.users === 0 && (lease.revoked || lease.lost)) void this.releaseShared(backend, state);
     }
+    this.retryEchoOwed();
+  }
+
+  /** Why Echo's lease can't be asked for now, or null when it can. */
+  private echoBlocker(): string | null {
+    if (!this.used) return 'the controller is not in use';
+    if (!this.want) return 'the app is asleep or quitting';
+    if (this.coderBusy) return 'a coding task holds the GPU';
+    if (this.echoYield.size > 0) return `${[...this.echoYield].join(' and ')} holds the GPU`;
+    return null;
+  }
+
+  /** Echo's lease was given back and nothing has leased it again: ask again, at most every echoRetryMs. */
+  private retryEchoOwed(): void {
+    if (!this.echoOwed) return;
+    if (this.echoLease && !this.echoLease.revoked && !this.echoLease.lost) {
+      this.echoOwed = false;
+      return;
+    }
+    if (this.echoPending || this.echoBlocker() !== null) return;
+    for (const state of this.shared.values()) if (state.lease || state.pending || state.users > 0) return;
+    if (Date.now() < this.echoRetryAt) return;
+    this.echoRetryAt = Date.now() + this.echoRetryMs;
+    // A health probe the controller missed makes the client refuse leases for a minute; look again now.
+    if (this.controller.available === false) this.controller.available = null;
+    this.logger.info('Leasing echo-llm again: it was given back for another backend and not leased since.');
+    void this.leaseEcho().catch((error) => this.logger.warn('Could not lease echo-llm again.', { message: messageOf(error) }));
   }
 
   /** Before a turn: makes sure Echo holds a lease again after a revoke. Throws the reason if it can't. */
@@ -351,6 +389,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
 
   async leaseEcho(): Promise<void> {
     if (!this.used || !this.want || this.coderBusy || this.echoYield.size > 0) return;
+    this.echoRetryAt = Date.now() + this.echoRetryMs;
     return this.ensureEchoLease(this.leaseWaitS);
   }
 
@@ -371,6 +410,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
         return;
       }
       this.echoLease = lease;
+      this.echoOwed = false;
       this.paused = null;
       this.failure = null;
       this.logger.info('Leased echo-llm.', { lease: lease.id, url: lease.url, model: lease.model ?? undefined });
@@ -598,6 +638,8 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
   private async openShared(backend: SharedBackend, state: SharedState): Promise<void> {
     // The controller never evicts a leased backend, so Echo's lease goes back while this one works.
     this.echoYield.add(backend);
+    // Echo had (or was getting) a lease and not a revoke's pause: it is owed back once nothing else holds the GPU.
+    if (this.used && this.want && (this.echoLease || this.echoPending || !this.paused)) this.echoOwed = true;
     try {
       await this.releaseEcho();
       await this.echoPending?.catch(() => undefined);
@@ -644,13 +686,19 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
 
   /** Nothing else needs the GPU: lease Echo's model again, in the background. */
   private backToEcho(): void {
-    if (this.echoYield.size > 0 || !this.used || !this.want) return;
+    const blocker = this.echoBlocker();
+    if (blocker) {
+      this.logger.info('Not leasing echo-llm again yet.', { reason: blocker });
+      return;
+    }
+    this.echoRetryAt = Date.now() + this.echoRetryMs;
     void this.leaseEcho().catch((error) => this.logger.warn('Could not lease echo-llm again.', { message: messageOf(error) }));
   }
 
   /** Suspend and hibernate: give every lease back so the GPU is free while the PC sleeps. */
   async suspend(): Promise<void> {
     this.want = false;
+    this.echoOwed = false;
     // A lease still queued at the controller (e.g. for memory) is not known by id here: aborting the request
     // makes the client give it back. One that arrives after this point is released on arrival.
     this.abort.abort();

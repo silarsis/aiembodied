@@ -364,6 +364,69 @@ describe('aicontroller leases for the other GPU servers', () => {
     });
   });
 
+  describe('giving Echo its lease back after a per-use lease', () => {
+    const until = async (condition: () => boolean, ms = 3000) => {
+      const end = Date.now() + ms;
+      while (!condition() && Date.now() < end) await new Promise((resolve) => setTimeout(resolve, 10));
+    };
+
+    it('asks again when the first hand-back fails, without waiting for a turn', async () => {
+      const b = bridge({ watchMs: 15, echoRetryMs: 30 });
+      await b.start();
+      await b.ensureEcho();
+      const handle = await b.acquire('comfyui');
+      expect(fake.active('echo-llm')).toHaveLength(0);
+      // The controller refuses echo-llm at the moment ComfyUI lets go (it is busy, or the GPU is wanted).
+      fake.refuse.add('echo-llm');
+      handle?.done();
+      await until(() => logger.warn.mock.calls.some(([message]) => String(message).includes('Could not lease echo-llm again')));
+      expect(fake.active('echo-llm')).toHaveLength(0);
+      fake.refuse.delete('echo-llm');
+      await until(() => fake.active('echo-llm').length === 1, 4000);
+      expect(fake.active('echo-llm')).toHaveLength(1);
+      await b.shutdown();
+    });
+
+    it('asks again when the controller did not answer its health check at the hand-back', async () => {
+      // A busy controller (ComfyUI and a mesh model loading) can miss the client's 2 s health probe. The
+      // client then refuses every lease for a minute without sending anything, so no POST is seen.
+      let healthDown = false;
+      const fetchFn = ((input: string | URL | Request, init?: RequestInit) => {
+        if (healthDown && String(input).endsWith('/health')) return Promise.reject(new Error('timed out'));
+        return fetch(input, init);
+      }) as typeof fetch;
+      const b = bridge({ watchMs: 15, echoRetryMs: 30, fetchFn });
+      await b.start();
+      await b.ensureEcho();
+      const handle = await b.acquire('comfyui');
+      healthDown = true;
+      handle?.done();
+      await until(() => logger.warn.mock.calls.some(([message]) => String(message).includes('Could not lease echo-llm again')));
+      const posts = fake.leaseRequests.length;
+      healthDown = false;
+      // The client would refuse for its own minute; the bridge makes it look again.
+      await until(() => fake.active('echo-llm').length === 1, 4000);
+      expect(fake.leaseRequests.length).toBeGreaterThanOrEqual(posts);
+      expect(fake.active('echo-llm')).toHaveLength(1);
+      await b.shutdown();
+    });
+
+    it('does not take the GPU back from a game that revoked Echo, nor from a ComfyUI job still running', async () => {
+      const b = bridge({ watchMs: 15, echoRetryMs: 30 });
+      await b.start();
+      await b.ensureEcho();
+      fake.revokeAll('game');
+      await until(() => b.status().echo === 'paused');
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(fake.active('echo-llm')).toHaveLength(0);
+      const handle = await b.acquire('comfyui');
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(fake.leaseRequests.filter((request) => request.backend === 'echo-llm')).toHaveLength(1);
+      handle?.done();
+      await b.shutdown();
+    });
+  });
+
   it('Echo’s turn says why its model is unloaded while ComfyUI works', async () => {
     const b = bridge();
     await b.start();
