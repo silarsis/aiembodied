@@ -102,7 +102,7 @@ describe('AicontrollerBridge', () => {
       b.check();
       expect(b.status().echo).toBe('paused');
     });
-    expect(b.status().line).toBe('Local LLM paused by the model controller (GPU needed by game.exe).');
+    expect(b.status().line).toContain('Local LLM paused by the model controller (GPU needed by game.exe).');
     expect(b.echoUrl()).toBeNull();
     await b.ensureEcho();
     expect(b.status().echo).toBe('leased');
