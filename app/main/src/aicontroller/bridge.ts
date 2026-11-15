@@ -18,8 +18,45 @@
  * uses it. This app never starts the controller: on bija it runs from the tray.
  */
 import path from 'node:path';
-import { Controller, ControllerError, type Lease } from './client.js';
+import { Controller, ControllerError, type DownloadOptions, type DownloadSource, type Lease } from './client.js';
 import { BUILT_IN_SERVER_IDS, routeTargets, type ModelRouting, type RouteOverride } from '../config/model-routing.js';
+
+/** A model file on one machine, as GET /v1/models?scope=all lists it. */
+export interface ControllerModelEntry {
+  kind: string;
+  /** ComfyUI kinds (checkpoints, loras…) are listed as kind `comfyui` with a subfolder. */
+  subfolder: string | null;
+  fileName: string;
+  sizeBytes: number | null;
+  /** The machine's name. */
+  host: string;
+  /** installed, loaded, offline, busy or ask-first. */
+  state: string;
+}
+
+/** A download the controller runs (POST /v1/models/download, GET /v1/downloads/{id}). */
+export interface ControllerDownloadJob {
+  id: string;
+  /** queued, downloading, verifying, done, failed or cancelled. */
+  state: string;
+  bytesDone: number;
+  bytesTotal: number | null;
+  error: string | null;
+  host: string | null;
+  fileName: string | null;
+}
+
+function toDownloadJob(job: Record<string, unknown>): ControllerDownloadJob {
+  return {
+    id: String(job.id ?? ''),
+    state: typeof job.state === 'string' ? job.state : 'queued',
+    bytesDone: typeof job.bytes_done === 'number' ? job.bytes_done : 0,
+    bytesTotal: typeof job.bytes_total === 'number' ? job.bytes_total : null,
+    error: typeof job.error === 'string' ? job.error : null,
+    host: typeof job.host === 'string' ? job.host : null,
+    fileName: typeof job.file_name === 'string' ? job.file_name : null,
+  };
+}
 
 export type ControllerMode = 'auto' | 'required' | 'off';
 
@@ -68,6 +105,8 @@ export interface ControllerStatus {
 /** A per-use lease in use. `done()` says the use is over (safe to call twice); the lease is kept for a while for the next one. */
 export interface SharedHandle {
   url: string | null;
+  /** The machine that runs it, when the controller routed the lease away from this PC. */
+  host?: string | null;
   done(): void;
 }
 
@@ -79,7 +118,12 @@ export interface SharedLeases {
    * backend (logged once): the caller then runs its own server. Rejects with the reason when the
    * lease can't be had (the GPU is needed by a game, the controller is required but down).
    */
-  acquire(backend: SharedBackend): Promise<SharedHandle | null>;
+  acquire(backend: SharedBackend, options?: SharedAcquireOptions): Promise<SharedHandle | null>;
+}
+
+export interface SharedAcquireOptions {
+  /** Model file names the job loads: the controller may route the lease to a machine that has them. */
+  needs?: string[];
 }
 
 /** The Thinking model picked for Echo: a GGUF file the controller must know. */
@@ -148,6 +192,10 @@ function isNotFound(error: unknown): boolean {
 
 /** A backend leased per use. */
 interface SharedState {
+  backend: SharedBackend;
+  needs: string[];
+  /** Echo's lease was given back for this one (it runs on this PC). */
+  yielding: boolean;
   lease: Lease | null;
   pending: Promise<void> | null;
   /** Uses between acquire() and done(). */
@@ -188,7 +236,10 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
   private echoModelId: string | null = null;
   private echoPickKnown = false;
   /** Backends leased per use hold Echo's lease back (the controller never evicts a leased backend) while they work. */
+  /** Keys of the per-use leases that run on this PC and so hold the GPU Echo's model would use. */
   private readonly echoYield = new Set<string>();
+  /** This controller's own machine name (GET /health). */
+  private localName: string | null = null;
   /**
    * Echo's lease was given back for a per-use lease and has not been leased again yet. check() keeps
    * asking until it is (or Echo is no longer wanted), so one failed hand-back (the controller busy
@@ -196,7 +247,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
    */
   private echoOwed = false;
   private echoRetryAt = 0;
-  private readonly shared = new Map<SharedBackend, SharedState>();
+  private readonly shared = new Map<string, SharedState>();
   /** Motion is enabled in Models and servers and is this PC's own. */
   private motionWanted = false;
   private motionLease: Lease | null = null;
@@ -252,7 +303,8 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       return;
     }
     try {
-      await this.controller.health();
+      const health = await this.controller.health();
+      this.localName = health?.name ?? null;
       this.used = true;
       await this.readBackends();
     } catch (error) {
@@ -331,11 +383,16 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       void Promise.resolve(this.onChange?.()).catch(() => undefined);
     }
     // A per-use lease the controller took back while nothing used it is simply let go.
-    for (const [backend, state] of this.shared) {
+    for (const state of this.shared.values()) {
       const lease = state.lease;
-      if (lease && state.users === 0 && (lease.revoked || lease.lost)) void this.releaseShared(backend, state);
+      if (lease && state.users === 0 && (lease.revoked || lease.lost)) void this.releaseShared(state);
     }
     this.retryEchoOwed();
+  }
+
+  /** The backends whose leases hold this PC's GPU, for messages. */
+  private yieldNames(): string {
+    return [...new Set([...this.echoYield].map((key) => key.split('|')[0]))].join(' and ');
   }
 
   /** Why Echo's lease can't be asked for now, or null when it can. */
@@ -343,7 +400,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     if (!this.used) return 'the controller is not in use';
     if (!this.want) return 'the app is asleep or quitting';
     if (this.coderBusy) return 'a coding task holds the GPU';
-    if (this.echoYield.size > 0) return `${[...this.echoYield].join(' and ')} holds the GPU`;
+    if (this.echoYield.size > 0) return `${this.yieldNames()} holds the GPU`;
     return null;
   }
 
@@ -375,7 +432,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       try {
         await this.ensureEchoLease(3);
       } catch {
-        throw new Error(`Echo's model is unloaded while ${[...this.echoYield].join(' and ')} uses the GPU. Try again when it has finished (about a minute after the last job).`);
+        throw new Error(`Echo's model is unloaded while ${this.yieldNames()} uses the GPU. Try again when it has finished (about a minute after the last job).`);
       }
       return;
     }
@@ -593,25 +650,28 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
 
   // ComfyUI and the vision model: leased per use, kept for a quiet spell so jobs in a row share one.
 
-  async acquire(backend: SharedBackend): Promise<SharedHandle | null> {
+  async acquire(backend: SharedBackend, options: SharedAcquireOptions = {}): Promise<SharedHandle | null> {
     await this.starting;
     if (!this.used || !this.managesBackend(backend)) return null;
-    let state = this.shared.get(backend);
+    // One lease per set of needs: a job that routes to another machine must not reuse this PC's lease, nor the reverse.
+    const needs = [...new Set((options.needs ?? []).filter(Boolean))].sort();
+    const key = needs.length ? `${backend}|${needs.join('|')}` : backend;
+    let state = this.shared.get(key);
     if (!state) {
-      state = { lease: null, pending: null, users: 0, timer: null };
-      this.shared.set(backend, state);
+      state = { backend, needs, yielding: false, lease: null, pending: null, users: 0, timer: null };
+      this.shared.set(key, state);
     }
     const held = state;
     this.clearSharedTimer(held);
     held.users += 1; // counted before waiting, so the quiet-spell timer can't release a lease being asked for
     const finish = () => {
       held.users -= 1;
-      if (held.users === 0) this.armShared(backend, held);
+      if (held.users === 0) this.armShared(key, held);
     };
     try {
       if (held.lease && (held.lease.revoked || held.lease.lost)) held.lease = null;
       if (!held.lease) {
-        held.pending ??= this.openShared(backend, held).finally(() => {
+        held.pending ??= this.openShared(key, held).finally(() => {
           held.pending = null;
         });
         await held.pending;
@@ -627,6 +687,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     let over = false;
     return {
       url: held.lease.url,
+      host: this.remoteHost(held.lease),
       done: () => {
         if (over) return;
         over = true;
@@ -635,19 +696,111 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     };
   }
 
-  private async openShared(backend: SharedBackend, state: SharedState): Promise<void> {
-    // The controller never evicts a leased backend, so Echo's lease goes back while this one works.
-    this.echoYield.add(backend);
+  /** Every model on every machine the controller knows (GET /v1/models?scope=all); empty when the controller isn't in use or can't be asked. */
+  async listAllModels(): Promise<ControllerModelEntry[]> {
+    await this.starting;
+    if (!this.used) return [];
+    const models = await this.controller.models({ scope: 'all' });
+    return models.flatMap((entry): ControllerModelEntry[] => {
+      if (typeof entry.file_name !== 'string' || !entry.file_name) return [];
+      return [
+        {
+          kind: typeof entry.kind === 'string' ? entry.kind : '',
+          subfolder: typeof entry.subfolder === 'string' ? entry.subfolder : null,
+          fileName: entry.file_name,
+          sizeBytes: typeof entry.size_bytes === 'number' ? entry.size_bytes : null,
+          host: typeof entry.host === 'string' && entry.host ? entry.host : (this.localName ?? 'this PC'),
+          state: typeof entry.state === 'string' ? entry.state : 'installed',
+        },
+      ];
+    });
+  }
+
+  /** This controller's machine name and its peers (the other machines a download can go to). */
+  async hostNames(): Promise<{ local: string | null; hosts: string[] }> {
+    await this.starting;
+    if (!this.used) return { local: null, hosts: [] };
+    const status = (await this.controller.status().catch(() => ({}))) as { name?: string; peers?: (string | { name?: string })[] };
+    const local = status.name ?? this.localName;
+    const peers = (status.peers ?? []).flatMap((peer) => {
+      const name = typeof peer === 'string' ? peer : peer?.name;
+      return typeof name === 'string' && name ? [name] : [];
+    });
+    return { local: local ?? null, hosts: [...new Set(peers)].filter((name) => name !== local) };
+  }
+
+  /** Starts a download on a machine (or "auto") through the controller; resolves with its job. */
+  async startDownload(source: DownloadSource, options: DownloadOptions): Promise<ControllerDownloadJob> {
+    await this.starting;
+    if (!this.used) throw new Error('The model controller is not in use.');
+    return toDownloadJob(await this.controller.download(source, options));
+  }
+
+  async cancelDownload(id: string): Promise<void> {
+    await this.controller.request('DELETE', `/v1/downloads/${encodeURIComponent(id)}`);
+  }
+
+  async downloadJob(id: string): Promise<ControllerDownloadJob> {
+    return toDownloadJob(await this.controller.downloadStatus(id));
+  }
+
+  /** The machine a lease runs on when that is not this PC, else null. */
+  private remoteHost(lease: Lease): string | null {
+    const host = lease.data.host;
+    if (!host) return null;
+    if (lease.id.startsWith(`${host}:`)) return host;
+    return this.localName && host !== this.localName ? host : null;
+  }
+
+  /** Whether the controller will probably send a job with these needs to another machine (one that is up and has the files). */
+  private async routesAway(needs: string[]): Promise<boolean> {
+    if (!needs.length) return false;
+    try {
+      const wanted = needs.map((name) => path.posix.basename(normalPath(name)));
+      const byHost = new Map<string, Set<string>>();
+      for (const entry of await this.controller.models({ scope: 'all' })) {
+        const host = typeof entry.host === 'string' ? entry.host : null;
+        const file = typeof entry.file_name === 'string' ? path.posix.basename(normalPath(entry.file_name)) : null;
+        if (!host || !file || host === this.localName || entry.state === 'offline' || entry.state === 'busy') continue;
+        byHost.set(host, (byHost.get(host) ?? new Set()).add(file));
+      }
+      return [...byHost.values()].some((files) => wanted.every((name) => files.has(name)));
+    } catch {
+      return false;
+    }
+  }
+
+  /** The controller never evicts a leased backend, so Echo's lease goes back while a job on this PC's GPU works. */
+  private async yieldEcho(key: string, state: SharedState): Promise<void> {
+    state.yielding = true;
+    this.echoYield.add(key);
     // Echo had (or was getting) a lease and not a revoke's pause: it is owed back once nothing else holds the GPU.
     if (this.used && this.want && (this.echoLease || this.echoPending || !this.paused)) this.echoOwed = true;
+    await this.releaseEcho();
+    await this.echoPending?.catch(() => undefined);
+    await this.releaseEcho();
+  }
+
+  private async openShared(key: string, state: SharedState): Promise<void> {
+    const { backend, needs } = state;
+    // A job the controller will send to another machine doesn't need this PC's GPU, so Echo keeps it.
+    const away = await this.routesAway(needs);
     try {
-      await this.releaseEcho();
-      await this.echoPending?.catch(() => undefined);
-      await this.releaseEcho();
-      state.lease = await this.controller.lease(backend, { waitS: this.leaseWaitS, signal: this.abort.signal });
-      this.logger.info(`Leased ${backend}.`, { lease: state.lease.id, url: state.lease.url });
+      if (!away) await this.yieldEcho(key, state);
+      state.lease = await this.controller.lease(backend, { waitS: this.leaseWaitS, signal: this.abort.signal, ...(needs.length ? { needs } : {}) });
+      const host = this.remoteHost(state.lease);
+      this.logger.info(`Leased ${backend}.`, { lease: state.lease.id, url: state.lease.url, ...(host ? { host } : {}) });
+      if (host && state.yielding) {
+        // Routed away after all: Echo's GPU is not needed.
+        state.yielding = false;
+        this.echoYield.delete(key);
+        this.backToEcho();
+      } else if (!host && !state.yielding) {
+        await this.yieldEcho(key, state); // the prediction was wrong: it runs here
+      }
     } catch (error) {
-      this.echoYield.delete(backend);
+      state.yielding = false;
+      this.echoYield.delete(key);
       this.backToEcho();
       if (isNotFound(error)) {
         this.noteUnknown(backend);
@@ -662,24 +815,29 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     state.timer = null;
   }
 
-  private armShared(backend: SharedBackend, state: SharedState): void {
+  private armShared(key: string, state: SharedState): void {
     this.clearSharedTimer(state);
     if (!state.lease) return;
     state.timer = setTimeout(() => {
       state.timer = null;
-      if (state.users === 0) void this.releaseShared(backend, state);
+      if (state.users === 0) void this.releaseShared(state);
     }, this.sharedIdleMs);
     state.timer.unref?.();
   }
 
-  private async releaseShared(backend: SharedBackend, state: SharedState): Promise<void> {
+  private async releaseShared(state: SharedState): Promise<void> {
     const lease = state.lease;
     state.lease = null;
     this.clearSharedTimer(state);
-    this.echoYield.delete(backend);
+    const key = [...this.shared].find(([, entry]) => entry === state)?.[0];
+    if (key) {
+      this.echoYield.delete(key);
+      if (key.includes('|') && state.users === 0 && !state.pending) this.shared.delete(key); // needs-keyed entries don't pile up
+    }
+    state.yielding = false;
     if (lease) {
       await lease.release().catch(() => undefined);
-      this.logger.info(`Released ${backend}.`);
+      this.logger.info(`Released ${state.backend}.`);
     }
     this.backToEcho();
   }
@@ -704,7 +862,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     this.abort.abort();
     await this.releaseCoder().catch(() => undefined);
     await this.releaseMotion().catch(() => undefined);
-    for (const [backend, state] of this.shared) await this.releaseShared(backend, state).catch(() => undefined);
+    for (const state of this.shared.values()) await this.releaseShared(state).catch(() => undefined);
     await this.releaseEcho().catch(() => undefined);
     await Promise.resolve(this.onChange?.()).catch(() => undefined);
   }
@@ -745,7 +903,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     }
     for (const backend of [COMFY_BACKEND, VISION_BACKEND] as const) {
       if (this.unknownBackends.has(backend)) out.push({ backend, state: 'own' });
-      else out.push({ backend, state: this.shared.get(backend)?.lease ? 'leased' : 'idle' });
+      else out.push({ backend, state: [...this.shared.values()].some((entry) => entry.backend === backend && entry.lease) ? 'leased' : 'idle' });
     }
     return out;
   }
@@ -777,7 +935,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       notes.push(`echo-llm lease failed: ${this.failure}.`);
     } else {
       echo = 'leasing';
-      notes.push(this.echoYield.size > 0 ? `Echo’s model is unloaded while ${[...this.echoYield].join(' and ')} uses the GPU.` : 'Leasing echo-llm (the model may be loading).');
+      notes.push(this.echoYield.size > 0 ? `Echo’s model is unloaded while ${this.yieldNames()} uses the GPU.` : 'Leasing echo-llm (the model may be loading).');
     }
     if (this.motionPaused) notes.push(`${this.motionPaused}.`);
     else if (this.motionWanted && !this.motionLease && this.motionPending && Date.now() - this.motionAskedAt > MOTION_WAITING_MS) notes.push('motion waiting for memory on the controller.');

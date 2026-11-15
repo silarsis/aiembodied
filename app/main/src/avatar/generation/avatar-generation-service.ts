@@ -5,7 +5,8 @@
 import { randomInt, randomUUID } from 'node:crypto';
 import { access, copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { ComfyUIClient } from './comfyui-client.js';
+import { inJob, type ComfyUIClient } from './comfyui-client.js';
+import { graphsModelFiles } from './comfyui-needs.js';
 import {
   buildConceptPrompt,
   characterViewGraph,
@@ -282,6 +283,12 @@ export class AvatarGenerationService {
     try {
       const comfy = await getComfy();
       const front = await readFile(path.join(job.directory, 'concept.png'));
+      const viewGraph = (frontName: string, prompt: string, negative: string, viewSeed: number) => {
+        const graph = characterViewGraph({ front: frontName, prompt, negative, seed: viewSeed, models });
+        return loras.length ? applyLoras(graph, loras) : graph;
+      };
+      // The front is uploaded to the machine that draws the views: one lease for both.
+      await inJob(comfy, graphsModelFiles(viewGraph('front.png', '', '', seed)), async () => {
       const frontName = await comfy.uploadImage(`${job.status.jobId}-front.png`, front);
       for (const [index, view] of (['left', 'back'] as const).entries()) {
         throwIfAborted(signal);
@@ -290,19 +297,14 @@ export class AvatarGenerationService {
         });
         const { prompt, negative } = CHARACTER_VIEW_PROMPTS[view];
         const triggers = [...new Set(loras.flatMap((lora) => lora.triggerWords ?? []))].join(', ');
-        const graph = characterViewGraph({
-          front: frontName,
-          prompt: triggers ? `${triggers}, ${prompt}` : prompt,
-          negative,
-          seed: seed + index,
-          models,
-        });
-        const png = await comfy.run(loras.length ? applyLoras(graph, loras) : graph, { signal });
+        const graph = viewGraph(frontName, triggers ? `${triggers}, ${prompt}` : prompt, negative, seed + index);
+        const png = await comfy.run(graph, { signal });
         throwIfAborted(signal);
         await writeFile(path.join(job.directory, `view-${view}.png`), png);
         views[view] = `data:image/png;base64,${png.toString('base64')}`;
         this.update(job, { views: { ...views } });
       }
+      });
     } catch (error) {
       if (signal.aborted) throw error;
       const reason = error instanceof Error ? error.message : String(error);
@@ -710,16 +712,19 @@ export class AvatarGenerationService {
             : buildConceptPrompt(job.prompt);
         // Models with pose control draw the front over the A-pose skeleton.
         const pose = job.imageModel ? poseImageSize(job.imageModel) : undefined;
-        const poseImage = pose && !job.referenceImage
-          ? await comfy.uploadImage(`a-pose-${pose.width}x${pose.height}.png`, drawPoseSkeleton(pose.width, pose.height))
-          : undefined;
+        const usePose = pose && !job.referenceImage;
+        const conceptGraphFor = (drawSeed: number, poseImage?: string) =>
+          job.imageModel
+            ? buildAvatarImageWorkflow(job.imageModel, job.prompt, job.mode, drawSeed, poseImage)
+            : conceptGraph(prompt, drawSeed);
+        // Each draw uploads the pose skeleton and runs on one lease, so both reach the same machine.
         const draw = (drawSeed: number) =>
-          comfy.run(
-            job.imageModel
-              ? buildAvatarImageWorkflow(job.imageModel, job.prompt, job.mode, drawSeed, poseImage)
-              : conceptGraph(prompt, drawSeed),
-            { signal },
-          );
+          inJob(comfy, graphsModelFiles(conceptGraphFor(drawSeed, usePose ? 'a-pose.png' : undefined)), async () => {
+            const poseImage = usePose
+              ? await comfy.uploadImage(`a-pose-${pose.width}x${pose.height}.png`, drawPoseSkeleton(pose.width, pose.height))
+              : undefined;
+            return comfy.run(conceptGraphFor(drawSeed, poseImage), { signal });
+          });
         let concept = job.referenceImage ?? (await draw(seed));
         throwIfAborted(signal);
         await writeFile(path.join(job.directory, 'concept.png'), concept);
@@ -788,10 +793,14 @@ export class AvatarGenerationService {
             message: 'Generating the 3D shape from the front, side and back views',
           });
         }
-        const images = await this.uploadViews(job, comfy, concept);
-        const mesh = await comfy.run(characterMeshGraph(images, seed, job.geometry), {
-          signal,
-          output: 'mesh',
+        const meshNeeds = graphsModelFiles(characterMeshGraph({ front: 'front.png', left: 'left.png', back: 'back.png' }, seed, job.geometry));
+        const { glb: mesh, images } = await inJob(comfy, meshNeeds, async () => {
+          const images = await this.uploadViews(job, comfy, concept);
+          const glb = await comfy.run(characterMeshGraph(images, seed, job.geometry), {
+            signal,
+            output: 'mesh',
+          });
+          return { glb, images };
         });
         throwIfAborted(signal);
         const meshPath = path.join(job.directory, 'source.glb');
@@ -867,7 +876,10 @@ export class AvatarGenerationService {
       const baseVrm = await readFile(this.options.baseModelPath);
       const regions = await this.runner.prepare(baseVrm);
 
-      const edited = [];
+      const edited: { box: (typeof regions)[number]['box']; png: Buffer }[] = [];
+      const retextureNeeds = graphsModelFiles(retextureGraph({ crop: 'crop.png', cropWidth: 1, cropHeight: 1, prompt: '', seed }));
+      // The crops are uploaded to the machine that repaints them: one lease for the whole repaint.
+      await inJob(comfy, retextureNeeds, async () => {
       for (const [index, region] of regions.entries()) {
         const label = `${region.name.replace('_', ' ')} (${index + 1} of ${regions.length})`;
         const cropName = await comfy.uploadImage(
@@ -919,6 +931,7 @@ export class AvatarGenerationService {
           );
         }
       }
+      });
 
       if (edited.length === 0) {
         throw new Error(

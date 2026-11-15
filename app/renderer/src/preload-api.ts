@@ -12,6 +12,7 @@ import type { CivitaiLookup } from '../../main/src/avatar/generation/civitai.js'
 import type { HfLookup } from '../../main/src/local-llm/huggingface.js';
 import type { LocalLlmSettings } from '../../main/src/local-llm/llm-settings.js';
 import type { LlmDownload, LocalLlmList } from '../../main/src/local-llm/llm-library.js';
+import type { DownloadHosts } from '../../main/src/aicontroller/remote-downloads.js';
 import type { VisionStatus } from '../../main/src/local-vision/vision-model.js';
 import type { ModelDownload } from '../../main/src/avatar/generation/model-downloads.js';
 import type { BackgroundBridge } from '../../main/src/backgrounds/types.js';
@@ -73,7 +74,8 @@ export interface ModelsBridge {
   setRoute(use: UseId, route: ModelRoute): Promise<ModelRoutingView>;
   setKey(serverId: string, key: string): Promise<ModelRoutingView>;
   civitaiLookup?(ref: string, versionId?: number): Promise<CivitaiLookup>;
-  download?(serverId: string, ref: string, versionId?: number): Promise<ModelDownload>;
+  download?(serverId: string, ref: string, versionId?: number, host?: string): Promise<ModelDownload>;
+  downloadHosts?(): Promise<DownloadHosts>;
   downloads?(): Promise<ModelDownload[]>;
   /** A speech service's text-to-speech engines and models (null: it is down or too old). */
   speechEngines?(serverId: string): Promise<SpeechTtsEngine[] | null>;
@@ -83,7 +85,7 @@ export interface ModelsBridge {
   comfyAddon?(serverId: string): Promise<{ installed: boolean; folder: string }>;
   /** Thinking models from Hugging Face for this PC's llama-server. */
   hfLookup?(ref: string): Promise<HfLookup>;
-  hfDownload?(repo: string, quant: string, use: boolean): Promise<LlmDownload>;
+  hfDownload?(repo: string, quant: string, use: boolean, host?: string): Promise<LlmDownload>;
   hfDownloads?(): Promise<LlmDownload[]>;
   hfCancel?(id: string): Promise<LlmDownload[]>;
   /** The local vision model for Describe the avatar: download status, start a download (default model, or a link / owner/repo[:QUANT]), cancel. */

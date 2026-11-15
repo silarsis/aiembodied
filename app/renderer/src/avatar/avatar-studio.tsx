@@ -61,6 +61,9 @@ function errorText(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
 }
 
+/** Models only a machine that is down or busy has are shown greyed. */
+const OFFLINE_STYLE = { color: '#8a8a8a' } as const;
+
 function ModelSelect({
   id,
   label,
@@ -89,8 +92,10 @@ function ModelSelect({
       >
         {!selectedId ? <option value="">No usable option found</option> : null}
         {models.map((model) => (
-          <option key={model.id} value={model.id} disabled={!model.available}>
+          <option key={model.id} value={model.id} disabled={!model.available} style={model.offline ? OFFLINE_STYLE : undefined}>
             {model.name}
+            {model.location ? ` ${model.location}` : ''}
+            {model.offline ? ' (offline)' : ''}
             {model.available ? '' : ' (unavailable)'}
           </option>
         ))}
@@ -644,8 +649,10 @@ export function AvatarStudio({
                 </option>
               ) : null}
               {imageModels.models.map((item) => (
-                <option key={item.id} value={item.id} disabled={!item.available}>
+                <option key={item.id} value={item.id} disabled={!item.available} style={item.offline ? OFFLINE_STYLE : undefined}>
                   {item.name}
+                  {item.location ? ` ${item.location}` : ''}
+                  {item.offline ? ' (offline)' : ''}
                   {!item.available
                     ? ' (unavailable)'
                     : item.poseControl === 'none' || item.poseControl === 'unavailable' || item.poseControl === 'failed'

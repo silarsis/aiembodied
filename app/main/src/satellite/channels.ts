@@ -119,6 +119,7 @@ const UNAVAILABLE = [
   'models:comfy-addon',
   'models:delete-local-llm',
   'models:download',
+  'models:download-hosts',
   'models:downloads',
   'models:get',
   'models:hf-cancel',

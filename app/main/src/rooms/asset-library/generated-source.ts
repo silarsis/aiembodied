@@ -8,7 +8,8 @@
  * which the room generation service runs in the background, one object at a time.
  */
 import { randomInt } from 'node:crypto';
-import type { ComfyGraph } from '../../avatar/generation/comfyui-client.js';
+import { inJob, type ComfyGraph } from '../../avatar/generation/comfyui-client.js';
+import { graphsModelFiles } from '../../avatar/generation/comfyui-needs.js';
 import { characterMeshGraph } from '../../avatar/generation/character/graphs.js';
 import type { GeometryModel } from '../../avatar/generation/character-model-service.js';
 import { buildImageWorkflow, type ImageWorkflowModel } from '../../avatar/generation/image-workflows.js';
@@ -33,6 +34,8 @@ import type { ObjectSource } from './library-source.js';
 export interface ObjectComfy {
   uploadImage(fileName: string, png: Buffer): Promise<string>;
   run(graph: ComfyGraph, options?: { signal?: AbortSignal; output?: 'image' | 'mesh' }): Promise<Buffer>;
+  /** One lease for the uploads and runs inside (ComfyUIClient has it; a fake may not). */
+  job?: <T>(needs: string[], work: () => Promise<T>) => Promise<T>;
 }
 
 export interface GeneratedSourceOptions {
@@ -125,8 +128,11 @@ export class GeneratedSource implements ObjectSource {
     const created = (this.options.now?.() ?? new Date()).toISOString();
     const dir = directoryFor(object.name, `${object.name}|${prompt}|${created}|${seed}`);
     const meshComfy = await this.options.pickComfy('mesh');
-    const uploaded = await meshComfy.uploadImage(`room-object-${dir}.png`, image);
-    const glb = await meshComfy.run(characterMeshGraph({ front: uploaded }, seed, geometry), { signal, output: 'mesh' });
+    // The image is uploaded to the machine that builds the mesh: one lease for both.
+    const glb = await inJob(meshComfy, graphsModelFiles(characterMeshGraph({ front: 'front.png' }, seed, geometry)), async () => {
+      const uploaded = await meshComfy.uploadImage(`room-object-${dir}.png`, image);
+      return meshComfy.run(characterMeshGraph({ front: uploaded }, seed, geometry), { signal, output: 'mesh' });
+    });
     if (signal.aborted) throw cancelled();
 
     const bounds = glbBounds(glb);

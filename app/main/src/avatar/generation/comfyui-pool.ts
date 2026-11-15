@@ -147,8 +147,8 @@ export class ComfyUIPool {
       ...(leased && leases
         ? {
             lease: {
-              acquire: async () => {
-                const handle = await leases.acquire('comfyui');
+              acquire: async (needs) => {
+                const handle = await leases.acquire('comfyui', { needs });
                 if (!handle) throw new Error('The model controller no longer has a comfyui backend.');
                 return handle;
               },

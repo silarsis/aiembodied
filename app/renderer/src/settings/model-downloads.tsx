@@ -3,6 +3,7 @@ import type { CivitaiLookup } from '../../../main/src/avatar/generation/civitai.
 import type { ModelDownload } from '../../../main/src/avatar/generation/model-downloads.js';
 import type { ModelServerView } from '../../../main/src/config/config-manager.js';
 import type { ModelsBridge } from '../preload-api.js';
+import { DownloadTo, useDownloadHosts } from './download-to.js';
 
 const ACTIVE = new Set(['queued', 'downloading', 'verifying']);
 
@@ -20,6 +21,10 @@ export function ModelDownloads({ api, server, onFinished }: { api: ModelsBridge;
   const [downloads, setDownloads] = useState<ModelDownload[]>([]);
   const [addon, setAddon] = useState<{ installed: boolean; folder: string } | null>(null);
   const finished = useRef(new Set<string>());
+  // Only this PC's ComfyUI can hand a download to the model controller.
+  const downloadHosts = useDownloadHosts(api);
+  const [target, setTarget] = useState('');
+  const remote = server.managed && Boolean(target);
 
   const checkAddon = useCallback(async () => {
     if (!api.comfyAddon) return;
@@ -75,7 +80,7 @@ export function ModelDownloads({ api, server, onFinished }: { api: ModelsBridge;
     setBusy(true);
     setError(null);
     try {
-      await api.download(server.id, ref.trim(), lookup.plan.versionId);
+      await (remote ? api.download(server.id, ref.trim(), lookup.plan.versionId, target) : api.download(server.id, ref.trim(), lookup.plan.versionId));
       setLookup(null);
       setRef('');
       await refresh();
@@ -155,9 +160,10 @@ export function ModelDownloads({ api, server, onFinished }: { api: ModelsBridge;
             </label>
           ) : null}
           {plan.note ? <small className="kiosk__helper">{plan.note}</small> : null}
+          {server.managed ? <DownloadTo hosts={downloadHosts} value={target} onChange={setTarget} disabled={busy} id="models-civitai-download-to" /> : null}
           <span className="modelsDialog__actions">
             <button type="button" className="modelsDialog__primary" onClick={() => void start()} disabled={busy || Boolean(needsAddon)}>
-              Download to {server.name}
+              Download to {remote ? (target === 'auto' ? 'the best fit' : target) : server.name}
             </button>
           </span>
         </div>

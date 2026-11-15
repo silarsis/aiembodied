@@ -1,5 +1,5 @@
 /**
- * Vendored from silarsis/aicontroller, clients/typescript/src/index.ts (commit 00bc054).
+ * Vendored from silarsis/aicontroller, clients/typescript/src/index.ts (commit 2189494).
  * Kept as upstream wrote it apart from lint fixes (Record<string, any> became Record<string, unknown>; a non-null assertion removed);
  * resync from there rather than editing it. The client has no runtime dependencies.
  */
@@ -54,6 +54,8 @@ export interface LeaseOptions {
   /** Lease time-to-live in seconds (default 120); heartbeats every ttlS/3. */
   ttlS?: number;
   allowAskFirst?: boolean;
+  /** Model file names the job will load; lets the controller route a host-less lease to a peer that has them. */
+  needs?: string[];
   /** Aborting releases the lease (and cancels a pending request). */
   signal?: AbortSignal;
 }
@@ -64,12 +66,14 @@ export interface ModelsOptions {
 }
 
 export interface DownloadSource {
-  type: "huggingface" | "civitai" | "url";
+  type: "huggingface" | "civitai" | "url" | "peer";
   repo?: string;
   file?: string;
   revision?: string;
   url?: string;
   version_id?: number | string;
+  host?: string;
+  model_id?: string;
 }
 export interface DownloadOptions {
   kind?: string;
@@ -353,6 +357,7 @@ export class Controller {
       body: {
         backend, client: this.o.client ?? "typescript", model: opts.model ?? null, host: opts.host ?? null,
         wait_s: waitS, ttl_s: opts.ttlS ?? 120, allow_ask_first: opts.allowAskFirst ?? false,
+        needs: opts.needs ?? [],
       },
       timeoutMs: waitS * 1000 + (this.o.timeoutMs ?? 30_000),
       signal: opts.signal,

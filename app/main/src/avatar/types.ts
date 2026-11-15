@@ -197,10 +197,21 @@ export type AvatarGenerationStage =
  * impossible on this server, or none (no pose control for that family yet).
  */
 export type AvatarImagePoseControl = 'guided' | 'installing' | 'failed' | 'unavailable' | 'none';
+/** A machine that has a model file, with the controller's word for its state (installed, loaded, offline, busy, ask-first). */
+export interface AvatarModelHost {
+  name: string;
+  state: string;
+}
 export interface AvatarImageModelSummary {
   id: string;
   name: string;
   available: boolean;
+  /** With the model controller: the machines that have the file. */
+  hosts?: AvatarModelHost[];
+  /** "on bija, acrasia" for the picker; absent without the controller. */
+  location?: string;
+  /** Every machine with the file is offline or busy. */
+  offline?: boolean;
   unavailableReason?: string;
   poseControl?: AvatarImagePoseControl;
   /** One line for the picker saying what poseControl means for this model. */
@@ -209,6 +220,9 @@ export interface AvatarImageModelSummary {
 export interface AvatarLoraSummary {
   /** File name in ComfyUI's loras folder. */
   name: string;
+  hosts?: AvatarModelHost[];
+  location?: string;
+  offline?: boolean;
   /** Civitai's name for it, when it was downloaded through the app. */
   title?: string;
   /** sd1, sdxl… read from the file or from Civitai; absent when unknown. */
@@ -264,6 +278,10 @@ export interface AvatarCharacterModelSummary {
   views?: boolean;
   available: boolean;
   unavailableReason?: string;
+  /** With the model controller: the machines that have the file, "on bija, acrasia", and whether none can run it now. */
+  hosts?: AvatarModelHost[];
+  location?: string;
+  offline?: boolean;
 }
 /** Models that turn an approved image into a rigged, animated 3D avatar. */
 export interface AvatarCharacterModelSelection {

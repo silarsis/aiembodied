@@ -191,16 +191,29 @@ export type AvatarGenerationStage =
 
 /** How a model's front gets its A-pose; see the main process type for each value. */
 export type AvatarImagePoseControl = 'guided' | 'installing' | 'failed' | 'unavailable' | 'none';
+/** A machine that has a model file, with the controller's word for its state (installed, loaded, offline, busy, ask-first). */
+export interface AvatarModelHost {
+  name: string;
+  state: string;
+}
 export interface AvatarImageModelSummary {
   id: string;
   name: string;
   available: boolean;
+  hosts?: AvatarModelHost[];
+  /** "on bija, acrasia"; absent without the model controller. */
+  location?: string;
+  /** Every machine with the file is offline or busy. */
+  offline?: boolean;
   unavailableReason?: string;
   poseControl?: AvatarImagePoseControl;
   poseNote?: string;
 }
 export interface AvatarLoraSummary {
   name: string;
+  hosts?: AvatarModelHost[];
+  location?: string;
+  offline?: boolean;
   title?: string;
   family?: string;
   baseModel?: string;
@@ -277,6 +290,9 @@ export interface AvatarCharacterModelSummary {
   views?: boolean;
   available: boolean;
   unavailableReason?: string;
+  hosts?: AvatarModelHost[];
+  location?: string;
+  offline?: boolean;
 }
 /** Models that turn an approved image into a rigged, animated 3D avatar. */
 export interface AvatarCharacterModelSelection {
