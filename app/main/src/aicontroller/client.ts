@@ -116,6 +116,7 @@ export class Lease {
   lost = false;
   private timer?: ReturnType<typeof setInterval>;
   private released = false;
+  private releasing?: Promise<void>;
   private onAbort?: () => void;
 
   constructor(private ctl: Controller | undefined, data: LeaseData, readonly direct = false, private signal?: AbortSignal) {
@@ -166,9 +167,13 @@ export class Lease {
     if (this.revoked) throw this.revoked;
   }
 
-  /** Stop heartbeating and release (safe to call twice). */
-  async release(): Promise<void> {
-    if (this.released) return;
+  /** Stop heartbeating and release (safe to call twice; later calls wait for the first). */
+  release(): Promise<void> {
+    this.releasing ??= this.doRelease();
+    return this.releasing;
+  }
+
+  private async doRelease(): Promise<void> {
     this.released = true;
     this.stopTimer();
     if (this.onAbort) this.signal?.removeEventListener("abort", this.onAbort);

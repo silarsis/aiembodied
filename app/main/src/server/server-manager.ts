@@ -19,6 +19,16 @@ const SERVICE_CONTAINERS: Record<string, string> = {
  */
 export const CONTROLLER_MANAGED_IDS: readonly string[] = ['llm', 'coder-llm'];
 
+/**
+ * The pid files of the servers the controller runs only when it has the backend of that name:
+ * motion (:8190), vision (:1237) and ComfyUI (:8188). Where it doesn't, the app stops them as ever.
+ */
+export const CONTROLLER_OPTIONAL_IDS: readonly { pid: string; backend: string }[] = [
+  { pid: 'motion', backend: 'motion' },
+  { pid: 'vision', backend: 'vision' },
+  { pid: 'comfyui', backend: 'comfyui' },
+];
+
 export interface ServerManagerOptions {
   logger: Logger;
   /**
@@ -33,6 +43,8 @@ export interface ServerManagerOptions {
   powershell?: (command: string, timeoutMs: number) => Promise<string>;
   /** True when the model controller runs the language models: their pid files are then left alone. */
   controllerInUse?: () => boolean;
+  /** True when the model controller runs the backend of that name (motion, vision, comfyui): its pid file is left alone too. */
+  controllerManages?: (backend: string) => boolean;
   /** Longest wait for the stop, in ms. */
   timeoutMs?: number;
 }
@@ -105,8 +117,11 @@ export class ServerManager {
     if (directories.length === 0) {
       return [];
     }
-    const skipIds = this.options.controllerInUse?.() ? CONTROLLER_MANAGED_IDS : [];
-    if (skipIds.length > 0) this.logger.debug('ServerManager: the model controller runs the language models; leaving their servers alone');
+    const skipIds = [
+      ...(this.options.controllerInUse?.() ? CONTROLLER_MANAGED_IDS : []),
+      ...CONTROLLER_OPTIONAL_IDS.filter((entry) => this.options.controllerManages?.(entry.backend) === true).map((entry) => entry.pid),
+    ];
+    if (skipIds.length > 0) this.logger.debug('ServerManager: the model controller runs some servers; leaving their pid files alone');
     const startedAt = Date.now();
     const timeoutMs = this.options.timeoutMs ?? 15_000;
     const run =

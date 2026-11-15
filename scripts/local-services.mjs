@@ -338,7 +338,7 @@ export function buildStartCommand({ script, args, cwd, logPath, errPath, pidPath
 }
 
 /**
- * Whether the shared model controller (aicontroller) runs the language models. AICONTROLLER_URL
+ * Whether the shared model controller (aicontroller) runs the GPU servers. AICONTROLLER_URL
  * (default http://127.0.0.1:8200); AICONTROLLER_ENABLED: 1 requires it, 0 never uses it, anything
  * else (auto) uses it when GET /health answers {ok: true}. Mirrors app/main/src/aicontroller/bridge.ts.
  */
@@ -357,8 +357,28 @@ export async function controllerInUse(env, fetchFn = fetch, timeoutMs = 1500) {
   }
 }
 
-/** The services whose models the controller runs when it is in use (Echo's llama-server; the coder's is started by the app). */
-const CONTROLLER_SERVICE_IDS = new Set(['llm']);
+/**
+ * Whether the controller has a backend of that name (GET /v1/status lists them). False when it does
+ * not answer or does not list it: the service is then started as before.
+ */
+export async function controllerHasBackend(env, backend, fetchFn = fetch, timeoutMs = 1500) {
+  const url = trimSlash(env.AICONTROLLER_URL?.trim() || 'http://127.0.0.1:8200');
+  try {
+    const response = await fetchFn(`${url}/v1/status`, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!response.ok) return false;
+    const body = await response.json();
+    return Array.isArray(body?.backends) && body.backends.some((entry) => entry?.id === backend);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The services whose servers the controller runs when it is in use, and the backend that runs each:
+ * Echo's llama-server (the coder's is started by the app), and the motion service when the
+ * controller has a `motion` backend. ASR and the rest are still started here.
+ */
+const CONTROLLER_SERVICE_BACKENDS = { llm: null, motion: 'motion' };
 
 /**
  * Check each service and start the ones that are down. Returns one line per service:
@@ -375,7 +395,8 @@ export async function ensureLocalServices(repoRoot, env, {
   const results = [];
   const controller = await controllerInUse(env, fetchFn, probeTimeoutMs);
   for (const service of describeLocalServices(repoRoot, env)) {
-    if (controller && service.enabled && CONTROLLER_SERVICE_IDS.has(service.id)) {
+    const backend = CONTROLLER_SERVICE_BACKENDS[service.id];
+    if (controller && service.enabled && backend !== undefined && (backend === null || (await controllerHasBackend(env, backend, fetchFn, probeTimeoutMs)))) {
       results.push({ id: service.id, status: 'skipped', reason: 'using aicontroller' });
       log.info?.(`[info] using aicontroller: not starting ${service.label}.`);
       continue;

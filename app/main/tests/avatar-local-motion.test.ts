@@ -133,6 +133,34 @@ describe('LocalMotionClient', () => {
     await expect(stream.next()).rejects.toThrow('Motion service failed: out of memory');
   });
 
+  it('starts afresh when the continuation session has expired', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetchFn = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      bodies.push(body);
+      if (body.continue_from) return jsonResponse({ error: 'unknown session' }, 404);
+      return ndjsonResponse([
+        { type: 'chunk', index: 0, start: 0, vrma: sampleVrma('stand-0') },
+        { type: 'done', chunks: 1, timings: {}, session: 'new' },
+      ]);
+    });
+    const client = new LocalMotionClient({ baseUrl: 'http://127.0.0.1:8190', fetchFn: fetchFn as unknown as typeof fetch });
+
+    const stream = client.stream({ prompt: 'stand up', continueFrom: 'old-session' });
+    const first = await stream.next();
+    expect(first.done).toBe(false);
+    const last = await stream.next();
+    expect(last.value).toMatchObject({ chunks: 1, session: 'new' });
+    expect(bodies.map((b) => b.continue_from)).toEqual(['old-session', undefined]);
+  });
+
+  it('does not retry other 404s', async () => {
+    const fetchFn = vi.fn(async () => jsonResponse({ error: 'not found' }, 404));
+    const client = new LocalMotionClient({ baseUrl: 'http://127.0.0.1:8190', fetchFn });
+    await expect(client.stream({ prompt: 'x', continueFrom: 's' }).next()).rejects.toThrow('404');
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
   it('throws when the stream ends without a done line', async () => {
     const fetchFn = vi.fn(async () => ndjsonResponse([{ type: 'chunk', index: 0, start: 0, vrma: sampleVrma('wave-0') }]));
     const client = new LocalMotionClient({ baseUrl: 'http://127.0.0.1:8190', fetchFn });

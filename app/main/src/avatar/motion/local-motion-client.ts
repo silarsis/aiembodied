@@ -174,7 +174,15 @@ export class LocalMotionClient {
     request: MotionRequest,
     options: MotionCallOptions = {},
   ): AsyncGenerator<MotionChunk, MotionStreamSummary, void> {
-    const response = await this.post('/v1/motion/stream', request, options);
+    let response: Response;
+    try {
+      response = await this.post('/v1/motion/stream', request, options);
+    } catch (error) {
+      // The service keeps continuation sessions for 10 minutes (and only the last few), and forgets them
+      // all when it restarts. Start fresh rather than fail: the avatar may jump slightly, but it moves.
+      if (!request.continueFrom || !/HTTP 404 unknown session/.test(error instanceof Error ? error.message : '')) throw error;
+      response = await this.post('/v1/motion/stream', { ...request, continueFrom: undefined }, options);
+    }
     if (!response.body) {
       throw new Error('Motion service returned an empty stream.');
     }

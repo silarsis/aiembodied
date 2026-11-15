@@ -48,6 +48,11 @@ describe('LocalLlmControl', () => {
     expect(launch).not.toHaveBeenCalled();
   });
 
+  it('tells the user the controller’s config decides the model when nothing can re-lease it', async () => {
+    const { llm } = await control({ viaController: () => true });
+    expect((await llm.restart()).message).toContain('set in the controller’s config');
+  });
+
   it('reports false when nothing was stopped', async () => {
     const { llm } = await control({ powershell: async () => '' });
     await expect(llm.stop()).resolves.toBe(false);
