@@ -54,6 +54,11 @@ interface HistoryEntry {
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 
+/** Any one ComfyUI request (not a whole job): a hung request must not hold the controller's lease forever. */
+const REQUEST_TIMEOUT_MS = 60_000;
+/** Fetching a finished image or mesh can be large. */
+const DOWNLOAD_TIMEOUT_MS = 5 * 60_000;
+
 export class ComfyUIClient {
   /** The address in use: the lease's URL while ComfyUI is leased from the model controller. */
   baseUrl: string;
@@ -113,6 +118,7 @@ export class ComfyUIClient {
     const response = await this.fetchFn(`${this.baseUrl}/upload/image`, {
       method: 'POST',
       body: form,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) {
       throw new Error(`ComfyUI upload failed: HTTP ${response.status} ${await safeText(response)}`);
@@ -206,6 +212,7 @@ export class ComfyUIClient {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: graph, client_id: 'aiembodied' }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) {
       throw new Error(`ComfyUI rejected the workflow: ${await safeText(response)}`);
@@ -218,7 +225,9 @@ export class ComfyUIClient {
   }
 
   private async history(promptId: string): Promise<HistoryEntry | undefined> {
-    const response = await this.fetchFn(`${this.baseUrl}/history/${encodeURIComponent(promptId)}`);
+    const response = await this.fetchFn(`${this.baseUrl}/history/${encodeURIComponent(promptId)}`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
     if (!response.ok) {
       return undefined;
     }
@@ -232,7 +241,9 @@ export class ComfyUIClient {
       subfolder: saved.subfolder ?? '',
       type: saved.type ?? 'output',
     });
-    const response = await this.fetchFn(`${this.baseUrl}/view?${params.toString()}`);
+    const response = await this.fetchFn(`${this.baseUrl}/view?${params.toString()}`, {
+      signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+    });
     if (!response.ok) {
       throw new Error(`ComfyUI /view failed: HTTP ${response.status}`);
     }
