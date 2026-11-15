@@ -157,19 +157,52 @@ toggle the "Launch on Login" checkbox, which exercises the auto-launch flow with
 ### Running with aicontroller (shared model controller)
 
 On a PC that runs [aicontroller](https://github.com/silarsis/aicontroller) (bija runs it from the tray), the controller owns
-the GPU servers: `echo-llm` on :1234 (Echo's language model) and `coder-llm` on :1236 (the coding model). With it in use the
-app starts and stops no llama-server for those two:
+the GPU servers, and the app leases them instead of starting and stopping them itself. When the controller is not in use
+(`AICONTROLLER_ENABLED=0`, or it does not answer in `auto` mode) everything works as it always did.
+
+Backends the app expects in the controller's `config.yaml` (see its `config.example.yaml`; names and ports must match):
+
+| Backend | Port | Used for | Leased |
+|---|---|---|---|
+| `echo-llm` | 1234 | Echo's language model (Thinking) | `interactive`, while the app runs; released on quit, suspend and hibernate |
+| `coder-llm` | 1236 | The coding model | for a coding task, in place of `echo-llm` |
+| `motion` | 8190 | The motion service (ARDY), when Moving runs on this PC's own motion service | `interactive`, while the app runs and motion is enabled |
+| `comfyui` | 8188 | Avatar, scenery and pose generation, when the ComfyUI server is the built-in "ComfyUI on this PC" | per job, kept for 60 s after the last one |
+| `vision` | 1237 | Describe the avatar, Check poses | per use, kept for 60 s after the last one |
+
+Leave out any you do not want the controller to run: a backend it does not list (or answers 404 for) is logged once and the
+app runs its own server for that one, as without the controller. ASR (:1235) and the speech service are still started by the app.
 
 - Echo holds an `interactive` lease (client `aiembodied`) on `echo-llm` while the app runs, heartbeats it, and chats on the
   lease's URL. The lease is released on quit, hibernate and suspend, and taken again on resume.
-- If the controller revokes the lease (a game needs the GPU, or the model is evicted), Status shows "Local LLM paused by the
-  model controller (reason)". The next turn leases again; if that fails the turn errors with that message.
+- If the controller revokes a lease (a game needs the GPU, or the model is evicted), Status shows "Local LLM paused by the
+  model controller (reason)" (or "Motion paused ..."). The next turn (or motion request) leases again; if that fails the turn
+  errors with that message.
 - A coding task that needs the coder model gives Echo's lease up, leases `coder-llm` (the controller evicts `echo-llm` if the
   two don't fit) and Echo chats on the coder meanwhile. When the task has been idle for a while (`CODER_SWAP_BACK_S`) the
   coder lease is released and `echo-llm` is leased again. The Coding memory mode and GGUF settings are ignored then.
-- Quitting or hibernating leaves the llama-servers the controller started running (their `llm.pid` / `coder-llm.pid` files
-  are skipped), and `pnpm dev:run` logs "using aicontroller" instead of starting Echo's llama-server. ASR, Kokoro, motion
-  and ComfyUI still start as before.
+- **ComfyUI**: each generation request (avatar, backgrounds, poses, scenery objects) leases `comfyui` and uses the lease's URL;
+  jobs in a row share the lease, which is released 60 s after the last request, also after a failure or cancel. The app never
+  starts, kills or calls `/free` on ComfyUI then. Remote ComfyUI servers configured in Models and servers are left alone.
+- **Motion**: the lease's URL replaces the motion service's address while it is held; turning Moving off in Models and servers
+  gives the lease back.
+- **Vision**: leased for each use and released 60 s after the last one.
+- The controller never evicts a leased backend, so while `comfyui` or `vision` is leased Echo's `echo-llm` lease is given back
+  and taken again afterwards (the controller evicts the idle model only if it needs the memory, and `echo-llm` should list
+  `comfyui` in `evictable_by`). A chat turn in that time errors with "Echo's model is unloaded while comfyui uses the GPU",
+  unless the model is still loaded. `motion` is leased all the time, so the controller's `gpu_budget_gb` must fit it
+  alongside `echo-llm` (and `vision`).
+- **Thinking model picker**: with the controller in use, picking a local model (Settings, Thinking) finds the file in the
+  controller's catalog (`GET /v1/models`), releases `echo-llm` and leases it again with that model's catalog id; the controller
+  loads it. The model has to be in a folder listed under `model_store.dirs.llm` (the app downloads to
+  `~/.cache/aiembodied/llm-models`, so list that folder; the controller adopts new files when it scans). Otherwise the picker
+  says "the model controller doesn't have this model; add its folder to the controller's model_store". Hugging Face downloads
+  are still made by the app itself, not through the controller's download endpoint.
+- Quitting or hibernating leaves the servers the controller started running (their `llm.pid`, `coder-llm.pid`, `motion.pid`,
+  `vision.pid` and `comfyui.pid` files are skipped, for the motion, vision and ComfyUI ones only if the controller has that
+  backend). `pnpm dev:run` logs "using aicontroller" instead of starting Echo's llama-server, and the motion service when the
+  controller lists a `motion` backend (`GET /v1/status`).
+- The Model controller line in Status lists the leases held, for example "echo-llm, motion leased; comfyui, vision idle".
 
 Environment variables:
 
@@ -179,8 +212,7 @@ Environment variables:
 | `AICONTROLLER_ENABLED` | `auto` | `auto`: use the controller if `GET /health` answers at startup (and after resume), else everything works as before. `1`: require it; turns fail with a message while it is down. `0`: never use it. |
 | `AICONTROLLER_TOKEN` | none | Bearer token, only needed for a controller on another machine. |
 
-The app never starts the controller. The controller's backends are configured in its own `config.yaml` (see its
-`config.example.yaml`); changing the Thinking model in this app does not restart a llama-server the controller runs.
+The app never starts the controller. The controller's backends are configured in its own `config.yaml`.
 
 ### Diagnostics & Debug Logging
 
