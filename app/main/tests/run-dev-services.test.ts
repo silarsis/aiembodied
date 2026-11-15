@@ -271,6 +271,25 @@ describe('local services', () => {
     expect(off.find((r: { id: string }) => r.id === 'llm')?.reason).not.toBe('using aicontroller');
   }));
 
+  it('does not start the motion service when the model controller has a motion backend', withTempRepo(async (repoRoot) => {
+    const launcher = fakeLauncher();
+    const backends = (ids: string[]) =>
+      vi.fn(async (url: string) => {
+        if (url === 'http://127.0.0.1:8200/health') return new Response(JSON.stringify({ ok: true, name: 'bija' }), { status: 200 });
+        if (url === 'http://127.0.0.1:8200/v1/status') return new Response(JSON.stringify({ backends: ids.map((id) => ({ id })) }), { status: 200 });
+        throw new Error('ECONNREFUSED');
+      });
+    const env = { STT_ENGINE: 'whisper', WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', SWITCHBOARD_AUTOSTART: '0', LAYA_AUTOSTART: '0' };
+    const withMotion = await ensureLocalServices(repoRoot, env, { fetchFn: backends(['echo-llm', 'motion']), spawnSyncFn: launcher, platform: 'win32', log: quiet });
+    expect(withMotion.find((r: { id: string }) => r.id === 'motion')).toMatchObject({ status: 'skipped', reason: 'using aicontroller' });
+    expect(launcher).not.toHaveBeenCalled();
+
+    // A controller without a motion backend leaves motion to dev:run, as before.
+    const without = await ensureLocalServices(repoRoot, env, { fetchFn: backends(['echo-llm']), spawnSyncFn: launcher, platform: 'win32', log: quiet });
+    expect(without.find((r: { id: string }) => r.id === 'motion')).toMatchObject({ status: 'started' });
+    expect(launcher).toHaveBeenCalledTimes(1);
+  }));
+
   it('does not start the speech service without KOKORO_DIR, or ASR when whisper is chosen', async () => {
     const launcher = fakeLauncher();
     const results = await ensureLocalServices(

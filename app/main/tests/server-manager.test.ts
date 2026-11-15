@@ -39,6 +39,32 @@ describe('ServerManager', () => {
     expect(buildStopCommand([dir])).not.toContain('-contains $file.BaseName');
   });
 
+  it('also leaves the motion, vision and ComfyUI pid files alone when the controller runs those backends', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'pids-'));
+    const powershell = vi.fn(async () => '');
+    const runs: Record<string, boolean> = { motion: true, vision: false, comfyui: true };
+    const manager = new ServerManager({
+      logger,
+      pidDirectories: [dir],
+      platform: 'win32',
+      powershell,
+      controllerInUse: () => true,
+      controllerManages: (backend) => runs[backend] === true,
+    });
+    await manager.shutdown();
+    const [command] = powershell.mock.calls[0] as unknown as [string];
+    // vision isn't on the controller, so the app still stops the one it started.
+    expect(command).toContain("@('llm', 'coder-llm', 'motion', 'comfyui') -contains $file.BaseName");
+    runs.motion = false;
+    runs.comfyui = false;
+    await manager.shutdown();
+    expect((powershell.mock.calls[1] as unknown as [string])[0]).toContain("@('llm', 'coder-llm') -contains $file.BaseName");
+    // Without the controller nothing is skipped.
+    const alone = new ServerManager({ logger, pidDirectories: [dir], platform: 'win32', powershell, controllerManages: () => false });
+    await alone.shutdown();
+    expect((powershell.mock.calls[2] as unknown as [string])[0]).not.toContain('-contains $file.BaseName');
+  });
+
   it('runs one stop at a time when quit and suspend overlap', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'pids-'));
     let finish: (value: string) => void = () => undefined;

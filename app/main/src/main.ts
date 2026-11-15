@@ -299,6 +299,12 @@ const aicontroller = new AicontrollerBridge({
   logger,
   // A new lease URL (or none): rebuild Echo's engines.
   onChange: () => (voiceConfigManager ? applyProviderSettings(voiceConfigManager) : undefined),
+  // The Thinking model picked in Models and servers, so the controller loads it for Echo's lease.
+  echoModel: async () => {
+    if (!voiceConfigManager) return undefined;
+    const model = await getLocalLlmTools(voiceConfigManager).library.selected();
+    return model ? { path: model.path, alias: model.alias } : null;
+  },
 });
 let avatarModelService: AvatarModelService | null = null;
 let avatarAnimationService: AvatarAnimationService | null = null;
@@ -1125,7 +1131,10 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
   localVoiceService = voiceServices.get(DEFAULT_AVATAR_ID);
 
   const motionServer = localMotionServer(manager);
-  const motionUrl = motionServer?.url ?? providers.motion.localServiceUrl;
+  // This PC's own motion service is leased from the model controller (when it has one) while motion is enabled.
+  const motionLeased = motionServer?.id === BUILT_IN_SERVER_IDS.motion && motionServer.managed;
+  aicontroller.setMotionWanted(motionLeased);
+  const motionUrl = (motionLeased ? aicontroller.motionUrl() : null) ?? motionServer?.url ?? providers.motion.localServiceUrl;
   if (avatarAnimationService && currentMotionServiceUrl !== motionUrl) {
     localMotionService = new LocalMotionGenerationService({
       client: new LocalMotionClient({ baseUrl: motionUrl }),
@@ -1178,6 +1187,8 @@ function getLocalLlmTools(manager: ConfigManager): { library: LlmLibrary; contro
     model: () => library.selected(),
     settings: () => library.settings(),
     viaController: () => aicontroller.inUse(),
+    // Picking a model re-leases echo-llm with it (the controller loads the model).
+    useModelViaController: (pick) => aicontroller.useEchoModel(pick),
   });
   localLlmTools = { library, control };
   return localLlmTools;
@@ -1210,6 +1221,7 @@ function getVisionTools(manager: ConfigManager): { model: VisionModel; server: V
     logDirectory,
     // Reuses the llama-server stopper; it only ever stops a process named llama-server on that port.
     stop: () => new LocalLlmControl({ baseUrl, repoRoot, logDirectory, fileName: 'vision' }).stop(),
+    leases: aicontroller,
     logger,
   });
   visionTools = { model, server };
@@ -2173,6 +2185,8 @@ function registerIpcHandlers(
   });
   handleIpc('avatar-animation:generate', async (_event, payload: AvatarAnimationGenerationRequest) => {
     const useLocalMotion = localMotionServer(manager) !== null;
+    // The model controller may have taken the motion lease back: lease it again (a failure shows as "not ready" below).
+    if (useLocalMotion) await aicontroller.ensureMotion().catch(() => undefined);
     if (useLocalMotion && localMotionService && (await localMotionService.isReady())) {
       return localMotionService.generateAnimation(payload);
     }
@@ -2206,6 +2220,7 @@ function registerIpcHandlers(
         model: clips?.model ?? null,
       };
     }
+    await aicontroller.ensureMotion().catch(() => undefined);
     const health = localMotionService ? await localMotionService.health() : null;
     return {
       provider: 'local',
@@ -2216,6 +2231,7 @@ function registerIpcHandlers(
     };
   });
   handleIpc('avatar-motion:stream', async (event, payload: AvatarMotionStreamRequest) => {
+    await aicontroller.ensureMotion().catch(() => undefined);
     if (!localMotionService || !localMotionServer(manager)) {
       throw new Error('Local motion service is unavailable.');
     }
@@ -2971,8 +2987,9 @@ app.whenReady().then(async () => {
     pidDirectories: [path.resolve(__dirname, '../../..', '.dev-home', 'logs'), path.join(app.getPath('userData'), 'logs')],
     // The model controller owns the language-model servers it started: their pid files are skipped.
     controllerInUse: () => aicontroller.inUse(),
+    // ...and so are motion, vision and ComfyUI when the controller has those backends.
+    controllerManages: (backend) => aicontroller.managesBackend(backend),
   });
-  void aicontroller.start();
   logger.info('ServerManager initialized');
 
   // Register for system suspend/resume notifications
@@ -3297,6 +3314,8 @@ app.whenReady().then(async () => {
     routing: () => manager.getConfig().models,
     logDirectory: path.join(app.getPath('userData'), 'logs'),
     logger,
+    // With the model controller in use, this PC's ComfyUI is leased from it per job instead of started here.
+    leases: aicontroller,
   });
   avatarComfyPool = comfyPool;
   const imageModelScript = path.join(__dirname, '../assets/avatar-generation/image-models.py').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
@@ -3362,6 +3381,8 @@ app.whenReady().then(async () => {
   }
 
   await applyProviderSettings(manager);
+  // After the config is loaded: the lease asks for the Thinking model picked there.
+  void aicontroller.start();
 
   if (avatarModelService) {
     avatarGenerationService = new AvatarGenerationService({
