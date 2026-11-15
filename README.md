@@ -154,6 +154,34 @@ This serves the UI on http://localhost:5173 with hot reloading; rebuild before r
 While running in development, a lightweight system tray menu appears. Use it to bring the kiosk window to the foreground or to
 toggle the "Launch on Login" checkbox, which exercises the auto-launch flow without touching your OS login items permanently.
 
+### Running with aicontroller (shared model controller)
+
+On a PC that runs [aicontroller](https://github.com/silarsis/aicontroller) (bija runs it from the tray), the controller owns
+the GPU servers: `echo-llm` on :1234 (Echo's language model) and `coder-llm` on :1236 (the coding model). With it in use the
+app starts and stops no llama-server for those two:
+
+- Echo holds an `interactive` lease (client `aiembodied`) on `echo-llm` while the app runs, heartbeats it, and chats on the
+  lease's URL. The lease is released on quit, hibernate and suspend, and taken again on resume.
+- If the controller revokes the lease (a game needs the GPU, or the model is evicted), Status shows "Local LLM paused by the
+  model controller (reason)". The next turn leases again; if that fails the turn errors with that message.
+- A coding task that needs the coder model gives Echo's lease up, leases `coder-llm` (the controller evicts `echo-llm` if the
+  two don't fit) and Echo chats on the coder meanwhile. When the task has been idle for a while (`CODER_SWAP_BACK_S`) the
+  coder lease is released and `echo-llm` is leased again. The Coding memory mode and GGUF settings are ignored then.
+- Quitting or hibernating leaves the llama-servers the controller started running (their `llm.pid` / `coder-llm.pid` files
+  are skipped), and `pnpm dev:run` logs "using aicontroller" instead of starting Echo's llama-server. ASR, Kokoro, motion
+  and ComfyUI still start as before.
+
+Environment variables:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AICONTROLLER_URL` | `http://127.0.0.1:8200` | The controller's address. |
+| `AICONTROLLER_ENABLED` | `auto` | `auto`: use the controller if `GET /health` answers at startup (and after resume), else everything works as before. `1`: require it; turns fail with a message while it is down. `0`: never use it. |
+| `AICONTROLLER_TOKEN` | none | Bearer token, only needed for a controller on another machine. |
+
+The app never starts the controller. The controller's backends are configured in its own `config.yaml` (see its
+`config.example.yaml`); changing the Thinking model in this app does not restart a llama-server the controller runs.
+
 ### Diagnostics & Debug Logging
 
 When troubleshooting a blank window or startup failures (common on fresh Windows installs), enable the global diagnostics
