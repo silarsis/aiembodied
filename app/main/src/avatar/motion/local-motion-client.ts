@@ -181,8 +181,7 @@ export class LocalMotionClient {
       // The service keeps continuation sessions for 10 minutes (and only the last few), and forgets them
       // all when it restarts. Start fresh rather than fail: the avatar may jump slightly, but it moves.
       if (!request.continueFrom || !/HTTP 404 unknown session/.test(error instanceof Error ? error.message : '')) throw error;
-      const { continueFrom: _expired, ...fresh } = request;
-      response = await this.post('/v1/motion/stream', fresh, options);
+      response = await this.post('/v1/motion/stream', { ...request, continueFrom: undefined }, options);
     }
     if (!response.body) {
       throw new Error('Motion service returned an empty stream.');
