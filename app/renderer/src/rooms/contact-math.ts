@@ -30,6 +30,17 @@ export const ANKLE_MAX_OFFSET = (20 * Math.PI) / 180;
 export const SHOULDER_MAX_OFFSET = (30 * Math.PI) / 180;
 export const ELBOW_MAX_OFFSET = (30 * Math.PI) / 180;
 export const WRIST_MAX_OFFSET = (20 * Math.PI) / 180;
+/**
+ * While seated on a seat, a hip may flex (thigh rising, knee up and forward) this far from its animated
+ * rotation, so a thigh sloping into the cushion can clear it. Every other direction keeps HIP_MAX_OFFSET.
+ */
+export const HIP_FLEXION_MAX_OFFSET = (45 * Math.PI) / 180;
+/** Seated head settle: neck and head together may turn this far from straight ahead (radians) before they are eased back. */
+export const HEAD_YAW_LIMIT = (35 * Math.PI) / 180;
+export const HEAD_PITCH_LIMIT = (25 * Math.PI) / 180;
+export const HEAD_ROLL_LIMIT = (15 * Math.PI) / 180;
+/** About how long the excess takes to ease away (seconds). */
+export const HEAD_SETTLE_SECONDS = 0.8;
 /** The target correction of a joint may grow by at most this per second (radians), so one bad frame cannot fling a limb. */
 export const MAX_OFFSET_RATE = (90 * Math.PI) / 180;
 
@@ -108,8 +119,9 @@ export function clampCone(total: THREE.Quaternion, max: number, animatedAngle: n
   const w = Math.min(1, Math.abs(total.w));
   const angle = 2 * Math.acos(w);
   if (angle <= limit) return out.copy(total);
-  TMP_Q2.identity();
-  return out.copy(TMP_Q2).slerp(total, limit / angle);
+  // `out` may be `total`: take a copy before overwriting it.
+  TMP_Q2.copy(total);
+  return out.identity().slerp(TMP_Q2, limit / angle);
 }
 
 /** Angle of a rotation from identity, 0..PI. */
@@ -187,4 +199,74 @@ export function stepSpring(spring: Spring, target: number, deltaSeconds: number,
     spring.value = target;
     spring.velocity = 0;
   }
+}
+
+const TMP_SWING = new THREE.Quaternion();
+const TMP_TWIST = new THREE.Quaternion();
+const TMP_EULER = new THREE.Euler();
+
+/**
+ * Caps a joint offset by direction. `offset` is split about the unit `axis` into a twist (rotation about the
+ * axis) and the rest. A twist in the negative direction (flexion for a leg whose hip axis is the body's
+ * lateral axis, where a negative turn raises the knee) may reach `flexionMax`; a positive twist and the rest
+ * (abduction, adduction, rotation about the leg) may only reach `otherMax`. Writes the result to `out` (which
+ * may be `offset`) and returns true when anything was cut.
+ */
+export function capDirectional(
+  offset: THREE.Quaternion,
+  axis: THREE.Vector3,
+  flexionMax: number,
+  otherMax: number,
+  out: THREE.Quaternion,
+): boolean {
+  const angle = hingeAngle(offset, axis);
+  TMP_TWIST.setFromAxisAngle(axis, angle);
+  TMP_SWING.copy(offset).multiply(TMP_Q2.copy(TMP_TWIST).invert());
+  if (TMP_SWING.w < 0) TMP_SWING.set(-TMP_SWING.x, -TMP_SWING.y, -TMP_SWING.z, -TMP_SWING.w);
+  const twistLimit = angle < 0 ? flexionMax : otherMax;
+  let cut = false;
+  let twist = angle;
+  if (Math.abs(angle) > twistLimit) {
+    twist = Math.sign(angle) * twistLimit;
+    cut = true;
+  }
+  const swingAngle = rotationAngle(TMP_SWING);
+  if (swingAngle > otherMax) {
+    TMP_Q1.identity().slerp(TMP_SWING, otherMax / swingAngle);
+    TMP_SWING.copy(TMP_Q1);
+    cut = true;
+  }
+  if (!cut) return false;
+  TMP_TWIST.setFromAxisAngle(axis, twist);
+  out.copy(TMP_SWING).multiply(TMP_TWIST);
+  return true;
+}
+
+const TMP_Q1 = new THREE.Quaternion();
+
+/**
+ * The rotation that brings a head orientation (neck and head together, relative to the chest) back inside the
+ * yaw, pitch and roll limits, taking only the excess off each angle. Writes it to `out` (identity when inside
+ * the limits) and returns true when there is any excess.
+ */
+export function headExcessCorrection(
+  combined: THREE.Quaternion,
+  yawLimit: number,
+  pitchLimit: number,
+  rollLimit: number,
+  out: THREE.Quaternion,
+): boolean {
+  TMP_EULER.setFromQuaternion(combined, 'YXZ');
+  const yaw = Math.max(-yawLimit, Math.min(yawLimit, TMP_EULER.y));
+  const pitch = Math.max(-pitchLimit, Math.min(pitchLimit, TMP_EULER.x));
+  const roll = Math.max(-rollLimit, Math.min(rollLimit, TMP_EULER.z));
+  if (yaw === TMP_EULER.y && pitch === TMP_EULER.x && roll === TMP_EULER.z) {
+    out.identity();
+    return false;
+  }
+  TMP_EULER.set(pitch, yaw, roll, 'YXZ');
+  TMP_Q1.setFromEuler(TMP_EULER);
+  // corrected = correction * combined
+  out.copy(TMP_Q1).multiply(TMP_SWING.copy(combined).invert());
+  return true;
 }

@@ -77,6 +77,8 @@ export interface SceneEnv {
   setSeat?(objectId: string): void;
   /** The avatar is standing (or getting up): let the seat fit ease away. */
   clearSeat?(): void;
+  /** Whether a motion stream is playing for this avatar now (the seated head settle only runs while none is). */
+  setStreamPlaying?(playing: boolean): void;
   /** Limb ends that are missing their animated place right now. Absent without a contact solver. */
   contactMisses?(): ContactReport[];
   /** Calls `listener` when a limb end starts to miss; returns the unsubscribe function. */
@@ -103,7 +105,7 @@ export interface SceneExecutorOptions {
   trace?: TraceFn;
   /** Whether tracing is on; the trace builders do not run while it is not (default: the motion trace switch). */
   tracing?: () => boolean;
-  /** Whether a sit that ends with legs in furniture is re-tried with settle streams (default: the debug switch, on). */
+  /** Whether a sit that ends with legs in furniture is re-tried with settle streams (default: the debug switch, off). */
   settleRetries?: () => boolean;
 }
 
@@ -160,6 +162,8 @@ const CONTACT_SETTLE_MS = 600;
 export const MAX_REPLANS = 2;
 /** A miss on a limb the action did not aim at only matters once it has lasted this long (seconds). */
 const UNTARGETED_MISS_SECONDS = 1;
+/** A leg end must be further than this from its animated place (metres) before a repair stream is worth playing. */
+export const REPAIR_MISS_DISTANCE = 0.1;
 
 const LEG_JOINT: Partial<Record<LimbEnd, AvatarMotionJoint>> = {
   leftKnee: 'left_knee',
@@ -347,6 +351,7 @@ export class SceneActionExecutor {
       stream.done.resolve();
     }
     this.streams.clear();
+    this.env?.setStreamPlaying?.(false);
     try {
       this.env?.releaseHeld();
     } catch (error) {
@@ -567,7 +572,7 @@ export class SceneActionExecutor {
     );
     return (env.contactMisses?.() ?? []).filter((miss) => {
       const joint = LEG_JOINT[miss.end];
-      return joint !== undefined && (aimed.has(joint) || miss.seconds > UNTARGETED_MISS_SECONDS);
+      return joint !== undefined && miss.distance > REPAIR_MISS_DISTANCE && (aimed.has(joint) || miss.seconds > UNTARGETED_MISS_SECONDS);
     });
   }
 
@@ -727,6 +732,7 @@ export class SceneActionExecutor {
       done: deferred(),
     };
     this.streams.set(id, stream);
+    this.env?.setStreamPlaying?.(true);
     // Getting up (or walking off) starts from the plain floor, so the seat fit eases out first.
     if (this.state.posture === 'seated' && !planned.repair) this.env?.clearSeat?.();
     this.emit({ type: 'start', id, label: planned.label });
@@ -765,7 +771,10 @@ export class SceneActionExecutor {
     );
 
     await stream.done.promise;
-    if (generation === this.generation) this.streams.delete(id);
+    if (generation === this.generation) {
+      this.streams.delete(id);
+      this.env?.setStreamPlaying?.(this.streams.size > 0);
+    }
   }
 
   private generationEnded(stream: RunningStream, error: unknown, summary: AvatarMotionStreamResult | null): void {

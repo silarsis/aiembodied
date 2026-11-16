@@ -6,7 +6,7 @@
  * so a developer can analyse a sitting problem from the file afterwards. Callers pass a *builder*, not data:
  * `trace(avatar, kind, () => ({ ... }))` never runs the builder (and so allocates nothing) while tracing is off.
  *
- * The settle switch lives here too: "Re-try sits that end with legs in furniture" (default on) decides whether
+ * The settle switch lives here too: "Re-try sits that end with legs in furniture" (default off; only localStorage "1" turns it on) decides whether
  * the executor plays the post-sit settle streams.
  */
 
@@ -109,7 +109,7 @@ async function syncMotionTrace(settingOn: boolean): Promise<void> {
 
 /** The "Re-try sits that end with legs in furniture" checkbox (default on). */
 export function isSettleRetryEnabled(): boolean {
-  if (settleRetries === null) settleRetries = storage()?.getItem(SETTLE_RETRY_STORAGE_KEY) !== '0';
+  if (settleRetries === null) settleRetries = storage()?.getItem(SETTLE_RETRY_STORAGE_KEY) === '1';
   return settleRetries;
 }
 
@@ -117,8 +117,8 @@ export function setSettleRetryEnabled(on: boolean): void {
   settleRetries = on;
   const store = storage();
   if (!store) return;
-  if (on) store.removeItem(SETTLE_RETRY_STORAGE_KEY);
-  else store.setItem(SETTLE_RETRY_STORAGE_KEY, '0');
+  if (on) store.setItem(SETTLE_RETRY_STORAGE_KEY, '1');
+  else store.removeItem(SETTLE_RETRY_STORAGE_KEY);
 }
 
 /** Appends one line. `build` runs only while tracing is on. */

@@ -1,11 +1,19 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
 import type { PenetrationHit } from './room-physics.js';
+import { BUTTOCKS_BELOW_HIPS } from './seat-fit.js';
 import {
   ANKLE_CONE,
   ANKLE_MAX_OFFSET,
   ELBOW_MAX_OFFSET,
   HIP_MAX_OFFSET,
+  HIP_FLEXION_MAX_OFFSET,
+  HEAD_PITCH_LIMIT,
+  HEAD_ROLL_LIMIT,
+  HEAD_SETTLE_SECONDS,
+  HEAD_YAW_LIMIT,
+  capDirectional,
+  headExcessCorrection,
   KNEE_MAX_OFFSET,
   MAX_OFFSET_RATE,
   SHOULDER_MAX_OFFSET,
@@ -43,7 +51,8 @@ import {
 export const REFERENCE_HIPS_HEIGHT = 0.95;
 /** Capsule radii in metres for a 0.95 m-hips avatar; scaled by hips height and root scale. Tune here. */
 export const CAPSULE_RADII = {
-  pelvis: 0.12,
+  // The same distance seat fit puts between the hips bone and the seat, so a fitted pelvis only touches its seat.
+  pelvis: BUTTOCKS_BELOW_HIPS,
   chest: 0.13,
   thigh: 0.075,
   shin: 0.05,
@@ -77,9 +86,10 @@ export const MISS_SECONDS = 0.25;
 const FOOT_LENGTH = 0.12;
 /** A push whose horizontal part points this close (radians) to straight out from the body midline would abduct a leg: refused. */
 const ABDUCTION_ANGLE = Math.PI / 4;
-/** Contacts with the seat under a seated avatar whose normal points up more than this are resting, not penetrations. */
-const RESTING_NORMAL_Y = 0.7;
 const HAND_LENGTH = 0.08;
+/** Time constant of the seated head settle easing in (about HEAD_SETTLE_SECONDS to 95%) and, quicker, out (seconds). */
+const HEAD_SETTLE_IN_TAU = HEAD_SETTLE_SECONDS / 3;
+const HEAD_SETTLE_OUT_TAU = 0.1;
 
 export interface BoneSource {
   getNormalizedBoneNode(name: string): THREE.Object3D | null | undefined;
@@ -184,6 +194,18 @@ interface EndTrack {
   missing: boolean;
 }
 
+/** A neck or head bone the head settle adds a correction to. */
+interface HeadBone {
+  bone: THREE.Object3D;
+  anim: THREE.Quaternion;
+  written: THREE.Quaternion;
+  hasWritten: boolean;
+}
+
+function newHeadBone(bone: THREE.Object3D): HeadBone {
+  return { bone, anim: new THREE.Quaternion().copy(bone.quaternion), written: new THREE.Quaternion(), hasWritten: false };
+}
+
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const X_AXIS = new THREE.Vector3(1, 0, 0);
 const NEG_Y_AXIS = new THREE.Vector3(0, -1, 0);
@@ -207,6 +229,7 @@ const TMP_Q1 = new THREE.Quaternion();
 const TMP_Q2 = new THREE.Quaternion();
 const TMP_CENTER = new THREE.Vector3();
 const TMP_ROT = new THREE.Quaternion();
+const TMP_EULER = new THREE.Euler();
 
 const shapes = new Map<string, RAPIER.Capsule>();
 /** One Rapier capsule per (half height, radius) rounded to the millimetre, shared by every avatar. */
@@ -256,12 +279,23 @@ export class ContactBody {
   private factor = 1;
   /** The object the avatar is seated on, if any (resting contacts with it belong to the pelvis lift). */
   private seatId: string | null = null;
+  private readonly neck: HeadBone | null;
+  private readonly head: HeadBone | null;
+  /** How much of the head settle correction applies (0..1). */
+  private headWeight = 0;
+  /** The correction wanted this frame (neck and head together, in the chest's frame), for the motion trace. */
+  private readonly headCorrection = new THREE.Quaternion();
+  private headExcessDeg: [number, number, number] = [0, 0, 0];
   /** Horizontal unit vector along the body's left-right axis (from the hips). */
   private readonly lateral = new THREE.Vector3(1, 0, 0);
 
   constructor(humanoid: BoneSource) {
     const bone = (name: string) => humanoid.getNormalizedBoneNode(name) ?? null;
     this.hips = bone('hips');
+    const neckBone = bone('neck');
+    const headBone = bone('head');
+    this.neck = neckBone ? newHeadBone(neckBone) : null;
+    this.head = headBone ? newHeadBone(headBone) : null;
     this.pelvis = this.hips ? this.bodySegment(this.hips, bone('spine'), CAPSULE_RADII.pelvis) : null;
     if (this.pelvis) this.pelvis.name = 'pelvis';
     const chestBone = bone('chest') ?? bone('spine');
@@ -305,6 +339,9 @@ export class ContactBody {
    */
   release(): void {
     this.restoreAnimated();
+    this.restoreHead();
+    this.headWeight = 0;
+    this.headCorrection.identity();
     for (const limb of this.limbs) {
       for (const joint of limb.joints) {
         joint.weight = 0;
@@ -332,7 +369,7 @@ export class ContactBody {
 
   /** True while any capsule touches something or the pelvis is lifted: the motion trace samples then. */
   isInContact(): boolean {
-    if (this.lift.value !== 0 || this.liftTarget !== 0) return true;
+    if (this.lift.value !== 0 || this.liftTarget !== 0 || this.headWeight > 0) return true;
     if (this.pelvis?.contact || this.chest?.contact) return true;
     return this.limbs.some((limb) => limb.segments.some((segment) => segment.contact));
   }
@@ -380,6 +417,7 @@ export class ContactBody {
     }
     return {
       pelvisLift: { target: r3(this.liftTarget), applied: r3(this.lift.value) },
+      headSettle: { weight: r3(this.headWeight), excessYawPitchRollDeg: this.headExcessDeg },
       segments,
       joints,
       misses: this.misses().map((miss) => ({ end: miss.end, objectId: miss.objectId, distance: r3(miss.distance), seconds: r3(miss.seconds) })),
@@ -408,7 +446,8 @@ export class ContactBody {
    * own update. A bone that anything since our last write (mixer, pose blend) rewrote is taken as the new
    * animated pose; one still holding our write gets its animated rotation back first.
    * `physics` null (no physics in this room) still restores the animated pose. `debugParent` non-null draws
-   * the body capsules into it. `seatId` is the object the avatar sits on (or null/undefined).
+   * the body capsules into it. `seatId` is the object the avatar sits on (or null/undefined). `headSettle` is true while
+   * seated with no stream playing: the head is then eased back inside the seated head limits.
    */
   update(
     rig: { scene: THREE.Object3D; restHipsHeight: number },
@@ -417,6 +456,7 @@ export class ContactBody {
     exclude: readonly string[],
     debugParent: THREE.Object3D | null,
     seatId: string | null = null,
+    headSettle = false,
   ): void {
     const hips = this.hips;
     if (!hips) return;
@@ -427,6 +467,7 @@ export class ContactBody {
     this.factor = factor;
     this.seatId = seatId;
     this.restoreAnimated();
+    this.restoreHead();
     hips.updateWorldMatrix(true, true);
     this.measureLateral();
     this.measureShapes(factor);
@@ -448,17 +489,18 @@ export class ContactBody {
     if (physics) {
       for (let pass = 0; pass < SOLVER_ITERATIONS; pass += 1) {
         // Planting every pass: pushing a thigh out of the cushion lifts the foot, and the foot must go back down.
-        for (const limb of this.limbs) if (limb.isLeg) this.plantFoot(limb, physics);
+        for (const limb of this.limbs) if (limb.isLeg) this.plantFoot(limb, physics, exclude);
         let any = false;
         for (const limb of this.limbs) any = this.solveLimb(limb, physics, exclude, pass === 0) || any;
         if (!any) break;
       }
       // Grounded feet get the last word: the legs may end up a hair into furniture rather than a foot floating.
-      for (const limb of this.limbs) if (limb.isLeg && limb.groundHeight !== null) this.plantFoot(limb, physics);
+      for (const limb of this.limbs) if (limb.isLeg && limb.groundHeight !== null) this.plantFoot(limb, physics, exclude);
     }
 
     this.writeBlended(dt);
     hips.updateWorldMatrix(false, true);
+    this.settleHead(dt, headSettle);
     this.trackMisses(dt);
 
     if (debugParent) this.drawDebug(debugParent, physics, exclude);
@@ -561,6 +603,61 @@ export class ContactBody {
     }
   }
 
+  /** Puts back the animated rotation of the neck and head if they still hold our last write; otherwise takes what was written as animated. */
+  private restoreHead(): void {
+    for (const part of [this.neck, this.head]) {
+      if (!part) continue;
+      if (!(part.hasWritten && part.bone.quaternion.equals(part.written))) part.anim.copy(part.bone.quaternion);
+      else part.bone.quaternion.copy(part.anim);
+      part.hasWritten = false;
+    }
+  }
+
+  /**
+   * Seated head settle. While `active` (seated, no stream playing) the neck and head together are held inside
+   * the yaw/pitch/roll limits: the excess is added back as a correction that eases in over about
+   * HEAD_SETTLE_SECONDS, split between neck and head. It eases out quickly once inactive.
+   */
+  private settleHead(dt: number, active: boolean): void {
+    const { neck, head } = this;
+    if (!head) return;
+    // Neck and head together, relative to the chest.
+    const combined = TMP_Q1.copy(neck ? neck.anim : IDENTITY).multiply(head.anim);
+    const excess = headExcessCorrection(combined, HEAD_YAW_LIMIT, HEAD_PITCH_LIMIT, HEAD_ROLL_LIMIT, this.headCorrection);
+    const wanted = active && excess;
+    this.headWeight = wanted
+      ? easeTowards(this.headWeight, 1, dt, HEAD_SETTLE_IN_TAU)
+      : easeTowards(this.headWeight, 0, dt, HEAD_SETTLE_OUT_TAU);
+    if (excess) {
+      TMP_EULER.setFromQuaternion(combined, 'YXZ');
+      const toDeg = (r: number) => Math.round(((r * 180) / Math.PI) * 10) / 10;
+      this.headExcessDeg = [toDeg(TMP_EULER.y), toDeg(TMP_EULER.x), toDeg(TMP_EULER.z)];
+    } else {
+      this.headExcessDeg = [0, 0, 0];
+    }
+    if (this.headWeight === 0 || !excess) {
+      if (!excess) this.headWeight = 0;
+      return;
+    }
+    // Half the correction on the neck (in the chest's frame), the rest on the head (in the corrected neck's frame).
+    const full = this.headCorrection;
+    const share = TMP_Q2.identity().slerp(full, this.headWeight);
+    const neckShare = neck ? TMP_QW.identity().slerp(share, 0.5) : TMP_QW.identity();
+    const rest = TMP_PW.copy(neckShare).invert().premultiply(share); // share * neckShare^-1
+    if (neck) {
+      neck.bone.quaternion.copy(neckShare).multiply(neck.anim);
+      neck.written.copy(neck.bone.quaternion);
+      neck.hasWritten = true;
+    }
+    // The head turn is expressed in the neck's new frame: neck'^-1 * rest * neck'.
+    const neckNow = neck ? neck.bone.quaternion : IDENTITY;
+    TMP_QL.copy(neckNow).invert().multiply(rest).multiply(neckNow);
+    head.bone.quaternion.copy(TMP_QL).multiply(head.anim);
+    head.written.copy(head.bone.quaternion);
+    head.hasWritten = true;
+    (neck ?? head).bone.updateWorldMatrix(false, true);
+  }
+
   /** The body's left-right axis, flattened to the horizontal plane. */
   private measureLateral(): void {
     if (!this.hips) return;
@@ -624,7 +721,7 @@ export class ContactBody {
   }
 
   /**
-   * Raises the root so the pelvis and thighs rest on whatever they sank into from above. The capsules are
+   * Raises the root so the pelvis and thighs rest on whatever they sank into from above (other than the seat being sat on). The capsules are
    * measured as if the current lift were not applied, so the target does not depend on the lift itself and
    * falls back to zero once the contact is gone.
    */
@@ -640,6 +737,9 @@ export class ContactBody {
         if (hit && hit.objectId !== null && hit.normal.y > 0.5) {
           segment.contact = true;
           segment.hit = hit;
+          // Seat fit is the only authority on hip height on the seat being sat on: the pelvis and thighs
+          // resting in it never drive the lift (the thighs are cleared by the hips instead).
+          if (hit.objectId === this.seatId) return;
           target = Math.max(target, hit.depth * hit.normal.y);
         }
       };
@@ -681,7 +781,7 @@ export class ContactBody {
    * Foot planting with two-bone IK. A foot the animation had on the ground goes back to where it was; any
    * other ankle that is below the surface under it is put on the surface.
    */
-  private plantFoot(limb: Limb, physics: ContactPhysics): void {
+  private plantFoot(limb: Limb, physics: ContactPhysics, exclude: readonly string[]): void {
     const [hip, knee, ankle] = limb.joints as [Joint, Joint, Joint];
     const footRadius = CAPSULE_RADII.foot * this.factor;
     positionOf(hip.bone, TMP_A);
@@ -701,6 +801,12 @@ export class ContactBody {
     // The knee keeps bending the way the animation bent it.
     TMP_E.subVectors(TMP_B, TMP_A);
     solveTwoBone(TMP_A, TMP_D, TMP_E, TMP_A.distanceTo(TMP_B), TMP_B.distanceTo(TMP_C), TMP_F, TMP_G);
+    // Seated: a foot is not worth a thigh in the cushion. Where the pin would swing the thigh into the seat,
+    // the thigh keeps its clearance and the foot floats (recorded as a miss).
+    if (this.seatId !== null && this.thighWouldSink(limb, physics, exclude, TMP_A, TMP_F)) {
+      limb.refused = true;
+      return;
+    }
     // Swing the thigh so the knee goes to its new place, then the shin so the ankle reaches the target.
     TMP_DIR.subVectors(TMP_B, TMP_A).normalize();
     TMP_N.subVectors(TMP_F, TMP_A).normalize();
@@ -714,6 +820,20 @@ export class ContactBody {
     this.rotateJoint(limb, 1, TMP_QW, 0, null, null, false);
   }
 
+  /** True when a thigh from `hip` to `knee` (same length and radius as the real one) would sink into the seat being sat on. */
+  private thighWouldSink(limb: Limb, physics: ContactPhysics, exclude: readonly string[], hip: THREE.Vector3, knee: THREE.Vector3): boolean {
+    const thigh = limb.segments[0];
+    if (!thigh?.shape) return false;
+    TMP_N.subVectors(knee, hip);
+    const length = TMP_N.length();
+    if (length < 1e-6) return false;
+    TMP_N.multiplyScalar(1 / length);
+    TMP_POINT.addVectors(hip, knee).multiplyScalar(0.5);
+    TMP_ROT.setFromUnitVectors(Y_AXIS, TMP_N);
+    const hit = physics.penetration(thigh.shape, TMP_POINT, TMP_ROT, exclude);
+    return !!hit && hit.objectId === this.seatId && hit.depth > CONTACT_TOLERANCE;
+  }
+
   /** One pass over a limb's segments; true when any needed a correction. */
   private solveLimb(limb: Limb, physics: ContactPhysics, exclude: readonly string[], first: boolean): boolean {
     let any = false;
@@ -723,8 +843,13 @@ export class ContactBody {
       if (!hit || hit.depth <= CONTACT_TOLERANCE) continue;
       // A foot standing on the floor is the normal case; only a foot sunk deeper than its radius counts.
       if (segment.isFoot && hit.objectId === null && hit.depth <= segment.shapeRadius) continue;
-      // A thigh lying on the seat it sits on is resting, not penetrating: only the pelvis lift answers to it.
-      if (limb.isLeg && segment.joint === 0 && this.seatId !== null && hit.objectId === this.seatId && hit.normal.y > RESTING_NORMAL_Y) continue;
+      // The rounded hip end of a thigh sitting on its seat is the buttocks resting, which rotating the hip
+      // cannot change (seat fit places the pelvis): leave it, or the hip would be driven to its cap for nothing.
+      if (limb.isLeg && segment.joint === 0 && this.seatId !== null && hit.objectId === this.seatId) {
+        TMP_DIR.subVectors(segment.p1, segment.p0).normalize();
+        TMP_B.set(hit.point.x, hit.point.y, hit.point.z).sub(segment.p0);
+        if (TMP_B.dot(TMP_DIR) < segment.shapeRadius) continue;
+      }
       if (first) {
         segment.contact = true;
         segment.hit = hit;
@@ -817,13 +942,20 @@ export class ContactBody {
     }
     joint.offset.copy(total).multiply(TMP_PW.copy(joint.anim).invert());
     // The solver nudges, it never re-poses: whatever the cap refuses is a miss, not pushed up the chain.
-    const offsetAngle = rotationAngle(joint.offset);
-    const capped = offsetAngle > joint.cap;
-    if (capped) {
-      TMP_QL.copy(joint.offset);
-      joint.offset.identity().slerp(TMP_QL, joint.cap / offsetAngle);
-      limb.refused = true;
+    let capped: boolean;
+    if (limb.isLeg && index === 0 && this.seatId !== null) {
+      // Seated: the hip may flex (knee up) further than it may move any other way. Negative about the
+      // lateral axis (X in the hips' frame) raises the knee.
+      capped = capDirectional(joint.offset, X_AXIS, HIP_FLEXION_MAX_OFFSET, joint.cap, joint.offset);
+    } else {
+      const offsetAngle = rotationAngle(joint.offset);
+      capped = offsetAngle > joint.cap;
+      if (capped) {
+        TMP_QL.copy(joint.offset);
+        joint.offset.identity().slerp(TMP_QL, joint.cap / offsetAngle);
+      }
     }
+    if (capped) limb.refused = true;
     bone.quaternion.copy(joint.offset).multiply(joint.anim);
     bone.updateWorldMatrix(false, true);
 

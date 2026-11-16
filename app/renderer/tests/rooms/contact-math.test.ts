@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import {
+  HIP_FLEXION_MAX_OFFSET,
+  HIP_MAX_OFFSET,
+  capDirectional,
+  headExcessCorrection,
   clampCone,
   clampHinge,
   easeTowards,
@@ -137,5 +141,67 @@ describe('easing', () => {
     }
     expect(spring.value).toBe(0.05);
     expect(peak).toBeLessThanOrEqual(0.05 + 1e-9);
+  });
+});
+
+describe('clampCone', () => {
+  it('shrinks a rotation in place without losing its direction', () => {
+    const q = new THREE.Quaternion().setFromAxisAngle(X, -deg(130));
+    clampCone(q, deg(120), 0, q);
+    expect(rotationAngle(q)).toBeCloseTo(deg(120), 6);
+    expect(hingeAngle(q, X)).toBeCloseTo(-deg(120), 6);
+  });
+});
+
+describe('capDirectional', () => {
+  const Z = new THREE.Vector3(0, 0, 1);
+  const cap = (q: THREE.Quaternion) => {
+    const out = new THREE.Quaternion();
+    const cut = capDirectional(q, X, HIP_FLEXION_MAX_OFFSET, HIP_MAX_OFFSET, out);
+    return { out, cut };
+  };
+
+  it('lets flexion (negative about the lateral axis) reach 45 degrees and no more', () => {
+    expect(cap(new THREE.Quaternion().setFromAxisAngle(X, -deg(40))).cut).toBe(false);
+    const { out, cut } = cap(new THREE.Quaternion().setFromAxisAngle(X, -deg(60)));
+    expect(cut).toBe(true);
+    expect(hingeAngle(out, X)).toBeCloseTo(-deg(45), 6);
+  });
+
+  it('keeps 25 degrees for extension, abduction and twist', () => {
+    const extension = cap(new THREE.Quaternion().setFromAxisAngle(X, deg(40)));
+    expect(extension.cut).toBe(true);
+    expect(hingeAngle(extension.out, X)).toBeCloseTo(deg(25), 6);
+    const abduction = cap(new THREE.Quaternion().setFromAxisAngle(Z, deg(40)));
+    expect(abduction.cut).toBe(true);
+    expect(rotationAngle(abduction.out)).toBeCloseTo(deg(25), 6);
+    const within = cap(new THREE.Quaternion().setFromAxisAngle(Z, deg(20)));
+    expect(within.cut).toBe(false);
+  });
+
+  it('caps the flexion and the rest separately and may write in place', () => {
+    const q = new THREE.Quaternion().setFromAxisAngle(X, -deg(40)).multiply(new THREE.Quaternion().setFromAxisAngle(Z, deg(40)));
+    expect(capDirectional(q, X, HIP_FLEXION_MAX_OFFSET, HIP_MAX_OFFSET, q)).toBe(true);
+    expect(hingeAngle(q, X)).toBeLessThan(-deg(35));
+    expect(rotationAngle(q)).toBeGreaterThan(deg(40));
+  });
+});
+
+describe('headExcessCorrection', () => {
+  const limits = [deg(35), deg(25), deg(15)] as const;
+  const yawOf = (q: THREE.Quaternion) => (new THREE.Euler().setFromQuaternion(q, 'YXZ').y * 180) / Math.PI;
+
+  it('takes only the excess off a 58 degree yaw', () => {
+    const head = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, deg(58), 0, 'YXZ'));
+    const out = new THREE.Quaternion();
+    expect(headExcessCorrection(head, ...limits, out)).toBe(true);
+    expect(yawOf(out.multiply(head))).toBeCloseTo(35, 6);
+  });
+
+  it('leaves a 20 degree yaw alone', () => {
+    const head = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, deg(20), 0, 'YXZ'));
+    const out = new THREE.Quaternion(1, 2, 3, 4);
+    expect(headExcessCorrection(head, ...limits, out)).toBe(false);
+    expect(out.equals(new THREE.Quaternion())).toBe(true);
   });
 });

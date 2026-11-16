@@ -3749,7 +3749,7 @@ export default function App() {
                   setSettleRetryEnabled(event.target.checked);
                 }}
               />{' '}
-              Re-try sits that end with legs in furniture
+              Re-try sits that end with legs in furniture (off by default)
             </label>
             <div className="kiosk__statusBar">
               <div
