@@ -42,6 +42,9 @@ export const EMPTY_LOCAL_ANSWERS: Record<string, (args: unknown[]) => unknown> =
   'wake-word:list': () => [],
   'wake-word:set-listening': () => undefined,
   'metrics:observe-latency': () => undefined,
+  // No local motion service on a satellite, so nothing to trace.
+  'motion-trace:append': () => undefined,
+  'motion-trace:configure': () => false,
   'approvals:list': () => [],
   'rooms:making': () => null,
 };

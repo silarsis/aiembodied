@@ -581,6 +581,55 @@ describe('SceneActionExecutor', () => {
       expect(executor.nextFailureExpiryMs()).toBeNull();
     });
 
+    it('plays no settle stream when the retry switch is off', async () => {
+      let n = 0;
+      executor = new SceneActionExecutor({ newId: () => `s${(n += 1)}`, setTimer: (fn) => setTimeout(fn, 0), now: () => clock, settleRetries: () => false });
+      executor.setBridge(bridge);
+      executor.setEnv(contactEnv);
+      await sitDown();
+      contactEnv.miss('leftFoot');
+      await playStream(executor, bridge, 's1', [undefined, hold], 'sess-1');
+      await until(() => !executor.busy);
+      expect(bridge.requests).toHaveLength(1);
+      expect(executor.getState()).toMatchObject({ posture: 'seated', seat: { session: 'sess-1' } });
+      expect(executor.recentFailures()).toEqual([]);
+    });
+
+    it('traces plans, streams, chunks and the settle decision, and builds nothing while tracing is off', async () => {
+      const lines: Array<{ avatar: string; kind: string; data: Record<string, unknown> }> = [];
+      let on = false;
+      const trace = vi.fn((avatar: string, kind: string, build: () => Record<string, unknown>) => {
+        lines.push({ avatar, kind, data: build() });
+      });
+      let n = 0;
+      executor = new SceneActionExecutor({ newId: () => `s${(n += 1)}`, setTimer: (fn) => setTimeout(fn, 0), now: () => clock, avatarId: 'rex', trace, tracing: () => on });
+      executor.setBridge(bridge);
+      executor.setEnv(contactEnv);
+      await sitDown();
+      await playStream(executor, bridge, 's1', [undefined, hold], 'sess-1');
+      await until(() => !executor.busy);
+      expect(trace).not.toHaveBeenCalled();
+
+      on = true;
+      let m = 0;
+      executor = new SceneActionExecutor({ newId: () => `t${(m += 1)}`, setTimer: (fn) => setTimeout(fn, 0), now: () => clock, avatarId: 'rex', trace, tracing: () => on });
+      contactEnv = new ContactEnv();
+      executor.setBridge(bridge);
+      executor.setEnv(contactEnv);
+      executor.submit([{ kind: 'sit', objectId: 'sofa' }]);
+      await until(() => bridge.requests.length === 2);
+      contactEnv.miss('leftFoot');
+      await playStream(executor, bridge, 't1', [undefined, hold], 'sess-2');
+      await until(() => bridge.requests.length === 3);
+      const kinds = lines.map((line) => line.kind);
+      for (const kind of ['plan', 'stream.start', 'stream.chunk', 'stream.done', 'stream.final', 'settle.check', 'settle.repair']) expect(kinds).toContain(kind);
+      expect(lines.every((line) => line.avatar === 'rex')).toBe(true);
+      const plan = lines.find((line) => line.kind === 'plan' && line.data.planType === 'stream')!;
+      expect(plan.data.request).toBeDefined();
+      expect(plan.data.sitWorld).toMatchObject({ objectId: 'sofa', restHipsHeight: expect.any(Number) });
+      expect(lines.find((line) => line.kind === 'settle.repair')!.data.observed).toBeDefined();
+    });
+
     it('stays seated with the old session when the settle stream fails', async () => {
       await sitDown();
       contactEnv.miss('leftKnee');

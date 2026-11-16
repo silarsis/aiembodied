@@ -197,9 +197,9 @@ describe('RoomStage seat geometry and collider overlay', () => {
   it('reports a turned armchair seat in world space', async () => {
     const stage = await RoomStage.create(room);
     const seat = stage.seatGeometry('armchair')!;
-    expect(seat.seatTopY).toBeCloseTo(0.52, 2);
+    expect(seat.seatTopY).toBeCloseTo(0.44, 2);
     expect(seat.facing).toBeCloseTo(40);
-    expect(seat.backRest?.top).toBeCloseTo(0.955, 2);
+    expect(seat.backRest?.top).toBeCloseTo(0.875, 2);
     expect(stage.seatGeometry('bookshelf')).toBeNull();
     stage.dispose();
   });

@@ -38,7 +38,7 @@ export class MovementRigs {
   get(avatarId: string): MovementRig {
     let rig = this.rigs.get(avatarId);
     if (!rig) {
-      rig = { avatarId, executor: new SceneActionExecutor() };
+      rig = { avatarId, executor: new SceneActionExecutor({ avatarId }) };
       this.rigs.set(avatarId, rig);
       rig.executor.setBridge(this.bridgeFactory?.(avatarId) ?? null);
       this.watchActivity(rig);

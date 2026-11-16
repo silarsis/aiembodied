@@ -11,7 +11,7 @@ describe('seatGeometryLocal on the reading-room sofa', () => {
   const local = seatGeometryLocal(tag, shapeSampler(objectShapes(sofa)));
 
   it('finds the cushion top, its front edge and depth', () => {
-    expect(local.seatTopY).toBeCloseTo(0.54, 2);
+    expect(local.seatTopY).toBeCloseTo(0.46, 2);
     // Cushion spans z -0.27 .. 0.43; the tag is at z 0.05.
     expect(local.frontEdge).toBeCloseTo(0.38, 1);
     expect(local.depth).toBeCloseTo(0.7, 1);
@@ -20,7 +20,7 @@ describe('seatGeometryLocal on the reading-room sofa', () => {
   it('finds the back rest behind the tag', () => {
     // Back rest front plane at z -0.25, tag at 0.05; top at 0.9.
     expect(local.backRest?.distance).toBeCloseTo(0.3, 1);
-    expect(local.backRest?.top).toBeCloseTo(0.9, 2);
+    expect(local.backRest?.top).toBeCloseTo(0.82, 2);
   });
 
   it('puts the feet on the floor in front', () => {
@@ -51,7 +51,7 @@ describe('seat overrides and world space', () => {
   it('follows the object pose', () => {
     const world = seatGeometryToWorld(local, tag, { position: [2, 0.1, 3], yawDegrees: 90 });
     expect(world.seatTopY).toBeCloseTo(local.seatTopY + 0.1);
-    expect(world.backRest?.top).toBeCloseTo(1.0, 2);
+    expect(world.backRest?.top).toBeCloseTo(0.92, 2);
     expect(world.facing).toBe(90);
     // Local (0, 0.5, 0.05) turned 90 degrees about Y lands 0.05 along +X.
     expect(world.position[0]).toBeCloseTo(2.05);

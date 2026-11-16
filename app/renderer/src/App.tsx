@@ -72,6 +72,7 @@ import {
 import { MovementRigs } from './rooms/movement-rig.js';
 import { MoveRequestFilter, enqueueMotionChunk } from './avatar/live-motion.js';
 import { SceneActionExecutor, type SceneActivity } from './rooms/scene-executor.js';
+import { getMotionTraceSetting, initMotionTrace, isSettleRetryEnabled, setMotionTraceSetting, setSettleRetryEnabled } from './rooms/motion-trace.js';
 import { tagToAction, type SceneAction } from './rooms/scene-actions.js';
 import { buildSceneInstructions, describeAvatarWhere, describeBody, type OtherAvatarEntry } from './rooms/scene-instructions.js';
 import { useIdleDirector } from './rooms/use-idle-director.js';
@@ -965,6 +966,12 @@ export default function App() {
   const satellitePlace = isSatellite && placesSnapshot ? placesSnapshot.places.find((place) => place.id === placesSnapshot.localPlaceId) : undefined;
   const backgrounds = useBackgrounds(activeBridge?.backgrounds, isSatellite ? (satellitePlace ? (satellitePlace.room ?? DEFAULT_DESKTOP_ROOM) : null) : undefined);
   const [showWalkableArea, setShowWalkableArea] = useState(false);
+  // Debug switches kept in localStorage (rooms/motion-trace.ts): the verbose motion log and the post-sit settle retries.
+  const [motionTraceOn, setMotionTraceOn] = useState(() => getMotionTraceSetting());
+  const [settleRetriesOn, setSettleRetriesOn] = useState(() => isSettleRetryEnabled());
+  useEffect(() => {
+    void initMotionTrace();
+  }, []);
   const [avatarFootY, setAvatarFootY] = useState(0.9);
 
   useEffect(() => {
@@ -3635,6 +3642,28 @@ export default function App() {
                 onChange={(event) => setShowWalkableArea(event.target.checked)}
               />{' '}
               Show navmesh and colliders (3D rooms)
+            </label>
+            <label className="kiosk__helper">
+              <input
+                type="checkbox"
+                checked={motionTraceOn}
+                onChange={(event) => {
+                  setMotionTraceOn(event.target.checked);
+                  void setMotionTraceSetting(event.target.checked);
+                }}
+              />{' '}
+              Verbose motion log (motion-trace.jsonl)
+            </label>
+            <label className="kiosk__helper">
+              <input
+                type="checkbox"
+                checked={settleRetriesOn}
+                onChange={(event) => {
+                  setSettleRetriesOn(event.target.checked);
+                  setSettleRetryEnabled(event.target.checked);
+                }}
+              />{' '}
+              Re-try sits that end with legs in furniture
             </label>
             <div className="kiosk__statusBar">
               <div

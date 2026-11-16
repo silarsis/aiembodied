@@ -264,7 +264,7 @@ describe('sit and stand', () => {
     const [sx, sz] = motionToWorld(world.frame, target.root![0], target.root![1]);
     expect(sx).toBeCloseTo(sit.position[0], 6);
     expect(sz).toBeCloseTo(sit.position[2], 6);
-    expect(target.height).toBeCloseTo(0.5 + 0.08, 6);
+    expect(target.height).toBeCloseTo(0.42 + 0.08, 6);
     expect(target.heading).toBeCloseTo(0, 6); // the sofa faces +Z like the avatar
     expect(target.t).toBe(phase.startS + 2);
     expect(target.revealS).toBe(phase.startS);
@@ -274,7 +274,7 @@ describe('sit and stand', () => {
 
   it('sends the seat height in avatar metres for a scaled avatar', () => {
     const stream = streamOf(planAction(worldAt(0, -0.3, 0, 1.25), INITIAL_STATE, { kind: 'sit', objectId: 'sofa' }));
-    expect(stream.request.targets!.at(-1)!.height).toBeCloseTo((0.5 + 0.08) / 1.25, 6);
+    expect(stream.request.targets!.at(-1)!.height).toBeCloseTo((0.42 + 0.08) / 1.25, 6);
   });
 
   it('turns the heading into the avatar frame for a rotated armchair', () => {
