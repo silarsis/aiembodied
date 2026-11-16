@@ -2290,6 +2290,32 @@ body {
   font: inherit;
 }
 .typedMessage__send { border-radius: 999px; }
+/* Desktop: Enter opens a one-line prompt along the bottom of the screen. */
+.typedPrompt {
+  position: fixed;
+  left: 50%;
+  bottom: 84px;
+  transform: translateX(-50%);
+  width: min(720px, calc(100vw - 48px));
+  z-index: 60;
+  display: grid;
+  gap: 6px;
+}
+.typedPrompt__input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 18px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  backdrop-filter: blur(14px);
+  color: rgba(226, 232, 240, 0.95);
+  font: inherit;
+  font-size: 1.05rem;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+.typedPrompt__input:focus { outline: 2px solid rgba(125, 211, 252, 0.6); outline-offset: 2px; }
+.typedPrompt__note { margin: 0; padding: 0 18px; font-size: 0.85rem; color: rgba(253, 230, 138, 0.95); }
 .satelliteBanner {
   position: absolute;
   top: 18px;
