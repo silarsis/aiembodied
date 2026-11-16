@@ -74,4 +74,9 @@ export class MoveRequestFilter {
     this.recent.set(key, time);
     return true;
   }
+
+  /** Lets the next sighting of this description start a movement (a station repeats its gestures on purpose). */
+  forget(description: string): void {
+    this.recent.delete(description.toLowerCase());
+  }
 }

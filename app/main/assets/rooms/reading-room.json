@@ -328,8 +328,8 @@
         },
         {
           "shape": "box",
-          "size": [1.4, 0.35, 0.22],
-          "offset": [0, 1.2, 0.02],
+          "size": [1.0, 0.35, 0.22],
+          "offset": [-0.2, 1.2, 0.02],
           "color": "#3e5f7a"
         },
         {
@@ -347,13 +347,38 @@
       ],
       "tags": {
         "look": {
-          "position": [0, 1.4, 0.2]
+          "position": [0.5, 1.1, 0.2]
         },
         "stand": {
-          "position": [0, 0, 0.8],
+          "position": [0.5, 0, 0.8],
           "facing": 180
         },
+        "surface": {
+          "height": 1.025
+        },
         "idle": "browse the books"
+      }
+    },
+    {
+      "id": "book",
+      "name": "book",
+      "description": "A small hardback book, lying on the bookshelf.",
+      "position": [-2.78, 1.025, -1.0],
+      "rotationY": 90,
+      "size": [0.22, 0.03, 0.16],
+      "dynamic": true,
+      "parts": [
+        {
+          "shape": "box",
+          "size": [0.22, 0.03, 0.16],
+          "offset": [0, 0.015, 0],
+          "color": "#7a2f3b"
+        }
+      ],
+      "tags": {
+        "grab": {
+          "position": [0, 0.03, 0]
+        }
       }
     },
     {

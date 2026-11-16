@@ -173,7 +173,7 @@ export class PursuitManager {
         signal,
         onStep: (step) => {
           // The model calls run while the avatar walks over; the walk does not hold them up.
-          visit?.activity(readingActivity(step, objectName));
+          visit?.activity(readingActivity(step, objectName), step);
         },
       });
     } catch (error) {

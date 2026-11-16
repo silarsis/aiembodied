@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { RoomFile } from '../../../main/src/rooms/types.js';
 import type { MCPServerSummary } from '../../../main/src/mcp/types.js';
-import type { Station, StationSource, StationView } from '../../../main/src/stations/types.js';
+import type { Station, StationBody, StationSource, StationView } from '../../../main/src/stations/types.js';
 import type { McpBridge, StationsBridge } from '../preload-api.js';
 import type { BackgroundController } from './use-backgrounds.js';
 
@@ -69,6 +69,10 @@ export function RoomStations({
   // Only objects an avatar can stand at can hold something.
   const objects = useMemo(() => (room && room.id === shownId ? room.objects.filter((object) => object.tags?.stand) : []), [room, shownId]);
 
+  // What a reading character can sit on, and what it can take from the object.
+  const seats = useMemo(() => (room && room.id === shownId ? room.objects.filter((object) => object.tags?.sit) : []), [room, shownId]);
+  const takeable = useMemo(() => (room && room.id === shownId ? room.objects.filter((object) => object.dynamic === true && object.tags?.grab) : []), [room, shownId]);
+
   if (!stations) return null;
 
   const stationAt = (objectId: string): StationView | undefined => list.find((station) => station.roomId === shownId && station.objectId === objectId);
@@ -91,6 +95,14 @@ export function RoomStations({
     // A new station gets a plain activity; an existing one keeps what it had.
     const extra: Partial<Pick<Station, 'activity' | 'verb'>> = existing ? {} : { verb: 'use', activity: `uses the ${objectName}` };
     void save(() => stations.hold(shownId, objectId, source, extra));
+  };
+
+  /** Set one part of a station's body plan ('' clears it); the gestures it already has are kept. */
+  const changeBody = (station: StationView, key: 'seat' | 'prop', value: string) => {
+    const body: StationBody = { ...(station.body ?? {}) };
+    if (value) body[key] = value;
+    else delete body[key];
+    void save(() => stations.update(station.id, { body }));
   };
 
   return (
@@ -144,6 +156,40 @@ export function RoomStations({
                   >
                     <option value="all">Every use</option>
                     <option value="writes">Only changes</option>
+                  </select>
+                </label>
+              ) : null}
+              {station ? (
+                <label>
+                  Read at{' '}
+                  <select
+                    aria-label={`Where to read what is kept on the ${object.name}`}
+                    value={station.body?.seat ?? ''}
+                    onChange={(event) => changeBody(station, 'seat', event.target.value)}
+                  >
+                    <option value="">Stay standing</option>
+                    {seats.map((seat) => (
+                      <option key={seat.id} value={seat.id}>
+                        {seat.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {station ? (
+                <label>
+                  Take{' '}
+                  <select
+                    aria-label={`What to take from the ${object.name}`}
+                    value={station.body?.prop ?? ''}
+                    onChange={(event) => changeBody(station, 'prop', event.target.value)}
+                  >
+                    <option value="">Nothing</option>
+                    {takeable.map((prop) => (
+                      <option key={prop.id} value={prop.id}>
+                        {prop.name}
+                      </option>
+                    ))}
                   </select>
                 </label>
               ) : null}

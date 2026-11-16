@@ -9,7 +9,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { findPreset } from '../mcp/presets.js';
-import type { Station, StationLabels, StationSource, StationTool, StationView } from './types.js';
+import type { Station, StationBody, StationLabels, StationSource, StationTool, StationView } from './types.js';
 
 export const STATIONS_KEY = 'rooms.stations';
 
@@ -31,8 +31,28 @@ export const DEFAULT_STATIONS: Station[] = [
     activity: 'pulls a book from the shelf and reads',
     trip: 'all',
     characters: 'all',
+    // Reading at the bookshelf: take the book off the shelf, read it in the armchair (the Reading room's objects).
+    body: {
+      prop: 'book',
+      seat: 'armchair',
+      browse: 'runs a finger along the book spines',
+      read: 'reads a book, turning a page now and then',
+      note: 'pauses and jots something down',
+    },
   },
 ];
+
+/** A body plan from saved data: only non-empty strings are kept. An empty object means "no props, no seat". */
+export function sanitizeBody(input: unknown): StationBody | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const value = input as Record<string, unknown>;
+  const body: StationBody = {};
+  for (const key of ['prop', 'seat', 'browse', 'read', 'note'] as const) {
+    const text = value[key];
+    if (typeof text === 'string' && text.trim()) body[key] = text.trim().replace(/[{}]/g, '');
+  }
+  return body;
+}
 
 /** What the registry needs to know about an MCP server: its id and address. */
 export interface StationServer {
@@ -102,7 +122,13 @@ export function sanitizeStation(input: unknown): Station | null {
     activity: typeof value.activity === 'string' && value.activity.trim() ? value.activity.trim() : `uses the ${value.objectId}`,
     trip: value.trip === 'writes' ? 'writes' : 'all',
     characters,
+    ...(sanitizeBody(value.body) ? { body: sanitizeBody(value.body) } : {}),
   };
+}
+
+function bodyOfDefault(id: string): { body?: StationBody } {
+  const body = DEFAULT_STATIONS.find((fallback) => fallback.id === id)?.body;
+  return body ? { body: { ...body } } : {};
 }
 
 function sameSource(a: StationSource, b: StationSource): boolean {
@@ -136,7 +162,11 @@ export class StationRegistry {
       }
     }
     const value = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
-    const stations = (Array.isArray(value.stations) ? value.stations : []).map(sanitizeStation).filter((s): s is Station => s !== null);
+    const stations = (Array.isArray(value.stations) ? value.stations : [])
+      .map(sanitizeStation)
+      .filter((s): s is Station => s !== null)
+      // A default saved before it had a body plan gets the default one (a body Kevin saved, even an empty one, is kept).
+      .map((s) => (s.body === undefined ? { ...s, ...bodyOfDefault(s.id) } : s));
     const removedDefaults = Array.isArray(value.removedDefaults) ? value.removedDefaults.filter((id): id is string => typeof id === 'string') : [];
     return { stations, removedDefaults };
   }
@@ -221,7 +251,7 @@ export class StationRegistry {
    * A source lives in one place, so any other station that holds it is removed. Settings that Kevin did not
    * touch (verb, activity, trip, characters) are kept when the object already had a station.
    */
-  hold(roomId: string, objectId: string, source: StationSource | null, extra: Partial<Pick<Station, 'verb' | 'activity' | 'trip' | 'characters'>> = {}): Station | null {
+  hold(roomId: string, objectId: string, source: StationSource | null, extra: Partial<Pick<Station, 'verb' | 'activity' | 'trip' | 'characters' | 'body'>> = {}): Station | null {
     this.list();
     const saved = this.read();
     const here = saved.stations.find((station) => station.roomId === roomId && station.objectId === objectId);

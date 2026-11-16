@@ -41,7 +41,7 @@ describe('idle prompt', () => {
     expect(user).toContain('Idle habits: Sits by the window with tea.');
     expect(user).toContain('Room: Reading room. A warm reading room');
     expect(user).toContain('- sofa (sit, go to / look at)');
-    expect(user).toContain('- bookshelf (go to / look at); idle idea: browse the books');
+    expect(user).toContain('- bookshelf (go to / look at, put things on); idle idea: browse the books');
     expect(user).toContain('- mug (pick up)');
     expect(user).toContain('- coffee table (go to / look at, put things on)');
     expect(user).not.toContain('- rug');

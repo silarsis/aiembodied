@@ -268,11 +268,23 @@ describe('StationTrips', () => {
       const visit = trips.beginAt('echo', station)!;
       expect(visit).not.toBeNull();
       expect(sent[0].event).toMatchObject({ phase: 'start', objectId: 'bookshelf' });
-      visit.activity('jots down notes');
-      expect(sent[1].event).toMatchObject({ phase: 'activity', activity: 'jots down notes', useId: sent[0].event.useId });
+      visit.activity('jots down notes', 'note');
+      expect(sent[1].event).toMatchObject({ phase: 'activity', activity: 'jots down notes', step: 'note', useId: sent[0].event.useId });
       trips.arrived(sent[0].event.useId);
       await visit.settle(true);
       expect(sent[2].event).toMatchObject({ phase: 'end', ok: true });
+    });
+
+    it('marks every event as from a pursuit and carries the station body; a tool call is not marked', async () => {
+      const { trips, stations, sent } = setup();
+      const station = stations.list()[0];
+      const visit = trips.beginAt('echo', station)!;
+      visit.activity('reads', 'consume');
+      trips.arrived(sent[0].event.useId);
+      await visit.settle(false);
+      expect(sent.map((entry) => entry.event.source)).toEqual(['pursuit', 'pursuit', 'pursuit']);
+      expect(sent[1].event.body).toEqual(station.body);
+      expect(sent[2].event).toMatchObject({ phase: 'end', ok: false });
     });
 
     it('stays put for a character the station is not for, and when the avatar is not in a 3D room', () => {
