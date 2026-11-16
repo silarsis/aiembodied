@@ -3,6 +3,13 @@ import * as THREE from 'three';
 import type { PenetrationHit } from './room-physics.js';
 import {
   ANKLE_CONE,
+  ANKLE_MAX_OFFSET,
+  ELBOW_MAX_OFFSET,
+  HIP_MAX_OFFSET,
+  KNEE_MAX_OFFSET,
+  MAX_OFFSET_RATE,
+  SHOULDER_MAX_OFFSET,
+  WRIST_MAX_OFFSET,
   CONTACT_TOLERANCE,
   HINGE_MIN,
   HIP_CONE,
@@ -68,6 +75,10 @@ export const MISS_DISTANCE = 0.05;
 export const MISS_SECONDS = 0.25;
 /** Fallback segment lengths (reference scale metres) when a toes or middle finger bone is missing. */
 const FOOT_LENGTH = 0.12;
+/** A push whose horizontal part points this close (radians) to straight out from the body midline would abduct a leg: refused. */
+const ABDUCTION_ANGLE = Math.PI / 4;
+/** Contacts with the seat under a seated avatar whose normal points up more than this are resting, not penetrations. */
+const RESTING_NORMAL_Y = 0.7;
 const HAND_LENGTH = 0.08;
 
 export interface BoneSource {
@@ -107,6 +118,8 @@ interface Joint {
   axis: THREE.Vector3;
   /** Hinge: maximum flexion. Cone: maximum angle from rest. Radians. */
   limit: number;
+  /** The most the correction may rotate this joint from its animated rotation (radians). */
+  cap: number;
   /** The rotation the animation gave the bone this frame. */
   anim: THREE.Quaternion;
   /** The last rotation written, to tell a bone the mixer rewrote from one it left alone. */
@@ -146,6 +159,8 @@ interface Limb {
   /** Object that pushed this limb this frame (null when none or the shell). */
   blocker: string | null;
   hit: boolean;
+  /** A hit this frame was refused (cap, abduction rule): the limb could not get clear. */
+  refused: boolean;
   /** Leg only: the animated ankle's height above the surface under it when the foot was grounded, else null. Measured before the pelvis lift. */
   groundHeight: number | null;
   /** Where that animated ankle was (world, before the lift; the lift only moves y). */
@@ -161,6 +176,8 @@ interface EndTrack {
   seconds: number;
   reported: boolean;
   blocker: string | null;
+  /** The end is away from its animated place or its limb's correction was refused this frame. */
+  missing: boolean;
 }
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -231,6 +248,10 @@ export class ContactBody {
   private debugCapacity = 0;
   /** World size of the avatar relative to the reference (hips height ratio times root scale). */
   private factor = 1;
+  /** The object the avatar is seated on, if any (resting contacts with it belong to the pelvis lift). */
+  private seatId: string | null = null;
+  /** Horizontal unit vector along the body's left-right axis (from the hips). */
+  private readonly lateral = new THREE.Vector3(1, 0, 0);
 
   constructor(humanoid: BoneSource) {
     const bone = (name: string) => humanoid.getNormalizedBoneNode(name) ?? null;
@@ -253,7 +274,7 @@ export class ContactBody {
     for (const [end, isLeg, side, joint] of labels) {
       const limb = this.limbs.find((candidate) => candidate.isLeg === isLeg && candidate.side === side);
       if (limb) {
-        this.ends.push({ end, limb, joint, animated: new THREE.Vector3(), distance: 0, seconds: 0, reported: false, blocker: null });
+        this.ends.push({ end, limb, joint, animated: new THREE.Vector3(), distance: 0, seconds: 0, reported: false, blocker: null, missing: false });
       }
     }
   }
@@ -286,6 +307,7 @@ export class ContactBody {
     for (const track of this.ends) {
       track.distance = 0;
       track.seconds = 0;
+      track.missing = false;
       track.reported = false;
     }
     this.resetLift();
@@ -295,7 +317,7 @@ export class ContactBody {
   misses(): ContactMiss[] {
     const result: ContactMiss[] = [];
     for (const track of this.ends) {
-      if (track.distance > MISS_DISTANCE && track.seconds >= MISS_SECONDS) result.push(this.missOf(track));
+      if (track.missing && track.seconds >= MISS_SECONDS) result.push(this.missOf(track));
     }
     return result;
   }
@@ -322,7 +344,7 @@ export class ContactBody {
    * own update. A bone that anything since our last write (mixer, pose blend) rewrote is taken as the new
    * animated pose; one still holding our write gets its animated rotation back first.
    * `physics` null (no physics in this room) still restores the animated pose. `debugParent` non-null draws
-   * the body capsules into it.
+   * the body capsules into it. `seatId` is the object the avatar sits on (or null/undefined).
    */
   update(
     rig: { scene: THREE.Object3D; restHipsHeight: number },
@@ -330,6 +352,7 @@ export class ContactBody {
     deltaSeconds: number,
     exclude: readonly string[],
     debugParent: THREE.Object3D | null,
+    seatId: string | null = null,
   ): void {
     const hips = this.hips;
     if (!hips) return;
@@ -338,13 +361,16 @@ export class ContactBody {
     const factor = (rest / REFERENCE_HIPS_HEIGHT) * (rig.scene.scale.x || 1);
 
     this.factor = factor;
+    this.seatId = seatId;
     this.restoreAnimated();
     hips.updateWorldMatrix(true, true);
+    this.measureLateral();
     this.measureShapes(factor);
 
     for (const limb of this.limbs) {
       limb.blocker = null;
       limb.hit = false;
+      limb.refused = false;
       for (const segment of limb.segments) segment.contact = false;
       for (const joint of limb.joints) joint.offset.identity();
     }
@@ -419,14 +445,15 @@ export class ContactBody {
     if (bones.length !== names.length) return;
     // The hinge axes assume the normalised rest pose: legs down, arms out along +/-X, model facing +Z.
     const hingeAxis = isLeg ? X_AXIS : side === 'left' ? NEG_Y_AXIS : Y_AXIS;
-    const kinds: Array<[JointKind, number]> = isLeg
-      ? [['cone', HIP_CONE], ['hinge', KNEE_MAX_FLEXION], ['cone', ANKLE_CONE]]
-      : [['cone', SHOULDER_CONE], ['hinge', KNEE_MAX_FLEXION], ['cone', WRIST_CONE]];
+    const kinds: Array<[JointKind, number, number]> = isLeg
+      ? [['cone', HIP_CONE, HIP_MAX_OFFSET], ['hinge', KNEE_MAX_FLEXION, KNEE_MAX_OFFSET], ['cone', ANKLE_CONE, ANKLE_MAX_OFFSET]]
+      : [['cone', SHOULDER_CONE, SHOULDER_MAX_OFFSET], ['hinge', KNEE_MAX_FLEXION, ELBOW_MAX_OFFSET], ['cone', WRIST_CONE, WRIST_MAX_OFFSET]];
     const joints = bones.map((bone, i): Joint => ({
       bone,
       kind: nth(kinds, i)[0],
       axis: nth(kinds, i)[0] === 'hinge' ? hingeAxis.clone() : new THREE.Vector3(),
       limit: nth(kinds, i)[1],
+      cap: nth(kinds, i)[2],
       anim: new THREE.Quaternion().copy(bone.quaternion),
       written: new THREE.Quaternion(),
       hasWritten: false,
@@ -445,7 +472,7 @@ export class ContactBody {
     ];
     nth(segments, 2).isFoot = isLeg;
     nth(segments, 2).isHand = !isLeg;
-    const limb: Limb = { side, isLeg, joints, segments, blocker: null, hit: false, groundHeight: null, groundAt: new THREE.Vector3() };
+    const limb: Limb = { side, isLeg, joints, segments, blocker: null, hit: false, refused: false, groundHeight: null, groundAt: new THREE.Vector3() };
     for (const segment of segments) segment.limb = limb;
     this.limbs.push(limb);
   }
@@ -462,6 +489,16 @@ export class ContactBody {
         joint.hasWritten = false;
       }
     }
+  }
+
+  /** The body's left-right axis, flattened to the horizontal plane. */
+  private measureLateral(): void {
+    if (!this.hips) return;
+    worldQuaternionOf(this.hips, TMP_QW);
+    this.lateral.set(1, 0, 0).applyQuaternion(TMP_QW);
+    this.lateral.y = 0;
+    if (this.lateral.lengthSq() < 1e-6) this.lateral.set(1, 0, 0);
+    this.lateral.normalize();
   }
 
   /** Fits each segment's shape to its current length and radius (lengths only change when the avatar is rescaled). */
@@ -614,6 +651,8 @@ export class ContactBody {
       if (!hit || hit.depth <= CONTACT_TOLERANCE) continue;
       // A foot standing on the floor is the normal case; only a foot sunk deeper than its radius counts.
       if (segment.isFoot && hit.objectId === null && hit.depth <= segment.shapeRadius) continue;
+      // A thigh lying on the seat it sits on is resting, not penetrating: only the pelvis lift answers to it.
+      if (limb.isLeg && segment.joint === 0 && this.seatId !== null && hit.objectId === this.seatId && hit.normal.y > RESTING_NORMAL_Y) continue;
       if (first) segment.contact = true;
       any = true;
       limb.hit = true;
@@ -623,6 +662,11 @@ export class ContactBody {
       TMP_DIR.multiplyScalar(1 / Math.max(length, 1e-6));
       TMP_N.set(hit.normal.x, hit.normal.y, hit.normal.z);
       TMP_POINT.set(hit.point.x, hit.point.y, hit.point.z);
+      if (limb.isLeg && this.pushesOutward(limb, TMP_N)) {
+        // Legs are never pushed out over an armrest: the contact stays, and counts as a miss.
+        limb.refused = true;
+        continue;
+      }
       // Rotating about the start joint moves a point `reach` along the segment; aim at the contact itself.
       const along = TMP_B.subVectors(TMP_POINT, segment.p0).dot(TMP_DIR) / Math.max(length, 1e-6);
       const reach = Math.min(1, Math.max(0.25, along)) * length;
@@ -637,13 +681,27 @@ export class ContactBody {
     return any;
   }
 
+  /** True when the horizontal part of `normal` points away from the body midline, within ABDUCTION_ANGLE, on the side of this leg. */
+  private pushesOutward(limb: Limb, normal: THREE.Vector3): boolean {
+    const hips = this.hips;
+    const hip = limb.joints[0]?.bone;
+    if (!hips || !hip) return false;
+    const side = TMP_A.subVectors(positionOf(hip, TMP_A), positionOf(hips, TMP_B)).dot(this.lateral) >= 0 ? 1 : -1;
+    const along = normal.dot(this.lateral) * side;
+    const horizontal = Math.hypot(normal.x, normal.z);
+    if (horizontal < 0.3) return false; // mostly vertical: a lift, not an abduction
+    return along / horizontal > Math.cos(ABDUCTION_ANGLE);
+  }
+
   private pushUp(limb: Limb, joint: number, depth: number): void {
     const parent = nth(limb.joints, joint - 1);
     TMP_DIR.subVectors(positionOf(nth(limb.joints, joint).bone, TMP_A), positionOf(parent.bone, TMP_B)).normalize();
     // Any perpendicular lets the parent swing the whole limb clear.
-    TMP_N.crossVectors(TMP_DIR, Y_AXIS);
+    // A leg swings forward or back about the body's lateral axis, never sideways.
+    TMP_N.crossVectors(TMP_DIR, limb.isLeg ? this.lateral : Y_AXIS);
     if (TMP_N.lengthSq() < 1e-6) TMP_N.crossVectors(TMP_DIR, X_AXIS);
     TMP_N.normalize();
+    if (limb.isLeg && TMP_N.y < 0) TMP_N.negate();
     const length = TMP_A.distanceTo(TMP_B);
     const angle = smallestRotation(TMP_DIR, TMP_N, depth, length, TMP_QW);
     if (angle > 0) this.rotateJoint(limb, joint - 1, TMP_QW, 0, null, null, false);
@@ -683,10 +741,18 @@ export class ContactBody {
       clampCone(total, joint.limit, rotationAngle(joint.anim), total);
     }
     joint.offset.copy(total).multiply(TMP_PW.copy(joint.anim).invert());
+    // The solver nudges, it never re-poses: whatever the cap refuses is a miss, not pushed up the chain.
+    const offsetAngle = rotationAngle(joint.offset);
+    const capped = offsetAngle > joint.cap;
+    if (capped) {
+      TMP_QL.copy(joint.offset);
+      joint.offset.identity().slerp(TMP_QL, joint.cap / offsetAngle);
+      limb.refused = true;
+    }
     bone.quaternion.copy(joint.offset).multiply(joint.anim);
     bone.updateWorldMatrix(false, true);
 
-    if (!push || index === 0 || !normal || !point || requested < 1e-6) return;
+    if (capped || !push || index === 0 || !normal || !point || requested < 1e-6) return;
     const achieved = rotationAngle(TMP_PW.copy(old).invert().multiply(joint.offset));
     const remaining = depth * (1 - Math.min(1, achieved / requested));
     if (remaining < CONTACT_TOLERANCE * 0.5) return;
@@ -706,8 +772,16 @@ export class ContactBody {
       for (const joint of limb.joints) {
         const touched = rotationAngle(joint.offset) > MIN_CORRECTION_ANGLE;
         if (touched) {
+          // The target may grow only so fast; a single bad frame cannot fling the limb.
+          const previous = rotationAngle(joint.target);
+          const wanted = rotationAngle(joint.offset);
+          const allowed = previous + MAX_OFFSET_RATE * dt;
           joint.target.copy(joint.offset);
           if (joint.target.w < 0) joint.target.set(-joint.target.x, -joint.target.y, -joint.target.z, -joint.target.w);
+          if (wanted > allowed) {
+            TMP_Q1.copy(joint.target);
+            joint.target.copy(IDENTITY).slerp(TMP_Q1, allowed / wanted);
+          }
           joint.weight = easeTowards(joint.weight, 1, dt, CORRECTION_IN_TAU);
         } else {
           joint.weight = easeTowards(joint.weight, 0, dt, CORRECTION_OUT_TAU, WEIGHT_EPSILON);
@@ -730,7 +804,8 @@ export class ContactBody {
       const bone = nth(track.limb.joints, track.joint).bone;
       track.distance = positionOf(bone, TMP_A).distanceTo(track.animated);
       if (track.limb.hit) track.blocker = track.limb.blocker;
-      if (track.distance > MISS_DISTANCE) {
+      track.missing = track.distance > MISS_DISTANCE || track.limb.refused;
+      if (track.missing) {
         track.seconds += dt;
         if (track.seconds >= MISS_SECONDS && !track.reported) {
           track.reported = true;
