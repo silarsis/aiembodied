@@ -1689,7 +1689,12 @@ export default function App() {
         room: () => activeRoomRef.current,
         executorFor: (avatarId) => rigs.get(avatarId).executor,
         isHere: (avatarId) => presentIdsRef.current.includes(avatarId),
-        gesture: (text, avatarId) => animationTextHandlerRef.current(text, avatarId),
+        gesture: (text, avatarId) => {
+          // A station gesture may repeat the last one on purpose (reading again): let the repeat filter pass it.
+          const move = text.replace(/^\{move:/i, '').replace(/\}$/, '');
+          (avatarId === 'echo' ? moveRequestFilterRef.current : rigs.filterFor(avatarId)).forget(move);
+          animationTextHandlerRef.current(text, avatarId);
+        },
         arrived: (useId) => void stations.arrived(useId).catch((error: unknown) => console.warn('[stations] could not report arrival', error)),
       }),
     );

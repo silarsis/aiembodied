@@ -77,6 +77,25 @@ describe('Things kept in the room', () => {
     expect(screen.queryByLabelText('What the rug holds')).toBeNull();
   });
 
+  it('lets a station pick where to read and what to take, keeping its gestures', async () => {
+    const withBody: StationView = { ...papersStation, body: { prop: 'book', seat: 'armchair', browse: 'browses', read: 'reads' } };
+    const { api, stations, mcp } = bridges([withBody]);
+    render(<Harness api={api} stations={stations} mcp={mcp} />);
+    const seat = (await screen.findByLabelText('Where to read what is kept on the bookshelf')) as HTMLSelectElement;
+    await waitFor(() => expect(seat.value).toBe('armchair'));
+    // Seats are the objects with a sit tag; props are dynamic objects with a grab tag.
+    expect(Array.from(seat.options).map((option) => option.value)).toEqual(['', 'sofa', 'armchair']);
+    const take = screen.getByLabelText('What to take from the bookshelf') as HTMLSelectElement;
+    expect(take.value).toBe('book');
+    expect(Array.from(take.options).map((option) => option.value)).toEqual(['', 'mug', 'book']);
+    fireEvent.change(seat, { target: { value: 'sofa' } });
+    await waitFor(() => expect(stations.update).toHaveBeenCalledWith(withBody.id, { body: { prop: 'book', seat: 'sofa', browse: 'browses', read: 'reads' } }));
+    fireEvent.change(take, { target: { value: '' } });
+    await waitFor(() => expect(stations.update).toHaveBeenLastCalledWith(withBody.id, { body: { seat: 'armchair', browse: 'browses', read: 'reads' } }));
+    // Only an object that holds something has them.
+    expect(screen.queryByLabelText('Where to read what is kept on the sofa')).toBeNull();
+  });
+
   it('makes an object hold a server, and clears it with None', async () => {
     const { api, stations, mcp } = bridges([]);
     render(<Harness api={api} stations={stations} mcp={mcp} />);

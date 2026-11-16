@@ -1,6 +1,6 @@
 # Reading
 
-Status: In Progress (phase 2: reading as the character's own pursuit).
+Status: In Progress (phase 3: the body of reading, on top of phase 2, the character's own pursuit).
 
 Reading is something a character does because it wants to. It is not a tool Kevin triggers and not a feature of Echo alone: every character may read, on its own conversation model, so the notes sound like the one who wrote them.
 
@@ -33,7 +33,23 @@ A session cut short keeps what it has: if an item was read but not noted yet, a 
 
 ## The body
 
-`StationTrips.beginAt(avatarId, station)` makes the same trip a tool call would (walk to the object in the same room, a move to a place that shows the room, or an errand next door) and returns a visit. The session sends `station:use` `phase: 'activity'` events with the step's activity ("browses the bookshelf", "reads", "jots down notes"); the renderer (`rooms/station-walks.ts`) acts them as `{move:}` gestures where the avatar stands. When the session ends, `phase: 'end'` follows and, after an errand, the avatar goes back. Props in the hands and an armchair come later.
+`StationTrips.beginAt(avatarId, station)` makes the same trip a tool call would (walk to the object in the same room, a move to a place that shows the room, or an errand next door) and returns a visit. The session sends `station:use` `phase: 'activity'` events with the step's activity ("browses the bookshelf", "reads", "jots down notes"); the renderer (`rooms/station-walks.ts`) acts them as `{move:}` gestures where the avatar stands. When the session ends, `phase: 'end'` follows and, after an errand, the avatar goes back. The body of reading (phase 3) is below.
+
+### The body of reading (phase 3)
+
+A station's optional `body` (see [stations.md](./stations.md)) says what to take (`prop`), where to read (`seat`) and three gesture texts (`browse`, `read`, `note`). The bookshelf default: take the `book`, read in the `armchair`. Main marks a pursuit's `station:use` events with `source: 'pursuit'`, the `step` (want, act, choose, consume, note, next) and the `body`; a voice tool call has no `source` and keeps phase 1 behaviour. The renderer maps them in `rooms/station-body.ts` (pure planner) and `rooms/station-walks.ts`:
+
+- **start**: `{go:bookshelf}`, `{look:bookshelf}`; arrival is reported as before.
+- **want / act / choose**: the `browse` gesture (the same text is not replayed within 8 s). While seated nothing is played.
+- **consume**: `{pick:book}`, then `{sit:armchair}` (each planned when its turn comes through `submitPlan`, so a failed pick means no sitting), then the `read` gesture. Seated, gestures are skipped (the executor refuses `{move:}` while seated, a standing-start clip would break the pose), so the seated avatar holding a book is the reading; if the avatar stands (no seat, failed sit) the `read` gesture repeats every `READ_REPEAT_MS` (20 s) until the next step.
+- **note**: the `note` gesture when standing; nothing when seated.
+- **Another item (act/choose again) while seated**: the avatar stays seated and keeps the book (robust, no walking back and forth). The book returns at the end.
+- **end**: `stand`, `{put:book@bookshelf}` (the shelf has a `surface` tag; else the nearest surface), then the idle director takes over. When the session was cut short (Kevin started talking, `ok: false`) a `{come}` follows, so the conversation finds the avatar at its spot.
+- **Degrading**: a prop or seat the room lacks (or without the book, no seat) is dropped by `resolveBodyPlan`; the avatar then stands at the shelf and plays gestures, as in phase 2. A station event without a `body` is phase 2 exactly.
+- Station gestures pass the `{move:}` repeat filter on purpose (`MoveRequestFilter.forget`).
+- Interruption: the pursuit aborts and `end` arrives with `ok: false`. The executor's `interrupt()` lets a sit/pick finish and keeps a seated avatar seated; the idle director's talk-start reaction only runs for avatars that wandered, so a reading avatar is released by the `end` event, not by the director.
+
+The Reading room has a dynamic `book` (0.22 x 0.03 x 0.16 m, grab tag) lying on the 1 m shelf board of the bookshelf, in a gap left beside the blue books; the bookshelf has a `surface` tag at 1.025 m and its stand/look tags moved to that gap, so a put-back lands on the free board.
 
 ## Starting a session
 
@@ -62,4 +78,4 @@ Each character's card has a "Reading" section (`avatar/reading-notes.tsx`): the 
 
 ## Not yet
 
-Props and an armchair at the shelf (phase 3), links that open in the browser (the app blocks navigation, so a note's link is shown as text and as a link that does nothing yet), pursuits other than reading, a spoken "go and read" command.
+Gestures while seated, a different book per item, links that open in the browser (the app blocks navigation, so a note's link is shown as text and as a link that does nothing yet), pursuits other than reading, a spoken "go and read" command.

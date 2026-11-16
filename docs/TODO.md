@@ -143,7 +143,12 @@ more depth and are linked where they apply.
   inbox. It stops when Kevin starts talking to it. "What have you been reading?"
   uses `my_reading_notes`; the Characters pop-up lists each character's notes.
   See [features/reading.md](./features/reading.md).
-- **To do:** props in hands and an armchair (phase 3), links that open in the
+- **Today (phase 3):** reading has a body: the character takes the `book` from
+  the bookshelf, reads it in the armchair and puts it back when done or cut
+  short (station `body`, `rooms/station-body.ts`).
+- **To do:** reading gestures while seated (the executor skips `{move:}` when
+  seated), fetching a fresh book per item, a book in the hands on an interrupted
+  session whose `end` was queued behind a second interruption, links that open in the
   browser, other pursuits (watching, tidying, sketching), letting a character
   follow up on an open question across sessions, and an engine "reading" kind.
 

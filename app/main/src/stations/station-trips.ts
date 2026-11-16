@@ -54,7 +54,7 @@ export interface StationVisit extends StationUse {
   /** Resolves when the avatar is at the object (or the walk failed or timed out). Never rejects. */
   arrived(): Promise<void>;
   /** The avatar acts something else at the object ("jots down notes"). Ignored until it has arrived at a screen that draws the room. */
-  activity(text: string): void;
+  activity(text: string, step?: string): void;
 }
 
 /** Resolves when the promise does, or as soon as the signal aborts (the turn was cancelled). */
@@ -145,7 +145,7 @@ export class StationTrips {
   begin(avatarId: string, tool: StationTool): StationVisit | null {
     const plan = this.plan(avatarId, tool);
     if (!plan) return null;
-    return plan.kind === 'same' ? this.beginSameRoom(avatarId, plan.station) : this.beginErrand(avatarId, plan);
+    return plan.kind === 'same' ? this.beginSameRoom(avatarId, plan.station, 'tool') : this.beginErrand(avatarId, plan, 'tool');
   }
 
   /**
@@ -157,11 +157,12 @@ export class StationTrips {
     if (!this.options.stations.appliesTo(station, avatarId)) return null;
     const plan = this.planFor(avatarId, station);
     if (!plan) return null;
-    return plan.kind === 'same' ? this.beginSameRoom(avatarId, plan.station) : this.beginErrand(avatarId, plan);
+    return plan.kind === 'same' ? this.beginSameRoom(avatarId, plan.station, 'pursuit') : this.beginErrand(avatarId, plan, 'pursuit');
   }
 
-  private event(avatarId: string, station: Station, useId: string, phase: StationUseEvent['phase'], ok?: boolean): StationUseEvent {
+  private event(avatarId: string, station: Station, useId: string, phase: StationUseEvent['phase'], ok?: boolean, source: 'pursuit' | 'tool' = 'tool'): StationUseEvent {
     return {
+      ...(source === 'pursuit' ? { source, ...(station.body ? { body: station.body } : {}) } : {}),
       useId,
       avatarId,
       stationId: station.id,
@@ -175,19 +176,19 @@ export class StationTrips {
 
   // -- Same room ----------------------------------------------------------------------------------
 
-  private beginSameRoom(avatarId: string, station: Station): StationVisit | null {
+  private beginSameRoom(avatarId: string, station: Station, source: 'pursuit' | 'tool'): StationVisit | null {
     const useId = randomUUID();
-    if (!this.options.send(avatarId, this.event(avatarId, station, useId, 'start'))) return null;
+    if (!this.options.send(avatarId, this.event(avatarId, station, useId, 'start', undefined, source))) return null;
     // Listen from now: the renderer may report arrival before the tool is done.
     const arrival = this.waitForArrival(useId, this.holdMs);
     return {
       arrived: () => arrival,
-      activity: (text) => {
-        this.options.send(avatarId, { ...this.event(avatarId, station, useId, 'activity'), activity: text });
+      activity: (text, step) => {
+        this.options.send(avatarId, { ...this.event(avatarId, station, useId, 'activity', undefined, source), activity: text, ...(step ? { step } : {}) });
       },
       settle: async (ok, signal) => {
         await until(arrival, signal);
-        this.options.send(avatarId, this.event(avatarId, station, useId, 'end', ok));
+        this.options.send(avatarId, this.event(avatarId, station, useId, 'end', ok, source));
       },
     };
   }
@@ -210,7 +211,7 @@ export class StationTrips {
 
   // -- Another place ------------------------------------------------------------------------------
 
-  private beginErrand(avatarId: string, plan: Extract<Plan, { kind: 'errand' }>): StationVisit | null {
+  private beginErrand(avatarId: string, plan: Extract<Plan, { kind: 'errand' }>, source: 'pursuit' | 'tool'): StationVisit | null {
     const { places, logger } = this.options;
     const origin = places.locationOf(avatarId);
     const objectName = this.options.stations.labelsFor(plan.station).objectName;
@@ -226,7 +227,7 @@ export class StationTrips {
     let atObject = false;
     const out = places.waitForArrival(avatarId, left(), plan.placeId).then((arrived) => {
       if (arrived && plan.toStation) {
-        atObject = this.options.send(avatarId, this.event(avatarId, plan.station, useId, 'start'));
+        atObject = this.options.send(avatarId, this.event(avatarId, plan.station, useId, 'start', undefined, source));
       }
       return arrived;
     });
@@ -235,7 +236,7 @@ export class StationTrips {
     // first is still going is refused ("already moving") and the avatar would stay away.
     const comeBack = async (ok: boolean): Promise<void> => {
       const arrived = await out.catch(() => false);
-      if (arrived && plan.toStation) this.options.send(avatarId, this.event(avatarId, plan.station, useId, 'end', ok));
+      if (arrived && plan.toStation) this.options.send(avatarId, this.event(avatarId, plan.station, useId, 'end', ok, source));
       if (!arrived) {
         // The move failed or timed out. If the avatar is on its way somewhere, wait for that to end.
         logger?.warn('Station: the avatar did not get there', { avatarId, placeId: plan.placeId });
@@ -253,8 +254,8 @@ export class StationTrips {
       arrived: async () => {
         await out.then(() => undefined, () => undefined);
       },
-      activity: (text) => {
-        if (atObject) this.options.send(avatarId, { ...this.event(avatarId, plan.station, useId, 'activity'), activity: text });
+      activity: (text, step) => {
+        if (atObject) this.options.send(avatarId, { ...this.event(avatarId, plan.station, useId, 'activity', undefined, source), activity: text, ...(step ? { step } : {}) });
       },
       settle: async (ok, signal) => {
         // A cancelled turn stops waiting at once; the avatar still goes home, in the background.

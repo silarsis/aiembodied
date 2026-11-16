@@ -1,7 +1,7 @@
 /** The renderer's bridge to stations. Types only. */
-import type { Station, StationSource, StationUseEvent, StationView } from './types.js';
+import type { Station, StationBody, StationSource, StationUseEvent, StationView } from './types.js';
 
-export type { Station, StationSource, StationUseEvent, StationView };
+export type { Station, StationBody, StationSource, StationUseEvent, StationView };
 
 export interface StationsBridge {
   /** Every station with the names of its room and object, and the MCP server it holds. */
@@ -14,7 +14,7 @@ export interface StationsBridge {
     roomId: string,
     objectId: string,
     source: StationSource | null,
-    extra?: Partial<Pick<Station, 'verb' | 'activity' | 'trip' | 'characters'>>,
+    extra?: Partial<Pick<Station, 'verb' | 'activity' | 'trip' | 'characters' | 'body'>>,
   ): Promise<Station | null>;
   update(id: string, changes: Partial<Omit<Station, 'id'>>): Promise<Station | null>;
   remove(id: string): Promise<boolean>;

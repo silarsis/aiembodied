@@ -13,7 +13,8 @@ describe('scene instructions', () => {
     expect(text).toContain('sofa (sit, go to / look at)');
     expect(text).toContain('coffee table (go to / look at, put things on)');
     expect(text).toContain('mug (pick up)');
-    expect(text).toContain('bookshelf (go to / look at)');
+    expect(text).toContain('bookshelf (go to / look at, put things on)');
+    expect(text).toContain('book (pick up)');
     // Objects with nothing to do are left out.
     expect(text).not.toContain('rug');
     expect(text).not.toContain('floor lamp');

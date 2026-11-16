@@ -42,10 +42,25 @@ describe('StationRegistry', () => {
         activity: 'pulls a book from the shelf and reads',
         trip: 'all',
         characters: 'all',
+        body: { prop: 'book', seat: 'armchair', browse: 'runs a finger along the book spines', read: 'reads a book, turning a page now and then', note: 'pauses and jots something down' },
       });
       // Saved, so Kevin's later changes build on it.
       expect(JSON.parse(kv.get(STATIONS_KEY) ?? '{}').stations).toHaveLength(1);
       expect(registry.stationForTool(papersTool)?.id).toBe(DEFAULT_STATIONS[0].id);
+    });
+
+    it('gives a default saved before bodies existed the default body, and keeps a body Kevin changed (even an empty one)', () => {
+      const old = { ...DEFAULT_STATIONS[0], body: undefined };
+      const { registry, kv } = setup({
+        servers: [{ id: 'srv-1', httpUrl: PAPERS_URL }],
+        kv: { [STATIONS_KEY]: JSON.stringify({ stations: [old], removedDefaults: [] }) },
+      });
+      expect(registry.list()[0].body?.seat).toBe('armchair');
+      registry.update(DEFAULT_STATIONS[0].id, { body: { read: '  reads {slowly} ' } });
+      expect(registry.list()[0].body).toEqual({ read: 'reads slowly' });
+      registry.update(DEFAULT_STATIONS[0].id, { body: {} });
+      expect(registry.list()[0].body).toEqual({});
+      expect(JSON.parse(kv.get(STATIONS_KEY) ?? '{}').stations[0].body).toEqual({});
     });
 
     it('does not add it when another station already holds that server', () => {
