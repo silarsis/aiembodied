@@ -258,7 +258,7 @@ describe('MemoryStore speaker column', () => {
     first.database.exec('ALTER TABLE messages DROP COLUMN speaker;');
     // ...and without what version 10 added (MCP over HTTP), which this rewind would otherwise add twice.
     first.database.exec('DROP TABLE mcp_oauth;');
-    for (const column of ['http_url', 'http_auth_header', 'http_auth_token_encrypted', 'oauth', 'oauth_scope']) {
+    for (const column of ['http_url', 'http_auth_header', 'http_auth_token_encrypted', 'oauth', 'oauth_scope', 'token_from_model_server']) {
       first.database.exec(`ALTER TABLE mcp_servers DROP COLUMN ${column};`);
     }
     // ...and what version 11 added (read-only state of MCP tools).
@@ -269,7 +269,7 @@ describe('MemoryStore speaker column', () => {
 
     const store = new MemoryStore({ filePath });
     stores.push(store);
-    expect(Number(store.database.pragma('user_version', { simple: true }))).toBe(12);
+    expect(Number(store.database.pragma('user_version', { simple: true }))).toBe(13);
     const columns = store.database.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string; notnull: number }>;
     expect(columns.find((c) => c.name === 'speaker')).toMatchObject({ notnull: 0 });
     expect(store.listMessages('s')).toEqual([{ id: 'old', sessionId: 's', role: 'user', ts: 1, content: 'before', audioPath: null }]);
@@ -293,7 +293,7 @@ describe('MemoryStore speaker column', () => {
     const store = new MemoryStore({ filePath: path.join(directory, 'memory.db') });
     stores.push(store);
     const serverColumns = (store.database.prepare('PRAGMA table_info(mcp_servers)').all() as Array<{ name: string }>).map((c) => c.name);
-    expect(serverColumns).toEqual(expect.arrayContaining(['http_url', 'http_auth_header', 'http_auth_token_encrypted', 'oauth', 'oauth_scope']));
+    expect(serverColumns).toEqual(expect.arrayContaining(['http_url', 'http_auth_header', 'http_auth_token_encrypted', 'oauth', 'oauth_scope', 'token_from_model_server']));
     const oauthColumns = (store.database.prepare('PRAGMA table_info(mcp_oauth)').all() as Array<{ name: string }>).map((c) => c.name);
     expect(oauthColumns).toEqual(
       expect.arrayContaining(['server_id', 'client_info_encrypted', 'tokens_encrypted', 'code_verifier_encrypted']),

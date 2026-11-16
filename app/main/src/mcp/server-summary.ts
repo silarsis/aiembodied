@@ -9,7 +9,7 @@ export function toServerSummary(config: MCPServerConfig): MCPServerSummary {
   const { sseAuthToken, httpAuthToken, stdioEnv, ...rest } = config;
   return {
     ...rest,
-    hasAuthToken: Boolean(sseAuthToken || httpAuthToken),
+    hasAuthToken: Boolean(sseAuthToken || httpAuthToken || rest.tokenFromModelServer),
     stdioEnvKeys: stdioEnv ? Object.keys(stdioEnv) : undefined,
   };
 }

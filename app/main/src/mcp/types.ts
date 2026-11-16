@@ -23,6 +23,11 @@ export interface MCPServerConfig {
   httpAuthToken?: string; // Will be encrypted in DB
   oauth?: boolean; // Sign in with the browser (OAuth 2.1); tokens live in the mcp_oauth table
   oauthScope?: string; // Scope to ask for, e.g. 'papers:read'
+  /**
+   * Home Assistant: the id of the "Models and servers" home whose token this server uses. Main reads the token
+   * at connect time (so changing it there flows through) and it is never stored here or sent to the renderer.
+   */
+  tokenFromModelServer?: string;
 
   // SSE config (the older web transport)
   sseUrl?: string;

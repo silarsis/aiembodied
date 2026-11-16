@@ -40,6 +40,11 @@ export interface Station {
   trip: 'all' | 'writes';
   /** Which avatars make the trip. */
   characters: 'all' | string[];
+  /**
+   * 'none': a pursuit (reading) is never started here; the station is only for tool trips. Absent means the station may be
+   * read at. Set on Home Assistant panels, which hold controls, not something to read.
+   */
+  pursuit?: 'none';
   /** What the body does for a pursuit at this station (props, seat, gestures); see `StationBody`. */
   body?: StationBody;
 }

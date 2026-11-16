@@ -14,7 +14,17 @@ import { HTTPMCPClient } from './clients/http-client.js';
 import { McpOAuthProvider, McpOAuthStore } from './clients/oauth-provider.js';
 import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 import { chooseToolName, isValidToolName } from './tool-names.js';
-import { findPreset, listPresetSummaries, type MCPPresetSummary } from './presets.js';
+import {
+  HOME_ASSISTANT_PRESET_PREFIX,
+  findPreset,
+  homeAssistantPreset,
+  homeAssistantReadOnlyDefault,
+  isRiskyHomeAssistantTool,
+  listPresetSummaries,
+  type HomeAssistantHome,
+  type MCPPreset,
+  type MCPPresetSummary,
+} from './presets.js';
 import type { MCPClient } from './clients/base-client.js';
 import { randomUUID } from 'node:crypto';
 import { encryptToken, decryptToken } from './encryption.js';
@@ -26,6 +36,10 @@ export interface MCPManagerOptions {
   oauthCallbackPort?: number;
   /** Override how long a sign-in waits for the browser (default 5 minutes). */
   oauthTimeoutMs?: number;
+  /** The Home Assistant homes of "Models and servers" (no tokens). Each becomes a ready-made server. */
+  homeAssistantHomes?: () => HomeAssistantHome[];
+  /** The token saved for a "Models and servers" entry (keytar or environment). Read at connect time, never sent out. */
+  modelServerToken?: (modelServerId: string) => string | undefined;
 }
 
 const SIGN_IN_NEEDED = 'Sign-in needed. Press "Sign in" to connect.';
@@ -89,7 +103,25 @@ export class MCPManager extends EventEmitter {
 
   /** The ready-made servers the person can add. */
   listPresets(): MCPPresetSummary[] {
-    return listPresetSummaries();
+    const homes = this.homes().map((home) => homeAssistantPreset(home));
+    return [...listPresetSummaries(), ...homes.map((preset) => ({ id: preset.id, name: preset.name, description: preset.description, url: preset.config.httpUrl ?? '' }))];
+  }
+
+  private homes(): HomeAssistantHome[] {
+    try {
+      return this.options.homeAssistantHomes?.() ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** A preset by id: the fixed ones, or `home-assistant:<model server id>` for a home that is configured now. */
+  private resolvePreset(presetId: string): MCPPreset | undefined {
+    if (presetId.startsWith(HOME_ASSISTANT_PRESET_PREFIX)) {
+      const home = this.homes().find((candidate) => `${HOME_ASSISTANT_PRESET_PREFIX}${candidate.id}` === presetId);
+      return home ? homeAssistantPreset(home) : undefined;
+    }
+    return findPreset(presetId);
   }
 
   /**
@@ -97,12 +129,13 @@ export class MCPManager extends EventEmitter {
    * unchanged, so pressing Add twice never makes a duplicate.
    */
   async addPreset(presetId: string): Promise<MCPServerConfig> {
-    const preset = findPreset(presetId);
+    const preset = this.resolvePreset(presetId);
     if (!preset) {
       throw new Error(`Unknown MCP preset: ${presetId}`);
     }
     const url = preset.config.httpUrl ?? preset.config.sseUrl;
-    const existing = this.loadServersFromDB().find((server) => (server.httpUrl ?? server.sseUrl) === url);
+    const sameAddress = (a: string | undefined, b: string | undefined) => (a ?? '').toLowerCase().replace(/\/+$/, '') === (b ?? '').toLowerCase().replace(/\/+$/, '');
+    const existing = this.loadServersFromDB().find((server) => sameAddress(server.httpUrl ?? server.sseUrl, url));
     if (existing) return existing;
     return await this.addServer(preset.config);
   }
@@ -125,11 +158,11 @@ export class MCPManager extends EventEmitter {
         id, name, transport_type,
         sse_url, sse_auth_header, sse_auth_token_encrypted,
         stdio_command, stdio_args_json, stdio_env_json_encrypted,
-        http_url, http_auth_header, http_auth_token_encrypted, oauth, oauth_scope,
+        http_url, http_auth_header, http_auth_token_encrypted, oauth, oauth_scope, token_from_model_server,
         enabled, auto_start,
         connection_status, tools_discovered,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -147,6 +180,7 @@ export class MCPManager extends EventEmitter {
       httpAuthTokenEncrypted,
       config.oauth ? 1 : 0,
       config.oauthScope || null,
+      config.tokenFromModelServer || null,
       config.enabled ? 1 : 0,
       config.autoStart ? 1 : 0,
       'disconnected',
@@ -422,7 +456,8 @@ export class MCPManager extends EventEmitter {
     const stmt = this.db.prepare(`
       SELECT
         t.*,
-        s.name as server_name
+        s.name as server_name,
+        s.token_from_model_server as home_server
       FROM mcp_tools t
       JOIN mcp_servers s ON t.server_id = s.id
       ORDER BY s.name, t.tool_name
@@ -643,6 +678,7 @@ export class MCPManager extends EventEmitter {
       config.httpAuthHeader = row.http_auth_header || undefined;
       config.oauth = Boolean(row.oauth);
       config.oauthScope = row.oauth_scope || undefined;
+      config.tokenFromModelServer = row.token_from_model_server || undefined;
       if (row.http_auth_token_encrypted) {
         try {
           config.httpAuthToken = decryptToken(row.http_auth_token_encrypted);
@@ -684,7 +720,8 @@ export class MCPManager extends EventEmitter {
     const stmt = this.db.prepare(`
       SELECT
         t.*,
-        s.name as server_name
+        s.name as server_name,
+        s.token_from_model_server as home_server
       FROM mcp_tools t
       JOIN mcp_servers s ON t.server_id = s.id
       WHERE t.server_id = ?
@@ -696,7 +733,10 @@ export class MCPManager extends EventEmitter {
   }
 
   private getToolById(id: string): MCPToolRow | undefined {
-    const stmt = this.db.prepare('SELECT * FROM mcp_tools WHERE id = ?');
+    const stmt = this.db.prepare(`
+      SELECT t.*, s.name as server_name, s.token_from_model_server as home_server
+      FROM mcp_tools t JOIN mcp_servers s ON t.server_id = s.id WHERE t.id = ?
+    `);
     return stmt.get(id) as MCPToolRow | undefined;
   }
 
@@ -712,7 +752,7 @@ export class MCPManager extends EventEmitter {
       description: row.custom_description || row.description,
       enabled: Boolean(row.enabled),
       confirmationLevel: row.confirmation_level,
-      readOnly: effectiveReadOnly(row),
+      readOnly: effectiveReadOnly(row, presetReadOnly(row)),
       readOnlyOverride: row.read_only === null || row.read_only === undefined ? null : Boolean(row.read_only),
     };
   }
@@ -728,9 +768,16 @@ export class MCPManager extends EventEmitter {
       if (!config.httpUrl) {
         throw new Error('A web address is required for HTTP transport');
       }
+      // A Home Assistant server takes its token from the home in Models and servers, read now (not copied).
+      let headerToken = config.httpAuthToken;
+      if (config.tokenFromModelServer) {
+        const token = this.options.modelServerToken?.(config.tokenFromModelServer)?.trim();
+        if (!token) throw new Error(`No Home Assistant token is saved for ${config.name}. Add one in Models and servers.`);
+        headerToken = `Bearer ${token}`;
+      }
       return new HTTPMCPClient(config.httpUrl, {
         headerName: config.httpAuthHeader,
-        headerToken: config.httpAuthToken,
+        headerToken,
         // Without an active sign-in this provider never opens the browser.
         authProvider: config.oauth ? this.createOAuthProvider(config) : undefined,
       });
@@ -739,6 +786,10 @@ export class MCPManager extends EventEmitter {
       throw new Error('stdio command is required for stdio transport');
     }
     return new StdioMCPClient(config.stdioCommand, config.stdioArgs || [], config.stdioEnv || {});
+  }
+
+  private isHomeAssistant(serverId: string): boolean {
+    return Boolean(this.getServerById(serverId)?.tokenFromModelServer);
   }
 
   private async registerTool(
@@ -770,7 +821,8 @@ export class MCPManager extends EventEmitter {
       toolDef.description || '',
       JSON.stringify(toolDef.inputSchema),
       1, // enabled by default
-      'none', // default confirmation level
+      // First discovery only (the conflict clause leaves the column alone): a risky Home Assistant tool asks first.
+      this.isHomeAssistant(serverId) && isRiskyHomeAssistantTool(toolDef.name, toolDef.description) ? 'confirm' : 'none',
       now,
       now,
       toolDef.readOnlyHint === undefined ? null : toolDef.readOnlyHint ? 1 : 0,
@@ -797,7 +849,7 @@ export class MCPManager extends EventEmitter {
       inputSchema: JSON.parse(dbTool.input_schema_json) as Record<string, unknown>,
       enabled: Boolean(dbTool.enabled),
       confirmationLevel: dbTool.confirmation_level as 'none' | 'notify' | 'confirm' | 'block',
-      readOnly: effectiveReadOnly(dbTool),
+      readOnly: effectiveReadOnly(dbTool, presetReadOnly(dbTool)),
       execute: async (params: unknown) => {
         // Look the client up at call time so a reconnected server is used, and a dropped one gives a clear error.
         const current = this.clients.get(dbTool.server_id);
@@ -855,6 +907,7 @@ interface MCPServerRow {
   http_auth_token_encrypted: string | null;
   oauth: number;
   oauth_scope: string | null;
+  token_from_model_server: string | null;
   enabled: number;
   auto_start: number;
   connection_status: string;
@@ -878,13 +931,23 @@ interface MCPToolRow {
   custom_description: string | null;
   read_only_hint?: number | null;
   read_only?: number | null;
+  /** The "Models and servers" home behind a Home Assistant server (from the join); null for other servers. */
+  home_server?: string | null;
   discovered_at: number;
   updated_at: number;
 }
 
-/** A tool only reads when the person said so; otherwise what the server said; otherwise we assume it changes things. */
-function effectiveReadOnly(row: { read_only?: number | null; read_only_hint?: number | null }): boolean {
+/** The preset-level default for a tool (Home Assistant servers only): undefined when the server has none. */
+function presetReadOnly(row: { home_server?: string | null; tool_name: string }): boolean | undefined {
+  return row.home_server ? homeAssistantReadOnlyDefault(row.tool_name) : undefined;
+}
+
+/**
+ * A tool only reads when the person said so; otherwise what the server said; otherwise the preset's default
+ * (Home Assistant: `Get...` tools); otherwise we assume it changes things.
+ */
+function effectiveReadOnly(row: { read_only?: number | null; read_only_hint?: number | null }, presetDefault?: boolean): boolean {
   if (row.read_only !== null && row.read_only !== undefined) return Boolean(row.read_only);
   if (row.read_only_hint !== null && row.read_only_hint !== undefined) return Boolean(row.read_only_hint);
-  return false;
+  return presetDefault ?? false;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_STATIONS, READING_ROOM_ID, STATIONS_KEY, StationRegistry, type StationServer } from '../../src/stations/station-registry.js';
+import { DEFAULT_STATIONS, HOME_ASSISTANT_DEFAULT_ID, READING_ROOM_ID, STUDIO_FLAT_ROOM_ID, STATIONS_KEY, StationRegistry, type StationServer } from '../../src/stations/station-registry.js';
 import type { StationTool } from '../../src/stations/types.js';
 
 const PAPERS_URL = 'https://academy.dair.ai/api/mcp';
@@ -168,6 +168,56 @@ describe('StationRegistry', () => {
       expect(registry.descriptionNote(station)).toBe(' (kept on the bookshelf in the Reading room)');
       expect(await registry.views()).toEqual([expect.objectContaining({ serverId: 'srv-1', roomName: 'Reading room', objectName: 'bookshelf' })]);
     });
+  });
+});
+
+describe('StationRegistry Home Assistant home panel', () => {
+  const home1: StationServer = { id: 'ha-1', httpUrl: 'http://homeassistant-1:8123/api/mcp', homeAssistant: true };
+  const home2: StationServer = { id: 'ha-2', httpUrl: 'http://sg.local:8123/api/mcp', homeAssistant: true };
+
+  it('puts the first Home Assistant server on the Studio flat home panel: changes walk, reads do not', () => {
+    const { registry } = setup({ servers: [home1, home2] });
+    const stations = registry.list();
+    expect(stations).toHaveLength(1);
+    expect(stations[0]).toMatchObject({
+      id: HOME_ASSISTANT_DEFAULT_ID,
+      roomId: STUDIO_FLAT_ROOM_ID,
+      objectId: 'home-panel',
+      source: { kind: 'mcp', serverId: 'ha-1' },
+      verb: 'use',
+      activity: 'taps at the home panel',
+      trip: 'writes',
+      pursuit: 'none',
+    });
+    expect(registry.needsTrip(stations[0], { readOnly: true })).toBe(false);
+    expect(registry.needsTrip(stations[0], { readOnly: false })).toBe(true);
+    // The second home waits for the Holds picker (a station is one object and one source).
+    expect(registry.stationForTool({ id: 'ha-2:GetLiveContext', serverId: 'ha-2', toolName: 'GetLiveContext' })).toBeNull();
+  });
+
+  it('does nothing without a Home Assistant server, or when a station already holds it', () => {
+    expect(setup({ servers: [{ id: 'srv-2' }] }).registry.list()).toEqual([]);
+    const { registry } = setup({ servers: [home1] });
+    registry.hold('room:builtin:reading-room', 'home-panel', { kind: 'mcp', serverId: 'ha-1' });
+    expect(registry.list().map((s) => s.roomId)).toEqual(['room:builtin:reading-room']);
+    expect(registry.list()[0].pursuit).toBe('none');
+  });
+
+  it('moves on to the next home when its server is deleted, and stays removed once removed', () => {
+    const { registry, servers } = setup({ servers: [home1, home2] });
+    registry.list();
+    servers.current = [home2];
+    expect(registry.list()[0].source).toEqual({ kind: 'mcp', serverId: 'ha-2' });
+    registry.remove(HOME_ASSISTANT_DEFAULT_ID);
+    expect(registry.list()).toEqual([]);
+  });
+
+  it('lets another home sit on another panel with the Holds picker', () => {
+    const { registry } = setup({ servers: [home1, home2] });
+    registry.list();
+    const second = registry.hold('room:builtin:reading-room', 'home-panel', { kind: 'mcp', serverId: 'ha-2' }, { trip: 'writes' });
+    expect(second).toMatchObject({ trip: 'writes', pursuit: 'none' });
+    expect(registry.list()).toHaveLength(2);
   });
 });
 

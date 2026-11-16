@@ -35,6 +35,18 @@ Station { id, roomId, objectId,
 - Backgrounds, 3D rooms tab, "Things kept in the room": for each object an avatar can stand at, a "Holds" choice (None, each MCP server, Web search) and "Every use / Only changes"; for a station also "Read at" (the room's seats) and "Take" (its dynamic objects with a grab tag).
 - Tools / MCP: a server held by a station says "Kept on the bookshelf in the Reading room"; each MCP tool has "Changes things / Only reads".
 
+## Home Assistant panel (phase 4)
+
+Kevin's rule: reads come in from anywhere, changes need a walk to the panel.
+
+- **Room object**: `home-panel` ("a wall panel that controls the house", 0.3 x 0.2 x 0.03 m at 1.4 m, collider none) on the east wall of the Studio flat (z 0.5) and the Reading room (z -0.6), with a stand tag 0.7 m in front and a look tag. Tests check the spot is free and reachable.
+- **Ready-made servers**: Tools / MCP, "Ready-made servers" lists "Home Assistant: <home name>" for each `homeassistant` server of Models and servers (`MCPManager` options `homeAssistantHomes`, `modelServerToken`; ids `home-assistant:<model server id>`). Adding makes an http server "Home Assistant (<home name>)" at `<home url>/api/mcp`, header `Authorization`, once per address. The token is **not copied**: the server keeps `tokenFromModelServer` (the Models and servers id) and main reads the token (keytar or env) at connect time and sends `Bearer <token>`; the renderer never sees it, and a changed token flows through on the next connect. Homes configured only by `HA_URL`/`HA_TOKEN` for the memory engine are not in Models and servers, so they are not listed.
+- **Read-only defaults**: tool read-only = the person's choice, else the server's `readOnlyHint`, else the preset default (Home Assistant: names starting `Get` and `HOME_ASSISTANT_READ_TOOLS` in `mcp/presets.ts`), else changes things. `HassTurnOn`, `HassLightSet` etc. count as changes.
+- **Confirmation**: on first discovery, Home Assistant tools whose name or description mentions lock, unlock, alarm, arm, disarm or garage get confirmation level `confirm` (spoken approval). Later changes by the person win.
+- **Default station**: the first Home Assistant server no station holds goes on the Studio flat `home-panel` (`default:home-assistant`: verb use, activity "taps at the home panel", `trip: 'writes'`). One default only; further homes and other rooms' panels are set with the Holds picker. A default whose server is deleted is replaced by the next home; a removed one stays removed.
+- **Trips**: "turn on the lamp" walks the avatar to the panel (hold up to 6 s for arrival); "what's the temperature" does not.
+- **Pursuits**: Home Assistant stations carry `pursuit: 'none'`, so `PursuitManager.offers()` and `start()` skip them; only other stations (the bookshelf) are read at.
+
 ## Not in phase 1
 
 Per-character activities, stations for several avatars at once at one object (each avatar walks to the same spot; the room's occupancy rules decide who goes first), and a settings page on a satellite (stations are set up on bija; `station:use` and `station:arrived` do cross to a satellite).

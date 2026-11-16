@@ -136,6 +136,17 @@ describe('PursuitManager', () => {
     expect(none.manager.start('sage', 'station-1')).toMatchObject({ ok: false });
   });
 
+  it("never offers or starts reading at a Home Assistant panel (pursuit: 'none')", () => {
+    const { manager } = setup();
+    station.pursuit = 'none';
+    try {
+      expect(manager.offers()).toEqual([]);
+      expect(manager.start('echo', 'station-1')).toMatchObject({ ok: false });
+    } finally {
+      delete station.pursuit;
+    }
+  });
+
   it('ends at once when Kevin starts talking, aborting the model call and saving what it had', async () => {
     const { manager, notes, chatFor } = setup();
     const chat = chatFor('sage');

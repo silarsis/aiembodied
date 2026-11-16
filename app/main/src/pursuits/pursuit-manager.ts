@@ -83,7 +83,8 @@ export class PursuitManager {
     const { stations } = this.options;
     return stations
       .list()
-      .filter((station) => this.toolsAt(station).length > 0)
+      // A Home Assistant panel (`pursuit: 'none'`) is for tool trips only, never something to read at.
+      .filter((station) => station.pursuit !== 'none' && this.toolsAt(station).length > 0)
       .map((station) => ({
         stationId: station.id,
         roomId: station.roomId,
@@ -100,6 +101,7 @@ export class PursuitManager {
     const station = stations.get(stationId);
     if (!station) return { ok: false, reason: 'no such station' };
     if (!stations.appliesTo(station, avatarId)) return { ok: false, reason: 'this station is not for this character' };
+    if (station.pursuit === 'none') return { ok: false, reason: 'nothing to read here' };
     const tools = this.toolsAt(station);
     if (tools.length === 0) return { ok: false, reason: 'nothing to read with here' };
     const voice = this.options.voiceFor(avatarId);

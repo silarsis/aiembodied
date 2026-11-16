@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HALLWAY_MS, PlaceManager } from '../../src/places/place-manager.js';
-import { READING_ROOM_ID, StationRegistry } from '../../src/stations/station-registry.js';
+import { READING_ROOM_ID, StationRegistry, type StationServer } from '../../src/stations/station-registry.js';
 import { STATION_ARRIVAL_HOLD_MS, StationTrips } from '../../src/stations/station-trips.js';
 import type { StationTool, StationUseEvent } from '../../src/stations/types.js';
 
@@ -15,7 +15,7 @@ interface Sent {
   event: StationUseEvent;
 }
 
-function setup(options: { active?: string | null; attic?: string | null; sendOk?: boolean } = {}) {
+function setup(options: { active?: string | null; attic?: string | null; sendOk?: boolean; servers?: StationServer[] } = {}) {
   const kv = new Map<string, string>();
   const store = { getValue: (key: string) => kv.get(key) ?? null, setValue: (key: string, value: string) => void kv.set(key, value) };
   const places = new PlaceManager({
@@ -35,7 +35,7 @@ function setup(options: { active?: string | null; attic?: string | null; sendOk?
   });
   const stations = new StationRegistry({
     store,
-    servers: () => [{ id: 'srv-1', httpUrl: 'https://academy.dair.ai/api/mcp' }],
+    servers: () => options.servers ?? [{ id: 'srv-1', httpUrl: 'https://academy.dair.ai/api/mcp' }],
     describeRoom: async () => ({ name: 'Reading room', objects: [{ id: 'bookshelf', name: 'bookshelf' }] }),
   });
   const sent: Sent[] = [];
@@ -346,5 +346,35 @@ describe('StationTrips', () => {
       expect(trips.noticeFor('echo', { ...papers, spokenNotice: 'Hold on.' })).toBeNull();
       expect(trips.noticeFor('echo', { id: 'x:y', serverId: 'x', toolName: 'y' })).toBeNull();
     });
+  });
+});
+
+describe('Home Assistant panel trips', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const getState: StationTool = { id: 'ha:GetLiveContext', serverId: 'ha', toolName: 'GetLiveContext', readOnly: true };
+  const turnOn: StationTool = { id: 'ha:HassTurnOn', serverId: 'ha', toolName: 'HassTurnOn', readOnly: false };
+
+  it('walks the avatar to the home panel for a change and holds up to 6 s for the arrival, but not for a read', async () => {
+    const { trips, sent } = setup({ active: STUDIO, servers: [{ id: 'ha', httpUrl: 'http://homeassistant-1:8123/api/mcp', homeAssistant: true }] });
+    // "What is the temperature?" is answered from where the avatar stands.
+    expect(trips.begin('echo', getState)).toBeNull();
+    expect(sent).toHaveLength(0);
+    // "Turn on the lamp" is a trip to the panel.
+    const use = trips.begin('echo', turnOn);
+    expect(use).not.toBeNull();
+    expect(sent[0].event).toMatchObject({ roomId: STUDIO, objectId: 'home-panel', activity: 'taps at the home panel', phase: 'start' });
+    let done = false;
+    const settled = use!.settle(true).then(() => (done = true));
+    await vi.advanceTimersByTimeAsync(STATION_ARRIVAL_HOLD_MS - 100);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(200);
+    await settled;
+    expect(done).toBe(true);
   });
 });
