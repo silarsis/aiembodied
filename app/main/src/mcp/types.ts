@@ -79,6 +79,8 @@ export interface MCPTool {
   enabled: boolean;
   confirmationLevel: 'none' | 'notify' | 'confirm' | 'block';
   customDescription?: string;
+  readOnlyHint?: boolean; // What the server said (annotations.readOnlyHint)
+  readOnly?: boolean; // The person's own choice; wins over the hint
 
   discoveredAt: number;
   updatedAt: number;
@@ -95,6 +97,10 @@ export interface MCPToolSummary {
   description: string;
   enabled: boolean;
   confirmationLevel: string;
+  /** True when the tool only reads: the person's choice, else the server's hint, else false. */
+  readOnly: boolean;
+  /** The person's own choice (null when none), so the UI can tell "chosen" from "guessed". */
+  readOnlyOverride: boolean | null;
 }
 
 // Tool execution result
@@ -117,6 +123,8 @@ export interface MCPToolDefinition {
   name: string;
   description?: string;
   inputSchema: JSONSchema;
+  /** annotations.readOnlyHint from the server, when it said. */
+  readOnlyHint?: boolean;
 }
 
 export interface MCPListToolsResult {

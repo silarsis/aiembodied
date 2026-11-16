@@ -189,6 +189,10 @@ import { VisionModel } from './local-vision/vision-model.js';
 import { VisionServer, withVisionServer } from './local-vision/vision-server.js';
 import { MCPManager } from './mcp/mcp-manager.js';
 import { ToolRegistry } from './tools/tool-registry.js';
+import { StationRegistry } from './stations/station-registry.js';
+import { StationTrips } from './stations/station-trips.js';
+import { createVoiceStations, type VoiceStations } from './stations/voice-stations.js';
+import type { Station, StationSource } from './stations/types.js';
 import { createRoutedSearchProvider, createWebSearchTool, WEB_SEARCH_TOOL_ID } from './tools/web-search.js';
 import { registerMCPHandlers } from './mcp/ipc-handlers.js';
 import { GpuMemoryReader, localPort, type GpuMemoryServer } from './diagnostics/gpu-memory.js';
@@ -488,6 +492,10 @@ function broadcastToWindows(channel: string, payload?: unknown): void {
   }
 }
 let mcpManager: MCPManager | null = null;
+// Stations: tools that live at an object in a 3D room (stations/). Set up with the rooms; null before that.
+let stationRegistry: StationRegistry | null = null;
+let stationTrips: StationTrips | null = null;
+let voiceStations: VoiceStations | null = null;
 
 function emitCameraDetection(event: CameraDetectionEventPayload): boolean {
   const cue = typeof event.cue === 'string' ? event.cue.trim() : '';
@@ -1097,6 +1105,13 @@ function createVoiceService(avatarId: string): LocalVoiceService {
     avatarId,
     tools: toolRegistry ?? undefined,
     approvals: approvalBroker?.forAvatar(avatarId),
+    // Looked up at call time: the stations are set up after the voice services.
+    stations: {
+      prepare: () => voiceStations?.prepare() ?? Promise.resolve(),
+      descriptionNote: (tool) => voiceStations?.descriptionNote(tool) ?? '',
+      noticeFor: (id, tool) => voiceStations?.noticeFor(id, tool) ?? null,
+      begin: (id, tool) => voiceStations?.begin(id, tool) ?? null,
+    },
     extraInstructions: () => codingBrief(manager),
     // The update is spoken where the avatar is.
     onSystemReady: () =>
@@ -2317,6 +2332,23 @@ function registerIpcHandlers(
   handleIpc('places:arrived', (_event, avatarId: unknown) => {
     if (typeof avatarId === 'string' && avatarId) requirePlaces().arrived(avatarId);
   });
+  // Stations (stations/): which tools live at which object. `station:arrived` is the renderer saying the avatar
+  // reached the object (or cannot walk); a desktop room sends it too.
+  const requireStations = (): StationRegistry => {
+    if (!stationRegistry) throw new Error('Stations are unavailable.');
+    return stationRegistry;
+  };
+  handleIpc('stations:list', () => requireStations().views());
+  handleIpc('stations:hold', (_event, roomId: unknown, objectId: unknown, source: unknown, extra: unknown) =>
+    requireStations().hold(String(roomId ?? ''), String(objectId ?? ''), (source ?? null) as StationSource | null, (extra && typeof extra === 'object' ? extra : {}) as Partial<Station>),
+  );
+  handleIpc('stations:update', (_event, id: unknown, changes: unknown) =>
+    requireStations().update(String(id ?? ''), (changes && typeof changes === 'object' ? changes : {}) as Partial<Station>),
+  );
+  handleIpc('stations:remove', (_event, id: unknown) => requireStations().remove(String(id ?? '')));
+  handleIpc('station:arrived', (_event, useId: unknown) => {
+    if (typeof useId === 'string' && useId) stationTrips?.arrived(useId);
+  });
   // The talk key with nobody in the room: call someone over (the recent partner, else Echo, else the first avatar).
   // The same rule for bija's own window and for a desktop room; the answer says who is coming.
   handleIpc('places:summon', (event) => {
@@ -2854,6 +2886,46 @@ function registerIpcHandlers(
     registerMCPHandlers(mcpManager, toolRegistry);
     logger.info('MCP IPC handlers registered');
   }
+}
+
+/**
+ * Stations: tools that live at an object in a 3D room. The registry knows which tool lives where; the trips
+ * send an avatar to the object while the tool runs (stations/station-trips.ts); the voice gets both through
+ * `voiceStations`. Needs the places, the rooms, the tools and the MCP servers, so it is set up after them.
+ */
+function setupStations(store: MemoryStore): void {
+  const places = placeManager;
+  if (!places || !toolRegistry || !mcpManager || !roomService) return;
+  const tools = toolRegistry;
+  const manager = mcpManager;
+  const rooms = roomService;
+  const registry = new StationRegistry({
+    store,
+    servers: () => manager.listServers().map((server) => ({ id: server.id, httpUrl: server.httpUrl, sseUrl: server.sseUrl })),
+    describeRoom: async (roomId) => {
+      const room = await rooms.load(roomId);
+      return { name: room.name, objects: room.objects.map((object) => ({ id: object.id, name: object.name })) };
+    },
+    tools: { get: (id) => tools.get(id) },
+  });
+  const trips = new StationTrips({
+    stations: registry,
+    places,
+    // The local place draws the stage's room; only a 3D room (`room:...`) has objects to walk to.
+    activeRoom: () => backgroundService?.getActive() ?? null,
+    send: (avatarId, event) => {
+      const placeId = places.locationOf(avatarId);
+      const reachable =
+        placeId === places.localPlaceId() ? BrowserWindow.getAllWindows().some((window) => !window.isDestroyed()) : Boolean(roomHub?.deviceForPlace(placeId));
+      if (!reachable) return false;
+      sendForAvatar(avatarId, 'station:use', event);
+      return true;
+    },
+    logger,
+  });
+  stationRegistry = registry;
+  stationTrips = trips;
+  voiceStations = createVoiceStations(registry, trips);
 }
 
 function focusExistingWindow() {
@@ -3413,6 +3485,7 @@ app.whenReady().then(async () => {
       },
       onRoomUpdated: (roomId) => {
         broadcastToWindows('rooms:updated', roomId);
+        stationRegistry?.clearLabels();
         // A desktop room may be showing that room.
         roomHub?.sendToAll({ op: 'ipc', channel: 'rooms:updated', args: [roomId] });
       },
@@ -3430,6 +3503,7 @@ app.whenReady().then(async () => {
         backgroundComfy = await comfyPool.pick('image');
       },
     });
+    setupStations(memoryStore);
   }
 
   await applyProviderSettings(manager);

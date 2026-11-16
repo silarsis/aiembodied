@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { MCPServerSummary } from '../../../main/src/mcp/types.js';
-import type { McpBridge, ModelsBridge } from '../../src/preload-api.js';
+import type { StationView } from '../../../main/src/stations/types.js';
+import type { McpBridge, ModelsBridge, StationsBridge } from '../../src/preload-api.js';
 import { ToolsSettings } from '../../src/settings/tools-settings.js';
 
 const server: MCPServerSummary = {
@@ -37,6 +38,8 @@ function bridges() {
         description: 'Turn a light on',
         enabled: true,
         confirmationLevel: 'confirm',
+        readOnly: false,
+        readOnlyOverride: null,
       },
     ]),
     updateToolPreferences: vi.fn().mockResolvedValue(undefined),
@@ -60,7 +63,42 @@ function bridges() {
   return { mcp, models };
 }
 
+const heldStation: StationView = {
+  id: 's1',
+  roomId: 'room:builtin:reading-room',
+  objectId: 'bookshelf',
+  source: { kind: 'mcp', serverId: 'ha' },
+  verb: 'read',
+  activity: 'reads',
+  trip: 'all',
+  characters: 'all',
+  serverId: 'ha',
+  roomName: 'Reading room',
+  objectName: 'bookshelf',
+};
+
 describe('Tools / MCP settings', () => {
+  it('says where a server is kept, and saves whether a tool only reads', async () => {
+    const { mcp, models } = bridges();
+    const stations = { list: vi.fn().mockResolvedValue([heldStation]) } as unknown as StationsBridge;
+    render(<ToolsSettings mcp={mcp} models={models} stations={stations} active />);
+    const article = await screen.findByRole('article', { name: 'Home Assistant' });
+    await waitFor(() => expect(article).toHaveTextContent('Kept on the bookshelf in the Reading room'));
+    const reads = screen.getByLabelText('Does turn_on change things') as HTMLSelectElement;
+    expect(reads.value).toBe('changes');
+    expect(Array.from(reads.options).map((option) => option.textContent)).toEqual(['Changes things', 'Only reads']);
+    fireEvent.change(reads, { target: { value: 'reads' } });
+    await waitFor(() => expect(mcp.updateToolPreferences).toHaveBeenCalledWith('ha:turn_on', { readOnly: true }));
+  });
+
+  it('says nothing about a station when no server is kept anywhere', async () => {
+    const { mcp, models } = bridges();
+    const stations = { list: vi.fn().mockResolvedValue([]) } as unknown as StationsBridge;
+    render(<ToolsSettings mcp={mcp} models={models} stations={stations} active />);
+    const article = await screen.findByRole('article', { name: 'Home Assistant' });
+    expect(article).not.toHaveTextContent('Kept on');
+  });
+
   it('lists built-in tools, web search and MCP servers', async () => {
     const { mcp, models } = bridges();
     const openWebSearch = vi.fn();

@@ -25,7 +25,10 @@ export function normalizeToolList(tools: unknown): MCPToolDefinition[] {
       'inputSchema' in record
         ? (record.inputSchema as MCPToolDefinition['inputSchema'])
         : { type: 'object', properties: {} };
-    return { name, description, inputSchema };
+    // Tools may say they only read (annotations.readOnlyHint); stations use it to decide on a trip.
+    const annotations = isRecord(record.annotations) ? record.annotations : {};
+    const readOnlyHint = typeof annotations.readOnlyHint === 'boolean' ? annotations.readOnlyHint : undefined;
+    return readOnlyHint === undefined ? { name, description, inputSchema } : { name, description, inputSchema, readOnlyHint };
   });
 }
 

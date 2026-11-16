@@ -87,6 +87,7 @@ import type { AvatarIdlePersona, AvatarsBridge } from '../avatars/bridge-types.j
 import type { PresenceBridge } from '../presence/bridge-types.js';
 import type { FloorBridge } from '../floor/bridge-types.js';
 import type { PlacesBridge, PlacesSnapshot } from '../places/bridge-types.js';
+import type { StationsBridge } from '../stations/bridge-types.js';
 import type { RoomHubBridge, RoomHubStatus } from '../room-hub/bridge-types.js';
 import type { GpuMemoryBridge } from '../diagnostics/gpu-memory.js';
 import type { CodingBridge, CodingBusy, CodingBusyBridge, CodingTasksBridge, RunnerEvent } from '../coding/bridge-types.js';
@@ -210,6 +211,7 @@ export interface PreloadApi {
   presence?: PresenceBridge;
   floor?: FloorBridge;
   places?: PlacesBridge;
+  stations?: StationsBridge;
   roomHub?: RoomHubBridge;
   satellite?: SatelliteBridge;
   deviceGate?: DeviceGateBridge;
@@ -393,6 +395,7 @@ export interface MCPBridge {
       enabled?: boolean;
       confirmationLevel?: string;
       customDescription?: string;
+      readOnly?: boolean | null;
     },
   ): Promise<void>;
 
@@ -767,6 +770,21 @@ export function createBridge(
       },
       summon: () => transport.invoke('places:summon'),
       canWander: (avatarId: string, placeRef: string, speaking?: boolean) => transport.invoke('places:can-wander', avatarId, placeRef, speaking === true) as Promise<{ ok: boolean; reason?: string }>,
+    },
+    stations: {
+      list: () => transport.invoke('stations:list') as ReturnType<StationsBridge['list']>,
+      hold: (roomId, objectId, source, extra) =>
+        transport.invoke('stations:hold', roomId, objectId, source, extra) as ReturnType<StationsBridge['hold']>,
+      update: (id, changes) => transport.invoke('stations:update', id, changes) as ReturnType<StationsBridge['update']>,
+      remove: (id) => transport.invoke('stations:remove', id) as Promise<boolean>,
+      onUse: (listener) => {
+        const channel = 'station:use';
+        const handler = (event: Parameters<typeof listener>[0]) => listener(event);
+        return transport.on(channel, handler);
+      },
+      arrived: async (useId) => {
+        await transport.invoke('station:arrived', useId);
+      },
     },
     roomHub: {
       status: () => transport.invoke('room-hub:status') as Promise<RoomHubStatus>,

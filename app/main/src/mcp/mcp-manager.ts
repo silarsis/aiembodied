@@ -437,7 +437,13 @@ export class MCPManager extends EventEmitter {
    */
   async updateToolPreferences(
     toolId: string,
-    prefs: { enabled?: boolean; confirmationLevel?: string; customDescription?: string },
+    prefs: {
+      enabled?: boolean;
+      confirmationLevel?: string;
+      customDescription?: string;
+      /** true/false = the person's choice; null = back to the server's hint */
+      readOnly?: boolean | null;
+    },
   ): Promise<void> {
     const updates: string[] = [];
     const values: unknown[] = [];
@@ -455,6 +461,11 @@ export class MCPManager extends EventEmitter {
       values.push(prefs.customDescription);
     }
 
+    if (prefs.readOnly !== undefined) {
+      updates.push('read_only = ?');
+      values.push(prefs.readOnly === null ? null : prefs.readOnly ? 1 : 0);
+    }
+
     if (updates.length > 0) {
       updates.push('updated_at = ?');
       values.push(Date.now());
@@ -465,10 +476,10 @@ export class MCPManager extends EventEmitter {
       `);
       stmt.run(...values);
 
-      // Re-sync with ToolRegistry if enabled status changed
-      if (prefs.enabled !== undefined) {
+      // Re-sync with ToolRegistry if enabled status or the read-only state changed
+      if (prefs.enabled !== undefined || prefs.readOnly !== undefined) {
         const tool = this.getToolById(toolId);
-        if (tool && prefs.enabled) {
+        if (tool && Boolean(tool.enabled)) {
           // Re-register with updated settings
           await this.registerToolFromDB(tool);
         } else {
@@ -701,6 +712,8 @@ export class MCPManager extends EventEmitter {
       description: row.custom_description || row.description,
       enabled: Boolean(row.enabled),
       confirmationLevel: row.confirmation_level,
+      readOnly: effectiveReadOnly(row),
+      readOnlyOverride: row.read_only === null || row.read_only === undefined ? null : Boolean(row.read_only),
     };
   }
 
@@ -728,7 +741,10 @@ export class MCPManager extends EventEmitter {
     return new StdioMCPClient(config.stdioCommand, config.stdioArgs || [], config.stdioEnv || {});
   }
 
-  private async registerTool(serverId: string, toolDef: { name: string; description?: string; inputSchema: unknown }): Promise<void> {
+  private async registerTool(
+    serverId: string,
+    toolDef: { name: string; description?: string; inputSchema: unknown; readOnlyHint?: boolean },
+  ): Promise<void> {
     const toolId = `${serverId}:${toolDef.name}`;
     const now = Date.now();
 
@@ -736,12 +752,13 @@ export class MCPManager extends EventEmitter {
     const stmt = this.db.prepare(`
       INSERT INTO mcp_tools (
         id, server_id, tool_name, display_name, description, input_schema_json,
-        enabled, confirmation_level, discovered_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        enabled, confirmation_level, discovered_at, updated_at, read_only_hint
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         tool_name = excluded.tool_name,
         description = excluded.description,
         input_schema_json = excluded.input_schema_json,
+        read_only_hint = excluded.read_only_hint,
         updated_at = excluded.updated_at
     `);
 
@@ -756,6 +773,7 @@ export class MCPManager extends EventEmitter {
       'none', // default confirmation level
       now,
       now,
+      toolDef.readOnlyHint === undefined ? null : toolDef.readOnlyHint ? 1 : 0,
     );
 
     // Register with ToolRegistry
@@ -779,6 +797,7 @@ export class MCPManager extends EventEmitter {
       inputSchema: JSON.parse(dbTool.input_schema_json) as Record<string, unknown>,
       enabled: Boolean(dbTool.enabled),
       confirmationLevel: dbTool.confirmation_level as 'none' | 'notify' | 'confirm' | 'block',
+      readOnly: effectiveReadOnly(dbTool),
       execute: async (params: unknown) => {
         // Look the client up at call time so a reconnected server is used, and a dropped one gives a clear error.
         const current = this.clients.get(dbTool.server_id);
@@ -857,6 +876,15 @@ interface MCPToolRow {
   enabled: number;
   confirmation_level: string;
   custom_description: string | null;
+  read_only_hint?: number | null;
+  read_only?: number | null;
   discovered_at: number;
   updated_at: number;
+}
+
+/** A tool only reads when the person said so; otherwise what the server said; otherwise we assume it changes things. */
+function effectiveReadOnly(row: { read_only?: number | null; read_only_hint?: number | null }): boolean {
+  if (row.read_only !== null && row.read_only !== undefined) return Boolean(row.read_only);
+  if (row.read_only_hint !== null && row.read_only_hint !== undefined) return Boolean(row.read_only_hint);
+  return false;
 }

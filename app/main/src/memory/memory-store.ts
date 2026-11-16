@@ -315,6 +315,15 @@ const MIGRATIONS: readonly Migration[] = [
       );`,
     ],
   },
+  {
+    // Stations: whether a tool only reads. `read_only_hint` is what the server said (annotations.readOnlyHint),
+    // `read_only` is the person's own choice in the Tools pop-up. Both nullable: null means "not said".
+    version: 11,
+    statements: [
+      `ALTER TABLE mcp_tools ADD COLUMN read_only_hint INTEGER NULL;`,
+      `ALTER TABLE mcp_tools ADD COLUMN read_only INTEGER NULL;`,
+    ],
+  },
 ];
 
 function runMigrations(db: SqliteDatabase) {

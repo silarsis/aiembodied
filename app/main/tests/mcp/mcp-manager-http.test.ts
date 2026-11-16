@@ -83,7 +83,7 @@ const SCHEMA = `
   CREATE TABLE mcp_tools (
     id TEXT PRIMARY KEY, server_id TEXT NOT NULL, tool_name TEXT NOT NULL, display_name TEXT,
     description TEXT, input_schema_json TEXT NOT NULL, enabled INTEGER DEFAULT 1,
-    confirmation_level TEXT DEFAULT 'none', custom_description TEXT,
+    confirmation_level TEXT DEFAULT 'none', custom_description TEXT, read_only_hint INTEGER, read_only INTEGER,
     discovered_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
   );
   CREATE TABLE mcp_oauth (

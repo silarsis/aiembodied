@@ -52,6 +52,8 @@ export const SATELLITE_CHANNELS: ReadonlySet<string> = new Set([
   'places:summon',
   // Wandering: may this avatar go to that place on its own right now? (Answered by the same rules as the move.)
   'places:can-wander',
+  // The avatar reached the object of a station (or cannot walk): bija may go on with the answer.
+  'station:arrived',
   // The wake word picked on bija, and for a trained one its file, for the satellite's own wake word worker. Read-only.
   'wake-word:model',
 ]);
