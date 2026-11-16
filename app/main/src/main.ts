@@ -2,7 +2,7 @@ import { BackgroundService } from './backgrounds/background-service.js';
 import { RoomService } from './rooms/room-service.js';
 import { pickIdleActions } from './rooms/idle-thoughts.js';
 import { MAX_IDLE_HABITS_LENGTH, normalizeIdleHabits } from './rooms/idle-habits.js';
-import { Menu, Notification, app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain, nativeImage, powerMonitor, protocol, session } from 'electron';
+import { Menu, Notification, app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain, nativeImage, powerMonitor, protocol, session, shell } from 'electron';
 import type { WebContents } from 'electron';
 import { ASSET_SCHEME, ASSET_SCHEME_PRIVILEGES, registerAssetProtocol } from './rooms/asset-protocol.js';
 import { ASSET_FOLDER, createRoomGenerationService, objectMakingAvailable, pickSingleImageGeometry } from './rooms/room-generation-setup.js';
@@ -3306,8 +3306,14 @@ app.whenReady().then(async () => {
       }
       logger.info('Memory tools registered');
     }
-    mcpManager = new MCPManager(memoryStore.database, toolRegistry);
-    await mcpManager.initialize();
+    // openExternal is only used for an explicit "Sign in" press; start-up never opens the browser.
+    mcpManager = new MCPManager(memoryStore.database, toolRegistry, {
+      openExternal: (url) => shell.openExternal(url),
+    });
+    // Servers connect in the background so a slow one cannot hold up start-up.
+    void mcpManager.initialize().catch((error) => {
+      logger.warn('MCP auto-start failed', { message: error instanceof Error ? error.message : String(error) });
+    });
     logger.info('MCP Manager initialized', {
       autoStartedServers: mcpManager.listServers().filter(s => s.autoStart && s.enabled).length
     });
@@ -3644,6 +3650,11 @@ app.on('before-quit', async (event) => {
   satelliteDevices?.stop();
   for (const { inbox } of avatarPlumbing.values()) inbox.stop();
   void switchboardClient?.stop();
+
+  // Stop MCP programs this app started (stdio servers) so none is left running.
+  await mcpManager?.disconnectAll().catch((error) => {
+    logger.warn('Failed to disconnect MCP servers during shutdown', { message: error instanceof Error ? error.message : String(error) });
+  });
 
   // Give the model controller its leases back.
   await aicontroller.shutdown().catch((error) => {

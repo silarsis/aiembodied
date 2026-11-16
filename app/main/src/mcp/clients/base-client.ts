@@ -2,7 +2,7 @@ import type { MCPToolDefinition } from '../types.js';
 
 /**
  * Base interface for MCP clients.
- * Implementations handle either stdio or SSE transport protocols.
+ * Implementations handle stdio, SSE or Streamable HTTP transports.
  */
 export interface MCPClient {
   /**
@@ -38,4 +38,11 @@ export interface MCPClient {
    * @param callback - Called when the server's tool list changes
    */
   onToolsChanged?(callback: () => void): void;
+
+  /**
+   * Optional: Called when the connection ends without disconnect() having been called
+   * (the stdio process died, the stream dropped, the HTTP session went away).
+   * @param callback - Receives a short detail string when there is one (e.g. the last stderr lines)
+   */
+  onClosed?(callback: (detail?: string) => void): void;
 }

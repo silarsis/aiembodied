@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import type { MCPServerConfig, MCPToolSummary } from '../../../main/src/mcp/types.js';
+import type { MCPServerConfigInput, MCPServerSummary, MCPToolSummary } from '../../../main/src/mcp/types.js';
+import type { MCPPresetSummary } from '../../../main/src/mcp/presets.js';
 import type { McpBridge, ModelsBridge } from '../preload-api.js';
 
 const CONFIRMATION_LEVELS = [
@@ -9,14 +10,108 @@ const CONFIRMATION_LEVELS = [
   { value: 'block', label: 'Never run' },
 ] as const;
 
+/** How the new server is reached: a web address (Streamable HTTP), a program on this PC (stdio), or the older SSE address. */
+type ConnectsBy = 'http' | 'stdio' | 'sse';
+/** How we prove who we are to a web address. */
+type SignInKind = 'none' | 'header' | 'oauth';
+
 interface ServerDraft {
   name: string;
+  connectsBy: ConnectsBy;
   url: string;
+  signIn: SignInKind;
   header: string;
   token: string;
+  scope: string;
+  command: string;
+  argsText: string; // one argument per line
+  envText: string; // KEY=value per line
 }
 
-const EMPTY_DRAFT: ServerDraft = { name: '', url: '', header: 'Authorization', token: '' };
+const EMPTY_DRAFT: ServerDraft = {
+  name: '',
+  connectsBy: 'http',
+  url: '',
+  signIn: 'none',
+  header: 'Authorization',
+  token: '',
+  scope: '',
+  command: '',
+  argsText: '',
+  envText: '',
+};
+
+/** One argument per non-empty line. */
+function parseArgs(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+/** KEY=value per line; blank lines are skipped, anything else without an `=` is an error. */
+function parseEnv(text: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const at = line.indexOf('=');
+    if (at < 1) throw new Error(`Environment line “${line}” should look like KEY=value.`);
+    env[line.slice(0, at).trim()] = line.slice(at + 1);
+  }
+  return env;
+}
+
+/** Turn the form into what the main process stores. */
+function draftToConfig(draft: ServerDraft): MCPServerConfigInput {
+  const base = { enabled: true, autoStart: true };
+  if (draft.connectsBy === 'stdio') {
+    const env = parseEnv(draft.envText);
+    return {
+      ...base,
+      name: draft.name.trim() || draft.command.trim(),
+      transportType: 'stdio',
+      stdioCommand: draft.command.trim(),
+      stdioArgs: parseArgs(draft.argsText),
+      stdioEnv: Object.keys(env).length > 0 ? env : undefined,
+    };
+  }
+  const url = draft.url.trim();
+  const header = draft.signIn === 'header' && draft.token ? draft.header.trim() || 'Authorization' : undefined;
+  const token = draft.signIn === 'header' && draft.token ? draft.token : undefined;
+  if (draft.connectsBy === 'sse') {
+    return { ...base, name: draft.name.trim() || url, transportType: 'sse', sseUrl: url, sseAuthHeader: header, sseAuthToken: token };
+  }
+  return {
+    ...base,
+    name: draft.name.trim() || url,
+    transportType: 'http',
+    httpUrl: url,
+    httpAuthHeader: header,
+    httpAuthToken: token,
+    oauth: draft.signIn === 'oauth',
+    oauthScope: draft.signIn === 'oauth' && draft.scope.trim() ? draft.scope.trim() : undefined,
+  };
+}
+
+function statusText(server: MCPServerSummary): string {
+  switch (server.connectionStatus) {
+    case 'connected':
+      return `Connected · ${server.toolsDiscovered} tools`;
+    case 'needs-sign-in':
+      return 'Sign-in needed';
+    case 'error':
+      return 'Error';
+    default:
+      return 'Not connected';
+  }
+}
+
+function serverAddress(server: MCPServerSummary): string | undefined {
+  if (server.transportType === 'http') return server.httpUrl;
+  if (server.transportType === 'sse') return server.sseUrl;
+  return [server.stdioCommand, ...(server.stdioArgs ?? [])].filter(Boolean).join(' ');
+}
 
 function errorText(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
@@ -39,22 +134,25 @@ export function ToolsSettings({
 }) {
   const [definitions, setDefinitions] = useState<{ name: string; description: string }[] | null>(null);
   const [searchServers, setSearchServers] = useState<string | null>(null);
-  const [servers, setServers] = useState<MCPServerConfig[]>([]);
+  const [servers, setServers] = useState<MCPServerSummary[]>([]);
   const [tools, setTools] = useState<MCPToolSummary[]>([]);
+  const [presets, setPresets] = useState<MCPPresetSummary[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState<ServerDraft | null>(null);
 
   const reload = useCallback(async () => {
-    const [nextDefinitions, nextServers, nextTools, routing] = await Promise.all([
+    const [nextDefinitions, nextServers, nextTools, nextPresets, routing] = await Promise.all([
       mcp?.getToolDefinitionsForLLM?.().catch(() => null) ?? null,
       mcp?.listServers().catch(() => []) ?? [],
       mcp?.listTools().catch(() => []) ?? [],
+      mcp?.listPresets?.().catch(() => []) ?? [],
       models?.get().catch(() => null) ?? null,
     ]);
     setDefinitions(nextDefinitions);
     setServers(nextServers);
     setTools(nextTools);
+    setPresets(nextPresets);
     if (routing) {
       const route = routing.routes.search;
       const ids = route?.server ? [route.server, ...(route.backups ?? []).map((backup) => backup.server)] : [];
@@ -92,6 +190,13 @@ export function ToolsSettings({
     }
   };
 
+  /** Connect a server, or for an OAuth server open the browser sign-in. Throws a readable error on failure. */
+  const startServer = async (server: MCPServerSummary) => {
+    if (!mcp) return;
+    const result = server.oauth && mcp.signIn ? await mcp.signIn(server.id) : await mcp.connectServer(server.id);
+    if (!result.success) throw new Error(result.error ?? `Couldn’t connect to ${server.name}.`);
+  };
+
   const handleAdd = async (event: FormEvent) => {
     event.preventDefault();
     if (!mcp || !adding) return;
@@ -99,25 +204,30 @@ export function ToolsSettings({
     await run(
       'add',
       async () => {
-        const server = await mcp.addServer({
-          name: draft.name.trim() || draft.url.trim(),
-          transportType: 'sse',
-          sseUrl: draft.url.trim(),
-          sseAuthHeader: draft.token ? draft.header.trim() || 'Authorization' : undefined,
-          sseAuthToken: draft.token || undefined,
-          enabled: true,
-          autoStart: true,
-        });
+        const server = await mcp.addServer(draftToConfig(draft));
         setAdding(null);
-        const result = await mcp.connectServer(server.id);
-        if (!result.success) throw new Error(result.error ?? `Couldn’t connect to ${server.name}.`);
+        await startServer(server);
       },
       'Couldn’t add that server.',
     );
   };
 
+  const handleAddPreset = async (preset: MCPPresetSummary) => {
+    const addPreset = mcp?.addPreset?.bind(mcp);
+    if (!addPreset) return;
+    await run(
+      `preset:${preset.id}`,
+      async () => {
+        const server = await addPreset(preset.id);
+        await startServer(server);
+      },
+      `Couldn’t add ${preset.name}.`,
+    );
+  };
+
+  const signOut = mcp?.signOut?.bind(mcp);
   const builtIn = (definitions ?? []).filter(
-    (definition) => !tools.some((tool) => tool.toolName === definition.name),
+    (definition) => !tools.some((tool) => tool.llmName === definition.name),
   );
 
   return (
@@ -159,10 +269,10 @@ export function ToolsSettings({
               </li>
             ))}
             {tools
-              .filter((tool) => tool.enabled && definitions.some((d) => d.name === tool.toolName))
+              .filter((tool) => tool.enabled && definitions.some((d) => d.name === tool.llmName))
               .map((tool) => (
                 <li key={tool.id}>
-                  <code>{tool.toolName}</code>
+                  <code>{tool.llmName}</code>
                   <span className="kiosk__helper">From {tool.serverName}</span>
                 </li>
               ))}
@@ -184,20 +294,21 @@ export function ToolsSettings({
             {servers.map((server) => {
               const serverTools = tools.filter((tool) => tool.serverId === server.id);
               const connected = server.connectionStatus === 'connected';
+              const needsSignIn = server.connectionStatus === 'needs-sign-in' && Boolean(server.oauth);
               return (
                 <article key={server.id} className="toolsSettings__server" aria-label={server.name}>
                   <div className="toolsSettings__serverHeader">
                     <strong>{server.name}</strong>
-                    <code>{server.transportType === 'sse' ? server.sseUrl : server.stdioCommand}</code>
+                    <code>{serverAddress(server)}</code>
                     <span className="toolsSettings__status" data-status={server.connectionStatus}>
-                      {connected
-                        ? `Connected · ${server.toolsDiscovered} tools`
-                        : server.connectionStatus === 'error'
-                          ? 'Error'
-                          : 'Not connected'}
+                      {statusText(server)}
                     </span>
                   </div>
-                  {server.lastError ? <p className="kiosk__helper">{server.lastError}</p> : null}
+                  {server.lastError ? (
+                    <p className="kiosk__helper" style={{ whiteSpace: 'pre-wrap' }}>
+                      {server.lastError}
+                    </p>
+                  ) : null}
                   <div className="toolsSettings__actions">
                     {connected ? (
                       <button
@@ -207,10 +318,19 @@ export function ToolsSettings({
                       >
                         Disconnect
                       </button>
+                    ) : needsSignIn ? (
+                      <button
+                        type="button"
+                        className="faces__submit"
+                        disabled={busy !== null}
+                        onClick={() => void run(server.id, () => startServer(server), 'Couldn’t sign in.')}
+                      >
+                        {busy === server.id ? 'Waiting for the browser…' : 'Sign in'}
+                      </button>
                     ) : (
                       <button
                         type="button"
-                        disabled={busy !== null || server.transportType === 'stdio'}
+                        disabled={busy !== null}
                         onClick={() =>
                           void run(
                             server.id,
@@ -240,6 +360,15 @@ export function ToolsSettings({
                       />
                       Connect at startup
                     </label>
+                    {server.oauth && signOut ? (
+                      <button
+                        type="button"
+                        disabled={busy !== null}
+                        onClick={() => void run(server.id, () => signOut(server.id), 'Couldn’t sign out.')}
+                      >
+                        Sign out
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       disabled={busy !== null}
@@ -248,9 +377,6 @@ export function ToolsSettings({
                       Remove
                     </button>
                   </div>
-                  {server.transportType === 'stdio' ? (
-                    <p className="kiosk__helper">Command-line (stdio) MCP servers aren’t supported yet.</p>
-                  ) : null}
                   {serverTools.length > 0 ? (
                     <ul className="toolsSettings__list">
                       {serverTools.map((tool) => (
@@ -268,10 +394,10 @@ export function ToolsSettings({
                                 )
                               }
                             />
-                            <code>{tool.displayName || tool.toolName}</code>
+                            <code>{tool.llmName || tool.toolName}</code>
                           </label>
                           <select
-                            aria-label={`When ${tool.displayName || tool.toolName} runs`}
+                            aria-label={`When ${tool.llmName || tool.toolName} runs`}
                             value={tool.confirmationLevel}
                             disabled={busy !== null || !tool.enabled}
                             onChange={(event) =>
@@ -308,43 +434,151 @@ export function ToolsSettings({
                   />
                 </label>
                 <label>
-                  SSE URL
-                  <input
-                    type="url"
-                    required
-                    value={adding.url}
-                    onChange={(event) => setAdding({ ...adding, url: event.target.value })}
-                    placeholder="http://192.168.1.20:8123/mcp_server/sse"
-                  />
+                  Connects by
+                  <select
+                    value={adding.connectsBy}
+                    onChange={(event) => setAdding({ ...adding, connectsBy: event.target.value as ConnectsBy })}
+                  >
+                    <option value="http">Web address</option>
+                    <option value="stdio">Program on this PC</option>
+                    <option value="sse">Older web address (SSE)</option>
+                  </select>
                 </label>
-                <label>
-                  Auth header
-                  <input value={adding.header} onChange={(event) => setAdding({ ...adding, header: event.target.value })} />
-                </label>
-                <label>
-                  Auth value (optional)
-                  <input
-                    type="password"
-                    value={adding.token}
-                    onChange={(event) => setAdding({ ...adding, token: event.target.value })}
-                    placeholder="Bearer …"
-                  />
-                </label>
+
+                {adding.connectsBy === 'stdio' ? (
+                  <>
+                    <label>
+                      Command
+                      <input
+                        required
+                        value={adding.command}
+                        onChange={(event) => setAdding({ ...adding, command: event.target.value })}
+                        placeholder="npx"
+                      />
+                    </label>
+                    <label>
+                      Arguments (one per line)
+                      <textarea
+                        rows={3}
+                        value={adding.argsText}
+                        onChange={(event) => setAdding({ ...adding, argsText: event.target.value })}
+                        placeholder={'-y\n@modelcontextprotocol/server-filesystem\nC:\\Users\\me\\Documents'}
+                      />
+                    </label>
+                    <label>
+                      Environment (KEY=value, one per line)
+                      <textarea
+                        rows={2}
+                        value={adding.envText}
+                        onChange={(event) => setAdding({ ...adding, envText: event.target.value })}
+                        placeholder="API_KEY=…"
+                      />
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <label>
+                      {adding.connectsBy === 'sse' ? 'SSE URL' : 'Web address'}
+                      <input
+                        type="url"
+                        required
+                        value={adding.url}
+                        onChange={(event) => setAdding({ ...adding, url: event.target.value })}
+                        placeholder={
+                          adding.connectsBy === 'sse' ? 'http://192.168.1.20:8123/mcp_server/sse' : 'https://example.com/mcp'
+                        }
+                      />
+                    </label>
+                    <label>
+                      Sign-in
+                      <select
+                        value={adding.signIn}
+                        onChange={(event) => setAdding({ ...adding, signIn: event.target.value as SignInKind })}
+                      >
+                        <option value="none">None</option>
+                        <option value="header">Token in a header</option>
+                        {adding.connectsBy === 'http' ? <option value="oauth">Sign in with the browser (OAuth)</option> : null}
+                      </select>
+                    </label>
+                    {adding.signIn === 'header' ? (
+                      <>
+                        <label>
+                          Auth header
+                          <input value={adding.header} onChange={(event) => setAdding({ ...adding, header: event.target.value })} />
+                        </label>
+                        <label>
+                          Auth value
+                          <input
+                            type="password"
+                            value={adding.token}
+                            onChange={(event) => setAdding({ ...adding, token: event.target.value })}
+                            placeholder="Bearer …"
+                          />
+                        </label>
+                      </>
+                    ) : null}
+                    {adding.signIn === 'oauth' ? (
+                      <label>
+                        Permission to ask for (optional)
+                        <input
+                          value={adding.scope}
+                          onChange={(event) => setAdding({ ...adding, scope: event.target.value })}
+                          placeholder="papers:read"
+                        />
+                      </label>
+                    ) : null}
+                  </>
+                )}
+
                 <div className="toolsSettings__actions">
-                  <button type="submit" className="faces__submit" disabled={busy !== null || !adding.url.trim()}>
-                    {busy === 'add' ? 'Adding…' : 'Add and connect'}
+                  <button
+                    type="submit"
+                    className="faces__submit"
+                    disabled={busy !== null || (adding.connectsBy === 'stdio' ? !adding.command.trim() : !adding.url.trim())}
+                  >
+                    {busy === 'add' ? 'Adding…' : adding.signIn === 'oauth' && adding.connectsBy === 'http' ? 'Add and sign in' : 'Add and connect'}
                   </button>
                   <button type="button" onClick={() => setAdding(null)}>
                     Cancel
                   </button>
                 </div>
-                <p className="kiosk__helper">Only SSE servers work for now; command-line (stdio) servers are still to come.</p>
+                {adding.connectsBy === 'stdio' ? (
+                  <p className="kiosk__helper">
+                    The program starts with this app and stops when it closes. Only add programs you trust.
+                  </p>
+                ) : null}
               </form>
             ) : (
               <button type="button" className="faces__submit" onClick={() => setAdding({ ...EMPTY_DRAFT })}>
                 Add an MCP server
               </button>
             )}
+
+            {mcp.listPresets && presets.length > 0 ? (
+              <div aria-label="Ready-made servers" role="group" className="toolsSettings__presets">
+                <h4>Ready-made servers</h4>
+                {presets.map((preset) => {
+                  const added = servers.some((server) => (server.httpUrl ?? server.sseUrl) === preset.url);
+                  return (
+                    <article key={preset.id} className="toolsSettings__server" aria-label={`Ready-made ${preset.name}`}>
+                      <div className="toolsSettings__serverHeader">
+                        <strong>{preset.name}</strong>
+                      </div>
+                      <p className="kiosk__helper">{preset.description}</p>
+                      <div className="toolsSettings__actions">
+                        <button
+                          type="button"
+                          disabled={busy !== null || added}
+                          onClick={() => void handleAddPreset(preset)}
+                        >
+                          {busy === `preset:${preset.id}` ? 'Adding…' : added ? 'Added' : 'Add'}
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : null}
           </>
         )}
       </section>

@@ -2,6 +2,7 @@ import { ipcMain, BrowserWindow } from 'electron';
 import type { MCPManager } from './mcp-manager.js';
 import type { ToolRegistry } from '../tools/tool-registry.js';
 import type { MCPServerConfigInput } from './types.js';
+import { toServerSummary } from './server-summary.js';
 
 /**
  * Register all MCP-related IPC handlers.
@@ -9,16 +10,35 @@ import type { MCPServerConfigInput } from './types.js';
  */
 export function registerMCPHandlers(mcpManager: MCPManager, toolRegistry: ToolRegistry): void {
   // Server management handlers
+  // Everything that goes to the renderer passes through toServerSummary: no tokens or env values leave the main process.
   ipcMain.handle('mcp:list-servers', async () => {
-    return mcpManager.listServers();
+    return mcpManager.listServers().map(toServerSummary);
   });
 
   ipcMain.handle('mcp:add-server', async (_, config: MCPServerConfigInput) => {
-    return await mcpManager.addServer(config);
+    return toServerSummary(await mcpManager.addServer(config));
   });
 
   ipcMain.handle('mcp:update-server', async (_, id: string, updates: Partial<MCPServerConfigInput>) => {
-    return await mcpManager.updateServer(id, updates);
+    return toServerSummary(await mcpManager.updateServer(id, updates));
+  });
+
+  // Ready-made servers. The renderer calls sign-in itself after adding one that needs it.
+  ipcMain.handle('mcp:list-presets', async () => {
+    return mcpManager.listPresets();
+  });
+
+  ipcMain.handle('mcp:add-preset', async (_, presetId: string) => {
+    return toServerSummary(await mcpManager.addPreset(presetId));
+  });
+
+  // Browser sign-in for OAuth servers (not available on satellites).
+  ipcMain.handle('mcp:sign-in', async (_, id: string) => {
+    return await mcpManager.signIn(id);
+  });
+
+  ipcMain.handle('mcp:sign-out', async (_, id: string) => {
+    await mcpManager.signOut(id);
   });
 
   ipcMain.handle('mcp:delete-server', async (_, id: string) => {

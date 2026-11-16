@@ -47,10 +47,11 @@ import type {
 import type { SpeechTtsEngine } from '../../main/src/local-voice/speech-service-client.js';
 import type {
   MCPConnectionResult,
-  MCPServerConfig,
+  MCPServerSummary,
   MCPServerConfigInput,
   MCPToolSummary,
 } from '../../main/src/mcp/types.js';
+import type { MCPPresetSummary } from '../../main/src/mcp/presets.js';
 import type { AvatarBridge } from './avatar/types.js';
 import type { CameraDetectionEvent } from './avatar/behavior-cues.js';
 import type { MemoryEngineBridge } from '../../main/src/memory-engine/bridge-types.js';
@@ -192,11 +193,16 @@ export interface PreloadApi {
 
 /** MCP servers and the tools the assistant can call (the parts the settings use). */
 export interface McpBridge {
-  listServers(): Promise<MCPServerConfig[]>;
-  addServer(config: MCPServerConfigInput): Promise<MCPServerConfig>;
-  updateServer(id: string, updates: Partial<MCPServerConfigInput>): Promise<MCPServerConfig>;
+  listServers(): Promise<MCPServerSummary[]>;
+  addServer(config: MCPServerConfigInput): Promise<MCPServerSummary>;
+  updateServer(id: string, updates: Partial<MCPServerConfigInput>): Promise<MCPServerSummary>;
   deleteServer(id: string): Promise<void>;
   connectServer(id: string): Promise<MCPConnectionResult>;
+  /** Browser sign-in for a server that uses OAuth; resolves when connected or failed. */
+  signIn?(id: string): Promise<MCPConnectionResult>;
+  signOut?(id: string): Promise<void>;
+  listPresets?(): Promise<MCPPresetSummary[]>;
+  addPreset?(presetId: string): Promise<MCPServerSummary>;
   disconnectServer(id: string): Promise<void>;
   listTools(serverId?: string): Promise<MCPToolSummary[]>;
   updateToolPreferences(toolId: string, prefs: { enabled?: boolean; confirmationLevel?: string }): Promise<void>;

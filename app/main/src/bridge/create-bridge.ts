@@ -72,12 +72,13 @@ import type {
 import type { ApprovalsBridge, ApprovalView } from '../tools/approvals-ipc.js';
 import type { SpeechTtsEngine } from '../local-voice/speech-service-client.js';
 import type {
-  MCPServerConfig,
+  MCPServerSummary,
   MCPServerConfigInput,
   MCPToolSummary,
   MCPConnectionResult,
   MCPToolResult,
 } from '../mcp/types.js';
+import type { MCPPresetSummary } from '../mcp/presets.js';
 import type { OpenAIFunction } from '../tools/tool-registry.js';
 import type { MemoryEngineBridge } from '../memory-engine/bridge-types.js';
 import type { SwitchboardBridge } from '../switchboard/bridge-types.js';
@@ -358,16 +359,21 @@ export interface AppBridge {
 
 export interface ServerStatusEvent {
   serverId: string;
-  status: 'connected' | 'disconnected' | 'error';
+  status: 'connected' | 'disconnected' | 'error' | 'needs-sign-in';
 }
 
 export interface MCPBridge {
   // Server management
-  listServers(): Promise<MCPServerConfig[]>;
-  addServer(config: MCPServerConfigInput): Promise<MCPServerConfig>;
-  updateServer(id: string, updates: Partial<MCPServerConfigInput>): Promise<MCPServerConfig>;
+  listServers(): Promise<MCPServerSummary[]>;
+  addServer(config: MCPServerConfigInput): Promise<MCPServerSummary>;
+  updateServer(id: string, updates: Partial<MCPServerConfigInput>): Promise<MCPServerSummary>;
   deleteServer(id: string): Promise<void>;
   connectServer(id: string): Promise<MCPConnectionResult>;
+  /** Open the browser to sign in to an OAuth server, wait for the answer, then connect. */
+  signIn(id: string): Promise<MCPConnectionResult>;
+  signOut(id: string): Promise<void>;
+  listPresets(): Promise<MCPPresetSummary[]>;
+  addPreset(presetId: string): Promise<MCPServerSummary>;
   disconnectServer(id: string): Promise<void>;
   testConnection(id: string): Promise<MCPConnectionResult>;
 
@@ -857,10 +863,14 @@ export function createBridge(
       runSummaries: () => transport.invoke('memory-engine:run-summaries'),
     },
     mcp: {
-      listServers: () => transport.invoke('mcp:list-servers') as Promise<MCPServerConfig[]>,
-      addServer: (config) => transport.invoke('mcp:add-server', config) as Promise<MCPServerConfig>,
+      listServers: () => transport.invoke('mcp:list-servers') as Promise<MCPServerSummary[]>,
+      addServer: (config) => transport.invoke('mcp:add-server', config) as Promise<MCPServerSummary>,
       updateServer: (id, updates) =>
-        transport.invoke('mcp:update-server', id, updates) as Promise<MCPServerConfig>,
+        transport.invoke('mcp:update-server', id, updates) as Promise<MCPServerSummary>,
+      signIn: (id) => transport.invoke('mcp:sign-in', id) as Promise<MCPConnectionResult>,
+      signOut: (id) => transport.invoke('mcp:sign-out', id) as Promise<void>,
+      listPresets: () => transport.invoke('mcp:list-presets') as Promise<MCPPresetSummary[]>,
+      addPreset: (presetId) => transport.invoke('mcp:add-preset', presetId) as Promise<MCPServerSummary>,
       deleteServer: (id) => transport.invoke('mcp:delete-server', id) as Promise<void>,
       connectServer: (id) => transport.invoke('mcp:connect-server', id) as Promise<MCPConnectionResult>,
       disconnectServer: (id) => transport.invoke('mcp:disconnect-server', id) as Promise<void>,

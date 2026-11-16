@@ -256,16 +256,34 @@ describe('MemoryStore speaker column', () => {
     first.appendMessage({ id: 'old', sessionId: 's', role: 'user', ts: 1, content: 'before', audioPath: null });
     // Put the database back as version 8 left it: no speaker column.
     first.database.exec('ALTER TABLE messages DROP COLUMN speaker;');
+    // ...and without what version 10 added (MCP over HTTP), which this rewind would otherwise add twice.
+    first.database.exec('DROP TABLE mcp_oauth;');
+    for (const column of ['http_url', 'http_auth_header', 'http_auth_token_encrypted', 'oauth', 'oauth_scope']) {
+      first.database.exec(`ALTER TABLE mcp_servers DROP COLUMN ${column};`);
+    }
     first.database.pragma('user_version = 8');
     first.dispose();
 
     const store = new MemoryStore({ filePath });
     stores.push(store);
-    expect(Number(store.database.pragma('user_version', { simple: true }))).toBe(9);
+    expect(Number(store.database.pragma('user_version', { simple: true }))).toBe(10);
     const columns = store.database.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string; notnull: number }>;
     expect(columns.find((c) => c.name === 'speaker')).toMatchObject({ notnull: 0 });
     expect(store.listMessages('s')).toEqual([{ id: 'old', sessionId: 's', role: 'user', ts: 1, content: 'before', audioPath: null }]);
     store.appendMessage({ id: 'new', sessionId: 's', role: 'assistant', ts: 2, content: 'after', audioPath: null, speaker: 'echo' });
     expect(store.listMessages('s')[1]?.speaker).toBe('echo');
+  });
+
+  it('migration 10 gives mcp_servers its web-address columns and creates mcp_oauth', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'memory-store-mcp-'));
+    tempDirs.push(directory);
+    const store = new MemoryStore({ filePath: path.join(directory, 'memory.db') });
+    stores.push(store);
+    const serverColumns = (store.database.prepare('PRAGMA table_info(mcp_servers)').all() as Array<{ name: string }>).map((c) => c.name);
+    expect(serverColumns).toEqual(expect.arrayContaining(['http_url', 'http_auth_header', 'http_auth_token_encrypted', 'oauth', 'oauth_scope']));
+    const oauthColumns = (store.database.prepare('PRAGMA table_info(mcp_oauth)').all() as Array<{ name: string }>).map((c) => c.name);
+    expect(oauthColumns).toEqual(
+      expect.arrayContaining(['server_id', 'client_info_encrypted', 'tokens_encrypted', 'code_verifier_encrypted']),
+    );
   });
 });

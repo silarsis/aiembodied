@@ -37,6 +37,10 @@ describe('MCP IPC Handlers', () => {
       connectServer: vi.fn().mockResolvedValue({ success: true }),
       disconnectServer: vi.fn().mockResolvedValue(undefined),
       testConnection: vi.fn().mockResolvedValue({ success: true }),
+      signIn: vi.fn().mockResolvedValue({ success: true }),
+      signOut: vi.fn().mockResolvedValue(undefined),
+      listPresets: vi.fn().mockReturnValue([{ id: 'p', name: 'P', description: 'd', url: 'https://p' }]),
+      addPreset: vi.fn().mockResolvedValue({ id: 'server-2', name: 'P' }),
       listTools: vi.fn().mockReturnValue([]),
       updateToolPreferences: vi.fn().mockResolvedValue(undefined),
       on: emitter.on.bind(emitter),
@@ -75,7 +79,7 @@ describe('MCP IPC Handlers', () => {
 
       const result = await handler!({}, config);
       expect(mockMCPManager.addServer).toHaveBeenCalledWith(config);
-      expect(result).toEqual({ id: 'server-1', name: 'Test Server' });
+      expect(result).toMatchObject({ id: 'server-1', name: 'Test Server' });
     });
 
     it('registers mcp:update-server handler', async () => {
@@ -86,7 +90,34 @@ describe('MCP IPC Handlers', () => {
       const result = await handler!({}, 'server-1', updates);
 
       expect(mockMCPManager.updateServer).toHaveBeenCalledWith('server-1', updates);
-      expect(result).toEqual({ id: 'server-1', name: 'Updated Server' });
+      expect(result).toMatchObject({ id: 'server-1', name: 'Updated Server' });
+    });
+
+    it('never sends tokens or environment values to the renderer', async () => {
+      mockMCPManager.listServers.mockReturnValue([
+        {
+          id: 's1',
+          name: 'Secret',
+          transportType: 'http',
+          httpUrl: 'https://x',
+          httpAuthToken: 'top-secret',
+          stdioEnv: { KEY: 'env-secret' },
+        },
+      ]);
+      const servers = (await handlers.get('mcp:list-servers')!({}, undefined)) as Record<string, unknown>[];
+      expect(JSON.stringify(servers)).not.toContain('top-secret');
+      expect(JSON.stringify(servers)).not.toContain('env-secret');
+      expect(servers[0]).toMatchObject({ hasAuthToken: true, stdioEnvKeys: ['KEY'] });
+    });
+
+    it('registers sign-in, sign-out and preset handlers', async () => {
+      expect(await handlers.get('mcp:sign-in')!({}, 'server-1')).toEqual({ success: true });
+      expect(mockMCPManager.signIn).toHaveBeenCalledWith('server-1');
+      await handlers.get('mcp:sign-out')!({}, 'server-1');
+      expect(mockMCPManager.signOut).toHaveBeenCalledWith('server-1');
+      expect(await handlers.get('mcp:list-presets')!({}, undefined)).toHaveLength(1);
+      expect(await handlers.get('mcp:add-preset')!({}, 'p')).toMatchObject({ id: 'server-2' });
+      expect(mockMCPManager.addPreset).toHaveBeenCalledWith('p');
     });
 
     it('registers mcp:delete-server handler', async () => {
