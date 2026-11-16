@@ -21,7 +21,7 @@
     "@pixiv/three-vrm-animation": "^3.5.5",
     "@pixiv/three-vrm-core": "^3.5.5",
     "auto-launch": "^5.0.6",
-    "better-sqlite3": "^13.0.3",
+    "better-sqlite3": "^13.1.1",
     "debug": "^4.4.3",
     "dotenv": "^18.0.9",
     "electron": "^45.2.3",
