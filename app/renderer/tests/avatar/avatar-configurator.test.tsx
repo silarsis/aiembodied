@@ -149,7 +149,7 @@ describe('AvatarConfigurator', () => {
   });
 
 
-  it('renders VRM models with metadata and handles activation and deletion', async () => {
+  it('no longer lists models to pick, and tells the app when the library loads', async () => {
     const models = [
       {
         id: 'vrm-1',
@@ -160,56 +160,20 @@ describe('AvatarConfigurator', () => {
         thumbnailDataUrl: SAMPLE_PREVIEW,
         description: null,
       },
-      {
-        id: 'vrm-2',
-        name: 'Model Two',
-        createdAt: 1735689700000,
-        version: '2.0',
-        fileSha: 'fedcba9876543210',
-        thumbnailDataUrl: null,
-        description: null,
-      },
     ];
+    const listModels = vi.fn().mockResolvedValue(models);
+    const getActiveModel = vi.fn().mockResolvedValue(models[0]);
+    const onActiveModelChange = vi.fn();
+    const onModelsChanged = vi.fn();
+    const avatarApi = createAvatarBridgeStub({ listModels, getActiveModel });
 
-    const listModels = vi.fn().mockResolvedValueOnce(models).mockResolvedValueOnce([models[1]]);
-    const getActiveModel = vi
-      .fn()
-      .mockResolvedValueOnce(models[0])
-      .mockResolvedValueOnce(models[1]);
-    const setActiveModel = vi.fn().mockResolvedValue(models[1]);
-    const deleteModel = vi.fn().mockResolvedValue(undefined);
+    render(<AvatarConfigurator avatarApi={avatarApi} onActiveModelChange={onActiveModelChange} onModelsChanged={onModelsChanged} />);
 
-    const avatarApi = createAvatarBridgeStub({
-      listModels,
-      getActiveModel,
-      setActiveModel,
-      deleteModel,
-    });
-
-    render(<AvatarConfigurator avatarApi={avatarApi} />);
-
-    await waitFor(() => expect(screen.getByText('Model One')).toBeInTheDocument());
-    expect(screen.getByText('Model Two')).toBeInTheDocument();
-
-    const modelTwoCard = screen.getByRole('heading', { name: 'Model Two' }).closest('article');
-    expect(modelTwoCard).not.toBeNull();
-    if (!modelTwoCard) {
-      throw new Error('VRM card not found');
-    }
-
-    const useModelButton = within(modelTwoCard).getByRole('button', { name: 'Use model' });
-    fireEvent.click(useModelButton);
-    await waitFor(() => expect(setActiveModel).toHaveBeenCalledWith('vrm-2'));
-
-    const deleteButton = within(screen.getByRole('heading', { name: 'Model One' }).closest('article')!).getByRole(
-      'button',
-      { name: 'Delete' },
-    );
-    fireEvent.click(deleteButton);
-    await waitFor(() => expect(deleteModel).toHaveBeenCalledWith('vrm-1'));
-    await waitFor(() => expect(listModels).toHaveBeenCalledTimes(2));
-    expect(getActiveModel).toHaveBeenCalledTimes(2);
-    await waitFor(() => expect(screen.queryByText('Model One')).not.toBeInTheDocument());
+    await waitFor(() => expect(onModelsChanged).toHaveBeenCalled());
+    expect(onActiveModelChange).toHaveBeenCalledWith(models[0]);
+    expect(screen.queryByText('VRM Avatars')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Use model' })).toBeNull();
+    expect(screen.getByText('+ Upload .vrm')).toBeInTheDocument();
   });
 
   it('uploads a VRM file and surfaces metadata from the main service', async () => {

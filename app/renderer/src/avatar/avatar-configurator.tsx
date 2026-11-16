@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -22,8 +21,8 @@ interface AvatarConfiguratorProps {
   children?: ReactNode;
   avatarApi?: AvatarBridge;
   onActiveModelChange?: (detail: AvatarModelSummary | null) => void;
-  /** The active model as the app knows it, so a change made elsewhere (Echo's body picker) shows here too. */
-  activeModelId?: string | null;
+  /** Called whenever the library's list changes (load, upload, new thumbnail), so pickers elsewhere stay current. */
+  onModelsChanged?: () => void;
   /**
    * When set, the avatar studio is opened from outside (the app's Avatar button) instead
    * of by the launcher section at the bottom of the library.
@@ -69,31 +68,15 @@ async function fileToBase64(file: File): Promise<string> {
   return dataUrl.slice(commaIndex + 1);
 }
 
-function formatTimestamp(value: number): string {
-  try {
-    return new Date(value).toLocaleString();
-  } catch {
-    return new Date(value).toString();
-  }
-}
-
-
-
 export function AvatarConfigurator({
   avatarApi,
   onActiveModelChange,
-  activeModelId: activeModelIdFromApp,
+  onModelsChanged,
   compact = false,
   children,
   studio,
 }: AvatarConfiguratorProps) {
   const [models, setModels] = useState<AvatarModelSummary[]>([]);
-  const [activeModelId, setActiveModelId] = useState<string | null>(null);
-  useEffect(() => {
-    if (activeModelIdFromApp !== undefined) setActiveModelId(activeModelIdFromApp);
-  }, [activeModelIdFromApp]);
-  const [modelsLoading, setModelsLoading] = useState(true);
-  const [modelBusyId, setModelBusyId] = useState<string | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [modelFile, setModelFile] = useState<File | null>(null);
@@ -121,13 +104,6 @@ export function AvatarConfigurator({
     }
   }, [avatarApi]);
 
-  const formattedModels = useMemo(() => {
-    return models.map((model) => ({
-      ...model,
-      createdLabel: formatTimestamp(model.createdAt),
-    }));
-  }, [models]);
-
   const generateMissingThumbnails = useCallback(async () => {
     if (!avatarApi?.loadModelBinary || !avatarApi.updateModelThumbnail) {
       return;
@@ -140,7 +116,6 @@ export function AvatarConfigurator({
 
     for (const model of modelsNeedingThumbnails) {
       try {
-        setModelBusyId(model.id);
         const modelData = await avatarApi.loadModelBinary(model.id);
         const thumbnailResult = await generateVrmThumbnail(modelData);
         const updated = await avatarApi.updateModelThumbnail(model.id, thumbnailResult.dataUrl);
@@ -151,8 +126,6 @@ export function AvatarConfigurator({
         }
       } catch (err) {
         console.warn(`[avatar-configurator] Failed to generate thumbnail for model ${model.id}:`, err);
-      } finally {
-        setModelBusyId(null);
       }
     }
   }, [models, avatarApi]);
@@ -160,29 +133,32 @@ export function AvatarConfigurator({
   const refreshModels = useCallback(async () => {
     if (!avatarApi?.listModels || !avatarApi.getActiveModel) {
       setModels([]);
-      setActiveModelId(null);
       onActiveModelChange?.(null);
-      setModelsLoading(false);
       setModelError('VRM configuration bridge is unavailable.');
       return;
     }
 
-    setModelsLoading(true);
     setModelError(null);
 
     try {
       const [list, active] = await Promise.all([avatarApi.listModels(), avatarApi.getActiveModel()]);
       setModels(list);
-      setActiveModelId(active?.id ?? null);
       onActiveModelChange?.(active ?? null);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load VRM models.';
       setModelError(message);
-    } finally {
-      setModelsLoading(false);
-      setModelBusyId(null);
     }
   }, [avatarApi, onActiveModelChange]);
+
+  // Tell the app after the first load and after every change, not on mount with an empty list.
+  const modelsLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!modelsLoadedRef.current) {
+      modelsLoadedRef.current = true;
+      return;
+    }
+    onModelsChanged?.();
+  }, [models, onModelsChanged]);
 
   useEffect(() => {
     generateMissingThumbnails();
@@ -303,54 +279,6 @@ export function AvatarConfigurator({
     [avatarApi, modelFile, modelNameInput, refreshModels],
   );
 
-  const handleModelSelect = useCallback(
-    async (modelId: string) => {
-      if (!avatarApi?.setActiveModel) {
-        setModelError('VRM configuration bridge is unavailable.');
-        return;
-      }
-
-      setModelBusyId(modelId);
-      setModelError(null);
-      try {
-        const detail = await avatarApi.setActiveModel(modelId);
-        setActiveModelId(detail?.id ?? null);
-        onActiveModelChange?.(detail ?? null);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to activate VRM model.';
-        setModelError(message);
-      } finally {
-        setModelBusyId(null);
-      }
-    },
-    [avatarApi, onActiveModelChange],
-  );
-
-  const handleModelDelete = useCallback(
-    async (modelId: string) => {
-      if (!avatarApi?.deleteModel) {
-        setModelError('VRM configuration bridge is unavailable.');
-        return;
-      }
-
-      setModelBusyId(modelId);
-      setModelError(null);
-      try {
-        await avatarApi.deleteModel(modelId);
-        if (activeModelId === modelId) {
-          onActiveModelChange?.(null);
-        }
-        await refreshModels();
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to delete VRM model.';
-        setModelError(message);
-      } finally {
-        setModelBusyId(null);
-      }
-    },
-    [avatarApi, activeModelId, onActiveModelChange, refreshModels],
-  );
-
   const modelUploadDisabled = !isModelBridgeAvailable || modelUploadStatus === 'reading' || modelUploadStatus === 'uploading';
 
   return (
@@ -361,48 +289,11 @@ export function AvatarConfigurator({
         </p>
       ) : null}
 
-      {/* VRM Models Section */}
       <div className="faces__section">
-        <h3 className="faces__heading">VRM Avatars</h3>
-
         {modelError ? (
           <p role="alert" className="kiosk__error">
             {modelError}
           </p>
-        ) : null}
-        {modelsLoading ? <p className="kiosk__info">Loading stored VRM models…</p> : null}
-
-        <div className="faces__grid faces__grid--compact" role="list">
-          {formattedModels.map((model) => {
-            const isActive = model.id === activeModelId;
-            const busy = modelBusyId === model.id || modelUploadStatus === 'uploading';
-            return (
-              <article key={model.id} className="faceCard faceCard--compact" data-active={isActive ? 'true' : 'false'} role="listitem">
-                <div className="faceCard__preview" aria-hidden="true">
-                  {model.thumbnailDataUrl ? (
-                    <img src={model.thumbnailDataUrl} alt="" loading="lazy" />
-                  ) : (
-                    <div className="faceCard__placeholder">No thumbnail</div>
-                  )}
-                </div>
-                <div className="faceCard__info">
-                  <h4>{model.name}</h4>
-                </div>
-                <div className="faceCard__actions">
-                  <button type="button" onClick={() => handleModelSelect(model.id)} disabled={busy || !isModelBridgeAvailable}>
-                    {isActive ? 'Active' : 'Use model'}
-                  </button>
-                  <button type="button" onClick={() => handleModelDelete(model.id)} disabled={busy || !isModelBridgeAvailable}>
-                    Delete
-                  </button>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-
-        {!modelsLoading && formattedModels.length === 0 ? (
-          <p className="kiosk__info">No VRM models uploaded yet. Add a .vrm file to enable the 3D renderer.</p>
         ) : null}
 
         <details className="avatarUpload" open={compact ? undefined : true}>

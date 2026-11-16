@@ -3598,8 +3598,8 @@ export default function App() {
             />
             <AvatarConfigurator
               avatarApi={activeBridge?.avatar}
-              activeModelId={activeVrmModel?.id ?? null}
               onActiveModelChange={setActiveVrmModel}
+              onModelsChanged={refreshAvatars}
               studio={{ open: studioOpen, onClose: () => setStudioOpen(false) }}
               compact
             >

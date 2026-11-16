@@ -41,6 +41,58 @@ function Thumbnail({ url, name }: { url: string | null | undefined; name: string
   );
 }
 
+/**
+ * The library as a grid of pictures to pick a body from. The picked one is highlighted. With `echoLook`
+ * the first tile means "no body of its own": a copy of whatever Echo wears.
+ */
+function AvatarPicker({ label, models, selected, onSelect, echoLook = false, disabled = false }: {
+  label: string;
+  models: SceneCastModel[];
+  selected: string | null;
+  onSelect: (modelId: string | null) => void;
+  echoLook?: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="avatarPicker" role="group" aria-label={label}>
+      {echoLook ? (
+        <button
+          type="button"
+          className="avatarPicker__tile"
+          aria-pressed={selected === null}
+          aria-label="Same look as Echo"
+          title="Same look as Echo"
+          disabled={disabled}
+          onClick={() => onSelect(null)}
+        >
+          <span className="avatarPicker__img avatarPicker__img--echo" aria-hidden="true">E</span>
+          <span className="avatarPicker__name">Like Echo</span>
+        </button>
+      ) : null}
+      {models.map((model) => (
+        <button
+          key={model.id}
+          type="button"
+          className="avatarPicker__tile"
+          aria-pressed={selected === model.id}
+          aria-label={model.name}
+          title={model.name}
+          disabled={disabled}
+          onClick={() => onSelect(model.id)}
+        >
+          {model.thumbnailDataUrl ? (
+            <img className="avatarPicker__img" src={model.thumbnailDataUrl} alt="" loading="lazy" />
+          ) : (
+            <span className="avatarPicker__img" aria-hidden="true">{model.name.trim().charAt(0).toUpperCase() || '?'}</span>
+          )}
+          <span className="avatarPicker__name">{model.name}</span>
+        </button>
+      ))}
+      {models.length === 0 && !echoLook ? <p className="kiosk__helper">No avatars in the library yet. Upload a .vrm or make one in the studio below.</p> : null}
+    </div>
+  );
+}
+
 /** Settings of a character other than Echo, read and saved under its avatar id. */
 function OtherSettings({ context, api, profile, ownBody, run }: {
   context: CharacterSettingsContext;
@@ -75,9 +127,8 @@ function CardEditor({ api, profile, models, ownBody, settings, run, onPickHostBo
   };
   return (
     <div className="sceneCard__edit">
-      <div className="sceneCard__pair">
-        <label className="sceneCard__field">
-          <span>Name</span>
+      <label className="sceneCard__field">
+        <span>Name</span>
           <input
             aria-label={`Name of ${profile.name}`}
             value={name}
@@ -89,33 +140,7 @@ function CardEditor({ api, profile, models, ownBody, settings, run, onPickHostBo
               else setName(profile.name);
             }}
           />
-        </label>
-        <label className="sceneCard__field">
-          <span>Body</span>
-          <select
-            aria-label={`Body of ${profile.name}`}
-            value={profile.vrmModelId ?? ''}
-            disabled={isEcho && !onPickHostBody}
-            onChange={(event) => pickBody(event.target.value)}
-          >
-            {isEcho ? (
-              profile.vrmModelId ? null : <option value="">No body yet</option>
-            ) : (
-              <option value="">Same look as Echo</option>
-            )}
-            {models.map((model) => (
-              <option key={model.id} value={model.id}>{model.name}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-      {isEcho ? (
-        <small className="kiosk__helper">
-          {onPickHostBody
-            ? 'Echo wears the active model in the library below. Prompt and voice are saved per body, so a new body brings its own.'
-            : 'Echo wears the active character picked below.'}
-        </small>
-      ) : null}
+      </label>
       {settings ? (
         isEcho ? (
           <CharacterSettings name={profile.name} controls={settings.echo} />
@@ -124,10 +149,21 @@ function CardEditor({ api, profile, models, ownBody, settings, run, onPickHostBo
           <OtherSettings key={profile.vrmModelId ?? ''} context={settings} api={api} profile={profile} ownBody={ownBody} run={run} />
         )
       ) : null}
+      <div className="sceneCard__field">
+        <span>Avatar</span>
+        <AvatarPicker
+          label={`Avatar of ${profile.name}`}
+          models={models}
+          selected={profile.vrmModelId ?? null}
+          echoLook={!isEcho}
+          disabled={isEcho && !onPickHostBody}
+          onSelect={(modelId) => pickBody(modelId ?? '')}
+        />
+      </div>
+      {isEcho ? <small className="kiosk__helper">Prompt and voice are saved per avatar, so a new avatar brings its own.</small> : null}
     </div>
   );
 }
-
 function CastCard({ api, profile, models, echoModelId, settings, run, onPickHostBody }: {
   api: AvatarsBridge;
   profile: AvatarProfile;
@@ -198,6 +234,7 @@ export function SceneCast({ api, profiles, models, roomActive = false, onChanged
   const [error, setError] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const [newPrompt, setNewPrompt] = useState('');
+  const [newModelId, setNewModelId] = useState<string | null>(null);
   if (!api || typeof api.add !== 'function') return null;
 
   const run: Run = async (action) => {
@@ -213,19 +250,22 @@ export function SceneCast({ api, profiles, models, roomActive = false, onChanged
   };
 
   const echoModelId = profiles.find((profile) => profile.id === ECHO_ID)?.vrmModelId ?? null;
-  const worn = new Set(profiles.map((profile) => profile.vrmModelId).filter((id): id is string => Boolean(id)));
-  const available = models.filter((model) => !worn.has(model.id));
+  const newModel = newModelId ? models.find((model) => model.id === newModelId) : undefined;
 
-  const addByName = async () => {
-    const name = newName.trim();
+  const addCharacter = async () => {
+    // A blank name takes the picked avatar's name.
+    const name = newName.trim() || newModel?.name.trim() || '';
     if (!name) {
       setError('Give the character a name.');
       return;
     }
-    const ok = await run(() => api.add({ name, ...(newPrompt.trim() ? { prompt: newPrompt } : {}) }));
+    const ok = await run(() =>
+      api.add({ name, ...(newModel ? { vrmModelId: newModel.id } : {}), ...(newPrompt.trim() ? { prompt: newPrompt } : {}) }),
+    );
     if (ok) {
       setNewName('');
       setNewPrompt('');
+      setNewModelId(null);
     }
   };
 
@@ -244,42 +284,36 @@ export function SceneCast({ api, profiles, models, roomActive = false, onChanged
         ))}
       </ul>
 
-      <h3 className="faces__heading">Add a character</h3>
-      {available.length > 0 ? (
-        <ul className="sceneCast__tiles" aria-label="Characters you can add">
-          {available.map((model) => (
-            <li key={model.id} className="faceCard faceCard--compact">
-              <div className="faceCard__preview" aria-hidden="true">
-                {model.thumbnailDataUrl ? <img src={model.thumbnailDataUrl} alt="" loading="lazy" /> : <div className="faceCard__placeholder">No thumbnail</div>}
-              </div>
-              <div className="faceCard__info"><h4>{model.name}</h4></div>
-              <div className="faceCard__actions">
-                <button type="button" aria-label={`Add ${model.name} to scene`} onClick={() => void run(() => api.add({ name: model.name, vrmModelId: model.id }))}>
-                  Add to scene
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="kiosk__helper">Every character in your library is already in the scene.</p>
-      )}
-
       <form
-        className="sceneCast__byName"
-        aria-label="Add by name"
+        className="sceneCast__add"
+        aria-label="Add a character"
         onSubmit={(event) => {
           event.preventDefault();
-          void addByName();
+          void addCharacter();
         }}
       >
-        <h3 className="faces__heading">Add by name</h3>
-        <p className="kiosk__helper">A new character who looks like Echo, as its own figure on stage. Give it its own voice and habits with Edit.</p>
-        <div className="sceneCast__byNameRow">
-          <input aria-label="New character name" placeholder="Name" value={newName} maxLength={NAME_MAX} onChange={(event) => setNewName(event.target.value)} />
+        <h3 className="faces__heading">Add a character</h3>
+        <label className="sceneCard__field">
+          <span>Name</span>
+          <input
+            aria-label="New character name"
+            placeholder={newModel ? newModel.name : 'Name'}
+            value={newName}
+            maxLength={NAME_MAX}
+            onChange={(event) => setNewName(event.target.value)}
+          />
+        </label>
+        <label className="sceneCard__field">
+          <span>Prompt</span>
+          <textarea aria-label="New character prompt" placeholder="Prompt (optional)" rows={2} value={newPrompt} maxLength={PROMPT_MAX} onChange={(event) => setNewPrompt(event.target.value)} />
+        </label>
+        <div className="sceneCard__field">
+          <span>Avatar</span>
+          <AvatarPicker label="Avatar for the new character" models={models} selected={newModelId} echoLook onSelect={setNewModelId} />
+        </div>
+        <div className="sceneCast__addActions">
           <button type="submit">Add character</button>
         </div>
-        <textarea aria-label="New character prompt" placeholder="Prompt (optional)" rows={2} value={newPrompt} maxLength={PROMPT_MAX} onChange={(event) => setNewPrompt(event.target.value)} />
       </form>
       {error ? <p className="kiosk__error" role="alert">{error}</p> : null}
     </section>
