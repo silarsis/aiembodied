@@ -149,6 +149,10 @@ interface Segment {
   halfHeight: number;
   shapeRadius: number;
   contact: boolean;
+  /** The deepest overlap that made `contact` true this frame (kept for the motion trace only). */
+  hit: PenetrationHit | null;
+  /** Name for the motion trace, set when the segment is built into a limb. */
+  name: string;
 }
 
 interface Limb {
@@ -243,6 +247,8 @@ export class ContactBody {
   private readonly limbs: Limb[] = [];
   private readonly ends: EndTrack[] = [];
   private readonly lift: Spring = { value: 0, velocity: 0 };
+  /** The lift the last frame asked for (metres), for the motion trace. */
+  private liftTarget = 0;
   private readonly listeners = new Set<(miss: ContactMiss) => void>();
   private debugLines: THREE.LineSegments | null = null;
   private debugCapacity = 0;
@@ -257,8 +263,10 @@ export class ContactBody {
     const bone = (name: string) => humanoid.getNormalizedBoneNode(name) ?? null;
     this.hips = bone('hips');
     this.pelvis = this.hips ? this.bodySegment(this.hips, bone('spine'), CAPSULE_RADII.pelvis) : null;
+    if (this.pelvis) this.pelvis.name = 'pelvis';
     const chestBone = bone('chest') ?? bone('spine');
     this.chest = chestBone ? this.bodySegment(chestBone, bone('neck') ?? bone('head'), CAPSULE_RADII.chest) : null;
+    if (this.chest) this.chest.name = 'chest';
     for (const side of ['left', 'right'] as const) {
       this.addLimb(humanoid, side, true);
       this.addLimb(humanoid, side, false);
@@ -320,6 +328,62 @@ export class ContactBody {
       if (track.missing && track.seconds >= MISS_SECONDS) result.push(this.missOf(track));
     }
     return result;
+  }
+
+  /** True while any capsule touches something or the pelvis is lifted: the motion trace samples then. */
+  isInContact(): boolean {
+    if (this.lift.value !== 0 || this.liftTarget !== 0) return true;
+    if (this.pelvis?.contact || this.chest?.contact) return true;
+    return this.limbs.some((limb) => limb.segments.some((segment) => segment.contact));
+  }
+
+  /**
+   * A plain-data picture of the solver for the motion trace (see motion-trace.ts): pelvis lift, the segments
+   * touching something, the joints currently corrected and whether the cap held them, and the misses. Only
+   * called while tracing, so it may allocate.
+   */
+  traceSnapshot(): Record<string, unknown> {
+    const deg = (radians: number) => Math.round(((radians * 180) / Math.PI) * 100) / 100;
+    const r3 = (value: number) => Math.round(value * 1000) / 1000;
+    const segments: Array<Record<string, unknown>> = [];
+    const all: Segment[] = [];
+    if (this.pelvis) all.push(this.pelvis);
+    if (this.chest) all.push(this.chest);
+    for (const limb of this.limbs) all.push(...limb.segments);
+    for (const segment of all) {
+      if (!segment.contact) continue;
+      const hit = segment.hit;
+      segments.push({
+        name: segment.name,
+        contact: true,
+        objectId: hit?.objectId ?? null,
+        depth: hit ? r3(hit.depth) : null,
+        normal: hit ? [r3(hit.normal.x), r3(hit.normal.y), r3(hit.normal.z)] : null,
+      });
+    }
+    const joints: Array<Record<string, unknown>> = [];
+    const jointNames = ['hip', 'knee', 'ankle'];
+    const armNames = ['shoulder', 'elbow', 'wrist'];
+    for (const limb of this.limbs) {
+      limb.joints.forEach((joint, i) => {
+        const offset = rotationAngle(joint.target);
+        if (offset <= MIN_CORRECTION_ANGLE && joint.weight === 0) return;
+        joints.push({
+          name: `${limb.side}${limb.isLeg ? nth(jointNames, i) : nth(armNames, i)}`,
+          offsetDeg: deg(offset),
+          weight: r3(joint.weight),
+          appliedDeg: deg(offset * joint.weight),
+          capDeg: deg(joint.cap),
+          capped: limb.refused && rotationAngle(joint.offset) >= joint.cap - 1e-4,
+        });
+      });
+    }
+    return {
+      pelvisLift: { target: r3(this.liftTarget), applied: r3(this.lift.value) },
+      segments,
+      joints,
+      misses: this.misses().map((miss) => ({ end: miss.end, objectId: miss.objectId, distance: r3(miss.distance), seconds: r3(miss.seconds) })),
+    };
   }
 
   /** Where a limb end is now and where the animation put it this frame (world metres); null without that bone. */
@@ -429,6 +493,8 @@ export class ContactBody {
       halfHeight: -1,
       shapeRadius: -1,
       contact: false,
+      hit: null,
+      name: '',
     };
   }
 
@@ -470,6 +536,10 @@ export class ContactBody {
       this.newSegment(1, nth(bones, 1), nth(bones, 2), nth(radii, 1)),
       this.newSegment(2, nth(bones, 2), toes ?? null, nth(radii, 2), isLeg ? FOOT_LENGTH : HAND_LENGTH),
     ];
+    const segmentNames = isLeg ? ['Thigh', 'Shin', 'Foot'] : ['UpperArm', 'Forearm', 'Hand'];
+    segments.forEach((segment, i) => {
+      segment.name = `${side}${nth(segmentNames, i)}`;
+    });
     nth(segments, 2).isFoot = isLeg;
     nth(segments, 2).isHand = !isLeg;
     const limb: Limb = { side, isLeg, joints, segments, blocker: null, hit: false, refused: false, groundHeight: null, groundAt: new THREE.Vector3() };
@@ -569,6 +639,7 @@ export class ContactBody {
         // The floor is the motion model's business (standing, floor sits); only furniture lifts the pelvis.
         if (hit && hit.objectId !== null && hit.normal.y > 0.5) {
           segment.contact = true;
+          segment.hit = hit;
           target = Math.max(target, hit.depth * hit.normal.y);
         }
       };
@@ -576,6 +647,7 @@ export class ContactBody {
       for (const limb of this.limbs) if (limb.isLeg) consider(limb.segments[0]);
       target = Math.min(MAX_PELVIS_LIFT, Math.max(0, target));
     }
+    this.liftTarget = target;
     const before = this.lift.value;
     stepSpring(this.lift, target, dt, PELVIS_LIFT_SMOOTH_TIME);
     const delta = this.lift.value - before;
@@ -653,7 +725,10 @@ export class ContactBody {
       if (segment.isFoot && hit.objectId === null && hit.depth <= segment.shapeRadius) continue;
       // A thigh lying on the seat it sits on is resting, not penetrating: only the pelvis lift answers to it.
       if (limb.isLeg && segment.joint === 0 && this.seatId !== null && hit.objectId === this.seatId && hit.normal.y > RESTING_NORMAL_Y) continue;
-      if (first) segment.contact = true;
+      if (first) {
+        segment.contact = true;
+        segment.hit = hit;
+      }
       any = true;
       limb.hit = true;
       limb.blocker = hit.objectId;

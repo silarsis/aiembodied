@@ -70,7 +70,7 @@ describe('ContactBody on the reading-room sofa', () => {
     const avatar = buildAvatar(shin);
     const [sx, , sz] = sofa.position;
     avatar.scene.position.set(sx, 0, sz + 0.15); // towards the front edge, so the knees clear the sofa base
-    avatar.bones.get('hips')!.position.set(0, 0.54 + 0.09, 0);
+    avatar.bones.get('hips')!.position.set(0, 0.46 + 0.09, 0);
     for (const side of ['left', 'right']) {
       avatar.bones.get(`${side}UpperLeg`)!.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -deg(thigh));
       avatar.bones.get(`${side}LowerLeg`)!.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), deg(knee));
@@ -87,7 +87,7 @@ describe('ContactBody on the reading-room sofa', () => {
   }
 
   it('lifts the pelvis a little and keeps thighs and shins out of the cushion', () => {
-    const avatar = seated(0.3, 75, 60); // short shins: the feet dangle
+    const avatar = seated(0.22, 75, 60); // short shins: the feet dangle (the seat is 8 cm lower, so the shins are too)
     const body = new ContactBody(avatar.humanoid);
     const thigh = CAPSULE_RADII.thigh;
     const before = depthOf(physics, worldPoint(avatar.bones.get('leftUpperLeg')!), worldPoint(avatar.bones.get('leftLowerLeg')!), thigh);
@@ -117,7 +117,7 @@ describe('ContactBody on the reading-room sofa', () => {
   });
 
   it('eases the lift and the correction away once the animation leaves the furniture', () => {
-    const avatar = seated(0.3, 75, 60);
+    const avatar = seated(0.22, 75, 60);
     const body = new ContactBody(avatar.humanoid);
     const baseY = avatar.scene.position.y;
     const seatedHips = avatar.bones.get('hips')!.position.clone();
@@ -139,7 +139,7 @@ describe('ContactBody on the reading-room sofa', () => {
     avatar.scene.position.x = -2;
     avatar.scene.position.z = 1;
     avatar.scene.position.y = body.pelvisLift + 0; // the lift is still on the root
-    expect(seatedHips.y).toBeCloseTo(0.63);
+    expect(seatedHips.y).toBeCloseTo(0.55);
     run(avatar, body, 90, () => {
       for (const [name, q] of animated) avatar.bones.get(name)!.quaternion.copy(q);
     });
@@ -148,7 +148,7 @@ describe('ContactBody on the reading-room sofa', () => {
   });
 
   it('takes a pose that something else rewrote after our write (a pose blend) as the new animated pose', () => {
-    const avatar = seated(0.3, 75, 60);
+    const avatar = seated(0.22, 75, 60);
     const body = new ContactBody(avatar.humanoid);
     const thigh = avatar.bones.get('leftUpperLeg')!;
     const animated = thigh.quaternion.clone();
@@ -173,7 +173,7 @@ describe('ContactBody on the reading-room sofa', () => {
   });
 
   it('release() puts back the animated pose of bones nothing else rewrites and clears the lift', () => {
-    const avatar = seated(0.3, 75, 60);
+    const avatar = seated(0.22, 75, 60);
     const body = new ContactBody(avatar.humanoid);
     const names = ['leftUpperLeg', 'leftLowerLeg', 'rightUpperLeg', 'rightLowerLeg'];
     const animated = new Map(names.map((name) => [name, avatar.bones.get(name)!.quaternion.clone()]));
@@ -206,7 +206,7 @@ describe('ContactBody on the reading-room sofa', () => {
 
   it('keeps grounded feet on the floor while the pelvis is lifted', () => {
     // Long shins, vertical: the ankles are on the floor in the animated pose.
-    const avatar = seated(0.54, 85, 85);
+    const avatar = seated(0.46, 85, 85);
     const animated = new Map<string, THREE.Quaternion>();
     for (const side of ['left', 'right']) {
       avatar.bones.get(`${side}LowerLeg`)!.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), deg(85));
@@ -251,7 +251,7 @@ describe('ContactBody on the reading-room sofa', () => {
   });
 
   it('reports a limb end that stays away from its animated place', () => {
-    const avatar = seated(0.3, 75, 60);
+    const avatar = seated(0.22, 75, 60);
     // A hand pushed into the sofa's back rest and held there by the animation.
     const arm = avatar.bones.get('rightUpperArm')!;
     arm.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), deg(-100)); // arm behind the body
@@ -298,7 +298,7 @@ describe('ContactBody on the reading-room armchair', () => {
     pivot.rotation.y = deg(chair.rotationY ?? 0);
     pivot.add(avatar.scene);
     avatar.scene.position.set(localX, 0, localZ);
-    avatar.bones.get('hips')!.position.set(0, 0.52 + 0.09, 0);
+    avatar.bones.get('hips')!.position.set(0, 0.44 + 0.09, 0);
     for (const side of ['left', 'right']) {
       avatar.bones.get(`${side}UpperLeg`)!.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -deg(thigh));
       avatar.bones.get(`${side}LowerLeg`)!.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), deg(knee));

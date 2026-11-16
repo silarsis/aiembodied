@@ -72,6 +72,7 @@ import { KeytarSecretStore } from './config/keytar-secret-store.js';
 import { InMemorySecretStore } from './config/secret-store.js';
 import { FilePreferencesStore } from './config/preferences-store.js';
 import { initializeLogger } from './logging/logger.js';
+import { MotionTraceSink } from './logging/motion-trace.js';
 import { createAppDiagnostics } from './logging/app-diagnostics.js';
 import { CrashGuard } from './crash-guard.js';
 import { WakeWordService } from './wake-word/wake-word-service.js';
@@ -234,6 +235,8 @@ let satelliteActivity: ActivityMonitor | null = null;
 
 const secretStore = isProduction ? new KeytarSecretStore('aiembodied') : new InMemorySecretStore();
 const { logger } = initializeLogger();
+// Verbose motion/contact trace for analysing sitting problems (AIEMBODIED_MOTION_TRACE=1 or the Status setting).
+const motionTrace = new MotionTraceSink({ directory: path.join(app.getPath('userData'), 'logs') });
 // Register a preload diagnostics channel as early as possible to catch messages during renderer bootstrap
 try {
   ipcMain.on(
@@ -1138,7 +1141,7 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
   const motionUrl = (motionLeased ? aicontroller.motionUrl() : null) ?? motionServer?.url ?? providers.motion.localServiceUrl;
   if (avatarAnimationService && currentMotionServiceUrl !== motionUrl) {
     localMotionService = new LocalMotionGenerationService({
-      client: new LocalMotionClient({ baseUrl: motionUrl }),
+      client: new LocalMotionClient({ baseUrl: motionUrl, trace: (kind, build) => motionTrace.log('main', kind, build) }),
       animationService: avatarAnimationService,
       logger,
     });
@@ -2279,6 +2282,9 @@ function registerIpcHandlers(
       motionStreamControllers.delete(payload.streamId);
     }
   });
+  // Motion trace: the renderer sends batches of lines, and the UI setting (the env var also counts).
+  ipcMain.on('motion-trace:append', (_event, lines: unknown) => motionTrace.append(lines));
+  handleIpc('motion-trace:configure', (_event, settingOn: unknown) => motionTrace.configure(settingOn === true));
   handleIpc('avatar-motion:cancel', (_event, streamId: unknown) => {
     if (typeof streamId === 'string') {
       motionStreamControllers.get(streamId)?.abort();

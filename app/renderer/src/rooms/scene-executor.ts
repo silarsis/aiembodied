@@ -31,6 +31,7 @@ import type { LimbEnd } from './contact-body.js';
 import type { AvatarOccupancy } from './room-occupancy.js';
 import { bakedRootPose, worldToMotion, type RootPose } from './scene-frames.js';
 import type { Vec3 } from '../../../main/src/rooms/types.js';
+import { isMotionTraceEnabled, isSettleRetryEnabled, round, trace as defaultTrace, type TraceFn } from './motion-trace.js';
 
 export type { ClipEndAction };
 
@@ -96,6 +97,14 @@ export interface SceneExecutorOptions {
   clearTimer?: (handle: unknown) => void;
   /** Milliseconds, for how long ago a failure was (default Date.now). */
   now?: () => number;
+  /** This avatar's id in the motion trace (default 'echo'). */
+  avatarId?: string;
+  /** Where trace lines go (default the motion trace in motion-trace.ts). */
+  trace?: TraceFn;
+  /** Whether tracing is on; the trace builders do not run while it is not (default: the motion trace switch). */
+  tracing?: () => boolean;
+  /** Whether a sit that ends with legs in furniture is re-tried with settle streams (default: the debug switch, on). */
+  settleRetries?: () => boolean;
 }
 
 interface Deferred {
@@ -189,12 +198,25 @@ export class SceneActionExecutor {
   private readonly clearTimer: (handle: unknown) => void;
   private readonly now: () => number;
   private failures: Array<{ text: string; at: number }> = [];
+  private readonly avatarId: string;
+  private readonly traceFn: TraceFn;
+  private readonly isTracing: () => boolean;
+  private readonly settleRetries: () => boolean;
 
   constructor(options: SceneExecutorOptions = {}) {
+    this.avatarId = options.avatarId ?? 'echo';
+    this.traceFn = options.trace ?? defaultTrace;
+    this.isTracing = options.tracing ?? isMotionTraceEnabled;
+    this.settleRetries = options.settleRetries ?? isSettleRetryEnabled;
     this.now = options.now ?? (() => Date.now());
     this.newId = options.newId ?? (() => Math.random().toString(36).slice(2, 10));
     this.setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
     this.clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
+  }
+
+  /** Writes a motion trace line; `build` runs only while tracing is on. */
+  private tr(kind: string, build: () => Record<string, unknown>): void {
+    if (this.isTracing()) this.traceFn(this.avatarId, kind, build);
   }
 
   setBridge(bridge: SceneBridge | null): void {
@@ -347,6 +369,14 @@ export class SceneActionExecutor {
     if (stream.cancelled || !this.bridge) return true;
     stream.enqueued += 1;
     if (chunk.endPose) stream.lastEndPose = chunk.endPose;
+    this.tr('stream.chunk', () => ({
+      streamId: chunk.streamId,
+      label: stream.planned.label,
+      index: chunk.index,
+      start: chunk.start,
+      duration: chunk.duration ?? null,
+      endPose: chunk.endPose ?? null,
+    }));
     const length = chunk.duration ?? DEFAULT_CHUNK_SECONDS;
     this.bridge.playChunk(chunk, {
       continuation: chunk.index > 0 || stream.planned.request.continueFrom !== undefined,
@@ -423,6 +453,7 @@ export class SceneActionExecutor {
       console.warn('[scene-actions] could not plan', action.kind, error);
       return;
     }
+    this.tr('plan', () => this.describePlan(action, plan, world, depth));
     if (plan.type === 'skip') {
       console.warn(`[scene-actions] skipping ${action.kind}: ${plan.reason}`);
       this.emit({ type: 'skipped', label: describeAction(action), reason: plan.reason });
@@ -479,26 +510,49 @@ export class SceneActionExecutor {
     epoch: number,
   ): Promise<void> {
     if (original.outcome.posture !== 'seated') return;
+    if (!this.settleRetries()) {
+      this.tr('settle.disabled', () => ({ label: original.label }));
+      return;
+    }
     let current = original;
     try {
       for (let attempt = 0; ; attempt += 1) {
         await this.wait(CONTACT_SETTLE_MS);
         if (this.stale(generation, epoch) || this.state.posture !== 'seated' || !this.state.seat) return;
         const missing = this.legMisses(env, current);
+        this.tr('settle.check', () => ({
+          label: original.label,
+          attempt,
+          misses: missing.map((miss) => this.describeMiss(miss)),
+          blockers: Object.fromEntries(blockers),
+        }));
         if (missing.length === 0) return;
         for (const miss of missing) if (miss.objectId) blockers.set(miss.end, miss.objectId);
         if (attempt >= MAX_REPLANS) {
+          this.tr('settle.giveup', () => ({ label: original.label, attempts: attempt, misses: missing.map((miss) => this.describeMiss(miss)) }));
           this.recordFailure(world, original.label, missing, blockers);
           return;
         }
         const repair = this.buildRepair(env, original, current, missing, this.state.seat.session);
-        if (!repair) return;
+        if (!repair) {
+          this.tr('settle.no-repair', () => ({ label: original.label, attempt }));
+          return;
+        }
+        this.tr('settle.repair', () => ({
+          label: repair.label,
+          attempt,
+          triggeredBy: missing.map((miss) => this.describeMiss(miss)),
+          observed: repair.request.observed ?? null,
+          request: repair.request,
+        }));
         try {
           await this.runStream(repair, generation, epoch);
         } catch (error) {
           console.warn('[scene-actions] the settle stream failed', error);
+          this.tr('settle.outcome', () => ({ label: original.label, attempt, outcome: 'error', message: String(error) }));
           return;
         }
+        this.tr('settle.outcome', () => ({ label: original.label, attempt, outcome: 'played' }));
         current = repair;
       }
     } catch (error) {
@@ -577,12 +631,55 @@ export class SceneActionExecutor {
     };
   }
 
+  private describeMiss(miss: ContactReport): Record<string, unknown> {
+    return {
+      end: miss.end,
+      objectId: miss.objectId,
+      distance: round(miss.distance),
+      seconds: round(miss.seconds),
+      actual: miss.actual.map((v) => round(v)),
+      animated: miss.animated.map((v) => round(v)),
+    };
+  }
+
+  /** The trace line for a planned action: the full stream request and, for a sit, the world inputs it was planned from. */
+  private describePlan(action: SceneAction, plan: ActionPlan, world: PlanWorld, depth: number): Record<string, unknown> {
+    const base = { action, depth, planType: plan.type };
+    if (plan.type === 'skip') return { ...base, reason: plan.reason };
+    if (plan.type === 'insert') return { ...base, inserted: plan.actions };
+    const { stream } = plan;
+    const seated = stream.outcome.posture === 'seated' ? stream.outcome.seat : null;
+    return {
+      ...base,
+      label: stream.label,
+      request: stream.request,
+      frame: stream.frame,
+      expectedEnd: stream.expectedEnd,
+      outcome: stream.outcome,
+      events: stream.events.map((event) => ({ t: event.t, kind: event.kind, objectId: event.objectId, hand: event.hand })),
+      settle: stream.settle ?? null,
+      ...(seated
+        ? {
+            sitWorld: {
+              objectId: seated.objectId,
+              seatGeometry: world.seatGeometry?.(seated.objectId) ?? null,
+              restLegLengths: world.restLegLengths ?? null,
+              frame: world.frame,
+              restHipsHeight: world.restHipsHeight,
+              hips: this.env?.hipsPosition?.() ?? null,
+            },
+          }
+        : {}),
+    };
+  }
+
   private recordFailure(world: PlanWorld, label: string, missing: ContactReport[], blockers: Map<LimbEnd, string>): void {
     const nameOf = (id: string) => world.room.objects.find((object) => object.id === id)?.name ?? id;
     for (const miss of missing) {
       const blocker = miss.objectId ?? blockers.get(miss.end);
       const text = `couldn't reach its ${LIMB_NAME[miss.end]} target${blocker ? ` (blocked by ${nameOf(blocker)})` : ''}`;
       console.warn(`[scene-actions] ${text}`);
+      this.tr('failure', () => ({ label, text, end: miss.end, objectId: blocker ?? null }));
       this.failures.push({ text, at: this.now() });
       this.emit({ type: 'skipped', label: label, reason: text });
     }
@@ -633,6 +730,14 @@ export class SceneActionExecutor {
     // Getting up (or walking off) starts from the plain floor, so the seat fit eases out first.
     if (this.state.posture === 'seated' && !planned.repair) this.env?.clearSeat?.();
     this.emit({ type: 'start', id, label: planned.label });
+    this.tr('stream.start', () => ({
+      streamId: id,
+      label: planned.label,
+      repair: planned.repair === true,
+      interruptible: stream.interruptible,
+      hasAvatarRest: bridge.avatarRest?.() !== undefined,
+      request,
+    }));
 
     const rest = bridge.avatarRest?.();
     let result: Promise<AvatarMotionStreamResult>;
@@ -670,8 +775,15 @@ export class SceneActionExecutor {
       stream.failed = true;
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[scene-actions] ${stream.planned.label} failed:`, message);
+      this.tr('stream.error', () => ({ streamId: stream.id, label: stream.planned.label, message, enqueued: stream.enqueued }));
       this.emit({ type: 'failed', id: stream.id, message });
     } else if (summary) {
+      this.tr('stream.done', () => ({
+        streamId: stream.id,
+        label: stream.planned.label,
+        chunks: summary.chunks,
+        session: summary.session ?? null,
+      }));
       this.emit({ type: 'done', id: stream.id, detail: `${summary.chunks} chunk${summary.chunks === 1 ? '' : 's'}` });
     }
     if (stream.finished >= stream.enqueued) this.finalize(stream);
@@ -736,6 +848,16 @@ export class SceneActionExecutor {
       const endPose = stream.lastEndPose ?? (stream.cancelled || stream.failed ? undefined : planned.expectedEnd);
       const { outcome } = planned;
       const session = stream.failed || stream.cancelled ? undefined : stream.session;
+      this.tr('stream.final', () => ({
+        streamId: stream.id,
+        label: planned.label,
+        outcome,
+        endPose: endPose ?? null,
+        session: session ?? null,
+        failed: stream.failed,
+        cancelled: stream.cancelled,
+        hips: env.hipsPosition?.() ?? null,
+      }));
       if (planned.repair && !session) {
         // A failed settle stream leaves the avatar sitting as it was: the old session still stands up.
         console.warn('[scene-actions] the settle stream did not finish; the avatar stays seated');
@@ -785,6 +907,7 @@ export class SceneActionExecutor {
   private cancelStream(stream: RunningStream): void {
     if (stream.cancelled) return;
     stream.cancelled = true;
+    this.tr('stream.cancel', () => ({ streamId: stream.id, label: stream.planned.label, enqueued: stream.enqueued, generationEnded: stream.generationEnded }));
     if (!stream.generationEnded) {
       try {
         this.bridge?.cancelMotion?.(stream.id);

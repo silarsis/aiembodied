@@ -218,6 +218,7 @@ export interface PreloadApi {
   codingBusy?: CodingBusyBridge;
   approvals?: ApprovalsBridge;
   app?: AppBridge;
+  motionTrace?: MotionTraceBridge;
   ping(): string;
   __bridgeReady?: boolean;
   __bridgeVersion?: string;
@@ -350,6 +351,13 @@ export interface CameraDetectionEvent {
 export interface CameraBridge {
   onDetection(listener: (event: CameraDetectionEvent) => void): () => void;
   emitDetection(event: CameraDetectionEvent): Promise<void>;
+}
+
+/** The verbose motion log (`<userData>/logs/motion-trace.jsonl`); lines are plain objects with ts, t, avatar and kind. */
+export interface MotionTraceBridge {
+  append(lines: Array<Record<string, unknown>>): void;
+  /** Sets the UI switch; resolves with whether tracing is on (AIEMBODIED_MOTION_TRACE=1 also turns it on). */
+  configure(settingOn: boolean): Promise<boolean>;
 }
 
 export interface AppBridge {
@@ -890,6 +898,13 @@ export function createBridge(
       quit: async () => {
         await transport.invoke('app:quit');
       },
+    },
+    motionTrace: {
+      append: (lines) => {
+        if (transport.send) transport.send('motion-trace:append', lines);
+        else void transport.invoke('motion-trace:append', lines).catch(() => undefined);
+      },
+      configure: async (settingOn) => Boolean(await transport.invoke('motion-trace:configure', settingOn)),
     },
     ping: () => 'pong',
     __bridgeReady: true,

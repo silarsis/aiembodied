@@ -94,42 +94,42 @@
       "name": "sofa",
       "description": "A three-seat fabric sofa under the window.",
       "position": [0.6, 0, -2.0],
-      "size": [2.0, 0.9, 0.9],
+      "size": [2.0, 0.82, 0.9],
       "parts": [
         {
           "shape": "box",
-          "size": [2.0, 0.4, 0.9],
-          "offset": [0, 0.2, 0],
+          "size": [2.0, 0.32, 0.9],
+          "offset": [0, 0.16, 0],
           "color": "#4f6b5c"
         },
         {
           "shape": "box",
           "size": [1.7, 0.14, 0.7],
-          "offset": [0, 0.47, 0.08],
+          "offset": [0, 0.39, 0.08],
           "color": "#628472"
         },
         {
           "shape": "box",
           "size": [2.0, 0.5, 0.2],
-          "offset": [0, 0.65, -0.35],
+          "offset": [0, 0.57, -0.35],
           "color": "#4f6b5c"
         },
         {
           "shape": "box",
           "size": [0.2, 0.3, 0.8],
-          "offset": [-0.9, 0.55, 0.05],
+          "offset": [-0.9, 0.47, 0.05],
           "color": "#43594d"
         },
         {
           "shape": "box",
           "size": [0.2, 0.3, 0.8],
-          "offset": [0.9, 0.55, 0.05],
+          "offset": [0.9, 0.47, 0.05],
           "color": "#43594d"
         }
       ],
       "tags": {
         "sit": {
-          "position": [0, 0.5, 0.05],
+          "position": [0, 0.42, 0.05],
           "facing": 0
         },
         "stand": {
@@ -144,42 +144,42 @@
       "description": "A deep armchair turned toward the room.",
       "position": [-1.7, 0, -1.6],
       "rotationY": 40,
-      "size": [0.9, 0.95, 0.9],
+      "size": [0.9, 0.87, 0.9],
       "parts": [
         {
           "shape": "box",
-          "size": [0.9, 0.4, 0.9],
-          "offset": [0, 0.2, 0],
+          "size": [0.9, 0.32, 0.9],
+          "offset": [0, 0.16, 0],
           "color": "#9a5f3c"
         },
         {
           "shape": "box",
           "size": [0.6, 0.12, 0.6],
-          "offset": [0, 0.46, 0.05],
+          "offset": [0, 0.38, 0.05],
           "color": "#b0714a"
         },
         {
           "shape": "box",
           "size": [0.9, 0.55, 0.18],
-          "offset": [0, 0.68, -0.36],
+          "offset": [0, 0.6, -0.36],
           "color": "#9a5f3c"
         },
         {
           "shape": "box",
           "size": [0.14, 0.3, 0.7],
-          "offset": [-0.38, 0.55, 0.05],
+          "offset": [-0.38, 0.47, 0.05],
           "color": "#85502f"
         },
         {
           "shape": "box",
           "size": [0.14, 0.3, 0.7],
-          "offset": [0.38, 0.55, 0.05],
+          "offset": [0.38, 0.47, 0.05],
           "color": "#85502f"
         }
       ],
       "tags": {
         "sit": {
-          "position": [0, 0.5, 0.05],
+          "position": [0, 0.42, 0.05],
           "facing": 0
         },
         "stand": {

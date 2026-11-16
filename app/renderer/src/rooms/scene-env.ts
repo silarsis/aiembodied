@@ -8,6 +8,7 @@ import type { RoomStage } from './room-stage.js';
 import type { RoomOccupancy } from './room-occupancy.js';
 import { ContactBody, type ContactMiss } from './contact-body.js';
 import { measureRestLegLengths } from './leg-lengths.js';
+import { isMotionTraceEnabled, round, trace } from './motion-trace.js';
 import { easeOffset, seatOffsetTarget, seatedContactY } from './seat-fit.js';
 
 /** The parts of the loaded avatar that scene actions need. */
@@ -51,6 +52,8 @@ const PALM_FRACTION = 0.5;
 const GRIP_SNAP_RATE = 15;
 /** The snap is finished when the node is closer than this to its place (metres). */
 const GRIP_SNAP_EPSILON = 0.0005;
+/** Contact snapshots go to the motion trace at this rate while something touches (seconds between lines). */
+const TRACE_INTERVAL_S = 0.2;
 const TMP_A = new THREE.Vector3();
 const TMP_B = new THREE.Vector3();
 
@@ -77,6 +80,9 @@ export class RoomSceneEnv implements SceneEnv {
   private contactRig: AvatarRig | null = null;
   private contactOff: (() => void) | null = null;
   private readonly missListeners = new Set<(report: ContactReport) => void>();
+  private traceClock = 0;
+  private traceWasActive = false;
+  private traceSeated: boolean | null = null;
   private carriedCache: string[] = [];
   private carriedDirty = false;
 
@@ -253,6 +259,59 @@ export class RoomSceneEnv implements SceneEnv {
       this.carriedDirty = false;
     }
     contact.update(rig, stage.collision, deltaSeconds, this.carriedCache, stage.debugNavmesh ? stage.group : null, this.seatId);
+    if (isMotionTraceEnabled()) this.traceContact(rig, contact, deltaSeconds);
+  }
+
+  /** Motion trace: a contact snapshot at 5 Hz while a limb touches or the pelvis is lifted, and on every seated/standing change. */
+  private traceContact(rig: AvatarRig, contact: ContactBody, deltaSeconds: number): void {
+    const avatar = this.host.avatarId ?? 'echo';
+    const seated = this.seatId !== null;
+    const changed = this.traceSeated !== null && this.traceSeated !== seated;
+    this.traceSeated = seated;
+    const active = contact.isInContact();
+    this.traceClock += deltaSeconds;
+    // A contact that has just begun is written at once; after that every TRACE_INTERVAL_S.
+    const due = changed || (active && (!this.traceWasActive || this.traceClock >= TRACE_INTERVAL_S));
+    this.traceWasActive = active;
+    if (!due) return;
+    this.traceClock = 0;
+    trace(avatar, 'contact', () => this.contactSnapshot(rig, contact, changed ? 'seat-change' : 'sample'));
+  }
+
+  private contactSnapshot(rig: AvatarRig, contact: ContactBody, reason: string): Record<string, unknown> {
+    rig.scene.updateWorldMatrix(true, true);
+    const r3 = (value: number) => round(value, 3);
+    const hips = rig.humanoid.getNormalizedBoneNode('hips');
+    const hipsAt = hips ? hips.getWorldPosition(new THREE.Vector3()) : null;
+    const euler = new THREE.Euler();
+    const quaternion = new THREE.Quaternion();
+    const deg = (radians: number) => round((radians * 180) / Math.PI, 1);
+    const rotationOf = (name: string) => {
+      const bone = rig.humanoid.getNormalizedBoneNode(name);
+      if (!bone) return null;
+      bone.getWorldQuaternion(quaternion);
+      euler.setFromQuaternion(quaternion, 'YXZ');
+      const local = new THREE.Euler().setFromQuaternion(bone.quaternion, 'YXZ');
+      return {
+        worldYawPitchRollDeg: [deg(euler.y), deg(euler.x), deg(euler.z)],
+        localYawPitchRollDeg: [deg(local.y), deg(local.x), deg(local.z)],
+      };
+    };
+    return {
+      reason,
+      seated: this.seatId !== null,
+      seatId: this.seatId,
+      hips: hipsAt ? [r3(hipsAt.x), r3(hipsAt.y), r3(hipsAt.z)] : null,
+      rootY: r3(rig.scene.position.y),
+      root: [r3(rig.scene.position.x), r3(rig.scene.position.z)],
+      yawDeg: deg(rig.scene.rotation.y - rig.baseRotationY),
+      seatFitOffset: r3(this.seatOffset),
+      ...contact.traceSnapshot(),
+      head: rotationOf('head'),
+      neck: rotationOf('neck'),
+      // Which system last wrote the head bone (animation mixer, pose blend, look-at, contact solver) is not recorded; the angles above are what the bone held after the solver.
+      headWriter: 'unknown',
+    };
   }
 
   /** Forgets the pelvis lift (the root was put somewhere else, e.g. at another room's home). */
