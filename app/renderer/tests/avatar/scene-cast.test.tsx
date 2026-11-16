@@ -38,22 +38,55 @@ describe('SceneCast', () => {
     expect(cards[2].querySelector('img')).toBeNull();
   });
 
-  it('adds a library character in one click, then refreshes', async () => {
+  it('adds a character with name, prompt and a picked avatar, then refreshes', async () => {
     const api = makeApi();
     const onChanged = vi.fn();
     render(<SceneCast api={api} profiles={[echo]} models={models} onChanged={onChanged} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Add Body Two to scene' }));
-    await waitFor(() => expect(api.add).toHaveBeenCalledWith({ name: 'Body Two', vrmModelId: 'm2' }));
+    const picker = within(screen.getByRole('group', { name: 'Avatar for the new character' }));
+    expect(picker.getByRole('button', { name: 'Same look as Echo' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(picker.getByRole('button', { name: 'Body Two' }));
+    expect(picker.getByRole('button', { name: 'Body Two' })).toHaveAttribute('aria-pressed', 'true');
+    expect(picker.getByRole('button', { name: 'Same look as Echo' })).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.change(screen.getByLabelText('New character name'), { target: { value: 'Rex' } });
+    fireEvent.change(screen.getByLabelText('New character prompt'), { target: { value: 'Be bold.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add character' }));
+    await waitFor(() => expect(api.add).toHaveBeenCalledWith({ name: 'Rex', vrmModelId: 'm2', prompt: 'Be bold.' }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    await waitFor(() => expect(picker.getByRole('button', { name: 'Same look as Echo' })).toHaveAttribute('aria-pressed', 'true'));
+  });
+
+  it('a blank name takes the picked avatar\'s name', async () => {
+    const api = makeApi();
+    render(<SceneCast api={api} profiles={[echo]} models={models} />);
+    fireEvent.click(within(screen.getByRole('group', { name: 'Avatar for the new character' })).getByRole('button', { name: 'Body Three' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add character' }));
+    await waitFor(() => expect(api.add).toHaveBeenCalledWith({ name: 'Body Three', vrmModelId: 'm3' }));
+  });
+
+  it('always offers every avatar in the library, even ones already worn', () => {
+    render(<SceneCast api={makeApi()} profiles={[echo, luna, { id: 'r', name: 'R', vrmModelId: 'm3' }]} models={models} />);
+    const tiles = within(screen.getByRole('group', { name: 'Avatar for the new character' })).getAllByRole('button');
+    expect(tiles.map((tile) => tile.getAttribute('aria-label'))).toEqual(['Same look as Echo', 'Body One', 'Body Two', 'Body Three']);
+  });
+
+  it('deletes a library avatar after confirming, naming who wore it, and never the one Echo wears', async () => {
+    const onDeleteModel = vi.fn(async () => undefined);
+    const onChanged = vi.fn();
+    render(<SceneCast api={makeApi()} profiles={[echo, luna]} models={models} onDeleteModel={onDeleteModel} onChanged={onChanged} />);
+    expect(screen.getByRole('button', { name: 'Delete Body One' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Body Two' }));
+    expect(screen.getByText(/Delete Body Two from the library\? This can't be undone\. Luna will look like Echo instead\./)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel deleting Body Two' }));
+    expect(onDeleteModel).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Body Three' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm deleting Body Three' }));
+    await waitFor(() => expect(onDeleteModel).toHaveBeenCalledWith('m3'));
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
-  it('offers only library characters nobody in the scene wears', () => {
-    const { rerender } = render(<SceneCast api={makeApi()} profiles={[echo, luna]} models={models} />);
-    const tiles = within(screen.getByRole('list', { name: 'Characters you can add' }));
-    expect(tiles.getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['Add Body Three to scene']);
-    rerender(<SceneCast api={makeApi()} profiles={[echo, luna, { id: 'r', name: 'R', vrmModelId: 'm3' }]} models={models} />);
-    expect(screen.queryByRole('list', { name: 'Characters you can add' })).toBeNull();
-    expect(screen.getByText(/already in the scene/)).toBeInTheDocument();
+  it('shows no Delete without a way to delete', () => {
+    render(<SceneCast api={makeApi()} profiles={[echo]} models={models} />);
+    expect(screen.queryByRole('button', { name: 'Delete Body Two' })).toBeNull();
   });
 
   it('adds by name, with an optional prompt, and clears the form', async () => {
@@ -77,23 +110,24 @@ describe('SceneCast', () => {
     expect(api.add).not.toHaveBeenCalled();
   });
 
-  it('edits name and body on one row, with no settings until the app supplies them', async () => {
+  it('edits name and avatar, highlighting the current one, with no settings until the app supplies them', async () => {
     const api = makeApi();
-    render(<SceneCast api={api} profiles={[echo, sage]} models={models} />);
-    expect(screen.queryByLabelText('Name of Sage')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Edit Sage' }));
-    const name = screen.getByLabelText('Name of Sage');
-    fireEvent.change(name, { target: { value: 'Sagey' } });
+    render(<SceneCast api={api} profiles={[echo, luna]} models={models} />);
+    expect(screen.queryByLabelText('Name of Luna')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Luna' }));
+    const name = screen.getByLabelText('Name of Luna');
+    fireEvent.change(name, { target: { value: 'Lunar' } });
     fireEvent.blur(name);
-    await waitFor(() => expect(api.update).toHaveBeenCalledWith('sage', { name: 'Sagey' }));
-    fireEvent.change(screen.getByLabelText('Body of Sage'), { target: { value: 'm3' } });
-    await waitFor(() => expect(api.update).toHaveBeenCalledWith('sage', { vrmModelId: 'm3' }));
-    fireEvent.change(screen.getByLabelText('Body of Sage'), { target: { value: '' } });
-    await waitFor(() => expect(api.update).toHaveBeenCalledWith('sage', { vrmModelId: null }));
-    expect(name.closest('.sceneCard__pair')).toBe(screen.getByLabelText('Body of Sage').closest('.sceneCard__pair'));
-    expect(screen.queryByLabelText('Prompt of Sage')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Edit Sage' }));
-    expect(screen.queryByLabelText('Name of Sage')).toBeNull();
+    await waitFor(() => expect(api.update).toHaveBeenCalledWith('luna', { name: 'Lunar' }));
+    const picker = within(screen.getByRole('group', { name: 'Avatar of Luna' }));
+    expect(picker.getAllByRole('button').filter((tile) => tile.getAttribute('aria-pressed') === 'true').map((tile) => tile.getAttribute('aria-label'))).toEqual(['Body Two']);
+    fireEvent.click(picker.getByRole('button', { name: 'Body Three' }));
+    await waitFor(() => expect(api.update).toHaveBeenCalledWith('luna', { vrmModelId: 'm3' }));
+    fireEvent.click(picker.getByRole('button', { name: 'Same look as Echo' }));
+    await waitFor(() => expect(api.update).toHaveBeenCalledWith('luna', { vrmModelId: null }));
+    expect(screen.queryByLabelText('Prompt of Luna')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Luna' }));
+    expect(screen.queryByLabelText('Name of Luna')).toBeNull();
   });
 
   it('does not save an unchanged or blank name', () => {
@@ -107,11 +141,27 @@ describe('SceneCast', () => {
     expect(name.value).toBe('Sage');
   });
 
-  it('locks Echo\'s body and explains why', () => {
+  it('locks Echo\'s avatar when the app gives no way to change it', () => {
     render(<SceneCast api={makeApi()} profiles={[echo, sage]} models={models} />);
     fireEvent.click(screen.getByRole('button', { name: 'Edit Echo' }));
-    expect(screen.getByLabelText('Body of Echo')).toBeDisabled();
-    expect(screen.getByText('Echo wears the active character picked below.')).toBeInTheDocument();
+    for (const tile of within(screen.getByRole('group', { name: 'Avatar of Echo' })).getAllByRole('button')) expect(tile).toBeDisabled();
+  });
+
+  it('lets Echo change avatar through the host picker, never the profile API', async () => {
+    const api = makeApi();
+    const onPickHostBody = vi.fn(async () => undefined);
+    const onChanged = vi.fn();
+    render(<SceneCast api={api} profiles={[echo, sage]} models={models} onPickHostBody={onPickHostBody} onChanged={onChanged} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Echo' }));
+    const picker = within(screen.getByRole('group', { name: 'Avatar of Echo' }));
+    expect(picker.getAllByRole('button').map((tile) => tile.getAttribute('aria-label'))).toEqual(['Body One', 'Body Two', 'Body Three']);
+    expect(picker.getByRole('button', { name: 'Body One' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(picker.getByRole('button', { name: 'Body One' }));
+    expect(onPickHostBody).not.toHaveBeenCalled();
+    fireEvent.click(picker.getByRole('button', { name: 'Body Three' }));
+    await waitFor(() => expect(onPickHostBody).toHaveBeenCalledWith('m3'));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(api.update).not.toHaveBeenCalled();
   });
 
   it('confirms before removing, and Echo has no Remove', async () => {
