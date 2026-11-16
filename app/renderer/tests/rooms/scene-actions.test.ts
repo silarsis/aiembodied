@@ -731,7 +731,7 @@ describe('sit leg targets', () => {
     const f = ((sit.facing ?? 0) * Math.PI) / 180;
     const base = worldAt(sit.position[0] + 0.45 * Math.sin(f), sit.position[2] + 0.45 * Math.cos(f), 180);
     const stream = streamOf(planAction(base, INITIAL_STATE, { kind: 'sit', objectId: 'sofa' }));
-    expect(stream.settle?.prompt).toBe('a person turns around and sits down on a chair');
-    expect(stream.settle?.targets[0]).toMatchObject({ root: stream.request.targets![0]!.root, revealS: 0 });
+    expect(stream.settle?.prompt).toBe('a person sits still on a chair, looking ahead');
+    expect(stream.settle?.targets[0]).toMatchObject({ root: stream.request.targets![0]!.root, heading: stream.request.targets![0]!.heading, revealS: 0, t: 0, until: stream.settle!.duration });
   });
 });

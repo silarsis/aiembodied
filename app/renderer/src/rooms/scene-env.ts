@@ -74,6 +74,8 @@ export class RoomSceneEnv implements SceneEnv {
   private seatId: string | null = null;
   /** The vertical offset currently added to the avatar root's y by the seat fit (metres). */
   private seatOffset = 0;
+  /** True while a motion stream is playing for this avatar. */
+  private streamPlaying = false;
   private seatRig: AvatarRig | null = null;
   /** The limb contact solver of the current rig (see contact-body.ts). */
   private contact: ContactBody | null = null;
@@ -185,6 +187,11 @@ export class RoomSceneEnv implements SceneEnv {
     this.seatId = null;
   }
 
+  /** A motion stream starts or ends for this avatar; the seated head settle only runs while none plays. */
+  setStreamPlaying(playing: boolean): void {
+    this.streamPlaying = playing;
+  }
+
   detach(event: StreamEvent): void {
     const stage = this.host.stage();
     const rig = this.host.rig();
@@ -258,7 +265,7 @@ export class RoomSceneEnv implements SceneEnv {
       this.carriedCache = [...this.carried.keys()];
       this.carriedDirty = false;
     }
-    contact.update(rig, stage.collision, deltaSeconds, this.carriedCache, stage.debugNavmesh ? stage.group : null, this.seatId);
+    contact.update(rig, stage.collision, deltaSeconds, this.carriedCache, stage.debugNavmesh ? stage.group : null, this.seatId, this.seatId !== null && !this.streamPlaying);
     if (isMotionTraceEnabled()) this.traceContact(rig, contact, deltaSeconds);
   }
 

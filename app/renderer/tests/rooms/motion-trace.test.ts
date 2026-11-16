@@ -65,12 +65,13 @@ describe('motion trace', () => {
     expect(isMotionTraceEnabled()).toBe(true);
   });
 
-  it('keeps the settle retry switch, on by default', () => {
-    expect(isSettleRetryEnabled()).toBe(true);
-    setSettleRetryEnabled(false);
+  it('keeps the settle retry switch, off by default (only "1" means on)', () => {
     expect(isSettleRetryEnabled()).toBe(false);
-    expect(window.localStorage.getItem(SETTLE_RETRY_STORAGE_KEY)).toBe('0');
     setSettleRetryEnabled(true);
     expect(isSettleRetryEnabled()).toBe(true);
+    expect(window.localStorage.getItem(SETTLE_RETRY_STORAGE_KEY)).toBe('1');
+    setSettleRetryEnabled(false);
+    expect(isSettleRetryEnabled()).toBe(false);
+    expect(window.localStorage.getItem(SETTLE_RETRY_STORAGE_KEY)).toBeNull();
   });
 });

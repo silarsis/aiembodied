@@ -500,7 +500,7 @@ describe('SceneActionExecutor', () => {
         return [0, 0.55, -0.4];
       }
       miss(end: ContactReport['end'], objectId: string | null = 'sofa'): ContactReport {
-        const report: ContactReport = { end, objectId, distance: 0.08, seconds: 0.3, actual: [0.1, 0.49, -0.1], animated: [0.1, 0.52, 0.1] };
+        const report: ContactReport = { end, objectId, distance: 0.12, seconds: 0.3, actual: [0.1, 0.49, -0.1], animated: [0.1, 0.52, 0.1] };
         this.misses = [report];
         for (const listener of [...this.listeners]) listener(report);
         return report;
@@ -513,7 +513,7 @@ describe('SceneActionExecutor', () => {
     beforeEach(() => {
       let n = 0;
       clock = 1_000_000;
-      executor = new SceneActionExecutor({ newId: () => `s${(n += 1)}`, setTimer: (fn) => setTimeout(fn, 0), now: () => clock });
+      executor = new SceneActionExecutor({ newId: () => `s${(n += 1)}`, setTimer: (fn) => setTimeout(fn, 0), now: () => clock, settleRetries: () => true });
       contactEnv = new ContactEnv();
       executor.setBridge(bridge);
       executor.setEnv(contactEnv);
@@ -556,6 +556,29 @@ describe('SceneActionExecutor', () => {
       expect(bridge.requests).toHaveLength(2);
       expect(executor.getState()).toMatchObject({ posture: 'seated', seat: { session: 'sess-2' } });
       expect(executor.recentFailures()).toEqual([]);
+    });
+
+    it('plays a calm repair that keeps the seat-facing heading, not a new sit', async () => {
+      await sitDown();
+      contactEnv.miss('leftFoot');
+      await playStream(executor, bridge, 's1', [undefined, hold], 'sess-1');
+      await until(() => bridge.requests.length === 2);
+      const settle = bridge.requests[1]!;
+      expect(settle.prompt).toBe('a person sits still on a chair, looking ahead');
+      expect(settle.prompt).not.toContain('turns around');
+      const rootTarget = settle.targets!.find((t) => t.root)!;
+      expect(rootTarget.heading).toBeDefined();
+      expect(rootTarget.t).toBe(0);
+      expect(rootTarget.until).toBe(settle.duration);
+    });
+
+    it('does not repair a leg end that misses by 10 cm or less', async () => {
+      await sitDown();
+      const report = contactEnv.miss('leftFoot');
+      contactEnv.misses = [{ ...report, distance: 0.1 }];
+      await playStream(executor, bridge, 's1', [undefined, hold], 'sess-1');
+      await until(() => !executor.busy);
+      expect(bridge.requests).toHaveLength(1);
     });
 
     it('settles at most twice, then records what it could not reach for a minute', async () => {
@@ -612,7 +635,7 @@ describe('SceneActionExecutor', () => {
 
       on = true;
       let m = 0;
-      executor = new SceneActionExecutor({ newId: () => `t${(m += 1)}`, setTimer: (fn) => setTimeout(fn, 0), now: () => clock, avatarId: 'rex', trace, tracing: () => on });
+      executor = new SceneActionExecutor({ newId: () => `t${(m += 1)}`, setTimer: (fn) => setTimeout(fn, 0), now: () => clock, avatarId: 'rex', trace, tracing: () => on, settleRetries: () => true });
       contactEnv = new ContactEnv();
       executor.setBridge(bridge);
       executor.setEnv(contactEnv);

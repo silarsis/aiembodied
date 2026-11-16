@@ -152,6 +152,8 @@ export type ActionPlan =
 export const WALK_PROMPT = 'a person walks calmly';
 export const LOOK_PROMPT = 'a person turns to look at something';
 export const SIT_PROMPT = 'a person turns around and sits down on a chair';
+/** The prompt of settle/repair streams: no new sit (which would wiggle and turn), just hold still on the seat. */
+export const SETTLE_PROMPT = 'a person sits still on a chair, looking ahead';
 export const STAND_PROMPT = 'a person stands up from the chair';
 export const REACH_PROMPT = 'a person reaches out and picks something up from a table';
 export const REACH_FLOOR_PROMPT = 'a person bends down and picks something up from the floor';
@@ -739,7 +741,8 @@ function planSit(world: PlanWorld, object: RoomObject): ActionPlan {
           revealS: phaseStart,
         })
       : [];
-  const settleTarget: AvatarMotionTarget = { ...target, t: 0.4, until: roundMs(SETTLE_SECONDS - 0.1), revealS: 0 };
+  // The seat-facing heading is held for the whole repair, so the body is not turned away from the seat.
+  const settleTarget: AvatarMotionTarget = { ...target, t: 0, until: SETTLE_SECONDS, revealS: 0 };
   return {
     type: 'stream',
     stream: {
@@ -759,7 +762,7 @@ function planSit(world: PlanWorld, object: RoomObject): ActionPlan {
       expectedEnd: { root, heading },
       events: [],
       outcome: { posture: 'seated', seat: { objectId: object.id, frame, approach, facing } },
-      settle: { prompt: SIT_PROMPT, duration: SETTLE_SECONDS, targets: [settleTarget] },
+      settle: { prompt: SETTLE_PROMPT, duration: SETTLE_SECONDS, targets: [settleTarget] },
     },
   };
 }
