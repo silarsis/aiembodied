@@ -175,6 +175,12 @@ more depth and are linked where they apply.
   after a reconnect is not news). Echo decides to ignore, remember or say each
   one, and if the decide step fails the change is remembered, never spoken.
   Alarms are still spoken at once.
+- **Control through the home panel (2026-11-16):** Home Assistant's own MCP
+  Server integration can now be added from Tools / MCP (one ready-made server
+  per home in Models and servers) and is kept on the `home-panel` of the Studio
+  flat: changes walk to the panel, reads come from anywhere, locks and alarms
+  ask first. Not yet tested against a live Home Assistant. See
+  [features/stations.md](./features/stations.md).
 - **Akari:** Home Assistant is next on the roadmap, then HomeKit and Matter.
   Also drives GPIO, Arduino and ESP32 boards directly, with six safety checks,
   spoken confirmation for risky actions and a Stop All button.

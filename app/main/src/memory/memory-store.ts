@@ -348,6 +348,11 @@ const MIGRATIONS: readonly Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_reading_notes_avatar ON reading_notes (avatar_id, created_at DESC);`,
     ],
   },
+  {
+    // Home Assistant as an MCP server: which "Models and servers" home supplies the token (read at connect time).
+    version: 13,
+    statements: [`ALTER TABLE mcp_servers ADD COLUMN token_from_model_server TEXT NULL;`],
+  },
 ];
 
 function runMigrations(db: SqliteDatabase) {

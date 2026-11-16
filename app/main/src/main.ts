@@ -2939,7 +2939,8 @@ function setupStations(store: MemoryStore): void {
   const rooms = roomService;
   const registry = new StationRegistry({
     store,
-    servers: () => manager.listServers().map((server) => ({ id: server.id, httpUrl: server.httpUrl, sseUrl: server.sseUrl })),
+    servers: () =>
+      manager.listServers().map((server) => ({ id: server.id, httpUrl: server.httpUrl, sseUrl: server.sseUrl, homeAssistant: Boolean(server.tokenFromModelServer) })),
     describeRoom: async (roomId) => {
       const room = await rooms.load(roomId);
       return { name: room.name, objects: room.objects.map((object) => ({ id: object.id, name: object.name })) };
@@ -3206,6 +3207,12 @@ app.whenReady().then(async () => {
   } else {
     logger.info('Suspend/resume handlers not available on this platform');
   }
+
+  // MCP servers start once the configuration (and the keys saved with it) has loaded; see releaseMcpStart().
+  let releaseMcpStart: () => void = () => {};
+  const mcpMayStart = new Promise<void>((resolve) => {
+    releaseMcpStart = resolve;
+  });
 
   const manager = new ConfigManager({
     secretStore,
@@ -3475,9 +3482,18 @@ app.whenReady().then(async () => {
     // openExternal is only used for an explicit "Sign in" press; start-up never opens the browser.
     mcpManager = new MCPManager(memoryStore.database, toolRegistry, {
       openExternal: (url) => shell.openExternal(url),
+      // Home Assistant homes of Models and servers become ready-made servers; their tokens are read here, in main,
+      // when the server connects (never sent to the renderer).
+      homeAssistantHomes: () =>
+        manager
+          .getConfig()
+          .models.servers.filter((server) => server.type === 'homeassistant')
+          .map((server) => ({ id: server.id, name: server.name, url: server.url })),
+      modelServerToken: (id) => manager.getServerKey(id),
     });
-    // Servers connect in the background so a slow one cannot hold up start-up.
-    void mcpManager.initialize().catch((error) => {
+    // Servers connect in the background so a slow one cannot hold up start-up. They wait for the configuration
+    // (and its saved keys) to load first: a Home Assistant server needs its token to connect.
+    void mcpMayStart.then(() => mcpManager?.initialize()).catch((error) => {
       logger.warn('MCP auto-start failed', { message: error instanceof Error ? error.message : String(error) });
     });
     logger.info('MCP Manager initialized', {
@@ -3496,6 +3512,7 @@ app.whenReady().then(async () => {
 
   try {
     await manager.load();
+    releaseMcpStart();
   } catch (error) {
     const message =
       error instanceof ConfigValidationError || error instanceof Error

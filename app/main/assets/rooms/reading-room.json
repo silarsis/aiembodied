@@ -440,6 +440,23 @@
           "color": "#553a24"
         }
       ]
+    },
+    {
+      "id": "home-panel",
+      "name": "home panel",
+      "description": "a wall panel that controls the house",
+      "position": [2.985, 1.4, -0.6],
+      "rotationY": -90,
+      "size": [0.3, 0.2, 0.03],
+      "collider": "none",
+      "parts": [
+        { "shape": "box", "size": [0.3, 0.2, 0.03], "offset": [0, 0.1, 0], "color": "#2b2f36" },
+        { "shape": "box", "size": [0.26, 0.16, 0.01], "offset": [0, 0.1, 0.011], "color": "#5fb3d9" }
+      ],
+      "tags": {
+        "stand": { "position": [0, 0, 0.7], "facing": 180 },
+        "look": { "position": [0, 0.1, 0.1] }
+      }
     }
   ]
 }

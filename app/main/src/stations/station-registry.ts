@@ -16,6 +16,15 @@ export const STATIONS_KEY = 'rooms.stations';
 /** The Reading room of the built-in rooms (assets/rooms/reading-room.json). */
 export const READING_ROOM_ID = 'room:builtin:reading-room';
 
+/** The Studio flat of the built-in rooms (assets/rooms/studio-flat.json): where the avatar lives by default. */
+export const STUDIO_FLAT_ROOM_ID = 'room:builtin:studio-flat';
+
+/** The wall panel of the Studio flat and the Reading room, where Home Assistant lives. */
+export const HOME_PANEL_OBJECT_ID = 'home-panel';
+
+/** Id of the station made for the first Home Assistant server (see `homeAssistantDefault`). */
+export const HOME_ASSISTANT_DEFAULT_ID = 'default:home-assistant';
+
 /**
  * Stations that exist without Kevin setting them up: a built-in room that has a natural place for a preset.
  * Each is added (once) as soon as the preset's server exists and no other station holds that server. If Kevin
@@ -42,6 +51,29 @@ export const DEFAULT_STATIONS: Station[] = [
   },
 ];
 
+/**
+ * The default station for a Home Assistant MCP server: the Studio flat's home panel. Only changes walk to the panel
+ * (`trip: 'writes'`); reads (what is the temperature?) are answered from wherever the avatar stands.
+ */
+function homeAssistantDefault(serverId: string): Station {
+  return {
+    id: HOME_ASSISTANT_DEFAULT_ID,
+    roomId: STUDIO_FLAT_ROOM_ID,
+    objectId: HOME_PANEL_OBJECT_ID,
+    source: { kind: 'mcp', serverId },
+    verb: 'use',
+    activity: 'taps at the home panel',
+    trip: 'writes',
+    characters: 'all',
+    pursuit: 'none',
+  };
+}
+
+/** A station made without Kevin: a built-in default, or the Home Assistant one. Removing it keeps it removed. */
+function isDefaultStation(id: string): boolean {
+  return id === HOME_ASSISTANT_DEFAULT_ID || DEFAULT_STATIONS.some((fallback) => fallback.id === id);
+}
+
 /** A body plan from saved data: only non-empty strings are kept. An empty object means "no props, no seat". */
 export function sanitizeBody(input: unknown): StationBody | undefined {
   if (!input || typeof input !== 'object') return undefined;
@@ -57,6 +89,8 @@ export function sanitizeBody(input: unknown): StationBody | undefined {
 /** What the registry needs to know about an MCP server: its id and address. */
 export interface StationServer {
   id: string;
+  /** A Home Assistant MCP server (its token comes from Models and servers). */
+  homeAssistant?: boolean;
   httpUrl?: string;
   sseUrl?: string;
 }
@@ -122,6 +156,7 @@ export function sanitizeStation(input: unknown): Station | null {
     activity: typeof value.activity === 'string' && value.activity.trim() ? value.activity.trim() : `uses the ${value.objectId}`,
     trip: value.trip === 'writes' ? 'writes' : 'all',
     characters,
+    ...(value.pursuit === 'none' ? { pursuit: 'none' as const } : {}),
     ...(sanitizeBody(value.body) ? { body: sanitizeBody(value.body) } : {}),
   };
 }
@@ -202,8 +237,36 @@ export class StationRegistry {
       saved.stations.push({ ...fallback });
       changed = true;
     }
+    if (this.addHomeAssistantDefault(saved)) changed = true;
     if (changed) this.write(saved);
     return saved.stations;
+  }
+
+  /**
+   * The home panel holds the first Home Assistant MCP server that no station holds. One default only (a station is
+   * one object and one source): further homes are set on a panel with the Holds picker, in this or another room.
+   * A default whose server has been deleted is dropped so the next home can take its place.
+   */
+  private addHomeAssistantDefault(saved: Saved): boolean {
+    if (saved.removedDefaults.includes(HOME_ASSISTANT_DEFAULT_ID)) return false;
+    let changed = false;
+    const existing = saved.stations.find((s) => s.id === HOME_ASSISTANT_DEFAULT_ID);
+    if (existing) {
+      if (this.resolveServerId(existing.source) !== null) return false;
+      saved.stations = saved.stations.filter((s) => s !== existing);
+      changed = true;
+    }
+    const homes = this.options.servers().filter((server) => server.homeAssistant);
+    const free = homes.find((home) => !saved.stations.some((s) => this.resolveServerId(s.source) === home.id));
+    if (!free) return changed;
+    saved.stations.push(homeAssistantDefault(free.id));
+    return true;
+  }
+
+  /** Whether a source is a Home Assistant MCP server. */
+  private isHomeAssistant(source: StationSource): boolean {
+    const id = this.resolveServerId(source);
+    return id !== null && this.options.servers().some((server) => server.id === id && server.homeAssistant);
   }
 
   get(id: string): Station | null {
@@ -211,7 +274,7 @@ export class StationRegistry {
   }
 
   add(input: StationInput): Station {
-    const station = sanitizeStation({ ...input, id: `station-${randomUUID()}` });
+    const station = sanitizeStation({ ...input, ...(this.isHomeAssistant(input.source) ? { pursuit: 'none' } : {}), id: `station-${randomUUID()}` });
     if (!station) throw new Error('This station needs a room, an object and something to hold.');
     const saved = this.read();
     saved.stations.push(station);
@@ -240,7 +303,7 @@ export class StationRegistry {
     saved.stations = saved.stations.filter((station) => station.id !== id);
     if (saved.stations.length === before) return false;
     // A removed default must not come back the next time the list is read.
-    if (DEFAULT_STATIONS.some((fallback) => fallback.id === id) && !saved.removedDefaults.includes(id)) saved.removedDefaults.push(id);
+    if (isDefaultStation(id) && !saved.removedDefaults.includes(id)) saved.removedDefaults.push(id);
     this.write(saved);
     this.changed();
     return true;
@@ -260,11 +323,11 @@ export class StationRegistry {
     const removed = saved.stations.filter((station) => dropped(station) || (source === null && station === here));
     saved.stations = saved.stations.filter((station) => !removed.includes(station));
     for (const station of removed) {
-      if (DEFAULT_STATIONS.some((fallback) => fallback.id === station.id) && !saved.removedDefaults.includes(station.id)) saved.removedDefaults.push(station.id);
+      if (isDefaultStation(station.id) && !saved.removedDefaults.includes(station.id)) saved.removedDefaults.push(station.id);
     }
     let result: Station | null = null;
     if (source !== null) {
-      const next = sanitizeStation({ ...(here ?? { verb: 'use', trip: 'all', characters: 'all' }), ...extra, id: here?.id ?? `station-${randomUUID()}`, roomId, objectId, source });
+      const next = sanitizeStation({ ...(here ?? { verb: 'use', trip: 'all', characters: 'all' }), ...extra, pursuit: this.isHomeAssistant(source) ? 'none' : undefined, id: here?.id ?? `station-${randomUUID()}`, roomId, objectId, source });
       if (!next) throw new Error('This station could not be saved.');
       saved.stations = here ? saved.stations.map((station) => (station === here ? next : station)) : [...saved.stations, next];
       result = next;

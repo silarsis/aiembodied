@@ -73,7 +73,7 @@ describe('MCPManager', () => {
         http_auth_header TEXT,
         http_auth_token_encrypted TEXT,
         oauth INTEGER NOT NULL DEFAULT 0,
-        oauth_scope TEXT,
+        oauth_scope TEXT, token_from_model_server TEXT,
         enabled INTEGER DEFAULT 1,
         auto_start INTEGER DEFAULT 0,
         connection_status TEXT DEFAULT 'disconnected',
