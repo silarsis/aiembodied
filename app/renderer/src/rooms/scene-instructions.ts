@@ -1,4 +1,5 @@
 import type { RoomFile, RoomObject } from '../../../main/src/rooms/types.js';
+import type { PlanWorld } from './scene-actions.js';
 
 /** What a model can do with an object, in plain words, from the object's tags. */
 export function objectAffordances(object: RoomObject): string[] {
@@ -41,6 +42,67 @@ export function describeAvatarWhere(
   return best && best.distance <= NEAR_LIMIT ? `standing near the ${best.name}` : null;
 }
 
+/** Feet this much above the floor count as resting on something other than the floor (metres). */
+const RAISED_FOOT_FLOOR = 0.03;
+/** Furthest an object may be from where the feet land to be named as what they rest on (metres). */
+const FOOT_SUPPORT_REACH = 1;
+/** How much slack the shin gets before the feet count as dangling (metres). */
+const DANGLE_MARGIN = 0.02;
+
+/**
+ * Where the feet of an avatar seated on `seatId` are, in words: "feet on the floor", "feet on the footstool" or
+ * "feet dangling" (the seat is too high for the shins to reach what is in front of it). Null when the seat
+ * cannot be measured.
+ */
+export function describeFeet(
+  room: RoomFile | null | undefined,
+  world: PlanWorld | null | undefined,
+  seatId: string,
+): string | null {
+  const geometry = world?.seatGeometry?.(seatId);
+  if (!room || !world || !geometry) return null;
+  const scale = world.frame.scale;
+  const legs = world.restLegLengths;
+  if (legs) {
+    const knee = geometry.seatTopY + 0.07 * scale;
+    const ankle = geometry.footFloorY + legs.ankleHeight * scale;
+    if (knee - ankle >= legs.shin * scale + DANGLE_MARGIN) return 'feet dangling';
+  }
+  if (geometry.footFloorY < RAISED_FOOT_FLOOR) return 'feet on the floor';
+  const facing = (geometry.facing * Math.PI) / 180;
+  const ahead = geometry.frontEdge + 0.15;
+  const x = geometry.position[0] + Math.sin(facing) * ahead;
+  const z = geometry.position[2] + Math.cos(facing) * ahead;
+  let best: { name: string; distance: number } | null = null;
+  for (const object of room.objects) {
+    if (object.id === seatId || object.collider === 'none') continue;
+    const distance = Math.hypot(object.position[0] - x, object.position[2] - z);
+    if (distance <= FOOT_SUPPORT_REACH && (!best || distance < best.distance)) best = { name: object.name, distance };
+  }
+  return best ? `feet on the ${best.name}` : 'feet on a raised surface';
+}
+
+/**
+ * The avatar's contact with the room in words, for the model: how it sits and what it could not do lately
+ * (`failures`, already worded by the scene executor). Empty when there is nothing worth saying.
+ */
+export function describeBody(
+  room: RoomFile | null | undefined,
+  state: { posture: 'standing' | 'seated'; seat?: { objectId: string } },
+  world: PlanWorld | null | undefined,
+  failures: readonly string[] = [],
+): string {
+  const parts: string[] = [];
+  const seat = state.posture === 'seated' ? state.seat : undefined;
+  if (seat && room) {
+    const name = room.objects.find((object) => object.id === seat.objectId)?.name;
+    const feet = describeFeet(room, world, seat.objectId);
+    if (name) parts.push(`You are seated on the ${name}${feet ? `, ${feet}` : ''}.`);
+  }
+  if (failures.length > 0) parts.push(`Just now your body ${failures.join('; and ')}.`);
+  return parts.join(' ');
+}
+
 /**
  * The part of the model's instructions that describes the room and the scene tags. Empty in 2D or
  * when live motion is unavailable, so the instructions are then exactly what they were.
@@ -51,6 +113,8 @@ export function buildSceneInstructions(
   idleNote = '',
   /** Names of the other avatars standing in the room with this one. */
   others: readonly OtherAvatarEntry[] = [],
+  /** How this avatar sits and what its body could not do lately (see `describeBody`). */
+  body = '',
 ): string {
   if (!room || !motionAvailable) return '';
   const objects = room.objects
@@ -72,6 +136,7 @@ export function buildSceneInstructions(
     'For example: `{go:bookshelf}{move:runs a finger along the book spines}`.',
     ...othersLines,
     idleLine,
+    body.trim(),
   ]
     .filter(Boolean)
     .join(' ');

@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import type { Vec3 } from '../../../main/src/rooms/types.js';
 import { GripPose, type Side } from './grip-pose.js';
-import type { Hand, PlanWorld, StreamEvent } from './scene-actions.js';
-import type { SceneEnv } from './scene-executor.js';
+import type { Hand, PlanWorld, RestLegLengths, StreamEvent } from './scene-actions.js';
+import type { ContactReport, SceneEnv } from './scene-executor.js';
 import type { RootPose } from './scene-frames.js';
 import type { RoomStage } from './room-stage.js';
 import type { RoomOccupancy } from './room-occupancy.js';
-import { ContactBody } from './contact-body.js';
+import { ContactBody, type ContactMiss } from './contact-body.js';
+import { measureRestLegLengths } from './leg-lengths.js';
 import { easeOffset, seatOffsetTarget, seatedContactY } from './seat-fit.js';
 
 /** The parts of the loaded avatar that scene actions need. */
@@ -53,6 +54,11 @@ const GRIP_SNAP_EPSILON = 0.0005;
 const TMP_A = new THREE.Vector3();
 const TMP_B = new THREE.Vector3();
 
+function legsOf(rig: AvatarRig): { restLegLengths?: RestLegLengths } {
+  const legs = rig.restHipsHeight > 0 ? measureRestLegLengths(rig.humanoid, rig.restHipsHeight) : null;
+  return legs ? { restLegLengths: legs } : {};
+}
+
 /**
  * The real `SceneEnv`: the avatar's root, hands and grip, and the props of the active room. The
  * controller owns one and keeps it pointed at the current stage and avatar.
@@ -69,6 +75,8 @@ export class RoomSceneEnv implements SceneEnv {
   /** The limb contact solver of the current rig (see contact-body.ts). */
   private contact: ContactBody | null = null;
   private contactRig: AvatarRig | null = null;
+  private contactOff: (() => void) | null = null;
+  private readonly missListeners = new Set<(report: ContactReport) => void>();
   private carriedCache: string[] = [];
   private carriedDirty = false;
 
@@ -91,11 +99,13 @@ export class RoomSceneEnv implements SceneEnv {
         const tag = stage.worldTag(objectId, 'sit');
         return tag ? stage.surfaceHeightAt(objectId, x, z, tag.position[1]) : null;
       },
+      seatGeometry: (objectId) => stage.seatGeometry(objectId),
       frame: {
         origin: { x: rig.scene.position.x, z: rig.scene.position.z, yaw: rig.scene.rotation.y - rig.baseRotationY },
         scale: rig.scene.scale.x || 1,
       },
       restHipsHeight: rig.restHipsHeight > 0 ? rig.restHipsHeight : FALLBACK_HIPS_HEIGHT,
+      ...legsOf(rig),
       cameraAspect: this.host.aspect?.(),
       ...(occupancy ? { others: occupancy.others(id), occupancy: occupancy.forAvatar(id) } : {}),
     };
@@ -226,8 +236,14 @@ export class RoomSceneEnv implements SceneEnv {
     }
     let contact = this.contact;
     if (!contact || this.contactRig !== rig) {
+      this.contactOff?.();
       contact?.dispose();
       contact = new ContactBody(rig.humanoid);
+      const created = contact;
+      this.contactOff = contact.onMissStart((miss) => {
+        const report = this.reportOf(created, miss);
+        if (report) for (const listener of [...this.missListeners]) listener(report);
+      });
       this.contact = contact;
       this.contactRig = rig;
     }
@@ -243,8 +259,36 @@ export class RoomSceneEnv implements SceneEnv {
     return this.contact;
   }
 
+  /** Limb ends missing their animated place now, with where they are (see SceneEnv). */
+  contactMisses(): ContactReport[] {
+    const contact = this.contact;
+    if (!contact) return [];
+    return contact.misses().flatMap((miss) => this.reportOf(contact, miss) ?? []);
+  }
+
+  onContactMiss(listener: (report: ContactReport) => void): () => void {
+    this.missListeners.add(listener);
+    return () => this.missListeners.delete(listener);
+  }
+
+  hipsPosition(): Vec3 | null {
+    const rig = this.host.rig();
+    const hips = rig?.humanoid.getNormalizedBoneNode('hips');
+    if (!rig || !hips) return null;
+    rig.scene.updateWorldMatrix(true, true);
+    const p = hips.getWorldPosition(TMP_A);
+    return [p.x, p.y, p.z];
+  }
+
+  private reportOf(contact: ContactBody, miss: ContactMiss): ContactReport | null {
+    const at = contact.endPositions(miss.end);
+    return at ? { ...miss, actual: at.actual, animated: at.animated } : null;
+  }
+
   /** Drops the contact solver (the avatar left or the room went away). */
   disposeContact(): void {
+    this.contactOff?.();
+    this.contactOff = null;
     this.contact?.dispose();
     this.contact = null;
     this.contactRig = null;

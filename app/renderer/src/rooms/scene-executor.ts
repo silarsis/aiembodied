@@ -9,6 +9,9 @@ import type { ClipEndAction } from '../avatar/animation-bus.js';
 import type {
   AvatarMotionChunkEvent,
   AvatarMotionEndPose,
+  AvatarMotionJoint,
+  AvatarMotionObserved,
+  AvatarMotionTarget,
   AvatarMotionStreamRequest,
   AvatarMotionStreamResult,
   AvatarRestSkeleton,
@@ -24,8 +27,10 @@ import {
   type SceneAction,
   type StreamEvent,
 } from './scene-actions.js';
+import type { LimbEnd } from './contact-body.js';
 import type { AvatarOccupancy } from './room-occupancy.js';
-import { bakedRootPose, type RootPose } from './scene-frames.js';
+import { bakedRootPose, worldToMotion, type RootPose } from './scene-frames.js';
+import type { Vec3 } from '../../../main/src/rooms/types.js';
 
 export type { ClipEndAction };
 
@@ -45,6 +50,19 @@ export interface SceneBridge {
   avatarRest?(): AvatarRestSkeleton | undefined;
 }
 
+/** A limb end that is not where the animation put it (see ContactBody), with where it is, in the world. */
+export interface ContactReport {
+  end: LimbEnd;
+  /** The object in the way, when known. */
+  objectId: string | null;
+  distance: number;
+  seconds: number;
+  /** Where the limb end is (metres, world). */
+  actual: Vec3;
+  /** Where the animation put it. */
+  animated: Vec3;
+}
+
 /** The room and the avatar in it. */
 export interface SceneEnv {
   /** A snapshot for planning, or null while there is no room or avatar. */
@@ -58,6 +76,12 @@ export interface SceneEnv {
   setSeat?(objectId: string): void;
   /** The avatar is standing (or getting up): let the seat fit ease away. */
   clearSeat?(): void;
+  /** Limb ends that are missing their animated place right now. Absent without a contact solver. */
+  contactMisses?(): ContactReport[];
+  /** Calls `listener` when a limb end starts to miss; returns the unsubscribe function. */
+  onContactMiss?(listener: (report: ContactReport) => void): () => void;
+  /** The pelvis in the world now. */
+  hipsPosition?(): Vec3 | null;
 }
 
 export type SceneActivity =
@@ -70,6 +94,8 @@ export interface SceneExecutorOptions {
   newId?: () => string;
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (handle: unknown) => void;
+  /** Milliseconds, for how long ago a failure was (default Date.now). */
+  now?: () => number;
 }
 
 interface Deferred {
@@ -117,6 +143,30 @@ type QueueItem =
   | { type: 'plan'; label: string; build: PlanBuilder };
 
 const MAX_INSERT_DEPTH = 4;
+/** A failed reach is told to the LLM for this long. */
+export const FAILURE_MEMORY_MS = 60_000;
+/** After a sit has played, how long to let the limbs settle before judging whether they followed (ms). */
+const CONTACT_SETTLE_MS = 600;
+/** Settle streams per action. */
+export const MAX_REPLANS = 2;
+/** A miss on a limb the action did not aim at only matters once it has lasted this long (seconds). */
+const UNTARGETED_MISS_SECONDS = 1;
+
+const LEG_JOINT: Partial<Record<LimbEnd, AvatarMotionJoint>> = {
+  leftKnee: 'left_knee',
+  rightKnee: 'right_knee',
+  leftFoot: 'left_ankle',
+  rightFoot: 'right_ankle',
+};
+
+const LIMB_NAME: Record<LimbEnd, string> = {
+  leftKnee: 'left knee',
+  rightKnee: 'right knee',
+  leftFoot: 'left foot',
+  rightFoot: 'right foot',
+  leftHand: 'left hand',
+  rightHand: 'right hand',
+};
 const DEFAULT_CHUNK_SECONDS = 2;
 
 export class SceneActionExecutor {
@@ -137,8 +187,11 @@ export class SceneActionExecutor {
   private readonly newId: () => string;
   private readonly setTimer: (fn: () => void, ms: number) => unknown;
   private readonly clearTimer: (handle: unknown) => void;
+  private readonly now: () => number;
+  private failures: Array<{ text: string; at: number }> = [];
 
   constructor(options: SceneExecutorOptions = {}) {
+    this.now = options.now ?? (() => Date.now());
     this.newId = options.newId ?? (() => Math.random().toString(36).slice(2, 10));
     this.setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
     this.clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
@@ -169,6 +222,13 @@ export class SceneActionExecutor {
   /** A snapshot of the room and the avatar in it for planning, or null while there is no room or avatar. */
   world(): PlanWorld | null {
     return this.env?.planWorld() ?? null;
+  }
+
+  /** What the body could not do lately ("couldn't reach ... (blocked by ...)"), newest last, for the LLM. */
+  recentFailures(): string[] {
+    const cutoff = this.now() - FAILURE_MEMORY_MS;
+    this.failures = this.failures.filter((failure) => failure.at >= cutoff);
+    return this.failures.map((failure) => failure.text);
   }
 
   /** Called after each `interrupt` (the user spoke, woke the avatar or tapped). */
@@ -370,7 +430,155 @@ export class SceneActionExecutor {
       await this.runAction(action, generation, epoch, depth + 1);
       return;
     }
-    await this.runStream(plan.stream, generation, epoch);
+    // Watch the limbs while the stream plays (and settles): a sit that leaves a leg in the sofa is corrected.
+    // The misses seen name the blocker even after the solver has since lifted the limb clear.
+    const blockers = new Map<LimbEnd, string>();
+    const watching = plan.stream.settle
+      ? env.onContactMiss?.((report) => {
+          if (report.objectId) blockers.set(report.end, report.objectId);
+        })
+      : undefined;
+    try {
+      await this.runStream(plan.stream, generation, epoch);
+      if (plan.stream.settle && env.contactMisses && !this.stale(generation, epoch)) {
+        await this.settleContact(env, world, plan.stream, blockers, generation, epoch);
+      }
+    } finally {
+      watching?.();
+    }
+  }
+
+  // -- Contact feedback -----------------------------------------------------------------------
+
+  private wait(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      this.setTimer(resolve, ms);
+    });
+  }
+
+  /**
+   * After a sit has played: if a leg is stuck in furniture (the body could not follow the pose the model
+   * planned), continue the stream for a moment with the real pose as `observed` and the stuck joint's target
+   * moved to where the solver left it, so the model plans from where the body is. At most MAX_REPLANS times;
+   * after that the failure is recorded and the avatar stays as it is. Never throws: a failed replan leaves
+   * things as they were.
+   */
+  private async settleContact(
+    env: SceneEnv,
+    world: PlanWorld,
+    original: PlannedStream,
+    blockers: Map<LimbEnd, string>,
+    generation: number,
+    epoch: number,
+  ): Promise<void> {
+    if (original.outcome.posture !== 'seated') return;
+    let current = original;
+    try {
+      for (let attempt = 0; ; attempt += 1) {
+        await this.wait(CONTACT_SETTLE_MS);
+        if (this.stale(generation, epoch) || this.state.posture !== 'seated' || !this.state.seat) return;
+        const missing = this.legMisses(env, current);
+        if (missing.length === 0) return;
+        for (const miss of missing) if (miss.objectId) blockers.set(miss.end, miss.objectId);
+        if (attempt >= MAX_REPLANS) {
+          this.recordFailure(world, original.label, missing, blockers);
+          return;
+        }
+        const repair = this.buildRepair(env, original, current, missing, this.state.seat.session);
+        if (!repair) return;
+        try {
+          await this.runStream(repair, generation, epoch);
+        } catch (error) {
+          console.warn('[scene-actions] the settle stream failed', error);
+          return;
+        }
+        current = repair;
+      }
+    } catch (error) {
+      console.warn('[scene-actions] could not settle the legs', error);
+    }
+  }
+
+  /** Leg ends still missing that the action aimed at, or that have been missing for a while. */
+  private legMisses(env: SceneEnv, planned: PlannedStream): ContactReport[] {
+    const aimed = new Set(
+      (planned.request.targets ?? []).flatMap((target) => (target.joint ? [target.joint] : [])),
+    );
+    return (env.contactMisses?.() ?? []).filter((miss) => {
+      const joint = LEG_JOINT[miss.end];
+      return joint !== undefined && (aimed.has(joint) || miss.seconds > UNTARGETED_MISS_SECONDS);
+    });
+  }
+
+  /** The stream that carries on from the sit with the real pose pinned at its start. Null when it cannot be built. */
+  private buildRepair(
+    env: SceneEnv,
+    original: PlannedStream,
+    current: PlannedStream,
+    missing: ContactReport[],
+    session: string,
+  ): PlannedStream | null {
+    const settle = original.settle;
+    if (!settle || !session) return null;
+    const { frame } = original;
+    const toMotion = (p: Vec3): [number, number, number] => {
+      const [x, z] = worldToMotion(frame, p[0], p[2]);
+      return [roundMm(x), roundMm(p[1] / frame.scale), roundMm(z)];
+    };
+    // The joint targets so far (the last stream's), with the stuck ends moved to where the body really is.
+    const positions = new Map<AvatarMotionJoint, [number, number, number]>();
+    for (const target of current.request.targets ?? []) {
+      if (target.joint && target.position) positions.set(target.joint, target.position);
+    }
+    const observed: AvatarMotionObserved = { joints: {} };
+    for (const miss of missing) {
+      const joint = LEG_JOINT[miss.end];
+      if (!joint) continue;
+      const here = toMotion(miss.actual);
+      positions.set(joint, here);
+      observed.joints = { ...observed.joints, [joint]: here };
+    }
+    const hips = env.hipsPosition?.() ?? null;
+    if (hips) {
+      const [x, y, z] = toMotion(hips);
+      observed.root = [x, z];
+      observed.height = y;
+    }
+    const holdFrom = settle.targets.reduce((least, target) => Math.min(least, target.t), Infinity);
+    const holdUntil = settle.targets.reduce((most, target) => Math.max(most, target.until ?? target.t), 0);
+    const jointTargets: AvatarMotionTarget[] = [...positions].map(([joint, position]) => ({
+      t: holdFrom,
+      until: holdUntil,
+      joint,
+      position,
+    }));
+    return {
+      label: `settle ${original.label}`,
+      request: {
+        prompt: settle.prompt,
+        duration: settle.duration,
+        targets: [...settle.targets, ...jointTargets],
+        continueFrom: session,
+        observed,
+      },
+      frame,
+      expectedEnd: original.expectedEnd,
+      events: [],
+      outcome: original.outcome,
+      settle,
+      repair: true,
+    };
+  }
+
+  private recordFailure(world: PlanWorld, label: string, missing: ContactReport[], blockers: Map<LimbEnd, string>): void {
+    const nameOf = (id: string) => world.room.objects.find((object) => object.id === id)?.name ?? id;
+    for (const miss of missing) {
+      const blocker = miss.objectId ?? blockers.get(miss.end);
+      const text = `couldn't reach its ${LIMB_NAME[miss.end]} target${blocker ? ` (blocked by ${nameOf(blocker)})` : ''}`;
+      console.warn(`[scene-actions] ${text}`);
+      this.failures.push({ text, at: this.now() });
+      this.emit({ type: 'skipped', label: label, reason: text });
+    }
   }
 
   // -- Streams --------------------------------------------------------------------------------
@@ -416,7 +624,7 @@ export class SceneActionExecutor {
     };
     this.streams.set(id, stream);
     // Getting up (or walking off) starts from the plain floor, so the seat fit eases out first.
-    if (this.state.posture === 'seated') this.env?.clearSeat?.();
+    if (this.state.posture === 'seated' && !planned.repair) this.env?.clearSeat?.();
     this.emit({ type: 'start', id, label: planned.label });
 
     const rest = bridge.avatarRest?.();
@@ -431,6 +639,7 @@ export class SceneActionExecutor {
         ...(request.path ? { path: request.path } : {}),
         ...(request.targets ? { targets: request.targets } : {}),
         ...(request.continueFrom ? { continueFrom: request.continueFrom } : {}),
+        ...(request.observed ? { observed: request.observed } : {}),
       });
     } catch (error) {
       result = Promise.reject(error);
@@ -520,6 +729,14 @@ export class SceneActionExecutor {
       const endPose = stream.lastEndPose ?? (stream.cancelled || stream.failed ? undefined : planned.expectedEnd);
       const { outcome } = planned;
       const session = stream.failed || stream.cancelled ? undefined : stream.session;
+      if (planned.repair && !session) {
+        // A failed settle stream leaves the avatar sitting as it was: the old session still stands up.
+        console.warn('[scene-actions] the settle stream did not finish; the avatar stays seated');
+        verdict = 'hold';
+        this.syncClaims();
+        stream.done.resolve();
+        return verdict;
+      }
       if (outcome.posture === 'seated' && !session) {
         console.warn('[scene-actions] sit did not finish cleanly; treating the avatar as standing');
       }
@@ -589,6 +806,10 @@ export class SceneActionExecutor {
       }
     }
   }
+}
+
+function roundMm(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }
 
 function describeAction(action: SceneAction): string {

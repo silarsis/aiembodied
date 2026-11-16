@@ -73,7 +73,7 @@ import { MovementRigs } from './rooms/movement-rig.js';
 import { MoveRequestFilter, enqueueMotionChunk } from './avatar/live-motion.js';
 import { SceneActionExecutor, type SceneActivity } from './rooms/scene-executor.js';
 import { tagToAction, type SceneAction } from './rooms/scene-actions.js';
-import { buildSceneInstructions, describeAvatarWhere, type OtherAvatarEntry } from './rooms/scene-instructions.js';
+import { buildSceneInstructions, describeAvatarWhere, describeBody, type OtherAvatarEntry } from './rooms/scene-instructions.js';
 import { useIdleDirector } from './rooms/use-idle-director.js';
 import { usePlaces } from './places/use-places.js';
 import { useSatellite } from './satellite/satellite-context.js';
@@ -1458,7 +1458,11 @@ export default function App() {
     [stageNames, rigs, backgrounds.activeRoom],
   );
   const sceneInstructions = useMemo(
-    () => buildSceneInstructions(backgrounds.activeRoom, liveMotionReady, idleNote, othersFor('echo')),
+    () => {
+      const executor = rigs.get('echo').executor;
+      const body = describeBody(backgrounds.activeRoom, executor.getState(), executor.world(), executor.recentFailures());
+      return buildSceneInstructions(backgrounds.activeRoom, liveMotionReady, idleNote, othersFor('echo'), body);
+    },
     // sceneTick: where the others are changes when an action ends.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [backgrounds.activeRoom, liveMotionReady, idleNote, othersFor, sceneTick],

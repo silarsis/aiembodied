@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .backends.base import Backend
 from .calibration import REST_BONES, arm_forward_for_avatar
-from .constraints import (DEFAULT_CORNER_RADIUS, PathParams, TargetParams, build_plan, end_pose,
+from .constraints import (DEFAULT_CORNER_RADIUS, ObservedParams, PathParams, TargetParams, build_plan, end_pose,
                           scale_for, seconds_to_frame_ceil, snap_root)
 from .retarget import RootFrame, chest_forward_deg, joint_names, slugify, to_vrma
 from .sessions import Session, SessionStore
@@ -80,6 +80,7 @@ class TargetSpec(BaseModel):
     height: Optional[float] = Field(default=None, gt=0, le=10, allow_inf_nan=False)
     heading: Optional[Num] = None
     hand: Optional[Literal["left", "right"]] = None
+    joint: Optional[Literal["left_knee", "right_knee", "left_ankle", "right_ankle"]] = None
     position: Optional[tuple[Num, Num, Num]] = None
     reveal_s: float = Field(default=0.0, ge=0, le=60, allow_inf_nan=False)
 
@@ -87,15 +88,35 @@ class TargetSpec(BaseModel):
     def _shape(self):
         if self.until is not None and self.until < self.t:
             raise ValueError("until must not be before t")
-        if self.hand is not None:
+        if self.hand is not None and self.joint is not None:
+            raise ValueError("a target takes hand or joint, not both")
+        if self.joint is not None:
+            if self.position is None:
+                raise ValueError("a joint target needs position")
+        elif self.hand is not None:
             if self.position is None:
                 raise ValueError("a hand target needs position")
             if self.root is None or self.height is None or self.heading is None:
                 raise ValueError("a hand target needs root, height and heading (the pelvis to hold)")
         elif self.position is not None:
-            raise ValueError("position needs hand")
+            raise ValueError("position needs hand or joint")
         elif self.root is None and self.height is None and self.heading is None:
             raise ValueError("a target needs root, height, heading or hand")
+        return self
+
+
+class ObservedSpec(BaseModel):
+    """Where the body is now, for a continued stream: pinned onto its first frames (motion frame, avatar metres)."""
+
+    joints: dict[Literal["left_knee", "right_knee", "left_ankle", "right_ankle"], tuple[Num, Num, Num]] = Field(
+        default_factory=dict)
+    root: Optional[tuple[Num, Num]] = None
+    height: Optional[float] = Field(default=None, gt=0, le=10, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _any(self):
+        if not self.joints and self.root is None and self.height is None:
+            raise ValueError("observed needs joints, root or height")
         return self
 
 
@@ -119,6 +140,7 @@ class StreamRequest(ClipRequest):
     targets: Optional[list[TargetSpec]] = Field(default=None, max_length=64)
     constraint_weight: float = Field(default=2.0, ge=0, le=10, allow_inf_nan=False)
     continue_from: Optional[str] = Field(default=None, max_length=64)
+    observed: Optional[ObservedSpec] = None
     snap_s: float = Field(default=0.3, ge=0, le=5, allow_inf_nan=False)
 
 
@@ -250,6 +272,8 @@ def create_app(backend: Backend, load_in_background: bool = True, keep_warm_seco
     def stream(req: StreamRequest):
         frames, steps, name = _check(req)
         previous: Optional[Session] = None
+        if req.observed is not None and req.continue_from is None:
+            raise ApiError(400, "observed needs continue_from")
         if req.continue_from is not None:
             previous = sessions.get(req.continue_from)
             if previous is None:
@@ -258,10 +282,11 @@ def create_app(backend: Backend, load_in_background: bool = True, keep_warm_seco
         fps = backend.fps
         scale = scale_for(req.avatar_rest)
         plan = None
-        if req.path is not None or req.targets:
+        if req.path is not None or req.targets or req.observed is not None:
             path = None if req.path is None else PathParams(**req.path.model_dump())
             targets = [TargetParams(**t.model_dump()) for t in req.targets or []]
-            plan = build_plan(path, targets, fps, scale, frames)
+            observed = None if req.observed is None else ObservedParams(**req.observed.model_dump())
+            plan = build_plan(path, targets, fps, scale, frames, observed=observed)
         phase_specs = sorted(req.phases or [], key=lambda p: p.start_s)
 
         def lines() -> Iterator[bytes]:

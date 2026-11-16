@@ -77,10 +77,12 @@ follows root targets crudely, Kimodo ignores them). A request without them behav
   },
   "targets": [                     // timed keyframes, motion frame, avatar metres, heading in radians
     {"t": 5.5, "until": 7.0, "root": [0.0, 2.65], "height": 0.50, "heading": 3.1416, "reveal_s": 4.0},
-    {"t": 2.0, "until": 2.3, "hand": "right", "position": [-0.18, 0.75, 0.50], "root": [0, 0], "height": 0.90, "heading": 0}
+    {"t": 2.0, "until": 2.3, "hand": "right", "position": [-0.18, 0.75, 0.50], "root": [0, 0], "height": 0.90, "heading": 0},
+    {"t": 6.5, "until": 7.0, "joint": "left_knee", "position": [0.1, 0.52, 0.30], "reveal_s": 4.0}
   ],
   "constraint_weight": 2.0,        // default 2.0 (the constraint-only CFG pass; 1.0 helps on sharp paths)
   "continue_from": "s-1a2b",       // start from the end of an earlier stream, same motion frame
+  "observed": {"joints": {"left_knee": [0.1, 0.5, 0.3]}, "root": [0.0, 0.2], "height": 0.5},  // with continue_from
   "snap_s": 0.3                    // blend the root onto exact root targets that hold (until > t) over this window before each target; 0 = off
 }
 ```
@@ -94,6 +96,19 @@ Frames and units:
 - `hand` targets (`"left"` or `"right"`) are wrist positions. The service expands one into the demo's
   end-effector bundle (wrist and middle-fingertip positions, palm-down wrist rotation, pelvis x/z/height and
   heading), so `root`, `height` and `heading` are required: they are the pelvis values to hold.
+- `joint` targets (`left_knee`, `right_knee`, `left_ankle`, `right_ankle`) pin one joint to `position`
+  ([x, y, z], motion frame, avatar metres; same scaling and `t`/`until`/`reveal_s` rules as the others). They map
+  to the SOMA joints LeftShin / RightShin (SOMA's "Leg" is the thigh, so the knee is where the shin starts) and
+  LeftFoot / RightFoot. ARDY only accepts a joint position on a frame whose pelvis x/z is constrained too, so
+  give the target its own `root`, or let a root target overlap it; a joint target on any other frame is dropped.
+  Use them to plan the legs round furniture, for example knees over the front edge of a seat. A target takes
+  `hand` or `joint`, not both. The fake backend and Kimodo ignore them.
+- `observed` (only with `continue_from`, otherwise 400) says where the body actually is now: `joints` (same names
+  as joint targets), `root` [x, z] and `height`, in the motion frame and avatar metres. They become hard targets
+  on the first 4 frames (0 to 3) of the continued stream and override any other target there. This is not a
+  rewrite of the history: the model still remembers its own end pose and the observed pose only pulls the first
+  frames onto the real one (a true rewrite would need inverse retargeting). Joints still need `root` (observed
+  or a target) on those frames.
 - `t`/`until`: the target holds on every frame from `t` to `until` inclusive (30 fps); `until` defaults to `t`.
   A target with a `root` that holds for more than one frame (`until` later than `t`) is also snapped onto exactly
   (x/z only) in the decoded motion, which moves the whole body with it. Single-frame targets and path
@@ -135,5 +150,5 @@ Lines:
 ## Errors
 
 Non-2xx responses carry `{ "error": "message" }`: 400 for an invalid request (including a bad hand name,
-non-finite numbers or a target without what it needs), 404 `{"error": "unknown session"}` for a
+non-finite numbers, an unknown joint, `observed` without `continue_from` or a target without what it needs), 404 `{"error": "unknown session"}` for a
 `continue_from` that is unknown or expired, 503 when the model is not ready, 500 otherwise.

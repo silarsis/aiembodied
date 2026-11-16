@@ -278,6 +278,17 @@ export class ContactBody {
     return result;
   }
 
+  /** Where a limb end is now and where the animation put it this frame (world metres); null without that bone. */
+  endPositions(end: LimbEnd): { actual: [number, number, number]; animated: [number, number, number] } | null {
+    const track = this.ends.find((candidate) => candidate.end === end);
+    if (!track) return null;
+    const actual = positionOf(nth(track.limb.joints, track.joint).bone, TMP_A);
+    return {
+      actual: [actual.x, actual.y, actual.z],
+      animated: [track.animated.x, track.animated.y, track.animated.z],
+    };
+  }
+
   /** Calls `listener` when a limb end starts to miss (once per miss). Returns the unsubscribe function. */
   onMissStart(listener: (miss: ContactMiss) => void): () => void {
     this.listeners.add(listener);

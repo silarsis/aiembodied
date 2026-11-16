@@ -5,9 +5,10 @@
  * avatar ends up. The executor in scene-executor.ts runs the plans.
  */
 import type { RoomFile, RoomObject, Vec3 } from '../../../main/src/rooms/types.js';
-import type { AvatarMotionPhase, AvatarMotionPath, AvatarMotionTarget } from '../avatar/types.js';
+import type { AvatarMotionObserved, AvatarMotionPhase, AvatarMotionPath, AvatarMotionTarget } from '../avatar/types.js';
 import type { SceneTag } from '../avatar/animation-tags.js';
 import { degToRad } from './room-geometry.js';
+import type { WorldSeatGeometry } from './seat-geometry.js';
 import type { AvatarOccupancy } from './room-occupancy.js';
 import { worldTag } from './room-tags.js';
 import { heightToMotion, worldToMotion, worldYawToMotion, yawToward, type MotionFrame } from './scene-frames.js';
@@ -54,6 +55,16 @@ export interface AvatarState {
 
 export const INITIAL_STATE: AvatarState = { posture: 'standing', held: null };
 
+/** Leg proportions of the avatar's rest skeleton, avatar metres. */
+export interface RestLegLengths {
+  /** Hip joint to knee. */
+  thigh: number;
+  /** Knee to ankle. */
+  shin: number;
+  /** Ankle joint above the sole. */
+  ankleHeight: number;
+}
+
 /** What a plan needs to know about the world right now. */
 export interface PlanWorld {
   room: RoomFile;
@@ -69,8 +80,12 @@ export interface PlanWorld {
    * it cannot be measured (the tag height is used then).
    */
   seatSurfaceY?(objectId: string, x: number, z: number): number | null;
+  /** The measured seat (top, front edge, floor in front) of an object with a sit tag; absent or null when unknown. */
+  seatGeometry?(objectId: string): WorldSeatGeometry | null;
   /** Standing pelvis height in avatar metres (the rest skeleton's hips height). */
   restHipsHeight: number;
+  /** Thigh, shin and ankle height of the rest skeleton in avatar metres; absent when it cannot be measured. */
+  restLegLengths?: RestLegLengths;
   /** Width over height of the room view, for judging what the camera can see. */
   cameraAspect?: number;
   /** Other avatars in the room: where they stand now and where they are heading. Set only with 2+ avatars. */
@@ -104,6 +119,8 @@ export interface StreamRequestPlan {
   path?: AvatarMotionPath;
   targets?: AvatarMotionTarget[];
   continueFrom?: string;
+  /** With `continueFrom`: where the body really is, pinned onto the first frames. */
+  observed?: AvatarMotionObserved;
 }
 
 export interface PlannedStream {
@@ -118,6 +135,13 @@ export interface PlannedStream {
   outcome: { posture: 'standing' } | { posture: 'seated'; seat: Omit<SeatState, 'session'> };
   /** `undefined`: unchanged. */
   held?: HeldState | null;
+  /**
+   * What to ask for when the body could not follow the motion (a limb stuck in furniture): a short stream
+   * continued from this one that holds the final pose. Its target times count from the start of that stream.
+   */
+  settle?: { prompt: string; duration: number; targets: AvatarMotionTarget[] };
+  /** This stream corrects an earlier one: the seat fit stays on and it is not planned again. */
+  repair?: boolean;
 }
 
 export type ActionPlan =
@@ -150,6 +174,16 @@ const TURN_LOOKAHEAD = 0.4;
 const TURN_SETTLE_S = 0.2;
 const SIT_APPROACH = 0.45;
 const SEAT_HEIGHT_OFFSET = 0.08;
+/** Radius of a thigh above the cushion, avatar metres: the knee joint sits this far above the seat top. */
+const THIGH_RADIUS = 0.07;
+/** Half the distance between the knees when seated, avatar metres. */
+const KNEE_HALF_SPACING = 0.09;
+/** The knees go this far (world metres) past the seat's front edge. */
+const KNEE_PAST_EDGE = 0.03;
+/** The leg targets are held over the last stretch of the sit (seconds), inside the root target's span. */
+const LEG_HOLD_S = 0.5;
+/** The settle stream after a contact miss: long enough for one chunk and the pose to arrive. */
+export const SETTLE_SECONDS = 2;
 const REACH_DISTANCE = 0.7;
 const FRONT_OF_FACE = 0.5;
 const SURFACE_INSET = 0.15;
@@ -593,6 +627,60 @@ function planLook(world: PlanWorld, object: RoomObject): ActionPlan {
   return turnPlan(world, yawToward(rootWorld(world), point), object.name);
 }
 
+/**
+ * Knee and ankle targets for sitting on a seat, in the motion frame: knees at seat-top height (plus the thigh's
+ * radius) just past the front edge and a hip width apart, ankles on the floor in front of the seat (or hanging
+ * a shin below the knees when the floor is out of reach). The pelvis sits at the sit tag, facing `facing`.
+ */
+export function sitLegTargets(
+  frame: MotionFrame,
+  seat: Vec3,
+  facing: number,
+  pelvisY: number,
+  geometry: WorldSeatGeometry,
+  legs: RestLegLengths,
+  span: { t: number; until: number; revealS: number },
+): AvatarMotionTarget[] {
+  const s = frame.scale;
+  const thigh = legs.thigh * s;
+  const shin = legs.shin * s;
+  const forward: [number, number] = [Math.sin(facing), Math.cos(facing)];
+  const left: [number, number] = [Math.cos(facing), -Math.sin(facing)];
+  const kneeY = geometry.seatTopY + THIGH_RADIUS * s;
+  // Past the edge, but not further than the thigh reaches from the pelvis.
+  const reach = Math.sqrt(Math.max(thigh * thigh - (kneeY - pelvisY) ** 2, 0));
+  const ahead = Math.min(geometry.frontEdge + KNEE_PAST_EDGE, reach);
+  const out: AvatarMotionTarget[] = [];
+  for (const side of ['left', 'right'] as const) {
+    const lateral = (side === 'left' ? 1 : -1) * KNEE_HALF_SPACING * s;
+    const kx = seat[0] + forward[0] * ahead + left[0] * lateral;
+    const kz = seat[2] + forward[1] * ahead + left[1] * lateral;
+    const ankleFloor = geometry.footFloorY + legs.ankleHeight * s;
+    const drop = kneeY - ankleFloor;
+    // Feet that reach the floor go slightly ahead of the knees (a straight shin of the right length); feet that
+    // do not hang straight down.
+    const reachesFloor = drop > 0 && drop < shin;
+    const step = reachesFloor ? Math.sqrt(shin * shin - drop * drop) : 0;
+    const ankleY = reachesFloor ? ankleFloor : kneeY - shin;
+    const ax = kx + forward[0] * step;
+    const az = kz + forward[1] * step;
+    for (const [joint, x, y, z] of [
+      [`${side}_knee`, kx, kneeY, kz],
+      [`${side}_ankle`, ax, ankleY, az],
+    ] as const) {
+      const [mx, mz] = worldToMotion(frame, x, z);
+      out.push({
+        t: span.t,
+        until: span.until,
+        joint,
+        position: [roundMs(mx), roundMs(heightToMotion(frame, y)), roundMs(mz)],
+        revealS: span.revealS,
+      });
+    }
+  }
+  return out;
+}
+
 function planSit(world: PlanWorld, object: RoomObject): ActionPlan {
   const sit = worldTag(world.room, object.id, 'sit');
   if (!sit) return skip(`${object.name} cannot be sat on`);
@@ -640,6 +728,18 @@ function planSit(world: PlanWorld, object: RoomObject): ActionPlan {
     heading,
     revealS: phaseStart,
   };
+  const geometry = world.seatGeometry?.(object.id) ?? null;
+  const legs = world.restLegLengths;
+  const pelvisY = surfaceY + SEAT_HEIGHT_OFFSET;
+  const legTargets =
+    geometry && legs
+      ? sitLegTargets(frame, seat, facing, pelvisY, geometry, legs, {
+          t: roundMs(duration - 0.1 - LEG_HOLD_S),
+          until: roundMs(duration - 0.1),
+          revealS: phaseStart,
+        })
+      : [];
+  const settleTarget: AvatarMotionTarget = { ...target, t: 0.4, until: roundMs(SETTLE_SECONDS - 0.1), revealS: 0 };
   return {
     type: 'stream',
     stream: {
@@ -653,12 +753,13 @@ function planSit(world: PlanWorld, object: RoomObject): ActionPlan {
               phases: [{ prompt: SIT_PROMPT, startS: phaseStart }],
             }
           : {}),
-        targets: [...(start?.targets ?? []), target],
+        targets: [...(start?.targets ?? []), target, ...legTargets],
       },
       frame,
       expectedEnd: { root, heading },
       events: [],
       outcome: { posture: 'seated', seat: { objectId: object.id, frame, approach, facing } },
+      settle: { prompt: SIT_PROMPT, duration: SETTLE_SECONDS, targets: [settleTarget] },
     },
   };
 }

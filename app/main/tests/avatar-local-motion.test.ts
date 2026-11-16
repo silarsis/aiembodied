@@ -291,6 +291,44 @@ describe('motion steering fields', () => {
     });
   });
 
+  it('sends joint targets and the observed pose (only with continueFrom)', () => {
+    const observed = { joints: { left_knee: [0.1, 0.5, 0.3] as [number, number, number] }, root: [0, 0.2] as [number, number], height: 0.55 };
+    const wire = toWireRequest({
+      prompt: 'sit',
+      targets: [{ t: 1, until: 1.5, joint: 'left_ankle', position: [0.1, 0.08, 0.4], revealS: 2 }],
+      continueFrom: 's-1',
+      observed,
+    });
+    expect(wire).toEqual({
+      prompt: 'sit',
+      targets: [{ t: 1, until: 1.5, joint: 'left_ankle', position: [0.1, 0.08, 0.4], reveal_s: 2 }],
+      continue_from: 's-1',
+      observed,
+    });
+    expect(toWireRequest({ prompt: 'sit', observed })).not.toHaveProperty('observed');
+  });
+
+  it('sanitizes joint targets and the observed pose', () => {
+    const controls = sanitizeMotionControls({
+      targets: [
+        { t: 1, joint: 'right_knee', position: [0, 0.5, 0.3] },
+        { t: 1, joint: 'left_elbow' as 'left_knee', position: [0, 0, 0] },
+        { t: 1, joint: 'left_knee' },
+        { t: 1, joint: 'left_knee', position: [0, 0, Number.NaN] },
+      ],
+      continueFrom: 's-1',
+      observed: {
+        joints: { left_knee: [0, 0.5, 0.3], right_knee: [0, 0] as unknown as [number, number, number] },
+        root: [0, 1],
+        height: -1,
+      },
+    });
+    expect(controls.targets).toEqual([{ t: 1, joint: 'right_knee', position: [0, 0.5, 0.3] }]);
+    expect(controls.observed).toEqual({ joints: { left_knee: [0, 0.5, 0.3] }, root: [0, 1] });
+    expect(sanitizeMotionControls({ observed: { root: [0, 1] } }).observed).toBeUndefined(); // no continueFrom
+    expect(sanitizeMotionControls({ continueFrom: 's-1', observed: {} }).observed).toBeUndefined();
+  });
+
   it('drops malformed steering fields instead of failing the movement', () => {
     const controls = sanitizeMotionControls({
       path: { points: [[0, 0], [Number.NaN, 1], [0, 2]], speed: -1 },

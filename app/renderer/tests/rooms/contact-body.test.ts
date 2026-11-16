@@ -215,4 +215,18 @@ describe('ContactBody on the reading-room sofa', () => {
     // Whether or not this pose is blocked, the report must agree with itself.
     for (const miss of body.misses()) expect(starts).toContain(miss.end);
   });
+
+  it('reports where a limb end is and where the animation put it', () => {
+    const avatar = buildAvatar();
+    avatar.scene.position.set(-2, 0, 1);
+    avatar.scene.updateMatrixWorld(true);
+    const body = new ContactBody(avatar.humanoid);
+    run(avatar, body, 5);
+    const knee = body.endPositions('leftKnee')!;
+    const ankle = worldPoint(avatar.bones.get('leftFoot')!);
+    const at = body.endPositions('leftFoot')!;
+    expect(at.actual[1]).toBeCloseTo(ankle.y, 6);
+    expect(at.animated[0]).toBeCloseTo(at.actual[0], 6); // no contact: the solver left it alone
+    expect(knee.actual[1]).toBeGreaterThan(at.actual[1]);
+  });
 });

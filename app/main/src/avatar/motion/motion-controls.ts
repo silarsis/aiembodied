@@ -5,6 +5,8 @@
  * send, which is cut down to its valid entries.
  */
 import type {
+  AvatarMotionJoint,
+  AvatarMotionObserved,
   AvatarMotionPath,
   AvatarMotionPhase,
   AvatarMotionStreamRequest,
@@ -13,7 +15,7 @@ import type {
 
 export type MotionControls = Pick<
   AvatarMotionStreamRequest,
-  'phases' | 'path' | 'targets' | 'constraintWeight' | 'continueFrom' | 'snapS'
+  'phases' | 'path' | 'targets' | 'constraintWeight' | 'continueFrom' | 'observed' | 'snapS'
 >;
 
 const MAX_TARGETS = 64;
@@ -30,6 +32,27 @@ function pair(value: unknown): [number, number] | undefined {
 
 function triple(value: unknown): [number, number, number] | undefined {
   return Array.isArray(value) && value.length === 3 && value.every(finite) ? [value[0], value[1], value[2]] : undefined;
+}
+
+const JOINTS: readonly AvatarMotionJoint[] = ['left_knee', 'right_knee', 'left_ankle', 'right_ankle'];
+
+function sanitizeObserved(value: unknown): AvatarMotionObserved | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = value as Record<string, unknown>;
+  const joints: NonNullable<AvatarMotionObserved['joints']> = {};
+  if (raw.joints && typeof raw.joints === 'object') {
+    for (const joint of JOINTS) {
+      const position = triple((raw.joints as Record<string, unknown>)[joint]);
+      if (position) joints[joint] = position;
+    }
+  }
+  const root = pair(raw.root);
+  const observed: AvatarMotionObserved = {
+    ...(Object.keys(joints).length > 0 ? { joints } : {}),
+    ...(root ? { root } : {}),
+    ...(finite(raw.height) && raw.height > 0 ? { height: raw.height } : {}),
+  };
+  return Object.keys(observed).length > 0 ? observed : undefined;
 }
 
 function sanitizePath(value: unknown): AvatarMotionPath | undefined {
@@ -61,6 +84,8 @@ function sanitizeTarget(value: unknown): AvatarMotionTarget | undefined {
   if (raw.hand !== undefined && (!hand || !position || !root || !finite(raw.height) || !finite(raw.heading))) {
     return undefined;
   }
+  const joint = JOINTS.find((name) => name === raw.joint);
+  if (raw.joint !== undefined && (!joint || !position || hand)) return undefined;
   return {
     t: raw.t,
     ...(finite(raw.until) && raw.until >= raw.t ? { until: raw.until } : {}),
@@ -69,6 +94,7 @@ function sanitizeTarget(value: unknown): AvatarMotionTarget | undefined {
     ...(finite(raw.heading) ? { heading: raw.heading } : {}),
     ...(finite(raw.revealS) && raw.revealS >= 0 ? { revealS: raw.revealS } : {}),
     ...(hand && position ? { hand, position } : {}),
+    ...(joint && position ? { joint, position } : {}),
   };
 }
 
@@ -104,6 +130,8 @@ export function sanitizeMotionControls(request: Partial<AvatarMotionStreamReques
   if (typeof request.continueFrom === 'string' && /^[\w-]{1,64}$/.test(request.continueFrom)) {
     controls.continueFrom = request.continueFrom;
   }
+  const observed = controls.continueFrom ? sanitizeObserved(request.observed) : undefined;
+  if (observed) controls.observed = observed;
   if (finite(request.snapS) && request.snapS >= 0) controls.snapS = request.snapS;
   return controls;
 }

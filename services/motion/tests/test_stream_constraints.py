@@ -243,3 +243,91 @@ def test_continue_after_a_whole_chunk_drops_nothing(client):
     second, _ = chunks_of(client.post("/v1/motion/stream", json={
         "prompt": "walk", "duration": 2.0, "continue_from": first[1]["session"]}))
     assert len(second[0]["vrma"]["hips"]["position"]["keyframes"]) == 60 and second[0]["start"] == 0.0
+
+
+# ---- joint targets and the observed pose ----------------------------------------------------------
+
+
+def _visible_at(backend, start=0):
+    return backend.calls[-1]["visible"][start]
+
+
+def test_joint_target_maps_to_soma_names_and_scales_to_model_units(client, backend):
+    body = {"prompt": "sit", "duration": 2, "avatar_rest": REST,
+            "targets": [{"t": 1.0, "until": 1.5, "root": [0, 0.5], "height": 0.4},
+                        {"t": 1.0, "until": 1.5, "joint": "left_knee", "position": [0.1, 0.5, 0.6]},
+                        {"t": 1.6, "joint": "right_ankle", "position": [-0.1, 0.1, 0.7]}]}
+    assert client.post("/v1/motion/stream", json=body).status_code == 200
+    tg = _visible_at(backend)
+    scale = 0.8 / 0.989
+    assert tg.joints[(30, "LeftShin")] == pytest.approx((0.1 / scale, 0.5 / scale, 0.6 / scale))
+    assert tg.joints[(45, "LeftShin")] == pytest.approx((0.1 / scale, 0.5 / scale, 0.6 / scale))
+    assert (46, "LeftShin") not in tg.joints
+    # no pelvis root on frame 48: ARDY would reject a lone joint position, so the plan drops it
+    assert not any(k[1] == "RightFoot" for k in tg.joints)
+
+
+def test_joint_target_with_its_own_root_is_kept(client, backend):
+    body = {"prompt": "sit", "duration": 2,
+            "targets": [{"t": 1.0, "joint": "right_knee", "position": [-0.1, 0.5, 0.6], "root": [0, 0.5]}]}
+    assert client.post("/v1/motion/stream", json=body).status_code == 200
+    assert (30, "RightShin") in _visible_at(backend).joints
+
+
+@pytest.mark.parametrize("target", [
+    {"t": 1, "joint": "left_elbow", "position": [0, 0, 0]},
+    {"t": 1, "joint": "left_knee"},
+    {"t": 1, "joint": "left_knee", "position": [0, 0, float("nan")]},
+    {"t": 1, "joint": "left_knee", "position": [0, 0, 1e9]},
+    {"t": 1, "joint": "left_knee", "position": [0, 0, 0], "hand": "left", "root": [0, 0], "height": 1, "heading": 0},
+])
+def test_bad_joint_targets_are_400(client, target):
+    r = client.post("/v1/motion/stream", content=json.dumps({"prompt": "x", "targets": [target]}),
+                    headers={"content-type": "application/json"})
+    assert r.status_code == 400 and "error" in r.json()
+
+
+def _session(client):
+    _, done = chunks_of(client.post("/v1/motion/stream", json={"prompt": "walk", "duration": 2}))
+    return done["session"]
+
+
+def test_observed_pins_the_first_frames_of_a_continuation(client, backend):
+    sid = _session(client)
+    body = {"prompt": "sit", "duration": 2, "avatar_rest": REST, "continue_from": sid,
+            "observed": {"joints": {"left_knee": [0.1, 0.5, 0.3], "right_ankle": [-0.1, 0.05, 0.4]},
+                         "root": [0.0, 0.2], "height": 0.6}}
+    assert client.post("/v1/motion/stream", json=body).status_code == 200
+    tg = _visible_at(backend)
+    scale = 0.8 / 0.989
+    for f in range(4):
+        assert tg.root2d[f] == pytest.approx((0.0, 0.2 / scale))
+        assert tg.root_y[f] == pytest.approx(0.6 / scale)
+        assert tg.joints[(f, "LeftShin")] == pytest.approx((0.1 / scale, 0.5 / scale, 0.3 / scale))
+        assert tg.joints[(f, "RightFoot")] == pytest.approx((-0.1 / scale, 0.05 / scale, 0.4 / scale))
+    assert 4 not in tg.root2d
+
+
+def test_observed_beats_an_explicit_target_on_the_same_frames(client, backend):
+    sid = _session(client)
+    body = {"prompt": "x", "duration": 2, "continue_from": sid, "observed": {"root": [0.5, 0.5]},
+            "targets": [{"t": 0, "until": 10 / 30, "root": [0, 0]}]}
+    assert client.post("/v1/motion/stream", json=body).status_code == 200
+    tg = _visible_at(backend)
+    assert tg.root2d[2] == pytest.approx((0.5, 0.5)) and tg.root2d[6] == pytest.approx((0, 0))
+
+
+@pytest.mark.parametrize("observed", [
+    {}, {"joints": {"left_elbow": [0, 0, 0]}}, {"joints": {"left_knee": [0, 0]}}, {"root": [0, float("inf")]},
+    {"height": -1},
+])
+def test_bad_observed_is_400(client, observed):
+    sid = _session(client)
+    r = client.post("/v1/motion/stream", content=json.dumps({"prompt": "x", "continue_from": sid, "observed": observed}).replace("Infinity", "1e999"),
+                    headers={"content-type": "application/json"})
+    assert r.status_code == 400
+
+
+def test_observed_without_continue_from_is_400(client):
+    r = client.post("/v1/motion/stream", json={"prompt": "x", "observed": {"root": [0, 0]}})
+    assert r.status_code == 400 and "continue_from" in r.json()["error"]
