@@ -49,6 +49,14 @@ export interface StationUse {
   settle(ok: boolean, signal?: AbortSignal): Promise<void>;
 }
 
+/** A trip made for a pursuit (reading at the bookshelf): the same trip, plus what the avatar does there. */
+export interface StationVisit extends StationUse {
+  /** Resolves when the avatar is at the object (or the walk failed or timed out). Never rejects. */
+  arrived(): Promise<void>;
+  /** The avatar acts something else at the object ("jots down notes"). Ignored until it has arrived at a screen that draws the room. */
+  activity(text: string): void;
+}
+
 /** Resolves when the promise does, or as soon as the signal aborts (the turn was cancelled). */
 function until<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T | undefined> {
   if (!signal) return promise;
@@ -100,9 +108,15 @@ export class StationTrips {
 
   /** What this avatar would do for this tool right now, or null for no trip. */
   private plan(avatarId: string, tool: StationTool): Plan | null {
-    const { stations, places } = this.options;
+    const { stations } = this.options;
     const station = stations.stationForTool(tool);
     if (!station || !stations.appliesTo(station, avatarId) || !stations.needsTrip(station, tool)) return null;
+    return this.planFor(avatarId, station);
+  }
+
+  /** What this avatar would do to get to this station right now, or null for no trip. */
+  private planFor(avatarId: string, station: Station): Plan | null {
+    const { places } = this.options;
     if (places.inTransit(avatarId)) return null;
     const here = places.locationOf(avatarId);
     const hereRoom = this.roomOf(here);
@@ -128,13 +142,25 @@ export class StationTrips {
   }
 
   /** A tool is about to run for this avatar. Returns the trip, or null when the avatar stays where it is. */
-  begin(avatarId: string, tool: StationTool): StationUse | null {
+  begin(avatarId: string, tool: StationTool): StationVisit | null {
     const plan = this.plan(avatarId, tool);
     if (!plan) return null;
     return plan.kind === 'same' ? this.beginSameRoom(avatarId, plan.station) : this.beginErrand(avatarId, plan);
   }
 
-  private event(avatarId: string, station: Station, useId: string, phase: 'start' | 'end', ok?: boolean): StationUseEvent {
+  /**
+   * A pursuit goes to a station (no tool involved): the same walk, or errand to another place, as a tool would
+   * make. Null when the avatar stays where it is (a 2D background, away, already moving, nobody could get the event).
+   * `settle` ends the visit: the end event, and the way back from an errand.
+   */
+  beginAt(avatarId: string, station: Station): StationVisit | null {
+    if (!this.options.stations.appliesTo(station, avatarId)) return null;
+    const plan = this.planFor(avatarId, station);
+    if (!plan) return null;
+    return plan.kind === 'same' ? this.beginSameRoom(avatarId, plan.station) : this.beginErrand(avatarId, plan);
+  }
+
+  private event(avatarId: string, station: Station, useId: string, phase: StationUseEvent['phase'], ok?: boolean): StationUseEvent {
     return {
       useId,
       avatarId,
@@ -149,12 +175,16 @@ export class StationTrips {
 
   // -- Same room ----------------------------------------------------------------------------------
 
-  private beginSameRoom(avatarId: string, station: Station): StationUse | null {
+  private beginSameRoom(avatarId: string, station: Station): StationVisit | null {
     const useId = randomUUID();
     if (!this.options.send(avatarId, this.event(avatarId, station, useId, 'start'))) return null;
     // Listen from now: the renderer may report arrival before the tool is done.
     const arrival = this.waitForArrival(useId, this.holdMs);
     return {
+      arrived: () => arrival,
+      activity: (text) => {
+        this.options.send(avatarId, { ...this.event(avatarId, station, useId, 'activity'), activity: text });
+      },
       settle: async (ok, signal) => {
         await until(arrival, signal);
         this.options.send(avatarId, this.event(avatarId, station, useId, 'end', ok));
@@ -180,7 +210,7 @@ export class StationTrips {
 
   // -- Another place ------------------------------------------------------------------------------
 
-  private beginErrand(avatarId: string, plan: Extract<Plan, { kind: 'errand' }>): StationUse | null {
+  private beginErrand(avatarId: string, plan: Extract<Plan, { kind: 'errand' }>): StationVisit | null {
     const { places, logger } = this.options;
     const origin = places.locationOf(avatarId);
     const objectName = this.options.stations.labelsFor(plan.station).objectName;
@@ -193,27 +223,45 @@ export class StationTrips {
     const startedAt = Date.now();
     const left = (): number => Math.max(0, this.errandCapMs - (Date.now() - startedAt));
     // Out: wait for the arrival, then (at a place with a screen) let its renderer walk to the object.
+    let atObject = false;
     const out = places.waitForArrival(avatarId, left(), plan.placeId).then((arrived) => {
-      if (arrived && plan.toStation) this.options.send(avatarId, this.event(avatarId, plan.station, useId, 'start'));
+      if (arrived && plan.toStation) {
+        atObject = this.options.send(avatarId, this.event(avatarId, plan.station, useId, 'start'));
+      }
       return arrived;
     });
+    // Everything after the tool: the end event, then the way back. It always waits for the outbound move to end
+    // (arrived or failed) before moving back, also when the turn was cancelled meanwhile: a second move while the
+    // first is still going is refused ("already moving") and the avatar would stay away.
+    const comeBack = async (ok: boolean): Promise<void> => {
+      const arrived = await out.catch(() => false);
+      if (arrived && plan.toStation) this.options.send(avatarId, this.event(avatarId, plan.station, useId, 'end', ok));
+      if (!arrived) {
+        // The move failed or timed out. If the avatar is on its way somewhere, wait for that to end.
+        logger?.warn('Station: the avatar did not get there', { avatarId, placeId: plan.placeId });
+        if (places.locationOf(avatarId) === origin && !places.inTransit(avatarId)) return;
+      }
+      const back = places.startMove(avatarId, origin, 'came back');
+      if (!back.ok) {
+        logger?.warn('Station: the avatar could not go back', { avatarId, origin, reason: back.reason });
+        return;
+      }
+      const home = await places.waitForArrival(avatarId, left(), origin);
+      if (!home) logger?.warn('Station: the avatar was not back in time', { avatarId, origin });
+    };
     return {
+      arrived: async () => {
+        await out.then(() => undefined, () => undefined);
+      },
+      activity: (text) => {
+        if (atObject) this.options.send(avatarId, { ...this.event(avatarId, plan.station, useId, 'activity'), activity: text });
+      },
       settle: async (ok, signal) => {
-        const arrived = (await until(out.catch(() => false), signal)) ?? false;
-        if (arrived && plan.toStation) this.options.send(avatarId, this.event(avatarId, plan.station, useId, 'end', ok));
-        if (!arrived) {
-          // The move failed or timed out. If the avatar is on its way somewhere, wait for that to end.
-          logger?.warn('Station: the avatar did not get there', { avatarId, placeId: plan.placeId });
-          if (places.locationOf(avatarId) === origin && !places.inTransit(avatarId)) return;
-        }
-        const back = places.startMove(avatarId, origin, 'came back');
-        if (!back.ok) {
-          logger?.warn('Station: the avatar could not go back', { avatarId, origin, reason: back.reason });
-          return;
-        }
-        // A cancelled turn still sends the avatar home; it just does not wait for it.
-        const home = (await until(places.waitForArrival(avatarId, left(), origin), signal)) ?? true;
-        if (!home) logger?.warn('Station: the avatar was not back in time', { avatarId, origin });
+        // A cancelled turn stops waiting at once; the avatar still goes home, in the background.
+        const home = comeBack(ok).catch((error: unknown) => {
+          logger?.warn('Station: the way back failed', { avatarId, message: error instanceof Error ? error.message : String(error) });
+        });
+        await until(home, signal);
       },
     };
   }

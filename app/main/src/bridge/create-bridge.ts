@@ -88,6 +88,7 @@ import type { PresenceBridge } from '../presence/bridge-types.js';
 import type { FloorBridge } from '../floor/bridge-types.js';
 import type { PlacesBridge, PlacesSnapshot } from '../places/bridge-types.js';
 import type { StationsBridge } from '../stations/bridge-types.js';
+import type { PursuitsBridge } from '../pursuits/types.js';
 import type { RoomHubBridge, RoomHubStatus } from '../room-hub/bridge-types.js';
 import type { GpuMemoryBridge } from '../diagnostics/gpu-memory.js';
 import type { CodingBridge, CodingBusy, CodingBusyBridge, CodingTasksBridge, RunnerEvent } from '../coding/bridge-types.js';
@@ -212,6 +213,7 @@ export interface PreloadApi {
   floor?: FloorBridge;
   places?: PlacesBridge;
   stations?: StationsBridge;
+  pursuits?: PursuitsBridge;
   roomHub?: RoomHubBridge;
   satellite?: SatelliteBridge;
   deviceGate?: DeviceGateBridge;
@@ -785,6 +787,20 @@ export function createBridge(
       arrived: async (useId) => {
         await transport.invoke('station:arrived', useId);
       },
+    },
+    pursuits: {
+      start: (avatarId, stationId) => transport.invoke('pursuits:start', avatarId, stationId) as ReturnType<PursuitsBridge['start']>,
+      stop: async (avatarId) => {
+        await transport.invoke('pursuits:stop', avatarId);
+      },
+      offers: () => transport.invoke('pursuits:offers') as ReturnType<PursuitsBridge['offers']>,
+      running: () => transport.invoke('pursuits:running') as ReturnType<PursuitsBridge['running']>,
+      onChanged: (listener) => {
+        const channel = 'pursuits:changed';
+        const handler = (running: string[]) => listener(running);
+        return transport.on(channel, handler);
+      },
+      notes: (avatarId, limit) => transport.invoke('pursuits:notes', avatarId, limit) as ReturnType<PursuitsBridge['notes']>,
     },
     roomHub: {
       status: () => transport.invoke('room-hub:status') as Promise<RoomHubStatus>,

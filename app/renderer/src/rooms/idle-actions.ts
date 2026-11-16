@@ -18,7 +18,9 @@ const FAR_FROM_HOME = 1.5;
 const COME_WEIGHT = 0.3;
 
 const WAIT_TAG = /\{\s*wait\s*\}/i;
-const FIRST_ACTION_TAG = /\{\s*(?:move|go|sit|stand|look|pick|put|come|room)\b/i;
+const FIRST_ACTION_TAG = /\{\s*(?:move|go|sit|stand|look|pick|put|come|room|read)\b/i;
+const READ_TAG = /\{\s*read\s*:\s*([^}]*)\}/i;
+const plainName = (name: string): string => name.toLowerCase().replace(/^the\s+/, '').replace(/\s+/g, ' ').trim();
 
 const find = (room: RoomFile, ref: string): RoomObject | null => resolveObjectRef(room, ref);
 
@@ -39,6 +41,13 @@ export function startsWithWait(text: string): boolean {
  */
 export function parseIdleReply(text: string, input: IdleInput): IdleTag[] {
   if (startsWithWait(text)) return [{ type: 'wait' }];
+  // {read:<object>} starts a reading session at an offered station. It is the only tag then: main walks the body there.
+  const wantsRead = READ_TAG.exec(text);
+  if (wantsRead) {
+    const wanted = plainName(wantsRead[1] ?? '');
+    const offered = (input.pursuits ?? []).find((pursuit) => [pursuit.objectName, pursuit.objectId, pursuit.stationId].some((name) => plainName(name) === wanted));
+    if (offered) return [{ type: 'read', station: offered.stationId, object: offered.objectId }];
+  }
   const visible = new Set(input.visible.map((object) => object.id));
   const { room, state } = input;
   const usable = (ref: string, needs: (object: RoomObject) => boolean): RoomObject | null => {
@@ -125,6 +134,9 @@ export function idleTagsToText(tags: readonly IdleTag[]): string {
           return `{room:${tag.place.replace(/[{}]/g, '')}}`;
         case 'put':
           return `{put:${tag.object}@${tag.surface}}`;
+        // Reading is started in main, not run as a scene tag.
+        case 'read':
+          return '';
         default:
           return `{${tag.type}:${tag.object}}`;
       }
@@ -178,6 +190,9 @@ export function describeIdleTags(tags: readonly IdleTag[], room: RoomFile): stri
       case 'room':
         parts.push(`went to ${tag.place}`);
         break;
+      case 'read':
+        parts.push(`went to read at the ${name(tag.object)}`);
+        break;
       case 'wait':
         break;
     }
@@ -217,6 +232,12 @@ function candidates(input: IdleInput): Candidate[] {
         weight: 1,
         targets: [object.id],
       });
+    }
+  }
+  // Reading is the character's own pursuit; it stays a live option when the idle model cannot be asked.
+  if (!state.held) {
+    for (const pursuit of input.pursuits ?? []) {
+      found.push({ tags: [{ type: 'read', station: pursuit.stationId, object: pursuit.objectId }], weight: 1.5, targets: [pursuit.objectId] });
     }
   }
   const home = room.home.position;

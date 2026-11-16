@@ -1,6 +1,6 @@
 # Stations
 
-Status: In Progress (phase 1: walk to the object while the tool runs).
+Status: In Progress (phase 1: walk to the object while the tool runs). Reading as a character's own pursuit builds on it: see [reading.md](./reading.md).
 
 A station binds a tool source to an object in a 3D room. The reading library (the DAIR Academy papers MCP server) is kept on the bookshelf of the Reading room: when an avatar uses it, it walks to the bookshelf and acts reading, instead of standing still while the tool runs.
 

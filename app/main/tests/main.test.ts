@@ -140,6 +140,7 @@ const MemoryStoreMock = vi.fn(function () {
     setValue: setValueMock,
     getValue: getValueMock,
     deleteValue: deleteValueMock,
+    deleteReadingNotes: vi.fn(),
     exportData: exportDataMock,
     importData: importDataMock,
     listVrmPoses: vi.fn(() => []),

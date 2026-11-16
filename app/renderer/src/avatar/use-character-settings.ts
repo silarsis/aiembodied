@@ -4,6 +4,7 @@ import { MAX_IDLE_HABITS_LENGTH } from '../../../main/src/rooms/idle-habits.js';
 import type { SpeakingVoiceOptions } from '../../../main/src/local-voice/types.js';
 import type { CharacterSettingsControls } from './character-settings.js';
 import type { AvatarBridge } from './types.js';
+import type { LoadReadingNotes } from './reading-notes.js';
 
 /** Runs a save, shows its error if any, and tells the app something changed. */
 export type Run = (action: () => Promise<unknown>) => Promise<boolean>;
@@ -18,6 +19,8 @@ export interface CharacterSettingsContext {
   isLocalBackend: boolean;
   /** The voice names of the OpenAI backend. */
   realtimeVoices: string[];
+  /** Reads a character's reading notes (read-only); without it the Reading section is left out. */
+  readingNotes?: LoadReadingNotes;
   /** Echo's controls, wired to the app's own state (session instructions, idle persona, voice). */
   echo: CharacterSettingsControls;
 }

@@ -101,4 +101,33 @@ describe('handleStationUse', () => {
     expect(deps.arrived).toHaveBeenCalledWith('use-1');
     warn.mockRestore();
   });
+
+  describe('a pursuit moving on to its next step', () => {
+    const activity: StationUseEvent = { ...start, phase: 'activity', activity: 'jots down notes' };
+
+    it('acts the new activity where the avatar stands, without walking or answering', () => {
+      const { deps, executor, calls } = setup();
+      handleStationUse(activity, deps);
+      expect(calls).toEqual(['gesture echo {move:jots down notes}']);
+      expect(executor.submit).not.toHaveBeenCalled();
+      expect(deps.arrived).not.toHaveBeenCalled();
+    });
+
+    it('does nothing in another room, for an avatar that is elsewhere, or without a body', () => {
+      for (const overrides of [{ room: () => studio }, { isHere: () => false }] as Array<Partial<StationWalkDeps>>) {
+        const { deps, calls } = setup(overrides);
+        handleStationUse(activity, deps);
+        expect(calls).toEqual([]);
+      }
+      const noBody = setup({}, false);
+      handleStationUse(activity, noBody.deps);
+      expect(noBody.calls).toEqual([]);
+    });
+
+    it('cannot slip a tag into the gesture', () => {
+      const { deps, calls } = setup();
+      handleStationUse({ ...activity, activity: 'reads {go:door}' }, deps);
+      expect(calls).toEqual(['gesture echo {move:reads go:door}']);
+    });
+  });
 });

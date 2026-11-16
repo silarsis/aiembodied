@@ -13,7 +13,18 @@ export type IdleTag =
   | { type: 'move'; text: string }
   /** Walk out to another place. Always the last tag; the idle director checks the rules in code before it runs. */
   | { type: 'room'; place: string }
+  /** Go and read at a station (a pursuit, run by main): `station` is the station id, `object` the object it is kept on. */
+  | { type: 'read'; station: string; object: string }
   | { type: 'wait' };
+
+/** Something the avatar may go and do for a while on its own at an object (read at the bookshelf). */
+export interface IdlePursuit {
+  stationId: string;
+  /** The object it is kept on, as a room object id. */
+  objectId: string;
+  /** What the room calls the object: "bookshelf". */
+  objectName: string;
+}
 
 /** Another place an idle avatar could walk to (only listed when it may leave at all). */
 export interface IdlePlace {
@@ -44,4 +55,6 @@ export interface IdleInput {
   others?: Array<{ name: string; where: string | null }>;
   /** The other places that exist, who is in each and whether that PC was used lately; absent with one place. */
   places?: IdlePlace[];
+  /** Things it may go and do on its own here (read at the bookshelf); absent when there are none or it is busy with one. */
+  pursuits?: IdlePursuit[];
 }

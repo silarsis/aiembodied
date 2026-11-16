@@ -14,13 +14,13 @@ export interface UseIdleDirectorOptions extends IdleDirectorInputs {
  * mid-response.
  */
 export function useIdleDirector(options: UseIdleDirectorOptions): { director: IdleDirector; idleNote: string } {
-  const { executor, room, settings, motionReady, persona, phase, pick, run, avatars, nobodyHere, places, canWander } = options;
+  const { executor, room, settings, motionReady, persona, phase, pick, run, avatars, nobodyHere, places, canWander, pursuitsFor, startPursuit, pursuing } = options;
   const [idleNote, setIdleNote] = useState('');
   const { director, setInputs } = useMemo(() => createIdleDirector(executor, setIdleNote), [executor]);
 
   // Declared first, so the director sees the new values when the effects below call it.
   useEffect(() => {
-    setInputs({ room, settings, motionReady, persona, pick, run, avatars, nobodyHere, places, canWander });
+    setInputs({ room, settings, motionReady, persona, pick, run, avatars, nobodyHere, places, canWander, pursuitsFor, startPursuit, pursuing });
   });
   useEffect(() => {
     director.start();

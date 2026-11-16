@@ -27,11 +27,14 @@ export const IDLE_TAG_SYNTAX = [
 /** Added to the tag list only when there are other places to go to. */
 export const IDLE_ROOM_TAG_SYNTAX = '{room:<place>} walk out to another place, as the last tag (rarely: only to find someone)';
 
-export function idleSystemPrompt(name: string, withPlaces = false): string {
+/** Added to the tag list only when the avatar may go and read somewhere. */
+export const IDLE_READ_TAG_SYNTAX = '{read:<object>} go and read something there, as your only tag (you choose what to read once you are there)';
+
+export function idleSystemPrompt(name: string, withPlaces = false, withReading = false): string {
   return [
     `You decide what ${name || 'the character'} does on their own in a room while nobody is talking to them.`,
     'Reply with only 1 to 3 action tags, nothing else.',
-    `Tags: ${IDLE_TAG_SYNTAX}${withPlaces ? `; ${IDLE_ROOM_TAG_SYNTAX}` : ''}.`,
+    `Tags: ${IDLE_TAG_SYNTAX}${withPlaces ? `; ${IDLE_ROOM_TAG_SYNTAX}` : ''}${withReading ? `; ${IDLE_READ_TAG_SYNTAX}` : ''}.`,
     'Name objects exactly as listed. Only use what each object allows.',
   ].join(' ');
 }
@@ -117,11 +120,14 @@ export function buildIdlePrompt(input: IdleInput): IdlePickContext {
     ...(input.places && input.places.length > 0
       ? [`Other places you could walk to (only go to find someone, never just for something to do):\n${input.places.map(describePlace).join('\n')}`]
       : []),
+    ...(input.pursuits && input.pursuits.length > 0
+      ? [`Things they may spend a while on, if they feel like it (reading is their own pursuit, not a chore):\n${input.pursuits.map((p) => `- read something at the ${p.objectName}: {read:${p.objectName}}`).join('\n')}`]
+      : []),
     recent.length > 0
       ? `What they did recently:\n${recent.map((line) => `- ${line}`).join('\n')}`
       : 'What they did recently: nothing yet',
     `Time: ${timeOfDay(input.now)}`,
     'Prefer variety. Use {wait} to stay as you are.',
   ];
-  return { system: idleSystemPrompt(input.name, Boolean(input.places?.length)), user: lines.filter(Boolean).join('\n') };
+  return { system: idleSystemPrompt(input.name, Boolean(input.places?.length), Boolean(input.pursuits?.length)), user: lines.filter(Boolean).join('\n') };
 }

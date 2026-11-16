@@ -235,6 +235,69 @@ describe('StationTrips', () => {
     });
   });
 
+  describe('a turn cancelled while the avatar is still on its way out', () => {
+    it('waits for the outbound arrival, then brings the avatar back (it does not stay away)', async () => {
+      const { trips, places } = setup({ active: STUDIO });
+      const use = trips.begin('echo', papers)!;
+      // The tool is done and the turn is cancelled while the avatar is still walking next door.
+      expect(places.inTransit('echo')).toBe(true);
+      const controller = new AbortController();
+      let done = false;
+      void use.settle(true, controller.signal).then(() => (done = true));
+      controller.abort();
+      await flush();
+      // The caller stops waiting at once...
+      expect(done).toBe(true);
+      // ...but the way back has not been tried yet (a second move now would be refused).
+      expect(places.locationOf('echo')).toBe('home');
+      expect(places.inTransit('echo')).toBe(true);
+      await vi.advanceTimersByTimeAsync(HALLWAY_MS);
+      await flush();
+      // It arrived next door, then came back on its own.
+      await vi.advanceTimersByTimeAsync(HALLWAY_MS);
+      await flush();
+      expect(places.locationOf('echo')).toBe('home');
+      expect(places.inTransit('echo')).toBe(false);
+    });
+  });
+
+  describe('a visit for a pursuit (beginAt)', () => {
+    it('walks to the object, sends activity updates, and ends with an end event', async () => {
+      const { trips, stations, sent } = setup();
+      const station = stations.list()[0];
+      const visit = trips.beginAt('echo', station)!;
+      expect(visit).not.toBeNull();
+      expect(sent[0].event).toMatchObject({ phase: 'start', objectId: 'bookshelf' });
+      visit.activity('jots down notes');
+      expect(sent[1].event).toMatchObject({ phase: 'activity', activity: 'jots down notes', useId: sent[0].event.useId });
+      trips.arrived(sent[0].event.useId);
+      await visit.settle(true);
+      expect(sent[2].event).toMatchObject({ phase: 'end', ok: true });
+    });
+
+    it('stays put for a character the station is not for, and when the avatar is not in a 3D room', () => {
+      const { trips, stations, active } = setup();
+      const station = stations.list()[0];
+      stations.update(station.id, { characters: ['sage'] });
+      expect(trips.beginAt('echo', stations.list()[0])).toBeNull();
+      active.room = null;
+      expect(trips.beginAt('sage', stations.list()[0])).toBeNull();
+    });
+
+    it('goes on an errand to another place and only sends activity once it stands at the object', async () => {
+      const { trips, places, stations, sent } = setup({ active: STUDIO, attic: READING_ROOM_ID });
+      const visit = trips.beginAt('echo', stations.list()[0])!;
+      visit.activity('too early');
+      expect(sent).toHaveLength(0);
+      await flush();
+      await visit.arrived();
+      visit.activity('reads');
+      expect(sent.map((entry) => entry.event.phase)).toEqual(['start', 'activity']);
+      await visit.settle(true);
+      expect(places.locationOf('echo')).toBe('home');
+    });
+  });
+
   describe('the errand cap', () => {
     it('is longer than two place moves, and ends the wait even when moves are slow', async () => {
       const kv = new Map<string, string>();

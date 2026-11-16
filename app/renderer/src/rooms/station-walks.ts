@@ -34,6 +34,13 @@ export interface StationWalkDeps {
 
 /** Handles one `station:use` event. Never throws: a station that cannot be walked to just answers "arrived". */
 export function handleStationUse(event: StationUseEvent, deps: StationWalkDeps): void {
+  // A pursuit moves on to its next step: the avatar acts it out where it stands (no walking, no answer to main).
+  if (event.phase === 'activity') {
+    if (deps.room()?.id === event.roomId && deps.isHere(event.avatarId) && deps.executorFor(event.avatarId)?.world()) {
+      deps.gesture(`{move:${event.activity.replace(/[{}]/g, '')}}`, event.avatarId);
+    }
+    return;
+  }
   // Nothing special at the end: the idle director takes over later and the avatar is not sent back.
   if (event.phase !== 'start') return;
   try {
