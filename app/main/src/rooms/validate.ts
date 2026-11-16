@@ -164,6 +164,12 @@ export function validateRoomFile(raw: unknown): RoomFile {
         const tag = record(tags[key], `${where}.tags.${key}`);
         vec3(tag.position, `${where}.tags.${key}.position`);
         num(tag.facing, `${where}.tags.${key}.facing`);
+        if (key === 'sit' && tag.seat !== undefined) {
+          const seat = record(tag.seat, `${where}.tags.sit.seat`);
+          if (seat.top !== undefined) num(seat.top, `${where}.tags.sit.seat.top`);
+          if (seat.frontEdge !== undefined) positive(seat.frontEdge, `${where}.tags.sit.seat.frontEdge`);
+          if (seat.depth !== undefined) positive(seat.depth, `${where}.tags.sit.seat.depth`);
+        }
       }
       if (tags.grab !== undefined) vec3(record(tags.grab, `${where}.tags.grab`).position, `${where}.tags.grab.position`);
       if (tags.look !== undefined) vec3(record(tags.look, `${where}.tags.look`).position, `${where}.tags.look.position`);

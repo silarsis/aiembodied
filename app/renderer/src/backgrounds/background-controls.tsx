@@ -56,7 +56,7 @@ export function BackgroundControls({
                 checked={walkableArea.shown}
                 onChange={(event) => walkableArea.onChange(event.target.checked)}
               />{' '}
-              Show walkable area
+              Show navmesh and colliders
             </label>
           ) : null}
         </>

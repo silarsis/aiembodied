@@ -190,3 +190,27 @@ describe('RoomStage surfaceHeightAt', () => {
     expect(stage.surfaceHeightAt('sofa', sofa.position[0], sofa.position[2])).toBeCloseTo(sofa.position[1] + sofa.size[1], 6);
   });
 });
+
+describe('RoomStage seat geometry and collider overlay', () => {
+  const room = builtInRoom('reading-room');
+
+  it('reports a turned armchair seat in world space', async () => {
+    const stage = await RoomStage.create(room);
+    const seat = stage.seatGeometry('armchair')!;
+    expect(seat.seatTopY).toBeCloseTo(0.52, 2);
+    expect(seat.facing).toBeCloseTo(40);
+    expect(seat.backRest?.top).toBeCloseTo(0.955, 2);
+    expect(stage.seatGeometry('bookshelf')).toBeNull();
+    stage.dispose();
+  });
+
+  it('draws the colliders while the debug overlay is on', async () => {
+    const stage = await RoomStage.create(room);
+    stage.setDebugNavmesh(true);
+    stage.step(1 / 60);
+    expect(stage.group.getObjectByName('debug:colliders')).toBeDefined();
+    stage.setDebugNavmesh(false);
+    expect(stage.group.getObjectByName('debug:colliders')).toBeUndefined();
+    stage.dispose();
+  });
+});

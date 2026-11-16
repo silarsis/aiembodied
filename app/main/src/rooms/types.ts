@@ -45,6 +45,8 @@ export interface SitTag {
   position: Vec3;
   /** Degrees, 0 = +Z. */
   facing: number;
+  /** Replaces what is measured from the object's shapes (object-local metres): cushion top, tag-to-front-edge and seat depth. */
+  seat?: { top?: number; frontEdge?: number; depth?: number };
 }
 export interface StandTag {
   position: Vec3;
