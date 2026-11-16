@@ -90,6 +90,11 @@ export class RoomStage {
     return this.physics !== null;
   }
 
+  /** The physics world for geometry queries (the contact solver's), or null when it failed to start. */
+  get collision(): RoomPhysics | null {
+    return this.physics;
+  }
+
   get hasNavigation(): boolean {
     return this.navmesh !== null;
   }

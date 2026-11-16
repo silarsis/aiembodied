@@ -235,6 +235,7 @@ export class RoomSceneController {
   detachCompanion(id: string): void {
     this.hiddenIds.delete(id);
     this.companionEnvs.get(id)?.releaseHeld();
+    this.companionEnvs.get(id)?.disposeContact();
     this.companionEnvs.delete(id);
     this.occupancy.forget(id);
     this.companions.detach(id);
@@ -271,6 +272,7 @@ export class RoomSceneController {
   /** Call once per frame after the animation mixer has run. */
   step(dt: number): void {
     this.sceneEnv.step(dt);
+    if (!this.hiddenIds.has('echo')) this.sceneEnv.solveContact(dt);
     for (const env of this.companionEnvs.values()) env.step(dt);
     const echoHidden = this.hiddenIds.has('echo');
     if (echoHidden) this.stage?.parkEcho();
@@ -279,6 +281,14 @@ export class RoomSceneController {
       echoHidden ? null : (this.body ?? this.avatar),
       this.hiddenIds.size === 0 ? this.companions.bodies() : this.companions.bodies().filter((body) => !this.hiddenIds.has(body.id)),
     );
+  }
+
+  /**
+   * Call after a companion's own animation mixer has run (its pose is reset every frame), before its VRM
+   * update: keeps its limbs out of furniture.
+   */
+  stepCompanion(id: string, dt: number): void {
+    if (!this.hiddenIds.has(id)) this.companionEnvs.get(id)?.solveContact(dt);
   }
 
   setDebugNavmesh(on: boolean): void {
@@ -291,6 +301,8 @@ export class RoomSceneController {
     if (this.avatar && this.avatarBase) this.restoreAvatar();
     this.companions.restore();
     this.companions.clear();
+    for (const env of this.companionEnvs.values()) env.disposeContact();
+    this.sceneEnv.disposeContact();
     this.companionEnvs.clear();
     this.occupancy.clear();
     this.disposeStage();

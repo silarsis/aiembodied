@@ -6,6 +6,7 @@ import type { SceneEnv } from './scene-executor.js';
 import type { RootPose } from './scene-frames.js';
 import type { RoomStage } from './room-stage.js';
 import type { RoomOccupancy } from './room-occupancy.js';
+import { ContactBody } from './contact-body.js';
 import { easeOffset, seatOffsetTarget, seatedContactY } from './seat-fit.js';
 
 /** The parts of the loaded avatar that scene actions need. */
@@ -65,6 +66,11 @@ export class RoomSceneEnv implements SceneEnv {
   /** The vertical offset currently added to the avatar root's y by the seat fit (metres). */
   private seatOffset = 0;
   private seatRig: AvatarRig | null = null;
+  /** The limb contact solver of the current rig (see contact-body.ts). */
+  private contact: ContactBody | null = null;
+  private contactRig: AvatarRig | null = null;
+  private carriedCache: string[] = [];
+  private carriedDirty = false;
 
   constructor(private readonly host: SceneEnvHost) {}
 
@@ -117,6 +123,7 @@ export class RoomSceneEnv implements SceneEnv {
     if (!stage || !rig || !node || !bone || this.carried.has(objectId)) return false;
     const origin = stage.objectPosition(objectId) ?? [0, 0, 0];
     this.carried.set(objectId, { hand, origin, yaw: stage.objectYaw(objectId) });
+    this.carriedDirty = true;
     rig.scene.updateWorldMatrix(true, true);
     bone.attach(node); // keeps its world transform, then follows the hand
     stage.setHeld(objectId, true);
@@ -189,6 +196,7 @@ export class RoomSceneEnv implements SceneEnv {
       const node = stage?.objectNode(objectId);
       if (stage && node) this.putDown(stage, objectId, node, entry.origin, entry.yaw, entry.hand);
       else this.carried.delete(objectId);
+      this.carriedDirty = true;
     }
     for (const grip of this.grips.values()) grip.setGripped(false);
   }
@@ -201,6 +209,45 @@ export class RoomSceneEnv implements SceneEnv {
     for (const grip of this.grips.values()) if (grip.active) grip.update(deltaSeconds);
     this.easeCarried(deltaSeconds);
     this.fitSeat(rig, deltaSeconds);
+  }
+
+  /**
+   * Keeps the avatar's limbs out of furniture (see contact-body.ts). Call once per frame after the animation
+   * mixer, `step` (grip and seat fit) and before the VRM's own update, for every avatar in the room.
+   */
+  solveContact(deltaSeconds: number): void {
+    const rig = this.host.rig();
+    const stage = this.host.stage();
+    if (!rig) return;
+    if (!stage) {
+      // The room went away and the root was put back to its 2D place, lift included.
+      this.contact?.resetLift();
+      return;
+    }
+    let contact = this.contact;
+    if (!contact || this.contactRig !== rig) {
+      contact?.dispose();
+      contact = new ContactBody(rig.humanoid);
+      this.contact = contact;
+      this.contactRig = rig;
+    }
+    if (this.carriedDirty) {
+      this.carriedCache = [...this.carried.keys()];
+      this.carriedDirty = false;
+    }
+    contact.update(rig, stage.collision, deltaSeconds, this.carriedCache, stage.debugNavmesh ? stage.group : null);
+  }
+
+  /** The solver of the current rig (null before its first frame); its misses are for the scene planner. */
+  get contactBody(): ContactBody | null {
+    return this.contact;
+  }
+
+  /** Drops the contact solver (the avatar left or the room went away). */
+  disposeContact(): void {
+    this.contact?.dispose();
+    this.contact = null;
+    this.contactRig = null;
   }
 
   /** Eases each freshly grabbed object into the palm. */
@@ -258,6 +305,7 @@ export class RoomSceneEnv implements SceneEnv {
     stage.propParent.add(node); // the physics sync and placeObject set its pose in room space
     stage.placeObject(objectId, origin, yaw);
     this.carried.delete(objectId);
+    this.carriedDirty = true;
     this.grips.get(hand)?.setGripped(false);
   }
 
