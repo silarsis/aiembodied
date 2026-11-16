@@ -114,6 +114,21 @@ describe('SceneCast', () => {
     expect(screen.getByText('Echo wears the active character picked below.')).toBeInTheDocument();
   });
 
+  it('lets Echo change body through the host picker, never the profile API', async () => {
+    const api = makeApi();
+    const onPickHostBody = vi.fn(async () => undefined);
+    const onChanged = vi.fn();
+    render(<SceneCast api={api} profiles={[echo, sage]} models={models} onPickHostBody={onPickHostBody} onChanged={onChanged} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Echo' }));
+    const body = screen.getByLabelText('Body of Echo') as HTMLSelectElement;
+    expect(body).not.toBeDisabled();
+    expect(Array.from(body.options).map((option) => option.value)).toEqual(['m1', 'm2', 'm3']);
+    fireEvent.change(body, { target: { value: 'm3' } });
+    await waitFor(() => expect(onPickHostBody).toHaveBeenCalledWith('m3'));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(api.update).not.toHaveBeenCalled();
+  });
+
   it('confirms before removing, and Echo has no Remove', async () => {
     const api = makeApi();
     const onChanged = vi.fn();

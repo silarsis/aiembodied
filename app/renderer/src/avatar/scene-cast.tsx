@@ -24,6 +24,8 @@ interface Props {
   onChanged?: () => void | Promise<void>;
   /** How to read and save each character's prompt, idle habits and voice. Without it Edit has only name and body. */
   settings?: CharacterSettingsContext;
+  /** Puts the host (Echo) in another body: makes that model the active one. Without it Echo's body can't be changed here. */
+  onPickHostBody?: (modelId: string) => Promise<void>;
 }
 
 function message(error: unknown): string {
@@ -52,16 +54,25 @@ function OtherSettings({ context, api, profile, ownBody, run }: {
 }
 
 /** The edit fields: name and body on one row, then the character's own settings. */
-function CardEditor({ api, profile, models, ownBody, settings, run }: {
+function CardEditor({ api, profile, models, ownBody, settings, run, onPickHostBody }: {
   api: AvatarsBridge;
   profile: AvatarProfile;
   models: SceneCastModel[];
   ownBody: boolean;
   settings?: CharacterSettingsContext;
   run: Run;
+  onPickHostBody?: (modelId: string) => Promise<void>;
 }) {
   const [name, setName] = useState(profile.name);
   const isEcho = profile.id === ECHO_ID;
+  // Echo always wears the active model, so its body is changed by activating another one.
+  const pickBody = (modelId: string) => {
+    if (isEcho) {
+      if (modelId && onPickHostBody && modelId !== profile.vrmModelId) void run(() => onPickHostBody(modelId));
+      return;
+    }
+    void run(() => api.update(profile.id, { vrmModelId: modelId || null }));
+  };
   return (
     <div className="sceneCard__edit">
       <div className="sceneCard__pair">
@@ -84,17 +95,27 @@ function CardEditor({ api, profile, models, ownBody, settings, run }: {
           <select
             aria-label={`Body of ${profile.name}`}
             value={profile.vrmModelId ?? ''}
-            disabled={isEcho}
-            onChange={(event) => void run(() => api.update(profile.id, { vrmModelId: event.target.value || null }))}
+            disabled={isEcho && !onPickHostBody}
+            onChange={(event) => pickBody(event.target.value)}
           >
-            <option value="">{isEcho ? 'Active character' : "Same look as Echo"}</option>
+            {isEcho ? (
+              profile.vrmModelId ? null : <option value="">No body yet</option>
+            ) : (
+              <option value="">Same look as Echo</option>
+            )}
             {models.map((model) => (
               <option key={model.id} value={model.id}>{model.name}</option>
             ))}
           </select>
         </label>
       </div>
-      {isEcho ? <small className="kiosk__helper">Echo wears the active character picked below.</small> : null}
+      {isEcho ? (
+        <small className="kiosk__helper">
+          {onPickHostBody
+            ? 'Echo wears the active model in the library below. Prompt and voice are saved per body, so a new body brings its own.'
+            : 'Echo wears the active character picked below.'}
+        </small>
+      ) : null}
       {settings ? (
         isEcho ? (
           <CharacterSettings name={profile.name} controls={settings.echo} />
@@ -107,13 +128,14 @@ function CardEditor({ api, profile, models, ownBody, settings, run }: {
   );
 }
 
-function CastCard({ api, profile, models, echoModelId, settings, run }: {
+function CastCard({ api, profile, models, echoModelId, settings, run, onPickHostBody }: {
   api: AvatarsBridge;
   profile: AvatarProfile;
   models: SceneCastModel[];
   echoModelId: string | null;
   settings?: CharacterSettingsContext;
   run: Run;
+  onPickHostBody?: (modelId: string) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -167,12 +189,12 @@ function CastCard({ api, profile, models, echoModelId, settings, run }: {
           <button type="button" aria-label={`Cancel removing ${profile.name}`} onClick={() => setConfirming(false)}>Cancel</button>
         </div>
       ) : null}
-      {editing ? <CardEditor api={api} profile={profile} models={models} ownBody={ownBody} settings={settings} run={run} /> : null}
+      {editing ? <CardEditor api={api} profile={profile} models={models} ownBody={ownBody} settings={settings} run={run} onPickHostBody={onPickHostBody} /> : null}
     </li>
   );
 }
 
-export function SceneCast({ api, profiles, models, roomActive = false, onChanged, settings }: Props) {
+export function SceneCast({ api, profiles, models, roomActive = false, onChanged, settings, onPickHostBody }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const [newPrompt, setNewPrompt] = useState('');
@@ -218,7 +240,7 @@ export function SceneCast({ api, profiles, models, roomActive = false, onChanged
       ) : null}
       <ul className="sceneCast__list" aria-label="Characters in the scene">
         {profiles.map((profile) => (
-          <CastCard api={api} key={profile.id} profile={profile} models={models} echoModelId={echoModelId} settings={settings} run={run} />
+          <CastCard api={api} key={profile.id} profile={profile} models={models} echoModelId={echoModelId} settings={settings} run={run} onPickHostBody={onPickHostBody} />
         ))}
       </ul>
 

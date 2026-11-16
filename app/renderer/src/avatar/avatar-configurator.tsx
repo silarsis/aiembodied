@@ -22,6 +22,8 @@ interface AvatarConfiguratorProps {
   children?: ReactNode;
   avatarApi?: AvatarBridge;
   onActiveModelChange?: (detail: AvatarModelSummary | null) => void;
+  /** The active model as the app knows it, so a change made elsewhere (Echo's body picker) shows here too. */
+  activeModelId?: string | null;
   /**
    * When set, the avatar studio is opened from outside (the app's Avatar button) instead
    * of by the launcher section at the bottom of the library.
@@ -80,12 +82,16 @@ function formatTimestamp(value: number): string {
 export function AvatarConfigurator({
   avatarApi,
   onActiveModelChange,
+  activeModelId: activeModelIdFromApp,
   compact = false,
   children,
   studio,
 }: AvatarConfiguratorProps) {
   const [models, setModels] = useState<AvatarModelSummary[]>([]);
   const [activeModelId, setActiveModelId] = useState<string | null>(null);
+  useEffect(() => {
+    if (activeModelIdFromApp !== undefined) setActiveModelId(activeModelIdFromApp);
+  }, [activeModelIdFromApp]);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [modelBusyId, setModelBusyId] = useState<string | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);

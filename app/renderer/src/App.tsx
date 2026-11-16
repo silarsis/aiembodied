@@ -3531,9 +3531,18 @@ export default function App() {
                 await refreshAvatars();
               }}
               settings={characterSettings}
+              onPickHostBody={
+                activeBridge?.avatar?.setActiveModel
+                  ? async (modelId) => {
+                      const detail = await activeBridge?.avatar?.setActiveModel(modelId);
+                      setActiveVrmModel(detail ?? null);
+                    }
+                  : undefined
+              }
             />
             <AvatarConfigurator
               avatarApi={activeBridge?.avatar}
+              activeModelId={activeVrmModel?.id ?? null}
               onActiveModelChange={setActiveVrmModel}
               studio={{ open: studioOpen, onClose: () => setStudioOpen(false) }}
               compact
