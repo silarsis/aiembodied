@@ -3245,7 +3245,7 @@ export default function App() {
                   animationVersion={0}
                   room={backgrounds.activeRoom}
                   roomAvatarHeight={backgrounds.idleSettings.avatarHeight}
-                  showWalkableArea={showDeveloperHud && showWalkableArea}
+                  showWalkableArea={showWalkableArea}
                   sceneActions={sceneActions}
                   sceneExecutors={sceneExecutorFor}
                   {...(placesSnapshot ? { hiddenIds, onBodyReady: handleBodyReady } : {})}
@@ -3566,7 +3566,7 @@ export default function App() {
           <PanelDialog id="backgrounds" title="Backgrounds" subtitle="Pick a scene or describe a new one." open={panel === 'backgrounds'} onClose={closePanel}>
             <BackgroundControls
               backgrounds={backgrounds}
-              walkableArea={showDeveloperHud ? { shown: showWalkableArea, onChange: setShowWalkableArea } : undefined}
+              walkableArea={{ shown: showWalkableArea, onChange: setShowWalkableArea }}
             />
           </PanelDialog>
 
@@ -3628,6 +3628,14 @@ export default function App() {
               </div>
             ) : null}
             <RoomDevicesStatus roomHub={activeBridge?.roomHub} active={panel === 'status'} />
+            <label className="kiosk__helper">
+              <input
+                type="checkbox"
+                checked={showWalkableArea}
+                onChange={(event) => setShowWalkableArea(event.target.checked)}
+              />{' '}
+              Show navmesh and colliders (3D rooms)
+            </label>
             <div className="kiosk__statusBar">
               <div
                 className={`statusChip statusChip--${wakeStatusVariant}`}
