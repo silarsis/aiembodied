@@ -23,6 +23,14 @@ HAND_LENGTH_M = 0.18  # SOMA wrist -> middle fingertip, measured on generated fr
 DEFAULT_CORNER_RADIUS = 0.6
 ARC_SPACING_M = 0.05
 PATH_END_HOLD_S = 0.5
+OBSERVED_FRAMES = 4  # a continued stream's first frames are pinned to the observed pose
+
+# Request joint name -> SOMA joint name. SOMA's "Leg" is the thigh (the hip joint: heading_of uses it for the
+# hip line) and "Shin" starts at the knee, so the knee is LeftShin / RightShin and the ankle LeftFoot / RightFoot.
+JOINT_TARGETS = {
+    "left_knee": "LeftShin", "right_knee": "RightShin",
+    "left_ankle": "LeftFoot", "right_ankle": "RightFoot",
+}
 
 
 # ----------------------------------------------------------------------------------------------
@@ -245,6 +253,8 @@ class ConstraintPlan:
                 tg.joints[(f, name)] = xyz
             for name, rot in e.rots.items():
                 tg.rots[(f, name)] = rot
+        # ARDY only takes a joint position on a frame whose pelvis x/z is also constrained
+        tg.joints = {k: v for k, v in tg.joints.items() if k[0] in tg.root2d}
         return tg
 
 
@@ -265,8 +275,18 @@ class TargetParams:
     height: Optional[float] = None
     heading: Optional[float] = None
     hand: Optional[str] = None  # "left" | "right"
-    position: Optional[Sequence[float]] = None  # wrist, with hand
+    position: Optional[Sequence[float]] = None  # wrist with hand, else the position of `joint`
     reveal_s: float = 0.0
+    joint: Optional[str] = None  # a JOINT_TARGETS key: one joint position target (no hand bundle)
+
+
+@dataclass
+class ObservedParams:
+    """Where the body actually is when a stream is continued (motion frame, avatar metres)."""
+
+    joints: Mapping[str, Sequence[float]] = field(default_factory=dict)  # JOINT_TARGETS key -> [x, y, z]
+    root: Optional[Sequence[float]] = None  # [x, z]
+    height: Optional[float] = None
 
 
 def seconds_to_frame_ceil(seconds: float, fps: float) -> int:
@@ -289,10 +309,12 @@ def hand_bundle(hand: str, wrist_xyz: Sequence[float], heading: float, hand_leng
 
 
 def build_plan(path: Optional[PathParams], targets: Sequence[TargetParams], fps: float, scale: float = 1.0,
-               total_frames: Optional[int] = None, hand_length: float = HAND_LENGTH_M) -> ConstraintPlan:
+               total_frames: Optional[int] = None, hand_length: float = HAND_LENGTH_M,
+               observed: Optional[ObservedParams] = None) -> ConstraintPlan:
     """Turn the request's path and targets (avatar metres) into per-frame model-unit constraints.
 
-    Path frames come first so that explicit targets override them. Frames at or beyond `total_frames` are dropped."""
+    Path frames come first so that explicit targets override them. Frames at or beyond `total_frames` are dropped.
+    `observed` (a continued stream) is applied last, as hard targets on the first OBSERVED_FRAMES frames."""
     plan = ConstraintPlan(fps=fps)
     limit = total_frames if total_frames is not None else 10**9
 
@@ -319,11 +341,22 @@ def build_plan(path: Optional[PathParams], targets: Sequence[TargetParams], fps:
                 raise ValueError("a hand target needs position, root, height and heading")
             wrist = to_model_units(np.asarray(tp.position), scale)
             joints, rots = hand_bundle(tp.hand, wrist, tp.heading, hand_length)
+        elif tp.joint is not None:
+            if tp.position is None:
+                raise ValueError("a joint target needs position")
+            joints = {JOINT_TARGETS[tp.joint]: tuple(float(v) for v in to_model_units(np.asarray(tp.position), scale))}
         for f in range(t_f, min(u_f, limit - 1) + 1):
             plan.entries.append(Entry(frame=f, reveal=reveal, root=root, height=height, heading=tp.heading,
                                       joints=dict(joints), rots=dict(rots)))
         if root is not None:
             plan.snaps.append(SnapTarget(t_f, u_f, root[0], root[1]))
+    if observed is not None:
+        o_root = None if observed.root is None else tuple(float(v) for v in to_model_units(np.asarray(observed.root), scale))
+        o_height = None if observed.height is None else to_model_units(observed.height, scale)
+        o_joints = {JOINT_TARGETS[k]: tuple(float(v) for v in to_model_units(np.asarray(p), scale))
+                    for k, p in observed.joints.items()}
+        for f in range(min(OBSERVED_FRAMES, limit)):
+            plan.entries.append(Entry(frame=f, root=o_root, height=o_height, joints=dict(o_joints)))
     plan.snaps.sort(key=lambda s: s.t)
     return plan
 

@@ -117,4 +117,14 @@ describe('idle prompt with other places', () => {
     expect(user).toContain('- the loft: Sage and Rex are there; nobody used that PC lately');
     expect(user).toContain('- the shed: nobody is there; someone used that PC in the last 10 minutes');
   });
+
+  it('adds where the feet are while seated and what the body could not do lately', () => {
+    const seated: IdleInput['state'] = { posture: 'seated', held: null, seat: { objectId: 'sofa', session: 's', frame: { origin: { x: 0, z: 0, yaw: 0 }, scale: 1 }, approach: [0, 0, 0], facing: 0 } };
+    const contact = { feet: 'feet dangling', failures: ["couldn't reach its left knee target (blocked by sofa)"] };
+    expect(describeState(input({ state: seated, contact }))).toBe('seated on the sofa, feet dangling');
+    const { user } = buildIdlePrompt(input({ state: seated, contact }));
+    expect(user).toContain('Right now: seated on the sofa, feet dangling\nYour body just'.replace('\\n', '\n'));
+    expect(user).toContain("Your body just couldn't reach its left knee target (blocked by sofa).");
+    expect(buildIdlePrompt(input({ state: seated })).user).not.toContain('Your body just');
+  });
 });

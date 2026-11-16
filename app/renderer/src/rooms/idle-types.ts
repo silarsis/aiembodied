@@ -35,6 +35,8 @@ export interface IdleInput {
   state: AvatarState;
   /** Where the avatar stands (world). */
   position: Vec3;
+  /** What the body says about itself: where the feet are while seated, what it could not reach lately. */
+  contact?: { feet?: string | null; failures?: string[] };
   /** The last few idle actions, newest last, as written for the log. */
   recent: string[];
   now: Date;

@@ -8,6 +8,7 @@ import type {
   AvatarMotionEndPose,
   AvatarMotionPath,
   AvatarMotionPhase,
+  AvatarMotionObserved,
   AvatarMotionTarget,
 } from '../types.js';
 
@@ -37,12 +38,13 @@ export interface MotionRequest {
   targets?: AvatarMotionTarget[];
   constraintWeight?: number;
   continueFrom?: string;
+  observed?: AvatarMotionObserved;
   snapS?: number;
 }
 
 /** The JSON body the service expects: the camelCase control fields become snake_case. */
 export function toWireRequest(request: MotionRequest): Record<string, unknown> {
-  const { phases, path, targets, constraintWeight, continueFrom, snapS, ...rest } = request;
+  const { phases, path, targets, constraintWeight, continueFrom, observed, snapS, ...rest } = request;
   const wire: Record<string, unknown> = { ...rest };
   if (phases?.length) {
     wire.phases = phases.map((phase) => ({ prompt: phase.prompt, start_s: phase.startS }));
@@ -66,12 +68,14 @@ export function toWireRequest(request: MotionRequest): Record<string, unknown> {
         heading: target.heading,
         reveal_s: target.revealS,
         hand: target.hand,
+        joint: target.joint,
         position: target.position,
       }),
     );
   }
   if (constraintWeight !== undefined) wire.constraint_weight = constraintWeight;
   if (continueFrom) wire.continue_from = continueFrom;
+  if (observed && continueFrom) wire.observed = observed;
   if (snapS !== undefined) wire.snap_s = snapS;
   return wire;
 }

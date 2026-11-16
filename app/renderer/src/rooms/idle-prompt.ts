@@ -79,7 +79,7 @@ export function describeState(input: IdleInput): string {
   const nameOf = (id: string) => room.objects.find((object) => object.id === id)?.name ?? id;
   const where =
     state.posture === 'seated' && state.seat
-      ? `seated on the ${nameOf(state.seat.objectId)}`
+      ? `seated on the ${nameOf(state.seat.objectId)}${input.contact?.feet ? `, ${input.contact.feet}` : ''}`
       : (() => {
           const near = nearestObject(room.objects, input.position);
           return near ? `standing near the ${near.name}` : 'standing in the middle of the room';
@@ -108,6 +108,7 @@ export function buildIdlePrompt(input: IdleInput): IdlePickContext {
     'Things they can see and reach:',
     ...(things.length > 0 ? things.map(describeObject) : ['- nothing in particular']),
     `Right now: ${describeState(input)}`,
+    ...(input.contact?.failures?.length ? [`Your body just ${input.contact.failures.join('; and ')}.`] : []),
     ...(input.others && input.others.length > 0
       ? [
           `Others in the room:\n${input.others.map((other) => `- ${other.name || 'someone'} is ${other.where ?? 'in the room'}`).join('\n')}`,

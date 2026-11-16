@@ -16,11 +16,14 @@ import {
   type PlannedStream,
   type SceneAction,
   walkStart,
+  sitLegTargets,
+  type RestLegLengths,
 } from '../../src/rooms/scene-actions.js';
 import type { AvatarMotionTarget } from '../../src/avatar/types.js';
-import { motionToWorld, worldToMotion, type MotionFrame } from '../../src/rooms/scene-frames.js';
+import { motionPointToWorld, motionToWorld, worldToMotion, type MotionFrame } from '../../src/rooms/scene-frames.js';
 import { RoomOccupancy } from '../../src/rooms/room-occupancy.js';
 import { sideStepPath } from '../../src/rooms/scene-actions.js';
+import type { WorldSeatGeometry } from '../../src/rooms/seat-geometry.js';
 import { builtInRoom } from './fixtures.js';
 
 const REST_HIPS = 0.95;
@@ -616,5 +619,119 @@ describe('leaving by the door', () => {
 
   it('turns a {room:} tag into the walk to the door', () => {
     expect(tagToAction(room, { type: 'room', place: 'next door' })).toEqual({ kind: 'exit' });
+  });
+});
+
+describe('sit leg targets', () => {
+  const LEGS: RestLegLengths = { thigh: 0.42, shin: 0.46, ankleHeight: 0.08 };
+  const GEOMETRY: WorldSeatGeometry = {
+    seatTopY: 0.45,
+    frontEdge: 0.22,
+    depth: 0.6,
+    backRest: null,
+    footFloorY: 0,
+    position: [0, 0.45, 0],
+    facing: 0,
+  };
+
+  function sitAt(scale: number, geometry = GEOMETRY, legs: RestLegLengths | null = LEGS): AvatarMotionTarget[] {
+    const sit = stage.worldTag('sofa', 'sit')!;
+    const f = ((sit.facing ?? 0) * Math.PI) / 180;
+    const base = worldAt(sit.position[0] + 0.45 * Math.sin(f), sit.position[2] + 0.45 * Math.cos(f), 180, scale);
+    const world: PlanWorld = { ...base, seatGeometry: () => geometry, ...(legs ? { restLegLengths: legs } : {}) };
+    return streamOf(planAction(world, INITIAL_STATE, { kind: 'sit', objectId: 'sofa' })).request.targets!;
+  }
+
+  it('sends nothing extra without a seat geometry or leg lengths', () => {
+    const sit = stage.worldTag('sofa', 'sit')!;
+    const f = ((sit.facing ?? 0) * Math.PI) / 180;
+    const base = worldAt(sit.position[0] + 0.45 * Math.sin(f), sit.position[2] + 0.45 * Math.cos(f), 180);
+    const plain = streamOf(planAction(base, INITIAL_STATE, { kind: 'sit', objectId: 'sofa' })).request.targets!;
+    expect(plain.some((t) => t.joint)).toBe(false);
+    expect(sitAt(1, GEOMETRY, null).some((t) => t.joint)).toBe(false);
+    const nullGeometry = { ...base, seatGeometry: () => null, restLegLengths: LEGS };
+    const none = streamOf(planAction(nullGeometry, INITIAL_STATE, { kind: 'sit', objectId: 'sofa' })).request.targets!;
+    expect(none).toEqual(plain);
+  });
+
+  it('puts the knees just past the front edge and the ankles on the floor below them, over the last 0.5 s', () => {
+    const targets = sitAt(1);
+    const root = targets.find((t) => t.root)!;
+    const joints = targets.filter((t) => t.joint);
+    expect(joints.map((t) => t.joint).sort()).toEqual(['left_ankle', 'left_knee', 'right_ankle', 'right_knee']);
+    for (const t of joints) {
+      expect(t.until).toBeCloseTo(root.until!, 6);
+      expect(t.until! - t.t).toBeCloseTo(0.5, 6);
+      expect(t.t).toBeGreaterThanOrEqual(root.t);
+      expect(t.revealS).toBe(root.revealS);
+    }
+    const sit = stage.worldTag('sofa', 'sit')!;
+    const facing = ((sit.facing ?? 0) * Math.PI) / 180;
+    // Back to the world, relative to the seat anchor, along and across the facing direction.
+    const local = (t: AvatarMotionTarget) => {
+      const sitFrame: MotionFrame = { origin: { x: sit.position[0] + 0.45 * Math.sin(facing), z: sit.position[2] + 0.45 * Math.cos(facing), yaw: Math.PI }, scale: 1 };
+      const [x, y, z] = motionPointToWorld(sitFrame, t.position!);
+      const dx = x - sit.position[0];
+      const dz = z - sit.position[2];
+      return { along: dx * Math.sin(facing) + dz * Math.cos(facing), across: dx * Math.cos(facing) - dz * Math.sin(facing), y };
+    };
+    const leftKnee = local(joints.find((t) => t.joint === 'left_knee')!);
+    const rightKnee = local(joints.find((t) => t.joint === 'right_knee')!);
+    expect(leftKnee.along).toBeCloseTo(0.25, 2); // 0.22 front edge + 0.03
+    expect(leftKnee.y).toBeCloseTo(0.52, 2); // seat top + thigh radius
+    expect(Math.abs(leftKnee.across - rightKnee.across)).toBeCloseTo(0.18, 2);
+    expect(leftKnee.across).toBeGreaterThan(rightKnee.across); // the character's left
+    const leftAnkle = local(joints.find((t) => t.joint === 'left_ankle')!);
+    expect(leftAnkle.y).toBeCloseTo(0.08, 2); // floor + ankle height
+    expect(leftAnkle.along).toBeGreaterThanOrEqual(leftKnee.along); // a straight shin: at or just in front of the knee
+    expect(Math.hypot(leftAnkle.along - leftKnee.along, leftAnkle.y - leftKnee.y)).toBeCloseTo(0.46, 2);
+  });
+
+  it('lets the feet hang a shin below the knees when the floor is out of reach', () => {
+    const targets = sitAt(1, { ...GEOMETRY, seatTopY: 0.9 });
+    const knee = targets.find((t) => t.joint === 'left_knee')!;
+    const ankle = targets.find((t) => t.joint === 'left_ankle')!;
+    expect(knee.position![1]! - ankle.position![1]!).toBeCloseTo(0.46, 3);
+    expect(ankle.position![0]).toBeCloseTo(knee.position![0], 6);
+    expect(ankle.position![2]).toBeCloseTo(knee.position![2], 6);
+  });
+
+  it('works in avatar metres: a larger avatar (scale 1.25) gets the same pose in its own units', () => {
+    const small = sitAt(1);
+    const big = sitAt(1.25);
+    const heightOf = (targets: AvatarMotionTarget[], joint: string) => targets.find((t) => t.joint === joint)!.position![1]!;
+    // Seat 0.45 m high is 0.36 avatar metres at scale 1.25, so knees sit lower in avatar units.
+    expect(heightOf(big, 'left_knee')).toBeCloseTo((0.45 + 0.07 * 1.25) / 1.25, 2);
+    expect(heightOf(big, 'left_knee')).toBeLessThan(heightOf(small, 'left_knee'));
+  });
+
+  it('keeps the knees within reach of the pelvis', () => {
+    const pure = sitLegTargets(
+      { origin: { x: 0, z: 0, yaw: 0 }, scale: 1 },
+      [0, 0.45, 0],
+      0,
+      0.53,
+      { ...GEOMETRY, frontEdge: 0.9 },
+      LEGS,
+      { t: 3, until: 3.5, revealS: 2 },
+    );
+    const knee = pure.find((t) => t.joint === 'left_knee')!;
+    expect(Math.hypot(knee.position![2]!, knee.position![1]! - 0.53)).toBeLessThanOrEqual(0.42 + 1e-3);
+  });
+
+  it('measures a real sofa: the planned sit carries leg targets', () => {
+    const geometry = stage.seatGeometry('sofa')!;
+    const targets = sitAt(1, geometry);
+    expect(targets.filter((t) => t.joint)).toHaveLength(4);
+    expect(targets.find((t) => t.joint === 'left_knee')!.position![1]).toBeCloseTo(geometry.seatTopY + 0.07, 2);
+  });
+
+  it('plans a settle stream that holds the pelvis target', () => {
+    const sit = stage.worldTag('sofa', 'sit')!;
+    const f = ((sit.facing ?? 0) * Math.PI) / 180;
+    const base = worldAt(sit.position[0] + 0.45 * Math.sin(f), sit.position[2] + 0.45 * Math.cos(f), 180);
+    const stream = streamOf(planAction(base, INITIAL_STATE, { kind: 'sit', objectId: 'sofa' }));
+    expect(stream.settle?.prompt).toBe('a person turns around and sits down on a chair');
+    expect(stream.settle?.targets[0]).toMatchObject({ root: stream.request.targets![0]!.root, revealS: 0 });
   });
 });

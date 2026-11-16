@@ -85,7 +85,19 @@ export interface AvatarMotionTarget {
   /** The target is only shown to the model for chunks starting at or after this time. */
   revealS?: number;
   hand?: 'left' | 'right';
+  /** A single joint position target (no hand bundle); `position` is then that joint's position. */
+  joint?: AvatarMotionJoint;
   position?: [number, number, number];
+}
+
+/** Joints a target or an observed pose can name (SOMA knees are the shin joints, ankles the feet). */
+export type AvatarMotionJoint = 'left_knee' | 'right_knee' | 'left_ankle' | 'right_ankle';
+
+/** Where the body actually is when a stream is continued (motion frame, avatar metres). */
+export interface AvatarMotionObserved {
+  joints?: Partial<Record<AvatarMotionJoint, [number, number, number]>>;
+  root?: [number, number];
+  height?: number;
 }
 
 /** A later prompt that applies from `startS` on (chunk-aligned). */
@@ -116,6 +128,8 @@ export interface AvatarMotionStreamRequest {
   constraintWeight?: number;
   /** A session id from an earlier stream's result: continue from where it ended, in the same motion frame. */
   continueFrom?: string;
+  /** With `continueFrom`: the pose the body is really in, pinned onto the first frames of the new stream. */
+  observed?: AvatarMotionObserved;
   snapS?: number;
 }
 

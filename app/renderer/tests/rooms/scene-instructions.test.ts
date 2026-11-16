@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildAnimationInstructions } from '../../src/avatar/animation-instructions.js';
-import { buildSceneInstructions, describeAvatarWhere, objectAffordances } from '../../src/rooms/scene-instructions.js';
+import type { PlanWorld } from '../../src/rooms/scene-actions.js';
+import { buildSceneInstructions, describeAvatarWhere, describeBody, objectAffordances } from '../../src/rooms/scene-instructions.js';
 import { builtInRoom } from './fixtures.js';
 
 describe('scene instructions', () => {
@@ -94,5 +95,50 @@ describe('scene instructions', () => {
     const text = buildSceneInstructions(flat, true);
     expect(text).toContain(flat.name);
     expect(text).toMatch(/\(sit/);
+  });
+
+  describe('body contact', () => {
+    const sofa = room.objects.find((object) => object.id === 'sofa')!;
+    const world = (overrides: Partial<PlanWorld> = {}): PlanWorld =>
+      ({
+        room,
+        frame: { origin: { x: 0, z: 0, yaw: 0 }, scale: 1 },
+        restHipsHeight: 0.95,
+        restLegLengths: { thigh: 0.42, shin: 0.43, ankleHeight: 0.08 },
+        seatGeometry: () => ({ seatTopY: 0.45, frontEdge: 0.2, depth: 0.6, backRest: null, footFloorY: 0, position: [0, 0.45, 0], facing: 0 }),
+        ...overrides,
+      }) as PlanWorld;
+    const seated = { posture: 'seated' as const, seat: { objectId: 'sofa' } };
+
+    it('says where the feet are while seated', () => {
+      expect(describeBody(room, seated, world())).toBe(`You are seated on the ${sofa.name}, feet on the floor.`);
+      const high = world({ seatGeometry: () => ({ seatTopY: 0.95, frontEdge: 0.2, depth: 0.6, backRest: null, footFloorY: 0, position: [0, 0.95, 0], facing: 0 }) });
+      expect(describeBody(room, seated, high)).toBe(`You are seated on the ${sofa.name}, feet dangling.`);
+    });
+
+    it('names the object the feet rest on when the floor in front is raised', () => {
+      const table = room.objects.find((object) => object.id === 'coffee-table')!;
+      const onTable = world({
+        seatGeometry: () => ({
+          seatTopY: 0.45, frontEdge: 0.2, depth: 0.6, backRest: null, footFloorY: 0.2,
+          position: [table.position[0], 0.45, table.position[2] - 0.35], facing: 0,
+        }),
+      });
+      expect(describeBody(room, seated, onTable)).toContain(`feet on the ${table.name}`);
+    });
+
+    it('leaves the feet out when the seat cannot be measured, and says nothing when standing', () => {
+      expect(describeBody(room, seated, world({ seatGeometry: () => null }))).toBe(`You are seated on the ${sofa.name}.`);
+      expect(describeBody(room, { posture: 'standing' }, world())).toBe('');
+    });
+
+    it('reports failed reaches and puts the body line into the scene instructions', () => {
+      const failure = "couldn't reach its left knee target (blocked by sofa)";
+      expect(describeBody(room, { posture: 'standing' }, world(), [failure])).toBe(`Just now your body ${failure}.`);
+      const body = describeBody(room, seated, world(), [failure]);
+      const text = buildSceneInstructions(room, true, '', [], body);
+      expect(text.endsWith(body)).toBe(true);
+      expect(buildSceneInstructions(room, true, '', [], '')).toBe(buildSceneInstructions(room, true));
+    });
   });
 });

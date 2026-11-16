@@ -28,7 +28,7 @@ import {
   pickIdleActor,
   type IdleCandidate,
 } from './idle-picker.js';
-import { describeAvatarWhere } from './scene-instructions.js';
+import { describeAvatarWhere, describeFeet } from './scene-instructions.js';
 import type { IdleInput, IdlePlace, IdleTag } from './idle-types.js';
 import type { PlacesSnapshot } from '../../../main/src/places/place-manager.js';
 import { isPhonePlace } from '../../../main/src/places/place-kind.js';
@@ -55,6 +55,8 @@ export interface IdleExecutor {
   readonly busy: boolean;
   getState(): AvatarState;
   world(): PlanWorld | null;
+  /** What the body could not do in the last minute, worded for the model. */
+  recentFailures?(): string[];
   submitPlan(label: string, build: PlanBuilder): void;
   onInterrupt(listener: () => void): () => void;
 }
@@ -381,9 +383,13 @@ export class IdleDirector {
         });
         return { name: avatar.name, where };
       });
+    const state = executor.getState();
+    const feet = state.posture === 'seated' && state.seat ? describeFeet(room, world, state.seat.objectId) : null;
+    const failures = executor.recentFailures?.() ?? [];
     return {
       ...persona,
       room,
+      ...(feet || failures.length > 0 ? { contact: { ...(feet ? { feet } : {}), ...(failures.length > 0 ? { failures } : {}) } } : {}),
       visible: visibleObjects(room, world.cameraAspect ?? DEFAULT_ASPECT),
       state: executor.getState(),
       position: [world.frame.origin.x, 0, world.frame.origin.z],

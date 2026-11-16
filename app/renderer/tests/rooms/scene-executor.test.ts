@@ -7,6 +7,7 @@ import {
   SceneActionExecutor,
   type ChunkHooks,
   type ClipEndAction,
+  type ContactReport,
   type SceneActivity,
   type SceneBridge,
   type SceneEnv,
@@ -65,7 +66,7 @@ class FakeBridge implements SceneBridge {
   requests: AvatarMotionStreamRequest[] = [];
   cancelled: string[] = [];
   played: PlayedChunk[] = [];
-  private resolvers = new Map<string, { resolve: (r: AvatarMotionStreamResult) => void; reject: (e: unknown) => void }>();
+  resolvers = new Map<string, { resolve: (r: AvatarMotionStreamResult) => void; reject: (e: unknown) => void }>();
   streamMotion(request: AvatarMotionStreamRequest): Promise<AvatarMotionStreamResult> {
     this.requests.push(request);
     return new Promise((resolve, reject) => this.resolvers.set(request.streamId, { resolve, reject }));
@@ -476,5 +477,128 @@ describe('SceneActionExecutor', () => {
       expect(bridge.requests).toHaveLength(0);
     });
   });
-});
 
+  describe('contact feedback', () => {
+    class ContactEnv extends FakeEnv {
+      misses: ContactReport[] = [];
+      listeners = new Set<(report: ContactReport) => void>();
+      contactMisses(): ContactReport[] {
+        return this.misses;
+      }
+      onContactMiss(listener: (report: ContactReport) => void): () => void {
+        this.listeners.add(listener);
+        return () => this.listeners.delete(listener);
+      }
+      planWorld(): PlanWorld {
+        return {
+          ...super.planWorld(),
+          seatGeometry: () => ({ seatTopY: 0.45, frontEdge: 0.2, depth: 0.6, backRest: null, footFloorY: 0, position: [0, 0.45, 0], facing: 0 }),
+          restLegLengths: { thigh: 0.42, shin: 0.46, ankleHeight: 0.08 },
+        };
+      }
+      hipsPosition(): [number, number, number] {
+        return [0, 0.55, -0.4];
+      }
+      miss(end: ContactReport['end'], objectId: string | null = 'sofa'): ContactReport {
+        const report: ContactReport = { end, objectId, distance: 0.08, seconds: 0.3, actual: [0.1, 0.49, -0.1], animated: [0.1, 0.52, 0.1] };
+        this.misses = [report];
+        for (const listener of [...this.listeners]) listener(report);
+        return report;
+      }
+    }
+    let contactEnv: ContactEnv;
+    let clock: number;
+    const hold = { root: [0, -0.4] as [number, number], height: 0.58, heading: 0 };
+
+    beforeEach(() => {
+      let n = 0;
+      clock = 1_000_000;
+      executor = new SceneActionExecutor({ newId: () => `s${(n += 1)}`, setTimer: (fn) => setTimeout(fn, 0), now: () => clock });
+      contactEnv = new ContactEnv();
+      executor.setBridge(bridge);
+      executor.setEnv(contactEnv);
+      executor.onActivity((a) => activity.push(a));
+    });
+
+    async function sitDown(): Promise<void> {
+      executor.submit([{ kind: 'sit', objectId: 'sofa' }]);
+      await until(() => bridge.requests.length === 1);
+    }
+
+    it('does nothing extra when the legs follow', async () => {
+      await sitDown();
+      await playStream(executor, bridge, 's1', [undefined, hold], 'sess-1');
+      await until(() => !executor.busy);
+      expect(bridge.requests).toHaveLength(1);
+      expect(executor.recentFailures()).toEqual([]);
+    });
+
+    it('settles from the observed pose, moving the stuck foot target to where the solver left it', async () => {
+      await sitDown();
+      const first = bridge.requests[0]!;
+      contactEnv.miss('leftFoot');
+      await playStream(executor, bridge, 's1', [undefined, hold], 'sess-1');
+      await until(() => bridge.requests.length === 2);
+      const settle = bridge.requests[1]!;
+      expect(settle.continueFrom).toBe('sess-1');
+      expect(settle.duration).toBe(2);
+      expect(settle.observed?.joints?.left_ankle).toEqual([0.1, 0.49, 0.2]); // the frame starts at world (0, -0.3)
+      expect(settle.observed?.root).toEqual([0, -0.1]); // hips at world (0, -0.4)
+      expect(settle.observed?.height).toBeCloseTo(0.55, 6);
+      const ankle = settle.targets!.find((t) => t.joint === 'left_ankle')!;
+      expect(ankle.position).toEqual([0.1, 0.49, 0.2]);
+      expect(settle.targets!.some((t) => t.root)).toBe(true);
+      expect(first.observed).toBeUndefined();
+      // The legs follow now: the settle stream is the only one, and the session moves on.
+      contactEnv.misses = [];
+      await playStream(executor, bridge, 's2', [hold], 'sess-2');
+      await until(() => !executor.busy);
+      expect(bridge.requests).toHaveLength(2);
+      expect(executor.getState()).toMatchObject({ posture: 'seated', seat: { session: 'sess-2' } });
+      expect(executor.recentFailures()).toEqual([]);
+    });
+
+    it('settles at most twice, then records what it could not reach for a minute', async () => {
+      await sitDown();
+      contactEnv.miss('rightKnee');
+      await playStream(executor, bridge, 's1', [undefined, hold], 'sess-1');
+      await until(() => bridge.requests.length === 2);
+      await playStream(executor, bridge, 's2', [hold], 'sess-2');
+      await until(() => bridge.requests.length === 3);
+      expect(bridge.requests[2]!.continueFrom).toBe('sess-2');
+      await playStream(executor, bridge, 's3', [hold], 'sess-3');
+      await until(() => !executor.busy);
+      expect(bridge.requests).toHaveLength(3);
+      expect(executor.getState()).toMatchObject({ posture: 'seated', seat: { session: 'sess-3' } });
+      const failure = "couldn't reach its right knee target (blocked by sofa)";
+      expect(executor.recentFailures()).toEqual([failure]);
+      expect(activity).toContainEqual({ type: 'skipped', label: 'sit on sofa', reason: failure });
+      clock += 61_000;
+      expect(executor.recentFailures()).toEqual([]);
+    });
+
+    it('stays seated with the old session when the settle stream fails', async () => {
+      await sitDown();
+      contactEnv.miss('leftKnee');
+      await playStream(executor, bridge, 's1', [undefined, hold], 'sess-1');
+      await until(() => bridge.requests.length === 2);
+      bridge.resolvers.get('s2')?.reject(new Error('service down'));
+      await until(() => bridge.requests.length === 3); // it tries again, then gives up the same way
+      bridge.resolvers.get('s3')?.reject(new Error('service down'));
+      await until(() => !executor.busy);
+      expect(executor.getState()).toMatchObject({ posture: 'seated', seat: { session: 'sess-1' } });
+    });
+
+    it('ignores a miss on a limb the action did not aim at unless it lasts over a second', async () => {
+      await sitDown();
+      // Hands are never settled; a foot with no target and a short miss is left alone.
+      contactEnv.miss('leftHand');
+      const planned = (executor as unknown as { streams: Map<string, { planned: { request: { targets: Array<{ joint?: string }> } } }> }).streams.get('s1')!;
+      planned.planned.request.targets = planned.planned.request.targets.filter((t) => !t.joint);
+      contactEnv.miss('leftFoot');
+      await playStream(executor, bridge, 's1', [undefined, hold], 'sess-1');
+      await until(() => !executor.busy);
+      expect(bridge.requests).toHaveLength(1);
+    });
+  });
+});
