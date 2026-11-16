@@ -3,6 +3,15 @@ import type { RoomCamera, RoomFile, Vec3 } from '../../../main/src/rooms/types.j
 import { buildRoom, type BuildRoomOptions, type BuiltRoom } from './room-builder.js';
 import { RoomNavMesh } from './room-navmesh.js';
 import { RoomPhysics } from './room-physics.js';
+import { modelShapes, objectShapes, type LocalShape } from './room-shapes.js';
+import {
+  applySeatOverrides,
+  seatGeometryLocal,
+  seatGeometryToWorld,
+  shapeSampler,
+  type SurfaceSampler,
+  type WorldSeatGeometry,
+} from './seat-geometry.js';
 import { worldTag, type PositionalTag, type WorldTag } from './room-tags.js';
 
 const TMP = new THREE.Vector3();
@@ -22,6 +31,8 @@ const PARKED_AT = 10_000;
 
 export class RoomStage {
   private debugOn = false;
+  private navOverlay: THREE.Object3D | null = null;
+  private colliderLines: THREE.LineSegments | null = null;
 
   private constructor(
     readonly room: RoomFile,
@@ -31,7 +42,27 @@ export class RoomStage {
   ) {}
 
   static async create(room: RoomFile, options: BuildRoomOptions = {}): Promise<RoomStage> {
-    const built = buildRoom(room, options);
+    // A loaded model's mesh becomes the object's collider. The model can arrive before or after the physics world exists.
+    let stage: RoomStage | null = null;
+    const early = new Map<string, LocalShape[]>();
+    const apply = (id: string, shapes: LocalShape[]) => {
+      if (stage) stage.physics?.replaceObjectColliders(id, shapes);
+      else early.set(id, shapes);
+    };
+    const { loadModel } = options;
+    const built = buildRoom(room, {
+      ...options,
+      loadModel: loadModel
+        ? async (object) => {
+            const model = await loadModel(object);
+            if (!object.parts?.length && !object.dynamic) {
+              const shapes = modelShapes(model);
+              if (shapes) apply(object.id, shapes);
+            }
+            return model;
+          }
+        : undefined,
+    });
     const [physics, navmesh] = await Promise.all([
       RoomPhysics.create(room, built.objectNodes).catch((error: unknown) => {
         console.warn('[rooms] physics is unavailable for this room', error);
@@ -42,7 +73,9 @@ export class RoomStage {
         return null;
       }),
     ]);
-    return new RoomStage(room, built, physics, navmesh);
+    stage = new RoomStage(room, built, physics, navmesh);
+    for (const [id, shapes] of early) physics?.replaceObjectColliders(id, shapes);
+    return stage;
   }
 
   get group(): THREE.Group {
@@ -109,6 +142,35 @@ export class RoomStage {
     return hit ? hit.point.y : boxTop;
   }
 
+  /**
+   * The seat of an object with a sit tag, in the world as it is now (the object may have been moved or turned).
+   * Parts are measured exactly; a model is sampled with rays against its meshes. Null without a sit tag.
+   */
+  seatGeometry(id: string): WorldSeatGeometry | null {
+    const object = this.room.objects.find((candidate) => candidate.id === id);
+    const tag = object?.tags?.sit;
+    const node = this.built.objectNodes.get(id);
+    if (!object || !tag || !node) return null;
+    let sample: SurfaceSampler;
+    if (object.parts?.length || !object.model) {
+      sample = shapeSampler(objectShapes(object));
+    } else {
+      // Ray-cast in the node's space so the object's pose does not matter.
+      node.updateWorldMatrix(true, true);
+      const raycaster = new THREE.Raycaster();
+      const down = new THREE.Vector3(0, -1, 0);
+      const start = new THREE.Vector3();
+      sample = (x, z, fromY) => {
+        raycaster.set(node.localToWorld(start.set(x, fromY, z)), down.set(0, -1, 0).transformDirection(node.matrixWorld));
+        const hit = raycaster.intersectObject(node, true).find((candidate) => candidate.object instanceof THREE.Mesh);
+        return hit ? node.worldToLocal(hit.point.clone()).y : null;
+      };
+    }
+    const local = applySeatOverrides(seatGeometryLocal(tag, sample), tag.seat);
+    const position = this.objectPosition(id) ?? object.position;
+    return seatGeometryToWorld(local, tag, { position, yawDegrees: (this.objectYaw(id) * 180) / Math.PI });
+  }
+
   /** Where an object's floor-contact origin is in the world right now (it may have been moved or carried). */
   objectPosition(id: string): Vec3 | null {
     const node = this.built.objectNodes.get(id);
@@ -167,6 +229,7 @@ export class RoomStage {
       this.physics.setAvatarPosition(TMP.x, TMP.z, other.id);
     }
     this.physics.step(dt);
+    this.refreshColliderLines();
   }
 
   /** Echo is in another place: her capsule (which cannot be removed) waits far outside the room, out of everyone's way. */
@@ -181,10 +244,32 @@ export class RoomStage {
 
   setDebugNavmesh(on: boolean): void {
     this.debugOn = on;
-    if (!this.navmesh) return;
-    const overlay = this.navmesh.debugMesh();
-    if (on) this.built.group.add(overlay);
-    else overlay.removeFromParent();
+    this.navOverlay ??= this.navmesh?.debugMesh() ?? null;
+    if (on) {
+      if (this.navOverlay) this.built.group.add(this.navOverlay);
+      this.refreshColliderLines();
+    } else {
+      this.navOverlay?.removeFromParent();
+      this.colliderLines?.removeFromParent();
+    }
+  }
+
+  /** The colliders as wireframe, rebuilt every step while the debug overlay is on (props and avatars move). */
+  private refreshColliderLines(): void {
+    if (!this.debugOn || !this.physics) return;
+    const { vertices, colors } = this.physics.debugLines();
+    if (!this.colliderLines) {
+      const material = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthTest: false });
+      this.colliderLines = new THREE.LineSegments(new THREE.BufferGeometry(), material);
+      this.colliderLines.name = 'debug:colliders';
+      this.colliderLines.frustumCulled = false;
+      this.colliderLines.renderOrder = 999;
+    }
+    const geometry = this.colliderLines.geometry;
+    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4));
+    geometry.computeBoundingSphere();
+    if (!this.colliderLines.parent) this.built.group.add(this.colliderLines);
   }
 
   get debugNavmesh(): boolean {
@@ -192,6 +277,10 @@ export class RoomStage {
   }
 
   dispose(): void {
+    this.colliderLines?.removeFromParent();
+    this.colliderLines?.geometry.dispose();
+    (this.colliderLines?.material as THREE.Material | undefined)?.dispose();
+    this.colliderLines = null;
     this.physics?.dispose();
     this.physics = null;
     this.navmesh?.dispose();

@@ -82,10 +82,10 @@ describe('3D rooms in the background controls', () => {
   it('only offers the walkable-area toggle when asked to', async () => {
     const { unmount } = render(<Harness api={bridge('room:builtin:reading-room')} />);
     await screen.findByRole('button', { name: 'Reading room' });
-    expect(screen.queryByLabelText('Show walkable area')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Show navmesh and colliders')).not.toBeInTheDocument();
     unmount();
     render(<Harness api={bridge('room:builtin:reading-room')} walkable />);
-    expect(await screen.findByLabelText('Show walkable area')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Show navmesh and colliders')).toBeInTheDocument();
   });
 });
 
