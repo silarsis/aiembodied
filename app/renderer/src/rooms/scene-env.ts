@@ -252,7 +252,7 @@ export class RoomSceneEnv implements SceneEnv {
       this.carriedCache = [...this.carried.keys()];
       this.carriedDirty = false;
     }
-    contact.update(rig, stage.collision, deltaSeconds, this.carriedCache, stage.debugNavmesh ? stage.group : null);
+    contact.update(rig, stage.collision, deltaSeconds, this.carriedCache, stage.debugNavmesh ? stage.group : null, this.seatId);
   }
 
   /** Forgets the pelvis lift (the root was put somewhere else, e.g. at another room's home). */

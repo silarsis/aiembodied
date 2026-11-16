@@ -20,6 +20,19 @@ export const SHOULDER_CONE = (120 * Math.PI) / 180;
 export const WRIST_CONE = (60 * Math.PI) / 180;
 export const ANKLE_CONE = (60 * Math.PI) / 180;
 
+/**
+ * The most the solver may rotate a joint away from its animated local rotation (radians). The solver nudges
+ * limbs, it never re-poses them; whatever a cap refuses is a miss. Applies on top of the anatomical limits.
+ */
+export const HIP_MAX_OFFSET = (25 * Math.PI) / 180;
+export const KNEE_MAX_OFFSET = (30 * Math.PI) / 180;
+export const ANKLE_MAX_OFFSET = (20 * Math.PI) / 180;
+export const SHOULDER_MAX_OFFSET = (30 * Math.PI) / 180;
+export const ELBOW_MAX_OFFSET = (30 * Math.PI) / 180;
+export const WRIST_MAX_OFFSET = (20 * Math.PI) / 180;
+/** The target correction of a joint may grow by at most this per second (radians), so one bad frame cannot fling a limb. */
+export const MAX_OFFSET_RATE = (90 * Math.PI) / 180;
+
 const TMP_AXIS = new THREE.Vector3();
 const TMP_Q = new THREE.Quaternion();
 const TMP_Q2 = new THREE.Quaternion();
