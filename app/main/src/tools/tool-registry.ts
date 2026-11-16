@@ -7,7 +7,7 @@ import type { JSONSchema } from '../mcp/types.js';
 export interface RegisteredTool {
   id: string; // Unique identifier (e.g., "server_id:tool_name")
   serverId: string; // MCP server ID this tool belongs to
-  toolName: string; // Tool name as defined by the MCP server
+  toolName: string; // Name the LLM calls (for MCP tools: cleaned up and made unique; the server's own name is kept by the manager)
   description: string; // Description for the LLM
   inputSchema: JSONSchema; // JSON Schema for tool parameters
   enabled: boolean; // Whether the tool is enabled
@@ -73,6 +73,14 @@ export class ToolRegistry extends EventEmitter {
    */
   list(): RegisteredTool[] {
     return Array.from(this.tools.values()).filter((t) => t.enabled);
+  }
+
+  /**
+   * List every registered tool, including disabled ones.
+   * Used to check that a new tool name does not clash with one already taken.
+   */
+  listAll(): RegisteredTool[] {
+    return Array.from(this.tools.values());
   }
 
   /**

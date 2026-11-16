@@ -295,6 +295,26 @@ const MIGRATIONS: readonly Migration[] = [
     version: 9,
     statements: [`ALTER TABLE messages ADD COLUMN speaker TEXT NULL;`],
   },
+  {
+    // MCP over Streamable HTTP with optional OAuth sign-in. The OAuth data (client registration, tokens, PKCE
+    // verifier) sits in its own table, one row per server, each column encrypted with Electron safeStorage.
+    version: 10,
+    statements: [
+      `ALTER TABLE mcp_servers ADD COLUMN http_url TEXT NULL;`,
+      `ALTER TABLE mcp_servers ADD COLUMN http_auth_header TEXT NULL;`,
+      `ALTER TABLE mcp_servers ADD COLUMN http_auth_token_encrypted TEXT NULL;`,
+      `ALTER TABLE mcp_servers ADD COLUMN oauth INTEGER NOT NULL DEFAULT 0;`,
+      `ALTER TABLE mcp_servers ADD COLUMN oauth_scope TEXT NULL;`,
+      `CREATE TABLE IF NOT EXISTS mcp_oauth (
+        server_id TEXT PRIMARY KEY,
+        client_info_encrypted TEXT NULL,
+        tokens_encrypted TEXT NULL,
+        code_verifier_encrypted TEXT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE
+      );`,
+    ],
+  },
 ];
 
 function runMigrations(db: SqliteDatabase) {

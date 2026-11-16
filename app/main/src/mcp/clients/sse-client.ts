@@ -2,6 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import type { MCPClient } from './base-client.js';
 import type { MCPToolDefinition } from '../types.js';
+import { normalizeCallToolResult, normalizeToolList, toolsChangedOptions } from './mcp-response.js';
 
 /**
  * MCP client that communicates via Server-Sent Events (SSE) transport.
@@ -13,6 +14,7 @@ export class SSEMCPClient implements MCPClient {
   private client: Client | null = null;
   private transport: SSEClientTransport | null = null;
   private toolsChangedCallback: (() => void) | null = null;
+  private closedCallback: ((detail?: string) => void) | null = null;
 
   constructor(
     private url: string,
@@ -23,23 +25,11 @@ export class SSEMCPClient implements MCPClient {
   async connect(): Promise<void> {
     // Create the MCP client with tools listChanged handler
     this.client = new Client(
-      {
-        name: 'aiembodied-client',
-        version: '1.0.0',
-      },
-      {
-        capabilities: {},
-        listChanged: {
-          tools: {
-            onChanged: () => {
-              if (this.toolsChangedCallback) {
-                this.toolsChangedCallback();
-              }
-            },
-          },
-        },
-      },
+      { name: 'aiembodied-client', version: '1.0.0' },
+      toolsChangedOptions(() => this.toolsChangedCallback?.()),
     );
+    // The stream dropped (not our own disconnect(), which clears this first).
+    this.client.onclose = () => this.closedCallback?.();
 
     // Parse URL and add auth headers if provided
     const urlObj = new URL(this.url);
@@ -59,6 +49,8 @@ export class SSEMCPClient implements MCPClient {
   }
 
   async disconnect(): Promise<void> {
+    // Our own close must not look like a dropped connection.
+    this.closedCallback = null;
     if (this.client) {
       try {
         await this.client.close();
@@ -70,6 +62,7 @@ export class SSEMCPClient implements MCPClient {
     }
     this.transport = null;
     this.toolsChangedCallback = null;
+    this.closedCallback = null;
   }
 
   async listTools(): Promise<MCPToolDefinition[]> {
@@ -79,22 +72,7 @@ export class SSEMCPClient implements MCPClient {
 
     try {
       const response = await this.client.listTools();
-
-      // Convert from MCP SDK format to our internal format
-      return response.tools.map((tool) => {
-        // Safely extract tool properties with type guards
-        const name = typeof tool === 'object' && tool !== null && 'name' in tool && typeof tool.name === 'string'
-          ? tool.name
-          : '';
-        const description = typeof tool === 'object' && tool !== null && 'description' in tool && typeof tool.description === 'string'
-          ? tool.description
-          : undefined;
-        const inputSchema = typeof tool === 'object' && tool !== null && 'inputSchema' in tool
-          ? tool.inputSchema as MCPToolDefinition['inputSchema']
-          : { type: 'object', properties: {} };
-
-        return { name, description, inputSchema };
-      });
+      return normalizeToolList(response.tools);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to list tools from SSE MCP server: ${message}`);
@@ -111,68 +89,7 @@ export class SSEMCPClient implements MCPClient {
         name,
         arguments: args as Record<string, unknown>,
       });
-
-      // Check if the response indicates an error
-      const isError = typeof response === 'object' && response !== null && 'isError' in response
-        ? Boolean(response.isError)
-        : false;
-
-      if (isError) {
-        const content = typeof response === 'object' && response !== null && 'content' in response && Array.isArray(response.content)
-          ? response.content as unknown[]
-          : [];
-
-        let errorMessage = 'Tool execution failed';
-        for (const c of content) {
-          if (typeof c === 'object' && c !== null && 'type' in c) {
-            const cType: unknown = (c as Record<string, unknown>).type;
-            if (typeof cType === 'string' && cType === 'text' && 'text' in c) {
-              const cText: unknown = (c as Record<string, unknown>).text;
-              if (typeof cText === 'string') {
-                errorMessage = cText;
-                break;
-              }
-            }
-          }
-        }
-        throw new Error(errorMessage);
-      }
-
-      // Extract the result from content
-      const content = typeof response === 'object' && response !== null && 'content' in response && Array.isArray(response.content)
-        ? response.content as unknown[]
-        : [];
-
-      // MCP tools can return multiple content items, we'll combine them
-      if (content.length === 0) {
-        return null;
-      }
-
-      // If single text content, return just the text
-      if (content.length === 1) {
-        const firstItem: unknown = content[0];
-        if (typeof firstItem === 'object' && firstItem !== null && 'type' in firstItem && typeof firstItem.type === 'string' && firstItem.type === 'text' && 'text' in firstItem && typeof firstItem.text === 'string') {
-          return firstItem.text;
-        }
-      }
-
-      // Otherwise return all content items
-      return content.map((item: unknown) => {
-        if (typeof item !== 'object' || item === null) {
-          return { type: 'unknown', data: String(item) };
-        }
-
-        if ('type' in item && typeof item.type === 'string' && item.type === 'text' && 'text' in item) {
-          return { type: 'text', text: String(item.text) };
-        }
-        if ('type' in item && typeof item.type === 'string' && item.type === 'image' && 'data' in item && 'mimeType' in item) {
-          return { type: 'image', data: String(item.data), mimeType: String(item.mimeType) };
-        }
-        if ('type' in item && typeof item.type === 'string' && item.type === 'resource' && 'resource' in item) {
-          return { type: 'resource', resource: item.resource as Record<string, unknown> };
-        }
-        return { type: 'unknown', data: item };
-      });
+      return normalizeCallToolResult(response);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to call tool '${name}': ${message}`);
@@ -181,5 +98,9 @@ export class SSEMCPClient implements MCPClient {
 
   onToolsChanged(callback: () => void): void {
     this.toolsChangedCallback = callback;
+  }
+
+  onClosed(callback: (detail?: string) => void): void {
+    this.closedCallback = callback;
   }
 }

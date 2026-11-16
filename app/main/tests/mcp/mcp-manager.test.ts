@@ -68,6 +68,11 @@ describe('MCPManager', () => {
         stdio_command TEXT,
         stdio_args_json TEXT,
         stdio_env_json_encrypted TEXT,
+        http_url TEXT,
+        http_auth_header TEXT,
+        http_auth_token_encrypted TEXT,
+        oauth INTEGER NOT NULL DEFAULT 0,
+        oauth_scope TEXT,
         enabled INTEGER DEFAULT 1,
         auto_start INTEGER DEFAULT 0,
         connection_status TEXT DEFAULT 'disconnected',
@@ -89,6 +94,15 @@ describe('MCPManager', () => {
         confirmation_level TEXT DEFAULT 'none',
         custom_description TEXT,
         discovered_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE mcp_oauth (
+        server_id TEXT PRIMARY KEY,
+        client_info_encrypted TEXT,
+        tokens_encrypted TEXT,
+        code_verifier_encrypted TEXT,
         updated_at INTEGER NOT NULL,
         FOREIGN KEY (server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE
       );

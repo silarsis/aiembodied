@@ -4,14 +4,31 @@ import type {
   MCPServerConfigInput,
   MCPToolSummary,
   MCPConnectionResult,
+  MCPConnectionStatus,
 } from './types.js';
 import type { ToolRegistry, RegisteredTool } from '../tools/tool-registry.js';
 import { EventEmitter } from 'node:events';
 import { SSEMCPClient } from './clients/sse-client.js';
 import { StdioMCPClient } from './clients/stdio-client.js';
+import { HTTPMCPClient } from './clients/http-client.js';
+import { McpOAuthProvider, McpOAuthStore } from './clients/oauth-provider.js';
+import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
+import { chooseToolName, isValidToolName } from './tool-names.js';
+import { findPreset, listPresetSummaries, type MCPPresetSummary } from './presets.js';
 import type { MCPClient } from './clients/base-client.js';
 import { randomUUID } from 'node:crypto';
 import { encryptToken, decryptToken } from './encryption.js';
+
+export interface MCPManagerOptions {
+  /** Opens a URL in the system browser (Electron shell.openExternal). Needed for OAuth sign-in. */
+  openExternal?: (url: string) => Promise<void>;
+  /** Override the sign-in callback port (default: MCP_OAUTH_CALLBACK_PORT or 8797). */
+  oauthCallbackPort?: number;
+  /** Override how long a sign-in waits for the browser (default 5 minutes). */
+  oauthTimeoutMs?: number;
+}
+
+const SIGN_IN_NEEDED = 'Sign-in needed. Press "Sign in" to connect.';
 
 /**
  * Manages MCP server connections and tool discovery.
@@ -23,11 +40,15 @@ export class MCPManager extends EventEmitter {
   private clients: Map<string, MCPClient> = new Map();
   private toolRegistry: ToolRegistry;
   private db: Database;
+  private options: MCPManagerOptions;
+  // Servers with a sign-in in progress (only one at a time per server; the callback port is shared).
+  private signingIn: Set<string> = new Set();
 
-  constructor(db: Database, toolRegistry: ToolRegistry) {
+  constructor(db: Database, toolRegistry: ToolRegistry, options: MCPManagerOptions = {}) {
     super();
     this.db = db;
     this.toolRegistry = toolRegistry;
+    this.options = options;
   }
 
   /**
@@ -35,17 +56,55 @@ export class MCPManager extends EventEmitter {
    * Loads all enabled servers and auto-starts those marked for auto-start.
    */
   async initialize(): Promise<void> {
-    const servers = this.loadServersFromDB();
+    const servers = this.loadServersFromDB().filter((server) => server.enabled && server.autoStart);
 
-    for (const server of servers) {
-      if (server.enabled && server.autoStart) {
+    // Start them side by side so one slow server does not hold up the others.
+    // connectServer records its own failures in the database; this only guards against surprises.
+    await Promise.all(
+      servers.map(async (server) => {
         try {
           await this.connectServer(server.id);
         } catch (error) {
           console.error(`Failed to auto-start server ${server.name}:`, error);
         }
-      }
+      }),
+    );
+  }
+
+  /**
+   * Disconnect every server. Called when the app quits so stdio child processes are not left running.
+   */
+  async disconnectAll(): Promise<void> {
+    const ids = Array.from(this.clients.keys());
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          await this.disconnectServer(id);
+        } catch (error) {
+          console.error(`Failed to disconnect MCP server ${id}:`, error);
+        }
+      }),
+    );
+  }
+
+  /** The ready-made servers the person can add. */
+  listPresets(): MCPPresetSummary[] {
+    return listPresetSummaries();
+  }
+
+  /**
+   * Add a ready-made server. If a server with the same address already exists it is returned
+   * unchanged, so pressing Add twice never makes a duplicate.
+   */
+  async addPreset(presetId: string): Promise<MCPServerConfig> {
+    const preset = findPreset(presetId);
+    if (!preset) {
+      throw new Error(`Unknown MCP preset: ${presetId}`);
     }
+    const url = preset.config.httpUrl ?? preset.config.sseUrl;
+    const existing = this.loadServersFromDB().find((server) => (server.httpUrl ?? server.sseUrl) === url);
+    if (existing) return existing;
+    return await this.addServer(preset.config);
   }
 
   /**
@@ -58,6 +117,7 @@ export class MCPManager extends EventEmitter {
     // Encrypt sensitive fields
     const sseAuthTokenEncrypted = config.sseAuthToken ? encryptToken(config.sseAuthToken) : null;
     const stdioEnvEncrypted = config.stdioEnv ? encryptToken(JSON.stringify(config.stdioEnv)) : null;
+    const httpAuthTokenEncrypted = config.httpAuthToken ? encryptToken(config.httpAuthToken) : null;
 
     // Insert into database
     const stmt = this.db.prepare(`
@@ -65,10 +125,11 @@ export class MCPManager extends EventEmitter {
         id, name, transport_type,
         sse_url, sse_auth_header, sse_auth_token_encrypted,
         stdio_command, stdio_args_json, stdio_env_json_encrypted,
+        http_url, http_auth_header, http_auth_token_encrypted, oauth, oauth_scope,
         enabled, auto_start,
         connection_status, tools_discovered,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -81,6 +142,11 @@ export class MCPManager extends EventEmitter {
       config.stdioCommand || null,
       config.stdioArgs ? JSON.stringify(config.stdioArgs) : null,
       stdioEnvEncrypted,
+      config.httpUrl || null,
+      config.httpAuthHeader || null,
+      httpAuthTokenEncrypted,
+      config.oauth ? 1 : 0,
+      config.oauthScope || null,
       config.enabled ? 1 : 0,
       config.autoStart ? 1 : 0,
       'disconnected',
@@ -148,6 +214,31 @@ export class MCPManager extends EventEmitter {
       values.push(updates.stdioEnv ? encryptToken(JSON.stringify(updates.stdioEnv)) : null);
     }
 
+    if (updates.httpUrl !== undefined) {
+      updateFields.push('http_url = ?');
+      values.push(updates.httpUrl);
+    }
+
+    if (updates.httpAuthHeader !== undefined) {
+      updateFields.push('http_auth_header = ?');
+      values.push(updates.httpAuthHeader);
+    }
+
+    if (updates.httpAuthToken !== undefined) {
+      updateFields.push('http_auth_token_encrypted = ?');
+      values.push(updates.httpAuthToken ? encryptToken(updates.httpAuthToken) : null);
+    }
+
+    if (updates.oauth !== undefined) {
+      updateFields.push('oauth = ?');
+      values.push(updates.oauth ? 1 : 0);
+    }
+
+    if (updates.oauthScope !== undefined) {
+      updateFields.push('oauth_scope = ?');
+      values.push(updates.oauthScope || null);
+    }
+
     if (updateFields.length > 0) {
       updateFields.push('updated_at = ?');
       values.push(Date.now());
@@ -168,6 +259,8 @@ export class MCPManager extends EventEmitter {
 
   /**
    * Connect to an MCP server and discover its tools.
+   * An existing connection to the same server is closed first.
+   * Never opens the browser: a server that needs OAuth sign-in ends up as 'needs-sign-in'.
    */
   async connectServer(serverId: string): Promise<MCPConnectionResult> {
     const config = this.getServerById(serverId);
@@ -175,50 +268,106 @@ export class MCPManager extends EventEmitter {
       throw new Error(`Server not found: ${serverId}`);
     }
 
+    // Close the old client (and unregister its tools) so nothing is leaked.
+    await this.teardown(serverId);
+
+    let client: MCPClient | undefined;
     try {
-      // Create appropriate client
-      const client = this.createClient(config);
-
-      // Connect
+      client = this.createClient(config);
       await client.connect();
-
-      // Discover tools
-      const tools = await client.listTools();
-
-      // Store the client first: registering a tool looks it up to route calls.
-      this.clients.set(serverId, client);
-
-      // Register tools with ToolRegistry
-      for (const tool of tools) {
-        await this.registerTool(serverId, tool);
+      return await this.adoptClient(serverId, client);
+    } catch (error) {
+      // Make sure a half-started client (e.g. a child process) does not stay around.
+      if (client) {
+        try {
+          await client.disconnect();
+        } catch {
+          // Already failing; ignore.
+        }
       }
+      if (this.clients.get(serverId) === client) this.clients.delete(serverId);
 
-      // Update database
-      const stmt = this.db.prepare(`
-        UPDATE mcp_servers
-        SET connection_status = ?, tools_discovered = ?, last_connected_at = ?, updated_at = ?, last_error = NULL
-        WHERE id = ?
-      `);
-      stmt.run('connected', tools.length, Date.now(), Date.now(), serverId);
+      if (error instanceof UnauthorizedError) {
+        this.recordStatus(serverId, 'needs-sign-in', SIGN_IN_NEEDED);
+        return { success: false, error: SIGN_IN_NEEDED };
+      }
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.recordStatus(serverId, 'error', errorMsg);
+      return { success: false, error: errorMsg };
+    }
+  }
 
-      this.emit('server-status-changed', { serverId, status: 'connected' });
-      this.emit('tools-discovered', serverId, tools.length);
+  /**
+   * Sign in to a server that uses OAuth: open the browser, wait for the person to approve,
+   * then connect. Only this method ever opens the browser.
+   */
+  async signIn(serverId: string): Promise<MCPConnectionResult> {
+    const config = this.getServerById(serverId);
+    if (!config) {
+      throw new Error(`Server not found: ${serverId}`);
+    }
+    if (config.transportType !== 'http' || !config.oauth) {
+      throw new Error('This server does not use browser sign-in.');
+    }
+    if (!this.options.openExternal) {
+      throw new Error('Cannot open the browser for sign-in.');
+    }
+    if (this.signingIn.has(serverId)) {
+      throw new Error('Sign-in is already in progress for this server.');
+    }
+    this.signingIn.add(serverId);
 
-      return { success: true, toolsDiscovered: tools.length };
+    await this.teardown(serverId);
+    const provider = this.createOAuthProvider(config);
+    // Where we are, so a failure is recorded the right way: trouble waiting for the browser still
+    // means "sign-in needed", while a failure to reach the server is a plain error.
+    let waitingForBrowser = false;
+    let client: HTTPMCPClient | undefined;
+    try {
+      // The listener must be up before the browser is sent back to it.
+      await provider.beginSignIn();
+      client = new HTTPMCPClient(config.httpUrl ?? '', {
+        headerName: config.httpAuthHeader,
+        headerToken: config.httpAuthToken,
+        authProvider: provider,
+      });
+      try {
+        // With no usable token this makes the SDK call redirectToAuthorization (opens the browser)
+        // and throw UnauthorizedError. With a good token it simply connects.
+        await client.connect();
+      } catch (error) {
+        if (!(error instanceof UnauthorizedError)) throw error;
+        waitingForBrowser = true;
+        const code = await provider.waitForCode();
+        await client.finishAuth(code);
+      }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-
-      // Update database with error
-      const stmt = this.db.prepare(`
-        UPDATE mcp_servers
-        SET connection_status = ?, last_error = ?, updated_at = ?
-        WHERE id = ?
-      `);
-      stmt.run('error', errorMsg, Date.now(), serverId);
-
-      this.emit('server-status-changed', { serverId, status: 'error' });
-
+      this.recordStatus(serverId, waitingForBrowser ? 'needs-sign-in' : 'error', errorMsg);
       return { success: false, error: errorMsg };
+    } finally {
+      await client?.disconnect();
+      await provider.endSignIn();
+      this.signingIn.delete(serverId);
+    }
+
+    // Tokens are saved now; connect for real (no browser needed any more).
+    return await this.connectServer(serverId);
+  }
+
+  /**
+   * Sign out of an OAuth server: disconnect and forget the tokens.
+   * The client registration is kept so the next sign-in does not register again.
+   */
+  async signOut(serverId: string): Promise<void> {
+    const config = this.getServerById(serverId);
+    if (!config) {
+      throw new Error(`Server not found: ${serverId}`);
+    }
+    await this.disconnectServer(serverId);
+    new McpOAuthStore(this.db).clearTokens(serverId);
+    if (config.oauth) {
+      this.recordStatus(serverId, 'needs-sign-in', SIGN_IN_NEEDED);
     }
   }
 
@@ -226,17 +375,7 @@ export class MCPManager extends EventEmitter {
    * Disconnect from an MCP server and unregister its tools.
    */
   async disconnectServer(serverId: string): Promise<void> {
-    const client = this.clients.get(serverId);
-    if (client) {
-      await client.disconnect();
-      this.clients.delete(serverId);
-    }
-
-    // Unregister all tools from this server
-    const tools = this.getToolsByServer(serverId);
-    for (const tool of tools) {
-      this.toolRegistry.unregister(tool.id);
-    }
+    await this.teardown(serverId);
 
     // Update database
     const stmt = this.db.prepare(`
@@ -258,7 +397,9 @@ export class MCPManager extends EventEmitter {
     // Disconnect if connected
     await this.disconnectServer(serverId);
 
-    // Delete from database (cascade will delete tools)
+    // Delete from database (cascade will delete tools; the sign-in data is removed explicitly
+    // because SQLite only cascades when foreign keys are switched on).
+    new McpOAuthStore(this.db).clearAll(serverId);
     const stmt = this.db.prepare('DELETE FROM mcp_servers WHERE id = ?');
     stmt.run(serverId);
   }
@@ -349,18 +490,100 @@ export class MCPManager extends EventEmitter {
 
     try {
       const client = this.createClient(config);
-      await client.connect();
-      const tools = await client.listTools();
-      await client.disconnect();
-
-      return { success: true, toolsDiscovered: tools.length };
+      try {
+        await client.connect();
+        const tools = await client.listTools();
+        return { success: true, toolsDiscovered: tools.length };
+      } finally {
+        await client.disconnect();
+      }
     } catch (error) {
+      if (error instanceof UnauthorizedError) {
+        return { success: false, error: SIGN_IN_NEEDED };
+      }
       const errorMsg = error instanceof Error ? error.message : String(error);
       return { success: false, error: errorMsg };
     }
   }
 
   // Private helper methods
+
+  /**
+   * Store a connected client: list its tools, register them, and record 'connected'.
+   */
+  private async adoptClient(serverId: string, client: MCPClient): Promise<MCPConnectionResult> {
+    const tools = await client.listTools();
+
+    // Store the client first: registering a tool looks it up to route calls.
+    this.clients.set(serverId, client);
+
+    // If the connection ends by itself (program died, session gone), tidy up and say so.
+    client.onClosed?.((detail) => this.handleUnexpectedClose(serverId, client, detail));
+
+    for (const tool of tools) {
+      await this.registerTool(serverId, tool);
+    }
+
+    const stmt = this.db.prepare(`
+      UPDATE mcp_servers
+      SET connection_status = ?, tools_discovered = ?, last_connected_at = ?, updated_at = ?, last_error = NULL
+      WHERE id = ?
+    `);
+    stmt.run('connected', tools.length, Date.now(), Date.now(), serverId);
+
+    this.emit('server-status-changed', { serverId, status: 'connected' });
+    this.emit('tools-discovered', serverId, tools.length);
+
+    return { success: true, toolsDiscovered: tools.length };
+  }
+
+  /**
+   * Close the client of a server (if any) and unregister its tools.
+   * The client is removed from the map first so its close event is not mistaken for a crash.
+   */
+  private async teardown(serverId: string): Promise<void> {
+    const client = this.clients.get(serverId);
+    this.clients.delete(serverId);
+    if (client) {
+      await client.disconnect();
+    }
+    for (const tool of this.getToolsByServer(serverId)) {
+      this.toolRegistry.unregister(tool.id);
+    }
+  }
+
+  /** Write a status (and message) to the database and tell listeners. */
+  private recordStatus(serverId: string, status: MCPConnectionStatus, message: string | null): void {
+    this.db
+      .prepare('UPDATE mcp_servers SET connection_status = ?, last_error = ?, updated_at = ? WHERE id = ?')
+      .run(status, message, Date.now(), serverId);
+    this.emit('server-status-changed', { serverId, status });
+  }
+
+  /** A connected server's transport closed without us asking. */
+  private handleUnexpectedClose(serverId: string, client: MCPClient, detail?: string): void {
+    // Ignore if this is no longer the current client (we replaced or closed it ourselves).
+    if (this.clients.get(serverId) !== client) return;
+    this.clients.delete(serverId);
+    for (const tool of this.getToolsByServer(serverId)) {
+      this.toolRegistry.unregister(tool.id);
+    }
+    const message = detail
+      ? `The connection closed unexpectedly. Last output:\n${detail}`
+      : 'The connection closed unexpectedly.';
+    this.recordStatus(serverId, 'error', message);
+  }
+
+  private createOAuthProvider(config: MCPServerConfig): McpOAuthProvider {
+    return new McpOAuthProvider({
+      db: this.db,
+      serverId: config.id,
+      scope: config.oauthScope,
+      openExternal: this.options.openExternal ?? (() => Promise.reject(new Error('Cannot open the browser.'))),
+      callbackPort: this.options.oauthCallbackPort,
+      timeoutMs: this.options.oauthTimeoutMs,
+    });
+  }
 
   private loadServersFromDB(): MCPServerConfig[] {
     const stmt = this.db.prepare('SELECT * FROM mcp_servers ORDER BY name');
@@ -379,10 +602,10 @@ export class MCPManager extends EventEmitter {
     const config: MCPServerConfig = {
       id: row.id,
       name: row.name,
-      transportType: row.transport_type as 'sse' | 'stdio',
+      transportType: row.transport_type as MCPServerConfig['transportType'],
       enabled: Boolean(row.enabled),
       autoStart: Boolean(row.auto_start),
-      connectionStatus: row.connection_status as 'connected' | 'disconnected' | 'error',
+      connectionStatus: row.connection_status as MCPConnectionStatus,
       lastError: row.last_error || undefined,
       toolsDiscovered: row.tools_discovered,
       lastConnectedAt: row.last_connected_at || undefined,
@@ -399,6 +622,21 @@ export class MCPManager extends EventEmitter {
           config.sseAuthToken = decryptToken(row.sse_auth_token_encrypted);
         } catch (error) {
           console.error('Failed to decrypt SSE auth token:', error);
+        }
+      }
+    }
+
+    // Decrypt and add Streamable HTTP fields
+    if (config.transportType === 'http') {
+      config.httpUrl = row.http_url || undefined;
+      config.httpAuthHeader = row.http_auth_header || undefined;
+      config.oauth = Boolean(row.oauth);
+      config.oauthScope = row.oauth_scope || undefined;
+      if (row.http_auth_token_encrypted) {
+        try {
+          config.httpAuthToken = decryptToken(row.http_auth_token_encrypted);
+        } catch (error) {
+          console.error('Failed to decrypt HTTP auth token:', error);
         }
       }
     }
@@ -455,8 +693,10 @@ export class MCPManager extends EventEmitter {
     return {
       id: row.id,
       serverId: row.server_id,
-      serverName: row.server_name,
+      serverName: row.server_name ?? '',
       toolName: row.tool_name,
+      // display_name holds the name the assistant sees (chosen when the tool is registered).
+      llmName: row.display_name || row.tool_name,
       displayName: row.display_name || row.tool_name,
       description: row.custom_description || row.description,
       enabled: Boolean(row.enabled),
@@ -470,16 +710,22 @@ export class MCPManager extends EventEmitter {
         throw new Error('SSE URL is required for SSE transport');
       }
       return new SSEMCPClient(config.sseUrl, config.sseAuthHeader, config.sseAuthToken);
-    } else {
-      if (!config.stdioCommand) {
-        throw new Error('stdio command is required for stdio transport');
-      }
-      return new StdioMCPClient(
-        config.stdioCommand,
-        config.stdioArgs || [],
-        config.stdioEnv || {},
-      );
     }
+    if (config.transportType === 'http') {
+      if (!config.httpUrl) {
+        throw new Error('A web address is required for HTTP transport');
+      }
+      return new HTTPMCPClient(config.httpUrl, {
+        headerName: config.httpAuthHeader,
+        headerToken: config.httpAuthToken,
+        // Without an active sign-in this provider never opens the browser.
+        authProvider: config.oauth ? this.createOAuthProvider(config) : undefined,
+      });
+    }
+    if (!config.stdioCommand) {
+      throw new Error('stdio command is required for stdio transport');
+    }
+    return new StdioMCPClient(config.stdioCommand, config.stdioArgs || [], config.stdioEnv || {});
   }
 
   private async registerTool(serverId: string, toolDef: { name: string; description?: string; inputSchema: unknown }): Promise<void> {
@@ -493,6 +739,7 @@ export class MCPManager extends EventEmitter {
         enabled, confirmation_level, discovered_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
+        tool_name = excluded.tool_name,
         description = excluded.description,
         input_schema_json = excluded.input_schema_json,
         updated_at = excluded.updated_at
@@ -519,23 +766,57 @@ export class MCPManager extends EventEmitter {
   }
 
   private async registerToolFromDB(dbTool: MCPToolRow): Promise<void> {
-    const client = this.clients.get(dbTool.server_id);
-    if (!client) return;
+    if (!this.clients.has(dbTool.server_id)) return;
+
+    // The name the assistant sees. Kept stable across reconnects when still valid and free.
+    const llmName = this.resolveLlmName(dbTool);
 
     const registeredTool: RegisteredTool = {
       id: dbTool.id,
       serverId: dbTool.server_id,
-      toolName: dbTool.tool_name,
+      toolName: llmName,
       description: dbTool.custom_description || dbTool.description,
       inputSchema: JSON.parse(dbTool.input_schema_json) as Record<string, unknown>,
       enabled: Boolean(dbTool.enabled),
       confirmationLevel: dbTool.confirmation_level as 'none' | 'notify' | 'confirm' | 'block',
       execute: async (params: unknown) => {
-        return await client.callTool(dbTool.tool_name, params);
+        // Look the client up at call time so a reconnected server is used, and a dropped one gives a clear error.
+        const current = this.clients.get(dbTool.server_id);
+        if (!current) {
+          throw new Error(`MCP server is not connected: ${dbTool.server_name ?? dbTool.server_id}`);
+        }
+        // The server knows the tool by its own name, not the cleaned-up one.
+        return await current.callTool(dbTool.tool_name, params);
       },
     };
 
     this.toolRegistry.register(registeredTool);
+  }
+
+  /**
+   * Decide the LLM-facing name of a tool and save it in display_name.
+   * Reuses the saved name when it is valid and nobody else has it; otherwise cleans up the server's
+   * name, and prefixes it with the server name when it would clash (see tool-names.ts).
+   */
+  private resolveLlmName(dbTool: MCPToolRow): string {
+    const taken = new Set(
+      this.toolRegistry
+        .listAll()
+        .filter((tool) => tool.id !== dbTool.id)
+        .map((tool) => tool.toolName),
+    );
+    const saved = dbTool.display_name;
+    let name: string;
+    if (saved && isValidToolName(saved) && !taken.has(saved)) {
+      name = saved;
+    } else {
+      const server = this.getServerById(dbTool.server_id);
+      name = chooseToolName(dbTool.tool_name, server?.name ?? dbTool.server_id, taken);
+    }
+    if (name !== saved) {
+      this.db.prepare('UPDATE mcp_tools SET display_name = ? WHERE id = ?').run(name, dbTool.id);
+    }
+    return name;
   }
 }
 
@@ -550,6 +831,11 @@ interface MCPServerRow {
   stdio_command: string | null;
   stdio_args_json: string | null;
   stdio_env_json_encrypted: string | null;
+  http_url: string | null;
+  http_auth_header: string | null;
+  http_auth_token_encrypted: string | null;
+  oauth: number;
+  oauth_scope: string | null;
   enabled: number;
   auto_start: number;
   connection_status: string;
@@ -563,7 +849,7 @@ interface MCPServerRow {
 interface MCPToolRow {
   id: string;
   server_id: string;
-  server_name: string;
+  server_name?: string;
   tool_name: string;
   display_name: string | null;
   description: string;

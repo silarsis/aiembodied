@@ -101,15 +101,20 @@ more depth and are linked where they apply.
 
 ### Full MCP support
 
-- **Today:** MCP over SSE works and the Tools / MCP pop-up adds, enables and
-  tests servers. Tools are passed to local Qwen through tool calling (#282,
-  #283), with web search on SearXNG. The stdio client is still a stub, there is
-  no Streamable HTTP transport, and voice simply leaves out tools that need
-  confirmation instead of asking out loud.
+- **Today:** MCP servers work over stdio (a program on this PC, started with
+  the app and stopped when it quits), Streamable HTTP (a web address, with an
+  optional header token or OAuth sign-in in the browser) and the older SSE. The
+  Tools / MCP pop-up adds, signs in to, enables and tests servers and offers
+  ready-made ones (DAIR Academy papers). Tools are passed to local Qwen through
+  tool calling (#282, #283), with web search on SearXNG. Tool names are cleaned
+  up and prefixed with the server name when they would clash. Voice simply
+  leaves out tools that need confirmation instead of asking out loud.
 - **Akari:** MCP connectors for files, smart home and a 3D printer, plus
   voice-taught custom actions and shareable "recipe" packs.
 - **Dipal:** built-in assistant features only.
-- **To do:** finish the stdio client and add Streamable HTTP transport. Ask for spoken confirmation
+- **To do:** a 3D-room bookshelf for the DAIR Academy papers preset, and a
+  second look at servers that drop their HTTP session (they show as an error
+  until reconnected). Ask for spoken confirmation
   before risky tools, and keep a log of every call and refusal (Akari does
   both). See [features/02-mcp-integration.md](./features/02-mcp-integration.md).
 

@@ -9,13 +9,22 @@ export interface JSONSchema {
   [key: string]: unknown;
 }
 
-// MCP Server Configuration
+export type MCPConnectionStatus = 'connected' | 'disconnected' | 'error' | 'needs-sign-in';
+
+// MCP Server Configuration (main process only: it holds decrypted secrets)
 export interface MCPServerConfig {
   id: string;
   name: string;
-  transportType: 'sse' | 'stdio';
+  transportType: 'sse' | 'stdio' | 'http';
 
-  // SSE config
+  // Streamable HTTP config (the current standard for remote servers)
+  httpUrl?: string;
+  httpAuthHeader?: string;
+  httpAuthToken?: string; // Will be encrypted in DB
+  oauth?: boolean; // Sign in with the browser (OAuth 2.1); tokens live in the mcp_oauth table
+  oauthScope?: string; // Scope to ask for, e.g. 'papers:read'
+
+  // SSE config (the older web transport)
   sseUrl?: string;
   sseAuthHeader?: string;
   sseAuthToken?: string; // Will be encrypted in DB
@@ -28,7 +37,7 @@ export interface MCPServerConfig {
   // Common
   enabled: boolean;
   autoStart: boolean;
-  connectionStatus: 'connected' | 'disconnected' | 'error';
+  connectionStatus: MCPConnectionStatus;
   lastError?: string;
   toolsDiscovered: number;
   lastConnectedAt?: number;
@@ -47,6 +56,15 @@ export type MCPServerConfigInput = Omit<
   | 'createdAt'
   | 'updatedAt'
 >;
+
+/**
+ * What the renderer is allowed to see of a server: the same as MCPServerConfig but with every secret
+ * (header tokens, program environment values) replaced by a flag or the names only.
+ */
+export type MCPServerSummary = Omit<MCPServerConfig, 'sseAuthToken' | 'httpAuthToken' | 'stdioEnv'> & {
+  hasAuthToken: boolean; // A header token is stored (SSE or HTTP)
+  stdioEnvKeys?: string[]; // Names of the environment variables, never their values
+};
 
 // MCP Tool Definition
 export interface MCPTool {
@@ -71,7 +89,8 @@ export interface MCPToolSummary {
   id: string;
   serverId: string;
   serverName: string;
-  toolName: string;
+  toolName: string; // Name on the server
+  llmName: string; // Name the assistant sees (cleaned up, prefixed when it would clash)
   displayName: string;
   description: string;
   enabled: boolean;

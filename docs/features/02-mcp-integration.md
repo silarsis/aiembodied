@@ -4,6 +4,11 @@
 > **Status**: Implementation In Progress
 > **Last Updated**: 2026-01-05
 
+> **Status 2026-11-16**: stdio (SDK `StdioClientTransport`), Streamable HTTP (static header token or
+> OAuth 2.1 with PKCE and dynamic client registration) and SSE all work, with a "Sign in" flow, ready-made
+> presets (DAIR Academy papers) and LLM-safe tool names. The sections below are the original design;
+> where they differ (for example the stdio "Phase 2" notes), the code in `app/main/src/mcp/` wins.
+
 ## Overview
 
 This document describes the integration of Model Context Protocol (MCP) servers into the Embodied ChatGPT Assistant, enabling the LLM to execute actions via external tools and services through a unified interface. Users can configure MCP servers via a dedicated UI tab, and discovered tools become available for function calling during voice conversations.
