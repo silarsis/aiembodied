@@ -44,6 +44,7 @@ export function createWebSearchTool(
     },
     enabled: true,
     confirmationLevel: 'none',
+    readOnly: true,
     spokenNotice: 'Let me look that up.',
     describeCall: (params) => readQuery(params),
     execute: async (params) => {

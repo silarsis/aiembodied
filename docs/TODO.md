@@ -112,11 +112,26 @@ more depth and are linked where they apply.
 - **Akari:** MCP connectors for files, smart home and a 3D printer, plus
   voice-taught custom actions and shareable "recipe" packs.
 - **Dipal:** built-in assistant features only.
-- **To do:** a 3D-room bookshelf for the DAIR Academy papers preset, and a
-  second look at servers that drop their HTTP session (they show as an error
+- **To do:** a second look at servers that drop their HTTP session (they show as an error
   until reconnected). Ask for spoken confirmation
   before risky tools, and keep a log of every call and refusal (Akari does
   both). See [features/02-mcp-integration.md](./features/02-mcp-integration.md).
+
+### Stations: tools that live in the room
+
+- **Today (phase 1):** a tool source can be kept on an object in a 3D room. The
+  DAIR Academy papers server lives on the Reading room's bookshelf: when an
+  avatar uses it, the avatar walks to the bookshelf and acts reading while the
+  tool runs, and the answer waits (at most 6 s) until it is there. The 3D rooms
+  tab has a "Holds" choice per object and "Every use / Only changes"; the Tools
+  pop-up says where a server is kept and lets Kevin mark a tool "Only reads".
+  An avatar in another room goes to a place that shows the station's room, or
+  next door as an errand, and comes back before it answers. See
+  [features/stations.md](./features/stations.md).
+- **To do:** more built-in stations (a desk for coding tools, a window for
+  weather), a visible "reading" prop in the avatar's hands, avatar-side
+  gestures that match the verb, and letting rooms made by the room builder
+  suggest a station for the objects they contain.
 
 ### Timers, alarms, reminders, todos, weather, clocks, and a world tick
 

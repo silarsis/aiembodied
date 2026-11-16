@@ -67,7 +67,7 @@ export function registerMCPHandlers(mcpManager: MCPManager, toolRegistry: ToolRe
     async (
       _,
       toolId: string,
-      prefs: { enabled?: boolean; confirmationLevel?: string; customDescription?: string },
+      prefs: { enabled?: boolean; confirmationLevel?: string; customDescription?: string; readOnly?: boolean | null },
     ) => {
       await mcpManager.updateToolPreferences(toolId, prefs);
     },

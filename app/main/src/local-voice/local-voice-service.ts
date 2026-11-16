@@ -8,6 +8,8 @@ import type { ChatMessage, LlmToolCall, LlmToolDefinition } from './local-llm-cl
 import type { ChatClient } from './voice-engines.js';
 import type { RegisteredTool, ToolRegistry } from '../tools/tool-registry.js';
 import { describeOutcome, type ApprovalBroker } from '../tools/approvals.js';
+import type { VoiceStations } from '../stations/voice-stations.js';
+import type { StationUse } from '../stations/station-trips.js';
 import type { VoiceMemory } from '../memory-engine/voice-memory.js';
 import type { SpeechServiceClient } from './speech-service-client.js';
 import { stripAvatarTags } from './avatar-tags.js';
@@ -101,6 +103,11 @@ export interface LocalVoiceServiceOptions {
    * recorded here for Kevin to approve (card or a spoken yes). Without it they stay hidden.
    */
   approvals?: Pick<ApprovalBroker, 'request' | 'waitingMessage' | 'resolveSpoken'>;
+  /**
+   * Tools that live at a station in a 3D room: their description says where they are kept, the avatar says a
+   * notice, walks there while the tool runs, and the answer waits until it arrived (or the cap).
+   */
+  stations?: VoiceStations;
   /** A line added to the system prompt each turn, such as which workspaces the coding tools reach. */
   extraInstructions?: () => string | null | undefined;
   /** Updates are waiting and a system turn may run now: the renderer should call respond({ system: true }). */
@@ -133,6 +140,7 @@ export class LocalVoiceService {
   private readonly maxHistoryMessages: number;
 
   private readonly onToolResult?: (record: LocalVoiceToolRecord) => void;
+  private readonly stations?: VoiceStations;
   private readonly voiceFor?: () => string | undefined | Promise<string | undefined>;
   private readonly historyIdleResetMs: number;
   private readonly now: () => number;
@@ -163,6 +171,7 @@ export class LocalVoiceService {
     this.logger = options.logger;
     this.maxHistoryMessages = options.maxHistoryMessages ?? 24;
     this.onToolResult = options.onToolResult;
+    this.stations = options.stations;
     this.voiceFor = options.voiceFor;
     this.memory = options.memory;
     this.approvals = options.approvals;
@@ -422,6 +431,10 @@ export class LocalVoiceService {
 
     // Tools that need approval ("confirm") are offered when there is a broker to ask Kevin;
     // forbidden ones ("block") never are, and a call to one is refused as an unknown tool.
+    if (!preview && !request.noTools) {
+      // So the station notes can use room and object names; a failure only costs the note its names.
+      await this.stations?.prepare().catch(() => undefined);
+    }
     const tools = (preview || request.noTools ? [] : (this.tools?.list() ?? [])).filter(
       (tool) =>
         tool.confirmationLevel === 'none' ||
@@ -481,7 +494,7 @@ export class LocalVoiceService {
         const offered = round < MAX_TOOL_ROUNDS ? tools : [];
         const thinking = new ThinkFilter();
         let calls: LlmToolCall[] = [];
-        for await (const part of llm.streamChat(messages, { signal, tools: toToolDefinitions(offered) })) {
+        for await (const part of llm.streamChat(messages, { signal, tools: toToolDefinitions(offered, this.stations) })) {
           if (part.type === 'tool_calls') {
             calls = part.calls;
           } else {
@@ -502,7 +515,13 @@ export class LocalVoiceService {
 
         // Say something while the tools run, unless the model already did.
         if (!text) {
-          const notice = calls.map((call) => findTool(offered, call.name)?.spokenNotice).find(Boolean);
+          const notice = calls
+            .map((call) => {
+              const tool = findTool(offered, call.name);
+              // A station may say its own thing ("Let me check the bookshelf.", "I'll go and check ...").
+              return (tool && this.stations?.noticeFor(this.avatarId, tool)) || tool?.spokenNotice;
+            })
+            .find(Boolean);
           speak(notice ?? DEFAULT_SPOKEN_NOTICE);
         }
         messages.push({
@@ -515,7 +534,7 @@ export class LocalVoiceService {
           })),
         });
         for (const call of calls) {
-          const content = await this.runTool(requestId, findTool(offered, call.name), call, emit);
+          const content = await this.runTool(requestId, findTool(offered, call.name), call, emit, signal);
           signal.throwIfAborted();
           messages.push({ role: 'tool', tool_call_id: call.id, content });
         }
@@ -570,6 +589,7 @@ export class LocalVoiceService {
     tool: RegisteredTool | undefined,
     call: LlmToolCall,
     emit: (event: LocalVoiceEvent) => void,
+    signal: AbortSignal,
   ): Promise<string> {
     let params: unknown;
     try {
@@ -583,24 +603,42 @@ export class LocalVoiceService {
 
     let failure: string | null = null;
     let content = '';
-    if (!tool || !this.tools) {
-      failure = `There is no tool called ${call.name}.`;
-    } else if (params === undefined) {
-      failure = 'The tool arguments were not valid JSON.';
-    } else if (tool.confirmationLevel === 'confirm' && this.approvals) {
-      // Not run: Kevin has to approve it first (the card, or a spoken yes).
-      const approval = await this.approvals.request(tool, params);
-      content = this.approvals.waitingMessage(approval);
-      this.logger?.info('Local voice: tool call waits for approval', { name: call.name, label, approvalId: approval.id });
-      emit({ ...event, status: 'done', detail: 'waiting for approval' });
-    } else {
-      const result = await this.tools.execute(tool.id, params);
-      if (result.success) {
-        content = typeof result.data === 'string' ? result.data : JSON.stringify(result.data ?? null);
-        this.logger?.info('Local voice: tool call finished', { name: call.name, label, durationMs: result.durationMs });
-        emit({ ...event, status: 'done', detail: `${result.durationMs} ms` });
+    // A tool that lives at a station sends the avatar there. The tool starts at once; only the answer waits.
+    let trip: StationUse | null = null;
+    if (tool && this.tools && params !== undefined && tool.confirmationLevel !== 'confirm') {
+      try {
+        trip = this.stations?.begin(this.avatarId, tool) ?? null;
+      } catch (error) {
+        this.logger?.warn('Local voice: starting a station trip failed', { message: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    try {
+      if (!tool || !this.tools) {
+        failure = `There is no tool called ${call.name}.`;
+      } else if (params === undefined) {
+        failure = 'The tool arguments were not valid JSON.';
+      } else if (tool.confirmationLevel === 'confirm' && this.approvals) {
+        // Not run: Kevin has to approve it first (the card, or a spoken yes).
+        const approval = await this.approvals.request(tool, params);
+        content = this.approvals.waitingMessage(approval);
+        this.logger?.info('Local voice: tool call waits for approval', { name: call.name, label, approvalId: approval.id });
+        emit({ ...event, status: 'done', detail: 'waiting for approval' });
       } else {
-        failure = result.error ?? 'The tool failed.';
+        const result = await this.tools.execute(tool.id, params);
+        if (result.success) {
+          content = typeof result.data === 'string' ? result.data : JSON.stringify(result.data ?? null);
+          this.logger?.info('Local voice: tool call finished', { name: call.name, label, durationMs: result.durationMs });
+          emit({ ...event, status: 'done', detail: `${result.durationMs} ms` });
+        } else {
+          failure = result.error ?? 'The tool failed.';
+        }
+      }
+    } finally {
+      if (trip) {
+        // Hold the answer until the avatar is at the station (or back), at most the trip's own cap.
+        await trip.settle(failure === null, signal).catch((error: unknown) => {
+          this.logger?.warn('Local voice: a station trip failed', { message: error instanceof Error ? error.message : String(error) });
+        });
       }
     }
     this.reportToolResult(call.name, params ?? call.arguments, failure ?? content, failure === null);
@@ -627,10 +665,11 @@ export class LocalVoiceService {
   }
 }
 
-function toToolDefinitions(tools: RegisteredTool[]): LlmToolDefinition[] {
+function toToolDefinitions(tools: RegisteredTool[], stations?: VoiceStations): LlmToolDefinition[] {
   return tools.map((tool) => ({
     type: 'function',
-    function: { name: tool.toolName, description: tool.description, parameters: tool.inputSchema },
+    // The stored description stays as it is; the note about where the tool is kept is added for the model only.
+    function: { name: tool.toolName, description: tool.description + (stations?.descriptionNote(tool) ?? ''), parameters: tool.inputSchema },
   }));
 }
 

@@ -62,6 +62,8 @@ const FORWARD = [
   'places:arrived',
   'places:summon',
   'places:can-wander',
+  // A station walk is done (or cannot happen): bija may go on with the answer.
+  'station:arrived',
   // The satellite's own main process asks for the wake word picked on bija (and a trained model's file). The page never calls it.
   'wake-word:model',
 ] as const;
@@ -106,6 +108,8 @@ const EVENT = [
   'coding:busy',
   // A greeting for an avatar that just walked in where a face was seen (this PC's own camera cues are sent by its own main process).
   'camera:detection',
+  // An avatar of that room goes to the object that holds a tool (stations).
+  'station:use',
 ] as const;
 
 /** Never run on a satellite: settings, models, keys, avatars, coding, generation, uploads, deletes, memory, tools, bija's own admin. */
@@ -191,6 +195,11 @@ const UNAVAILABLE = [
   'rooms:generated:delete',
   'rooms:generated:list',
   'rooms:idle-settings:set',
+  // Setting up stations is done on bija.
+  'stations:hold',
+  'stations:list',
+  'stations:remove',
+  'stations:update',
   'rooms:object-settings:set',
   // Coding, memory, tools.
   'coding:answer-task',

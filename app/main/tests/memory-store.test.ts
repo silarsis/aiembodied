@@ -261,17 +261,30 @@ describe('MemoryStore speaker column', () => {
     for (const column of ['http_url', 'http_auth_header', 'http_auth_token_encrypted', 'oauth', 'oauth_scope']) {
       first.database.exec(`ALTER TABLE mcp_servers DROP COLUMN ${column};`);
     }
+    // ...and what version 11 added (read-only state of MCP tools).
+    first.database.exec('ALTER TABLE mcp_tools DROP COLUMN read_only_hint;');
+    first.database.exec('ALTER TABLE mcp_tools DROP COLUMN read_only;');
     first.database.pragma('user_version = 8');
     first.dispose();
 
     const store = new MemoryStore({ filePath });
     stores.push(store);
-    expect(Number(store.database.pragma('user_version', { simple: true }))).toBe(10);
+    expect(Number(store.database.pragma('user_version', { simple: true }))).toBe(11);
     const columns = store.database.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string; notnull: number }>;
     expect(columns.find((c) => c.name === 'speaker')).toMatchObject({ notnull: 0 });
     expect(store.listMessages('s')).toEqual([{ id: 'old', sessionId: 's', role: 'user', ts: 1, content: 'before', audioPath: null }]);
     store.appendMessage({ id: 'new', sessionId: 's', role: 'assistant', ts: 2, content: 'after', audioPath: null, speaker: 'echo' });
     expect(store.listMessages('s')[1]?.speaker).toBe('echo');
+  });
+
+  it('migration 11 gives mcp_tools its read-only columns', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'memory-store-readonly-'));
+    tempDirs.push(directory);
+    const store = new MemoryStore({ filePath: path.join(directory, 'memory.db') });
+    stores.push(store);
+    const columns = (store.database.prepare('PRAGMA table_info(mcp_tools)').all() as Array<{ name: string; notnull: number }>);
+    expect(columns.find((c) => c.name === 'read_only_hint')).toMatchObject({ notnull: 0 });
+    expect(columns.find((c) => c.name === 'read_only')).toMatchObject({ notnull: 0 });
   });
 
   it('migration 10 gives mcp_servers its web-address columns and creates mcp_oauth', async () => {

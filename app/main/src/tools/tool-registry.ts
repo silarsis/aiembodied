@@ -13,6 +13,7 @@ export interface RegisteredTool {
   enabled: boolean; // Whether the tool is enabled
   confirmationLevel: 'none' | 'notify' | 'confirm' | 'block'; // Security level
   execute: (params: unknown) => Promise<unknown>; // Execution function
+  readOnly?: boolean; // True when the tool only reads (MCP: person's choice, else server hint); used by stations
   spokenNotice?: string; // Said aloud by the local voice while the tool runs, e.g. "Let me look that up."
   describeCall?: (params: unknown) => string; // Short label for a call in the status panel
   /**

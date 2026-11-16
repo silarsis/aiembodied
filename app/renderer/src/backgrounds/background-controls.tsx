@@ -4,6 +4,8 @@ import { MAX_ROOM_AVATAR_HEIGHT, MIN_ROOM_AVATAR_HEIGHT, type OnTalk, type Restl
 import { RoomCards } from './room-cards.js';
 import { RoomDescribeForm } from './room-describe-form.js';
 import { GeneratedObjects, MakeMissingObjects } from './room-objects.js';
+import { RoomStations } from './room-stations.js';
+import type { McpBridge, StationsBridge } from '../preload-api.js';
 
 export interface WalkableAreaToggle {
   shown: boolean;
@@ -13,8 +15,13 @@ export interface WalkableAreaToggle {
 export function BackgroundControls({
   backgrounds,
   walkableArea,
+  stations,
+  mcp,
 }: {
   backgrounds: BackgroundController;
+  /** Stations (what an object in a room holds); without them the section is not shown. */
+  stations?: StationsBridge;
+  mcp?: McpBridge;
   /** Developer toggle for the navmesh overlay; only passed when the metrics HUD flag is on. */
   walkableArea?: WalkableAreaToggle;
 }) {
@@ -47,6 +54,7 @@ export function BackgroundControls({
           <RoomDescribeForm backgrounds={backgrounds} prompt={roomPrompt} onPromptChange={setRoomPrompt} />
           <MakeMissingObjects backgrounds={backgrounds} />
           <GeneratedObjects backgrounds={backgrounds} />
+          <RoomStations backgrounds={backgrounds} stations={stations} mcp={mcp} />
           <AvatarHeight backgrounds={backgrounds} />
           <WhenIdle backgrounds={backgrounds} />
           {walkableArea ? (

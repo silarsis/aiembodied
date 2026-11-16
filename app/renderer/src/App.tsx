@@ -77,6 +77,7 @@ import { getMotionTraceSetting, initMotionTrace, isSettleRetryEnabled, setMotion
 import { tagToAction, type SceneAction } from './rooms/scene-actions.js';
 import { buildSceneInstructions, describeAvatarWhere, describeBody, type OtherAvatarEntry } from './rooms/scene-instructions.js';
 import { useIdleDirector } from './rooms/use-idle-director.js';
+import { handleStationUse } from './rooms/station-walks.js';
 import { usePlaces } from './places/use-places.js';
 import { useSatellite } from './satellite/satellite-context.js';
 import { SatelliteBanner } from './satellite/satellite-banner.js';
@@ -1665,6 +1666,24 @@ export default function App() {
   useEffect(() => {
     animationTextHandlerRef.current = handleRealtimeTextContent;
   }, [handleRealtimeTextContent]);
+
+  // Stations: main says an avatar is using a tool that lives at an object in the room. Walk it there and act the
+  // activity; main holds the spoken answer until `arrived` (rooms/station-walks.ts). The latest values are read from refs.
+  const presentIdsRef = useRef(presence.present);
+  useEffect(() => { presentIdsRef.current = presence.present; }, [presence.present]);
+  useEffect(() => {
+    const stations = resolveApi()?.stations;
+    if (!stations?.onUse) return undefined;
+    return stations.onUse((event) =>
+      handleStationUse(event, {
+        room: () => activeRoomRef.current,
+        executorFor: (avatarId) => rigs.get(avatarId).executor,
+        isHere: (avatarId) => presentIdsRef.current.includes(avatarId),
+        gesture: (text, avatarId) => animationTextHandlerRef.current(text, avatarId),
+        arrived: (useId) => void stations.arrived(useId).catch((error: unknown) => console.warn('[stations] could not report arrival', error)),
+      }),
+    );
+  }, [resolveApi, rigs]);
 
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const visemeDriverRef = useRef<VisemeDriver | null>(null);
@@ -3622,6 +3641,8 @@ export default function App() {
           <PanelDialog id="backgrounds" title="Backgrounds" subtitle="Pick a scene or describe a new one." open={panel === 'backgrounds'} onClose={closePanel}>
             <BackgroundControls
               backgrounds={backgrounds}
+              stations={activeBridge?.stations}
+              mcp={activeBridge?.mcp}
               walkableArea={{ shown: showWalkableArea, onChange: setShowWalkableArea }}
             />
           </PanelDialog>
@@ -3643,6 +3664,7 @@ export default function App() {
             <ToolsSettings
               mcp={activeBridge?.mcp}
               models={activeBridge?.models}
+              stations={activeBridge?.stations}
               active={panel === 'tools'}
               onOpenWebSearch={activeBridge?.models ? () => openModels('search') : undefined}
             />

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { MCPServerConfigInput, MCPServerSummary, MCPToolSummary } from '../../../main/src/mcp/types.js';
 import type { MCPPresetSummary } from '../../../main/src/mcp/presets.js';
-import type { McpBridge, ModelsBridge } from '../preload-api.js';
+import type { StationView } from '../../../main/src/stations/types.js';
+import type { McpBridge, ModelsBridge, StationsBridge } from '../preload-api.js';
 
 const CONFIRMATION_LEVELS = [
   { value: 'none', label: 'Run straight away' },
@@ -124,11 +125,14 @@ function errorText(error: unknown, fallback: string) {
 export function ToolsSettings({
   mcp,
   models,
+  stations,
   active,
   onOpenWebSearch,
 }: {
   mcp?: McpBridge;
   models?: ModelsBridge;
+  /** Where tools are kept in rooms; used to say "Kept on the bookshelf in the Reading room". */
+  stations?: StationsBridge;
   active: boolean;
   onOpenWebSearch?(): void;
 }) {
@@ -137,18 +141,21 @@ export function ToolsSettings({
   const [servers, setServers] = useState<MCPServerSummary[]>([]);
   const [tools, setTools] = useState<MCPToolSummary[]>([]);
   const [presets, setPresets] = useState<MCPPresetSummary[]>([]);
+  const [stationList, setStationList] = useState<StationView[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState<ServerDraft | null>(null);
 
   const reload = useCallback(async () => {
-    const [nextDefinitions, nextServers, nextTools, nextPresets, routing] = await Promise.all([
+    const [nextDefinitions, nextServers, nextTools, nextPresets, routing, nextStations] = await Promise.all([
       mcp?.getToolDefinitionsForLLM?.().catch(() => null) ?? null,
       mcp?.listServers().catch(() => []) ?? [],
       mcp?.listTools().catch(() => []) ?? [],
       mcp?.listPresets?.().catch(() => []) ?? [],
       models?.get().catch(() => null) ?? null,
+      stations?.list().catch(() => [] as StationView[]) ?? [],
     ]);
+    setStationList(nextStations);
     setDefinitions(nextDefinitions);
     setServers(nextServers);
     setTools(nextTools);
@@ -161,7 +168,7 @@ export function ToolsSettings({
         .filter((name): name is string => Boolean(name));
       setSearchServers(names.length > 0 ? names.join(', then ') : '');
     }
-  }, [mcp, models]);
+  }, [mcp, models, stations]);
 
   useEffect(() => {
     if (active) void Promise.resolve().then(reload);
@@ -225,6 +232,7 @@ export function ToolsSettings({
     );
   };
 
+  const stationFor = (serverId: string): StationView | undefined => stationList.find((station) => station.serverId === serverId);
   const signOut = mcp?.signOut?.bind(mcp);
   const builtIn = (definitions ?? []).filter(
     (definition) => !tools.some((tool) => tool.llmName === definition.name),
@@ -304,6 +312,11 @@ export function ToolsSettings({
                       {statusText(server)}
                     </span>
                   </div>
+                  {stationFor(server.id) ? (
+                    <p className="kiosk__helper">
+                      Kept on the {stationFor(server.id)?.objectName} in the {stationFor(server.id)?.roomName}
+                    </p>
+                  ) : null}
                   {server.lastError ? (
                     <p className="kiosk__helper" style={{ whiteSpace: 'pre-wrap' }}>
                       {server.lastError}
@@ -413,6 +426,21 @@ export function ToolsSettings({
                                 {level.label}
                               </option>
                             ))}
+                          </select>
+                          <select
+                            aria-label={`Does ${tool.llmName || tool.toolName} change things`}
+                            value={tool.readOnly ? 'reads' : 'changes'}
+                            disabled={busy !== null || !tool.enabled}
+                            onChange={(event) =>
+                              void run(
+                                tool.id,
+                                () => mcp.updateToolPreferences(tool.id, { readOnly: event.target.value === 'reads' }),
+                                'Couldn’t save that.',
+                              )
+                            }
+                          >
+                            <option value="changes">Changes things</option>
+                            <option value="reads">Only reads</option>
                           </select>
                           {tool.description ? <span className="kiosk__helper">{tool.description}</span> : null}
                         </li>

@@ -3,6 +3,7 @@ import type { AvatarsBridge } from '../../main/src/avatars/bridge-types.js';
 import type { PresenceBridge } from '../../main/src/presence/bridge-types.js';
 import type { FloorBridge } from '../../main/src/floor/bridge-types.js';
 import type { PlacesBridge } from '../../main/src/places/bridge-types.js';
+import type { StationsBridge } from '../../main/src/stations/bridge-types.js';
 import type { RoomHubBridge } from '../../main/src/room-hub/bridge-types.js';
 import type { DeviceGateBridge, SatelliteBridge } from '../../main/src/satellite/bridge-types.js';
 import type { GpuMemoryBridge } from '../../main/src/diagnostics/gpu-memory.js';
@@ -55,6 +56,8 @@ import type { MCPPresetSummary } from '../../main/src/mcp/presets.js';
 import type { AvatarBridge } from './avatar/types.js';
 import type { CameraDetectionEvent } from './avatar/behavior-cues.js';
 import type { MemoryEngineBridge } from '../../main/src/memory-engine/bridge-types.js';
+
+export type { StationsBridge };
 
 export interface ConfigBridge {
   get(): Promise<RendererConfig>;
@@ -177,6 +180,7 @@ export interface PreloadApi {
   presence?: PresenceBridge;
   floor?: FloorBridge;
   places?: PlacesBridge;
+  stations?: StationsBridge;
   roomHub?: RoomHubBridge;
   satellite?: SatelliteBridge;
   deviceGate?: DeviceGateBridge;
@@ -205,7 +209,10 @@ export interface McpBridge {
   addPreset?(presetId: string): Promise<MCPServerSummary>;
   disconnectServer(id: string): Promise<void>;
   listTools(serverId?: string): Promise<MCPToolSummary[]>;
-  updateToolPreferences(toolId: string, prefs: { enabled?: boolean; confirmationLevel?: string }): Promise<void>;
+  updateToolPreferences(
+    toolId: string,
+    prefs: { enabled?: boolean; confirmationLevel?: string; readOnly?: boolean | null },
+  ): Promise<void>;
   onServerStatusChanged?(callback: (event: unknown) => void): () => void;
   onToolsDiscovered?(callback: (serverId: string, count: number) => void): () => void;
   getToolDefinitionsForLLM?(): Promise<{ name: string; description: string }[]>;

@@ -19,6 +19,7 @@ vi.mock('../../src/mcp/clients/sse-client.js', () => ({
           name: 'test-tool',
           description: 'A test tool',
           inputSchema: { type: 'object', properties: {} },
+          readOnlyHint: true,
         },
       ]),
       callTool: vi.fn().mockResolvedValue('tool result'),
@@ -93,6 +94,8 @@ describe('MCPManager', () => {
         enabled INTEGER DEFAULT 1,
         confirmation_level TEXT DEFAULT 'none',
         custom_description TEXT,
+        read_only_hint INTEGER,
+        read_only INTEGER,
         discovered_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         FOREIGN KEY (server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE
@@ -527,6 +530,44 @@ describe('MCPManager', () => {
 
       const updated = manager.listTools(server.id);
       expect(updated[0].description).toBe('Custom description');
+    });
+  });
+
+  describe('read-only tools (for stations)', () => {
+    async function connected() {
+      const server = await manager.addServer({
+        name: 'Server',
+        transportType: 'sse',
+        sseUrl: 'https://example.com',
+        enabled: true,
+        autoStart: false,
+      });
+      await manager.connectServer(server.id);
+      return { server, tool: manager.listTools(server.id)[0] };
+    }
+
+    it('takes the read-only hint the server sent', async () => {
+      const { tool } = await connected();
+      expect(tool.readOnly).toBe(true);
+      expect(tool.readOnlyOverride).toBeNull();
+      expect(toolRegistry.list()[0].readOnly).toBe(true);
+    });
+
+    it("lets the person's choice win over the hint, and go back to the hint with null", async () => {
+      const { server, tool } = await connected();
+      await manager.updateToolPreferences(tool.id, { readOnly: false });
+      expect(manager.listTools(server.id)[0]).toMatchObject({ readOnly: false, readOnlyOverride: false });
+      expect(toolRegistry.get(tool.id)?.readOnly).toBe(false);
+
+      await manager.updateToolPreferences(tool.id, { readOnly: null });
+      expect(manager.listTools(server.id)[0]).toMatchObject({ readOnly: true, readOnlyOverride: null });
+      expect(toolRegistry.get(tool.id)?.readOnly).toBe(true);
+    });
+
+    it('treats a tool as changing things when nobody said otherwise', async () => {
+      const { server, tool } = await connected();
+      db.prepare('UPDATE mcp_tools SET read_only_hint = NULL WHERE id = ?').run(tool.id);
+      expect(manager.listTools(server.id)[0].readOnly).toBe(false);
     });
   });
 
