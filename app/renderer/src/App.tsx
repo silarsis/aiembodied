@@ -3595,6 +3595,16 @@ export default function App() {
                     }
                   : undefined
               }
+              onDeleteModel={
+                activeBridge?.avatar?.deleteModel
+                  ? async (modelId) => {
+                      await activeBridge?.avatar?.deleteModel(modelId);
+                      // Deleting can move the active model; read it back so Echo follows.
+                      const active = await activeBridge?.avatar?.getActiveModel?.();
+                      setActiveVrmModel(active ?? null);
+                    }
+                  : undefined
+              }
             />
             <AvatarConfigurator
               avatarApi={activeBridge?.avatar}

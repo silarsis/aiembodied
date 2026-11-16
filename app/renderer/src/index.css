@@ -2314,6 +2314,24 @@ body {
   font-weight: 600;
 }
 .avatarPicker__img--echo { color: #7dd3fc; }
+.avatarPicker__cell { position: relative; display: grid; min-width: 0; }
+.sceneCast__add .avatarPicker__delete,
+.avatarPicker__delete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(248, 113, 113, 0.5);
+  background: rgba(15, 23, 42, 0.85);
+  color: #fecaca;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+.sceneCast__add .avatarPicker__delete:disabled { opacity: 0.35; cursor: default; }
+.sceneCast__add .avatarPicker__delete:hover:not(:disabled) { background: rgba(127, 29, 29, 0.8); }
 .avatarPicker__name {
   font-size: 0.72rem;
   max-width: 100%;

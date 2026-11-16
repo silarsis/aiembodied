@@ -69,6 +69,26 @@ describe('SceneCast', () => {
     expect(tiles.map((tile) => tile.getAttribute('aria-label'))).toEqual(['Same look as Echo', 'Body One', 'Body Two', 'Body Three']);
   });
 
+  it('deletes a library avatar after confirming, naming who wore it, and never the one Echo wears', async () => {
+    const onDeleteModel = vi.fn(async () => undefined);
+    const onChanged = vi.fn();
+    render(<SceneCast api={makeApi()} profiles={[echo, luna]} models={models} onDeleteModel={onDeleteModel} onChanged={onChanged} />);
+    expect(screen.getByRole('button', { name: 'Delete Body One' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Body Two' }));
+    expect(screen.getByText(/Delete Body Two from the library\? This can't be undone\. Luna will look like Echo instead\./)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel deleting Body Two' }));
+    expect(onDeleteModel).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Body Three' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm deleting Body Three' }));
+    await waitFor(() => expect(onDeleteModel).toHaveBeenCalledWith('m3'));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it('shows no Delete without a way to delete', () => {
+    render(<SceneCast api={makeApi()} profiles={[echo]} models={models} />);
+    expect(screen.queryByRole('button', { name: 'Delete Body Two' })).toBeNull();
+  });
+
   it('adds by name, with an optional prompt, and clears the form', async () => {
     const api = makeApi();
     render(<SceneCast api={api} profiles={[echo]} models={[]} />);
