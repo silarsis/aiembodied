@@ -316,3 +316,71 @@ describe('RoomSceneController places', () => {
     instance.dispose();
   });
 });
+
+describe('RoomSceneController contact body', () => {
+  /** A rig with hips, spine and legs, sitting on the reading-room sofa: thighs sunk into the cushion. */
+  async function seatedOnSofa() {
+    const canvas = document.createElement('canvas');
+    const parent = document.createElement('div');
+    parent.append(canvas);
+    Object.defineProperty(parent, 'clientWidth', { value: 800 });
+    Object.defineProperty(parent, 'clientHeight', { value: 600 });
+    const renderer = { setClearColor: () => undefined, setSize: () => undefined } as unknown as THREE.WebGLRenderer;
+    const instance = new RoomSceneController({ renderer, scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(), canvas, legacySize: { width: 480, height: 640 } });
+    const avatar = new THREE.Group();
+    const bones = new Map<string, THREE.Object3D>();
+    const add = (name: string, parentName: string | null, x: number, y: number, z: number) => {
+      const bone = new THREE.Object3D();
+      bone.position.set(x, y, z);
+      (parentName ? bones.get(parentName)! : avatar).add(bone);
+      bones.set(name, bone);
+    };
+    add('hips', null, 0, 0.63, 0);
+    add('spine', 'hips', 0, 0.1, 0);
+    add('chest', 'spine', 0, 0.15, 0);
+    add('neck', 'chest', 0, 0.25, 0);
+    for (const [side, sign] of [['left', 1], ['right', -1]] as const) {
+      add(`${side}UpperLeg`, 'hips', sign * 0.09, -0.05, 0);
+      add(`${side}LowerLeg`, `${side}UpperLeg`, 0, -0.43, 0);
+      add(`${side}Foot`, `${side}LowerLeg`, 0, -0.3, 0);
+      bones.get(`${side}UpperLeg`)!.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -(75 * Math.PI) / 180);
+      bones.get(`${side}LowerLeg`)!.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), (60 * Math.PI) / 180);
+    }
+    instance.attachAvatar(avatar, { getNormalizedBoneNode: (name: string) => bones.get(name) ?? null } as never, 0.95);
+    const reading = builtInRoom('reading-room');
+    await instance.setRoom(reading);
+    const sofa = reading.objects.find((object) => object.id === 'sofa')!;
+    avatar.position.set(sofa.position[0], 0, sofa.position[2] + 0.15);
+    avatar.updateWorldMatrix(true, true);
+    const animated = new Map([...bones].map(([name, bone]) => [name, bone.quaternion.clone()]));
+    for (let i = 0; i < 40; i += 1) {
+      for (const [name, q] of animated) bones.get(name)!.quaternion.copy(q);
+      instance.solveContact(1 / 60);
+    }
+    return { instance, avatar, bones, animated };
+  }
+
+  it('drops the pelvis lift when another room is entered, so the avatar is not left below the floor', async () => {
+    const { instance, avatar } = await seatedOnSofa();
+    expect(instance.sceneEnv.contactBody!.pelvisLift).toBeGreaterThan(0.005);
+    const studio = builtInRoom('studio-flat');
+    await instance.setRoom(studio);
+    expect(instance.sceneEnv.contactBody!.pelvisLift).toBe(0);
+    expect(avatar.position.y).toBeCloseTo(studio.home.position[1], 9);
+    for (let i = 0; i < 30; i += 1) instance.solveContact(1 / 60);
+    expect(avatar.position.y).toBeGreaterThanOrEqual(studio.home.position[1] - 1e-9);
+    instance.dispose();
+  });
+
+  it('gives bones the mixer does not key their animated pose back when the room is left', async () => {
+    const { instance, bones, animated } = await seatedOnSofa();
+    const corrected = ['leftUpperLeg', 'leftLowerLeg', 'rightUpperLeg', 'rightLowerLeg'].filter(
+      (name) => !bones.get(name)!.quaternion.equals(animated.get(name)!),
+    );
+    expect(corrected.length).toBeGreaterThan(0);
+    await instance.setRoom(null);
+    instance.solveContact(1 / 60);
+    for (const [name, q] of animated) expect(bones.get(name)!.quaternion.angleTo(q)).toBeLessThan(1e-9);
+    instance.dispose();
+  });
+});

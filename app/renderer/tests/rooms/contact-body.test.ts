@@ -141,6 +141,45 @@ describe('ContactBody on the reading-room sofa', () => {
     expect(avatar.scene.position.y).toBeCloseTo(baseY, 9);
   });
 
+  it('takes a pose that something else rewrote after our write (a pose blend) as the new animated pose', () => {
+    const avatar = seated(0.3, 75, 60);
+    const body = new ContactBody(avatar.humanoid);
+    const thigh = avatar.bones.get('leftUpperLeg')!;
+    const animated = thigh.quaternion.clone();
+    run(avatar, body, 30, () => thigh.quaternion.copy(animated));
+    expect(thigh.quaternion.equals(animated)).toBe(false);
+    // Stand up and walk off; a pose blend (which runs before the contact solve) writes a pose between
+    // the corrected one and the new animation. Nothing touches the contact any more, so it must stay exactly so.
+    avatar.scene.position.set(-2, avatar.scene.position.y - body.pelvisLift, 1);
+    avatar.bones.get('hips')!.position.set(0, 0.95, 0);
+    for (const name of ['leftUpperLeg', 'leftLowerLeg', 'rightUpperLeg', 'rightLowerLeg']) avatar.bones.get(name)!.quaternion.identity();
+    const blended = new THREE.Quaternion().copy(thigh.quaternion).setFromAxisAngle(new THREE.Vector3(1, 0, 0), -deg(10));
+    thigh.quaternion.copy(blended);
+    avatar.scene.updateMatrixWorld(true);
+    body.update(avatar, physics, 1 / 60, [], null);
+    // Weight is still easing out, but it eases from the blended pose, not from a stale animated one.
+    const angleToBlended = thigh.quaternion.angleTo(blended);
+    const angleToStale = thigh.quaternion.angleTo(animated);
+    expect(angleToBlended).toBeLessThan(angleToStale);
+    run(avatar, body, 120, () => thigh.quaternion.copy(blended));
+    expect(thigh.quaternion.angleTo(blended)).toBeLessThan(1e-6);
+  });
+
+  it('release() puts back the animated pose of bones nothing else rewrites and clears the lift', () => {
+    const avatar = seated(0.3, 75, 60);
+    const body = new ContactBody(avatar.humanoid);
+    const names = ['leftUpperLeg', 'leftLowerLeg', 'rightUpperLeg', 'rightLowerLeg'];
+    const animated = new Map(names.map((name) => [name, avatar.bones.get(name)!.quaternion.clone()]));
+    run(avatar, body, 30, () => {
+      for (const [name, q] of animated) avatar.bones.get(name)!.quaternion.copy(q);
+    });
+    expect(names.some((name) => !avatar.bones.get(name)!.quaternion.equals(animated.get(name)!))).toBe(true);
+    expect(body.pelvisLift).toBeGreaterThan(0);
+    body.release();
+    for (const [name, q] of animated) expect(avatar.bones.get(name)!.quaternion.angleTo(q)).toBeLessThan(1e-9);
+    expect(body.pelvisLift).toBe(0);
+  });
+
   it('leaves a pose with no contact exactly as it was', () => {
     const avatar = buildAvatar();
     avatar.scene.position.set(-2, 0, 1);

@@ -230,8 +230,9 @@ export class RoomSceneEnv implements SceneEnv {
     const stage = this.host.stage();
     if (!rig) return;
     if (!stage) {
-      // The room went away and the root was put back to its 2D place, lift included.
-      this.contact?.resetLift();
+      // The room went away and the root was put back to its 2D place, lift included. Bones the 2D
+      // mixer does not key would keep the collision-adjusted pose, so put their animated pose back.
+      this.contact?.release();
       return;
     }
     let contact = this.contact;
@@ -252,6 +253,11 @@ export class RoomSceneEnv implements SceneEnv {
       this.carriedDirty = false;
     }
     contact.update(rig, stage.collision, deltaSeconds, this.carriedCache, stage.debugNavmesh ? stage.group : null);
+  }
+
+  /** Forgets the pelvis lift (the root was put somewhere else, e.g. at another room's home). */
+  resetContactLift(): void {
+    this.contact?.resetLift();
   }
 
   /** The solver of the current rig (null before its first frame); its misses are for the scene planner. */
@@ -289,6 +295,7 @@ export class RoomSceneEnv implements SceneEnv {
   disposeContact(): void {
     this.contactOff?.();
     this.contactOff = null;
+    this.contact?.release();
     this.contact?.dispose();
     this.contact = null;
     this.contactRig = null;

@@ -123,6 +123,8 @@ export interface AvatarActorUnloadOptions {
 export interface AvatarActorUpdateHooks {
   /** Runs right after the mixer update and before expression keyframes, idle motion and pose blending. */
   afterMixer?: () => void;
+  /** Runs after pose blending (which can rewrite limb rotations) and immediately before the VRM's own update. */
+  beforeVrmUpdate?: () => void;
 }
 
 /**
@@ -515,6 +517,7 @@ export class AvatarActor {
 
     this.idleScheduler?.update(delta);
     this.poseBlend.apply(delta);
+    hooks.beforeVrmUpdate?.();
     this.vrm?.update(delta);
   }
 
