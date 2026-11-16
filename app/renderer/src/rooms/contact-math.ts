@@ -1,0 +1,177 @@
+import * as THREE from 'three';
+
+/**
+ * Pure helpers for the kinematic contact solver (contact-body.ts): the smallest rotation that pushes a
+ * limb out of furniture, joint limits, two-bone IK and the easing that blends corrections in and out.
+ * Everything writes into caller-owned outputs so the per-frame path allocates nothing.
+ */
+
+/** Overlaps shallower than this (metres) are left alone; it stops the solver chattering on touching surfaces. */
+export const CONTACT_TOLERANCE = 0.005;
+/** Corrections smaller than this angle (radians) count as "no contact" for blending. */
+export const MIN_CORRECTION_ANGLE = 1e-4;
+/** A correction weight below this is snapped to zero so a released bone goes back to exactly its animated pose. */
+export const WEIGHT_EPSILON = 0.002;
+
+export const KNEE_MAX_FLEXION = (150 * Math.PI) / 180;
+export const HINGE_MIN = 0;
+export const HIP_CONE = (120 * Math.PI) / 180;
+export const SHOULDER_CONE = (120 * Math.PI) / 180;
+export const WRIST_CONE = (60 * Math.PI) / 180;
+export const ANKLE_CONE = (60 * Math.PI) / 180;
+
+const TMP_AXIS = new THREE.Vector3();
+const TMP_Q = new THREE.Quaternion();
+const TMP_Q2 = new THREE.Quaternion();
+const TMP_V = new THREE.Vector3();
+const TMP_W = new THREE.Vector3();
+
+/** Signed rotation (radians, -PI..PI) of `q` about the unit `axis`: the twist part of its swing-twist split. */
+export function hingeAngle(q: THREE.Quaternion, axis: THREE.Vector3): number {
+  const along = q.x * axis.x + q.y * axis.y + q.z * axis.z;
+  let angle = 2 * Math.atan2(along, q.w);
+  if (angle > Math.PI) angle -= 2 * Math.PI;
+  else if (angle < -Math.PI) angle += 2 * Math.PI;
+  return angle;
+}
+
+/**
+ * The smallest rotation (a quaternion about the joint) that moves the point `reach` metres along `dir`
+ * from the joint towards `normal` by `depth`. Returns the angle, or 0 (and identity) when `dir` and
+ * `normal` are parallel, where no rotation about the joint moves the point that way.
+ */
+export function smallestRotation(
+  dir: THREE.Vector3,
+  normal: THREE.Vector3,
+  depth: number,
+  reach: number,
+  out: THREE.Quaternion,
+): number {
+  TMP_AXIS.crossVectors(dir, normal);
+  const length = TMP_AXIS.length();
+  if (length < 1e-6 || depth <= 0 || reach <= 1e-6) {
+    out.identity();
+    return 0;
+  }
+  const angle = Math.atan2(depth, reach);
+  out.setFromAxisAngle(TMP_AXIS.multiplyScalar(1 / length), angle);
+  return angle;
+}
+
+/**
+ * Keeps only the rotation of `offset` about `axis` (a hinge cannot swing sideways). Writes to `out`;
+ * `out` may be `offset`.
+ */
+export function projectToHinge(offset: THREE.Quaternion, axis: THREE.Vector3, out: THREE.Quaternion): THREE.Quaternion {
+  return out.setFromAxisAngle(axis, hingeAngle(offset, axis));
+}
+
+/**
+ * Limits the hinge angle of `total` (the joint's whole local rotation) to [min, max]. The range is widened
+ * to include the angle `animated` already has, so a pose the animation put past a limit is left as it is
+ * rather than being pulled in. The swing part is untouched. Returns the clamped rotation in `out`.
+ */
+export function clampHinge(
+  total: THREE.Quaternion,
+  axis: THREE.Vector3,
+  min: number,
+  max: number,
+  animatedAngle: number,
+  out: THREE.Quaternion,
+): THREE.Quaternion {
+  const angle = hingeAngle(total, axis);
+  const lo = Math.min(min, animatedAngle);
+  const hi = Math.max(max, animatedAngle);
+  const clamped = Math.min(hi, Math.max(lo, angle));
+  if (clamped === angle) return out.copy(total);
+  // Rotating about the hinge axis by the difference only changes the twist angle.
+  TMP_Q.setFromAxisAngle(axis, clamped - angle);
+  return out.copy(total).premultiply(TMP_Q);
+}
+
+/** Limits the angle of `total` from rest (identity) to `max`, widened to `animatedAngle`; shrinks it along its own axis. */
+export function clampCone(total: THREE.Quaternion, max: number, animatedAngle: number, out: THREE.Quaternion): THREE.Quaternion {
+  const limit = Math.max(max, animatedAngle);
+  const w = Math.min(1, Math.abs(total.w));
+  const angle = 2 * Math.acos(w);
+  if (angle <= limit) return out.copy(total);
+  TMP_Q2.identity();
+  return out.copy(TMP_Q2).slerp(total, limit / angle);
+}
+
+/** Angle of a rotation from identity, 0..PI. */
+export function rotationAngle(q: THREE.Quaternion): number {
+  return 2 * Math.acos(Math.min(1, Math.abs(q.w)));
+}
+
+/**
+ * Two-bone IK. Puts the end of a two-segment limb (lengths `l1` from `root` to the middle joint and `l2`
+ * on to the end) as close to `target` as it can reach, bending towards `pole` (a direction from the root,
+ * the animated middle joint's). Writes the middle joint to `outMid` and the end to `outEnd`. Returns true
+ * when the target is reachable; otherwise the limb is stretched straight towards it.
+ */
+export function solveTwoBone(
+  root: THREE.Vector3,
+  target: THREE.Vector3,
+  pole: THREE.Vector3,
+  l1: number,
+  l2: number,
+  outMid: THREE.Vector3,
+  outEnd: THREE.Vector3,
+): boolean {
+  TMP_V.subVectors(target, root);
+  const wanted = TMP_V.length();
+  if (wanted < 1e-6) {
+    outMid.copy(pole).normalize().multiplyScalar(l1).add(root);
+    outEnd.copy(root);
+    return false;
+  }
+  const reach = Math.min(wanted, l1 + l2 - 1e-6);
+  const minReach = Math.abs(l1 - l2) + 1e-6;
+  const distance = Math.max(reach, minReach);
+  TMP_V.multiplyScalar(1 / wanted);
+  const along = (l1 * l1 - l2 * l2 + distance * distance) / (2 * distance);
+  const height = Math.sqrt(Math.max(0, l1 * l1 - along * along));
+  // The bend direction is the pole with its component along the limb taken out.
+  TMP_W.copy(pole).addScaledVector(TMP_V, -pole.dot(TMP_V));
+  if (TMP_W.lengthSq() < 1e-10) {
+    TMP_W.set(0, 0, 1).addScaledVector(TMP_V, -TMP_V.z);
+    if (TMP_W.lengthSq() < 1e-10) TMP_W.set(1, 0, 0);
+  }
+  TMP_W.normalize();
+  outMid.copy(root).addScaledVector(TMP_V, along).addScaledVector(TMP_W, height);
+  outEnd.copy(root).addScaledVector(TMP_V, distance);
+  return wanted <= l1 + l2 && wanted >= minReach;
+}
+
+/** Moves `current` towards `target` with an exponential ease of time constant `tau` seconds. */
+export function easeTowards(current: number, target: number, deltaSeconds: number, tau: number, epsilon = WEIGHT_EPSILON): number {
+  const next = current + (target - current) * (1 - Math.exp(-Math.max(0, deltaSeconds) / tau));
+  return Math.abs(target - next) < epsilon ? target : next;
+}
+
+/** State of a critically damped spring. */
+export interface Spring {
+  value: number;
+  velocity: number;
+}
+
+/**
+ * Critically damped spring step towards `target`: reaches it in about `smoothTime` seconds with no
+ * overshoot (the usual "smooth damp"). Snaps once both distance and speed are negligible.
+ */
+export function stepSpring(spring: Spring, target: number, deltaSeconds: number, smoothTime: number, epsilon = 0.0005): void {
+  const dt = Math.max(0, deltaSeconds);
+  if (dt === 0) return;
+  const omega = 2 / Math.max(1e-4, smoothTime);
+  const x = omega * dt;
+  const decay = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
+  const change = spring.value - target;
+  const temp = (spring.velocity + omega * change) * dt;
+  spring.velocity = (spring.velocity - omega * temp) * decay;
+  spring.value = target + (change + temp) * decay;
+  if (Math.abs(spring.value - target) < epsilon && Math.abs(spring.velocity) < epsilon) {
+    spring.value = target;
+    spring.velocity = 0;
+  }
+}

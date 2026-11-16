@@ -388,11 +388,15 @@ export const VrmAvatarRenderer = memo(function VrmAvatarRenderer({
       const delta = timer.getDelta();
 
       const now = Date.now();
-      for (const frameActor of actors.values()) {
+      for (const [frameId, frameActor] of actors) {
         // The room controller steps between the mixer and the rest of the actor's update.
-        // Only Echo's body drives the room (walking, physics); companions just stand.
+        // Only Echo's body drives the room (walking, physics); companions just stand, but every body
+        // keeps its limbs out of furniture, so each solves right after its own mixer.
         frameActor.update(delta, now, {
-          afterMixer: frameActor === actor ? () => roomControllerRef.current?.step(delta) : () => undefined,
+          afterMixer:
+            frameActor === actor
+              ? () => roomControllerRef.current?.step(delta)
+              : () => roomControllerRef.current?.stepCompanion(frameId, delta),
         });
       }
 
