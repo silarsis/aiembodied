@@ -113,6 +113,8 @@ export interface SharedHandle {
 /** What ComfyUI's pool and the vision server need from the controller. */
 export interface SharedLeases {
   inUse(): boolean;
+  /** True when the controller's status lists this backend; a lease for it then picks the machine. */
+  listsBackend?(backend: string): boolean;
   /**
    * Leases a backend for one use. Resolves null when the controller isn't in use or doesn't know the
    * backend (logged once): the caller then runs its own server. Rejects with the reason when the
@@ -287,6 +289,10 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
    * True when the controller runs this backend: in use, it lists the backend (or its list could not
    * be read) and has not answered 404 for it. The app then starts and stops no server of its own for it.
    */
+  listsBackend(backend: string): boolean {
+    return this.used && !this.unknownBackends.has(backend) && this.backendIds?.has(backend) === true;
+  }
+
   managesBackend(backend: string): boolean {
     return this.used && !this.unknownBackends.has(backend) && (this.backendIds ? this.backendIds.has(backend) : true);
   }

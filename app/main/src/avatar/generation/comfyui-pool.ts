@@ -109,6 +109,12 @@ export class ComfyUIPool {
 
   private async ready(server: ModelServer): Promise<void> {
     if (this.viaController(server)) {
+      if (this.options.leases?.listsBackend?.('comfyui')) {
+        // Each request leases with the models it needs, so the controller can run it on another machine.
+        // Leasing here, without them, would start this PC's ComfyUI (and unload Echo) for nothing.
+        this.leasedIds.add(server.id);
+        return;
+      }
       // Leasing starts ComfyUI (the controller may need to make room first) and says where it is.
       const handle = await this.options.leases?.acquire('comfyui');
       if (handle) {
