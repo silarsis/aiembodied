@@ -102,7 +102,7 @@ import { AvatarDescriptionService } from './avatar/avatar-description-service.js
 import { AvatarGenerationService } from './avatar/generation/avatar-generation-service.js';
 import { ComfyUIClient } from './avatar/generation/comfyui-client.js';
 import { BlenderCharacterRunner } from './avatar/generation/character/rig-runner.js';
-import { AvatarImageModelService, createImageModelScanner, createRemoteComfyModelScanner, type PoseControlInstaller } from './avatar/generation/image-model-service.js';
+import { AvatarImageModelService, createControllerModelScanner, createImageModelScanner, createRemoteComfyModelScanner, type PoseControlInstaller } from './avatar/generation/image-model-service.js';
 import { POSE_CONTROLNETS, poseControlNetPlan } from './avatar/generation/pose-control.js';
 import { baseModelForFamily, type BaseModelSuggestions, lookupCivitai, parseCivitaiRef, planCivitaiDownload, suggestBaseModels } from './avatar/generation/civitai.js';
 import { resolveComfyInstallation } from './avatar/generation/comfyui-runtime.js';
@@ -112,6 +112,7 @@ import { LocalMotionClient } from './avatar/motion/local-motion-client.js';
 import { LocalMotionGenerationService } from './avatar/motion/local-motion-generation-service.js';
 import { ServerManager } from './server/server-manager.js';
 import { AicontrollerBridge, echoRouteOverride } from './aicontroller/bridge.js';
+import { AUTO_HOST, RemoteDownloads } from './aicontroller/remote-downloads.js';
 import { LocalVoiceService } from './local-voice/local-voice-service.js';
 import {
   activeAgent,
@@ -1720,7 +1721,28 @@ function registerIpcHandlers(
       plan: planCivitaiDownload(model, versionId, ref.fileId),
     };
   });
-  handleIpc('models:download', async (_event, payload: { serverId?: unknown; ref?: unknown; versionId?: unknown }) => {
+  // Downloads the model controller runs on another machine (or the one it picks).
+  const remoteDownloads = new RemoteDownloads(aicontroller);
+  /** A machine name or "auto" when the download goes through the controller, else null (this PC's own downloader). */
+  const remoteHost = (value: unknown): string | null => {
+    if (typeof value !== 'string' || !value.trim() || value === 'local') return null;
+    if (!aicontroller.inUse()) throw new Error('The model controller is not running, so downloads to other machines are unavailable.');
+    return value === AUTO_HOST ? AUTO_HOST : value.trim();
+  };
+  handleIpc('models:download-hosts', async () => {
+    const { local, hosts } = await aicontroller.hostNames();
+    return { inUse: aicontroller.inUse(), local, hosts };
+  });
+  handleIpc('models:download', async (_event, payload: { serverId?: unknown; ref?: unknown; versionId?: unknown; host?: unknown }) => {
+    const host = remoteHost(payload?.host);
+    if (host) {
+      const ref = parseCivitaiRef(typeof payload?.ref === 'string' ? payload.ref : '');
+      if (!ref) throw new Error('Paste a Civitai model link or AIR.');
+      const key = manager.getServerKey(BUILT_IN_SERVER_IDS.civitai);
+      const model = await lookupCivitai(ref, key);
+      const plan = planCivitaiDownload(model, typeof payload?.versionId === 'number' ? payload.versionId : undefined, ref.fileId);
+      return remoteDownloads.startCivitai(host, plan);
+    }
     const server = comfyServer(payload?.serverId);
     const ref = parseCivitaiRef(typeof payload?.ref === 'string' ? payload.ref : '');
     if (!ref) throw new Error('Paste a Civitai model link or AIR.');
@@ -1732,7 +1754,7 @@ function registerIpcHandlers(
     }
     return modelDownloads.start(server, plan, key);
   });
-  handleIpc('models:downloads', () => modelDownloads.list());
+  handleIpc('models:downloads', async () => [...modelDownloads.list(), ...(await remoteDownloads.listModels())]);
   const speechServerClient = (serverId: unknown) => {
     const server = manager.getConfig().models.servers.find((entry) => entry.id === serverId && entry.type === 'speech');
     if (!server) throw new Error('That is not a speech service.');
@@ -1747,9 +1769,10 @@ function registerIpcHandlers(
     await client.downloadTtsModel(payload.engine, payload.model);
     return client.ttsEngines();
   });
-  handleIpc('models:cancel-download', (_event, id: unknown) => {
-    if (typeof id === 'string') modelDownloads.cancel(id);
-    return modelDownloads.list();
+  handleIpc('models:cancel-download', async (_event, id: unknown) => {
+    if (typeof id === 'string' && RemoteDownloads.isRemoteId(id)) await remoteDownloads.cancel(id);
+    else if (typeof id === 'string') modelDownloads.cancel(id);
+    return [...modelDownloads.list(), ...(await remoteDownloads.listModels())];
   });
   handleIpc('models:comfy-addon', async (_event, serverId: unknown) => {
     const server = comfyServer(serverId);
@@ -1766,23 +1789,26 @@ function registerIpcHandlers(
     if (!parsed) throw new Error('Paste a Hugging Face link or repo name (such as unsloth/Qwen3-8B-GGUF), or type words to search for.');
     return lookupHuggingFace(parsed, hfToken());
   });
-  handleIpc('models:hf-download', async (_event, payload: { repo?: unknown; quant?: unknown; use?: unknown }) => {
+  handleIpc('models:hf-download', async (_event, payload: { repo?: unknown; quant?: unknown; use?: unknown; host?: unknown }) => {
     if (typeof payload?.repo !== 'string' || typeof payload.quant !== 'string') throw new Error('Pick a model and size first.');
     // Read the repo again here rather than trusting file names from the page.
     const lookup = await lookupHuggingFace({ repo: payload.repo }, hfToken());
     const quant = lookup.quants.find((entry) => entry.id === payload.quant);
     if (!lookup.repo || !quant) throw new Error('That size is no longer in the repo. Look it up again.');
+    const host = remoteHost(payload.host);
+    if (host) return remoteDownloads.startHuggingFace(host, lookup.repo, quant);
     return getLocalLlmTools(manager).library.start(lookup.repo, quant, {
       token: hfToken(),
       use: payload.use !== false,
       ...(lookup.contextLength ? { contextLength: lookup.contextLength } : {}),
     });
   });
-  handleIpc('models:hf-downloads', () => getLocalLlmTools(manager).library.list());
-  handleIpc('models:hf-cancel', (_event, id: unknown) => {
+  handleIpc('models:hf-downloads', async () => [...getLocalLlmTools(manager).library.list(), ...(await remoteDownloads.listLlm())]);
+  handleIpc('models:hf-cancel', async (_event, id: unknown) => {
     const { library } = getLocalLlmTools(manager);
-    if (typeof id === 'string') library.cancel(id);
-    return library.list();
+    if (typeof id === 'string' && RemoteDownloads.isRemoteId(id)) await remoteDownloads.cancel(id);
+    else if (typeof id === 'string') library.cancel(id);
+    return [...library.list(), ...(await remoteDownloads.listLlm())];
   });
   // The vision model (Qwen3-VL) for Describe the avatar: download status and progress.
   handleIpc('models:vision-status', () => getVisionTools(manager).model.status());
@@ -3324,6 +3350,20 @@ app.whenReady().then(async () => {
   const scanComfyModels = (stage: 'image' | 'mesh') => async () => {
     const server = comfyPool.primary(stage);
     if (!server) throw new Error('No ComfyUI server is set for this step. Choose one in Models and servers.');
+    if (server.managed && aicontroller.inUse() && aicontroller.managesBackend('comfyui')) {
+      // This PC's ComfyUI is the controller's: list the models of every machine it can send a job to.
+      return createControllerModelScanner(
+        async () =>
+          (await aicontroller.listAllModels()).map((entry) => ({
+            kind: entry.kind,
+            subfolder: entry.subfolder,
+            fileName: entry.fileName,
+            host: entry.host,
+            state: entry.state,
+          })),
+        createImageModelScanner(imageModelScript, server.url),
+      )();
+    }
     return server.managed
       ? createImageModelScanner(imageModelScript, server.url)()
       : createRemoteComfyModelScanner(server.url)();

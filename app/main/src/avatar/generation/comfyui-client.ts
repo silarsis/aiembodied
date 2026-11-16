@@ -7,12 +7,15 @@
  * server (access violation while moving the weights back to the CPU).
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { graphModelFiles } from './comfyui-needs.js';
+
 export type ComfyGraph = Record<string, { class_type: string; inputs: Record<string, unknown> }>;
 
 /** A shared lease on the model controller's comfyui backend (see aicontroller/bridge.ts). */
 export interface ComfyLeaseSource {
   /** Holds the lease for one request; `done()` says the request is over. The lease itself is kept for a quiet spell. */
-  acquire(): Promise<{ url: string | null; done(): void }>;
+  acquire(needs?: string[]): Promise<{ url: string | null; host?: string | null; done(): void }>;
 }
 
 export interface ComfyUIClientOptions {
@@ -63,6 +66,8 @@ export class ComfyUIClient {
   /** The address in use: the lease's URL while ComfyUI is leased from the model controller. */
   baseUrl: string;
   private readonly lease?: ComfyLeaseSource;
+  /** The lease a job holds across its uploads and runs; they must reach the machine the lease is on. */
+  private readonly scope = new AsyncLocalStorage<{ url: string | null; host: string | null }>();
   private readonly fetchFn: typeof fetch;
   private readonly pollIntervalMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
@@ -75,16 +80,38 @@ export class ComfyUIClient {
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
 
-  /** Runs one request with the controller's lease held, on the lease's URL. Without a lease source it just runs. */
-  private async leased<T>(request: () => Promise<T>): Promise<T> {
-    if (!this.lease) return request();
-    const handle = await this.lease.acquire();
+  /** The address a request goes to: the lease of the job it belongs to, else the client's own. */
+  private get base(): string {
+    const url = this.scope.getStore()?.url;
+    return url ? url.replace(/\/+$/, '') : this.baseUrl;
+  }
+
+  /**
+   * Runs one request with the controller's lease held, on the lease's URL. Inside {@link job} it
+   * uses the job's lease; otherwise it leases for `needs`. Without a lease source it just runs.
+   */
+  private async leased<T>(request: () => Promise<T>, needs: string[] = []): Promise<T> {
+    if (!this.lease || this.scope.getStore()) return request();
+    const handle = await this.lease.acquire(needs);
     if (handle.url) this.baseUrl = handle.url.replace(/\/+$/, '');
     try {
-      return await request();
+      return await this.scope.run({ url: handle.url, host: handle.host ?? null }, request);
     } finally {
       handle.done();
     }
+  }
+
+  /**
+   * Runs a job's uploads and runs on one lease, so they all reach the same machine. `needs` are the
+   * model files its graphs load (see graphModelFiles): the controller may lease a machine that has them.
+   */
+  job<T>(needs: string[], work: () => Promise<T>): Promise<T> {
+    return this.leased(work, needs);
+  }
+
+  /** The machine the current job's lease is on when the controller routed it away from this PC. */
+  currentHost(): string | null {
+    return this.scope.getStore()?.host ?? null;
   }
 
   /** True when the server answers /system_stats. */
@@ -94,7 +121,7 @@ export class ComfyUIClient {
 
   private async probe(): Promise<boolean> {
     try {
-      const response = await this.fetchFn(`${this.baseUrl}/system_stats`, {
+      const response = await this.fetchFn(`${this.base}/system_stats`, {
         signal: AbortSignal.timeout(5000),
       });
       return response.ok;
@@ -115,7 +142,7 @@ export class ComfyUIClient {
     form.append('type', 'input');
     form.append('overwrite', 'true');
 
-    const response = await this.fetchFn(`${this.baseUrl}/upload/image`, {
+    const response = await this.fetchFn(`${this.base}/upload/image`, {
       method: 'POST',
       body: form,
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -132,7 +159,7 @@ export class ComfyUIClient {
 
   /** Queue `graph`, wait for it, and return the bytes of the first image it saved. */
   run(graph: ComfyGraph, options: ComfyRunOptions = {}): Promise<Buffer> {
-    return this.leased(() => this.runGraph(graph, options));
+    return this.leased(() => this.runGraph(graph, options), graphModelFiles(graph));
   }
 
   private async runGraph(graph: ComfyGraph, options: ComfyRunOptions): Promise<Buffer> {
@@ -179,7 +206,7 @@ export class ComfyUIClient {
   private async cancelPrompt(promptId: string): Promise<void> {
     try {
       const response = await this.fetchFn(
-        `${this.baseUrl}/api/jobs/${encodeURIComponent(promptId)}/cancel`,
+        `${this.base}/api/jobs/${encodeURIComponent(promptId)}/cancel`,
         {
           method: 'POST',
           signal: AbortSignal.timeout(5000),
@@ -187,7 +214,7 @@ export class ComfyUIClient {
       );
       if (response.ok) return;
       // Older servers can at least remove this queued prompt. Never interrupt unrelated work.
-      await this.fetchFn(`${this.baseUrl}/queue`, {
+      await this.fetchFn(`${this.base}/queue`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ delete: [promptId] }),
@@ -201,14 +228,14 @@ export class ComfyUIClient {
   /** Stop whatever ComfyUI is running now. */
   async interrupt(): Promise<void> {
     try {
-      await this.fetchFn(`${this.baseUrl}/interrupt`, { method: 'POST' });
+      await this.fetchFn(`${this.base}/interrupt`, { method: 'POST' });
     } catch {
       // Best effort: the server may already be gone.
     }
   }
 
   private async queue(graph: ComfyGraph): Promise<string> {
-    const response = await this.fetchFn(`${this.baseUrl}/prompt`, {
+    const response = await this.fetchFn(`${this.base}/prompt`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: graph, client_id: 'aiembodied' }),
@@ -225,7 +252,7 @@ export class ComfyUIClient {
   }
 
   private async history(promptId: string): Promise<HistoryEntry | undefined> {
-    const response = await this.fetchFn(`${this.baseUrl}/history/${encodeURIComponent(promptId)}`, {
+    const response = await this.fetchFn(`${this.base}/history/${encodeURIComponent(promptId)}`, {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) {
@@ -241,7 +268,7 @@ export class ComfyUIClient {
       subfolder: saved.subfolder ?? '',
       type: saved.type ?? 'output',
     });
-    const response = await this.fetchFn(`${this.baseUrl}/view?${params.toString()}`, {
+    const response = await this.fetchFn(`${this.base}/view?${params.toString()}`, {
       signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
     });
     if (!response.ok) {
@@ -257,4 +284,9 @@ async function safeText(response: Response): Promise<string> {
   } catch {
     return '';
   }
+}
+
+/** Runs `work` as one of `comfy`'s jobs (one lease for its uploads and runs) when the client has jobs, else just runs it. */
+export function inJob<T>(comfy: { job?: ComfyUIClient['job'] }, needs: string[], work: () => Promise<T>): Promise<T> {
+  return typeof comfy.job === 'function' ? comfy.job(needs, work) : work();
 }

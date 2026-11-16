@@ -151,11 +151,23 @@ describe('aicontroller leases for the other GPU servers', () => {
       await b.shutdown();
     });
 
+    it('does not lease this PC’s ComfyUI just to pick a server, so a job routed elsewhere leaves Echo alone', async () => {
+      const b = bridge();
+      await b.start();
+      await b.ensureEcho();
+      await pool(b, fakeComfy()).pick('image');
+      expect(fake.leaseRequests.filter((request) => request.backend === 'comfyui')).toHaveLength(0);
+      expect(fake.active('echo-llm')).toHaveLength(1);
+      await b.shutdown();
+    });
+
     it('fails the job with the reason when the controller can’t give ComfyUI the GPU', async () => {
       const b = bridge();
       await b.start();
       fake.refuse.add('comfyui');
-      await expect(pool(b, fakeComfy()).pick('image')).rejects.toThrow(/GPU needed by game.exe/);
+      // Picking no longer leases (the job's own lease picks the machine); the job fails with the reason.
+      const client = await pool(b, fakeComfy()).pick('image');
+      await expect(client.run({})).rejects.toThrow(/GPU needed by game.exe/);
       await b.shutdown();
     });
   });
@@ -407,6 +419,17 @@ describe('aicontroller leases for the other GPU servers', () => {
       // The client would refuse for its own minute; the bridge makes it look again.
       await until(() => fake.active('echo-llm').length === 1, 4000);
       expect(fake.leaseRequests.length).toBeGreaterThanOrEqual(posts);
+      expect(fake.active('echo-llm')).toHaveLength(1);
+      await b.shutdown();
+    });
+
+    it('asks again when the controller restarted and forgot Echo’s lease', async () => {
+      const b = bridge({ watchMs: 15, echoRetryMs: 30 });
+      await b.start();
+      await b.ensureEcho();
+      expect(fake.active('echo-llm')).toHaveLength(1);
+      fake.leases.clear(); // the controller restarted: heartbeats now get 404
+      await until(() => fake.active('echo-llm').length === 1, 4000);
       expect(fake.active('echo-llm')).toHaveLength(1);
       await b.shutdown();
     });

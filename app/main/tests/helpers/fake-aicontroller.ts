@@ -10,6 +10,7 @@ export interface FakeLease {
   url: string;
   error: string | null;
   ttl_s: number;
+  host?: string;
 }
 
 /** Where the fake controller says each backend's server is. */
@@ -34,7 +35,32 @@ export interface FakeModel {
  * A tiny stand-in for aicontroller's HTTP API: /health and the lease calls. Records every request
  * and can revoke a lease the way the controller does when it yields the GPU.
  */
+/** A peer machine the fake routes leases to (the controller's `routes`). */
+export interface FakePeer {
+  /** Basenames of the model files it has. */
+  files: Set<string>;
+  online: boolean;
+  url: string;
+}
+
+/** A model file on a machine, as GET /v1/models?scope=all lists it. */
+export interface FakeHostModel {
+  host: string;
+  state: string;
+  kind: string;
+  subfolder: string | null;
+  file_name: string;
+}
+
 export class FakeAicontroller {
+  /** Peers a lease with `needs` goes to when they are online and have every file, in order; else it stays here. */
+  readonly peers = new Map<string, FakePeer>();
+  /** Extra models GET /v1/models?scope=all lists (other machines', and this one's). */
+  readonly hostModels: FakeHostModel[] = [];
+  /** Every POST /v1/models/download body. */
+  readonly downloadRequests: Record<string, unknown>[] = [];
+  /** Download jobs, by id; tests change `bytes_done`/`state` to show progress. */
+  readonly downloads = new Map<string, Record<string, unknown>>();
   readonly leases = new Map<string, FakeLease>();
   readonly requests: string[] = [];
   /** Backends whose lease request is refused with 503, as while the GPU is yielded. */
@@ -54,7 +80,7 @@ export class FakeAicontroller {
   /** The models GET /v1/models lists. A lease naming a model not in here answers 404. */
   readonly models: FakeModel[] = [];
   /** Every lease request body, in order. */
-  readonly leaseRequests: { backend: string; client: string; model: string | null }[] = [];
+  readonly leaseRequests: { backend: string; client: string; model: string | null; needs: string[]; host: string | null }[] = [];
   private server: Server | null = null;
   private counter = 0;
   url = '';
@@ -111,12 +137,32 @@ export class FakeAicontroller {
     if (method === 'GET' && path === '/v1/status') {
       if (!this.statusWorks) return send(500, { error: 'status unavailable' });
       const ids = Object.keys(FAKE_BACKEND_URLS).filter((id) => !this.unknown.has(id));
-      return send(200, { name: 'fake', backends: ids.map((id) => ({ id, state: 'ready' })) });
+      return send(200, { name: 'fake', peers: [...this.peers.keys()].map((name) => ({ name })), backends: ids.map((id) => ({ id, state: 'ready' })) });
     }
-    if (method === 'GET' && path.startsWith('/v1/models')) return send(200, { models: this.models });
+    if (method === 'POST' && path === '/v1/models/download') {
+      const body = JSON.parse(text) as Record<string, unknown>;
+      this.downloadRequests.push(body);
+      const host = body.host === 'auto' ? 'acrasia' : (body.host as string | null) ?? 'fake';
+      const id = `${host}:D${this.downloadRequests.length}`;
+      const job = { id, state: 'downloading', bytes_done: 0, bytes_total: 1000, error: null, model_id: null, kind: body.kind ?? null, file_name: 'model.gguf', host };
+      this.downloads.set(id, job);
+      return send(202, job);
+    }
+    const download = /^\/v1\/downloads\/([^/]+)$/.exec(path);
+    if (download) {
+      const job = this.downloads.get(decodeURIComponent(download[1]));
+      if (!job) return send(404, { error: 'unknown download' });
+      if (method === 'DELETE') job.state = 'cancelled';
+      return send(200, job);
+    }
+    if (method === 'GET' && path.startsWith('/v1/models')) {
+      const all = new URL(path, 'http://x').searchParams.get('scope') === 'all';
+      return send(200, { models: all ? [...this.models, ...this.hostModels] : this.models });
+    }
     if (method === 'POST' && path === '/v1/leases') {
-      const body = JSON.parse(text) as { backend: string; client: string; model?: string | null };
-      this.leaseRequests.push({ backend: body.backend, client: body.client, model: body.model ?? null });
+      const body = JSON.parse(text) as { backend: string; client: string; model?: string | null; needs?: string[]; host?: string | null };
+      const needs = body.needs ?? [];
+      this.leaseRequests.push({ backend: body.backend, client: body.client, model: body.model ?? null, needs, host: body.host ?? null });
       if (this.unknown.has(body.backend)) return send(404, { error: `unknown backend '${body.backend}'` });
       if (body.model && !this.models.some((entry) => entry.id === body.model || entry.alias === body.model)) return send(404, { error: `unknown model '${body.model}'` });
       if (this.refuse.has(body.backend)) return send(503, { error: 'GPU needed by game.exe' });
@@ -130,6 +176,10 @@ export class FakeAicontroller {
         error: null,
         ttl_s: this.ttlS,
       };
+      const peer = needs.length && !body.host
+        ? [...this.peers].find(([, entry]) => entry.online && needs.every((file) => entry.files.has(file.split(/[\\/]/).pop() ?? file)))
+        : undefined;
+      if (peer) Object.assign(lease, { id: `${peer[0]}:${lease.id}`, url: peer[1].url, host: peer[0] });
       this.leases.set(lease.id, lease);
       if (this.stillQueued.has(body.backend)) {
         lease.state = 'queued';
@@ -150,7 +200,7 @@ export class FakeAicontroller {
       }
       return send(200, lease);
     }
-    const match = /^\/v1\/leases\/([^/]+)(\/heartbeat)?$/.exec(path);
+    const match = /^\/v1\/leases\/([^/]+)(\/heartbeat)?$/.exec(path.replace(/%3A/gi, ':'));
     const lease = match ? this.leases.get(match[1]) : undefined;
     if (!match || !lease) return send(404, { error: 'unknown lease' });
     if (method === 'DELETE') {

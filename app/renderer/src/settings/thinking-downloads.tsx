@@ -4,6 +4,7 @@ import type { LlmDownload, LocalLlmList } from '../../../main/src/local-llm/llm-
 import type { ModelRoutingView } from '../../../main/src/config/config-manager.js';
 import type { ModelsBridge } from '../preload-api.js';
 import { formatBytes } from './model-downloads.js';
+import { DownloadTo, useDownloadHosts } from './download-to.js';
 
 const ACTIVE = new Set(['queued', 'downloading', 'verifying']);
 const SLOT_CHOICES = [1, 2, 3, 4];
@@ -28,6 +29,9 @@ export function ThinkingDownloads({ api, busy: parentBusy, onView, local = true 
   const [downloads, setDownloads] = useState<LlmDownload[]>([]);
   const [library, setLibrary] = useState<LocalLlmList | null>(null);
   const finished = useRef(new Set<string>());
+  const downloadHosts = useDownloadHosts(api);
+  const [target, setTarget] = useState('');
+  const remote = Boolean(target);
 
   const refresh = useCallback(async () => {
     const [all, list] = await Promise.all([
@@ -82,7 +86,7 @@ export function ThinkingDownloads({ api, busy: parentBusy, onView, local = true 
     setBusy(true);
     setError(null);
     try {
-      await api.hfDownload(lookup.repo, quant, use);
+      await (remote ? api.hfDownload(lookup.repo, quant, false, target) : api.hfDownload(lookup.repo, quant, use));
       setLookup(null);
       setRef('');
       await refresh();
@@ -223,8 +227,12 @@ export function ThinkingDownloads({ api, busy: parentBusy, onView, local = true 
             {lookup.contextLength ? ` Made for up to ${lookup.contextLength.toLocaleString()} tokens of context.` : ''}
           </small>
           {lookup.note ? <small className="kiosk__helper">{lookup.note}</small> : null}
+          <DownloadTo hosts={downloadHosts} value={target} onChange={setTarget} disabled={disabled} id="models-hf-download-to" />
+          {remote ? (
+            <small className="kiosk__helper">It is downloaded there by the model controller. Thinking keeps using this PC’s model.</small>
+          ) : null}
           <label className="modelsDialog__check">
-            <input type="checkbox" checked={use} onChange={(event) => setUse(event.target.checked)} disabled={disabled} />
+            <input type="checkbox" checked={use && !remote} disabled={disabled || remote} onChange={(event) => setUse(event.target.checked)} />
             Use it for Thinking when it’s downloaded (restarts llama-server)
           </label>
           <span className="modelsDialog__actions">

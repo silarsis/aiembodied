@@ -13,6 +13,7 @@ import type { BaseModelSuggestions, CivitaiLookup } from '../avatar/generation/c
 import type { HfLookup } from '../local-llm/huggingface.js';
 import type { LocalLlmSettings } from '../local-llm/llm-settings.js';
 import type { LlmDownload, LocalLlmList } from '../local-llm/llm-library.js';
+import type { DownloadHosts } from '../aicontroller/remote-downloads.js';
 import type { VisionStatus } from '../local-vision/vision-model.js';
 import type { ModelDownload } from '../avatar/generation/model-downloads.js';
 import type { AudioDevicePreferences } from '../config/preferences-store.js';
@@ -160,7 +161,10 @@ export interface ModelsBridge {
   setRoute(use: UseId, route: ModelRoute): Promise<ModelRoutingView>;
   setKey(serverId: string, key: string): Promise<ModelRoutingView>;
   civitaiLookup?(ref: string, versionId?: number): Promise<CivitaiLookup>;
-  download?(serverId: string, ref: string, versionId?: number): Promise<ModelDownload>;
+  /** `host`: a controller machine's name or "auto" to download there instead of on the server (the model controller runs it). */
+  download?(serverId: string, ref: string, versionId?: number, host?: string): Promise<ModelDownload>;
+  /** The other machines the model controller can download to; inUse false when there is no controller. */
+  downloadHosts?(): Promise<DownloadHosts>;
   downloads?(): Promise<ModelDownload[]>;
   /** A speech service's text-to-speech engines and models (null: it is down or too old). */
   speechEngines?(serverId: string): Promise<SpeechTtsEngine[] | null>;
@@ -170,7 +174,7 @@ export interface ModelsBridge {
   comfyAddon?(serverId: string): Promise<{ installed: boolean; folder: string }>;
   /** Thinking models from Hugging Face for this PC's llama-server. */
   hfLookup?(ref: string): Promise<HfLookup>;
-  hfDownload?(repo: string, quant: string, use: boolean): Promise<LlmDownload>;
+  hfDownload?(repo: string, quant: string, use: boolean, host?: string): Promise<LlmDownload>;
   hfDownloads?(): Promise<LlmDownload[]>;
   hfCancel?(id: string): Promise<LlmDownload[]>;
   /** The local vision model for Describe the avatar: download status, start a download (default model, or a link / owner/repo[:QUANT]), cancel. */
@@ -415,7 +419,8 @@ export function createBridge(
       setRoute: (use, route) => transport.invoke('models:set-route', { use, route }) as Promise<ModelRoutingView>,
       setKey: (serverId, key) => transport.invoke('models:set-key', { serverId, key }) as Promise<ModelRoutingView>,
       civitaiLookup: (ref, versionId) => transport.invoke('models:civitai-lookup', { ref, versionId }) as Promise<CivitaiLookup>,
-      download: (serverId, ref, versionId) => transport.invoke('models:download', { serverId, ref, versionId }) as Promise<ModelDownload>,
+      download: (serverId, ref, versionId, host) => transport.invoke('models:download', { serverId, ref, versionId, host }) as Promise<ModelDownload>,
+      downloadHosts: () => transport.invoke('models:download-hosts') as Promise<DownloadHosts>,
       downloads: () => transport.invoke('models:downloads') as Promise<ModelDownload[]>,
       speechEngines: (serverId) => transport.invoke('models:speech-engines', serverId) as Promise<SpeechTtsEngine[] | null>,
       speechDownload: (serverId, engine, model) =>
@@ -423,7 +428,7 @@ export function createBridge(
       cancelDownload: (id) => transport.invoke('models:cancel-download', id) as Promise<ModelDownload[]>,
       comfyAddon: (serverId) => transport.invoke('models:comfy-addon', serverId) as Promise<{ installed: boolean; folder: string }>,
       hfLookup: (ref) => transport.invoke('models:hf-lookup', ref) as Promise<HfLookup>,
-      hfDownload: (repo, quant, use) => transport.invoke('models:hf-download', { repo, quant, use }) as Promise<LlmDownload>,
+      hfDownload: (repo, quant, use, host) => transport.invoke('models:hf-download', { repo, quant, use, host }) as Promise<LlmDownload>,
       hfDownloads: () => transport.invoke('models:hf-downloads') as Promise<LlmDownload[]>,
       hfCancel: (id) => transport.invoke('models:hf-cancel', id) as Promise<LlmDownload[]>,
       visionStatus: () => transport.invoke('models:vision-status') as Promise<VisionStatus>,

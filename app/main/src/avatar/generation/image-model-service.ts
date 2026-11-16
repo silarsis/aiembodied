@@ -4,7 +4,7 @@ import type { MemoryStore } from '../../memory/index.js';
 import { resolveComfyInstallation } from './comfyui-runtime.js';
 import type { ImageFamily, ImageWorkflowModel } from './image-workflows.js';
 import { POSE_CONTROLNETS, poseSupport } from './pose-control.js';
-import type { AvatarImageModelSelection, AvatarImageModelSummary, AvatarImagePoseControl, AvatarLoraChoice, AvatarLoraSummary } from '../types.js';
+import type { AvatarModelHost, AvatarImageModelSelection, AvatarImageModelSummary, AvatarImagePoseControl, AvatarLoraChoice, AvatarLoraSummary } from '../types.js';
 
 export interface ImageModelFile {
   folder: string;
@@ -18,7 +18,72 @@ export interface ImageModelFile {
   embeddedVae?: boolean;
   embeddedClip?: boolean;
   embeddedClip2?: boolean;
+  /** With the model controller: the machines that have this file. */
+  hosts?: AvatarModelHost[];
 }
+
+/** "on bija, acrasia" for a picker, and whether no machine with the file can run it now. */
+export function hostLabel(hosts: AvatarModelHost[] | undefined): { hosts?: AvatarModelHost[]; location?: string; offline?: boolean } {
+  if (!hosts?.length) return {};
+  const up = (host: AvatarModelHost) => host.state !== 'offline' && host.state !== 'busy';
+  return {
+    hosts,
+    location: `on ${hosts.map((host) => host.name).join(', ')}`,
+    ...(hosts.some(up) ? {} : { offline: true }),
+  };
+}
+
+/** A model file on one machine, as the model controller lists it. */
+export interface ControllerFile {
+  kind: string;
+  subfolder: string | null;
+  fileName: string;
+  host: string;
+  state: string;
+}
+
+const COMFY_FOLDERS = new Set(['checkpoints', 'loras', 'controlnet', 'unet', 'diffusion_models', 'vae', 'clip', 'text_encoders']);
+
+/**
+ * Model discovery across every machine the model controller knows. Files are de-duplicated by name
+ * and each carries the machines that have it. This PC's own scan (when it works) supplies what the
+ * file's tensors say; a file only another machine has is described from its folder and name.
+ */
+export function createControllerModelScanner(
+  listFiles: () => Promise<ControllerFile[]>,
+  local: () => Promise<ImageModelFile[]>,
+): () => Promise<ImageModelFile[]> {
+  return async () => {
+    const [listed, scanned] = await Promise.all([listFiles(), local().catch(() => [] as ImageModelFile[])]);
+    const byKey = new Map<string, ImageModelFile>();
+    const keyOf = (folder: string, name: string) => `${folder}/${name}`.toLowerCase();
+    for (const file of scanned) byKey.set(keyOf(file.folder, file.name), { ...file });
+    for (const entry of listed) {
+      // ComfyUI models are kind `comfyui` plus a subfolder; the unet folder is diffusion_models.
+      const folder = (entry.kind === 'comfyui' ? entry.subfolder : entry.kind) ?? '';
+      if (!COMFY_FOLDERS.has(folder)) continue;
+      const canonical = folder === 'unet' ? 'diffusion_models' : folder === 'clip' ? 'text_encoders' : folder;
+      const key = keyOf(canonical, entry.fileName);
+      let file = byKey.get(key);
+      if (!file) {
+        const kind = remoteModelKind(canonical, entry.fileName);
+        if (!kind) continue;
+        file = {
+          folder: canonical,
+          name: entry.fileName,
+          kind,
+          ...(canonical === 'controlnet' ? { family: remoteControlNetFamily(entry.fileName) } : {}),
+          ...(canonical === 'checkpoints' ? { embeddedVae: true, embeddedClip: true, embeddedClip2: kind === 'sdxl' } : {}),
+        };
+        byKey.set(key, file);
+      }
+      const hosts = (file.hosts ??= []);
+      if (!hosts.some((host) => host.name === entry.host)) hosts.push({ name: entry.host, state: entry.state });
+    }
+    return [...byKey.values()];
+  };
+}
+
 export function createImageModelScanner(
   scriptPath: string,
   baseUrl: string,
@@ -153,6 +218,7 @@ export class AvatarImageModelService {
                 name,
                 available: !reason,
                 ...(reason ? { unavailableReason: reason } : {}),
+                ...hostLabel(file.hosts),
               },
             };
           })
@@ -161,6 +227,7 @@ export class AvatarImageModelService {
           .filter((file) => file.folder === 'loras' && file.kind === 'lora')
           .map((file): AvatarLoraSummary => ({
             name: file.name,
+            ...hostLabel(file.hosts),
             ...(file.title ? { title: file.title } : {}),
             ...(typeof file.family === 'string' ? { family: file.family } : {}),
             ...(typeof file.baseModel === 'string' ? { baseModel: file.baseModel } : {}),

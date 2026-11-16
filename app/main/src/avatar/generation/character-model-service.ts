@@ -1,5 +1,5 @@
 import type { MemoryStore } from '../../memory/index.js';
-import type { ImageModelFile } from './image-model-service.js';
+import { hostLabel, type ImageModelFile } from './image-model-service.js';
 import type { AvatarCharacterModelSelection, AvatarCharacterModelSummary } from '../types.js';
 
 /**
@@ -178,7 +178,14 @@ export class AvatarCharacterModelService {
       const name = hunyuanName(checkpoint);
       return {
         model: { kind: 'hunyuan3d-2mv', id: checkpoint, name, checkpoint },
-        summary: { id: checkpoint, name, description, views: true, available: true },
+        summary: {
+          id: checkpoint,
+          name,
+          description,
+          views: true,
+          available: true,
+          ...hostLabel(files?.find((file) => file.folder === 'checkpoints' && file.name === checkpoint)?.hosts),
+        },
       };
     });
   }
@@ -240,6 +247,7 @@ export class AvatarCharacterModelService {
             description: 'Textured mesh from the front image only, generated in ComfyUI.',
             available: !reason,
             ...(reason ? { unavailableReason: reason } : {}),
+            ...hostLabel(files?.find((file) => file.folder === 'diffusion_models' && file.name === unet)?.hosts),
           },
         };
       })

@@ -97,6 +97,31 @@ describe('Download a thinking model', () => {
     expect(screen.getByText('In use')).toBeTruthy();
   });
 
+  it('offers the controller’s machines and sends the download there, leaving Thinking alone', async () => {
+    const { api } = bridge();
+    api.downloadHosts = vi.fn(async () => ({ inUse: true, local: 'bija', hosts: ['acrasia'] }));
+    render(<ThinkingDownloads api={api} busy={false} onView={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Hugging Face model'), { target: { value: 'unsloth/Qwen3-8B-GGUF' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Look up' }));
+    const target = (await screen.findByLabelText(/Download to/)) as HTMLSelectElement;
+    expect([...target.options].map((option) => option.textContent)).toEqual(['This PC', 'acrasia', 'Best fit (automatic)']);
+    expect(target.value).toBe('');
+    fireEvent.change(target, { target: { value: 'acrasia' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Download/ }));
+    await waitFor(() => expect(api.hfDownload).toHaveBeenCalledWith('unsloth/Qwen3-8B-GGUF', 'Qwen3-8B-Q4_K_M.gguf', false, 'acrasia'));
+  });
+
+  it('keeps the download on this PC without a controller', async () => {
+    const { api } = bridge();
+    render(<ThinkingDownloads api={api} busy={false} onView={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Hugging Face model'), { target: { value: 'unsloth/Qwen3-8B-GGUF' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Look up' }));
+    await screen.findByLabelText(/Size/);
+    expect(screen.queryByLabelText(/Download to/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^Download/ }));
+    await waitFor(() => expect(api.hfDownload).toHaveBeenCalledWith('unsloth/Qwen3-8B-GGUF', 'Qwen3-8B-Q4_K_M.gguf', true));
+  });
+
   it('offers GGUF repos for search words', async () => {
     const { api } = bridge();
     render(<ThinkingDownloads api={api} busy={false} onView={vi.fn()} />);

@@ -30,6 +30,12 @@ describe('LoRA picker', () => {
     expect(screen.getByRole('button', { name: '1 more for other models' })).toBeTruthy();
   });
 
+  it('says which machines have a LoRA when the model controller lists them', () => {
+    const loras = [{ ...selection.loras![0], location: 'on bija, acrasia' }];
+    render(<LoraPicker api={{} as AvatarBridge} selection={{ ...selection, loras: [{ ...loras[0], location: 'on acrasia', offline: true }] }} disabled={false} onChange={vi.fn()} onRefresh={vi.fn()} />);
+    expect(screen.getByText(/on acrasia \(offline\)/)).toBeTruthy();
+  });
+
   it('turns on a LoRA of the model’s family and sets its strength', () => {
     const onChange = vi.fn();
     const { rerender } = render(<LoraPicker api={{} as AvatarBridge} selection={selection} disabled={false} onChange={onChange} onRefresh={vi.fn()} />);

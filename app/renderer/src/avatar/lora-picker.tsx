@@ -99,7 +99,7 @@ export function LoraPicker({ api, selection, disabled, onChange, onRefresh }: Pr
         const usable = Boolean(lora.family && lora.family === modelFamily);
         const hasModel = Boolean(lora.family && availableFamilies.has(lora.family));
         return (
-          <div key={lora.name} className="avatarStudio__lora">
+          <div key={lora.name} className="avatarStudio__lora" style={lora.offline ? { opacity: 0.55 } : undefined}>
             <label>
               <input
                 type="checkbox"
@@ -108,6 +108,7 @@ export function LoraPicker({ api, selection, disabled, onChange, onRefresh }: Pr
                 onChange={(event) => toggle(lora, event.target.checked)}
               />{' '}
               {lora.title ?? lora.name} <small>({baseLabel(lora)})</small>
+              {lora.location ? <small> {lora.location}{lora.offline ? ' (offline)' : ''}</small> : null}
             </label>
             {choice && usable ? (
               <label className="avatarStudio__loraStrength">
