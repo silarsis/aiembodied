@@ -78,6 +78,8 @@ const LOCAL = [
   'wake-word:list',
   'wake-word:set-listening',
   'metrics:observe-latency',
+  'motion-trace:append',
+  'motion-trace:configure',
   // Nothing to approve or make in the background on this PC: the answers are empty.
   'approvals:list',
   'rooms:making',

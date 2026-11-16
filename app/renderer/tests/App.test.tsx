@@ -783,6 +783,13 @@ describe('App component', () => {
     fireEvent.keyDown(window, { key: 'T', code: 'KeyT', ctrlKey: true, shiftKey: true });
     expect(screen.getByTestId('transcript-overlay')).toBeInTheDocument();
 
+    // Enter outside a control opens the typed prompt; Escape closes it.
+    expect(screen.queryByTestId('typed-prompt')).not.toBeInTheDocument();
+    fireEvent.keyDown(document.body, { key: 'Enter' });
+    const typed = await screen.findByLabelText('Typed message');
+    fireEvent.keyDown(typed, { key: 'Escape' });
+    expect(screen.queryByTestId('typed-prompt')).not.toBeInTheDocument();
+
     await openGroup(/Devices and wake words/i);
 
     const inputSelect = await screen.findByLabelText('Microphone');

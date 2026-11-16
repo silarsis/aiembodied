@@ -16,6 +16,8 @@ export interface LocalMotionClientOptions {
   baseUrl: string;
   fetchFn?: typeof fetch;
   healthTimeoutMs?: number;
+  /** Motion trace (see logging/motion-trace.ts): `build` runs only while tracing is on. */
+  trace?: (kind: string, build: () => Record<string, unknown>) => void;
 }
 
 export interface MotionServiceHealth {
@@ -136,11 +138,13 @@ export class LocalMotionClient {
   readonly baseUrl: string;
   private readonly fetchFn: typeof fetch;
   private readonly healthTimeoutMs: number;
+  private readonly trace: (kind: string, build: () => Record<string, unknown>) => void;
 
   constructor(options: LocalMotionClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
     this.fetchFn = options.fetchFn ?? fetch;
     this.healthTimeoutMs = options.healthTimeoutMs ?? 2000;
+    this.trace = options.trace ?? (() => undefined);
   }
 
   /** The service's health, or null when it is not reachable. */
@@ -222,12 +226,22 @@ export class LocalMotionClient {
   }
 
   private async post(pathName: string, request: MotionRequest, options: MotionCallOptions): Promise<Response> {
-    const response = await this.fetchFn(`${this.baseUrl}${pathName}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(toWireRequest(request)),
-      signal: options.signal,
-    });
+    const body = JSON.stringify(toWireRequest(request));
+    this.trace('service.request', () => ({ path: pathName, body: JSON.parse(body) as unknown }));
+    const started = Date.now();
+    let response: Response;
+    try {
+      response = await this.fetchFn(`${this.baseUrl}${pathName}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        signal: options.signal,
+      });
+    } catch (error) {
+      this.trace('service.response', () => ({ path: pathName, error: error instanceof Error ? error.message : String(error), ms: Date.now() - started }));
+      throw error;
+    }
+    this.trace('service.response', () => ({ path: pathName, status: response.status, ok: response.ok, ms: Date.now() - started }));
     if (!response.ok) {
       throw new Error(`Motion service request failed: HTTP ${response.status} ${await errorText(response)}`);
     }

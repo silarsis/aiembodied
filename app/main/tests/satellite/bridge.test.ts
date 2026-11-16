@@ -66,7 +66,7 @@ describe('shared satellite answers', () => {
   });
 
   it('answers the always-empty channels the same way for both satellites', () => {
-    expect(Object.keys(EMPTY_LOCAL_ANSWERS).sort()).toEqual(['approvals:list', 'metrics:observe-latency', 'rooms:making', 'wake-word:list', 'wake-word:set-listening']);
+    expect(Object.keys(EMPTY_LOCAL_ANSWERS).sort()).toEqual(['approvals:list', 'metrics:observe-latency', 'motion-trace:append', 'motion-trace:configure', 'rooms:making', 'wake-word:list', 'wake-word:set-listening']);
     expect(EMPTY_LOCAL_ANSWERS['wake-word:list']([])).toEqual([]);
   });
 });

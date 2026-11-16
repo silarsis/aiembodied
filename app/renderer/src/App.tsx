@@ -21,6 +21,7 @@ import { ModelsDialog } from './settings/models-dialog.js';
 import type { UseId } from '../../main/src/config/model-routing.js';
 import type { PushToTalkStatus } from '../../main/src/talk/types.js';
 import { isTalkTapTarget } from './talk/tap-to-talk.js';
+import { opensTypedPrompt, TypedPrompt } from './talk/type-to-talk.js';
 import { VrmAvatarRenderer, type VrmRendererStatus, type VrmStageAvatar } from './avatar/vrm-avatar-renderer.js';
 import { AnimationBusProvider, createAvatarAnimationBus } from './avatar/animation-bus.js';
 import { BehaviorCueProvider } from './avatar/behavior-cues.js';
@@ -72,6 +73,7 @@ import {
 import { MovementRigs } from './rooms/movement-rig.js';
 import { MoveRequestFilter, enqueueMotionChunk } from './avatar/live-motion.js';
 import { SceneActionExecutor, type SceneActivity } from './rooms/scene-executor.js';
+import { getMotionTraceSetting, initMotionTrace, isSettleRetryEnabled, setMotionTraceSetting, setSettleRetryEnabled } from './rooms/motion-trace.js';
 import { tagToAction, type SceneAction } from './rooms/scene-actions.js';
 import { buildSceneInstructions, describeAvatarWhere, describeBody, type OtherAvatarEntry } from './rooms/scene-instructions.js';
 import { useIdleDirector } from './rooms/use-idle-director.js';
@@ -965,6 +967,12 @@ export default function App() {
   const satellitePlace = isSatellite && placesSnapshot ? placesSnapshot.places.find((place) => place.id === placesSnapshot.localPlaceId) : undefined;
   const backgrounds = useBackgrounds(activeBridge?.backgrounds, isSatellite ? (satellitePlace ? (satellitePlace.room ?? DEFAULT_DESKTOP_ROOM) : null) : undefined);
   const [showWalkableArea, setShowWalkableArea] = useState(false);
+  // Debug switches kept in localStorage (rooms/motion-trace.ts): the verbose motion log and the post-sit settle retries.
+  const [motionTraceOn, setMotionTraceOn] = useState(() => getMotionTraceSetting());
+  const [settleRetriesOn, setSettleRetriesOn] = useState(() => isSettleRetryEnabled());
+  useEffect(() => {
+    void initMotionTrace();
+  }, []);
   const [avatarFootY, setAvatarFootY] = useState(0.9);
 
   useEffect(() => {
@@ -2528,6 +2536,53 @@ export default function App() {
     [realtimeClient, interruptMovement],
   );
 
+  // Enter opens a one-line prompt (desktop; a satellite always shows its own box). With listening off,
+  // typing turns it on as push-to-talk does, and the line goes once the conversation has connected.
+  const [typedPromptOpen, setTypedPromptOpen] = useState(false);
+  const realtimeStatusRef = useRef(realtimeState.status);
+  const connectedWaitersRef = useRef<Array<() => void>>([]);
+  useEffect(() => {
+    realtimeStatusRef.current = realtimeState.status;
+    if (realtimeState.status !== 'connected') return;
+    const waiters = connectedWaitersRef.current;
+    connectedWaitersRef.current = [];
+    waiters.forEach((wake) => wake());
+  }, [realtimeState.status]);
+  const sendPromptLine = useCallback(
+    async (text: string): Promise<boolean> => {
+      if (!(realtimeClient instanceof LocalVoiceClient)) return false;
+      if (realtimeStatusRef.current !== 'connected') {
+        setListeningEnabled(true);
+        const connected = await new Promise<boolean>((resolve) => {
+          const timer = setTimeout(() => {
+            connectedWaitersRef.current = connectedWaitersRef.current.filter((entry) => entry !== wake);
+            resolve(false);
+          }, 20_000);
+          const wake = () => {
+            clearTimeout(timer);
+            resolve(true);
+          };
+          connectedWaitersRef.current.push(wake);
+        });
+        if (!connected) return false;
+      }
+      console.info('[talk] Typed prompt');
+      return sendTypedMessage(text);
+    },
+    [realtimeClient, sendTypedMessage, setListeningEnabled],
+  );
+  useEffect(() => {
+    if (isSatellite || typedPromptOpen) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!opensTypedPrompt(event)) return;
+      event.preventDefault();
+      setTypedPromptOpen(true);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isSatellite, typedPromptOpen]);
+  const closeTypedPrompt = useCallback(() => setTypedPromptOpen(false), []);
+
   useEffect(() => {
     if (!realtimeClient || !hasRealtimeApiKey) {
       return;
@@ -3245,7 +3300,7 @@ export default function App() {
                   animationVersion={0}
                   room={backgrounds.activeRoom}
                   roomAvatarHeight={backgrounds.idleSettings.avatarHeight}
-                  showWalkableArea={showDeveloperHud && showWalkableArea}
+                  showWalkableArea={showWalkableArea}
                   sceneActions={sceneActions}
                   sceneExecutors={sceneExecutorFor}
                   {...(placesSnapshot ? { hiddenIds, onBodyReady: handleBodyReady } : {})}
@@ -3261,6 +3316,7 @@ export default function App() {
               ) : null}
             </section>
           </section>
+          {typedPromptOpen && !isSatellite ? <TypedPrompt onSend={sendPromptLine} onClose={closeTypedPrompt} /> : null}
           {satellite ? <SatelliteBanner status={satellite.status} bridge={satellite.bridge} /> : null}
           {satellite ? <DeviceDots gate={deviceGate} /> : <CameraLiveDot live={facePresence.live} />}
           <div className="stageToolbar">
@@ -3575,7 +3631,7 @@ export default function App() {
           <PanelDialog id="backgrounds" title="Backgrounds" subtitle="Pick a scene or describe a new one." open={panel === 'backgrounds'} onClose={closePanel}>
             <BackgroundControls
               backgrounds={backgrounds}
-              walkableArea={showDeveloperHud ? { shown: showWalkableArea, onChange: setShowWalkableArea } : undefined}
+              walkableArea={{ shown: showWalkableArea, onChange: setShowWalkableArea }}
             />
           </PanelDialog>
 
@@ -3637,6 +3693,36 @@ export default function App() {
               </div>
             ) : null}
             <RoomDevicesStatus roomHub={activeBridge?.roomHub} active={panel === 'status'} />
+            <label className="kiosk__helper">
+              <input
+                type="checkbox"
+                checked={showWalkableArea}
+                onChange={(event) => setShowWalkableArea(event.target.checked)}
+              />{' '}
+              Show navmesh and colliders (3D rooms)
+            </label>
+            <label className="kiosk__helper">
+              <input
+                type="checkbox"
+                checked={motionTraceOn}
+                onChange={(event) => {
+                  setMotionTraceOn(event.target.checked);
+                  void setMotionTraceSetting(event.target.checked);
+                }}
+              />{' '}
+              Verbose motion log (motion-trace.jsonl)
+            </label>
+            <label className="kiosk__helper">
+              <input
+                type="checkbox"
+                checked={settleRetriesOn}
+                onChange={(event) => {
+                  setSettleRetriesOn(event.target.checked);
+                  setSettleRetryEnabled(event.target.checked);
+                }}
+              />{' '}
+              Re-try sits that end with legs in furniture
+            </label>
             <div className="kiosk__statusBar">
               <div
                 className={`statusChip statusChip--${wakeStatusVariant}`}

@@ -177,7 +177,7 @@ export class Satellite {
   async start(ipcMain: IpcMainLike, protocol: ProtocolLike): Promise<void> {
     for (const channel of [...channelsOfKind('forward'), ...channelsOfKind('local'), ...channelsOfKind('unavailable')]) {
       // `diagnostics:preload-log` is a one-way message main.ts already listens for.
-      if (channel === 'diagnostics:preload-log') continue;
+      if (channel === 'diagnostics:preload-log' || channel === 'motion-trace:append') continue;
       ipcMain.handle(channel, (_event, ...args) => this.invoke(channel, args));
     }
     protocol.handle(ASSET_SCHEME, (request) => this.serveAsset(request.url));
