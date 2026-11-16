@@ -423,6 +423,29 @@ describe('aicontroller leases for the other GPU servers', () => {
       await b.shutdown();
     });
 
+    it('keeps asking for Echo and motion after a wake the controller has not handled yet', async () => {
+      const b = bridge({ watchMs: 15, echoRetryMs: 30 });
+      await b.start();
+      b.setMotionWanted(true);
+      await b.ensureEcho();
+      await until(() => fake.active('motion').length === 1);
+      await b.suspend();
+      expect(fake.active('echo-llm')).toHaveLength(0);
+      expect(fake.active('motion')).toHaveLength(0);
+      // The PC wakes; the controller still says it is going to sleep.
+      fake.refuse.add('echo-llm');
+      fake.refuse.add('motion');
+      await b.resume();
+      await until(() => logger.warn.mock.calls.filter(([message]) => String(message).includes('after resume')).length >= 2);
+      fake.refuse.delete('echo-llm');
+      fake.refuse.delete('motion');
+      // No turn and no motion request: the bridge asks again by itself.
+      await until(() => fake.active('echo-llm').length === 1 && fake.active('motion').length === 1, 4000);
+      expect(fake.active('echo-llm')).toHaveLength(1);
+      expect(fake.active('motion')).toHaveLength(1);
+      await b.shutdown();
+    });
+
     it('asks again when the controller restarted and forgot Echo’s lease', async () => {
       const b = bridge({ watchMs: 15, echoRetryMs: 30 });
       await b.start();

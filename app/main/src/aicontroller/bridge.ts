@@ -259,6 +259,8 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
   /** Aborts lease requests still waiting at the controller (queued for memory) when the app sleeps or quits. */
   private abort = new AbortController();
   private motionPaused: string | null = null;
+  /** Motion's lease failed to come back after a wake: ask again every echoRetryMs until it does. */
+  private motionOwed = false;
   private motionFailure: string | null = null;
   /** Backends the controller answered 404 for: the app runs its own server for them. */
   private readonly unknownBackends = new Set<string>();
@@ -396,6 +398,19 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
       if (lease && state.users === 0 && (lease.revoked || lease.lost)) void this.releaseShared(state);
     }
     this.retryEchoOwed();
+    this.retryMotionOwed();
+  }
+
+  /** After a wake the controller may still say it is going to sleep: keep asking for motion until it comes back. */
+  private retryMotionOwed(): void {
+    if (!this.motionOwed) return;
+    if (this.motionLease || !this.used || !this.want || !this.motionWanted) {
+      this.motionOwed = !this.motionLease && this.want && this.motionWanted && this.used;
+      return;
+    }
+    if (this.motionPending || Date.now() < this.motionAskedAt + this.echoRetryMs) return;
+    if (this.controller.available === false) this.controller.available = null;
+    void this.leaseMotion().catch((error) => this.logger.warn('Could not lease motion again after waking.', { message: messageOf(error) }));
   }
 
   /** The backends whose leases hold this PC's GPU, for messages. */
@@ -616,6 +631,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
         return;
       }
       this.motionLease = lease;
+      this.motionOwed = false;
       this.motionPaused = null;
       this.motionFailure = null;
       this.logger.info('Leased motion.', { lease: lease.id, url: lease.url });
@@ -865,6 +881,7 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
   async suspend(): Promise<void> {
     this.want = false;
     this.echoOwed = false;
+    this.motionOwed = false;
     // A lease still queued at the controller (e.g. for memory) is not known by id here: aborting the request
     // makes the client give it back. One that arrives after this point is released on arrival.
     this.abort.abort();
@@ -882,8 +899,16 @@ export class AicontrollerBridge implements CoderLeases, SharedLeases {
     await this.detect();
     this.want = true;
     if (this.used) {
-      void this.leaseEcho().catch((error) => this.logger.warn('Could not lease echo-llm after resume.', { message: messageOf(error) }));
-      void this.leaseMotion().catch((error) => this.logger.warn('Could not lease motion after resume.', { message: messageOf(error) }));
+      // The controller gets the same wake signal and may not have handled it yet ("going to sleep", 503),
+      // or the network may still be coming up: a failed ask is retried every echoRetryMs, not left for a turn.
+      void this.leaseEcho().catch((error) => {
+        this.echoOwed = true;
+        this.logger.warn('Could not lease echo-llm after resume; asking again shortly.', { message: messageOf(error) });
+      });
+      void this.leaseMotion().catch((error) => {
+        this.motionOwed = true;
+        this.logger.warn('Could not lease motion after resume; asking again shortly.', { message: messageOf(error) });
+      });
     }
   }
 
