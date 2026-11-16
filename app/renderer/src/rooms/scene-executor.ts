@@ -231,6 +231,13 @@ export class SceneActionExecutor {
     return this.failures.map((failure) => failure.text);
   }
 
+  /** Milliseconds until the oldest remembered failure is forgotten; null when there is none. */
+  nextFailureExpiryMs(): number | null {
+    if (this.recentFailures().length === 0) return null;
+    const oldest = Math.min(...this.failures.map((failure) => failure.at));
+    return Math.max(0, oldest + FAILURE_MEMORY_MS - this.now());
+  }
+
   /** Called after each `interrupt` (the user spoke, woke the avatar or tapped). */
   onInterrupt(listener: () => void): () => void {
     this.interruptListeners.add(listener);

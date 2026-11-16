@@ -82,7 +82,8 @@ vi.mock('../../src/rooms/room-scene-controller.js', () => ({
     setDebugNavmesh = vi.fn();
     remember2dCamera = vi.fn();
     step = vi.fn();
-    stepCompanion = vi.fn();
+    solveContact = vi.fn();
+    solveCompanionContact = vi.fn();
   },
 }));
 

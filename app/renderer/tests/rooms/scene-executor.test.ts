@@ -573,8 +573,12 @@ describe('SceneActionExecutor', () => {
       const failure = "couldn't reach its right knee target (blocked by sofa)";
       expect(executor.recentFailures()).toEqual([failure]);
       expect(activity).toContainEqual({ type: 'skipped', label: 'sit on sofa', reason: failure });
+      expect(executor.nextFailureExpiryMs()).toBe(60_000);
+      clock += 20_000;
+      expect(executor.nextFailureExpiryMs()).toBe(40_000);
       clock += 61_000;
       expect(executor.recentFailures()).toEqual([]);
+      expect(executor.nextFailureExpiryMs()).toBeNull();
     });
 
     it('stays seated with the old session when the settle stream fails', async () => {

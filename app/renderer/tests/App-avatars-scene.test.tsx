@@ -201,5 +201,18 @@ describe('App scene actions from another avatar', () => {
     });
     await waitFor(() => expect(echoSubmit).toHaveBeenCalledTimes(1));
     expect(sageSubmit).toHaveBeenCalledTimes(1);
+
+    // A failed reach recorded after the last repair refreshes that avatar's own scene text (not Echo's).
+    vi.spyOn(sageExecutor, 'recentFailures').mockReturnValue(["couldn't reach its left hand target"]);
+    vi.spyOn(sageExecutor, 'nextFailureExpiryMs').mockReturnValue(null);
+    await act(async () => {
+      (sageExecutor as unknown as { emit: (activity: unknown) => void }).emit({ type: 'skipped', label: 'sit on sofa', reason: 'x' });
+    });
+    await waitFor(() => {
+      const last = setTagInstructions.mock.calls.at(-1)?.[0] as { sceneFor?: Record<string, string> } | undefined;
+      expect(last?.sceneFor?.sage).toContain("Just now your body couldn't reach its left hand target.");
+    });
+    const lastScene = setTagInstructions.mock.calls.at(-1)?.[0] as { scene?: string };
+    expect(lastScene.scene).not.toContain('Just now your body');
   });
 });

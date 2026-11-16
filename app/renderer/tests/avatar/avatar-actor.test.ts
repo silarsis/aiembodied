@@ -244,6 +244,17 @@ describe('AvatarActor', () => {
     expect(order).toEqual(['mixer', 'hook', 'vrm']);
   });
 
+  it('runs the beforeVrmUpdate hook after pose blending, immediately before the VRM update', async () => {
+    const { actor } = await loadActor();
+    const order: string[] = [];
+    const blend = (actor as unknown as { poseBlend: { apply: (delta: number) => void } }).poseBlend;
+    const apply = vi.spyOn(blend, 'apply').mockImplementation(() => void order.push('blend'));
+    (created.vrm.update as ReturnType<typeof vi.fn>).mockImplementation(() => order.push('vrm'));
+    actor.update(1 / 60, 0, { afterMixer: () => order.push('afterMixer'), beforeVrmUpdate: () => order.push('contact') });
+    expect(order).toEqual(['afterMixer', 'blend', 'contact', 'vrm']);
+    apply.mockRestore();
+  });
+
   it('applies emotion expressions and clears them with a zero weight', async () => {
     const { actor } = await loadActor();
     vi.spyOn(console, 'info').mockImplementation(() => {});

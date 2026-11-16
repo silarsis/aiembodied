@@ -272,7 +272,6 @@ export class RoomSceneController {
   /** Call once per frame after the animation mixer has run. */
   step(dt: number): void {
     this.sceneEnv.step(dt);
-    if (!this.hiddenIds.has('echo')) this.sceneEnv.solveContact(dt);
     for (const env of this.companionEnvs.values()) env.step(dt);
     const echoHidden = this.hiddenIds.has('echo');
     if (echoHidden) this.stage?.parkEcho();
@@ -284,10 +283,15 @@ export class RoomSceneController {
   }
 
   /**
-   * Call after a companion's own animation mixer has run (its pose is reset every frame), before its VRM
-   * update: keeps its limbs out of furniture.
+   * Call once per frame after Echo's pose blending, right before its VRM update: keeps its limbs out of
+   * furniture (and restores the bones' animated pose when there is no room).
    */
-  stepCompanion(id: string, dt: number): void {
+  solveContact(dt: number): void {
+    if (!this.hiddenIds.has('echo')) this.sceneEnv.solveContact(dt);
+  }
+
+  /** The same for a companion, after its own pose blending and before its VRM update. */
+  solveCompanionContact(id: string, dt: number): void {
     if (!this.hiddenIds.has(id)) this.companionEnvs.get(id)?.solveContact(dt);
   }
 
@@ -401,13 +405,18 @@ export class RoomSceneController {
     );
     this.avatar.scale.setScalar(this.avatarBase.scale * factor);
     this.currentScale = factor;
+    // The root is back at the home height, so the contact body's lift (spring state) no longer applies.
+    this.sceneEnv.resetContactLift();
     this.avatar.position.set(...placed.position);
     this.avatar.rotation.y = placed.rotationY;
     this.avatar.updateWorldMatrix(true, true);
   }
 
   private placeCompanions(all = true): void {
-    if (this.room && this.stage) this.companions.place(this.room.home, this.targetHeight, all);
+    if (this.room && this.stage) {
+      this.companions.place(this.room.home, this.targetHeight, all);
+      if (all) for (const env of this.companionEnvs.values()) env.resetContactLift();
+    }
   }
 
   private restoreAvatar(): void {

@@ -1431,7 +1431,8 @@ export default function App() {
   const [sceneTick, setSceneTick] = useState(0);
   useEffect(() => {
     const bump = (activity: SceneActivity) => {
-      if (activity.type === 'done' || activity.type === 'failed') setSceneTick((tick) => tick + 1);
+      // 'skipped' is how a failed reach is recorded (after the last repair's 'done'), so the body text changes too.
+      if (activity.type === 'done' || activity.type === 'failed' || activity.type === 'skipped') setSceneTick((tick) => tick + 1);
     };
     const offEcho = sceneActions.onActivity(bump);
     const offOthers = rigs.onOtherActivity((_avatarId, activity) => bump(activity));
@@ -1440,6 +1441,17 @@ export default function App() {
       offOthers();
     };
   }, [sceneActions, rigs]);
+  // A remembered failure is told for FAILURE_MEMORY_MS only: refresh the scene text when the earliest one expires.
+  useEffect(() => {
+    let earliest: number | null = null;
+    for (const profile of stageNames) {
+      const ms = rigs.get(profile.id).executor.nextFailureExpiryMs();
+      if (ms !== null && (earliest === null || ms < earliest)) earliest = ms;
+    }
+    if (earliest === null) return undefined;
+    const timer = setTimeout(() => setSceneTick((tick) => tick + 1), earliest + 50);
+    return () => clearTimeout(timer);
+  }, [stageNames, rigs, sceneTick]);
   /** What each avatar on stage would be told about the others in the room, with where they are when known. */
   const othersFor = useCallback(
     (forId: string): OtherAvatarEntry[] =>
@@ -2184,10 +2196,19 @@ export default function App() {
     const sceneFor = Object.fromEntries(
       stageNames
         .filter((profile) => profile.id !== 'echo')
-        .map((profile) => [
+        .map((profile) => {
+          const executor = rigs.get(profile.id).executor;
+          return [
           profile.id,
-          buildSceneInstructions(room, liveMotionReady, undefined, othersFor(profile.id)),
-        ]),
+          buildSceneInstructions(
+            room,
+            liveMotionReady,
+            undefined,
+            othersFor(profile.id),
+            describeBody(room, executor.getState(), executor.world(), executor.recentFailures()),
+          ),
+          ];
+        }),
     );
     return {
       shared: buildAvatarTagInstructions(availableAnimationSlugs, poseSlugs, liveMotionReady),

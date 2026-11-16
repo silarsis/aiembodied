@@ -269,6 +269,28 @@ export class ContactBody {
     this.lift.velocity = 0;
   }
 
+  /**
+   * Gives the bones back to the animation: restores the animated rotation of every bone this solver wrote
+   * (and the mixer has not rewritten since), drops all corrections and the lift. For when the avatar leaves
+   * the room, since bones nothing else keys would keep the collision-adjusted pose.
+   */
+  release(): void {
+    this.restoreAnimated();
+    for (const limb of this.limbs) {
+      for (const joint of limb.joints) {
+        joint.weight = 0;
+        joint.target.identity();
+        joint.offset.identity();
+      }
+    }
+    for (const track of this.ends) {
+      track.distance = 0;
+      track.seconds = 0;
+      track.reported = false;
+    }
+    this.resetLift();
+  }
+
   /** The limb ends that have been further than MISS_DISTANCE from their animated place for MISS_SECONDS. */
   misses(): ContactMiss[] {
     const result: ContactMiss[] = [];
@@ -296,7 +318,9 @@ export class ContactBody {
   }
 
   /**
-   * Solves one frame. Call after the animation mixer, grip and seat fit and before the VRM's own update.
+   * Solves one frame. Call after the animation mixer, pose blending, grip and seat fit and before the VRM's
+   * own update. A bone that anything since our last write (mixer, pose blend) rewrote is taken as the new
+   * animated pose; one still holding our write gets its animated rotation back first.
    * `physics` null (no physics in this room) still restores the animated pose. `debugParent` non-null draws
    * the body capsules into it.
    */
