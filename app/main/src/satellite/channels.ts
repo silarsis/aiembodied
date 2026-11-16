@@ -64,6 +64,10 @@ const FORWARD = [
   'places:can-wander',
   // A station walk is done (or cannot happen): bija may go on with the answer.
   'station:arrived',
+  // A character on this PC's screen starts reading at a station (the idle director), and which stations and who is reading.
+  'pursuits:start',
+  'pursuits:offers',
+  'pursuits:running',
   // The satellite's own main process asks for the wake word picked on bija (and a trained model's file). The page never calls it.
   'wake-word:model',
 ] as const;
@@ -110,6 +114,8 @@ const EVENT = [
   'camera:detection',
   // An avatar of that room goes to the object that holds a tool (stations).
   'station:use',
+  // Which avatars are reading right now.
+  'pursuits:changed',
 ] as const;
 
 /** Never run on a satellite: settings, models, keys, avatars, coding, generation, uploads, deletes, memory, tools, bija's own admin. */
@@ -200,6 +206,9 @@ const UNAVAILABLE = [
   'stations:list',
   'stations:remove',
   'stations:update',
+  // A character's reading notes are read in the Characters pop-up on bija; stopping a session is done there too.
+  'pursuits:notes',
+  'pursuits:stop',
   'rooms:object-settings:set',
   // Coding, memory, tools.
   'coding:answer-task',

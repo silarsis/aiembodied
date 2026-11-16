@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import type { AvatarProfile, AvatarsBridge } from '../../../main/src/avatars/bridge-types.js';
 import { CharacterSettings } from './character-settings.js';
+import { ReadingNotes } from './reading-notes.js';
 import { useCharacterSettings, type CharacterSettingsContext, type Run } from './use-character-settings.js';
 
 export interface SceneCastModel {
@@ -167,6 +168,7 @@ function CastCard({ api, profile, models, echoModelId, settings, run }: {
           <button type="button" aria-label={`Cancel removing ${profile.name}`} onClick={() => setConfirming(false)}>Cancel</button>
         </div>
       ) : null}
+      {settings?.readingNotes ? <ReadingNotes avatarId={profile.id} name={profile.name} load={settings.readingNotes} /> : null}
       {editing ? <CardEditor api={api} profile={profile} models={models} ownBody={ownBody} settings={settings} run={run} /> : null}
     </li>
   );

@@ -269,7 +269,7 @@ describe('MemoryStore speaker column', () => {
 
     const store = new MemoryStore({ filePath });
     stores.push(store);
-    expect(Number(store.database.pragma('user_version', { simple: true }))).toBe(11);
+    expect(Number(store.database.pragma('user_version', { simple: true }))).toBe(12);
     const columns = store.database.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string; notnull: number }>;
     expect(columns.find((c) => c.name === 'speaker')).toMatchObject({ notnull: 0 });
     expect(store.listMessages('s')).toEqual([{ id: 'old', sessionId: 's', role: 'user', ts: 1, content: 'before', audioPath: null }]);

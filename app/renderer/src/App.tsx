@@ -77,6 +77,7 @@ import { getMotionTraceSetting, initMotionTrace, isSettleRetryEnabled, setMotion
 import { tagToAction, type SceneAction } from './rooms/scene-actions.js';
 import { buildSceneInstructions, describeAvatarWhere, describeBody, type OtherAvatarEntry } from './rooms/scene-instructions.js';
 import { useIdleDirector } from './rooms/use-idle-director.js';
+import { usePursuits } from './rooms/use-pursuits.js';
 import { handleStationUse } from './rooms/station-walks.js';
 import { usePlaces } from './places/use-places.js';
 import { useSatellite } from './satellite/satellite-context.js';
@@ -1373,11 +1374,15 @@ export default function App() {
     (avatarId?: string) => getPreloadApi()?.localVoice?.getVoiceOptions?.(avatarId) ?? Promise.reject(new Error('The voices are unavailable.')),
     [],
   );
+  // Stable, so the Reading list of a character is read once, not on every render.
+  const pursuitsBridge = activeBridge?.pursuits;
+  const loadReadingNotes = useMemo(() => (pursuitsBridge ? (avatarId: string, limit: number) => pursuitsBridge.notes(avatarId, limit) : undefined), [pursuitsBridge]);
   const characterSettings: CharacterSettingsContext = {
     avatarApi: activeBridge?.avatar,
     getVoiceOptions: getVoiceOptionsFor,
     isLocalBackend,
     realtimeVoices: availableVoices,
+    readingNotes: loadReadingNotes,
     echo: echoControls,
   };
 
@@ -1386,8 +1391,13 @@ export default function App() {
   useEffect(() => {
     speakingRef.current = { echo: visemeFrame, others: visemeFrames };
   }, [visemeFrame, visemeFrames]);
+  const pursuits = usePursuits(activeBridge?.pursuits, backgrounds.activeRoom?.id ?? null);
   const { idleNote } = useIdleDirector({
     executor: sceneActions,
+    // Characters may go and read at a station of this room on their own (main runs the session).
+    pursuitsFor: pursuits.pursuitsFor,
+    startPursuit: pursuits.startPursuit,
+    pursuing: pursuits.pursuing,
     // Several avatars on stage: the one idle director picks who acts (rooms/idle-picker.ts). Each avatar has its own habits.
     avatars: () =>
       stageNames.map((profile) => {

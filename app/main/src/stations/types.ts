@@ -44,7 +44,8 @@ export interface StationUseEvent {
   roomId: string;
   objectId: string;
   activity: string;
-  phase: 'start' | 'end';
+  /** 'activity': a pursuit's next step; the avatar acts `activity` where it stands (no walking). */
+  phase: 'start' | 'end' | 'activity';
   /** Only on 'end': whether the tool worked. */
   ok?: boolean;
 }

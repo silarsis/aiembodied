@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import DatabaseConstructor, { type Database as SqliteDatabase } from 'better-sqlite3';
 import { Buffer } from 'node:buffer';
+import type { NewReadingNote, ReadingNote } from '../pursuits/types.js';
 
 export interface MemoryStoreOptions {
   filePath: string;
@@ -322,6 +324,28 @@ const MIGRATIONS: readonly Migration[] = [
     statements: [
       `ALTER TABLE mcp_tools ADD COLUMN read_only_hint INTEGER NULL;`,
       `ALTER TABLE mcp_tools ADD COLUMN read_only INTEGER NULL;`,
+    ],
+  },
+  {
+    // Pursuits: what a character wrote down while reading on its own. Kept here as well as in the memory engine
+    // so the Characters pop-up can list the notes while the engine is down. `questions` is a JSON array of text.
+    version: 12,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS reading_notes (
+        id TEXT PRIMARY KEY,
+        avatar_id TEXT NOT NULL,
+        station_id TEXT NULL,
+        title TEXT NOT NULL,
+        link TEXT NULL,
+        takeaway TEXT NOT NULL,
+        opinion TEXT NOT NULL DEFAULT '',
+        connection TEXT NOT NULL DEFAULT '',
+        questions TEXT NOT NULL DEFAULT '[]',
+        curiosity TEXT NOT NULL DEFAULT '',
+        partial INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+      );`,
+      `CREATE INDEX IF NOT EXISTS idx_reading_notes_avatar ON reading_notes (avatar_id, created_at DESC);`,
     ],
   },
 ];
@@ -827,6 +851,46 @@ export class MemoryStore {
     }
 
     this.setValue(ACTIVE_VRM_KEY, modelId);
+  }
+
+  /** Save one reading note (pursuits/). Returns it with its id and time. */
+  addReadingNote(note: NewReadingNote): ReadingNote {
+    this.ensureOpen();
+    const saved: ReadingNote = { ...note, id: randomUUID(), createdAt: note.createdAt ?? Date.now() };
+    this.db
+      .prepare(
+        `INSERT INTO reading_notes (id, avatar_id, station_id, title, link, takeaway, opinion, connection, questions, curiosity, partial, created_at)
+         VALUES (@id, @avatarId, @stationId, @title, @link, @takeaway, @opinion, @connection, @questions, @curiosity, @partial, @createdAt)`,
+      )
+      .run({ ...saved, questions: JSON.stringify(saved.questions), partial: saved.partial ? 1 : 0 });
+    return saved;
+  }
+
+  /** An avatar's reading notes, newest first. */
+  listReadingNotes(avatarId: string, limit = 20): ReadingNote[] {
+    this.ensureOpen();
+    const rows = this.db
+      .prepare(
+        `SELECT id, avatar_id AS avatarId, station_id AS stationId, title, link, takeaway, opinion, connection, questions, curiosity, partial, created_at AS createdAt
+         FROM reading_notes WHERE avatar_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?`,
+      )
+      .all(avatarId, Math.max(1, Math.min(200, Math.floor(limit)))) as Array<Omit<ReadingNote, 'questions' | 'partial'> & { questions: string; partial: number }>;
+    return rows.map((row) => {
+      let questions: string[] = [];
+      try {
+        const parsed: unknown = JSON.parse(row.questions);
+        if (Array.isArray(parsed)) questions = parsed.filter((q): q is string => typeof q === 'string');
+      } catch {
+        /* A damaged row still lists, without questions. */
+      }
+      return { ...row, questions, partial: row.partial === 1 };
+    });
+  }
+
+  /** Drop an avatar's reading notes (the avatar was removed). Returns how many. */
+  deleteReadingNotes(avatarId: string): number {
+    this.ensureOpen();
+    return this.db.prepare('DELETE FROM reading_notes WHERE avatar_id = ?').run(avatarId).changes;
   }
 
   /** Queue a write for the memory engine. Returns the entry's id. */

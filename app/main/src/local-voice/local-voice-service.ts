@@ -320,6 +320,27 @@ export class LocalVoiceService {
     if (this.heard.length > HEARD_LINES_KEPT) this.heard = this.heard.slice(-HEARD_LINES_KEPT);
   }
 
+  /** The conversation model client now in use (a pursuit makes its own calls with it, as this avatar). */
+  chat(): ChatClient {
+    return this.llm;
+  }
+
+  /**
+   * The last `count` lines of this avatar's conversation, oldest first, as "Kevin: ..." and "You: ..." (clipped).
+   * Recalled-memory and heard-in-the-room blocks in front of a user line are left out. For a pursuit's context.
+   */
+  recentLines(count: number): string[] {
+    return this.history
+      .slice(-Math.max(0, count))
+      .map((message) => {
+        if (message.role !== 'user' && message.role !== 'assistant') return '';
+        const text = (message.content.split('\n\n').pop() ?? '').replace(/\s+/g, ' ').trim();
+        if (!text) return '';
+        return `${message.role === 'user' ? 'Kevin' : 'You'}: ${text.length > 200 ? `${text.slice(0, 200)}…` : text}`;
+      })
+      .filter(Boolean);
+  }
+
   resetHistory(): void {
     this.heard = [];
     this.history = [];

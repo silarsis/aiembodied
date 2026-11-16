@@ -2398,3 +2398,14 @@ body {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* Reading notes in the Characters pop-up (avatar/reading-notes.tsx). */
+.readingNotes { margin-top: 0.5rem; }
+.readingNotes__heading { margin: 0 0 0.25rem; font-size: 0.9rem; }
+.readingNotes__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
+.readingNote summary { cursor: pointer; }
+.readingNote__date { opacity: 0.7; }
+.readingNote__title { font-weight: 600; }
+.readingNote__takeaway { opacity: 0.8; }
+.readingNote__full { padding: 0.25rem 0 0.25rem 1rem; }
+.readingNote__full p { margin: 0.25rem 0; overflow-wrap: anywhere; }

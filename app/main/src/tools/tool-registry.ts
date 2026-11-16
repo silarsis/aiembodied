@@ -1,6 +1,11 @@
 import { EventEmitter } from 'node:events';
 import type { JSONSchema } from '../mcp/types.js';
 
+/** Who is calling a tool. Tools that depend on the caller (an avatar's own notes) read it; the rest ignore it. */
+export interface ToolContext {
+  avatarId?: string;
+}
+
 /**
  * A tool registered in the registry with execution capabilities.
  */
@@ -12,7 +17,7 @@ export interface RegisteredTool {
   inputSchema: JSONSchema; // JSON Schema for tool parameters
   enabled: boolean; // Whether the tool is enabled
   confirmationLevel: 'none' | 'notify' | 'confirm' | 'block'; // Security level
-  execute: (params: unknown) => Promise<unknown>; // Execution function
+  execute: (params: unknown, context?: ToolContext) => Promise<unknown>; // Execution function
   readOnly?: boolean; // True when the tool only reads (MCP: person's choice, else server hint); used by stations
   spokenNotice?: string; // Said aloud by the local voice while the tool runs, e.g. "Let me look that up."
   describeCall?: (params: unknown) => string; // Short label for a call in the status panel
@@ -100,7 +105,7 @@ export class ToolRegistry extends EventEmitter {
    * @returns Execution result with success status, data, and duration
    * @throws Error if tool not found or disabled
    */
-  async execute(toolId: string, params: unknown): Promise<ToolExecutionResult> {
+  async execute(toolId: string, params: unknown, context?: ToolContext): Promise<ToolExecutionResult> {
     const tool = this.tools.get(toolId);
     if (!tool) {
       throw new Error(`Tool not found: ${toolId}`);
@@ -111,7 +116,7 @@ export class ToolRegistry extends EventEmitter {
 
     const startTime = Date.now();
     try {
-      const result = await tool.execute(params);
+      const result = await (context ? tool.execute(params, context) : tool.execute(params));
       return { success: true, data: result, durationMs: Date.now() - startTime };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);

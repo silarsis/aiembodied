@@ -66,6 +66,7 @@ runTests('tests/aicontroller*.test.ts', 'Model Controller');
 runTests('tests/rooms-*.test.ts', 'Rooms');
 runTests('tests/places/*.test.ts', 'Places');
 runTests('tests/stations/*.test.ts', 'Stations');
+runTests('tests/pursuits/*.test.ts', 'Pursuits');
 runTests('tests/presence-place.test.ts', 'Place Presence');
 runTests('tests/room-hub/*.test.ts', 'Room Hub');
 runTests('tests/satellite/*.test.ts', 'Satellite');

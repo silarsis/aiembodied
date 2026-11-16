@@ -29,7 +29,7 @@ import {
   type IdleCandidate,
 } from './idle-picker.js';
 import { describeAvatarWhere, describeFeet } from './scene-instructions.js';
-import type { IdleInput, IdlePlace, IdleTag } from './idle-types.js';
+import type { IdleInput, IdlePlace, IdlePursuit, IdleTag } from './idle-types.js';
 import type { PlacesSnapshot } from '../../../main/src/places/place-manager.js';
 import { isPhonePlace } from '../../../main/src/places/place-kind.js';
 import { ACTIVE_WINDOW_MS, WANDER_COOLDOWN_MS, activeWithin, othersAt } from '../../../main/src/places/wander.js';
@@ -123,6 +123,15 @@ export interface IdleDirectorDeps {
    * what only this screen knows. Absent means no. A `{room:}` tag the answer refuses is dropped, whatever the model said.
    */
   canWander?(avatarId: string, place: string, speaking: boolean): Promise<boolean>;
+  /**
+   * Things this avatar may go and do for a while on its own right now, in the room it is in (read at the bookshelf):
+   * the stations of this room that its character may use. Absent means none, and the prompt is what it always was.
+   */
+  pursuitsFor?(avatarId: string): readonly IdlePursuit[];
+  /** Start the avatar on a pursuit at a station (main runs it). False when it could not start. */
+  startPursuit?(avatarId: string, stationId: string): Promise<boolean>;
+  /** The avatar has a pursuit running: it is busy, so it does not act on its own and is not offered another. */
+  pursuing?(avatarId: string): boolean;
   /**
    * The "just before this, while idle, you…" note for the conversation changed. It only changes while
    * the assistant is not working on a turn.
@@ -339,13 +348,13 @@ export class IdleDirector {
     if (this.deps.nobodyHere?.()) return null;
     const roster = this.roster();
     if (roster.length === 0) {
-      return this.deps.executor.busy
+      return this.deps.executor.busy || this.deps.pursuing?.(ECHO_ID)
         ? null
         : { id: ECHO_ID, name: '', executor: this.deps.executor };
     }
     const candidates: IdleCandidate[] = roster.map((avatar) => ({
       id: avatar.id,
-      busy: this.executorOf(avatar).busy,
+      busy: this.executorOf(avatar).busy || this.deps.pursuing?.(avatar.id) === true,
       speaking: Boolean(avatar.speaking),
       lastActedAt: this.lastActed.get(avatar.id),
     }));
@@ -383,6 +392,7 @@ export class IdleDirector {
         });
         return { name: avatar.name, where };
       });
+    const pursuits = this.deps.pursuing?.(actor.id) ? [] : [...(this.deps.pursuitsFor?.(actor.id) ?? [])];
     const state = executor.getState();
     const feet = state.posture === 'seated' && state.seat ? describeFeet(room, world, state.seat.objectId) : null;
     const failures = executor.recentFailures?.() ?? [];
@@ -397,6 +407,7 @@ export class IdleDirector {
       now: new Date(this.deps.now()),
       ...(others.length > 0 ? { others } : {}),
       ...(places.length > 0 ? { places } : {}),
+      ...(pursuits.length > 0 ? { pursuits } : {}),
     };
   }
 
@@ -476,6 +487,12 @@ export class IdleDirector {
     this.wandered = true;
     this.wanderers.add(actor.id);
     this.lastActed.set(actor.id, this.deps.now());
+    // Reading is the character's own pursuit: main walks its body to the station and runs the session.
+    if (first.type === 'read') {
+      void this.deps.startPursuit?.(actor.id, first.station).catch((error: unknown) => console.warn('[idle] could not start reading', error));
+      this.finish();
+      return;
+    }
     // Only the action tags run (the reply is parsed into tags); spoken remarks are Echo's alone.
     if (isEcho) this.deps.run(idleTagsToText(tags));
     else this.deps.run(idleTagsToText(tags), actor.id);
@@ -584,6 +601,10 @@ export interface IdleDirectorInputs {
   /** Wandering between places; see `IdleDirectorDeps`. */
   places?(): Promise<IdlePlacesView | null> | null;
   canWander?(avatarId: string, place: string, speaking: boolean): Promise<boolean>;
+  /** Pursuits: see `IdleDirectorDeps`. */
+  pursuitsFor?(avatarId: string): readonly IdlePursuit[];
+  startPursuit?(avatarId: string, stationId: string): Promise<boolean>;
+  pursuing?(avatarId: string): boolean;
 }
 
 const NO_INPUTS: IdleDirectorInputs = {
@@ -620,6 +641,9 @@ export function createIdleDirector(
     places: () => latest.places?.() ?? null,
     canWander: (avatarId, place, speaking) => latest.canWander?.(avatarId, place, speaking) ?? Promise.resolve(false),
     run: (text, avatarId) => (avatarId ? latest.run(text, avatarId) : latest.run(text)),
+    pursuitsFor: (avatarId) => latest.pursuitsFor?.(avatarId) ?? [],
+    startPursuit: (avatarId, stationId) => latest.startPursuit?.(avatarId, stationId) ?? Promise.resolve(false),
+    pursuing: (avatarId) => latest.pursuing?.(avatarId) === true,
     onNoteChange,
   });
   return {

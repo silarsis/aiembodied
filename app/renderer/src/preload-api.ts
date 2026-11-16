@@ -4,6 +4,7 @@ import type { PresenceBridge } from '../../main/src/presence/bridge-types.js';
 import type { FloorBridge } from '../../main/src/floor/bridge-types.js';
 import type { PlacesBridge } from '../../main/src/places/bridge-types.js';
 import type { StationsBridge } from '../../main/src/stations/bridge-types.js';
+import type { PursuitsBridge } from '../../main/src/pursuits/types.js';
 import type { RoomHubBridge } from '../../main/src/room-hub/bridge-types.js';
 import type { DeviceGateBridge, SatelliteBridge } from '../../main/src/satellite/bridge-types.js';
 import type { GpuMemoryBridge } from '../../main/src/diagnostics/gpu-memory.js';
@@ -57,7 +58,7 @@ import type { AvatarBridge } from './avatar/types.js';
 import type { CameraDetectionEvent } from './avatar/behavior-cues.js';
 import type { MemoryEngineBridge } from '../../main/src/memory-engine/bridge-types.js';
 
-export type { StationsBridge };
+export type { StationsBridge, PursuitsBridge };
 
 export interface ConfigBridge {
   get(): Promise<RendererConfig>;
@@ -181,6 +182,7 @@ export interface PreloadApi {
   floor?: FloorBridge;
   places?: PlacesBridge;
   stations?: StationsBridge;
+  pursuits?: PursuitsBridge;
   roomHub?: RoomHubBridge;
   satellite?: SatelliteBridge;
   deviceGate?: DeviceGateBridge;

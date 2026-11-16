@@ -133,6 +133,20 @@ more depth and are linked where they apply.
   gestures that match the verb, and letting rooms made by the room builder
   suggest a station for the objects they contain.
 
+### Reading: the character's own pursuit
+
+- **Today (phase 2):** when idle, any character may choose to read at a station
+  (the bookshelf). On its own conversation model it decides what to look for,
+  searches the library with the station's tools, picks and reads an item (in
+  chunks when long), writes notes in its own voice (kept in SQLite and in the
+  memory engine as a private fact), and may hand Kevin a short line through its
+  inbox. It stops when Kevin starts talking to it. "What have you been reading?"
+  uses `my_reading_notes`; the Characters pop-up lists each character's notes.
+  See [features/reading.md](./features/reading.md).
+- **To do:** props in hands and an armchair (phase 3), links that open in the
+  browser, other pursuits (watching, tidying, sketching), letting a character
+  follow up on an open question across sessions, and an engine "reading" kind.
+
 ### Timers, alarms, reminders, todos, weather, clocks, and a world tick
 
 - **Today:** none.

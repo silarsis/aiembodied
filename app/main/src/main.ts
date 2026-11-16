@@ -191,6 +191,8 @@ import { MCPManager } from './mcp/mcp-manager.js';
 import { ToolRegistry } from './tools/tool-registry.js';
 import { StationRegistry } from './stations/station-registry.js';
 import { StationTrips } from './stations/station-trips.js';
+import { PursuitManager } from './pursuits/pursuit-manager.js';
+import { createReadingNotesTool, readingOutboxItem } from './pursuits/reading-memory.js';
 import { createVoiceStations, type VoiceStations } from './stations/voice-stations.js';
 import type { Station, StationSource } from './stations/types.js';
 import { createRoutedSearchProvider, createWebSearchTool, WEB_SEARCH_TOOL_ID } from './tools/web-search.js';
@@ -496,6 +498,8 @@ let mcpManager: MCPManager | null = null;
 let stationRegistry: StationRegistry | null = null;
 let stationTrips: StationTrips | null = null;
 let voiceStations: VoiceStations | null = null;
+// Pursuits: reading sessions an avatar starts on its own (pursuits/). Set up with the stations.
+let pursuitManager: PursuitManager | null = null;
 
 function emitCameraDetection(event: CameraDetectionEventPayload): boolean {
   const cue = typeof event.cue === 'string' ? event.cue.trim() : '';
@@ -1069,6 +1073,9 @@ async function runVoiceTurn(
   const instructions = withPlacesNote(baseInstructions, request.preview === true, placeId);
   const payload = instructions === request.instructions ? request : { ...request, ...(instructions !== undefined ? { instructions } : {}) };
   const mirror = mirrorFor(avatarId);
+  // Kevin is talking with this avatar (not a preview, a system update or back-channel chatter): it stops reading,
+  // keeping its notes, so its live turn does not wait behind a reading call.
+  if (!payload.preview && !payload.system && !payload.silent) pursuitManager?.interrupt(avatarId, 'conversation');
   mirror?.turnStarted(payload.requestId, { text: payload.text, system: payload.system === true, preview: payload.preview === true });
   activeVoiceRequests.set(avatarId, payload.requestId);
   // bija's presence is about bija's room; a desktop room's own presence is kept apart.
@@ -1097,13 +1104,22 @@ async function runVoiceTurn(
   }
 }
 
+/** The registry as one avatar uses it: the same tools, each call carrying the avatar's id. */
+function avatarTools(registry: ToolRegistry, avatarId: string): Pick<ToolRegistry, 'list' | 'execute'> {
+  return {
+    list: () => registry.list(),
+    execute: (toolId, params) => registry.execute(toolId, params, { avatarId }),
+  };
+}
+
 function createVoiceService(avatarId: string): LocalVoiceService {
   const manager = voiceConfigManager;
   if (!voiceEngines || !manager) throw new Error('Voice engines are not configured yet.');
   return new LocalVoiceService({
     ...voiceEngines,
     avatarId,
-    tools: toolRegistry ?? undefined,
+    // Tools run on this avatar's behalf: a tool that depends on who calls (my_reading_notes) is told the avatar.
+    tools: toolRegistry ? avatarTools(toolRegistry, avatarId) : undefined,
     approvals: approvalBroker?.forAvatar(avatarId),
     // Looked up at call time: the stations are set up after the voice services.
     stations: {
@@ -2349,6 +2365,26 @@ function registerIpcHandlers(
   handleIpc('station:arrived', (_event, useId: unknown) => {
     if (typeof useId === 'string' && useId) stationTrips?.arrived(useId);
   });
+  // Pursuits (pursuits/): a character starts reading at a station on its own (the idle director asks), the Characters
+  // pop-up lists its notes.
+  handleIpc('pursuits:start', (_event, avatarId: unknown, stationId: unknown) => {
+    if (typeof avatarId !== 'string' || !avatarId || typeof stationId !== 'string' || !stationId) return { ok: false, reason: 'invalid request' };
+    if (!pursuitManager) return { ok: false, reason: 'pursuits are not available yet' };
+    return pursuitManager.start(avatarId, stationId);
+  });
+  handleIpc('pursuits:stop', (_event, avatarId: unknown) => {
+    if (typeof avatarId === 'string' && avatarId) pursuitManager?.interrupt(avatarId, 'stopped');
+  });
+  handleIpc('pursuits:offers', async () => {
+    await stationRegistry?.loadLabels().catch(() => undefined);
+    return pursuitManager?.offers() ?? [];
+  });
+  handleIpc('pursuits:running', () => pursuitManager?.running() ?? []);
+  handleIpc('pursuits:notes', (_event, avatarId: unknown, limit: unknown) => {
+    if (typeof avatarId !== 'string' || !avatarId) return [];
+    return memoryStore?.listReadingNotes(avatarId, typeof limit === 'number' ? limit : 20) ?? [];
+  });
+
   // The talk key with nobody in the room: call someone over (the recent partner, else Echo, else the first avatar).
   // The same rule for bija's own window and for a desktop room; the answer says who is coming.
   handleIpc('places:summon', (event) => {
@@ -2438,6 +2474,8 @@ function registerIpcHandlers(
     avatarPlumbing.get(id)?.inbox.stop();
     avatarPlumbing.delete(id);
     voiceServices?.delete(id);
+    pursuitManager?.interrupt(id, 'removed');
+    memoryStore?.deleteReadingNotes(id);
     // Its own voice and idle habits go with it, so a later avatar with the same id starts clean.
     // Settings saved under a library character's VRM model id stay: that character is still in the library.
     for (const key of avatarOnlyKeys(id, SPEAKING_ENGINES)) memoryStore?.deleteValue(key);
@@ -2928,6 +2966,55 @@ function setupStations(store: MemoryStore): void {
   voiceStations = createVoiceStations(registry, trips);
 }
 
+/**
+ * Pursuits (pursuits/): reading sessions a character starts on its own at a station. Each runs on the avatar's own
+ * conversation model, with only the station's tools; its body walks to the station like a tool call would. Needs
+ * the stations, the tools and the voice services.
+ */
+function setupPursuits(store: MemoryStore): void {
+  const registry = stationRegistry;
+  const trips = stationTrips;
+  const tools = toolRegistry;
+  if (!registry || !trips || !tools) return;
+  pursuitManager = new PursuitManager({
+    stations: registry,
+    tools,
+    voiceFor: (avatarId) => {
+      const service = getVoiceService(avatarId);
+      return service ? { chat: () => service.chat(), recentLines: (count) => service.recentLines(count) } : null;
+    },
+    // The character's own prompt only (no scene tags): Echo's saved prompt, another's by avatarPersona().
+    persona: (avatarId) => {
+      if (avatarId === DEFAULT_AVATAR_ID) {
+        const key = characterPromptKey(DEFAULT_AVATAR_ID);
+        return (key ? store.getValue(key) : null)?.trim() ?? '';
+      }
+      return avatarPersona(avatarId).persona ?? '';
+    },
+    habits: (avatarId) => {
+      const key = characterIdleHabitsKey(avatarId);
+      return key ? normalizeIdleHabits(store.getValue(key)) : '';
+    },
+    avatarName: (avatarId) => avatarRegistry?.get(avatarId)?.name ?? avatarId,
+    memoryFor: (avatarId) => ({ brief: () => memoryEngine?.voiceFor(avatarId).brief() ?? Promise.resolve(null) }),
+    notes: store,
+    // Also in long-term memory, through the outbox (so it waits for the engine when it is down).
+    saveToMemory: (note, avatarName) => memoryEngine?.outbox.enqueue(readingOutboxItem(note, avatarName, conversationModelName())),
+    // An update from the avatar itself: the inbox decides to ignore, remember or say it. Never spoken from the pursuit.
+    tell: (avatarId, text) => {
+      const mirror = mirrorFor(avatarId);
+      if (mirror) mirror.noteQueued(text, false, 'your own reading');
+      else getVoiceService(avatarId)?.notify(text, { urgent: false, source: 'your own reading' });
+    },
+    visit: (avatarId, station) => trips.beginAt(avatarId, station),
+    onChanged: (running) => {
+      broadcastToWindows('pursuits:changed', running);
+      roomHub?.sendToAll({ op: 'ipc', channel: 'pursuits:changed', args: [running] });
+    },
+    logger,
+  });
+}
+
 function focusExistingWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     logger.warn('Main window missing on second-instance event. Relaunching.');
@@ -3359,6 +3446,7 @@ app.whenReady().then(async () => {
 
     // Initialize MCP tool registry and manager
     toolRegistry = new ToolRegistry();
+    toolRegistry.register(createReadingNotesTool({ notes: memoryStore }));
     approvalBroker = new ApprovalBroker({ registry: toolRegistry, avatarId: DEFAULT_AVATAR_ID, logger });
     approvalBroker.on('outcome', (outcome) => codingNudger?.handleApproval(outcome));
     approvalBroker.on('outcome', (outcome: ApprovalOutcome) => mirrorFor(avatarIdOfAddress(outcome.approval.requestedBy))?.approvalOutcome(outcome));
@@ -3504,6 +3592,7 @@ app.whenReady().then(async () => {
       },
     });
     setupStations(memoryStore);
+    setupPursuits(memoryStore);
   }
 
   await applyProviderSettings(manager);
@@ -3729,6 +3818,7 @@ app.on('before-quit', async (event) => {
   satellite?.stop();
   satelliteDevices?.stop();
   for (const { inbox } of avatarPlumbing.values()) inbox.stop();
+  await pursuitManager?.stopAll().catch(() => undefined);
   void switchboardClient?.stop();
 
   // Stop MCP programs this app started (stdio servers) so none is left running.
