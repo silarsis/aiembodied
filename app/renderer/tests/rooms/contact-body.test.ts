@@ -391,6 +391,42 @@ describe('ContactBody on the reading-room sofa', () => {
       expect(a.roll).toBeCloseTo(HEAD_ROLL_LIMIT_DEG, 1);
     });
 
+    /** Head yaw (degrees) relative to the hips, from world rotations: what the settle limits, whatever the spine does. */
+    function headYawFromHips(avatar: ReturnType<typeof echoSeated>) {
+      avatar.scene.updateMatrixWorld(true);
+      const worldQ = (name: string) => avatar.bones.get(name)!.getWorldQuaternion(new THREE.Quaternion());
+      const q = worldQ('hips').invert().multiply(worldQ('head'));
+      return (new THREE.Euler().setFromQuaternion(q, 'YXZ').y * 180) / Math.PI;
+    }
+
+    it('takes a head turned -178 degrees (a broken frame) back to straight ahead, never through bigger angles', () => {
+      const avatar = echoSeated(0);
+      avatar.bones.get('head')!.quaternion.setFromEuler(new THREE.Euler(0, deg(-178), 0, 'YXZ'));
+      const animated = new Map(['neck', 'head'].map((n) => [n, avatar.bones.get(n)!.quaternion.clone()]));
+      const body = new ContactBody(avatar.humanoid);
+      let widest = 0;
+      for (let i = 0; i < 180; i += 1) {
+        frames(avatar, body, 1, true, animated);
+        widest = Math.max(widest, Math.abs(headYawFromHips(avatar)));
+      }
+      expect(widest).toBeLessThanOrEqual(178.01);
+      expect(Math.abs(headYawFromHips(avatar))).toBeLessThan(5);
+      const trace = body.traceSnapshot().headSettle as { reset: boolean; animYawPitchRollDeg: number[] };
+      expect(trace).toMatchObject({ reset: true });
+      expect(trace.animYawPitchRollDeg[0]).toBeCloseTo(-178, 1);
+    });
+
+    it('counts a twisted chest toward the limit: chest 40 degrees plus head 30 ends within 35 degrees of the hips', () => {
+      const avatar = echoSeated(0);
+      avatar.bones.get('chest')!.quaternion.setFromEuler(new THREE.Euler(0, deg(40), 0, 'YXZ'));
+      avatar.bones.get('head')!.quaternion.setFromEuler(new THREE.Euler(0, deg(30), 0, 'YXZ'));
+      const animated = new Map(['chest', 'neck', 'head'].map((n) => [n, avatar.bones.get(n)!.quaternion.clone()]));
+      const body = new ContactBody(avatar.humanoid);
+      frames(avatar, body, 180, true, animated);
+      expect(headYawFromHips(avatar)).toBeCloseTo(HEAD_YAW_LIMIT_DEG, 1);
+      expect(body.traceSnapshot().headSettle).toMatchObject({ reset: false });
+    });
+
     it('uses the seat fit distance as the pelvis radius, so a fitted pelvis does not lift', () => {
       expect(CAPSULE_RADII.pelvis).toBe(BUTTOCKS_BELOW_HIPS);
       const avatar = echoSeated(0);
