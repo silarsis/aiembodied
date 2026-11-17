@@ -53,6 +53,18 @@ function formatDay(date: Date): string {
   return date.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+/**
+ * Old replies carry body tags ({pick:mug}{move:sits on the couch}); left in, the model copies them as if they
+ * were moves to make now. Line breaks stay, so `oneLine` still marks where turns change.
+ */
+function withoutTags(text: string): string {
+  return text
+    .replace(/\{[^}]*\}/g, ' ')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+/g, ' ').replace(/ ([,.;:!?…])/g, '$1').trim())
+    .join('\n');
+}
+
 function oneLine(text: string): string {
   return text.replace(/\s*\n\s*/g, ' / ');
 }
@@ -69,7 +81,7 @@ export function formatBrief(brief: MemoryEngineBrief | null, now: Date): string 
   if (days.length) {
     lines.push('', 'Recent days:');
     for (const day of days) {
-      lines.push(`- ${formatDay(new Date(day.period_start))}: ${oneLine(day.text)}`);
+      lines.push(`- ${formatDay(new Date(day.period_start))}: ${oneLine(withoutTags(day.text))}`);
     }
   }
   const coding = brief?.recent_coding ?? [];
@@ -90,13 +102,13 @@ export function formatBrief(brief: MemoryEngineBrief | null, now: Date): string 
   if (last?.summary) {
     const when = new Date(last.last_at);
     const who = last.agent ? `, with ${last.agent}` : '';
-    lines.push('', `Your last conversation (${describeAgo(when, now)}${who}): ${oneLine(last.summary)}`);
+    lines.push('', `Your last conversation (${describeAgo(when, now)}${who}): ${oneLine(withoutTags(last.summary))}`);
   } else if (last && last.turns.length) {
     const when = new Date(last.last_at);
     const who = last.agent ? `, with ${last.agent}` : '';
     lines.push('', `How your last conversation ended (${describeAgo(when, now)}${who}):`);
     for (const turn of last.turns) {
-      lines.push(`- ${oneLine(turn)}`);
+      lines.push(`- ${oneLine(withoutTags(turn))}`);
     }
   }
   lines.push(
@@ -112,7 +124,7 @@ export function formatRecalled(items: MemoryEngineSearchResult[], now: Date): st
   for (const item of items) {
     const when = new Date(item.period_start);
     const label = item.kind === 'fact' ? 'noted' : 'talked';
-    lines.push(`- ${formatDay(when)} (${describeAgo(when, now)}, ${label}): ${oneLine(item.text)}`);
+    lines.push(`- ${formatDay(when)} (${describeAgo(when, now)}, ${label}): ${oneLine(withoutTags(item.text))}`);
   }
   lines.push('</recalled>');
   return lines.join('\n');

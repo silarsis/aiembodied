@@ -244,10 +244,24 @@ export function capDirectional(
 
 const TMP_Q1 = new THREE.Quaternion();
 
+/** A head turned further than this from the hips' forward is a broken pose, not a turn to limit (radians). */
+export const HEAD_IMPLAUSIBLE_YAW = (90 * Math.PI) / 180;
+export const HEAD_IMPLAUSIBLE_PITCH = (60 * Math.PI) / 180;
+
+/** What headExcessCorrection saw: the measured angles (radians) and whether it took the pose for broken. */
+export interface HeadAngles {
+  yaw: number;
+  pitch: number;
+  roll: number;
+  reset: boolean;
+}
+
 /**
- * The rotation that brings a head orientation (neck and head together, relative to the chest) back inside the
- * yaw, pitch and roll limits, taking only the excess off each angle. Writes it to `out` (identity when inside
- * the limits) and returns true when there is any excess.
+ * The rotation that brings a head orientation (neck and head together, relative to the hips) back inside the
+ * yaw, pitch and roll limits, taking only the excess off each angle. A pose past HEAD_IMPLAUSIBLE_YAW or
+ * HEAD_IMPLAUSIBLE_PITCH is a broken motion frame: the target is then straight ahead, not the edge of the
+ * limit. Writes the correction (in the same frame `combined` is measured in; identity when inside the limits)
+ * to `out` and returns true when there is any. `seen`, when given, receives the measured angles.
  */
 export function headExcessCorrection(
   combined: THREE.Quaternion,
@@ -255,11 +269,19 @@ export function headExcessCorrection(
   pitchLimit: number,
   rollLimit: number,
   out: THREE.Quaternion,
+  seen?: HeadAngles,
 ): boolean {
   TMP_EULER.setFromQuaternion(combined, 'YXZ');
-  const yaw = Math.max(-yawLimit, Math.min(yawLimit, TMP_EULER.y));
-  const pitch = Math.max(-pitchLimit, Math.min(pitchLimit, TMP_EULER.x));
-  const roll = Math.max(-rollLimit, Math.min(rollLimit, TMP_EULER.z));
+  const reset = Math.abs(TMP_EULER.y) > HEAD_IMPLAUSIBLE_YAW || Math.abs(TMP_EULER.x) > HEAD_IMPLAUSIBLE_PITCH;
+  if (seen) {
+    seen.yaw = TMP_EULER.y;
+    seen.pitch = TMP_EULER.x;
+    seen.roll = TMP_EULER.z;
+    seen.reset = reset;
+  }
+  const yaw = reset ? 0 : Math.max(-yawLimit, Math.min(yawLimit, TMP_EULER.y));
+  const pitch = reset ? 0 : Math.max(-pitchLimit, Math.min(pitchLimit, TMP_EULER.x));
+  const roll = reset ? 0 : Math.max(-rollLimit, Math.min(rollLimit, TMP_EULER.z));
   if (yaw === TMP_EULER.y && pitch === TMP_EULER.x && roll === TMP_EULER.z) {
     out.identity();
     return false;
@@ -269,4 +291,18 @@ export function headExcessCorrection(
   // corrected = correction * combined
   out.copy(TMP_Q1).multiply(TMP_SWING.copy(combined).invert());
   return true;
+}
+
+/**
+ * `q` turned by the fraction `t` of its angle, keeping the sign of `q` (so a w < 0 quaternion goes the long way).
+ * Unlike slerp from identity it does not pick the short way itself, which would flip the direction frame to
+ * frame when a correction sits near 180 degrees; the caller keeps the sign consistent instead.
+ */
+export function scaleRotation(q: THREE.Quaternion, t: number, out: THREE.Quaternion): THREE.Quaternion {
+  const w = Math.max(-1, Math.min(1, q.w));
+  const s = Math.sqrt(1 - w * w);
+  if (s < 1e-9) return out.identity();
+  const half = Math.acos(w) * t;
+  const k = Math.sin(half) / s;
+  return out.set(q.x * k, q.y * k, q.z * k, Math.cos(half));
 }

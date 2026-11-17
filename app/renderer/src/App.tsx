@@ -75,7 +75,7 @@ import { MovementRigs } from './rooms/movement-rig.js';
 import { MoveRequestFilter, enqueueMotionChunk } from './avatar/live-motion.js';
 import { SceneActionExecutor, type SceneActivity } from './rooms/scene-executor.js';
 import { getMotionTraceSetting, initMotionTrace, isSettleRetryEnabled, setMotionTraceSetting, setSettleRetryEnabled } from './rooms/motion-trace.js';
-import { tagToAction, type SceneAction } from './rooms/scene-actions.js';
+import { seatFromMove, tagToAction, type SceneAction, type TagContext } from './rooms/scene-actions.js';
 import { buildSceneInstructions, describeAvatarWhere, describeBody, type OtherAvatarEntry } from './rooms/scene-instructions.js';
 import { useIdleDirector } from './rooms/use-idle-director.js';
 import { usePursuits } from './rooms/use-pursuits.js';
@@ -1564,6 +1564,17 @@ export default function App() {
         const flushActions = () => {
           if (pendingActions.length > 0) executor.submit(pendingActions.splice(0));
         };
+        // Where this avatar is and which seats the others are on, so a vague {sit} picks a free seat nearby.
+        const tagContext = (): TagContext => {
+          const world = executor.world();
+          const takenSeats = new Set<string>();
+          for (const id of ['echo', ...stageNames.map((profile) => profile.id)]) {
+            if (id === (speaker ?? 'echo')) continue;
+            const seat = rigs.get(id).executor.getState().seat?.objectId;
+            if (seat) takenSeats.add(seat);
+          }
+          return { position: world ? { x: world.frame.origin.x, z: world.frame.origin.z } : null, takenSeats };
+        };
         for (const tag of extractMotionTags(content)) {
           if (tag.type === 'room') {
             // Leaving: walk to the door (if the room has one), then ask main to move the avatar. Without a room it is handled below.
@@ -1576,8 +1587,18 @@ export default function App() {
           }
           if (tag.type !== 'move') {
             if (!room || !sceneFilter.shouldStart(JSON.stringify(tag))) continue;
-            const action = tagToAction(room, tag);
+            const action = tagToAction(room, tag, tagContext());
             if (action) pendingActions.push(action);
+            continue;
+          }
+          // "{move:sits on the couch}" can't seat the body (a free movement doesn't know where the couch is),
+          // so it becomes a real sit, which walks there first.
+          const seat = room ? seatFromMove(room, tag.text) : null;
+          if (seat) {
+            if (sceneFilter.shouldStart(JSON.stringify({ type: 'sit', object: seat.id }))) {
+              console.info(`[scene-actions] {move:${tag.text}} -> {sit:${seat.id}}`);
+              pendingActions.push({ kind: 'sit', objectId: seat.id });
+            }
             continue;
           }
           const move = tag;
@@ -1676,7 +1697,7 @@ export default function App() {
         }
       }
     },
-    [animationBus, availableAnimationSlugSet, availablePoseSlugSet, availablePoses, avatarProfiles, liveMotionReady, moveAvatarToPlace, resolveApi, rigs, sceneActions],
+    [animationBus, availableAnimationSlugSet, availablePoseSlugSet, availablePoses, avatarProfiles, liveMotionReady, moveAvatarToPlace, resolveApi, rigs, sceneActions, stageNames],
   );
 
   useEffect(() => {

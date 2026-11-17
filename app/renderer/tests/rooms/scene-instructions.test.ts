@@ -54,7 +54,9 @@ describe('scene instructions', () => {
   it('gives worked examples with this room\'s own objects, including a synonym and a no-move case', () => {
     const text = buildSceneInstructions(room, true);
     expect(text).toContain('"Go sit on the couch" -> "Sure, getting comfy. {sit:sofa}"');
-    expect(text).toContain('{pick:mug}');
+    expect(text).not.toContain('{pick:mug}');
+    expect(text).toContain('"Okay. {sit}"');
+    expect(text).toContain('never {move:...}');
     expect(text).toContain('with no room tags');
   });
 
