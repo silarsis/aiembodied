@@ -1,0 +1,129 @@
+name: Windows installer
+
+# Builds the desktop app as a Windows installer (NSIS, per-user) and a portable exe.
+# - Pull requests that touch the packaging: build only, files attached to the run as an artifact.
+# - Run by hand (Actions > Windows installer > Run workflow): build, artifact, and a GitHub release when
+#   "release" is ticked.
+# - A push to main that changes RELEASE.txt: build and publish GitHub release v<RELEASE.txt>.
+# See docs/windows-installer.md.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/windows-installer.yml
+      - packaging/windows/**
+      - scripts/build_windows_installer.py
+  push:
+    branches: [main]
+    paths:
+      - RELEASE.txt
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Publish a GitHub release (tag v<version>) with the installer
+        type: boolean
+        default: false
+      version:
+        description: Version (blank = RELEASE.txt)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ inputs.version }}"
+          if [[ -z "$version" ]]; then version="$(tr -d '[:space:]' < RELEASE.txt)"; fi
+          if ! [[ "$version" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+            echo "Version '$version' must look like 1, 1.2 or 1.2.3" >&2
+            exit 1
+          fi
+          # electron-builder wants three parts.
+          while [[ "$(tr -cd '.' <<< "$version" | wc -c)" -lt 2 ]]; do version="$version.0"; done
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build installer
+        # electron-builder downloads Electron and NSIS from GitHub; retry once on a flaky download.
+        shell: bash
+        run: |
+          python scripts/build_windows_installer.py --version "${{ steps.version.outputs.version }}" \
+            || python scripts/build_windows_installer.py --skip-build --version "${{ steps.version.outputs.version }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: aiembodied-${{ steps.version.outputs.version }}-windows
+          path: |
+            release/*.exe
+            release/*.exe.blockmap
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.release)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download build
+        uses: actions/download-artifact@v7
+        with:
+          name: aiembodied-${{ needs.build.outputs.version }}-windows
+          path: dist
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          notes="Windows installer for AI Embodied Assistant $VERSION.
+
+          - \`*-setup.exe\`: installs for the current user (no admin needed). Adds \"AI Embodied Assistant\" and \"AI Embodied Room (satellite)\" shortcuts.
+          - \`*-portable.exe\`: runs without installing.
+
+          Not code-signed: Windows SmartScreen shows a warning on first run (More info > Run anyway).
+          What still needs setting up on the PC: docs/windows-installer.md."
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/*.exe --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" dist/*.exe --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "AI Embodied Assistant $VERSION" --notes "$notes"
+          fi

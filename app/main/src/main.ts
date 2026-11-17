@@ -3638,7 +3638,9 @@ app.whenReady().then(async () => {
     appPath: app.getPath('exe'),
   });
 
-  const shouldEnableAutoLaunch = isProduction || process.env.ENABLE_AUTO_LAUNCH === '1';
+  // Opt-in: an installed copy on a shared PC should not start itself at every sign-in, and the portable exe
+  // unpacks to a temp folder, so a start-up entry pointing at it would break. ENABLE_AUTO_LAUNCH=1 turns it on.
+  const shouldEnableAutoLaunch = process.env.ENABLE_AUTO_LAUNCH === '1';
   const launchEnabled = await autoLaunchManager.sync(shouldEnableAutoLaunch);
   logger.info('Auto-launch synchronization complete.', { enabled: launchEnabled });
 
