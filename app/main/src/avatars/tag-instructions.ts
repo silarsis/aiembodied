@@ -36,7 +36,7 @@ export function composeAvatarPrompt({ name, persona, ownModel, tags, avatarId }:
   const sceneText = (avatarId ? tags.sceneFor?.[avatarId] : undefined) ?? tags.scene ?? '';
   const baseTagText = ownModel ? tags.moveOnly : tags.shared;
   // The scene text follows the tags; it only exists while live motion is available, so it never stands alone.
-  const tagText = baseTagText && sceneText ? `${baseTagText} ${sceneText}` : baseTagText;
+  const tagText = baseTagText && sceneText ? `${baseTagText}\n\n${sceneText}` : baseTagText;
   const base = persona?.trim() ?? '';
   if (!tagText) return base || undefined;
   const lead = base || `You are ${name}, an AI character who shares a room with Kevin and Echo.`;

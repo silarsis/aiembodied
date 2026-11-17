@@ -103,41 +103,89 @@ export function describeBody(
   return parts.join(' ');
 }
 
+/** What the chat model hears about this avatar and the room, besides the room itself. */
+export interface SceneContext {
+  /** What the avatar did while idle just before this, in words. */
+  idleNote?: string;
+  /** The other avatars in the room with this one. */
+  others?: readonly OtherAvatarEntry[];
+  /** How this avatar sits and what its body could not do lately (see `describeBody`). */
+  body?: string;
+  /** Where the avatar is when standing, e.g. "standing near the bookshelf" (see `describeAvatarWhere`). */
+  where?: string | null;
+  /** The name of what the avatar holds, if anything. */
+  held?: string | null;
+}
+
+/** The first object in the room that allows `use`, for the worked examples. */
+function firstWith(room: RoomFile, use: string): RoomObject | undefined {
+  return room.objects.find((object) => objectAffordances(object).includes(use));
+}
+
+/** One worked example per kind of request, using this room's own objects, so the model sees the mapping. */
+function sceneExamples(room: RoomFile): string[] {
+  const examples: string[] = [];
+  const seat = firstWith(room, 'sit');
+  if (seat) {
+    const said = /\bsofa\b/i.test(seat.name) ? 'couch' : seat.name;
+    examples.push(`"Go sit on the ${said}" -> "Sure, getting comfy. {sit:${seat.name}}"`);
+  }
+  const small = firstWith(room, 'pick up');
+  if (small) examples.push(`"Can you grab the ${small.name}?" -> "Here it is. {pick:${small.name}}{come}"`);
+  examples.push('"How was your day?" -> an answer with no room tags, since nothing asked you to move.');
+  return examples;
+}
+
 /**
- * The part of the model's instructions that describes the room and the scene tags. Empty in 2D or
- * when live motion is unavailable, so the instructions are then exactly what they were.
+ * The part of the model's instructions that describes the room and how to move in it, in the shape the
+ * idle model gets (a list of things and what each allows, and where the avatar is now), but for a chat
+ * turn: move only when asked or when the reply plainly needs it. Empty in 2D. Without the motion service
+ * it only says the body cannot move, so the model does not promise to.
  */
 export function buildSceneInstructions(
   room: RoomFile | null | undefined,
   motionAvailable: boolean,
-  idleNote = '',
-  /** Names of the other avatars standing in the room with this one. */
-  others: readonly OtherAvatarEntry[] = [],
-  /** How this avatar sits and what its body could not do lately (see `describeBody`). */
-  body = '',
+  context: SceneContext = {},
 ): string {
-  if (!room || !motionAvailable) return '';
+  if (!room) return '';
   const objects = room.objects
     .map((object) => ({ object, uses: objectAffordances(object) }))
     .filter((entry) => entry.uses.length > 0)
-    .map(({ object, uses }) => `${object.name} (${uses.join(', ')})`);
+    .map(({ object, uses }) => `- ${object.name} (${uses.join(', ')})`);
   if (objects.length === 0) return '';
-  const othersLines = others
+  if (!motionAvailable) {
+    return `You are in a 3D room, the ${room.name}, but your body cannot move right now (live motion is not running), so do not offer or promise to walk, sit or pick things up.`;
+  }
+  const others = (context.others ?? [])
     .map((entry) => (typeof entry === 'string' ? { name: entry.trim(), where: null } : { name: entry.name.trim(), where: entry.where?.trim() || null }))
     .filter((entry) => entry.name)
     .map((entry) => (entry.where ? `${entry.name} is ${entry.where}.` : `${entry.name} is in the room with you.`));
-  const idleLine = idleNote.trim() ? `Just before this, while idle, you: ${idleNote.trim()}.` : '';
+  const body = context.body?.trim() ?? '';
+  const seated = body.startsWith('You are seated');
+  const where = context.where?.trim();
+  const held = context.held?.trim();
+  const now = [
+    seated ? '' : `You are ${where || 'standing in the room'}.`,
+    body,
+    held ? `You are holding the ${held}.` : '',
+  ].filter(Boolean).join(' ');
+  const idleNote = context.idleNote?.trim();
   return [
-    `You are standing in a 3D room, the ${room.name}. Things in it: ${objects.join('; ')}.`,
-    'To act in the room, include `{go:<object>}` (walk there), `{look:<object>}` (turn to it), `{sit:<object>}`, `{stand}`,',
-    '`{come}` (back to your spot in front of the user), `{pick:<object>}` and `{put:<object>@<surface>}` (put what you hold on a surface),',
-    'naming the object as listed above.',
-    'Use these only when they fit the conversation. They happen one after another, in the order written, and each takes a few seconds.',
-    'For example: `{go:bookshelf}{move:runs a finger along the book spines}`.',
-    ...othersLines,
-    idleLine,
-    body.trim(),
+    `Your room: you have a body in a 3D room, the ${room.name}, and can move around it.`,
+    'Things in it and what you can do with them:',
+    ...objects,
+    `Right now: ${now}`,
+    ...others,
+    idleNote ? `Just before this, while idle, you: ${idleNote}.` : '',
+    'Moving: when the user asks you to go somewhere, sit, stand up, look at, fetch, pick up or put down something, do it in the same reply',
+    'by writing room tags next to your words. Also move when your reply plainly needs it. Otherwise stay where you are; do not move just to fill a reply.',
+    'Room tags: {go:object} walk to it; {look:object} turn to it; {sit:object} walk to a seat and sit; {stand} get up;',
+    '{pick:object} pick up something small; {put:object@surface} put what you hold on a surface; {come} come back to your spot in front of the user.',
+    'Name objects as listed above, even when the user calls them something else. Tags run one after another, a few seconds each.',
+    'Tags are silent: they are taken out before your words are spoken, so they do not count as markup. Moving is done with these tags, never with a tool call.',
+    'Examples:',
+    ...sceneExamples(room).map((line) => `- ${line}`),
   ]
     .filter(Boolean)
-    .join(' ');
+    .join('\n');
 }
