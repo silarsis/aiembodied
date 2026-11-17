@@ -1,5 +1,6 @@
 import { useBackgrounds } from './backgrounds/use-backgrounds.js';
 import { BackgroundControls } from './backgrounds/background-controls.js';
+import { FurnitureControls } from './furniture/furniture-controls.js';
 import {
   useCallback,
   useEffect,
@@ -954,7 +955,7 @@ export default function App() {
   const [modelsOpen, setModelsOpen] = useState(false);
   const [modelsInitialUse, setModelsInitialUse] = useState<UseId | undefined>(undefined);
   /** Which settings pop-up is open (the avatar studio and models pop-ups have their own state). */
-  const [panel, setPanel] = useState<'character' | 'backgrounds' | 'devices' | 'places' | 'tools' | 'memory' | 'status' | null>(null);
+  const [panel, setPanel] = useState<'character' | 'backgrounds' | 'furniture' | 'devices' | 'places' | 'tools' | 'memory' | 'status' | null>(null);
   const [studioOpen, setStudioOpen] = useState(false);
   const closePanel = useCallback(() => setPanel(null), []);
   const openModels = useCallback((use?: UseId) => {
@@ -3437,6 +3438,13 @@ export default function App() {
               onOpen={() => setPanel('backgrounds')}
             />
             <ControlButton
+              id="furniture"
+              title="Furniture"
+              summary="Browse or generate"
+              keywords="furniture library room decor seating tables storage lighting appliances"
+              onOpen={() => setPanel('furniture')}
+            />
+            <ControlButton
               id="models"
               title="Models and servers"
               summary={isLocalBackend ? 'Pipeline' : 'OpenAI Realtime'}
@@ -3668,6 +3676,10 @@ export default function App() {
               mcp={activeBridge?.mcp}
               walkableArea={{ shown: showWalkableArea, onChange: setShowWalkableArea }}
             />
+          </PanelDialog>
+
+          <PanelDialog id="furniture" title="Furniture" subtitle="Browse the furniture library or generate new pieces." open={panel === 'furniture'} onClose={closePanel}>
+            <FurnitureControls bridge={activeBridge?.furniture} />
           </PanelDialog>
 
           <PanelDialog id="places" title="Places" subtitle="Where the characters can be, and the desktops that show a room." open={panel === 'places'} onClose={closePanel}>

@@ -6,6 +6,13 @@
  * one list means a new channel cannot be wired for one and forgotten for the other.
  */
 import type { BackgroundBridge } from '../backgrounds/types.js';
+import type {
+  FurnitureBridge,
+  FurnitureSummary,
+  FurnitureItem,
+} from '../furniture/types.js';
+import type { RoomObject } from '../rooms/types.js';
+import type { ComfyGraph } from '../avatar/generation/comfyui-client.js';
 import type { ConfigSecretKey, ModelRoutingView, RendererConfig } from '../config/config-manager.js';
 import type { ModelRoute, ServerType, UseId } from '../config/model-routing.js';
 import type { ServerProbe } from '../config/model-server-probe.js';
@@ -195,6 +202,7 @@ export interface ModelsBridge {
 
 export interface PreloadApi {
   backgrounds?: BackgroundBridge;
+  furniture?: FurnitureBridge;
   models?: ModelsBridge;
   config: ConfigBridge;
   realtime: RealtimeBridge;
@@ -581,6 +589,15 @@ export function createBridge(
         const handler = (roomId: string) => listener(roomId);
         return transport.on(channel, handler);
       },
+    },
+    furniture: {
+      list: () => transport.invoke('furniture:list') as Promise<FurnitureSummary[]>,
+      load: (id: string) => transport.invoke('furniture:load', id) as Promise<FurnitureItem>,
+      generate: (prompt: string) => transport.invoke('furniture:generate', prompt) as Promise<FurnitureItem>,
+      addToRoom: (id: string, position: [number, number, number], rotationY: number) =>
+        transport.invoke('furniture:add-to-room', { id, position, rotationY }) as Promise<RoomObject>,
+      delete: (id: string) => transport.invoke('furniture:delete', id) as Promise<void>,
+      listCategories: () => transport.invoke('furniture:list-categories') as Promise<Record<string, number>>,
     },
     avatar: {
       listModels: () => transport.invoke('avatar-model:list') as Promise<AvatarModelSummary[]>,

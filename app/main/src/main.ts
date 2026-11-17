@@ -1,4 +1,6 @@
 import { BackgroundService } from './backgrounds/background-service.js';
+import { FurnitureService } from './furniture/furniture-service.js';
+import type { ComfyGraph } from './avatar/generation/comfyui-client.js';
 import { RoomService } from './rooms/room-service.js';
 import { pickIdleActions } from './rooms/idle-thoughts.js';
 import { MAX_IDLE_HABITS_LENGTH, normalizeIdleHabits } from './rooms/idle-habits.js';
@@ -320,6 +322,7 @@ let avatarModelService: AvatarModelService | null = null;
 let avatarAnimationService: AvatarAnimationService | null = null;
 let avatarPoseService: AvatarPoseService | null = null;
 let backgroundService: BackgroundService | null = null;
+let furnitureService: FurnitureService | null = null;
 let roomService: RoomService | null = null;
 let roomGeneration: RoomGenerationService | null = null;
 // The scheme that serves downloaded room models must be declared before the app is ready.
@@ -2088,7 +2091,16 @@ function registerIpcHandlers(
     if (!backgroundService) throw new Error('Backgrounds are unavailable.');
     return backgroundService;
   };
+  const requireFurniture = (): FurnitureService => {
+    if (!furnitureService) throw new Error('Furniture library is unavailable.');
+    return furnitureService;
+  };
   handleIpc('background:list', () => requireBackgrounds().list());
+  handleIpc('furniture:list', () => requireFurniture().list());
+  handleIpc('furniture:load', (_event, id: string) => requireFurniture().load(id));
+  handleIpc('furniture:generate', (_event, prompt: string) => requireFurniture().generate(prompt));
+  handleIpc('furniture:delete', (_event, id: string) => requireFurniture().delete(id));
+  handleIpc('furniture:list-categories', () => requireFurniture().listCategories());
   handleIpc('background:get-active', () => requireBackgrounds().getActive());
   handleIpc('background:set-active', (_event, id: string | null) => requireBackgrounds().setActive(id));
   handleIpc('background:load', (_event, id: string) => requireBackgrounds().load(id));
@@ -3601,12 +3613,27 @@ app.whenReady().then(async () => {
       assetsDirectory: path.join(__dirname, '../assets/backgrounds'),
       backgroundsDirectory: path.join(app.getPath('userData'), 'backgrounds'),
       comfy: {
-        isAvailable: () => (backgroundComfy ?? fallbackComfy).isAvailable(),
-        run: (graph, options) => (backgroundComfy ?? fallbackComfy).run(graph, options),
+        isAvailable: async (): Promise<boolean> => (backgroundComfy ?? fallbackComfy)?.isAvailable() ?? false,
+        run: (graph: unknown, options?: { signal?: AbortSignal }) => (backgroundComfy ?? fallbackComfy).run(graph as ComfyGraph, options),
       },
       ensureComfyReady: async () => {
         backgroundComfy = await comfyPool.pick('image');
       },
+    });
+    furnitureService = new FurnitureService({
+      store: memoryStore,
+      furnitureDirectory: path.join(app.getPath('userData'), 'furniture'),
+      thumbnailDirectory: path.join(app.getPath('userData'), 'furniture', 'thumbnails'),
+      comfy: {
+        isAvailable: async (): Promise<boolean> => (backgroundComfy ?? fallbackComfy)?.isAvailable() ?? false,
+        run: (graph: unknown, options?: { signal?: AbortSignal }) => (backgroundComfy ?? fallbackComfy).run(graph as ComfyGraph, options),
+      },
+      ensureComfyReady: async () => {
+        backgroundComfy = await comfyPool.pick('image');
+      },
+    });
+    furnitureService.initialize().catch((error: unknown) => {
+      logger.warn('Furniture service initialization failed.', { message: error instanceof Error ? error.message : String(error) });
     });
     setupStations(memoryStore);
     setupPursuits(memoryStore);
