@@ -107,7 +107,6 @@ def stage_app(stage: Path, version: str) -> None:
     renderer_stage.mkdir(parents=True)
     shutil.copytree(RENDERER / "dist", renderer_stage / "dist")
 
-    root = read_json(REPO / "package.json")
     write_json(
         stage / "package.json",
         {
@@ -122,9 +121,13 @@ def stage_app(stage: Path, version: str) -> None:
             "type": "module",
             # electron-builder reads the Electron version from here.
             "devDependencies": {"electron": electron_version()},
-            "packageManager": root.get("packageManager"),
         },
     )
+
+    # electron-builder looks for installer resources (installer.nsh) in <projectDir>/build.
+    resources = stage / "build"
+    resources.mkdir()
+    shutil.copy2(CONFIG.parent / "installer.nsh", resources / "installer.nsh")
 
 
 def package(stage: Path, out: Path, target: str) -> None:
