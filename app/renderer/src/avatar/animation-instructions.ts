@@ -43,7 +43,7 @@ export function buildAnimationInstructions(
   const moveInstructions = liveMotionAvailable
     ? MOVE_INSTRUCTION_LINES
     : [];
-  return [
+  const tagText = [
     `${ANIMATION_INSTRUCTION_PREFIX} ${animList}.`,
     `Available poses: ${poseList}.`,
     'You have a 3D body you can control through animations or poses.',
@@ -54,6 +54,7 @@ export function buildAnimationInstructions(
     ] : []),
     ...moveInstructions,
     'Multiple tags are allowed. Slug format: lowercase letters, numbers, and hyphens.',
-    ...(sceneInstructions ? [sceneInstructions] : []),
   ].join(' ');
+  // The room is its own section, so it is not lost at the end of the animation paragraph.
+  return sceneInstructions ? `${tagText}\n\n${sceneInstructions}` : tagText;
 }

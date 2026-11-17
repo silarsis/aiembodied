@@ -10,24 +10,22 @@ describe('scene instructions', () => {
   it('lists the room name and what each object allows, from its tags', () => {
     const text = buildSceneInstructions(room, true);
     expect(text).toContain('Reading room');
-    expect(text).toContain('sofa (sit, go to / look at)');
-    expect(text).toContain('coffee table (go to / look at, put things on)');
-    expect(text).toContain('mug (pick up)');
-    expect(text).toContain('bookshelf (go to / look at, put things on)');
-    expect(text).toContain('book (pick up)');
+    expect(text).toContain('- sofa (sit, go to / look at)');
+    expect(text).toContain('- coffee table (go to / look at, put things on)');
+    expect(text).toContain('- mug (pick up)');
+    expect(text).toContain('- bookshelf (go to / look at, put things on)');
+    expect(text).toContain('- book (pick up)');
     // Objects with nothing to do are left out.
     expect(text).not.toContain('rug');
     expect(text).not.toContain('floor lamp');
   });
 
   it('says where the others are when it is known, else keeps the plain line', () => {
-    const text = buildSceneInstructions(room, true, '', [
-      { name: 'Sage', where: 'sitting on the sofa' },
-      { name: 'Rex', where: null },
-      'Ada',
-    ]);
-    expect(text).toContain('Sage is sitting on the sofa. Rex is in the room with you. Ada is in the room with you.');
-    expect(buildSceneInstructions(room, true, '', [{ name: 'Sage' }])).toBe(buildSceneInstructions(room, true, '', ['Sage']));
+    const text = buildSceneInstructions(room, true, {
+      others: [{ name: 'Sage', where: 'sitting on the sofa' }, { name: 'Rex', where: null }, 'Ada'],
+    });
+    expect(text).toContain('Sage is sitting on the sofa.\nRex is in the room with you.\nAda is in the room with you.');
+    expect(buildSceneInstructions(room, true, { others: [{ name: 'Sage' }] })).toBe(buildSceneInstructions(room, true, { others: ['Sage'] }));
   });
 
   it('describes where an avatar is from its seat or the nearest listed object', () => {
@@ -40,30 +38,50 @@ describe('scene instructions', () => {
     expect(describeAvatarWhere(null, { seatedOn: 'sofa' })).toBeNull();
   });
 
-  it('explains the tags in a couple of sentences, with the example and the ordering rules', () => {
+  it('explains the tags, says to act on requests in the same reply, and not to move otherwise', () => {
     const text = buildSceneInstructions(room, true);
-    for (const tag of ['{go:<object>}', '{look:<object>}', '{sit:<object>}', '{stand}', '{come}', '{pick:<object>}', '{put:<object>@<surface>}']) {
+    for (const tag of ['{go:object}', '{look:object}', '{sit:object}', '{stand}', '{come}', '{pick:object}', '{put:object@surface}']) {
       expect(text).toContain(tag);
     }
-    expect(text).toContain('Use these only when they fit the conversation');
-    expect(text).toContain('one after another, in the order written');
-    expect(text).toContain('`{go:bookshelf}{move:runs a finger along the book spines}`');
+    expect(text).toContain('when the user asks you to go somewhere, sit');
+    expect(text).toContain('do it in the same reply');
+    expect(text).toContain('do not move just to fill a reply');
+    expect(text).toContain('Tags are silent');
+    expect(text).toContain('never with a tool call');
+    expect(text).toContain('one after another');
+  });
+
+  it('gives worked examples with this room\'s own objects, including a synonym and a no-move case', () => {
+    const text = buildSceneInstructions(room, true);
+    expect(text).toContain('"Go sit on the couch" -> "Sure, getting comfy. {sit:sofa}"');
+    expect(text).toContain('{pick:mug}');
+    expect(text).toContain('with no room tags');
+  });
+
+  it('says where the avatar is and what it holds', () => {
+    expect(buildSceneInstructions(room, true)).toContain('Right now: You are standing in the room.');
+    const text = buildSceneInstructions(room, true, { where: 'standing near the bookshelf', held: 'mug' });
+    expect(text).toContain('Right now: You are standing near the bookshelf. You are holding the mug.');
+    const seated = buildSceneInstructions(room, true, { where: 'standing near the sofa', body: 'You are seated on the sofa, feet on the floor.' });
+    expect(seated).toContain('Right now: You are seated on the sofa, feet on the floor.');
+    expect(seated).not.toContain('standing near');
   });
 
   it('names the other avatars in the room, and is unchanged without any', () => {
-    const plain = buildSceneInstructions(room, true, 'sat down');
-    expect(buildSceneInstructions(room, true, 'sat down', [])).toBe(plain);
-    expect(buildSceneInstructions(room, true)).toBe(buildSceneInstructions(room, true, '', []));
-    const withOthers = buildSceneInstructions(room, true, '', ['Sage', 'Rex']);
-    expect(withOthers).toContain('Sage is in the room with you. Rex is in the room with you.');
-    expect(withOthers.startsWith(buildSceneInstructions(room, true).replace(/\.$/, ''))).toBe(true);
-    expect(buildSceneInstructions(null, true, '', ['Sage'])).toBe('');
+    const plain = buildSceneInstructions(room, true, { idleNote: 'sat down' });
+    expect(buildSceneInstructions(room, true, { idleNote: 'sat down', others: [] })).toBe(plain);
+    expect(buildSceneInstructions(room, true)).toBe(buildSceneInstructions(room, true, { others: [] }));
+    const withOthers = buildSceneInstructions(room, true, { others: ['Sage', 'Rex'] });
+    expect(withOthers).toContain('Sage is in the room with you.\nRex is in the room with you.');
+    expect(buildSceneInstructions(null, true, { others: ['Sage'] })).toBe('');
   });
 
-  it('is empty in 2D or without the motion service', () => {
+  it('is empty in 2D, and only says the body cannot move without the motion service', () => {
     expect(buildSceneInstructions(null, true)).toBe('');
     expect(buildSceneInstructions(undefined, true)).toBe('');
-    expect(buildSceneInstructions(room, false)).toBe('');
+    const still = buildSceneInstructions(room, false);
+    expect(still).toContain('your body cannot move right now');
+    expect(still).not.toContain('{sit:');
   });
 
   it('only offers pick up for dynamic objects with a grab tag', () => {
@@ -76,19 +94,18 @@ describe('scene instructions', () => {
     const plain = buildAnimationInstructions(['wave'], ['relaxed-neutral'], true);
     expect(buildAnimationInstructions(['wave'], ['relaxed-neutral'], true, '')).toBe(plain);
     const inRoom = buildAnimationInstructions(['wave'], ['relaxed-neutral'], true, buildSceneInstructions(room, true));
-    expect(inRoom.startsWith(plain)).toBe(true);
-    expect(inRoom).toContain('You are standing in a 3D room');
+    expect(inRoom.startsWith(`${plain}\n\nYour room:`)).toBe(true);
     expect(inRoom.startsWith('Available animations:')).toBe(true);
   });
 
   it('adds one line about what the avatar did while idle, only in a room with live motion', () => {
     const base = buildSceneInstructions(room, true);
     const note = 'walked to the bookshelf (browses the books); sat down on the armchair';
-    const text = buildSceneInstructions(room, true, note);
-    expect(text).toBe(`${base} Just before this, while idle, you: ${note}.`);
-    expect(buildSceneInstructions(room, true, '  ')).toBe(base);
-    expect(buildSceneInstructions(null, true, note)).toBe('');
-    expect(buildSceneInstructions(room, false, note)).toBe('');
+    const text = buildSceneInstructions(room, true, { idleNote: note });
+    expect(text).toContain(`\nJust before this, while idle, you: ${note}.\n`);
+    expect(buildSceneInstructions(room, true, { idleNote: '  ' })).toBe(base);
+    expect(buildSceneInstructions(null, true, { idleNote: note })).toBe('');
+    expect(buildSceneInstructions(room, false, { idleNote: note })).not.toContain(note);
   });
 
   it('matches the instructions of the studio flat too', () => {
@@ -137,9 +154,9 @@ describe('scene instructions', () => {
       const failure = "couldn't reach its left knee target (blocked by sofa)";
       expect(describeBody(room, { posture: 'standing' }, world(), [failure])).toBe(`Just now your body ${failure}.`);
       const body = describeBody(room, seated, world(), [failure]);
-      const text = buildSceneInstructions(room, true, '', [], body);
-      expect(text.endsWith(body)).toBe(true);
-      expect(buildSceneInstructions(room, true, '', [], '')).toBe(buildSceneInstructions(room, true));
+      const text = buildSceneInstructions(room, true, { body });
+      expect(text).toContain(`Right now: ${body}`);
+      expect(buildSceneInstructions(room, true, { body: '' })).toBe(buildSceneInstructions(room, true));
     });
   });
 });

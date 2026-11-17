@@ -1491,8 +1491,13 @@ export default function App() {
   const sceneInstructions = useMemo(
     () => {
       const executor = rigs.get('echo').executor;
-      const body = describeBody(backgrounds.activeRoom, executor.getState(), executor.world(), executor.recentFailures());
-      return buildSceneInstructions(backgrounds.activeRoom, liveMotionReady, idleNote, othersFor('echo'), body);
+      const room = backgrounds.activeRoom;
+      const state = executor.getState();
+      const world = executor.world();
+      const body = describeBody(room, state, world, executor.recentFailures());
+      const where = describeAvatarWhere(room, { position: world ? { x: world.frame.origin.x, z: world.frame.origin.z } : null });
+      const held = state.held ? (room?.objects.find((object) => object.id === state.held?.objectId)?.name ?? null) : null;
+      return buildSceneInstructions(room, liveMotionReady, { idleNote, others: othersFor('echo'), body, where, held });
     },
     // sceneTick: where the others are changes when an action ends.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2234,7 +2239,7 @@ export default function App() {
     const poseSlugs = availablePoses.map((p) => toAnimationSlug(p.name)).filter((s) => s.length > 0);
     // The scene text has no idle note; each avatar on stage also hears who else is in the room.
     const room = backgrounds.activeRoom;
-    const scene = buildSceneInstructions(room, liveMotionReady, undefined);
+    const scene = buildSceneInstructions(room, liveMotionReady);
     const sceneFor = Object.fromEntries(
       stageNames
         .filter((profile) => profile.id !== 'echo')
@@ -2242,13 +2247,16 @@ export default function App() {
           const executor = rigs.get(profile.id).executor;
           return [
           profile.id,
-          buildSceneInstructions(
-            room,
-            liveMotionReady,
-            undefined,
-            othersFor(profile.id),
-            describeBody(room, executor.getState(), executor.world(), executor.recentFailures()),
-          ),
+          (() => {
+            const state = executor.getState();
+            const world = executor.world();
+            return buildSceneInstructions(room, liveMotionReady, {
+              others: othersFor(profile.id),
+              body: describeBody(room, state, world, executor.recentFailures()),
+              where: describeAvatarWhere(room, { position: world ? { x: world.frame.origin.x, z: world.frame.origin.z } : null }),
+              held: state.held ? (room?.objects.find((object) => object.id === state.held?.objectId)?.name ?? null) : null,
+            });
+          })(),
           ];
         }),
     );

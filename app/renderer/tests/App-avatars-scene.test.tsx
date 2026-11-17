@@ -172,7 +172,7 @@ describe('App scene actions from another avatar', () => {
     // The scene text reaches main for the other avatars, naming who else is in the room.
     await waitFor(() => {
       const last = setTagInstructions.mock.calls.at(-1)?.[0] as { scene?: string; sceneFor?: Record<string, string> } | undefined;
-      expect(last?.scene).toContain('{go:<object>}');
+      expect(last?.scene).toContain('{go:object}');
       expect(last?.sceneFor?.sage).toContain('Echo is in the room with you.');
       expect(last?.scene).not.toContain('is in the room with you');
     });

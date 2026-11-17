@@ -33,7 +33,8 @@ type Logger = Pick<Console, 'info' | 'warn' | 'error' | 'debug'>;
 export const SPOKEN_REPLY_GUIDANCE =
   'You are talking out loud: everything you write is spoken by a text-to-speech voice. ' +
   'Answer in one to three short sentences unless asked for more. Use plain spoken English, ' +
-  'with no markdown, lists, headings, emoji or URLs.';
+  'with no markdown, lists, headings, emoji or URLs. Tags in curly braces that your instructions describe, ' +
+  'such as {move:...} or {sit:...}, are fine: they are taken out before speaking.';
 
 export const TOOL_GUIDANCE =
   'You can call tools. Use one when it would give a better answer than memory, such as web_search ' +

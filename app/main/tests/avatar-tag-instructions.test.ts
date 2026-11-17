@@ -30,12 +30,12 @@ describe('composeAvatarPrompt with the scene', () => {
 
   it('appends the scene after the tag instructions for the avatar\'s own variant, else the shared one', () => {
     expect(composeAvatarPrompt({ name: 'Sage', persona: 'You are calm.', ownModel: false, tags: withScene, avatarId: 'sage' })).toBe(
-      'You are calm.\n\nSHARED tags ROOM text, Echo is in the room with you.',
+      'You are calm.\n\nSHARED tags\n\nROOM text, Echo is in the room with you.',
     );
     expect(composeAvatarPrompt({ name: 'Rex', persona: 'You are calm.', ownModel: true, tags: withScene, avatarId: 'rex' })).toBe(
-      'You are calm.\n\nMOVE only ROOM text',
+      'You are calm.\n\nMOVE only\n\nROOM text',
     );
-    expect(composeAvatarPrompt({ name: 'Rex', persona: 'p', ownModel: true, tags: withScene })).toBe('p\n\nMOVE only ROOM text');
+    expect(composeAvatarPrompt({ name: 'Rex', persona: 'p', ownModel: true, tags: withScene })).toBe('p\n\nMOVE only\n\nROOM text');
   });
 
   it('adds no scene when there is none or no tag instructions', () => {
