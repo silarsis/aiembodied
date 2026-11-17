@@ -139,7 +139,7 @@ export class FurnitureService implements FurnitureBridge {
       category,
       description: prompt,
       dimensions: DEFAULT_DIMENSIONS[category],
-      thumbnailDataUrl: this.getDefaultThumbnail(category),
+      thumbnailDataUrl: this.getDefaultThumbnail(),
       builtIn: false,
       createdAt: new Date().toISOString(),
     };
@@ -218,7 +218,7 @@ export class FurnitureService implements FurnitureBridge {
       return [];
     }
     try {
-      return JSON.parse(raw);
+      return JSON.parse(raw) as FurnitureItem[];
     } catch {
       return [];
     }
@@ -258,7 +258,7 @@ export class FurnitureService implements FurnitureBridge {
   }
 
   /** Get default thumbnail for a category. */
-  private getDefaultThumbnail(category: FurnitureCategory): string {
+  private getDefaultThumbnail(): string {
     // In a real implementation, this would be a placeholder image
     // For now, return a minimal data URL
     return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIwAAAABJRU5ErkJggg==';

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { FurnitureBridge, FurnitureSummary, FurnitureItem } from '../preload-api.js';
+import type { FurnitureBridge, FurnitureSummary } from '../preload-api.js';
 
 export interface FurnitureController {
   bridge: FurnitureBridge | undefined;

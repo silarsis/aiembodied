@@ -12,7 +12,6 @@ import type {
   FurnitureItem,
 } from '../furniture/types.js';
 import type { RoomObject } from '../rooms/types.js';
-import type { ComfyGraph } from '../avatar/generation/comfyui-client.js';
 import type { ConfigSecretKey, ModelRoutingView, RendererConfig } from '../config/config-manager.js';
 import type { ModelRoute, ServerType, UseId } from '../config/model-routing.js';
 import type { ServerProbe } from '../config/model-server-probe.js';

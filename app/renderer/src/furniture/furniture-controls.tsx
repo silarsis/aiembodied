@@ -129,7 +129,7 @@ export function FurnitureGenerator({ controller }: { controller: FurnitureContro
     <div className="furnitureGenerator">
       <h2>Generate Furniture</h2>
       <p className="furnitureGenerator__hint">
-        Describe the furniture you want (e.g., "a leather armchair, dark brown, modern style")
+        Describe the furniture you want (e.g., “a leather armchair, dark brown, modern style”)
       </p>
       <textarea
         className="furnitureGenerator__prompt"
