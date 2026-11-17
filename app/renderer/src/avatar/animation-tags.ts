@@ -98,7 +98,8 @@ export function extractMotionTags(text: string): MotionTag[] {
       if (put) results.push({ type: 'put', ...put });
     } else {
       const object = cleanRef(argument);
-      if (object) results.push({ type: name as 'go' | 'sit' | 'look' | 'pick', object });
+      // A bare {sit} means "sit down somewhere": the room picks the nearest free seat.
+      if (object || (name === 'sit' && argument === undefined)) results.push({ type: name as 'go' | 'sit' | 'look' | 'pick', object });
     }
   }
   return results;

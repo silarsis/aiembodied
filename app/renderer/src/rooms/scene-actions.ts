@@ -240,13 +240,89 @@ export function resolveObjectRef(room: RoomFile, ref: string): RoomObject | null
   return loose.length === 1 ? (loose[0] ?? null) : null;
 }
 
-/** Turns a parsed tag into an action, or null (with a warning) when the room has no such object. */
-export function tagToAction(room: RoomFile, tag: SceneTag): SceneAction | null {
+/** Words people use for the same thing; a word in a group matches an object named with another word of it. */
+const SYNONYM_GROUPS: readonly (readonly string[])[] = [
+  ['sofa', 'couch', 'settee', 'loveseat', 'love seat', 'sectional'],
+  ['armchair', 'arm chair', 'easy chair', 'recliner'],
+  ['mug', 'cup', 'coffee cup', 'teacup', 'tea cup'],
+  ['bookshelf', 'bookcase', 'shelf', 'shelves', 'book shelf'],
+  ['footstool', 'ottoman', 'pouf', 'foot stool'],
+];
+
+/** The object a synonym of `ref` names, when exactly one object's name holds a word of the same group. */
+function resolveBySynonym(room: RoomFile, ref: string): RoomObject | null {
+  const wanted = singularPhrase(normaliseName(ref));
+  for (const group of SYNONYM_GROUPS) {
+    if (!group.some((word) => wanted === word || wanted.endsWith(` ${word}`))) continue;
+    const hits = room.objects.filter((object) => {
+      const name = ` ${singularPhrase(normaliseName(object.name))} `;
+      return group.some((word) => name.includes(` ${word} `));
+    });
+    if (hits.length === 1) return hits[0] ?? null;
+  }
+  return null;
+}
+
+/** Where the avatar is and which seats others use, so a vague {sit} can pick a seat. */
+export interface TagContext {
+  /** The avatar's position on the floor (room coordinates). */
+  position?: { x: number; z: number } | null;
+  /** Ids of the seats other avatars are sitting on. */
+  takenSeats?: ReadonlySet<string>;
+}
+
+/** The nearest seat that nobody else is on (or the nearest seat at all when every one is taken). */
+export function nearestFreeSeat(room: RoomFile, context: TagContext = {}): RoomObject | null {
+  const seats = room.objects.filter((object) => Boolean(object.tags?.sit));
+  if (seats.length === 0) return null;
+  const position = context.position ?? { x: 0, z: 0 };
+  const distance = (object: RoomObject) => Math.hypot(object.position[0] - position.x, object.position[2] - position.z);
+  const free = seats.filter((object) => !context.takenSeats?.has(object.id));
+  return [...(free.length > 0 ? free : seats)].sort((a, b) => distance(a) - distance(b))[0] ?? null;
+}
+
+const SIT_WORDS = /\b(?:sits?|sitting|sat|seats? (?:herself|himself|themselves|itself)|perch(?:es)?|plops?|flops?|settles?|curls? up)\b/i;
+
+/**
+ * A free-text movement that means sitting on something in the room ("sits on a space on the couch with the
+ * mug"): the seat it names, so the caller can run a real {sit:} instead, which walks there first. Null when
+ * the text is not about sitting or names no seat.
+ */
+export function seatFromMove(room: RoomFile, text: string): RoomObject | null {
+  if (!SIT_WORDS.test(text)) return null;
+  const words = normaliseName(text).split(' ');
+  // Every run of up to three words, longest first, so "coffee table" beats "table".
+  for (let size = 3; size >= 1; size -= 1) {
+    for (let start = 0; start + size <= words.length; start += 1) {
+      const phrase = words.slice(start, start + size).join(' ');
+      const object = resolveObjectRef(room, phrase) ?? resolveBySynonym(room, phrase);
+      if (object?.tags?.sit) return object;
+    }
+  }
+  return null;
+}
+
+/**
+ * Turns a parsed tag into an action, or null (with a warning) when the room has no such object. Names
+ * match by id, name or a common synonym ("couch" for the sofa). A {sit} with no seat named, an unknown
+ * one or something that is not a seat goes to the nearest free seat.
+ */
+export function tagToAction(room: RoomFile, tag: SceneTag, context: TagContext = {}): SceneAction | null {
   const find = (ref: string): RoomObject | null => {
-    const object = resolveObjectRef(room, ref);
+    const object = resolveObjectRef(room, ref) ?? resolveBySynonym(room, ref);
     if (!object) console.warn(`[scene-actions] no object "${ref}" in ${room.name}`);
     return object;
   };
+  if (tag.type === 'sit') {
+    const named = tag.object ? resolveObjectRef(room, tag.object) ?? resolveBySynonym(room, tag.object) : null;
+    const seat = named?.tags?.sit ? named : nearestFreeSeat(room, context);
+    if (!seat) {
+      console.warn(`[scene-actions] no seat for "${tag.object}" in ${room.name}`);
+      return null;
+    }
+    if (seat !== named) console.info(`[scene-actions] {sit:${tag.object}} -> nearest free seat ${seat.id}`);
+    return { kind: 'sit', objectId: seat.id };
+  }
   switch (tag.type) {
     case 'stand':
     case 'come':
@@ -255,7 +331,6 @@ export function tagToAction(room: RoomFile, tag: SceneTag): SceneAction | null {
       // The walk to the door; leaving for the place the tag names is the caller's business.
       return { kind: 'exit' };
     case 'go':
-    case 'sit':
     case 'look':
     case 'pick': {
       const object = find(tag.object);

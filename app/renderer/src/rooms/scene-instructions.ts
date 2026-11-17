@@ -122,7 +122,10 @@ function firstWith(room: RoomFile, use: string): RoomObject | undefined {
   return room.objects.find((object) => objectAffordances(object).includes(use));
 }
 
-/** One worked example per kind of request, using this room's own objects, so the model sees the mapping. */
+/**
+ * Worked examples using this room's own objects, so the model sees the mapping. Only for sitting and for
+ * not moving: a small model copies examples word for word, so none of them holds or fetches anything.
+ */
 function sceneExamples(room: RoomFile): string[] {
   const examples: string[] = [];
   const seat = firstWith(room, 'sit');
@@ -130,8 +133,7 @@ function sceneExamples(room: RoomFile): string[] {
     const said = /\bsofa\b/i.test(seat.name) ? 'couch' : seat.name;
     examples.push(`"Go sit on the ${said}" -> "Sure, getting comfy. {sit:${seat.name}}"`);
   }
-  const small = firstWith(room, 'pick up');
-  if (small) examples.push(`"Can you grab the ${small.name}?" -> "Here it is. {pick:${small.name}}{come}"`);
+  if (seat) examples.push('"Sit down" (no seat named) -> "Okay. {sit}" (you sit on the nearest free seat)');
   examples.push('"How was your day?" -> an answer with no room tags, since nothing asked you to move.');
   return examples;
 }
@@ -179,9 +181,9 @@ export function buildSceneInstructions(
     idleNote ? `Just before this, while idle, you: ${idleNote}.` : '',
     'Moving: when the user asks you to go somewhere, sit, stand up, look at, fetch, pick up or put down something, do it in the same reply',
     'by writing room tags next to your words. Also move when your reply plainly needs it. Otherwise stay where you are; do not move just to fill a reply.',
-    'Room tags: {go:object} walk to it; {look:object} turn to it; {sit:object} walk to a seat and sit; {stand} get up;',
+    'Room tags: {go:object} walk to it; {look:object} turn to it; {sit:object} walk to a seat and sit ({sit} alone: the nearest free seat); {stand} get up;',
     '{pick:object} pick up something small; {put:object@surface} put what you hold on a surface; {come} come back to your spot in front of the user.',
-    'Name objects as listed above, even when the user calls them something else. Tags run one after another, a few seconds each.',
+    'Name objects as listed above, even when the user calls them something else. Sitting on furniture is always {sit:...}, never {move:...}. Tags run one after another, a few seconds each.',
     'Tags are silent: they are taken out before your words are spoken, so they do not count as markup. Moving is done with these tags, never with a tool call.',
     'Examples:',
     ...sceneExamples(room).map((line) => `- ${line}`),
