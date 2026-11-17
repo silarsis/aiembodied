@@ -14,6 +14,8 @@ import {
   HEAD_YAW_LIMIT,
   capDirectional,
   headExcessCorrection,
+  scaleRotation,
+  type HeadAngles,
   KNEE_MAX_OFFSET,
   MAX_OFFSET_RATE,
   SHOULDER_MAX_OFFSET,
@@ -227,9 +229,10 @@ const TMP_PW = new THREE.Quaternion();
 const TMP_QL = new THREE.Quaternion();
 const TMP_Q1 = new THREE.Quaternion();
 const TMP_Q2 = new THREE.Quaternion();
+const TMP_Q3 = new THREE.Quaternion();
+const TMP_Q4 = new THREE.Quaternion();
 const TMP_CENTER = new THREE.Vector3();
 const TMP_ROT = new THREE.Quaternion();
-const TMP_EULER = new THREE.Euler();
 
 const shapes = new Map<string, RAPIER.Capsule>();
 /** One Rapier capsule per (half height, radius) rounded to the millimetre, shared by every avatar. */
@@ -283,9 +286,12 @@ export class ContactBody {
   private readonly head: HeadBone | null;
   /** How much of the head settle correction applies (0..1). */
   private headWeight = 0;
-  /** The correction wanted this frame (neck and head together, in the chest's frame), for the motion trace. */
+  /** The correction wanted this frame (neck and head together, in the chest's frame), for the motion trace. Its sign carries over to the next frame. */
   private readonly headCorrection = new THREE.Quaternion();
-  private headExcessDeg: [number, number, number] = [0, 0, 0];
+  /** The hips-relative head angles of the animated pose (degrees) and whether it was taken for broken, for the motion trace. */
+  private headAnimDeg: [number, number, number] = [0, 0, 0];
+  private headReset = false;
+  private readonly headSeen: HeadAngles = { yaw: 0, pitch: 0, roll: 0, reset: false };
   /** Horizontal unit vector along the body's left-right axis (from the hips). */
   private readonly lateral = new THREE.Vector3(1, 0, 0);
 
@@ -417,7 +423,13 @@ export class ContactBody {
     }
     return {
       pelvisLift: { target: r3(this.liftTarget), applied: r3(this.lift.value) },
-      headSettle: { weight: r3(this.headWeight), excessYawPitchRollDeg: this.headExcessDeg },
+      headSettle: {
+        weight: r3(this.headWeight),
+        animYawPitchRollDeg: this.headAnimDeg,
+        // The old key, for logs read by older tooling.
+        excessYawPitchRollDeg: this.headAnimDeg,
+        reset: this.headReset,
+      },
       segments,
       joints,
       misses: this.misses().map((miss) => ({ end: miss.end, objectId: miss.objectId, distance: r3(miss.distance), seconds: r3(miss.seconds) })),
@@ -614,35 +626,45 @@ export class ContactBody {
   }
 
   /**
-   * Seated head settle. While `active` (seated, no stream playing) the neck and head together are held inside
-   * the yaw/pitch/roll limits: the excess is added back as a correction that eases in over about
-   * HEAD_SETTLE_SECONDS, split between neck and head. It eases out quickly once inactive.
+   * Seated head settle. While `active` (seated, no stream playing) the head's turn from the hips (spine and
+   * chest twist count, so a twisted chest cannot hide a head that looks spun round) is held inside the
+   * yaw/pitch/roll limits: the excess is added back as a correction that eases in over about
+   * HEAD_SETTLE_SECONDS, split between neck and head. A pose far outside any human range is a broken frame
+   * and is eased back to straight ahead. It eases out quickly once inactive.
    */
   private settleHead(dt: number, active: boolean): void {
     const { neck, head } = this;
-    if (!head) return;
-    // Neck and head together, relative to the chest.
-    const combined = TMP_Q1.copy(neck ? neck.anim : IDENTITY).multiply(head.anim);
-    const excess = headExcessCorrection(combined, HEAD_YAW_LIMIT, HEAD_PITCH_LIMIT, HEAD_ROLL_LIMIT, this.headCorrection);
+    if (!head || !this.hips) return;
+    // World rotations of the animated pose: neck and head were restored to it, and nothing here writes the spine or chest.
+    const first = neck ?? head;
+    const hipsW = worldQuaternionOf(this.hips, TMP_QW);
+    const headW = worldQuaternionOf(head.bone, TMP_PW);
+    const parentW = worldQuaternionOf(first.bone, TMP_QL).multiply(TMP_Q2.copy(first.anim).invert());
+    // Head orientation relative to the hips, and the correction needed in the hips' frame.
+    const inverseHips = TMP_Q1.copy(hipsW).invert();
+    const combined = TMP_Q3.copy(inverseHips).multiply(headW);
+    const excess = headExcessCorrection(combined, HEAD_YAW_LIMIT, HEAD_PITCH_LIMIT, HEAD_ROLL_LIMIT, TMP_Q4, this.headSeen);
+    // Move it into the frame the neck is corrected in (its parent, the chest): parent^-1 * hips * c * hips^-1 * parent.
+    const toParent = inverseHips.multiply(parentW);
+    TMP_Q4.premultiply(TMP_Q2.copy(toParent).invert()).multiply(toParent);
+    // Same sign as last frame's, so a correction near 180 degrees does not flip direction between frames.
+    if (!excess) TMP_Q4.identity();
+    else if (TMP_Q4.dot(this.headCorrection) < 0) TMP_Q4.set(-TMP_Q4.x, -TMP_Q4.y, -TMP_Q4.z, -TMP_Q4.w);
+    this.headCorrection.copy(TMP_Q4);
     const wanted = active && excess;
     this.headWeight = wanted
       ? easeTowards(this.headWeight, 1, dt, HEAD_SETTLE_IN_TAU)
       : easeTowards(this.headWeight, 0, dt, HEAD_SETTLE_OUT_TAU);
-    if (excess) {
-      TMP_EULER.setFromQuaternion(combined, 'YXZ');
-      const toDeg = (r: number) => Math.round(((r * 180) / Math.PI) * 10) / 10;
-      this.headExcessDeg = [toDeg(TMP_EULER.y), toDeg(TMP_EULER.x), toDeg(TMP_EULER.z)];
-    } else {
-      this.headExcessDeg = [0, 0, 0];
-    }
+    const toDeg = (r: number) => Math.round(((r * 180) / Math.PI) * 10) / 10;
+    this.headAnimDeg = excess ? [toDeg(this.headSeen.yaw), toDeg(this.headSeen.pitch), toDeg(this.headSeen.roll)] : [0, 0, 0];
+    this.headReset = excess && this.headSeen.reset;
     if (this.headWeight === 0 || !excess) {
       if (!excess) this.headWeight = 0;
       return;
     }
     // Half the correction on the neck (in the chest's frame), the rest on the head (in the corrected neck's frame).
-    const full = this.headCorrection;
-    const share = TMP_Q2.identity().slerp(full, this.headWeight);
-    const neckShare = neck ? TMP_QW.identity().slerp(share, 0.5) : TMP_QW.identity();
+    const share = scaleRotation(this.headCorrection, this.headWeight, TMP_Q2);
+    const neckShare = neck ? scaleRotation(share, 0.5, TMP_QW) : TMP_QW.identity();
     const rest = TMP_PW.copy(neckShare).invert().premultiply(share); // share * neckShare^-1
     if (neck) {
       neck.bone.quaternion.copy(neckShare).multiply(neck.anim);
