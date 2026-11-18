@@ -194,6 +194,12 @@ const UNAVAILABLE = [
   // Backgrounds and rooms: authoring.
   'background:delete',
   'background:generate',
+  'furniture:generate',
+  'furniture:add-to-room',
+  'furniture:delete',
+  'furniture:list',
+  'furniture:load',
+  'furniture:list-categories',
   'background:set-active',
   'rooms:cancel-generate',
   'rooms:delete',

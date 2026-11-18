@@ -164,6 +164,7 @@ export interface LocalVoiceBridge {
 
 export interface PreloadApi {
   backgrounds?: BackgroundBridge;
+  furniture?: FurnitureBridge;
   config: ConfigBridge;
   models?: ModelsBridge;
   realtime: RealtimeBridge;
@@ -227,6 +228,33 @@ export interface CameraBridge {
 
 export interface AppBridge {
   quit(): Promise<void>;
+}
+
+export interface FurnitureBridge {
+  list(): Promise<FurnitureSummary[]>;
+  load(id: string): Promise<FurnitureItem>;
+  generate(prompt: string): Promise<FurnitureItem>;
+  delete(id: string): Promise<void>;
+  listCategories(): Promise<Record<string, number>>;
+}
+
+export interface FurnitureSummary {
+  id: string;
+  name: string;
+  category: string;
+  description?: string;
+  thumbnailDataUrl: string;
+  builtIn: boolean;
+}
+
+export interface FurnitureItem extends FurnitureSummary {
+  dimensions: [number, number, number];
+  model?: {
+    file: string;
+    asset?: string;
+    scale: number;
+  };
+  createdAt?: string;
 }
 
 export function getPreloadApi(): PreloadApi | undefined {
