@@ -1,0 +1,44 @@
+# Windows installer + portable exe for the desktop app. Built by scripts/build_windows_installer.py,
+# which stages a self-contained copy of the app (flat node_modules) and points --projectDir at it.
+# See docs/windows-installer.md.
+appId: com.aiembodied.assistant
+productName: AI Embodied Assistant
+# No asar: the wake word and retexture code run in worker threads, and onnxruntime reads its models with
+# native file I/O, neither of which can see inside an asar archive.
+asar: false
+# Every native module ships N-API prebuilds (keytar's comes from its install step), so nothing is rebuilt
+# against Electron and no C++ toolchain is needed.
+npmRebuild: false
+nodeGypRebuild: false
+files:
+  - package.json
+  - app/main/package.json
+  - app/main/dist/**
+  - app/main/assets/**
+  - app/main/node_modules/**
+  - app/renderer/dist/**
+  - "!app/main/node_modules/**/*.{md,map,ts}"
+  - "!app/main/node_modules/**/{test,tests,__tests__}/**"
+  - "!app/main/node_modules/better-sqlite3/{deps,src}/**"
+directories:
+  output: release
+win:
+  files:
+    # onnxruntime-node ships every platform; keep Windows x64 only.
+    - "!app/main/node_modules/onnxruntime-node/bin/napi-v*/darwin/**"
+    - "!app/main/node_modules/onnxruntime-node/bin/napi-v*/linux/**"
+    - "!app/main/node_modules/onnxruntime-node/bin/napi-v*/win32/arm64/**"
+  artifactName: AIEmbodied-${version}-win-${arch}-setup.${ext}
+  requestedExecutionLevel: asInvoker
+  # Not code-signed: Windows SmartScreen warns on first run ("More info" > "Run anyway").
+  signAndEditExecutable: true
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: AI Embodied Assistant
+  include: installer.nsh
+portable:
+  artifactName: AIEmbodied-${version}-win-${arch}-portable.${ext}
