@@ -35,8 +35,8 @@ vi.mock('../../src/mcp/clients/http-client.js', () => ({
   }),
 }));
 vi.mock('../../src/mcp/encryption.js', () => ({
-  encryptToken: vi.fn((token: string) => `encrypted:${token}`),
-  decryptToken: vi.fn((encrypted: string) => encrypted.replace('encrypted:', '')),
+  encryptToken: vi.fn(async (token: string) => `encrypted:${token}`),
+  decryptToken: vi.fn(async (encrypted: string) => encrypted.replace('encrypted:', '')),
 }));
 
 const SCHEMA = `
@@ -104,7 +104,7 @@ describe('Home Assistant as an MCP server', () => {
     const first = await manager.addPreset('home-assistant:ha-1');
     const again = await manager.addPreset('home-assistant:ha-1');
     expect(again.id).toBe(first.id);
-    expect(manager.listServers()).toHaveLength(1);
+    expect((await manager.listServers())).toHaveLength(1);
     expect(first).toMatchObject({
       name: 'Home Assistant (Home)',
       transportType: 'http',

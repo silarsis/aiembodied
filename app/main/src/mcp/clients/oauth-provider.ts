@@ -33,28 +33,28 @@ export function resolveCallbackPort(env: NodeJS.ProcessEnv = process.env): numbe
 export class McpOAuthStore {
   constructor(private db: Database) {}
 
-  getClientInformation(serverId: string): OAuthClientInformationMixed | undefined {
-    return this.read<OAuthClientInformationMixed>(serverId, 'client_info_encrypted');
+  async getClientInformation(serverId: string): Promise<OAuthClientInformationMixed | undefined> {
+    return await this.read<OAuthClientInformationMixed>(serverId, 'client_info_encrypted');
   }
 
-  saveClientInformation(serverId: string, info: OAuthClientInformationMixed): void {
-    this.write(serverId, 'client_info_encrypted', info);
+  async saveClientInformation(serverId: string, info: OAuthClientInformationMixed): Promise<void> {
+    await this.write(serverId, 'client_info_encrypted', info);
   }
 
-  getTokens(serverId: string): OAuthTokens | undefined {
-    return this.read<OAuthTokens>(serverId, 'tokens_encrypted');
+  async getTokens(serverId: string): Promise<OAuthTokens | undefined> {
+    return await this.read<OAuthTokens>(serverId, 'tokens_encrypted');
   }
 
-  saveTokens(serverId: string, tokens: OAuthTokens): void {
-    this.write(serverId, 'tokens_encrypted', tokens);
+  async saveTokens(serverId: string, tokens: OAuthTokens): Promise<void> {
+    await this.write(serverId, 'tokens_encrypted', tokens);
   }
 
-  getCodeVerifier(serverId: string): string | undefined {
-    return this.read<string>(serverId, 'code_verifier_encrypted');
+  async getCodeVerifier(serverId: string): Promise<string | undefined> {
+    return await this.read<string>(serverId, 'code_verifier_encrypted');
   }
 
-  saveCodeVerifier(serverId: string, verifier: string): void {
-    this.write(serverId, 'code_verifier_encrypted', verifier);
+  async saveCodeVerifier(serverId: string, verifier: string): Promise<void> {
+    await this.write(serverId, 'code_verifier_encrypted', verifier);
   }
 
   /** Forget the tokens and the verifier but keep the client registration (so sign-in need not register again). */
@@ -79,21 +79,21 @@ export class McpOAuthStore {
     this.db.prepare('DELETE FROM mcp_oauth WHERE server_id = ?').run(serverId);
   }
 
-  private read<T>(serverId: string, column: string): T | undefined {
+  private async read<T>(serverId: string, column: string): Promise<T | undefined> {
     const row = this.db.prepare(`SELECT ${column} AS value FROM mcp_oauth WHERE server_id = ?`).get(serverId) as
       | { value: string | null }
       | undefined;
     if (!row?.value) return undefined;
     try {
-      return JSON.parse(decryptToken(row.value)) as T;
+      return JSON.parse(await decryptToken(row.value)) as T;
     } catch (error) {
       console.error(`Failed to read MCP OAuth ${column}:`, error);
       return undefined;
     }
   }
 
-  private write(serverId: string, column: string, value: unknown): void {
-    const encrypted = encryptToken(JSON.stringify(value));
+  private async write(serverId: string, column: string, value: unknown): Promise<void> {
+    const encrypted = await encryptToken(JSON.stringify(value));
     // Make sure the row exists, then set one column. `column` is one of our own constants, never user input.
     this.db
       .prepare('INSERT OR IGNORE INTO mcp_oauth (server_id, updated_at) VALUES (?, ?)')
@@ -273,8 +273,8 @@ export class McpOAuthProvider implements OAuthClientProvider {
     return state;
   }
 
-  clientInformation(): OAuthClientInformationMixed | undefined {
-    const info = this.store.getClientInformation(this.options.serverId);
+  async clientInformation(): Promise<OAuthClientInformationMixed | undefined> {
+    const info = await this.store.getClientInformation(this.options.serverId);
     // A registration made for another callback port (MCP_OAUTH_CALLBACK_PORT changed) would be
     // refused by the server, so register again instead.
     const uris = (info as { redirect_uris?: unknown } | undefined)?.redirect_uris;
@@ -282,24 +282,24 @@ export class McpOAuthProvider implements OAuthClientProvider {
     return info;
   }
 
-  saveClientInformation(info: OAuthClientInformationMixed): void {
-    this.store.saveClientInformation(this.options.serverId, info);
+  async saveClientInformation(info: OAuthClientInformationMixed): Promise<void> {
+    await this.store.saveClientInformation(this.options.serverId, info);
   }
 
-  tokens(): OAuthTokens | undefined {
-    return this.store.getTokens(this.options.serverId);
+  async tokens(): Promise<OAuthTokens | undefined> {
+    return await this.store.getTokens(this.options.serverId);
   }
 
-  saveTokens(tokens: OAuthTokens): void {
-    this.store.saveTokens(this.options.serverId, tokens);
+  async saveTokens(tokens: OAuthTokens): Promise<void> {
+    await this.store.saveTokens(this.options.serverId, tokens);
   }
 
-  saveCodeVerifier(verifier: string): void {
-    this.store.saveCodeVerifier(this.options.serverId, verifier);
+  async saveCodeVerifier(verifier: string): Promise<void> {
+    await this.store.saveCodeVerifier(this.options.serverId, verifier);
   }
 
-  codeVerifier(): string {
-    const verifier = this.store.getCodeVerifier(this.options.serverId);
+  async codeVerifier(): Promise<string> {
+    const verifier = await this.store.getCodeVerifier(this.options.serverId);
     if (!verifier) throw new Error('No saved sign-in verifier. Start the sign-in again.');
     return verifier;
   }

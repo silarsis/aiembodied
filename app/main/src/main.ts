@@ -2951,8 +2951,8 @@ function setupStations(store: MemoryStore): void {
   const rooms = roomService;
   const registry = new StationRegistry({
     store,
-    servers: () =>
-      manager.listServers().map((server) => ({ id: server.id, httpUrl: server.httpUrl, sseUrl: server.sseUrl, homeAssistant: Boolean(server.tokenFromModelServer) })),
+    // Sync on purpose (the registry is pure and sync): listServerAddresses reads only unencrypted columns.
+    servers: () => manager.listServerAddresses(),
     describeRoom: async (roomId) => {
       const room = await rooms.load(roomId);
       return { name: room.name, objects: room.objects.map((object) => ({ id: object.id, name: object.name })) };
@@ -3509,7 +3509,7 @@ app.whenReady().then(async () => {
       logger.warn('MCP auto-start failed', { message: error instanceof Error ? error.message : String(error) });
     });
     logger.info('MCP Manager initialized', {
-      autoStartedServers: mcpManager.listServers().filter(s => s.autoStart && s.enabled).length
+      autoStartedServers: (await mcpManager.listServers()).filter(s => s.autoStart && s.enabled).length
     });
 
     // Seed default model if this is the first run

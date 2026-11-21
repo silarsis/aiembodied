@@ -8,6 +8,7 @@ import {
   VRMHumanBoneList,
   type VRMExpressionManager,
 } from '@pixiv/three-vrm';
+import { VRMLookAtQuaternionProxy } from '@pixiv/three-vrm-animation';
 import { measureRestSkeleton, setAvatarRestSkeleton } from './rest-skeleton.js';
 import type { AvatarRestSkeleton } from './types.js';
 import type {
@@ -271,8 +272,8 @@ export class AvatarActor {
     if (typeof VRMUtils.removeUnnecessaryVertices === 'function') {
       VRMUtils.removeUnnecessaryVertices(vrm.scene);
     }
-    if (typeof VRMUtils.removeUnnecessaryJoints === 'function') {
-      VRMUtils.removeUnnecessaryJoints(vrm.scene);
+    if (typeof VRMUtils.combineSkeletons === 'function') {
+      VRMUtils.combineSkeletons(vrm.scene);
     }
     if (typeof VRMUtils.rotateVRM0 === 'function') {
       VRMUtils.rotateVRM0(vrm);
@@ -283,6 +284,13 @@ export class AvatarActor {
     vrm.scene.traverse((object: THREE.Object3D) => {
       object.frustumCulled = false;
     });
+
+    // createVRMAnimationClip looks for this proxy to drive the eyes; adding it here stops it warning.
+    if (vrm.lookAt) {
+      const lookAtProxy = new VRMLookAtQuaternionProxy(vrm.lookAt);
+      lookAtProxy.name = 'VRMLookAtQuaternionProxy';
+      vrm.scene.add(lookAtProxy);
+    }
 
     vrm.scene.rotation.y = vrm.meta?.metaVersion === '1' ? 0 : Math.PI;
     vrm.scene.updateWorldMatrix(true, true);

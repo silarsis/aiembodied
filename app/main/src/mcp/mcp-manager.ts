@@ -70,7 +70,7 @@ export class MCPManager extends EventEmitter {
    * Loads all enabled servers and auto-starts those marked for auto-start.
    */
   async initialize(): Promise<void> {
-    const servers = this.loadServersFromDB().filter((server) => server.enabled && server.autoStart);
+    const servers = (await this.loadServersFromDB()).filter((server) => server.enabled && server.autoStart);
 
     // Start them side by side so one slow server does not hold up the others.
     // connectServer records its own failures in the database; this only guards against surprises.
@@ -135,7 +135,7 @@ export class MCPManager extends EventEmitter {
     }
     const url = preset.config.httpUrl ?? preset.config.sseUrl;
     const sameAddress = (a: string | undefined, b: string | undefined) => (a ?? '').toLowerCase().replace(/\/+$/, '') === (b ?? '').toLowerCase().replace(/\/+$/, '');
-    const existing = this.loadServersFromDB().find((server) => sameAddress(server.httpUrl ?? server.sseUrl, url));
+    const existing = (await this.loadServersFromDB()).find((server) => sameAddress(server.httpUrl ?? server.sseUrl, url));
     if (existing) return existing;
     return await this.addServer(preset.config);
   }
@@ -148,9 +148,9 @@ export class MCPManager extends EventEmitter {
     const now = Date.now();
 
     // Encrypt sensitive fields
-    const sseAuthTokenEncrypted = config.sseAuthToken ? encryptToken(config.sseAuthToken) : null;
-    const stdioEnvEncrypted = config.stdioEnv ? encryptToken(JSON.stringify(config.stdioEnv)) : null;
-    const httpAuthTokenEncrypted = config.httpAuthToken ? encryptToken(config.httpAuthToken) : null;
+    const sseAuthTokenEncrypted = config.sseAuthToken ? await encryptToken(config.sseAuthToken) : null;
+    const stdioEnvEncrypted = config.stdioEnv ? await encryptToken(JSON.stringify(config.stdioEnv)) : null;
+    const httpAuthTokenEncrypted = config.httpAuthToken ? await encryptToken(config.httpAuthToken) : null;
 
     // Insert into database
     const stmt = this.db.prepare(`
@@ -189,7 +189,7 @@ export class MCPManager extends EventEmitter {
       now,
     );
 
-    const server = this.getServerById(id);
+    const server = await this.getServerById(id);
     if (!server) {
       throw new Error(`Failed to retrieve newly created server with id: ${id}`);
     }
@@ -230,7 +230,7 @@ export class MCPManager extends EventEmitter {
 
     if (updates.sseAuthToken !== undefined) {
       updateFields.push('sse_auth_token_encrypted = ?');
-      values.push(updates.sseAuthToken ? encryptToken(updates.sseAuthToken) : null);
+      values.push(updates.sseAuthToken ? await encryptToken(updates.sseAuthToken) : null);
     }
 
     if (updates.stdioCommand !== undefined) {
@@ -245,7 +245,7 @@ export class MCPManager extends EventEmitter {
 
     if (updates.stdioEnv !== undefined) {
       updateFields.push('stdio_env_json_encrypted = ?');
-      values.push(updates.stdioEnv ? encryptToken(JSON.stringify(updates.stdioEnv)) : null);
+      values.push(updates.stdioEnv ? await encryptToken(JSON.stringify(updates.stdioEnv)) : null);
     }
 
     if (updates.httpUrl !== undefined) {
@@ -260,7 +260,7 @@ export class MCPManager extends EventEmitter {
 
     if (updates.httpAuthToken !== undefined) {
       updateFields.push('http_auth_token_encrypted = ?');
-      values.push(updates.httpAuthToken ? encryptToken(updates.httpAuthToken) : null);
+      values.push(updates.httpAuthToken ? await encryptToken(updates.httpAuthToken) : null);
     }
 
     if (updates.oauth !== undefined) {
@@ -284,7 +284,7 @@ export class MCPManager extends EventEmitter {
       stmt.run(...values);
     }
 
-    const server = this.getServerById(id);
+    const server = await this.getServerById(id);
     if (!server) {
       throw new Error(`Server not found: ${id}`);
     }
@@ -297,7 +297,7 @@ export class MCPManager extends EventEmitter {
    * Never opens the browser: a server that needs OAuth sign-in ends up as 'needs-sign-in'.
    */
   async connectServer(serverId: string): Promise<MCPConnectionResult> {
-    const config = this.getServerById(serverId);
+    const config = await this.getServerById(serverId);
     if (!config) {
       throw new Error(`Server not found: ${serverId}`);
     }
@@ -336,7 +336,7 @@ export class MCPManager extends EventEmitter {
    * then connect. Only this method ever opens the browser.
    */
   async signIn(serverId: string): Promise<MCPConnectionResult> {
-    const config = this.getServerById(serverId);
+    const config = await this.getServerById(serverId);
     if (!config) {
       throw new Error(`Server not found: ${serverId}`);
     }
@@ -394,7 +394,7 @@ export class MCPManager extends EventEmitter {
    * The client registration is kept so the next sign-in does not register again.
    */
   async signOut(serverId: string): Promise<void> {
-    const config = this.getServerById(serverId);
+    const config = await this.getServerById(serverId);
     if (!config) {
       throw new Error(`Server not found: ${serverId}`);
     }
@@ -441,8 +441,24 @@ export class MCPManager extends EventEmitter {
   /**
    * List all MCP server configurations.
    */
-  listServers(): MCPServerConfig[] {
-    return this.loadServersFromDB();
+  async listServers(): Promise<MCPServerConfig[]> {
+    return await this.loadServersFromDB();
+  }
+
+  /**
+   * The addresses of all servers, read synchronously. None of these columns is encrypted, so nothing is
+   * decrypted; for callers (the station registry) that need a sync answer. Same values listServers() gives.
+   */
+  listServerAddresses(): Array<{ id: string; httpUrl?: string; sseUrl?: string; homeAssistant: boolean }> {
+    const rows = this.db
+      .prepare('SELECT id, transport_type, sse_url, http_url, token_from_model_server FROM mcp_servers ORDER BY name')
+      .all() as Array<{ id: string; transport_type: string; sse_url: string | null; http_url: string | null; token_from_model_server: string | null }>;
+    return rows.map((row) => ({
+      id: row.id,
+      httpUrl: row.transport_type === 'http' ? row.http_url || undefined : undefined,
+      sseUrl: row.transport_type === 'sse' ? row.sse_url || undefined : undefined,
+      homeAssistant: row.transport_type === 'http' && Boolean(row.token_from_model_server),
+    }));
   }
 
   /**
@@ -529,7 +545,7 @@ export class MCPManager extends EventEmitter {
    * Test connection to an MCP server without persisting the connection.
    */
   async testConnection(serverId: string): Promise<MCPConnectionResult> {
-    const config = this.getServerById(serverId);
+    const config = await this.getServerById(serverId);
     if (!config) {
       throw new Error(`Server not found: ${serverId}`);
     }
@@ -631,20 +647,20 @@ export class MCPManager extends EventEmitter {
     });
   }
 
-  private loadServersFromDB(): MCPServerConfig[] {
+  private async loadServersFromDB(): Promise<MCPServerConfig[]> {
     const stmt = this.db.prepare('SELECT * FROM mcp_servers ORDER BY name');
     const rows = stmt.all() as MCPServerRow[];
 
-    return rows.map((row) => this.serverRowToConfig(row));
+    return await Promise.all(rows.map((row) => this.serverRowToConfig(row)));
   }
 
-  private getServerById(id: string): MCPServerConfig | undefined {
+  private async getServerById(id: string): Promise<MCPServerConfig | undefined> {
     const stmt = this.db.prepare('SELECT * FROM mcp_servers WHERE id = ?');
     const row = stmt.get(id) as MCPServerRow | undefined;
-    return row ? this.serverRowToConfig(row) : undefined;
+    return row ? await this.serverRowToConfig(row) : undefined;
   }
 
-  private serverRowToConfig(row: MCPServerRow): MCPServerConfig {
+  private async serverRowToConfig(row: MCPServerRow): Promise<MCPServerConfig> {
     const config: MCPServerConfig = {
       id: row.id,
       name: row.name,
@@ -665,7 +681,7 @@ export class MCPManager extends EventEmitter {
       config.sseAuthHeader = row.sse_auth_header || undefined;
       if (row.sse_auth_token_encrypted) {
         try {
-          config.sseAuthToken = decryptToken(row.sse_auth_token_encrypted);
+          config.sseAuthToken = await decryptToken(row.sse_auth_token_encrypted);
         } catch (error) {
           console.error('Failed to decrypt SSE auth token:', error);
         }
@@ -681,7 +697,7 @@ export class MCPManager extends EventEmitter {
       config.tokenFromModelServer = row.token_from_model_server || undefined;
       if (row.http_auth_token_encrypted) {
         try {
-          config.httpAuthToken = decryptToken(row.http_auth_token_encrypted);
+          config.httpAuthToken = await decryptToken(row.http_auth_token_encrypted);
         } catch (error) {
           console.error('Failed to decrypt HTTP auth token:', error);
         }
@@ -703,7 +719,7 @@ export class MCPManager extends EventEmitter {
       }
       if (row.stdio_env_json_encrypted) {
         try {
-          const parsed = JSON.parse(decryptToken(row.stdio_env_json_encrypted)) as unknown;
+          const parsed = JSON.parse(await decryptToken(row.stdio_env_json_encrypted)) as unknown;
           if (typeof parsed === 'object' && parsed !== null) {
             config.stdioEnv = parsed as Record<string, string>;
           }
@@ -789,7 +805,11 @@ export class MCPManager extends EventEmitter {
   }
 
   private isHomeAssistant(serverId: string): boolean {
-    return Boolean(this.getServerById(serverId)?.tokenFromModelServer);
+    // Only HTTP servers carry token_from_model_server (see serverRowToConfig). Read straight from the row so no decryption is needed.
+    const row = this.db
+      .prepare('SELECT transport_type, token_from_model_server FROM mcp_servers WHERE id = ?')
+      .get(serverId) as { transport_type: string; token_from_model_server: string | null } | undefined;
+    return Boolean(row?.transport_type === 'http' && row.token_from_model_server);
   }
 
   private async registerTool(
@@ -881,7 +901,7 @@ export class MCPManager extends EventEmitter {
     if (saved && isValidToolName(saved) && !taken.has(saved)) {
       name = saved;
     } else {
-      const server = this.getServerById(dbTool.server_id);
+      const server = this.db.prepare('SELECT name FROM mcp_servers WHERE id = ?').get(dbTool.server_id) as { name: string } | undefined;
       name = chooseToolName(dbTool.tool_name, server?.name ?? dbTool.server_id, taken);
     }
     if (name !== saved) {

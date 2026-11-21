@@ -134,7 +134,7 @@ vi.mock('@pixiv/three-vrm', async () => {
     VRMLoaderPlugin: class {},
     VRMUtils: {
       removeUnnecessaryVertices: vi.fn(),
-      removeUnnecessaryJoints: vi.fn(),
+      combineSkeletons: vi.fn(),
       rotateVRM0: vi.fn(),
     },
   };

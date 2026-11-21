@@ -30,7 +30,7 @@ describe('MCP IPC Handlers', () => {
     // Create mock MCP manager with EventEmitter
     const emitter = new EventEmitter();
     mockMCPManager = {
-      listServers: vi.fn().mockReturnValue([]),
+      listServers: vi.fn().mockResolvedValue([]),
       addServer: vi.fn().mockResolvedValue({ id: 'server-1', name: 'Test Server' }),
       updateServer: vi.fn().mockResolvedValue({ id: 'server-1', name: 'Updated Server' }),
       deleteServer: vi.fn().mockResolvedValue(undefined),
@@ -94,7 +94,7 @@ describe('MCP IPC Handlers', () => {
     });
 
     it('never sends tokens or environment values to the renderer', async () => {
-      mockMCPManager.listServers.mockReturnValue([
+      mockMCPManager.listServers.mockResolvedValue([
         {
           id: 's1',
           name: 'Secret',

@@ -64,8 +64,8 @@ vi.mock('../../src/mcp/clients/http-client.js', () => ({
   }),
 }));
 vi.mock('../../src/mcp/encryption.js', () => ({
-  encryptToken: vi.fn((token: string) => `encrypted:${token}`),
-  decryptToken: vi.fn((encrypted: string) => encrypted.replace('encrypted:', '')),
+  encryptToken: vi.fn(async (token: string) => `encrypted:${token}`),
+  decryptToken: vi.fn(async (encrypted: string) => encrypted.replace('encrypted:', '')),
 }));
 
 const SCHEMA = `
@@ -220,7 +220,7 @@ describe('MCPManager (stdio, http, OAuth)', () => {
 
       await manager.initialize(); // auto-start at launch
 
-      const after = manager.listServers().find((s) => s.id === server.id);
+      const after = (await manager.listServers()).find((s) => s.id === server.id);
       expect(after?.connectionStatus).toBe('needs-sign-in');
       expect(after?.lastError).toMatch(/Sign-in needed/);
       expect(openExternal).not.toHaveBeenCalled();
@@ -237,7 +237,7 @@ describe('MCPManager (stdio, http, OAuth)', () => {
       const result = await manager.connectServer(server.id);
       expect(result).toEqual({ success: false, error: 'spawn nope ENOENT' });
       expect(state.clients[0].disconnect).toHaveBeenCalled();
-      expect(manager.listServers()[0].connectionStatus).toBe('error');
+      expect((await manager.listServers())[0].connectionStatus).toBe('error');
     });
   });
 
@@ -255,7 +255,7 @@ describe('MCPManager (stdio, http, OAuth)', () => {
       state.clients[0].closed?.();
 
       expect(registry.list()).toHaveLength(0);
-      const after = manager.listServers()[0];
+      const after = (await manager.listServers())[0];
       expect(after.connectionStatus).toBe('error');
       expect(after.lastError).toMatch(/closed unexpectedly/);
       expect(events).toContainEqual({ serverId: server.id, status: 'error' });
@@ -267,7 +267,7 @@ describe('MCPManager (stdio, http, OAuth)', () => {
       await manager.connectServer(server.id);
       await manager.disconnectServer(server.id);
       state.clients[0].closed?.();
-      expect(manager.listServers()[0].connectionStatus).toBe('disconnected');
+      expect((await manager.listServers())[0].connectionStatus).toBe('disconnected');
     });
   });
 
@@ -291,7 +291,7 @@ describe('MCPManager (stdio, http, OAuth)', () => {
       const first = await manager.addPreset(DAIR_ACADEMY_PAPERS_PRESET_ID);
       const second = await manager.addPreset(DAIR_ACADEMY_PAPERS_PRESET_ID);
       expect(second.id).toBe(first.id);
-      expect(manager.listServers()).toHaveLength(1);
+      expect((await manager.listServers())).toHaveLength(1);
       expect(first).toMatchObject({
         name: 'DAIR Academy papers', transportType: 'http', httpUrl: 'https://academy.dair.ai/api/mcp',
         oauth: true, oauthScope: 'papers:read', enabled: true, autoStart: true,
@@ -336,7 +336,7 @@ describe('MCPManager (stdio, http, OAuth)', () => {
 
       expect(result).toEqual({ success: true, toolsDiscovered: 1 });
       expect(openExternal).toHaveBeenCalledTimes(1);
-      expect(manager.listServers()[0].connectionStatus).toBe('connected');
+      expect((await manager.listServers())[0].connectionStatus).toBe('connected');
       expect(registry.list()).toHaveLength(1);
     });
 
@@ -353,7 +353,7 @@ describe('MCPManager (stdio, http, OAuth)', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toMatch(/timed out/);
-      expect(manager.listServers()[0].connectionStatus).toBe('needs-sign-in');
+      expect((await manager.listServers())[0].connectionStatus).toBe('needs-sign-in');
     });
 
     it('refuses to sign in to a server that does not use OAuth', async () => {
@@ -365,21 +365,21 @@ describe('MCPManager (stdio, http, OAuth)', () => {
       state.tools = [tool('a')];
       const server = await addOauthServer();
       const store = new McpOAuthStore(db);
-      store.saveClientInformation(server.id, { client_id: 'cid' });
-      store.saveTokens(server.id, { access_token: 'at', token_type: 'Bearer' });
+      await store.saveClientInformation(server.id, { client_id: 'cid' });
+      await store.saveTokens(server.id, { access_token: 'at', token_type: 'Bearer' });
       await manager.connectServer(server.id);
 
       await manager.signOut(server.id);
 
-      expect(store.getTokens(server.id)).toBeUndefined();
-      expect(store.getClientInformation(server.id)).toEqual({ client_id: 'cid' });
+      expect(await store.getTokens(server.id)).toBeUndefined();
+      expect(await store.getClientInformation(server.id)).toEqual({ client_id: 'cid' });
       expect(registry.list()).toHaveLength(0);
-      expect(manager.listServers()[0].connectionStatus).toBe('needs-sign-in');
+      expect((await manager.listServers())[0].connectionStatus).toBe('needs-sign-in');
     });
 
     it('deleting a server also deletes its sign-in data', async () => {
       const server = await addOauthServer();
-      new McpOAuthStore(db).saveTokens(server.id, { access_token: 'at', token_type: 'Bearer' });
+      await new McpOAuthStore(db).saveTokens(server.id, { access_token: 'at', token_type: 'Bearer' });
       await manager.deleteServer(server.id);
       expect(db.prepare('SELECT COUNT(*) AS n FROM mcp_oauth').get()).toEqual({ n: 0 });
     });
