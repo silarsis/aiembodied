@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createFakeMicNode, fakeAudioWorklet, micNodeOf } from './fake-mic.js';
 import { LocalVoiceClient, playPreviewReply } from '../../src/realtime/local-voice-client.js';
 import type { LocalVoiceBridge } from '../../src/preload-api.js';
 import type { LocalVoiceEvent } from '../../../main/src/local-voice/types.js';
@@ -6,14 +7,8 @@ import type { VoiceActivity } from '../../src/realtime/voice-activity.js';
 
 const SAMPLE_RATE = 16000;
 
-interface FakeProcessor {
-  onaudioprocess: ((event: { inputBuffer: { getChannelData: () => Float32Array } }) => void) | null;
-  connect: () => void;
-  disconnect: () => void;
-}
-
 function createFakeContext() {
-  const processor: FakeProcessor = { onaudioprocess: null, connect: vi.fn(), disconnect: vi.fn() };
+  const processor = createFakeMicNode();
   const node = () => ({ connect: vi.fn(), disconnect: vi.fn(), gain: { value: 1 } });
   const context = {
     sampleRate: SAMPLE_RATE,
@@ -22,7 +17,8 @@ function createFakeContext() {
     resume: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
     createMediaStreamSource: vi.fn(node),
-    createScriptProcessor: vi.fn(() => processor),
+    audioWorklet: fakeAudioWorklet(),
+    micNode: processor,
     createGain: vi.fn(node),
     createMediaStreamDestination: vi.fn(() => ({ ...node(), stream: {} as MediaStream })),
     decodeAudioData: vi.fn(async () => ({ duration: 0.01 })),
@@ -71,7 +67,7 @@ describe('Test Response voice preview', () => {
     const spoken: string[] = [];
     const client = new LocalVoiceClient({
       getBridge: () => bridge,
-      createAudioContext: () => context,
+      createAudioContext: () => context, createMicCaptureNode: micNodeOf,
       now: () => 10_000,
       callbacks: { onTextContent: (text) => spoken.push(text) },
     });

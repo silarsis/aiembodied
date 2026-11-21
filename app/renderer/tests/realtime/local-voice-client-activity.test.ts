@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createFakeMicNode, fakeAudioWorklet, micNodeOf } from './fake-mic.js';
 import { LocalVoiceClient } from '../../src/realtime/local-voice-client.js';
 import type { LocalVoiceBridge } from '../../src/preload-api.js';
 import type { LocalVoiceEvent } from '../../../main/src/local-voice/types.js';
@@ -8,14 +9,8 @@ const SAMPLE_RATE = 16000;
 const FRAME = 2048;
 const FRAME_MS = (FRAME / SAMPLE_RATE) * 1000;
 
-interface FakeProcessor {
-  onaudioprocess: ((event: { inputBuffer: { getChannelData: () => Float32Array } }) => void) | null;
-  connect: () => void;
-  disconnect: () => void;
-}
-
 function createFakeContext() {
-  const processor: FakeProcessor = { onaudioprocess: null, connect: vi.fn(), disconnect: vi.fn() };
+  const processor = createFakeMicNode();
   const node = () => ({ connect: vi.fn(), disconnect: vi.fn(), gain: { value: 1 } });
   const context = {
     sampleRate: SAMPLE_RATE,
@@ -24,7 +19,8 @@ function createFakeContext() {
     resume: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
     createMediaStreamSource: vi.fn(node),
-    createScriptProcessor: vi.fn(() => processor),
+    audioWorklet: fakeAudioWorklet(),
+    micNode: processor,
     createGain: vi.fn(node),
     createMediaStreamDestination: vi.fn(() => ({ ...node(), stream: {} as MediaStream })),
     decodeAudioData: vi.fn(async () => ({ duration: 0.01 })),
@@ -76,7 +72,7 @@ describe('LocalVoiceClient activity', () => {
     const client = new LocalVoiceClient({
       getBridge: () => bridge,
       wakePhrase: 'Hey Jarvis',
-      createAudioContext: () => context,
+      createAudioContext: () => context, createMicCaptureNode: micNodeOf,
       now: () => now,
       callbacks: { onActivity: (next) => activity.push(next) },
     });
@@ -85,7 +81,7 @@ describe('LocalVoiceClient activity', () => {
       for (let i = 0; i < frames; i += 1) {
         now += FRAME_MS;
         const samples = new Float32Array(FRAME).fill(loud ? 0.2 : 0);
-        processor.onaudioprocess?.({ inputBuffer: { getChannelData: () => samples } });
+        processor.port.onmessage?.({ data: samples });
       }
     };
     const phases = () => activity.map((entry) => entry.phase);
@@ -154,7 +150,7 @@ describe('LocalVoiceClient activity', () => {
     const calls: unknown[] = [];
     const client = new LocalVoiceClient({
       getBridge: () => bridge,
-      createAudioContext: () => context,
+      createAudioContext: () => context, createMicCaptureNode: micNodeOf,
       now: () => now,
       callbacks: { onToolCall: (call) => calls.push(call) },
     });
@@ -164,7 +160,7 @@ describe('LocalVoiceClient activity', () => {
       for (let i = 0; i < 8; i += 1) {
         now += FRAME_MS;
         const samples = new Float32Array(FRAME).fill(loud ? 0.2 : 0);
-        processor.onaudioprocess?.({ inputBuffer: { getChannelData: () => samples } });
+        processor.port.onmessage?.({ data: samples });
       }
     }
     await vi.advanceTimersByTimeAsync(2000);
