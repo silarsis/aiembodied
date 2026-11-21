@@ -76,6 +76,8 @@ export class StationTrips {
   private readonly errandCapMs: number;
   /** Trips waiting for the renderer to say it arrived. */
   private readonly waiting = new Map<string, () => void>();
+  /** What each same-room trip is, for the log lines written when the renderer answers. */
+  private readonly meta = new Map<string, { info: Record<string, unknown>; startedAt: number }>();
 
   constructor(private readonly options: StationTripsOptions) {
     this.holdMs = options.holdMs ?? STATION_ARRIVAL_HOLD_MS;
@@ -86,6 +88,8 @@ export class StationTrips {
   arrived(useId: string): boolean {
     const release = this.waiting.get(useId);
     if (!release) return false;
+    const meta = this.meta.get(useId);
+    this.options.logger?.info('Stations: trip arrived', { ...meta?.info, waitedMs: meta ? Date.now() - meta.startedAt : undefined });
     release();
     return true;
   }
@@ -108,24 +112,48 @@ export class StationTrips {
 
   /** What this avatar would do for this tool right now, or null for no trip. */
   private plan(avatarId: string, tool: StationTool): Plan | null {
+    const planned = this.planWhy(avatarId, tool);
+    return typeof planned === 'string' ? null : planned;
+  }
+
+  /** Like `plan`, but a no-trip answer says why (a short text for the log). */
+  private planWhy(avatarId: string, tool: StationTool): Plan | string {
     const { stations } = this.options;
     const station = stations.stationForTool(tool);
-    if (!station || !stations.appliesTo(station, avatarId) || !stations.needsTrip(station, tool)) return null;
+    if (!station) return 'the tool is not kept at a station';
+    if (!stations.appliesTo(station, avatarId)) return 'the station is not for this character';
+    if (!stations.needsTrip(station, tool)) return 'this tool does not need a trip (a read at a writes-only station)';
     return this.planFor(avatarId, station);
   }
 
-  /** What this avatar would do to get to this station right now, or null for no trip. */
-  private planFor(avatarId: string, station: Station): Plan | null {
+  /** What this avatar would do to get to this station right now; a text (the reason) when there is no trip. */
+  private planFor(avatarId: string, station: Station): Plan | string {
     const { places } = this.options;
-    if (places.inTransit(avatarId)) return null;
+    if (places.inTransit(avatarId)) return 'the avatar is already moving';
     const here = places.locationOf(avatarId);
     const hereRoom = this.roomOf(here);
-    if (!hereRoom) return null;
+    if (!hereRoom) return 'the avatar is not in a 3D room';
     if (hereRoom === station.roomId) return { kind: 'same', station };
     const there = this.placeShowing(station.roomId, here);
     if (there) return { kind: 'errand', station, placeId: there.id, toStation: true };
     const nextDoor = places.get(NEXT_DOOR_PLACE_ID);
     if (nextDoor && here !== nextDoor.id) return { kind: 'errand', station, placeId: nextDoor.id, toStation: false };
+    return 'no place shows the station room and there is no next door';
+  }
+
+  /** The log fields that name a trip: who, where and which of the three cases. */
+  private tripInfo(avatarId: string, plan: Plan, source: 'pursuit' | 'tool'): Record<string, unknown> {
+    return {
+      avatarId,
+      stationId: plan.station.id,
+      source,
+      case: plan.kind === 'same' ? 'same-room' : plan.toStation ? 'other-place' : 'errand',
+    };
+  }
+
+  /** Logs "no trip" with the reason; returns null so the callers can `return this.none(...)`. */
+  private none(avatarId: string, stationId: string | null, why: string, source: 'pursuit' | 'tool'): null {
+    this.options.logger?.info('Stations: trip none', { avatarId, stationId, source, case: 'none', why });
     return null;
   }
 
@@ -143,8 +171,12 @@ export class StationTrips {
 
   /** A tool is about to run for this avatar. Returns the trip, or null when the avatar stays where it is. */
   begin(avatarId: string, tool: StationTool): StationVisit | null {
-    const plan = this.plan(avatarId, tool);
-    if (!plan) return null;
+    const plan = this.planWhy(avatarId, tool);
+    if (typeof plan === 'string') {
+      // A tool that lives nowhere is not worth a line; every other no-trip case is.
+      const station = this.options.stations.stationForTool(tool);
+      return station ? this.none(avatarId, station.id, plan, 'tool') : null;
+    }
     return plan.kind === 'same' ? this.beginSameRoom(avatarId, plan.station, 'tool') : this.beginErrand(avatarId, plan, 'tool');
   }
 
@@ -154,9 +186,9 @@ export class StationTrips {
    * `settle` ends the visit: the end event, and the way back from an errand.
    */
   beginAt(avatarId: string, station: Station): StationVisit | null {
-    if (!this.options.stations.appliesTo(station, avatarId)) return null;
+    if (!this.options.stations.appliesTo(station, avatarId)) return this.none(avatarId, station.id, 'the station is not for this character', 'pursuit');
     const plan = this.planFor(avatarId, station);
-    if (!plan) return null;
+    if (typeof plan === 'string') return this.none(avatarId, station.id, plan, 'pursuit');
     return plan.kind === 'same' ? this.beginSameRoom(avatarId, plan.station, 'pursuit') : this.beginErrand(avatarId, plan, 'pursuit');
   }
 
@@ -178,7 +210,13 @@ export class StationTrips {
 
   private beginSameRoom(avatarId: string, station: Station, source: 'pursuit' | 'tool'): StationVisit | null {
     const useId = randomUUID();
-    if (!this.options.send(avatarId, this.event(avatarId, station, useId, 'start', undefined, source))) return null;
+    const info = this.tripInfo(avatarId, { kind: 'same', station }, source);
+    if (!this.options.send(avatarId, this.event(avatarId, station, useId, 'start', undefined, source))) {
+      return this.none(avatarId, station.id, 'no screen could receive the walk', source);
+    }
+    this.options.logger?.info('Stations: trip start', { ...info, objectId: station.objectId });
+    const startedAt = Date.now();
+    this.meta.set(useId, { info, startedAt });
     // Listen from now: the renderer may report arrival before the tool is done.
     const arrival = this.waitForArrival(useId, this.holdMs);
     return {
@@ -187,8 +225,13 @@ export class StationTrips {
         this.options.send(avatarId, { ...this.event(avatarId, station, useId, 'activity', undefined, source), activity: text, ...(step ? { step } : {}) });
       },
       settle: async (ok, signal) => {
+        const heldFrom = Date.now();
         await until(arrival, signal);
+        // `held`: how long the answer waited for the arrival (0 when the avatar was already there).
+        this.options.logger?.info('Stations: trip held', { ...info, heldMs: Date.now() - heldFrom, cancelled: signal?.aborted === true });
+        this.meta.delete(useId);
         this.options.send(avatarId, this.event(avatarId, station, useId, 'end', ok, source));
+        this.options.logger?.info('Stations: trip end', { ...info, ok, totalMs: Date.now() - startedAt });
       },
     };
   }
@@ -218,14 +261,17 @@ export class StationTrips {
     const started = places.startMove(avatarId, plan.placeId, `went to the ${objectName}`);
     if (!started.ok) {
       logger?.info('Station: the avatar could not go', { avatarId, placeId: plan.placeId, reason: started.reason });
-      return null;
+      return this.none(avatarId, plan.station.id, `the move was refused: ${started.reason ?? 'unknown'}`, source);
     }
     const useId = randomUUID();
     const startedAt = Date.now();
+    const info = { ...this.tripInfo(avatarId, plan, source), placeId: plan.placeId };
+    logger?.info('Stations: trip start', info);
     const left = (): number => Math.max(0, this.errandCapMs - (Date.now() - startedAt));
     // Out: wait for the arrival, then (at a place with a screen) let its renderer walk to the object.
     let atObject = false;
     const out = places.waitForArrival(avatarId, left(), plan.placeId).then((arrived) => {
+      logger?.info('Stations: trip arrived', { ...info, arrived, waitedMs: Date.now() - startedAt });
       if (arrived && plan.toStation) {
         atObject = this.options.send(avatarId, this.event(avatarId, plan.station, useId, 'start', undefined, source));
       }
@@ -249,6 +295,7 @@ export class StationTrips {
       }
       const home = await places.waitForArrival(avatarId, left(), origin);
       if (!home) logger?.warn('Station: the avatar was not back in time', { avatarId, origin });
+      logger?.info('Stations: trip end', { ...info, ok, backHome: home, totalMs: Date.now() - startedAt });
     };
     return {
       arrived: async () => {
@@ -259,6 +306,8 @@ export class StationTrips {
       },
       settle: async (ok, signal) => {
         // A cancelled turn stops waiting at once; the avatar still goes home, in the background.
+        // `held`: the answer waits for the way back.
+        logger?.info('Stations: trip held', { ...info, errandCapMs: this.errandCapMs });
         const home = comeBack(ok).catch((error: unknown) => {
           logger?.warn('Station: the way back failed', { avatarId, message: error instanceof Error ? error.message : String(error) });
         });

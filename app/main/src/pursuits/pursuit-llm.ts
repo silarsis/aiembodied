@@ -112,6 +112,8 @@ export interface PursuitLlmOptions {
   execute: (toolId: string, params: unknown) => Promise<ToolExecutionResult>;
   /** Counts one tool call against the session's limit; false when the limit is used up. */
   allowToolCall: () => boolean;
+  /** Told about every tool call once it has run (for the log): the name, the arguments, how long it took and how it went. */
+  onToolCall?: (call: { name: string; arguments: string; durationMs: number; ok: boolean; resultLength: number; error?: string }) => void;
 }
 
 export class PursuitLlm {
@@ -125,19 +127,20 @@ export class PursuitLlm {
 
   /**
    * The character looks something up: it may call the tools for up to `rounds` model calls (the last offers no
-   * tools). Returns what it said at the end and every tool result.
+   * tools). Returns what it said at the end and every tool result. `results` may be given to see the tool results
+   * even when the call throws half way (a timeout): each result is pushed to it as it comes.
    */
   async useTools(
     user: string,
     tools: RegisteredTool[],
     rounds: number,
     signal: AbortSignal,
+    results: ToolRound[] = [],
   ): Promise<{ text: string; results: ToolRound[] }> {
     const messages: ChatMessage[] = [
       { role: 'system', content: this.options.system() },
       { role: 'user', content: user },
     ];
-    const results: ToolRound[] = [];
     let text = '';
     for (let round = 1; round <= rounds; round += 1) {
       const offered = round < rounds ? tools : [];
@@ -169,12 +172,23 @@ export class PursuitLlm {
     } catch {
       return { text: JSON.stringify({ error: 'The tool arguments were not valid JSON.' }), ok: false };
     }
+    const startedAt = Date.now();
+    let outcome: { text: string; ok: boolean; error?: string };
     try {
       const result = await this.options.execute(tool.id, params);
-      return result.success ? { text: resultText(result.data), ok: true } : { text: JSON.stringify({ error: result.error ?? 'The tool failed.' }), ok: false };
+      outcome = result.success
+        ? { text: resultText(result.data), ok: true }
+        : { text: JSON.stringify({ error: result.error ?? 'The tool failed.' }), ok: false, error: result.error ?? 'The tool failed.' };
     } catch (error) {
-      return { text: JSON.stringify({ error: error instanceof Error ? error.message : String(error) }), ok: false };
+      const message = error instanceof Error ? error.message : String(error);
+      outcome = { text: JSON.stringify({ error: message }), ok: false, error: message };
     }
+    try {
+      this.options.onToolCall?.({ name, arguments: rawArguments, durationMs: Date.now() - startedAt, ok: outcome.ok, resultLength: outcome.text.length, ...(outcome.error ? { error: outcome.error } : {}) });
+    } catch {
+      /* A logging listener must not break the call. */
+    }
+    return outcome;
   }
 
   /** One streamed model call under the gate. */

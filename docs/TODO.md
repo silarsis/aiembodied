@@ -128,6 +128,17 @@ more depth and are linked where they apply.
   An avatar in another room goes to a place that shows the station's room, or
   next door as an errand, and comes back before it answers. See
   [features/stations.md](./features/stations.md).
+- **Done (2026-11-22):** a reading station is offered to the conversation as ONE
+  tool (`go_to_bookshelf`, argument `question`) instead of its 12 library tools,
+  because a 4B local model offered 20+ tools never called any. Running it walks
+  to the shelf and runs a short tool loop with only the library's tools.
+  `STATION_SINGLE_TOOL=0` brings the individual tools back.
+- **To do:** check on Kevin's PC that Gemma 4 E4B now calls `go_to_bookshelf`
+  (the log line `Local voice: tools offered` and `Local voice: tool call` show
+  it); if it still does not, route "papers/research" questions to the lookup
+  before the model (a Quick decision), or let the lookup use the stronger
+  model. Single tools for other multi-tool servers (web search plus fetch) and
+  a per-station choice in the 3D rooms tab are not done.
 - **To do:** more built-in stations (a desk for coding tools, a window for
   weather), a visible "reading" prop in the avatar's hands, avatar-side
   gestures that match the verb, and letting rooms made by the room builder
