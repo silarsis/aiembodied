@@ -293,6 +293,33 @@ lean = normals[hidden, 1]
 weights[hidden, 0] = np.where(available["back"], np.clip(-lean, 0, None) + 0.05, 1.0)
 if available["back"]:
     weights[hidden, 2] = np.clip(lean, 0, None) + 0.05
+# The drawings never quite agree (separate pictures, each with its own eye, nose, pocket or
+# logo), so cross-fading two of them shows both, offset: a second nose on the cheek. Paint each
+# region from one drawing instead. On the head the front drawing owns everything in front of the
+# ears, even the cheeks it sees at a slant, and the side drawing only the ears, sides and back of
+# the head; the change happens across a short band at the ears, where hair usually hides it.
+# Elsewhere the view a point faces most wins, with only a narrow blend at the seams.
+crown = points[:, 2] > lo[2] + 0.88 * height
+head_x = float(np.median(points[crown, 0]))
+head_half = float(np.percentile(np.abs(points[crown, 0] - head_x), 97))
+head = (points[:, 2] > lo[2] + 0.8 * height) & (np.abs(points[:, 0] - head_x) < 1.15 * head_half)
+ears = float((points[crown, 1].min() + points[crown, 1].max()) / 2)
+depth = float(np.ptp(points[crown, 1]))
+# 1 in front of the ears, 0 behind them, over a band a tenth of the head's depth. Where the front
+# drawing sees the surface nearly edge-on (a muzzle's sides, the jaw's silhouette), its outline
+# would be stretched across it, so the views share it as before.
+forward = np.clip((ears + 0.05 * depth - points[:, 1]) / (0.1 * depth), 0, 1)
+slant = np.clip((-normals[:, 1] - 0.2) / 0.25, 0, 1)
+forward *= slant * slant * (3 - 2 * slant)
+seen_front = weights[:, 0] > 0
+own = head & seen_front & (forward > 0)
+weights[own, 0] = weights[own, 0] * (1 - forward[own]) + forward[own]
+weights[own, 1] *= 1 - forward[own]
+weights[own, 3] *= 1 - forward[own]
+behind = head & (forward < 1)
+weights[behind, 0] *= forward[behind]
+weights = weights ** 4
+weights[weights.sum(axis=1) < 1e-12] = facing[weights.sum(axis=1) < 1e-12] + 1e-6
 weights /= weights.sum(axis=1, keepdims=True)
 painted = {
     "front": float((weights[:, 0] > 0.5).mean()),
