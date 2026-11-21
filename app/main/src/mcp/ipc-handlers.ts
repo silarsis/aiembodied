@@ -12,7 +12,7 @@ export function registerMCPHandlers(mcpManager: MCPManager, toolRegistry: ToolRe
   // Server management handlers
   // Everything that goes to the renderer passes through toServerSummary: no tokens or env values leave the main process.
   ipcMain.handle('mcp:list-servers', async () => {
-    return mcpManager.listServers().map(toServerSummary);
+    return (await mcpManager.listServers()).map(toServerSummary);
   });
 
   ipcMain.handle('mcp:add-server', async (_, config: MCPServerConfigInput) => {

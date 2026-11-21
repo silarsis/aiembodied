@@ -41,8 +41,8 @@ vi.mock('../../src/mcp/clients/stdio-client.js', () => ({
 }));
 
 vi.mock('../../src/mcp/encryption.js', () => ({
-  encryptToken: vi.fn((token: string) => `encrypted:${token}`),
-  decryptToken: vi.fn((encrypted: string) => encrypted.replace('encrypted:', '')),
+  encryptToken: vi.fn(async (token: string) => `encrypted:${token}`),
+  decryptToken: vi.fn(async (encrypted: string) => encrypted.replace('encrypted:', '')),
 }));
 
 describe('MCPManager', () => {
@@ -255,7 +255,7 @@ describe('MCPManager', () => {
 
       await manager.deleteServer(server.id);
 
-      const servers = manager.listServers();
+      const servers = (await manager.listServers());
       expect(servers.find((s) => s.id === server.id)).toBeUndefined();
     });
 
@@ -299,7 +299,7 @@ describe('MCPManager', () => {
       expect(result.success).toBe(true);
       expect(result.toolsDiscovered).toBe(1);
 
-      const updated = manager.listServers().find((s) => s.id === server.id);
+      const updated = (await manager.listServers()).find((s) => s.id === server.id);
       expect(updated?.connectionStatus).toBe('connected');
       expect(updated?.toolsDiscovered).toBe(1);
     });
@@ -383,7 +383,7 @@ describe('MCPManager', () => {
       expect(result.success).toBe(false);
       expect(result.error).toBe('Connection failed');
 
-      const updated = manager.listServers().find((s) => s.id === server.id);
+      const updated = (await manager.listServers()).find((s) => s.id === server.id);
       expect(updated?.connectionStatus).toBe('error');
       expect(updated?.lastError).toBe('Connection failed');
     });
@@ -404,7 +404,7 @@ describe('MCPManager', () => {
 
       await manager.disconnectServer(server.id);
 
-      const updated = manager.listServers().find((s) => s.id === server.id);
+      const updated = (await manager.listServers()).find((s) => s.id === server.id);
       expect(updated?.connectionStatus).toBe('disconnected');
       expect(toolRegistry.list().length).toBe(0);
     });
@@ -428,12 +428,12 @@ describe('MCPManager', () => {
         autoStart: false,
       });
 
-      const servers = manager.listServers();
+      const servers = (await manager.listServers());
       expect(servers.length).toBe(2);
     });
 
-    it('returns empty array when no servers', () => {
-      const servers = manager.listServers();
+    it('returns empty array when no servers', async () => {
+      const servers = (await manager.listServers());
       expect(servers).toEqual([]);
     });
   });
@@ -593,7 +593,7 @@ describe('MCPManager', () => {
       const newManager = new MCPManager(db, new ToolRegistry());
       await newManager.initialize();
 
-      const servers = newManager.listServers();
+      const servers = (await newManager.listServers());
       const autoStart = servers.find((s) => s.name === 'Auto Start Server');
       const manual = servers.find((s) => s.name === 'Manual Server');
 
@@ -618,7 +618,7 @@ describe('MCPManager', () => {
       expect(result.toolsDiscovered).toBe(1);
 
       // Verify server is still disconnected
-      const updated = manager.listServers().find((s) => s.id === server.id);
+      const updated = (await manager.listServers()).find((s) => s.id === server.id);
       expect(updated?.connectionStatus).toBe('disconnected');
     });
   });
