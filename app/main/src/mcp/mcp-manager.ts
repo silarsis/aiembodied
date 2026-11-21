@@ -449,12 +449,13 @@ export class MCPManager extends EventEmitter {
    * The addresses of all servers, read synchronously. None of these columns is encrypted, so nothing is
    * decrypted; for callers (the station registry) that need a sync answer. Same values listServers() gives.
    */
-  listServerAddresses(): Array<{ id: string; httpUrl?: string; sseUrl?: string; homeAssistant: boolean }> {
+  listServerAddresses(): Array<{ id: string; name: string; httpUrl?: string; sseUrl?: string; homeAssistant: boolean }> {
     const rows = this.db
-      .prepare('SELECT id, transport_type, sse_url, http_url, token_from_model_server FROM mcp_servers ORDER BY name')
-      .all() as Array<{ id: string; transport_type: string; sse_url: string | null; http_url: string | null; token_from_model_server: string | null }>;
+      .prepare('SELECT id, name, transport_type, sse_url, http_url, token_from_model_server FROM mcp_servers ORDER BY name')
+      .all() as Array<{ id: string; name: string; transport_type: string; sse_url: string | null; http_url: string | null; token_from_model_server: string | null }>;
     return rows.map((row) => ({
       id: row.id,
+      name: row.name,
       httpUrl: row.transport_type === 'http' ? row.http_url || undefined : undefined,
       sseUrl: row.transport_type === 'sse' ? row.sse_url || undefined : undefined,
       homeAssistant: row.transport_type === 'http' && Boolean(row.token_from_model_server),

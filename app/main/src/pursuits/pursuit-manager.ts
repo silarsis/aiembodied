@@ -12,7 +12,7 @@ import type { Station } from '../stations/types.js';
 import type { StationVisit } from '../stations/station-trips.js';
 import type { RegisteredTool, ToolExecutionResult } from '../tools/tool-registry.js';
 import { SESSION_TIMEOUT_MS, runPursuit, type PursuitResult } from './pursuit.js';
-import { LlmGate, PursuitLlm } from './pursuit-llm.js';
+import { LlmGate, PursuitLlm, clip } from './pursuit-llm.js';
 import { MAX_TOOL_CALLS, ReadingPursuit, readingActivity, readingGuidance, type ReadingMemory } from './reading-pursuit.js';
 import type { PursuitOffer, ReadingNote, ReadingNoteStore } from './types.js';
 
@@ -155,6 +155,8 @@ export class PursuitManager {
         system: () => [this.options.persona(avatarId).trim(), readingGuidance(name, objectName)].filter(Boolean).join('\n\n'),
         execute: (toolId, params) => this.options.tools.execute(toolId, params),
         allowToolCall: () => (toolCalls < maxCalls ? ((toolCalls += 1), true) : false),
+        // Tool calls are logged with the arguments cut short (never a token: tool arguments are what the model chose).
+        onToolCall: (call) => logger?.info('Reading: tool call', { avatarId, stationId: station.id, tool: call.name, args: clip(call.arguments, 300), durationMs: call.durationMs, ok: call.ok, resultLength: call.resultLength, ...(call.error ? { error: clip(call.error, 200) } : {}) }),
       });
       const reading = new ReadingPursuit({
         avatarId,
@@ -174,6 +176,7 @@ export class PursuitManager {
       result = await runPursuit(reading, {
         signal,
         onStep: (step) => {
+          logger?.info('Reading: step', { avatarId, stationId: station.id, step });
           // The model calls run while the avatar walks over; the walk does not hold them up.
           visit?.activity(readingActivity(step, objectName), step);
         },
