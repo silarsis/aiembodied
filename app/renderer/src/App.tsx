@@ -3699,7 +3699,7 @@ export default function App() {
             />
           </PanelDialog>
 
-          <PanelDialog id="furniture" title="Furniture" subtitle="Browse the furniture library or generate new pieces." open={panel === 'furniture'} onClose={closePanel}>
+          <PanelDialog id="furniture" title="Furniture" subtitle="Describe a piece of furniture and see it in 3D at real size." open={panel === 'furniture'} onClose={closePanel}>
             <FurnitureControls bridge={activeBridge?.furniture} />
           </PanelDialog>
 

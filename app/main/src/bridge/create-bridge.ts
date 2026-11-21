@@ -6,12 +6,7 @@
  * one list means a new channel cannot be wired for one and forgotten for the other.
  */
 import type { BackgroundBridge } from '../backgrounds/types.js';
-import type {
-  FurnitureBridge,
-  FurnitureSummary,
-  FurnitureItem,
-} from '../furniture/types.js';
-import type { RoomObject } from '../rooms/types.js';
+import type { FurnitureBridge, FurnitureItem } from '../furniture/types.js';
 import type { ConfigSecretKey, ModelRoutingView, RendererConfig } from '../config/config-manager.js';
 import type { ModelRoute, ServerType, UseId } from '../config/model-routing.js';
 import type { ServerProbe } from '../config/model-server-probe.js';
@@ -590,13 +585,21 @@ export function createBridge(
       },
     },
     furniture: {
-      list: () => transport.invoke('furniture:list') as Promise<FurnitureSummary[]>,
-      load: (id: string) => transport.invoke('furniture:load', id) as Promise<FurnitureItem>,
-      generate: (prompt: string) => transport.invoke('furniture:generate', prompt) as Promise<FurnitureItem>,
-      addToRoom: (id: string, position: [number, number, number], rotationY: number) =>
-        transport.invoke('furniture:add-to-room', { id, position, rotationY }) as Promise<RoomObject>,
-      delete: (id: string) => transport.invoke('furniture:delete', id) as Promise<void>,
-      listCategories: () => transport.invoke('furniture:list-categories') as Promise<Record<string, number>>,
+      list: () => transport.invoke('furniture:list') as Promise<FurnitureItem[]>,
+      load: (id) => transport.invoke('furniture:load', id) as Promise<FurnitureItem>,
+      generate: (prompt) => transport.invoke('furniture:generate', prompt) as Promise<FurnitureItem>,
+      edit: (id, prompt) => transport.invoke('furniture:edit', id, prompt) as Promise<FurnitureItem>,
+      delete: (id) => transport.invoke('furniture:delete', id) as Promise<void>,
+      model: async (id) =>
+        cloneBinary(await transport.invoke('furniture:model', id), {
+          id,
+          errorMessage: 'Unexpected furniture model payload received from main process.',
+        }),
+      onChanged: (listener) => {
+        const channel = 'furniture:changed';
+        const handler = (item: FurnitureItem) => listener(item);
+        return transport.on(channel, handler);
+      },
     },
     avatar: {
       listModels: () => transport.invoke('avatar-model:list') as Promise<AvatarModelSummary[]>,

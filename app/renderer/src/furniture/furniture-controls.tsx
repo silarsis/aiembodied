@@ -1,179 +1,172 @@
-import { useState, useEffect } from 'react';
-import type { FurnitureBridge, FurnitureSummary } from '../preload-api.js';
+import { useEffect, useState } from 'react';
+import type { FurnitureBridge, FurnitureItem } from '../preload-api.js';
+import { FurnitureViewer } from './furniture-viewer.js';
+import { useFurniture, type FurnitureController } from './use-furniture.js';
 
-export interface FurnitureController {
-  bridge: FurnitureBridge | undefined;
-  available: boolean;
-  loading: boolean;
-  items: FurnitureSummary[];
-  categories: Record<string, number>;
-  refresh: () => Promise<void>;
+const MAX_PROMPT = 1000;
+
+/** "0.85 × 0.85 × 0.95 m", as width × depth × height. */
+export function formatSize([width, height, depth]: FurnitureItem['dimensions']): string {
+  return `${width.toFixed(2)} × ${depth.toFixed(2)} × ${height.toFixed(2)} m`;
 }
 
-export function useFurniture(bridge: FurnitureBridge | undefined): FurnitureController {
-  const [items, setItems] = useState<FurnitureSummary[]>([]);
-  const [categories, setCategories] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(false);
-
-  const available = !!bridge;
-
-  const load = async () => {
-    if (!bridge) return;
-    setLoading(true);
-    try {
-      const [itemsData, categoriesData] = await Promise.all([
-        bridge.list(),
-        bridge.listCategories(),
-      ]);
-      setItems(itemsData);
-      setCategories(categoriesData);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const refresh = async () => await load();
-
-  // Load on mount
-  useEffect(() => {
-    if (available) {
-      load();
-    }
-  }, [available, bridge]);
-
-  return {
-    bridge,
-    available,
-    loading,
-    items,
-    categories,
-    refresh,
-  };
-}
-
-export function FurnitureBrowser({ controller }: { controller: FurnitureController }) {
-  const { items, categories, refresh } = controller;
-
-  if (controller.loading) {
-    return <p role="status">Loading furniture library…</p>;
-  }
-
+function FurnitureGenerator({ controller, onCreated }: { controller: FurnitureController; onCreated: (item: FurnitureItem) => void }) {
+  const [prompt, setPrompt] = useState('');
   return (
-    <div className="furnitureBrowser">
-      <div className="furnitureBrowser__header">
-        <h2>Furniture</h2>
-        <button type="button" onClick={refresh} disabled={controller.loading}>
-          Refresh
-        </button>
-      </div>
-
-      <div className="furnitureBrowser__categories" role="tablist">
-        {(Object.entries(categories).sort(([a], [b]) => a.localeCompare(b)) as [string, number][]).map(
-          ([category, count]) => (
-            <button
-              key={category}
-              type="button"
-              className="furnitureBrowser__category"
-              role="tab"
-              aria-selected="false"
-            >
-              {category} ({count})
-            </button>
-          ),
-        )}
-      </div>
-
-      <div className="furnitureBrowser__grid" aria-label="Furniture library">
-        {items.map((item) => (
-          <div key={item.id} className="furnitureBrowser__card">
-            <button
-              type="button"
-              className="furnitureBrowser__image"
-              aria-label={`Select ${item.name}`}
-            >
-              <img src={item.thumbnailDataUrl} alt={item.name} />
-            </button>
-            <div className="furnitureBrowser__info">
-              <h3>{item.name}</h3>
-              <p>{item.category}</p>
-              {item.description && <p>{item.description}</p>}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {items.length === 0 && !controller.loading && (
-        <p className="furnitureBrowser__empty">No furniture in the library yet.</p>
-      )}
-    </div>
+    <form
+      className="faces__form"
+      aria-label="Generate furniture"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void controller.generate(prompt.trim()).then((item) => {
+          if (!item) return;
+          setPrompt('');
+          onCreated(item);
+        });
+      }}
+    >
+      <label className="faces__field">
+        <span>Furniture description</span>
+        <textarea
+          rows={3}
+          maxLength={MAX_PROMPT}
+          value={prompt}
+          placeholder="A worn brown leather armchair with wooden legs…"
+          onChange={(event) => setPrompt(event.target.value)}
+        />
+      </label>
+      <button type="submit" className="faces__submit" disabled={!prompt.trim()}>
+        Generate furniture
+      </button>
+    </form>
   );
 }
 
-export function FurnitureGenerator({ controller }: { controller: FurnitureController }) {
-  const [prompt, setPrompt] = useState('');
-  const [generating, setGenerating] = useState(false);
+/** The 3D view of the selected piece, with edit (the prompt, run again) and delete. */
+function FurnitureDetail({ item, controller, onDeleted }: { item: FurnitureItem; controller: FurnitureController; onDeleted: () => void }) {
+  const [draft, setDraft] = useState(item.prompt);
+  const [confirming, setConfirming] = useState(false);
+  const [loaded, setLoaded] = useState<{ id: string; at: string; data: ArrayBuffer | null; error: string | null } | null>(null);
+  const model = loaded?.id === item.id ? loaded : null;
+  const busy = item.status === 'generating';
 
-  const handleGenerate = async () => {
-    if (!controller.bridge || !prompt) return;
-    setGenerating(true);
-    try {
-      const item = await controller.bridge.generate(prompt);
-      await controller.refresh();
-      return item;
-    } finally {
-      setGenerating(false);
-    }
-  };
+  // The model changes when a run finishes (updatedAt moves); the old one stays in view while a run works.
+  useEffect(() => {
+    if (!item.hasModel || busy) return;
+    let cancelled = false;
+    controller
+      .model(item.id)
+      .then((data) => {
+        if (!cancelled) setLoaded({ id: item.id, at: item.updatedAt, data, error: null });
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) setLoaded({ id: item.id, at: item.updatedAt, data: null, error: reason instanceof Error ? reason.message : 'Could not load the model.' });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the controller is rebuilt on every render; the model is a function of the piece
+  }, [item.id, item.updatedAt, item.hasModel, busy]);
 
   return (
-    <div className="furnitureGenerator">
-      <h2>Generate Furniture</h2>
-      <p className="furnitureGenerator__hint">
-        Describe the furniture you want (e.g., “a leather armchair, dark brown, modern style”)
-      </p>
-      <textarea
-        className="furnitureGenerator__prompt"
-        value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
-        placeholder="Describe the furniture..."
-        disabled={generating}
-      />
-      <button
-        type="button"
-        className="furnitureGenerator__button"
-        onClick={handleGenerate}
-        disabled={generating || !prompt}
+    <section className="furnitureDetail" aria-label={`${item.name} in 3D`}>
+      <h3>{item.name}</h3>
+      {item.hasModel && model?.data ? (
+        <FurnitureViewer key={`${item.id}-${model.at}`} modelData={model.data} label={`${item.name} in 3D`} />
+      ) : (
+        <p className="kiosk__helper" role="status">
+          {busy ? (item.message ?? 'Working…') : (model?.error ?? 'There is no 3D model for this piece yet.')}
+        </p>
+      )}
+      {item.hasModel ? <p className="kiosk__helper">Size: {formatSize(item.dimensions)} (width × depth × height)</p> : null}
+      {busy && item.hasModel ? <p role="status">{item.message ?? 'Working…'}</p> : null}
+      {item.error ? (
+        <p role="alert" className="kiosk__error">
+          {item.error}
+        </p>
+      ) : null}
+      <form
+        className="faces__form"
+        aria-label="Edit furniture"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void controller.edit(item.id, draft.trim());
+        }}
       >
-        {generating ? 'Generating…' : 'Generate'}
-      </button>
-    </div>
+        <label className="faces__field">
+          <span>Description</span>
+          <textarea rows={3} maxLength={MAX_PROMPT} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={busy} />
+        </label>
+        <button type="submit" className="faces__submit" disabled={busy || !draft.trim()}>
+          {busy ? 'Working…' : 'Regenerate'}
+        </button>
+      </form>
+      {confirming ? (
+        <p className="furnitureDetail__confirm" role="group" aria-label={`Delete ${item.name}?`}>
+          <span>Delete {item.name}?</span>
+          <button
+            type="button"
+            className="backgroundCard__delete"
+            onClick={() => {
+              void controller.remove(item.id).then(onDeleted);
+            }}
+          >
+            Yes
+          </button>
+          <button type="button" onClick={() => setConfirming(false)}>
+            No
+          </button>
+        </p>
+      ) : (
+        <button type="button" className="backgroundCard__delete" onClick={() => setConfirming(true)}>
+          Delete
+        </button>
+      )}
+    </section>
   );
 }
 
 export function FurnitureControls({ bridge }: { bridge: FurnitureBridge | undefined }) {
   const controller = useFurniture(bridge);
-
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  if (!controller.available) return <p className="kiosk__helper">Furniture is available in the desktop app.</p>;
+  const selected = controller.items.find((item) => item.id === selectedId) ?? null;
   return (
     <div className="furnitureControls">
-      <div className="furnitureControls__tabs" role="group" aria-label="Furniture options">
-        <button
-          type="button"
-          className="furnitureControls__tab"
-          aria-pressed={true}
-        >
-          Library
-        </button>
-        <button
-          type="button"
-          className="furnitureControls__tab"
-          aria-pressed={false}
-        >
-          Generate
-        </button>
+      <FurnitureGenerator controller={controller} onCreated={(item) => setSelectedId(item.id)} />
+      <p className="kiosk__helper">
+        Describe one piece. It is drawn, turned into a 3D model and scaled to the size such a piece really is. This takes
+        minutes, one piece at a time; you can keep using the app.
+      </p>
+      {controller.error ? (
+        <p role="alert" className="kiosk__error">
+          {controller.error}
+        </p>
+      ) : null}
+      {controller.loading ? <p role="status">Loading furniture…</p> : null}
+      <div className="backgroundControls__grid" aria-label="Furniture pieces">
+        {controller.items.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className="backgroundCard"
+            aria-pressed={item.id === selectedId}
+            onClick={() => setSelectedId(item.id)}
+          >
+            {item.thumbnailDataUrl ? <img src={item.thumbnailDataUrl} alt="" /> : <span className="backgroundCard__plain" />}
+            <span>{item.name}</span>
+            <span className="kiosk__helper">
+              {item.status === 'generating'
+                ? (item.message ?? 'Working…')
+                : item.status === 'failed'
+                  ? `Failed: ${item.error ?? 'unknown error'}`
+                  : formatSize(item.dimensions)}
+            </span>
+          </button>
+        ))}
       </div>
-
-      <FurnitureBrowser controller={controller} />
-      <FurnitureGenerator controller={controller} />
+      {controller.items.length === 0 && !controller.loading ? <p className="kiosk__helper">No furniture yet.</p> : null}
+      {selected ? <FurnitureDetail key={selected.id} item={selected} controller={controller} onDeleted={() => setSelectedId(null)} /> : null}
     </div>
   );
 }

@@ -2099,8 +2099,9 @@ function registerIpcHandlers(
   handleIpc('furniture:list', () => requireFurniture().list());
   handleIpc('furniture:load', (_event, id: string) => requireFurniture().load(id));
   handleIpc('furniture:generate', (_event, prompt: string) => requireFurniture().generate(prompt));
+  handleIpc('furniture:edit', (_event, id: string, prompt: string) => requireFurniture().edit(id, prompt));
   handleIpc('furniture:delete', (_event, id: string) => requireFurniture().delete(id));
-  handleIpc('furniture:list-categories', () => requireFurniture().listCategories());
+  handleIpc('furniture:model', (_event, id: string) => requireFurniture().model(id));
   handleIpc('background:get-active', () => requireBackgrounds().getActive());
   handleIpc('background:set-active', (_event, id: string | null) => requireBackgrounds().setActive(id));
   handleIpc('background:load', (_event, id: string) => requireBackgrounds().load(id));
@@ -3622,15 +3623,32 @@ app.whenReady().then(async () => {
     });
     furnitureService = new FurnitureService({
       store: memoryStore,
-      furnitureDirectory: path.join(app.getPath('userData'), 'furniture'),
-      thumbnailDirectory: path.join(app.getPath('userData'), 'furniture', 'thumbnails'),
-      comfy: {
-        isAvailable: async (): Promise<boolean> => (backgroundComfy ?? fallbackComfy)?.isAvailable() ?? false,
-        run: (graph: unknown, options?: { signal?: AbortSignal }) => (backgroundComfy ?? fallbackComfy).run(graph as ComfyGraph, options),
+      directory: path.join(app.getPath('userData'), 'furniture'),
+      pickComfy: (stage) => comfyPool.pick(stage),
+      imageModel: () => {
+        if (!avatarImageModels) throw new Error('Image models are unavailable.');
+        return avatarImageModels.resolve();
       },
-      ensureComfyReady: async () => {
-        backgroundComfy = await comfyPool.pick('image');
+      geometryModel: () => {
+        if (!avatarCharacterModels) throw new Error('3D models are unavailable.');
+        return pickSingleImageGeometry(avatarCharacterModels);
       },
+      paint: (input) => characterRunner.paintViews(input),
+      // Sizes and names the piece with the 'describe' helper; the keyword table answers when there is none.
+      askHelper: async (system, user) => {
+        const target = helperTarget(manager, 'describe');
+        if (!target) return null;
+        const response = await (target.client as unknown as { responses: { create: (args: unknown) => Promise<{ output_text: string }> } }).responses.create({
+          model: target.model ?? 'gpt-4.1-mini',
+          instructions: system,
+          input: user,
+          max_output_tokens: 300,
+          temperature: 0.2,
+        });
+        return response?.output_text ?? null;
+      },
+      onChanged: (item) => broadcastToWindows('furniture:changed', item),
+      logger,
     });
     furnitureService.initialize().catch((error: unknown) => {
       logger.warn('Furniture service initialization failed.', { message: error instanceof Error ? error.message : String(error) });
