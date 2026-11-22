@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createFakeMicNode, fakeAudioWorklet, micNodeOf } from './fake-mic.js';
 import { LocalVoiceClient } from '../../src/realtime/local-voice-client.js';
 import type { LocalVoiceBridge } from '../../src/preload-api.js';
 import type { LocalVoiceEvent } from '../../../main/src/local-voice/types.js';
 
 function createFakeContext() {
-  const processor = { onaudioprocess: null as null | ((event: { inputBuffer: { getChannelData: () => Float32Array } }) => void), connect: vi.fn(), disconnect: vi.fn() };
+  const processor = createFakeMicNode();
   const node = () => ({ connect: vi.fn(), disconnect: vi.fn(), gain: { value: 1 } });
   const context = {
     sampleRate: 16000,
@@ -13,7 +14,8 @@ function createFakeContext() {
     resume: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
     createMediaStreamSource: vi.fn(node),
-    createScriptProcessor: vi.fn(() => processor),
+    audioWorklet: fakeAudioWorklet(),
+    micNode: processor,
     createGain: vi.fn(node),
     createMediaStreamDestination: vi.fn(() => ({ ...node(), stream: {} as MediaStream })),
     decodeAudioData: vi.fn(async () => ({ duration: 0.01 })),
@@ -59,7 +61,7 @@ describe('system turns (updates from the coding agent)', () => {
     const onUserTranscript = vi.fn();
     const onSystemNote = vi.fn();
     const onAssistantTranscript = vi.fn();
-    const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => context, now: () => 10_000, callbacks: { onUserTranscript, onSystemNote, onAssistantTranscript } });
+    const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => context, createMicCaptureNode: micNodeOf, now: () => 10_000, callbacks: { onUserTranscript, onSystemNote, onAssistantTranscript } });
     await client.connect({ inputStream: {} as MediaStream });
 
     fire();
@@ -75,7 +77,7 @@ describe('system turns (updates from the coding agent)', () => {
   it('picks up updates that were queued before the conversation started', async () => {
     const { context } = createFakeContext();
     const { bridge } = createBridge('[Update from the coding agent, not from Kevin] Done.', true);
-    const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => context, now: () => 10_000 });
+    const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => context, createMicCaptureNode: micNodeOf, now: () => 10_000 });
     await client.connect({ inputStream: {} as MediaStream });
     await vi.advanceTimersByTimeAsync(1500);
     expect(bridge.respond).toHaveBeenCalledWith(expect.objectContaining({ system: true }));
@@ -84,9 +86,9 @@ describe('system turns (updates from the coding agent)', () => {
   it('waits while the user is speaking', async () => {
     const { context, processor } = createFakeContext();
     const { bridge, fire } = createBridge('[Update from the coding agent, not from Kevin] Done.');
-    const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => context, now: () => 10_000 });
+    const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => context, createMicCaptureNode: micNodeOf, now: () => 10_000 });
     await client.connect({ inputStream: {} as MediaStream });
-    processor.onaudioprocess?.({ inputBuffer: { getChannelData: () => new Float32Array(2048).fill(0.2) } });
+    processor.port.onmessage?.({ data: new Float32Array(2048).fill(0.2) });
 
     fire();
     await vi.advanceTimersByTimeAsync(500);
@@ -97,7 +99,7 @@ describe('system turns (updates from the coding agent)', () => {
     const { context } = createFakeContext();
     const { bridge, fire } = createBridge(undefined);
     const onSystemNote = vi.fn();
-    const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => context, now: () => 10_000, callbacks: { onSystemNote } });
+    const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => context, createMicCaptureNode: micNodeOf, now: () => 10_000, callbacks: { onSystemNote } });
     await client.connect({ inputStream: {} as MediaStream });
     fire();
     await vi.advanceTimersByTimeAsync(500);
@@ -120,7 +122,7 @@ describe('system turns (updates from the coding agent)', () => {
       const onAssistantTranscript = vi.fn();
       const client = new LocalVoiceClient({
         getBridge: () => bridge,
-        createAudioContext: () => context,
+        createAudioContext: () => context, createMicCaptureNode: micNodeOf,
         now: () => 10_000,
         callbacks: { onRemoteStream, onAnnouncement, onSystemNote, onAssistantTranscript },
       });
@@ -135,8 +137,8 @@ describe('system turns (updates from the coding agent)', () => {
       expect(onAssistantTranscript).not.toHaveBeenCalled();
       expect(getUserMedia).not.toHaveBeenCalled();
       expect(context.createMediaStreamSource).not.toHaveBeenCalled();
-      expect(context.createScriptProcessor).not.toHaveBeenCalled();
-      expect(processor.onaudioprocess).toBeNull();
+      expect(context.audioWorklet.addModule).not.toHaveBeenCalled();
+      expect(processor.port.onmessage).toBeNull();
       expect(context.close).toHaveBeenCalledTimes(1);
       expect(client.getActivity().phase).toBe('off');
       expect(client.getState().status).toBe('idle');
@@ -147,7 +149,7 @@ describe('system turns (updates from the coding agent)', () => {
     it('ignores non-urgent updates and a missing flag while idle', async () => {
       const { context } = createFakeContext();
       const { bridge, fire } = createBridge(NOTE);
-      const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => context, now: () => 10_000 });
+      const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => context, createMicCaptureNode: micNodeOf, now: () => 10_000 });
       client.watchUpdates();
       fire({ urgent: false });
       fire();
@@ -159,7 +161,7 @@ describe('system turns (updates from the coding agent)', () => {
       const { context } = createFakeContext();
       const { bridge } = createBridge(NOTE, true, true);
       const onAnnouncement = vi.fn();
-      const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => context, now: () => 10_000, callbacks: { onAnnouncement } });
+      const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => context, createMicCaptureNode: micNodeOf, now: () => 10_000, callbacks: { onAnnouncement } });
       client.watchUpdates();
       await vi.advanceTimersByTimeAsync(1500);
       expect(onAnnouncement).toHaveBeenCalledTimes(1);
@@ -168,7 +170,7 @@ describe('system turns (updates from the coding agent)', () => {
     it('does not announce non-urgent updates queued before load, and stops after unwatch', async () => {
       const { context } = createFakeContext();
       const { bridge, fire } = createBridge(NOTE, true, false);
-      const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => context, now: () => 10_000 });
+      const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => context, createMicCaptureNode: micNodeOf, now: () => 10_000 });
       client.watchUpdates();
       await vi.advanceTimersByTimeAsync(500);
       expect(bridge.respond).not.toHaveBeenCalled();
@@ -183,7 +185,7 @@ describe('system turns (updates from the coding agent)', () => {
       const { bridge, fire } = createBridge(NOTE);
       const onSystemNote = vi.fn();
       const onAnnouncement = vi.fn();
-      const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => context, now: () => 10_000, callbacks: { onSystemNote, onAnnouncement } });
+      const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => context, createMicCaptureNode: micNodeOf, now: () => 10_000, callbacks: { onSystemNote, onAnnouncement } });
       client.watchUpdates();
       await client.connect({ inputStream: {} as MediaStream });
       fire({ urgent: false });
@@ -206,7 +208,7 @@ describe('system turns (updates from the coding agent)', () => {
           }),
       );
       const onAnnouncement = vi.fn();
-      const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => contexts.shift() as AudioContext, now: () => 10_000, callbacks: { onAnnouncement } });
+      const client = new LocalVoiceClient({ getBridge: () => bridge, createAudioContext: () => contexts.shift() as AudioContext, createMicCaptureNode: micNodeOf, now: () => 10_000, callbacks: { onAnnouncement } });
       client.watchUpdates();
       fire({ urgent: true });
       await vi.advanceTimersByTimeAsync(10);

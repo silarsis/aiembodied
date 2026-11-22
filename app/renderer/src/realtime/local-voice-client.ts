@@ -13,6 +13,8 @@ import type { LocalVoiceBridge } from '../preload-api.js';
 import type { LocalVoiceEvent, LocalVoiceStatus } from '../../../main/src/local-voice/types.js';
 import type { RealtimeClientCallbacks, RealtimeClientOptions, RealtimeClientState } from './realtime-client.js';
 import type { VoiceActivity, VoicePhase } from './voice-activity.js';
+// &no-inline keeps Vite from turning the tiny worklet into a data: URL; addModule needs a real file.
+import micCaptureWorkletUrl from './mic-capture.worklet.js?url&no-inline';
 
 /** The avatar that answers when an event or result names none. */
 export const DEFAULT_SPEAKER_ID = 'echo';
@@ -66,6 +68,8 @@ export interface LocalVoiceClientOptions {
   /** How often to re-check the local services while they are down. */
   statusPollMs?: number;
   createAudioContext?: () => AudioContext;
+  /** Builds the mic capture node (an AudioWorkletNode); overridable so tests can supply a fake. */
+  createMicCaptureNode?: (context: AudioContext) => AudioWorkletNode;
   now?: () => number;
   /** Tell the main process that Kevin barged in on avatar chatter (the floor drops its queued turns). */
   interruptFloor?: () => Promise<void> | void;
@@ -76,6 +80,7 @@ type SessionConfig = NonNullable<RealtimeClientOptions['sessionConfig']>;
 // The upstream mic stream is already gated to silence by the renderer VAD, so any real signal
 // counts as speech.
 const SPEECH_RMS = 0.004;
+// Mic frames delivered to handleAudio, in samples (the capture worklet batches 128-sample quanta).
 const PROCESSOR_FRAME = 2048;
 const PLAYBACK_TAIL_MS = 300;
 const WAKE_GRACE_MS = 600;
@@ -93,6 +98,7 @@ export class LocalVoiceClient {
   private readonly wakeWindowMs: number;
   private readonly statusPollMs: number;
   private readonly createAudioContext: () => AudioContext;
+  private readonly createMicCaptureNode: (context: AudioContext) => AudioWorkletNode;
   private readonly now: () => number;
   private readonly interruptFloor: (() => Promise<void> | void) | undefined;
   private readonly segmenter: UtteranceSegmenter;
@@ -100,7 +106,7 @@ export class LocalVoiceClient {
   private sessionConfig: SessionConfig = {};
   private context: AudioContext | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
-  private processor: ScriptProcessorNode | null = null;
+  private processor: AudioWorkletNode | null = null;
   private sink: GainNode | null = null;
   /** One audio output per avatar, created lazily; `echo` is created at connect. */
   private readonly outputs = new Map<string, MediaStreamAudioDestinationNode>();
@@ -175,6 +181,17 @@ export class LocalVoiceClient {
     this.wakeWindowMs = options.wakeWindowMs ?? 8000;
     this.statusPollMs = options.statusPollMs ?? 5000;
     this.createAudioContext = options.createAudioContext ?? (() => new AudioContext());
+    this.createMicCaptureNode =
+      options.createMicCaptureNode ??
+      ((context) =>
+        new AudioWorkletNode(context, 'aiembodied-mic-capture', {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [1],
+          channelCount: 1,
+          channelCountMode: 'explicit',
+          processorOptions: { frameSize: PROCESSOR_FRAME },
+        }));
     this.now = options.now ?? Date.now;
     this.interruptFloor = options.interruptFloor;
     this.segmenter = new UtteranceSegmenter({
@@ -385,16 +402,27 @@ export class LocalVoiceClient {
 
     const context = this.createAudioContext();
     await context.resume?.();
+    try {
+      await context.audioWorklet.addModule(micCaptureWorkletUrl);
+    } catch (error) {
+      void context.close().catch(() => undefined);
+      throw error;
+    }
+    if (connectionId !== this.connectionId || this.disposed) {
+      // disconnect()/dispose() ran while the worklet module loaded; nothing was wired up yet.
+      void context.close().catch(() => undefined);
+      return;
+    }
     const source = context.createMediaStreamSource(options.inputStream);
-    const processor = context.createScriptProcessor(PROCESSOR_FRAME, 1, 1);
+    const processor = this.createMicCaptureNode(context);
     const sink = context.createGain();
     sink.gain.value = 0;
     source.connect(processor);
     processor.connect(sink);
     sink.connect(context.destination);
     const output = context.createMediaStreamDestination();
-    processor.onaudioprocess = (event) => {
-      this.handleAudio(event.inputBuffer.getChannelData(0), context.sampleRate);
+    processor.port.onmessage = (event: MessageEvent) => {
+      this.handleAudio(event.data as Float32Array, context.sampleRate);
     };
 
     this.context = context;
@@ -1012,7 +1040,8 @@ export class LocalVoiceClient {
     this.unsubscribeSystemReady?.();
     this.unsubscribeSystemReady = null;
     if (this.processor) {
-      this.processor.onaudioprocess = null;
+      this.processor.port.onmessage = null;
+      this.processor.port.close();
     }
     this.source?.disconnect();
     this.processor?.disconnect();
