@@ -3639,18 +3639,20 @@ app.whenReady().then(async () => {
       },
       paint: (input) => characterRunner.paintViews(input),
       // Sizes and names the piece with the 'describe' helper; the keyword table answers when there is none.
-      askHelper: async (system, user) => {
-        const target = helperTarget(manager, 'describe');
-        if (!target) return null;
-        const response = await (target.client as unknown as { responses: { create: (args: unknown) => Promise<{ output_text: string }> } }).responses.create({
-          model: target.model ?? 'gpt-4.1-mini',
-          instructions: system,
-          input: user,
-          max_output_tokens: 300,
-          temperature: 0.2,
-        });
-        return response?.output_text ?? null;
-      },
+      // The describe route is usually the on-demand local vision server: start it first, as avatar descriptions do.
+      askHelper: (system, user) =>
+        withVision(manager, 'describe', async () => {
+          const target = helperTarget(manager, 'describe');
+          if (!target) return null;
+          const response = await (target.client as unknown as { responses: { create: (args: unknown) => Promise<{ output_text: string }> } }).responses.create({
+            model: target.model ?? 'gpt-4.1-mini',
+            instructions: system,
+            input: user,
+            max_output_tokens: 300,
+            temperature: 0.2,
+          });
+          return response?.output_text ?? null;
+        }),
       onChanged: (item) => broadcastToWindows('furniture:changed', item),
       logger,
     });

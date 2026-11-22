@@ -38,7 +38,6 @@ const FALLBACKS: Array<[string[], string, number, number, number]> = [
   [['coffee table'], 'table', 1.1, 0.6, 0.45],
   [['side table', 'end table', 'nightstand', 'bedside table'], 'table', 0.45, 0.4, 0.55],
   [['dining table'], 'table', 1.6, 0.9, 0.75],
-  [['standing desk', 'sit-stand desk', 'stand-up desk'], 'table', 1.4, 0.7, 1.1],
   [['desk'], 'table', 1.3, 0.65, 0.75],
   [['table'], 'table', 1.2, 0.8, 0.75],
   [['bookshelf', 'bookcase', 'shelf', 'shelving'], 'storage', 0.8, 0.35, 1.8],
