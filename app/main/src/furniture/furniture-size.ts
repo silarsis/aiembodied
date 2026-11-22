@@ -38,6 +38,7 @@ const FALLBACKS: Array<[string[], string, number, number, number]> = [
   [['coffee table'], 'table', 1.1, 0.6, 0.45],
   [['side table', 'end table', 'nightstand', 'bedside table'], 'table', 0.45, 0.4, 0.55],
   [['dining table'], 'table', 1.6, 0.9, 0.75],
+  [['standing desk', 'sit-stand desk', 'stand-up desk'], 'table', 1.4, 0.7, 1.1],
   [['desk'], 'table', 1.3, 0.65, 0.75],
   [['table'], 'table', 1.2, 0.8, 0.75],
   [['bookshelf', 'bookcase', 'shelf', 'shelving'], 'storage', 0.8, 0.35, 1.8],
@@ -55,7 +56,9 @@ const escape = (word: string): string => word.replace(/[.*+?^${}()|[\]\\]/g, '\\
 
 /** A name from the first words of the prompt, for a piece whose helper answer is missing. */
 function nameFromPrompt(prompt: string): string {
-  const words = prompt.trim().split(/\s+/).slice(0, 4).join(' ').replace(/[.,;:!?]+$/, '');
+  // The first clause without a leading article: "A standing desk, with a monitor" -> "Standing desk".
+  const clause = prompt.trim().split(/[,.;:!?]/)[0].replace(/^(an?|the)\s+/i, '');
+  const words = clause.split(/\s+/).filter(Boolean).slice(0, 4).join(' ');
   return words ? words[0].toUpperCase() + words.slice(1) : 'Furniture';
 }
 
@@ -102,15 +105,25 @@ export function parseSizeEstimate(reply: string, prompt: string): SizeEstimate |
 }
 
 /** The helper's estimate, or the table's when there is no helper, it fails, or its answer is unusable. Aborts still throw. */
-export async function estimateFurniture(prompt: string, ask: AskHelper | undefined, signal?: AbortSignal): Promise<SizeEstimate> {
+export async function estimateFurniture(
+  prompt: string,
+  ask: AskHelper | undefined,
+  signal?: AbortSignal,
+  warn?: (message: string, details: Record<string, unknown>) => void,
+): Promise<SizeEstimate> {
   if (ask) {
     try {
       const reply = await ask(SIZE_SYSTEM_PROMPT, prompt);
       const parsed = reply ? parseSizeEstimate(reply, prompt) : null;
       if (parsed) return parsed;
+      // Logged so a silent fallback (wrong size, clumsy name) can be traced to the helper.
+      warn?.('Furniture size helper gave no usable answer; using the keyword table.', { reply: reply?.slice(0, 300) ?? null });
     } catch (error) {
       if (signal?.aborted) throw error;
+      warn?.('Furniture size helper failed; using the keyword table.', { message: error instanceof Error ? error.message : String(error) });
     }
+  } else {
+    warn?.('No helper model for furniture sizes (Models and servers: describe); using the keyword table.', {});
   }
   return fallbackEstimate(prompt);
 }
