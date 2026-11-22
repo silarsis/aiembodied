@@ -43,7 +43,7 @@ export interface FurnitureServiceOptions {
   onChanged?: (item: FurnitureItem) => void;
   seed?: () => number;
   now?: () => Date;
-  logger?: Pick<Console, 'warn'>;
+  logger?: Pick<Console, 'warn' | 'info'>;
 }
 
 interface Job {
@@ -80,9 +80,12 @@ function readableRecords(raw: string | null): FurnitureRecord[] {
 /** The picture the 3D step works best from: one piece on plain white. No negations: the sampler ignores the negative prompt. */
 export function buildFurniturePrompt(description: string): string {
   return (
-    `Product photo of a single piece of furniture: ${description.trim().replace(/\.?$/, '.')} ` +
-    'Three-quarter front view, the whole object in frame with margin around it, centred, ' +
-    'plain pure white background, soft even studio light, one object only.'
+    `Product photo of one complete piece of furniture standing on the floor: ${description.trim().replace(/\.?$/, '.')} ` +
+    // The furniture is the subject, not what sits on it: a close-up of a monitor on a desk makes a monitor model.
+    'The furniture itself fills the picture: all of it is visible from top to bottom including its legs or base, ' +
+    'three-quarter front view from a few metres away, centred with margin around it. ' +
+    'Anything on it is small and secondary, and any screens are plain and dark. ' +
+    'Plain pure white background, soft even studio light, nothing else in the picture.'
   );
 }
 
@@ -216,7 +219,10 @@ export class FurnitureService {
     };
     try {
       this.progress(id, 'Working out the size');
-      const estimate = await estimateFurniture(prompt, this.options.askHelper, signal);
+      const estimate = await estimateFurniture(prompt, this.options.askHelper, signal, (message, details) =>
+        this.options.logger?.warn(message, { id, ...details }),
+      );
+      this.options.logger?.info('Furniture size estimated.', { id, ...estimate });
       stop();
 
       this.progress(id, 'Drawing the piece');
@@ -265,6 +271,7 @@ export class FurnitureService {
         status: 'ready',
         error: undefined,
       });
+      this.options.logger?.info('Furniture ready.', { id, dimensions: fitted.dimensions });
     } finally {
       await rm(next, { recursive: true, force: true });
     }
@@ -281,6 +288,7 @@ export class FurnitureService {
 
   private progress(id: string, message: string): void {
     this.messages.set(id, message);
+    this.options.logger?.info(`Furniture: ${message}.`, { id });
     const record = this.records().find((entry) => entry.id === id);
     if (record) void this.toItem(record).then((item) => this.options.onChanged?.(item));
   }

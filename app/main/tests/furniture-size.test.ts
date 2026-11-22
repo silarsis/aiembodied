@@ -17,7 +17,7 @@ describe('fallback sizes', () => {
 
   it('names the piece from the first words and always gives sizes in range', () => {
     const estimate = fallbackEstimate('a very comfortable green velvet sofa with gold feet.');
-    expect(estimate.name).toBe('A very comfortable green');
+    expect(estimate.name).toBe('Very comfortable green velvet');
     for (const n of [estimate.width, estimate.depth, estimate.height]) expect(n).toBeGreaterThanOrEqual(0.05);
   });
 });
@@ -44,7 +44,7 @@ describe('parsing the helper answer', () => {
 
   it('falls back on a missing name or category alone and trims long names to four words', () => {
     const parsed = parseSizeEstimate('{"name":"","category":"!!","width_m":1,"depth_m":1,"height_m":1}', 'a stool');
-    expect(parsed).toMatchObject({ name: 'A stool', category: 'seating' });
+    expect(parsed).toMatchObject({ name: 'Stool', category: 'seating' });
     expect(parseSizeEstimate('{"name":"one two three four five six","width_m":1,"depth_m":1,"height_m":1}', 'x')?.name).toBe('one two three four');
   });
 });
@@ -68,5 +68,11 @@ describe('estimateFurniture', () => {
     const controller = new AbortController();
     controller.abort();
     await expect(estimateFurniture('a sofa', async () => { throw new Error('aborted'); }, controller.signal)).rejects.toThrow('aborted');
+  });
+});
+
+describe('clause names', () => {
+  it('names a piece from its first clause without the article', () => {
+    expect(fallbackEstimate('A standing desk, with monitor and keyboard, in black wood').name).toBe('Standing desk');
   });
 });
