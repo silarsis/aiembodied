@@ -18,6 +18,7 @@ import type { DownloadHosts } from '../../main/src/aicontroller/remote-downloads
 import type { VisionStatus } from '../../main/src/local-vision/vision-model.js';
 import type { ModelDownload } from '../../main/src/avatar/generation/model-downloads.js';
 import type { BackgroundBridge } from '../../main/src/backgrounds/types.js';
+import type { FurnitureBridge } from '../../main/src/furniture/types.js';
 import type { ConfigSecretKey, ModelRoutingView, RendererConfig } from '../../main/src/config/config-manager.js';
 import type { ModelRoute, ServerType, UseId } from '../../main/src/config/model-routing.js';
 import type { ServerProbe } from '../../main/src/config/model-server-probe.js';
@@ -230,32 +231,7 @@ export interface AppBridge {
   quit(): Promise<void>;
 }
 
-export interface FurnitureBridge {
-  list(): Promise<FurnitureSummary[]>;
-  load(id: string): Promise<FurnitureItem>;
-  generate(prompt: string): Promise<FurnitureItem>;
-  delete(id: string): Promise<void>;
-  listCategories(): Promise<Record<string, number>>;
-}
-
-export interface FurnitureSummary {
-  id: string;
-  name: string;
-  category: string;
-  description?: string;
-  thumbnailDataUrl: string;
-  builtIn: boolean;
-}
-
-export interface FurnitureItem extends FurnitureSummary {
-  dimensions: [number, number, number];
-  model?: {
-    file: string;
-    asset?: string;
-    scale: number;
-  };
-  createdAt?: string;
-}
+export type { FurnitureBridge, FurnitureItem } from '../../main/src/furniture/types.js';
 
 export function getPreloadApi(): PreloadApi | undefined {
   return (window as unknown as { aiembodied?: PreloadApi }).aiembodied;

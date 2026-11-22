@@ -1,87 +1,55 @@
 /**
- * Furniture library types.
- * Furniture is 3D room objects that can be browsed and added to rooms.
- * The library includes Poly Haven models and user-generated pieces.
+ * Furniture the user makes from a description: the service draws the piece, builds a 3D model of it and
+ * scales that to real metres. Adding pieces to rooms is a later step.
  */
-import type { RoomObject } from '../rooms/types.js';
 
-/** A furniture item in the library. */
-export interface FurnitureItem {
-  /** Unique ID (slug), e.g. "polyhaven-ArmChair_01" or "generated-3fa91c2e". */
+export type FurnitureStatus = 'generating' | 'ready' | 'failed';
+
+/** How the model.glb was made from model-raw.glb: so any consumer gets real metres without scaling it. */
+export interface FurnitureFit {
+  /** The uniform scale applied to the raw model. */
+  scale: number;
+  /** Where the scaled model was moved so its bottom sits on y=0, centred on x and z. */
+  offset: [number, number, number];
+}
+
+/** What is kept for one piece (the memory store holds a list of these). */
+export interface FurnitureRecord {
   id: string;
-  /** Human-readable name, e.g. "Armchair 01". */
   name: string;
-  /** Category for filtering (matching Poly Haven tags). */
-  category: FurnitureCategory;
-  /** Short description for the UI. */
-  description?: string;
-  /** Dimensions in metres (width, height, depth). */
+  prompt: string;
+  /** A word like "seating" or "table"; from the helper model, or guessed from the prompt. */
+  category: string;
+  /** Width, height, depth in metres: what the model really measures after scaling. */
   dimensions: [number, number, number];
-  /** Thumbnail image (data URL or path). */
-  thumbnailDataUrl: string;
-  /** Whether it's built-in (Poly Haven) or user-generated. */
-  builtIn: boolean;
-  /** Model reference for 3D rendering. */
-  model?: {
-    file: string;
-    asset?: string;
-    scale: number;
-  };
-  /** When it was created (user-generated only). */
-  createdAt?: string;
+  status: FurnitureStatus;
+  /** Why the last run failed. A piece whose edit failed stays 'ready' with its old model and this set. */
+  error?: string;
+  fit?: FurnitureFit;
+  createdAt: string;
+  updatedAt: string;
 }
 
-/** Furniture categories for filtering. */
-export type FurnitureCategory =
-  | 'seating'
-  | 'tables'
-  | 'storage'
-  | 'lighting'
-  | 'decor'
-  | 'appliances'
-  | 'bedding'
-  | 'rugs';
-
-/** What the renderer asks for: furniture library data. */
-export interface FurnitureSummary {
-  id: string;
-  name: string;
-  category: FurnitureCategory;
-  description?: string;
-  thumbnailDataUrl: string;
-  builtIn: boolean;
+/** What the renderer sees. */
+export interface FurnitureItem extends FurnitureRecord {
+  /** Progress of the running job, while there is one. */
+  message?: string;
+  /** Whether model.glb exists (a new piece has none until its first run succeeds). */
+  hasModel: boolean;
+  thumbnailDataUrl: string | null;
 }
 
-/** Request to generate new furniture from text. */
-export interface FurnitureGenerationRequest {
-  /** Text description, e.g. "a leather armchair, dark brown, modern style". */
-  description: string;
-  /** Optional category hint. */
-  category?: FurnitureCategory;
-  /** Custom dimensions (optional). */
-  dimensions?: [number, number, number];
-}
-
-/** Result of a furniture generation job. */
-export interface FurnitureGenerationResult {
-  /** The generated furniture item. */
-  item: FurnitureItem;
-  /** Whether it was newly generated or reused from cache. */
-  reused?: boolean;
-}
-
-/** Bridge interface for renderer → main communication. */
 export interface FurnitureBridge {
-  /** List all furniture in the library. */
-  list(): Promise<FurnitureSummary[]>;
-  /** Get a single furniture item by ID. */
+  list(): Promise<FurnitureItem[]>;
   load(id: string): Promise<FurnitureItem>;
-  /** Add furniture to a room (converts to RoomObject). */
-  addToRoom(id: string, position: [number, number, number], rotationY: number): Promise<RoomObject>;
-  /** Generate new furniture from text description. */
+  /** Starts a job and returns the new piece at once, with status 'generating'. */
   generate(prompt: string): Promise<FurnitureItem>;
-  /** Delete user-generated furniture. */
+  /** Runs the whole generation again for this piece with a new prompt. */
+  edit(id: string, prompt: string): Promise<FurnitureItem>;
+  /** Cancels its running job, then removes its files and record. */
   delete(id: string): Promise<void>;
-  /** List categories with their furniture counts. */
-  listCategories(): Promise<Record<FurnitureCategory, number>>;
+  /** The scaled GLB for the 3D view. */
+  model(id: string): Promise<ArrayBuffer>;
+  /** A piece changed: progress, finished or failed. */
+  onChanged(listener: (item: FurnitureItem) => void): () => void;
 }
