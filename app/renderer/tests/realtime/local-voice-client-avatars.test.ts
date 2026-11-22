@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createFakeMicNode, fakeAudioWorklet, micNodeOf } from './fake-mic.js';
 import { LocalVoiceClient } from '../../src/realtime/local-voice-client.js';
 import type { LocalVoiceBridge } from '../../src/preload-api.js';
 import type { LocalVoiceEvent } from '../../../main/src/local-voice/types.js';
@@ -15,7 +16,7 @@ interface FakeNode {
 }
 
 function createFakeContext() {
-  const processor = { onaudioprocess: null as null | ((event: { inputBuffer: { getChannelData: () => Float32Array } }) => void), connect: vi.fn(), disconnect: vi.fn() };
+  const processor = createFakeMicNode();
   const node = () => ({ connect: vi.fn(), disconnect: vi.fn(), gain: { value: 1 } });
   const destinations: FakeNode[] = [];
   const sources: Array<{ connect: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> }> = [];
@@ -26,7 +27,8 @@ function createFakeContext() {
     resume: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
     createMediaStreamSource: vi.fn(node),
-    createScriptProcessor: vi.fn(() => processor),
+    audioWorklet: fakeAudioWorklet(),
+    micNode: processor,
     createGain: vi.fn(node),
     createMediaStreamDestination: vi.fn(() => {
       const created = { ...node(), stream: { id: `stream-${destinations.length}` } as unknown as MediaStream };
@@ -100,7 +102,7 @@ describe('LocalVoiceClient with several avatars', () => {
     const client = new LocalVoiceClient({
       getBridge: () => bridge,
       wakePhrase: 'Hey Jarvis',
-      createAudioContext: () => fake.context,
+      createAudioContext: () => fake.context, createMicCaptureNode: micNodeOf,
       now: () => now,
       callbacks,
       ...extra,
@@ -110,11 +112,11 @@ describe('LocalVoiceClient with several avatars', () => {
       client.talk();
       for (let i = 0; i < 8; i += 1) {
         now += FRAME_MS;
-        fake.processor.onaudioprocess?.({ inputBuffer: { getChannelData: () => new Float32Array(FRAME).fill(0.2) } });
+        fake.processor.port.onmessage?.({ data: new Float32Array(FRAME).fill(0.2) });
       }
       for (let i = 0; i < 8; i += 1) {
         now += FRAME_MS;
-        fake.processor.onaudioprocess?.({ inputBuffer: { getChannelData: () => new Float32Array(FRAME) } });
+        fake.processor.port.onmessage?.({ data: new Float32Array(FRAME) });
       }
       await vi.advanceTimersByTimeAsync(2000);
     };
@@ -367,7 +369,7 @@ describe('LocalVoiceClient with several avatars', () => {
     const speak = (fake: ReturnType<typeof createFakeContext>, loud: boolean, frames: number) => {
       for (let i = 0; i < frames; i += 1) {
         now += FRAME_MS;
-        fake.processor.onaudioprocess?.({ inputBuffer: { getChannelData: () => new Float32Array(FRAME).fill(loud ? 0.2 : 0) } });
+        fake.processor.port.onmessage?.({ data: new Float32Array(FRAME).fill(loud ? 0.2 : 0) });
       }
     };
 

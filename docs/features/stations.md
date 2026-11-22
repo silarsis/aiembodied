@@ -30,6 +30,16 @@ Station { id, roomId, objectId,
    - **Not in a 3D room** (a 2D background, away, already moving) or nobody can receive the event: no trip and no wait.
 3. A cancelled turn stops waiting at once.
 
+## One tool per reading station (2026-11-22)
+
+A small local model (Gemma 4 E4B, 4B) offered 20+ tools at once (the 12 DAIR Academy tools, memory, coding, `web_search`, `my_reading_notes`) never called one, so no trip happened. Now the conversation is not offered the individual tools of a reading station:
+
+- **Which stations**: MCP stations with `pursuit` not `'none'` and `trip: 'all'` (the bookshelf). Home Assistant panels (`trip: 'writes'`, `pursuit: 'none'`), built-in tools and tools needing approval are offered one by one, unchanged. `STATION_SINGLE_TOOL=0` offers every tool on its own as before (read at each turn).
+- **The tool** (`stations/station-lookup.ts`, `StationLookup.offer`): named `go_to_<object id>` (sanitised, made unique: `go_to_bookshelf`), one argument `question`, read-only, spoken notice "Let me check the bookshelf.". Its description is built from the station verb, the object and room names, the MCP server name (and the preset's one-line blurb) and the tool names ("DAIR Academy papers, a reading library of AI research papers ... It can: latest papers of the week, search papers, ...").
+- **Running it** (`StationLookup.run`, called by the voice instead of the registry): the lookup tool carries the real server id, so `StationTrips.begin` makes the usual phase 1 trip (walk while it runs, arrival hold, other place or errand); it is not a reading session (no seat, no book). Meanwhile a bounded loop runs on the avatar's own chat client with ONLY the station's tools (`PursuitLlm.useTools`: at most 4 tool calls, 4 model rounds, 60 s, no queue behind pursuit calls since the turn already holds the slot). The system prompt says to call the tools, not answer from memory, and return at most ~120 words with titles and links. The summary is the tool result; the conversation model speaks it in character.
+- **Fallback**: if the model made no tool call, the first tool with no required argument whose name starts with `latest` (else `list`) is called with `{}` (DAIR: `latest_papers_of_the_week`), and the model summarises that; if that fails too the raw result is returned. The answer is never empty.
+- **Logs** (main log): `Local voice: tools offered` (count, names) per turn; `Local voice: tool call` per call (avatarId, name, args cut to 300 characters, durationMs, ok, resultLength or error); `Stations: lookup start/tool call/end`; `Stations: trip start/arrived/held/end` with the station id and the case (`same-room`, `other-place`, `errand`) and `Stations: trip none` with `why` ("the avatar is not in a 3D room", "the avatar is already moving", ...). Reading steps and tool calls log as `Reading: step` and `Reading: tool call`.
+
 ## Settings
 
 - Backgrounds, 3D rooms tab, "Things kept in the room": for each object an avatar can stand at, a "Holds" choice (None, each MCP server, Web search) and "Every use / Only changes"; for a station also "Read at" (the room's seats) and "Take" (its dynamic objects with a grab tag).

@@ -195,6 +195,7 @@ import { StationRegistry } from './stations/station-registry.js';
 import { StationTrips } from './stations/station-trips.js';
 import { PursuitManager } from './pursuits/pursuit-manager.js';
 import { createReadingNotesTool, readingOutboxItem } from './pursuits/reading-memory.js';
+import { StationLookup } from './stations/station-lookup.js';
 import { createVoiceStations, type VoiceStations } from './stations/voice-stations.js';
 import type { Station, StationSource } from './stations/types.js';
 import { createRoutedSearchProvider, createWebSearchTool, WEB_SEARCH_TOOL_ID } from './tools/web-search.js';
@@ -1130,6 +1131,8 @@ function createVoiceService(avatarId: string): LocalVoiceService {
       descriptionNote: (tool) => voiceStations?.descriptionNote(tool) ?? '',
       noticeFor: (id, tool) => voiceStations?.noticeFor(id, tool) ?? null,
       begin: (id, tool) => voiceStations?.begin(id, tool) ?? null,
+      offer: (list) => voiceStations?.offer?.(list) ?? list,
+      runLookup: (id, tool, params, context) => voiceStations?.runLookup?.(id, tool, params, context) ?? null,
     },
     extraInstructions: () => codingBrief(manager),
     // The update is spoken where the avatar is.
@@ -2977,7 +2980,8 @@ function setupStations(store: MemoryStore): void {
   });
   stationRegistry = registry;
   stationTrips = trips;
-  voiceStations = createVoiceStations(registry, trips);
+  // Reading stations are offered to the conversation as one tool each (env STATION_SINGLE_TOOL=0 turns it off).
+  voiceStations = createVoiceStations(registry, trips, new StationLookup({ stations: registry, tools, logger }));
 }
 
 /**

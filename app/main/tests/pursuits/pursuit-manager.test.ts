@@ -96,6 +96,16 @@ describe('PursuitManager', () => {
     expect(visit?.settle).toHaveBeenCalledWith(true);
   });
 
+  it('logs each step and each tool call briefly', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const { manager } = setup({ known: { logger } });
+    manager.start('sage', 'station-1');
+    await idle(manager);
+    const steps = logger.info.mock.calls.filter(([message]) => message === 'Reading: step').map(([, meta]) => (meta as { step: string }).step);
+    expect(steps).toEqual(['want', 'act', 'choose', 'consume', 'note', 'next']);
+    expect(logger.info).toHaveBeenCalledWith('Reading: tool call', expect.objectContaining({ avatarId: 'sage', tool: 'search', args: '{"q":"gardens"}', ok: true, durationMs: expect.any(Number), resultLength: expect.any(Number) }));
+  });
+
   it('uses the avatar\'s own model, its persona, and only the station tools without approvals', async () => {
     const { manager, chatFor } = setup();
     manager.start('sage', 'station-1');

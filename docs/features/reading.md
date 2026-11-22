@@ -51,6 +51,10 @@ A station's optional `body` (see [stations.md](./stations.md)) says what to take
 
 The Reading room has a dynamic `book` (0.22 x 0.03 x 0.16 m, grab tag) lying on the 1 m shelf board of the bookshelf, in a gap left beside the blue books; the bookshelf has a `surface` tag at 1.025 m and its stand/look tags moved to that gap, so a put-back lands on the free board.
 
+## Lookups in a conversation (2026-11-22)
+
+Reading as a pursuit keeps using the station's individual tools (`PursuitManager.toolsAt`). Kevin's questions in a conversation do not: the conversation model is offered the station as ONE tool, `go_to_bookshelf` with a `question`, and the lookup runs a bounded loop with the station's tools on the same chat client (`stations/station-lookup.ts`, see [stations.md](./stations.md)). It uses the phase 1 body (walk to the shelf, browse gesture), not a seated reading session, and writes no reading notes. The pursuit's step and tool-call lines are logged (`Reading: step`, `Reading: tool call`).
+
 ## Starting a session
 
 Only the character decides, through the idle director (`rooms/idle-director.ts`):
