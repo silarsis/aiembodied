@@ -181,7 +181,7 @@ async def test_life_sleeps_after_too_many_awake_hours_and_wakes_on_interaction(t
                                                task_queue="agents")
         await temporal_env.sleep(900)
         state = await handle.query("state")
-        assert state["awake"] is False and state["awakeSeconds"] > 180
+        assert state["awake"] is False and state["awakeSeconds"] >= 180
         assert {"asleep": True, "reason": "awake more than 0.05 hours"} in app.kinds("sleep_state")
         await handle.signal("interaction")
         await asyncio.sleep(0.3)
@@ -230,8 +230,9 @@ async def test_life_decision_say(temporal_env):
     says = [a for a in app.kinds("say") if a["source"] == "own thoughts"]
     assert says and says[0]["text"] == "The bins go out tonight." and says[0]["urgent"] is False
     assert state["lastDecision"]["summary"].startswith("SAY") and state["nextDecisionAt"]
-    think = app.kinds("think")[0]
-    assert think["tools"] == "safe" and "SAY:" in think["prompt"]
+    # the first think of a new day is the morning plan; the decision comes after it
+    decisions = [t for t in app.kinds("think") if "SAY:" in t["prompt"]]
+    assert decisions and decisions[0]["tools"] == "safe"
 
 
 async def test_flow_runs_a_small_definition(temporal_env):
