@@ -44,6 +44,8 @@ export interface PursuitManagerOptions {
   visit: (avatarId: string, station: Station) => StationVisit | null;
   /** The set of reading avatars changed. */
   onChanged?: (running: string[]) => void;
+  /** True while the avatar is asleep: no session starts. */
+  isAsleep?: (avatarId: string) => boolean;
   gate?: LlmGate;
   sessionTimeoutMs?: number;
   maxToolCalls?: number;
@@ -98,6 +100,7 @@ export class PursuitManager {
   start(avatarId: string, stationId: string): { ok: boolean; reason?: string } {
     const { stations, logger } = this.options;
     if (this.sessions.has(avatarId)) return { ok: false, reason: 'already reading' };
+    if (this.options.isAsleep?.(avatarId)) return { ok: false, reason: 'asleep' };
     const station = stations.get(stationId);
     if (!station) return { ok: false, reason: 'no such station' };
     if (!stations.appliesTo(station, avatarId)) return { ok: false, reason: 'this station is not for this character' };

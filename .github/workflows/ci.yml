@@ -82,6 +82,24 @@ jobs:
       - name: Test
         run: python -m pytest -q
 
+  workflows:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/workflows
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Install
+        run: pip install -e ".[test]"
+      - name: Test
+        # Includes the workflow tests that start Temporal's time-skipping test server (downloaded on first use).
+        run: python -m pytest -q
+
   memory-engine:
     runs-on: ubuntu-latest
     services:

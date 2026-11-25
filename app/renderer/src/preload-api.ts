@@ -5,6 +5,7 @@ import type { FloorBridge } from '../../main/src/floor/bridge-types.js';
 import type { PlacesBridge } from '../../main/src/places/bridge-types.js';
 import type { StationsBridge } from '../../main/src/stations/bridge-types.js';
 import type { PursuitsBridge } from '../../main/src/pursuits/types.js';
+import type { AgentsBridge, WorkflowsBridge } from '../../main/src/agent-time/bridge-types.js';
 import type { RoomHubBridge } from '../../main/src/room-hub/bridge-types.js';
 import type { DeviceGateBridge, SatelliteBridge } from '../../main/src/satellite/bridge-types.js';
 import type { GpuMemoryBridge } from '../../main/src/diagnostics/gpu-memory.js';
@@ -185,6 +186,8 @@ export interface PreloadApi {
   places?: PlacesBridge;
   stations?: StationsBridge;
   pursuits?: PursuitsBridge;
+  workflows?: WorkflowsBridge;
+  agents?: AgentsBridge;
   roomHub?: RoomHubBridge;
   satellite?: SatelliteBridge;
   deviceGate?: DeviceGateBridge;

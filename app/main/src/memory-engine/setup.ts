@@ -89,6 +89,7 @@ export function setupMemoryEngine(options: SetupMemoryEngineOptions): MemoryEngi
         client,
         currentSessionId: () => conversations.getCurrentSessionId(),
         agentName: () => agentFor(avatarId).name,
+        avatarId: avatarId ?? 'echo',
         brief: settings.brief,
         autoRecall: settings.autoRecall,
         logger,

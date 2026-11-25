@@ -14,15 +14,15 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import psycopg
-from fastapi import Depends, FastAPI, Header, Query, Request
+from fastapi import Depends, FastAPI, Header, Path, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import __version__, coding, context, db, facts, handoffs, home, mirror, recall, store, storage, summaries
+from . import __version__, agent_time, coding, context, db, facts, handoffs, home, mirror, recall, store, storage, summaries
 from .embed import Embedder
 from .summaries import Summariser
 
@@ -148,6 +148,61 @@ class CodingTaskBody(BaseModel):
     agent: Optional[str] = Field(default=None, max_length=200)
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
+
+
+IntentionKind = Literal["goal", "intention", "promise", "watch", "reminder", "wakeup"]
+IntentionStatus = Literal["open", "waiting", "done", "dropped"]
+AvatarId = Path(min_length=1, max_length=200)
+FlowName = Path(pattern=r"^[a-z0-9_-]{1,64}$")
+
+
+class IntentionBody(BaseModel):
+    id: Optional[UUID] = None
+    avatar_id: str = Field(min_length=1, max_length=200)
+    kind: IntentionKind
+    text: str = Field(min_length=1, max_length=2000)
+    why: Optional[str] = Field(default=None, max_length=2000)
+    status: IntentionStatus = "open"
+    parent_id: Optional[UUID] = None
+    workflow_id: Optional[str] = Field(default=None, max_length=300)
+    template: Optional[str] = Field(default=None, max_length=200)
+    params: Optional[dict[str, Any]] = None
+    due_at: Optional[datetime] = None
+    origin_message_id: Optional[str] = Field(default=None, max_length=200)
+    outcome: Optional[str] = Field(default=None, max_length=2000)
+
+
+class IntentionPatch(BaseModel):
+    """Only the fields sent are changed; null clears one that may be empty."""
+
+    status: Optional[IntentionStatus] = None
+    outcome: Optional[str] = Field(default=None, max_length=2000)
+    workflow_id: Optional[str] = Field(default=None, max_length=300)
+    text: Optional[str] = Field(default=None, min_length=1, max_length=2000)
+    why: Optional[str] = Field(default=None, max_length=2000)
+    due_at: Optional[datetime] = None
+    params: Optional[dict[str, Any]] = None
+    template: Optional[str] = Field(default=None, max_length=200)
+
+
+class FlowBody(BaseModel):
+    description: str = Field(default="", max_length=2000)
+    definition: dict[str, Any]
+    trigger: dict[str, Any] = Field(default_factory=lambda: {"kind": "manual"})
+    enabled: bool = True
+
+
+class FlowPatch(BaseModel):
+    enabled: Optional[bool] = None
+    last_run_at: Optional[datetime] = None
+    last_outcome: Optional[str] = Field(default=None, max_length=2000)
+
+
+class AgentStateBody(BaseModel):
+    asleep: Optional[bool] = None
+    awake_since: Optional[datetime] = None
+    last_sleep_at: Optional[datetime] = None
+    last_wake_at: Optional[datetime] = None
 
 
 MAX_HOME_SERVERS = 20
@@ -826,9 +881,105 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
             return {"summaries": summaries.list_summaries(conn, kind=kind, start=start, end=end, limit=limit)}
 
     @app.get("/v1/brief", dependencies=guarded)
-    def get_brief(session_id: Optional[UUID] = None, agent: Optional[str] = None):
+    def get_brief(session_id: Optional[UUID] = None, agent: Optional[str] = None, avatar_id: Optional[str] = None):
         with engine.connection() as conn:
-            return context.brief(conn, session_id=session_id, agent=agent)
+            return context.brief(conn, session_id=session_id, agent=agent, avatar_id=avatar_id)
+
+    @app.get("/v1/intentions", dependencies=guarded)
+    def get_intentions(
+        avatar_id: Optional[str] = None,
+        status: Literal["open", "waiting", "done", "dropped", "active", "all"] = "active",
+        kind: Optional[IntentionKind] = None,
+        limit: int = Query(default=100, ge=1, le=1000),
+    ):
+        statuses = None if status == "all" else agent_time.ACTIVE if status == "active" else (status,)
+        with engine.connection() as conn:
+            found = agent_time.list_intentions(conn, avatar_id=avatar_id, statuses=statuses, kind=kind, limit=limit)
+        return {"intentions": found}
+
+    @app.post("/v1/intentions", dependencies=guarded)
+    def post_intention(body: IntentionBody):
+        values = body.model_dump(exclude={"id"})
+        with engine.connection() as conn:
+            if body.parent_id and not agent_time.intention_exists(conn, body.parent_id):
+                raise ApiError(404, "no such parent intention")
+            return agent_time.create_intention(conn, body.id or uuid4(), values)
+
+    @app.patch("/v1/intentions/{intention_id}", dependencies=guarded)
+    def patch_intention(intention_id: UUID, body: IntentionPatch):
+        changes = {k: getattr(body, k) for k in body.model_fields_set}
+        if changes.get("status") is None:
+            changes.pop("status", None)
+        if changes.get("text") is None:
+            changes.pop("text", None)
+        with engine.connection() as conn:
+            row = agent_time.update_intention(conn, intention_id, changes)
+        if not row:
+            raise ApiError(404, "no such intention")
+        return row
+
+    @app.get("/v1/flows", dependencies=guarded)
+    def get_flows(avatar_id: Optional[str] = None, include_disabled: bool = False):
+        with engine.connection() as conn:
+            return {"flows": agent_time.list_flows(conn, avatar_id=avatar_id, include_disabled=include_disabled)}
+
+    @app.get("/v1/flows/{avatar_id}/{name}", dependencies=guarded)
+    def get_flow(avatar_id: str = AvatarId, name: str = FlowName):
+        with engine.connection() as conn:
+            flow = agent_time.get_flow(conn, avatar_id, name)
+        if not flow:
+            raise ApiError(404, "no such flow")
+        return flow
+
+    @app.put("/v1/flows/{avatar_id}/{name}", dependencies=guarded)
+    def put_flow(body: FlowBody, avatar_id: str = AvatarId, name: str = FlowName):
+        """Create the flow or save a new version of it."""
+        with engine.connection() as conn:
+            return agent_time.put_flow(
+                conn,
+                avatar_id,
+                name,
+                description=body.description,
+                definition=body.definition,
+                trigger=body.trigger,
+                enabled=body.enabled,
+            )
+
+    @app.patch("/v1/flows/{avatar_id}/{name}", dependencies=guarded)
+    def patch_flow(body: FlowPatch, avatar_id: str = AvatarId, name: str = FlowName):
+        changes = {k: getattr(body, k) for k in body.model_fields_set}
+        if changes.get("enabled") is None:
+            changes.pop("enabled", None)
+        with engine.connection() as conn:
+            flow = agent_time.update_flow(conn, avatar_id, name, changes)
+        if not flow:
+            raise ApiError(404, "no such flow")
+        return flow
+
+    @app.delete("/v1/flows/{avatar_id}/{name}", dependencies=guarded)
+    def delete_flow(avatar_id: str = AvatarId, name: str = FlowName):
+        with engine.connection() as conn:
+            found = agent_time.delete_flow(conn, avatar_id, name)
+        if not found:
+            raise ApiError(404, "no such flow")
+        return {"deleted": name}
+
+    @app.get("/v1/agents/{avatar_id}/state", dependencies=guarded)
+    def get_agent_state(avatar_id: str = AvatarId):
+        with engine.connection() as conn:
+            state = agent_time.get_state(conn, avatar_id)
+        if not state:
+            raise ApiError(404, "no state yet")
+        return state
+
+    @app.put("/v1/agents/{avatar_id}/state", dependencies=guarded)
+    def put_agent_state(body: AgentStateBody, avatar_id: str = AvatarId):
+        """Create or change the avatar's sleep state; fields left out stay as they are."""
+        changes = {k: getattr(body, k) for k in body.model_fields_set}
+        if changes.get("asleep") is None:
+            changes.pop("asleep", None)
+        with engine.connection() as conn:
+            return agent_time.put_state(conn, avatar_id, changes)
 
     @app.post("/v1/recall", dependencies=guarded)
     def post_recall(body: RecallBody):

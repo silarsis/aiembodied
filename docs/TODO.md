@@ -165,12 +165,15 @@ more depth and are linked where they apply.
 
 ### Timers, alarms, reminders, todos, weather, clocks, and a world tick
 
-- **Today:** none.
+- **Today:** agents now have reminders (`remind_me`), wake-ups (`wake_me_later`),
+  watches (`watch_for`), goals and intentions, and their own flows, run by Temporal
+  and the workflows service (see [features/agent-time.md](./features/agent-time.md)).
+  Reminders survive restarts. There are no timers or alarms for Kevin to set by
+  hand, no todos, weather or world clocks, and no widgets yet.
 - **Akari:** timers, alarms, reminders, todos, Pomodoro, weather and world
   clocks, each also shown as a widget.
 - **Dipal:** alarms, reminders and schedules, and reacts to time of day.
-- **To do:** built-in tools for all of these, stored in SQLite so they survive
-  restarts, plus widgets for the display modes. A regular tick (every minute or
+- **To do:** the rest of these (todos, weather, clocks), plus widgets for the display modes. A regular tick (every minute or
   so) gathers the world state: time, weather, due items, calendar, presence
   from the camera, Home Assistant state, and anything new from web search
   subscriptions. See [features/03-scheduled-actions.md](./features/03-scheduled-actions.md).
@@ -203,7 +206,11 @@ more depth and are linked where they apply.
 
 ### Spontaneous reactions and speech
 
-- **Today:** a first version. A tick (every minute, `PROACTIVE_TICK_MS`; off
+- **Today:** with agent time on (the default), each avatar's life workflow
+  decides when to speak, read, sleep or come back from next door (see
+  [features/agent-time.md](./features/agent-time.md)); it can also mention a due
+  reminder. The older tick below is used with `AGENT_LIFE=0`.
+- **Older tick:** a first version. A tick (every minute, `PROACTIVE_TICK_MS`; off
   with `PROACTIVE_ENABLED=0`) greets Kevin when he comes back after 30 minutes
   or more away, or mentions things the inbox saved quietly since Echo last
   spoke. Hard rules run first (do-not-disturb, voice turn, recent speech,
@@ -213,7 +220,7 @@ more depth and are linked where they apply.
   callbacks.
 - **Dipal:** reacts to music and time of day, comforts you when you seem down,
   waves when you look at it.
-- **To do:** still missing: mention a due reminder, react to weather,
+- **To do:** still missing: react to weather,
   bring up a remembered anniversary. The appropriateness check is Laya
   (Quick decisions, see below). Small actions (a glance, a stretch) can happen without speech.
 

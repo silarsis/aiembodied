@@ -2,7 +2,10 @@
  * Make sure the local model servers the app talks to are running before the dev app starts:
  * the LLM (llama-server, Qwen Flash-Next), speech-to-text (llama-server, Qwen3-ASR), the speech
  * service (Kokoro TTS), the motion service (ARDY), the memory engine (with PostgreSQL in a container), the coding
- * runner (services/coder), the quick-decision model (Laya, services/laya; switch off with LAYA_ENABLED=0 or LAYA_AUTOSTART=0) and, when web search uses it, SearXNG (a container). The coder's own
+ * runner (services/coder), the quick-decision model (Laya, services/laya; switch off with LAYA_ENABLED=0 or LAYA_AUTOSTART=0), the
+ * Temporal dev server (temporal.exe with a SQLite file, services/temporal) and the workflows service that runs the agents' time on it
+ * (services/workflows); both are switched off by WORKFLOWS_ENABLED=0, or one by one with TEMPORAL_AUTOSTART=0 / WORKFLOWS_AUTOSTART=0,
+ * and, when web search uses it, SearXNG (a container). The coder's own
  * llama-server (Qwen3-Coder-Next) and the vision model's (Qwen3-VL) are not started here: the app starts them when a job needs them. A server that already
  * answers is left alone, so one slopcore or another terminal started is reused. A missing one is started with
  * its own start script in a hidden console of its own, logging to .dev-home/logs/<id>.log
@@ -10,7 +13,7 @@
  * picks it up once it reports ready.
  *
  * Settings come from the environment or .env: the same URLs the app uses (LOCAL_LLM_BASE_URL,
- * STT_URL, SPEECH_SERVICE_URL, MOTION_SERVICE_URL, MEMORY_SERVICE_URL, SEARXNG_URL, CODING_RUNNER_URL, LAYA_URL) plus the paths the start scripts need
+ * STT_URL, SPEECH_SERVICE_URL, MOTION_SERVICE_URL, MEMORY_SERVICE_URL, SEARXNG_URL, CODING_RUNNER_URL, LAYA_URL, WORKFLOWS_URL, TEMPORAL_ADDRESS) plus the paths the start scripts need
  * (KOKORO_DIR, MOTION_VENV, TEXT_ENCODERS_DIR, LOCAL_LLM_SLOTS, LOCAL_LLM_CONTEXT (per slot), ...). What the user saved on the
  * app's Settings page wins over the environment, as it does in the app: a part switched to OpenAI
  * needs no local server, and the motion model picked there is the one services/motion starts with.
@@ -156,6 +159,11 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
   const switchboardUrl = trimSlash(env.SWITCHBOARD_URL || 'http://127.0.0.1:8196');
   const layaUrl = trimSlash(builtInUrl('local-laya') || env.LAYA_URL || 'http://127.0.0.1:8197');
   const memoryUrl = trimSlash(env.MEMORY_SERVICE_URL || 'http://127.0.0.1:8194');
+  const workflowsUrl = trimSlash(env.WORKFLOWS_URL || 'http://127.0.0.1:8198');
+  // Temporal: the gRPC port the workers use, and the built-in web UI, which also tells us the server is up.
+  const temporalPort = /:(\d+)\s*$/.exec(env.TEMPORAL_ADDRESS ?? '')?.[1] ?? '7233';
+  const temporalUiUrl = trimSlash(env.TEMPORAL_UI_URL || 'http://127.0.0.1:8233');
+  const workflowsOn = isOn(env.WORKFLOWS_ENABLED, true);
   // The coding runner: the built-in server, unless the app points coding at a runner on another machine.
   const coderServer = typeof saved.coding?.runner === 'string' && saved.coding.runner ? saved.coding.runner : 'local-coder-runner';
   const coderUrl = trimSlash(builtInUrl('local-coder-runner') || env.CODING_RUNNER_URL || 'http://127.0.0.1:8195');
@@ -260,6 +268,24 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
       probe: `${switchboardUrl}/health`,
       script: 'services/switchboard/scripts/start.ps1',
       args: portArgs(switchboardUrl),
+    },
+    {
+      id: 'temporal',
+      label: 'Temporal workflow server (temporal.exe, SQLite)',
+      enabled: workflowsOn && isOn(env.TEMPORAL_AUTOSTART, true),
+      url: temporalUiUrl,
+      probe: `${temporalUiUrl}/`,
+      script: 'services/temporal/scripts/start.ps1',
+      args: ['-Port', temporalPort, ...(new URL(temporalUiUrl).port ? ['-UiPort', new URL(temporalUiUrl).port] : [])],
+    },
+    {
+      id: 'workflows',
+      label: 'Agent workflows service (services/workflows)',
+      enabled: workflowsOn && isOn(env.WORKFLOWS_AUTOSTART, true),
+      url: workflowsUrl,
+      probe: `${workflowsUrl}/health`,
+      script: 'services/workflows/scripts/start.ps1',
+      args: portArgs(workflowsUrl),
     },
     {
       id: 'laya',

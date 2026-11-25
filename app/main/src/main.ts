@@ -37,7 +37,7 @@ import { createTailscaleLookup } from './room-hub/tailscale.js';
 import { rememberIpcHandler } from './room-hub/ipc-registry.js';
 import { callToPlace, chooseSummon, summon } from './places/summon.js';
 import { createDoorbell, wakeShouldListen } from './places/doorbell.js';
-import { wanderRefusal } from './places/wander.js';
+import { CONVERSATION_MS, wanderRefusal } from './places/wander.js';
 import { NextDoorReturn } from './places/next-door-return.js';
 import { walkToKevin } from './places/urgent-walk.js';
 import { ActivityMonitor } from './presence/activity-monitor.js';
@@ -194,6 +194,17 @@ import { ToolRegistry } from './tools/tool-registry.js';
 import { StationRegistry } from './stations/station-registry.js';
 import { StationTrips } from './stations/station-trips.js';
 import { PursuitManager } from './pursuits/pursuit-manager.js';
+import { LlmGate } from './pursuits/pursuit-llm.js';
+import { AgentActHandler } from './agent-time/act-handler.js';
+import { AgentSync } from './agent-time/agent-sync.js';
+import { AgentSleep } from './agent-time/sleep.js';
+import { QuietSaves } from './agent-time/quiet-saves.js';
+import { QUESTION_TOOL_ID, withQuestionTool } from './agent-time/ask.js';
+import { withTimeNote } from './agent-time/prompt.js';
+import { createAgentTimeTools } from './agent-time/tools.js';
+import { agentTimeSettingsFromEnv } from './agent-time/settings.js';
+import { WorkflowsClient } from './agent-time/workflows-client.js';
+import type { WorkflowsStatus } from './agent-time/bridge-types.js';
 import { createReadingNotesTool, readingOutboxItem } from './pursuits/reading-memory.js';
 import { StationLookup } from './stations/station-lookup.js';
 import { createVoiceStations, type VoiceStations } from './stations/voice-stations.js';
@@ -504,6 +515,16 @@ let stationTrips: StationTrips | null = null;
 let voiceStations: VoiceStations | null = null;
 // Pursuits: reading sessions an avatar starts on its own (pursuits/). Set up with the stations.
 let pursuitManager: PursuitManager | null = null;
+// Agent time (agent-time/): the workflows service runs each avatar's life and asks this app to act. Off with WORKFLOWS_ENABLED=0.
+const agentTime = agentTimeSettingsFromEnv(process.env);
+/** Who is asleep, and what each inbox saved quietly since the avatar spoke. */
+const agentSleep = new AgentSleep(logger);
+const quietSaves = new QuietSaves();
+/** One model call at a time across pursuits and agent thinking, so a conversation always has a slot. */
+const agentLlmGate = new LlmGate(1);
+let workflowsClient: WorkflowsClient | null = null;
+let agentActHandler: AgentActHandler | null = null;
+let agentSync: AgentSync | null = null;
 
 function emitCameraDetection(event: CameraDetectionEventPayload): boolean {
   const cue = typeof event.cue === 'string' ? event.cue.trim() : '';
@@ -929,7 +950,11 @@ function startAvatarPlumbing(profile: AvatarProfile, manager: ConfigManager): vo
         logger,
       });
     },
-    onRemembered: (text) => proactiveTick?.noteRemembered(text),
+    onRemembered: (text) => {
+      proactiveTick?.noteRemembered(text);
+      quietSaves.add(avatarId, text);
+    },
+    asleep: () => agentSleep.isAsleep(avatarId),
     remember: (_event, text, source) => {
       conversationManager?.appendToRecentSession([
         { role: 'system', content: `[Update from ${source}, not from Kevin, saved quietly] ${text}`, ts: Date.now() },
@@ -1033,11 +1058,12 @@ function avatarPersona(avatarId: string): { persona: string | undefined; ownMode
  * Every turn gets it, chatter included; a preview turn does not.
  */
 function withPlacesNote(instructions: string | undefined, preview = false, placeId?: string): string | undefined {
-  if (preview || !placeManager) return instructions;
+  if (preview) return instructions;
   // "You are in ..." is told from the place the avatar is in.
-  const note = placesNote(scopedPlaces(placeManager, placeId ?? placeManager.localPlaceId()), (id) => avatarRegistry?.get(id)?.name ?? id);
-  if (!note) return instructions;
-  return instructions?.trim() ? `${instructions.trim()}\n\n${note}` : note;
+  const note = placeManager ? placesNote(scopedPlaces(placeManager, placeId ?? placeManager.localPlaceId()), (id) => avatarRegistry?.get(id)?.name ?? id) : null;
+  const withPlaces = note ? (instructions?.trim() ? `${instructions.trim()}\n\n${note}` : note) : instructions;
+  // "Your time and plans": the reminder, watch and flow tools (agent-time/), when they are on.
+  return agentTime.enabled ? withTimeNote(withPlaces) : withPlaces;
 }
 
 /**
@@ -1079,7 +1105,10 @@ async function runVoiceTurn(
   const mirror = mirrorFor(avatarId);
   // Kevin is talking with this avatar (not a preview, a system update or back-channel chatter): it stops reading,
   // keeping its notes, so its live turn does not wait behind a reading call.
-  if (!payload.preview && !payload.system && !payload.silent) pursuitManager?.interrupt(avatarId, 'conversation');
+  if (!payload.preview && !payload.system && !payload.silent) {
+    pursuitManager?.interrupt(avatarId, 'conversation');
+    agentActHandler?.interruptThinking(avatarId);
+  }
   mirror?.turnStarted(payload.requestId, { text: payload.text, system: payload.system === true, preview: payload.preview === true });
   activeVoiceRequests.set(avatarId, payload.requestId);
   // bija's presence is about bija's room; a desktop room's own presence is kept apart.
@@ -1095,6 +1124,7 @@ async function runVoiceTurn(
       }
     });
     if (!payload.preview) mirror?.turnFinished(payload.requestId, { text: result.text, cancelled: result.cancelled });
+    if (!payload.preview && result.text) quietSaves.clear(avatarId);
     if (!payload.preview && result.text) {
       if (here) presence.update({ lastAssistantSpokeAt: Date.now() });
       else placePresence.update(placeId, { assistantSpokeAt: Date.now() });
@@ -2396,6 +2426,18 @@ function registerIpcHandlers(
     return pursuitManager?.offers() ?? [];
   });
   handleIpc('pursuits:running', () => pursuitManager?.running() ?? []);
+  // Agent time: who is asleep (the idle director skips them), and the workflows service for the Status panel.
+  handleIpc('agents:asleep', () => agentSleep.list());
+  handleIpc('workflows:status', async (): Promise<WorkflowsStatus> => {
+    const base = { enabled: agentTime.enabled, agentLife: agentTime.agentLife, url: agentTime.enabled ? agentTime.url : null, asleep: agentSleep.list(), temporalUiUrl: agentTime.enabled ? agentTime.temporalUiUrl : null };
+    if (!agentTime.enabled || !workflowsClient) return { ...base, reachable: false, temporal: null, agents: [] };
+    try {
+      const health = await workflowsClient.health();
+      return { ...base, reachable: true, temporal: health.temporal === true, agents: health.agents ?? [] };
+    } catch {
+      return { ...base, reachable: false, temporal: null, agents: [] };
+    }
+  });
   handleIpc('pursuits:notes', (_event, avatarId: unknown, limit: unknown) => {
     if (typeof avatarId !== 'string' || !avatarId) return [];
     return memoryStore?.listReadingNotes(avatarId, typeof limit === 'number' ? limit : 20) ?? [];
@@ -2458,12 +2500,15 @@ function registerIpcHandlers(
       ...(fields.prompt ? { prompt: fields.prompt } : {}),
     });
     startAvatarPlumbing(profile, manager);
+    void agentSync?.sync();
     return profile;
   });
   handleIpc('avatars:update', (_event, id: unknown, changes: unknown) => {
     const registry = requireAvatarRegistry();
     if (typeof id !== 'string' || !id) throw new Error('Avatar id is required.');
-    return registry.update(id, readAvatarFields(changes, false));
+    const updated = registry.update(id, readAvatarFields(changes, false));
+    void agentSync?.sync();
+    return updated;
   });
   // What the idle director needs for the avatars other than Echo: their personality and idle habits, as saved.
   handleIpc('avatars:idle-personas', () => {
@@ -2491,6 +2536,8 @@ function registerIpcHandlers(
     avatarPlumbing.delete(id);
     voiceServices?.delete(id);
     pursuitManager?.interrupt(id, 'removed');
+    agentSleep.forget(id);
+    void agentSync?.sync();
     memoryStore?.deleteReadingNotes(id);
     // Its own voice and idle habits go with it, so a later avatar with the same id starts clean.
     // Settings saved under a library character's VRM model id stay: that character is still in the library.
@@ -3014,6 +3061,8 @@ function setupPursuits(store: MemoryStore): void {
       return key ? normalizeIdleHabits(store.getValue(key)) : '';
     },
     avatarName: (avatarId) => avatarRegistry?.get(avatarId)?.name ?? avatarId,
+    isAsleep: (avatarId) => agentSleep.isAsleep(avatarId),
+    gate: agentLlmGate,
     memoryFor: (avatarId) => ({ brief: () => memoryEngine?.voiceFor(avatarId).brief() ?? Promise.resolve(null) }),
     notes: store,
     // Also in long-term memory, through the outbox (so it waits for the engine when it is down).
@@ -3031,6 +3080,86 @@ function setupPursuits(store: MemoryStore): void {
     },
     logger,
   });
+}
+
+/** The avatar's own prompt text (no scene tags), as pursuits and agent thinking use it. */
+function avatarPersonaText(avatarId: string): string {
+  if (avatarId === DEFAULT_AVATAR_ID) {
+    const key = characterPromptKey(DEFAULT_AVATAR_ID);
+    return (key ? memoryStore?.getValue(key) : null)?.trim() ?? '';
+  }
+  return avatarPersona(avatarId).persona ?? '';
+}
+
+/**
+ * Agent time (agent-time/, docs/features/agent-time.md): the workflow tools, the handler that does what the workflows
+ * service asks (acts), and the sync that tells the service which avatars exist. Everything the handler needs from the app
+ * is looked up when it is used, because several parts (pursuits, places) are set up later than this.
+ */
+function setupAgentTime(registry: ToolRegistry, broker: ApprovalBroker): void {
+  const client = new WorkflowsClient({ baseUrl: agentTime.url, token: agentTime.token });
+  workflowsClient = client;
+  for (const tool of createAgentTimeTools({ client })) registry.register(tool);
+  logger.info('Agent time is on: workflow tools registered', { url: agentTime.url, agentLife: agentTime.agentLife });
+  const places = () => placeManager;
+  agentActHandler?.stop();
+  agentActHandler = new AgentActHandler({
+    bus: () => switchboardBus,
+    logger,
+    sleep: agentSleep,
+    quietSaves,
+    presence,
+    avatarName: (avatarId) => avatarRegistry?.get(avatarId)?.name ?? null,
+    persona: avatarPersonaText,
+    habits: (avatarId) => {
+      const key = characterIdleHabitsKey(avatarId);
+      return key && memoryStore ? normalizeIdleHabits(memoryStore.getValue(key)) : '';
+    },
+    placeOf: (avatarId) => {
+      const manager = places();
+      if (!manager) return HOME_PLACE_ID;
+      const placeId = manager.locationOf(avatarId);
+      return manager.get(placeId)?.node === 'offscreen' ? 'next-door' : placeId;
+    },
+    restlessness: () => {
+      const idle = backgroundService?.getIdleSettings();
+      return idle?.enabled ? idle.restlessness : null;
+    },
+    conversationActive: (avatarId) => {
+      if (activeVoiceRequests.has(avatarId)) return true;
+      const ago = talkedAgoMs(avatarId);
+      return ago !== null && ago < CONVERSATION_MS;
+    },
+    pursuits: {
+      isRunning: (avatarId) => pursuitManager?.isRunning(avatarId) === true,
+      offers: () => pursuitManager?.offers() ?? [],
+      start: (avatarId, stationId) => pursuitManager?.start(avatarId, stationId) ?? { ok: false, reason: 'pursuits are not available yet' },
+      interrupt: (avatarId, reason) => pursuitManager?.interrupt(avatarId, reason) === true,
+    },
+    say: (avatarId, text, urgent, source) => {
+      const mirror = mirrorFor(avatarId);
+      if (mirror) mirror.noteQueued(text, urgent, source);
+      else getVoiceService(avatarId)?.notify(text, { urgent, source });
+    },
+    chatFor: (avatarId) => getVoiceService(avatarId)?.chat() ?? null,
+    brief: (avatarId) => memoryEngine?.voiceFor(avatarId).brief() ?? Promise.resolve(null),
+    llmGate: agentLlmGate,
+    tools: registry,
+    approvals: broker,
+    nextDoor: { tryAvatar: (avatarId) => nextDoorReturn?.tryAvatar(avatarId) ?? { moved: false, reason: 'places are not ready' } },
+  });
+  agentActHandler.start();
+  agentSleep.onChanged((asleep) => {
+    broadcastToWindows('agents:changed', asleep);
+    roomHub?.sendToAll({ op: 'ipc', channel: 'agents:changed', args: [asleep] });
+  });
+  agentSync?.stop();
+  agentSync = new AgentSync({
+    client,
+    avatars: () => (avatarRegistry?.list() ?? []).map((profile) => ({ id: profile.id, name: profile.name })),
+    logger,
+  });
+  void agentSync.sync();
 }
 
 function focusExistingWindow() {
@@ -3364,7 +3493,8 @@ app.whenReady().then(async () => {
       talkedAgoMs,
       logger,
     });
-    nextDoorReturn.start();
+    // With agent life on, the life workflows decide when someone comes back (act return_home); the class stays for that.
+    if (!agentTime.agentLife) nextDoorReturn.start();
     void hub.start().catch((error) => logger.warn('Room hub failed to start', { message: error instanceof Error ? error.message : String(error) }));
     // One floor per place: the scene is the avatars at that place, and what the floor starts (answers, chatter)
     // is delivered where that place is drawn (this window, or a satellite's link).
@@ -3464,15 +3594,23 @@ app.whenReady().then(async () => {
       bus: () => switchboardBus,
       logger,
     });
-    proactiveTick.start();
+    if (agentTime.agentLife) {
+      logger.info('Agent life is on: the life workflows replace the proactive tick and the next-door return');
+    } else {
+      logger.info('Agent life is off: using the proactive tick and the next-door return', { workflows: agentTime.enabled });
+      proactiveTick.start();
+    }
     // Provider settings may have been applied before the engine existed.
     syncMemoryStorage();
 
     // Initialize MCP tool registry and manager
     toolRegistry = new ToolRegistry();
     toolRegistry.register(createReadingNotesTool({ notes: memoryStore }));
-    approvalBroker = new ApprovalBroker({ registry: toolRegistry, avatarId: DEFAULT_AVATAR_ID, logger });
-    approvalBroker.on('outcome', (outcome) => codingNudger?.handleApproval(outcome));
+    // The agents' yes/no questions (agent-time/ask.ts) are answered by the wrapper; the nudger does not announce them.
+    approvalBroker = new ApprovalBroker({ registry: withQuestionTool(toolRegistry), avatarId: DEFAULT_AVATAR_ID, logger });
+    approvalBroker.on('outcome', (outcome: ApprovalOutcome) => {
+      if (outcome.approval.toolId !== QUESTION_TOOL_ID) codingNudger?.handleApproval(outcome);
+    });
     approvalBroker.on('outcome', (outcome: ApprovalOutcome) => mirrorFor(avatarIdOfAddress(outcome.approval.requestedBy))?.approvalOutcome(outcome));
     // 'changed' lists everything pending; only ids not seen before are new requests.
     approvalBroker.on('changed', (pending: PendingApproval[]) => {
@@ -3496,6 +3634,7 @@ app.whenReady().then(async () => {
       }
       logger.info('Memory tools registered');
     }
+    if (agentTime.enabled) setupAgentTime(toolRegistry, approvalBroker);
     // openExternal is only used for an explicit "Sign in" press; start-up never opens the browser.
     mcpManager = new MCPManager(memoryStore.database, toolRegistry, {
       openExternal: (url) => shell.openExternal(url),
@@ -3880,6 +4019,8 @@ app.on('before-quit', async (event) => {
   codingService?.stop();
   approvalBroker?.dispose();
   proactiveTick?.stop();
+  agentActHandler?.stop();
+  agentSync?.stop();
   activityMonitor?.stop();
   satelliteActivity?.stop();
   nextDoorReturn?.stop();

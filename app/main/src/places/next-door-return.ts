@@ -46,20 +46,25 @@ export class NextDoorReturn {
     this.handle = null;
   }
 
+  /** The place an avatar next door may come back to now (the most lively one that wander rules allow), or null. */
+  private targetFor(view: ReturnType<Places['snapshot']>, avatarId: string): string | null {
+    const lively = view.places
+      .filter((place) => place.node !== 'offscreen')
+      .sort((a, b) => (view.activeAt?.[b.id] ?? 0) - (view.activeAt?.[a.id] ?? 0));
+    return lively.find((place) => wanderRefusal(view, avatarId, place.id, { talkedAgoMs: this.options.talkedAgoMs(avatarId) }) === null)?.id ?? null;
+  }
+
   /** One roll. Returns the avatar that was sent back and where, or null. */
   tick(): { avatarId: string; placeId: string } | null {
     const level = this.options.restlessness();
     if (!level) return null;
     const { places } = this.options;
     const view = places.snapshot();
-    const lively = view.places
-      .filter((place) => place.node !== 'offscreen')
-      .sort((a, b) => (view.activeAt?.[b.id] ?? 0) - (view.activeAt?.[a.id] ?? 0));
     const pairs: Array<{ avatarId: string; placeId: string }> = [];
     for (const nextDoor of view.places.filter((place) => place.node === 'offscreen')) {
       for (const avatarId of places.avatarsAt(nextDoor.id)) {
-        const target = lively.find((place) => wanderRefusal(view, avatarId, place.id, { talkedAgoMs: this.options.talkedAgoMs(avatarId) }) === null);
-        if (target) pairs.push({ avatarId, placeId: target.id });
+        const target = this.targetFor(view, avatarId);
+        if (target) pairs.push({ avatarId, placeId: target });
       }
     }
     const first = pairs[0];
@@ -73,5 +78,25 @@ export class NextDoorReturn {
     }
     this.options.logger?.info('An avatar came back from next door', first);
     return first;
+  }
+
+  /**
+   * Try to bring one avatar back now, with no dice (the caller rolled them). The same rules apply: it must be next
+   * door, and a place must be open, active and not just talked in (places/wander.ts).
+   */
+  tryAvatar(avatarId: string): { moved: boolean; placeId?: string; reason?: string } {
+    const { places } = this.options;
+    const view = places.snapshot();
+    const nextDoor = view.places.filter((place) => place.node === 'offscreen');
+    if (!nextDoor.some((place) => places.avatarsAt(place.id).includes(avatarId))) return { moved: false, reason: 'not next door' };
+    const target = this.targetFor(view, avatarId);
+    if (!target) return { moved: false, reason: 'nobody is anywhere it may go' };
+    const started = places.startMove(avatarId, target, 'wandered');
+    if (!started.ok) {
+      this.options.logger?.info('An avatar next door could not come back', { avatarId, placeId: target, reason: started.reason });
+      return { moved: false, reason: started.reason };
+    }
+    this.options.logger?.info('An avatar came back from next door', { avatarId, placeId: target });
+    return { moved: true, placeId: target };
   }
 }

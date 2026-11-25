@@ -88,7 +88,7 @@ Summaries newest first. `kind` is `session`, `day`, `week` or `month`. Each has 
 `text`, `topics`, `period_start`, `period_end` and `model`. Search results, `/v1/memories/{id}`
 and the timeline carry them too, as kinds `session`, `day`, `week` and `month`.
 
-## `GET /v1/brief?session_id=&agent=`
+## `GET /v1/brief?session_id=&agent=&avatar_id=`
 
 For the start of a conversation: active, non-private `facts` (pinned first, then the easiest to
 reach, see fading, up to about 1,200 characters); `handoff`, the newest note the agent left in
@@ -96,6 +96,14 @@ another conversation (`text`, `agent`, `model`, `written_at`), to be shown whole
 `session_id`, with its `summary` (once made) and last three turns, and `recent_days`, up to two
 day summaries from the past week; and `recent_coding`, up to three coding tasks finished in the past week
 (`workspace`, `title`, `outcome`, `pr_url`, `pr_state`, `finished_at`; empty when none). The client adds the date and time and formats it.
+
+The brief also has the avatar's own time keeping: `intentions` (active ones, goals first, then by
+due date, at most 12: `id`, `kind`, `text`, `due_at`, `status`, `workflow_id`, `avatar_id`), `flows`
+(enabled ones, at most 12: `name`, `description`, `trigger`, `avatar_id`) and `agent_state` (the
+sleep state below, or `null`). Facts, the note and the conversations are shared by all avatars, but
+these three are per avatar. They are for `avatar_id` if given, else for `agent` lower-cased (the
+avatar ids are lower-case names such as `echo`, so `agent=Echo` works), and for every avatar when
+neither is given (`agent_state` is then `null`).
 
 ## `POST /v1/coding/tasks`
 
@@ -106,6 +114,59 @@ pull request is merged). Body: `task_id`, `workspace_id`, `workspace_name`, `tit
 `model`, `provider`, `agent`, `started_at`, `finished_at`. It is stored in `coding_tasks` and indexed
 as one sentence (kind `coding_task`, source `coding`). Coding rows are not mirrored and are kept out
 of auto-recall, summaries and fact extraction.
+
+## `GET /v1/intentions?avatar_id=&status=active&kind=&limit=100`
+
+What avatars mean to do, newest first, as `{"intentions": [...]}`. `status` is `open`, `waiting`,
+`done`, `dropped`, `active` (open and waiting; the default) or `all`. `kind` is `goal`, `intention`,
+`promise`, `watch`, `reminder` or `wakeup`. Each row has `id`, `avatar_id`, `kind`, `text`, `why`,
+`status`, `parent_id`, `workflow_id`, `template`, `params`, `due_at`, `origin_message_id`, `outcome`,
+`created_at` and `updated_at`.
+
+## `POST /v1/intentions`
+
+Body: `avatar_id`, `kind`, `text`, and optionally `why`, `status` (default `open`), `parent_id`
+(404 if there is no such intention), `workflow_id`, `template`, `params` (an object), `due_at`,
+`origin_message_id`, `outcome` and `id` (a uuid; one is made if left out). Returns the row.
+
+## `PATCH /v1/intentions/{id}`
+
+Change `status`, `outcome`, `workflow_id`, `text`, `why`, `due_at`, `params` or `template`. Only the
+fields sent change; `null` clears `outcome`, `workflow_id`, `why`, `due_at`, `params` and
+`template`. Returns the row, or 404.
+
+## `GET /v1/flows?avatar_id=&include_disabled=false`
+
+The flows avatars built for themselves, as `{"flows": [...]}`, by avatar and name. Deleted flows
+are never listed; switched-off ones only with `include_disabled=true`. Each has `avatar_id`, `name`,
+`description`, `version`, `definition`, `trigger`, `enabled`, `deleted_at`, `last_run_at`,
+`last_outcome`, `created_at` and `updated_at`. `GET /v1/flows/{avatar_id}/{name}` returns one (404
+if it is missing or deleted). Names are `[a-z0-9_-]`, 1 to 64 characters.
+
+## `PUT /v1/flows/{avatar_id}/{name}`
+
+```json
+{"description": "Weekday weather and bins", "definition": {"inputs": {}, "steps": []},
+ "trigger": {"kind": "schedule", "cron": "30 7 * * 1-5"}, "enabled": true}
+```
+
+Create the flow, or save a new version of it: `version` goes up by one and every saved version is
+kept in `agent_flow_versions`. `description` defaults to empty, `trigger` to `{"kind": "manual"}`
+and `enabled` to true. A deleted flow saved again comes back. The engine does not check the
+definition; the workflows service does. Returns the flow.
+
+## `PATCH /v1/flows/{avatar_id}/{name}` and `DELETE /v1/flows/{avatar_id}/{name}`
+
+PATCH changes `enabled`, `last_run_at` or `last_outcome` (the version stays) and returns the flow.
+DELETE switches the flow off and sets `deleted_at`; its versions are kept. Both give 404 if there is
+no such flow.
+
+## `GET /v1/agents/{avatar_id}/state` and `PUT /v1/agents/{avatar_id}/state`
+
+Whether an avatar is asleep: `avatar_id`, `asleep`, `awake_since`, `last_sleep_at`, `last_wake_at`
+and `updated_at`. GET gives 404 until one has been written. PUT takes any of `asleep`,
+`awake_since`, `last_sleep_at` and `last_wake_at`, creates the row if needed, leaves the fields not
+sent as they are (`null` clears a time) and returns the state.
 
 ## `POST /v1/recall`
 

@@ -35,6 +35,7 @@ import { VisemeDriver, type VisemeFrame } from './audio/viseme-driver.js';
 import type { VoiceActivity } from './realtime/voice-activity.js';
 import { GpuMemoryPanel } from './status/gpu-memory-bar.js';
 import { SwitchboardStatusLine } from './status/switchboard-status.js';
+import { WorkflowsStatusLine } from './status/workflows-status.js';
 import { DoNotDisturbToggle } from './status/dnd-toggle.js';
 import { HearChatterToggle } from './status/hear-chatter-toggle.js';
 import { usePresenceReporter } from './presence/use-presence-reporter.js';
@@ -1392,7 +1393,7 @@ export default function App() {
   useEffect(() => {
     speakingRef.current = { echo: visemeFrame, others: visemeFrames };
   }, [visemeFrame, visemeFrames]);
-  const pursuits = usePursuits(activeBridge?.pursuits, backgrounds.activeRoom?.id ?? null);
+  const pursuits = usePursuits(activeBridge?.pursuits, backgrounds.activeRoom?.id ?? null, activeBridge?.agents);
   const { idleNote } = useIdleDirector({
     executor: sceneActions,
     // Characters may go and read at a station of this room on their own (main runs the session).
@@ -3863,6 +3864,7 @@ export default function App() {
             <CodingStatusLine api={activeBridge?.coding} active={panel === 'status'} />
             <CodingTasksPanel api={activeBridge?.codingTasks} codingApi={activeBridge?.coding} localVoice={activeBridge?.localVoice} active={panel === 'status'} />
             <SwitchboardStatusLine api={activeBridge?.switchboard} active={panel === 'status'} />
+            <WorkflowsStatusLine api={activeBridge?.workflows} active={panel === 'status'} />
             <DoNotDisturbToggle api={activeBridge?.presence} />
             <HearChatterToggle api={activeBridge?.floor} />
             <GpuMemoryPanel api={activeBridge?.gpuMemory} active={panel === 'status'} />

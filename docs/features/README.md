@@ -23,6 +23,7 @@ This directory contains design documents for potential future features of the Em
 | — | [Models and servers](./models-and-servers.md) | High | Shipped | One pop-up for every model job: server, model, backups and keys |
 | — | [Stations](./stations.md) | Medium | In Progress | Tools that live at an object in a 3D room; the avatar walks there while the tool runs |
 | — | [Reading](./reading.md) | Medium | In Progress | A character reads on its own at a station, on its own model, and keeps notes |
+| — | [Agent time](./agent-time.md) | High | In Progress | Agents plan their own time: reminders, watches, goals, their own flows and sleep, run by Temporal |
 | — | [Places](./places.md) | High | In Progress | Every screen is a place; avatars walk out of one and into another (`{room:}`), and can be called back |
 
 ## Feature Dependencies

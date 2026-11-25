@@ -13,7 +13,7 @@ from uuid import UUID
 import psycopg
 from psycopg.types.json import Jsonb
 
-from . import coding, handoffs
+from . import agent_time, coding, handoffs
 from .embed import Embedder
 from .facts import ACCESSIBILITY_SQL, touch
 from .recall import hybrid_search
@@ -40,12 +40,15 @@ def brief(
     *,
     session_id: Optional[UUID] = None,
     agent: Optional[str] = None,
+    avatar_id: Optional[str] = None,
     fact_chars: int = BRIEF_FACT_CHARS,
 ) -> dict[str, Any]:
     """Pinned facts then the most used and recent others, up to `fact_chars`; the newest note
     the agent left itself; and how the last conversation (not `session_id`, the one starting)
-    ended. `agent` is reported, not filtered on: every
-    character shares one memory."""
+    ended. `agent` is reported, not filtered on for facts, notes and conversations: every
+    character shares one memory. The avatar's own intentions, flows and sleep state are the
+    exception: they are for `avatar_id`, or else for `agent` lower-cased (the avatar ids are
+    lower-case names, such as 'echo'); with neither, every avatar's are listed."""
     # Pinned first, then the easiest to reach: what is used stays, what never comes up fades
     # out of the brief (still searchable). See facts.ACCESSIBILITY_SQL.
     rows = conn.execute(
@@ -116,6 +119,7 @@ def brief(
         """
     ).fetchall()
     recent_days = [{"period_start": d[0].isoformat(), "title": d[1], "text": d[2]} for d in reversed(days)]
+    who = (avatar_id or agent or "").strip().lower() or None
     return {
         "agent": agent,
         "facts": facts,
@@ -123,6 +127,7 @@ def brief(
         "last_session": last_session,
         "recent_days": recent_days,
         "recent_coding": coding.recent(conn),
+        **agent_time.brief_parts(conn, who),
     }
 
 
