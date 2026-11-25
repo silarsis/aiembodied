@@ -57,6 +57,9 @@ export function createAppWindow(options: AppWindowOptions): BrowserWindow {
     throw error;
   }
 
+  // Kiosk (no way out but Alt+F4) only for a dedicated appliance: AIEMBODIED_KIOSK=1 on a packaged build.
+  // Otherwise full screen, and Escape leaves it.
+  const kiosk = isProduction && process.env.AIEMBODIED_KIOSK === '1';
   const saved = satellite?.get().bounds ?? null;
   const placement: BrowserWindowConstructorOptions = satellite
     ? {
@@ -65,7 +68,7 @@ export function createAppWindow(options: AppWindowOptions): BrowserWindow {
         ...(saved?.x !== undefined && saved?.y !== undefined ? { x: saved.x, y: saved.y } : {}),
         fullscreen: saved?.fullScreen ?? false,
       }
-    : { width: 1920, height: 1080, kiosk: isProduction, fullscreen: !isProduction };
+    : { width: 1920, height: 1080, kiosk, fullscreen: !kiosk };
 
   const window = new BrowserWindow({
     ...placement,
@@ -113,7 +116,7 @@ export function createAppWindow(options: AppWindowOptions): BrowserWindow {
 
   if (satellite) {
     watchSatelliteWindow(window, satellite);
-  } else if (!isProduction) {
+  } else if (!kiosk) {
     window.webContents.on('before-input-event', (event, input) => {
       if (input.type === 'keyDown' && input.key === 'Escape') {
         event.preventDefault();

@@ -240,16 +240,33 @@ deprecated `realtime.session` handshakes and should not be used with the current
 
 ### Package for Distribution
 
-Electron bundles for Windows, macOS, and Linux are generated with `electron-builder`.
+#### Windows installer (built on GitHub)
+
+The **Windows installer** workflow builds a per-user setup exe and a portable exe that run on a PC with no dev setup
+(no Python services or models inside; see [docs/windows-installer.md](docs/windows-installer.md) for what still needs
+setting up there).
+
+To build a new one:
+
+- **Release (a link you can send):** change the number in `RELEASE.txt` (e.g. `0.0.3` → `0.0.4`) and merge it to main.
+  The workflow publishes GitHub release `v<number>` with both exes under the repo's Releases.
+- **By hand:** GitHub → Actions → Windows installer → Run workflow on `main`. Tick "release" to publish a release;
+  otherwise the exes are in the run's artifacts (GitHub sign-in needed). You can type a version instead of using `RELEASE.txt`.
+- **Locally on Windows:** `pnpm install --frozen-lockfile`, then `python scripts\build_windows_installer.py` (output in `release\`).
+
+The exes are not signed: SmartScreen asks once (More info → Run anyway).
+
+#### Other platforms
+
+Electron bundles for macOS and Linux are generated with `electron-builder`.
 
 ```bash
 pnpm build            # compile main + renderer bundles
 pnpm dist             # emit installers into release/
 ```
 
-Artifacts land in `release/` with platform-specific installers (`.dmg`, `.zip`, `.exe`, `.AppImage`, `.deb`). Production builds
-boot directly into kiosk mode and automatically register themselves to launch at login. To opt into the auto-launch flow from a
-development build, run with `ENABLE_AUTO_LAUNCH=1 pnpm --filter @aiembodied/main dev`.
+Artifacts land in `release/`. Packaged builds open full screen (Escape leaves it); `AIEMBODIED_KIOSK=1` makes them a locked
+kiosk, and `ENABLE_AUTO_LAUNCH=1` registers them to start at login.
 
 ### Intel N100 Deployment Tips
 

@@ -22,3 +22,7 @@ lint_output*.txt
 test-output*.txt
 test_output*.txt
 typecheck_log.txt
+
+# Windows installer build (scripts/build_windows_installer.py)
+/build/windows-stage/
+/release/
