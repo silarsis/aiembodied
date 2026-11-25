@@ -43,6 +43,13 @@ What exists so far (phases 1 to 4):
   next brief word for word, and can correct or withdraw a saved fact (the old one is kept). Facts
   record the model that wrote them, and fade out of the brief unless they keep being used
   (pinned facts never fade; faded ones are still searchable). See API.md.
+- **Agents and time.** For each avatar (by its id, such as `echo`): *intentions* (goals, promises,
+  reminders, watches and wake-ups, each with a status and why), the *flows* it built for itself
+  (versioned definitions and triggers, kept for the workflows service that runs them), and its sleep
+  state. The brief lists the active intentions, enabled flows and sleep state. These tables
+  (`intentions`, `agent_flows`, `agent_flow_versions`, `agent_state`) are not mirrored yet: flows
+  have a name key and not an id and `seq`, which the mirror's tables all need, so they are left out
+  like the Home Assistant and coding tables. See API.md.
 - **Forget.** Delete a session, a message or a fact, with everything indexed from it. Deletes are
   recorded as tombstones, which the mirror follows.
 - **Move and mirror.** Switch to another database (such as Supabase) while running, copying

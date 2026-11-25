@@ -57,6 +57,7 @@ export const SATELLITE_CHANNELS: ReadonlySet<string> = new Set([
   'pursuits:start',
   'pursuits:offers',
   'pursuits:running',
+  'agents:asleep',
   // The wake word picked on bija, and for a trained one its file, for the satellite's own wake word worker. Read-only.
   'wake-word:model',
 ]);

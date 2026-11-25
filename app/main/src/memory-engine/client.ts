@@ -184,6 +184,12 @@ export interface MemoryEngineBrief {
   handoff?: MemoryEngineHandoff | null;
   /** Up to three coding tasks finished in the last week, newest first. */
   recent_coding?: MemoryEngineCodingBrief[];
+  /** Agent time: what this avatar is in the middle of (active, goals first, at most 12). Absent from an older engine. */
+  intentions?: Array<{ id: string; kind: string; text: string; due_at?: string | null; status?: string; workflow_id?: string | null; avatar_id?: string }>;
+  /** Agent time: the flows this avatar wrote (enabled, at most 12). */
+  flows?: Array<{ name: string; description?: string | null; trigger?: Record<string, unknown> | null; avatar_id?: string }>;
+  /** Agent time: whether the avatar is asleep, and when it last slept or woke. */
+  agent_state?: { avatar_id?: string; asleep: boolean; awake_since?: string | null; last_sleep_at?: string | null; last_wake_at?: string | null } | null;
 }
 
 export interface MemoryEngineCodingBrief {
@@ -550,10 +556,11 @@ export class MemoryEngineClient {
     return this.request('PUT', `/v1/facts/${encodeURIComponent(id)}`, fact);
   }
 
-  brief(options: { sessionId?: string | null; agent?: string; timeoutMs?: number } = {}): Promise<MemoryEngineBrief> {
+  brief(options: { sessionId?: string | null; agent?: string; avatarId?: string; timeoutMs?: number } = {}): Promise<MemoryEngineBrief> {
     const params = new URLSearchParams();
     if (options.sessionId) params.set('session_id', options.sessionId);
     if (options.agent) params.set('agent', options.agent);
+    if (options.avatarId) params.set('avatar_id', options.avatarId);
     const query = params.toString();
     return this.request('GET', `/v1/brief${query ? `?${query}` : ''}`, undefined, options.timeoutMs);
   }

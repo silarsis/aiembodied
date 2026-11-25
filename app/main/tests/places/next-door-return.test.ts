@@ -120,4 +120,17 @@ describe('NextDoorReturn', () => {
     loop.stop();
     expect(cleared).toEqual([1]);
   });
+
+  it('tryAvatar brings one avatar back with no dice, by the same rules', () => {
+    const { places, tick, rng } = setup({ roll: 0.99 });
+    expect(tick.tryAvatar('sage')).toEqual({ moved: true, placeId: 'home' });
+    expect(rng).not.toHaveBeenCalled();
+    expect(places.snapshot().transit).toEqual([{ avatarId: 'sage', from: 'next-door', to: 'home' }]);
+    expect(tick.tryAvatar('echo')).toEqual({ moved: false, reason: 'not next door' });
+  });
+
+  it('tryAvatar keeps the avatar next door when nobody is around or Kevin just talked with it', () => {
+    expect(setup({ activeAt: {}, locations: { sage: 'next-door', echo: 'next-door' } }).tick.tryAvatar('sage')).toMatchObject({ moved: false });
+    expect(setup({ talked: CONVERSATION_MS - 1 }).tick.tryAvatar('sage')).toMatchObject({ moved: false });
+  });
 });

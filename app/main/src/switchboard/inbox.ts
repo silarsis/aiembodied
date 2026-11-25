@@ -64,6 +64,8 @@ export interface AvatarInboxOptions {
   remember?: (event: SwitchboardEvent, text: string, source: string) => void;
   /** Told of the text of every quiet save (rule or decision), for things like the proactive tick. */
   onRemembered?: (text: string) => void;
+  /** True while the avatar is asleep (agent time): only urgent news is spoken, the rest is remembered. */
+  asleep?: () => boolean;
   /** True while do-not-disturb is on. */
   doNotDisturb?: () => boolean;
   /** Told of every decision that is journalled, whether or not the bus reaches the switchboard. */
@@ -104,7 +106,12 @@ export class AvatarInbox {
       return;
     }
     const rule = lookupRule(this.options.policy ?? DEFAULT_INBOX_POLICY, event.type);
-    const action = typeof rule?.action === 'function' ? rule.action(event) : (rule?.action ?? 'ignore');
+    let action = typeof rule?.action === 'function' ? rule.action(event) : (rule?.action ?? 'ignore');
+    // A sleeping avatar only speaks urgent news; everything else is kept quietly.
+    if (action !== 'ignore' && action !== 'speak-urgent' && event.priority !== 'urgent' && this.options.asleep?.() === true) {
+      logger?.debug?.('Inbox: asleep, remembering', { type: event.type, id: event.id });
+      action = 'remember';
+    }
     if (action === 'deliberate') {
       void this.deliberating(event, rule, now).catch((error) => {
         logger?.warn('Inbox: deliberation failed', { message: error instanceof Error ? error.message : String(error) });

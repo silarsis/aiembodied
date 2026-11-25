@@ -450,6 +450,8 @@ describe('main process bootstrap', () => {
   beforeEach(() => {
     vi.resetModules();
     process.env.NODE_ENV = 'test';
+    // Agent time (the workflows service) is tested apart; here it stays off so prompts and the network are as before.
+    process.env.WORKFLOWS_ENABLED = '0';
 
     dotenvConfigMock.mockClear();
     initializeLoggerMock.mockClear();

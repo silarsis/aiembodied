@@ -96,6 +96,13 @@ describe('PursuitManager', () => {
     expect(visit?.settle).toHaveBeenCalledWith(true);
   });
 
+  it('does not start a session for an avatar that is asleep', () => {
+    const asleep = new Set(['sage']);
+    const { manager } = setup({ known: { isAsleep: (id) => asleep.has(id) } });
+    expect(manager.start('sage', 'station-1')).toEqual({ ok: false, reason: 'asleep' });
+    expect(manager.isRunning('sage')).toBe(false);
+  });
+
   it('logs each step and each tool call briefly', async () => {
     const logger = { info: vi.fn(), warn: vi.fn() };
     const { manager } = setup({ known: { logger } });

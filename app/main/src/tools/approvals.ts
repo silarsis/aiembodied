@@ -103,7 +103,7 @@ export class ApprovalBroker extends EventEmitter {
   }
 
   /** Record a call that needs approval. The same tool with the same arguments, still pending, is not added twice. */
-  async request(tool: RegisteredTool, params: unknown, avatarId?: string): Promise<PendingApproval> {
+  async request(tool: RegisteredTool, params: unknown, avatarId?: string, requestOptions: { ttlMs?: number } = {}): Promise<PendingApproval> {
     this.expireOld();
     const key = JSON.stringify(params ?? null);
     const requestedBy = `avatar:${avatarId || this.options.avatarId || 'echo'}`;
@@ -129,14 +129,14 @@ export class ApprovalBroker extends EventEmitter {
       params,
       summary: summarize(tool, params),
       createdAt,
-      expiresAt: createdAt + this.ttlMs,
+      expiresAt: createdAt + (requestOptions.ttlMs ?? this.ttlMs),
       source: 'voice',
       cardOnly,
       requestedBy,
       approvers: ['person:kevin'],
     };
     this.pending.set(approval.id, approval);
-    const timer = setTimeout(() => this.expireOld(), this.ttlMs + 50);
+    const timer = setTimeout(() => this.expireOld(), Math.min(requestOptions.ttlMs ?? this.ttlMs, 2_000_000_000) + 50);
     timer.unref?.();
     this.timers.set(approval.id, timer);
     this.options.logger?.info('Approval requested', { id: approval.id, tool: approval.toolName, summary: approval.summary, cardOnly, source: approval.source });

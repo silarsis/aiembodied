@@ -47,6 +47,29 @@ describe('inbox policy', () => {
   });
 });
 
+describe('inbox while asleep', () => {
+  it('speaks only urgent news; the rest is remembered', async () => {
+    const bus = new LocalOnlyBus(makeEventId);
+    const notify = vi.fn();
+    const remember = vi.fn();
+    let asleep = true;
+    new AvatarInbox({ avatarId: 'echo', bus, notify, remember, asleep: () => asleep, logger: warn }).start();
+    bus.publish(ev('avatar.inbox', { priority: 'normal', payload: { text: 'later' } }));
+    bus.publish(ev('home.change', { payload: { text: 'door opened' } }));
+    bus.publish(ev('home.alert', { payload: { text: 'Smoke' } }));
+    bus.publish(ev('avatar.inbox', { priority: 'urgent', payload: { text: 'Now!' } }));
+    bus.publish(ev('speech.heard'));
+    await flush();
+    await flush();
+    expect(notify.mock.calls.map((call) => call[0])).toEqual(['Smoke', 'Now!']);
+    expect(remember.mock.calls.map((call) => call[1])).toEqual(['later', 'door opened']);
+    asleep = false;
+    bus.publish(ev('avatar.inbox', { priority: 'high', payload: { text: 'awake now' } }));
+    await flush();
+    expect(notify).toHaveBeenLastCalledWith('awake now', expect.anything());
+  });
+});
+
 describe('inbox decision step', () => {
   function setup(opts: { decision?: Decision | null | Error; dnd?: boolean; noDeliberate?: boolean } = {}) {
     const bus = new LocalOnlyBus(makeEventId);

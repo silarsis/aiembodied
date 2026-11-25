@@ -31,6 +31,8 @@ export interface VoiceMemoryOptions {
   client: Pick<MemoryEngineClient, 'brief' | 'recall'> & Partial<Pick<MemoryEngineClient, 'activity'>>;
   currentSessionId: () => string | null;
   agentName: () => string;
+  /** The avatar's id, so the engine can add its own goals, intentions and flows. */
+  avatarId?: string;
   /** Off: the brief is only the date and time. */
   brief?: boolean;
   autoRecall?: boolean;
@@ -98,6 +100,28 @@ export function formatBrief(brief: MemoryEngineBrief | null, now: Date): string 
     const by = handoff.model ? `, written by ${handoff.model}` : '';
     lines.push('', `The note you left yourself for this conversation (${describeAgo(when, now)}${by}):`, handoff.text);
   }
+  const intentions = brief?.intentions ?? [];
+  const goals = intentions.filter((item) => item.kind === 'goal');
+  const doing = intentions.filter((item) => item.kind !== 'goal');
+  if (doing.length) {
+    lines.push('', "What you're in the middle of:");
+    for (const item of doing) {
+      const dueAt = item.due_at ? new Date(item.due_at) : null;
+      const due = dueAt && !Number.isNaN(dueAt.getTime()) ? ` (due ${formatDay(dueAt)} ${dueAt.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })})` : '';
+      lines.push(`- ${oneLine(item.text)}${due}${item.status === 'waiting' ? ' [waiting]' : ''}`);
+    }
+  }
+  if (goals.length) {
+    lines.push('', 'Your goals:');
+    for (const item of goals) lines.push(`- ${oneLine(item.text)}`);
+  }
+  const flows = brief?.flows ?? [];
+  if (flows.length) {
+    lines.push('', 'Your workflows (run them with run_flow, change them with write_flow):');
+    for (const flow of flows) lines.push(`- ${flow.name}${flow.description ? `: ${oneLine(flow.description)}` : ''}`);
+  }
+  const state = brief?.agent_state;
+  if (state?.asleep) lines.push('', 'You are asleep right now.');
   const last = brief?.last_session;
   if (last?.summary) {
     const when = new Date(last.last_at);
@@ -142,6 +166,7 @@ export function createVoiceMemory(options: VoiceMemoryOptions): VoiceMemory {
         const brief = await options.client.brief({
           sessionId: options.currentSessionId(),
           agent: options.agentName(),
+          ...(options.avatarId ? { avatarId: options.avatarId } : {}),
           timeoutMs: options.briefTimeoutMs ?? BRIEF_TIMEOUT_MS,
         });
         return formatBrief(brief, now());

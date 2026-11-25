@@ -90,6 +90,7 @@ import type { FloorBridge } from '../floor/bridge-types.js';
 import type { PlacesBridge, PlacesSnapshot } from '../places/bridge-types.js';
 import type { StationsBridge } from '../stations/bridge-types.js';
 import type { PursuitsBridge } from '../pursuits/types.js';
+import type { AgentsBridge, WorkflowsBridge } from '../agent-time/bridge-types.js';
 import type { RoomHubBridge, RoomHubStatus } from '../room-hub/bridge-types.js';
 import type { GpuMemoryBridge } from '../diagnostics/gpu-memory.js';
 import type { CodingBridge, CodingBusy, CodingBusyBridge, CodingTasksBridge, RunnerEvent } from '../coding/bridge-types.js';
@@ -211,6 +212,8 @@ export interface PreloadApi {
   memoryEngine?: MemoryEngineBridge;
   gpuMemory?: GpuMemoryBridge;
   switchboard?: SwitchboardBridge;
+  workflows?: WorkflowsBridge;
+  agents?: AgentsBridge;
   presence?: PresenceBridge;
   floor?: FloorBridge;
   places?: PlacesBridge;
@@ -752,6 +755,17 @@ export function createBridge(
     },
     switchboard: {
       status: () => transport.invoke('switchboard:status'),
+    },
+    workflows: {
+      status: () => transport.invoke('workflows:status') as ReturnType<WorkflowsBridge['status']>,
+    },
+    agents: {
+      asleep: () => transport.invoke('agents:asleep') as ReturnType<AgentsBridge['asleep']>,
+      onChanged: (listener) => {
+        const channel = 'agents:changed';
+        const handler = (asleep: string[]) => listener(asleep);
+        return transport.on(channel, handler);
+      },
     },
     avatars: {
       list: () => transport.invoke('avatars:list') as Promise<AvatarProfile[]>,

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { PursuitOffer, PursuitsBridge } from '../../../main/src/pursuits/types.js';
+import type { AgentsBridge } from '../../../main/src/agent-time/bridge-types.js';
 import type { IdlePursuit } from './idle-types.js';
 
 /** How often the list of stations that can be read at is read again (tools connect and stations change while the app runs). */
@@ -17,9 +18,29 @@ export function offersFor(offers: readonly PursuitOffer[], roomId: string | null
  * Keeps what the idle director needs to let a character read on its own: which stations can be read at, and
  * which avatars are reading now (so none is offered a second session). Reading is run by main.
  */
-export function usePursuits(api: PursuitsBridge | undefined, roomId: string | null) {
+export function usePursuits(api: PursuitsBridge | undefined, roomId: string | null, agentsApi?: AgentsBridge) {
   const offers = useRef<PursuitOffer[]>([]);
   const reading = useRef(new Set<string>());
+  // Agents asleep (agent time) are kept apart from readers: they are treated as busy, so the idle director skips them.
+  const asleep = useRef(new Set<string>());
+
+  useEffect(() => {
+    if (!agentsApi) return undefined;
+    let cancelled = false;
+    agentsApi
+      .asleep()
+      .then((ids) => {
+        if (!cancelled) asleep.current = new Set(ids);
+      })
+      .catch((error: unknown) => console.warn('[agents] could not read who is asleep', error));
+    const unsubscribe = agentsApi.onChanged((ids) => {
+      asleep.current = new Set(ids);
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [agentsApi]);
 
   useEffect(() => {
     if (!api) return undefined;
@@ -52,7 +73,7 @@ export function usePursuits(api: PursuitsBridge | undefined, roomId: string | nu
   }, [api, roomId]);
 
   const pursuitsFor = useCallback((avatarId: string) => offersFor(offers.current, roomId, avatarId), [roomId]);
-  const pursuing = useCallback((avatarId: string) => reading.current.has(avatarId), []);
+  const pursuing = useCallback((avatarId: string) => reading.current.has(avatarId) || asleep.current.has(avatarId), []);
   const startPursuit = useCallback(
     async (avatarId: string, stationId: string) => {
       if (!api) return false;

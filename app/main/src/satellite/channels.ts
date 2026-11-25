@@ -68,6 +68,8 @@ const FORWARD = [
   'pursuits:start',
   'pursuits:offers',
   'pursuits:running',
+  // Which avatars are asleep (agent time): the idle director leaves them alone.
+  'agents:asleep',
   // The satellite's own main process asks for the wake word picked on bija (and a trained model's file). The page never calls it.
   'wake-word:model',
 ] as const;
@@ -118,6 +120,8 @@ const EVENT = [
   'station:use',
   // Which avatars are reading right now.
   'pursuits:changed',
+  // Which avatars are asleep.
+  'agents:changed',
 ] as const;
 
 /** Never run on a satellite: settings, models, keys, avatars, coding, generation, uploads, deletes, memory, tools, bija's own admin. */
@@ -268,6 +272,7 @@ const UNAVAILABLE = [
   'approvals:changed',
   'approvals:decline',
   'switchboard:status',
+  'workflows:status',
   'diagnostics:gpu-memory',
   // Voice on bija: resetting its history, the chatter switch, do-not-disturb.
   'local-voice:reset',

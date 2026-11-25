@@ -150,3 +150,33 @@ describe('LocalVoiceService overhearing', () => {
     expect(chats[1].messages.at(-1)?.content).toBe('hello');
   });
 });
+
+describe('formatBrief agent time sections', () => {
+  const base = { agent: 'Echo', facts: [], last_session: null };
+  it('adds what you are in the middle of, goals, workflows and sleep', async () => {
+    const { formatBrief } = await import('../src/memory-engine/voice-memory.js');
+    const text = formatBrief(
+      {
+        ...base,
+        intentions: [
+          { id: '1', kind: 'goal', text: 'Learn his tastes' },
+          { id: '2', kind: 'reminder', text: 'Tell Kevin about the bins', due_at: '2026-11-26T10:00:00Z', status: 'open' },
+        ],
+        flows: [{ name: 'morning_bins', description: 'Weekday bins reminder' }],
+        agent_state: { asleep: true },
+      },
+      new Date('2026-11-25T00:00:00Z'),
+    );
+    expect(text).toContain("What you're in the middle of:\n- Tell Kevin about the bins (due");
+    expect(text).toContain('Your goals:\n- Learn his tastes');
+    expect(text).toContain('Your workflows');
+    expect(text).toContain('- morning_bins: Weekday bins reminder');
+    expect(text).toContain('You are asleep right now.');
+  });
+
+  it('is silent when an older engine sends none of them', async () => {
+    const { formatBrief } = await import('../src/memory-engine/voice-memory.js');
+    const text = formatBrief(base, new Date('2026-11-25T00:00:00Z'));
+    expect(text).not.toMatch(/in the middle of|Your goals|Your workflows|asleep/);
+  });
+});
