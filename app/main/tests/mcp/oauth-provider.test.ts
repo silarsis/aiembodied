@@ -16,9 +16,9 @@ import {
 // safeStorage mocked like encryption.test.ts does: "encryption" is a visible prefix, so the tests can check it happened.
 vi.mock('electron', () => ({
   safeStorage: {
-    isEncryptionAvailable: vi.fn(() => true),
-    encryptString: vi.fn((text: string) => Buffer.from(`enc:${text}`)),
-    decryptString: vi.fn((buffer: Buffer) => buffer.toString().replace(/^enc:/, '')),
+    isAsyncEncryptionAvailable: vi.fn(async () => true),
+    encryptStringAsync: vi.fn(async (text: string) => Buffer.from(`enc:${text}`)),
+    decryptStringAsync: vi.fn(async (buffer: Buffer) => ({ shouldReEncrypt: false, result: buffer.toString().replace(/^enc:/, '') })),
   },
 }));
 
@@ -59,66 +59,66 @@ describe('MCP OAuth', () => {
     new McpOAuthProvider({ db, serverId: 's1', openExternal, callbackPort: port, ...extra });
 
   describe('storage', () => {
-    it('round-trips client information, tokens and verifier, encrypted at rest', () => {
+    it('round-trips client information, tokens and verifier, encrypted at rest', async () => {
       const provider = makeProvider();
-      provider.saveClientInformation({ client_id: 'cid', redirect_uris: [`http://127.0.0.1:${port}/mcp/oauth/callback`] } as any);
-      provider.saveTokens({ access_token: 'secret-access', refresh_token: 'secret-refresh', token_type: 'Bearer' });
-      provider.saveCodeVerifier('verifier-123');
+      await provider.saveClientInformation({ client_id: 'cid', redirect_uris: [`http://127.0.0.1:${port}/mcp/oauth/callback`] } as any);
+      await provider.saveTokens({ access_token: 'secret-access', refresh_token: 'secret-refresh', token_type: 'Bearer' });
+      await provider.saveCodeVerifier('verifier-123');
 
-      expect(provider.clientInformation()).toMatchObject({ client_id: 'cid' });
-      expect(provider.tokens()).toEqual({ access_token: 'secret-access', refresh_token: 'secret-refresh', token_type: 'Bearer' });
-      expect(provider.codeVerifier()).toBe('verifier-123');
+      expect(await provider.clientInformation()).toMatchObject({ client_id: 'cid' });
+      expect(await provider.tokens()).toEqual({ access_token: 'secret-access', refresh_token: 'secret-refresh', token_type: 'Bearer' });
+      expect(await provider.codeVerifier()).toBe('verifier-123');
 
       // What is on disk is not plain text.
       const row = db.prepare('SELECT * FROM mcp_oauth WHERE server_id = ?').get('s1') as Record<string, string>;
       expect(JSON.stringify(row)).not.toContain('secret-access');
-      expect(row.tokens_encrypted).toBe(Buffer.from('enc:' + JSON.stringify(provider.tokens())).toString('base64'));
+      expect(row.tokens_encrypted).toBe(Buffer.from('enc:' + JSON.stringify(await provider.tokens())).toString('base64'));
     });
 
-    it('keeps servers apart and returns undefined when nothing is saved', () => {
-      makeProvider().saveTokens({ access_token: 'a', token_type: 'Bearer' });
+    it('keeps servers apart and returns undefined when nothing is saved', async () => {
+      await makeProvider().saveTokens({ access_token: 'a', token_type: 'Bearer' });
       const other = new McpOAuthProvider({ db, serverId: 's2', openExternal, callbackPort: port });
-      expect(other.tokens()).toBeUndefined();
-      expect(other.clientInformation()).toBeUndefined();
-      expect(() => other.codeVerifier()).toThrow(/verifier/);
+      expect(await other.tokens()).toBeUndefined();
+      expect(await other.clientInformation()).toBeUndefined();
+      await expect(other.codeVerifier()).rejects.toThrow(/verifier/);
     });
 
-    it('clearTokens keeps the client registration; clearAll removes everything', () => {
+    it('clearTokens keeps the client registration; clearAll removes everything', async () => {
       const provider = makeProvider();
-      provider.saveClientInformation({ client_id: 'cid' } as any);
-      provider.saveTokens({ access_token: 'a', token_type: 'Bearer' });
+      await provider.saveClientInformation({ client_id: 'cid' } as any);
+      await provider.saveTokens({ access_token: 'a', token_type: 'Bearer' });
       provider.clearTokens();
-      expect(provider.tokens()).toBeUndefined();
-      expect(provider.clientInformation()).toMatchObject({ client_id: 'cid' });
+      expect(await provider.tokens()).toBeUndefined();
+      expect(await provider.clientInformation()).toMatchObject({ client_id: 'cid' });
 
       new McpOAuthStore(db).clearAll('s1');
-      expect(provider.clientInformation()).toBeUndefined();
+      expect(await provider.clientInformation()).toBeUndefined();
     });
 
-    it('invalidateCredentials follows the SDK scopes', () => {
+    it('invalidateCredentials follows the SDK scopes', async () => {
       const provider = makeProvider();
-      provider.saveClientInformation({ client_id: 'cid' } as any);
-      provider.saveTokens({ access_token: 'a', token_type: 'Bearer' });
+      await provider.saveClientInformation({ client_id: 'cid' } as any);
+      await provider.saveTokens({ access_token: 'a', token_type: 'Bearer' });
       provider.invalidateCredentials('tokens');
-      expect(provider.tokens()).toBeUndefined();
-      expect(provider.clientInformation()).toBeDefined();
+      expect(await provider.tokens()).toBeUndefined();
+      expect(await provider.clientInformation()).toBeDefined();
       provider.invalidateCredentials('client');
-      expect(provider.clientInformation()).toBeUndefined();
-      provider.saveClientInformation({ client_id: 'cid' } as any);
-      provider.saveCodeVerifier('v');
+      expect(await provider.clientInformation()).toBeUndefined();
+      await provider.saveClientInformation({ client_id: 'cid' } as any);
+      await provider.saveCodeVerifier('v');
       provider.invalidateCredentials('verifier');
-      expect(() => provider.codeVerifier()).toThrow(/verifier/);
-      expect(provider.clientInformation()).toBeDefined();
+      await expect(provider.codeVerifier()).rejects.toThrow(/verifier/);
+      expect(await provider.clientInformation()).toBeDefined();
       provider.invalidateCredentials('all');
-      expect(provider.clientInformation()).toBeUndefined();
+      expect(await provider.clientInformation()).toBeUndefined();
     });
 
-    it('registers again when the saved client was made for another callback port', () => {
+    it('registers again when the saved client was made for another callback port', async () => {
       const provider = makeProvider();
-      provider.saveClientInformation({ client_id: 'old', redirect_uris: ['http://127.0.0.1:1/mcp/oauth/callback'] } as any);
-      expect(provider.clientInformation()).toBeUndefined();
-      provider.saveClientInformation({ client_id: 'new', redirect_uris: [provider.redirectUrl] } as any);
-      expect(provider.clientInformation()).toMatchObject({ client_id: 'new' });
+      await provider.saveClientInformation({ client_id: 'old', redirect_uris: ['http://127.0.0.1:1/mcp/oauth/callback'] } as any);
+      expect(await provider.clientInformation()).toBeUndefined();
+      await provider.saveClientInformation({ client_id: 'new', redirect_uris: [provider.redirectUrl] } as any);
+      expect(await provider.clientInformation()).toMatchObject({ client_id: 'new' });
     });
   });
 

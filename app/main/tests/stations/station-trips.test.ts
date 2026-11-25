@@ -15,7 +15,7 @@ interface Sent {
   event: StationUseEvent;
 }
 
-function setup(options: { active?: string | null; attic?: string | null; sendOk?: boolean; servers?: StationServer[] } = {}) {
+function setup(options: { active?: string | null; attic?: string | null; sendOk?: boolean; servers?: StationServer[]; logger?: { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void } } = {}) {
   const kv = new Map<string, string>();
   const store = { getValue: (key: string) => kv.get(key) ?? null, setValue: (key: string, value: string) => void kv.set(key, value) };
   const places = new PlaceManager({
@@ -51,6 +51,7 @@ function setup(options: { active?: string | null; attic?: string | null; sendOk?
     },
     holdMs: STATION_ARRIVAL_HOLD_MS,
     errandCapMs: 20_000,
+    logger: options.logger,
   });
   return { trips, places, stations, sent, active, screen };
 }
@@ -376,5 +377,34 @@ describe('Home Assistant panel trips', () => {
     await vi.advanceTimersByTimeAsync(200);
     await settled;
     expect(done).toBe(true);
+  });
+
+  describe('logging', () => {
+    const lines = (logger: { info: ReturnType<typeof vi.fn> }) => logger.info.mock.calls.map(([message]) => message);
+
+    it('logs start, arrived, held and end for a trip in the same room', async () => {
+      const logger = { info: vi.fn(), warn: vi.fn() };
+      const { trips, sent } = setup({ logger });
+      const use = trips.begin('echo', papers)!;
+      expect(logger.info).toHaveBeenCalledWith('Stations: trip start', expect.objectContaining({ avatarId: 'echo', stationId: 'default:dair-academy-papers', case: 'same-room', source: 'tool' }));
+      trips.arrived(sent[0].event.useId);
+      await use.settle(true);
+      expect(lines(logger)).toEqual(['Stations: trip start', 'Stations: trip arrived', 'Stations: trip held', 'Stations: trip end']);
+      expect(logger.info).toHaveBeenLastCalledWith('Stations: trip end', expect.objectContaining({ ok: true }));
+    });
+
+    it('says why there is no trip', () => {
+      const logger = { info: vi.fn(), warn: vi.fn() };
+      const { trips } = setup({ logger, active: 'builtin:garden' });
+      expect(trips.begin('echo', papers)).toBeNull();
+      expect(logger.info).toHaveBeenCalledWith('Stations: trip none', expect.objectContaining({ avatarId: 'echo', case: 'none', why: 'the avatar is not in a 3D room' }));
+    });
+
+    it('logs an errand to next door', async () => {
+      const logger = { info: vi.fn(), warn: vi.fn() };
+      const { trips } = setup({ logger, active: STUDIO });
+      trips.begin('echo', papers);
+      expect(logger.info).toHaveBeenCalledWith('Stations: trip start', expect.objectContaining({ case: 'errand', placeId: 'next-door' }));
+    });
   });
 });

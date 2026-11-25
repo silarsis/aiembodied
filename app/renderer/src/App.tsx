@@ -1,5 +1,6 @@
 import { useBackgrounds } from './backgrounds/use-backgrounds.js';
 import { BackgroundControls } from './backgrounds/background-controls.js';
+import { FurnitureControls } from './furniture/furniture-controls.js';
 import {
   useCallback,
   useEffect,
@@ -74,7 +75,7 @@ import { MovementRigs } from './rooms/movement-rig.js';
 import { MoveRequestFilter, enqueueMotionChunk } from './avatar/live-motion.js';
 import { SceneActionExecutor, type SceneActivity } from './rooms/scene-executor.js';
 import { getMotionTraceSetting, initMotionTrace, isSettleRetryEnabled, setMotionTraceSetting, setSettleRetryEnabled } from './rooms/motion-trace.js';
-import { tagToAction, type SceneAction } from './rooms/scene-actions.js';
+import { seatFromMove, tagToAction, type SceneAction, type TagContext } from './rooms/scene-actions.js';
 import { buildSceneInstructions, describeAvatarWhere, describeBody, type OtherAvatarEntry } from './rooms/scene-instructions.js';
 import { useIdleDirector } from './rooms/use-idle-director.js';
 import { usePursuits } from './rooms/use-pursuits.js';
@@ -954,7 +955,7 @@ export default function App() {
   const [modelsOpen, setModelsOpen] = useState(false);
   const [modelsInitialUse, setModelsInitialUse] = useState<UseId | undefined>(undefined);
   /** Which settings pop-up is open (the avatar studio and models pop-ups have their own state). */
-  const [panel, setPanel] = useState<'character' | 'backgrounds' | 'devices' | 'places' | 'tools' | 'memory' | 'status' | null>(null);
+  const [panel, setPanel] = useState<'character' | 'backgrounds' | 'furniture' | 'devices' | 'places' | 'tools' | 'memory' | 'status' | null>(null);
   const [studioOpen, setStudioOpen] = useState(false);
   const closePanel = useCallback(() => setPanel(null), []);
   const openModels = useCallback((use?: UseId) => {
@@ -1563,6 +1564,17 @@ export default function App() {
         const flushActions = () => {
           if (pendingActions.length > 0) executor.submit(pendingActions.splice(0));
         };
+        // Where this avatar is and which seats the others are on, so a vague {sit} picks a free seat nearby.
+        const tagContext = (): TagContext => {
+          const world = executor.world();
+          const takenSeats = new Set<string>();
+          for (const id of ['echo', ...stageNames.map((profile) => profile.id)]) {
+            if (id === (speaker ?? 'echo')) continue;
+            const seat = rigs.get(id).executor.getState().seat?.objectId;
+            if (seat) takenSeats.add(seat);
+          }
+          return { position: world ? { x: world.frame.origin.x, z: world.frame.origin.z } : null, takenSeats };
+        };
         for (const tag of extractMotionTags(content)) {
           if (tag.type === 'room') {
             // Leaving: walk to the door (if the room has one), then ask main to move the avatar. Without a room it is handled below.
@@ -1575,8 +1587,18 @@ export default function App() {
           }
           if (tag.type !== 'move') {
             if (!room || !sceneFilter.shouldStart(JSON.stringify(tag))) continue;
-            const action = tagToAction(room, tag);
+            const action = tagToAction(room, tag, tagContext());
             if (action) pendingActions.push(action);
+            continue;
+          }
+          // "{move:sits on the couch}" can't seat the body (a free movement doesn't know where the couch is),
+          // so it becomes a real sit, which walks there first.
+          const seat = room ? seatFromMove(room, tag.text) : null;
+          if (seat) {
+            if (sceneFilter.shouldStart(JSON.stringify({ type: 'sit', object: seat.id }))) {
+              console.info(`[scene-actions] {move:${tag.text}} -> {sit:${seat.id}}`);
+              pendingActions.push({ kind: 'sit', objectId: seat.id });
+            }
             continue;
           }
           const move = tag;
@@ -1675,7 +1697,7 @@ export default function App() {
         }
       }
     },
-    [animationBus, availableAnimationSlugSet, availablePoseSlugSet, availablePoses, avatarProfiles, liveMotionReady, moveAvatarToPlace, resolveApi, rigs, sceneActions],
+    [animationBus, availableAnimationSlugSet, availablePoseSlugSet, availablePoses, avatarProfiles, liveMotionReady, moveAvatarToPlace, resolveApi, rigs, sceneActions, stageNames],
   );
 
   useEffect(() => {
@@ -3437,6 +3459,13 @@ export default function App() {
               onOpen={() => setPanel('backgrounds')}
             />
             <ControlButton
+              id="furniture"
+              title="Furniture"
+              summary="Browse or generate"
+              keywords="furniture library room decor seating tables storage lighting appliances"
+              onOpen={() => setPanel('furniture')}
+            />
+            <ControlButton
               id="models"
               title="Models and servers"
               summary={isLocalBackend ? 'Pipeline' : 'OpenAI Realtime'}
@@ -3668,6 +3697,10 @@ export default function App() {
               mcp={activeBridge?.mcp}
               walkableArea={{ shown: showWalkableArea, onChange: setShowWalkableArea }}
             />
+          </PanelDialog>
+
+          <PanelDialog id="furniture" title="Furniture" subtitle="Describe a piece of furniture and see it in 3D at real size." open={panel === 'furniture'} onClose={closePanel}>
+            <FurnitureControls bridge={activeBridge?.furniture} />
           </PanelDialog>
 
           <PanelDialog id="places" title="Places" subtitle="Where the characters can be, and the desktops that show a room." open={panel === 'places'} onClose={closePanel}>

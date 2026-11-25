@@ -89,6 +89,8 @@ export function sanitizeBody(input: unknown): StationBody | undefined {
 /** What the registry needs to know about an MCP server: its id and address. */
 export interface StationServer {
   id: string;
+  /** The name the person sees ("DAIR Academy papers"); used to describe the station's single tool. */
+  name?: string;
   /** A Home Assistant MCP server (its token comes from Models and servers). */
   homeAssistant?: boolean;
   httpUrl?: string;
@@ -222,6 +224,14 @@ export class StationRegistry {
       if (match) return match.id;
     }
     return null;
+  }
+
+  /** The name of the MCP server a station holds (the server's own, else its preset's), or null. */
+  serverNameFor(station: Station): string | null {
+    const id = this.resolveServerId(station.source);
+    const named = id ? this.options.servers().find((server) => server.id === id)?.name : undefined;
+    if (named) return named;
+    return station.source.kind === 'mcp' && station.source.preset ? (findPreset(station.source.preset)?.name ?? null) : null;
   }
 
   /** The stations, with built-in defaults added when their server exists and nobody holds it. */

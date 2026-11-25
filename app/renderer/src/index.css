@@ -1664,6 +1664,21 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.furnitureControls,
+.furnitureDetail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.furnitureViewer .avatarModelPreview__canvas {
+  height: min(50dvh, 420px);
+}
+.furnitureDetail__confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
 .backgroundCard__delete {
   align-self: flex-end;
   background: none;

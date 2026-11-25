@@ -18,6 +18,7 @@ import type { DownloadHosts } from '../../main/src/aicontroller/remote-downloads
 import type { VisionStatus } from '../../main/src/local-vision/vision-model.js';
 import type { ModelDownload } from '../../main/src/avatar/generation/model-downloads.js';
 import type { BackgroundBridge } from '../../main/src/backgrounds/types.js';
+import type { FurnitureBridge } from '../../main/src/furniture/types.js';
 import type { ConfigSecretKey, ModelRoutingView, RendererConfig } from '../../main/src/config/config-manager.js';
 import type { ModelRoute, ServerType, UseId } from '../../main/src/config/model-routing.js';
 import type { ServerProbe } from '../../main/src/config/model-server-probe.js';
@@ -164,6 +165,7 @@ export interface LocalVoiceBridge {
 
 export interface PreloadApi {
   backgrounds?: BackgroundBridge;
+  furniture?: FurnitureBridge;
   config: ConfigBridge;
   models?: ModelsBridge;
   realtime: RealtimeBridge;
@@ -228,6 +230,8 @@ export interface CameraBridge {
 export interface AppBridge {
   quit(): Promise<void>;
 }
+
+export type { FurnitureBridge, FurnitureItem } from '../../main/src/furniture/types.js';
 
 export function getPreloadApi(): PreloadApi | undefined {
   return (window as unknown as { aiembodied?: PreloadApi }).aiembodied;

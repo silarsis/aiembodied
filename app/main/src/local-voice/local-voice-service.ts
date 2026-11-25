@@ -6,13 +6,14 @@
  */
 import type { ChatMessage, LlmToolCall, LlmToolDefinition } from './local-llm-client.js';
 import type { ChatClient } from './voice-engines.js';
-import type { RegisteredTool, ToolRegistry } from '../tools/tool-registry.js';
+import type { RegisteredTool, ToolExecutionResult, ToolRegistry } from '../tools/tool-registry.js';
 import { describeOutcome, type ApprovalBroker } from '../tools/approvals.js';
 import type { VoiceStations } from '../stations/voice-stations.js';
 import type { StationUse } from '../stations/station-trips.js';
 import type { VoiceMemory } from '../memory-engine/voice-memory.js';
 import type { SpeechServiceClient } from './speech-service-client.js';
 import { stripAvatarTags } from './avatar-tags.js';
+import { RUNAWAY_FALLBACK_LINE, isRunawayOutput } from './runaway.js';
 import {
   KokoroTts,
   SpeechServiceStt,
@@ -44,6 +45,8 @@ export const TOOL_GUIDANCE =
 /** Model rounds per turn; the last one is offered no tools, so it has to answer. */
 const MAX_TOOL_ROUNDS = 3;
 const MAX_TOOL_RESULT_CHARS = 4000;
+/** Characters of a tool call's arguments written to the log. */
+const TOOL_LOG_ARGS_CHARS = 300;
 const DEFAULT_SPOKEN_NOTICE = 'One moment.';
 /** Updates that arrive within this long of each other become one system turn. */
 export const SYSTEM_COALESCE_MS = 5000;
@@ -457,12 +460,18 @@ export class LocalVoiceService {
       // So the station notes can use room and object names; a failure only costs the note its names.
       await this.stations?.prepare().catch(() => undefined);
     }
-    const tools = (preview || request.noTools ? [] : (this.tools?.list() ?? [])).filter(
+    const allowed = (preview || request.noTools ? [] : (this.tools?.list() ?? [])).filter(
       (tool) =>
         tool.confirmationLevel === 'none' ||
         tool.confirmationLevel === 'notify' ||
         (tool.confirmationLevel === 'confirm' && this.approvals !== undefined),
     );
+    // A reading station's tools are offered as one lookup tool ("go_to_bookshelf"); the rest as they are.
+    const tools = this.stations?.offer?.(allowed) ?? allowed;
+    if (!preview && !request.noTools) {
+      // For diagnosing a model that never calls a tool: what exactly was it offered?
+      this.logger?.info('Local voice: tools offered', { requestId, avatarId: this.avatarId, count: tools.length, names: tools.map((tool) => tool.toolName) });
+    }
     const systemPrompt = [
       request.instructions?.trim(),
       SPOKEN_REPLY_GUIDANCE,
@@ -511,6 +520,8 @@ export class LocalVoiceService {
     };
 
     let cancelled = false;
+    // The model ran away in a loop ("2-2-2-2..."): the stream was stopped and a short line spoken instead.
+    let runaway = false;
     try {
       for (let round = 1; round <= MAX_TOOL_ROUNDS; round += 1) {
         const offered = round < MAX_TOOL_ROUNDS ? tools : [];
@@ -520,10 +531,23 @@ export class LocalVoiceService {
           if (part.type === 'tool_calls') {
             calls = part.calls;
           } else {
-            for (const sentence of splitter.push(thinking.push(part.text))) {
+            const delta = thinking.push(part.text);
+            if (isRunawayOutput(thinking.visible)) {
+              runaway = true;
+              break;
+            }
+            for (const sentence of splitter.push(delta)) {
               speak(sentence);
             }
           }
+        }
+        if (runaway) {
+          // Nothing of this round is spoken or kept, and no tool call from it is run.
+          this.logger?.warn('Local voice: runaway output stopped', { requestId, avatarId: this.avatarId, round, chars: thinking.visible.length, sample: thinking.visible.slice(-40) });
+          splitter.flush();
+          speak(RUNAWAY_FALLBACK_LINE);
+          reply = [reply, RUNAWAY_FALLBACK_LINE].filter(Boolean).join(' ');
+          break;
         }
         const rest = splitter.flush();
         if (rest) {
@@ -556,7 +580,7 @@ export class LocalVoiceService {
           })),
         });
         for (const call of calls) {
-          const content = await this.runTool(requestId, findTool(offered, call.name), call, emit, signal);
+          const content = await this.runTool(requestId, findTool(offered, call.name), call, emit, signal, llm);
           signal.throwIfAborted();
           messages.push({ role: 'tool', tool_call_id: call.id, content });
         }
@@ -589,7 +613,8 @@ export class LocalVoiceService {
     // A system note is kept as a user-role message because Qwen's chat template allows a system
     // message only at the start; its marker says plainly that it did not come from Kevin.
     this.history.push({ role: 'user', content: userContent });
-    if (reply) {
+    // A runaway reply is not kept: it would be fed back to the model on the next turn.
+    if (reply && !runaway) {
       this.history.push({ role: 'assistant', content: reply });
     }
     this.history = this.history.slice(-this.maxHistoryMessages);
@@ -612,7 +637,9 @@ export class LocalVoiceService {
     call: LlmToolCall,
     emit: (event: LocalVoiceEvent) => void,
     signal: AbortSignal,
+    chat: ChatClient,
   ): Promise<string> {
+    const startedAt = this.now();
     let params: unknown;
     try {
       params = call.arguments.trim() ? (JSON.parse(call.arguments) as unknown) : {};
@@ -646,10 +673,15 @@ export class LocalVoiceService {
         this.logger?.info('Local voice: tool call waits for approval', { name: call.name, label, approvalId: approval.id });
         emit({ ...event, status: 'done', detail: 'waiting for approval' });
       } else {
-        const result = await this.tools.execute(tool.id, params);
+        // A station lookup tool runs the focused loop with the station's tools; any other tool runs as itself.
+        const lookup = this.stations?.runLookup?.(this.avatarId, tool, params, { chat, signal });
+        const result = lookup ? await lookup.then(
+              (data): ToolExecutionResult => ({ success: true, data, durationMs: this.now() - startedAt }),
+              // A cancelled turn is handled by the abort check after the call; anything else is a failed tool.
+              (error: unknown): ToolExecutionResult => ({ success: false, error: error instanceof Error ? error.message : String(error), durationMs: this.now() - startedAt }),
+            ) : await this.tools.execute(tool.id, params);
         if (result.success) {
           content = typeof result.data === 'string' ? result.data : JSON.stringify(result.data ?? null);
-          this.logger?.info('Local voice: tool call finished', { name: call.name, label, durationMs: result.durationMs });
           emit({ ...event, status: 'done', detail: `${result.durationMs} ms` });
         } else {
           failure = result.error ?? 'The tool failed.';
@@ -664,8 +696,21 @@ export class LocalVoiceService {
       }
     }
     this.reportToolResult(call.name, params ?? call.arguments, failure ?? content, failure === null);
+    // One line per call, whatever the tool: what the model asked for and how it went (arguments cut short).
+    const logged = {
+      requestId,
+      avatarId: this.avatarId,
+      name: call.name,
+      args: call.arguments.length > TOOL_LOG_ARGS_CHARS ? `${call.arguments.slice(0, TOOL_LOG_ARGS_CHARS)}…` : call.arguments,
+      durationMs: this.now() - startedAt,
+      ok: failure === null,
+    };
     if (failure !== null) {
-      this.logger?.warn('Local voice: tool call failed', { name: call.name, label, message: failure });
+      this.logger?.warn('Local voice: tool call', { ...logged, error: failure.slice(0, 300) });
+    } else {
+      this.logger?.info('Local voice: tool call', { ...logged, resultLength: content.length });
+    }
+    if (failure !== null) {
       emit({ ...event, status: 'failed', detail: failure });
       return JSON.stringify({ error: failure });
     }

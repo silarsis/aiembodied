@@ -110,6 +110,8 @@ const EVENT = [
   'places:changed',
   'rooms:updated',
   'coding:busy',
+  // A furniture piece's progress, finish or failure (bija's own window only).
+  'furniture:changed',
   // A greeting for an avatar that just walked in where a face was seen (this PC's own camera cues are sent by its own main process).
   'camera:detection',
   // An avatar of that room goes to the object that holds a tool (stations).
@@ -194,6 +196,12 @@ const UNAVAILABLE = [
   // Backgrounds and rooms: authoring.
   'background:delete',
   'background:generate',
+  'furniture:delete',
+  'furniture:edit',
+  'furniture:generate',
+  'furniture:list',
+  'furniture:load',
+  'furniture:model',
   'background:set-active',
   'rooms:cancel-generate',
   'rooms:delete',

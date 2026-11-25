@@ -1,4 +1,6 @@
 import { BackgroundService } from './backgrounds/background-service.js';
+import { FurnitureService } from './furniture/furniture-service.js';
+import type { ComfyGraph } from './avatar/generation/comfyui-client.js';
 import { RoomService } from './rooms/room-service.js';
 import { pickIdleActions } from './rooms/idle-thoughts.js';
 import { MAX_IDLE_HABITS_LENGTH, normalizeIdleHabits } from './rooms/idle-habits.js';
@@ -193,6 +195,7 @@ import { StationRegistry } from './stations/station-registry.js';
 import { StationTrips } from './stations/station-trips.js';
 import { PursuitManager } from './pursuits/pursuit-manager.js';
 import { createReadingNotesTool, readingOutboxItem } from './pursuits/reading-memory.js';
+import { StationLookup } from './stations/station-lookup.js';
 import { createVoiceStations, type VoiceStations } from './stations/voice-stations.js';
 import type { Station, StationSource } from './stations/types.js';
 import { createRoutedSearchProvider, createWebSearchTool, WEB_SEARCH_TOOL_ID } from './tools/web-search.js';
@@ -320,6 +323,7 @@ let avatarModelService: AvatarModelService | null = null;
 let avatarAnimationService: AvatarAnimationService | null = null;
 let avatarPoseService: AvatarPoseService | null = null;
 let backgroundService: BackgroundService | null = null;
+let furnitureService: FurnitureService | null = null;
 let roomService: RoomService | null = null;
 let roomGeneration: RoomGenerationService | null = null;
 // The scheme that serves downloaded room models must be declared before the app is ready.
@@ -1127,6 +1131,8 @@ function createVoiceService(avatarId: string): LocalVoiceService {
       descriptionNote: (tool) => voiceStations?.descriptionNote(tool) ?? '',
       noticeFor: (id, tool) => voiceStations?.noticeFor(id, tool) ?? null,
       begin: (id, tool) => voiceStations?.begin(id, tool) ?? null,
+      offer: (list) => voiceStations?.offer?.(list) ?? list,
+      runLookup: (id, tool, params, context) => voiceStations?.runLookup?.(id, tool, params, context) ?? null,
     },
     extraInstructions: () => codingBrief(manager),
     // The update is spoken where the avatar is.
@@ -2088,7 +2094,17 @@ function registerIpcHandlers(
     if (!backgroundService) throw new Error('Backgrounds are unavailable.');
     return backgroundService;
   };
+  const requireFurniture = (): FurnitureService => {
+    if (!furnitureService) throw new Error('Furniture library is unavailable.');
+    return furnitureService;
+  };
   handleIpc('background:list', () => requireBackgrounds().list());
+  handleIpc('furniture:list', () => requireFurniture().list());
+  handleIpc('furniture:load', (_event, id: string) => requireFurniture().load(id));
+  handleIpc('furniture:generate', (_event, prompt: string) => requireFurniture().generate(prompt));
+  handleIpc('furniture:edit', (_event, id: string, prompt: string) => requireFurniture().edit(id, prompt));
+  handleIpc('furniture:delete', (_event, id: string) => requireFurniture().delete(id));
+  handleIpc('furniture:model', (_event, id: string) => requireFurniture().model(id));
   handleIpc('background:get-active', () => requireBackgrounds().getActive());
   handleIpc('background:set-active', (_event, id: string | null) => requireBackgrounds().setActive(id));
   handleIpc('background:load', (_event, id: string) => requireBackgrounds().load(id));
@@ -2939,8 +2955,8 @@ function setupStations(store: MemoryStore): void {
   const rooms = roomService;
   const registry = new StationRegistry({
     store,
-    servers: () =>
-      manager.listServers().map((server) => ({ id: server.id, httpUrl: server.httpUrl, sseUrl: server.sseUrl, homeAssistant: Boolean(server.tokenFromModelServer) })),
+    // Sync on purpose (the registry is pure and sync): listServerAddresses reads only unencrypted columns.
+    servers: () => manager.listServerAddresses(),
     describeRoom: async (roomId) => {
       const room = await rooms.load(roomId);
       return { name: room.name, objects: room.objects.map((object) => ({ id: object.id, name: object.name })) };
@@ -2964,7 +2980,8 @@ function setupStations(store: MemoryStore): void {
   });
   stationRegistry = registry;
   stationTrips = trips;
-  voiceStations = createVoiceStations(registry, trips);
+  // Reading stations are offered to the conversation as one tool each (env STATION_SINGLE_TOOL=0 turns it off).
+  voiceStations = createVoiceStations(registry, trips, new StationLookup({ stations: registry, tools, logger }));
 }
 
 /**
@@ -3497,7 +3514,7 @@ app.whenReady().then(async () => {
       logger.warn('MCP auto-start failed', { message: error instanceof Error ? error.message : String(error) });
     });
     logger.info('MCP Manager initialized', {
-      autoStartedServers: mcpManager.listServers().filter(s => s.autoStart && s.enabled).length
+      autoStartedServers: (await mcpManager.listServers()).filter(s => s.autoStart && s.enabled).length
     });
 
     // Seed default model if this is the first run
@@ -3601,12 +3618,46 @@ app.whenReady().then(async () => {
       assetsDirectory: path.join(__dirname, '../assets/backgrounds'),
       backgroundsDirectory: path.join(app.getPath('userData'), 'backgrounds'),
       comfy: {
-        isAvailable: () => (backgroundComfy ?? fallbackComfy).isAvailable(),
-        run: (graph, options) => (backgroundComfy ?? fallbackComfy).run(graph, options),
+        isAvailable: async (): Promise<boolean> => (backgroundComfy ?? fallbackComfy)?.isAvailable() ?? false,
+        run: (graph: unknown, options?: { signal?: AbortSignal }) => (backgroundComfy ?? fallbackComfy).run(graph as ComfyGraph, options),
       },
       ensureComfyReady: async () => {
         backgroundComfy = await comfyPool.pick('image');
       },
+    });
+    furnitureService = new FurnitureService({
+      store: memoryStore,
+      directory: path.join(app.getPath('userData'), 'furniture'),
+      pickComfy: (stage) => comfyPool.pick(stage),
+      imageModel: () => {
+        if (!avatarImageModels) throw new Error('Image models are unavailable.');
+        return avatarImageModels.resolve();
+      },
+      geometryModel: () => {
+        if (!avatarCharacterModels) throw new Error('3D models are unavailable.');
+        return pickSingleImageGeometry(avatarCharacterModels);
+      },
+      paint: (input) => characterRunner.paintViews(input),
+      // Sizes and names the piece with the 'describe' helper; the keyword table answers when there is none.
+      // The describe route is usually the on-demand local vision server: start it first, as avatar descriptions do.
+      askHelper: (system, user) =>
+        withVision(manager, 'describe', async () => {
+          const target = helperTarget(manager, 'describe');
+          if (!target) return null;
+          const response = await (target.client as unknown as { responses: { create: (args: unknown) => Promise<{ output_text: string }> } }).responses.create({
+            model: target.model ?? 'gpt-4.1-mini',
+            instructions: system,
+            input: user,
+            max_output_tokens: 300,
+            temperature: 0.2,
+          });
+          return response?.output_text ?? null;
+        }),
+      onChanged: (item) => broadcastToWindows('furniture:changed', item),
+      logger,
+    });
+    furnitureService.initialize().catch((error: unknown) => {
+      logger.warn('Furniture service initialization failed.', { message: error instanceof Error ? error.message : String(error) });
     });
     setupStations(memoryStore);
     setupPursuits(memoryStore);

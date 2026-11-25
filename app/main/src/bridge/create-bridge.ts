@@ -6,6 +6,7 @@
  * one list means a new channel cannot be wired for one and forgotten for the other.
  */
 import type { BackgroundBridge } from '../backgrounds/types.js';
+import type { FurnitureBridge, FurnitureItem } from '../furniture/types.js';
 import type { ConfigSecretKey, ModelRoutingView, RendererConfig } from '../config/config-manager.js';
 import type { ModelRoute, ServerType, UseId } from '../config/model-routing.js';
 import type { ServerProbe } from '../config/model-server-probe.js';
@@ -195,6 +196,7 @@ export interface ModelsBridge {
 
 export interface PreloadApi {
   backgrounds?: BackgroundBridge;
+  furniture?: FurnitureBridge;
   models?: ModelsBridge;
   config: ConfigBridge;
   realtime: RealtimeBridge;
@@ -579,6 +581,23 @@ export function createBridge(
       onRoomUpdated: (listener) => {
         const channel = 'rooms:updated';
         const handler = (roomId: string) => listener(roomId);
+        return transport.on(channel, handler);
+      },
+    },
+    furniture: {
+      list: () => transport.invoke('furniture:list') as Promise<FurnitureItem[]>,
+      load: (id) => transport.invoke('furniture:load', id) as Promise<FurnitureItem>,
+      generate: (prompt) => transport.invoke('furniture:generate', prompt) as Promise<FurnitureItem>,
+      edit: (id, prompt) => transport.invoke('furniture:edit', id, prompt) as Promise<FurnitureItem>,
+      delete: (id) => transport.invoke('furniture:delete', id) as Promise<void>,
+      model: async (id) =>
+        cloneBinary(await transport.invoke('furniture:model', id), {
+          id,
+          errorMessage: 'Unexpected furniture model payload received from main process.',
+        }),
+      onChanged: (listener) => {
+        const channel = 'furniture:changed';
+        const handler = (item: FurnitureItem) => listener(item);
         return transport.on(channel, handler);
       },
     },
