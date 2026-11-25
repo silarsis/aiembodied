@@ -120,7 +120,7 @@ class Harness:
         acts = self.app.activities()
         self.workers = [
             Worker(self.client, task_queue="agents", workflows=WORKFLOWS, activities=acts, workflow_runner=sandbox_runner()),
-            Worker(self.client, task_queue="think", activities=[a for a in acts if a.__temporal_activity_definition.name == "app_act"]),
+            Worker(self.client, task_queue="think", activities=[a for a in acts if getattr(a, "__temporal_activity_definition").name == "app_act"]),
         ]
         self.tasks = [asyncio.create_task(w.run()) for w in self.workers]
         await asyncio.sleep(0.2)
