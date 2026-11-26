@@ -1,4 +1,4 @@
-import type { DeviceGateState } from '../../../main/src/satellite/bridge-types.js';
+import type { DeviceGateState } from '../../../main/src/shared/satellite/bridge-types.js';
 
 const WORDS = { live: 'live', doorbell: 'doorbell only', off: 'off' } as const;
 

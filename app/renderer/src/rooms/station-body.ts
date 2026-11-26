@@ -8,8 +8,8 @@
  * actions. Gestures are not planned here: a `{move:}` gesture is skipped by the executor while the avatar is
  * seated, so `station-walks.ts` plays them only when standing.
  */
-import type { RoomFile, RoomObject } from '../../../main/src/rooms/types.js';
-import type { StationBody } from '../../../main/src/stations/types.js';
+import type { RoomFile, RoomObject } from '../../../main/src/shared/rooms/types.js';
+import type { StationBody } from '../../../main/src/shared/stations/types.js';
 import type { AvatarState, PlanWorld, SceneAction } from './scene-actions.js';
 
 /** A station's body plan checked against the room. */

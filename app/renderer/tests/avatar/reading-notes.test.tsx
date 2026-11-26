@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { ReadingNote } from '../../../main/src/pursuits/types.js';
+import type { ReadingNote } from '../../../main/src/shared/pursuits/types.js';
 import { ReadingNotes } from '../../src/avatar/reading-notes.js';
 import { SceneCast } from '../../src/avatar/scene-cast.js';
 import type { CharacterSettingsContext } from '../../src/avatar/use-character-settings.js';

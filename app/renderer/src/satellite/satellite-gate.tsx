@@ -3,7 +3,7 @@ import { getPreloadApi, type PreloadApi } from '../preload-api.js';
 import { SatelliteContext } from './satellite-context.js';
 import { ConnectScreen } from './connect-screen.js';
 import { useSatelliteStatus } from './use-satellite-status.js';
-import type { SatelliteBridge, SatelliteStatus } from '../../../main/src/satellite/bridge-types.js';
+import type { SatelliteBridge, SatelliteStatus } from '../../../main/src/shared/satellite/bridge-types.js';
 
 type Role = 'loading' | 'full' | 'satellite';
 

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { buildRoom } from '../../src/rooms/room-builder.js';
 import { createModelLoader, modelUrl } from '../../src/rooms/room-model-loader.js';
-import type { RoomObject } from '../../../main/src/rooms/types.js';
+import type { RoomObject } from '../../../main/src/shared/rooms/types.js';
 import { builtInRoom } from './fixtures.js';
 
 const object = (over: Partial<RoomObject> = {}): RoomObject => ({

@@ -1,6 +1,6 @@
 /** Switchboard in Status and diagnostics: is it connected, and which transactions are open. */
 import { useEffect, useState } from 'react';
-import type { SwitchboardBridge, SwitchboardDecision, SwitchboardOpenTxn, SwitchboardStatus } from '../../../main/src/switchboard/bridge-types.js';
+import type { SwitchboardBridge, SwitchboardDecision, SwitchboardOpenTxn, SwitchboardStatus } from '../../../main/src/shared/switchboard/bridge-types.js';
 
 export const SWITCHBOARD_POLL_MS = 5000;
 const MAX_SHOWN = 10;

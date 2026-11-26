@@ -10,14 +10,8 @@
 import { randomUUID } from 'node:crypto';
 import type { RegisteredTool } from '../tools/tool-registry.js';
 import { MemoryEngineError } from './client.js';
-import type {
-  MemoryEngineClient,
-  MemoryEngineCorrectionResult,
-  MemoryEngineHomeHistory,
-  MemoryEngineMemoryDetail,
-  MemoryEngineSearchResult,
-  MemoryEngineTimeline,
-} from './client.js';
+import type { MemoryEngineClient, MemoryEngineCorrectionResult, MemoryEngineHomeHistory } from './client.js';
+import type { MemoryEngineMemoryDetail, MemoryEngineSearchResult, MemoryEngineTimeline } from '../shared/memory-engine/client-types.js';
 import type { OutboxItem } from './outbox.js';
 import { describeAgo, parsePeriod, type Period } from './period.js';
 

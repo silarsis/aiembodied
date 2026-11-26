@@ -6,7 +6,7 @@ import DatabaseConstructor from 'better-sqlite3';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { MCPServerConfigInput } from '../../src/mcp/types.js';
+import type { MCPServerConfigInput } from '../../src/shared/mcp/types.js';
 
 // Mock the MCP clients
 vi.mock('../../src/mcp/clients/sse-client.js', () => ({

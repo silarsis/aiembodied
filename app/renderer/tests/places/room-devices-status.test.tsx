@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { RoomHubBridge, RoomHubStatus } from '../../../main/src/room-hub/bridge-types.js';
+import type { RoomHubBridge, RoomHubStatus } from '../../../main/src/shared/room-hub/bridge-types.js';
 import { RoomDevicesStatus, deviceSummary } from '../../src/places/room-devices-status.js';
 
 const STATE = { mic: 'live', camera: 'off', speakers: 'live', locked: false, closed: false, fullscreen: false };

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Vec3 } from '../../../main/src/rooms/types.js';
+import type { Vec3 } from '../../../main/src/shared/rooms/types.js';
 import type { AvatarRig } from './scene-env.js';
 import { companionHome, measureAvatarHeight, measureSoleLift, placeAtHome } from './avatar-placement.js';
 

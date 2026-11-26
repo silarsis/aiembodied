@@ -1,4 +1,4 @@
-import type { RoomFile } from '../../rooms/types.js';
+import type { RoomFile } from './types.js';
 
 const WALLS = ['north', 'south', 'east', 'west'];
 const LIGHTS = ['ambient', 'directional', 'point', 'hemisphere'];

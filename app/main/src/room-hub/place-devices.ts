@@ -10,7 +10,8 @@
  *
  * The satellite switches its own devices off first. Nothing here can turn a device on.
  */
-import type { PlacePresence, PlaceDeviceState } from '../presence/place-presence.js';
+import type { PlacePresence } from '../presence/place-presence.js';
+import type { PlaceDeviceState } from '../shared/presence/place-presence-types.js';
 import type { PlaceManager } from '../places/place-manager.js';
 import type { SwitchboardBus } from '../switchboard/bus.js';
 import type { Op } from '../shared/room-hub/frames.js';

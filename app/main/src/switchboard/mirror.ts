@@ -5,9 +5,10 @@
  * queues it. Preview turns are never mirrored.
  */
 import os from 'node:os';
-import type { RunnerEvent } from '../coding/runner-client.js';
+import type { RunnerEvent } from '../shared/coding/runner-client-types.js';
 import type { LocalVoiceToolRecord } from '../local-voice/local-voice-service.js';
-import type { ApprovalOutcome, PendingApproval } from '../tools/approvals.js';
+import type { ApprovalOutcome } from '../tools/approvals.js';
+import type { PendingApproval } from '../shared/tools/approvals-types.js';
 import type { Address, ActorKind, SwitchboardEventInput, SwitchboardProducer, TxnState } from './types.js';
 
 export const DEFAULT_AVATAR_ID = 'echo';

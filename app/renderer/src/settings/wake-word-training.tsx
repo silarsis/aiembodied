@@ -1,9 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type {
-  WakeWordOption,
-  WakeWordTrainingJob,
-  WakeWordTrainingStatus,
-} from '../../../main/src/wake-word/types.js';
+import type { WakeWordOption, WakeWordTrainingJob, WakeWordTrainingStatus } from '../../../main/src/shared/wake-word/types.js';
 import type { WakeWordBridge } from '../preload-api.js';
 
 export interface WakeWordLibrary {

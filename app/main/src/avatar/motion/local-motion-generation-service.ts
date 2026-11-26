@@ -13,7 +13,7 @@ import type {
   AvatarMotionStreamRequest,
   AvatarMotionStreamResult,
   AvatarRestSkeleton,
-} from '../types.js';
+} from '../../shared/avatar/types.js';
 import type { LocalMotionClient, MotionServiceHealth } from './local-motion-client.js';
 import { sanitizeMotionControls } from './motion-controls.js';
 

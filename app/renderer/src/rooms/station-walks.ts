@@ -6,8 +6,8 @@
  *
  * Everything the walk needs comes in through `StationWalkDeps`, so tests can use fakes.
  */
-import type { RoomFile } from '../../../main/src/rooms/types.js';
-import type { StationUseEvent } from '../../../main/src/stations/types.js';
+import type { RoomFile } from '../../../main/src/shared/rooms/types.js';
+import type { StationUseEvent } from '../../../main/src/shared/stations/types.js';
 import type { SceneAction, PlanWorld, AvatarState } from './scene-actions.js';
 import type { PlanBuilder } from './scene-executor.js';
 import { GESTURE_REPEAT_MS, READ_REPEAT_MS, planRelease, planSit, planTake, resolveBodyPlan, type BodyPlan } from './station-body.js';

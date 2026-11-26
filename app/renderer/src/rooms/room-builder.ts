@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { RoomFile, RoomLight, RoomObject, RoomOpening, RoomPart } from '../../../main/src/rooms/types.js';
+import type { RoomFile, RoomLight, RoomObject, RoomOpening, RoomPart } from '../../../main/src/shared/rooms/types.js';
 import { WALL_THICKNESS, degToRad, wallPieces, type WallName } from './room-geometry.js';
 
 export interface BuiltRoom {

@@ -5,7 +5,7 @@
  * the next.
  */
 import type { GlobalShortcut } from 'electron';
-import type { PushToTalkStatus } from './types.js';
+import type { PushToTalkStatus } from '../shared/talk/types.js';
 
 type ShortcutLogger = Pick<Console, 'info' | 'warn'>;
 

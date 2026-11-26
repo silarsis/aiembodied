@@ -5,7 +5,7 @@ import type {
     AvatarPoseUploadResult,
     PoseEvaluationRequest,
     PoseEvaluationResult,
-} from './types.js';
+} from '../shared/avatar/types.js';
 import type { AvatarPoseService } from './avatar-pose-service.js';
 
 export interface PoseEvaluationServiceOptions {

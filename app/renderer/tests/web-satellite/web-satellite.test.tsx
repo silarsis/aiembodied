@@ -11,7 +11,7 @@ import { bootWebSatellite, pageServedByHub } from '../../src/web-satellite/boot.
 import { readShellHook } from '../../src/web-satellite/shell-hook.js';
 import { browserSocketFactory } from '../../src/web-satellite/browser-socket.js';
 import { hubAssetResolver, resolveAssetUrl, setAssetUrlResolver } from '../../src/rooms/asset-url.js';
-import type { SatelliteStatus } from '../../../main/src/satellite/bridge-types.js';
+import type { SatelliteStatus } from '../../../main/src/shared/satellite/bridge-types.js';
 
 afterEach(() => {
   setAssetUrlResolver(null);

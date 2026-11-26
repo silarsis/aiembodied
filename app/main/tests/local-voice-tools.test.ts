@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { LocalLlmClient } from '../src/local-voice/local-llm-client.js';
 import { SpeechServiceClient } from '../src/local-voice/speech-service-client.js';
 import { LocalVoiceService, TOOL_GUIDANCE } from '../src/local-voice/local-voice-service.js';
-import type { LocalVoiceEvent } from '../src/local-voice/types.js';
+import type { LocalVoiceEvent } from '../src/shared/local-voice/types.js';
 import { ToolRegistry, type RegisteredTool } from '../src/tools/tool-registry.js';
 import {
   BraveSearchProvider,

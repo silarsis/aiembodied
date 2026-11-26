@@ -2,8 +2,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { BackgroundControls } from '../../src/backgrounds/background-controls.js';
 import { useBackgrounds } from '../../src/backgrounds/use-backgrounds.js';
-import type { BackgroundBridge } from '../../../main/src/backgrounds/types.js';
-import type { StationView } from '../../../main/src/stations/types.js';
+import type { BackgroundBridge } from '../../../main/src/shared/backgrounds/types.js';
+import type { StationView } from '../../../main/src/shared/stations/types.js';
 import type { McpBridge, StationsBridge } from '../../src/preload-api.js';
 import { builtInRoom } from '../rooms/fixtures.js';
 

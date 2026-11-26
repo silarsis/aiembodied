@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { WakeWordListeningController } from '../src/wake-word/listening-controller.js';
-import type { WakeWordConfig } from '../src/config/config-manager.js';
+import type { WakeWordConfig } from '../src/shared/config/config-manager-types.js';
 
 const CONFIG: WakeWordConfig = { model: 'hey_echo', keywordLabel: 'Hey Echo', threshold: 0.5, cooldownMs: 1500 };
 

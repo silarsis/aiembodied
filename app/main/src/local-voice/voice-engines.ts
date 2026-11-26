@@ -18,7 +18,7 @@ import { OpenAiRealtimeTts, type RealtimeSocketFactory } from './openai-realtime
 import { OpenAiStt, SpeechServiceStt, SpeechServiceTts } from './speech-engines.js';
 import type { SpeakOptions, SpeechToTextEngine, TextToSpeechEngine } from './speech-engines.js';
 import { SpeechServiceClient, type SpeechServiceHealth } from './speech-service-client.js';
-import type { LocalVoiceTranscribeResult } from './types.js';
+import type { LocalVoiceTranscribeResult } from '../shared/local-voice/types.js';
 
 /** What the pipeline needs from a chat server. */
 export interface ChatClient {

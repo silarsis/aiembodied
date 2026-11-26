@@ -6,7 +6,7 @@
  * - absent: everyone else, for the "Elsewhere" chip.
  * Without a snapshot (no bridge, or not read yet) everybody is present, as before places existed.
  */
-import type { PlacesSnapshot } from '../../../main/src/places/place-manager.js';
+import type { PlacesSnapshot } from '../../../main/src/shared/places/place-manager-types.js';
 
 export interface AbsentAvatar {
   id: string;

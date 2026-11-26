@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { FloorController } from '../src/floor/index.js';
 import { LOCATIONS_KEY, PLACES_KEY, PlaceManager, scopedPlaces } from '../src/places/place-manager.js';
 import { summon } from '../src/places/summon.js';
-import type { LocalVoiceRespondRequest, LocalVoiceRespondResult } from '../src/local-voice/types.js';
+import type { LocalVoiceRespondRequest, LocalVoiceRespondResult } from '../src/shared/local-voice/types.js';
 
 const PROFILES = [
   { id: 'echo', name: 'Echo', vrmModelId: 'm1' },

@@ -7,7 +7,7 @@ import type {
   MemoryEngineStoredFact,
   MemoryEngineTimeline,
   MemoryPanelStatus,
-} from '../../../main/src/memory-engine/bridge-types.js';
+} from '../../../main/src/shared/memory-engine/bridge-types.js';
 
 type Tab = 'facts' | 'conversations' | 'search' | 'recalled';
 type FactFilter = 'active' | 'unreviewed' | 'old';

@@ -1,6 +1,6 @@
 /** "Do not disturb" in Status and diagnostics: Echo saves updates quietly instead of speaking them. */
 import { useEffect, useState } from 'react';
-import type { PresenceBridge } from '../../../main/src/presence/bridge-types.js';
+import type { PresenceBridge } from '../../../main/src/shared/presence/bridge-types.js';
 
 export function DoNotDisturbToggle({ api }: { api?: PresenceBridge }) {
   const [enabled, setEnabled] = useState(false);

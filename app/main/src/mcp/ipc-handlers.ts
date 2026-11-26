@@ -1,7 +1,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import type { MCPManager } from './mcp-manager.js';
 import type { ToolRegistry } from '../tools/tool-registry.js';
-import type { MCPServerConfigInput } from './types.js';
+import type { MCPServerConfigInput } from '../shared/mcp/types.js';
 import { toServerSummary } from './server-summary.js';
 
 /**

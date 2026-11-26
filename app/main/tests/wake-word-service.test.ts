@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { WorkerOptions } from 'node:worker_threads';
 import type { Logger } from 'winston';
 import { WakeWordService, type WorkerFactory } from '../src/wake-word/wake-word-service.js';
-import type { WakeWordDetectionEvent, WakeWordWorkerMessage } from '../src/wake-word/types.js';
+import type { WakeWordWorkerMessage } from '../src/wake-word/types.js';
+import type { WakeWordDetectionEvent } from '../src/shared/wake-word/types.js';
 
 class FakeWorker extends EventEmitter {
   terminated = false;

@@ -3,7 +3,7 @@
  * a pull request). Shown prominently in the status panel and as a small banner on the main screen.
  */
 import { useCallback, useEffect, useState } from 'react';
-import type { ApprovalsBridge, ApprovalView } from '../../../main/src/tools/approvals-ipc.js';
+import type { ApprovalsBridge, ApprovalView } from '../../../main/src/shared/tools/approvals-ipc-types.js';
 
 export function ApprovalsCard({ api, floating = false }: { api?: ApprovalsBridge; floating?: boolean }) {
   const [approvals, setApprovals] = useState<ApprovalView[]>([]);

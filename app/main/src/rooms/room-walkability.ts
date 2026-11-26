@@ -4,7 +4,7 @@
  * the renderer; this check keeps generated rooms usable.
  */
 import { distanceToRect, rectOf, toWorld, type Rect } from './placer-geometry.js';
-import type { RoomFile, RoomObject, Vec3 } from './types.js';
+import type { RoomFile, RoomObject, Vec3 } from '../shared/rooms/types.js';
 
 export const CELL = 0.1;
 export const FURNITURE_CLEARANCE = 0.35;

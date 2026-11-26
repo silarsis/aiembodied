@@ -20,7 +20,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { isLocalUrl, routeTargets, type ModelRouting, type ModelServer, type UseId } from '../shared/config/model-routing.js';
 import type { SharedHandle, SharedLeases } from '../aicontroller/bridge.js';
-import type { VisionPick } from './vision-model.js';
+import type { VisionPick } from '../shared/local-vision/vision-model-types.js';
 
 export const MISSING_VISION_MODEL = 'Download the vision model in Models and servers → Describe the avatar first.';
 const IDLE_MS = 10 * 60_000;

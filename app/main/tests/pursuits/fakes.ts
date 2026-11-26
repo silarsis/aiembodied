@@ -2,7 +2,8 @@
 import type { ChatMessage, LlmStreamPart, LlmToolDefinition } from '../../src/local-voice/local-llm-client.js';
 import type { ChatClient } from '../../src/local-voice/voice-engines.js';
 import type { RegisteredTool } from '../../src/tools/tool-registry.js';
-import type { NewReadingNote, ReadingNote, ReadingNoteStore } from '../../src/pursuits/types.js';
+import type { NewReadingNote, ReadingNoteStore } from '../../src/pursuits/types.js';
+import type { ReadingNote } from '../../src/shared/pursuits/types.js';
 
 export interface Reply {
   text?: string;

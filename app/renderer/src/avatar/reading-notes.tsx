@@ -1,6 +1,6 @@
 /** A character's reading notes in the Characters pop-up: what it wrote down while reading on its own. Read-only. */
 import { useEffect, useState } from 'react';
-import type { ReadingNote } from '../../../main/src/pursuits/types.js';
+import type { ReadingNote } from '../../../main/src/shared/pursuits/types.js';
 
 /** How many notes the list asks for. */
 export const READING_NOTES_SHOWN = 10;

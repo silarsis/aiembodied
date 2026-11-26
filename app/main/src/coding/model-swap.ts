@@ -43,16 +43,9 @@ import {
 import { CODER_CONTEXT_LENGTH } from '../shared/coding/types.js';
 import type { LocalLlmControl } from '../local-voice/local-llm-control.js';
 import type { CoderLeases } from '../aicontroller/bridge.js';
+import type { SwapState, SwapPhase } from '../shared/coding/model-swap-types.js';
 
 export type CoderMemoryMode = 'auto' | 'side-by-side' | 'swap';
-
-export type SwapPhase = 'idle' | 'waiting-for-quiet' | 'swapping-in' | 'coder-loaded' | 'swapping-back';
-
-export interface SwapState {
-  phase: SwapPhase;
-  /** For the status panel, in words. */
-  message: string;
-}
 
 type Logger = { info: (message: string, data?: Record<string, unknown>) => void; warn: (message: string, data?: Record<string, unknown>) => void };
 

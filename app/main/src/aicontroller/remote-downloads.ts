@@ -4,24 +4,15 @@
  * controller job is shown as one of them (ids start with `ctl:`), with progress read from
  * GET /v1/downloads/{id}.
  */
-import type { LlmDownload, LlmDownloadState } from '../local-llm/llm-library.js';
-import type { HfQuant } from '../local-llm/huggingface.js';
-import type { ModelDownload } from '../avatar/generation/model-downloads.js';
-import type { CivitaiDownloadPlan } from '../avatar/generation/civitai.js';
+import type { LlmDownload, LlmDownloadState } from '../shared/local-llm/llm-library-types.js';
+import type { HfQuant } from '../shared/local-llm/huggingface-types.js';
+import type { ModelDownload } from '../shared/avatar/model-downloads-types.js';
+import type { CivitaiDownloadPlan } from '../shared/avatar/civitai-types.js';
 import type { ControllerDownloadJob } from './bridge.js';
 import type { DownloadOptions, DownloadSource } from './client.js';
 
 /** "auto": the controller picks the machine by GPU fit and disk. */
 export const AUTO_HOST = 'auto';
-/** The machines a download can go to besides this PC. */
-export interface DownloadHosts {
-  /** The model controller is running. */
-  inUse: boolean;
-  /** This controller's machine name. */
-  local: string | null;
-  /** The other machines. */
-  hosts: string[];
-}
 
 export const REMOTE_ID_PREFIX = 'ctl:';
 

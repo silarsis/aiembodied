@@ -5,19 +5,19 @@
  * `ipcRenderer`; the web satellite builds the very same API on the room link (renderer/src/web-satellite). Keeping
  * one list means a new channel cannot be wired for one and forgotten for the other.
  */
-import type { BackgroundBridge } from '../../backgrounds/types.js';
-import type { FurnitureBridge, FurnitureItem } from '../../furniture/types.js';
-import type { ConfigSecretKey, ModelRoutingView, RendererConfig } from '../../config/config-manager.js';
+import type { BackgroundBridge } from '../backgrounds/types.js';
+import type { FurnitureBridge, FurnitureItem } from '../furniture/types.js';
+import type { ConfigSecretKey, ModelRoutingView, RendererConfig } from '../config/config-manager-types.js';
 import type { ModelRoute, ServerType, UseId } from '../config/model-routing.js';
-import type { ServerProbe } from '../../config/model-server-probe.js';
-import type { BaseModelSuggestions, CivitaiLookup } from '../../avatar/generation/civitai.js';
-import type { HfLookup } from '../../local-llm/huggingface.js';
-import type { LocalLlmSettings } from '../../local-llm/llm-settings.js';
-import type { LlmDownload, LocalLlmList } from '../../local-llm/llm-library.js';
-import type { DownloadHosts } from '../../aicontroller/remote-downloads.js';
-import type { VisionStatus } from '../../local-vision/vision-model.js';
-import type { ModelDownload } from '../../avatar/generation/model-downloads.js';
-import type { AudioDevicePreferences } from '../../config/preferences-store.js';
+import type { ServerProbe } from '../config/model-server-probe-types.js';
+import type { BaseModelSuggestions, CivitaiLookup } from '../avatar/civitai-types.js';
+import type { HfLookup } from '../local-llm/huggingface-types.js';
+import type { LocalLlmSettings } from '../local-llm/llm-settings-types.js';
+import type { LlmDownload, LocalLlmList } from '../local-llm/llm-library-types.js';
+import type { DownloadHosts } from '../aicontroller/remote-downloads-types.js';
+import type { VisionStatus } from '../local-vision/vision-model-types.js';
+import type { ModelDownload } from '../avatar/model-downloads-types.js';
+import type { AudioDevicePreferences } from '../config/preferences-store-types.js';
 import type { ProviderSettingsPatch } from '../config/provider-settings.js';
 import type {
   AvatarModelSummary,
@@ -45,22 +45,18 @@ import type {
   AvatarGenerationStatus,
   AvatarGenerationConfirmation,
   AvatarGenerationAcceptance,
-} from '../../avatar/types.js';
+} from '../avatar/types.js';
 import type {
   ConversationAppendMessagePayload,
   ConversationHistory,
   ConversationMessage,
   ConversationSession,
-} from '../../conversation/types.js';
-import type {
-  WakeWordDetectionEvent,
-  WakeWordOption,
-  WakeWordTrainingStatus,
-} from '../../wake-word/types.js';
-import type { PushToTalkStatus, TalkTriggerEvent } from '../../talk/types.js';
-import type { DeviceGateBridge, DeviceGateState, SatelliteBridge, SatelliteStatus } from '../../satellite/bridge-types.js';
-import type { LatencyMetricName } from '../../metrics/types.js';
-import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from '../../realtime/types.js';
+} from '../conversation/types.js';
+import type { WakeWordDetectionEvent, WakeWordOption, WakeWordTrainingStatus } from '../wake-word/types.js';
+import type { PushToTalkStatus, TalkTriggerEvent } from '../talk/types.js';
+import type { DeviceGateBridge, DeviceGateState, SatelliteBridge, SatelliteStatus } from '../satellite/bridge-types.js';
+import type { LatencyMetricName } from '../metrics/types.js';
+import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from '../realtime/types.js';
 import type {
   LocalVoiceEvent,
   LocalVoiceRespondRequest,
@@ -69,32 +65,26 @@ import type {
   LocalVoiceSystemStatus,
   LocalVoiceTranscribeResult,
   SpeakingVoiceOptions,
-} from '../../local-voice/types.js';
-import type { ApprovalsBridge, ApprovalView } from '../../tools/approvals-ipc.js';
-import type { SpeechTtsEngine } from '../../local-voice/speech-service-client.js';
-import type {
-  MCPServerSummary,
-  MCPServerConfigInput,
-  MCPToolSummary,
-  MCPConnectionResult,
-  MCPToolResult,
-} from '../../mcp/types.js';
-import type { MCPPresetSummary } from '../../mcp/presets.js';
-import type { OpenAIFunction } from '../../tools/tool-registry.js';
-import type { MemoryEngineBridge } from '../../memory-engine/bridge-types.js';
-import type { SwitchboardBridge } from '../../switchboard/bridge-types.js';
-import type { AvatarProfile } from '../../avatars/avatar-registry.js';
-import type { AvatarIdlePersona, AvatarsBridge } from '../../avatars/bridge-types.js';
-import type { PresenceBridge } from '../../presence/bridge-types.js';
-import type { FloorBridge } from '../../floor/bridge-types.js';
-import type { PlacesBridge, PlacesSnapshot } from '../../places/bridge-types.js';
-import type { StationsBridge } from '../../stations/bridge-types.js';
-import type { PursuitsBridge } from '../../pursuits/types.js';
-import type { AgentsBridge, WorkflowsBridge } from '../../agent-time/bridge-types.js';
-import type { RoomHubBridge, RoomHubStatus } from '../../room-hub/bridge-types.js';
-import type { GpuMemoryBridge } from '../../diagnostics/gpu-memory.js';
-import type { CodingBridge, CodingBusy, CodingBusyBridge, CodingTasksBridge, RunnerEvent } from '../../coding/bridge-types.js';
-import type { CodingStatus, CodingView } from '../../coding/coding-service.js';
+} from '../local-voice/types.js';
+import type { ApprovalsBridge, ApprovalView } from '../tools/approvals-ipc-types.js';
+import type { SpeechTtsEngine } from '../local-voice/speech-service-client-types.js';
+import type { MCPServerSummary, MCPServerConfigInput, MCPToolSummary, MCPConnectionResult, MCPToolResult } from '../mcp/types.js';
+import type { MCPPresetSummary } from '../mcp/presets-types.js';
+import type { OpenAIFunction } from '../tools/tool-registry-types.js';
+import type { MemoryEngineBridge } from '../memory-engine/bridge-types.js';
+import type { SwitchboardBridge } from '../switchboard/bridge-types.js';
+import type { AvatarProfile } from '../avatars/avatar-registry-types.js';
+import type { AvatarIdlePersona, AvatarsBridge } from '../avatars/bridge-types.js';
+import type { PresenceBridge } from '../presence/bridge-types.js';
+import type { FloorBridge } from '../floor/bridge-types.js';
+import type { PlacesBridge, PlacesSnapshot } from '../places/bridge-types.js';
+import type { StationsBridge } from '../stations/bridge-types.js';
+import type { PursuitsBridge } from '../pursuits/types.js';
+import type { AgentsBridge, WorkflowsBridge } from '../agent-time/bridge-types.js';
+import type { RoomHubBridge, RoomHubStatus } from '../room-hub/bridge-types.js';
+import type { GpuMemoryBridge } from '../diagnostics/gpu-memory-types.js';
+import type { CodingBridge, CodingBusy, CodingBusyBridge, CodingTasksBridge, RunnerEvent } from '../coding/bridge-types.js';
+import type { CodingStatus, CodingView } from '../coding/coding-service-types.js';
 
 /** What the bridge needs from the outside world: ask for an answer, and hear events. */
 export interface BridgeTransport {

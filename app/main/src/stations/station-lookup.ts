@@ -19,7 +19,7 @@ import { findPreset } from '../mcp/presets.js';
 import { LlmGate, PursuitLlm, clip, resultText, type ToolRound } from '../pursuits/pursuit-llm.js';
 import type { RegisteredTool, ToolContext, ToolExecutionResult } from '../tools/tool-registry.js';
 import type { StationRegistry } from './station-registry.js';
-import type { Station } from './types.js';
+import type { Station } from '../shared/stations/types.js';
 
 /** Tool calls the focused lookup may make. */
 export const LOOKUP_MAX_TOOL_CALLS = 4;

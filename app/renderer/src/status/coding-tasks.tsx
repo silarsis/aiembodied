@@ -4,7 +4,7 @@
  * a form to start a task by hand. Live: the runner's event stream refreshes the list.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CodingBridge, CodingTasksBridge, RunnerTask } from '../../../main/src/coding/bridge-types.js';
+import type { CodingBridge, CodingTasksBridge, RunnerTask } from '../../../main/src/shared/coding/bridge-types.js';
 import type { CodingWorkspace } from '../../../main/src/shared/coding/types.js';
 import type { LocalVoiceBridge } from '../preload-api.js';
 

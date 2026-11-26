@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { HfLookup } from '../../../main/src/local-llm/huggingface.js';
-import type { LlmDownload, LocalLlmList } from '../../../main/src/local-llm/llm-library.js';
-import type { ModelRoutingView } from '../../../main/src/config/config-manager.js';
+import type { HfLookup } from '../../../main/src/shared/local-llm/huggingface-types.js';
+import type { LlmDownload, LocalLlmList } from '../../../main/src/shared/local-llm/llm-library-types.js';
+import type { ModelRoutingView } from '../../../main/src/shared/config/config-manager-types.js';
 import type { ModelsBridge } from '../preload-api.js';
 import { formatBytes } from './model-downloads.js';
 import { DownloadTo, useDownloadHosts } from './download-to.js';

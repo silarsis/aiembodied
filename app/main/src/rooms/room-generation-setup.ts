@@ -5,7 +5,7 @@ import type { GeometryModel } from '../avatar/generation/character-model-service
 import type { ImageWorkflowModel } from '../avatar/generation/image-workflows.js';
 import { routeTargets, type ModelRouting } from '../shared/config/model-routing.js';
 import type { ServerKeyLookup } from '../local-voice/voice-engines.js';
-import type { AvatarCharacterModelSelection } from '../avatar/types.js';
+import type { AvatarCharacterModelSelection } from '../shared/avatar/types.js';
 import { GeneratedLibrary } from './asset-library/generated-library.js';
 import { GeneratedSource } from './asset-library/generated-source.js';
 import { PolyHavenClient } from './asset-library/polyhaven.js';

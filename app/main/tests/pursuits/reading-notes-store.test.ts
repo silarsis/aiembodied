@@ -4,7 +4,8 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MemoryStore } from '../../src/memory/memory-store.js';
 import { READING_NOTES_TOOL_ID, createReadingNotesTool, formatReadingNotes, readingFact, readingFactText, readingOutboxItem } from '../../src/pursuits/reading-memory.js';
-import type { NewReadingNote, ReadingNote } from '../../src/pursuits/types.js';
+import type { NewReadingNote } from '../../src/pursuits/types.js';
+import type { ReadingNote } from '../../src/shared/pursuits/types.js';
 
 const dirs: string[] = [];
 const stores: MemoryStore[] = [];

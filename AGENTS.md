@@ -19,7 +19,7 @@ These apply to every change, in the TypeScript app and the Python services. Wher
 
 ### Where code goes
 5. **One feature, one folder.** Keep a feature's code together (`app/main/src/<feature>/`, `app/renderer/src/<feature>/`, its doc in `docs/features/`). Don't scatter one feature's helpers across the repo.
-6. **Respect the Electron split.** Main-process code lives in `app/main`, UI in `app/renderer`. `app/main` never imports from `app/renderer`. The renderer reaches main only through the preload bridge; `import type` from `app/main` is fine, runtime imports are not. Code both sides run belongs in `app/main/src/shared/<feature>/`: pure TypeScript with no `electron`, no Node built-ins, no npm packages and no runtime imports from outside `shared/` (`import type` from elsewhere in `app/main` is allowed for now). ESLint enforces this split.
+6. **Respect the Electron split.** Main-process code lives in `app/main`, UI in `app/renderer`. `app/main` never imports from `app/renderer`. The renderer reaches main only through the preload bridge; `import type` from `app/main` is fine, runtime imports are not. Code both sides run belongs in `app/main/src/shared/<feature>/`: pure TypeScript with no `electron`, no Node built-ins, no npm packages and no runtime imports from outside `shared/`. ESLint enforces this split.
 7. **Make the right way the easy way.** Agents copy the nearest pattern. Follow the existing pattern; if it is wrong, fix it rather than adding a second one beside it.
 
 ### No slop
@@ -37,8 +37,11 @@ These apply to every change, in the TypeScript app and the Python services. Wher
 ### Formatting
 16. TypeScript follows `prettier.config.cjs` (single quotes, semicolons, trailing commas, 100 columns) and `eslint.config.js`. Python follows `ruff.toml` (`ruff check` and `ruff format`).
 
+### React
+17. **Effects live in named hooks.** Components don't call `useEffect`/`useLayoutEffect` directly; put each effect in a `useX` hook named for what it does, in the feature folder. Prefer no effect at all: derive values during render, and do event work in the handler. ESLint enforces this for new code; existing direct effects are listed in `app/renderer/eslint-suppressions.json`. Remove entries as you fix them (`pnpm --filter ./app/renderer exec eslint "src/**/*.{ts,tsx}" --prune-suppressions`).
+
 ### Keeping the rules alive
-17. **Turn corrections into checks.** When the same kind of mistake is corrected twice, propose a lint rule, test or CI check that catches it, not just another line here.
+18. **Turn corrections into checks.** When the same kind of mistake is corrected twice, propose a lint rule, test or CI check that catches it, not just another line here.
 
 ## Development Workflow
 1. Read the relevant section in `plan.md` for the feature you are implementing.

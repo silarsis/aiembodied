@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { RoomFile } from '../../../main/src/rooms/types.js';
+import type { RoomFile } from '../../../main/src/shared/rooms/types.js';
 import { RoomStage } from '../../src/rooms/room-stage.js';
 import { HOME_DISTANCE, TURN_THRESHOLD, talkStartActions } from '../../src/rooms/idle-talk.js';
 import { INITIAL_STATE, type AvatarState, type PlanWorld } from '../../src/rooms/scene-actions.js';

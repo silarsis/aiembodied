@@ -10,9 +10,10 @@
 import type { SwitchboardBus } from '../switchboard/bus.js';
 import type { SwitchboardEvent } from '../switchboard/types.js';
 import { PursuitLlm, type LlmGate } from '../pursuits/pursuit-llm.js';
-import type { PursuitOffer } from '../pursuits/types.js';
+import type { PursuitOffer } from '../shared/pursuits/types.js';
 import type { ChatClient } from '../local-voice/voice-engines.js';
-import type { PendingApproval, ApprovalOutcome } from '../tools/approvals.js';
+import type { ApprovalOutcome } from '../tools/approvals.js';
+import type { PendingApproval } from '../shared/tools/approvals-types.js';
 import type { RegisteredTool, ToolContext, ToolExecutionResult } from '../tools/tool-registry.js';
 import type { PresenceSnapshot } from '../presence/presence.js';
 import type { Restlessness } from '../shared/rooms/idle-settings.js';

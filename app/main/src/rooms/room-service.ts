@@ -5,7 +5,7 @@ import { ASSET_FOLDER } from './asset-folder.js';
 import { OBJECT_CATEGORIES, type ObjectCategory } from './room-layout.js';
 import { DEFAULT_COLOR, resolveColor } from './room-palette.js';
 import { buildParts } from './room-primitives.js';
-import type { RoomFile, RoomObject, RoomSummary } from './types.js';
+import type { RoomFile, RoomObject, RoomSummary } from '../shared/rooms/types.js';
 import { validateRoomFile } from '../shared/rooms/validate.js';
 
 const BUILTIN_PREFIX = 'room:builtin:';

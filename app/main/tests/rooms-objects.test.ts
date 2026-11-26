@@ -10,7 +10,7 @@ import { refitObject } from '../src/rooms/room-refit.js';
 import { objectMakingAvailable, pickSingleImageGeometry } from '../src/rooms/room-generation-setup.js';
 import { DEFAULT_OBJECT_SETTINGS, parseObjectSettings, sanitizeObjectSettings } from '../src/shared/rooms/object-settings.js';
 import type { ResolvedModel } from '../src/rooms/room-placer.js';
-import type { RoomFile, RoomObject } from '../src/rooms/types.js';
+import type { RoomFile, RoomObject } from '../src/shared/rooms/types.js';
 
 function room(objects: RoomObject[]): RoomFile {
   return {

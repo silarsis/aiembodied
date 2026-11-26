@@ -1,5 +1,5 @@
 /** How an avatar other than Echo gets its system prompt: persona plus the movement tag instructions. */
-import type { AvatarTagInstructions } from './bridge-types.js';
+import type { AvatarTagInstructions } from '../shared/avatars/bridge-types.js';
 
 export const MAX_TAG_INSTRUCTIONS_LENGTH = 20_000;
 

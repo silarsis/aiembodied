@@ -7,7 +7,7 @@ import type {
   AvatarModelSummary,
   AvatarModelUploadRequest,
   AvatarModelUploadResult,
-} from './types.js';
+} from '../shared/avatar/types.js';
 
 interface FileSystemAdapter {
   mkdir: (target: string) => Promise<void>;

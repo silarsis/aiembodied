@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CodingRunnerClient, RunnerError, parseEventBlock, type RunnerEvent } from '../src/coding/runner-client.js';
+import { CodingRunnerClient, RunnerError, parseEventBlock } from '../src/coding/runner-client.js';
+import type { RunnerEvent } from '../src/shared/coding/runner-client-types.js';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 

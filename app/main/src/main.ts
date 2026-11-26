@@ -50,10 +50,11 @@ import { createSystemOne } from './decide/system-one.js';
 import { createSystemOneAddressee, createSystemOneBid, createSystemOneIntent } from './floor/system-one-floor.js';
 import { avatarIdForName } from './avatars/avatar-id.js';
 import { SwitchboardMirror } from './switchboard/mirror.js';
-import { AvatarRegistry, DEFAULT_AVATAR_ID, type AvatarProfile } from './avatars/avatar-registry.js';
+import { AvatarRegistry, DEFAULT_AVATAR_ID } from './avatars/avatar-registry.js';
+import type { AvatarProfile } from './shared/avatars/avatar-registry-types.js';
 import { AvatarSettingsKeys, avatarOnlyKeys } from './avatars/avatar-settings.js';
 import { composeAvatarPrompt, readTagInstructions } from './avatars/tag-instructions.js';
-import type { AvatarTagInstructions } from './avatars/bridge-types.js';
+import type { AvatarTagInstructions } from './shared/avatars/bridge-types.js';
 import { VoiceServices } from './avatars/voice-services.js';
 import { tagEvent, tagResult } from './avatars/speaker.js';
 import dotenv from 'dotenv';
@@ -63,13 +64,8 @@ import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import {
-  ConfigManager,
-  ConfigValidationError,
-  type ConfigSecretKey,
-  type RendererConfig,
-  type WakeWordConfig,
-} from './config/config-manager.js';
+import { ConfigManager, ConfigValidationError } from './config/config-manager.js';
+import type { ConfigSecretKey, RendererConfig, WakeWordConfig } from './shared/config/config-manager-types.js';
 import { KeytarSecretStore } from './config/keytar-secret-store.js';
 import { InMemorySecretStore } from './config/secret-store.js';
 import { FilePreferencesStore } from './config/preferences-store.js';
@@ -78,7 +74,7 @@ import { MotionTraceSink } from './logging/motion-trace.js';
 import { createAppDiagnostics } from './logging/app-diagnostics.js';
 import { CrashGuard } from './crash-guard.js';
 import { WakeWordService } from './wake-word/wake-word-service.js';
-import type { WakeWordDetectionEvent } from './wake-word/types.js';
+import type { WakeWordDetectionEvent } from './shared/wake-word/types.js';
 import { WakeWordListeningController } from './wake-word/listening-controller.js';
 import { WakeWordTrainer } from './wake-word/wake-word-trainer.js';
 import { listWakeWords } from './wake-word/wake-word-library.js';
@@ -88,11 +84,11 @@ import type {
   ConversationAppendMessagePayload,
   ConversationMessage,
   ConversationSession,
-} from './conversation/types.js';
+} from './shared/conversation/types.js';
 import { MemoryStore } from './memory/index.js';
 import { PrometheusCollector } from './metrics/prometheus-collector.js';
 import type { LatencyObservation } from './metrics/types.js';
-import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from './realtime/types.js';
+import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from './shared/realtime/types.js';
 import { AutoLaunchManager } from './lifecycle/auto-launch.js';
 import { createDevTray } from './lifecycle/dev-tray.js';
 import { AvatarModelService } from './avatar/avatar-model-service.js';
@@ -107,7 +103,8 @@ import { ComfyUIClient } from './avatar/generation/comfyui-client.js';
 import { BlenderCharacterRunner } from './avatar/generation/character/rig-runner.js';
 import { AvatarImageModelService, createControllerModelScanner, createImageModelScanner, createRemoteComfyModelScanner, type PoseControlInstaller } from './avatar/generation/image-model-service.js';
 import { POSE_CONTROLNETS, poseControlNetPlan } from './avatar/generation/pose-control.js';
-import { baseModelForFamily, type BaseModelSuggestions, lookupCivitai, parseCivitaiRef, planCivitaiDownload, suggestBaseModels } from './avatar/generation/civitai.js';
+import { baseModelForFamily, lookupCivitai, parseCivitaiRef, planCivitaiDownload, suggestBaseModels } from './avatar/generation/civitai.js';
+import type { BaseModelSuggestions } from './shared/avatar/civitai-types.js';
 import { resolveComfyInstallation } from './avatar/generation/comfyui-runtime.js';
 import { ModelDownloadService } from './avatar/generation/model-downloads.js';
 import { AvatarCharacterModelService } from './avatar/generation/character-model-service.js';
@@ -132,7 +129,7 @@ import {
 } from './memory-engine/index.js';
 import { buildVoiceEngines, DEFAULT_OPENAI_MODELS } from './local-voice/voice-engines.js';
 import { describeProviders, type ProviderSettingsPatch } from './shared/config/provider-settings.js';
-import type { LocalVoiceEvent, LocalVoiceRespondRequest, LocalVoiceRespondResult, SpeakingVoiceOptions } from './local-voice/types.js';
+import type { LocalVoiceEvent, LocalVoiceRespondRequest, LocalVoiceRespondResult, SpeakingVoiceOptions } from './shared/local-voice/types.js';
 import { SpeechServiceClient } from './local-voice/speech-service-client.js';
 import type {
   AvatarModelSummary,
@@ -153,7 +150,7 @@ import type {
   AvatarGenerationStatus,
   AvatarGenerationConfirmation,
   AvatarGenerationAcceptance,
-} from './avatar/types.js';
+} from './shared/avatar/types.js';
 import { getOpenAIClient } from './openai/client.js';
 import type OpenAI from 'openai';
 import { createChatCompletionsResponsesClient } from './openai/chat-completions-responses.js';
@@ -177,16 +174,18 @@ import {
 import { probeMemoryDatabase, probeModelServer } from './config/model-server-probe.js';
 import { ComfyUIPool } from './avatar/generation/comfyui-pool.js';
 import { LocalLlmControl } from './local-voice/local-llm-control.js';
-import { CodingService, type CodingView } from './coding/coding-service.js';
+import { CodingService } from './coding/coding-service.js';
+import type { CodingView } from './shared/coding/coding-service-types.js';
 import { CodingMemoryWriter } from './coding/memory-writer.js';
 import { CodingNudger } from './coding/nudger.js';
 import { registerCodingTaskIpc } from './coding/task-ipc.js';
 import { CODING_SERVER_ID, CODING_TOOL_IDS, createCodingTools } from './coding/tools.js';
-import { ApprovalBroker, type ApprovalOutcome, type PendingApproval } from './tools/approvals.js';
+import { ApprovalBroker, type ApprovalOutcome } from './tools/approvals.js';
+import type { PendingApproval } from './shared/tools/approvals-types.js';
 import { registerApprovalsIpc } from './tools/approvals-ipc.js';
 import { lookupHuggingFace, parseHuggingFaceRef } from './local-llm/huggingface.js';
 import { LlmLibrary } from './local-llm/llm-library.js';
-import type { LocalLlmSettings } from './local-llm/llm-settings.js';
+import type { LocalLlmSettings } from './shared/local-llm/llm-settings-types.js';
 import { VisionModel } from './local-vision/vision-model.js';
 import { VisionServer, withVisionServer } from './local-vision/vision-server.js';
 import { MCPManager } from './mcp/mcp-manager.js';
@@ -204,17 +203,17 @@ import { withTimeNote } from './agent-time/prompt.js';
 import { createAgentTimeTools } from './agent-time/tools.js';
 import { agentTimeSettingsFromEnv } from './agent-time/settings.js';
 import { WorkflowsClient } from './agent-time/workflows-client.js';
-import type { WorkflowsStatus } from './agent-time/bridge-types.js';
+import type { WorkflowsStatus } from './shared/agent-time/bridge-types.js';
 import { createReadingNotesTool, readingOutboxItem } from './pursuits/reading-memory.js';
 import { StationLookup } from './stations/station-lookup.js';
 import { createVoiceStations, type VoiceStations } from './stations/voice-stations.js';
-import type { Station, StationSource } from './stations/types.js';
+import type { Station, StationSource } from './shared/stations/types.js';
 import { createRoutedSearchProvider, createWebSearchTool, WEB_SEARCH_TOOL_ID } from './tools/web-search.js';
 import { registerMCPHandlers } from './mcp/ipc-handlers.js';
 import { GpuMemoryReader, localPort, type GpuMemoryServer } from './diagnostics/gpu-memory.js';
 import { DEFAULT_MEMORY_SERVICE_URL } from './memory-engine/settings.js';
 import { PushToTalkShortcut } from './talk/push-to-talk.js';
-import type { TalkTriggerEvent } from './talk/types.js';
+import type { TalkTriggerEvent } from './shared/talk/types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

@@ -3,13 +3,8 @@ import { EventEmitter } from 'node:events';
 import { Worker, type WorkerOptions } from 'node:worker_threads';
 import { fileURLToPath } from 'node:url';
 import type { Logger } from 'winston';
-import type {
-  WakeWordDetectionEvent,
-  WakeWordReadyEvent,
-  WakeWordWorkerCommand,
-  WakeWordWorkerConfig,
-  WakeWordWorkerMessage,
-} from './types.js';
+import type { WakeWordReadyEvent, WakeWordWorkerCommand, WakeWordWorkerConfig, WakeWordWorkerMessage } from './types.js';
+import type { WakeWordDetectionEvent } from '../shared/wake-word/types.js';
 
 export interface WakeWordServiceOptions {
   logger: Logger;

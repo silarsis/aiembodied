@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_IDLE_SETTINGS, type IdleSettings } from '../../../main/src/shared/rooms/idle-settings.js';
-import type { IdlePickContext, IdlePickResult } from '../../../main/src/rooms/types.js';
+import type { IdlePickContext, IdlePickResult } from '../../../main/src/shared/rooms/types.js';
 import {
   FIRST_ACTION_DELAY_MS,
   IdleDirector,

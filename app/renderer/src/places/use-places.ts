@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { PlacesBridge, PlacesSnapshot } from '../../../main/src/places/bridge-types.js';
+import type { PlacesBridge, PlacesSnapshot } from '../../../main/src/shared/places/bridge-types.js';
 
 /**
  * Follows the places snapshot: read once, then pushed on every change. Null while it is not known, or when

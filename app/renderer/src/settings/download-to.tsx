@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { DownloadHosts } from '../../../main/src/aicontroller/remote-downloads.js';
+import type { DownloadHosts } from '../../../main/src/shared/aicontroller/remote-downloads-types.js';
 import type { ModelsBridge } from '../preload-api.js';
 
 /** The value for "Best fit": the model controller picks the machine by GPU fit and disk. */

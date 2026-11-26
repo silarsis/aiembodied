@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { ModelServerView } from '../../../main/src/config/config-manager.js';
-import type { SpeechTtsEngine } from '../../../main/src/local-voice/speech-service-client.js';
+import type { ModelServerView } from '../../../main/src/shared/config/config-manager-types.js';
+import type { SpeechTtsEngine } from '../../../main/src/shared/local-voice/speech-service-client-types.js';
 import { SpeakingEngineFields } from '../../src/settings/speaking-engines.js';
 
 const server: ModelServerView = { id: 'local-speech', name: 'This PC', type: 'speech', url: 'http://127.0.0.1:8192', builtIn: true, managed: true, hasKey: false };

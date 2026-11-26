@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { ModelDownload } from '../../../main/src/avatar/generation/model-downloads.js';
-import type { ModelServerView } from '../../../main/src/config/config-manager.js';
+import type { ModelDownload } from '../../../main/src/shared/avatar/model-downloads-types.js';
+import type { ModelServerView } from '../../../main/src/shared/config/config-manager-types.js';
 import type { ModelsBridge } from '../../src/preload-api.js';
 import { ModelDownloads, formatBytes } from '../../src/settings/model-downloads.js';
 

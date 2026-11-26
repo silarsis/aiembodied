@@ -9,7 +9,7 @@
  * Time, timers, randomness, the model and the executor all come in through `IdleDirectorDeps`, so
  * the whole thing runs in tests with fakes.
  */
-import type { IdlePickContext, IdlePickResult, RoomFile } from '../../../main/src/rooms/types.js';
+import type { IdlePickContext, IdlePickResult, RoomFile } from '../../../main/src/shared/rooms/types.js';
 import {
   RESTLESSNESS_MEAN_SECONDS,
   type IdleSettings,
@@ -30,7 +30,7 @@ import {
 } from './idle-picker.js';
 import { describeAvatarWhere, describeFeet } from './scene-instructions.js';
 import type { IdleInput, IdlePlace, IdlePursuit, IdleTag } from './idle-types.js';
-import type { PlacesSnapshot } from '../../../main/src/places/place-manager.js';
+import type { PlacesSnapshot } from '../../../main/src/shared/places/place-manager-types.js';
 import { isPhonePlace } from '../../../main/src/shared/places/place-kind.js';
 import { ACTIVE_WINDOW_MS, WANDER_COOLDOWN_MS, activeWithin, othersAt } from '../../../main/src/shared/places/wander.js';
 import { talkStartActions } from './idle-talk.js';

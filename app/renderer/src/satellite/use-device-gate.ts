@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { DeviceGateBridge, DeviceGateState } from '../../../main/src/satellite/bridge-types.js';
+import type { DeviceGateBridge, DeviceGateState } from '../../../main/src/shared/satellite/bridge-types.js';
 
 /**
  * Follows the satellite's privacy gate (which lives in the main process). Null until the first answer, and on the

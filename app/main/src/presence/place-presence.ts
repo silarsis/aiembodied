@@ -6,6 +6,7 @@
  * Pure: no Electron, no timers. Times are the PC's own clock readings passed in by the caller.
  */
 import type { Op } from '../shared/room-hub/frames.js';
+import type { PlaceDeviceState } from '../shared/presence/place-presence-types.js';
 
 export interface PlacePresenceSnapshot {
   listening?: boolean;
@@ -16,16 +17,6 @@ export interface PlacePresenceSnapshot {
   activeAt?: number;
   /** When this snapshot last changed (this PC's clock). */
   updatedAt: number;
-}
-
-export interface PlaceDeviceState {
-  mic: string;
-  camera: string;
-  speakers: string;
-  locked: boolean;
-  closed: boolean;
-  /** Another app is full screen on that PC, so its devices are off for now. */
-  fullscreen: boolean;
 }
 
 export interface PlaceWake {

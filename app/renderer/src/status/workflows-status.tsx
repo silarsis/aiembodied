@@ -1,6 +1,6 @@
 /** The workflows service in Status and diagnostics: is it up, can it reach Temporal, who has a life workflow and who is asleep. */
 import { useEffect, useState } from 'react';
-import type { WorkflowsBridge, WorkflowsStatus } from '../../../main/src/agent-time/bridge-types.js';
+import type { WorkflowsBridge, WorkflowsStatus } from '../../../main/src/shared/agent-time/bridge-types.js';
 
 export const WORKFLOWS_POLL_MS = 5000;
 

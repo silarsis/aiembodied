@@ -5,7 +5,7 @@
  * their turn. Events for things Echo already saw in a tool result are not repeated.
  */
 import { describeOutcome, type ApprovalOutcome } from '../tools/approvals.js';
-import type { RunnerEvent, RunnerQuestion, RunnerTask } from './runner-client.js';
+import type { RunnerEvent, RunnerQuestion, RunnerTask } from '../shared/coding/runner-client-types.js';
 
 type Logger = { info: (message: string, data?: Record<string, unknown>) => void; warn: (message: string, data?: Record<string, unknown>) => void };
 

@@ -3,7 +3,7 @@ import { registerCodingTaskIpc } from '../src/coding/task-ipc.js';
 import { registerApprovalsIpc } from '../src/tools/approvals-ipc.js';
 import { ApprovalBroker } from '../src/tools/approvals.js';
 import { ToolRegistry } from '../src/tools/tool-registry.js';
-import type { RunnerEvent } from '../src/coding/runner-client.js';
+import type { RunnerEvent } from '../src/shared/coding/runner-client-types.js';
 
 function fakeIpc() {
   const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();

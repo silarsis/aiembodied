@@ -10,7 +10,7 @@
  * before the wake word is thrown away: an utterance that spans it is cut at the detection.
  */
 import type { LocalVoiceBridge } from '../preload-api.js';
-import type { LocalVoiceEvent, LocalVoiceStatus } from '../../../main/src/local-voice/types.js';
+import type { LocalVoiceEvent, LocalVoiceStatus } from '../../../main/src/shared/local-voice/types.js';
 import type { RealtimeClientCallbacks, RealtimeClientOptions, RealtimeClientState } from './realtime-client.js';
 import type { VoiceActivity, VoicePhase } from './voice-activity.js';
 // &no-inline keeps Vite from turning the tiny worklet into a data: URL; addModule needs a real file.

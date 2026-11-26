@@ -4,7 +4,7 @@ import type { MemoryStore } from '../../memory/index.js';
 import { resolveComfyInstallation } from './comfyui-runtime.js';
 import type { ImageFamily, ImageWorkflowModel } from './image-workflows.js';
 import { POSE_CONTROLNETS, poseSupport } from './pose-control.js';
-import type { AvatarModelHost, AvatarImageModelSelection, AvatarImageModelSummary, AvatarImagePoseControl, AvatarLoraChoice, AvatarLoraSummary } from '../types.js';
+import type { AvatarModelHost, AvatarImageModelSelection, AvatarImageModelSummary, AvatarImagePoseControl, AvatarLoraChoice, AvatarLoraSummary } from '../../shared/avatar/types.js';
 
 export interface ImageModelFile {
   folder: string;

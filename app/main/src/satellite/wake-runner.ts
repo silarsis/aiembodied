@@ -15,10 +15,10 @@
  * worker starts, so the model Kevin picked on bija is the one that listens. Everything Electron-specific comes in
  * from outside, so the tests run it with fakes.
  */
-import type { WakeWordConfig } from '../config/config-manager.js';
+import type { WakeWordConfig } from '../shared/config/config-manager-types.js';
 import { BUILTIN_WAKE_WORD_MODELS } from '../wake-word/open-wake-word.js';
 import { WakeWordListeningController } from '../wake-word/listening-controller.js';
-import type { WakeWordDetectionEvent } from '../wake-word/types.js';
+import type { WakeWordDetectionEvent } from '../shared/wake-word/types.js';
 
 export type WakeMode = 'live' | 'doorbell';
 

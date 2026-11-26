@@ -5,7 +5,7 @@
  */
 import type { OpenAiAudioClient } from './openai-audio-client.js';
 import type { SpeechServiceClient, SpeechServiceHealth } from './speech-service-client.js';
-import type { LocalVoiceSttStatus, LocalVoiceTranscribeResult, LocalVoiceTtsStatus } from './types.js';
+import type { LocalVoiceSttStatus, LocalVoiceTranscribeResult, LocalVoiceTtsStatus } from '../shared/local-voice/types.js';
 
 type CallOptions = { signal?: AbortSignal };
 /** `voice`: the character's own voice for this engine, used instead of the engine's default. */

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { RoomCamera, RoomFile, Vec3 } from '../../../main/src/rooms/types.js';
+import type { RoomCamera, RoomFile, Vec3 } from '../../../main/src/shared/rooms/types.js';
 import { buildRoom, type BuildRoomOptions, type BuiltRoom } from './room-builder.js';
 import { RoomNavMesh } from './room-navmesh.js';
 import { RoomPhysics } from './room-physics.js';

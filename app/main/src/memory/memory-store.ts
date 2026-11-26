@@ -3,7 +3,8 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import DatabaseConstructor, { type Database as SqliteDatabase } from 'better-sqlite3';
 import { Buffer } from 'node:buffer';
-import type { NewReadingNote, ReadingNote } from '../pursuits/types.js';
+import type { NewReadingNote } from '../pursuits/types.js';
+import type { ReadingNote } from '../shared/pursuits/types.js';
 
 export interface MemoryStoreOptions {
   filePath: string;

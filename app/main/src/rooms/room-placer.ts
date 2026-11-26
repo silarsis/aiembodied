@@ -12,7 +12,7 @@ import { lightsFor, lightingCeiling, lightingOutside, resolveColor } from './roo
 import { buildParts } from './room-primitives.js';
 import { buildWalkability, findUnreachable, reachableStand } from './room-walkability.js';
 import type { LayoutObject, RoomLayout, WallSide } from './room-layout.js';
-import type { RoomFile, RoomObject, RoomOpening, RoomModelRef, Vec3 } from './types.js';
+import type { RoomFile, RoomObject, RoomOpening, RoomModelRef, Vec3 } from '../shared/rooms/types.js';
 
 export interface ResolvedModel {
   model: RoomModelRef & { asset: string; scale: number };

@@ -1,6 +1,6 @@
 import type { MemoryStore } from '../../memory/index.js';
 import { hostLabel, type ImageModelFile } from './image-model-service.js';
-import type { AvatarCharacterModelSelection, AvatarCharacterModelSummary } from '../types.js';
+import type { AvatarCharacterModelSelection, AvatarCharacterModelSummary } from '../../shared/avatar/types.js';
 
 /**
  * The weights a geometry run loads. TRELLIS.2 builds a textured mesh from the front image alone;

@@ -30,7 +30,7 @@ import {
 import type { LimbEnd } from './contact-body.js';
 import type { AvatarOccupancy } from './room-occupancy.js';
 import { bakedRootPose, worldToMotion, type RootPose } from './scene-frames.js';
-import type { Vec3 } from '../../../main/src/rooms/types.js';
+import type { Vec3 } from '../../../main/src/shared/rooms/types.js';
 import { isMotionTraceEnabled, isSettleRetryEnabled, round, trace as defaultTrace, type TraceFn } from './motion-trace.js';
 
 export type { ClipEndAction };

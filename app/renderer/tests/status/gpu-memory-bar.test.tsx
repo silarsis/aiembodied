@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import type { GpuMemorySnapshot } from '../../../main/src/diagnostics/gpu-memory.js';
+import type { GpuMemorySnapshot } from '../../../main/src/shared/diagnostics/gpu-memory-types.js';
 import { buildSegments, GpuMemoryView } from '../../src/status/gpu-memory-bar.js';
 
 const GB = 1024 ** 3;

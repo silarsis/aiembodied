@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { RoomHubBridge, RoomHubStatus } from '../../../main/src/room-hub/bridge-types.js';
-import type { PlaceDeviceState } from '../../../main/src/presence/place-presence.js';
+import type { RoomHubBridge, RoomHubStatus } from '../../../main/src/shared/room-hub/bridge-types.js';
+import type { PlaceDeviceState } from '../../../main/src/shared/presence/place-presence-types.js';
 
 /** What a desktop room's PC says about its mic and camera, in words ("Mic live, camera off"). */
 export function deviceSummary(state: PlaceDeviceState | null | undefined): string {

@@ -7,7 +7,7 @@
 import { OPENAI_TTS_VOICES } from '../shared/config/model-routing.js';
 import { pcm16ToWav } from './openai-audio-client.js';
 import type { TextToSpeechEngine } from './speech-engines.js';
-import type { LocalVoiceTtsStatus } from './types.js';
+import type { LocalVoiceTtsStatus } from '../shared/local-voice/types.js';
 
 type Logger = Pick<Console, 'warn'>;
 

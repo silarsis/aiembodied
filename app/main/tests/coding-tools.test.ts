@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CODING_TOOL_IDS, createCodingTools } from '../src/coding/tools.js';
-import type { RunnerTask } from '../src/coding/runner-client.js';
+import type { RunnerTask } from '../src/shared/coding/runner-client-types.js';
 import type { CodingWorkspace } from '../src/shared/coding/types.js';
 
 const workspaces: CodingWorkspace[] = [

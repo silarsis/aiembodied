@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { tagEvent, tagResult } from '../src/avatars/speaker.js';
 import { FloorController } from '../src/floor/index.js';
-import type { LocalVoiceEvent, LocalVoiceRespondRequest, LocalVoiceRespondResult } from '../src/local-voice/types.js';
+import type { LocalVoiceEvent, LocalVoiceRespondRequest, LocalVoiceRespondResult } from '../src/shared/local-voice/types.js';
 
 describe('avatar speaker stamping', () => {
   it('stamps events and results, echo included', () => {

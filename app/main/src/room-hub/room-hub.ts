@@ -21,7 +21,6 @@ import os from 'node:os';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import type { PlaceManager } from '../places/place-manager.js';
-import type { PlaceDeviceState } from '../presence/place-presence.js';
 import type { SwitchboardBus } from '../switchboard/bus.js';
 import type { SwitchboardEventInput } from '../switchboard/types.js';
 import { mimeFor, resolveAssetPath } from '../rooms/asset-protocol.js';
@@ -29,8 +28,9 @@ import { WEB_PREFIX, hostAllowed, originAllowed, serveStaticFile } from './web-s
 import { isAllowedChannel } from './allowlist.js';
 import { FrameError, MAX_FRAME_BYTES, decodeMessage, encodeBinaryFrame, encodeMessage, type Op } from '../shared/room-hub/frames.js';
 import { getIpcHandler, type IpcHandler } from './ipc-registry.js';
-import { cleanKind, type DeviceKind, type RoomDeviceRegistry } from './room-devices.js';
+import { cleanKind, type RoomDeviceRegistry } from './room-devices.js';
 import type { TailscaleLookup } from './tailscale.js';
+import type { RoomHubStatus, PairingStart } from '../shared/room-hub/room-hub-types.js';
 
 export const PROTOCOL_VERSION = 1;
 export const DEFAULT_HUB_PORT = 8791;
@@ -96,37 +96,6 @@ export function fileMarker(file: string): { has(): boolean; mark(): void } {
       }
     },
   };
-}
-
-export interface RoomHubDeviceStatus {
-  id: string;
-  name: string;
-  /** Shown on the Places page: a desktop, a phone or a browser. */
-  kind?: DeviceKind;
-  placeId: string;
-  online: boolean;
-  lastSeen: number;
-  tailscaleNode: string | null;
-  /** What the PC last said about its mic, camera, speakers, lock, kill switch and full-screen apps. Added by main.ts. */
-  deviceState?: PlaceDeviceState | null;
-}
-
-export interface RoomHubStatus {
-  running: boolean;
-  port: number | null;
-  /** Addresses the server listens on. */
-  addresses: string[];
-  /** Set (on Windows) when the hub started listening for the first time on this PC; the Places page shows it. */
-  firewallNote?: string | null;
-  pairing: { code: string; expiresAt: number; placeName: string | null } | null;
-  devices: RoomHubDeviceStatus[];
-}
-
-export interface PairingStart {
-  code: string;
-  expiresAt: number;
-  /** Where to point the other PC (`http://<host>:<port>`). */
-  urls: string[];
 }
 
 interface Connection {

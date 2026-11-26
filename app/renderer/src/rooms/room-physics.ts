@@ -1,6 +1,6 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
-import type { RoomFile } from '../../../main/src/rooms/types.js';
+import type { RoomFile } from '../../../main/src/shared/rooms/types.js';
 import { objectShapes, type LocalShape } from './room-shapes.js';
 import { WALL_THICKNESS, colliderObjects, degToRad, wallPieces, windowBlockers, type WallName } from './room-geometry.js';
 

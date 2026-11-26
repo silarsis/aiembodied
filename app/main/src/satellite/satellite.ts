@@ -5,7 +5,7 @@
  * what), keeps the RoomLink to bija, serves room files through the asset protocol with an on-disk cache, and
  * pairs with bija once. Everything that needs Electron is passed in, so the tests run it against a real RoomHub.
  */
-import type { LinkState, LinkStatus, RoomLink, RoomLinkOptions, Welcome } from './room-link.js';
+import type { LinkStatus, RoomLink, RoomLinkOptions, Welcome } from './room-link.js';
 import { LOST_TOUCH, RoomLink as RoomLinkClass } from './room-link.js';
 import { requestPairing } from '../shared/satellite/pairing.js';
 import { AssetCache } from './asset-cache.js';
@@ -14,38 +14,12 @@ import type { SatelliteSettings, SatelliteSettingsStore } from './settings.js';
 import type { TokenStore } from './token-store.js';
 import { ASSET_SCHEME, mimeFor, type ProtocolLike } from '../rooms/asset-protocol.js';
 import { EMPTY_LOCAL_ANSWERS, keywordOf, satelliteConfig } from '../shared/satellite/local-config.js';
-import type { RendererConfig } from '../config/config-manager.js';
-import type { AudioDevicePreferences } from '../config/preferences-store.js';
+import type { RendererConfig } from '../shared/config/config-manager-types.js';
+import type { AudioDevicePreferences } from '../shared/config/preferences-store-types.js';
 import type { Op } from '../shared/room-hub/frames.js';
 import { INITIAL_FACTS, evaluateGate, type DeviceGateState } from '../shared/satellite/device-gate.js';
-import type { PushToTalkStatus } from '../talk/types.js';
-
-export interface SatelliteStatus {
-  role: 'satellite';
-  /** This PC has a token for a hub (the "Connect to bija" screen shows when false). */
-  paired: boolean;
-  hubUrl: string | null;
-  deviceName: string | null;
-  placeId: string | null;
-  placeName: string | null;
-  link: LinkState;
-  /** Why bija refused this PC (auth, peer, protocol, revoked, replaced). */
-  linkCode: string | null;
-  /** The last thing that went wrong, in words for Kevin (a failed pairing, a refusal, a keychain problem). */
-  lastError: string | null;
-  /** This PC's name, offered as the device name on the connect screen. */
-  hostname: string;
-  /** Only the web satellite sets these. The address to offer on the connect screen (the page's own origin when the hub served it), and what kind of device this is. */
-  suggestedHubUrl?: string | null;
-  deviceKind?: 'browser';
-}
-
-export interface PairInput {
-  hubUrl: string;
-  code: string;
-  placeName?: string;
-  deviceName?: string;
-}
+import type { PushToTalkStatus } from '../shared/talk/types.js';
+import type { SatelliteStatus, PairInput, TurnTiming } from '../shared/satellite/satellite-types.js';
 
 export interface IpcMainLike {
   handle(channel: string, listener: (event: unknown, ...args: unknown[]) => unknown): void;
@@ -64,16 +38,6 @@ export interface DevicesLike {
   hubOff(reason: string): void;
   setOpen(open: boolean): DeviceGateState;
   captureStopped(): void;
-}
-
-/** How long one spoken turn took on this PC, measured from the end of speech (milliseconds). */
-export interface TurnTiming {
-  /** Until the transcript came back from bija. Null for a typed line. */
-  transcriptMs: number | null;
-  /** Until the first sentence of audio arrived. */
-  firstAudioMs: number | null;
-  /** Until the first sentence started playing. */
-  playbackMs: number | null;
 }
 
 export interface SatelliteDeps {

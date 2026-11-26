@@ -1,10 +1,10 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { ModelRoutingView, ModelServerView } from '../../../main/src/config/config-manager.js';
-import type { CodingBridge, CodingConfig, CodingStatus, CodingView } from '../../../main/src/coding/bridge-types.js';
+import type { ModelRoutingView, ModelServerView } from '../../../main/src/shared/config/config-manager-types.js';
+import type { CodingBridge, CodingConfig, CodingStatus, CodingView } from '../../../main/src/shared/coding/bridge-types.js';
 import { builtInServers, defaultRoutes } from '../../../main/src/shared/config/model-routing.js';
 import { DEFAULT_PROVIDER_SETTINGS } from '../../../main/src/shared/config/provider-settings.js';
-import type { ServerProbe } from '../../../main/src/config/model-server-probe.js';
+import type { ServerProbe } from '../../../main/src/shared/config/model-server-probe-types.js';
 import type { ModelsBridge } from '../../src/preload-api.js';
 import { CodingStatusLine } from '../../src/status/coding-status.js';
 import { ModelsDialog } from '../../src/settings/models-dialog.js';

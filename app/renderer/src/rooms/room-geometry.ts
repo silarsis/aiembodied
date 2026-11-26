@@ -1,5 +1,5 @@
 /** Shared by the visual builder and the physics world so walls and colliders always agree. */
-import type { RoomFile, RoomObject, RoomOpening, RoomShell, Vec3 } from '../../../main/src/rooms/types.js';
+import type { RoomFile, RoomObject, RoomOpening, RoomShell, Vec3 } from '../../../main/src/shared/rooms/types.js';
 
 export const WALL_THICKNESS = 0.1;
 

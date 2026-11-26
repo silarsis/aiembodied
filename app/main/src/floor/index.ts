@@ -13,7 +13,7 @@
 import type { AvatarRegistry } from '../avatars/avatar-registry.js';
 import type { PlaceManager } from '../places/place-manager.js';
 import { stripAvatarTags } from '../local-voice/avatar-tags.js';
-import type { LocalVoiceEvent, LocalVoiceRespondRequest, LocalVoiceRespondResult } from '../local-voice/types.js';
+import type { LocalVoiceEvent, LocalVoiceRespondRequest, LocalVoiceRespondResult } from '../shared/local-voice/types.js';
 import type { SwitchboardBus } from '../switchboard/bus.js';
 import type { SwitchboardEventInput } from '../switchboard/types.js';
 import {

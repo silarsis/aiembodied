@@ -4,7 +4,7 @@
  * result says what to ask the motion service, which events to fire while it plays and where the
  * avatar ends up. The executor in scene-executor.ts runs the plans.
  */
-import type { RoomFile, RoomObject, Vec3 } from '../../../main/src/rooms/types.js';
+import type { RoomFile, RoomObject, Vec3 } from '../../../main/src/shared/rooms/types.js';
 import type { AvatarMotionObserved, AvatarMotionPhase, AvatarMotionPath, AvatarMotionTarget } from '../avatar/types.js';
 import type { SceneTag } from '../avatar/animation-tags.js';
 import { degToRad } from './room-geometry.js';

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { DeviceGateBridge, DeviceGateState, SatelliteBridge, SatelliteStatus, TurnTiming } from '../../../main/src/satellite/bridge-types.js';
+import type { DeviceGateBridge, DeviceGateState, SatelliteBridge, SatelliteStatus, TurnTiming } from '../../../main/src/shared/satellite/bridge-types.js';
 import type { AudioDeviceSelection } from '../hooks/use-audio-devices.js';
 import type { CameraChoice } from '../hooks/use-camera-devices.js';
 

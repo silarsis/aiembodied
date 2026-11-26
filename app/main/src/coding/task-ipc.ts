@@ -1,5 +1,6 @@
 /** IPC for the task cards on the status panel: list, follow and control coding tasks. */
-import type { CodingRunnerClient, RunnerAnswer, RunnerEvent, RunnerTask, RunnerTaskRequest } from './runner-client.js';
+import type { CodingRunnerClient } from './runner-client.js';
+import type { RunnerAnswer, RunnerEvent, RunnerTask, RunnerTaskRequest } from '../shared/coding/runner-client-types.js';
 
 export interface CodingTaskIpcOptions {
   ipcMain: { handle: (channel: string, listener: (event: unknown, ...args: unknown[]) => unknown) => void };

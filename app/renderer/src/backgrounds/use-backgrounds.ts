@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { BackgroundBridge, BackgroundSummary } from '../../../main/src/backgrounds/types.js';
+import type { BackgroundBridge, BackgroundSummary } from '../../../main/src/shared/backgrounds/types.js';
 import { DEFAULT_IDLE_SETTINGS, sanitizeIdleSettings, type IdleSettings } from '../../../main/src/shared/rooms/idle-settings.js';
 import type { GeneratedObjectSummary, ObjectSettings, ObjectSettingsView } from '../../../main/src/shared/rooms/object-settings.js';
-import type { RoomGenerationProgress } from '../../../main/src/rooms/room-generation.js';
-import type { RoomFile, RoomSummary } from '../../../main/src/rooms/types.js';
+import type { RoomGenerationProgress } from '../../../main/src/shared/rooms/room-generation-types.js';
+import type { RoomFile, RoomSummary } from '../../../main/src/shared/rooms/types.js';
 
 export const isRoomId = (id: string | null): id is string => Boolean(id?.startsWith('room:'));
 

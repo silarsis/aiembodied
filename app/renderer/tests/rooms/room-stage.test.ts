@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import type { Vec3 } from '../../../main/src/rooms/types.js';
+import type { Vec3 } from '../../../main/src/shared/rooms/types.js';
 import { RoomStage } from '../../src/rooms/room-stage.js';
 import { RoomPhysics } from '../../src/rooms/room-physics.js';
 import { buildRoom } from '../../src/rooms/room-builder.js';

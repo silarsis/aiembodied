@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CodingNudger } from '../src/coding/nudger.js';
-import type { RunnerTask } from '../src/coding/runner-client.js';
+import type { RunnerTask } from '../src/shared/coding/runner-client-types.js';
 import type { ApprovalOutcome } from '../src/tools/approvals.js';
 
 function setup(tasks: Record<string, RunnerTask>) {

@@ -1,6 +1,6 @@
 /** "In the scene" at the top of the Characters pop-up: who is in the scene, add from the library or by name, edit, remove. */
 import { useState } from 'react';
-import type { AvatarProfile, AvatarsBridge } from '../../../main/src/avatars/bridge-types.js';
+import type { AvatarProfile, AvatarsBridge } from '../../../main/src/shared/avatars/bridge-types.js';
 import { CharacterSettings } from './character-settings.js';
 import { ReadingNotes } from './reading-notes.js';
 import { useCharacterSettings, type CharacterSettingsContext, type Run } from './use-character-settings.js';

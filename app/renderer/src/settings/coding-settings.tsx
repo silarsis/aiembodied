@@ -3,10 +3,10 @@
  * takes the tasks, the coder model file, and the workspaces (repositories) the runner may work in.
  */
 import { useCallback, useEffect, useState } from 'react';
-import type { ModelServerView } from '../../../main/src/config/config-manager.js';
-import type { CodingBridge, CodingConfig, CodingStatus } from '../../../main/src/coding/bridge-types.js';
+import type { ModelServerView } from '../../../main/src/shared/config/config-manager-types.js';
+import type { CodingBridge, CodingConfig, CodingStatus } from '../../../main/src/shared/coding/bridge-types.js';
 import { SELF_PROTECTED_PATHS, slugifyWorkspaceId, type CodingWorkspace } from '../../../main/src/shared/coding/types.js';
-import type { ServerProbe } from '../../../main/src/config/model-server-probe.js';
+import type { ServerProbe } from '../../../main/src/shared/config/model-server-probe-types.js';
 
 export const CODING_STATUS_POLL_MS = 5000;
 

@@ -10,7 +10,7 @@ import type {
   AvatarMotionPhase,
   AvatarMotionObserved,
   AvatarMotionTarget,
-} from '../types.js';
+} from '../../shared/avatar/types.js';
 
 export interface LocalMotionClientOptions {
   baseUrl: string;

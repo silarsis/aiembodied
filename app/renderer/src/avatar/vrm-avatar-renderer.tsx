@@ -4,7 +4,7 @@ import type { VisemeFrame } from '../audio/viseme-driver.js';
 import type { AvatarModelSummary } from './types.js';
 import { getPreloadApi } from '../preload-api.js';
 import { useAvatarAnimationQueue, type AvatarAnimationEvent } from './animation-bus.js';
-import type { RoomFile } from '../../../main/src/rooms/types.js';
+import type { RoomFile } from '../../../main/src/shared/rooms/types.js';
 import { RoomSceneController } from '../rooms/room-scene-controller.js';
 import type { SceneActionExecutor } from '../rooms/scene-executor.js';
 import { useBehaviorCues, type BehaviorCueEvent } from './behavior-cues.js';

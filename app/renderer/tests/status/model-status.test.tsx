@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import type { LocalVoiceStatus } from '../../../main/src/local-voice/types.js';
+import type { LocalVoiceStatus } from '../../../main/src/shared/local-voice/types.js';
 import { AssistantStatusPanel } from '../../src/status/assistant-status.js';
 import { describeModels } from '../../src/status/model-status.js';
 

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '../../../main/src/shared/config/provider-settings.js';
-import type { WakeWordOption, WakeWordTrainingStatus } from '../../../main/src/wake-word/types.js';
+import type { WakeWordOption, WakeWordTrainingStatus } from '../../../main/src/shared/wake-word/types.js';
 import type { WakeWordBridge } from '../../src/preload-api.js';
 import { ProviderSettingsPanel } from '../../src/settings/provider-settings-panel.js';
 import { describeWakeWordOption } from '../../src/settings/wake-word-training.js';

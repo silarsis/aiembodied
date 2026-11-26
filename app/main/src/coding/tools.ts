@@ -5,7 +5,8 @@
  * of kind 'self' (Echo's own code) opening the pull request can only be approved on the card.
  */
 import type { RegisteredTool } from '../tools/tool-registry.js';
-import type { CodingRunnerClient, RunnerQuestion, RunnerTask } from './runner-client.js';
+import type { CodingRunnerClient } from './runner-client.js';
+import type { RunnerQuestion, RunnerTask } from '../shared/coding/runner-client-types.js';
 import type { CodingWorkspace } from '../shared/coding/types.js';
 
 export const CODING_SERVER_ID = 'coding';

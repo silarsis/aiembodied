@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { MemoryEngineBridge, MemoryEngineStoredFact } from '../../../main/src/memory-engine/bridge-types.js';
+import type { MemoryEngineBridge, MemoryEngineStoredFact } from '../../../main/src/shared/memory-engine/bridge-types.js';
 import { MemoryPanel } from '../../src/settings/memory-panel.js';
 
 const fact: MemoryEngineStoredFact = {

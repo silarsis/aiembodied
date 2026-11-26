@@ -10,7 +10,7 @@ import {
   PlaceManager,
   placesNote,
 } from '../../src/places/place-manager.js';
-import type { PlacesSnapshot } from '../../src/places/place-manager.js';
+import type { PlacesSnapshot } from '../../src/shared/places/place-manager-types.js';
 import type { SwitchboardEventInput } from '../../src/switchboard/types.js';
 import type { SwitchboardBus } from '../../src/switchboard/bus.js';
 

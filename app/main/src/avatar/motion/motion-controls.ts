@@ -11,7 +11,7 @@ import type {
   AvatarMotionPhase,
   AvatarMotionStreamRequest,
   AvatarMotionTarget,
-} from '../types.js';
+} from '../../shared/avatar/types.js';
 
 export type MotionControls = Pick<
   AvatarMotionStreamRequest,

@@ -1,7 +1,7 @@
 /**
  * Plain colour words (what the layout model writes) to hex, and the lighting presets. Pure.
  */
-import type { RoomLight } from './types.js';
+import type { RoomLight } from '../shared/rooms/types.js';
 
 const WORDS: Record<string, string> = {
   white: '#f2f0ea', 'off white': '#ece8dc', cream: '#e8dfc8', ivory: '#efe8d4', beige: '#d6c6a5', sand: '#d8c49a', tan: '#c4a57b',

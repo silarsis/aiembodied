@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { StationBody, StationUseEvent } from '../../../main/src/stations/types.js';
+import type { StationBody, StationUseEvent } from '../../../main/src/shared/stations/types.js';
 import type { AvatarState, PlanWorld, SceneAction } from '../../src/rooms/scene-actions.js';
 import type { PlanBuilder } from '../../src/rooms/scene-executor.js';
 import { READ_REPEAT_MS } from '../../src/rooms/station-body.js';

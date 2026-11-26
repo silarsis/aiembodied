@@ -1,6 +1,6 @@
 import { act, render, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { DeviceGateBridge, DeviceGateState } from '../../../main/src/satellite/bridge-types.js';
+import type { DeviceGateBridge, DeviceGateState } from '../../../main/src/shared/satellite/bridge-types.js';
 import { evaluateGate } from '../../../main/src/shared/satellite/device-gate.js';
 import { useDeviceGate } from '../../src/satellite/use-device-gate.js';
 import { DeviceDots } from '../../src/satellite/device-dots.js';

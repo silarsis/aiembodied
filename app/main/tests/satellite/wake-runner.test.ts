@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SatelliteWakeRunner, type SharedWakeWord, type WakeRunnerDeps } from '../../src/satellite/wake-runner.js';
 import { evaluateGate, INITIAL_FACTS } from '../../src/shared/satellite/device-gate.js';
-import type { WakeWordConfig } from '../../src/config/config-manager.js';
-import type { WakeWordDetectionEvent } from '../../src/wake-word/types.js';
+import type { WakeWordConfig } from '../../src/shared/config/config-manager-types.js';
+import type { WakeWordDetectionEvent } from '../../src/shared/wake-word/types.js';
 
 const BUILTIN: SharedWakeWord = { model: 'hey_echo', keywordLabel: 'Hey Echo', threshold: 0.5, cooldownMs: 1500 };
 const EVENT: WakeWordDetectionEvent = { keywordLabel: 'Hey Echo', confidence: 0.9, timestamp: 1 };

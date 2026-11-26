@@ -1,3 +1,4 @@
+import type { SpeechTtsEngine, SpeechTtsModel } from '../shared/local-voice/speech-service-client-types.js';
 /** Client for services/speech (contract in services/speech/API.md). */
 
 export interface SpeechServiceHealth {
@@ -9,25 +10,6 @@ export interface SpeechServiceHealth {
   ttsModel: string | null;
   voices: string[];
   defaultVoice: string | null;
-}
-
-/** One model of a speech-service TTS engine (GET /v1/tts/engines). */
-export interface SpeechTtsModel {
-  id: string;
-  label: string;
-  installed: boolean;
-  sizeMb?: number;
-  voices: string[];
-  defaultVoice: string | null;
-  download: { status: 'downloading' | 'done' | 'error'; received: number; total: number; error: string | null } | null;
-}
-
-export interface SpeechTtsEngine {
-  id: string;
-  label: string;
-  available: boolean;
-  error: string | null;
-  models: SpeechTtsModel[];
 }
 
 export interface SpeechServiceClientOptions {

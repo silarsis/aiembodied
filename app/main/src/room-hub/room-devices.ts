@@ -8,15 +8,13 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import type { DeviceKind } from '../shared/room-hub/room-devices-types.js';
 
 export const PAIRING_CODE_TTL_MS = 5 * 60_000;
 export const LOCKOUT_ATTEMPTS = 10;
 export const LOCKOUT_WINDOW_MS = 60_000;
 export const LOCKOUT_REFUSAL_MS = 60_000;
 const MAX_DEVICES = 20;
-
-/** What kind of thing a paired device is. Only shown for now; later PRs give a phone and a browser their own rules. */
-export type DeviceKind = 'desktop' | 'phone' | 'browser';
 export const DEVICE_KINDS: readonly DeviceKind[] = ['desktop', 'phone', 'browser'];
 
 /** The kind a pair request asked for; anything else (or nothing) is a desktop. */

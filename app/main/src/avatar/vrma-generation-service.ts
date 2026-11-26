@@ -6,7 +6,7 @@ import type {
   AvatarAnimationUploadResult,
   AvatarAnimationSummary,
   AvatarAnimationGenerationRequest,
-} from './types.js';
+} from '../shared/avatar/types.js';
 import type { AvatarAnimationService } from './avatar-animation-service.js';
 
 export interface VrmaGenerationServiceOptions {

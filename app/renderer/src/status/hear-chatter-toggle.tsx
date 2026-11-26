@@ -1,6 +1,6 @@
 /** "Hear avatar chatter" in Status and diagnostics: whether avatars talk to each other out loud. */
 import { useEffect, useState } from 'react';
-import type { FloorBridge } from '../../../main/src/floor/bridge-types.js';
+import type { FloorBridge } from '../../../main/src/shared/floor/bridge-types.js';
 
 export function HearChatterToggle({ api }: { api?: FloorBridge }) {
   const [enabled, setEnabled] = useState(false);

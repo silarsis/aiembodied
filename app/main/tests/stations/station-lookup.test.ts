@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { LOOKUP_MAX_TOOL_CALLS, StationLookup, defaultLookupTool, lookupToolName } from '../../src/stations/station-lookup.js';
-import type { Station } from '../../src/stations/types.js';
+import type { Station } from '../../src/shared/stations/types.js';
 import type { RegisteredTool } from '../../src/tools/tool-registry.js';
 import { FakeChat, executorFor, libraryTool, type Reply, type SeenCall } from '../pursuits/fakes.js';
 

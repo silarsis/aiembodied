@@ -11,7 +11,8 @@ import type { MemoryEngineFact } from '../memory-engine/client.js';
 import type { OutboxItem } from '../memory-engine/outbox.js';
 import type { RegisteredTool } from '../tools/tool-registry.js';
 import { clip } from './pursuit-llm.js';
-import type { ReadingNote, ReadingNoteStore } from './types.js';
+import type { ReadingNoteStore } from './types.js';
+import type { ReadingNote } from '../shared/pursuits/types.js';
 
 /** The note as one piece of text for memory: what it is, the link, then the character's own words. */
 export function readingFactText(note: ReadingNote, avatarName: string): string {

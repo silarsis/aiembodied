@@ -47,7 +47,7 @@ import type {
   AvatarGenerationConfirmation,
   AvatarModelUploadRequest,
   AvatarModelUploadResult,
-} from '../types.js';
+} from '../../shared/avatar/types.js';
 
 export interface AvatarGenerationModelStore {
   uploadModel(request: AvatarModelUploadRequest): Promise<AvatarModelUploadResult>;

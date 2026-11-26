@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_DESKTOP_ROOM, LOCATIONS_KEY, OFFLINE_GRACE_MS, PLACES_KEY, PlaceManager, scopedPlaces } from '../../src/places/place-manager.js';
-import type { PlacesSnapshot } from '../../src/places/place-manager.js';
+import type { PlacesSnapshot } from '../../src/shared/places/place-manager-types.js';
 import type { SwitchboardBus } from '../../src/switchboard/bus.js';
 import type { SwitchboardEventInput } from '../../src/switchboard/types.js';
 

@@ -8,12 +8,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
-import type {
-  WakeWordTrainingJob,
-  WakeWordTrainingMetrics,
-  WakeWordTrainingState,
-  WakeWordTrainingStatus,
-} from './types.js';
+import type { WakeWordTrainingJob, WakeWordTrainingMetrics, WakeWordTrainingState, WakeWordTrainingStatus } from '../shared/wake-word/types.js';
 
 type TrainerLogger = Pick<Console, 'info' | 'warn' | 'error'>;
 

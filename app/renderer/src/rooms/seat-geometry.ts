@@ -5,7 +5,7 @@
  * Measured in object-local space first (y up from the object's floor contact, tag facing in degrees, 0 = +Z),
  * then moved to the world by `seatGeometryToWorld`.
  */
-import type { SitTag, Vec3 } from '../../../main/src/rooms/types.js';
+import type { SitTag, Vec3 } from '../../../main/src/shared/rooms/types.js';
 import { degToRad } from './room-geometry.js';
 import { shapeTopAt, type LocalShape } from './room-shapes.js';
 
