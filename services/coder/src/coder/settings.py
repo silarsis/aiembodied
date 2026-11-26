@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -20,11 +20,11 @@ class DefaultModel(BaseModel):
 
 
 class SettingsBody(BaseModel):
-    local_llm_url: Optional[str] = Field(default=None, min_length=1)
-    local_model: Optional[str] = Field(default=None, min_length=1)
-    local_context: Optional[int] = Field(default=None, gt=0)
-    default_model: Optional[DefaultModel] = None
-    pr_poll_seconds: Optional[float] = Field(default=None, ge=0)
+    local_llm_url: str | None = Field(default=None, min_length=1)
+    local_model: str | None = Field(default=None, min_length=1)
+    local_context: int | None = Field(default=None, gt=0)
+    default_model: DefaultModel | None = None
+    pr_poll_seconds: float | None = Field(default=None, ge=0)
 
 
 def snapshot(cfg: Config) -> dict:

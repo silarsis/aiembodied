@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
-
 from memory_engine import home
 from memory_engine.home import classify, deadband, describe_change, keep_reading, ws_url
 
@@ -20,8 +19,9 @@ def iso(seconds):
 @pytest.fixture
 def second_database(database_url):
     """A second, empty database on the same server."""
-    import psycopg
     from urllib.parse import urlsplit, urlunsplit
+
+    import psycopg
 
     name = f"memtest_{uuid4().hex[:10]}"
     with psycopg.connect(database_url, autocommit=True) as conn:
@@ -746,7 +746,6 @@ def test_indexed_text_and_entities_carry_the_home_name(client, db):
 
 def make_app(database_url, schema, **kwargs):
     from fastapi.testclient import TestClient
-
     from memory_engine.app import Engine, create_app
     from memory_engine.embed import FakeEmbedder
 
@@ -904,7 +903,6 @@ def test_put_home_servers_validates_and_never_echoes_a_token(database_url, schem
 
 def test_put_home_servers_needs_the_api_token(database_url, schema):
     from fastapi.testclient import TestClient
-
     from memory_engine.app import Engine, create_app
 
     engine = Engine(database_url, schema)

@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Any
 
 from temporalio import workflow
 
 from .. import life_rules as rules
 from ..timeutil import get_tz, hhmm, iso_z, parse_iso
-from .common import Controllable, patch_intention, say_line, try_act, ts, wait_changed, wlog, now
+from .common import Controllable, now, patch_intention, say_line, try_act, ts, wait_changed, wlog
 
 LATE_SECONDS = 10 * 60
 OFFLINE_RETRY_SECONDS = 60

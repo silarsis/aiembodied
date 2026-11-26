@@ -3,10 +3,8 @@ import time
 
 import pytest
 from fastapi.testclient import TestClient
-
 from motion_service.app import create_app
 from motion_service.backends.fake import FakeBackend
-
 from vrma_check import assert_valid_vrma
 
 

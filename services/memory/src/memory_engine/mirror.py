@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlsplit
 
 import psycopg
@@ -267,7 +267,7 @@ def load_marks(conn: psycopg.Connection, target: str) -> dict[str, Any]:
     return dict(row[0]) if row else {}
 
 
-def save_marks(conn: psycopg.Connection, target: str, marks: dict[str, Any], error: Optional[str] = None) -> None:
+def save_marks(conn: psycopg.Connection, target: str, marks: dict[str, Any], error: str | None = None) -> None:
     conn.execute(
         """
         INSERT INTO mirror_state (target, marks, last_push_at, last_error) VALUES (%s, %s, now(), %s)

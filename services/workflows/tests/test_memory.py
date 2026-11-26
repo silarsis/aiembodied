@@ -2,7 +2,6 @@ import json
 
 import httpx
 import pytest
-
 from aiembodied_workflows.memory import MemoryClient, MemoryError
 
 

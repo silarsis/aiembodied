@@ -148,7 +148,6 @@ def test_background_worker_embeds_without_blocking_writes(database_url, schema):
     import time
 
     from fastapi.testclient import TestClient
-
     from memory_engine.app import Engine, create_app
     from memory_engine.embed import FakeEmbedder
 
@@ -171,7 +170,6 @@ def test_embedder_is_only_woken_once_the_write_is_visible(database_url, schema):
 
     import psycopg
     from fastapi.testclient import TestClient
-
     from memory_engine.app import Engine, create_app
     from memory_engine.embed import FakeEmbedder
 
@@ -198,7 +196,6 @@ def test_embedder_is_only_woken_once_the_write_is_visible(database_url, schema):
 
 def test_failed_model_load_waits_before_retrying(monkeypatch):
     import fastembed
-
     from memory_engine.embed import FastEmbedEmbedder
 
     calls = []

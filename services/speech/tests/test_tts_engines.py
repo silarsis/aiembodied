@@ -7,7 +7,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-
 from speech_service.app import create_app
 from speech_service.engines import FakeSynthesizer, FakeTranscriber
 from speech_service.tts_engines import TtsError, TtsModels, kitten_chunks, kitten_tokens, piper_files, trim_silence

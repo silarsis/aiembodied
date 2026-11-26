@@ -1,5 +1,4 @@
 import json
-import os
 import subprocess
 import threading
 import time
@@ -7,12 +6,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
-
 from coder import github, gitops
 from coder.app import create_app
 from coder.manager import slugify
 from conftest import new_task, wait_status
+from fastapi.testclient import TestClient
 
 
 def git(repo, *a):
@@ -391,6 +389,7 @@ def test_health(client):
 
 def test_event_hub_publish():
     import asyncio
+
     from coder.app import EventHub
 
     async def go():
@@ -668,6 +667,7 @@ def test_time_limit_paused_while_question(client, ws, monkeypatch):
 
 def test_old_database_gets_questions_column(tmp_path):
     import sqlite3
+
     from coder.store import Store
 
     p = tmp_path / "old.sqlite"

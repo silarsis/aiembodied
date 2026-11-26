@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any
 
 from .models import CLOSED_STATES, Event
 
@@ -109,13 +110,13 @@ class Store:
 
     def events(
         self,
-        since: Optional[str] = None,
-        type: Optional[str] = None,
-        producer: Optional[str] = None,
-        txn: Optional[str] = None,
-        root: Optional[str] = None,
-        scene: Optional[str] = None,
-        to: Optional[str] = None,
+        since: str | None = None,
+        type: str | None = None,
+        producer: str | None = None,
+        txn: str | None = None,
+        root: str | None = None,
+        scene: str | None = None,
+        to: str | None = None,
         limit: int = 200,
     ) -> list[dict[str, Any]]:
         """Envelopes oldest first. `since` is exclusive; an id that is not (or no longer) in the journal
@@ -150,7 +151,7 @@ class Store:
 
     # txns
 
-    def get_txn(self, txn_id: str) -> Optional[dict[str, Any]]:
+    def get_txn(self, txn_id: str) -> dict[str, Any] | None:
         with self.lock:
             row = self.db.execute("SELECT * FROM txns WHERE id=?", (txn_id,)).fetchone()
         return dict(row) if row else None
@@ -164,7 +165,7 @@ class Store:
             )
 
     def txns(
-        self, state: Optional[str] = None, root: Optional[str] = None, parent: Optional[str] = None, limit: int = 200
+        self, state: str | None = None, root: str | None = None, parent: str | None = None, limit: int = 200
     ) -> list[dict[str, Any]]:
         """Newest updated first. state: "open" = not closed, "closed" = any closed state, else that exact state."""
         where: list[str] = []

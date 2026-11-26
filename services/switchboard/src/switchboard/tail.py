@@ -7,8 +7,9 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from collections.abc import Iterator
 from fnmatch import fnmatchcase
-from typing import Any, Iterator, Optional
+from typing import Any
 
 from .ulid import new_ulid
 
@@ -25,7 +26,7 @@ def format_event(ev: dict[str, Any], width: int = 100) -> str:
     return f"{ev['at'][11:23]} {ev['type']} {p['kind']}:{p['id']} -> {to}{txn} {payload}"
 
 
-def _stream(base: str, types: list[str], since: Optional[str]) -> Iterator[dict[str, Any]]:
+def _stream(base: str, types: list[str], since: str | None) -> Iterator[dict[str, Any]]:
     from websockets.sync.client import connect
 
     with connect(base.replace("http", "ws", 1) + "/v1/stream") as ws:
@@ -40,7 +41,7 @@ def _stream(base: str, types: list[str], since: Optional[str]) -> Iterator[dict[
                 yield msg["event"]
 
 
-def _poll(base: str, txn: Optional[str], since: Optional[str]) -> Iterator[dict[str, Any]]:
+def _poll(base: str, txn: str | None, since: str | None) -> Iterator[dict[str, Any]]:
     # Without --since start from now: a ULID made now sorts after everything already journaled.
     cursor = since or new_ulid()
     while True:
@@ -54,7 +55,7 @@ def _poll(base: str, txn: Optional[str], since: Optional[str]) -> Iterator[dict[
             time.sleep(POLL_S)
 
 
-def run(url: str, types: list[str], txn: Optional[str], since: Optional[str]) -> int:
+def run(url: str, types: list[str], txn: str | None, since: str | None) -> int:
     base = url.rstrip("/").replace("ws", "http", 1) if url.startswith("ws") else url.rstrip("/")
     closed: tuple[type[BaseException], ...] = ()
     try:

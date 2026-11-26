@@ -142,7 +142,6 @@ def test_forgetting_a_message_rebuilds_its_turn(client):
 
 def test_bearer_token_is_required_when_set(database_url, schema):
     from fastapi.testclient import TestClient
-
     from memory_engine.app import Engine, create_app
 
     with TestClient(create_app(Engine(database_url, schema), api_token="s3cret", connect_in_background=False)) as c:
@@ -153,7 +152,6 @@ def test_bearer_token_is_required_when_set(database_url, schema):
 
 def test_starts_without_a_database_and_answers_503():
     from fastapi.testclient import TestClient
-
     from memory_engine.app import Engine, create_app
 
     engine = Engine("postgresql://nobody@127.0.0.1:1/none", "memory", retry_seconds=60)

@@ -2,7 +2,6 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 import pytest
-
 from aiembodied_workflows.timeutil import (
     due_from,
     hhmm,

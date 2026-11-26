@@ -11,7 +11,7 @@ from temporalio import workflow
 
 from .. import life_rules as rules
 from ..settings import HOST_AVATAR
-from ..timeutil import get_tz, iso_z
+from ..timeutil import iso_z
 from .common import best_effort, journal, now, say_line, try_act, ts, wlog
 
 MAX_TICKS_BEFORE_CONTINUE = 200

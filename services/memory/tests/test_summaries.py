@@ -1,9 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from test_recall import T0, at, message, post
-
 from memory_engine.summaries import period_bounds
+from test_recall import T0, at, message, post
 
 
 def run(client, now):

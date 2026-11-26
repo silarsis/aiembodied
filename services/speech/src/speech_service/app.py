@@ -9,7 +9,6 @@ import threading
 import time
 import wave
 from contextlib import asynccontextmanager
-from typing import Optional
 
 import numpy as np
 from fastapi import FastAPI, Request
@@ -26,12 +25,12 @@ MAX_STT_SECONDS = 60
 
 class TtsRequest(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
-    voice: Optional[str] = None
+    voice: str | None = None
     speed: float = Field(default=1.0, ge=0.5, le=2.0)
     # kokoro (the default, the engine the service started with), kitten or piper.
-    engine: Optional[str] = None
+    engine: str | None = None
     # Kitten: mini-0.8 or nano-0.8. Piper: unused (each voice is its own model).
-    model: Optional[str] = None
+    model: str | None = None
 
 
 class DownloadRequest(BaseModel):

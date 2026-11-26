@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Iterator, Optional, Sequence
+from collections.abc import Iterator, Sequence
 
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -122,8 +122,8 @@ class FakeBackend(Backend):
         steps: int,
         *,
         plan=None,
-        phase_texts: Optional[Sequence] = None,
-        history: Optional[StreamHistory] = None,
+        phase_texts: Sequence | None = None,
+        history: StreamHistory | None = None,
         constraint_weight: float = 2.0,
     ) -> Iterator[Chunk]:
         self.calls.append(

@@ -10,7 +10,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from . import gitops
 from .config import Config
@@ -27,15 +27,15 @@ class PiProbe:
     def __init__(self, cfg: Config):
         self.cfg = cfg
         self._lock = threading.Lock()
-        self._version: Optional[tuple[float, Optional[str], Optional[str]]] = None
-        self._models: Optional[tuple[float, dict]] = None
+        self._version: tuple[float, str | None, str | None] | None = None
+        self._models: tuple[float, dict] | None = None
 
     def found(self) -> bool:
         import shutil
 
         return shutil.which(self.cfg.pi_argv()[0]) is not None or Path(self.cfg.pi_argv()[0]).exists()
 
-    def version(self, refresh: bool = False) -> tuple[Optional[str], Optional[str]]:
+    def version(self, refresh: bool = False) -> tuple[str | None, str | None]:
         """(version, error)"""
         with self._lock:
             if self._version and not refresh and time.time() - self._version[0] < CACHE_S:
@@ -110,8 +110,8 @@ class PiProbe:
 
 def detect(ws: Workspace, remote: str) -> dict:
     p = Path(ws.path)
-    manager: Optional[str] = None
-    suggestion: Optional[str] = None
+    manager: str | None = None
+    suggestion: str | None = None
     pkg = p / "package.json"
     if pkg.is_file():
         manager = "pnpm" if (p / "pnpm-lock.yaml").exists() else "yarn" if (p / "yarn.lock").exists() else "npm"
@@ -138,7 +138,7 @@ def detect(ws: Workspace, remote: str) -> dict:
     }
 
 
-def _minutes(t: dict) -> Optional[float]:
+def _minutes(t: dict) -> float | None:
     if not (t["started_at"] and t["finished_at"]):
         return None
     try:

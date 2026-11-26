@@ -1,7 +1,6 @@
 import copy
 
 import pytest
-
 from aiembodied_workflows import flowdef as f
 
 GOOD = {

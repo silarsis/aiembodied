@@ -18,9 +18,10 @@ import logging
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone, tzinfo
-from typing import Any, Callable, ContextManager, Optional
+from typing import Any, ContextManager
 from uuid import UUID
 
 import psycopg
@@ -78,7 +79,7 @@ SYSTEM = (
 )
 
 
-def resolve_timezone(name: Optional[str]) -> tzinfo:
+def resolve_timezone(name: str | None) -> tzinfo:
     """MEMORY_TIMEZONE (an IANA name such as Australia/Melbourne), else this machine's offset."""
     if name:
         from zoneinfo import ZoneInfo
@@ -162,17 +163,17 @@ def due_periods(
 @dataclass
 class SessionJob:
     session_id: UUID
-    agent: Optional[str]
+    agent: str | None
     started_at: datetime
     last_at: datetime
     covered_seq: int
     transcript: str
     facts: list[tuple[str, str]] = field(default_factory=list)  # (id, text)
     # Which messages the transcript was built from; a summary of anything else is stale.
-    revision: Optional[str] = None
+    revision: str | None = None
 
 
-def _session_revision(conn: psycopg.Connection, session_id: UUID) -> Optional[str]:
+def _session_revision(conn: psycopg.Connection, session_id: UUID) -> str | None:
     return conn.execute(
         """
         SELECT md5(string_agg(id::text || ':' || seq::text, ',' ORDER BY seq)) FROM messages
@@ -182,7 +183,7 @@ def _session_revision(conn: psycopg.Connection, session_id: UUID) -> Optional[st
     ).fetchone()[0]
 
 
-def load_session_job(conn: psycopg.Connection, session_id: UUID) -> Optional[SessionJob]:
+def load_session_job(conn: psycopg.Connection, session_id: UUID) -> SessionJob | None:
     session = conn.execute("SELECT agent FROM sessions WHERE id = %s", (session_id,)).fetchone()
     if not session:
         return None
@@ -338,13 +339,13 @@ class PeriodJob:
     start: datetime
     end: datetime
     covered_seq: int
-    children: list[tuple[datetime, Optional[str], str]]  # (start, title, text)
+    children: list[tuple[datetime, str | None, str]]  # (start, title, text)
 
 
 CHILD_KIND = {"day": "session", "week": "day", "month": "day"}
 
 
-def load_period_job(conn: psycopg.Connection, kind: str, start: datetime, end: datetime) -> Optional[PeriodJob]:
+def load_period_job(conn: psycopg.Connection, kind: str, start: datetime, end: datetime) -> PeriodJob | None:
     rows = conn.execute(
         """
         SELECT period_start, title, text, seq FROM summaries
@@ -450,9 +451,9 @@ def invalidate_for_session(conn: psycopg.Connection, session_id: UUID) -> None:
 def list_summaries(
     conn: psycopg.Connection,
     *,
-    kind: Optional[str] = None,
-    start: Optional[datetime] = None,
-    end: Optional[datetime] = None,
+    kind: str | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
     rows = conn.execute(
@@ -507,15 +508,15 @@ class Summariser:
         self.session_quiet = session_quiet
         self.idle_seconds = idle_seconds
         self.clock = clock
-        self.error: Optional[str] = None
+        self.error: str | None = None
         self.done = 0
-        self._busy_since: Optional[float] = None
+        self._busy_since: float | None = None
         self._last_activity = clock() - idle_seconds
         self._retry_at: dict[Any, tuple[float, float]] = {}
         self._lock = threading.Lock()
 
     # Activity, from the client: a turn starting (busy) or ending, and every write.
-    def activity(self, busy: Optional[bool] = None) -> None:
+    def activity(self, busy: bool | None = None) -> None:
         now = self.clock()
         self._last_activity = now
         if busy is True:
@@ -532,8 +533,8 @@ class Summariser:
     def run_once(
         self,
         connect: Callable[[], ContextManager[psycopg.Connection]],
-        now: Optional[datetime] = None,
-    ) -> Optional[dict[str, Any]]:
+        now: datetime | None = None,
+    ) -> dict[str, Any] | None:
         """Do the next due job, if any. Returns what was done, or None when nothing is due."""
         with self._lock:
             now = now or datetime.now(timezone.utc)

@@ -32,7 +32,6 @@ def schema(database_url):
 @pytest.fixture
 def client(database_url, schema):
     from fastapi.testclient import TestClient
-
     from memory_engine.app import Engine, create_app
     from memory_engine.embed import FakeEmbedder
 
@@ -67,7 +66,6 @@ def summary_client(database_url, schema, llm):
     from datetime import timezone as tz
 
     from fastapi.testclient import TestClient
-
     from memory_engine.app import Engine, create_app
     from memory_engine.embed import FakeEmbedder
     from memory_engine.summaries import Summariser

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Iterable, Optional, Sequence
+from typing import Any
 from uuid import UUID
 
 import psycopg
@@ -18,12 +19,12 @@ from .turns import Message, assemble_turns
 class SessionIn:
     id: UUID
     started_at: datetime
-    agent: Optional[str] = None
-    channel: Optional[str] = None
-    title: Optional[str] = None
-    location: Optional[str] = None
-    ended_at: Optional[datetime] = None
-    meta: Optional[dict[str, Any]] = None
+    agent: str | None = None
+    channel: str | None = None
+    title: str | None = None
+    location: str | None = None
+    ended_at: datetime | None = None
+    meta: dict[str, Any] | None = None
 
 
 @dataclass
@@ -33,14 +34,14 @@ class MessageIn:
     role: str
     content: str
     created_at: datetime
-    speaker: Optional[str] = None
-    location: Optional[str] = None
-    tool: Optional[dict[str, Any]] = None
+    speaker: str | None = None
+    location: str | None = None
+    tool: dict[str, Any] | None = None
     private: bool = False
-    meta: Optional[dict[str, Any]] = None
+    meta: dict[str, Any] | None = None
 
 
-def content_hash(role: str, content: str, tool: Optional[dict[str, Any]]) -> str:
+def content_hash(role: str, content: str, tool: dict[str, Any] | None) -> str:
     digest = hashlib.sha256()
     digest.update(role.encode())
     digest.update(b"\0")
@@ -195,11 +196,11 @@ def rebuild_turns(conn: psycopg.Connection, session_id: UUID) -> int:
 def list_sessions(
     conn: psycopg.Connection,
     *,
-    start: Optional[datetime] = None,
-    end: Optional[datetime] = None,
-    agent: Optional[str] = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    agent: str | None = None,
     limit: int = 50,
-    before_seq: Optional[int] = None,
+    before_seq: int | None = None,
 ) -> list[dict[str, Any]]:
     """Sessions newest first, with message counts and the time of their last message.
     `start`/`end` select sessions with any activity in that range."""
@@ -236,7 +237,7 @@ def list_sessions(
     ]
 
 
-def session_messages(conn: psycopg.Connection, session_id: UUID) -> Optional[list[dict[str, Any]]]:
+def session_messages(conn: psycopg.Connection, session_id: UUID) -> list[dict[str, Any]] | None:
     if not conn.execute("SELECT 1 FROM sessions WHERE id = %s", (session_id,)).fetchone():
         return None
     rows = conn.execute(
@@ -263,14 +264,14 @@ def search_text(
     conn: psycopg.Connection,
     query: str,
     *,
-    start: Optional[datetime] = None,
-    end: Optional[datetime] = None,
-    agent: Optional[str] = None,
-    kinds: Optional[Sequence[str]] = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    agent: str | None = None,
+    kinds: Sequence[str] | None = None,
     include_private: bool = True,
     exclude_ids: Sequence[UUID] = (),
     limit: int = 10,
-    sources: Optional[Sequence[str]] = ("conversation",),
+    sources: Sequence[str] | None = ("conversation",),
 ) -> list[dict[str, Any]]:
     """Full-text search over the recall index, best match first. Embedding search joins this
     in phase 2; the result shape stays the same."""

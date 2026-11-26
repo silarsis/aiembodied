@@ -3,7 +3,6 @@
 from uuid import uuid4
 
 import psycopg
-
 from memory_engine import recall
 from test_recall import message, post
 

@@ -2,9 +2,9 @@ import io
 import logging
 import re
 
-from aiembodied_workflows.logs import LineFormatter, get_logger, setup_logging
-from aiembodied_workflows.interceptors import describe_call
 from aiembodied_workflows.activities import format_memory_hits, format_results
+from aiembodied_workflows.interceptors import describe_call
+from aiembodied_workflows.logs import LineFormatter, get_logger, setup_logging
 from aiembodied_workflows.settings import Settings
 
 LINE = re.compile(r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3} (INFO |WARNING) \S.*")

@@ -10,7 +10,6 @@ import json
 import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional
 from urllib.parse import urlsplit
 
 
@@ -18,8 +17,8 @@ from urllib.parse import urlsplit
 class StorageSettings:
     """None means "this machine's database" for `database`, and "no mirror" for `mirror`."""
 
-    database: Optional[str] = None
-    mirror: Optional[str] = None
+    database: str | None = None
+    mirror: str | None = None
 
 
 def default_settings_file() -> Path:
@@ -27,7 +26,7 @@ def default_settings_file() -> Path:
     return Path(base) / "aiembodied" / "memory" / "engine-settings.json"
 
 
-def load(path: Optional[Path]) -> StorageSettings:
+def load(path: Path | None) -> StorageSettings:
     if path is None or not path.exists():
         return StorageSettings()
     try:
@@ -37,7 +36,7 @@ def load(path: Optional[Path]) -> StorageSettings:
     return StorageSettings(database=_url_or_none(data.get("database")), mirror=_url_or_none(data.get("mirror")))
 
 
-def save(path: Optional[Path], settings: StorageSettings) -> None:
+def save(path: Path | None, settings: StorageSettings) -> None:
     if path is None:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -50,18 +49,18 @@ def save(path: Optional[Path], settings: StorageSettings) -> None:
     temporary.replace(path)
 
 
-def valid_url(url: Optional[str]) -> bool:
+def valid_url(url: str | None) -> bool:
     if not url:
         return False
     parts = urlsplit(url)
     return parts.scheme in ("postgres", "postgresql") and bool(parts.hostname)
 
 
-def _url_or_none(value: object) -> Optional[str]:
+def _url_or_none(value: object) -> str | None:
     return value if isinstance(value, str) and valid_url(value) else None
 
 
-def describe(url: Optional[str]) -> Optional[str]:
+def describe(url: str | None) -> str | None:
     """host:port/database, for showing where memory is without the user or password."""
     if not url:
         return None

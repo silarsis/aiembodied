@@ -1,5 +1,4 @@
 import pytest
-
 from aiembodied_workflows.interpreter import FlowError, evaluate, parse_choice, run_steps, substitute, truthy
 
 

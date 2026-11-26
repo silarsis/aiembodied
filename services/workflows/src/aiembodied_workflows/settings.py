@@ -54,7 +54,7 @@ class Settings:
     quiet_hours: str = "22-7"
 
     @classmethod
-    def from_env(cls, env: dict[str, str] | None = None) -> "Settings":
+    def from_env(cls, env: dict[str, str] | None = None) -> Settings:
         e = dict(os.environ if env is None else env)
         log_file = e.get("WORKFLOWS_LOG_FILE")
         if log_file is None or log_file.strip() == "":

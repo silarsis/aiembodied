@@ -87,6 +87,7 @@ def audioset(shards: int = 2) -> None:
         return
     out.mkdir(exist_ok=True)
     import io
+
     import pyarrow.parquet as pq
     import soundfile
 

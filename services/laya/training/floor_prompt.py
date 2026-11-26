@@ -6,8 +6,6 @@ Standard library only.
 
 from __future__ import annotations
 
-from typing import Optional
-
 RECENT_CLIP = 200
 MAX_RECENT = 4
 
@@ -23,7 +21,7 @@ def _clip(text: str, n: int = RECENT_CLIP) -> str:
 def build_state(
     scene: list[str],
     host: str,
-    last: Optional[str],
+    last: str | None,
     recent: list[tuple[str, str]],
     text: str,
 ) -> str:
@@ -74,7 +72,7 @@ def resolve_speaker(
     other: str,
     scene: list[str],
     host: str,
-    last: Optional[str],
+    last: str | None,
 ) -> str:
     """Return the lower-case avatar key that should act, or 'everyone'."""
     if addressed != "unclear":

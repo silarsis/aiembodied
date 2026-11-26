@@ -5,8 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any
 
 import anyio
 from fastapi import Body, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -35,7 +36,7 @@ async def housekeeping(hub: Hub) -> None:
             log.exception("housekeeping failed")
 
 
-def create_app(cfg: Optional[Config] = None) -> FastAPI:
+def create_app(cfg: Config | None = None) -> FastAPI:
     cfg = cfg or Config.from_env()
     hub = Hub(cfg)
 
@@ -73,13 +74,13 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
 
     @app.get("/v1/events")
     async def events(
-        since: Optional[str] = None,
-        type: Optional[str] = None,
-        producer: Optional[str] = None,
-        txn: Optional[str] = None,
-        root: Optional[str] = None,
-        scene: Optional[str] = None,
-        to: Optional[str] = None,
+        since: str | None = None,
+        type: str | None = None,
+        producer: str | None = None,
+        txn: str | None = None,
+        root: str | None = None,
+        scene: str | None = None,
+        to: str | None = None,
         limit: int = Query(200, ge=1, le=1000),
     ) -> dict[str, Any]:
         found = hub.store.events(since, type, producer, txn, root, scene, to, limit)
@@ -87,7 +88,7 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
 
     @app.get("/v1/txns")
     async def txns(
-        state: Optional[str] = None, root: Optional[str] = None, limit: int = Query(200, ge=1, le=1000)
+        state: str | None = None, root: str | None = None, limit: int = Query(200, ge=1, le=1000)
     ) -> dict[str, Any]:
         return {"txns": hub.store.txns(state, root, limit=limit)}
 

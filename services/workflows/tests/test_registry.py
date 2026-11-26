@@ -1,9 +1,8 @@
 """The workflow classes are valid Temporal definitions and load in the sandbox (no server needed)."""
 
 import pytest
-from temporalio.workflow import _Definition
-
 from aiembodied_workflows.registry import WORKFLOWS, sandbox_runner
+from temporalio.workflow import _Definition
 
 EXPECTED = {
     "AgentLife": {"interaction", "spoke", "sleep", "wake", "pause", "resume"},
@@ -23,7 +22,6 @@ async def test_definition_and_sandbox(cls):
 
 def test_every_activity_is_a_valid_definition():
     import temporalio.activity as ta
-
     from aiembodied_workflows.activities import Activities
     from aiembodied_workflows.settings import Settings
 

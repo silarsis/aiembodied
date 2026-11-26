@@ -8,8 +8,9 @@ import math
 import os
 import threading
 import time
+from collections.abc import Iterator
 from contextlib import asynccontextmanager
-from typing import Annotated, Iterator, Literal, Optional
+from typing import Annotated, Literal
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -38,14 +39,14 @@ log = logging.getLogger("motion_service")
 class ClipRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=500)
     duration: float = Field(default=3.0, ge=0.5, le=10.0)
-    steps: Optional[int] = Field(default=None, ge=1)
-    name: Optional[str] = Field(default=None, max_length=80)
+    steps: int | None = Field(default=None, ge=1)
+    name: str | None = Field(default=None, max_length=80)
     # The avatar's rest skeleton (bone -> [x, y, z] metres, facing +Z), for per-avatar arm calibration.
-    avatar_rest: Optional[dict[str, list[float]]] = None
+    avatar_rest: dict[str, list[float]] | None = None
 
     @field_validator("avatar_rest")
     @classmethod
-    def _rest(cls, v: Optional[dict[str, list[float]]]) -> Optional[dict[str, list[float]]]:
+    def _rest(cls, v: dict[str, list[float]] | None) -> dict[str, list[float]] | None:
         if v is None:
             return None
         missing = [bone for bone in REST_BONES if bone not in v]
@@ -84,13 +85,13 @@ class TargetSpec(BaseModel):
     """A timed keyframe: pelvis root / height / heading and, with `hand`, a wrist position."""
 
     t: float = Field(ge=0, le=60, allow_inf_nan=False)
-    until: Optional[float] = Field(default=None, ge=0, le=60, allow_inf_nan=False)
-    root: Optional[tuple[Num, Num]] = None
-    height: Optional[float] = Field(default=None, gt=0, le=10, allow_inf_nan=False)
-    heading: Optional[Num] = None
-    hand: Optional[Literal["left", "right"]] = None
-    joint: Optional[Literal["left_knee", "right_knee", "left_ankle", "right_ankle"]] = None
-    position: Optional[tuple[Num, Num, Num]] = None
+    until: float | None = Field(default=None, ge=0, le=60, allow_inf_nan=False)
+    root: tuple[Num, Num] | None = None
+    height: float | None = Field(default=None, gt=0, le=10, allow_inf_nan=False)
+    heading: Num | None = None
+    hand: Literal["left", "right"] | None = None
+    joint: Literal["left_knee", "right_knee", "left_ankle", "right_ankle"] | None = None
+    position: tuple[Num, Num, Num] | None = None
     reveal_s: float = Field(default=0.0, ge=0, le=60, allow_inf_nan=False)
 
     @model_validator(mode="after")
@@ -120,8 +121,8 @@ class ObservedSpec(BaseModel):
     joints: dict[Literal["left_knee", "right_knee", "left_ankle", "right_ankle"], tuple[Num, Num, Num]] = Field(
         default_factory=dict
     )
-    root: Optional[tuple[Num, Num]] = None
-    height: Optional[float] = Field(default=None, gt=0, le=10, allow_inf_nan=False)
+    root: tuple[Num, Num] | None = None
+    height: float | None = Field(default=None, gt=0, le=10, allow_inf_nan=False)
 
     @model_validator(mode="after")
     def _any(self):
@@ -145,12 +146,12 @@ class PhaseSpec(BaseModel):
 
 class StreamRequest(ClipRequest):
     duration: float = Field(default=4.0, ge=0.5, le=30.0)
-    phases: Optional[list[PhaseSpec]] = Field(default=None, max_length=16)
-    path: Optional[PathSpec] = None
-    targets: Optional[list[TargetSpec]] = Field(default=None, max_length=64)
+    phases: list[PhaseSpec] | None = Field(default=None, max_length=16)
+    path: PathSpec | None = None
+    targets: list[TargetSpec] | None = Field(default=None, max_length=64)
     constraint_weight: float = Field(default=2.0, ge=0, le=10, allow_inf_nan=False)
-    continue_from: Optional[str] = Field(default=None, max_length=64)
-    observed: Optional[ObservedSpec] = None
+    continue_from: str | None = Field(default=None, max_length=64)
+    observed: ObservedSpec | None = None
     snap_s: float = Field(default=0.3, ge=0, le=5, allow_inf_nan=False)
 
 
@@ -164,7 +165,7 @@ def _ms(seconds: float) -> int:
     return int(round(seconds * 1000))
 
 
-def _arm_forward(req: ClipRequest) -> Optional[float]:
+def _arm_forward(req: ClipRequest) -> float | None:
     """The calibrated arm swing for the request's avatar; None (env or default) when MOTION_ARM_FORWARD_DEG
     is set as a manual override or the request carries no skeleton."""
     if req.avatar_rest is None or os.environ.get("MOTION_ARM_FORWARD_DEG", "").strip():
@@ -304,7 +305,7 @@ def create_app(
     @app.post("/v1/motion/stream")
     def stream(req: StreamRequest):
         frames, steps, name = _check(req)
-        previous: Optional[Session] = None
+        previous: Session | None = None
         if req.observed is not None and req.continue_from is None:
             raise ApiError(400, "observed needs continue_from")
         if req.continue_from is not None:
@@ -336,7 +337,7 @@ def create_app(
                             encoded[p.prompt] = backend.encode(p.prompt)
                         phase_texts.append((seconds_to_frame_ceil(p.start_s, fps), encoded[p.prompt]))
                     encode_s = time.perf_counter() - t0
-                    root_frame: Optional[RootFrame] = None if previous is None else previous.root_frame
+                    root_frame: RootFrame | None = None if previous is None else previous.root_frame
                     carry = (0.0, 0.0) if previous is None else previous.carry
                     last_history = None
                     # A continuation restarts at the last whole 4-frame group the earlier stream kept, which

@@ -10,9 +10,10 @@ turns are rebuilt.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Optional, Sequence
+from typing import Any
 from uuid import UUID
 
 # Tool results can be whole web pages; the turn keeps the start, the message keeps it all.
@@ -27,8 +28,8 @@ class Message:
     content: str
     created_at: datetime
     seq: int = 0
-    speaker: Optional[str] = None
-    tool: Optional[dict[str, Any]] = None
+    speaker: str | None = None
+    tool: dict[str, Any] | None = None
     private: bool = False
 
 

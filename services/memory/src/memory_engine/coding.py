@@ -8,7 +8,7 @@ rows these stay out of auto-recall, summaries and fact extraction, and are not m
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 import psycopg

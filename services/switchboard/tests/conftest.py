@@ -1,6 +1,5 @@
 import pytest
 from fastapi.testclient import TestClient
-
 from switchboard.app import create_app
 from switchboard.models import Config
 

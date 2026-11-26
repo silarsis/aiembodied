@@ -6,18 +6,18 @@ import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
-from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import PlainTextResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import __version__, capabilities as caps, gitops
+from . import __version__, gitops
+from . import capabilities as caps
+from . import settings as settings_mod
 from .agentdir import write_agent_dir
 from .config import Config
 from .manager import CoderError, TaskManager
 from .store import Store
-from . import settings as settings_mod
 from .workspaces import ModelRef, Workspace, WorkspaceError, WorkspaceRegistry
 
 log = logging.getLogger("coder")
@@ -28,7 +28,7 @@ class TaskBody(BaseModel):
     goal: str = Field(min_length=1, max_length=20_000)
     acceptance: list[str] = Field(default_factory=list)
     scope: list[str] = Field(default_factory=list)
-    model: Optional[ModelRef] = None
+    model: ModelRef | None = None
 
 
 class MessageBody(BaseModel):
@@ -36,15 +36,15 @@ class MessageBody(BaseModel):
 
 
 class AnswerBody(BaseModel):
-    value: Optional[str] = None
-    confirmed: Optional[bool] = None
-    cancelled: Optional[bool] = None
-    dialog_id: Optional[str] = None
+    value: str | None = None
+    confirmed: bool | None = None
+    cancelled: bool | None = None
+    dialog_id: str | None = None
 
 
 class HoldBody(BaseModel):
     hold: bool
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 class ApplyBody(BaseModel):
@@ -80,7 +80,7 @@ class EventHub:
                 pass
 
 
-def create_app(cfg: Optional[Config] = None) -> FastAPI:
+def create_app(cfg: Config | None = None) -> FastAPI:
     cfg = cfg or Config.from_env()
     cfg.data_dir.mkdir(parents=True, exist_ok=True)
     settings_mod.load(cfg)
@@ -140,7 +140,7 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
         return registry.all()
 
     @app.put("/v1/keys", status_code=204)
-    def put_keys(keys: dict[str, Optional[str]]) -> Response:
+    def put_keys(keys: dict[str, str | None]) -> Response:
         manager.set_keys(keys)
         return Response(status_code=204)
 
@@ -153,7 +153,7 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
         return manager.create_task(body.workspace_id, body.goal, body.acceptance, body.scope, body.model)
 
     @app.get("/v1/tasks")
-    def list_tasks(status: Optional[str] = None) -> list[dict]:
+    def list_tasks(status: str | None = None) -> list[dict]:
         return store.list_tasks(status)
 
     @app.get("/v1/tasks/{tid}")
@@ -197,7 +197,7 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
         return manager.cancel(tid)
 
     @app.post("/v1/tasks/{tid}/apply")
-    def apply(tid: str, body: Optional[ApplyBody] = None) -> dict:
+    def apply(tid: str, body: ApplyBody | None = None) -> dict:
         return manager.apply(tid, body.draft if body else False)
 
     @app.post("/v1/tasks/{tid}/pr/refresh")

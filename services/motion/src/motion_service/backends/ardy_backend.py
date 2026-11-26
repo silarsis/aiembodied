@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import time
 from collections import OrderedDict
-from typing import Iterator, Optional, Sequence
+from collections.abc import Iterator, Sequence
 
 import numpy as np
 
@@ -95,7 +95,7 @@ class ArdyBackend(Backend):
         self.max_window = (int(10 * self.fps) // patch) * patch
         self.history_frames = max(patch, (int(HISTORY_S * self.fps) // patch) * patch)
         self.joint_index = {n: i for i, n in enumerate(self.model.motion_rep.skeleton.bone_order_names)}
-        self._texts: "OrderedDict[str, tuple]" = OrderedDict()
+        self._texts: OrderedDict[str, tuple] = OrderedDict()
         self.max_steps = int(self.model.diffusion.num_base_steps)
         self.default_steps = self.max_steps
         self.device_label = device + (f" {torch.cuda.get_device_name(0)}" if device.startswith("cuda") else "")
@@ -133,8 +133,8 @@ class ArdyBackend(Backend):
         steps: int,
         *,
         plan=None,
-        phase_texts: Optional[Sequence] = None,
-        history: Optional[StreamHistory] = None,
+        phase_texts: Sequence | None = None,
+        history: StreamHistory | None = None,
         constraint_weight: float = 2.0,
     ) -> Iterator[Chunk]:
         """One 60-frame `autoregressive_step` per chunk, as in steer_test.py (verified on the real model).

@@ -13,11 +13,10 @@ from temporalio.client import (
     ScheduleActionStartWorkflow,
     ScheduleAlreadyRunningError,
     ScheduleIntervalSpec,
-    SchedulePolicy,
     ScheduleOverlapPolicy,
+    SchedulePolicy,
     ScheduleSpec,
     ScheduleUpdate,
-    WorkflowHandle,
 )
 from temporalio.common import WorkflowIDConflictPolicy
 from temporalio.service import RPCError, RPCStatusCode
@@ -25,13 +24,13 @@ from temporalio.service import RPCError, RPCStatusCode
 from . import conditions as cnd
 from . import flowdef
 from .activities import Activities
-from .attrs import attr_value, search_attrs, AGENT_ID, PURPOSE
+from .attrs import AGENT_ID, PURPOSE, attr_value, search_attrs
 from .bridge import Bridge, Signal, WatchEntry, WatchIndex
 from .logs import get_logger
 from .memory import MemoryClient, MemoryError
 from .registry import make_workers
 from .settings import TASK_QUEUE, Settings
-from .timeutil import due_from, iso_z, parse_iso
+from .timeutil import due_from, iso_z
 from .wf.flow import FlowInput, flow_workflow_id
 from .wf.life import LifeInput
 from .wf.simple import DueInput

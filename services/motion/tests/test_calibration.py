@@ -4,8 +4,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-from scipy.spatial.transform import Rotation
-
 from motion_service.app import create_app
 from motion_service.backends.fake import FakeBackend
 from motion_service.calibration import (
@@ -14,6 +12,7 @@ from motion_service.calibration import (
     calibrated_arm_forward,
     hand_gap,
 )
+from scipy.spatial.transform import Rotation
 
 SKELETONS = json.loads((Path(__file__).parent / "rest_skeletons.json").read_text())
 

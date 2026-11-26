@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Iterator, Optional, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -24,16 +25,16 @@ class Motion:
     def frames(self) -> int:
         return int(self.global_rot_mats.shape[0])
 
-    def slice(self, start: int, end: int) -> "Motion":
+    def slice(self, start: int, end: int) -> Motion:
         return Motion(self.global_rot_mats[start:end], self.posed_joints[start:end], self.root_positions[start:end])
 
-    def translated(self, delta: np.ndarray) -> "Motion":
+    def translated(self, delta: np.ndarray) -> Motion:
         """Every joint and the root moved by `delta` ([T, 3] metres)."""
         d = np.asarray(delta, dtype=self.posed_joints.dtype)
         return Motion(self.global_rot_mats, self.posed_joints + d[:, None, :], self.root_positions + d)
 
     @staticmethod
-    def concat(parts: list["Motion"]) -> "Motion":
+    def concat(parts: list[Motion]) -> Motion:
         return Motion(
             np.concatenate([p.global_rot_mats for p in parts]),
             np.concatenate([p.posed_joints for p in parts]),
@@ -60,17 +61,17 @@ class Chunk:
     start_frame: int
     encode_ms: float = 0.0
     generate_ms: float = 0.0
-    history: Optional[StreamHistory] = None  # state after this chunk; the last one of a stream is what to keep
+    history: StreamHistory | None = None  # state after this chunk; the last one of a stream is what to keep
 
 
 @dataclass
 class BackendOptions:
-    model: Optional[str] = None
-    device: Optional[str] = None
+    model: str | None = None
+    device: str | None = None
     text_encoder_device: str = "gpu"  # gpu | cpu
-    text_encoders_dir: Optional[str] = None
+    text_encoders_dir: str | None = None
     postprocess: bool = True
-    seed: Optional[int] = None
+    seed: int | None = None
     extra: dict = field(default_factory=dict)
 
     def apply_env(self) -> None:
@@ -88,9 +89,9 @@ class Backend:
     name = "base"
     fps: float = 30.0
     default_steps: int = 25
-    max_steps: Optional[int] = None
+    max_steps: int | None = None
 
-    def __init__(self, options: Optional[BackendOptions] = None):
+    def __init__(self, options: BackendOptions | None = None):
         self.options = options or BackendOptions()
         self.device_label = "unloaded"
 
@@ -119,8 +120,8 @@ class Backend:
         steps: int,
         *,
         plan=None,
-        phase_texts: Optional[Sequence] = None,
-        history: Optional[StreamHistory] = None,
+        phase_texts: Sequence | None = None,
+        history: StreamHistory | None = None,
         constraint_weight: float = 2.0,
     ) -> Iterator[Chunk]:
         """Yield continuous chunks covering `frames` frames. Default: one chunk, constraints ignored.

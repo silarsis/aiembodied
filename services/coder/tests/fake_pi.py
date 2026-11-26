@@ -10,7 +10,6 @@ import os
 import queue
 import sys
 import threading
-import time
 
 if "--version" in sys.argv:
     print("fake-pi 9.9.9")

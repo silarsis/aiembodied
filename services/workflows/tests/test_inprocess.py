@@ -5,7 +5,6 @@ import socket
 
 import httpx
 import uvicorn
-
 from aiembodied_workflows.api import create_app
 from aiembodied_workflows.settings import Settings
 

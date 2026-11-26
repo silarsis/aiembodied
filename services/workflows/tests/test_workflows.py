@@ -6,17 +6,16 @@ import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from temporalio import activity
-from temporalio.exceptions import ApplicationError
-from temporalio.worker import Worker
-from temporalio.worker.workflow_sandbox import SandboxedWorkflowRunner  # noqa: F401
-
 from aiembodied_workflows.registry import WORKFLOWS, sandbox_runner
 from aiembodied_workflows.timeutil import iso_z
 from aiembodied_workflows.wf.flow import FlowInput
 from aiembodied_workflows.wf.life import LifeInput
 from aiembodied_workflows.wf.simple import DueInput
 from aiembodied_workflows.wf.watch import WatchInput
+from temporalio import activity
+from temporalio.exceptions import ApplicationError
+from temporalio.worker import Worker
+from temporalio.worker.workflow_sandbox import SandboxedWorkflowRunner  # noqa: F401
 
 CTX = {
     "avatarName": "Echo",

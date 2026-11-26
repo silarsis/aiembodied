@@ -19,9 +19,9 @@ import os
 import re
 import threading
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
 
 import numpy as np
 
@@ -103,7 +103,7 @@ class Download:
     status: str = "downloading"  # downloading | done | error
     received: int = 0
     total: int = 0
-    error: Optional[str] = None
+    error: str | None = None
 
     def view(self) -> dict:
         return {"status": self.status, "received": self.received, "total": self.total, "error": self.error}
@@ -266,7 +266,7 @@ class PiperSynthesizer:
         return trim_silence(samples, chunks[0].sample_rate), int(chunks[0].sample_rate)
 
 
-def _importable(module: str) -> Optional[str]:
+def _importable(module: str) -> str | None:
     """None when `module` imports, else why not."""
     try:
         __import__(module)
@@ -281,7 +281,7 @@ class TtsModels:
 
     root: Path
     opener: Opener = field(default=urllib.request.urlopen)
-    token: Optional[str] = None
+    token: str | None = None
     kitten_factory: Callable[[Path], object] = KittenSynthesizer
     piper_factory: Callable[[Path], object] = PiperSynthesizer
     _downloads: dict = field(default_factory=dict)
@@ -363,7 +363,7 @@ class TtsModels:
             },
         ]
 
-    def _download_view(self, engine: str, model: str) -> Optional[dict]:
+    def _download_view(self, engine: str, model: str) -> dict | None:
         download = self._downloads.get((engine, model))
         return download.view() if download else None
 
@@ -434,7 +434,7 @@ class TtsModels:
     # -- synthesis --
 
     def synthesize(
-        self, engine: str, model: Optional[str], voice: Optional[str], text: str, speed: float
+        self, engine: str, model: str | None, voice: str | None, text: str, speed: float
     ) -> tuple[np.ndarray, int]:
         if engine == "kitten":
             model = model or KITTEN_MODELS[0].id

@@ -20,7 +20,6 @@ import math
 import os
 import re
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -138,7 +137,7 @@ SOMA30 = [
 ]
 
 # (vrm bone, soma joint, vrm parent) in parent-before-child order
-BODY_MAP: list[tuple[str, str, Optional[str]]] = [
+BODY_MAP: list[tuple[str, str, str | None]] = [
     ("hips", "Hips", None),
     ("spine", "Spine1", "hips"),
     ("chest", "Spine2", "spine"),
@@ -146,7 +145,7 @@ BODY_MAP: list[tuple[str, str, Optional[str]]] = [
     ("neck", "Neck1", "upperChest"),
     ("head", "Head", "neck"),
 ]
-FINGER_MAP: list[tuple[str, str, Optional[str]]] = []
+FINGER_MAP: list[tuple[str, str, str | None]] = []
 for _side, _S in (("left", "Left"), ("right", "Right")):
     BODY_MAP += [
         (f"{_side}Shoulder", f"{_S}Shoulder", "upperChest"),
@@ -204,7 +203,7 @@ class RootFrame:
     origin_z: float
 
     @classmethod
-    def from_motion(cls, posed_joints: np.ndarray, root_positions: np.ndarray, names: list[str]) -> "RootFrame":
+    def from_motion(cls, posed_joints: np.ndarray, root_positions: np.ndarray, names: list[str]) -> RootFrame:
         idx = {n: i for i, n in enumerate(names)}
         toes = posed_joints[:, [idx["LeftToeBase"], idx["RightToeBase"]], 1]
         return cls(
@@ -249,16 +248,16 @@ def _squeeze_batch(a: np.ndarray, ndim: int) -> np.ndarray:
 def to_vrma(
     global_rot_mats: np.ndarray,
     posed_joints: np.ndarray,
-    root_positions: Optional[np.ndarray],
+    root_positions: np.ndarray | None,
     name: str,
     fps: float = 30.0,
     kind: str = "motion",
     loop: bool = False,
-    root_frame: Optional[RootFrame] = None,
+    root_frame: RootFrame | None = None,
     fingers: bool = True,
     in_place: bool = False,
-    chest_forward: Optional[float] = None,
-    arm_forward: Optional[float] = None,
+    chest_forward: float | None = None,
+    arm_forward: float | None = None,
 ) -> dict:
     """Build a VRMA JSON dict (app schema) from SOMA global rotations [T,J,3,3] and joints [T,J,3]."""
     G = _squeeze_batch(global_rot_mats, 4).astype(np.float64)

@@ -9,7 +9,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 ACTIVE = ("starting", "working", "question", "checks", "pushing", "paused")
 JSON_COLS = ("acceptance", "scope", "files_touched", "question", "questions", "review")
@@ -87,12 +87,12 @@ class Store:
             self.db.commit()
         return self.get_task(f["id"])  # type: ignore[return-value]
 
-    def get_task(self, tid: str) -> Optional[dict]:
+    def get_task(self, tid: str) -> dict | None:
         with self.lock:
             r = self.db.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
         return self._row(r) if r else None
 
-    def update_task(self, tid: str, **f: Any) -> Optional[dict]:
+    def update_task(self, tid: str, **f: Any) -> dict | None:
         f["updated_at"] = now()
         for c in JSON_COLS:
             if c in f and f[c] is not None:
@@ -105,7 +105,7 @@ class Store:
             self.db.commit()
         return self.get_task(tid)
 
-    def list_tasks(self, status: Optional[str] = None) -> list[dict]:
+    def list_tasks(self, status: str | None = None) -> list[dict]:
         q, args = "SELECT * FROM tasks", []
         if status:
             q += " WHERE status=?"

@@ -4,7 +4,6 @@ import math
 
 import numpy as np
 import pytest
-
 from motion_service.constraints import (
     ConstraintPlan,
     PathParams,

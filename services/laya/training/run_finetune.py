@@ -972,8 +972,8 @@ def _explain_nonfinite(ctx, reason, bad_grads=False):
 
 
 def step_train(ctx):
-    import torch
     import laya.train as lt
+    import torch
 
     a = ctx["args"]
     name = "trial-checkpoint" if a.trial else "checkpoint"
@@ -1073,8 +1073,8 @@ def _check_saved(torch, ckpt):
 
 
 def step_score(ctx):
-    import torch
     import laya
+    import torch
 
     a = ctx["args"]
     ckpt = ctx["ckpt"]

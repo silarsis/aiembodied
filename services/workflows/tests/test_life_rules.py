@@ -1,5 +1,4 @@
 import pytest
-
 from aiembodied_workflows import life_rules as r
 
 CALM = {

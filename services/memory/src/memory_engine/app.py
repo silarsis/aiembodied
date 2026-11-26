@@ -11,9 +11,9 @@ import logging
 import secrets
 import threading
 from contextlib import asynccontextmanager
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
-from typing import Any, Literal, Optional
+from pathlib import Path
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 import psycopg
@@ -33,8 +33,8 @@ from . import (
     home,
     mirror,
     recall,
-    store,
     storage,
+    store,
     summaries,
 )
 from .embed import Embedder
@@ -47,11 +47,11 @@ MAX_BATCH = 500
 
 class SessionBody(BaseModel):
     started_at: datetime
-    agent: Optional[str] = Field(default=None, max_length=200)
-    channel: Optional[str] = Field(default=None, max_length=50)
-    title: Optional[str] = Field(default=None, max_length=500)
-    location: Optional[str] = Field(default=None, max_length=200)
-    ended_at: Optional[datetime] = None
+    agent: str | None = Field(default=None, max_length=200)
+    channel: str | None = Field(default=None, max_length=50)
+    title: str | None = Field(default=None, max_length=500)
+    location: str | None = Field(default=None, max_length=200)
+    ended_at: datetime | None = None
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -61,51 +61,51 @@ class MessageBody(BaseModel):
     role: Literal["user", "assistant", "tool", "system"]
     content: str = Field(max_length=200_000)
     created_at: datetime
-    speaker: Optional[str] = Field(default=None, max_length=200)
-    location: Optional[str] = Field(default=None, max_length=200)
-    tool: Optional[dict[str, Any]] = None
+    speaker: str | None = Field(default=None, max_length=200)
+    location: str | None = Field(default=None, max_length=200)
+    tool: dict[str, Any] | None = None
     private: bool = False
     meta: dict[str, Any] = Field(default_factory=dict)
     # Lets one call carry a message for a session the engine hasn't seen, with its details.
-    session: Optional[SessionBody] = None
+    session: SessionBody | None = None
 
 
 class FactBody(BaseModel):
     text: str = Field(min_length=1, max_length=1000)
-    subject: Optional[str] = Field(default=None, max_length=200)
+    subject: str | None = Field(default=None, max_length=200)
     author: Literal["agent", "user", "extractor"] = "agent"
-    agent: Optional[str] = Field(default=None, max_length=200)
-    session_id: Optional[UUID] = None
+    agent: str | None = Field(default=None, max_length=200)
+    session_id: UUID | None = None
     source_message_ids: list[UUID] = Field(default_factory=list, max_length=100)
-    supersedes: Optional[UUID] = None
+    supersedes: UUID | None = None
     pinned: bool = False
     private: bool = False
-    model: Optional[str] = Field(default=None, max_length=200)
+    model: str | None = Field(default=None, max_length=200)
 
 
 class CorrectBody(BaseModel):
     """Name the fact by `id` (a fact's, or its search result's) or by `about` (what it said)."""
 
-    id: Optional[UUID] = None
-    about: Optional[str] = Field(default=None, max_length=1000)
+    id: UUID | None = None
+    about: str | None = Field(default=None, max_length=1000)
     action: Literal["replace", "retract"]
-    text: Optional[str] = Field(default=None, min_length=1, max_length=1000)
-    new_id: Optional[UUID] = None
+    text: str | None = Field(default=None, min_length=1, max_length=1000)
+    new_id: UUID | None = None
     author: Literal["agent", "user"] = "agent"
-    agent: Optional[str] = Field(default=None, max_length=200)
-    model: Optional[str] = Field(default=None, max_length=200)
-    session_id: Optional[UUID] = None
+    agent: str | None = Field(default=None, max_length=200)
+    model: str | None = Field(default=None, max_length=200)
+    session_id: UUID | None = None
 
 
 class HandoffBody(BaseModel):
     text: str = Field(min_length=1, max_length=handoffs.HANDOFF_MAX_CHARS)
-    agent: Optional[str] = Field(default=None, max_length=200)
-    model: Optional[str] = Field(default=None, max_length=200)
+    agent: str | None = Field(default=None, max_length=200)
+    model: str | None = Field(default=None, max_length=200)
 
 
 class RecallBody(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
-    session_id: Optional[UUID] = None
+    session_id: UUID | None = None
     exclude: list[UUID] = Field(default_factory=list, max_length=500)
     limit: int = Field(default=context.RECALL_LIMIT, ge=1, le=10)
     max_chars: int = Field(default=context.RECALL_MAX_CHARS, ge=100, le=10000)
@@ -113,8 +113,8 @@ class RecallBody(BaseModel):
 
 
 class StorageBody(BaseModel):
-    database: Optional[str] = Field(default=None, max_length=2000)
-    mirror: Optional[str] = Field(default=None, max_length=2000)
+    database: str | None = Field(default=None, max_length=2000)
+    mirror: str | None = Field(default=None, max_length=2000)
 
 
 class StorageTestBody(BaseModel):
@@ -126,16 +126,16 @@ class ActivityBody(BaseModel):
 
 
 class SummaryRunBody(BaseModel):
-    now: Optional[datetime] = None
+    now: datetime | None = None
     limit: int = Field(default=10, ge=1, le=200)
 
 
 class FactPatch(BaseModel):
-    text: Optional[str] = Field(default=None, min_length=1, max_length=1000)
-    subject: Optional[str] = Field(default=None, max_length=200)
-    pinned: Optional[bool] = None
-    status: Optional[Literal["active", "superseded", "retracted"]] = None
-    private: Optional[bool] = None
+    text: str | None = Field(default=None, min_length=1, max_length=1000)
+    subject: str | None = Field(default=None, max_length=200)
+    pinned: bool | None = None
+    status: Literal["active", "superseded", "retracted"] | None = None
+    private: bool | None = None
     reviewed: bool = False
 
 
@@ -149,19 +149,19 @@ class CodingTaskBody(BaseModel):
     workspace_name: str = Field(min_length=1, max_length=200)
     title: str = Field(min_length=1, max_length=2000)
     outcome: Literal["done", "failed", "cancelled", "discarded"]
-    pr_url: Optional[str] = Field(default=None, max_length=1000)
-    pr_state: Optional[str] = Field(default=None, max_length=50)
-    branch: Optional[str] = Field(default=None, max_length=300)
+    pr_url: str | None = Field(default=None, max_length=1000)
+    pr_state: str | None = Field(default=None, max_length=50)
+    branch: str | None = Field(default=None, max_length=300)
     files_changed: list[str] = Field(default_factory=list, max_length=coding.MAX_FILES)
     added: int = Field(default=0, ge=0)
     removed: int = Field(default=0, ge=0)
     review_flags: list[str] = Field(default_factory=list, max_length=50)
     summary: str = Field(default="", max_length=coding.MAX_SUMMARY_CHARS)
-    model: Optional[str] = Field(default=None, max_length=200)
-    provider: Optional[str] = Field(default=None, max_length=200)
-    agent: Optional[str] = Field(default=None, max_length=200)
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
+    model: str | None = Field(default=None, max_length=200)
+    provider: str | None = Field(default=None, max_length=200)
+    agent: str | None = Field(default=None, max_length=200)
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
 
 
 IntentionKind = Literal["goal", "intention", "promise", "watch", "reminder", "wakeup"]
@@ -171,32 +171,32 @@ FlowName = Path(pattern=r"^[a-z0-9_-]{1,64}$")
 
 
 class IntentionBody(BaseModel):
-    id: Optional[UUID] = None
+    id: UUID | None = None
     avatar_id: str = Field(min_length=1, max_length=200)
     kind: IntentionKind
     text: str = Field(min_length=1, max_length=2000)
-    why: Optional[str] = Field(default=None, max_length=2000)
+    why: str | None = Field(default=None, max_length=2000)
     status: IntentionStatus = "open"
-    parent_id: Optional[UUID] = None
-    workflow_id: Optional[str] = Field(default=None, max_length=300)
-    template: Optional[str] = Field(default=None, max_length=200)
-    params: Optional[dict[str, Any]] = None
-    due_at: Optional[datetime] = None
-    origin_message_id: Optional[str] = Field(default=None, max_length=200)
-    outcome: Optional[str] = Field(default=None, max_length=2000)
+    parent_id: UUID | None = None
+    workflow_id: str | None = Field(default=None, max_length=300)
+    template: str | None = Field(default=None, max_length=200)
+    params: dict[str, Any] | None = None
+    due_at: datetime | None = None
+    origin_message_id: str | None = Field(default=None, max_length=200)
+    outcome: str | None = Field(default=None, max_length=2000)
 
 
 class IntentionPatch(BaseModel):
     """Only the fields sent are changed; null clears one that may be empty."""
 
-    status: Optional[IntentionStatus] = None
-    outcome: Optional[str] = Field(default=None, max_length=2000)
-    workflow_id: Optional[str] = Field(default=None, max_length=300)
-    text: Optional[str] = Field(default=None, min_length=1, max_length=2000)
-    why: Optional[str] = Field(default=None, max_length=2000)
-    due_at: Optional[datetime] = None
-    params: Optional[dict[str, Any]] = None
-    template: Optional[str] = Field(default=None, max_length=200)
+    status: IntentionStatus | None = None
+    outcome: str | None = Field(default=None, max_length=2000)
+    workflow_id: str | None = Field(default=None, max_length=300)
+    text: str | None = Field(default=None, min_length=1, max_length=2000)
+    why: str | None = Field(default=None, max_length=2000)
+    due_at: datetime | None = None
+    params: dict[str, Any] | None = None
+    template: str | None = Field(default=None, max_length=200)
 
 
 class FlowBody(BaseModel):
@@ -207,16 +207,16 @@ class FlowBody(BaseModel):
 
 
 class FlowPatch(BaseModel):
-    enabled: Optional[bool] = None
-    last_run_at: Optional[datetime] = None
-    last_outcome: Optional[str] = Field(default=None, max_length=2000)
+    enabled: bool | None = None
+    last_run_at: datetime | None = None
+    last_outcome: str | None = Field(default=None, max_length=2000)
 
 
 class AgentStateBody(BaseModel):
-    asleep: Optional[bool] = None
-    awake_since: Optional[datetime] = None
-    last_sleep_at: Optional[datetime] = None
-    last_wake_at: Optional[datetime] = None
+    asleep: bool | None = None
+    awake_since: datetime | None = None
+    last_sleep_at: datetime | None = None
+    last_wake_at: datetime | None = None
 
 
 MAX_HOME_SERVERS = 20
@@ -280,13 +280,13 @@ class Engine:
         database_url: str,
         schema: str,
         retry_seconds: float = 5.0,
-        embedder: Optional[Embedder] = None,
+        embedder: Embedder | None = None,
         embed_inline: bool = False,
-        summariser: Optional[Summariser] = None,
-        settings_file: Optional[Path] = None,
+        summariser: Summariser | None = None,
+        settings_file: Path | None = None,
         mirror_interval: float = 60.0,
-        home_config: Optional[home.HomeConfig] = None,
-        home_configs: Optional[list[home.HomeConfig]] = None,
+        home_config: home.HomeConfig | None = None,
+        home_configs: list[home.HomeConfig] | None = None,
     ):
         # This machine's database; the saved storage settings may point elsewhere.
         self.local_url = database_url
@@ -295,32 +295,32 @@ class Engine:
         self.database_url = self.storage.database or database_url
         self.schema = schema
         self.mirror_interval = mirror_interval
-        self.mirror_error: Optional[str] = None
-        self.mirror_pushed_at: Optional[str] = None
+        self.mirror_error: str | None = None
+        self.mirror_pushed_at: str | None = None
         self.moving = False
-        self.move_error: Optional[str] = None
+        self.move_error: str | None = None
         self._wake_mirror = threading.Event()
-        self._mirror_thread: Optional[threading.Thread] = None
+        self._mirror_thread: threading.Thread | None = None
         self._storage_lock = threading.Lock()
         self.retry_seconds = retry_seconds
         # None: full-text search only. embed_inline (tests): embed during each write instead of
         # in the background worker.
         self.embedder = embedder
         self.embed_inline = embed_inline
-        self.embed_error: Optional[str] = None
+        self.embed_error: str | None = None
         self._wake_embedder = threading.Event()
-        self._embed_thread: Optional[threading.Thread] = None
+        self._embed_thread: threading.Thread | None = None
         # None: no background summaries or fact extraction (no LLM configured).
         self.summariser = summariser
-        self._summary_thread: Optional[threading.Thread] = None
+        self._summary_thread: threading.Thread | None = None
         # Home Assistant: a listener for each home that has an address and a token.
         self.homes = home.HomeManager(self, [*([home_config] if home_config else []), *(home_configs or [])])
         self.pool = db.open_pool(self.database_url, schema)
         self.ready = False
-        self.error: Optional[str] = None
+        self.error: str | None = None
         self.schema_version = 0
         self._stop = threading.Event()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
 
     def start(self, in_background: bool = True) -> None:
         if in_background:
@@ -379,7 +379,7 @@ class Engine:
             "move_error": self.move_error,
         }
 
-    def set_storage(self, database: Optional[str], mirror: Optional[str], *, background: bool = True) -> None:
+    def set_storage(self, database: str | None, mirror: str | None, *, background: bool = True) -> None:
         """Use another database (None: this machine's) and/or mirror (None: none). A move to a
         database that is still empty copies everything there first; until that is done the API
         answers 503, so the client queues its writes."""
@@ -580,7 +580,7 @@ class Engine:
             raise ApiError(503, "memory database is unavailable") from error
 
 
-def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_background: bool = True) -> FastAPI:
+def create_app(engine: Engine, *, api_token: str | None = None, connect_in_background: bool = True) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         engine.start(in_background=connect_in_background)
@@ -601,7 +601,7 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
         log.warning("Memory database error: %s", error)
         return JSONResponse(status_code=503, content={"error": "memory database is unavailable"})
 
-    def authorise(authorization: Optional[str] = Header(default=None)) -> None:
+    def authorise(authorization: str | None = Header(default=None)) -> None:
         if not api_token:
             return
         expected = f"Bearer {api_token}"
@@ -659,11 +659,11 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
 
     @app.get("/v1/sessions", dependencies=guarded)
     def get_sessions(
-        start: Optional[datetime] = Query(default=None, alias="from"),
-        end: Optional[datetime] = Query(default=None, alias="to"),
-        agent: Optional[str] = None,
+        start: datetime | None = Query(default=None, alias="from"),
+        end: datetime | None = Query(default=None, alias="to"),
+        agent: str | None = None,
         limit: int = Query(default=50, ge=1, le=500),
-        before: Optional[int] = Query(default=None, description="cursor: the last seq of the previous page"),
+        before: int | None = Query(default=None, description="cursor: the last seq of the previous page"),
     ):
         with engine.connection() as conn:
             sessions = store.list_sessions(conn, start=start, end=end, agent=agent, limit=limit, before_seq=before)
@@ -708,16 +708,16 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
     @app.get("/v1/search", dependencies=guarded)
     def search(
         q: str = Query(min_length=1, max_length=2000),
-        start: Optional[datetime] = Query(default=None, alias="from"),
-        end: Optional[datetime] = Query(default=None, alias="to"),
-        agent: Optional[str] = None,
-        kind: Optional[list[str]] = Query(default=None),
-        exclude: Optional[list[UUID]] = Query(default=None),
+        start: datetime | None = Query(default=None, alias="from"),
+        end: datetime | None = Query(default=None, alias="to"),
+        agent: str | None = None,
+        kind: list[str] | None = Query(default=None),
+        exclude: list[UUID] | None = Query(default=None),
         include_private: bool = True,
         mode: Literal["hybrid", "text"] = "hybrid",
         limit: int = Query(default=10, ge=1, le=100),
         touch: bool = Query(default=False, description="the agent is using what it finds: refresh those facts"),
-        session_id: Optional[UUID] = None,
+        session_id: UUID | None = None,
         source: Literal["conversation", "home_assistant", "coding", "all"] = Query(
             default="conversation",
             description="where to search: conversation memory, Home Assistant events, past coding tasks, or all",
@@ -782,18 +782,18 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
         return await run_in_threadpool(engine.set_home_servers, configs)
 
     @app.get("/v1/home/entities", dependencies=guarded)
-    def home_entities(home_id: Optional[str] = Query(default=None, alias="home"), q: Optional[str] = None):
+    def home_entities(home_id: str | None = Query(default=None, alias="home"), q: str | None = None):
         with engine.connection() as conn:
             return {"entities": home.list_entities(conn, home_id, q)}
 
     @app.get("/v1/home/history", dependencies=guarded)
     def home_history(
-        entity: Optional[str] = Query(default=None, max_length=300),
-        q: Optional[str] = Query(default=None, max_length=300),
-        start: Optional[datetime] = Query(default=None, alias="from"),
-        end: Optional[datetime] = Query(default=None, alias="to"),
+        entity: str | None = Query(default=None, max_length=300),
+        q: str | None = Query(default=None, max_length=300),
+        start: datetime | None = Query(default=None, alias="from"),
+        end: datetime | None = Query(default=None, alias="to"),
         limit: int = Query(default=200, ge=1, le=1000),
-        home_id: Optional[str] = Query(default=None, alias="home"),
+        home_id: str | None = Query(default=None, alias="home"),
     ):
         if not (entity or q):
             raise ApiError(400, "give entity or q")
@@ -895,24 +895,24 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
 
     @app.get("/v1/summaries", dependencies=guarded)
     def get_summaries(
-        kind: Optional[Literal["session", "day", "week", "month"]] = None,
-        start: Optional[datetime] = Query(default=None, alias="from"),
-        end: Optional[datetime] = Query(default=None, alias="to"),
+        kind: Literal["session", "day", "week", "month"] | None = None,
+        start: datetime | None = Query(default=None, alias="from"),
+        end: datetime | None = Query(default=None, alias="to"),
         limit: int = Query(default=100, ge=1, le=1000),
     ):
         with engine.connection() as conn:
             return {"summaries": summaries.list_summaries(conn, kind=kind, start=start, end=end, limit=limit)}
 
     @app.get("/v1/brief", dependencies=guarded)
-    def get_brief(session_id: Optional[UUID] = None, agent: Optional[str] = None, avatar_id: Optional[str] = None):
+    def get_brief(session_id: UUID | None = None, agent: str | None = None, avatar_id: str | None = None):
         with engine.connection() as conn:
             return context.brief(conn, session_id=session_id, agent=agent, avatar_id=avatar_id)
 
     @app.get("/v1/intentions", dependencies=guarded)
     def get_intentions(
-        avatar_id: Optional[str] = None,
+        avatar_id: str | None = None,
         status: Literal["open", "waiting", "done", "dropped", "active", "all"] = "active",
-        kind: Optional[IntentionKind] = None,
+        kind: IntentionKind | None = None,
         limit: int = Query(default=100, ge=1, le=1000),
     ):
         statuses = None if status == "all" else agent_time.ACTIVE if status == "active" else (status,)
@@ -942,7 +942,7 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
         return row
 
     @app.get("/v1/flows", dependencies=guarded)
-    def get_flows(avatar_id: Optional[str] = None, include_disabled: bool = False):
+    def get_flows(avatar_id: str | None = None, include_disabled: bool = False):
         with engine.connection() as conn:
             return {"flows": agent_time.list_flows(conn, avatar_id=avatar_id, include_disabled=include_disabled)}
 
@@ -1019,7 +1019,7 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
             )
 
     @app.get("/v1/recall-log", dependencies=guarded)
-    def get_recall_log(session_id: Optional[UUID] = None, limit: int = Query(default=50, ge=1, le=500)):
+    def get_recall_log(session_id: UUID | None = None, limit: int = Query(default=50, ge=1, le=500)):
         with engine.connection() as conn:
             return {"entries": context.recall_log(conn, session_id=session_id, limit=limit)}
 
@@ -1027,7 +1027,7 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
     def get_timeline(
         start: datetime = Query(alias="from"),
         end: datetime = Query(alias="to"),
-        agent: Optional[str] = None,
+        agent: str | None = None,
         include_private: bool = True,
         turns: int = Query(default=6, ge=0, le=50),
         limit: int = Query(default=50, ge=1, le=200),
@@ -1047,7 +1047,7 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
         memory_id: UUID,
         around: int = Query(default=1, ge=0, le=10),
         touch: bool = False,
-        session_id: Optional[UUID] = None,
+        session_id: UUID | None = None,
     ):
         with engine.connection() as conn:
             detail = recall.memory_detail(conn, memory_id, around=around)
@@ -1113,9 +1113,9 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
 
     @app.get("/v1/facts", dependencies=guarded)
     def get_facts(
-        status: Optional[Literal["active", "superseded", "retracted", "all"]] = "active",
-        pinned: Optional[bool] = None,
-        subject: Optional[str] = None,
+        status: Literal["active", "superseded", "retracted", "all"] | None = "active",
+        pinned: bool | None = None,
+        subject: str | None = None,
         unreviewed: bool = False,
         include_private: bool = True,
         limit: int = Query(default=200, ge=1, le=1000),

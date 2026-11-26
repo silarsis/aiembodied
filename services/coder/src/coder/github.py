@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import urllib.error
 import urllib.request
-from typing import Any, Optional
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ IGNORED_CONCLUSIONS = ("cancelled", "skipped", "neutral", "stale")
 PR_READ_FAILED = "could not read the pull request from GitHub"
 
 
-def parse_pr_url(url: Optional[str]) -> Optional[tuple[str, str, int]]:
+def parse_pr_url(url: str | None) -> tuple[str, str, int] | None:
     """(owner, repo, number) from https://github.com/owner/repo/pull/N, else None."""
     m = re.match(r"^https?://github\.com/([^/\s]+)/([^/\s]+)/pull/(\d+)", (url or "").strip())
     return (m.group(1), m.group(2), int(m.group(3))) if m else None
@@ -125,12 +125,12 @@ def gh_get_json(path: str) -> Any:
     raise PrError(PR_READ_FAILED)
 
 
-def get_json(api_base: str, token: Optional[str], path: str) -> Any:
+def get_json(api_base: str, token: str | None, path: str) -> Any:
     """The one place that talks to GitHub for reads: the token when there is one, else gh."""
     return http_get_json(api_base, token, path) if token else gh_get_json(path)
 
 
-def ci_state(check_runs: list[dict], statuses: list[dict]) -> Optional[str]:
+def ci_state(check_runs: list[dict], statuses: list[dict]) -> str | None:
     """failure, pending, success or None (no checks). Cancelled, skipped and neutral runs are ignored."""
     states = []
     for c in check_runs:
@@ -148,7 +148,7 @@ def ci_state(check_runs: list[dict], statuses: list[dict]) -> Optional[str]:
     return None
 
 
-def read_pr(api_base: str, token: Optional[str], owner: str, repo: str, number: int) -> dict:
+def read_pr(api_base: str, token: str | None, owner: str, repo: str, number: int) -> dict:
     """Where a pull request stands: {"pr_state": open|merged|closed, "merged_at", "ci_state"}."""
     pr = get_json(api_base, token, f"/repos/{owner}/{repo}/pulls/{number}")
     if not isinstance(pr, dict):

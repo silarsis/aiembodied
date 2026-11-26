@@ -1,16 +1,15 @@
 import os
 import subprocess
-import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import sys
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
-
 from coder.app import create_app
 from coder.config import Config
+from fastapi.testclient import TestClient
 
 FAKE_PI = Path(__file__).parent / "fake_pi.py"
 

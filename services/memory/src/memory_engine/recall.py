@@ -5,8 +5,9 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional, Sequence
+from typing import Any
 from uuid import UUID
 
 import psycopg
@@ -126,17 +127,17 @@ def hybrid_search(
     conn: psycopg.Connection,
     query: str,
     *,
-    embedder: Optional[Embedder] = None,
-    start: Optional[datetime] = None,
-    end: Optional[datetime] = None,
-    agent: Optional[str] = None,
-    kinds: Optional[Sequence[str]] = None,
+    embedder: Embedder | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    agent: str | None = None,
+    kinds: Sequence[str] | None = None,
     include_private: bool = True,
     exclude_ids: Sequence[UUID] = (),
-    skip_session: Optional[UUID] = None,
+    skip_session: UUID | None = None,
     limit: int = 10,
-    now: Optional[datetime] = None,
-    sources: Optional[Sequence[str]] = ("conversation",),
+    now: datetime | None = None,
+    sources: Sequence[str] | None = ("conversation",),
 ) -> list[dict[str, Any]]:
     """Full-text and vector search, each taking its best CANDIDATES, fused by reciprocal rank,
     then nudged by recency and importance. `sources` limits where rows come from (conversation
@@ -253,7 +254,7 @@ def timeline(
     start: datetime,
     end: datetime,
     *,
-    agent: Optional[str] = None,
+    agent: str | None = None,
     include_private: bool = True,
     turns_per_session: int = 6,
     limit: int = 50,
@@ -305,7 +306,7 @@ def timeline(
     return out
 
 
-def _session_summary(conn: psycopg.Connection, session_id: UUID) -> Optional[dict[str, Any]]:
+def _session_summary(conn: psycopg.Connection, session_id: UUID) -> dict[str, Any] | None:
     row = conn.execute(
         "SELECT r.id, s.title, s.text, s.topics FROM summaries s"
         " JOIN recall_index r ON r.source_id = s.id"
@@ -345,7 +346,7 @@ def period_summaries(conn: psycopg.Connection, start: datetime, end: datetime, l
     ]
 
 
-def memory_detail(conn: psycopg.Connection, index_id: UUID, around: int = 1) -> Optional[dict[str, Any]]:
+def memory_detail(conn: psycopg.Connection, index_id: UUID, around: int = 1) -> dict[str, Any] | None:
     """One memory in full: a turn with `around` turns either side, verbatim; or a fact with the
     messages it came from."""
     row = conn.execute(

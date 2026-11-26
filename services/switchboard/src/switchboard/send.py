@@ -6,7 +6,7 @@ import json
 import sys
 import urllib.error
 import urllib.request
-from typing import Any, Optional
+from typing import Any
 
 
 def build_event(text: str, *, to: str, source: str, urgent: bool, type_: str, producer: str) -> dict[str, Any]:
@@ -21,7 +21,7 @@ def build_event(text: str, *, to: str, source: str, urgent: bool, type_: str, pr
 
 
 def run(
-    url: str, text: str, *, to: str, source: str, urgent: bool, type_: str, producer: str, out: Optional[Any] = None
+    url: str, text: str, *, to: str, source: str, urgent: bool, type_: str, producer: str, out: Any | None = None
 ) -> int:
     out = out or sys.stdout
     body = json.dumps(

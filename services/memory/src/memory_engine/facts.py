@@ -3,8 +3,9 @@ recall index (kind 'fact') while it is active."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Optional, Sequence
+from typing import Any
 from uuid import UUID, uuid4
 
 import psycopg
@@ -19,15 +20,15 @@ FACT_IMPORTANCE = 0.8
 class FactIn:
     id: UUID
     text: str
-    subject: Optional[str] = None
+    subject: str | None = None
     author: str = "agent"
-    agent: Optional[str] = None
-    session_id: Optional[UUID] = None
+    agent: str | None = None
+    session_id: UUID | None = None
     source_message_ids: Sequence[UUID] = field(default_factory=list)
-    supersedes: Optional[UUID] = None
+    supersedes: UUID | None = None
     pinned: bool = False
     private: bool = False
-    model: Optional[str] = None
+    model: str | None = None
 
 
 def add_fact(conn: psycopg.Connection, fact: FactIn) -> bool:
@@ -73,11 +74,11 @@ def update_fact(
     conn: psycopg.Connection,
     fact_id: UUID,
     *,
-    text: Optional[str] = None,
-    subject: Optional[str] = None,
-    pinned: Optional[bool] = None,
-    status: Optional[str] = None,
-    private: Optional[bool] = None,
+    text: str | None = None,
+    subject: str | None = None,
+    pinned: bool | None = None,
+    status: str | None = None,
+    private: bool | None = None,
     reviewed: bool = False,
 ) -> bool:
     row = conn.execute(
@@ -125,7 +126,7 @@ ACCESSIBILITY_SQL = (
 )
 
 
-def touch(conn: psycopg.Connection, index_ids: Sequence[str], session_id: Optional[UUID] = None) -> int:
+def touch(conn: psycopg.Connection, index_ids: Sequence[str], session_id: UUID | None = None) -> int:
     """The facts among these recall-index rows were just used: each is refreshed, and counted
     once per conversation (a fact recalled five times in one chat is not five times as settled).
     Returns how many facts were touched."""
@@ -151,9 +152,9 @@ def touch(conn: psycopg.Connection, index_ids: Sequence[str], session_id: Option
 def list_facts(
     conn: psycopg.Connection,
     *,
-    status: Optional[str] = "active",
-    pinned: Optional[bool] = None,
-    subject: Optional[str] = None,
+    status: str | None = "active",
+    pinned: bool | None = None,
+    subject: str | None = None,
     unreviewed: bool = False,
     include_private: bool = True,
     limit: int = 200,
@@ -250,9 +251,7 @@ CORRECT_MIN_SIMILARITY = 0.8
 CORRECT_MARGIN = 0.1
 
 
-def find_fact(
-    conn: psycopg.Connection, about: str, embedder: Any = None
-) -> tuple[Optional[UUID], list[dict[str, Any]]]:
+def find_fact(conn: psycopg.Connection, about: str, embedder: Any = None) -> tuple[UUID | None, list[dict[str, Any]]]:
     """The one active fact `about` clearly means, or (None, the closest few)."""
     from .recall import hybrid_search
 
@@ -280,15 +279,15 @@ def find_fact(
 def correct(
     conn: psycopg.Connection,
     *,
-    target: Optional[UUID] = None,
-    about: Optional[str] = None,
+    target: UUID | None = None,
+    about: str | None = None,
     action: str,
-    text: Optional[str] = None,
-    new_id: Optional[UUID] = None,
+    text: str | None = None,
+    new_id: UUID | None = None,
     author: str = "agent",
-    agent: Optional[str] = None,
-    model: Optional[str] = None,
-    session_id: Optional[UUID] = None,
+    agent: str | None = None,
+    model: str | None = None,
+    session_id: UUID | None = None,
     embedder: Any = None,
 ) -> dict[str, Any]:
     """Replace a fact with new words (the old one is kept, superseded) or retract it (kept,
@@ -296,7 +295,7 @@ def correct(
     search result. The agent can't change a pinned fact; only the user can. Returns
     {"status": "replaced" | "retracted" | "not_found" | "ambiguous" | "not_a_fact" | "inactive"
     | "pinned", ...}."""
-    fact_id: Optional[UUID] = None
+    fact_id: UUID | None = None
     if target is not None:
         row = conn.execute(
             "SELECT id FROM facts WHERE id = %s"

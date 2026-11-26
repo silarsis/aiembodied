@@ -134,10 +134,9 @@ def main(argv=None) -> None:
         logging.getLogger("memory_engine").warning(
             "Listening on %s without MEMORY_API_TOKEN: anyone who can reach this port can read memory.", a.host
         )
-    from .embed import make_embedder
-
     from datetime import timedelta
 
+    from .embed import make_embedder
     from .llm import make_llm
     from .summaries import Summariser, resolve_timezone
 

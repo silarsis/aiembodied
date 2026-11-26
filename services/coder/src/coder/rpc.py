@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 import subprocess
 import threading
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Callable, Mapping, Optional
 
 from .procs import kill_tree, popen_flags
 
@@ -19,11 +19,11 @@ class PiProcess:
         env: Mapping[str, str],
         on_event: Callable[[dict], None],
         on_log: Callable[[str, str], None],
-        on_exit: Optional[Callable[[int], None]] = None,
+        on_exit: Callable[[int], None] | None = None,
     ):
         self.argv, self.cwd, self.env = argv, cwd, dict(env)
         self.on_event, self.on_log, self.on_exit = on_event, on_log, on_exit
-        self.proc: Optional[subprocess.Popen] = None
+        self.proc: subprocess.Popen | None = None
         self._wlock = threading.Lock()
         self.exited = threading.Event()
 

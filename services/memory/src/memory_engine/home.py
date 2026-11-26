@@ -16,13 +16,13 @@ import asyncio
 import fnmatch
 import json
 import logging
-import os
 import re
 import threading
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
@@ -62,8 +62,8 @@ BUS_ALARM_CLASSES = {"smoke", "gas", "carbon_monoxide", "moisture", "safety", "t
 
 @dataclass
 class HomeConfig:
-    url: Optional[str] = None
-    token: Optional[str] = field(default=None, repr=False)  # never printed
+    url: str | None = None
+    token: str | None = field(default=None, repr=False)  # never printed
     home_id: str = "home"
     name: str = "Home"
     label: str = "aiembodied"
@@ -73,7 +73,7 @@ class HomeConfig:
     source: str = "env"  # "env": from the environment; "app": pushed by the app (PUT /v1/home/servers)
 
     @property
-    def off_reason(self) -> Optional[str]:
+    def off_reason(self) -> str | None:
         if self.source == "app":
             if not self.url:
                 return "the server has no address"
@@ -92,7 +92,7 @@ class HomeConfig:
         return self.off_reason is None
 
 
-def parse_entity_list(text: Optional[str]) -> list[str]:
+def parse_entity_list(text: str | None) -> list[str]:
     return [part.strip() for part in (text or "").split(",") if part.strip()]
 
 
@@ -102,7 +102,7 @@ RESERVED_NAMES = {"HOME", "RAW"}
 _NAMED_URL = re.compile(r"^HA_([A-Za-z0-9_]+)_URL$")
 
 
-def _float(text: Optional[str], default: float) -> float:
+def _float(text: str | None, default: float) -> float:
     try:
         return float(text) if text not in (None, "") else default
     except ValueError:
@@ -160,7 +160,7 @@ def valid_server_url(url: str) -> bool:
         return False
 
 
-def public_url(url: Optional[str]) -> Optional[str]:
+def public_url(url: str | None) -> str | None:
     """The address without any credentials in it."""
     if not url:
         return url
@@ -193,7 +193,7 @@ def matches_entity(entity_id: str, patterns: Sequence[str]) -> bool:
 # --- classification, deadband and wording (pure) ----------------------------------------------
 
 
-def to_float(state: Any) -> Optional[float]:
+def to_float(state: Any) -> float | None:
     if state is None or isinstance(state, bool):
         return None
     try:
@@ -205,10 +205,10 @@ def to_float(state: Any) -> Optional[float]:
 
 def classify(
     domain: str,
-    device_class: Optional[str],
-    entity_category: Optional[str],
-    state: Optional[str],
-    attributes: Optional[dict[str, Any]] = None,
+    device_class: str | None,
+    entity_category: str | None,
+    state: str | None,
+    attributes: dict[str, Any] | None = None,
 ) -> str:
     """alert, state, numeric or ignore. A sensor that has a unit (or a state class) is numeric
     even while it reports unavailable, so it is not mistaken for a state entity until the next
@@ -225,7 +225,7 @@ def classify(
 
 
 # device class -> (absolute floor or step, relative fraction of the last value or None)
-_DEADBANDS: dict[str, tuple[float, Optional[float]]] = {
+_DEADBANDS: dict[str, tuple[float, float | None]] = {
     "temperature": (0.3, None),
     "humidity": (2.0, None),
     "pressure": (1.0, None),
@@ -238,7 +238,7 @@ _DEADBANDS: dict[str, tuple[float, Optional[float]]] = {
 }
 
 
-def deadband(device_class: Optional[str], last_value: Optional[float]) -> float:
+def deadband(device_class: str | None, last_value: float | None) -> float:
     """How far a number must move from the last kept one to be kept. The relative ones have a
     small floor so a value sitting at zero doesn't keep every update."""
     last = abs(last_value) if last_value is not None else 0.0
@@ -250,8 +250,8 @@ def deadband(device_class: Optional[str], last_value: Optional[float]) -> float:
 
 def keep_reading(
     value: float,
-    last_value: Optional[float],
-    last_kept_at: Optional[datetime],
+    last_value: float | None,
+    last_kept_at: datetime | None,
     at: datetime,
     band: float,
 ) -> bool:
@@ -284,13 +284,13 @@ def _plain(state: str) -> str:
 
 def describe_change(
     name: str,
-    area: Optional[str],
+    area: str | None,
     domain: str,
-    device_class: Optional[str],
-    old: Optional[str],
+    device_class: str | None,
+    old: str | None,
     new: str,
-    unit: Optional[str] = None,
-    home_name: Optional[str] = None,
+    unit: str | None = None,
+    home_name: str | None = None,
 ) -> str:
     """A readable sentence: "Front door (Hallway) opened, was closed." With a home that has a name
     of its own: "Front door (Hallway, SG) opened, was closed." """
@@ -319,7 +319,7 @@ def describe_change(
     return f"{head}, was {old_text}."
 
 
-def _state_word(device_class: Optional[str], state: str) -> str:
+def _state_word(device_class: str | None, state: str) -> str:
     """The state as a word that follows "was": closed, open, clear, detected, dry, wet."""
     on_word, off_word = _BINARY_WORDS.get(device_class or "", ("on", "off"))
     word = on_word if state == "on" else off_word
@@ -329,7 +329,7 @@ def _state_word(device_class: Optional[str], state: str) -> str:
 # --- recording (works on a connection; used by the listener and by the tests) ---------------
 
 
-def parse_time(value: Any, default: Optional[datetime] = None) -> datetime:
+def parse_time(value: Any, default: datetime | None = None) -> datetime:
     if isinstance(value, datetime):
         return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
     if isinstance(value, str):
@@ -357,9 +357,9 @@ def upsert_entity(
     home_id: str,
     state: dict[str, Any],
     *,
-    area: Optional[str] = None,
-    registry_name: Optional[str] = None,
-    entity_category: Optional[str] = None,
+    area: str | None = None,
+    registry_name: str | None = None,
+    entity_category: str | None = None,
 ) -> str:
     """Add or refresh a watched entity from a Home Assistant state object, keeping what was last
     seen of it. Returns its class."""
@@ -387,10 +387,10 @@ def record_state(
     conn: psycopg.Connection,
     home_id: str,
     entity_id: str,
-    new_state: Optional[dict[str, Any]],
+    new_state: dict[str, Any] | None,
     *,
     catch_up: bool = False,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Take one new state of a watched entity (a Home Assistant state object). Stores an event
     when there is something worth keeping and returns {"kind", "indexed"}; None when not.
     `catch_up` is a state read after a gap rather than a live change: a number is only taken if
@@ -516,14 +516,14 @@ def _store_event(
     kind: str,
     at: datetime,
     state: str,
-    old_state: Optional[str],
-    value: Optional[float],
+    old_state: str | None,
+    value: float | None,
     attributes: dict[str, Any],
     name: str,
-    area: Optional[str],
+    area: str | None,
     domain: str,
-    device_class: Optional[str],
-    unit: Optional[str],
+    device_class: str | None,
+    unit: str | None,
 ) -> dict[str, Any]:
     event_kind = "alert" if kind == "alert" else "change"
     event_id = uuid4()
@@ -619,7 +619,7 @@ def _publish(home_id, home_name, entity_id, name, area, domain, device_class, ol
         log.debug("Could not publish a home event: %s", error)
 
 
-def handle_event(conn: psycopg.Connection, home_id: str, event: dict[str, Any]) -> Optional[dict[str, Any]]:
+def handle_event(conn: psycopg.Connection, home_id: str, event: dict[str, Any]) -> dict[str, Any] | None:
     """A state_changed event as Home Assistant sends it ({"event_type", "data": {"entity_id",
     "new_state", "old_state"}, ...}). Entities that aren't watched are ignored."""
     data = event.get("data") or {}
@@ -629,7 +629,7 @@ def handle_event(conn: psycopg.Connection, home_id: str, event: dict[str, Any]) 
     return record_state(conn, home_id, entity_id, data.get("new_state"))
 
 
-def prune(conn: psycopg.Connection, raw_days: float, home_id: Optional[str] = None) -> int:
+def prune(conn: psycopg.Connection, raw_days: float, home_id: str | None = None) -> int:
     """Delete raw readings older than raw_days (of one home, or of all); rollups and changes stay."""
     cur = conn.execute(
         "DELETE FROM ha_events WHERE kind = 'reading' AND at < now() - make_interval(secs => %s)"
@@ -679,7 +679,7 @@ _HAYSTACK = (
 
 
 def find_entities(
-    conn: psycopg.Connection, home_id: Optional[str], term: Optional[str], limit: int = 200
+    conn: psycopg.Connection, home_id: str | None, term: str | None, limit: int = 200
 ) -> list[dict[str, Any]]:
     patterns = _like_all(term or "")
     rows = conn.execute(
@@ -692,22 +692,22 @@ def find_entities(
     return [_entity_json(r) for r in rows]
 
 
-def list_entities(conn: psycopg.Connection, home_id: Optional[str], q: Optional[str]) -> list[dict[str, Any]]:
+def list_entities(conn: psycopg.Connection, home_id: str | None, q: str | None) -> list[dict[str, Any]]:
     return find_entities(conn, home_id, q, 1000)
 
 
 def history(
     conn: psycopg.Connection,
-    home_id: Optional[str],
-    entity: Optional[str],
-    q: Optional[str],
+    home_id: str | None,
+    entity: str | None,
+    q: str | None,
     start: datetime,
     end: datetime,
     limit: int,
 ) -> dict[str, Any]:
     """What one entity did in [start, end). If `entity` or `q` does not single one out, the
     candidates come back as {"matches": [...]} and no history."""
-    chosen: Optional[dict[str, Any]] = None
+    chosen: dict[str, Any] | None = None
     exact = conn.execute(
         f"SELECT {ENTITY_COLUMNS} FROM {ENTITY_FROM} WHERE e.entity_id = ANY(%s)"  # noqa: S608
         " AND (%s::text IS NULL OR e.home_id = %s) LIMIT 2",
@@ -801,24 +801,24 @@ class AuthRefused(Exception):
 class HomeListener:
     """Runs in a daemon thread with an event loop of its own."""
 
-    def __init__(self, engine: "Engine", config: HomeConfig):
+    def __init__(self, engine: Engine, config: HomeConfig):
         self.engine = engine
         self.config = config
         self.connected = False
-        self.error: Optional[str] = None
-        self.note: Optional[str] = None
+        self.error: str | None = None
+        self.note: str | None = None
         self.watched: set[str] = set()
-        self.last_event_at: Optional[datetime] = None
+        self.last_event_at: datetime | None = None
         self._events_day = datetime.now().date()
         self._events_today = 0
-        self._thread: Optional[threading.Thread] = None
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._stop_event: Optional[asyncio.Event] = None
+        self._thread: threading.Thread | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._stop_event: asyncio.Event | None = None
         self._stopping = threading.Event()
         self._next_id = 0
         self._pending: dict[int, asyncio.Future] = {}
         # Events that arrive while the first sync runs, handled once it is done.
-        self._held: Optional[list[dict[str, Any]]] = None
+        self._held: list[dict[str, Any]] | None = None
 
     # --- thread control ----
 
@@ -1016,7 +1016,7 @@ class HomeListener:
         """Load the registries and states, work out which entities are watched, and catch up on
         anything that changed while we were away. The first pass only fills the registry."""
         config = self.config
-        registry: Optional[dict[str, Any]] = None
+        registry: dict[str, Any] | None = None
         try:
             labels = await self._call(ws, "config/label_registry/list")
             entries = await self._call(ws, "config/entity_registry/list")
@@ -1043,7 +1043,7 @@ class HomeListener:
         with self.engine.pool.connection(timeout=10) as conn:
             upsert_home(conn, self.config, connected=True)
 
-    def _sync(self, registry: Optional[dict[str, Any]], states: list[dict[str, Any]]) -> None:
+    def _sync(self, registry: dict[str, Any] | None, states: list[dict[str, Any]]) -> None:
         config = self.config
         by_state = {s["entity_id"]: s for s in states if isinstance(s, dict) and "entity_id" in s}
         meta: dict[str, dict[str, Any]] = {}
@@ -1174,7 +1174,7 @@ class CommandFailed(Exception):
         super().__init__(f"{kind} failed: {code}")
 
 
-def _find_label(labels: list[dict[str, Any]], wanted: str) -> Optional[str]:
+def _find_label(labels: list[dict[str, Any]], wanted: str) -> str | None:
     wanted_lower = wanted.lower()
     for label in labels:
         if (label.get("name") or "").lower() == wanted_lower or label.get("label_id") == wanted:
@@ -1209,7 +1209,7 @@ class HomeManager:
     are replaced as a set (set_app). An app home with the id of an environment home replaces it
     while it is there. Tokens live in memory only."""
 
-    def __init__(self, engine: "Engine", env_configs: Sequence[HomeConfig] = ()):
+    def __init__(self, engine: Engine, env_configs: Sequence[HomeConfig] = ()):
         self.engine = engine
         self.env: dict[str, HomeConfig] = {c.home_id: c for c in env_configs}
         self.app: dict[str, HomeConfig] = {}

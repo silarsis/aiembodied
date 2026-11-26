@@ -28,9 +28,8 @@ def test_format_event_without_to_txn_and_long_payload():
 
 
 def test_run_exits_quietly_when_the_switchboard_drops(monkeypatch, capsys):
-    from websockets.exceptions import ConnectionClosedError
-
     from switchboard import tail
+    from websockets.exceptions import ConnectionClosedError
 
     def dropped(base, types, since):
         yield {"type": "a.b", "at": "2026-11-10T12:34:56.789Z", "producer": {"kind": "service", "id": "x"}}

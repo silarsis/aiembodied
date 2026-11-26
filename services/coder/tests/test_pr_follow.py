@@ -81,6 +81,7 @@ def test_columns_in_task_json_and_migration(client, tmp_path):
     j = client.get(f"/v1/tasks/{t['id']}").json()
     assert j["pr_state"] is None and j["ci_state"] is None and j["pr_checked_at"] is None and j["merged_at"] is None
     import sqlite3
+
     from coder.store import Store
 
     db = sqlite3.connect(str(tmp_path / "old.sqlite"))

@@ -3,7 +3,6 @@ import wave
 
 import numpy as np
 from fastapi.testclient import TestClient
-
 from speech_service.app import create_app, decode_wav, encode_wav
 from speech_service.engines import FakeSynthesizer, FakeTranscriber
 

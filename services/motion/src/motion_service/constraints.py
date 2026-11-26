@@ -12,8 +12,8 @@ absolute frame -> value dicts, with joint and rotation targets keyed (frame, joi
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Mapping, Optional, Sequence
 
 import numpy as np
 
@@ -40,7 +40,7 @@ JOINT_TARGETS = {
 # ----------------------------------------------------------------------------------------------
 
 
-def scale_for(avatar_rest: Optional[Mapping[str, Sequence[float]]]) -> float:
+def scale_for(avatar_rest: Mapping[str, Sequence[float]] | None) -> float:
     """Avatar metres per SOMA metre: the avatar's hips height over SOMA's rest hips height (1.0 without a skeleton)."""
     if not avatar_rest:
         return 1.0
@@ -198,7 +198,7 @@ class Targets:
             | {k[0] for k in self.rots}
         )
 
-    def max_frame(self, from_frame: int = 0) -> Optional[int]:
+    def max_frame(self, from_frame: int = 0) -> int | None:
         """The last constrained frame at or after `from_frame` (None if there is none)."""
         later = [f for f in self.frames() if f >= from_frame]
         return max(later) if later else None
@@ -214,9 +214,9 @@ class Entry:
 
     frame: int
     reveal: int = 0
-    root: Optional[tuple[float, float]] = None
-    height: Optional[float] = None
-    heading: Optional[float] = None
+    root: tuple[float, float] | None = None
+    height: float | None = None
+    heading: float | None = None
     joints: dict = field(default_factory=dict)  # joint name -> (x, y, z)
     rots: dict = field(default_factory=dict)  # joint name -> 3x3
 
@@ -278,14 +278,14 @@ class PathParams:
 @dataclass
 class TargetParams:
     t: float
-    until: Optional[float] = None
-    root: Optional[Sequence[float]] = None
-    height: Optional[float] = None
-    heading: Optional[float] = None
-    hand: Optional[str] = None  # "left" | "right"
-    position: Optional[Sequence[float]] = None  # wrist with hand, else the position of `joint`
+    until: float | None = None
+    root: Sequence[float] | None = None
+    height: float | None = None
+    heading: float | None = None
+    hand: str | None = None  # "left" | "right"
+    position: Sequence[float] | None = None  # wrist with hand, else the position of `joint`
     reveal_s: float = 0.0
-    joint: Optional[str] = None  # a JOINT_TARGETS key: one joint position target (no hand bundle)
+    joint: str | None = None  # a JOINT_TARGETS key: one joint position target (no hand bundle)
 
 
 @dataclass
@@ -293,8 +293,8 @@ class ObservedParams:
     """Where the body actually is when a stream is continued (motion frame, avatar metres)."""
 
     joints: Mapping[str, Sequence[float]] = field(default_factory=dict)  # JOINT_TARGETS key -> [x, y, z]
-    root: Optional[Sequence[float]] = None  # [x, z]
-    height: Optional[float] = None
+    root: Sequence[float] | None = None  # [x, z]
+    height: float | None = None
 
 
 def seconds_to_frame_ceil(seconds: float, fps: float) -> int:
@@ -319,13 +319,13 @@ def hand_bundle(hand: str, wrist_xyz: Sequence[float], heading: float, hand_leng
 
 
 def build_plan(
-    path: Optional[PathParams],
+    path: PathParams | None,
     targets: Sequence[TargetParams],
     fps: float,
     scale: float = 1.0,
-    total_frames: Optional[int] = None,
+    total_frames: int | None = None,
     hand_length: float = HAND_LENGTH_M,
-    observed: Optional[ObservedParams] = None,
+    observed: ObservedParams | None = None,
 ) -> ConstraintPlan:
     """Turn the request's path and targets (avatar metres) into per-frame model-unit constraints.
 
@@ -398,7 +398,7 @@ def build_plan(
 def window_frames(
     hist_len: int,
     win_start: int,
-    max_constraint: Optional[int],
+    max_constraint: int | None,
     future_crop: int,
     horizon: int,
     patch: int,
@@ -434,11 +434,11 @@ def snap_weights(frames: np.ndarray, snap: SnapTarget, n: int) -> np.ndarray:
 
 def snap_root(
     root_positions: np.ndarray,
-    plan: Optional[ConstraintPlan],
+    plan: ConstraintPlan | None,
     fps: float,
     snap_s: float,
     start_frame: int = 0,
-    carry: Optional[Sequence[float]] = None,
+    carry: Sequence[float] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Pull the decoded root x/z onto the plan's root targets that hold (a span, until > t).
 

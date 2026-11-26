@@ -2,8 +2,6 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import httpx
-import pytest
-
 from aiembodied_workflows.api import create_app
 from aiembodied_workflows.service import Service
 from aiembodied_workflows.settings import Settings

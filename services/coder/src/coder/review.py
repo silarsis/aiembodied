@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Optional
 
 from . import gitops
 
@@ -29,8 +28,8 @@ def build_review(
     worktree: Path,
     base_commit: str,
     protected: list[str],
-    checks_ok: Optional[bool] = None,
-    setup_ok: Optional[bool] = None,
+    checks_ok: bool | None = None,
+    setup_ok: bool | None = None,
 ) -> dict:
     files = gitops.numstat(worktree, base_commit)
     deleted = gitops.deleted_files(worktree, base_commit)

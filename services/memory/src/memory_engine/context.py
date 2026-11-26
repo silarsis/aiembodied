@@ -6,8 +6,9 @@ stays free of any one app's prompt wording."""
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Any, Optional, Sequence
+from typing import Any
 from uuid import UUID
 
 import psycopg
@@ -38,9 +39,9 @@ def _clip(text: str, limit: int) -> str:
 def brief(
     conn: psycopg.Connection,
     *,
-    session_id: Optional[UUID] = None,
-    agent: Optional[str] = None,
-    avatar_id: Optional[str] = None,
+    session_id: UUID | None = None,
+    agent: str | None = None,
+    avatar_id: str | None = None,
     fact_chars: int = BRIEF_FACT_CHARS,
 ) -> dict[str, Any]:
     """Pinned facts then the most used and recent others, up to `fact_chars`; the newest note
@@ -133,21 +134,21 @@ def auto_recall(
     conn: psycopg.Connection,
     text: str,
     *,
-    embedder: Optional[Embedder],
-    session_id: Optional[UUID] = None,
+    embedder: Embedder | None,
+    session_id: UUID | None = None,
     exclude_ids: Sequence[UUID] = (),
     limit: int = RECALL_LIMIT,
     max_chars: int = RECALL_MAX_CHARS,
     min_similarity: float = RECALL_MIN_SIMILARITY,
     min_words: int = RECALL_MIN_WORDS,
-    now: Optional[datetime] = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Up to `limit` memories that clearly bear on `text`, or none. Each must be close in
     meaning (cosine >= `min_similarity`), so this needs embeddings; most turns get nothing.
     The current session is skipped (it is already in the transcript), as are `exclude_ids`
     (recalled earlier in it). Every call is written to recall_log."""
     items: list[dict[str, Any]] = []
-    reason: Optional[str] = None
+    reason: str | None = None
     if len(_WORD.findall(text)) < min_words:
         reason = "short"
     elif embedder is None:
@@ -190,7 +191,7 @@ def auto_recall(
     return {"items": items, "reason": reason}
 
 
-def recall_log(conn: psycopg.Connection, *, session_id: Optional[UUID] = None, limit: int = 50) -> list[dict[str, Any]]:
+def recall_log(conn: psycopg.Connection, *, session_id: UUID | None = None, limit: int = 50) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
         SELECT id, at, session_id, query, items, reason FROM recall_log

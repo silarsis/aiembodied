@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Any, Sequence
+from datetime import datetime, timedelta
+from typing import Any
 
 from temporalio import workflow
 from temporalio.common import RawValue, RetryPolicy
@@ -19,7 +20,7 @@ from ..flowdef import validate_definition
 from ..interpreter import FlowError, run_steps
 from ..settings import TASK_QUEUE
 from ..timeutil import get_tz, next_local_time, parse_iso
-from .common import Controllable, best_effort, journal, now, patch_intention, try_act, ts, wait_changed, wlog
+from .common import Controllable, best_effort, journal, now, try_act, ts, wait_changed, wlog
 
 MAX_DEPTH = 5
 RUNAWAY_SECONDS = 55
@@ -51,7 +52,7 @@ def seconds_between(a_iso: str | None, b: datetime) -> float | None:
 class WorkflowRunner:
     """The interpreter's Runner, built from activities."""
 
-    def __init__(self, wf: "AgentFlow", inp: FlowInput):
+    def __init__(self, wf: AgentFlow, inp: FlowInput):
         self.wf, self.inp, self.avatar = wf, inp, inp.avatar_id
         self.tz = get_tz(inp.config.get("timezone"))
 

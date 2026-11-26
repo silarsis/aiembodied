@@ -5,7 +5,6 @@ from uuid import uuid4
 
 import psycopg
 import pytest
-
 from test_recall import message, post
 
 
@@ -23,7 +22,6 @@ def second_database(database_url):
 
 def make_client(database_url, schema, settings_file):
     from fastapi.testclient import TestClient
-
     from memory_engine.app import Engine, create_app
     from memory_engine.embed import FakeEmbedder
 

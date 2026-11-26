@@ -7,7 +7,6 @@ import os
 import re
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 
 class GitError(RuntimeError):
@@ -15,7 +14,7 @@ class GitError(RuntimeError):
 
 
 def git(
-    *args: str, cwd: Optional[Path | str] = None, check: bool = True, timeout: float = 120
+    *args: str, cwd: Path | str | None = None, check: bool = True, timeout: float = 120
 ) -> subprocess.CompletedProcess:
     env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
     try:
@@ -48,12 +47,12 @@ def is_git_repo(path: Path | str) -> bool:
         return False
 
 
-def remote_url(repo: Path | str, remote: str) -> Optional[str]:
+def remote_url(repo: Path | str, remote: str) -> str | None:
     r = git("remote", "get-url", remote, cwd=repo, check=False)
     return r.stdout.strip() or None if r.returncode == 0 else None
 
 
-def parse_owner_repo(url: Optional[str]) -> Optional[tuple[str, str]]:
+def parse_owner_repo(url: str | None) -> tuple[str, str] | None:
     """github.com owner and repo from an https, ssh:// or scp-style remote URL."""
     if not url:
         return None
@@ -89,7 +88,7 @@ def create_worktree(repo: Path, remote: str, base: str, branch: str, path: Path)
     return start, head(path)
 
 
-def remove_worktree(repo: Path, path: Path, branch: Optional[str] = None) -> None:
+def remove_worktree(repo: Path, path: Path, branch: str | None = None) -> None:
     git("worktree", "remove", "--force", str(path), cwd=repo, check=False)
     if path.exists():
         import shutil
@@ -149,7 +148,7 @@ def matches_protected(path: str, patterns: list[str]) -> bool:
     return False
 
 
-def diff_text(repo: Path, worktree: Optional[Path], base: str, branch: str, cap: int = 500_000) -> Optional[str]:
+def diff_text(repo: Path, worktree: Path | None, base: str, branch: str, cap: int = 500_000) -> str | None:
     if worktree and worktree.is_dir():
         r = git("diff", base, cwd=worktree, check=False)
     elif rev_exists(repo, branch):

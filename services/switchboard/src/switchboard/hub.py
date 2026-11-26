@@ -7,7 +7,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from fnmatch import fnmatchcase
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -31,9 +31,9 @@ class BusError(Exception):
 class Client:
     """One live subscriber. Messages for its socket wait in `queue`; None means "drop this client"."""
 
-    def __init__(self, actor: Optional[str], types: list[str], to: list[str], observe: bool) -> None:
+    def __init__(self, actor: str | None, types: list[str], to: list[str], observe: bool) -> None:
         self.actor, self.types, self.to, self.observe = actor, types, set(to), observe
-        self.queue: asyncio.Queue[Optional[dict[str, Any]]] = asyncio.Queue(CLIENT_QUEUE)
+        self.queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(CLIENT_QUEUE)
 
     def matches(self, ev: dict[str, Any]) -> bool:
         return any(fnmatchcase(ev["type"], g) for g in self.types) and (
@@ -93,14 +93,14 @@ class Hub:
         ev.at = ev.at or now_iso()
         return ev
 
-    def expire(self, now: Optional[datetime] = None) -> int:
+    def expire(self, now: datetime | None = None) -> int:
         """Expire open txns past their deadline. Returns how many events that published."""
         events = self.ledger.expire(format_time(now or datetime.now(timezone.utc)))
         if events:
             self.publish([e.model_dump(exclude_none=True) for e in events])
         return len(events)
 
-    def prune(self, now: Optional[datetime] = None) -> tuple[int, int]:
+    def prune(self, now: datetime | None = None) -> tuple[int, int]:
         cutoff = format_time((now or datetime.now(timezone.utc)) - timedelta(days=self.cfg.retention_days))
         return self.store.prune(cutoff)
 

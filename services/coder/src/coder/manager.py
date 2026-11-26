@@ -8,13 +8,15 @@ import shutil
 import subprocess
 import threading
 import time
-from datetime import datetime, timedelta, timezone
 import urllib.error
 import urllib.request
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
-from . import github, gitops, review as review_mod
+from . import github, gitops
+from . import review as review_mod
 from .config import Config
 from .gitops import GitError
 from .procs import clean_env, kill_tree, popen_flags
@@ -52,24 +54,24 @@ class Run:
     """In-memory state of one task's pi process and worker thread."""
 
     def __init__(self) -> None:
-        self.pi: Optional[PiProcess] = None
-        self.thread: Optional[threading.Thread] = None
+        self.pi: PiProcess | None = None
+        self.thread: threading.Thread | None = None
         self.active = False
         self.used_s = 0.0  # time already spent working, kept across pauses so they do not count against the limit
-        self.sup_start: Optional[float] = None
+        self.sup_start: float | None = None
         self.q_s = 0.0  # time spent waiting for answers since sup_start
         self.reset()
 
     def reset(self) -> None:
-        self.stopped: Optional[str] = None
+        self.stopped: str | None = None
         self.settled = threading.Event()
-        self.agent_end_at: Optional[float] = None
+        self.agent_end_at: float | None = None
         self.last_activity = time.monotonic()
-        self.prompt_error: Optional[str] = None
+        self.prompt_error: str | None = None
         self.pending_question = False
-        self.checks_proc: Optional[subprocess.Popen] = None
+        self.checks_proc: subprocess.Popen | None = None
         self.setup_done = False  # the setup command has run (or was not needed) in this worktree
-        self.setup_ok: Optional[bool] = None  # None: not run; False: it failed
+        self.setup_ok: bool | None = None  # None: not run; False: it failed
 
 
 def slugify(text: str, limit: int = 40) -> str:
@@ -111,7 +113,7 @@ class TaskManager:
         cfg: Config,
         store: Store,
         workspaces: WorkspaceRegistry,
-        on_change: Optional[Callable[[dict], None]] = None,
+        on_change: Callable[[dict], None] | None = None,
     ):
         self.cfg, self.store, self.workspaces = cfg, store, workspaces
         self.on_change = on_change
@@ -123,7 +125,7 @@ class TaskManager:
         self._hold = False
         self._to_resume: list[str] = []
         self._stop_poll = threading.Event()
-        self._poller: Optional[threading.Thread] = None
+        self._poller: threading.Thread | None = None
         self._recover()
 
     # ---- restart recovery -------------------------------------------------------------------
@@ -184,7 +186,7 @@ class TaskManager:
 
     # ---- keys -------------------------------------------------------------------------------
 
-    def set_keys(self, keys: dict[str, Optional[str]]) -> None:
+    def set_keys(self, keys: dict[str, str | None]) -> None:
         with self._lock:
             for name in KEY_NAMES:
                 if name in keys:
@@ -232,7 +234,7 @@ class TaskManager:
             except Exception:
                 pass
 
-    def _update(self, tid: str, force: bool = False, **fields: Any) -> Optional[dict]:
+    def _update(self, tid: str, force: bool = False, **fields: Any) -> dict | None:
         if "question" in fields and fields["question"] is None and "questions" not in fields:
             fields["questions"] = []
         with self._lock:
@@ -268,7 +270,7 @@ class TaskManager:
 
     # ---- creating and scheduling ------------------------------------------------------------
 
-    def _resolve_model(self, ws: Workspace, model: Optional[ModelRef]) -> tuple[str, str]:
+    def _resolve_model(self, ws: Workspace, model: ModelRef | None) -> tuple[str, str]:
         m = model or ws.model
         if m:
             provider, mid = m.provider, m.id
@@ -280,7 +282,7 @@ class TaskManager:
         return provider, mid
 
     def create_task(
-        self, workspace_id: str, goal: str, acceptance: list[str], scope: list[str], model: Optional[ModelRef]
+        self, workspace_id: str, goal: str, acceptance: list[str], scope: list[str], model: ModelRef | None
     ) -> dict:
         ws = self.workspaces.get(workspace_id)
         if not ws:
@@ -324,7 +326,7 @@ class TaskManager:
                 )
                 run.thread.start()
 
-    def _worker(self, tid: str, run: Run, entry: Optional[Callable[[str, Run], bool]] = None) -> None:
+    def _worker(self, tid: str, run: Run, entry: Callable[[str, Run], bool] | None = None) -> None:
         try:
             if entry and not entry(tid, run):
                 return
@@ -544,7 +546,7 @@ class TaskManager:
                 )
 
     @staticmethod
-    def _relative(task: Optional[dict], p: str) -> str:
+    def _relative(task: dict | None, p: str) -> str:
         if task and task.get("worktree"):
             try:
                 return (
@@ -651,7 +653,7 @@ class TaskManager:
                 phase_detail="no changes were made",
             )
             return
-        checks_ok: Optional[bool] = None
+        checks_ok: bool | None = None
         if ws.checks:
             self._update(tid, status="checks", phase_detail="running checks")
             self._ensure_setup(tid, run, ws, wt)
@@ -672,7 +674,7 @@ class TaskManager:
         return (task.get("last_text") or "").strip().endswith("?")
 
     @staticmethod
-    def detect_setup(wt: Path) -> Optional[str]:
+    def detect_setup(wt: Path) -> str | None:
         """The install command to use when a workspace has no setup command, judged by the lockfile."""
         if (wt / "pnpm-lock.yaml").exists():
             return "pnpm install --frozen-lockfile --prefer-offline"
@@ -806,10 +808,10 @@ class TaskManager:
     def answer(
         self,
         tid: str,
-        value: Optional[str],
-        confirmed: Optional[bool],
-        cancelled: Optional[bool],
-        dialog_id: Optional[str] = None,
+        value: str | None,
+        confirmed: bool | None,
+        cancelled: bool | None,
+        dialog_id: str | None = None,
     ) -> dict:
         with self._lock:
             task = self._get(tid)
@@ -864,7 +866,7 @@ class TaskManager:
                 )
             return self._update(tid, status="working", question=None, phase_detail="answered") or task
 
-    def _stop_run(self, tid: str, why: str) -> Optional[Run]:
+    def _stop_run(self, tid: str, why: str) -> Run | None:
         run = self._runs.get(tid)
         if not run:
             return None
@@ -902,7 +904,7 @@ class TaskManager:
 
     # ---- hold: Echo needs the local model server ---------------------------------------------
 
-    def set_hold(self, hold: bool, reason: Optional[str] = None) -> dict:
+    def set_hold(self, hold: bool, reason: str | None = None) -> dict:
         """While held, local tasks are paused (pi stopped, session kept) and new ones wait. Releasing resumes them."""
         with self._lock:
             if self._closed:
@@ -924,7 +926,7 @@ class TaskManager:
                 pass
         return self.status()
 
-    def _pause(self, tid: str, reason: Optional[str]) -> None:
+    def _pause(self, tid: str, reason: str | None) -> None:
         run = self._runs.get(tid)
         task = self.store.get_task(tid)
         if not run or not task:
@@ -941,7 +943,7 @@ class TaskManager:
             tid, force=True, status="paused", current_tool=None, question=None, questions=[], phase_detail=PAUSE_DETAIL
         )
 
-    def _resume(self, tid: str, reason: Optional[str] = None) -> None:
+    def _resume(self, tid: str, reason: str | None = None) -> None:
         run = self._runs.setdefault(tid, Run())
         with self._lock:
             if run.active:

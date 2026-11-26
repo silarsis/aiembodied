@@ -1,10 +1,8 @@
 import numpy as np
 import pytest
-from scipy.spatial.transform import Rotation
-
 from motion_service.backends.fake import synthetic_motion
-from motion_service.retarget import SOMA_REST_HIPS_HEIGHT, RootFrame, SOMA77, slugify, to_vrma
-
+from motion_service.retarget import SOMA77, SOMA_REST_HIPS_HEIGHT, RootFrame, slugify, to_vrma
+from scipy.spatial.transform import Rotation
 from vrma_check import assert_valid_vrma
 
 

@@ -6,10 +6,8 @@ import math
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-
 from motion_service.app import create_app
 from motion_service.backends.fake import FakeBackend
-
 from vrma_check import assert_valid_vrma
 
 REST = {"hips": [0, 0.8, 0], "spine": [0, 0.9, 0], "chest": [0, 1.0, 0], "upperChest": [0, 1.1, 0]}
