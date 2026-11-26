@@ -1,15 +1,12 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { CAPSULE_RADII, ContactBody, MAX_PELVIS_LIFT, MISS_SECONDS } from '../../src/rooms/contact-body.js';
+import { CAPSULE_RADII, ContactBody, MAX_BODY_SHIFT, MAX_PELVIS_LIFT, MISS_SECONDS } from '../../src/rooms/contact-body.js';
 import { BUTTOCKS_BELOW_HIPS } from '../../src/rooms/seat-fit.js';
 import {
-  ANKLE_MAX_OFFSET,
   HEAD_PITCH_LIMIT,
   HEAD_ROLL_LIMIT,
   HEAD_YAW_LIMIT,
-  HIP_MAX_OFFSET,
-  KNEE_MAX_OFFSET,
 } from '../../src/rooms/contact-math.js';
 import { RoomPhysics } from '../../src/rooms/room-physics.js';
 import { builtInRoom } from './fixtures.js';
@@ -93,7 +90,7 @@ describe('ContactBody on the reading-room sofa', () => {
     }
   }
 
-  it('lifts the pelvis a little and keeps thighs and shins out of the cushion', () => {
+  it('lifts the root a little for furniture other than the seat, without bending any joint', () => {
     const avatar = seated(0.22, 75, 60); // short shins: the feet dangle (the seat is 8 cm lower, so the shins are too)
     const body = new ContactBody(avatar.humanoid);
     const thigh = CAPSULE_RADII.thigh;
@@ -107,6 +104,7 @@ describe('ContactBody on the reading-room sofa', () => {
     run(avatar, body, 30, () => {
       for (const [name, q] of animated) avatar.bones.get(name)!.quaternion.copy(q);
     }, null); // not the seat being sat on: other furniture still lifts the pelvis
+    for (const [name, q] of animated) expect(avatar.bones.get(name)!.quaternion.equals(q)).toBe(true);
     avatar.scene.updateMatrixWorld(true);
 
     const lift = avatar.scene.position.y - baseY;
@@ -117,7 +115,7 @@ describe('ContactBody on the reading-room sofa', () => {
       const hip = worldPoint(avatar.bones.get(`${side}UpperLeg`)!);
       const knee = worldPoint(avatar.bones.get(`${side}LowerLeg`)!);
       const ankle = worldPoint(avatar.bones.get(`${side}Foot`)!);
-      // The thighs rest on the seat: only the pelvis lift (at most MAX_PELVIS_LIFT) answers to them, they are not rotated.
+      // Only the lift (at most MAX_PELVIS_LIFT) answers to the cushion; the legs are not rotated.
       expect(depthOf(physics, hip, knee, thigh)).toBeLessThan(0.04);
       expect(depthOf(physics, knee, ankle, CAPSULE_RADII.shin)).toBeLessThan(0.01);
     }
@@ -155,11 +153,14 @@ describe('ContactBody on the reading-room sofa', () => {
   });
 
   it('takes a pose that something else rewrote after our write (a pose blend) as the new animated pose', () => {
-    const avatar = seated(0.22, 75, 60);
+    // The animation put the feet 6 cm into the floor: planting them rotates the thigh (within its cap).
+    const avatar = buildAvatar();
+    avatar.scene.position.set(-2, 0, 1);
+    avatar.bones.get('hips')!.position.y = 0.84;
+    avatar.scene.updateMatrixWorld(true);
     const body = new ContactBody(avatar.humanoid);
     const thigh = avatar.bones.get('leftUpperLeg')!;
     const animated = thigh.quaternion.clone();
-    // No seat given: the thigh in the cushion counts as a penetration here, so it is nudged (within its cap).
     run(avatar, body, 30, () => thigh.quaternion.copy(animated), null);
     expect(thigh.quaternion.equals(animated)).toBe(false);
     // Stand up and walk off; a pose blend (which runs before the contact solve) writes a pose between
@@ -179,19 +180,29 @@ describe('ContactBody on the reading-room sofa', () => {
     expect(thigh.quaternion.angleTo(blended)).toBeLessThan(1e-6);
   });
 
-  it('release() puts back the animated pose of bones nothing else rewrites and clears the lift', () => {
+  it('release() puts back the animated pose of bones nothing else rewrites and clears the body shift', () => {
+    // Feet 6 cm into the floor: planting them rotates the legs.
+    const sunk = buildAvatar();
+    sunk.scene.position.set(-2, 0, 1);
+    sunk.bones.get('hips')!.position.y = 0.84;
+    sunk.scene.updateMatrixWorld(true);
+    const sunkBody = new ContactBody(sunk.humanoid);
+    const names = ['leftUpperLeg', 'leftLowerLeg', 'rightUpperLeg', 'rightLowerLeg'];
+    const animated = new Map(names.map((name) => [name, sunk.bones.get(name)!.quaternion.clone()]));
+    run(sunk, sunkBody, 30, () => {
+      for (const [name, q] of animated) sunk.bones.get(name)!.quaternion.copy(q);
+    }, null);
+    expect(names.some((name) => !sunk.bones.get(name)!.quaternion.equals(animated.get(name)!))).toBe(true);
+    sunkBody.release();
+    for (const [name, q] of animated) expect(sunk.bones.get(name)!.quaternion.angleTo(q)).toBeLessThan(1e-9);
+
     const avatar = seated(0.22, 75, 60);
     const body = new ContactBody(avatar.humanoid);
-    const names = ['leftUpperLeg', 'leftLowerLeg', 'rightUpperLeg', 'rightLowerLeg'];
-    const animated = new Map(names.map((name) => [name, avatar.bones.get(name)!.quaternion.clone()]));
-    run(avatar, body, 30, () => {
-      for (const [name, q] of animated) avatar.bones.get(name)!.quaternion.copy(q);
-    }, null); // no seat: the thighs are nudged out of the cushion instead of resting on it
-    expect(names.some((name) => !avatar.bones.get(name)!.quaternion.equals(animated.get(name)!))).toBe(true);
+    run(avatar, body, 30, undefined, null); // no seat: the cushion lifts the root
     expect(body.pelvisLift).toBeGreaterThan(0);
     body.release();
-    for (const [name, q] of animated) expect(avatar.bones.get(name)!.quaternion.angleTo(q)).toBeLessThan(1e-9);
     expect(body.pelvisLift).toBe(0);
+    expect(body.traceSnapshot().bodyShift).toMatchObject({ applied: [0, 0, 0] });
   });
 
   it('leaves a pose with no contact exactly as it was', () => {
@@ -447,34 +458,47 @@ describe('ContactBody on the reading-room sofa', () => {
       expect(otherBody.pelvisLift).toBeGreaterThan(0.01);
     });
 
-    it.each([15, 18, 20])('clears the cushion by raising the knees (%i degree slope): thighs out of the seat, no pelvis lift, no outward push', (slope) => {
-      const avatar = echoSeated(slope);
-      const body = new ContactBody(avatar.humanoid);
+    function cushionFrames(avatar: ReturnType<typeof echoSeated>, body: ContactBody) {
       const names = ['UpperLeg', 'LowerLeg'].flatMap((n) => ['left', 'right'].map((side) => side + n));
       const animated = new Map(names.map((name) => [name, avatar.bones.get(name)!.quaternion.clone()]));
-      const thighRadius = CAPSULE_RADII.thigh * FACTOR;
-      const depth = (side: string) =>
-        depthOf(physics, worldPoint(avatar.bones.get(`${side}UpperLeg`)!), worldPoint(avatar.bones.get(`${side}LowerLeg`)!), thighRadius);
-      expect(depth('left')).toBeGreaterThan(0.08); // the pose really sinks in
-      const kneeX = ['left', 'right'].map((side) => worldPoint(avatar.bones.get(`${side}LowerLeg`)!).x);
-      const hipsY = worldPoint(avatar.bones.get('hips')!).y;
-      const baseY = avatar.scene.position.y;
-
       run(avatar, body, 60, () => {
         for (const [name, q] of animated) avatar.bones.get(name)!.quaternion.copy(q);
       });
       avatar.scene.updateMatrixWorld(true);
+      return animated;
+    }
+    const thighDepth = (avatar: ReturnType<typeof echoSeated>, side: string) =>
+      depthOf(physics, worldPoint(avatar.bones.get(`${side}UpperLeg`)!), worldPoint(avatar.bones.get(`${side}LowerLeg`)!), CAPSULE_RADII.thigh * FACTOR);
 
-      expect(depth('left')).toBeLessThan(0.02);
-      expect(depth('right')).toBeLessThan(0.02);
+    it('leaves thighs resting in the seat cushion alone: no body shift, no joint bent, no miss (15 degree slope)', () => {
+      const avatar = echoSeated(15);
+      const body = new ContactBody(avatar.humanoid);
+      expect(thighDepth(avatar, 'left')).toBeGreaterThan(0.05); // the pose really sinks in
+      const start = avatar.scene.position.clone();
+      const animated = cushionFrames(avatar, body);
+      // Seat fit is the authority on the seat: the thighs stay in the cushion and the pose is not bent to leave it.
+      expect(thighDepth(avatar, 'left')).toBeGreaterThan(0.05);
+      expect(avatar.scene.position.equals(start)).toBe(true);
       expect(body.pelvisLift).toBe(0);
-      // Pinning the feet back would pull the knees into the seat: they float and are recorded as missing.
-      expect(body.misses().map((miss) => miss.end)).toContain('leftFoot');
+      expect(body.misses()).toEqual([]);
+      for (const [name, q] of animated) expect(avatar.bones.get(name)!.quaternion.equals(q)).toBe(true);
+    });
+
+    it.each([18, 20])('moves the whole body forward out of the sofa front when the shins sink into it (%i degree slope)', (slope) => {
+      const avatar = echoSeated(slope);
+      const body = new ContactBody(avatar.humanoid);
+      const shin = () => depthOf(physics, worldPoint(avatar.bones.get('leftLowerLeg')!), worldPoint(avatar.bones.get('leftFoot')!), CAPSULE_RADII.shin * FACTOR);
+      const before = shin();
+      expect(before).toBeGreaterThan(0.03);
+      const start = avatar.scene.position.clone();
+      const baseY = start.y;
+      cushionFrames(avatar, body);
+      const moved = avatar.scene.position.clone().sub(start);
+      expect(moved.z).toBeGreaterThan(before * 0.8);
+      expect(Math.abs(moved.x)).toBeLessThan(1e-6);
       expect(avatar.scene.position.y).toBe(baseY);
-      expect(worldPoint(avatar.bones.get('hips')!).y).toBeCloseTo(hipsY, 9);
-      ['left', 'right'].forEach((side, i) => {
-        expect(Math.abs(worldPoint(avatar.bones.get(`${side}LowerLeg`)!).x - kneeX[i]!)).toBeLessThan(0.02);
-      });
+      expect(shin()).toBeLessThan(0.01);
+      expect(body.misses()).toEqual([]);
     });
   });
 });
@@ -482,6 +506,7 @@ describe('ContactBody on the reading-room sofa', () => {
 describe('ContactBody on the reading-room armchair', () => {
   const room = builtInRoom('reading-room');
   const chair = room.objects.find((object) => object.id === 'armchair')!;
+  const chairYaw = deg(chair.rotationY ?? 0);
   let physics: RoomPhysics;
 
   beforeAll(async () => {
@@ -489,86 +514,145 @@ describe('ContactBody on the reading-room armchair', () => {
   });
   afterAll(() => physics.dispose());
 
-  /** The avatar sits in a pivot placed and turned like the chair, so its x axis is the chair's. */
-  function inChair(localX: number, localZ: number, thigh: number, knee: number) {
-    const avatar = buildAvatar(0.42);
-    const pivot = new THREE.Group();
-    pivot.position.set(chair.position[0], 0, chair.position[2]);
-    pivot.rotation.y = deg(chair.rotationY ?? 0);
-    pivot.add(avatar.scene);
-    avatar.scene.position.set(localX, 0, localZ);
+  /** The avatar sits turned like the chair at (localX, localZ) in the chair's frame (x across, z forward). The root is in world space, as in the app. */
+  function inChair(localX: number, localZ: number, thigh: number, knee: number, shin = 0.22) {
+    const avatar = buildAvatar(shin);
+    avatar.scene.rotation.y = chairYaw;
+    avatar.scene.position.set(
+      chair.position[0] + localX * Math.cos(chairYaw) + localZ * Math.sin(chairYaw),
+      0,
+      chair.position[2] - localX * Math.sin(chairYaw) + localZ * Math.cos(chairYaw),
+    );
     avatar.bones.get('hips')!.position.set(0, 0.44 + 0.09, 0);
     for (const side of ['left', 'right']) {
       avatar.bones.get(`${side}UpperLeg`)!.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -deg(thigh));
       avatar.bones.get(`${side}LowerLeg`)!.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), deg(knee));
     }
-    pivot.updateMatrixWorld(true);
-    return { ...avatar, pivot };
+    avatar.scene.updateMatrixWorld(true);
+    return avatar;
   }
 
-  const NAMES = ['UpperLeg', 'LowerLeg', 'Foot'];
-  /** Offset angle of each leg bone from its animated rotation. */
-  function offsets(avatar: ReturnType<typeof inChair>, animated: Map<string, THREE.Quaternion>) {
-    const result = new Map<string, number>();
-    for (const [name, q] of animated) result.set(name, avatar.bones.get(name)!.quaternion.angleTo(q));
-    return result;
-  }
-  function lateralOf(avatar: ReturnType<typeof inChair>, name: string, sign: number): number {
-    const local = avatar.scene.worldToLocal(worldPoint(avatar.bones.get(name)!));
-    return local.x * sign;
-  }
-  function abductionOf(avatar: ReturnType<typeof inChair>, side: string, sign: number): number {
-    const hip = avatar.scene.worldToLocal(worldPoint(avatar.bones.get(`${side}UpperLeg`)!));
-    const knee = avatar.scene.worldToLocal(worldPoint(avatar.bones.get(`${side}LowerLeg`)!));
-    const d = knee.sub(hip).normalize();
-    return Math.asin(d.x * sign);
+  /** A world point in the chair's frame (x across, z forward). */
+  function chairFrame(point: THREE.Vector3): { x: number; z: number } {
+    const dx = point.x - chair.position[0];
+    const dz = point.z - chair.position[2];
+    return { x: dx * Math.cos(chairYaw) - dz * Math.sin(chairYaw), z: dx * Math.sin(chairYaw) + dz * Math.cos(chairYaw) };
   }
 
-  it('nudges a seated pose without throwing the legs out over the armrests', () => {
-    // Thighs on the cushion, tilted slightly down, knees near the front edge.
-    const avatar = inChair(0, -0.05, 80, 75);
-    const animated = new Map<string, THREE.Quaternion>();
-    for (const side of ['left', 'right']) for (const name of NAMES) animated.set(side + name, avatar.bones.get(side + name)!.quaternion.clone());
-    const sides: Array<[string, number]> = [['left', 1], ['right', -1]];
-    const startAbduction = sides.map(([side, sign]) => abductionOf(avatar, side, sign));
-    const startOut = sides.map(([side, sign]) => [lateralOf(avatar, `${side}LowerLeg`, sign), lateralOf(avatar, `${side}Foot`, sign)]);
-    const body = new ContactBody(avatar.humanoid);
-    const caps: Record<string, number> = { UpperLeg: HIP_MAX_OFFSET, LowerLeg: KNEE_MAX_OFFSET, Foot: ANKLE_MAX_OFFSET };
-    for (let i = 0; i < 60; i += 1) {
+  const JOINTS = ['UpperLeg', 'LowerLeg', 'Foot', 'UpperArm', 'LowerArm', 'Hand'].flatMap((name) => ['left', 'right'].map((side) => side + name));
+  function animatedPose(avatar: ReturnType<typeof inChair>) {
+    return new Map(JOINTS.map((name) => [name, avatar.bones.get(name)!.quaternion.clone()]));
+  }
+  function frames(avatar: ReturnType<typeof inChair>, body: ContactBody, count: number, animated: Map<string, THREE.Quaternion>) {
+    for (let i = 0; i < count; i += 1) {
       for (const [name, q] of animated) avatar.bones.get(name)!.quaternion.copy(q);
       body.update(avatar, physics, 1 / 60, [], null, 'armchair');
-      avatar.pivot.updateMatrixWorld(true);
-      for (const [name, angle] of offsets(avatar, animated)) {
-        expect(angle).toBeLessThanOrEqual(caps[name.replace(/^(left|right)/, '')]! + 1e-6);
-      }
     }
-    sides.forEach(([side, sign], i) => {
-      expect(Math.abs(abductionOf(avatar, side, sign) - startAbduction[i]!)).toBeLessThan(deg(5));
-      expect(lateralOf(avatar, `${side}LowerLeg`, sign)).toBeLessThanOrEqual(startOut[i]![0]! + 0.01);
-      expect(lateralOf(avatar, `${side}Foot`, sign)).toBeLessThanOrEqual(startOut[i]![1]! + 0.01);
-    });
+  }
+  function expectAsAnimated(avatar: ReturnType<typeof inChair>, animated: Map<string, THREE.Quaternion>) {
+    for (const [name, q] of animated) expect(avatar.bones.get(name)!.quaternion.equals(q)).toBe(true);
+  }
+
+  /** Far enough forward that the hanging shins clear the chair's base. */
+  const SIT_Z = 0.15;
+
+  /** The left thigh's centre sits 0.01 m outside the left armrest's inner face (chair x = 0.31), so it overlaps it by about 0.065 m. */
+  const IN_LEFT_ARMREST = 0.3 - 0.09;
+
+  it('moves the root away from an armrest the leg is in and leaves every joint as animated', () => {
+    const avatar = inChair(IN_LEFT_ARMREST, SIT_Z, 90, 90);
+    const animated = animatedPose(avatar);
+    const body = new ContactBody(avatar.humanoid);
+    const startX = chairFrame(avatar.scene.position).x;
+    const hip = worldPoint(avatar.bones.get('leftUpperLeg')!);
+    const knee = worldPoint(avatar.bones.get('leftLowerLeg')!);
+    expect(depthOf(physics, hip, knee, CAPSULE_RADII.thigh)).toBeGreaterThan(0.05);
+
+    frames(avatar, body, 90, animated);
+    avatar.scene.updateMatrixWorld(true);
+
+    const moved = chairFrame(avatar.scene.position).x - startX;
+    expect(moved).toBeLessThan(-0.04); // towards the middle of the chair
+    expect(moved).toBeGreaterThan(-MAX_BODY_SHIFT);
+    expectAsAnimated(avatar, animated);
+    expect(moved).toBeGreaterThan(-0.09); // about the overlap, not a throw
+    expect(body.misses()).toEqual([]);
   });
 
-  it('does not push a thigh deep inside an armrest outward; the refusal is a miss', () => {
-    // Left thigh centred 4 cm inside the armrest's outer face (chair x = +0.38 is the armrest centre).
-    const avatar = inChair(0.38 + 0.03 - 0.09, -0.1, 90, 90);
-    const thigh = avatar.bones.get('leftUpperLeg')!;
-    const animated = new Map<string, THREE.Quaternion>();
-    for (const side of ['left', 'right']) for (const name of NAMES) animated.set(side + name, avatar.bones.get(side + name)!.quaternion.clone());
-    const hip = worldPoint(thigh);
-    const knee = worldPoint(avatar.bones.get('leftLowerLeg')!);
-    const hit = physics.penetration(new RAPIER.Capsule(hip.distanceTo(knee) / 2, CAPSULE_RADII.thigh), hip.clone().add(knee).multiplyScalar(0.5), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), knee.clone().sub(hip).normalize()));
-    expect(hit?.objectId).toBe('armchair');
-    expect(hit!.depth).toBeGreaterThan(0.05);
-    const start = lateralOf(avatar, 'leftLowerLeg', 1);
+  it('shifts the root by at most MAX_BODY_SHIFT, and the leg left in the furniture is a miss', () => {
+    // Standing legs inside the chair's base: the way out is far more than the cap.
+    const avatar = buildAvatar();
+    avatar.scene.position.set(chair.position[0] + 0.15, 0, chair.position[2]);
+    avatar.scene.updateMatrixWorld(true);
     const body = new ContactBody(avatar.humanoid);
-    for (let i = 0; i < Math.ceil((MISS_SECONDS + 0.3) * 60); i += 1) {
-      for (const [name, q] of animated) avatar.bones.get(name)!.quaternion.copy(q);
-      body.update(avatar, physics, 1 / 60, [], null, 'armchair');
-      avatar.pivot.updateMatrixWorld(true);
-    }
-    expect(lateralOf(avatar, 'leftLowerLeg', 1)).toBeLessThanOrEqual(start + 0.01);
-    expect(abductionOf(avatar, 'left', 1)).toBeLessThan(deg(5) + abductionOf(inChair(0, 0, 90, 90), 'left', 1));
+    const start = avatar.scene.position.clone();
+    for (let i = 0; i < 120; i += 1) body.update(avatar, physics, 1 / 60, [], null, null);
+    const sideways = Math.hypot(avatar.scene.position.x - start.x, avatar.scene.position.z - start.z);
+    expect(sideways).toBeGreaterThan(MAX_BODY_SHIFT - 0.005);
+    expect(sideways).toBeLessThanOrEqual(MAX_BODY_SHIFT + 1e-6);
+    const target = (body.traceSnapshot().bodyShift as { target: number[] }).target;
+    expect(Math.hypot(target[0]!, target[2]!)).toBeCloseTo(MAX_BODY_SHIFT, 2); // the trace rounds to the millimetre
     expect(body.misses().length).toBeGreaterThan(0);
+  });
+
+  it('barely moves the root when both armrests are touched equally', () => {
+    const avatar = inChair(0, SIT_Z, 90, 90);
+    avatar.bones.get('leftUpperLeg')!.position.x = 0.3;
+    avatar.bones.get('rightUpperLeg')!.position.x = -0.3;
+    avatar.scene.updateMatrixWorld(true);
+    for (const side of ['left', 'right']) {
+      const thigh = avatar.bones.get(`${side}UpperLeg`)!;
+      const knee = avatar.bones.get(`${side}LowerLeg`)!;
+      expect(depthOf(physics, worldPoint(thigh), worldPoint(knee), CAPSULE_RADII.thigh)).toBeGreaterThan(0.05);
+    }
+    const animated = animatedPose(avatar);
+    const body = new ContactBody(avatar.humanoid);
+    const start = avatar.scene.position.clone();
+    frames(avatar, body, 90, animated);
+    expect(Math.abs(chairFrame(avatar.scene.position).x - chairFrame(start).x)).toBeLessThan(0.01);
+    expectAsAnimated(avatar, animated);
+  });
+
+  it('eases the shift back to zero once the animation leaves the armrest', () => {
+    const avatar = inChair(IN_LEFT_ARMREST, SIT_Z, 90, 90);
+    const animated = animatedPose(avatar);
+    const body = new ContactBody(avatar.humanoid);
+    const start = avatar.scene.position.clone();
+    frames(avatar, body, 90, animated);
+    expect(avatar.scene.position.distanceTo(start)).toBeGreaterThan(0.04);
+    // The animation now keeps the body in the middle of the chair: the hips move over by the shift and more.
+    avatar.bones.get('hips')!.position.x = -0.2;
+    frames(avatar, body, 120, animated);
+    expect(avatar.scene.position.x).toBeCloseTo(start.x, 3);
+    expect(avatar.scene.position.z).toBeCloseTo(start.z, 3);
+    expect(body.traceSnapshot().bodyShift).toMatchObject({ applied: [0, 0, 0], target: [0, 0, 0] });
+  });
+
+  it('keeps the root where it is after forgetHorizontalShift(): the shift is not eased back out', () => {
+    const avatar = inChair(IN_LEFT_ARMREST, SIT_Z, 90, 90);
+    const animated = animatedPose(avatar);
+    const body = new ContactBody(avatar.humanoid);
+    frames(avatar, body, 90, animated);
+    const placed = avatar.scene.position.clone();
+    body.forgetHorizontalShift();
+    expect(avatar.scene.position.equals(placed)).toBe(true);
+    const applied = (body.traceSnapshot().bodyShift as { applied: number[] }).applied;
+    expect([applied[0], applied[2]]).toEqual([0, 0]);
+    frames(avatar, body, 1, animated);
+    // The body is already clear where it stands, so nothing pulls it back.
+    expect(avatar.scene.position.distanceTo(placed)).toBeLessThan(0.002);
+    frames(avatar, body, 60, animated);
+    expect(avatar.scene.position.distanceTo(placed)).toBeLessThan(0.005);
+  });
+
+  it('resetLift() forgets every axis without moving the root', () => {
+    const avatar = inChair(IN_LEFT_ARMREST, SIT_Z, 90, 90);
+    const animated = animatedPose(avatar);
+    const body = new ContactBody(avatar.humanoid);
+    frames(avatar, body, 60, animated);
+    const placed = avatar.scene.position.clone();
+    body.resetLift();
+    expect(avatar.scene.position.equals(placed)).toBe(true);
+    expect(body.traceSnapshot().bodyShift).toMatchObject({ applied: [0, 0, 0] });
   });
 });

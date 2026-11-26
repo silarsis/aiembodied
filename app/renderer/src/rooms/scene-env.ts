@@ -129,6 +129,9 @@ export class RoomSceneEnv implements SceneEnv {
     rig.scene.position.x = pose.x;
     rig.scene.position.z = pose.z;
     rig.scene.rotation.y = rig.baseRotationY + pose.yaw;
+    // The baked end pose's origin already includes the contact shift, so the shift is now where the avatar
+    // stands; easing it out again would slide the avatar.
+    this.contact?.forgetHorizontalShift();
     rig.scene.updateWorldMatrix(true, true);
     this.occupancyOf()?.standing(this.host.avatarId ?? 'echo', { x: pose.x, z: pose.z });
   }
@@ -321,7 +324,7 @@ export class RoomSceneEnv implements SceneEnv {
     };
   }
 
-  /** Forgets the pelvis lift (the root was put somewhere else, e.g. at another room's home). */
+  /** Forgets the contact body shift (the root was put somewhere else, e.g. at another room's home). */
   resetContactLift(): void {
     this.contact?.resetLift();
   }
