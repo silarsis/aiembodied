@@ -16,9 +16,9 @@ import { resolveObject, type ObjectSource } from './asset-library/library-source
 import type { LayoutObject, ObjectCategory, RoomLayout } from './room-layout.js';
 import { placeRoom, type ResolvedModel } from './room-placer.js';
 import { refitObject } from './room-refit.js';
-import type { GeneratedObjectSummary, ObjectSettings } from './object-settings.js';
+import type { GeneratedObjectSummary, ObjectSettings } from '../shared/rooms/object-settings.js';
 import type { RoomSummary } from './types.js';
-import { validateRoomFile } from './validate.js';
+import { validateRoomFile } from '../shared/rooms/validate.js';
 
 export interface RoomGenerationProgress {
   phase: 'planning' | 'finding' | 'arranging' | 'making' | 'done';

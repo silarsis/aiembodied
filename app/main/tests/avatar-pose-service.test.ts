@@ -3,7 +3,7 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
 import { AvatarPoseService } from '../src/avatar/avatar-pose-service.js';
-import { BASE_POSES, LEGACY_DEFAULT_POSE_SHA } from '../src/avatar/base-poses.js';
+import { BASE_POSES, LEGACY_DEFAULT_POSE_SHA } from '../src/shared/avatar/base-poses.js';
 import { MemoryStore } from '../src/memory/memory-store.js';
 
 const tempDirs: string[] = [];

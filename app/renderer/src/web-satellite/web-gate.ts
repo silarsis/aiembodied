@@ -1,5 +1,5 @@
-import { DeviceGate, avatarsHere, type DeviceFacts, type DeviceGateState } from '../../../main/src/satellite/device-gate.js';
-import { cameraSettingHere } from '../../../main/src/satellite/snapshot-facts.js';
+import { DeviceGate, avatarsHere, type DeviceFacts, type DeviceGateState } from '../../../main/src/shared/satellite/device-gate.js';
+import { cameraSettingHere } from '../../../main/src/shared/satellite/snapshot-facts.js';
 
 export interface WebGateOptions {
   /** Is the page visible, and the shell (if any) in the foreground? The page's stand-in for "the screen is unlocked". */
@@ -16,7 +16,7 @@ export interface WebGateOptions {
 
 /**
  * The privacy gate of a web page: the same rules and the same pure logic as the desktop satellite's
- * (main/src/satellite/device-gate.ts), with the page's own facts:
+ * (main/src/shared/satellite/device-gate.ts), with the page's own facts:
  *
  * - unlocked: the page is visible (`document.visibilityState`) and, in a shell, the shell says it is in the foreground.
  * - noFullscreenApp: true. A page cannot see other apps; a shell may enforce more natively.

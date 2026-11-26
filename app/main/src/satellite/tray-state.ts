@@ -3,7 +3,7 @@
  * and a small icon with a coloured dot (green live, amber doorbell only, grey off). The icon is drawn from raw
  * pixels, so it needs no image files and no canvas.
  */
-import type { DeviceGateState, DeviceLevel } from './device-gate.js';
+import type { DeviceGateState, DeviceLevel } from '../shared/satellite/device-gate.js';
 
 /** "the study" -> "Study". */
 export function trayRoomName(placeName: string | null): string {

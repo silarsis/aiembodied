@@ -9,7 +9,7 @@ export function cleanPlaceKind(value: unknown): PlaceKind {
   return value === 'phone' || value === 'browser' ? value : 'desktop';
 }
 
-/** A phone is for being found, not for being visited: nobody wanders in by themselves (places/wander.ts). */
+/** A phone is for being found, not for being visited: nobody wanders in by themselves (shared/places/wander.ts). */
 export function isPhonePlace(place: { kind?: PlaceKind } | null | undefined): boolean {
   return place?.kind === 'phone';
 }

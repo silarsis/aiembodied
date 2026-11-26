@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { MAX_IDLE_HABITS_LENGTH } from '../../../main/src/rooms/idle-habits.js';
+import { MAX_IDLE_HABITS_LENGTH } from '../../../main/src/shared/rooms/idle-habits.js';
 import type { AvatarBridge } from './types.js';
 
 /**

@@ -10,7 +10,7 @@
  * fields, six worked examples from another room, then the real room. Options are the avatars'
  * lower-case names made unique, because the model reads names, not ids.
  */
-import type { ModelRouting } from '../config/model-routing.js';
+import type { ModelRouting } from '../shared/config/model-routing.js';
 import type { ChatClient, ServerKeyLookup } from '../local-voice/voice-engines.js';
 import { FailoverChatClient } from '../local-voice/voice-engines.js';
 import { idleClients } from '../rooms/idle-thoughts.js';

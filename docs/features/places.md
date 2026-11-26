@@ -81,7 +81,7 @@ Every avatar's system prompt ends with the places note (also chatter turns; neve
 
 ## What each desktop room shows
 
-A place has an optional `room`: the id of the room or background its screen draws (`room:builtin:studio-flat`, `room:<id>`, or a plain background id). Places without one use `DEFAULT_DESKTOP_ROOM` (in `places/default-room.ts`). Change it in Settings > Places, "Room shown there" (`room-hub:set-room`, `PlaceManager.setRoom`). The lounge uses the active background of this PC as before.
+A place has an optional `room`: the id of the room or background its screen draws (`room:builtin:studio-flat`, `room:<id>`, or a plain background id). Places without one use `DEFAULT_DESKTOP_ROOM` (in `shared/places/default-room.ts`). Change it in Settings > Places, "Room shown there" (`room-hub:set-room`, `PlaceManager.setRoom`). The lounge uses the active background of this PC as before.
 
 ## One floor per place
 
@@ -154,13 +154,13 @@ Any place can note that a face is there. The camera only ever produces "a face w
 
 ## Activity: "someone used this PC"
 
-Each place reports when its PC was last used. `app/main/src/presence/activity-monitor.ts` reads Electron's `powerMonitor.getSystemIdleTime()` every 15 seconds; an idle time under 60 seconds means the PC is in use right now. bija keeps the time per place (`PlacePresence`, field `activeAt`): its own straight from its monitor, a satellite's through a `presence` message with `activeAt`. A satellite's value is stamped with bija's clock when it arrives, like `faceSeenAt`.
+Each place reports when its PC was last used. `app/main/src/shared/presence/activity-monitor.ts` reads Electron's `powerMonitor.getSystemIdleTime()` every 15 seconds; an idle time under 60 seconds means the PC is in use right now. bija keeps the time per place (`PlacePresence`, field `activeAt`): its own straight from its monitor, a satellite's through a `presence` message with `activeAt`. A satellite's value is stamped with bija's clock when it arrives, like `faceSeenAt`.
 
 No microphone or camera is involved, so this works for an empty place too. It is what makes wandering sensible: an avatar only goes where someone sits. The places snapshot carries `activeAt` per place, `movedAt` per avatar (when it last arrived anywhere, since bija started) and `now` (bija's clock), so a reader never compares clocks of two PCs.
 
 ## Wandering between places
 
-An idle avatar may walk to another place on its own. All the rules live in `places/wander.ts` (`wanderRefusal`), and they are enforced in code, not only in the prompt:
+An idle avatar may walk to another place on its own. All the rules live in `shared/places/wander.ts` (`wanderRefusal`), and they are enforced in code, not only in the prompt:
 
 - **(a)** it has not changed place in the last 10 minutes (a summon, a call or a wander all count);
 - **(b)** the target is online and open (not closed with the kill switch);
@@ -186,7 +186,7 @@ A place's **Doorbell** (Settings > Places) says what its wake word does while no
 
 ## Phone and browser rooms
 
-A place drawn by a phone or a browser has a kind (`Place.kind`: `phone` or `browser`; a desktop room has none). It is set when the device pairs (`kind` in the pair request) and shown in Settings > Places. Kevin's rules, by kind (`places/place-kind.ts`):
+A place drawn by a phone or a browser has a kind (`Place.kind`: `phone` or `browser`; a desktop room has none). It is set when the device pairs (`kind` in the pair request) and shown in Settings > Places. Kevin's rules, by kind (`shared/places/place-kind.ts`):
 
 | Rule | desktop | browser | phone |
 |---|---|---|---|

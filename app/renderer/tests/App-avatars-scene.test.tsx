@@ -1,7 +1,7 @@
 import { act, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_PROVIDER_SETTINGS } from '../../main/src/config/provider-settings.js';
-import { builtInServers, defaultRoutes } from '../../main/src/config/model-routing.js';
+import { DEFAULT_PROVIDER_SETTINGS } from '../../main/src/shared/config/provider-settings.js';
+import { builtInServers, defaultRoutes } from '../../main/src/shared/config/model-routing.js';
 import type { AvatarModelSummary } from '../src/avatar/types.js';
 import type { SceneActionExecutor } from '../src/rooms/scene-executor.js';
 import { builtInRoom } from './rooms/fixtures.js';

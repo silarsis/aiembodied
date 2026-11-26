@@ -2,8 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/config/model-routing.js';
-import { DEFAULT_PROVIDER_SETTINGS } from '../src/config/provider-settings.js';
+import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/shared/config/model-routing.js';
+import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
 import { MISSING_VISION_MODEL, VisionServer, visionServerFor, withVisionServer } from '../src/local-vision/vision-server.js';
 
 let root: string;

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { sanitizeCodingConfig, seedCodingConfig, slugifyWorkspaceId, toRunnerWorkspace } from '../src/coding/config.js';
-import { SELF_PROTECTED_PATHS } from '../src/coding/types.js';
+import { SELF_PROTECTED_PATHS } from '../src/shared/coding/types.js';
 
 describe('coding config', () => {
   it('keeps well-formed workspaces and drops the rest', () => {

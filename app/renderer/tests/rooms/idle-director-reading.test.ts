@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_IDLE_SETTINGS } from '../../../main/src/rooms/idle-settings.js';
+import { DEFAULT_IDLE_SETTINGS } from '../../../main/src/shared/rooms/idle-settings.js';
 import { fallbackIdleTags, idleTagsToText, parseIdleReply } from '../../src/rooms/idle-actions.js';
 import { FIRST_ACTION_DELAY_MS, IdleDirector, type IdleAvatar, type IdleExecutor } from '../../src/rooms/idle-director.js';
 import { buildIdlePrompt } from '../../src/rooms/idle-prompt.js';

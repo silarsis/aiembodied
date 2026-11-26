@@ -4,7 +4,7 @@
  * each sentence is an out-of-band response (conversation "none"), so sentences don't build up a
  * conversation the model could start answering. The model is told to read the text verbatim.
  */
-import { OPENAI_TTS_VOICES } from '../config/model-routing.js';
+import { OPENAI_TTS_VOICES } from '../shared/config/model-routing.js';
 import { pcm16ToWav } from './openai-audio-client.js';
 import type { TextToSpeechEngine } from './speech-engines.js';
 import type { LocalVoiceTtsStatus } from './types.js';

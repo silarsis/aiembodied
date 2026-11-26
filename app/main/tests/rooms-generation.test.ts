@@ -6,7 +6,7 @@ import { RoomGenerationService, type RoomGenerationProgress } from '../src/rooms
 import { RoomService } from '../src/rooms/room-service.js';
 import { validateLayout } from '../src/rooms/room-layout.js';
 import type { ObjectSource } from '../src/rooms/asset-library/library-source.js';
-import { validateRoomFile } from '../src/rooms/validate.js';
+import { validateRoomFile } from '../src/shared/rooms/validate.js';
 
 const UUID = '11111111-2222-3333-4444-555555555555';
 const layout = () =>

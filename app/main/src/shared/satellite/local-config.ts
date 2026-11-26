@@ -3,8 +3,8 @@
  * (satellite.ts) and the web satellite (renderer/src/web-satellite). No Electron, no Node.
  */
 import { DEFAULT_PROVIDER_SETTINGS } from '../config/provider-settings.js';
-import type { RendererConfig } from '../config/config-manager.js';
-import type { AudioDevicePreferences } from '../config/preferences-store.js';
+import type { RendererConfig } from '../../config/config-manager.js';
+import type { AudioDevicePreferences } from '../../config/preferences-store.js';
 
 export const DEFAULT_KEYWORD = 'Hey Echo';
 

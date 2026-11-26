@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ACTIVE_WINDOW_MS, CONVERSATION_MS, WANDER_COOLDOWN_MS, normalisePlaceName, wanderRefusal, type WanderView } from '../../src/places/wander.js';
+import { ACTIVE_WINDOW_MS, CONVERSATION_MS, WANDER_COOLDOWN_MS, normalisePlaceName, wanderRefusal, type WanderView } from '../../src/shared/places/wander.js';
 
 const NOW = 10_000_000;
 

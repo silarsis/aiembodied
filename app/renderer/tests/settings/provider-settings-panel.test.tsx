@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '../../../main/src/config/provider-settings.js';
+import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '../../../main/src/shared/config/provider-settings.js';
 import type { LocalVoiceStatus } from '../../../main/src/local-voice/types.js';
 import {
   ProviderSettingsPanel,

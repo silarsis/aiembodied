@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { BackgroundController } from './use-backgrounds.js';
-import { MAX_ROOM_AVATAR_HEIGHT, MIN_ROOM_AVATAR_HEIGHT, type OnTalk, type Restlessness } from '../../../main/src/rooms/idle-settings.js';
+import { MAX_ROOM_AVATAR_HEIGHT, MIN_ROOM_AVATAR_HEIGHT, type OnTalk, type Restlessness } from '../../../main/src/shared/rooms/idle-settings.js';
 import { RoomCards } from './room-cards.js';
 import { RoomDescribeForm } from './room-describe-form.js';
 import { GeneratedObjects, MakeMissingObjects } from './room-objects.js';

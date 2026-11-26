@@ -5,7 +5,7 @@
  * a plain request when it is rejected. The reply is parsed and checked; if that fails the model
  * gets the problem once and tries again.
  */
-import { routeTargets, type ModelRouting } from '../config/model-routing.js';
+import { routeTargets, type ModelRouting } from '../shared/config/model-routing.js';
 import { DEFAULT_OPENAI_MODELS, FailoverChatClient, type ChatClient, type ServerKeyLookup } from '../local-voice/voice-engines.js';
 import { LocalLlmClient, type ChatMessage } from '../local-voice/local-llm-client.js';
 import { LayoutError, validateLayout, type RoomLayout } from './room-layout.js';

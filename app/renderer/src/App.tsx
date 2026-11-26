@@ -12,14 +12,14 @@ import {
 } from 'react';
 import type { ConversationBackend, RendererConfig } from '../../main/src/config/config-manager.js';
 import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
-import type { ProviderSettingsPatch } from '../../main/src/config/provider-settings.js';
+import type { ProviderSettingsPatch } from '../../main/src/shared/config/provider-settings.js';
 import { ControlButton, ControlsDrawer } from './settings/controls-drawer.js';
 import { PanelDialog } from './settings/panel-dialog.js';
 import { ToolsSettings } from './settings/tools-settings.js';
 import { MemoryPanel } from './settings/memory-panel.js';
 import { ProviderSettingsPanel } from './settings/provider-settings-panel.js';
 import { ModelsDialog } from './settings/models-dialog.js';
-import type { UseId } from '../../main/src/config/model-routing.js';
+import type { UseId } from '../../main/src/shared/config/model-routing.js';
 import type { PushToTalkStatus } from '../../main/src/talk/types.js';
 import { isTalkTapTarget } from './talk/tap-to-talk.js';
 import { opensTypedPrompt, TypedPrompt } from './talk/type-to-talk.js';
@@ -55,7 +55,7 @@ import { useAudioDevices } from './hooks/use-audio-devices.js';
 import { useCameraDevices } from './hooks/use-camera-devices.js';
 import { useFacePresence } from './camera/use-face-presence.js';
 import { CameraLiveDot } from './camera/camera-dot.js';
-import { cameraPresenceOn } from '../../main/src/places/camera-setting.js';
+import { cameraPresenceOn } from '../../main/src/shared/places/camera-setting.js';
 import { getPreloadApi, type PreloadApi } from './preload-api.js';
 import { RealtimeClient, type RealtimeClientCallbacks, type RealtimeClientState } from './realtime/realtime-client.js';
 import { LocalVoiceClient, playPreviewReply } from './realtime/local-voice-client.js';
@@ -89,7 +89,7 @@ import { TypedMessage } from './satellite/typed-message.js';
 import { DeviceDots } from './satellite/device-dots.js';
 import { useDeviceGate } from './satellite/use-device-gate.js';
 import type { TurnTiming } from './realtime/local-voice-client.js';
-import { DEFAULT_DESKTOP_ROOM } from '../../main/src/places/default-room.js';
+import { DEFAULT_DESKTOP_ROOM } from '../../main/src/shared/places/default-room.js';
 import { estimateSpeechMs, stagePresence } from './places/stage-presence.js';
 import { ElsewhereChip } from './places/elsewhere-chip.js';
 import { PlacesPanel } from './places/places-panel.js';
@@ -1424,7 +1424,7 @@ export default function App() {
     phase: voiceActivity.phase,
     pick: async (context) => (await activeBridge?.backgrounds?.pickIdle?.(context)) ?? null,
     run: (text, avatarId) => animationTextHandlerRef.current(text, avatarId, 'idle'),
-    // Wandering between places: bija says where everyone is and who used which PC, and whether this avatar may go (places/wander.ts).
+    // Wandering between places: bija says where everyone is and who used which PC, and whether this avatar may go (shared/places/wander.ts).
     places: () => {
       const bridge = resolveApi()?.places;
       if (!bridge?.canWander || !placesSnapshot || placesSnapshot.places.length < 2) return null;

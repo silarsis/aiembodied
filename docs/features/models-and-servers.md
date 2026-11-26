@@ -107,7 +107,7 @@ Keys never reach the renderer; the pop-up only sees whether one is set and wheth
 
 The servers and routes are saved under `models` in the preferences file (`StoredModels`: `servers` and `routes`). Anything not saved is derived from the provider settings and `WEB_SEARCH_PROVIDER`, so an upgrade changes nothing.
 
-- `app/main/src/config/model-routing.ts`: types, built-in servers, default routes, `resolveModelRouting`, `routeTargets`.
+- `app/main/src/shared/config/model-routing.ts`: types, built-in servers, default routes, `resolveModelRouting`, `routeTargets`.
 - `app/main/src/config/model-server-probe.ts`: Test.
 - `app/main/src/local-voice/voice-engines.ts`: Hearing, Thinking and Speaking with failover.
 - `app/main/src/rooms/room-layout-llm.ts`: the Room layout request (`generateRoomLayout`), failing over like Thinking.

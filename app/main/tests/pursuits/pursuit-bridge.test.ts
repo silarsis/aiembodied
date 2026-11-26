@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createBridge } from '../../src/bridge/create-bridge.js';
-import { channelKind } from '../../src/satellite/channels.js';
+import { createBridge } from '../../src/shared/bridge/create-bridge.js';
+import { channelKind } from '../../src/shared/satellite/channels.js';
 
 describe('the pursuits bridge', () => {
   function bridge() {

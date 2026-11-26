@@ -16,7 +16,7 @@ import {
 } from '../src/avatar/generation/civitai.js';
 import { createRemoteComfyModelScanner } from '../src/avatar/generation/image-model-service.js';
 import { ModelDownloadService, type ModelDownload } from '../src/avatar/generation/model-downloads.js';
-import type { ModelServer } from '../src/config/model-routing.js';
+import type { ModelServer } from '../src/shared/config/model-routing.js';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 

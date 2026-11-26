@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { VRMLoaderPlugin, VRMUtils, type VRM } from '@pixiv/three-vrm';
 import { applyPoseToVrm, setupLighting } from './pose-snapshot-generator.js';
-import baseNeutralPose from '../../../main/src/avatar/base-poses/relaxed-neutral.pose.json';
+import baseNeutralPose from '../../../main/src/shared/avatar/base-poses/relaxed-neutral.pose.json';
 
 export interface ModelReviewScene {
   view(direction: 'front' | 'side' | 'back'): void;

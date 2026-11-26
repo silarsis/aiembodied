@@ -14,7 +14,7 @@ import { characterMeshGraph } from '../../avatar/generation/character/graphs.js'
 import type { GeometryModel } from '../../avatar/generation/character-model-service.js';
 import { buildImageWorkflow, type ImageWorkflowModel } from '../../avatar/generation/image-workflows.js';
 import { ASSET_SCHEME } from '../asset-protocol.js';
-import type { GeneratedObjectSummary } from '../object-settings.js';
+import type { GeneratedObjectSummary } from '../../shared/rooms/object-settings.js';
 import type { LayoutObject } from '../room-layout.js';
 import { fitModel } from '../room-model-fit.js';
 import type { ResolvedModel } from '../room-placer.js';

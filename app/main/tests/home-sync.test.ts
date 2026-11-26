@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/config/model-routing.js';
-import { DEFAULT_PROVIDER_SETTINGS } from '../src/config/provider-settings.js';
+import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/shared/config/model-routing.js';
+import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
 import { MemoryEngineError, type MemoryEngineHomeServer, type MemoryEngineHomeStatus } from '../src/memory-engine/client.js';
 import { HomeServerSync, homeServersFor } from '../src/memory-engine/home-sync.js';
 

@@ -13,7 +13,7 @@
 import type { PlacePresence, PlaceDeviceState } from '../presence/place-presence.js';
 import type { PlaceManager } from '../places/place-manager.js';
 import type { SwitchboardBus } from '../switchboard/bus.js';
-import type { Op } from './frames.js';
+import type { Op } from '../shared/room-hub/frames.js';
 
 export const LOCKED_HOME_MS = 5 * 60_000;
 export const FULLSCREEN_HOME_MS = 2 * 60_000;

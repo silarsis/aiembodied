@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SatelliteWakeRunner, type SharedWakeWord, type WakeRunnerDeps } from '../../src/satellite/wake-runner.js';
-import { evaluateGate, INITIAL_FACTS } from '../../src/satellite/device-gate.js';
+import { evaluateGate, INITIAL_FACTS } from '../../src/shared/satellite/device-gate.js';
 import type { WakeWordConfig } from '../../src/config/config-manager.js';
 import type { WakeWordDetectionEvent } from '../../src/wake-word/types.js';
 

@@ -1,5 +1,5 @@
 import type { BackgroundController } from './use-backgrounds.js';
-import { MAX_OBJECTS_PER_ROOM } from '../../../main/src/rooms/object-settings.js';
+import { MAX_OBJECTS_PER_ROOM } from '../../../main/src/shared/rooms/object-settings.js';
 
 /**
  * "Make missing objects": whether objects the Poly Haven library has nothing for are made on this

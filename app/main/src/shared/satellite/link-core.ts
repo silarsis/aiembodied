@@ -7,7 +7,7 @@
  *
  * Nothing here knows about Electron, Node or the browser: the socket comes from a `SocketFactory`. The Node
  * satellite gives it the `ws` package (room-link.ts); the web satellite gives it the browser's WebSocket. The wire
- * format is room-hub/frames.ts, the same file bija uses.
+ * format is shared/room-hub/frames.ts, the same file bija uses.
  */
 import { FrameError, decodeMessage, encodeMessage, type Op } from '../room-hub/frames.js';
 import {

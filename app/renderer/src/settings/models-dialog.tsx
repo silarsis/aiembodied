@@ -12,7 +12,7 @@ import {
   type ModelRoute,
   type ServerType,
   type UseId,
-} from '../../../main/src/config/model-routing.js';
+} from '../../../main/src/shared/config/model-routing.js';
 import type { ModelRole, ServerProbe } from '../../../main/src/config/model-server-probe.js';
 import type { CodingBridge } from '../../../main/src/coding/bridge-types.js';
 import type { ModelsBridge } from '../preload-api.js';

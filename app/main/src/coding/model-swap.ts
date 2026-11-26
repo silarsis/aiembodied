@@ -39,8 +39,8 @@ import {
   type ModelRouting,
   type ModelServer,
   type RouteOverride,
-} from '../config/model-routing.js';
-import { CODER_CONTEXT_LENGTH } from './types.js';
+} from '../shared/config/model-routing.js';
+import { CODER_CONTEXT_LENGTH } from '../shared/coding/types.js';
 import type { LocalLlmControl } from '../local-voice/local-llm-control.js';
 import type { CoderLeases } from '../aicontroller/bridge.js';
 

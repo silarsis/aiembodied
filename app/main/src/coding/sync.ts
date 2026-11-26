@@ -6,9 +6,9 @@
  * everything again when the event stream reconnects (`reset()`), and every minute asks which keys
  * the runner holds. Keys only travel in the request body and are never logged.
  */
-import { BUILT_IN_SERVER_IDS, DEFAULT_CODER_MODEL, routeTargets, type ModelRouting } from '../config/model-routing.js';
+import { BUILT_IN_SERVER_IDS, DEFAULT_CODER_MODEL, routeTargets, type ModelRouting } from '../shared/config/model-routing.js';
 import { toRunnerWorkspace, type CodingConfig } from './config.js';
-import { CODER_CONTEXT_LENGTH } from './types.js';
+import { CODER_CONTEXT_LENGTH } from '../shared/coding/types.js';
 import { RunnerError, type CodingRunnerClient, type RunnerKeys, type RunnerSettings } from './runner-client.js';
 
 type Logger = { info: (message: string, data?: Record<string, unknown>) => void; warn: (message: string, data?: Record<string, unknown>) => void };

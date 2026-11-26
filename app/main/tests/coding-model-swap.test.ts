@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { builtInServers, defaultRoutes, resolveModelRouting, type StoredModels } from '../src/config/model-routing.js';
-import { DEFAULT_PROVIDER_SETTINGS } from '../src/config/provider-settings.js';
+import { builtInServers, defaultRoutes, resolveModelRouting, type StoredModels } from '../src/shared/config/model-routing.js';
+import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
 import { CoderModelSwap } from '../src/coding/model-swap.js';
 
 const GGUF = 'D:\\models\\Qwen3-Coder-Next-Q4_K_M-00001-of-00003.gguf';

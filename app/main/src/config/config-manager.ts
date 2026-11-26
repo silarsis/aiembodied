@@ -14,7 +14,7 @@ import {
   sanitizeProviderPatch,
   type ProviderSettings,
   type ProviderSettingsPatch,
-} from './provider-settings.js';
+} from '../shared/config/provider-settings.js';
 import {
   ADDABLE_SERVER_TYPES,
   BUILT_IN_SERVER_IDS,
@@ -28,7 +28,7 @@ import {
   type ServerType,
   type StoredModels,
   type UseId,
-} from './model-routing.js';
+} from '../shared/config/model-routing.js';
 
 type ConfigLogger = Pick<Console, 'debug' | 'info' | 'warn' | 'error'>;
 

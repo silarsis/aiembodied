@@ -2,12 +2,12 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { NOT_ON_SATELLITE, channelKind, channelsOfKind, isDeliverableEvent } from '../../src/satellite/channels.js';
+import { NOT_ON_SATELLITE, channelKind, channelsOfKind, isDeliverableEvent } from '../../src/shared/satellite/channels.js';
 import { SATELLITE_CHANNELS } from '../../src/room-hub/allowlist.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-// The bridge's channel list lives in bridge/create-bridge.ts (preload.ts only plugs ipcRenderer into it).
-const preload = ['../../src/preload.ts', '../../src/bridge/create-bridge.ts'].map((file) => readFileSync(path.resolve(here, file), 'utf8')).join('\n');
+// The bridge's channel list lives in shared/bridge/create-bridge.ts (preload.ts only plugs ipcRenderer into it).
+const preload = ['../../src/preload.ts', '../../src/shared/bridge/create-bridge.ts'].map((file) => readFileSync(path.resolve(here, file), 'utf8')).join('\n');
 
 /** Every channel name in preload.ts and the bridge it builds: a quoted `group:name` string. (`preload:bridge-exposed` is a log message, not a channel.) */
 const PRELOAD_CHANNELS = [...new Set([...preload.matchAll(/'([a-z][a-z0-9-]*(?::[a-z0-9-]+)+)'/g)].map((match) => match[1]))].filter((name) => name !== 'preload:bridge-exposed');
@@ -19,7 +19,7 @@ describe('satellite channels', () => {
     expect(PRELOAD_CHANNELS).toContain('places:changed');
   });
 
-  it('classifies every channel the preload script uses (add new channels to satellite/channels.ts)', () => {
+  it('classifies every channel the preload script uses (add new channels to shared/satellite/channels.ts)', () => {
     const unclassified = PRELOAD_CHANNELS.filter((channel) => channelKind(channel) === undefined);
     expect(unclassified).toEqual([]);
   });

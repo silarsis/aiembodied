@@ -1,8 +1,8 @@
 import { EventEmitter } from 'node:events';
 import type { IpcMainInvokeEvent } from 'electron';
 import type { ConfigSecretKey } from '../src/config/config-manager.js';
-import { DEFAULT_PROVIDER_SETTINGS } from '../src/config/provider-settings.js';
-import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/config/model-routing.js';
+import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
+import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/shared/config/model-routing.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Deferred<T> = {

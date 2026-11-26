@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CodingBridge, CodingTasksBridge, RunnerTask } from '../../../main/src/coding/bridge-types.js';
-import type { CodingWorkspace } from '../../../main/src/coding/types.js';
+import type { CodingWorkspace } from '../../../main/src/shared/coding/types.js';
 import type { LocalVoiceBridge } from '../preload-api.js';
 
 export const CODING_TASKS_POLL_MS = 10_000;

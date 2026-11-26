@@ -10,7 +10,7 @@ import { GeneratedLibrary } from '../src/rooms/asset-library/generated-library.j
 import { GeneratedSource } from '../src/rooms/asset-library/generated-source.js';
 import { makeGlb } from './rooms-glb-fixture.js';
 import type { RoomFile } from '../src/rooms/types.js';
-import { validateRoomFile } from '../src/rooms/validate.js';
+import { validateRoomFile } from '../src/shared/rooms/validate.js';
 
 const UUID = '11111111-2222-3333-4444-555555555555';
 const ROOM_ID = `room:${UUID}`;

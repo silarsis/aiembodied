@@ -18,7 +18,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { isLocalUrl, routeTargets, type ModelRouting, type ModelServer, type UseId } from '../config/model-routing.js';
+import { isLocalUrl, routeTargets, type ModelRouting, type ModelServer, type UseId } from '../shared/config/model-routing.js';
 import type { SharedHandle, SharedLeases } from '../aicontroller/bridge.js';
 import type { VisionPick } from './vision-model.js';
 

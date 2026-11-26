@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import type {
   ProviderSettings,
   ProviderSettingsPatch,
-} from '../../../main/src/config/provider-settings.js';
+} from '../../../main/src/shared/config/provider-settings.js';
 import type { PushToTalkStatus } from '../../../main/src/talk/types.js';
 import type { WakeWordOption } from '../../../main/src/wake-word/types.js';
 import type { WakeWordBridge } from '../preload-api.js';

@@ -14,7 +14,7 @@ import {
   type CodingConfig,
   type CodingWorkspace,
   type WorkspaceKind,
-} from './types.js';
+} from '../shared/coding/types.js';
 
 export {
   DEFAULT_CODING_CONFIG,

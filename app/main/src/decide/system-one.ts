@@ -10,7 +10,7 @@
  *  - score: rate on an ordered scale (the criteria, lowest first). Answer: 0..1.
  *  - noul: yes or no. Answer: the probability of yes.
  */
-import { routeTargets, type ModelRouting } from '../config/model-routing.js';
+import { routeTargets, type ModelRouting } from '../shared/config/model-routing.js';
 import type { ServerKeyLookup } from '../local-voice/voice-engines.js';
 
 export const SYSTEM_ONE_TIMEOUT_MS = 3_000;

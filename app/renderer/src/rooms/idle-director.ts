@@ -13,7 +13,7 @@ import type { IdlePickContext, IdlePickResult, RoomFile } from '../../../main/sr
 import {
   RESTLESSNESS_MEAN_SECONDS,
   type IdleSettings,
-} from '../../../main/src/rooms/idle-settings.js';
+} from '../../../main/src/shared/rooms/idle-settings.js';
 import {
   describeIdleTags,
   fallbackIdleTags,
@@ -31,8 +31,8 @@ import {
 import { describeAvatarWhere, describeFeet } from './scene-instructions.js';
 import type { IdleInput, IdlePlace, IdlePursuit, IdleTag } from './idle-types.js';
 import type { PlacesSnapshot } from '../../../main/src/places/place-manager.js';
-import { isPhonePlace } from '../../../main/src/places/place-kind.js';
-import { ACTIVE_WINDOW_MS, WANDER_COOLDOWN_MS, activeWithin, othersAt } from '../../../main/src/places/wander.js';
+import { isPhonePlace } from '../../../main/src/shared/places/place-kind.js';
+import { ACTIVE_WINDOW_MS, WANDER_COOLDOWN_MS, activeWithin, othersAt } from '../../../main/src/shared/places/wander.js';
 import { talkStartActions } from './idle-talk.js';
 import type { AvatarState, PlanWorld } from './scene-actions.js';
 import type { PlanBuilder } from './scene-executor.js';
@@ -118,7 +118,7 @@ export interface IdleDirectorDeps {
    */
   places?(): Promise<IdlePlacesView | null> | null;
   /**
-   * May this avatar walk to that place on its own right now? Bija decides (places/wander.ts: not moved in 10 minutes,
+   * May this avatar walk to that place on its own right now? Bija decides (shared/places/wander.ts: not moved in 10 minutes,
    * the place is open, someone used it lately or another avatar is there, not in a conversation); `speaking` is
    * what only this screen knows. Absent means no. A `{room:}` tag the answer refuses is dropped, whatever the model said.
    */

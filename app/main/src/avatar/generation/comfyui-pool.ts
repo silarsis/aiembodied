@@ -9,7 +9,7 @@
  * neither starts nor kills ComfyUI. Other machines' servers are never touched. A controller without a
  * comfyui backend leaves everything as above.
  */
-import { routeTargets, type ModelRouting, type ModelServer } from '../../config/model-routing.js';
+import { routeTargets, type ModelRouting, type ModelServer } from '../../shared/config/model-routing.js';
 import { comfyQueueLength } from '../../config/model-server-probe.js';
 import type { SharedLeases } from '../../aicontroller/bridge.js';
 import { ComfyUIClient } from './comfyui-client.js';

@@ -11,7 +11,7 @@ import {
   type ModelRouting,
   type ModelServer,
   type RouteOverride,
-} from '../config/model-routing.js';
+} from '../shared/config/model-routing.js';
 import { LocalLlmClient, type ChatMessage, type LlmStreamPart, type LlmToolDefinition } from './local-llm-client.js';
 import { OpenAiAudioClient } from './openai-audio-client.js';
 import { OpenAiRealtimeTts, type RealtimeSocketFactory } from './openai-realtime-tts.js';

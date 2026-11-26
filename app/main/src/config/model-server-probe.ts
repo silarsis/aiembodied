@@ -4,7 +4,7 @@
  * never called (each search costs quota), so it only reports whether a key is set.
  */
 import { SpeechServiceClient } from '../local-voice/speech-service-client.js';
-import type { ModelServer } from './model-routing.js';
+import type { ModelServer } from '../shared/config/model-routing.js';
 
 /** Which list of models a use reads from a server. */
 export type ModelRole = 'chat' | 'transcribe' | 'voices' | 'realtime' | 'motion' | 'image' | 'mesh' | 'decide';

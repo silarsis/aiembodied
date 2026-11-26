@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '../src/config/provider-settings.js';
+import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '../src/shared/config/provider-settings.js';
 import { LocalLlmClient } from '../src/local-voice/local-llm-client.js';
 import { LocalVoiceService } from '../src/local-voice/local-voice-service.js';
 import { OpenAiAudioClient, pcm16ToWav } from '../src/local-voice/openai-audio-client.js';
@@ -10,7 +10,7 @@ import {
   type RealtimeSocketFactory,
 } from '../src/local-voice/openai-realtime-tts.js';
 import { buildVoiceEngines } from '../src/local-voice/voice-engines.js';
-import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/config/model-routing.js';
+import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/shared/config/model-routing.js';
 
 /** The routing provider settings give before anything is saved in Models and servers. */
 function routed(providers: ProviderSettings) {

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/config/model-routing.js';
-import { DEFAULT_PROVIDER_SETTINGS } from '../src/config/provider-settings.js';
+import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/shared/config/model-routing.js';
+import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
 import { BackgroundService } from '../src/backgrounds/background-service.js';
-import { DEFAULT_IDLE_SETTINGS, RESTLESSNESS_MEAN_SECONDS, parseIdleSettings, sanitizeIdleSettings } from '../src/rooms/idle-settings.js';
-import { MAX_IDLE_HABITS_LENGTH, normalizeIdleHabits } from '../src/rooms/idle-habits.js';
+import { DEFAULT_IDLE_SETTINGS, RESTLESSNESS_MEAN_SECONDS, parseIdleSettings, sanitizeIdleSettings } from '../src/shared/rooms/idle-settings.js';
+import { MAX_IDLE_HABITS_LENGTH, normalizeIdleHabits } from '../src/shared/rooms/idle-habits.js';
 import { pickIdleActions } from '../src/rooms/idle-thoughts.js';
 import type { ChatClient } from '../src/local-voice/voice-engines.js';
 

@@ -7,17 +7,17 @@
  */
 import type { LinkState, LinkStatus, RoomLink, RoomLinkOptions, Welcome } from './room-link.js';
 import { LOST_TOUCH, RoomLink as RoomLinkClass } from './room-link.js';
-import { requestPairing } from './pairing.js';
+import { requestPairing } from '../shared/satellite/pairing.js';
 import { AssetCache } from './asset-cache.js';
-import { NOT_ON_SATELLITE, channelKind, channelsOfKind, isDeliverableEvent } from './channels.js';
+import { NOT_ON_SATELLITE, channelKind, channelsOfKind, isDeliverableEvent } from '../shared/satellite/channels.js';
 import type { SatelliteSettings, SatelliteSettingsStore } from './settings.js';
 import type { TokenStore } from './token-store.js';
 import { ASSET_SCHEME, mimeFor, type ProtocolLike } from '../rooms/asset-protocol.js';
-import { EMPTY_LOCAL_ANSWERS, keywordOf, satelliteConfig } from './local-config.js';
+import { EMPTY_LOCAL_ANSWERS, keywordOf, satelliteConfig } from '../shared/satellite/local-config.js';
 import type { RendererConfig } from '../config/config-manager.js';
 import type { AudioDevicePreferences } from '../config/preferences-store.js';
-import type { Op } from '../room-hub/frames.js';
-import { INITIAL_FACTS, evaluateGate, type DeviceGateState } from './device-gate.js';
+import type { Op } from '../shared/room-hub/frames.js';
+import { INITIAL_FACTS, evaluateGate, type DeviceGateState } from '../shared/satellite/device-gate.js';
 import type { PushToTalkStatus } from '../talk/types.js';
 
 export interface SatelliteStatus {

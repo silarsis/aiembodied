@@ -2,9 +2,9 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import { createBridge } from '../../src/bridge/create-bridge.js';
-import { requestPairing } from '../../src/satellite/pairing.js';
-import { satelliteConfig, EMPTY_LOCAL_ANSWERS } from '../../src/satellite/local-config.js';
+import { createBridge } from '../../src/shared/bridge/create-bridge.js';
+import { requestPairing } from '../../src/shared/satellite/pairing.js';
+import { satelliteConfig, EMPTY_LOCAL_ANSWERS } from '../../src/shared/satellite/local-config.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const preload = readFileSync(path.resolve(here, '../../src/preload.ts'), 'utf8');

@@ -5,7 +5,7 @@
  */
 import type { RoomFile, RoomObject } from '../../../main/src/rooms/types.js';
 import { extractMotionTags } from '../avatar/animation-tags.js';
-import { normalisePlaceName } from '../../../main/src/places/wander.js';
+import { normalisePlaceName } from '../../../main/src/shared/places/wander.js';
 import { resolveObjectRef } from './scene-actions.js';
 import type { IdleInput, IdleTag } from './idle-types.js';
 

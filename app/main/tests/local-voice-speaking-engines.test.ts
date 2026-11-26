@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { builtInServers, defaultRoutes, parseSpeakingModel, formatSpeakingModel, speakingVoiceKey } from '../src/config/model-routing.js';
-import { DEFAULT_PROVIDER_SETTINGS } from '../src/config/provider-settings.js';
+import { builtInServers, defaultRoutes, parseSpeakingModel, formatSpeakingModel, speakingVoiceKey } from '../src/shared/config/model-routing.js';
+import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
 import { LocalLlmClient } from '../src/local-voice/local-llm-client.js';
 import { LocalVoiceService } from '../src/local-voice/local-voice-service.js';
 import { SpeechServiceTts } from '../src/local-voice/speech-engines.js';

@@ -7,10 +7,10 @@ import {
   resolveModelRouting,
   sanitizeStoredModels,
   splitDatabasePassword,
-} from '../src/config/model-routing.js';
+} from '../src/shared/config/model-routing.js';
 import { probeMemoryDatabase } from '../src/config/model-server-probe.js';
 import { InMemoryPreferencesStore } from '../src/config/preferences-store.js';
-import { DEFAULT_PROVIDER_SETTINGS } from '../src/config/provider-settings.js';
+import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
 import { InMemorySecretStore } from '../src/config/secret-store.js';
 import { MemoryEngineError, MemoryStorageSync, memoryStorageTargets } from '../src/memory-engine/index.js';
 

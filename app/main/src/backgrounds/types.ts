@@ -1,5 +1,5 @@
-import type { IdleSettings } from '../rooms/idle-settings.js';
-import type { GeneratedObjectSummary, ObjectSettings, ObjectSettingsView } from '../rooms/object-settings.js';
+import type { IdleSettings } from '../shared/rooms/idle-settings.js';
+import type { GeneratedObjectSummary, ObjectSettings, ObjectSettingsView } from '../shared/rooms/object-settings.js';
 import type { RoomGenerationProgress, RoomGenerationResult } from '../rooms/room-generation.js';
 import type { IdlePickContext, IdlePickResult, RoomFile, RoomSummary } from '../rooms/types.js';
 

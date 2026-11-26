@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { placeRoom } from '../src/rooms/room-placer.js';
 import { validateLayout, type RoomLayout } from '../src/rooms/room-layout.js';
-import { validateRoomFile } from '../src/rooms/validate.js';
+import { validateRoomFile } from '../src/shared/rooms/validate.js';
 import { findUnreachable, footprintOf, floorObstacles } from '../src/rooms/room-walkability.js';
 import { contains, insideRoom, overlaps, rectOf } from '../src/rooms/placer-geometry.js';
 

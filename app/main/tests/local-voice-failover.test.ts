@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/config/model-routing.js';
-import { DEFAULT_PROVIDER_SETTINGS } from '../src/config/provider-settings.js';
+import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/shared/config/model-routing.js';
+import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
 import { createRoutedSearchProvider } from '../src/tools/web-search.js';
 import { buildVoiceEngines, FailoverChatClient, FailoverStt, type ChatClient } from '../src/local-voice/voice-engines.js';
 import { createChatCompletionsResponsesClient, toChatMessages } from '../src/openai/chat-completions-responses.js';

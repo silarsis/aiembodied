@@ -11,10 +11,10 @@ import {
   routeTargetsWithOverride,
   sanitizeStoredModels,
   serverUrl,
-} from '../src/config/model-routing.js';
+} from '../src/shared/config/model-routing.js';
 import { comfyQueueLength, openAiRoles, probeModelServer } from '../src/config/model-server-probe.js';
 import { InMemoryPreferencesStore } from '../src/config/preferences-store.js';
-import { DEFAULT_PROVIDER_SETTINGS, resolveProviderSettings } from '../src/config/provider-settings.js';
+import { DEFAULT_PROVIDER_SETTINGS, resolveProviderSettings } from '../src/shared/config/provider-settings.js';
 import { InMemorySecretStore } from '../src/config/secret-store.js';
 
 const builtIns = () => builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' });

@@ -10,7 +10,7 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import readline from 'node:readline';
-import type { ModelServer } from '../../config/model-routing.js';
+import type { ModelServer } from '../../shared/config/model-routing.js';
 import type { CivitaiDownloadPlan, CivitaiFile, ModelInfo } from './civitai.js';
 import type { ComfyInstallation } from './comfyui-runtime.js';
 

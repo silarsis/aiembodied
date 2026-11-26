@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import type { ModelServerView } from '../../../main/src/config/config-manager.js';
-import { formatSpeakingModel, parseSpeakingModel, type ModelRoute, type SpeakingEngineId } from '../../../main/src/config/model-routing.js';
+import { formatSpeakingModel, parseSpeakingModel, type ModelRoute, type SpeakingEngineId } from '../../../main/src/shared/config/model-routing.js';
 import type { SpeechTtsEngine, SpeechTtsModel } from '../../../main/src/local-voice/speech-service-client.js';
 import type { ModelsBridge } from '../preload-api.js';
 
