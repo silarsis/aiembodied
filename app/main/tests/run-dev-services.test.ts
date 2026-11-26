@@ -91,7 +91,7 @@ describe('local services', () => {
   });
 
   it(
-    'restarts a motion service that answers but failed to load its model, and only reports others',
+    'restarts the motion and speech services when they answer but failed to load their models',
     withTempRepo(async (repoRoot) => {
       const launcher = fakeLauncher(777);
       const fetchFn = vi.fn(async (url: string) => {
@@ -108,12 +108,14 @@ describe('local services', () => {
       );
       const byId = Object.fromEntries(results.map((r: { id: string }) => [r.id, r]));
       expect(byId.motion).toMatchObject({ status: 'restarted', pid: 777 });
-      // The speech service has no restart rule: it is left running, with the error reported.
-      expect(byId.speech).toMatchObject({ status: 'running', error: 'OSError: text encoder missing' });
+      // The speech service is restarted too (its start script downloads Kokoro's files when they went missing).
+      expect(byId.speech).toMatchObject({ status: 'restarted', pid: 777 });
       const calls = launcher.mock.calls as unknown as Array<[string, string[]]>;
-      expect(calls).toHaveLength(2);
-      expect(calls[0][1]).toEqual(['-NoProfile', '-NonInteractive', '-File', join(repoRoot, 'scripts', 'stop-service.ps1'), '-Port', '8190']);
-      expect(decodeCommand(calls[1][1])).toContain(resolve(repoRoot, 'services/motion/scripts/start.ps1'));
+      expect(calls).toHaveLength(4);
+      expect(calls[0][1]).toEqual(['-NoProfile', '-NonInteractive', '-File', join(repoRoot, 'scripts', 'stop-service.ps1'), '-Port', '8192']);
+      expect(decodeCommand(calls[1][1])).toContain(resolve(repoRoot, 'services/speech/scripts/start.ps1'));
+      expect(calls[2][1]).toEqual(['-NoProfile', '-NonInteractive', '-File', join(repoRoot, 'scripts', 'stop-service.ps1'), '-Port', '8190']);
+      expect(decodeCommand(calls[3][1])).toContain(resolve(repoRoot, 'services/motion/scripts/start.ps1'));
     }),
   );
 
@@ -302,7 +304,8 @@ describe('local services', () => {
         if (url === 'http://127.0.0.1:8200/v1/status') return new Response(JSON.stringify({ backends: ids.map((id) => ({ id })) }), { status: 200 });
         throw new Error('ECONNREFUSED');
       });
-    const env = { STT_ENGINE: 'whisper', WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', SWITCHBOARD_AUTOSTART: '0', WORKFLOWS_ENABLED: '0', LAYA_AUTOSTART: '0' };
+    // Speech on OpenAI, so motion is the only service that could be started here.
+    const env = { STT_ENGINE: 'whisper', STT_PROVIDER: 'openai', TTS_PROVIDER: 'openai', WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', SWITCHBOARD_AUTOSTART: '0', WORKFLOWS_ENABLED: '0', LAYA_AUTOSTART: '0' };
     const withMotion = await ensureLocalServices(repoRoot, env, { fetchFn: backends(['echo-llm', 'motion']), spawnSyncFn: launcher, platform: 'win32', log: quiet });
     expect(withMotion.find((r: { id: string }) => r.id === 'motion')).toMatchObject({ status: 'skipped', reason: 'using aicontroller' });
     expect(launcher).not.toHaveBeenCalled();
@@ -313,20 +316,26 @@ describe('local services', () => {
     expect(launcher).toHaveBeenCalledTimes(1);
   }));
 
-  it('does not start the speech service without KOKORO_DIR, or ASR when whisper is chosen', async () => {
-    const launcher = fakeLauncher();
-    const results = await ensureLocalServices(
-      '/repo',
-      { STT_ENGINE: 'whisper', DEV_START_MOTION: '0', WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', SWITCHBOARD_AUTOSTART: '0', WORKFLOWS_ENABLED: '0', LAYA_AUTOSTART: '0' },
-      { fetchFn: fakeFetch(['http://127.0.0.1:1234']), spawnSyncFn: launcher, platform: 'win32', log: quiet },
-    );
-    const byId = Object.fromEntries(results.map((r: { id: string }) => [r.id, r]));
-    expect(byId.asr.status).toBe('skipped');
-    expect(byId.speech).toMatchObject({ status: 'skipped' });
-    expect(byId.speech.reason).toContain('KOKORO_DIR');
-    expect(byId.motion.status).toBe('skipped');
-    expect(launcher).not.toHaveBeenCalled();
-  });
+  it(
+    'starts the speech service without KOKORO_DIR (its start script finds or downloads Kokoro), and not ASR when whisper is chosen',
+    withTempRepo(async (repoRoot) => {
+      const launcher = fakeLauncher();
+      const results = await ensureLocalServices(
+        repoRoot,
+        { STT_ENGINE: 'whisper', DEV_START_MOTION: '0', WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', SWITCHBOARD_AUTOSTART: '0', WORKFLOWS_ENABLED: '0', LAYA_AUTOSTART: '0' },
+        { fetchFn: fakeFetch(['http://127.0.0.1:1234']), spawnSyncFn: launcher, platform: 'win32', log: quiet },
+      );
+      const byId = Object.fromEntries(results.map((r: { id: string }) => [r.id, r]));
+      expect(byId.asr.status).toBe('skipped');
+      expect(byId.speech.status).toBe('started');
+      expect(byId.motion.status).toBe('skipped');
+      const calls = launcher.mock.calls as unknown as Array<[string, string[]]>;
+      expect(calls).toHaveLength(1);
+      const command = decodeCommand(calls[0][1]);
+      expect(command).toContain(resolve(repoRoot, 'services/speech/scripts/start.ps1'));
+      expect(command).not.toContain('-KokoroDir');
+    }),
+  );
 
   it(
     'reports a launch that leaves no process id as failed',

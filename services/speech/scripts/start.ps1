@@ -3,7 +3,8 @@
   Start the local speech service (see ..\README.md).
 
 .EXAMPLE
-  .\scripts\start.ps1 -KokoroDir C:\Users\kevin\repos\github\silarsis\slopcore\experiments\kokoro
+  .\scripts\start.ps1                # Kokoro from %USERPROFILE%\.cache\aiembodied\tts-models\kokoro (downloaded if missing)
+  .\scripts\start.ps1 -KokoroDir D:\models\kokoro
   .\scripts\start.ps1 -KokoroDir <dir> -Stt whisper -WhisperModel large-v3-turbo
   .\scripts\start.ps1 -KokoroDir <dir> -SttUrl http://127.0.0.1:1240/v1 -SttModel my-asr
   .\scripts\start.ps1 -Fake          # no models: canned transcript + a tone
@@ -11,7 +12,7 @@
 param(
   [string]$HostName = '127.0.0.1',
   [int]$Port = 8192,
-  # Folder holding kokoro-v1.0.onnx and voices-v1.0.bin
+  # Folder holding kokoro-v1.0.onnx and voices-v1.0.bin (default: the cache folder, see ensure-kokoro.ps1)
   [string]$KokoroDir = $env:KOKORO_DIR,
   # server: an OpenAI-compatible STT server (Qwen3-ASR from ..\..\..\scripts\start-local-asr.ps1);
   # whisper: faster-whisper inside this service, on the CPU.
@@ -51,7 +52,8 @@ $cliArgs = @('-m', 'speech_service', '--host', $HostName, '--port', $Port)
 if ($Fake) {
   $cliArgs += @('--engines', 'fake')
 } else {
-  if (-not $KokoroDir) { throw 'Pass -KokoroDir (or set KOKORO_DIR) to the folder with kokoro-v1.0.onnx and voices-v1.0.bin.' }
+  # Downloads Kokoro's two files when they are missing (default folder: <TTS_MODELS_DIR>\kokoro in the real home).
+  $KokoroDir = & (Join-Path $PSScriptRoot 'ensure-kokoro.ps1') -Dir $KokoroDir | Select-Object -Last 1
   $cliArgs += @('--kokoro-model', (Join-Path $KokoroDir 'kokoro-v1.0.onnx'),
                 '--kokoro-voices', (Join-Path $KokoroDir 'voices-v1.0.bin'),
                 '--voice', $Voice, '--stt', $Stt, '--stt-url', $SttUrl, '--stt-model', $SttModel,
