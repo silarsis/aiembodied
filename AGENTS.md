@@ -8,6 +8,38 @@ This repository implements the **Embodied ChatGPT Assistant MVP**, as outlined i
 
 Always cross-check planned work against these references before making changes. When adding or modifying features, verify that the resulting behavior satisfies the PRD goals (wake-word driven, low-latency, kiosk-ready assistant) while conforming to the architecture boundaries and module responsibilities in the spec.
 
+## Coding Rules (always apply)
+These apply to every change, in the TypeScript app and the Python services. Where a rule can be checked by lint, tests or CI, it should be; these words are the fallback.
+
+### Structure: deep modules, narrow interfaces
+1. **Export only what callers need.** A module hides real work behind a few functions. Don't add thin pass-through wrappers or export helpers "in case".
+2. **Imports go one way.** Higher layers import lower ones, never the reverse. If two modules import each other, or a child knows its parent, move the shared piece down a layer or have the parent call both.
+3. **Keep state private.** Other modules call operations; they don't read or write another module's fields or internal objects. TypeScript: `private`/`#` fields, return copies or `readonly` views. Python: leading-underscore names are not touched from outside their module.
+4. **Fix structural problems from first principles.** Work out what the layers should be and fix the design as a whole; don't shuffle code just to silence a warning. For a structural change, put a before/after sketch in the PR.
+
+### Where code goes
+5. **One feature, one folder.** Keep a feature's code together (`app/main/src/<feature>/`, `app/renderer/src/<feature>/`, its doc in `docs/features/`). Don't scatter one feature's helpers across the repo.
+6. **Respect the Electron split.** Main-process code lives in `app/main`, UI in `app/renderer`. `app/main` never imports from `app/renderer`. The renderer reaches main only through the preload bridge; `import type` from `app/main` is fine, runtime imports are not. Code both sides run belongs in `app/main/src/shared/<feature>/`: pure TypeScript with no `electron`, no Node built-ins and no imports from outside `shared/`. ESLint enforces this split.
+7. **Make the right way the easy way.** Agents copy the nearest pattern. Follow the existing pattern; if it is wrong, fix it rather than adding a second one beside it.
+
+### No slop
+8. **Smallest change that does the job.** No drive-by renames, reformatting or refactors outside the task.
+9. **No speculative code.** No unused parameters, options, config flags or abstractions "for later". No dead or commented-out code.
+10. **Reuse before writing.** Search for an existing helper, type or service client first. Don't add a second one that does the same thing.
+11. **Errors fail loudly.** No empty `catch`/`except`, no catch-log-and-carry-on unless carrying on is the intended behaviour, and no silent fallbacks (defaults that hide missing config or a failed call). Log the error's message and context, never `[object Object]`.
+12. **Comments say why, not what.** Don't narrate the change ("added X", "now uses Y"), restate the code, or record PR history in comments.
+13. **Types are not silenced.** No `any`, `as` casts or `!` to quiet the checker (ESLint already blocks most). Python public functions get type hints.
+
+### Tests
+14. **Test behaviour through the public interface.** Don't export internals just to test them, and don't mock the unit under test.
+15. **Never weaken, skip or delete a test to get green.** Fix the code, or say plainly why the test is wrong.
+
+### Formatting
+16. TypeScript follows `prettier.config.cjs` (single quotes, semicolons, trailing commas, 100 columns) and `eslint.config.js`. Python follows the surrounding file's style.
+
+### Keeping the rules alive
+17. **Turn corrections into checks.** When the same kind of mistake is corrected twice, propose a lint rule, test or CI check that catches it, not just another line here.
+
 ## Development Workflow
 1. Read the relevant section in `plan.md` for the feature you are implementing.
 2. Confirm functional expectations against `prd.md` and architectural constraints in `archspec.md`.
