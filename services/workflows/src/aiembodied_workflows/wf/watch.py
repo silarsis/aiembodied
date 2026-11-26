@@ -170,7 +170,7 @@ class Watch(Controllable):
         if inp.flow_name:
             return await self._start_flow(inp, inp.flow_name, {"trigger_info": info}, "watch")
         if "say" in then:
-            r = await try_act(avatar, "say", {"text": str(then["say"]), "urgent": False, "source": "a watch"})
+            r = await try_act(avatar, "say", {"text": str(then["say"]), "urgent": True, "source": "a watch"})
             return "said it" if r.ok else f"could not say it: {r.error}"
         if "think" in then:
             prompt = f"{then['think']}\n\n(What just happened: {info}.)\nIf you have something to say, end with one line 'SAY: <one short sentence>'. Otherwise end with NOTHING."

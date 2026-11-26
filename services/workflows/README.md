@@ -10,7 +10,7 @@ What runs:
 | Workflow | Id | What it does |
 |---|---|---|
 | `AgentLife` | `life:<avatar>` | One per avatar. Every minute it asks the app for the avatar's context. It tracks hours awake, decides now and then whether to speak, read or sleep, plans the morning, reflects in the evening, and sends the avatar to sleep after 24 hours awake. |
-| `Reminder` | `remind:<uuid>` | Waits until due, then says the reminder (urgent for an alarm). |
+| `Reminder` | `remind:<uuid>` | Waits until due, then says the reminder (always urgent, so it is spoken at once). |
 | `WakeMe` | `wake:<uuid>` | Waits until due, then lets the avatar think about a note it left itself. |
 | `Watch` | `watch:<uuid>`, `flowwatch:<avatar>:<name>` | Waits for a sensor, a new search result, a service going down or a coding task finishing, then says something, thinks, or starts a flow. |
 | `AgentFlow` | `flow:<avatar>:<name>:<uuid>` | Runs a flow the avatar wrote (see the step language in `API.md` and `src/aiembodied_workflows/flowdef.py`). Schedules (`sched:<avatar>:<name>`) start it on a cron or an interval. |

@@ -74,13 +74,14 @@ class Reminder(_Timed):
             await workflow.sleep(OFFLINE_RETRY_SECONDS)
             waited += OFFLINE_RETRY_SECONDS
         text = reminder_text(inp.text, due, now(), tz)
-        r = await try_act(inp.avatar_id, "say", {"text": text, "urgent": inp.alarm, "source": "reminder"})
+        # A reminder is due now, so it is always urgent: the app speaks it at once rather than weighing it first.
+        r = await try_act(inp.avatar_id, "say", {"text": text, "urgent": True, "source": "reminder"})
         for _ in range(60):  # busy = a live conversation is on: try again in a minute
             if not r.busy:
                 break
             wlog("a conversation is on; saying the reminder in a minute")
             await workflow.sleep(OFFLINE_RETRY_SECONDS)
-            r = await try_act(inp.avatar_id, "say", {"text": text, "urgent": inp.alarm, "source": "reminder"})
+            r = await try_act(inp.avatar_id, "say", {"text": text, "urgent": True, "source": "reminder"})
         outcome = "said" if r.ok else f"not delivered: {r.error}"
         await say_line("fired", f"reminder fired: {text} ({outcome})", inp.avatar_id, "info" if r.ok else "warning")
         await patch_intention(inp.intention_id, {"status": "done", "outcome": outcome})
