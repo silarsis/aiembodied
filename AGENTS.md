@@ -37,8 +37,11 @@ These apply to every change, in the TypeScript app and the Python services. Wher
 ### Formatting
 16. TypeScript follows `prettier.config.cjs` (single quotes, semicolons, trailing commas, 100 columns) and `eslint.config.js`. Python follows `ruff.toml` (`ruff check` and `ruff format`).
 
+### React
+17. **Effects live in named hooks.** Components don't call `useEffect`/`useLayoutEffect` directly; put each effect in a `useX` hook named for what it does, in the feature folder. Prefer no effect at all: derive values during render, and do event work in the handler. ESLint enforces this for new code; existing direct effects are listed in `app/renderer/eslint-suppressions.json`. Remove entries as you fix them (`pnpm --filter ./app/renderer exec eslint "src/**/*.{ts,tsx}" --prune-suppressions`).
+
 ### Keeping the rules alive
-17. **Turn corrections into checks.** When the same kind of mistake is corrected twice, propose a lint rule, test or CI check that catches it, not just another line here.
+18. **Turn corrections into checks.** When the same kind of mistake is corrected twice, propose a lint rule, test or CI check that catches it, not just another line here.
 
 ## Development Workflow
 1. Read the relevant section in `plan.md` for the feature you are implementing.

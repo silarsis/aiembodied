@@ -27,6 +27,24 @@ const rendererImport = {
   regex: '(^|/)renderer/',
   message: 'app/main never imports from app/renderer.',
 };
+// AGENTS.md rule 17: a component never calls useEffect/useLayoutEffect itself. A local lowercase use* hook inside
+// a component would still match (ESLint selectors cannot stop at the nearest function), so define hooks at module level.
+const effectCall =
+  'CallExpression[callee.name=/^use(Layout)?Effect$/], CallExpression[callee.object.name="React"][callee.property.name=/^use(Layout)?Effect$/]';
+const componentRoots = [
+  'FunctionDeclaration[id.name=/^[A-Z]/]',
+  'VariableDeclarator[id.name=/^[A-Z]/] > ArrowFunctionExpression',
+  'VariableDeclarator[id.name=/^[A-Z]/] > FunctionExpression',
+  'VariableDeclarator[id.name=/^[A-Z]/] > CallExpression[callee.name=/^(memo|forwardRef)$/]',
+  'VariableDeclarator[id.name=/^[A-Z]/] > CallExpression[callee.property.name=/^(memo|forwardRef)$/]',
+];
+const effectInComponentSelectors = componentRoots.flatMap((root) =>
+  effectCall.split(', ').map((call) => ({
+    selector: `${root} ${call}`,
+    message:
+      'Components do not call useEffect/useLayoutEffect directly. Move the effect into a named custom hook (useX, in the feature folder) named for what it does. Better still, derive the value during render or do the work in the event handler.',
+  })),
+);
 const restrict = (...patterns) => ['error', { patterns }];
 
 export default [
@@ -119,6 +137,11 @@ export default [
     // Tests and vite.config.ts run in Node, so only the shipped renderer code is kept off Node and Electron.
     files: ['app/renderer/src/**/*.{ts,tsx}'],
     rules: { 'no-restricted-imports': restrict(mainRuntime, electron, nodeBuiltins) },
+  },
+  {
+    // AGENTS.md rule 17. Existing direct effects are grandfathered in app/renderer/eslint-suppressions.json.
+    files: ['app/renderer/src/**/*.tsx'],
+    rules: { 'no-restricted-syntax': ['error', ...effectInComponentSelectors] },
   },
   {
     files: ['app/main/**/*.ts'],
