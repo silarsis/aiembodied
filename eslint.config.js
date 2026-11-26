@@ -5,6 +5,29 @@ import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
 import globals from 'globals';
+import { builtinModules } from 'node:module';
+
+// The Electron split (AGENTS.md rule 6). The renderer reaches main only through the preload bridge; code both
+// sides run lives in app/main/src/shared/<feature>/ and must stand alone.
+const nodeBuiltins = {
+  regex: `^(node:|(${builtinModules.filter((name) => !name.startsWith('_')).join('|')})(/|$))`,
+  message: 'Node built-ins are not available in the renderer or in app/main/src/shared.',
+};
+const electron = {
+  regex: '^electron(/|$)',
+  message: 'Electron is main-process only. The renderer reaches it through the preload bridge (window.aiembodied).',
+};
+const mainRuntime = {
+  regex: '(^|/)main/src/(?!shared/)',
+  allowTypeImports: true,
+  message:
+    'The renderer may import types from app/main, but runtime code only from app/main/src/shared/. Move code both sides run into app/main/src/shared/<feature>/, or call main through window.aiembodied.',
+};
+const rendererImport = {
+  regex: '(^|/)renderer/',
+  message: 'app/main never imports from app/renderer.',
+};
+const restrict = (...patterns) => ['error', { patterns }];
 
 export default [
   {
@@ -86,6 +109,35 @@ export default [
       react: {
         version: 'detect',
       },
+    },
+  },
+  {
+    files: ['app/renderer/**/*.{ts,tsx}'],
+    rules: { 'no-restricted-imports': restrict(mainRuntime) },
+  },
+  {
+    // Tests and vite.config.ts run in Node, so only the shipped renderer code is kept off Node and Electron.
+    files: ['app/renderer/src/**/*.{ts,tsx}'],
+    rules: { 'no-restricted-imports': restrict(mainRuntime, electron, nodeBuiltins) },
+  },
+  {
+    files: ['app/main/**/*.ts'],
+    rules: { 'no-restricted-imports': restrict(rendererImport) },
+  },
+  {
+    files: ['app/main/src/shared/**/*.ts'],
+    rules: {
+      'no-restricted-imports': restrict(
+        rendererImport,
+        electron,
+        nodeBuiltins,
+        { regex: '^[^.]', message: 'app/main/src/shared must not import npm packages.' },
+        {
+          regex: '^\\.\\./\\.\\./',
+          allowTypeImports: true,
+          message: 'app/main/src/shared must not import from outside shared/. Move what it needs into shared/.',
+        },
+      ),
     },
   },
 ];
