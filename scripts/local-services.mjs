@@ -209,8 +209,11 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
       url: speechUrl,
       probe: `${speechUrl}/health`,
       script: 'services/speech/scripts/start.ps1',
+      // Without KOKORO_DIR the start script uses (and downloads into) <TTS_MODELS_DIR>\kokoro in the real home.
       args: [...portArgs(speechUrl), ...(env.KOKORO_DIR ? ['-KokoroDir', env.KOKORO_DIR] : [])],
-      missing: env.KOKORO_DIR ? null : 'KOKORO_DIR (folder with kokoro-v1.0.onnx and voices-v1.0.bin)',
+      // A speech service that answers but failed to load (e.g. its Kokoro files went missing) is restarted, and the
+      // restart downloads the files again.
+      restartIfFailed: true,
     },
     {
       id: 'motion',

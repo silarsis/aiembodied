@@ -21,8 +21,12 @@ the repo root), and sends the reply back here one sentence at a time to be spoke
   (`--style-row 120`): Kokoro otherwise picks a style per text length, and speaking a reply one
   sentence at a time made the voice change part-way through. `bf_isabella`, `bf_emma`,
   `bm_fable` and `bm_george` hold their sound best on short text; `af_heart` and `af_bella` worst.
-  The model files are the same ones slopcore uses
-  (`kokoro-v1.0.onnx`, `voices-v1.0.bin`, from the kokoro-onnx GitHub releases).
+  The model files (`kokoro-v1.0.onnx`, 325 MB, and `voices-v1.0.bin`, 28 MB, from the kokoro-onnx
+  GitHub release `model-files-v1.0`) live in `KOKORO_DIR`, by default
+  `<TTS_MODELS_DIR or %USERPROFILE%\.cache\aiembodied\tts-models>\kokoro`. `scripts\start.ps1` runs
+  `scripts\ensure-kokoro.ps1` first, which downloads any file that is missing or the wrong size (to
+  `<name>.partial`, checked, then moved into place), so a deleted folder comes back on the next start.
+  Under `pnpm dev:run` the default uses the real home, not `.dev-home`.
 
 - **More TTS engines**, picked in the app (Models and servers → Speaking) and downloaded from there:
   - [Kitten TTS](https://github.com/KittenML/KittenTTS) 0.8 (mini 80 MB, nano 57 MB): the
@@ -53,7 +57,8 @@ default Qwen3-ASR server needs `unslothai/Qwen3-ASR-0.6B-GGUF` in the cache (mod
 ## Run
 
 ```powershell
-.\scripts\start.ps1 -KokoroDir C:\Users\kevin\repos\github\silarsis\slopcore\experiments\kokoro
+.\scripts\start.ps1                 # Kokoro from the cache folder, downloaded if missing
+.\scripts\start.ps1 -KokoroDir D:\models\kokoro
 ..\..\scripts\start-local-asr.ps1     # Qwen3-ASR on :1235 (separate window)
 .\scripts\start.ps1 -KokoroDir <dir> -Stt whisper -WhisperModel large-v3-turbo -Voice bf_emma
 .\scripts\start.ps1 -Fake     # no models: a canned transcript and a tone, for wiring

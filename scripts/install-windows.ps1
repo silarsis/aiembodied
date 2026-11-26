@@ -12,7 +12,7 @@
       node            Node.js and pnpm (runs scripts\setup-windows.ps1)
       tools           uv and git (winget); warns when neither wslc nor Docker is present
       llama-cpp       llama-server (GitHub release, Vulkan or CUDA build); sets LLAMA_SERVER_EXE, LLAMA_DEVICE
-      kokoro          Kokoro TTS model files; sets KOKORO_DIR
+      kokoro          Kokoro TTS model files in <InstallRoot>\tts-models\kokoro (KOKORO_DIR overrides; set only for another folder)
       speech          services\speech venv (uv, Python 3.13) with the engines extra
       asr             Qwen3-ASR-0.6B GGUF and mmproj in the Hugging Face cache
       python-services venvs for memory, coder, switchboard and laya
@@ -322,18 +322,22 @@ function Step-LlamaCpp {
 }
 
 function Step-Kokoro {
+    # The same folder and download the speech service's start script uses (services\speech\scripts\ensure-kokoro.ps1):
+    # KOKORO_DIR, else <TTS_MODELS_DIR or <InstallRoot>\tts-models>\kokoro.
     $dir = Get-Setting 'KOKORO_DIR'
-    if (-not $dir) { $dir = Join-Path $InstallRoot 'kokoro' }
-    $base = 'https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/'
-    $fetched = 0
-    foreach ($name in @('kokoro-v1.0.onnx', 'voices-v1.0.bin')) {
-        $path = Join-Path $dir $name
-        if ((Test-Path $path) -and -not $Force) { continue }
-        Save-Download "$base$name" $path
-        $fetched++
+    if (-not $dir) {
+        $models = Get-Setting 'TTS_MODELS_DIR'
+        if (-not $models) { $models = Join-Path $InstallRoot 'tts-models' }
+        $dir = Join-Path $models 'kokoro'
     }
-    Set-EnvDefault 'KOKORO_DIR' $dir
-    if ($fetched -eq 0) { return New-Result 'already present' $dir }
+    $names = @('kokoro-v1.0.onnx', 'voices-v1.0.bin')
+    if ($Force) { foreach ($name in $names) { Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $dir $name) } }
+    $before = @($names | Where-Object { Test-Path (Join-Path $dir $_) }).Count
+    & (Join-Path $repoRoot 'services\speech\scripts\ensure-kokoro.ps1') -Dir $dir | Out-Null
+    # The start script finds the default folder by itself; only another folder needs KOKORO_DIR.
+    $default = Join-Path $env:USERPROFILE '.cache\aiembodied\tts-models\kokoro'
+    if (-not (Get-Setting 'TTS_MODELS_DIR') -and ($dir -ne $default)) { Set-EnvDefault 'KOKORO_DIR' $dir }
+    if ($before -eq $names.Count) { return New-Result 'already present' $dir }
     return New-Result 'installed' $dir
 }
 
