@@ -75,16 +75,24 @@ def test_payload_too_big(client):
 
 def test_health(client, publish):
     publish(ev(txn={"id": "t1"}))
-    assert client.get("/health").json() == {"ok": True, "version": "0.1.0", "node": "testnode", "events": 1,
-                                            "open_txns": 1, "clients": 0}
+    assert client.get("/health").json() == {
+        "ok": True,
+        "version": "0.1.0",
+        "node": "testnode",
+        "events": 1,
+        "open_txns": 1,
+        "clients": 0,
+    }
 
 
 def test_prune(client, cfg, publish):
     now = datetime.now(timezone.utc)
     old = (now - timedelta(days=40)).isoformat()
-    publish(ev(at=old, txn={"id": "old-done", "state": "done"}),
-            ev(at=old, txn={"id": "old-open", "state": "progress"}),
-            ev(txn={"id": "new-done", "state": "done"}))
+    publish(
+        ev(at=old, txn={"id": "old-done", "state": "done"}),
+        ev(at=old, txn={"id": "old-open", "state": "progress"}),
+        ev(txn={"id": "new-done", "state": "done"}),
+    )
     assert client.get("/health").json()["events"] == 3
     assert client.app.state.hub.prune(now) == (2, 1)
     assert [e["txn"]["id"] for e in client.get("/v1/events").json()["events"]] == ["new-done"]

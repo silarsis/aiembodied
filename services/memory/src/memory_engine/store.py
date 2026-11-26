@@ -140,18 +140,18 @@ def rebuild_turns(conn: psycopg.Connection, session_id: UUID) -> int:
     agent = session[0] if session else None
     label = agent if agent and agent != "unknown" else "Assistant"
     rows = conn.execute(
-        "SELECT id, role, content, created_at, seq, speaker, tool, private"
-        " FROM messages WHERE session_id = %s",
+        "SELECT id, role, content, created_at, seq, speaker, tool, private FROM messages WHERE session_id = %s",
         (session_id,),
     ).fetchall()
     turns = assemble_turns(
-        [Message(id=r[0], role=r[1], content=r[2], created_at=r[3], seq=r[4], speaker=r[5], tool=r[6], private=r[7])
-         for r in rows]
+        [
+            Message(id=r[0], role=r[1], content=r[2], created_at=r[3], seq=r[4], speaker=r[5], tool=r[6], private=r[7])
+            for r in rows
+        ]
     )
     keep = [turn.source_id for turn in turns]
     deleted = conn.execute(
-        "DELETE FROM recall_index WHERE kind = 'turn' AND session_id = %s AND NOT (source_id = ANY(%s))"
-        " RETURNING id",
+        "DELETE FROM recall_index WHERE kind = 'turn' AND session_id = %s AND NOT (source_id = ANY(%s)) RETURNING id",
         (session_id, keep),
     ).fetchall()
     for (row_id,) in deleted:
@@ -339,9 +339,7 @@ def delete_session(conn: psycopg.Connection, session_id: UUID) -> bool:
         ).fetchall()
         fact_index.extend(("recall_index", r[0]) for r in rows)
     _tombstone(conn, [("facts", r[0]) for r in extracted] + fact_index)
-    index_ids = conn.execute(
-        "DELETE FROM recall_index WHERE session_id = %s RETURNING id", (session_id,)
-    ).fetchall()
+    index_ids = conn.execute("DELETE FROM recall_index WHERE session_id = %s RETURNING id", (session_id,)).fetchall()
     message_ids = conn.execute("DELETE FROM messages WHERE session_id = %s RETURNING id", (session_id,)).fetchall()
     session = conn.execute("DELETE FROM sessions WHERE id = %s RETURNING id", (session_id,)).fetchone()
     conn.execute("DELETE FROM recall_log WHERE session_id = %s", (session_id,))

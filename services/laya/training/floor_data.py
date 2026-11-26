@@ -6,6 +6,7 @@ construction), content (what Kevin says) and surface noise.
 
     python floor_data.py --out DIR [--n 8000] [--seed 0] [--exclude FILE.jsonl]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -30,6 +31,7 @@ def norm(text: str) -> str:
 
 # ---------------------------------------------------------------- banks
 
+
 class Bank:
     def __init__(self, split: str):
         self.split = split
@@ -49,8 +51,17 @@ class Bank:
 
     def phrases(self) -> list[str]:
         out = []
-        for lst in (self.imp, self.q, self.st, self.g_imp, self.g_q, self.g_st, self.topics,
-                    self.relay_q, self.relay_msg):
+        for lst in (
+            self.imp,
+            self.q,
+            self.st,
+            self.g_imp,
+            self.g_q,
+            self.g_st,
+            self.topics,
+            self.relay_q,
+            self.relay_msg,
+        ):
             out.extend(lst)
         return out
 
@@ -80,7 +91,11 @@ def get_bank(split: str) -> Bank:
 
 # ---------------------------------------------------------------- helpers
 
-GERUNDS = {w: g for w, g in (x.split(":") for x in """turn:turning set:setting remind:reminding add:adding put:putting
+GERUNDS = {
+    w: g
+    for w, g in (
+        x.split(":")
+        for x in """turn:turning set:setting remind:reminding add:adding put:putting
 cancel:cancelling tell:telling read:reading give:giving look:looking search:searching find:finding check:checking
 convert:converting translate:translating spell:spelling write:writing help:helping explain:explaining show:showing
 remember:remembering forget:forgetting switch:switching dim:dimming make:making open:opening close:closing play:playing
@@ -89,7 +104,9 @@ stand:standing take:taking count:counting say:saying sing:singing hum:humming sp
 pick:picking flip:flipping roll:rolling quiz:quizzing teach:teaching recommend:recommending suggest:suggesting
 wake:waking lock:locking cheer:cheering keep:keeping pretend:pretending talk:talking start:starting time:timing
 be:being jump:jumping stretch:stretching have:having let:letting spin:spinning hum:humming ask:asking chat:chatting
-strike:striking catch:catching get:getting see:seeing go:going""".split())}
+strike:striking catch:catching get:getting see:seeing go:going""".split()
+    )
+}
 
 
 def gerund(inner: str):
@@ -131,6 +148,7 @@ class Ctx:
             if len(k) == 1 and k.isupper():
                 return self.name(kw[k]) if kw[k] in self.scene else kw[k]
             return kw[k]
+
         return re.sub(r"\{(\w+)\}", rep, tpl)
 
     def pick(self, lst):
@@ -141,9 +159,18 @@ class Ctx:
         r = self.rng
         if r.random() < plain:
             return inner
-        opts = [("please {x}", 8), ("{x} please", 8), ("can you {x}" + Q_MARK, 12), ("could you {x}" + Q_MARK, 10),
-                ("would you mind {g}" + Q_MARK, 5), ("I'd like you to {x}", 4), ("why don't you {x}" + Q_MARK, 3),
-                ("I want you to {x}", 2), ("I need you to {x}", 3), ("could you possibly {x}" + Q_MARK, 2)]
+        opts = [
+            ("please {x}", 8),
+            ("{x} please", 8),
+            ("can you {x}" + Q_MARK, 12),
+            ("could you {x}" + Q_MARK, 10),
+            ("would you mind {g}" + Q_MARK, 5),
+            ("I'd like you to {x}", 4),
+            ("why don't you {x}" + Q_MARK, 3),
+            ("I want you to {x}", 2),
+            ("I need you to {x}", 3),
+            ("could you possibly {x}" + Q_MARK, 2),
+        ]
         g = gerund(inner)
         if g is None:
             opts = [o for o in opts if "{g}" not in o[0]]
@@ -203,24 +230,44 @@ class Ctx:
 # each frame: f(c) -> (text, addressed, wants, other) or None to reject
 
 VOC = [
-    ("{A}, {x}", 5, KINDS_ALL), ("hey {A}, {x}", 2, KINDS_ALL), ("hey {A} {x}", 2, KINDS_ALL),
-    ("{x}, {A}", 3, KINDS_ALL), ("{A} {x}", 2, KINDS_ALL), ("ok {A}, {x}", 1, KINDS_ALL),
-    ("okay {A}, {x}", 1, KINDS_ALL), ("oi {A}, {x}", 1, KINDS_ALL), ("hi {A}, {x}", 1, KINDS_ALL),
-    ("yo {A}, {x}", 1, KINDS_ALL), ("right {A}, {x}", 1, KINDS_ALL), ("so {A}, {x}", 1, KINDS_ALL),
-    ("excuse me {A}, {x}", 1, ("imp", "q")), ("{A} mate, {x}", 1, KINDS_ALL),
-    ("{A}, {x}, thanks", 1, ("imp", "q")), ("{A}, quick one, {x}", 1, ("q",)),
-    ("{A}, are you there, {x}", 1, KINDS_ALL), ("hang on {A}, {x}", 1, ("imp", "q")),
+    ("{A}, {x}", 5, KINDS_ALL),
+    ("hey {A}, {x}", 2, KINDS_ALL),
+    ("hey {A} {x}", 2, KINDS_ALL),
+    ("{x}, {A}", 3, KINDS_ALL),
+    ("{A} {x}", 2, KINDS_ALL),
+    ("ok {A}, {x}", 1, KINDS_ALL),
+    ("okay {A}, {x}", 1, KINDS_ALL),
+    ("oi {A}, {x}", 1, KINDS_ALL),
+    ("hi {A}, {x}", 1, KINDS_ALL),
+    ("yo {A}, {x}", 1, KINDS_ALL),
+    ("right {A}, {x}", 1, KINDS_ALL),
+    ("so {A}, {x}", 1, KINDS_ALL),
+    ("excuse me {A}, {x}", 1, ("imp", "q")),
+    ("{A} mate, {x}", 1, KINDS_ALL),
+    ("{A}, {x}, thanks", 1, ("imp", "q")),
+    ("{A}, quick one, {x}", 1, ("q",)),
+    ("{A}, are you there, {x}", 1, KINDS_ALL),
+    ("hang on {A}, {x}", 1, ("imp", "q")),
     ("{A}, hey, {x}", 1, KINDS_ALL),
 ]
 NONAME = [
-    ("{x}", 6, KINDS_ALL, True), ("right, {x}", 1, KINDS_ALL, True), ("okay, {x}", 1, KINDS_ALL, True),
-    ("so, {x}", 1, KINDS_ALL, True), ("actually, {x}", 1, KINDS_ALL, True),
-    ("sorry, {x}", 1, ("imp", "q"), True), ("quick question, {x}", 1, ("q",), False),
-    ("I was wondering, {x}", 1, ("q",), False), ("one more thing, {x}", 1, ("imp", "q"), True),
-    ("{x} please", 1, ("imp",), False), ("hang on, {x}", 1, ("imp", "q"), True),
-    ("oh and {x}", 1, ("imp", "q"), True), ("also, {x}", 1, ("imp", "q"), True),
-    ("while you're at it, {x}", 1, ("imp",), True), ("just {x}", 1, ("imp",), False),
-    ("I need you to {x}", 1, ("imp",), False), ("go on then, {x}", 1, ("imp",), True),
+    ("{x}", 6, KINDS_ALL, True),
+    ("right, {x}", 1, KINDS_ALL, True),
+    ("okay, {x}", 1, KINDS_ALL, True),
+    ("so, {x}", 1, KINDS_ALL, True),
+    ("actually, {x}", 1, KINDS_ALL, True),
+    ("sorry, {x}", 1, ("imp", "q"), True),
+    ("quick question, {x}", 1, ("q",), False),
+    ("I was wondering, {x}", 1, ("q",), False),
+    ("one more thing, {x}", 1, ("imp", "q"), True),
+    ("{x} please", 1, ("imp",), False),
+    ("hang on, {x}", 1, ("imp", "q"), True),
+    ("oh and {x}", 1, ("imp", "q"), True),
+    ("also, {x}", 1, ("imp", "q"), True),
+    ("while you're at it, {x}", 1, ("imp",), True),
+    ("just {x}", 1, ("imp",), False),
+    ("I need you to {x}", 1, ("imp",), False),
+    ("go on then, {x}", 1, ("imp",), True),
 ]
 
 
@@ -258,9 +305,18 @@ GROUPS = {
     3: [("you three", True), ("all three of you", True)],
     4: [("you four", True), ("all four of you", True)],
 }
-GROUPS_ANY = [("everyone", True), ("all of you", True), ("guys", True), ("everybody", True), ("you lot", True),
-              ("hello everybody", False), ("hi everyone", False), ("morning all", False),
-              ("hey guys", False), ("listen everyone", False)]
+GROUPS_ANY = [
+    ("everyone", True),
+    ("all of you", True),
+    ("guys", True),
+    ("everybody", True),
+    ("you lot", True),
+    ("hello everybody", False),
+    ("hi everyone", False),
+    ("morning all", False),
+    ("hey guys", False),
+    ("listen everyone", False),
+]
 
 
 def f_group(c):
@@ -277,9 +333,20 @@ def f_group(c):
     return c.fmt(tpl, g=g, x=c.req(group=True)), "everyone", "answer", "none"
 
 
-CONV_VERBS = ["talk to", "chat with", "have a word with", "go and talk to", "strike up a conversation with",
-              "say something to", "catch up with", "have a chat with", "go and chat to", "speak to",
-              "go and have a word with", "get chatting with"]
+CONV_VERBS = [
+    "talk to",
+    "chat with",
+    "have a word with",
+    "go and talk to",
+    "strike up a conversation with",
+    "say something to",
+    "catch up with",
+    "have a chat with",
+    "go and chat to",
+    "speak to",
+    "go and have a word with",
+    "get chatting with",
+]
 CONV_TAIL = [" for a bit", " for a while", " for a few minutes", " while I make a cuppa", " while I'm out"]
 
 
@@ -317,13 +384,22 @@ def relay_inner(c, three_plus=False):
     q, qw = r.choice(b.relay_q), r.choice(b.relay_wh)
     m, mc, tp = r.choice(b.relay_msg), r.choice(b.msg_clause), r.choice(b.topics)
     opts = [
-        (3, True, f"ask {{B}} {q}"), (2, True, f"go and ask {{B}} {q}"), (2, True, f"find out from {{B}} {q}"),
-        (2, True, f"check with {{B}} {q}"), (1, True, f"see if {{B}} knows {qw}"), (4, True, f"tell {{B}} {m}"),
-        (2, True, f"tell {{B}} that {mc}"), (2, True, f"let {{B}} know {mc}"), (2, True, f"go and tell {{B}} {m}"),
-        (1, True, f"pass it on to {{B}} that {mc}"), (2, True, f"ask {{B}} {q} and let me know"),
+        (3, True, f"ask {{B}} {q}"),
+        (2, True, f"go and ask {{B}} {q}"),
+        (2, True, f"find out from {{B}} {q}"),
+        (2, True, f"check with {{B}} {q}"),
+        (1, True, f"see if {{B}} knows {qw}"),
+        (4, True, f"tell {{B}} {m}"),
+        (2, True, f"tell {{B}} that {mc}"),
+        (2, True, f"let {{B}} know {mc}"),
+        (2, True, f"go and tell {{B}} {m}"),
+        (1, True, f"pass it on to {{B}} that {mc}"),
+        (2, True, f"ask {{B}} {q} and let me know"),
         (1, True, f"ask {{B}} {q} and tell me what they say"),
-        (1, True, f"get {{B}}'s opinion on {tp} and tell me"), (1, True, f"find out what {{B}} thinks about {tp}"),
-        (1, True, f"just ask {{B}} {q}"), (1, True, f"quickly ask {{B}} {q}"),
+        (1, True, f"get {{B}}'s opinion on {tp} and tell me"),
+        (1, True, f"find out what {{B}} thinks about {tp}"),
+        (1, True, f"just ask {{B}} {q}"),
+        (1, True, f"quickly ask {{B}} {q}"),
         (1, True, f"go and find out from {{B}} {q} and report back"),
         (1, False, f"when you get a second see if {{B}} knows {qw} and let me know"),
         (1, False, f"when you get a chance, ask {{B}} {q}"),
@@ -349,8 +425,14 @@ def f_relay_novoc(c):
     r = c.rng
     if len(c.scene) >= 3 and r.random() < 0.25:
         q, m = r.choice(c.bank.relay_q), r.choice(c.bank.relay_msg)
-        t = r.choice([f"could one of you find out from {{B}} {q}", f"can one of you ask {{B}} {q}",
-                      f"one of you go and tell {{B}} {m}", f"could one of you ask {{B}} {q} for me"])
+        t = r.choice(
+            [
+                f"could one of you find out from {{B}} {q}",
+                f"can one of you ask {{B}} {q}",
+                f"one of you go and tell {{B}} {m}",
+                f"could one of you ask {{B}} {q} for me",
+            ]
+        )
         t = t + (Q_MARK if t.startswith(("could", "can")) else "")
     else:
         t = relay_inner(c)
@@ -358,19 +440,38 @@ def f_relay_novoc(c):
 
 
 MENTION_VOC = [
-    "{A}, what do you think of {B}?", "{A}, is {B} always this quiet?", "{A}, do you like {B}'s voice?",
-    "what's {B}'s favourite colour, {A}?", "{A}, how long have you known {B}?",
-    "{A}, is {B} alright, they seem a bit down?", "{A}, does {B} ever get tired?",
-    "{A}, how do you and {B} get along?", "{A}, do you think {B} is happy in here?", "{A}, what does {B} do all day?",
-    "{A}, I think {B} likes you", "so {A}, is {B} any good at chess?", "{A}, what's {B}'s deal?",
-    "do you reckon {B} is funny, {A}?", "how well do you know {B}, {A}?", "{A}, is {B} new here?",
-    "{A}, has {B} said anything interesting today?", "hey {A}, what's {B} like?",
-    "{A}, do you ever argue with {B}?", "{A}, who's taller, you or {B}?",
+    "{A}, what do you think of {B}?",
+    "{A}, is {B} always this quiet?",
+    "{A}, do you like {B}'s voice?",
+    "what's {B}'s favourite colour, {A}?",
+    "{A}, how long have you known {B}?",
+    "{A}, is {B} alright, they seem a bit down?",
+    "{A}, does {B} ever get tired?",
+    "{A}, how do you and {B} get along?",
+    "{A}, do you think {B} is happy in here?",
+    "{A}, what does {B} do all day?",
+    "{A}, I think {B} likes you",
+    "so {A}, is {B} any good at chess?",
+    "{A}, what's {B}'s deal?",
+    "do you reckon {B} is funny, {A}?",
+    "how well do you know {B}, {A}?",
+    "{A}, is {B} new here?",
+    "{A}, has {B} said anything interesting today?",
+    "hey {A}, what's {B} like?",
+    "{A}, do you ever argue with {B}?",
+    "{A}, who's taller, you or {B}?",
 ]
 MENTION_NO = [
-    "tell me about {B}", "what's {B} like?", "who is {B} anyway?", "has {B} been behaving?",
-    "what's {B}'s favourite song?", "is {B} always this quiet?", "what's {B} up to?", "I wonder if {B} likes music",
-    "do you know much about {B}?", "how does {B} feel about the room?",
+    "tell me about {B}",
+    "what's {B} like?",
+    "who is {B} anyway?",
+    "has {B} been behaving?",
+    "what's {B}'s favourite song?",
+    "is {B} always this quiet?",
+    "what's {B} up to?",
+    "I wonder if {B} likes music",
+    "do you know much about {B}?",
+    "how does {B} feel about the room?",
 ]
 
 
@@ -385,31 +486,53 @@ def f_mention(c):
 
 
 HUMAN_VOC = [
-    "{A}, remind me to call {P}", "{A}, remind me to ring {P} tomorrow", "{A}, add a reminder for {P}'s birthday",
-    "{A}, text {P} that I'm on my way", "{A}, send {P} a message saying I'll be late",
-    "{A}, what time is {P} coming over?", "{A}, did {P} email me today?", "{A}, is {P} free on Saturday?",
-    "{A}, I'm meeting {P} for lunch, how's the weather looking?", "{A}, put {P}'s birthday in the calendar",
-    "{A}, {P} is coming for dinner so can you play something nice?", "{A}, tell {P} I'm running late",
-    "hey {A}, can you call {P}?", "{A}, find {P}'s number for me",
+    "{A}, remind me to call {P}",
+    "{A}, remind me to ring {P} tomorrow",
+    "{A}, add a reminder for {P}'s birthday",
+    "{A}, text {P} that I'm on my way",
+    "{A}, send {P} a message saying I'll be late",
+    "{A}, what time is {P} coming over?",
+    "{A}, did {P} email me today?",
+    "{A}, is {P} free on Saturday?",
+    "{A}, I'm meeting {P} for lunch, how's the weather looking?",
+    "{A}, put {P}'s birthday in the calendar",
+    "{A}, {P} is coming for dinner so can you play something nice?",
+    "{A}, tell {P} I'm running late",
+    "hey {A}, can you call {P}?",
+    "{A}, find {P}'s number for me",
 ]
 HUMAN_NO = [
-    "remind me to ring {P} tomorrow", "tell {P} I'm running late", "text {P} that I'm on my way",
-    "send {P} a message saying I'll be late", "I'm meeting {P} for lunch", "can you call {P}?",
-    "did {P} email me today?", "what time is {P} coming over?", "{P} is coming over this arvo",
-    "remind me to buy a present for {P}", "I need to speak to {P} about the rent",
+    "remind me to ring {P} tomorrow",
+    "tell {P} I'm running late",
+    "text {P} that I'm on my way",
+    "send {P} a message saying I'll be late",
+    "I'm meeting {P} for lunch",
+    "can you call {P}?",
+    "did {P} email me today?",
+    "what time is {P} coming over?",
+    "{P} is coming over this arvo",
+    "remind me to buy a present for {P}",
+    "I need to speak to {P} about the rent",
 ]
 HUMAN_NAMED_ONLY = [
-    "my friend {P} is coming over this arvo", "{P} is coming round for dinner tonight", "I'm having a coffee with {P} later",
+    "my friend {P} is coming over this arvo",
+    "{P} is coming round for dinner tonight",
+    "I'm having a coffee with {P} later",
 ]
 SAMENAME_VOC = [
-    "{A}, remind me to ring my cousin {X} tonight", "{A}, my friend {X} from work is coming over later",
-    "{A}, I had lunch with a guy called {X} today", "{A}, my neighbour {X} is visiting next week",
+    "{A}, remind me to ring my cousin {X} tonight",
+    "{A}, my friend {X} from work is coming over later",
+    "{A}, I had lunch with a guy called {X} today",
+    "{A}, my neighbour {X} is visiting next week",
     "{A}, I met a woman called {X} at the shops",
 ]
 SAMENAME_NO = [
-    "my friend {X} from work is coming over later", "I had lunch with a guy called {X}",
-    "my cousin {X} is visiting next week", "I met a woman called {X} at the shops",
-    "remind me to ring my mate {X} tonight", "my uncle {X} is coming for Christmas",
+    "my friend {X} from work is coming over later",
+    "I had lunch with a guy called {X}",
+    "my cousin {X} is visiting next week",
+    "I met a woman called {X} at the shops",
+    "remind me to ring my mate {X} tonight",
+    "my uncle {X} is coming for Christmas",
 ]
 
 
@@ -438,10 +561,18 @@ def f_human(c):
 
 
 EXCL = [
-    "not you, {A}. {B}, {x}", "{A}, quiet for a second. {B}, {x}", "no not {A}, I meant {B}. {x}",
-    "sorry {A}, I wasn't talking to you. {B}, {x}", "{A} hold on a sec. {B}, {x}", "not {A}, {B}, {x}",
-    "{A} no, you stay out of it. {B}, {x}", "oh not you {A}, I was asking {B}. {x}", "wait {A}, I meant {B}. {x}",
-    "{A} I'm talking to {B} right now. {B}, {x}", "{B} not {A}, {x}", "{A}, hang on. {B}, {x}",
+    "not you, {A}. {B}, {x}",
+    "{A}, quiet for a second. {B}, {x}",
+    "no not {A}, I meant {B}. {x}",
+    "sorry {A}, I wasn't talking to you. {B}, {x}",
+    "{A} hold on a sec. {B}, {x}",
+    "not {A}, {B}, {x}",
+    "{A} no, you stay out of it. {B}, {x}",
+    "oh not you {A}, I was asking {B}. {x}",
+    "wait {A}, I meant {B}. {x}",
+    "{A} I'm talking to {B} right now. {B}, {x}",
+    "{B} not {A}, {x}",
+    "{A}, hang on. {B}, {x}",
     "no {A}, not you. {B}, {x}",
 ]
 
@@ -456,13 +587,23 @@ def f_exclude(c):
 
 
 DISM_ANY = [
-    "{A}, forget {B} for a second, {x}", "{A}, ignore {B}, {x}", "{A}, never mind {B}, {x}",
-    "{A}, don't listen to {B}, {x}", "{A}, leave {B} out of this, {x}", "{A}, this one's for you, not {B}. {x}",
+    "{A}, forget {B} for a second, {x}",
+    "{A}, ignore {B}, {x}",
+    "{A}, never mind {B}, {x}",
+    "{A}, don't listen to {B}, {x}",
+    "{A}, leave {B} out of this, {x}",
+    "{A}, this one's for you, not {B}. {x}",
 ]
-DISM_Q = ["{A}, I'm not asking {B}, I'm asking you: {x}", "{A}, I'm asking you, not {B}: {x}",
-          "{A}, I want you to answer, not {B}: {x}"]
-DISM_IMP = ["{A}, I don't want to hear from {B} right now, just {x}", "{A}, you do it, not {B}: {x}",
-            "{A}, I'm not asking {B}, I'm asking you to {x}"]
+DISM_Q = [
+    "{A}, I'm not asking {B}, I'm asking you: {x}",
+    "{A}, I'm asking you, not {B}: {x}",
+    "{A}, I want you to answer, not {B}: {x}",
+]
+DISM_IMP = [
+    "{A}, I don't want to hear from {B} right now, just {x}",
+    "{A}, you do it, not {B}: {x}",
+    "{A}, I'm not asking {B}, I'm asking you to {x}",
+]
 
 
 def f_dismiss(c):
@@ -483,9 +624,13 @@ def f_dismiss(c):
 
 
 ANYBUT = [
-    "could somebody who isn't {A} answer this: {x}", "someone other than {A}, {x}", "anyone but {A}, {x}",
-    "I'd like someone other than {A} to answer this one: {x}", "somebody who isn't {A}, {x}",
-    "can anyone except {A} answer this: {x}", "let someone else take this one, not {A}. {x}",
+    "could somebody who isn't {A} answer this: {x}",
+    "someone other than {A}, {x}",
+    "anyone but {A}, {x}",
+    "I'd like someone other than {A} to answer this one: {x}",
+    "somebody who isn't {A}, {x}",
+    "can anyone except {A} answer this: {x}",
+    "let someone else take this one, not {A}. {x}",
     "can someone who's not {A} tell me this, {x}",
 ]
 
@@ -505,11 +650,17 @@ def f_anybut(c):
 
 
 STOP = [
-    "{A}, stop talking to {B} and talk to me", "{A}, that's enough chatting with {B}, {x}",
-    "{A}, leave {B} alone and listen", "{A}, stop chatting with {B} and come here",
-    "{A}, you've talked to {B} enough, {x}", "{A}, leave {B} alone for a minute, I need you",
-    "{A}, I need you to stop talking to {B}", "{A}, finish up with {B} and come and talk to me",
-    "{A}, that's enough, come back to me, {x}", "{A}, break it up with {B}, {x}", "okay {A}, enough with {B}, {x}",
+    "{A}, stop talking to {B} and talk to me",
+    "{A}, that's enough chatting with {B}, {x}",
+    "{A}, leave {B} alone and listen",
+    "{A}, stop chatting with {B} and come here",
+    "{A}, you've talked to {B} enough, {x}",
+    "{A}, leave {B} alone for a minute, I need you",
+    "{A}, I need you to stop talking to {B}",
+    "{A}, finish up with {B} and come and talk to me",
+    "{A}, that's enough, come back to me, {x}",
+    "{A}, break it up with {B}, {x}",
+    "okay {A}, enough with {B}, {x}",
     "{A}, say goodbye to {B} and listen to me",
 ]
 
@@ -523,10 +674,22 @@ def f_stop(c):
 
 
 WANT = [
-    "I want to talk to {B}", "{B}, talk to me", "let me speak to {B}", "can I have a word with {B}?", "put {B} on",
-    "is {B} there? I'd like a word", "I'd like to speak to {B} please", "where's {B}? I want to chat",
-    "{B}, come and talk to me", "{B}, I want to talk to you", "can I talk to {B}?", "I need a word with {B}",
-    "hand me over to {B}", "{B}, have you got a minute?", "I'd like to chat to {B} for a bit", "right, {B}, over to you",
+    "I want to talk to {B}",
+    "{B}, talk to me",
+    "let me speak to {B}",
+    "can I have a word with {B}?",
+    "put {B} on",
+    "is {B} there? I'd like a word",
+    "I'd like to speak to {B} please",
+    "where's {B}? I want to chat",
+    "{B}, come and talk to me",
+    "{B}, I want to talk to you",
+    "can I talk to {B}?",
+    "I need a word with {B}",
+    "hand me over to {B}",
+    "{B}, have you got a minute?",
+    "I'd like to chat to {B} for a bit",
+    "right, {B}, over to you",
 ]
 
 
@@ -538,10 +701,14 @@ def f_want(c):
 
 
 ASIDE = [
-    "I was telling {B} earlier about {t}. Anyway {A}, {x}", "{B} said something funny yesterday. {A}, {x}",
-    "{B} and I were chatting earlier. Anyway, {A}, {x}", "I was just talking to {B} about {t}, anyway {A} {x}",
-    "{B} was telling me about {t} earlier. Right, {A}, {x}", "so {B} told me a funny story earlier. {A}, {x}",
-    "I had a good chat with {B} this morning. {A}, {x}", "I asked {B} about {t} earlier. Anyway, {A}, {x}",
+    "I was telling {B} earlier about {t}. Anyway {A}, {x}",
+    "{B} said something funny yesterday. {A}, {x}",
+    "{B} and I were chatting earlier. Anyway, {A}, {x}",
+    "I was just talking to {B} about {t}, anyway {A} {x}",
+    "{B} was telling me about {t} earlier. Right, {A}, {x}",
+    "so {B} told me a funny story earlier. {A}, {x}",
+    "I had a good chat with {B} this morning. {A}, {x}",
+    "I asked {B} about {t} earlier. Anyway, {A}, {x}",
     "{B} was in a good mood earlier. Anyway, {A}, {x}",
 ]
 
@@ -555,9 +722,12 @@ def f_aside(c):
 
 
 DISCUSS = [
-    "I'd love to hear the two of you discuss {t}. {A}, you start", "you two debate {t}, {A} goes first",
-    "how about the pair of you chat about {t}? {A}, you kick us off", "I want you two to argue about {t}. {A}, go ahead and start",
-    "let's hear you two talk about {t}. {A} first", "{A}, start us off, I want to hear you and {B} discuss {t}",
+    "I'd love to hear the two of you discuss {t}. {A}, you start",
+    "you two debate {t}, {A} goes first",
+    "how about the pair of you chat about {t}? {A}, you kick us off",
+    "I want you two to argue about {t}. {A}, go ahead and start",
+    "let's hear you two talk about {t}. {A} first",
+    "{A}, start us off, I want to hear you and {B} discuss {t}",
     "I'd like you both to talk about {t}, and {A}, you go first",
 ]
 
@@ -575,19 +745,37 @@ def f_chain(c):
         return None
     A = c.pick(c.scene)
     Bn, Cn = c.rng.sample(c.others(A), 2)
-    t = c.pick([
-        "{A}, tell {B} to talk to {C}", "{A}, tell {B} they should go and chat with {C}", "{A}, tell {B} that {C} wants a word",
-        "{A}, ask {B} what {C} thinks about {t}", "{A}, ask {B} whether {C} is coming", "{A}, ask {B} if {C} wants some tea",
-        "{A}, find out from {B} what {C} is cooking", "{A}, ask {B} how {C} is feeling", "{A}, let {B} know {C} is looking for them",
-        "{A}, ask {B} where {C} went",
-    ])
+    t = c.pick(
+        [
+            "{A}, tell {B} to talk to {C}",
+            "{A}, tell {B} they should go and chat with {C}",
+            "{A}, tell {B} that {C} wants a word",
+            "{A}, ask {B} what {C} thinks about {t}",
+            "{A}, ask {B} whether {C} is coming",
+            "{A}, ask {B} if {C} wants some tea",
+            "{A}, find out from {B} what {C} is cooking",
+            "{A}, ask {B} how {C} is feeling",
+            "{A}, let {B} know {C} is looking for them",
+            "{A}, ask {B} where {C} went",
+        ]
+    )
     return c.fmt(t, A=A, B=Bn, C=Cn, t=c.pick(c.bank.topics)), A.lower(), "relay", Bn.lower()
 
 
 PRON_KEV = [
-    "ask {p} yourself", "go and ask {p} then", "tell {p} I said thanks", "why don't you ask {p}", "just ask {p}",
-    "can you ask {p} for me", "tell {p} I said hi", "check with {p}", "ask {p} about it", "go on then, ask {p}",
-    "tell {p} thanks from me", "pass that on to {p}", "go and tell {p} then",
+    "ask {p} yourself",
+    "go and ask {p} then",
+    "tell {p} I said thanks",
+    "why don't you ask {p}",
+    "just ask {p}",
+    "can you ask {p} for me",
+    "tell {p} I said hi",
+    "check with {p}",
+    "ask {p} about it",
+    "go on then, ask {p}",
+    "tell {p} thanks from me",
+    "pass that on to {p}",
+    "go and tell {p} then",
 ]
 
 
@@ -600,8 +788,20 @@ def f_pronoun(c):
     line = c.fmt(c.pick(B.RECENT_ABOUT_B), B=Bn)
     rec = []
     if r.random() < 0.5:
-        rec.append(("Kevin", r.choice(["where did I leave my charger", "what time is the match on", "does anyone know the wifi code",
-                                       "who turned the heating on", "what's the recipe for the soup"])))
+        rec.append(
+            (
+                "Kevin",
+                r.choice(
+                    [
+                        "where did I leave my charger",
+                        "what time is the match on",
+                        "does anyone know the wifi code",
+                        "who turned the heating on",
+                        "what's the recipe for the soup",
+                    ]
+                ),
+            )
+        )
     rec.append((S, line))
     c.recent = rec
     if r.random() < 0.7:
@@ -612,14 +812,24 @@ def f_pronoun(c):
 
 # name -> (weight, min_n, max_n, fn)
 FRAMES = {
-    "vocative-answer": (16, 2, 4, f_vocative_answer), "no-name": (14, 2, 4, f_no_name), "group": (8, 2, 4, f_group),
-    "converse-vocative": (11, 2, 4, f_converse_voc), "converse-no-vocative": (6, 2, 4, f_converse_novoc),
-    "relay-vocative": (11, 2, 4, f_relay_voc), "relay-no-vocative": (5, 2, 4, f_relay_novoc),
-    "mention-only": (8, 2, 4, f_mention), "human-third-party": (4, 1, 4, f_human),
-    "exclude-then-address": (3, 2, 4, f_exclude), "address-with-dismissal": (4, 2, 4, f_dismiss),
-    "anyone-but": (1.5, 2, 4, f_anybut), "stop-and-return": (2, 2, 4, f_stop), "kevin-wants-to-talk-to": (2.5, 2, 4, f_want),
-    "aside-then-address": (2, 2, 4, f_aside), "discuss-you-start": (1.8, 2, 2, f_discuss),
-    "relay-chain": (2.5, 3, 4, f_chain), "pronoun-follow-up": (1.5, 2, 4, f_pronoun),
+    "vocative-answer": (16, 2, 4, f_vocative_answer),
+    "no-name": (14, 2, 4, f_no_name),
+    "group": (8, 2, 4, f_group),
+    "converse-vocative": (11, 2, 4, f_converse_voc),
+    "converse-no-vocative": (6, 2, 4, f_converse_novoc),
+    "relay-vocative": (11, 2, 4, f_relay_voc),
+    "relay-no-vocative": (5, 2, 4, f_relay_novoc),
+    "mention-only": (8, 2, 4, f_mention),
+    "human-third-party": (4, 1, 4, f_human),
+    "exclude-then-address": (3, 2, 4, f_exclude),
+    "address-with-dismissal": (4, 2, 4, f_dismiss),
+    "anyone-but": (1.5, 2, 4, f_anybut),
+    "stop-and-return": (2, 2, 4, f_stop),
+    "kevin-wants-to-talk-to": (2.5, 2, 4, f_want),
+    "aside-then-address": (2, 2, 4, f_aside),
+    "discuss-you-start": (1.8, 2, 2, f_discuss),
+    "relay-chain": (2.5, 3, 4, f_chain),
+    "pronoun-follow-up": (1.5, 2, 4, f_pronoun),
     "single-avatar": (80, 1, 1, f_single),
 }
 # human-third-party is the only other frame allowed in one-avatar rooms
@@ -695,12 +905,14 @@ def generate_split(n_rows: int, seed, split: str, exclude=frozenset()):
         if state in seen:
             continue
         seen.add(state)
-        rows.append({
-            "state": state,
-            "questions": build_questions(c.scene),
-            "expected": {"addressed": addressed, "wants": wants, "other": other},
-            "meta": {"frame": frame, "scene": c.scene, "host": c.host, "last": c.last, "text": text},
-        })
+        rows.append(
+            {
+                "state": state,
+                "questions": build_questions(c.scene),
+                "expected": {"addressed": addressed, "wants": wants, "other": other},
+                "meta": {"frame": frame, "scene": c.scene, "host": c.host, "last": c.last, "text": text},
+            }
+        )
     return rows
 
 
@@ -729,6 +941,7 @@ def summarize(rows, title):
     def cat_addr(e, r):
         a = e["addressed"]
         return a if a in ("everyone", "unclear") else "avatar"
+
     print("addressed:", dict(Counter(cat_addr(r["expected"], r) for r in rows)))
     print("wants:", dict(Counter(r["expected"]["wants"] for r in rows)))
     print("other:", dict(Counter("none" if r["expected"]["other"] == "none" else "avatar" for r in rows)))

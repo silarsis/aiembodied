@@ -4,6 +4,7 @@ FAKE_PI_MODE: normal | question | ask | two | textq | hang | nosettled
 FAKE_PI_FILE: file to write in the cwd (default hello.txt)
 FAKE_PI_ENV_DUMP / FAKE_PI_ARGV_DUMP: write the environment / argv as JSON to this path
 """
+
 import json
 import os
 import queue
@@ -44,15 +45,29 @@ def flow(n, message=None):
     emit({"type": "turn_start"})
     write = True
     if mode == "question":
-        emit({"type": "extension_ui_request", "id": "q1", "method": "confirm", "title": "Delete things?",
-              "message": "rm -rf build"})
+        emit(
+            {
+                "type": "extension_ui_request",
+                "id": "q1",
+                "method": "confirm",
+                "title": "Delete things?",
+                "message": "rm -rf build",
+            }
+        )
         emit({"type": "extension_ui_request", "id": "n1", "method": "notify", "message": "hi"})
         a = answers.get()
         write = bool(a.get("confirmed"))
     note = ""
     if mode == "ask":
-        emit({"type": "extension_ui_request", "id": "a1", "method": "input",
-              "title": "Question from pi: Which port?", "placeholder": "type the answer"})
+        emit(
+            {
+                "type": "extension_ui_request",
+                "id": "a1",
+                "method": "input",
+                "title": "Question from pi: Which port?",
+                "placeholder": "type the answer",
+            }
+        )
         a = answers.get()
         note = a.get("value") or "no answer"
     if mode in ("select", "input", "editor"):
@@ -63,10 +78,16 @@ def flow(n, message=None):
         a = answers.get()
         note = json.dumps({k: a.get(k) for k in ("value", "confirmed", "cancelled") if k in a}, sort_keys=True)
     if mode == "two":
-        emit({"type": "extension_ui_request", "id": "q1", "method": "confirm", "title": "Delete things?",
-              "message": "rm -rf build"})
-        emit({"type": "extension_ui_request", "id": "a1", "method": "input",
-              "title": "Question from pi: Which port?"})
+        emit(
+            {
+                "type": "extension_ui_request",
+                "id": "q1",
+                "method": "confirm",
+                "title": "Delete things?",
+                "message": "rm -rf build",
+            }
+        )
+        emit({"type": "extension_ui_request", "id": "a1", "method": "input", "title": "Question from pi: Which port?"})
         got = {}
         for _ in range(2):
             a = answers.get()
@@ -89,8 +110,15 @@ def flow(n, message=None):
             os.makedirs(d, exist_ok=True)
         with open(target, "w") as f:
             f.write(f"hello from fake pi, run {n} {note}\n")
-        emit({"type": "tool_execution_end", "toolCallId": "t1", "toolName": "write",
-              "result": {"content": [], "details": {}}, "isError": False})
+        emit(
+            {
+                "type": "tool_execution_end",
+                "toolCallId": "t1",
+                "toolName": "write",
+                "result": {"content": [], "details": {}},
+                "isError": False,
+            }
+        )
     text = f"Wrote {target}" if write else "Skipped"
     if mode == "textq" and n == 1:
         text = "Which database should I use?"

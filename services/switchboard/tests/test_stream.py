@@ -13,24 +13,36 @@ def test_observer_gets_everything_addressed_client_only_its_own(client):
     with client.websocket_connect("/v1/stream") as obs, client.websocket_connect("/v1/stream") as echo:
         hello(obs, subscribe={"types": ["*"], "observe": True})
         hello(echo, subscribe={"types": ["tool.*", "speech.*"], "to": ["avatar:echo"]})
-        client.post("/v1/events", json={"events": [
-            ev("tool.result", "tool:x", ["avatar:echo"]),
-            ev("tool.result", "tool:x", ["person:kevin"]),
-            ev("speech.heard", "person:kevin", ["avatar:echo", "scene:lounge"]),
-            ev("task.status", "tool:coding", ["avatar:echo"]),
-        ]})
+        client.post(
+            "/v1/events",
+            json={
+                "events": [
+                    ev("tool.result", "tool:x", ["avatar:echo"]),
+                    ev("tool.result", "tool:x", ["person:kevin"]),
+                    ev("speech.heard", "person:kevin", ["avatar:echo", "scene:lounge"]),
+                    ev("task.status", "tool:coding", ["avatar:echo"]),
+                ]
+            },
+        )
         got = [obs.receive_json() for _ in range(4)]
         assert [m["op"] for m in got] == ["event"] * 4
         assert [m["event"]["type"] for m in got] == ["tool.result", "tool.result", "speech.heard", "task.status"]
         mine = [echo.receive_json()["event"] for _ in range(2)]
-        assert [(e["type"], e["to"][0]) for e in mine] == [("tool.result", "avatar:echo"), ("speech.heard", "avatar:echo")]
+        assert [(e["type"], e["to"][0]) for e in mine] == [
+            ("tool.result", "avatar:echo"),
+            ("speech.heard", "avatar:echo"),
+        ]
         assert client.get("/health").json()["clients"] == 2
     assert client.get("/health").json()["clients"] == 0
 
 
 def test_replay_since_then_live(client, publish):
-    ids = publish(ev("a.one", to=["avatar:echo"]), ev("a.two", to=["person:kevin"]), ev("b.three", to=["avatar:echo"]),
-                  ev("a.four", to=["avatar:echo"]))
+    ids = publish(
+        ev("a.one", to=["avatar:echo"]),
+        ev("a.two", to=["person:kevin"]),
+        ev("b.three", to=["avatar:echo"]),
+        ev("a.four", to=["avatar:echo"]),
+    )
     with client.websocket_connect("/v1/stream") as ws:
         hello(ws, since=ids[0], subscribe={"types": ["a.*"], "to": ["avatar:echo"]})
         assert ws.receive_json()["event"]["id"] == ids[3]

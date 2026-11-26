@@ -35,8 +35,9 @@ def test_health_reports_ready_and_voices():
 
 def test_stt_resamples_to_16k():
     with make_client() as client:
-        response = client.post("/v1/stt", content=wav_bytes(1.5, rate=48000, channels=2),
-                               headers={"Content-Type": "audio/wav"})
+        response = client.post(
+            "/v1/stt", content=wav_bytes(1.5, rate=48000, channels=2), headers={"Content-Type": "audio/wav"}
+        )
     assert response.status_code == 200
     assert response.json()["text"] == "fake transcript of 1.50 seconds"
     assert response.json()["timings"]["audio_ms"] == 1500

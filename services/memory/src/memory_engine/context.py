@@ -67,9 +67,7 @@ def brief(
                 continue  # a long pinned fact shouldn't push out the rest
             break
         used += len(r[1])
-        facts.append(
-            {"id": str(r[0]), "text": r[1], "subject": r[2], "pinned": r[3], "created_at": r[4].isoformat()}
-        )
+        facts.append({"id": str(r[0]), "text": r[1], "subject": r[2], "pinned": r[3], "created_at": r[4].isoformat()})
 
     last = conn.execute(
         """
@@ -192,9 +190,7 @@ def auto_recall(
     return {"items": items, "reason": reason}
 
 
-def recall_log(
-    conn: psycopg.Connection, *, session_id: Optional[UUID] = None, limit: int = 50
-) -> list[dict[str, Any]]:
+def recall_log(conn: psycopg.Connection, *, session_id: Optional[UUID] = None, limit: int = 50) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
         SELECT id, at, session_id, query, items, reason FROM recall_log

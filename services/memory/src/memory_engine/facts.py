@@ -250,7 +250,9 @@ CORRECT_MIN_SIMILARITY = 0.8
 CORRECT_MARGIN = 0.1
 
 
-def find_fact(conn: psycopg.Connection, about: str, embedder: Any = None) -> tuple[Optional[UUID], list[dict[str, Any]]]:
+def find_fact(
+    conn: psycopg.Connection, about: str, embedder: Any = None
+) -> tuple[Optional[UUID], list[dict[str, Any]]]:
     """The one active fact `about` clearly means, or (None, the closest few)."""
     from .recall import hybrid_search
 
@@ -258,8 +260,10 @@ def find_fact(conn: psycopg.Connection, about: str, embedder: Any = None) -> tup
     # By meaning when the fact has a vector; by words only when it hasn't one yet (just saved,
     # or no embedder), since nearly every fact shares a word with the question.
     candidates = [
-        r for r in found
-        if (r["similarity"] is not None and r["similarity"] >= 0.6) or (r["similarity"] is None and "text" in r["matched"])
+        r
+        for r in found
+        if (r["similarity"] is not None and r["similarity"] >= 0.6)
+        or (r["similarity"] is None and "text" in r["matched"])
     ]
     if not candidates:
         return None, []

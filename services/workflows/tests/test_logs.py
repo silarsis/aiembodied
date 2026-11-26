@@ -14,7 +14,9 @@ def test_line_format_with_workflow_id_column():
     rec = logging.LogRecord("x", logging.INFO, "f", 1, 'decision: SAY "Morning!" (think 4.2 s)', None, None)
     rec.wfid = "life:echo"
     line = LineFormatter().format(rec)
-    assert re.match(r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3} INFO  life:echo {14}decision: SAY \"Morning!\" \(think 4\.2 s\)$", line), line
+    assert re.match(
+        r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3} INFO  life:echo {14}decision: SAY \"Morning!\" \(think 4\.2 s\)$", line
+    ), line
 
 
 def test_column_falls_back_to_the_short_logger_name():
@@ -34,7 +36,10 @@ def test_setup_writes_stdout_and_a_rotating_file(tmp_path):
             h.flush()
         assert "PUT /v1/agents" in buf.getvalue() and "hidden" not in buf.getvalue()
         assert LINE.match(path.read_text().splitlines()[0])
-        assert any(type(h).__name__ == "RotatingFileHandler" and h.maxBytes == 5 * 1024 * 1024 and h.backupCount == 5 for h in handlers)
+        assert any(
+            type(h).__name__ == "RotatingFileHandler" and h.maxBytes == 5 * 1024 * 1024 and h.backupCount == 5
+            for h in handlers
+        )
     finally:
         for h in handlers:
             logging.getLogger().removeHandler(h)
@@ -63,10 +68,24 @@ def test_formatters():
 
 def test_settings_defaults_and_env():
     s = Settings.from_env({})
-    assert (s.temporal_address, s.namespace, s.port, s.agent_life, s.sleep_after_hours, s.sleep_hours, s.quiet_hours) == (
-        "127.0.0.1:7233", "aiembodied", 8198, True, 24.0, 7.0, "22-7")
-    e = Settings.from_env({"AGENT_LIFE": "0", "SLEEP_AFTER_HOURS": "12", "MEMORY_TIMEZONE": "Asia/Singapore",
-                           "WORKFLOWS_PORT": "9000", "MEMORY_SERVICE_URL": "http://m:1/"})
+    assert (
+        s.temporal_address,
+        s.namespace,
+        s.port,
+        s.agent_life,
+        s.sleep_after_hours,
+        s.sleep_hours,
+        s.quiet_hours,
+    ) == ("127.0.0.1:7233", "aiembodied", 8198, True, 24.0, 7.0, "22-7")
+    e = Settings.from_env(
+        {
+            "AGENT_LIFE": "0",
+            "SLEEP_AFTER_HOURS": "12",
+            "MEMORY_TIMEZONE": "Asia/Singapore",
+            "WORKFLOWS_PORT": "9000",
+            "MEMORY_SERVICE_URL": "http://m:1/",
+        }
+    )
     assert not e.agent_life and e.sleep_after_hours == 12 and e.timezone == "Asia/Singapore" and e.port == 9000
     assert e.memory_url == "http://m:1"
     assert Settings.from_env({"WORKFLOWS_TIMEZONE": "UTC", "MEMORY_TIMEZONE": "Asia/Tokyo"}).timezone == "UTC"

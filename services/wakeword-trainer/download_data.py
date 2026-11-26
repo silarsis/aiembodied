@@ -10,6 +10,7 @@ Each step (and each AudioSet shard) leaves a .done marker beside its folder when
 is skipped next time, so the script can be re-run after a failure without keeping a partial
 download. The markers stay out of the audio folders, because train.py loads every file in them.
 """
+
 import os
 import subprocess
 import sys
@@ -28,7 +29,10 @@ def wget(url: str, dest: Path) -> bool:
     if dest.exists() and dest.stat().st_size > 0:
         return True
     tmp = dest.with_suffix(dest.suffix + ".part")
-    ok = subprocess.run(["wget", "-q", "--show-progress", "--progress=dot:giga", "-c", "-O", str(tmp), url]).returncode == 0
+    ok = (
+        subprocess.run(["wget", "-q", "--show-progress", "--progress=dot:giga", "-c", "-O", str(tmp), url]).returncode
+        == 0
+    )
     if ok:
         tmp.rename(dest)
     else:
@@ -39,6 +43,7 @@ def wget(url: str, dest: Path) -> bool:
 def save16k(path: Path, audio: np.ndarray, rate: int) -> None:
     import torch
     import torchaudio
+
     t = torch.from_numpy(np.asarray(audio, dtype=np.float32))
     if t.ndim > 1:
         t = t.mean(dim=-1 if t.shape[-1] <= 2 else 0)
@@ -66,6 +71,7 @@ def rirs() -> None:
         return
     out.mkdir(exist_ok=True)
     import datasets
+
     ds = datasets.load_dataset("davidscripka/MIT_environmental_impulse_responses", split="train", streaming=True)
     for row in tqdm(ds, desc="MIT RIRs"):
         a = row["audio"]
@@ -83,6 +89,7 @@ def audioset(shards: int = 2) -> None:
     import io
     import pyarrow.parquet as pq
     import soundfile
+
     for i in range(shards):
         shard_done = DATA / f".audioset_shard_{i:02d}.done"
         if shard_done.exists():
@@ -114,6 +121,7 @@ def fma(hours: float = 1.0) -> None:
     out.mkdir(exist_ok=True)
     try:
         import datasets
+
         ds = datasets.load_dataset("rudraml/fma", name="small", split="train", streaming=True)
         ds = iter(ds.cast_column("audio", datasets.Audio(sampling_rate=16000)))
         for i in tqdm(range(int(hours * 3600 // 30)), desc="FMA"):

@@ -3,6 +3,7 @@
 Used for training rows and mirrored by the app, so keep this simple and stable.
 Standard library only.
 """
+
 from __future__ import annotations
 
 from typing import Optional

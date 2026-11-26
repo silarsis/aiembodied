@@ -34,8 +34,16 @@ def test_bundled_avatar_needs_about_four_degrees():
 def test_shoulders_further_back_need_more_swing():
     rest = {bone: list(p) for bone, p in SKELETONS["bundled_avatar"].items()}
     base = calibrated_arm_forward(rest, chest_forward=7)
-    for bone in ("leftShoulder", "leftUpperArm", "leftLowerArm", "leftHand",
-                 "rightShoulder", "rightUpperArm", "rightLowerArm", "rightHand"):
+    for bone in (
+        "leftShoulder",
+        "leftUpperArm",
+        "leftLowerArm",
+        "leftHand",
+        "rightShoulder",
+        "rightUpperArm",
+        "rightLowerArm",
+        "rightHand",
+    ):
         rest[bone][2] -= 0.02
     assert calibrated_arm_forward(rest, chest_forward=7) > base + 2
 
@@ -76,11 +84,14 @@ def test_requests_with_a_skeleton_use_its_calibration(client, monkeypatch):
     assert np.degrees((default * overridden.inv()).magnitude()) == pytest.approx(0, abs=1e-3)
 
 
-@pytest.mark.parametrize("rest", [
-    {"hips": [0, 0.9, 0]},
-    {**SKELETONS["bundled_avatar"], "leftHand": [0, 1]},
-    {**SKELETONS["bundled_avatar"], "hips": [0, -0.1, 0]},
-])
+@pytest.mark.parametrize(
+    "rest",
+    [
+        {"hips": [0, 0.9, 0]},
+        {**SKELETONS["bundled_avatar"], "leftHand": [0, 1]},
+        {**SKELETONS["bundled_avatar"], "hips": [0, -0.1, 0]},
+    ],
+)
 def test_malformed_skeletons_are_400(client, rest):
     r = client.post("/v1/motion/clip", json={"prompt": "wave", "avatar_rest": rest})
     assert r.status_code == 400 and "avatar_rest" in r.json()["error"]

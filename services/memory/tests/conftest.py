@@ -48,7 +48,9 @@ class FakeLlm:
 
     def __init__(self, reply=None):
         self.prompts = []
-        self.reply = reply or (lambda prompt: {"title": "A chat", "summary": "They talked.", "topics": ["chat"], "facts": []})
+        self.reply = reply or (
+            lambda prompt: {"title": "A chat", "summary": "They talked.", "topics": ["chat"], "facts": []}
+        )
 
     def complete_json(self, system, user, schema):
         self.prompts.append(user)

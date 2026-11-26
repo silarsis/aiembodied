@@ -26,8 +26,13 @@ class _CachedTextEncoder:
         import torch
 
         maxlen = max(self.cache[t][1] for t in texts)
-        out = torch.zeros(len(texts), maxlen, self.cache[texts[0]][0].shape[-1], dtype=self.cache[texts[0]][0].dtype,
-                          device=self.cache[texts[0]][0].device)
+        out = torch.zeros(
+            len(texts),
+            maxlen,
+            self.cache[texts[0]][0].shape[-1],
+            dtype=self.cache[texts[0]][0].dtype,
+            device=self.cache[texts[0]][0].device,
+        )
         for i, t in enumerate(texts):
             f, n = self.cache[t]
             out[i, :n] = f[0]
@@ -67,7 +72,17 @@ class KimodoBackend(Backend):
 
         if self.options.seed is not None:
             torch.manual_seed(self.options.seed)
-        out = self.model(text, frames, num_denoising_steps=steps, num_samples=1,
-                         post_processing=self.options.postprocess, return_numpy=True, progress_bar=lambda x: x)
-        return Motion(np.asarray(out["global_rot_mats"][0]), np.asarray(out["posed_joints"][0]),
-                      np.asarray(out["root_positions"][0]))
+        out = self.model(
+            text,
+            frames,
+            num_denoising_steps=steps,
+            num_samples=1,
+            post_processing=self.options.postprocess,
+            return_numpy=True,
+            progress_bar=lambda x: x,
+        )
+        return Motion(
+            np.asarray(out["global_rot_mats"][0]),
+            np.asarray(out["posed_joints"][0]),
+            np.asarray(out["root_positions"][0]),
+        )

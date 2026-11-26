@@ -20,12 +20,16 @@ def build_event(text: str, *, to: str, source: str, urgent: bool, type_: str, pr
     }
 
 
-def run(url: str, text: str, *, to: str, source: str, urgent: bool, type_: str, producer: str,
-        out: Optional[Any] = None) -> int:
+def run(
+    url: str, text: str, *, to: str, source: str, urgent: bool, type_: str, producer: str, out: Optional[Any] = None
+) -> int:
     out = out or sys.stdout
-    body = json.dumps({"events": [build_event(text, to=to, source=source, urgent=urgent, type_=type_, producer=producer)]})
-    request = urllib.request.Request(url.rstrip("/") + "/v1/events", data=body.encode(),
-                                     headers={"content-type": "application/json"}, method="POST")
+    body = json.dumps(
+        {"events": [build_event(text, to=to, source=source, urgent=urgent, type_=type_, producer=producer)]}
+    )
+    request = urllib.request.Request(
+        url.rstrip("/") + "/v1/events", data=body.encode(), headers={"content-type": "application/json"}, method="POST"
+    )
     try:
         with urllib.request.urlopen(request, timeout=5) as response:
             ids = json.load(response).get("ids", [])

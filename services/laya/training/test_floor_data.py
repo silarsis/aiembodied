@@ -111,8 +111,18 @@ class GeneratorTests(unittest.TestCase):
 
     def test_no_avatar_name_inside_content(self):
         words = set()
-        for lst in (banks.IMP, banks.Q, banks.ST, banks.G_IMP, banks.G_Q, banks.G_ST, banks.TOPICS, banks.RELAY_Q,
-                    banks.RELAY_MSG, banks.PEOPLE_REL):
+        for lst in (
+            banks.IMP,
+            banks.Q,
+            banks.ST,
+            banks.G_IMP,
+            banks.G_Q,
+            banks.G_ST,
+            banks.TOPICS,
+            banks.RELAY_Q,
+            banks.RELAY_MSG,
+            banks.PEOPLE_REL,
+        ):
             for p in lst:
                 words.update(re.findall(r"[a-z]+", p.lower()))
         self.assertFalse(words & {n.lower() for n in banks.NAMES})
@@ -123,8 +133,12 @@ class GeneratorTests(unittest.TestCase):
 
         def cat_a(e):
             return e if e in ("everyone", "unclear") else "avatar"
-        for q, cat in (("addressed", cat_a), ("wants", lambda e: e),
-                       ("other", lambda e: "none" if e == "none" else "avatar")):
+
+        for q, cat in (
+            ("addressed", cat_a),
+            ("wants", lambda e: e),
+            ("other", lambda e: "none" if e == "none" else "avatar"),
+        ):
             cnt = Counter(cat(r["expected"][q]) for r in rs)
             for k, v in cnt.items():
                 self.assertGreaterEqual(v / n, 0.05, (q, k, v))
@@ -172,6 +186,7 @@ class PromptTests(unittest.TestCase):
 def stub_for(answers):
     def fetch(payload):
         return {"answers": {q: {"choice": max(p, key=p.get), "probabilities": p} for q, p in answers.items()}}
+
     return fetch
 
 
@@ -191,8 +206,14 @@ class ScoreTests(unittest.TestCase):
         self.assertAlmostEqual(res["mean_top_prob_wrong"], 0.8)
 
     def test_truth_rows_and_debatable(self):
-        base = {"scene": ["Echo", "Sage"], "host": "Echo", "last": "Sage", "text": "turn off the lights",
-                "grade": "easy", "truth": {"speaker": ["sage", "echo"], "intent": ["answer"], "target": ["none"]}}
+        base = {
+            "scene": ["Echo", "Sage"],
+            "host": "Echo",
+            "last": "Sage",
+            "text": "turn off the lights",
+            "grade": "easy",
+            "truth": {"speaker": ["sage", "echo"], "intent": ["answer"], "target": ["none"]},
+        }
         ans = {"addressed": {"unclear": 0.7, "echo": 0.3}, "wants": {"answer": 1.0}, "other": {"none": 1.0}}
         res = score.run([base], stub_for(ans))  # unclear resolves to last = sage
         self.assertEqual(res["all_three"], 1.0)
@@ -206,14 +227,23 @@ class ScoreTests(unittest.TestCase):
         self.assertEqual(len(res["misses"]), 2)
 
     def test_top_level_answers_and_errors(self):
-        row = {"scene": ["Echo", "Sage"], "host": "Echo", "last": None, "text": "hi",
-               "truth": {"speaker": ["echo"], "intent": ["answer"], "target": ["none"]}}
-        flat = lambda p: {"addressed": {"probabilities": {"unclear": 1.0}}, "wants": {"choice": "answer"},
-                          "other": {"probabilities": {"none": 1.0}}}
+        row = {
+            "scene": ["Echo", "Sage"],
+            "host": "Echo",
+            "last": None,
+            "text": "hi",
+            "truth": {"speaker": ["echo"], "intent": ["answer"], "target": ["none"]},
+        }
+        flat = lambda p: {
+            "addressed": {"probabilities": {"unclear": 1.0}},
+            "wants": {"choice": "answer"},
+            "other": {"probabilities": {"none": 1.0}},
+        }
         self.assertEqual(score.run([row], flat)["all_three"], 1.0)
 
         def boom(p):
             raise OSError("down")
+
         res = score.run([row], boom)
         self.assertEqual(res["errors"], 1)
         self.assertEqual(res["all_three"], 0.0)

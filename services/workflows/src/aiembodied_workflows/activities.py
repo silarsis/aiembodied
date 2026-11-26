@@ -41,10 +41,16 @@ def format_memory_hits(hits: list[dict], limit: int = 5) -> str:
 
 
 class Activities:
-    def __init__(self, settings: Settings, *, switchboard: httpx.AsyncClient | None = None,
-                 memory: MemoryClient | None = None, web: httpx.AsyncClient | None = None,
-                 client_getter: Callable[[], Any] | None = None,
-                 agent_name: Callable[[str], str] | None = None):
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        switchboard: httpx.AsyncClient | None = None,
+        memory: MemoryClient | None = None,
+        web: httpx.AsyncClient | None = None,
+        client_getter: Callable[[], Any] | None = None,
+        agent_name: Callable[[str], str] | None = None,
+    ):
         self.settings = settings
         # memory keys facts and search by the agent's display name, as the app does
         self.agent_name = agent_name or (lambda avatar: avatar)
@@ -54,10 +60,23 @@ class Activities:
         self.web = web or httpx.AsyncClient(timeout=15.0, follow_redirects=False)
 
     def all(self) -> list:
-        return [self.app_act, self.journal, self.mem_decision_context, self.mem_create_intention,
-                self.mem_patch_intention, self.mem_get_flow, self.mem_patch_flow, self.mem_put_agent_state,
-                self.mem_put_fact, self.mem_search, self.mem_home_entities, self.mem_run_summaries,
-                self.web_search, self.probe_url, self.flow_runaway]
+        return [
+            self.app_act,
+            self.journal,
+            self.mem_decision_context,
+            self.mem_create_intention,
+            self.mem_patch_intention,
+            self.mem_get_flow,
+            self.mem_patch_flow,
+            self.mem_put_agent_state,
+            self.mem_put_fact,
+            self.mem_search,
+            self.mem_home_entities,
+            self.mem_run_summaries,
+            self.web_search,
+            self.probe_url,
+            self.flow_runaway,
+        ]
 
     # --- acts -----------------------------------------------------------------------------------
     @activity.defn(name=APP_ACT)
@@ -65,9 +84,14 @@ class Activities:
         """Contract 1. `req` = {avatarId, kind, args, workflowId}."""
         info = activity.info()
         try:
-            return await run_act(self.switchboard, req["avatarId"], req["kind"], req.get("args") or {},
-                                 workflow_id=req.get("workflowId") or info.workflow_id or "",
-                                 heartbeat=lambda: activity.heartbeat(req["kind"]))
+            return await run_act(
+                self.switchboard,
+                req["avatarId"],
+                req["kind"],
+                req.get("args") or {},
+                workflow_id=req.get("workflowId") or info.workflow_id or "",
+                heartbeat=lambda: activity.heartbeat(req["kind"]),
+            )
         except AppOffline as exc:
             raise ApplicationError(str(exc), type="AppOffline", non_retryable=True) from exc
         except ActFailed as exc:
@@ -79,9 +103,16 @@ class Activities:
     async def journal(self, event: dict) -> None:
         """Publish a `workflow.*` event. Never fails the workflow."""
         try:
-            await publish_event(self.switchboard, journal_event(
-                event.get("kind", "step"), event.get("workflowId", ""), event.get("avatarId"),
-                event.get("text", ""), event.get("extra")))
+            await publish_event(
+                self.switchboard,
+                journal_event(
+                    event.get("kind", "step"),
+                    event.get("workflowId", ""),
+                    event.get("avatarId"),
+                    event.get("text", ""),
+                    event.get("extra"),
+                ),
+            )
         except Exception as exc:  # noqa: BLE001
             log.debug("journal event not published: %s", exc)
 
@@ -94,8 +125,11 @@ class Activities:
     async def mem_decision_context(self, avatar_id: str) -> dict:
         """What the life workflow needs to write a decision prompt. Pieces that fail come back empty."""
         out: dict[str, Any] = {"intentions": [], "flows": [], "agentState": None}
-        for key, call in (("intentions", self.memory.intentions(avatar_id)), ("flows", self.memory.flows(avatar_id)),
-                          ("agentState", self.memory.agent_state(avatar_id))):
+        for key, call in (
+            ("intentions", self.memory.intentions(avatar_id)),
+            ("flows", self.memory.flows(avatar_id)),
+            ("agentState", self.memory.agent_state(avatar_id)),
+        ):
             try:
                 out[key] = await call
             except MemoryError as exc:
@@ -153,7 +187,9 @@ class Activities:
     @activity.defn(name="mem_search")
     async def mem_search(self, req: dict) -> str:
         try:
-            return format_memory_hits(await self.memory.search(req["query"], self.agent_name(req["agent"]) if req.get("agent") else None))
+            return format_memory_hits(
+                await self.memory.search(req["query"], self.agent_name(req["agent"]) if req.get("agent") else None)
+            )
         except MemoryError as exc:
             return f"(memory search failed: {exc})"
 
@@ -164,8 +200,11 @@ class Activities:
         except MemoryError as exc:
             log.warning("home entities unavailable: %s", exc)
             return []
-        return [{"entity_id": r.get("entity_id"), "state": r.get("last_state"), "value": r.get("last_value")}
-                for r in rows if r.get("entity_id")]
+        return [
+            {"entity_id": r.get("entity_id"), "state": r.get("last_state"), "value": r.get("last_value")}
+            for r in rows
+            if r.get("entity_id")
+        ]
 
     @activity.defn(name="mem_run_summaries")
     async def mem_run_summaries(self, _: None = None) -> None:
@@ -198,21 +237,34 @@ class Activities:
 
         `req` = {avatarId, name, source, gap}."""
         avatar, name, source = req["avatarId"], req["name"], req.get("source")
-        log.warning("flow %s/%s started again after %.0f s by its %s; stopping the trigger", avatar, name,
-                    float(req.get("gap") or 0), source, extra={"wfid": activity.info().workflow_id})
+        log.warning(
+            "flow %s/%s started again after %.0f s by its %s; stopping the trigger",
+            avatar,
+            name,
+            float(req.get("gap") or 0),
+            source,
+            extra={"wfid": activity.info().workflow_id},
+        )
         client = self.client_getter()
         if source == "schedule" and client is not None:
             try:
-                await client.get_schedule_handle(f"sched:{avatar}:{name}").pause(note="runaway: started twice within a minute")
+                await client.get_schedule_handle(f"sched:{avatar}:{name}").pause(
+                    note="runaway: started twice within a minute"
+                )
             except Exception as exc:  # noqa: BLE001
                 log.warning("could not pause the schedule for %s/%s: %s", avatar, name, exc)
         try:
             if source == "watch":
                 await self.memory.patch_flow(avatar, name, {"enabled": False})
-            await self.memory.create_intention({
-                "avatar_id": avatar, "kind": "intention", "status": "open",
-                "text": f"My workflow \"{name}\" kept starting again within a minute, so I stopped its "
-                        f"{'schedule' if source == 'schedule' else 'watcher'}. Fix it, then turn it back on."})
+            await self.memory.create_intention(
+                {
+                    "avatar_id": avatar,
+                    "kind": "intention",
+                    "status": "open",
+                    "text": f'My workflow "{name}" kept starting again within a minute, so I stopped its '
+                    f"{'schedule' if source == 'schedule' else 'watcher'}. Fix it, then turn it back on.",
+                }
+            )
         except MemoryError as exc:
             log.warning("could not write the runaway note: %s", exc)
 

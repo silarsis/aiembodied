@@ -10,8 +10,7 @@ from fastapi.testclient import TestClient
 
 from speech_service.app import create_app
 from speech_service.engines import FakeSynthesizer, FakeTranscriber
-from speech_service.tts_engines import (TtsError, TtsModels, kitten_chunks, kitten_tokens, piper_files,
-                                        trim_silence)
+from speech_service.tts_engines import TtsError, TtsModels, kitten_chunks, kitten_tokens, piper_files, trim_silence
 
 PIPER_SAMPLE = Path("/mnt/user-data/uploads/aiembodied/experiments/tts-compare/models/piper")
 
@@ -39,6 +38,7 @@ def hub(files: dict[str, bytes], seen: list[str]):
             if request.full_url.endswith(suffix):
                 return FakeResponse(data)
         raise OSError(f"404 {request.full_url}")
+
     return opener
 
 
@@ -54,15 +54,23 @@ class FakeVoice:
 
 
 def kitten_files():
-    config = {"type": "ONNX2", "model_file": "kitten_tts_mini_v0_8.onnx", "voices": "voices.npz",
-              "voice_aliases": {"Rosie": "expr-voice-3-f"}}
-    return {"/config.json": json.dumps(config).encode(), "/kitten_tts_mini_v0_8.onnx": b"m" * 3000,
-            "/voices.npz": b"v" * 1000}
+    config = {
+        "type": "ONNX2",
+        "model_file": "kitten_tts_mini_v0_8.onnx",
+        "voices": "voices.npz",
+        "voice_aliases": {"Rosie": "expr-voice-3-f"},
+    }
+    return {
+        "/config.json": json.dumps(config).encode(),
+        "/kitten_tts_mini_v0_8.onnx": b"m" * 3000,
+        "/voices.npz": b"v" * 1000,
+    }
 
 
 def client_for(models: TtsModels) -> TestClient:
-    return TestClient(create_app(FakeTranscriber(), FakeSynthesizer(), "fake_voice", load_in_background=False,
-                                 models=models))
+    return TestClient(
+        create_app(FakeTranscriber(), FakeSynthesizer(), "fake_voice", load_in_background=False, models=models)
+    )
 
 
 def test_engines_list_kokoro_kitten_and_piper(tmp_path):
@@ -87,7 +95,9 @@ def test_kitten_download_then_speak(tmp_path):
         listed = client.get("/v1/tts/engines").json()["engines"][1]["models"][0]
         assert listed["installed"] is True
         assert listed["download"] == {"status": "done", "received": 4000, "total": 4000, "error": None}
-        response = client.post("/v1/tts", json={"text": "hi", "engine": "kitten", "model": "mini-0.8", "voice": "Rosie"})
+        response = client.post(
+            "/v1/tts", json={"text": "hi", "engine": "kitten", "model": "mini-0.8", "voice": "Rosie"}
+        )
     assert response.status_code == 200
     with wave.open(io.BytesIO(response.content)) as reader:
         assert reader.getframerate() == 24000
@@ -152,7 +162,9 @@ def test_real_piper_voice(tmp_path):
     for name in ("en_GB-alba-medium.onnx", "en_GB-alba-medium.onnx.json"):
         shutil.copy(PIPER_SAMPLE / name, folder / name)
     with client_for(TtsModels(tmp_path)) as client:
-        response = client.post("/v1/tts", json={"text": "Good night, mate.", "engine": "piper", "voice": "en_GB-alba-medium"})
+        response = client.post(
+            "/v1/tts", json={"text": "Good night, mate.", "engine": "piper", "voice": "en_GB-alba-medium"}
+        )
     assert response.status_code == 200, response.text
     with wave.open(io.BytesIO(response.content)) as reader:
         assert reader.getframerate() == 22050

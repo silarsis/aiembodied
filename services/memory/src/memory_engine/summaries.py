@@ -74,7 +74,7 @@ PERIOD_SCHEMA: dict[str, Any] = {
 SYSTEM = (
     "You keep the long-term memory of a personal assistant that talks with one user. You write "
     "short, factual records that the assistant will read later to remember what happened. "
-    "Write about the user in the third person as \"the user\". Answer with JSON only."
+    'Write about the user in the third person as "the user". Answer with JSON only.'
 )
 
 
@@ -131,13 +131,17 @@ def due_sessions(conn: psycopg.Connection, now: datetime, quiet: timedelta, limi
     return [r[0] for r in rows]
 
 
-def due_periods(conn: psycopg.Connection, now: datetime, tz: tzinfo, limit: int = 20) -> list[tuple[str, datetime, datetime]]:
+def due_periods(
+    conn: psycopg.Connection, now: datetime, tz: tzinfo, limit: int = 20
+) -> list[tuple[str, datetime, datetime]]:
     """Closed days with conversation summaries, then weeks and months with day summaries, whose
     own summary is missing or saw less than is there now. Oldest first within each level."""
     children = conn.execute("SELECT kind, seq, period_start FROM summaries WHERE kind IN ('session', 'day')").fetchall()
     existing = {
         (r[0], r[1]): r[2]
-        for r in conn.execute("SELECT kind, period_start, covered_seq FROM summaries WHERE kind <> 'session'").fetchall()
+        for r in conn.execute(
+            "SELECT kind, period_start, covered_seq FROM summaries WHERE kind <> 'session'"
+        ).fetchall()
     }
     wanted: dict[tuple[str, datetime, datetime], int] = {}
     for kind, seq, start in children:
@@ -146,11 +150,7 @@ def due_periods(conn: psycopg.Connection, now: datetime, tz: tzinfo, limit: int 
             bounds = period_bounds(parent, start, tz)
             key = (parent, *bounds)
             wanted[key] = max(wanted.get(key, 0), seq)
-    due = [
-        key
-        for key, covered in wanted.items()
-        if key[2] <= now and existing.get((key[0], key[1]), -1) < covered
-    ]
+    due = [key for key, covered in wanted.items() if key[2] <= now and existing.get((key[0], key[1]), -1) < covered]
     order = {"day": 0, "week": 1, "month": 2}
     due.sort(key=lambda key: (order[key[0]], key[1]))
     return due[:limit]
@@ -236,12 +236,12 @@ def session_prompt(job: SessionJob, tz: tzinfo) -> str:
         "- title: 3 to 8 words naming what the conversation was about.\n"
         "- summary: 2 to 6 sentences in the past tense: what was discussed, decided or planned, "
         "with any names, dates and numbers that matter.\n"
-        "- topics: 1 to 5 short lowercase topic tags, such as \"garden\" or \"car\".\n"
+        '- topics: 1 to 5 short lowercase topic tags, such as "garden" or "car".\n'
         "- facts: durable facts about the user or their world that the assistant should know in "
         "future conversations: preferences, decisions, plans with their dates, people, places, "
         "possessions. One short sentence each, third person. Not small talk, not facts about the "
         "assistant, and not facts already known. If one updates or contradicts a known fact, set "
-        "\"replaces\" to that fact's id in square brackets, without the brackets. An empty list is "
+        '"replaces" to that fact\'s id in square brackets, without the brackets. An empty list is '
         "fine and usual."
     )
 
@@ -280,11 +280,23 @@ def apply_session(conn: psycopg.Connection, job: SessionJob, result: dict[str, A
         """,
         (job.session_id, job.started_at, job.last_at, title or None, summary, topics, job.covered_seq, model),
     ).fetchone()[0]
-    _index(conn, summary_id, "session", job.session_id, job.agent, job.started_at, job.last_at, title, summary, topics,
-           SESSION_IMPORTANCE)
+    _index(
+        conn,
+        summary_id,
+        "session",
+        job.session_id,
+        job.agent,
+        job.started_at,
+        job.last_at,
+        title,
+        summary,
+        topics,
+        SESSION_IMPORTANCE,
+    )
     if title:
         conn.execute(
-            "UPDATE sessions SET title = %s, updated_at = now() WHERE id = %s AND title IS NULL", (title, job.session_id)
+            "UPDATE sessions SET title = %s, updated_at = now() WHERE id = %s AND title IS NULL",
+            (title, job.session_id),
         )
 
     known_ids = {fid for fid, _ in job.facts}
@@ -361,7 +373,8 @@ def period_prompt(job: PeriodJob, tz: tzinfo) -> str:
         parts = "days"
         fmt = "%A %d %B"
     children = "\n".join(
-        f"- {start.astimezone(tz).strftime(fmt)}: {title + ': ' if title else ''}{text}" for start, title, text in job.children
+        f"- {start.astimezone(tz).strftime(fmt)}: {title + ': ' if title else ''}{text}"
+        for start, title, text in job.children
     )
     length = "2 to 4 sentences" if job.kind == "day" else "3 to 6 sentences"
     return (

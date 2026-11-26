@@ -119,7 +119,9 @@ class Store:
         if len(text) > EVENT_CAP:
             text = json.dumps({"truncated": True, "original_bytes": len(text), "preview": text[:2000]})
         with self.lock:
-            seq = (self.db.execute("SELECT COALESCE(MAX(seq), 0) FROM events WHERE task_id=?", (tid,)).fetchone()[0]) + 1
+            seq = (
+                (self.db.execute("SELECT COALESCE(MAX(seq), 0) FROM events WHERE task_id=?", (tid,)).fetchone()[0]) + 1
+            )
             self.db.execute("INSERT INTO events VALUES (?,?,?,?,?)", (tid, seq, now(), type_, text))
             self.db.commit()
         return seq
@@ -128,16 +130,31 @@ class Store:
         with self.lock:
             rows = self.db.execute(
                 "SELECT seq, ts, type, payload FROM events WHERE task_id=? AND seq>? ORDER BY seq LIMIT ?",
-                (tid, after, limit)).fetchall()
-        return [{"seq": r["seq"], "ts": r["ts"], "type": r["type"], "payload": json.loads(r["payload"]) if r["payload"] else None}
-                for r in rows]
+                (tid, after, limit),
+            ).fetchall()
+        return [
+            {
+                "seq": r["seq"],
+                "ts": r["ts"],
+                "type": r["type"],
+                "payload": json.loads(r["payload"]) if r["payload"] else None,
+            }
+            for r in rows
+        ]
 
     def mark_stale_failed(self) -> list[str]:
         marks = ",".join("?" * len(ACTIVE))
         with self.lock:
             ids = [r[0] for r in self.db.execute(f"SELECT id FROM tasks WHERE status IN ({marks})", ACTIVE)]
         for tid in ids:
-            self.update_task(tid, status="failed", error="runner restarted", question=None, questions=[], current_tool=None,
-                             finished_at=now())
+            self.update_task(
+                tid,
+                status="failed",
+                error="runner restarted",
+                question=None,
+                questions=[],
+                current_tool=None,
+                finished_at=now(),
+            )
             self.add_event(tid, "runner", {"message": "runner restarted; task marked failed"})
         return ids

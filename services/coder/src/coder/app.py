@@ -67,11 +67,13 @@ class EventHub:
 
     def publish(self, msg: dict) -> None:
         for loop, q in list(self.subs):
+
             def put(q=q) -> None:
                 try:
                     q.put_nowait(msg)
                 except asyncio.QueueFull:
                     pass
+
             try:
                 loop.call_soon_threadsafe(put)
             except RuntimeError:
@@ -170,7 +172,10 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
         if not ws or not t["base_commit"]:
             raise HTTPException(404, "no diff yet")
         from pathlib import Path
-        text = gitops.diff_text(Path(ws.path), Path(t["worktree"]) if t["worktree"] else None, t["base_commit"], t["branch"])
+
+        text = gitops.diff_text(
+            Path(ws.path), Path(t["worktree"]) if t["worktree"] else None, t["base_commit"], t["branch"]
+        )
         if text is None:
             raise HTTPException(404, "the worktree and branch are gone")
         return text

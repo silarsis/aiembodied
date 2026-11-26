@@ -29,4 +29,5 @@ def publish(client):
         r = client.post("/v1/events", json={"events": list(events)})
         assert r.status_code == 200, r.text
         return r.json()["ids"]
+
     return go

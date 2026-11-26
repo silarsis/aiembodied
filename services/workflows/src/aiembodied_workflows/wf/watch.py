@@ -72,7 +72,7 @@ class Watch(Controllable):
         if kind == "search":
             first = await best_effort("web_search", cond["query"]) or []
             first_urls = cnd.result_urls(first)
-            wlog(f"first look at \"{cond['query']}\": {len(first_urls)} results")
+            wlog(f'first look at "{cond["query"]}": {len(first_urls)} results')
             next_poll = ts() + cnd.poll_seconds(cond)
 
         while True:
@@ -93,7 +93,11 @@ class Watch(Controllable):
                     next_poll = ts() + cnd.ENTITY_POLL_SECONDS
                     for r in rows:
                         if r.get("entity_id") == eid:
-                            v = r.get("value") if ("below" in cond or "above" in cond) and r.get("value") is not None else r.get("state")
+                            v = (
+                                r.get("value")
+                                if ("below" in cond or "above" in cond) and r.get("value") is not None
+                                else r.get("state")
+                            )
                             matched = cnd.entity_matches(cond, v)
                             info = f"{eid} is {r.get('state')}"
                 while h_scan < len(self.home_events):
@@ -141,10 +145,16 @@ class Watch(Controllable):
             if fired:
                 armed = False
                 if loop and last_fire is not None and ts() - last_fire < RUNAWAY_SECONDS:
-                    await say_line("failed", f"watch for flow {inp.flow_name} fired twice within a minute; stopping it",
-                                   inp.avatar_id, "warning")
-                    await best_effort("flow_runaway", {"avatarId": inp.avatar_id, "name": inp.flow_name, "source": "watch",
-                                                       "gap": ts() - last_fire})
+                    await say_line(
+                        "failed",
+                        f"watch for flow {inp.flow_name} fired twice within a minute; stopping it",
+                        inp.avatar_id,
+                        "warning",
+                    )
+                    await best_effort(
+                        "flow_runaway",
+                        {"avatarId": inp.avatar_id, "name": inp.flow_name, "source": "watch", "gap": ts() - last_fire},
+                    )
                     return "stopped: runaway"
                 last_fire = ts()
                 await say_line("fired", f"watch matched: {info}", inp.avatar_id)
@@ -184,14 +194,20 @@ class Watch(Controllable):
                 return f'said "{rules.clip(arg, 80)}"'
             return "thought about it"
         if "flow" in then:
-            return await self._start_flow(inp, str(then["flow"]), {**(then.get("inputs") or {}), "trigger_info": info}, "then")
+            return await self._start_flow(
+                inp, str(then["flow"]), {**(then.get("inputs") or {}), "trigger_info": info}, "then"
+            )
         return "nothing to do"
 
     async def _start_flow(self, inp: WatchInput, name: str, inputs: dict, source: str) -> str:
         fid = flow_workflow_id(inp.avatar_id, name, str(workflow.uuid4()))
         await workflow.start_child_workflow(
-            "AgentFlow", FlowInput(inp.avatar_id, name, inputs, source, 0, inp.config), id=fid,
-            task_queue=TASK_QUEUE, parent_close_policy=ParentClosePolicy.ABANDON,
-            search_attributes=search_attrs(inp.avatar_id, "flow", "agent", name))
+            "AgentFlow",
+            FlowInput(inp.avatar_id, name, inputs, source, 0, inp.config),
+            id=fid,
+            task_queue=TASK_QUEUE,
+            parent_close_policy=ParentClosePolicy.ABANDON,
+            search_attributes=search_attrs(inp.avatar_id, "flow", "agent", name),
+        )
         wlog(f"started flow {name} as {fid}")
         return f"started flow {name}"

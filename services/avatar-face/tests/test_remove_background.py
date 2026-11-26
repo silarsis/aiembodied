@@ -2,6 +2,7 @@
 
 The cut-out is tested with a stand-in for the model, so no model download is needed.
 """
+
 import runpy
 import unittest
 from pathlib import Path
@@ -9,14 +10,15 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-cut_out = runpy.run_path(str(Path(__file__).resolve().parents[3] /
-    'app/main/assets/avatar-generation/remove-background.py'))['cut_out']
+cut_out = runpy.run_path(
+    str(Path(__file__).resolve().parents[3] / "app/main/assets/avatar-generation/remove-background.py")
+)["cut_out"]
 
 
 def scene():
     image = np.full((400, 300, 3), (20, 25, 40), dtype=np.uint8)
-    image[60:380, 110:190] = (90, 90, 100)          # the character
-    image[:, 40:42] = (200, 40, 120)                # a thin neon line the model keeps
+    image[60:380, 110:190] = (90, 90, 100)  # the character
+    image[:, 40:42] = (200, 40, 120)  # a thin neon line the model keeps
     return Image.fromarray(image)
 
 

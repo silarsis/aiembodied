@@ -73,9 +73,16 @@ def llm():
 
 @pytest.fixture
 def cfg(tmp_path, llm):
-    return Config(data_dir=tmp_path / "data", pi_command=f'"{sys.executable}" "{FAKE_PI}"',
-                  cancel_grace_s=0.2, settle_s=0.5, probe_timeout_s=10, local_llm_url=llm.url, local_poll_s=0.1,
-                  local_wait_s=30)
+    return Config(
+        data_dir=tmp_path / "data",
+        pi_command=f'"{sys.executable}" "{FAKE_PI}"',
+        cancel_grace_s=0.2,
+        settle_s=0.5,
+        probe_timeout_s=10,
+        local_llm_url=llm.url,
+        local_poll_s=0.1,
+        local_wait_s=30,
+    )
 
 
 @pytest.fixture
@@ -93,6 +100,7 @@ def ws(client, repo):
         r = client.put("/v1/workspaces", json=[body])
         assert r.status_code == 200, r.text
         return r.json()[0]
+
     return make
 
 

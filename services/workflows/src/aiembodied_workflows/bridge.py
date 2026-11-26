@@ -45,12 +45,18 @@ class WatchIndex:
         self.entries.pop(workflow_id, None)
 
     def for_entity(self, entity_id: str) -> list[WatchEntry]:
-        return [e for e in self.entries.values()
-                if e.condition.get("kind") == "entity" and e.condition.get("entityId") == entity_id]
+        return [
+            e
+            for e in self.entries.values()
+            if e.condition.get("kind") == "entity" and e.condition.get("entityId") == entity_id
+        ]
 
     def for_task(self, task_id: str) -> list[WatchEntry]:
-        return [e for e in self.entries.values()
-                if e.condition.get("kind") == "coding_task" and e.condition.get("taskId") == task_id]
+        return [
+            e
+            for e in self.entries.values()
+            if e.condition.get("kind") == "coding_task" and e.condition.get("taskId") == task_id
+        ]
 
 
 def _avatar_of(address: str | None) -> str | None:
@@ -80,9 +86,13 @@ def event_to_signals(event: dict, index: WatchIndex) -> list[Signal]:
             out += [Signal(e.workflow_id, "home_change", body) for e in index.for_entity(str(entity))]
     elif typ == "task.status":
         txn_id = (event.get("txn") or {}).get("id") or ""
-        task_id = txn_id[len("task:"):] if txn_id.startswith("task:") else payload.get("taskId")
+        task_id = txn_id[len("task:") :] if txn_id.startswith("task:") else payload.get("taskId")
         if task_id:
-            body = {**payload, "taskId": task_id, "state": payload.get("state") or (event.get("txn") or {}).get("state")}
+            body = {
+                **payload,
+                "taskId": task_id,
+                "state": payload.get("state") or (event.get("txn") or {}).get("state"),
+            }
             out += [Signal(e.workflow_id, "task_status", body) for e in index.for_task(str(task_id))]
     return out
 
@@ -100,8 +110,12 @@ class Bridge:
         self._connect = connect
 
     def hello(self) -> dict:
-        return {"op": "hello", "actor": ACTOR,
-                "subscribe": {"types": SUBSCRIBE_TYPES, "to": [ACTOR], "observe": True}, "since": self.last_id}
+        return {
+            "op": "hello",
+            "actor": ACTOR,
+            "subscribe": {"types": SUBSCRIBE_TYPES, "to": [ACTOR], "observe": True},
+            "since": self.last_id,
+        }
 
     async def handle(self, event: dict) -> None:
         if event.get("id"):
@@ -124,8 +138,11 @@ class Bridge:
                 async with connect(self.url) as ws:
                     await ws.send(json.dumps(self.hello()))
                     self.connected = True
-                    log.info("connected to the switchboard at %s%s", self.url,
-                             f" (resuming after {self.last_id})" if self.last_id else "")
+                    log.info(
+                        "connected to the switchboard at %s%s",
+                        self.url,
+                        f" (resuming after {self.last_id})" if self.last_id else "",
+                    )
                     delay = 1.0
                     async for raw in ws:
                         msg = json.loads(raw)

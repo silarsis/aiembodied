@@ -26,8 +26,9 @@ def _rows(data: Any, key: str) -> list[dict[str, Any]]:
 
 
 class MemoryClient:
-    def __init__(self, base_url: str, token: str | None = None, *, client: httpx.AsyncClient | None = None,
-                 timeout: float = 15.0):
+    def __init__(
+        self, base_url: str, token: str | None = None, *, client: httpx.AsyncClient | None = None, timeout: float = 15.0
+    ):
         headers = {"Authorization": f"Bearer {token}"} if token else {}
         self._http = client or httpx.AsyncClient(base_url=base_url, headers=headers, timeout=timeout)
         self.base_url = base_url
@@ -35,8 +36,9 @@ class MemoryClient:
     async def aclose(self) -> None:
         await self._http.aclose()
 
-    async def _call(self, method: str, path: str, *, params: dict | None = None, json: Any = None,
-                    allow_404: bool = False) -> Any:
+    async def _call(
+        self, method: str, path: str, *, params: dict | None = None, json: Any = None, allow_404: bool = False
+    ) -> Any:
         try:
             resp = await self._http.request(method, path, params=_clean(params), json=json)
         except httpx.HTTPError as exc:
@@ -56,10 +58,12 @@ class MemoryClient:
         return resp.json()
 
     # intentions
-    async def intentions(self, avatar_id: str, status: str = "active", kind: str | None = None,
-                         limit: int = 100) -> list[dict]:
-        data = await self._call("GET", "/v1/intentions",
-                                params={"avatar_id": avatar_id, "status": status, "kind": kind, "limit": limit})
+    async def intentions(
+        self, avatar_id: str, status: str = "active", kind: str | None = None, limit: int = 100
+    ) -> list[dict]:
+        data = await self._call(
+            "GET", "/v1/intentions", params={"avatar_id": avatar_id, "status": status, "kind": kind, "limit": limit}
+        )
         return _rows(data, "intentions")
 
     async def all_active_intentions(self, limit: int = 1000) -> list[dict]:
@@ -74,8 +78,11 @@ class MemoryClient:
 
     # flows
     async def flows(self, avatar_id: str | None = None, include_disabled: bool = False) -> list[dict]:
-        data = await self._call("GET", "/v1/flows",
-                                params={"avatar_id": avatar_id, "include_disabled": "true" if include_disabled else None})
+        data = await self._call(
+            "GET",
+            "/v1/flows",
+            params={"avatar_id": avatar_id, "include_disabled": "true" if include_disabled else None},
+        )
         return _rows(data, "flows")
 
     async def get_flow(self, avatar_id: str, name: str) -> dict | None:
@@ -104,7 +111,9 @@ class MemoryClient:
 
     async def put_fact(self, text: str, agent: str, subject: str | None = None) -> dict:
         body = {"text": text, "author": "agent", "agent": agent, "subject": subject}
-        return await self._call("PUT", f"/v1/facts/{uuid.uuid4()}", json={k: v for k, v in body.items() if v is not None})
+        return await self._call(
+            "PUT", f"/v1/facts/{uuid.uuid4()}", json={k: v for k, v in body.items() if v is not None}
+        )
 
     async def search(self, query: str, agent: str | None = None, limit: int = 5) -> list[dict]:
         data = await self._call("GET", "/v1/search", params={"q": query, "agent": agent, "limit": limit})

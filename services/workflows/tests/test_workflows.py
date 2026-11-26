@@ -18,10 +18,23 @@ from aiembodied_workflows.wf.life import LifeInput
 from aiembodied_workflows.wf.simple import DueInput
 from aiembodied_workflows.wf.watch import WatchInput
 
-CTX = {"avatarName": "Echo", "place": "lounge", "localTime": "2026-11-26T14:00:00+08:00", "hour": 14, "voicePhase": "idle",
-       "conversationActive": False, "secondsSinceKevinSpoke": 3600, "secondsSinceAvatarSpoke": 3600,
-       "secondsSinceFaceSeen": 3600, "doNotDisturb": False, "pursuitRunning": False, "pursuitOffers": [],
-       "restlessness": None, "quietSaves": [], "asleep": False}
+CTX = {
+    "avatarName": "Echo",
+    "place": "lounge",
+    "localTime": "2026-11-26T14:00:00+08:00",
+    "hour": 14,
+    "voicePhase": "idle",
+    "conversationActive": False,
+    "secondsSinceKevinSpoke": 3600,
+    "secondsSinceAvatarSpoke": 3600,
+    "secondsSinceFaceSeen": 3600,
+    "doNotDisturb": False,
+    "pursuitRunning": False,
+    "pursuitOffers": [],
+    "restlessness": None,
+    "quietSaves": [],
+    "asleep": False,
+}
 
 
 class FakeApp:
@@ -106,9 +119,23 @@ class FakeApp:
         async def flow_runaway(req: dict) -> None:
             return None
 
-        return [app_act, journal, mem_patch_intention, mem_decision_context, mem_run_summaries, mem_put_agent_state,
-                mem_get_flow, mem_patch_flow, mem_home_entities, mem_create_intention, mem_search, mem_put_fact,
-                web_search, probe_url, flow_runaway]
+        return [
+            app_act,
+            journal,
+            mem_patch_intention,
+            mem_decision_context,
+            mem_run_summaries,
+            mem_put_agent_state,
+            mem_get_flow,
+            mem_patch_flow,
+            mem_home_entities,
+            mem_create_intention,
+            mem_search,
+            mem_put_fact,
+            web_search,
+            probe_url,
+            flow_runaway,
+        ]
 
 
 class Harness:
@@ -119,8 +146,14 @@ class Harness:
     async def __aenter__(self):
         acts = self.app.activities()
         self.workers = [
-            Worker(self.client, task_queue="agents", workflows=WORKFLOWS, activities=acts, workflow_runner=sandbox_runner()),
-            Worker(self.client, task_queue="think", activities=[a for a in acts if getattr(a, "__temporal_activity_definition").name == "app_act"]),
+            Worker(
+                self.client, task_queue="agents", workflows=WORKFLOWS, activities=acts, workflow_runner=sandbox_runner()
+            ),
+            Worker(
+                self.client,
+                task_queue="think",
+                activities=[a for a in acts if getattr(a, "__temporal_activity_definition").name == "app_act"],
+            ),
         ]
         self.tasks = [asyncio.create_task(w.run()) for w in self.workers]
         await asyncio.sleep(0.2)
@@ -141,8 +174,12 @@ async def test_reminder_fires_and_says(temporal_env):
     async with Harness(temporal_env, app) as h:
         due = datetime.now(timezone.utc) + timedelta(hours=2)
         out = await h.client.execute_workflow(
-            "Reminder", DueInput("echo", "take the bins out", iso_z(due), True, "int-1", {}), id=wid("remind"),
-            task_queue="agents", result_type=str)
+            "Reminder",
+            DueInput("echo", "take the bins out", iso_z(due), True, "int-1", {}),
+            id=wid("remind"),
+            task_queue="agents",
+            result_type=str,
+        )
     assert out == "said"
     say = app.kinds("say")[0]
     assert say["text"] == "Reminder: take the bins out" and say["urgent"] is True
@@ -154,8 +191,13 @@ async def test_late_reminder_mentions_when_it_was_due(temporal_env):
     app = FakeApp()
     async with Harness(temporal_env, app) as h:
         due = datetime.now(timezone.utc) - timedelta(hours=1)
-        await h.client.execute_workflow("Reminder", DueInput("echo", "call mum", iso_z(due), False, None, {"timezone": "UTC"}),
-                                        id=wid("remind"), task_queue="agents", result_type=str)
+        await h.client.execute_workflow(
+            "Reminder",
+            DueInput("echo", "call mum", iso_z(due), False, None, {"timezone": "UTC"}),
+            id=wid("remind"),
+            task_queue="agents",
+            result_type=str,
+        )
     assert "(this was due at " in app.kinds("say")[0]["text"]
 
 
@@ -164,8 +206,11 @@ async def test_reminder_waits_for_the_app(temporal_env):
     app.offline = True
     async with Harness(temporal_env, app) as h:
         handle = await h.client.start_workflow(
-            "Reminder", DueInput("echo", "x", iso_z(datetime.now(timezone.utc) + timedelta(minutes=1)), False, None, {}),
-            id=wid("remind"), task_queue="agents")
+            "Reminder",
+            DueInput("echo", "x", iso_z(datetime.now(timezone.utc) + timedelta(minutes=1)), False, None, {}),
+            id=wid("remind"),
+            task_queue="agents",
+        )
         await temporal_env.sleep(3600)
         assert app.kinds("say") == []  # still waiting
         app.offline = False
@@ -177,8 +222,9 @@ async def test_life_sleeps_after_too_many_awake_hours_and_wakes_on_interaction(t
     app = FakeApp()
     config = {"sleepAfterHours": 0.05, "sleepHours": 7, "quietHours": "22-7"}  # 180 s awake
     async with Harness(temporal_env, app) as h:
-        handle = await h.client.start_workflow("AgentLife", LifeInput("echo", "Echo", config), id=wid("life"),
-                                               task_queue="agents")
+        handle = await h.client.start_workflow(
+            "AgentLife", LifeInput("echo", "Echo", config), id=wid("life"), task_queue="agents"
+        )
         await temporal_env.sleep(900)
         state = await handle.query("state")
         assert state["awake"] is False and state["awakeSeconds"] >= 180
@@ -194,8 +240,9 @@ async def test_life_sleeps_after_too_many_awake_hours_and_wakes_on_interaction(t
 async def test_life_sleeps_on_signal_and_wakes_after_sleep_hours(temporal_env):
     app = FakeApp()
     async with Harness(temporal_env, app) as h:
-        handle = await h.client.start_workflow("AgentLife", LifeInput("echo", "Echo", {"sleepHours": 1}), id=wid("life"),
-                                               task_queue="agents")
+        handle = await h.client.start_workflow(
+            "AgentLife", LifeInput("echo", "Echo", {"sleepHours": 1}), id=wid("life"), task_queue="agents"
+        )
         await temporal_env.sleep(120)
         await handle.signal("sleep", "bedtime")
         await asyncio.sleep(0.3)
@@ -209,8 +256,9 @@ async def test_life_does_not_count_awake_time_while_the_app_is_closed(temporal_e
     app = FakeApp()
     app.offline = True
     async with Harness(temporal_env, app) as h:
-        handle = await h.client.start_workflow("AgentLife", LifeInput("echo", "Echo", {"sleepAfterHours": 0.05}),
-                                               id=wid("life"), task_queue="agents")
+        handle = await h.client.start_workflow(
+            "AgentLife", LifeInput("echo", "Echo", {"sleepAfterHours": 0.05}), id=wid("life"), task_queue="agents"
+        )
         await temporal_env.sleep(3600)
         state = await handle.query("state")
         assert state["awake"] is True and state["awakeSeconds"] == 0
@@ -222,8 +270,9 @@ async def test_life_decision_say(temporal_env):
     app.replies["context"] = lambda a: {**CTX, "restlessness": "restless", "secondsSinceFaceSeen": 30}
     app.replies["think"] = lambda a: {"text": "Hmm.\nSAY: The bins go out tonight.", "toolCalls": []}
     async with Harness(temporal_env, app) as h:
-        handle = await h.client.start_workflow("AgentLife", LifeInput("echo", "Echo", {"quietHours": "22-7"}),
-                                               id=wid("life"), task_queue="agents")
+        handle = await h.client.start_workflow(
+            "AgentLife", LifeInput("echo", "Echo", {"quietHours": "22-7"}), id=wid("life"), task_queue="agents"
+        )
         await temporal_env.sleep(1500)
         state = await handle.query("state")
         await handle.terminate()
@@ -238,13 +287,28 @@ async def test_life_decision_say(temporal_env):
 async def test_flow_runs_a_small_definition(temporal_env):
     app = FakeApp()
     app.replies["think"] = lambda a: {"text": "Sunny and warm", "toolCalls": []}
-    app.flow_row = {"avatar_id": "echo", "name": "weather", "enabled": True, "trigger": {"kind": "manual"}, "definition": {
-        "inputs": {"city": "Paris"},
-        "steps": [{"think": "Weather in {{city}}?", "as": "w"}, {"wait": {"seconds": 30}},
-                  {"if": {"var": "w", "op": "contains", "value": "sunny"}, "then": [{"say": "It is {{w}}"}]}]}}
+    app.flow_row = {
+        "avatar_id": "echo",
+        "name": "weather",
+        "enabled": True,
+        "trigger": {"kind": "manual"},
+        "definition": {
+            "inputs": {"city": "Paris"},
+            "steps": [
+                {"think": "Weather in {{city}}?", "as": "w"},
+                {"wait": {"seconds": 30}},
+                {"if": {"var": "w", "op": "contains", "value": "sunny"}, "then": [{"say": "It is {{w}}"}]},
+            ],
+        },
+    }
     async with Harness(temporal_env, app) as h:
-        out = await h.client.execute_workflow("AgentFlow", FlowInput("echo", "weather", {}, "manual", 0, {}),
-                                              id="flow:echo:weather:" + str(uuid.uuid4()), task_queue="agents", result_type=str)
+        out = await h.client.execute_workflow(
+            "AgentFlow",
+            FlowInput("echo", "weather", {}, "manual", 0, {}),
+            id="flow:echo:weather:" + str(uuid.uuid4()),
+            task_queue="agents",
+            result_type=str,
+        )
     assert out == "It is Sunny and warm"
     assert app.kinds("think")[0] == {"prompt": "Weather in Paris?", "tools": "none"}
     assert app.kinds("say")[0]["text"] == "It is Sunny and warm"
@@ -256,8 +320,12 @@ async def test_flow_with_a_bad_definition_fails_and_records_why(temporal_env):
     app.flow_row = {"enabled": True, "definition": {"steps": [{"wait": {"minutes": 1}}]}}
     async with Harness(temporal_env, app) as h:
         try:
-            await h.client.execute_workflow("AgentFlow", FlowInput("echo", "bad", {}, "manual", 0, {}),
-                                            id="flow:echo:bad:" + str(uuid.uuid4()), task_queue="agents")
+            await h.client.execute_workflow(
+                "AgentFlow",
+                FlowInput("echo", "bad", {}, "manual", 0, {}),
+                id="flow:echo:bad:" + str(uuid.uuid4()),
+                task_queue="agents",
+            )
             raise AssertionError("should have failed")
         except Exception as exc:  # noqa: BLE001
             assert "not valid" in str(exc.__cause__ or exc)
@@ -270,8 +338,11 @@ async def test_watch_fires_on_a_home_change_signal(temporal_env):
     until = iso_z(datetime.now(timezone.utc) + timedelta(hours=24))
     async with Harness(temporal_env, app) as h:
         handle = await h.client.start_workflow(
-            "Watch", WatchInput("echo", cond, {"say": "The front door opened"}, until, "int-9", None, {}),
-            id=wid("watch"), task_queue="agents")
+            "Watch",
+            WatchInput("echo", cond, {"say": "The front door opened"}, until, "int-9", None, {}),
+            id=wid("watch"),
+            task_queue="agents",
+        )
         await handle.signal("home_change", {"entity_id": "binary_sensor.other", "new": "on"})  # not ours
         await asyncio.sleep(0.3)
         assert app.kinds("say") == []
@@ -287,7 +358,12 @@ async def test_watch_ends_at_its_deadline_without_firing(temporal_env):
     cond = {"kind": "entity", "entityId": "binary_sensor.front_door", "state": "on"}
     until = iso_z(datetime.now(timezone.utc) + timedelta(hours=1))
     async with Harness(temporal_env, app) as h:
-        out = await h.client.execute_workflow("Watch", WatchInput("echo", cond, {"say": "x"}, until, "i", None, {}),
-                                              id=wid("watch"), task_queue="agents", result_type=str)
+        out = await h.client.execute_workflow(
+            "Watch",
+            WatchInput("echo", cond, {"say": "x"}, until, "i", None, {}),
+            id=wid("watch"),
+            task_queue="agents",
+            result_type=str,
+        )
     assert out == "expired" and app.kinds("say") == []
     assert app.patched[-1]["fields"]["status"] == "dropped"

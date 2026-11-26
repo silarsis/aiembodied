@@ -1,4 +1,5 @@
 """The head close-up's bake, on a made-up flat head facing the front camera. Needs numpy, scipy and PIL."""
+
 import importlib.util
 import json
 import tempfile
@@ -31,7 +32,15 @@ def write_scene(work, points, normals):
         camera((0, 0, 1.8), (0, -1, 0), (1, 0, 0)),
         camera((0, 0, -1.8), (0, -1, 0), (-1, 0, 0)),
     ]
-    frame = {"centre": [0, 0, 0], "scale": 1.0, "lo": [-0.5, -0.5, -0.5], "hi": [0.5, 0.5, 0.5], "half": 0.55, "size": SIZE, "cameras": cameras}
+    frame = {
+        "centre": [0, 0, 0],
+        "scale": 1.0,
+        "lo": [-0.5, -0.5, -0.5],
+        "hi": [0.5, 0.5, 0.5],
+        "half": 0.55,
+        "size": SIZE,
+        "cameras": cameras,
+    }
     (work / "frame.json").write_text(json.dumps(frame))
     pos = np.full((6, SIZE, SIZE, 3), 0.5, dtype=np.float32)
     mask = np.zeros((6, SIZE, SIZE), dtype=bool)

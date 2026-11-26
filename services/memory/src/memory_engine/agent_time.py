@@ -144,7 +144,9 @@ def _flow(r: tuple) -> dict[str, Any]:
     }
 
 
-def list_flows(conn: psycopg.Connection, *, avatar_id: Optional[str] = None, include_disabled: bool = False) -> list[dict[str, Any]]:
+def list_flows(
+    conn: psycopg.Connection, *, avatar_id: Optional[str] = None, include_disabled: bool = False
+) -> list[dict[str, Any]]:
     """Flows that are not deleted, by avatar then name; switched-off ones only when asked for."""
     rows = conn.execute(
         f"""
@@ -213,7 +215,9 @@ def put_flow(
     return flow
 
 
-def update_flow(conn: psycopg.Connection, avatar_id: str, name: str, changes: dict[str, Any]) -> Optional[dict[str, Any]]:
+def update_flow(
+    conn: psycopg.Connection, avatar_id: str, name: str, changes: dict[str, Any]
+) -> Optional[dict[str, Any]]:
     """Change `enabled`, `last_run_at` or `last_outcome`; the definition's version stays as it is."""
     sets = ["updated_at = now()"]
     args: dict[str, Any] = {"avatar": avatar_id, "name": name}
@@ -313,6 +317,9 @@ def brief_parts(conn: psycopg.Connection, avatar_id: Optional[str]) -> dict[str,
         """,
         {"avatar": avatar_id, "limit": BRIEF_FLOWS},
     ).fetchall()
-    flows = [{"name": r[0], "description": _clip(r[1], BRIEF_TEXT_CHARS), "trigger": r[2], "avatar_id": r[3]} for r in flow_rows]
+    flows = [
+        {"name": r[0], "description": _clip(r[1], BRIEF_TEXT_CHARS), "trigger": r[2], "avatar_id": r[3]}
+        for r in flow_rows
+    ]
     state = get_state(conn, avatar_id) if avatar_id else None
     return {"intentions": intentions, "flows": flows, "agent_state": state}

@@ -23,9 +23,18 @@ from .retarget import SOMA_REST_HIPS_HEIGHT, _env_degrees
 
 # The bones the app sends: normalized rest positions in metres, Y up, facing +Z, left on +X.
 REST_BONES = (
-    "hips", "spine", "chest", "upperChest",
-    "leftShoulder", "leftUpperArm", "leftLowerArm", "leftHand",
-    "rightShoulder", "rightUpperArm", "rightLowerArm", "rightHand",
+    "hips",
+    "spine",
+    "chest",
+    "upperChest",
+    "leftShoulder",
+    "leftUpperArm",
+    "leftLowerArm",
+    "leftHand",
+    "rightShoulder",
+    "rightUpperArm",
+    "rightLowerArm",
+    "rightHand",
 )
 # Extra forward swing on top of the calibrated angle: Kevin wanted the hands "a little more" forward
 # than exact. Override with MOTION_ARM_FORWARD_BIAS_DEG.

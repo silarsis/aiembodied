@@ -106,7 +106,8 @@ class AgentLife:
             "awakeSeconds": int(s.awake_seconds),
             "nextDecisionAt": _iso(s.next_decision),
             "lastDecision": {"at": s.last_decision_at, "summary": s.last_decision_summary}
-            if s.last_decision_at else None,
+            if s.last_decision_at
+            else None,
             "mood": s.mood,
             "lastPlanDate": s.last_plan_date,
             "lastReflectDate": s.last_reflect_date,
@@ -139,8 +140,9 @@ class AgentLife:
                     workflow.continue_as_new(LifeInput(self.avatar, self.name, self.cfg, self.s))
             seen = self.rev
             try:
-                await workflow.wait_condition(lambda: self.rev != seen or self.paused,
-                                              timeout=timedelta(seconds=max(next_tick - ts(), 0.05)))
+                await workflow.wait_condition(
+                    lambda: self.rev != seen or self.paused, timeout=timedelta(seconds=max(next_tick - ts(), 0.05))
+                )
             except asyncio.TimeoutError:
                 pass
 
@@ -177,11 +179,15 @@ class AgentLife:
         self.s.asleep = True
         self.s.sleep_until = ts() + hours * 3600
         await try_act(self.avatar, "sleep_state", {"asleep": True, "reason": reason})
-        await say_line("sleep", f"sleeping: {reason} (until about {datetime.fromtimestamp(self.s.sleep_until, timezone.utc):%H:%M} UTC)",
-                       self.avatar)
+        await say_line(
+            "sleep",
+            f"sleeping: {reason} (until about {datetime.fromtimestamp(self.s.sleep_until, timezone.utc):%H:%M} UTC)",
+            self.avatar,
+        )
         await best_effort("mem_run_summaries", None, seconds=300)
-        await best_effort("mem_put_agent_state", {"avatarId": self.avatar, "state": {
-            "asleep": True, "last_sleep_at": iso_z(now())}})
+        await best_effort(
+            "mem_put_agent_state", {"avatarId": self.avatar, "state": {"asleep": True, "last_sleep_at": iso_z(now())}}
+        )
 
     async def _wake_up(self, reason: str) -> None:
         self.s.asleep = False
@@ -190,8 +196,13 @@ class AgentLife:
         self.s.last_tick = None
         await try_act(self.avatar, "sleep_state", {"asleep": False, "reason": reason})
         await say_line("wake", f"waking up: {reason}", self.avatar)
-        await best_effort("mem_put_agent_state", {"avatarId": self.avatar, "state": {
-            "asleep": False, "awake_since": iso_z(now()), "last_wake_at": iso_z(now())}})
+        await best_effort(
+            "mem_put_agent_state",
+            {
+                "avatarId": self.avatar,
+                "state": {"asleep": False, "awake_since": iso_z(now()), "last_wake_at": iso_z(now())},
+            },
+        )
 
     # --- one tick ---------------------------------------------------------------------------------
     async def _tick(self) -> None:
@@ -238,8 +249,10 @@ class AgentLife:
             if rules.hard_rules(ctx, hour=hour, quiet_hours=quiet, since_last_say=None, is_sleep_decision=True)[0]:
                 await self._reflect(ctx, local_date)
                 return
-        if rules.is_new_day_plan_time(ctx, local_date, hour, s.last_plan_date) and \
-                rules.hard_rules(ctx, hour=hour, quiet_hours=quiet, since_last_say=None)[0]:
+        if (
+            rules.is_new_day_plan_time(ctx, local_date, hour, s.last_plan_date)
+            and rules.hard_rules(ctx, hour=hour, quiet_hours=quiet, since_last_say=None)[0]
+        ):
             await self._plan(ctx, local_date)
             return
         await self._maybe_decide(ctx, t, hour, quiet, arrival)
@@ -308,8 +321,15 @@ class AgentLife:
         flows = [f"{f.get('name')}: {f.get('description') or ''}".strip() for f in mem.get("flows") or []][:12]
         arrival_minutes = s.pending_arrival_minutes
         prompt = rules.decision_prompt(
-            self.name, ctx, hours_awake=s.awake_seconds / 3600, intentions=intentions, flows=flows,
-            quiet_saves=saves, offers=ctx.get("pursuitOffers") or [], arrival_minutes=arrival_minutes)
+            self.name,
+            ctx,
+            hours_awake=s.awake_seconds / 3600,
+            intentions=intentions,
+            flows=flows,
+            quiet_saves=saves,
+            offers=ctx.get("pursuitOffers") or [],
+            arrival_minutes=arrival_minutes,
+        )
         why = "arrival" if arrival_minutes is not None else "saved notes" if saves else "time"
         wlog(f"deciding ({why})")
         t0 = now()
@@ -345,15 +365,20 @@ class AgentLife:
         s.last_plan_date = local_date
         mem = await best_effort("mem_decision_context", self.avatar) or {}
         prompt = rules.plan_prompt(
-            self.name, ctx, hours_awake=s.awake_seconds / 3600,
+            self.name,
+            ctx,
+            hours_awake=s.awake_seconds / 3600,
             intentions=[rules.describe_intention(r) for r in mem.get("intentions") or []][:12],
-            flows=[f.get("name", "") for f in mem.get("flows") or []][:12])
+            flows=[f.get("name", "") for f in mem.get("flows") or []][:12],
+        )
         await say_line("step", f"morning plan for {local_date}", self.avatar)
         t0 = now()
         res = await try_act(self.avatar, "think", {"prompt": prompt, "tools": "safe"})
         took = (now() - t0).total_seconds()
         if res.ok:
-            await say_line("step", f"plan: {rules.clip(str(res.data.get('text', '')), 160)} (think {took:.1f} s)", self.avatar)
+            await say_line(
+                "step", f"plan: {rules.clip(str(res.data.get('text', '')), 160)} (think {took:.1f} s)", self.avatar
+            )
         else:
             wlog(f"morning plan failed: {res.error}", "warning")
 
@@ -362,9 +387,12 @@ class AgentLife:
         s.last_reflect_date = local_date
         mem = await best_effort("mem_decision_context", self.avatar) or {}
         prompt = rules.reflect_prompt(
-            self.name, ctx, hours_awake=s.awake_seconds / 3600,
+            self.name,
+            ctx,
+            hours_awake=s.awake_seconds / 3600,
             intentions=[rules.describe_intention(r) for r in mem.get("intentions") or []][:12],
-            flows=[f.get("name", "") for f in mem.get("flows") or []][:12])
+            flows=[f.get("name", "") for f in mem.get("flows") or []][:12],
+        )
         await say_line("step", f"evening reflection for {local_date}", self.avatar)
         t0 = now()
         res = await try_act(self.avatar, "think", {"prompt": prompt, "tools": "safe"})

@@ -28,7 +28,7 @@ class DueInput:
 
 
 def reminder_text(text: str, due: datetime, fired: datetime, tz) -> str:
-    """"Reminder: <text>", plus when it was due if it is more than 10 minutes late."""
+    """ "Reminder: <text>", plus when it was due if it is more than 10 minutes late."""
     out = f"Reminder: {text}"
     if (fired - due).total_seconds() > LATE_SECONDS:
         out += f" (this was due at {hhmm(due, tz)})"

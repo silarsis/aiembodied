@@ -29,8 +29,14 @@ def main(argv=None) -> int:
 
     if a.host not in ("127.0.0.1", "localhost", "::1"):
         log.warning("Listening on %s: anyone who can reach this port can start and stop workflows.", a.host)
-    log.info("workflows service starting on http://%s:%s (Temporal %s, namespace %s, agent life %s)", a.host, a.port,
-             settings.temporal_address, settings.namespace, "on" if settings.agent_life else "off")
+    log.info(
+        "workflows service starting on http://%s:%s (Temporal %s, namespace %s, agent life %s)",
+        a.host,
+        a.port,
+        settings.temporal_address,
+        settings.namespace,
+        "on" if settings.agent_life else "off",
+    )
     uvicorn.run(create_app(settings), host=a.host, port=a.port, log_config=None, log_level=settings.log_level.lower())
     return 0
 

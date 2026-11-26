@@ -21,6 +21,7 @@ def git(repo, *a):
 
 # ---- workspaces -------------------------------------------------------------------------------
 
+
 def test_workspace_validation(client, ws, tmp_path):
     w = ws(kind="self")
     assert w["base_branch"] == "main"
@@ -46,12 +47,15 @@ def test_keys_never_returned(client):
 
 def test_task_needs_key_for_provider(client, ws):
     ws()
-    r = client.post("/v1/tasks", json={"workspace_id": "proj", "goal": "x", "model": {"provider": "openai", "id": "gpt"}})
+    r = client.post(
+        "/v1/tasks", json={"workspace_id": "proj", "goal": "x", "model": {"provider": "openai", "id": "gpt"}}
+    )
     assert r.status_code == 400
     assert client.post("/v1/tasks", json={"workspace_id": "nope", "goal": "x"}).status_code == 404
 
 
 # ---- full flow --------------------------------------------------------------------------------
+
 
 def test_flow_to_review_with_diff_stats(client, ws, repo):
     ws(checks="echo checks-ran && true")
@@ -103,12 +107,16 @@ def test_failed_setup_is_flagged_but_pi_still_runs(client, ws):
     t = wait_status(client, new_task(client)["id"], "review")
     assert "setup failed" in t["review"]["flags"]
     events = client.get(f"/v1/tasks/{t['id']}/events").json()
-    assert any(e["payload"].get("message") == "setup failed" and "broken" in e["payload"]["output"]
-               for e in events if e["type"] == "runner")
+    assert any(
+        e["payload"].get("message") == "setup failed" and "broken" in e["payload"]["output"]
+        for e in events
+        if e["type"] == "runner"
+    )
 
 
 def test_setup_autodetected_from_lockfile(tmp_path):
     from coder.manager import TaskManager as Manager
+
     assert Manager.detect_setup(tmp_path) is None
     (tmp_path / "pnpm-lock.yaml").write_text("")
     assert Manager.detect_setup(tmp_path) == "pnpm install --frozen-lockfile --prefer-offline"
@@ -116,6 +124,7 @@ def test_setup_autodetected_from_lockfile(tmp_path):
 
 def test_local_context_in_pi_models(client, cfg):
     import json
+
     client.put("/v1/settings", json={"local_context": 32768})
     models = json.loads((cfg.agent_dir / "models.json").read_text())
     assert models["providers"]["local"]["models"][0]["contextWindow"] == 32768
@@ -150,6 +159,7 @@ def test_follow_up_after_review(client, ws):
 
 # ---- apply ------------------------------------------------------------------------------------
 
+
 def test_protected_violation_blocks_apply(client, ws, monkeypatch):
     monkeypatch.setenv("FAKE_PI_FILE", "services/coder/x.txt")
     ws(protected_paths=["services/coder/"])
@@ -182,8 +192,12 @@ def test_apply_requires_review(client, ws, monkeypatch):
 
 
 def test_parse_owner_repo():
-    for url in ("https://github.com/acme/widgets.git", "git@github.com:acme/widgets.git",
-                "ssh://git@github.com/acme/widgets", "https://tok@github.com/acme/widgets/"):
+    for url in (
+        "https://github.com/acme/widgets.git",
+        "git@github.com:acme/widgets.git",
+        "ssh://git@github.com/acme/widgets",
+        "https://tok@github.com/acme/widgets/",
+    ):
         assert gitops.parse_owner_repo(url) == ("acme", "widgets"), url
     assert gitops.parse_owner_repo("/tmp/origin.git") is None
     assert gitops.parse_owner_repo("https://gitlab.com/a/b") is None
@@ -198,7 +212,9 @@ def test_create_pr_api_against_stub():
             seen["auth"] = self.headers["Authorization"]
             seen["body"] = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             data = json.dumps({"html_url": "https://github.com/acme/widgets/pull/7"}).encode()
-            self.send_response(201); self.send_header("Content-Length", str(len(data))); self.end_headers()
+            self.send_response(201)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
             self.wfile.write(data)
 
         def log_message(self, *a):
@@ -206,8 +222,9 @@ def test_create_pr_api_against_stub():
 
     srv = HTTPServer(("127.0.0.1", 0), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    url = github.create_pr_api(f"http://127.0.0.1:{srv.server_port}", "tok", "acme", "widgets", "echo/x", "main",
-                               "Title", "Body", True)
+    url = github.create_pr_api(
+        f"http://127.0.0.1:{srv.server_port}", "tok", "acme", "widgets", "echo/x", "main", "Title", "Body", True
+    )
     srv.shutdown()
     assert url.endswith("/pull/7")
     assert seen["path"] == "/repos/acme/widgets/pulls" and seen["auth"] == "Bearer tok"
@@ -215,6 +232,7 @@ def test_create_pr_api_against_stub():
 
 
 # ---- questions, cancel, discard ----------------------------------------------------------------
+
 
 def test_question_and_answer(client, ws, monkeypatch):
     monkeypatch.setenv("FAKE_PI_MODE", "question")
@@ -279,6 +297,7 @@ def test_queue_runs_one_at_a_time(client, ws, monkeypatch):
 
 # ---- restart, env, capabilities ----------------------------------------------------------------
 
+
 def test_startup_marks_stale_tasks_failed(cfg, repo, ws, client):
     ws()
     store = client.app.state.store
@@ -294,8 +313,16 @@ def test_env_is_stripped_and_provider_key_passed(client, ws, monkeypatch, tmp_pa
     dump = tmp_path / "env.json"
     monkeypatch.setenv("FAKE_PI_ENV_DUMP", str(dump))
     monkeypatch.setenv("FAKE_PI_ARGV_DUMP", str(tmp_path / "argv.json"))
-    for k, v in {"GITHUB_TOKEN": "g", "GH_TOKEN": "g", "HA_URL": "u", "SOME_API_KEY": "k", "OPENAI_API_KEY": "host-key",
-                 "MY_SECRET": "s", "DB_TOKEN": "t", "KEEP_ME": "yes"}.items():
+    for k, v in {
+        "GITHUB_TOKEN": "g",
+        "GH_TOKEN": "g",
+        "HA_URL": "u",
+        "SOME_API_KEY": "k",
+        "OPENAI_API_KEY": "host-key",
+        "MY_SECRET": "s",
+        "DB_TOKEN": "t",
+        "KEEP_ME": "yes",
+    }.items():
         monkeypatch.setenv(k, v)
     ws(protected_paths=["a/", "b.ts"])
     client.put("/v1/keys", json={"openai": "sk-from-app", "github": "ghp"})
@@ -382,11 +409,15 @@ def test_slugify():
 
 # ---- settings, local model wait, status, resume ------------------------------------------------
 
+
 def test_settings_roundtrip_and_agent_dir(cfg, client, tmp_path):
     r = client.get("/v1/settings").json()
     assert r["default_model"] == {"provider": "local", "id": cfg.local_model}
-    body = {"local_llm_url": "http://127.0.0.1:9/v1/", "local_model": "m2",
-            "default_model": {"provider": "openai", "id": "gpt-x"}}
+    body = {
+        "local_llm_url": "http://127.0.0.1:9/v1/",
+        "local_model": "m2",
+        "default_model": {"provider": "openai", "id": "gpt-x"},
+    }
     r = client.put("/v1/settings", json=body)
     assert r.status_code == 200 and r.json()["local_llm_url"] == "http://127.0.0.1:9/v1"
     models = json.loads((cfg.agent_dir / "models.json").read_text())
@@ -394,6 +425,7 @@ def test_settings_roundtrip_and_agent_dir(cfg, client, tmp_path):
     assert models["providers"]["local"]["models"] == [{"id": "m2", "contextWindow": 65536}]
     # a new runner on the same data dir reads the saved file
     from coder.config import Config
+
     c2 = Config(data_dir=cfg.data_dir)
     create_app(c2)
     assert c2.local_model == "m2" and c2.default_model == {"provider": "openai", "id": "gpt-x"}
@@ -496,10 +528,24 @@ def test_restart_recovery_other_states(cfg, repo, client, ws):
     wt = cfg.worktrees_dir / "20260101-cccc"
     gitops.create_worktree(repo, "origin", "main", "echo/x", wt)
     base = git(wt, "rev-parse", "HEAD")
-    store.create_task(id="20260101-cccc", workspace_id="proj", goal="g", status="pushing", branch="echo/x",
-                      worktree=str(wt), base_commit=base)
-    store.create_task(id="20260101-dddd", workspace_id="proj", goal="g", status="working", branch="b",
-                      worktree=str(cfg.worktrees_dir / "missing"), base_commit="abc")
+    store.create_task(
+        id="20260101-cccc",
+        workspace_id="proj",
+        goal="g",
+        status="pushing",
+        branch="echo/x",
+        worktree=str(wt),
+        base_commit=base,
+    )
+    store.create_task(
+        id="20260101-dddd",
+        workspace_id="proj",
+        goal="g",
+        status="working",
+        branch="b",
+        worktree=str(cfg.worktrees_dir / "missing"),
+        base_commit="abc",
+    )
     c2 = create_app(cfg).state.store
     a, b = c2.get_task("20260101-cccc"), c2.get_task("20260101-dddd")
     assert a["status"] == "review" and a["error"] == "runner restarted during push"
@@ -507,6 +553,7 @@ def test_restart_recovery_other_states(cfg, repo, client, ws):
 
 
 # ---- ask_echo, several dialogs, text questions, paused time limit -----------------------------
+
 
 def test_ask_echo_question_kind_and_answer(client, ws, monkeypatch):
     monkeypatch.setenv("FAKE_PI_MODE", "ask")
@@ -622,13 +669,16 @@ def test_time_limit_paused_while_question(client, ws, monkeypatch):
 def test_old_database_gets_questions_column(tmp_path):
     import sqlite3
     from coder.store import Store
+
     p = tmp_path / "old.sqlite"
     db = sqlite3.connect(p)
-    db.execute("CREATE TABLE tasks (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, goal TEXT NOT NULL, acceptance TEXT, "
-               "scope TEXT, provider TEXT, model TEXT, branch TEXT, worktree TEXT, base_commit TEXT, status TEXT NOT NULL, "
-               "phase_detail TEXT, current_tool TEXT, files_touched TEXT, question TEXT, last_text TEXT, checks_ok INTEGER, "
-               "checks_output TEXT, review TEXT, pr_url TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
-               "started_at TEXT, finished_at TEXT)")
+    db.execute(
+        "CREATE TABLE tasks (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, goal TEXT NOT NULL, acceptance TEXT, "
+        "scope TEXT, provider TEXT, model TEXT, branch TEXT, worktree TEXT, base_commit TEXT, status TEXT NOT NULL, "
+        "phase_detail TEXT, current_tool TEXT, files_touched TEXT, question TEXT, last_text TEXT, checks_ok INTEGER, "
+        "checks_output TEXT, review TEXT, pr_url TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
+        "started_at TEXT, finished_at TEXT)"
+    )
     db.commit()
     db.close()
     st = Store(p)
@@ -637,6 +687,7 @@ def test_old_database_gets_questions_column(tmp_path):
 
 
 # ---- hold: pause while Echo needs the local model -----------------------------------------------
+
 
 def test_hold_pauses_and_release_resumes(client, ws, monkeypatch, tmp_path):
     monkeypatch.setenv("FAKE_PI_MODE", "hang")

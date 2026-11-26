@@ -36,8 +36,9 @@ class Client:
         self.queue: asyncio.Queue[Optional[dict[str, Any]]] = asyncio.Queue(CLIENT_QUEUE)
 
     def matches(self, ev: dict[str, Any]) -> bool:
-        return (any(fnmatchcase(ev["type"], g) for g in self.types)
-                and (self.observe or any(a in self.to for a in ev.get("to", ()))))
+        return any(fnmatchcase(ev["type"], g) for g in self.types) and (
+            self.observe or any(a in self.to for a in ev.get("to", ()))
+        )
 
     def offer(self, msg: dict[str, Any]) -> bool:
         """Queue a message; on overflow throw the backlog away and queue the drop marker instead."""
@@ -106,8 +107,9 @@ class Hub:
     def attach(self, hello: dict[str, Any]) -> tuple[Client, list[dict[str, Any]]]:
         """Register a subscriber from its hello message. Returns it with the journal events to replay first."""
         sub = hello.get("subscribe") or {}
-        client = Client(hello.get("actor"), list(sub.get("types") or ["*"]), list(sub.get("to") or []),
-                        bool(sub.get("observe")))
+        client = Client(
+            hello.get("actor"), list(sub.get("types") or ["*"]), list(sub.get("to") or []), bool(sub.get("observe"))
+        )
         replay: list[dict[str, Any]] = []
         cursor = hello.get("since")
         while cursor:

@@ -25,9 +25,18 @@ class Ledger:
         was_closed = row is not None and row["state"] in CLOSED_STATES
         if row is None:
             parent = self.store.get_txn(t.parent) if t.parent else None
-            row = {"id": t.id, "parent": t.parent, "root": t.root or (parent["root"] if parent else t.parent) or t.id,
-                   "state": "open", "title": t.title, "opened_by": who, "owner": None, "opened_at": ev.at,
-                   "closed_at": None, "deadline": t.deadline}
+            row = {
+                "id": t.id,
+                "parent": t.parent,
+                "root": t.root or (parent["root"] if parent else t.parent) or t.id,
+                "state": "open",
+                "title": t.title,
+                "opened_by": who,
+                "owner": None,
+                "opened_at": ev.at,
+                "closed_at": None,
+                "deadline": t.deadline,
+            }
         if t.state and not was_closed:
             row["state"] = t.state
             if t.state != "open" and not row["owner"]:
@@ -38,15 +47,20 @@ class Ledger:
         self.store.put_txn(row)
         if was_closed or row["state"] not in CLOSED_STATES:
             return []
-        return [self._system("txn.cancelled", c, "cancelled", {"reason": "parent closed", "parent": row["id"]})
-                for c in self.store.txns(state="open", parent=row["id"], limit=1000)]
+        return [
+            self._system("txn.cancelled", c, "cancelled", {"reason": "parent closed", "parent": row["id"]})
+            for c in self.store.txns(state="open", parent=row["id"], limit=1000)
+        ]
 
     def expire(self, now: str) -> list[Event]:
         """`txn.expired` for every open txn whose deadline has passed (applying them cascades to the children)."""
-        return [self._system("txn.expired", row, "expired", {"deadline": row["deadline"]})
-                for row in self.store.overdue(now)]
+        return [
+            self._system("txn.expired", row, "expired", {"deadline": row["deadline"]})
+            for row in self.store.overdue(now)
+        ]
 
     @staticmethod
     def _system(type_: str, row: dict[str, Any], state: str, payload: dict[str, Any]) -> Event:
-        return Event(type=type_, producer=SWITCHBOARD, txn=Txn(id=row["id"], parent=row["parent"], state=state),
-                     payload=payload)
+        return Event(
+            type=type_, producer=SWITCHBOARD, txn=Txn(id=row["id"], parent=row["parent"], state=state), payload=payload
+        )

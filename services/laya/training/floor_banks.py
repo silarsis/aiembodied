@@ -6,24 +6,65 @@ Tilly Bruno Mabel Archie Zola Tango Marlo Nell Opal Percy Quinn Rosie Soren Tobi
 Xander Yara Zephyr Biscuit Fable Gus Hattie Iris Jinx Kit Lark Barnaby Delphi Mika Bodhi Pip""".split()
 
 ALIASES = {
-    "Echo": ["Eko", "Ecko", "Eco"], "Sage": ["Saige", "Sayge"], "Rex": ["Wrecks", "Rexx"],
-    "Luna": ["Loona", "Lunah"], "Nova": ["Novah", "Nover"], "Ash": ["Ashe", "Arsh"],
-    "River": ["Rivver"], "Juno": ["Junoh", "Juneau"], "Pixel": ["Pixil", "Pixle"],
-    "Momo": ["Mo Mo", "Mommo"], "Kai": ["Kye", "Ky", "Kae"], "Milo": ["Mylo", "Meelo"],
-    "Ivy": ["Ivie", "Ivvy"], "Zed": ["Zedd"], "Bea": ["Bee", "Beah"], "Otto": ["Auto", "Ottoh"],
-    "Lyra": ["Lira", "Liara"], "Finn": ["Fin", "Finnn"], "Wren": ["Ren", "Wrenn"],
-    "Jasper": ["Jaspa", "Jaspar"], "Poppy": ["Poppie"], "Hugo": ["Yugo", "Hewgo"],
-    "Orion": ["Oryan", "Orian"], "Ziggy": ["Ziggie"], "Clover": ["Clova"], "Atlas": ["Atlass"],
-    "Skye": ["Sky", "Skai"], "Remy": ["Remmy", "Remi"], "Piper": ["Pipa"], "Cleo": ["Clio", "Cleoh"],
-    "Bruno": ["Brunoh"], "Tilly": ["Tillie"],
+    "Echo": ["Eko", "Ecko", "Eco"],
+    "Sage": ["Saige", "Sayge"],
+    "Rex": ["Wrecks", "Rexx"],
+    "Luna": ["Loona", "Lunah"],
+    "Nova": ["Novah", "Nover"],
+    "Ash": ["Ashe", "Arsh"],
+    "River": ["Rivver"],
+    "Juno": ["Junoh", "Juneau"],
+    "Pixel": ["Pixil", "Pixle"],
+    "Momo": ["Mo Mo", "Mommo"],
+    "Kai": ["Kye", "Ky", "Kae"],
+    "Milo": ["Mylo", "Meelo"],
+    "Ivy": ["Ivie", "Ivvy"],
+    "Zed": ["Zedd"],
+    "Bea": ["Bee", "Beah"],
+    "Otto": ["Auto", "Ottoh"],
+    "Lyra": ["Lira", "Liara"],
+    "Finn": ["Fin", "Finnn"],
+    "Wren": ["Ren", "Wrenn"],
+    "Jasper": ["Jaspa", "Jaspar"],
+    "Poppy": ["Poppie"],
+    "Hugo": ["Yugo", "Hewgo"],
+    "Orion": ["Oryan", "Orian"],
+    "Ziggy": ["Ziggie"],
+    "Clover": ["Clova"],
+    "Atlas": ["Atlass"],
+    "Skye": ["Sky", "Skai"],
+    "Remy": ["Remmy", "Remi"],
+    "Piper": ["Pipa"],
+    "Cleo": ["Clio", "Cleoh"],
+    "Bruno": ["Brunoh"],
+    "Tilly": ["Tillie"],
 }
 
 # People who are not avatars.
 PEOPLE_NAMES = """Erika Dave Priya Tom Marcus Fiona Gareth Sandra Liam Hannah Colin Deepak Mei Jenny Aaron Narelle
 Bruce Trevor Claire Yusuf""".split()
-PEOPLE_REL = ["Mum", "Dad", "my boss", "my sister", "my brother", "Nan", "Grandpa", "the plumber", "my neighbour",
-              "Dr Patel", "the landlord", "my cousin", "my mate Steve", "my manager", "my wife", "my accountant",
-              "the electrician", "Auntie Jo", "the dentist", "my uncle"]
+PEOPLE_REL = [
+    "Mum",
+    "Dad",
+    "my boss",
+    "my sister",
+    "my brother",
+    "Nan",
+    "Grandpa",
+    "the plumber",
+    "my neighbour",
+    "Dr Patel",
+    "the landlord",
+    "my cousin",
+    "my mate Steve",
+    "my manager",
+    "my wife",
+    "my accountant",
+    "the electrician",
+    "Auntie Jo",
+    "the dentist",
+    "my uncle",
+]
 
 IMP = """set a timer for ten minutes
 set a timer for twenty minutes
@@ -355,7 +396,14 @@ who wants to play a quiz
 shall we play a game
 are you ready
 have you got everything you need""".split("\n")
-G_ST = ["I've got some news", "I've just got in", "it's been a long day", "thanks, that's all", "see you in the morning", "that'll do for now"]
+G_ST = [
+    "I've got some news",
+    "I've just got in",
+    "it's been a long day",
+    "thanks, that's all",
+    "see you in the morning",
+    "that'll do for now",
+]
 
 TOPICS = """the weekend
 whether cats are better than dogs
@@ -591,16 +639,48 @@ to stop pacing
 to smile more
 to behave""".split("\n")
 
-RECENT_KEVIN = ["what's the weather doing today", "that was funny", "ok thanks", "turn the lights down a bit",
-                "what time is it", "play something relaxing", "I'm back", "that's a good one",
-                "how was your day", "can you set a timer for five minutes", "I think I'll make some tea",
-                "what's on my calendar", "never mind that", "good morning", "I'm just working on something"]
-RECENT_AVATAR = ["It's about twenty past five.", "Sure, I've turned the lights down.", "I think it will stay dry until tomorrow.",
-                 "Good morning!", "I can do that.", "Done.", "Timer's set for five minutes.", "Of course.",
-                 "That sounds like a nice plan.", "I'm having a quiet afternoon.", "Playing something relaxing now.",
-                 "No worries.", "You have nothing on until three.", "Glad you liked it."]
-RECENT_ABOUT_B = ["{B} would know that better than me.", "I'm not sure, {B} was the one who set that up.",
-                  "You'd have to check with {B} about that.", "That's more {B}'s department, really.",
-                  "{B} said something about it earlier.", "I think {B} saw it last.", "{B} was in here a minute ago.",
-                  "Honestly {B} is the better person to ask.", "I haven't a clue, but {B} might.",
-                  "{B} knows that one, not me."]
+RECENT_KEVIN = [
+    "what's the weather doing today",
+    "that was funny",
+    "ok thanks",
+    "turn the lights down a bit",
+    "what time is it",
+    "play something relaxing",
+    "I'm back",
+    "that's a good one",
+    "how was your day",
+    "can you set a timer for five minutes",
+    "I think I'll make some tea",
+    "what's on my calendar",
+    "never mind that",
+    "good morning",
+    "I'm just working on something",
+]
+RECENT_AVATAR = [
+    "It's about twenty past five.",
+    "Sure, I've turned the lights down.",
+    "I think it will stay dry until tomorrow.",
+    "Good morning!",
+    "I can do that.",
+    "Done.",
+    "Timer's set for five minutes.",
+    "Of course.",
+    "That sounds like a nice plan.",
+    "I'm having a quiet afternoon.",
+    "Playing something relaxing now.",
+    "No worries.",
+    "You have nothing on until three.",
+    "Glad you liked it.",
+]
+RECENT_ABOUT_B = [
+    "{B} would know that better than me.",
+    "I'm not sure, {B} was the one who set that up.",
+    "You'd have to check with {B} about that.",
+    "That's more {B}'s department, really.",
+    "{B} said something about it earlier.",
+    "I think {B} saw it last.",
+    "{B} was in here a minute ago.",
+    "Honestly {B} is the better person to ask.",
+    "I haven't a clue, but {B} might.",
+    "{B} knows that one, not me.",
+]

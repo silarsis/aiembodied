@@ -21,7 +21,7 @@ def format_event(ev: dict[str, Any], width: int = 100) -> str:
     txn = f" [{ev['txn']['id']}{' ' + ev['txn']['state'] if ev['txn'].get('state') else ''}]" if ev.get("txn") else ""
     payload = json.dumps(ev.get("payload") or {}, ensure_ascii=False, separators=(",", ":"))
     if len(payload) > width:
-        payload = payload[:width - 1] + "…"
+        payload = payload[: width - 1] + "…"
     return f"{ev['at'][11:23]} {ev['type']} {p['kind']}:{p['id']} -> {to}{txn} {payload}"
 
 
@@ -29,8 +29,11 @@ def _stream(base: str, types: list[str], since: Optional[str]) -> Iterator[dict[
     from websockets.sync.client import connect
 
     with connect(base.replace("http", "ws", 1) + "/v1/stream") as ws:
-        ws.send(json.dumps({"op": "hello", "actor": None, "since": since,
-                            "subscribe": {"types": types or ["*"], "observe": True}}))
+        ws.send(
+            json.dumps(
+                {"op": "hello", "actor": None, "since": since, "subscribe": {"types": types or ["*"], "observe": True}}
+            )
+        )
         while True:
             msg = json.loads(ws.recv())
             if msg["op"] == "event":
@@ -56,6 +59,7 @@ def run(url: str, types: list[str], txn: Optional[str], since: Optional[str]) ->
     closed: tuple[type[BaseException], ...] = ()
     try:
         from websockets.exceptions import ConnectionClosed
+
         closed = (ConnectionClosed,)
         source = _stream(base, types, since)
     except ImportError:

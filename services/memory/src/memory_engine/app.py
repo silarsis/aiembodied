@@ -22,7 +22,21 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import __version__, agent_time, coding, context, db, facts, handoffs, home, mirror, recall, store, storage, summaries
+from . import (
+    __version__,
+    agent_time,
+    coding,
+    context,
+    db,
+    facts,
+    handoffs,
+    home,
+    mirror,
+    recall,
+    store,
+    storage,
+    summaries,
+)
 from .embed import Embedder
 from .summaries import Summariser
 
@@ -438,7 +452,9 @@ class Engine:
                     marks, sent = mirror.push(source, target, marks)
             except Exception as error:
                 source.rollback()
-                mirror.save_marks(source, name, marks, error=str(error).splitlines()[0][:500] if str(error) else "failed")
+                mirror.save_marks(
+                    source, name, marks, error=str(error).splitlines()[0][:500] if str(error) else "failed"
+                )
                 raise
             mirror.save_marks(source, name, marks)
         self.mirror_error = None
@@ -812,7 +828,9 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
         try:
             with psycopg.connect(body.url, connect_timeout=8) as conn:
                 version = conn.execute("SHOW server_version").fetchone()[0]
-                vector = conn.execute("SELECT 1 FROM pg_available_extensions WHERE name = 'vector'").fetchone() is not None
+                vector = (
+                    conn.execute("SELECT 1 FROM pg_available_extensions WHERE name = 'vector'").fetchone() is not None
+                )
         except psycopg.OperationalError as error:
             text = str(error).lower()
             log.info("Database test failed: %s", error)
@@ -820,7 +838,12 @@ def create_app(engine: Engine, *, api_token: Optional[str] = None, connect_in_ba
                 reason = "the user name or password was refused"
             elif "does not exist" in text:
                 reason = "that database does not exist"
-            elif "timeout" in text or "could not connect" in text or "connection refused" in text or "translate host" in text:
+            elif (
+                "timeout" in text
+                or "could not connect" in text
+                or "connection refused" in text
+                or "translate host" in text
+            ):
                 reason = "the server could not be reached"
             else:
                 reason = "the connection failed; see the engine's log"

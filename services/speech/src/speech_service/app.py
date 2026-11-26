@@ -80,9 +80,14 @@ def _ms(seconds: float) -> int:
     return int(round(seconds * 1000))
 
 
-def create_app(transcriber: Transcriber, synthesizer: Synthesizer, default_voice: str,
-               language: str | None = "en", load_in_background: bool = True,
-               models: TtsModels | None = None) -> FastAPI:
+def create_app(
+    transcriber: Transcriber,
+    synthesizer: Synthesizer,
+    default_voice: str,
+    language: str | None = "en",
+    load_in_background: bool = True,
+    models: TtsModels | None = None,
+) -> FastAPI:
     state: dict = {"ready": False, "error": None}
     # One STT and one TTS at a time each; they use different engines, so they may overlap.
     stt_lock, tts_lock = threading.Lock(), threading.Lock()
@@ -93,8 +98,12 @@ def create_app(transcriber: Transcriber, synthesizer: Synthesizer, default_voice
             transcriber.load()
             synthesizer.load()
             state["ready"] = True
-            log.info("engines ready in %.1f s (stt=%s, tts=%s)", time.perf_counter() - started,
-                     transcriber.description, synthesizer.description)
+            log.info(
+                "engines ready in %.1f s (stt=%s, tts=%s)",
+                time.perf_counter() - started,
+                transcriber.description,
+                synthesizer.description,
+            )
         except Exception as error:  # noqa: BLE001 - surfaced through /health
             state["error"] = f"{type(error).__name__}: {error}"
             log.exception("engine load failed")
@@ -123,14 +132,16 @@ def create_app(transcriber: Transcriber, synthesizer: Synthesizer, default_voice
             "label": "Kokoro",
             "available": state["ready"] and not state["error"],
             "error": state["error"],
-            "models": [{
-                "id": "kokoro",
-                "label": synthesizer.description.get("engine", "kokoro"),
-                "installed": True,
-                "voices": list(synthesizer.voices),
-                "default_voice": default_voice,
-                "download": None,
-            }],
+            "models": [
+                {
+                    "id": "kokoro",
+                    "label": synthesizer.description.get("engine", "kokoro"),
+                    "installed": True,
+                    "voices": list(synthesizer.voices),
+                    "default_voice": default_voice,
+                    "download": None,
+                }
+            ],
         }
 
     def _require_ready() -> None:
@@ -185,10 +196,17 @@ def create_app(transcriber: Transcriber, synthesizer: Synthesizer, default_voice
             with tts_lock:
                 samples, rate = models.synthesize(engine, body.model, body.voice, body.text.strip(), body.speed)
         elapsed = time.perf_counter() - started
-        log.info("tts %s/%s %d chars -> %.2f s audio in %d ms", engine, voice, len(body.text),
-                 len(samples) / rate if rate else 0, _ms(elapsed))
+        log.info(
+            "tts %s/%s %d chars -> %.2f s audio in %d ms",
+            engine,
+            voice,
+            len(body.text),
+            len(samples) / rate if rate else 0,
+            _ms(elapsed),
+        )
         return Response(
-            content=encode_wav(samples, rate), media_type="audio/wav",
+            content=encode_wav(samples, rate),
+            media_type="audio/wav",
             headers={"X-Audio-Ms": str(_ms(len(samples) / rate)), "X-Synthesize-Ms": str(_ms(elapsed))},
         )
 

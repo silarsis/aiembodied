@@ -294,7 +294,9 @@ def describe_change(
 ) -> str:
     """A readable sentence: "Front door (Hallway) opened, was closed." With a home that has a name
     of its own: "Front door (Hallway, SG) opened, was closed." """
-    where = ", ".join(part for part in (area, home_name if home_name and home_name != DEFAULT_HOME_NAME else None) if part)
+    where = ", ".join(
+        part for part in (area, home_name if home_name and home_name != DEFAULT_HOME_NAME else None) if part
+    )
     who = f"{name} ({where})" if where else name
     if domain == "binary_sensor" and new in ("on", "off") and old in (None, "on", "off"):
         on_word, off_word = _BINARY_WORDS.get(device_class or "", ("turned on", "turned off"))
@@ -423,8 +425,22 @@ def record_state(
         )
         if last_state is None:
             return None  # the first time it is seen: a starting point, not a change
-        return _store_event(conn, home_id, entity_id, cls, changed_at, state, last_state, None, attributes,
-                            name, area, domain, device_class, unit)
+        return _store_event(
+            conn,
+            home_id,
+            entity_id,
+            cls,
+            changed_at,
+            state,
+            last_state,
+            None,
+            attributes,
+            name,
+            area,
+            domain,
+            device_class,
+            unit,
+        )
 
     # numeric
     value = to_float(state)
@@ -438,8 +454,22 @@ def record_state(
         )
         if last_state is None:
             return None
-        return _store_event(conn, home_id, entity_id, "change", changed_at, state, last_state, None, attributes,
-                            name, area, domain, device_class, unit)
+        return _store_event(
+            conn,
+            home_id,
+            entity_id,
+            "change",
+            changed_at,
+            state,
+            last_state,
+            None,
+            attributes,
+            name,
+            area,
+            domain,
+            device_class,
+            unit,
+        )
     if catch_up and state == last_state:
         return None
     at = updated_at
@@ -504,7 +534,9 @@ def _store_event(
         (event_id, home_id, entity_id, event_kind, at, state, old_state, value, Jsonb(kept)),
     )
     home_name = conn.execute("SELECT name FROM homes WHERE id = %s", (home_id,)).fetchone()
-    sentence = describe_change(name, area, domain, device_class, old_state, state, unit, home_name[0] if home_name else None)
+    sentence = describe_change(
+        name, area, domain, device_class, old_state, state, unit, home_name[0] if home_name else None
+    )
     text = f"Alert: {sentence}" if event_kind == "alert" else sentence
     conn.execute(
         """
@@ -514,8 +546,19 @@ def _store_event(
         """,
         (INDEX_KIND, SOURCE, event_id, at, at, text, 0.9 if event_kind == "alert" else 0.4),
     )
-    _publish(home_id, home_name[0] if home_name else None, entity_id, name, area, domain, device_class,
-             old_state, state, sentence, at)
+    _publish(
+        home_id,
+        home_name[0] if home_name else None,
+        entity_id,
+        name,
+        area,
+        domain,
+        device_class,
+        old_state,
+        state,
+        sentence,
+        at,
+    )
     return {"kind": event_kind, "indexed": True}
 
 
@@ -529,21 +572,49 @@ def _publish(home_id, home_name, entity_id, name, area, domain, device_class, ol
     try:
         if old == new or old is None or old in NO_VALUE or new in NO_VALUE:
             return
-        payload = {"home_id": home_id, "home_name": home_name, "entity_id": entity_id, "name": name, "area": area,
-                   "domain": domain, "device_class": device_class, "old": old, "new": new, "text": text}
+        payload = {
+            "home_id": home_id,
+            "home_name": home_name,
+            "entity_id": entity_id,
+            "name": name,
+            "area": area,
+            "domain": domain,
+            "device_class": device_class,
+            "old": old,
+            "new": new,
+            "text": text,
+        }
         producer = {"kind": "sensor", "id": f"ha:{home_id}"}
         when = at.astimezone(timezone.utc)
         stamp = when.isoformat().replace("+00:00", "Z")
         is_alarm = (domain == "binary_sensor" and device_class in BUS_ALARM_CLASSES and new == "on") or (
             domain == "alarm_control_panel" and new == "triggered"
         )
-        bus.publish({"type": "home.change", "producer": producer, "to": [] if is_alarm else ["avatar:echo"],
-                     "audience": "private", "priority": "low", "at": stamp,
-                     "expires": (when + CHANGE_FRESH).isoformat().replace("+00:00", "Z"), "payload": payload})
+        bus.publish(
+            {
+                "type": "home.change",
+                "producer": producer,
+                "to": [] if is_alarm else ["avatar:echo"],
+                "audience": "private",
+                "priority": "low",
+                "at": stamp,
+                "expires": (when + CHANGE_FRESH).isoformat().replace("+00:00", "Z"),
+                "payload": payload,
+            }
+        )
         if is_alarm:
-            bus.publish({"type": "home.alert", "producer": producer, "to": ["avatar:echo"], "audience": "private",
-                         "priority": "urgent", "at": stamp,
-                         "expires": (when + ALERT_FRESH).isoformat().replace("+00:00", "Z"), "payload": payload})
+            bus.publish(
+                {
+                    "type": "home.alert",
+                    "producer": producer,
+                    "to": ["avatar:echo"],
+                    "audience": "private",
+                    "priority": "urgent",
+                    "at": stamp,
+                    "expires": (when + ALERT_FRESH).isoformat().replace("+00:00", "Z"),
+                    "payload": payload,
+                }
+            )
     except Exception as error:  # noqa: BLE001 - a bus problem must not lose the stored event
         log.debug("Could not publish a home event: %s", error)
 
@@ -607,7 +678,9 @@ _HAYSTACK = (
 )
 
 
-def find_entities(conn: psycopg.Connection, home_id: Optional[str], term: Optional[str], limit: int = 200) -> list[dict[str, Any]]:
+def find_entities(
+    conn: psycopg.Connection, home_id: Optional[str], term: Optional[str], limit: int = 200
+) -> list[dict[str, Any]]:
     patterns = _like_all(term or "")
     rows = conn.execute(
         f"SELECT {ENTITY_COLUMNS} FROM {ENTITY_FROM}"  # noqa: S608 - fixed text
@@ -675,8 +748,14 @@ def history(
                 "old_state": r[3],
                 "value": r[4],
                 "text": describe_change(
-                    chosen["name"] or entity_id, chosen["area"], chosen["domain"], chosen["device_class"],
-                    r[3], r[2] or "", chosen["unit"], chosen["home_name"],
+                    chosen["name"] or entity_id,
+                    chosen["area"],
+                    chosen["domain"],
+                    chosen["device_class"],
+                    r[3],
+                    r[2] or "",
+                    chosen["unit"],
+                    chosen["home_name"],
                 ),
             }
             for r in changes
@@ -692,7 +771,14 @@ def history(
             (home, entity_id, start, end, READINGS_MAX),
         ).fetchall()
         out["readings"] = [
-            {"hour": r[0].isoformat(), "n": r[1], "min": r[2], "mean": r[4] / r[1] if r[1] else None, "max": r[3], "last": r[5]}
+            {
+                "hour": r[0].isoformat(),
+                "n": r[1],
+                "min": r[2],
+                "mean": r[4] / r[1] if r[1] else None,
+                "max": r[3],
+                "last": r[5],
+            }
             for r in rollups
         ]
         if end - start <= RAW_MAX_RANGE:
@@ -810,8 +896,11 @@ class HomeListener:
                 self.error = None
             except AuthRefused:
                 self.error = "token refused"
-                log.warning("Home Assistant (%s) refused the access token; trying again in %d minutes",
-                            self.config.home_id, AUTH_REFUSED_WAIT // 60)
+                log.warning(
+                    "Home Assistant (%s) refused the access token; trying again in %d minutes",
+                    self.config.home_id,
+                    AUTH_REFUSED_WAIT // 60,
+                )
                 wait = AUTH_REFUSED_WAIT
             except asyncio.CancelledError:
                 raise
@@ -991,8 +1080,16 @@ class HomeListener:
                 continue
             state = by_state[entity_id]
             attributes = state.get("attributes") or {}
-            if classify(entity_id.split(".", 1)[0], attributes.get("device_class"),
-                        meta.get(entity_id, {}).get("category"), state.get("state"), attributes) == "ignore":
+            if (
+                classify(
+                    entity_id.split(".", 1)[0],
+                    attributes.get("device_class"),
+                    meta.get(entity_id, {}).get("category"),
+                    state.get("state"),
+                    attributes,
+                )
+                == "ignore"
+            ):
                 watched.discard(entity_id)
         if registry and not watched:
             # Connected but watching nothing: say why, so the status explains an empty memory.
@@ -1011,7 +1108,11 @@ class HomeListener:
                 state = by_state[entity_id]
                 info = meta.get(entity_id, {})
                 upsert_entity(
-                    conn, config.home_id, state, area=info.get("area"), registry_name=info.get("name"),
+                    conn,
+                    config.home_id,
+                    state,
+                    area=info.get("area"),
+                    registry_name=info.get("name"),
                     entity_category=None if entity_id in named else info.get("category"),
                 )
                 result = record_state(conn, config.home_id, entity_id, state, catch_up=True)
@@ -1056,6 +1157,7 @@ class HomeListener:
             if not self.engine.ready:
                 continue
             try:
+
                 def run() -> int:
                     with self.engine.pool.connection(timeout=10) as conn:
                         return prune(conn, self.config.raw_days, self.config.home_id)

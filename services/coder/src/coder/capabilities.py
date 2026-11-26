@@ -32,6 +32,7 @@ class PiProbe:
 
     def found(self) -> bool:
         import shutil
+
         return shutil.which(self.cfg.pi_argv()[0]) is not None or Path(self.cfg.pi_argv()[0]).exists()
 
     def version(self, refresh: bool = False) -> tuple[Optional[str], Optional[str]]:
@@ -40,8 +41,15 @@ class PiProbe:
             if self._version and not refresh and time.time() - self._version[0] < CACHE_S:
                 return self._version[1], self._version[2]
         try:
-            r = subprocess.run(self.cfg.pi_argv() + ["--version"], capture_output=True, text=True, timeout=15,
-                               encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL)
+            r = subprocess.run(
+                self.cfg.pi_argv() + ["--version"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                encoding="utf-8",
+                errors="replace",
+                stdin=subprocess.DEVNULL,
+            )
             out = (r.stdout.strip() or r.stderr.strip()).splitlines()
             v, err = (out[-1] if out else None), (None if r.returncode == 0 else f"exit code {r.returncode}")
         except subprocess.TimeoutExpired:
@@ -73,8 +81,13 @@ class PiProbe:
                     done.set()
 
         self.cfg.data_dir.mkdir(parents=True, exist_ok=True)
-        pi = PiProcess(self.cfg.pi_argv() + ["--mode", "rpc", "--no-session"], self.cfg.data_dir,
-                       clean_env(extra={"PI_CODING_AGENT_DIR": str(self.cfg.agent_dir)}), on_event, lambda s, l: None)
+        pi = PiProcess(
+            self.cfg.pi_argv() + ["--mode", "rpc", "--no-session"],
+            self.cfg.data_dir,
+            clean_env(extra={"PI_CODING_AGENT_DIR": str(self.cfg.agent_dir)}),
+            on_event,
+            lambda s, l: None,
+        )
         try:
             pi.start()
             pi.send({"id": "probe-models", "type": "get_available_models"})
@@ -88,8 +101,11 @@ class PiProbe:
             pi.kill()
         m, c = got["probe-models"], got["probe-commands"]
         err = None if m.get("success") else str(m.get("error") or "get_available_models failed")
-        return {"models": (m.get("data") or {}).get("models", []) if m.get("success") else [],
-                "commands": (c.get("data") or {}).get("commands", []) if c.get("success") else [], "error": err}
+        return {
+            "models": (m.get("data") or {}).get("models", []) if m.get("success") else [],
+            "commands": (c.get("data") or {}).get("commands", []) if c.get("success") else [],
+            "error": err,
+        }
 
 
 def detect(ws: Workspace, remote: str) -> dict:
@@ -139,21 +155,29 @@ def track_record(store: Store) -> list[dict]:
     for (wid, provider, model), tasks in sorted(groups.items(), key=lambda kv: tuple(str(x) for x in kv[0])):
         checked = [t for t in tasks if t["checks_ok"] is not None]
         ci_final = [t for t in tasks if t.get("ci_state") in ("success", "failure")]
-        mins = [m for m in (_minutes(t) for t in tasks if t["status"] in ("done", "failed", "cancelled")) if m is not None]
-        out.append({
-            "workspace_id": wid, "provider": provider, "model": model,
-            "started": sum(1 for t in tasks if t["started_at"]),
-            "done": sum(1 for t in tasks if t["status"] == "done"),
-            "failed": sum(1 for t in tasks if t["status"] == "failed"),
-            "cancelled": sum(1 for t in tasks if t["status"] == "cancelled"),
-            "discarded": sum(1 for t in tasks if t["status"] == "discarded"),
-            "with_pr": sum(1 for t in tasks if t["pr_url"]),
-            "merged": sum(1 for t in tasks if t.get("pr_state") == "merged"),
-            "closed_unmerged": sum(1 for t in tasks if t.get("pr_state") == "closed"),
-            "ci_pass_rate": (sum(1 for t in ci_final if t["ci_state"] == "success") / len(ci_final)) if ci_final else None,
-            "checks_pass_rate": (sum(1 for t in checked if t["checks_ok"]) / len(checked)) if checked else None,
-            "median_minutes": round(statistics.median(mins), 2) if mins else None,
-        })
+        mins = [
+            m for m in (_minutes(t) for t in tasks if t["status"] in ("done", "failed", "cancelled")) if m is not None
+        ]
+        out.append(
+            {
+                "workspace_id": wid,
+                "provider": provider,
+                "model": model,
+                "started": sum(1 for t in tasks if t["started_at"]),
+                "done": sum(1 for t in tasks if t["status"] == "done"),
+                "failed": sum(1 for t in tasks if t["status"] == "failed"),
+                "cancelled": sum(1 for t in tasks if t["status"] == "cancelled"),
+                "discarded": sum(1 for t in tasks if t["status"] == "discarded"),
+                "with_pr": sum(1 for t in tasks if t["pr_url"]),
+                "merged": sum(1 for t in tasks if t.get("pr_state") == "merged"),
+                "closed_unmerged": sum(1 for t in tasks if t.get("pr_state") == "closed"),
+                "ci_pass_rate": (sum(1 for t in ci_final if t["ci_state"] == "success") / len(ci_final))
+                if ci_final
+                else None,
+                "checks_pass_rate": (sum(1 for t in checked if t["checks_ok"]) / len(checked)) if checked else None,
+                "median_minutes": round(statistics.median(mins), 2) if mins else None,
+            }
+        )
     return out
 
 

@@ -364,7 +364,7 @@ def memory_detail(conn: psycopg.Connection, index_id: UUID, around: int = 1) -> 
             (session_id,),
         ).fetchall()
         position = next((i for i, t in enumerate(turns) if t[0] == source_id), 0)
-        chosen = turns[max(0, position - around): position + around + 1]
+        chosen = turns[max(0, position - around) : position + around + 1]
         message_ids = [mid for t in chosen for mid in t[2]]
         session = conn.execute("SELECT agent, channel, title FROM sessions WHERE id = %s", (session_id,)).fetchone()
         detail.update(

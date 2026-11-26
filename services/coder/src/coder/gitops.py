@@ -14,12 +14,20 @@ class GitError(RuntimeError):
     pass
 
 
-def git(*args: str, cwd: Optional[Path | str] = None, check: bool = True, timeout: float = 120) -> subprocess.CompletedProcess:
+def git(
+    *args: str, cwd: Optional[Path | str] = None, check: bool = True, timeout: float = 120
+) -> subprocess.CompletedProcess:
     env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
     try:
         r = subprocess.run(
-            ["git", *args], cwd=str(cwd) if cwd else None, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=timeout, env=env,
+            ["git", *args],
+            cwd=str(cwd) if cwd else None,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            env=env,
         )
     except subprocess.TimeoutExpired as e:
         raise GitError(f"git {' '.join(args[:2])} timed out") from e
@@ -49,7 +57,10 @@ def parse_owner_repo(url: Optional[str]) -> Optional[tuple[str, str]]:
     """github.com owner and repo from an https, ssh:// or scp-style remote URL."""
     if not url:
         return None
-    m = re.match(r"^(?:https?://(?:[^@/]+@)?|ssh://(?:[^@/]+@)?|git@)github\.com[:/](?:\d+/)?([^/\s]+)/([^/\s]+?)(?:\.git)?/?$", url.strip())
+    m = re.match(
+        r"^(?:https?://(?:[^@/]+@)?|ssh://(?:[^@/]+@)?|git@)github\.com[:/](?:\d+/)?([^/\s]+)/([^/\s]+?)(?:\.git)?/?$",
+        url.strip(),
+    )
     return (m.group(1), m.group(2)) if m else None
 
 
@@ -82,6 +93,7 @@ def remove_worktree(repo: Path, path: Path, branch: Optional[str] = None) -> Non
     git("worktree", "remove", "--force", str(path), cwd=repo, check=False)
     if path.exists():
         import shutil
+
         shutil.rmtree(path, ignore_errors=True)
     git("worktree", "prune", cwd=repo, check=False)
     if branch:
@@ -103,13 +115,21 @@ def numstat(worktree: Path, base: str) -> list[dict]:
     files = []
     for line in out.splitlines():
         a, d, p = (line.split("\t", 2) + ["", "", ""])[:3]
-        files.append({"path": p, "added": int(a) if a.isdigit() else 0, "deleted": int(d) if d.isdigit() else 0,
-                      "binary": a == "-"})
+        files.append(
+            {
+                "path": p,
+                "added": int(a) if a.isdigit() else 0,
+                "deleted": int(d) if d.isdigit() else 0,
+                "binary": a == "-",
+            }
+        )
     return files
 
 
 def deleted_files(worktree: Path, base: str) -> set[str]:
-    out = git("-c", "core.quotepath=false", "diff", "--name-status", "--no-renames", f"{base}..HEAD", cwd=worktree).stdout
+    out = git(
+        "-c", "core.quotepath=false", "diff", "--name-status", "--no-renames", f"{base}..HEAD", cwd=worktree
+    ).stdout
     return {l.split("\t", 1)[1] for l in out.splitlines() if l.startswith("D\t")}
 
 

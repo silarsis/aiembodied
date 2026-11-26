@@ -7,6 +7,7 @@ import psycopg
 from memory_engine import recall
 from test_recall import message, post
 
+
 def long_text():
     """Thirty sentences with no word in common, so one vector of the whole matches none well."""
     return " ".join(f"Item{i} part{i} piece{i} box{i} crate{i} shelf{i}." for i in range(30))
@@ -169,7 +170,11 @@ def test_unused_facts_fade_out_of_the_brief_and_recalled_ones_come_back(client, 
     age(database_url, schema, pinned, 400)
 
     brief = client.get("/v1/brief").json()["facts"]
-    assert [f["text"] for f in brief] == ["Kevin's partner is Erika", "Kevin grows tomatoes", "Kevin once owned a canoe"]
+    assert [f["text"] for f in brief] == [
+        "Kevin's partner is Erika",
+        "Kevin grows tomatoes",
+        "Kevin once owned a canoe",
+    ]
     listed = {f["text"]: f for f in client.get("/v1/facts").json()["facts"]}
     assert listed["Kevin once owned a canoe"]["accessibility"] < 0.1
     assert listed["Kevin's partner is Erika"]["accessibility"] == 1.0

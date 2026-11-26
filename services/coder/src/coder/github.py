@@ -19,15 +19,21 @@ class PrError(RuntimeError):
     pass
 
 
-def create_pr_api(api_base: str, token: str, owner: str, repo: str, head: str, base: str,
-                  title: str, body: str, draft: bool = False) -> str:
+def create_pr_api(
+    api_base: str, token: str, owner: str, repo: str, head: str, base: str, title: str, body: str, draft: bool = False
+) -> str:
     req = urllib.request.Request(
         f"{api_base.rstrip('/')}/repos/{owner}/{repo}/pulls",
         data=json.dumps({"title": title, "head": head, "base": base, "body": body, "draft": draft}).encode(),
         method="POST",
-        headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
-                 "Content-Type": "application/json", "User-Agent": "aiembodied-coding-runner",
-                 "X-GitHub-Api-Version": "2022-11-28"})
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json",
+            "User-Agent": "aiembodied-coding-runner",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             return json.loads(r.read())["html_url"]
@@ -43,7 +49,19 @@ def gh_available() -> bool:
 
 
 def create_pr_gh(cwd, head: str, base: str, title: str, body: str, draft: bool = False) -> str:
-    args = [shutil.which("gh") or "gh", "pr", "create", "--head", head, "--base", base, "--title", title, "--body", body]
+    args = [
+        shutil.which("gh") or "gh",
+        "pr",
+        "create",
+        "--head",
+        head,
+        "--base",
+        base,
+        "--title",
+        title,
+        "--body",
+        body,
+    ]
     if draft:
         args.append("--draft")
     try:
@@ -74,9 +92,15 @@ def parse_pr_url(url: Optional[str]) -> Optional[tuple[str, str, int]]:
 def http_get_json(api_base: str, token: str, path: str) -> Any:
     """GET one GitHub API path with the token. Raises PrError with a fixed message (details are logged)."""
     req = urllib.request.Request(
-        f"{api_base.rstrip('/')}{path}", method="GET",
-        headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
-                 "User-Agent": "aiembodied-coding-runner", "X-GitHub-Api-Version": "2022-11-28"})
+        f"{api_base.rstrip('/')}{path}",
+        method="GET",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "aiembodied-coding-runner",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             return json.loads(r.read())
@@ -90,8 +114,9 @@ def http_get_json(api_base: str, token: str, path: str) -> Any:
 def gh_get_json(path: str) -> Any:
     """GET one GitHub API path through the gh CLI (its own login). Raises PrError with a fixed message."""
     try:
-        r = subprocess.run([shutil.which("gh") or "gh", "api", path], capture_output=True, text=True, timeout=60,
-                           env=dict(os.environ))
+        r = subprocess.run(
+            [shutil.which("gh") or "gh", "api", path], capture_output=True, text=True, timeout=60, env=dict(os.environ)
+        )
         if r.returncode == 0:
             return json.loads(r.stdout)
         log.warning("gh api %s failed with exit code %s", path, r.returncode)

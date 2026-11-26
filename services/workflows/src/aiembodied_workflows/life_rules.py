@@ -49,8 +49,14 @@ def unoffered_saves(quiet_saves: list[str], offered: list[str]) -> list[str]:
     return [s for s in quiet_saves if s not in offered]
 
 
-def hard_rules(ctx: dict[str, Any], *, hour: int, quiet_hours: str | None, since_last_say: float | None,
-               is_sleep_decision: bool = False) -> tuple[bool, str]:
+def hard_rules(
+    ctx: dict[str, Any],
+    *,
+    hour: int,
+    quiet_hours: str | None,
+    since_last_say: float | None,
+    is_sleep_decision: bool = False,
+) -> tuple[bool, str]:
     """May the avatar say something unprompted now? Returns (allowed, reason). Cheap checks only."""
     if ctx.get("asleep"):
         return False, "asleep"
@@ -133,9 +139,18 @@ def _context_lines(name: str, ctx: dict[str, Any], hours_awake: float, extras: d
     return lines
 
 
-def decision_prompt(name: str, ctx: dict[str, Any], *, hours_awake: float, intentions: list[str],
-                    flows: list[str], quiet_saves: list[str], offers: list[dict[str, Any]],
-                    arrival_minutes: int | None = None, can_say: bool = True) -> str:
+def decision_prompt(
+    name: str,
+    ctx: dict[str, Any],
+    *,
+    hours_awake: float,
+    intentions: list[str],
+    flows: list[str],
+    quiet_saves: list[str],
+    offers: list[dict[str, Any]],
+    arrival_minutes: int | None = None,
+    can_say: bool = True,
+) -> str:
     """The first-person prompt for one decision. It asks for exactly one reply line."""
     lines = [f"This is a quiet moment in your day, {name}. Nobody is asking you for anything."]
     lines += _context_lines(name, ctx, hours_awake, {"arrival_minutes": arrival_minutes})
@@ -143,7 +158,10 @@ def decision_prompt(name: str, ctx: dict[str, Any], *, hours_awake: float, inten
     lines += _lines("Workflows you have written:", flows)
     lines += _lines("Things that were saved quietly while you were busy:", [f'"{s}"' for s in quiet_saves])
     if offers:
-        lines += _lines("You could read or look at:", [f"{o.get('label', o.get('stationId'))} (id {o.get('stationId')})" for o in offers])
+        lines += _lines(
+            "You could read or look at:",
+            [f"{o.get('label', o.get('stationId'))} (id {o.get('stationId')})" for o in offers],
+        )
     lines += [
         "",
         "If you want to, use your tools first (set an intention, write or run a workflow, set a reminder).",
@@ -153,7 +171,11 @@ def decision_prompt(name: str, ctx: dict[str, Any], *, hours_awake: float, inten
         lines.append("SAY: <one short sentence you say out loud now>")
     if offers:
         lines.append("READ: <the id of what you want to read or look at>")
-    lines += ["SLEEP", "NOTHING", "Choosing NOTHING is fine and is usually right. Only speak when you have a real reason."]
+    lines += [
+        "SLEEP",
+        "NOTHING",
+        "Choosing NOTHING is fine and is usually right. Only speak when you have a real reason.",
+    ]
     return "\n".join(lines)
 
 
@@ -170,7 +192,9 @@ def plan_prompt(name: str, ctx: dict[str, Any], *, hours_awake: float, intention
     return "\n".join(lines)
 
 
-def reflect_prompt(name: str, ctx: dict[str, Any], *, hours_awake: float, intentions: list[str], flows: list[str]) -> str:
+def reflect_prompt(
+    name: str, ctx: dict[str, Any], *, hours_awake: float, intentions: list[str], flows: list[str]
+) -> str:
     lines = [f"The day is winding down, {name}."]
     lines += _context_lines(name, ctx, hours_awake, {})
     lines += _lines("Things you are keeping in mind:", intentions)

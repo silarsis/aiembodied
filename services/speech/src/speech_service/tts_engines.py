@@ -170,7 +170,9 @@ _KITTEN_SYMBOLS = (
     ["$"]
     + list(';:,.!?¡¿—…"«»"" ')
     + list("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
-    + list("ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ")
+    + list(
+        "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
+    )
 )
 _KITTEN_INDEX = {symbol: index for index, symbol in enumerate(_KITTEN_SYMBOLS)}
 
@@ -229,11 +231,14 @@ class KittenSynthesizer:
                 phonemes = self.phonemizer.phonemize([chunk])[0]
                 ids = np.array([kitten_tokens(phonemes)], dtype=np.int64)
                 row = min(len(chunk), styles.shape[0] - 1)
-                audio = self.session.run(None, {
-                    "input_ids": ids,
-                    "style": styles[row:row + 1],
-                    "speed": np.array([speed], dtype=np.float32),
-                })[0]
+                audio = self.session.run(
+                    None,
+                    {
+                        "input_ids": ids,
+                        "style": styles[row : row + 1],
+                        "speed": np.array([speed], dtype=np.float32),
+                    },
+                )[0]
                 # Kitten's own trim of the end-of-utterance noise.
                 parts.append(np.asarray(audio, dtype=np.float32).reshape(-1)[:-5000])
         samples = np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
@@ -305,7 +310,9 @@ class TtsModels:
         folder = self.root / "piper"
         if not folder.is_dir():
             return []
-        return sorted(p.name[: -len(".onnx")] for p in folder.glob("*.onnx") if self.piper_installed(p.name[: -len(".onnx")]))
+        return sorted(
+            p.name[: -len(".onnx")] for p in folder.glob("*.onnx") if self.piper_installed(p.name[: -len(".onnx")])
+        )
 
     # -- listing --
 
@@ -316,29 +323,44 @@ class TtsModels:
         for model in KITTEN_MODELS:
             installed = self.kitten_installed(model.id)
             loaded = self._loaded.get(("kitten", model.id))
-            kitten_models.append({
-                "id": model.id,
-                "label": model.label,
-                "size_mb": model.size_mb,
-                "installed": installed,
-                "voices": loaded.voice_names() if loaded else list(KITTEN_VOICES),
-                "default_voice": KITTEN_DEFAULT_VOICE,
-                "download": self._download_view("kitten", model.id),
-            })
+            kitten_models.append(
+                {
+                    "id": model.id,
+                    "label": model.label,
+                    "size_mb": model.size_mb,
+                    "installed": installed,
+                    "voices": loaded.voice_names() if loaded else list(KITTEN_VOICES),
+                    "default_voice": KITTEN_DEFAULT_VOICE,
+                    "download": self._download_view("kitten", model.id),
+                }
+            )
         piper_ids = list(dict.fromkeys([*PIPER_VOICES, *self.installed_piper_voices()]))
-        piper_models = [{
-            "id": voice,
-            "label": voice,
-            "installed": self.piper_installed(voice),
-            "voices": [voice],
-            "default_voice": voice,
-            "download": self._download_view("piper", voice),
-        } for voice in piper_ids]
+        piper_models = [
+            {
+                "id": voice,
+                "label": voice,
+                "installed": self.piper_installed(voice),
+                "voices": [voice],
+                "default_voice": voice,
+                "download": self._download_view("piper", voice),
+            }
+            for voice in piper_ids
+        ]
         return [
-            {"id": "kitten", "label": "Kitten TTS", "available": kitten_problem is None, "error": kitten_problem,
-             "models": kitten_models},
-            {"id": "piper", "label": "Piper", "available": piper_problem is None, "error": piper_problem,
-             "models": piper_models},
+            {
+                "id": "kitten",
+                "label": "Kitten TTS",
+                "available": kitten_problem is None,
+                "error": kitten_problem,
+                "models": kitten_models,
+            },
+            {
+                "id": "piper",
+                "label": "Piper",
+                "available": piper_problem is None,
+                "error": piper_problem,
+                "models": piper_models,
+            },
         ]
 
     def _download_view(self, engine: str, model: str) -> Optional[dict]:
@@ -382,7 +404,9 @@ class TtsModels:
                 repo = next(entry.repo for entry in KITTEN_MODELS if entry.id == model)
                 folder = self.kitten_dir(model)
                 config_path = folder / "config.json"
-                _fetch(f"{HF_BASE}/{repo}/resolve/main/config.json", config_path, lambda *_: None, self.opener, self.token)
+                _fetch(
+                    f"{HF_BASE}/{repo}/resolve/main/config.json", config_path, lambda *_: None, self.opener, self.token
+                )
                 config = json.loads(config_path.read_text(encoding="utf-8"))
                 files = [config["model_file"], config["voices"]]
                 for name in files:
@@ -391,8 +415,13 @@ class TtsModels:
             else:
                 onnx, meta = piper_files(model)
                 target = self.piper_path(model)
-                _fetch(f"{HF_BASE}/rhasspy/piper-voices/resolve/main/{meta}", target.with_name(target.name + ".json"),
-                       lambda *_: None, self.opener, self.token)
+                _fetch(
+                    f"{HF_BASE}/rhasspy/piper-voices/resolve/main/{meta}",
+                    target.with_name(target.name + ".json"),
+                    lambda *_: None,
+                    self.opener,
+                    self.token,
+                )
                 _fetch(f"{HF_BASE}/rhasspy/piper-voices/resolve/main/{onnx}", target, progress, self.opener, self.token)
             download.total = max(download.total, download.received)
             download.status = "done"
@@ -404,8 +433,9 @@ class TtsModels:
 
     # -- synthesis --
 
-    def synthesize(self, engine: str, model: Optional[str], voice: Optional[str], text: str,
-                   speed: float) -> tuple[np.ndarray, int]:
+    def synthesize(
+        self, engine: str, model: Optional[str], voice: Optional[str], text: str, speed: float
+    ) -> tuple[np.ndarray, int]:
         if engine == "kitten":
             model = model or KITTEN_MODELS[0].id
             if not self.kitten_installed(model):

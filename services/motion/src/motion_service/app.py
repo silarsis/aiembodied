@@ -18,8 +18,17 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .backends.base import Backend
 from .calibration import REST_BONES, arm_forward_for_avatar
-from .constraints import (DEFAULT_CORNER_RADIUS, ObservedParams, PathParams, TargetParams, build_plan, end_pose,
-                          scale_for, seconds_to_frame_ceil, snap_root)
+from .constraints import (
+    DEFAULT_CORNER_RADIUS,
+    ObservedParams,
+    PathParams,
+    TargetParams,
+    build_plan,
+    end_pose,
+    scale_for,
+    seconds_to_frame_ceil,
+    snap_root,
+)
 from .retarget import RootFrame, chest_forward_deg, joint_names, slugify, to_vrma
 from .sessions import Session, SessionStore
 
@@ -109,7 +118,8 @@ class ObservedSpec(BaseModel):
     """Where the body is now, for a continued stream: pinned onto its first frames (motion frame, avatar metres)."""
 
     joints: dict[Literal["left_knee", "right_knee", "left_ankle", "right_ankle"], tuple[Num, Num, Num]] = Field(
-        default_factory=dict)
+        default_factory=dict
+    )
     root: Optional[tuple[Num, Num]] = None
     height: Optional[float] = Field(default=None, gt=0, le=10, allow_inf_nan=False)
 
@@ -166,8 +176,13 @@ def _arm_forward(req: ClipRequest) -> Optional[float]:
         return None
 
 
-def create_app(backend: Backend, load_in_background: bool = True, keep_warm_seconds: float = 0,
-               session_ttl_seconds: float = 600.0, max_sessions: int = 8) -> FastAPI:
+def create_app(
+    backend: Backend,
+    load_in_background: bool = True,
+    keep_warm_seconds: float = 0,
+    session_ttl_seconds: float = 600.0,
+    max_sessions: int = 8,
+) -> FastAPI:
     """keep_warm_seconds > 0: after that much idle time, run a tiny generation (and repeat) so the
     first request after a long pause doesn't pay to page the 8B text encoder back in (measured ~11 s
     after several idle hours on a Radeon 8060S, vs ~0.15 s warm)."""
@@ -245,8 +260,12 @@ def create_app(backend: Backend, load_in_background: bool = True, keep_warm_seco
 
     @app.get("/health")
     def health():
-        body = {"status": "ok" if state["error"] is None else "error", "backend": backend.name,
-                "device": backend.device_label, "ready": state["ready"]}
+        body = {
+            "status": "ok" if state["error"] is None else "error",
+            "backend": backend.name,
+            "device": backend.device_label,
+            "ready": state["ready"],
+        }
         if state["error"]:
             body["error"] = state["error"]
         return body
@@ -261,12 +280,26 @@ def create_app(backend: Backend, load_in_background: bool = True, keep_warm_seco
             t1 = time.perf_counter()
             motion = backend.generate(text, frames, steps)
             t2 = time.perf_counter()
-            vrma = to_vrma(motion.global_rot_mats, motion.posed_joints, motion.root_positions, name,
-                           fps=backend.fps, kind=backend.name, arm_forward=arm_forward)
+            vrma = to_vrma(
+                motion.global_rot_mats,
+                motion.posed_joints,
+                motion.root_positions,
+                name,
+                fps=backend.fps,
+                kind=backend.name,
+                arm_forward=arm_forward,
+            )
             t3 = time.perf_counter()
             state["last_used"] = time.monotonic()
-        return {"vrma": vrma, "timings": {"encodeMs": _ms(t1 - t0), "generateMs": _ms(t2 - t1),
-                                          "retargetMs": _ms(t3 - t2), "totalMs": _ms(t3 - t0)}}
+        return {
+            "vrma": vrma,
+            "timings": {
+                "encodeMs": _ms(t1 - t0),
+                "generateMs": _ms(t2 - t1),
+                "retargetMs": _ms(t3 - t2),
+                "totalMs": _ms(t3 - t0),
+            },
+        }
 
     @app.post("/v1/motion/stream")
     def stream(req: StreamRequest):
@@ -312,17 +345,29 @@ def create_app(backend: Backend, load_in_background: bool = True, keep_warm_seco
                     replay = 0 if previous is None else previous.history.emitted_ahead
                     shift = 0
                     t_prev = time.perf_counter()
-                    for chunk in backend.stream(text, frames, steps, plan=plan, phase_texts=phase_texts or None,
-                                                history=None if previous is None else previous.history,
-                                                constraint_weight=req.constraint_weight):
+                    for chunk in backend.stream(
+                        text,
+                        frames,
+                        steps,
+                        plan=plan,
+                        phase_texts=phase_texts or None,
+                        history=None if previous is None else previous.history,
+                        constraint_weight=req.constraint_weight,
+                    ):
                         m = chunk.motion
                         t_gen = time.perf_counter()
                         names = joint_names(m.global_rot_mats.shape[1])
                         if root_frame is None:  # every chunk shares the first chunk's floor and origin
                             root_frame = RootFrame.from_motion(m.posed_joints, m.root_positions, names)
                         if plan is not None or previous is not None:
-                            _snapped, delta = snap_root(m.root_positions, plan, fps, req.snap_s,
-                                                        chunk.start_frame, carry if chunk.start_frame == 0 else None)
+                            _snapped, delta = snap_root(
+                                m.root_positions,
+                                plan,
+                                fps,
+                                req.snap_s,
+                                chunk.start_frame,
+                                carry if chunk.start_frame == 0 else None,
+                            )
                             if delta.any():
                                 m = m.translated(delta)
                             carry_out = (float(delta[-1, 0]), float(delta[-1, 2]))
@@ -331,25 +376,46 @@ def create_app(backend: Backend, load_in_background: bool = True, keep_warm_seco
                         if count == 0 and replay > 0:
                             shift = min(replay, m.frames - 1)
                             m = m.slice(shift, m.frames)
-                        vrma = to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, f"{name}-{count}",
-                                       fps=fps, kind=backend.name, root_frame=root_frame, arm_forward=arm_forward)
-                        pose = end_pose(m.root_positions, m.posed_joints, names,
-                                        (root_frame.origin_x, root_frame.origin_z), scale)
+                        vrma = to_vrma(
+                            m.global_rot_mats,
+                            m.posed_joints,
+                            m.root_positions,
+                            f"{name}-{count}",
+                            fps=fps,
+                            kind=backend.name,
+                            root_frame=root_frame,
+                            arm_forward=arm_forward,
+                        )
+                        pose = end_pose(
+                            m.root_positions, m.posed_joints, names, (root_frame.origin_x, root_frame.origin_z), scale
+                        )
                         t_done = time.perf_counter()
-                        timings = {"generateMs": _ms(t_gen - t_prev), "retargetMs": _ms(t_done - t_gen),
-                                   "totalMs": _ms(t_done - t_prev + (encode_s if count == 0 else 0))}
+                        timings = {
+                            "generateMs": _ms(t_gen - t_prev),
+                            "retargetMs": _ms(t_done - t_gen),
+                            "totalMs": _ms(t_done - t_prev + (encode_s if count == 0 else 0)),
+                        }
                         if count == 0:
                             timings["encodeMs"] = _ms(encode_s)
-                        yield (json.dumps({"type": "chunk", "index": count,
-                                           "start": round((chunk.start_frame - shift) / fps, 5),
-                                           "vrma": vrma, "timings": timings, "end_pose": pose}) + "\n").encode()
+                        yield (
+                            json.dumps(
+                                {
+                                    "type": "chunk",
+                                    "index": count,
+                                    "start": round((chunk.start_frame - shift) / fps, 5),
+                                    "vrma": vrma,
+                                    "timings": timings,
+                                    "end_pose": pose,
+                                }
+                            )
+                            + "\n"
+                        ).encode()
                         count += 1
                         if chunk.history is not None:
                             last_history = chunk.history
                             carry = carry_out
                         t_prev = time.perf_counter()
-                    done = {"type": "done", "chunks": count,
-                            "timings": {"totalMs": _ms(time.perf_counter() - t_start)}}
+                    done = {"type": "done", "chunks": count, "timings": {"totalMs": _ms(time.perf_counter() - t_start)}}
                     if last_history is not None and root_frame is not None:
                         done["session"] = sessions.put(Session(last_history, root_frame, carry))
                     yield (json.dumps(done) + "\n").encode()

@@ -3,8 +3,15 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from aiembodied_workflows.timeutil import (due_from, hhmm, in_quiet_hours, iso_z, next_local_time, parse_iso,
-                                           parse_quiet_hours)
+from aiembodied_workflows.timeutil import (
+    due_from,
+    hhmm,
+    in_quiet_hours,
+    iso_z,
+    next_local_time,
+    parse_iso,
+    parse_quiet_hours,
+)
 
 
 def test_parse_quiet_hours():
@@ -28,7 +35,9 @@ def test_parse_iso_and_iso_z():
     assert parse_iso("2026-11-26T01:02:03Z") == datetime(2026, 11, 26, 1, 2, 3, tzinfo=timezone.utc)
     assert parse_iso("2026-11-26T01:02:03+08:00").utcoffset().total_seconds() == 8 * 3600
     assert parse_iso("2026-11-26T01:02:03").tzinfo is not None
-    assert iso_z(datetime(2026, 11, 26, 9, 2, 3, 456000, tzinfo=ZoneInfo("Asia/Singapore"))) == "2026-11-26T01:02:03.456Z"
+    assert (
+        iso_z(datetime(2026, 11, 26, 9, 2, 3, 456000, tzinfo=ZoneInfo("Asia/Singapore"))) == "2026-11-26T01:02:03.456Z"
+    )
     with pytest.raises(ValueError):
         parse_iso("tomorrow")
 

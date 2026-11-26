@@ -125,6 +125,8 @@ class Config:
     @classmethod
     def from_env(cls) -> "Config":
         env = os.environ
-        return cls(db_path=Path(env.get("SWITCHBOARD_DB") or default_db_path()),
-                   retention_days=int(env.get("SWITCHBOARD_RETENTION_DAYS") or 30),
-                   node=env.get("SWITCHBOARD_NODE") or socket.gethostname())
+        return cls(
+            db_path=Path(env.get("SWITCHBOARD_DB") or default_db_path()),
+            retention_days=int(env.get("SWITCHBOARD_RETENTION_DAYS") or 30),
+            node=env.get("SWITCHBOARD_NODE") or socket.gethostname(),
+        )

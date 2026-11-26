@@ -46,7 +46,14 @@ def put_handoff(
         ON CONFLICT (session_id) DO UPDATE SET
             agent = excluded.agent, model = excluded.model, text = excluded.text, updated_at = excluded.updated_at
         """,
-        {"id": note_id, "session": session_id, "agent": agent, "model": (model or "").strip() or None, "text": text, "at": at},
+        {
+            "id": note_id,
+            "session": session_id,
+            "agent": agent,
+            "model": (model or "").strip() or None,
+            "text": text,
+            "at": at,
+        },
     )
     conn.execute(
         """
@@ -61,7 +68,14 @@ def put_handoff(
             embed_model = CASE WHEN recall_index.text = excluded.text THEN recall_index.embed_model END,
             updated_at = now()
         """,
-        {"id": note_id, "session": session_id, "agent": agent, "at": at, "text": text, "importance": HANDOFF_IMPORTANCE},
+        {
+            "id": note_id,
+            "session": session_id,
+            "agent": agent,
+            "at": at,
+            "text": text,
+            "importance": HANDOFF_IMPORTANCE,
+        },
     )
     return {"id": str(note_id), "session_id": str(session_id)}
 

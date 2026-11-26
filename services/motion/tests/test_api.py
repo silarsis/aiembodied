@@ -34,8 +34,15 @@ def test_health_and_503_while_loading():
 
 
 def test_clip(client):
-    r = client.post("/v1/motion/clip", json={"prompt": "a person waves hello with their right hand", "duration": 2.0,
-                                              "steps": 5, "name": "wave-hello"})
+    r = client.post(
+        "/v1/motion/clip",
+        json={
+            "prompt": "a person waves hello with their right hand",
+            "duration": 2.0,
+            "steps": 5,
+            "name": "wave-hello",
+        },
+    )
     assert r.status_code == 200
     body = r.json()
     assert_valid_vrma(body["vrma"])
@@ -46,20 +53,25 @@ def test_clip(client):
 
 
 def test_clip_defaults_name_to_prompt_slug_and_duration_3s(client):
-    v = client.post("/v1/motion/clip", json={"prompt": "A person nods their head yes, several times over"}).json()["vrma"]
+    v = client.post("/v1/motion/clip", json={"prompt": "A person nods their head yes, several times over"}).json()[
+        "vrma"
+    ]
     assert v["meta"]["name"] == "a-person-nods-their-head-yes-several-tim"
     assert len(v["tracks"][0]["keyframes"]) == 90
 
 
-@pytest.mark.parametrize("payload", [
-    {},
-    {"prompt": ""},
-    {"prompt": "   "},
-    {"prompt": "x", "duration": 0.2},
-    {"prompt": "x", "duration": 10.5},
-    {"prompt": "x", "steps": 0},
-    {"prompt": "x", "steps": 51},  # over the fake backend's max_steps
-])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"prompt": ""},
+        {"prompt": "   "},
+        {"prompt": "x", "duration": 0.2},
+        {"prompt": "x", "duration": 10.5},
+        {"prompt": "x", "steps": 0},
+        {"prompt": "x", "steps": 51},  # over the fake backend's max_steps
+    ],
+)
 def test_clip_bad_requests_are_400_with_error_body(client, payload):
     r = client.post("/v1/motion/clip", json=payload)
     assert r.status_code == 400

@@ -39,8 +39,16 @@ def run(status, conclusion=None):
 def make_task(client, **kw):
     store = client.manager.store
     tid = store.new_id()
-    f = {"id": tid, "workspace_id": "proj", "goal": "g", "status": "done", "provider": "local", "model": "m",
-         "pr_url": PR, "finished_at": datetime.now(timezone.utc).isoformat()}
+    f = {
+        "id": tid,
+        "workspace_id": "proj",
+        "goal": "g",
+        "status": "done",
+        "provider": "local",
+        "model": "m",
+        "pr_url": PR,
+        "finished_at": datetime.now(timezone.utc).isoformat(),
+    }
     f.update(kw)
     return store.create_task(**f)
 
@@ -74,9 +82,11 @@ def test_columns_in_task_json_and_migration(client, tmp_path):
     assert j["pr_state"] is None and j["ci_state"] is None and j["pr_checked_at"] is None and j["merged_at"] is None
     import sqlite3
     from coder.store import Store
+
     db = sqlite3.connect(str(tmp_path / "old.sqlite"))
     db.execute("CREATE TABLE tasks (id TEXT PRIMARY KEY, questions TEXT, pr_url TEXT)")
-    db.commit(); db.close()
+    db.commit()
+    db.close()
     s = Store(tmp_path / "old.sqlite")
     cols = {r[1] for r in s.db.execute("PRAGMA table_info(tasks)")}
     s.close()
@@ -138,6 +148,7 @@ def test_poll_checks_only_followed_prs(client, monkeypatch):
 
 def test_poller_disabled_at_zero_and_runs_when_on(cfg, monkeypatch):
     import time
+
     gh = FakeGitHub()
     monkeypatch.setattr(github, "get_json", gh)
     cfg.pr_poll_seconds = 0
@@ -160,7 +171,13 @@ def test_poller_disabled_at_zero_and_runs_when_on(cfg, monkeypatch):
 
 
 def test_track_record_numbers(client):
-    for st, ci in (("merged", "success"), ("merged", "failure"), ("closed", "failure"), ("open", "pending"), (None, None)):
+    for st, ci in (
+        ("merged", "success"),
+        ("merged", "failure"),
+        ("closed", "failure"),
+        ("open", "pending"),
+        (None, None),
+    ):
         make_task(client, pr_state=st, ci_state=ci)
     tr = track_record(client.manager.store)[0]
     assert tr["with_pr"] == 5 and tr["merged"] == 2 and tr["closed_unmerged"] == 1

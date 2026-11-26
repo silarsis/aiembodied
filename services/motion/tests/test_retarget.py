@@ -16,7 +16,13 @@ def test_output_matches_app_schema():
     m = synthetic_motion(30)
     v = to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "wave-hello", kind="fake")
     assert_valid_vrma(v)
-    assert v["meta"] == {"name": "wave-hello", "fps": 30.0, "loop": False, "duration": pytest.approx(29 / 30, abs=1e-5), "kind": "fake"}
+    assert v["meta"] == {
+        "name": "wave-hello",
+        "fps": 30.0,
+        "loop": False,
+        "duration": pytest.approx(29 / 30, abs=1e-5),
+        "kind": "fake",
+    }
     bones = {t["bone"] for t in v["tracks"]}
     assert {"hips", "spine", "chest", "upperChest", "neck", "head", "rightUpperArm", "leftToes"} <= bones
     assert "rightIndexProximal" in bones and "leftThumbMetacarpal" in bones  # fingers for somaskel77
@@ -107,13 +113,19 @@ def test_rest_pose_stays_at_rest_without_lean_or_arm_swing():
     rest = Motion(np.tile(np.eye(3), (T, 77, 1, 1)), np.zeros((T, 77, 3)), np.zeros((T, 3)))
     v = to_vrma(rest.global_rot_mats, rest.posed_joints, rest.root_positions, "rest", chest_forward=0, arm_forward=0)
     for track in v["tracks"]:
-        np.testing.assert_allclose(np.abs([kf["q"][3] for kf in track["keyframes"]]), 1.0, atol=1e-6, err_msg=track["bone"])
+        np.testing.assert_allclose(
+            np.abs([kf["q"][3] for kf in track["keyframes"]]), 1.0, atol=1e-6, err_msg=track["bone"]
+        )
 
 
 def test_chest_lean_tilts_the_head_forward_but_not_the_arms():
     m = synthetic_motion(20)
-    straight = _globals(to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x", chest_forward=0, arm_forward=0))
-    leaning = _globals(to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x", chest_forward=7, arm_forward=0))
+    straight = _globals(
+        to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x", chest_forward=0, arm_forward=0)
+    )
+    leaning = _globals(
+        to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x", chest_forward=7, arm_forward=0)
+    )
 
     # Below the chest nothing changes.
     for bone in ("hips", "spine", "chest", "leftUpperLeg"):
@@ -143,8 +155,12 @@ def test_arm_forward_swings_hanging_arms_forward_about_the_shoulder():
         for joint in (f"{side}Arm", f"{side}ForeArm", f"{side}Hand"):
             G[:, SOMA77.index(joint)] = down
     m = Motion(G, np.zeros((T, 77, 3)), np.zeros((T, 3)))
-    straight = _globals(to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x", chest_forward=7, arm_forward=0))
-    forward = _globals(to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x", chest_forward=7, arm_forward=6))
+    straight = _globals(
+        to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x", chest_forward=7, arm_forward=0)
+    )
+    forward = _globals(
+        to_vrma(m.global_rot_mats, m.posed_joints, m.root_positions, "x", chest_forward=7, arm_forward=6)
+    )
 
     for side, out in (("left", 1), ("right", -1)):
         for bone in (f"{side}UpperArm", f"{side}LowerArm", f"{side}Hand"):

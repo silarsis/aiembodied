@@ -7,6 +7,7 @@ Rows have either `expected` ({addressed, wants, other}) or `truth`
 ({speaker, intent, target} as lists of accepted lower-case values, plus
 scene, host, last, optional debatable and grade). Exit code is always 0.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -34,6 +35,7 @@ def make_fetch(url: str, api_key=None, timeout: float = 120.0):
         req = urllib.request.Request(endpoint, data=json.dumps(payload).encode(), headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode())
+
     return fetch
 
 
@@ -72,8 +74,9 @@ def build_payload(row, model=None):
     if questions is None:
         questions = build_questions(row["scene"])
     if state is None:
-        state = build_state(row["scene"], row["host"], row.get("last"), [tuple(x) for x in row.get("recent", [])],
-                            row_text(row))
+        state = build_state(
+            row["scene"], row["host"], row.get("last"), [tuple(x) for x in row.get("recent", [])], row_text(row)
+        )
     payload = {"state": state, "questions": questions}
     if model:
         payload = {"model": model, **payload}
@@ -92,8 +95,9 @@ def grade(row, got: dict) -> dict:
         t = row["truth"]
         speaker = None
         if keys["addressed"] is not None:
-            speaker = resolve_speaker(keys["addressed"], keys["other"] or "none", row["scene"], row["host"],
-                                      row.get("last"))
+            speaker = resolve_speaker(
+                keys["addressed"], keys["other"] or "none", row["scene"], row["host"], row.get("last")
+            )
         have = {"addressed": speaker, "wants": keys["wants"], "other": keys["other"]}
         want = {"addressed": t["speaker"], "wants": t["intent"], "other": t["target"]}
         counted = not row.get("debatable")
@@ -120,9 +124,17 @@ def run(rows, fetch, model=None, progress=None):
             got, err = {}, f"{type(e).__name__}: {e}"
         lat = time.perf_counter() - t0
         g = grade(row, got)
-        items.append({"index": i, "text": row_text(row), "group": row_group(row), "latency": lat, "error": err,
-                      "got": {q: {"key": got[q][0], "top": got[q][1], "probabilities": got[q][2]} for q in got},
-                      **g})
+        items.append(
+            {
+                "index": i,
+                "text": row_text(row),
+                "group": row_group(row),
+                "latency": lat,
+                "error": err,
+                "got": {q: {"key": got[q][0], "top": got[q][1], "probabilities": got[q][2]} for q in got},
+                **g,
+            }
+        )
         if progress:
             progress(i + 1, len(rows))
     return summarise(items)
@@ -148,16 +160,30 @@ def summarise(items):
     misses = [it for it in items if not it["all"]]
     debatable = [it for it in items if not it["counted"]]
     return {
-        "rows": len(items), "counted": n, "debatable_rows": len(debatable),
+        "rows": len(items),
+        "counted": n,
+        "debatable_rows": len(debatable),
         "debatable_all_correct": sum(it["all"] for it in debatable),
-        "accuracy": acc, "all_three": all3,
+        "accuracy": acc,
+        "all_three": all3,
         "by_group": {k: {"correct": v[0], "total": v[1], "accuracy": v[0] / v[1]} for k, v in sorted(groups.items())},
-        "latency_median": statistics.median(lats) if lats else None, "latency_p95": percentile(lats, 95),
+        "latency_median": statistics.median(lats) if lats else None,
+        "latency_p95": percentile(lats, 95),
         "mean_top_prob_right": statistics.mean(right) if right else None,
         "mean_top_prob_wrong": statistics.mean(wrong) if wrong else None,
         "errors": sum(1 for it in items if it["error"]),
-        "misses": [{"text": it["text"], "group": it["group"], "counted": it["counted"], "expected": it["want"],
-                    "got": it["have"], "raw": it["got"], "error": it["error"]} for it in misses],
+        "misses": [
+            {
+                "text": it["text"],
+                "group": it["group"],
+                "counted": it["counted"],
+                "expected": it["want"],
+                "got": it["have"],
+                "raw": it["got"],
+                "error": it["error"],
+            }
+            for it in misses
+        ],
     }
 
 
@@ -168,8 +194,10 @@ def fmt(x, pct=False):
 
 
 def report(res):
-    print(f"rows {res['rows']}  counted {res['counted']}  debatable (not counted) {res['debatable_rows']}"
-          f" ({res['debatable_all_correct']} fully right)  errors {res['errors']}")
+    print(
+        f"rows {res['rows']}  counted {res['counted']}  debatable (not counted) {res['debatable_rows']}"
+        f" ({res['debatable_all_correct']} fully right)  errors {res['errors']}"
+    )
     for q in QIDS:
         print(f"  {q:10s} {fmt(res['accuracy'][q], True)}")
     print(f"  all three  {fmt(res['all_three'], True)}")

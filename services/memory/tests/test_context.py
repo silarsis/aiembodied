@@ -23,13 +23,22 @@ def test_brief_has_pinned_facts_first_and_the_last_conversation(client):
     body = client.get("/v1/brief", params={"session_id": str(current)}).json()
     assert [f["text"] for f in body["facts"]] == ["Kevin's partner is Erika", "Kevin grows tomatoes"]
     assert body["last_session"]["session_id"] == str(earlier)
-    assert body["last_session"]["turns"] == ["User: the greenhouse door is broken\nAssistant: I'll remind you to fix it."]
+    assert body["last_session"]["turns"] == [
+        "User: the greenhouse door is broken\nAssistant: I'll remind you to fix it."
+    ]
 
 
 def test_brief_is_empty_on_a_new_memory(client):
     assert client.get("/v1/brief").json() == {
-        "agent": None, "facts": [], "handoff": None, "last_session": None, "recent_days": [],
-        "recent_coding": [], "intentions": [], "flows": [], "agent_state": None,
+        "agent": None,
+        "facts": [],
+        "handoff": None,
+        "last_session": None,
+        "recent_days": [],
+        "recent_coding": [],
+        "intentions": [],
+        "flows": [],
+        "agent_state": None,
     }
 
 
@@ -39,7 +48,11 @@ def test_auto_recall_returns_strong_matches_from_other_sessions_only(client):
     post(client, message(current, "user", "the tomatoes are planted in the greenhouse beds again", 3600))
     body = client.post(
         "/v1/recall",
-        json={"text": "are the tomatoes planted in the greenhouse beds", "session_id": str(current), "min_similarity": 0.3},
+        json={
+            "text": "are the tomatoes planted in the greenhouse beds",
+            "session_id": str(current),
+            "min_similarity": 0.3,
+        },
     ).json()
     assert [item["session_id"] for item in body["items"]] == [str(earlier)]
     assert body["reason"] is None

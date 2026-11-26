@@ -12,8 +12,11 @@ FLOW = SearchAttributeKey.for_keyword("Flow")
 
 def search_attrs(avatar_id: str, purpose: str, owner: str = "agent", flow: str | None = None) -> TypedSearchAttributes:
     """Owner is "agent" (the avatar made it), "kevin" or "system"."""
-    pairs = [SearchAttributePair(AGENT_ID, avatar_id), SearchAttributePair(OWNER, owner),
-             SearchAttributePair(PURPOSE, purpose)]
+    pairs = [
+        SearchAttributePair(AGENT_ID, avatar_id),
+        SearchAttributePair(OWNER, owner),
+        SearchAttributePair(PURPOSE, purpose),
+    ]
     if flow:
         pairs.append(SearchAttributePair(FLOW, flow))
     return TypedSearchAttributes(pairs)
@@ -22,8 +25,15 @@ def search_attrs(avatar_id: str, purpose: str, owner: str = "agent", flow: str |
 def purpose_of(workflow_id: str) -> str:
     """The purpose that goes with a workflow id prefix."""
     prefix = workflow_id.split(":", 1)[0]
-    return {"life": "life", "remind": "reminder", "wake": "wakeup", "watch": "watch", "flowwatch": "watch",
-            "flow": "flow", "sched": "flow"}.get(prefix, prefix)
+    return {
+        "life": "life",
+        "remind": "reminder",
+        "wake": "wakeup",
+        "watch": "watch",
+        "flowwatch": "watch",
+        "flow": "flow",
+        "sched": "flow",
+    }.get(prefix, prefix)
 
 
 def attr_value(search_attributes, key: SearchAttributeKey) -> str | None:

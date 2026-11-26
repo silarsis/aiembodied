@@ -31,18 +31,112 @@ LOOKBACK = timedelta(minutes=2)
 
 # (table, columns, changes in place, numbering column). Order matters: parents before children.
 TABLES: list[tuple[str, list[str], bool, str]] = [
-    ("sessions", ["id", "seq", "agent", "channel", "title", "location", "started_at", "ended_at", "meta",
-                  "created_at", "updated_at"], True, "seq"),
+    (
+        "sessions",
+        [
+            "id",
+            "seq",
+            "agent",
+            "channel",
+            "title",
+            "location",
+            "started_at",
+            "ended_at",
+            "meta",
+            "created_at",
+            "updated_at",
+        ],
+        True,
+        "seq",
+    ),
     ("handoffs", ["id", "seq", "session_id", "agent", "model", "text", "created_at", "updated_at"], True, "seq"),
-    ("messages", ["id", "seq", "session_id", "role", "speaker", "location", "content", "tool", "created_at",
-                  "received_at", "content_hash", "private", "meta"], False, "seq"),
-    ("facts", ["id", "seq", "text", "subject", "status", "pinned", "author", "agent", "session_id",
-               "source_message_ids", "supersedes", "private", "reviewed_at", "created_at", "updated_at", "model",
-               "recall_count", "last_recalled_at", "last_recalled_session"], True, "seq"),
-    ("summaries", ["id", "seq", "kind", "session_id", "period_start", "period_end", "title", "text", "topics",
-                   "covered_seq", "model", "created_at"], False, "seq"),
-    ("recall_index", ["id", "seq", "kind", "source_id", "session_id", "agent", "period_start", "period_end", "text",
-                      "message_ids", "importance", "private", "embedding", "embed_model", "updated_at"], True, "seq"),
+    (
+        "messages",
+        [
+            "id",
+            "seq",
+            "session_id",
+            "role",
+            "speaker",
+            "location",
+            "content",
+            "tool",
+            "created_at",
+            "received_at",
+            "content_hash",
+            "private",
+            "meta",
+        ],
+        False,
+        "seq",
+    ),
+    (
+        "facts",
+        [
+            "id",
+            "seq",
+            "text",
+            "subject",
+            "status",
+            "pinned",
+            "author",
+            "agent",
+            "session_id",
+            "source_message_ids",
+            "supersedes",
+            "private",
+            "reviewed_at",
+            "created_at",
+            "updated_at",
+            "model",
+            "recall_count",
+            "last_recalled_at",
+            "last_recalled_session",
+        ],
+        True,
+        "seq",
+    ),
+    (
+        "summaries",
+        [
+            "id",
+            "seq",
+            "kind",
+            "session_id",
+            "period_start",
+            "period_end",
+            "title",
+            "text",
+            "topics",
+            "covered_seq",
+            "model",
+            "created_at",
+        ],
+        False,
+        "seq",
+    ),
+    (
+        "recall_index",
+        [
+            "id",
+            "seq",
+            "kind",
+            "source_id",
+            "session_id",
+            "agent",
+            "period_start",
+            "period_end",
+            "text",
+            "message_ids",
+            "importance",
+            "private",
+            "embedding",
+            "embed_model",
+            "updated_at",
+        ],
+        True,
+        "seq",
+    ),
     # Numbered by its own id. Forgetting a session tombstones ('recall_log', session id): the
     # mirror then drops that session's entries.
     ("recall_log", ["id", "at", "session_id", "query", "items", "reason"], False, "id"),
@@ -90,7 +184,9 @@ def _upsert_sql(table: str, columns: list[str], seq_col: str = "seq") -> str:
 
 
 def _row(columns: list[str], row: tuple) -> list[Any]:
-    return [Jsonb(value) if column in JSON_COLUMNS and value is not None else value for column, value in zip(columns, row)]
+    return [
+        Jsonb(value) if column in JSON_COLUMNS and value is not None else value for column, value in zip(columns, row)
+    ]
 
 
 def push(source: psycopg.Connection, target: psycopg.Connection, marks: dict[str, Any]) -> tuple[dict[str, Any], int]:

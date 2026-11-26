@@ -12,9 +12,15 @@ from .procs import kill_tree, popen_flags
 
 
 class PiProcess:
-    def __init__(self, argv: list[str], cwd: Path, env: Mapping[str, str],
-                 on_event: Callable[[dict], None], on_log: Callable[[str, str], None],
-                 on_exit: Optional[Callable[[int], None]] = None):
+    def __init__(
+        self,
+        argv: list[str],
+        cwd: Path,
+        env: Mapping[str, str],
+        on_event: Callable[[dict], None],
+        on_log: Callable[[str, str], None],
+        on_exit: Optional[Callable[[int], None]] = None,
+    ):
         self.argv, self.cwd, self.env = argv, cwd, dict(env)
         self.on_event, self.on_log, self.on_exit = on_event, on_log, on_exit
         self.proc: Optional[subprocess.Popen] = None
@@ -23,11 +29,18 @@ class PiProcess:
 
     def start(self) -> None:
         self.proc = subprocess.Popen(
-            self.argv, cwd=str(self.cwd), env=self.env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, **popen_flags())
+            self.argv,
+            cwd=str(self.cwd),
+            env=self.env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            **popen_flags(),
+        )
         t1 = threading.Thread(target=self._read, args=(self.proc.stdout, "stdout"), daemon=True)
         t2 = threading.Thread(target=self._read, args=(self.proc.stderr, "stderr"), daemon=True)
-        t1.start(); t2.start()
+        t1.start()
+        t2.start()
         threading.Thread(target=self._watch, args=(t1, t2), daemon=True).start()
 
     def _read(self, stream, name: str) -> None:

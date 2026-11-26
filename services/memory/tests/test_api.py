@@ -9,8 +9,14 @@ def at(seconds):
 
 
 def message(session_id, role, content, seconds, **extra):
-    return {"id": str(uuid4()), "session_id": str(session_id), "role": role, "content": content,
-            "created_at": at(seconds), **extra}
+    return {
+        "id": str(uuid4()),
+        "session_id": str(session_id),
+        "role": role,
+        "content": content,
+        "created_at": at(seconds),
+        **extra,
+    }
 
 
 def test_health_reports_ready(client):
@@ -23,10 +29,17 @@ def test_health_reports_ready(client):
 
 def test_messages_are_stored_once_and_indexed_as_turns(client):
     session = uuid4()
-    assert client.put(f"/v1/sessions/{session}", json={"started_at": at(0), "agent": "Echo", "channel": "voice"}).status_code == 200
+    assert (
+        client.put(
+            f"/v1/sessions/{session}", json={"started_at": at(0), "agent": "Echo", "channel": "voice"}
+        ).status_code
+        == 200
+    )
     batch = [
         message(session, "user", "My tomatoes are getting blight", 1),
-        message(session, "tool", "Copper spray helps", 2, tool={"name": "web_search", "arguments": {"query": "blight"}}),
+        message(
+            session, "tool", "Copper spray helps", 2, tool={"name": "web_search", "arguments": {"query": "blight"}}
+        ),
         message(session, "assistant", "Try a copper spray and water at the base.", 3),
     ]
     first = client.post("/v1/messages", json={"messages": batch}).json()
@@ -67,11 +80,16 @@ def test_message_can_carry_its_session(client):
 
 def test_late_user_message_splits_the_turn(client):
     session = uuid4()
-    client.post("/v1/messages", json={"messages": [
-        message(session, "user", "question one", 0),
-        message(session, "assistant", "answer one", 1),
-        message(session, "assistant", "answer two", 3),
-    ]})
+    client.post(
+        "/v1/messages",
+        json={
+            "messages": [
+                message(session, "user", "question one", 0),
+                message(session, "assistant", "answer one", 1),
+                message(session, "assistant", "answer two", 3),
+            ]
+        },
+    )
     client.post("/v1/messages", json={"messages": [message(session, "user", "question two", 2)]})
     results = client.get("/v1/search", params={"q": "answer"}).json()["results"]
     texts = sorted(r["text"] for r in results)
@@ -80,10 +98,15 @@ def test_late_user_message_splits_the_turn(client):
 
 def test_search_filters_by_time_and_privacy(client):
     session = uuid4()
-    client.post("/v1/messages", json={"messages": [
-        message(session, "user", "garden plans for spring", 0),
-        message(session, "user", "garden plans for autumn", 86400 * 30, private=True),
-    ]})
+    client.post(
+        "/v1/messages",
+        json={
+            "messages": [
+                message(session, "user", "garden plans for spring", 0),
+                message(session, "user", "garden plans for autumn", 86400 * 30, private=True),
+            ]
+        },
+    )
     later = client.get("/v1/search", params={"q": "garden", "from": at(86400)}).json()["results"]
     assert [r["text"] for r in later] == ["User: garden plans for autumn"]
     public = client.get("/v1/search", params={"q": "garden", "include_private": "false"}).json()["results"]

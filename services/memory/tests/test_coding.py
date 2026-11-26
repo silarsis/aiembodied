@@ -66,8 +66,12 @@ def test_validation(client):
 def test_brief_lists_up_to_three_recent_tasks_from_the_last_week(client):
     now = datetime.now(timezone.utc)
     for i in range(4):
-        client.post("/v1/coding/tasks", json=task(f"t{i}", title=f"Job {i}", finished_at=(now - timedelta(hours=i)).isoformat()))
-    client.post("/v1/coding/tasks", json=task("old", title="Ancient", finished_at=(now - timedelta(days=9)).isoformat()))
+        client.post(
+            "/v1/coding/tasks", json=task(f"t{i}", title=f"Job {i}", finished_at=(now - timedelta(hours=i)).isoformat())
+        )
+    client.post(
+        "/v1/coding/tasks", json=task("old", title="Ancient", finished_at=(now - timedelta(days=9)).isoformat())
+    )
     brief = client.get("/v1/brief").json()
     assert [t["title"] for t in brief["recent_coding"]] == ["Job 0", "Job 1", "Job 2"]
     assert brief["recent_coding"][0]["workspace"] == "aiembodied"

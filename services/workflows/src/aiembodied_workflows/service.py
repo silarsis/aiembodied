@@ -7,9 +7,18 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from temporalio.client import (Client, Schedule, ScheduleActionStartWorkflow, ScheduleAlreadyRunningError,
-                               ScheduleIntervalSpec, SchedulePolicy, ScheduleOverlapPolicy, ScheduleSpec,
-                               ScheduleUpdate, WorkflowHandle)
+from temporalio.client import (
+    Client,
+    Schedule,
+    ScheduleActionStartWorkflow,
+    ScheduleAlreadyRunningError,
+    ScheduleIntervalSpec,
+    SchedulePolicy,
+    ScheduleOverlapPolicy,
+    ScheduleSpec,
+    ScheduleUpdate,
+    WorkflowHandle,
+)
 from temporalio.common import WorkflowIDConflictPolicy
 from temporalio.service import RPCError, RPCStatusCode
 
@@ -58,10 +67,17 @@ def build_schedule(avatar: str, name: str, trigger: dict, config: dict) -> Sched
     else:
         spec = ScheduleSpec(intervals=[ScheduleIntervalSpec(every=timedelta(minutes=float(trigger["everyMinutes"])))])
     action = ScheduleActionStartWorkflow(
-        "AgentFlow", FlowInput(avatar, name, {}, "schedule", 0, config), id=flow_workflow_id(avatar, name, "sched"),
-        task_queue=TASK_QUEUE, typed_search_attributes=search_attrs(avatar, "flow", "agent", name))
-    return Schedule(action=action, spec=spec,
-                    policy=SchedulePolicy(overlap=ScheduleOverlapPolicy.SKIP, catchup_window=timedelta(minutes=10)))
+        "AgentFlow",
+        FlowInput(avatar, name, {}, "schedule", 0, config),
+        id=flow_workflow_id(avatar, name, "sched"),
+        task_queue=TASK_QUEUE,
+        typed_search_attributes=search_attrs(avatar, "flow", "agent", name),
+    )
+    return Schedule(
+        action=action,
+        spec=spec,
+        policy=SchedulePolicy(overlap=ScheduleOverlapPolicy.SKIP, catchup_window=timedelta(minutes=10)),
+    )
 
 
 class Service:
@@ -71,8 +87,12 @@ class Service:
         self.client: Client | None = None
         self.agents: dict[str, str] = {}
         self.index = WatchIndex()
-        self.activities = Activities(settings, memory=self.memory, client_getter=lambda: self.client,
-                                      agent_name=lambda avatar: self.agents.get(avatar, avatar))
+        self.activities = Activities(
+            settings,
+            memory=self.memory,
+            client_getter=lambda: self.client,
+            agent_name=lambda avatar: self.agents.get(avatar, avatar),
+        )
         self.bridge = Bridge(settings.switchboard_url, self.index, self.send_signal)
         self._tasks: list[asyncio.Task] = []
         self._workers_task: asyncio.Task | None = None
@@ -90,8 +110,10 @@ class Service:
 
     async def start(self) -> None:
         """Start the background tasks: connecting to Temporal (with retries) and the switchboard bridge."""
-        self._tasks = [asyncio.create_task(self._connect_loop(), name="temporal-connect"),
-                       asyncio.create_task(self.bridge.run(), name="bridge")]
+        self._tasks = [
+            asyncio.create_task(self._connect_loop(), name="temporal-connect"),
+            asyncio.create_task(self.bridge.run(), name="bridge"),
+        ]
 
     async def stop(self) -> None:
         for t in self._tasks:
@@ -109,13 +131,18 @@ class Service:
                 raise
             except Exception as exc:  # noqa: BLE001
                 if not failing:
-                    log.warning("Temporal at %s is not reachable (%s); retrying every 5 s",
-                                self.settings.temporal_address, str(exc)[:120])
+                    log.warning(
+                        "Temporal at %s is not reachable (%s); retrying every 5 s",
+                        self.settings.temporal_address,
+                        str(exc)[:120],
+                    )
                     failing = True
                 await asyncio.sleep(5)
                 continue
             failing = False
-            log.info("connected to Temporal at %s (namespace %s)", self.settings.temporal_address, self.settings.namespace)
+            log.info(
+                "connected to Temporal at %s (namespace %s)", self.settings.temporal_address, self.settings.namespace
+            )
             self.client = client
             try:
                 await self._run_workers(client)
@@ -197,9 +224,13 @@ class Service:
             if wid in running:
                 continue
             await client.start_workflow(
-                "AgentLife", LifeInput(avatar, name, self.config), id=wid, task_queue=TASK_QUEUE,
+                "AgentLife",
+                LifeInput(avatar, name, self.config),
+                id=wid,
+                task_queue=TASK_QUEUE,
                 search_attributes=search_attrs(avatar, "life", "system"),
-                id_conflict_policy=WorkflowIDConflictPolicy.USE_EXISTING)
+                id_conflict_policy=WorkflowIDConflictPolicy.USE_EXISTING,
+            )
             started.append(avatar)
             log.info("life workflow started for %s (%s)", name, wid)
         for wid in running - {f"life:{a}" for a, _ in agents}:
@@ -239,8 +270,9 @@ class Service:
             log.warning("could not record the intention in memory (%s); the workflow runs anyway", exc)
             return None
 
-    async def create_due(self, kind: str, avatar: str, text: str, at: str | None, in_seconds: float | None,
-                         alarm: bool = False) -> dict:
+    async def create_due(
+        self, kind: str, avatar: str, text: str, at: str | None, in_seconds: float | None, alarm: bool = False
+    ) -> dict:
         """A reminder (`remind:`) or a wake-up (`wake:`)."""
         try:
             due = due_from(datetime.now(timezone.utc), at, in_seconds)
@@ -249,8 +281,17 @@ class Service:
         uid = str(uuid.uuid4())
         wid = f"{'remind' if kind == 'reminder' else 'wake'}:{uid}"
         params = {"text": text, "alarm": alarm} if kind == "reminder" else {"text": text}
-        row = {"id": uid, "avatar_id": avatar, "kind": kind, "text": text, "status": "open", "workflow_id": wid,
-               "template": kind, "params": params, "due_at": iso_z(due)}
+        row = {
+            "id": uid,
+            "avatar_id": avatar,
+            "kind": kind,
+            "text": text,
+            "status": "open",
+            "workflow_id": wid,
+            "template": kind,
+            "params": params,
+            "due_at": iso_z(due),
+        }
         intention_id = await self._record_intention(row)
         await self._start_due(kind, wid, DueInput(avatar, text, iso_z(due), alarm, intention_id, self.config))
         return {"workflowId": wid, "intentionId": intention_id, "dueAt": iso_z(due)}
@@ -258,20 +299,34 @@ class Service:
     async def _start_due(self, kind: str, wid: str, inp: DueInput) -> None:
         client = self.require_client()
         await client.start_workflow(
-            "Reminder" if kind == "reminder" else "WakeMe", inp, id=wid, task_queue=TASK_QUEUE,
-            search_attributes=search_attrs(inp.avatar_id, kind))
+            "Reminder" if kind == "reminder" else "WakeMe",
+            inp,
+            id=wid,
+            task_queue=TASK_QUEUE,
+            search_attributes=search_attrs(inp.avatar_id, kind),
+        )
 
     async def create_watch(self, avatar: str, condition: dict, then: dict, until_hours: Any) -> dict:
         errors = cnd.validate_condition(condition) + cnd.validate_then(then)
         if errors:
             raise ServiceError(422, {"errors": errors})
-        until = datetime.now(timezone.utc) + timedelta(hours=cnd.clamp_until_hours(until_hours if until_hours is not None else cnd.DEFAULT_UNTIL_HOURS))
+        until = datetime.now(timezone.utc) + timedelta(
+            hours=cnd.clamp_until_hours(until_hours if until_hours is not None else cnd.DEFAULT_UNTIL_HOURS)
+        )
         uid = str(uuid.uuid4())
         wid = f"watch:{uid}"
         text = f"Watch for {cnd.describe(condition)}"
-        row = {"id": uid, "avatar_id": avatar, "kind": "watch", "text": text, "status": "open", "workflow_id": wid,
-               "template": "watch", "params": {"condition": condition, "then": then, "untilAt": iso_z(until)},
-               "due_at": iso_z(until)}
+        row = {
+            "id": uid,
+            "avatar_id": avatar,
+            "kind": "watch",
+            "text": text,
+            "status": "open",
+            "workflow_id": wid,
+            "template": "watch",
+            "params": {"condition": condition, "then": then, "untilAt": iso_z(until)},
+            "due_at": iso_z(until),
+        }
         intention_id = await self._record_intention(row)
         await self._start_watch(wid, WatchInput(avatar, condition, then, iso_z(until), intention_id, None, self.config))
         return {"workflowId": wid, "intentionId": intention_id}
@@ -279,30 +334,46 @@ class Service:
     async def _start_watch(self, wid: str, inp: WatchInput, *, replace: bool = False) -> None:
         client = self.require_client()
         await client.start_workflow(
-            "Watch", inp, id=wid, task_queue=TASK_QUEUE,
+            "Watch",
+            inp,
+            id=wid,
+            task_queue=TASK_QUEUE,
             search_attributes=search_attrs(inp.avatar_id, "watch", "agent", inp.flow_name),
-            id_conflict_policy=WorkflowIDConflictPolicy.TERMINATE_EXISTING if replace else WorkflowIDConflictPolicy.UNSPECIFIED)
+            id_conflict_policy=WorkflowIDConflictPolicy.TERMINATE_EXISTING
+            if replace
+            else WorkflowIDConflictPolicy.UNSPECIFIED,
+        )
         self.index.add(WatchEntry(wid, inp.avatar_id, inp.condition))
 
     # --- flows -----------------------------------------------------------------------------------------
-    async def put_flow(self, avatar: str, name: str, description: str, definition: Any, trigger: Any,
-                       enabled: bool = True) -> dict:
+    async def put_flow(
+        self, avatar: str, name: str, description: str, definition: Any, trigger: Any, enabled: bool = True
+    ) -> dict:
         errors = flowdef.validate_flow(name, definition, trigger)
         if errors:
             raise ServiceError(422, {"errors": errors})
         try:
-            saved = await self.memory.put_flow(avatar, name, {"description": description, "definition": definition,
-                                                              "trigger": trigger, "enabled": enabled})
+            saved = await self.memory.put_flow(
+                avatar,
+                name,
+                {"description": description, "definition": definition, "trigger": trigger, "enabled": enabled},
+            )
         except MemoryError as exc:
             raise ServiceError(502, str(exc)) from exc
-        log.info("flow %s/%s saved (version %s), trigger %s", avatar, name, saved.get("version", "?"), trigger.get("kind"))
+        log.info(
+            "flow %s/%s saved (version %s), trigger %s", avatar, name, saved.get("version", "?"), trigger.get("kind")
+        )
         applied = True
         try:
             await self.apply_trigger(avatar, name, trigger if enabled else {"kind": "manual"})
         except ServiceError:
             applied = False
-            log.warning("flow %s/%s saved but its trigger could not be applied (Temporal is not reachable); "
-                        "it will be applied when Temporal is back", avatar, name)
+            log.warning(
+                "flow %s/%s saved but its trigger could not be applied (Temporal is not reachable); "
+                "it will be applied when Temporal is back",
+                avatar,
+                name,
+            )
         return {**saved, "triggerApplied": applied}
 
     async def apply_trigger(self, avatar: str, name: str, trigger: dict) -> None:
@@ -313,9 +384,15 @@ class Service:
             schedule = build_schedule(avatar, name, trigger, self.config)
             try:
                 await client.create_schedule(sched_id(avatar, name), schedule)
-                log.info("schedule %s created (%s)", sched_id(avatar, name), trigger.get("cron") or f"every {trigger.get('everyMinutes')} min")
+                log.info(
+                    "schedule %s created (%s)",
+                    sched_id(avatar, name),
+                    trigger.get("cron") or f"every {trigger.get('everyMinutes')} min",
+                )
             except ScheduleAlreadyRunningError:
-                await client.get_schedule_handle(sched_id(avatar, name)).update(lambda _i: ScheduleUpdate(schedule=schedule))
+                await client.get_schedule_handle(sched_id(avatar, name)).update(
+                    lambda _i: ScheduleUpdate(schedule=schedule)
+                )
                 log.info("schedule %s updated", sched_id(avatar, name))
         elif kind == "watch":
             await self._delete_schedule(client, avatar, name)
@@ -352,8 +429,13 @@ class Service:
             raise ServiceError(404, f"no flow {name} for {avatar}")
         client = self.require_client()
         wid = flow_workflow_id(avatar, name, str(uuid.uuid4()))
-        await client.start_workflow("AgentFlow", FlowInput(avatar, name, inputs or {}, "manual", 0, self.config),
-                                    id=wid, task_queue=TASK_QUEUE, search_attributes=search_attrs(avatar, "flow", "agent", name))
+        await client.start_workflow(
+            "AgentFlow",
+            FlowInput(avatar, name, inputs or {}, "manual", 0, self.config),
+            id=wid,
+            task_queue=TASK_QUEUE,
+            search_attributes=search_attrs(avatar, "flow", "agent", name),
+        )
         log.info("flow %s/%s run started as %s", avatar, name, wid)
         return {"workflowId": wid}
 
@@ -385,14 +467,28 @@ class Service:
         async for wf in client.list_workflows(query):
             it = by_wf.get(wf.id) or {}
             purpose = attr_value(wf.typed_search_attributes, PURPOSE) or wf.workflow_type
-            rows.append({
-                "workflowId": wf.id, "purpose": purpose, "title": it.get("text") or wf.id, "status": "running",
-                "startedAt": iso_z(wf.start_time) if wf.start_time else None, "nextAt": it.get("due_at")})
+            rows.append(
+                {
+                    "workflowId": wf.id,
+                    "purpose": purpose,
+                    "title": it.get("text") or wf.id,
+                    "status": "running",
+                    "startedAt": iso_z(wf.start_time) if wf.start_time else None,
+                    "nextAt": it.get("due_at"),
+                }
+            )
         return {
             "workflows": rows,
             "intentions": intentions,
-            "flows": [{"name": f.get("name"), "trigger": f.get("trigger"), "enabled": f.get("enabled", True),
-                       "lastRun": f.get("last_run_at")} for f in flows],
+            "flows": [
+                {
+                    "name": f.get("name"),
+                    "trigger": f.get("trigger"),
+                    "enabled": f.get("enabled", True),
+                    "lastRun": f.get("last_run_at"),
+                }
+                for f in flows
+            ],
         }
 
     async def signal_plan(self, workflow_id: str, signal: str, args: dict | None) -> None:
@@ -473,12 +569,32 @@ class Service:
                 if template in ("reminder", "wakeup"):
                     kind = "reminder" if template == "reminder" else "wakeup"
                     due = row.get("due_at") or params.get("dueAt") or iso_z(datetime.now(timezone.utc))
-                    await self._start_due(kind, wid, DueInput(avatar, params.get("text") or row.get("text") or "", due,
-                                                              bool(params.get("alarm")), row.get("id"), self.config))
+                    await self._start_due(
+                        kind,
+                        wid,
+                        DueInput(
+                            avatar,
+                            params.get("text") or row.get("text") or "",
+                            due,
+                            bool(params.get("alarm")),
+                            row.get("id"),
+                            self.config,
+                        ),
+                    )
                 else:
                     until = params.get("untilAt") or row.get("due_at")
-                    await self._start_watch(wid, WatchInput(avatar, params.get("condition") or {}, params.get("then") or {},
-                                                            until, row.get("id"), None, self.config))
+                    await self._start_watch(
+                        wid,
+                        WatchInput(
+                            avatar,
+                            params.get("condition") or {},
+                            params.get("then") or {},
+                            until,
+                            row.get("id"),
+                            None,
+                            self.config,
+                        ),
+                    )
                 restarted.append(wid)
                 log.info("reconcile: %s was not running; started it again (late)", wid)
             except Exception as exc:  # noqa: BLE001

@@ -112,8 +112,17 @@ class Backend:
     supports_constraints = False
     _warned_constraints = False
 
-    def stream(self, text, frames: int, steps: int, *, plan=None, phase_texts: Optional[Sequence] = None,
-               history: Optional[StreamHistory] = None, constraint_weight: float = 2.0) -> Iterator[Chunk]:
+    def stream(
+        self,
+        text,
+        frames: int,
+        steps: int,
+        *,
+        plan=None,
+        phase_texts: Optional[Sequence] = None,
+        history: Optional[StreamHistory] = None,
+        constraint_weight: float = 2.0,
+    ) -> Iterator[Chunk]:
         """Yield continuous chunks covering `frames` frames. Default: one chunk, constraints ignored.
 
         plan: a `ConstraintPlan` (model units, request-relative frames) or None.

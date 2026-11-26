@@ -74,7 +74,11 @@ class Publisher:
             self._down = False
         except Exception as error:  # noqa: BLE001
             if not self._down:
-                log.warning("Could not publish to the switchboard at %s: %s", self.url, str(error).splitlines()[0] if str(error) else type(error).__name__)
+                log.warning(
+                    "Could not publish to the switchboard at %s: %s",
+                    self.url,
+                    str(error).splitlines()[0] if str(error) else type(error).__name__,
+                )
             self._down = True
 
 
