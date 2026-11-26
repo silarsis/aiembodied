@@ -36,6 +36,24 @@ Setup → Servers → **Add a server** adds a machine of your own: a chat model 
 
 This PC's llama-server serves several conversations at once, one slot per avatar, so each keeps its own prompt cache. Models and servers → Thinking shows **Conversations at once** (1 to 4, default 2) and **Context per conversation** (8K to 128K, default 64K, never above the model's own limit) while Thinking runs on it. The choice is saved as `slots` and `contextPerSlot` in `<userData>/local-llm.json` and restarts llama-server. llama-server's own `-c` is the total, so `scripts/start-local-llm.ps1` is given `Context x Slots` (two slots of 64K reserve 128K tokens). Without a saved choice, `LOCAL_LLM_SLOTS` (default 2, 1 to 8) and `LOCAL_LLM_CONTEXT` (the context **per slot**, default 65536) apply, for `pnpm dev:run` and for the script's `-Slots` / `-Context`. The coder's llama-server always uses one slot.
 
+## Thinking models that reason first
+
+Many local chat models think out loud before they answer, and how that is switched off depends on each model's chat template. The app sends `chat_template_kwargs: {"enable_thinking": false}` with every request to a local server (`local-voice/local-llm-client.ts`, `openai/chat-completions-responses.ts`). Models that ignore it reason on every call, which makes agent-time think acts (170 s limit) and the inbox decision step (6 s) time out, and voice replies slow. Measured on bija on 2026-11-26 through aicontroller (Vulkan, 128K context):
+
+| Model | Size | Speed | Thinking off with |
+|---|---|---|---|
+| Qwen3.8-Flash-Next IQ3_M | 83 GB (MoE, a small part per token) | not measured that day | `enable_thinking: false` (what the app sends) |
+| Gemma 4 E4B OBLITERATED Q8_0 | 7.5 GB | ~30 tokens/s | `enable_thinking: false`: a short answer in ~1 s, think act 0.8 s, inbox decision 1.5 s |
+| Inkling-2-Mini UD-Q8_K_XL | 21 GB (dense 26B) | ~12 tokens/s | **not** `enable_thinking`; see below |
+
+**Inkling-2-Mini** ignores `enable_thinking`. Its template reads `reasoning_effort` instead: a name from `{"none": 0.0, "minimal": 0.1, "low": 0.2, "medium": 0.7, "high": 0.9, "xhigh": 0.99, "max": 0.99}` or a number from 0.0 to 0.99 (anything else raises an error). It defaults to 0.9 when unset and writes it as a system message, "Thinking effort level: N", before the first non-system message. With the app's request as it is, a "say hi in three words" test spent all 200 tokens reasoning and gave no answer, every think act timed out, and so did every inbox decision. Ways to run it without reasoning (not yet tried on bija):
+
+1. **Per request:** add `"reasoning_effort": "none"` to `chat_template_kwargs`. The app doesn't do this yet: it needs a per-model request option next to `enable_thinking`. Templates that don't use the variable ignore it, but other models give `reasoning_effort` other meanings (gpt-oss expects low/medium/high), so key it to the model rather than sending it to everyone.
+2. **Per server:** start llama-server with `--chat-template-kwargs '{"reasoning_effort":"none"}'` (env `LLAMA_ARG_CHAT_TEMPLATE_KWARGS`). bija's build has the flag. With aicontroller that goes in the `echo-llm` start args in its config.yaml, which apply to every model that backend loads.
+3. **Bluntly:** `--reasoning-budget 0` ends thinking at once for any model whose thoughts llama-server can parse. Check that the answer is still good.
+
+To check: load Inkling, send `{"messages":[{"role":"user","content":"Say hi in three words."}],"max_tokens":200,"chat_template_kwargs":{"reasoning_effort":"none"}}` to `http://127.0.0.1:1234/v1/chat/completions`, and look for an empty `reasoning_content`, a short `content` and the `timings`. Then repeat the agent-time checks: a test flow with a `think` step, and a normal-priority `say` that goes through the inbox decision (see [Agent time](agent-time.md)).
+
 ## Vision model on this PC
 
 Describe the avatar sends an avatar screenshot to a model that reads images. By default that is **Qwen3-VL-8B-Instruct** (Q4_K_M, with its F16 vision projector), about 6 GB on disk and a little more in memory. The main language model already holds around 86 GB of bija's unified memory, so a small model that only runs when needed was chosen over keeping a second one loaded. The built-in server `local-vision` (type chat, `http://127.0.0.1:1237/v1`, model alias `qwen3-vl`) is the default route for `describe` and `posecheck`; a route you saved wins, and a route to OpenAI or a server on another PC never starts anything.
