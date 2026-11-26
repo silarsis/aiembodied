@@ -33,6 +33,8 @@ if (-not (Test-Path $exe)) {
     Write-Host "Downloading Temporal CLI v$CliVersion"
     Invoke-WebRequest -Uri "$Base/$Archive" -OutFile $zip -UseBasicParsing
     $sums = (Invoke-WebRequest -Uri "$Base/checksums.txt" -UseBasicParsing).Content
+    # GitHub serves checksums.txt as application/octet-stream, which Windows PowerShell 5.1 returns as byte[].
+    if ($sums -is [byte[]]) { $sums = [System.Text.Encoding]::UTF8.GetString($sums) }
     $line = ($sums -split "`n" | Where-Object { $_ -match [regex]::Escape($Archive) } | Select-Object -First 1)
     if (-not $line) { throw "checksums.txt has no entry for $Archive." }
     $expected = ($line.Trim() -split '\s+')[0].ToLower()
