@@ -16,7 +16,7 @@ describe('AicontrollerBridge', () => {
     await fake.stop();
   });
 
-  const bridge = (env: Record<string, string | undefined> = {}, extra: { onChange?: () => void } = {}) =>
+  const bridge = (env: Record<string, string | undefined> = {}, extra: { onChange?: () => void; leaseWaitS?: number } = {}) =>
     new AicontrollerBridge({ logger, env: { AICONTROLLER_URL: fake.url, ...env }, watchMs: 0, ...extra });
 
   it('parses AICONTROLLER_ENABLED', () => {
@@ -180,7 +180,7 @@ describe('AicontrollerBridge', () => {
 
     it('is deleted when the controller answers that it is still queued', async () => {
       fake.stillQueued.add('motion');
-      const b = bridge();
+      const b = bridge({}, { leaseWaitS: 0.2 });
       await b.start();
       b.setMotionWanted(true);
       await until(() => fake.requests.some((r) => r.startsWith('DELETE /v1/leases/')));

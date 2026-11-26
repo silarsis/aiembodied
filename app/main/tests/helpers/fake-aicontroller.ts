@@ -80,7 +80,7 @@ export class FakeAicontroller {
   /** The models GET /v1/models lists. A lease naming a model not in here answers 404. */
   readonly models: FakeModel[] = [];
   /** Every lease request body, in order. */
-  readonly leaseRequests: { backend: string; client: string; model: string | null; needs: string[]; host: string | null }[] = [];
+  readonly leaseRequests: { backend: string; client: string; model: string | null; needs: string[]; host: string | null; waitS?: number }[] = [];
   private server: Server | null = null;
   private counter = 0;
   url = '';
@@ -160,9 +160,9 @@ export class FakeAicontroller {
       return send(200, { models: all ? [...this.models, ...this.hostModels] : this.models });
     }
     if (method === 'POST' && path === '/v1/leases') {
-      const body = JSON.parse(text) as { backend: string; client: string; model?: string | null; needs?: string[]; host?: string | null };
+      const body = JSON.parse(text) as { backend: string; client: string; model?: string | null; needs?: string[]; host?: string | null; wait_s?: number };
       const needs = body.needs ?? [];
-      this.leaseRequests.push({ backend: body.backend, client: body.client, model: body.model ?? null, needs, host: body.host ?? null });
+      this.leaseRequests.push({ backend: body.backend, client: body.client, model: body.model ?? null, needs, host: body.host ?? null, waitS: body.wait_s });
       if (this.unknown.has(body.backend)) return send(404, { error: `unknown backend '${body.backend}'` });
       if (body.model && !this.models.some((entry) => entry.id === body.model || entry.alias === body.model)) return send(404, { error: `unknown model '${body.model}'` });
       if (this.refuse.has(body.backend)) return send(503, { error: 'GPU needed by game.exe' });
@@ -207,7 +207,8 @@ export class FakeAicontroller {
       if (lease.state === 'ready' || lease.state === 'queued') lease.state = 'released';
       return send(200, lease);
     }
-    if (match[2]) return lease.state === 'ready' ? send(200, lease) : send(410, { error: lease.error ?? 'lease is over' });
+    // Like the real controller, a heartbeat keeps a queued lease too, and answers with its state.
+    if (match[2]) return lease.state === 'ready' || lease.state === 'queued' ? send(200, lease) : send(410, { error: lease.error ?? 'lease is over' });
     return send(200, lease);
   }
 }

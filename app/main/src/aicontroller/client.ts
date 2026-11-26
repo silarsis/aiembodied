@@ -108,9 +108,36 @@ export interface ControllerOptions {
   serviceStarter?: ServiceStarter;
   launcher?: Launcher;
   fetch?: typeof fetch;
+  /**
+   * Longest wait_s one lease request asks for (default 240). Node's fetch gives up on an answer after
+   * 300 s, so a longer wait is split: the controller holds the request this long, then the client polls.
+   */
+  leaseRequestWaitS?: number;
+  /** How often a lease still queued or starting is polled after the first request (default 2000 ms). */
+  leasePollMs?: number;
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** Node's fetch (undici) drops a request whose answer has not started after 300 s; stay well under it. */
+export const LEASE_REQUEST_WAIT_S = 240;
+const LEASE_POLL_MS = 2000;
+
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return sleep(ms);
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) return reject(signal.reason ?? new Error("aborted"));
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason ?? new Error("aborted"));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
 
 /** A held lease (or a direct-mode stand-in with `direct = true`). */
 export class Lease {
@@ -225,7 +252,12 @@ export class Controller {
     const u = new URL(this.url + path);
     for (const [k, v] of Object.entries(opts.query ?? {})) if (v !== undefined) u.searchParams.set(k, v);
     const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), opts.timeoutMs ?? this.o.timeoutMs ?? 30_000);
+    const timeoutMs = opts.timeoutMs ?? this.o.timeoutMs ?? 30_000;
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      ac.abort();
+    }, timeoutMs);
     const onAbort = () => ac.abort();
     if (opts.signal?.aborted) ac.abort();
     else opts.signal?.addEventListener("abort", onAbort, { once: true });
@@ -240,6 +272,7 @@ export class Controller {
       });
     } catch (e) {
       if (opts.signal?.aborted) throw e;
+      if (timedOut) throw new ControllerError(`the controller at ${this.url} did not answer ${method} ${path} within ${Math.round(timeoutMs / 1000)}s`);
       throw new ControllerError(`cannot connect to the controller at ${this.url}; is it running?`);
     } finally {
       clearTimeout(timer);
@@ -353,22 +386,40 @@ export class Controller {
       return new Lease(undefined, { id: "direct", backend, model: opts.model ?? null, state: "ready", url }, true);
     }
     const waitS = opts.waitS ?? 900;
+    const deadline = Date.now() + waitS * 1000;
+    // The controller holds the request until the lease is ready or wait_s runs out. Ask for at most
+    // leaseRequestWaitS at once, then keep the same lease (and its place in the queue) and poll it.
+    const requestWaitS = Math.min(waitS, this.o.leaseRequestWaitS ?? LEASE_REQUEST_WAIT_S);
     const data = await this.request<LeaseData>("POST", "/v1/leases", {
       body: {
         backend, client: this.o.client ?? "typescript", model: opts.model ?? null, host: opts.host ?? null,
-        wait_s: waitS, ttl_s: opts.ttlS ?? 120, allow_ask_first: opts.allowAskFirst ?? false,
+        wait_s: requestWaitS, ttl_s: opts.ttlS ?? 120, allow_ask_first: opts.allowAskFirst ?? false,
         needs: opts.needs ?? [],
       },
-      timeoutMs: waitS * 1000 + (this.o.timeoutMs ?? 30_000),
+      timeoutMs: requestWaitS * 1000 + (this.o.timeoutMs ?? 30_000),
       signal: opts.signal,
     });
     const lease = new Lease(this, data, false, opts.signal);
-    if (data.state !== "ready") {
-      await lease.release();
-      if (data.state === "queued" || data.state === "starting") {
-        throw new ControllerError(`lease for '${backend}' is still ${data.state} after waiting ${waitS}s; try a larger waitS`);
+    try {
+      while ((lease.data.state === "queued" || lease.data.state === "starting") && Date.now() < deadline) {
+        await abortableSleep(Math.min(this.o.leasePollMs ?? LEASE_POLL_MS, Math.max(deadline - Date.now(), 0)), opts.signal);
+        // A heartbeat both keeps a queued lease alive and tells us its state.
+        lease.data = await this.request<LeaseData>("POST", `/v1/leases/${lease.id}/heartbeat`, { signal: opts.signal });
       }
-      throw new ControllerError(`lease for '${backend}' ${data.state}: ${data.error}`);
+    } catch (error) {
+      await lease.release();
+      if (error instanceof ControllerError && (error.status === 404 || error.status === 410)) {
+        throw new ControllerError(`lease for '${backend}' ended while it waited: ${error.message}`, error.status);
+      }
+      throw error;
+    }
+    const final = lease.data;
+    if (final.state !== "ready") {
+      await lease.release();
+      if (final.state === "queued" || final.state === "starting") {
+        throw new ControllerError(`lease for '${backend}' is still ${final.state} after waiting ${waitS}s (the controller may be loading the model or waiting for memory)`);
+      }
+      throw new ControllerError(`lease for '${backend}' ${final.state}: ${final.error}`);
     }
     return lease;
   }
