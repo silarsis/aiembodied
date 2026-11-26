@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LOCATIONS_KEY, PlaceManager } from '../../src/places/place-manager.js';
-import { URGENT_QUIET_MS, URGENT_WAIT_MS, urgentTarget, walkToKevin } from '../../src/places/urgent-walk.js';
+import {
+  URGENT_QUIET_MS,
+  URGENT_WAIT_MS,
+  urgentTarget,
+  walkToKevin,
+} from '../../src/places/urgent-walk.js';
 import { createPlaceDelivery } from '../../src/places/place-delivery.js';
 import { LocalOnlyBus } from '../../src/switchboard/bus.js';
 import { makeEventId } from '../../src/switchboard/client.js';
@@ -15,7 +20,10 @@ const NOW = 8_000_000;
 function setup(locations: Record<string, string>, activeAt: Record<string, number>) {
   const data = new Map<string, string>([[LOCATIONS_KEY, JSON.stringify(locations)]]);
   const places = new PlaceManager({
-    store: { getValue: (key) => data.get(key) ?? null, setValue: (key, value) => void data.set(key, value) },
+    store: {
+      getValue: (key) => data.get(key) ?? null,
+      setValue: (key, value) => void data.set(key, value),
+    },
     registry: { list: () => PROFILES },
     now: () => NOW,
     activeAt: (placeId) => activeAt[placeId] ?? null,
@@ -26,13 +34,19 @@ function setup(locations: Record<string, string>, activeAt: Record<string, numbe
 }
 
 describe('urgentTarget', () => {
-  it('stays when someone used the avatar\'s own PC in the last 2 minutes', () => {
-    const places = setup({ echo: 'home' }, { home: NOW - URGENT_QUIET_MS + 1000, study: NOW - 1000 });
+  it("stays when someone used the avatar's own PC in the last 2 minutes", () => {
+    const places = setup(
+      { echo: 'home' },
+      { home: NOW - URGENT_QUIET_MS + 1000, study: NOW - 1000 },
+    );
     expect(urgentTarget(places.snapshot(), 'echo')).toBeNull();
   });
 
   it('goes where someone is when nobody used its own PC lately and another PC was used', () => {
-    const places = setup({ echo: 'home' }, { home: NOW - URGENT_QUIET_MS - 1000, study: NOW - 30_000 });
+    const places = setup(
+      { echo: 'home' },
+      { home: NOW - URGENT_QUIET_MS - 1000, study: NOW - 30_000 },
+    );
     expect(urgentTarget(places.snapshot(), 'echo')).toBe('study');
     // Next door has no PC: an avatar there is fetched too.
     const away = setup({ echo: 'next-door' }, { home: NOW - 5000 });
@@ -61,7 +75,10 @@ describe('urgent news walks to Kevin, then speaks', () => {
     const sent: Array<{ placeId: string; channel: string }> = [];
     const delivery = createPlaceDelivery({
       places: () => places,
-      hub: () => ({ deviceForPlace: () => 'device-1', sendToPlace: (placeId, op) => (sent.push({ placeId, channel: String(op.channel) }), true) }),
+      hub: () => ({
+        deviceForPlace: () => 'device-1',
+        sendToPlace: (placeId, op) => (sent.push({ placeId, channel: String(op.channel) }), true),
+      }),
       localSink: () => null,
       broadcastLocal: (channel) => void sent.push({ placeId: 'home', channel }),
     });
@@ -78,7 +95,13 @@ describe('urgent news walks to Kevin, then speaks', () => {
       beforeUrgent: () => walkToKevin(places, 'echo'),
     });
     inbox.start();
-    bus.publish({ type: 'avatar.inbox', producer: { kind: 'service', id: 'app' }, to: ['avatar:echo'], priority: 'urgent', payload: { text: 'The oven is on' } });
+    bus.publish({
+      type: 'avatar.inbox',
+      producer: { kind: 'service', id: 'app' },
+      to: ['avatar:echo'],
+      priority: 'urgent',
+      payload: { text: 'The oven is on' },
+    });
     await vi.advanceTimersByTimeAsync(0);
     expect(order).toEqual([]);
     expect(places.snapshot().transit).toEqual([{ avatarId: 'echo', from: 'home', to: 'study' }]);
@@ -93,8 +116,18 @@ describe('urgent news walks to Kevin, then speaks', () => {
     const places = setup({ echo: 'home' }, { home: NOW - 10 * 60_000, study: NOW - 5000 });
     const notify = vi.fn();
     const bus = new LocalOnlyBus(makeEventId);
-    new AvatarInbox({ avatarId: 'echo', bus, notify, beforeUrgent: () => walkToKevin(places, 'echo') }).start();
-    bus.publish({ type: 'home.alert', producer: { kind: 'service', id: 'app' }, to: ['avatar:echo'], payload: { text: 'Smoke' } });
+    new AvatarInbox({
+      avatarId: 'echo',
+      bus,
+      notify,
+      beforeUrgent: () => walkToKevin(places, 'echo'),
+    }).start();
+    bus.publish({
+      type: 'home.alert',
+      producer: { kind: 'service', id: 'app' },
+      to: ['avatar:echo'],
+      payload: { text: 'Smoke' },
+    });
     await vi.advanceTimersByTimeAsync(URGENT_WAIT_MS - 100);
     expect(notify).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(200);
@@ -106,12 +139,29 @@ describe('urgent news walks to Kevin, then speaks', () => {
     const notify = vi.fn();
     const beforeUrgent = vi.fn(() => walkToKevin(places, 'echo'));
     const bus = new LocalOnlyBus(makeEventId);
-    new AvatarInbox({ avatarId: 'echo', bus, notify, beforeUrgent, deliberate: async () => ({ action: 'speak-idle', reason: 'test' }) }).start();
-    bus.publish({ type: 'home.alert', producer: { kind: 'service', id: 'app' }, to: ['avatar:echo'], payload: { text: 'Smoke' } });
+    new AvatarInbox({
+      avatarId: 'echo',
+      bus,
+      notify,
+      beforeUrgent,
+      deliberate: async () => ({ action: 'speak-idle', reason: 'test' }),
+    }).start();
+    bus.publish({
+      type: 'home.alert',
+      producer: { kind: 'service', id: 'app' },
+      to: ['avatar:echo'],
+      payload: { text: 'Smoke' },
+    });
     await vi.advanceTimersByTimeAsync(0);
     expect(notify).toHaveBeenCalledTimes(1);
     expect(places.snapshot().transit).toEqual([]);
-    bus.publish({ type: 'avatar.inbox', producer: { kind: 'service', id: 'app' }, to: ['avatar:echo'], priority: 'normal', payload: { text: 'later' } });
+    bus.publish({
+      type: 'avatar.inbox',
+      producer: { kind: 'service', id: 'app' },
+      to: ['avatar:echo'],
+      priority: 'normal',
+      payload: { text: 'later' },
+    });
     await vi.advanceTimersByTimeAsync(0);
     expect(notify).toHaveBeenCalledTimes(2);
     expect(beforeUrgent).toHaveBeenCalledTimes(1);
@@ -120,8 +170,19 @@ describe('urgent news walks to Kevin, then speaks', () => {
   it('speaks even when the walk throws', async () => {
     const notify = vi.fn();
     const bus = new LocalOnlyBus(makeEventId);
-    new AvatarInbox({ avatarId: 'echo', bus, notify, beforeUrgent: () => Promise.reject(new Error('boom')), logger: { warn: vi.fn() } }).start();
-    bus.publish({ type: 'home.alert', producer: { kind: 'service', id: 'app' }, to: ['avatar:echo'], payload: { text: 'Smoke' } });
+    new AvatarInbox({
+      avatarId: 'echo',
+      bus,
+      notify,
+      beforeUrgent: () => Promise.reject(new Error('boom')),
+      logger: { warn: vi.fn() },
+    }).start();
+    bus.publish({
+      type: 'home.alert',
+      producer: { kind: 'service', id: 'app' },
+      to: ['avatar:echo'],
+      payload: { text: 'Smoke' },
+    });
     await vi.advanceTimersByTimeAsync(0);
     expect(notify).toHaveBeenCalledTimes(1);
   });

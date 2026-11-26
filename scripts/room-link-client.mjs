@@ -22,7 +22,9 @@ function baseUrl(input) {
 }
 
 function describe(value) {
-  return JSON.stringify(value, (_key, item) => (item instanceof Uint8Array ? `<${item.byteLength} bytes>` : item));
+  return JSON.stringify(value, (_key, item) =>
+    item instanceof Uint8Array ? `<${item.byteLength} bytes>` : item,
+  );
 }
 
 /** Binary frame: 4-byte big-endian header length, JSON header, payload. Bytes in the op come back as Uint8Array. */
@@ -54,9 +56,20 @@ async function pair(hub, code, placeName) {
     body: JSON.stringify({ code, deviceName: os.hostname(), ...(placeName ? { placeName } : {}) }),
   });
   const body = await response.json().catch(() => ({}));
-  console.log(response.status, JSON.stringify({ ...body, token: body.token ? '<saved>' : undefined }));
+  console.log(
+    response.status,
+    JSON.stringify({ ...body, token: body.token ? '<saved>' : undefined }),
+  );
   if (!response.ok) process.exit(1);
-  writeFileSync(FILE, JSON.stringify({ hubUrl: baseUrl(hub), deviceId: body.deviceId, token: body.token, placeId: body.placeId }, null, 2), { mode: 0o600 });
+  writeFileSync(
+    FILE,
+    JSON.stringify(
+      { hubUrl: baseUrl(hub), deviceId: body.deviceId, token: body.token, placeId: body.placeId },
+      null,
+      2,
+    ),
+    { mode: 0o600 },
+  );
   console.log(`Saved ${FILE}`);
 }
 
@@ -72,7 +85,15 @@ function connect(hub, extra) {
   ws.binaryType = 'arraybuffer';
   let ping;
   ws.addEventListener('open', () => {
-    ws.send(JSON.stringify({ op: 'hello', protocol: 1, deviceId: device.deviceId, token: device.token, appVersion: 'room-link-client' }));
+    ws.send(
+      JSON.stringify({
+        op: 'hello',
+        protocol: 1,
+        deviceId: device.deviceId,
+        token: device.token,
+        appVersion: 'room-link-client',
+      }),
+    );
     ping = setInterval(() => ws.send(JSON.stringify({ op: 'ping', t: Date.now() })), 2000);
   });
   ws.addEventListener('message', (event) => {
@@ -80,7 +101,8 @@ function connect(hub, extra) {
     if (op.op === 'pong') return;
     console.log('<-', describe(op));
     if (op.op === 'welcome') {
-      if (extra.call) ws.send(JSON.stringify({ op: 'call', ref: 'c1', channel: extra.call, args: extra.args }));
+      if (extra.call)
+        ws.send(JSON.stringify({ op: 'call', ref: 'c1', channel: extra.call, args: extra.args }));
       if (extra.asset) ws.send(JSON.stringify({ op: 'asset.get', ref: 'a1', url: extra.asset }));
     }
   });
@@ -100,12 +122,15 @@ if (command === 'pair' && hub && rest[0]) {
   const callAt = rest.indexOf('--call');
   if (callAt >= 0) {
     extra.call = rest[callAt + 1];
-    extra.args = rest[callAt + 2] && !rest[callAt + 2].startsWith('--') ? JSON.parse(rest[callAt + 2]) : [];
+    extra.args =
+      rest[callAt + 2] && !rest[callAt + 2].startsWith('--') ? JSON.parse(rest[callAt + 2]) : [];
   }
   const assetAt = rest.indexOf('--asset');
   if (assetAt >= 0) extra.asset = rest[assetAt + 1];
   connect(hub, extra);
 } else {
-  console.error('Usage:\n  room-link-client.mjs pair <hubUrl> <code> [placeName]\n  room-link-client.mjs connect <hubUrl> [--call <channel> [jsonArgs]] [--asset <url>]');
+  console.error(
+    'Usage:\n  room-link-client.mjs pair <hubUrl> <code> [placeName]\n  room-link-client.mjs connect <hubUrl> [--call <channel> [jsonArgs]] [--asset <url>]',
+  );
   process.exit(2);
 }

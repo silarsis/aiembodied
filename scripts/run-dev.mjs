@@ -8,9 +8,11 @@ import { ensureLocalServices, shouldStartServices } from './local-services.mjs';
 
 function getPnpmExecutable() {
   try {
-    const check = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['pnpm'], { stdio: 'ignore' });
+    const check = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['pnpm'], {
+      stdio: 'ignore',
+    });
     if (check.status === 0) return 'pnpm';
-  } catch { }
+  } catch {}
 
   if (process.platform === 'win32') {
     const localAppData = process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local');
@@ -21,7 +23,6 @@ function getPnpmExecutable() {
 }
 
 const pnpmExe = getPnpmExecutable();
-
 
 function run(cmd, args, options = {}) {
   return new Promise((resolvePromise, reject) => {
@@ -44,7 +45,10 @@ function parseDotEnv(envPath) {
     if (trimmed.startsWith('#') || !trimmed) continue;
     const [key, ...valueParts] = trimmed.split('=');
     if (key && valueParts.length > 0) {
-      const value = valueParts.join('=').replace(/^["']|["']$/g, '').trim();
+      const value = valueParts
+        .join('=')
+        .replace(/^["']|["']$/g, '')
+        .trim();
       envVars[key.trim()] = value;
     }
   }
@@ -87,7 +91,11 @@ export function resolvePnpmStorePath(env = process.env) {
 export function electronLaunchEnv(argv, envIsolated, baseEnv = process.env) {
   const satellite = argv.includes('--satellite') || argv.includes('--daily');
   if (argv.includes('--daily')) return { ...baseEnv, AIEMBODIED_ROLE: 'satellite' };
-  return { ...envIsolated, AIEMBODIED_ENABLE_DIAGNOSTICS: '1', ...(satellite ? { AIEMBODIED_ROLE: 'satellite' } : {}) };
+  return {
+    ...envIsolated,
+    AIEMBODIED_ENABLE_DIAGNOSTICS: '1',
+    ...(satellite ? { AIEMBODIED_ROLE: 'satellite' } : {}),
+  };
 }
 
 export function prepareDevHomeEnv(
@@ -170,7 +178,9 @@ export function readElectronVersion(repoRoot) {
   try {
     electronPkg = JSON.parse(readFileSync(electronPackagePath, 'utf8'));
   } catch (error) {
-    throw new Error(`Failed to parse Electron package.json at ${electronPackagePath}: ${error.message}`);
+    throw new Error(
+      `Failed to parse Electron package.json at ${electronPackagePath}: ${error.message}`,
+    );
   }
 
   if (!electronPkg?.version) {
@@ -255,9 +265,14 @@ export function resolveElectronInstaller(repoRoot) {
 //
 // Native modules need no Electron rebuild: better-sqlite3, keytar and the Picovoice
 // packages all ship N-API prebuilds that load in Electron as-is.
-export async function ensureElectronBinary(repoRoot, { runImpl = run, baseEnv = process.env } = {}) {
+export async function ensureElectronBinary(
+  repoRoot,
+  { runImpl = run, baseEnv = process.env } = {},
+) {
   const installer = resolveElectronInstaller(repoRoot);
-  console.log(`[info] Ensuring the Electron ${readElectronVersion(repoRoot)} binary is downloaded...`);
+  console.log(
+    `[info] Ensuring the Electron ${readElectronVersion(repoRoot)} binary is downloaded...`,
+  );
   await runImpl(process.execPath, [installer], { env: baseEnv, shell: false });
 }
 
@@ -269,7 +284,9 @@ async function main() {
   const userEnv = { ...envFromFile, ...process.env };
   const backend = (userEnv.CONVERSATION_BACKEND ?? 'local').trim().toLowerCase();
   if (backend === 'openai' && !userEnv.REALTIME_API_KEY) {
-    console.warn('[warn] CONVERSATION_BACKEND=openai but REALTIME_API_KEY is not set (.env or environment).');
+    console.warn(
+      '[warn] CONVERSATION_BACKEND=openai but REALTIME_API_KEY is not set (.env or environment).',
+    );
   }
 
   // Start the local model servers that are down, with the user's real environment (they find
@@ -301,7 +318,7 @@ async function main() {
   const isolatedStore = resolve(storeHome, 'AppData', 'Local', 'pnpm', 'store', 'v3');
   try {
     mkdirSync(isolatedStore, { recursive: true });
-  } catch { }
+  } catch {}
   const pnpmStorePath = isolatedStore;
   console.log(`[info] Isolated pnpm store set to ${pnpmStorePath}`);
 
@@ -366,14 +383,19 @@ async function main() {
     } else {
       console.log('[info] Dependencies changed, running install/build...');
       if (oldStamp.lockHash !== newStamp.lockHash) console.log('  - pnpm-lock.yaml changed');
-      if (oldStamp.electronVersion !== newStamp.electronVersion) console.log('  - Electron version changed');
+      if (oldStamp.electronVersion !== newStamp.electronVersion)
+        console.log('  - Electron version changed');
       if (oldStamp.nodeVersion !== newStamp.nodeVersion) console.log('  - Node version changed');
     }
 
     // Install both workspaces in a single pnpm command to avoid Windows race conditions
     // (parallel pnpm processes can race on .pnpm directory creation causing ENOENT errors)
     console.log('[info] Installing workspace dependencies...');
-    await run(pnpmExe, ['--filter', '@aiembodied/main', '--filter', '@aiembodied/renderer', 'install'], { env: { ...envIsolated, CI: '1' } });
+    await run(
+      pnpmExe,
+      ['--filter', '@aiembodied/main', '--filter', '@aiembodied/renderer', 'install'],
+      { env: { ...envIsolated, CI: '1' } },
+    );
 
     // Build renderer and main in parallel
     console.log('[info] Building renderer and main process...');
@@ -387,20 +409,26 @@ async function main() {
     writeStamp(stampPath, { ...newStamp, electronVersion: finalElectronVersion });
     console.log('[info] Stamp file updated.');
   } else {
-    console.log('[info] Dependencies unchanged, skipping install/build (use --force-deps to override)');
+    console.log(
+      '[info] Dependencies unchanged, skipping install/build (use --force-deps to override)',
+    );
   }
 
   // Verify preload script exists
   const preloadPath = resolve(repoRoot, 'app/main/dist/preload.js');
   if (!existsSync(preloadPath)) {
-    throw new Error(`Preload script not found at ${preloadPath}. Ensure main process build completed successfully.`);
+    throw new Error(
+      `Preload script not found at ${preloadPath}. Ensure main process build completed successfully.`,
+    );
   }
   console.log('[info] Preload script verified at:', preloadPath);
 
   // Verify renderer dist exists
   const rendererIndexPath = resolve(repoRoot, 'app/renderer/dist/index.html');
   if (!existsSync(rendererIndexPath)) {
-    throw new Error(`Renderer build not found at ${rendererIndexPath}. Ensure renderer build completed successfully.`);
+    throw new Error(
+      `Renderer build not found at ${rendererIndexPath}. Ensure renderer build completed successfully.`,
+    );
   }
   console.log('[info] Renderer build verified at:', rendererIndexPath);
 
@@ -427,4 +455,3 @@ if (invokedDirectly) {
     process.exit(1);
   });
 }
-

@@ -34,7 +34,12 @@ function defaultReaddir(dir: string): Dirent[] {
 }
 
 /** Every file below `dir` (to a depth limit). Symbolic links count as files: the Hugging Face cache is full of them. */
-function walk(dir: string, readdir: (dir: string) => Dirent[], depth = 0, found: string[] = []): string[] {
+function walk(
+  dir: string,
+  readdir: (dir: string) => Dirent[],
+  depth = 0,
+  found: string[] = [],
+): string[] {
   if (depth > MAX_DEPTH) return found;
   for (const entry of readdir(dir)) {
     const full = path.join(dir, entry.name);
@@ -54,7 +59,11 @@ export function pickCoderGguf(files: string[]): string | null {
     return lower.endsWith('.gguf') && lower.includes(MODEL) && lower.includes(QUANT);
   });
   const sorted = [...matches].sort();
-  return sorted.find((file) => isFirstPart(path.basename(file))) ?? sorted.find((file) => !isLaterPart(path.basename(file))) ?? null;
+  return (
+    sorted.find((file) => isFirstPart(path.basename(file))) ??
+    sorted.find((file) => !isLaterPart(path.basename(file))) ??
+    null
+  );
 }
 
 /** The first match from the three places, or null. */
@@ -63,14 +72,22 @@ export function findCoderGguf(options: GgufSearchOptions = {}): string | null {
   const readdir = options.readdir ?? defaultReaddir;
   const home = homeOf(options);
   const localAppData = env.AIEMBODIED_HOST_LOCALAPPDATA?.trim() || env.LOCALAPPDATA?.trim();
-  const modelsDirectory = env.LOCAL_LLM_MODELS_DIR?.trim() || path.join(home, '.cache', 'aiembodied', 'llm-models');
+  const modelsDirectory =
+    env.LOCAL_LLM_MODELS_DIR?.trim() || path.join(home, '.cache', 'aiembodied', 'llm-models');
   const places: Array<{ dir: string; recursive: boolean }> = [
-    { dir: path.join(home, '.cache', 'huggingface', 'hub', 'models--Qwen--Qwen3-Coder-Next-GGUF'), recursive: true },
+    {
+      dir: path.join(home, '.cache', 'huggingface', 'hub', 'models--Qwen--Qwen3-Coder-Next-GGUF'),
+      recursive: true,
+    },
     ...(localAppData ? [{ dir: path.join(localAppData, 'llama.cpp'), recursive: false }] : []),
     { dir: modelsDirectory, recursive: true },
   ];
   for (const { dir, recursive } of places) {
-    const files = recursive ? walk(dir, readdir) : readdir(dir).filter((entry) => !entry.isDirectory()).map((entry) => path.join(dir, entry.name));
+    const files = recursive
+      ? walk(dir, readdir)
+      : readdir(dir)
+          .filter((entry) => !entry.isDirectory())
+          .map((entry) => path.join(dir, entry.name));
     const picked = pickCoderGguf(files);
     if (picked) return picked;
   }

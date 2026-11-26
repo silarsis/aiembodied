@@ -1,7 +1,14 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import type { RoomPart } from '../../../main/src/shared/rooms/types.js';
-import { MAX_TRIMESH_TRIANGLES, boundingBoxShape, modelShapes, objectShapes, partShapes, shapeTopAt } from '../../src/rooms/room-shapes.js';
+import {
+  MAX_TRIMESH_TRIANGLES,
+  boundingBoxShape,
+  modelShapes,
+  objectShapes,
+  partShapes,
+  shapeTopAt,
+} from '../../src/rooms/room-shapes.js';
 
 describe('partShapes', () => {
   it('maps each part kind to a shape centred on its offset', () => {
@@ -11,14 +18,25 @@ describe('partShapes', () => {
       { shape: 'sphere', radius: 0.2, offset: [1, 1, 1], color: '#fff' },
     ];
     const [box, cylinder, ball] = partShapes(parts);
-    expect(box).toMatchObject({ kind: 'cuboid', halfExtents: [1, 0.2, 0.5], translation: [0.1, 0.2, 0.3] });
-    expect(cylinder).toMatchObject({ kind: 'cylinder', halfHeight: 0.4, radius: 0.3, translation: [0, 0.4, 0] });
+    expect(box).toMatchObject({
+      kind: 'cuboid',
+      halfExtents: [1, 0.2, 0.5],
+      translation: [0.1, 0.2, 0.3],
+    });
+    expect(cylinder).toMatchObject({
+      kind: 'cylinder',
+      halfHeight: 0.4,
+      radius: 0.3,
+      translation: [0, 0.4, 0],
+    });
     expect(ball).toMatchObject({ kind: 'ball', radius: 0.2, translation: [1, 1, 1] });
     expect(box.rotation).toEqual({ x: 0, y: 0, z: 0, w: 1 });
   });
 
   it('turns degrees into the quaternion the builder gives the mesh', () => {
-    const [shape] = partShapes([{ shape: 'box', size: [1, 1, 1], offset: [0, 0, 0], rotation: [10, 20, 30], color: '#fff' }]);
+    const [shape] = partShapes([
+      { shape: 'box', size: [1, 1, 1], offset: [0, 0, 0], rotation: [10, 20, 30], color: '#fff' },
+    ]);
     const mesh = new THREE.Mesh();
     mesh.rotation.set((10 * Math.PI) / 180, (20 * Math.PI) / 180, (30 * Math.PI) / 180);
     expect(shape.rotation.x).toBeCloseTo(mesh.quaternion.x);
@@ -31,8 +49,16 @@ describe('partShapes', () => {
 describe('objectShapes', () => {
   it('uses the parts, else the bounding box standing on the origin', () => {
     expect(objectShapes({ size: [1, 2, 3] })).toEqual([boundingBoxShape([1, 2, 3])]);
-    expect(boundingBoxShape([1, 2, 3])).toMatchObject({ halfExtents: [0.5, 1, 1.5], translation: [0, 1, 0] });
-    expect(objectShapes({ size: [1, 1, 1], parts: [{ shape: 'sphere', radius: 1, offset: [0, 1, 0], color: '#fff' }] })).toHaveLength(1);
+    expect(boundingBoxShape([1, 2, 3])).toMatchObject({
+      halfExtents: [0.5, 1, 1.5],
+      translation: [0, 1, 0],
+    });
+    expect(
+      objectShapes({
+        size: [1, 1, 1],
+        parts: [{ shape: 'sphere', radius: 1, offset: [0, 1, 0], color: '#fff' }],
+      }),
+    ).toHaveLength(1);
   });
 });
 

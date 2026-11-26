@@ -23,7 +23,12 @@ describe('recalled memories without body tags', () => {
     const brief = {
       facts: [],
       recent_days: [],
-      last_session: { last_at: '2026-11-16T10:05:00Z', agent: 'echo', summary: null, turns: ['Echo: Sure. {sit:onu}'] },
+      last_session: {
+        last_at: '2026-11-16T10:05:00Z',
+        agent: 'echo',
+        summary: null,
+        turns: ['Echo: Sure. {sit:onu}'],
+      },
     } as unknown as MemoryEngineBrief;
     const text = formatBrief(brief, now);
     expect(text).toContain('- Echo: Sure.');

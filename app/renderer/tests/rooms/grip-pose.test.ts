@@ -38,7 +38,12 @@ function buildHand(side: Side) {
   parent.add(thumbTip);
   tips.set('Thumb', thumbTip);
   root.updateWorldMatrix(true, true);
-  return { root, bones, tips, humanoid: { getNormalizedBoneNode: (name: string) => bones.get(name) ?? null } };
+  return {
+    root,
+    bones,
+    tips,
+    humanoid: { getNormalizedBoneNode: (name: string) => bones.get(name) ?? null },
+  };
 }
 
 function tipHeights(rig: ReturnType<typeof buildHand>): number[] {
@@ -64,7 +69,8 @@ describe('GripPose', () => {
       expect(grip.active).toBe(false);
       const open = tipHeights(rig);
       open.forEach((height, i) => expect(height).toBeCloseTo(before[i]!, 9));
-      for (const bone of rig.bones.values()) expect(bone.quaternion.angleTo(new THREE.Quaternion())).toBe(0);
+      for (const bone of rig.bones.values())
+        expect(bone.quaternion.angleTo(new THREE.Quaternion())).toBe(0);
     });
   }
 
@@ -75,8 +81,12 @@ describe('GripPose', () => {
     grip.update(0.125);
     expect(grip.currentWeight).toBeCloseTo(0.5, 6);
     grip.update(1);
-    expect(rig.bones.get('rightIndexProximal')!.quaternion.angleTo(new THREE.Quaternion())).toBeCloseTo((55 * Math.PI) / 180, 6);
-    expect(rig.bones.get('rightThumbProximal')!.quaternion.angleTo(new THREE.Quaternion())).toBeCloseTo((25 * Math.PI) / 180, 6);
+    expect(
+      rig.bones.get('rightIndexProximal')!.quaternion.angleTo(new THREE.Quaternion()),
+    ).toBeCloseTo((55 * Math.PI) / 180, 6);
+    expect(
+      rig.bones.get('rightThumbProximal')!.quaternion.angleTo(new THREE.Quaternion()),
+    ).toBeCloseTo((25 * Math.PI) / 180, 6);
   });
 
   it('is a harmless no-op for an avatar without finger bones', () => {

@@ -13,13 +13,20 @@ export interface AvatarBaseTransform {
  * therefore rotates that offset too: position = home + Ry(facing) * basePosition.
  * Facing is in degrees (0 = +Z, direction (sin, 0, cos)); rotationY is in radians.
  */
-export function placeAtHome(base: AvatarBaseTransform, home: { position: Vec3; facing: number }): AvatarBaseTransform {
+export function placeAtHome(
+  base: AvatarBaseTransform,
+  home: { position: Vec3; facing: number },
+): AvatarBaseTransform {
   const angle = (home.facing * Math.PI) / 180;
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
   const [bx, by, bz] = base.position;
   return {
-    position: [home.position[0] + bx * cos + bz * sin, home.position[1] + by, home.position[2] - bx * sin + bz * cos],
+    position: [
+      home.position[0] + bx * cos + bz * sin,
+      home.position[1] + by,
+      home.position[2] - bx * sin + bz * cos,
+    ],
     rotationY: base.rotationY + angle,
   };
 }
@@ -40,7 +47,11 @@ export function companionHome(
   const angle = (home.facing * Math.PI) / 180;
   const offset = (Math.floor(index / 2) + 1) * spacing * (index % 2 === 0 ? 1 : -1);
   return {
-    position: [home.position[0] - Math.cos(angle) * offset, home.position[1], home.position[2] + Math.sin(angle) * offset],
+    position: [
+      home.position[0] - Math.cos(angle) * offset,
+      home.position[1],
+      home.position[2] + Math.sin(angle) * offset,
+    ],
     facing: home.facing,
   };
 }

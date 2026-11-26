@@ -4,7 +4,14 @@ import type { MemoryStore } from '../../memory/index.js';
 import { resolveComfyInstallation } from './comfyui-runtime.js';
 import type { ImageFamily, ImageWorkflowModel } from './image-workflows.js';
 import { POSE_CONTROLNETS, poseSupport } from './pose-control.js';
-import type { AvatarModelHost, AvatarImageModelSelection, AvatarImageModelSummary, AvatarImagePoseControl, AvatarLoraChoice, AvatarLoraSummary } from '../../shared/avatar/types.js';
+import type {
+  AvatarModelHost,
+  AvatarImageModelSelection,
+  AvatarImageModelSummary,
+  AvatarImagePoseControl,
+  AvatarLoraChoice,
+  AvatarLoraSummary,
+} from '../../shared/avatar/types.js';
 
 export interface ImageModelFile {
   folder: string;
@@ -23,7 +30,11 @@ export interface ImageModelFile {
 }
 
 /** "on bija, acrasia" for a picker, and whether no machine with the file can run it now. */
-export function hostLabel(hosts: AvatarModelHost[] | undefined): { hosts?: AvatarModelHost[]; location?: string; offline?: boolean } {
+export function hostLabel(hosts: AvatarModelHost[] | undefined): {
+  hosts?: AvatarModelHost[];
+  location?: string;
+  offline?: boolean;
+} {
   if (!hosts?.length) return {};
   const up = (host: AvatarModelHost) => host.state !== 'offline' && host.state !== 'busy';
   return {
@@ -42,7 +53,16 @@ export interface ControllerFile {
   state: string;
 }
 
-const COMFY_FOLDERS = new Set(['checkpoints', 'loras', 'controlnet', 'unet', 'diffusion_models', 'vae', 'clip', 'text_encoders']);
+const COMFY_FOLDERS = new Set([
+  'checkpoints',
+  'loras',
+  'controlnet',
+  'unet',
+  'diffusion_models',
+  'vae',
+  'clip',
+  'text_encoders',
+]);
 
 /**
  * Model discovery across every machine the model controller knows. Files are de-duplicated by name
@@ -54,7 +74,10 @@ export function createControllerModelScanner(
   local: () => Promise<ImageModelFile[]>,
 ): () => Promise<ImageModelFile[]> {
   return async () => {
-    const [listed, scanned] = await Promise.all([listFiles(), local().catch(() => [] as ImageModelFile[])]);
+    const [listed, scanned] = await Promise.all([
+      listFiles(),
+      local().catch(() => [] as ImageModelFile[]),
+    ]);
     const byKey = new Map<string, ImageModelFile>();
     const keyOf = (folder: string, name: string) => `${folder}/${name}`.toLowerCase();
     for (const file of scanned) byKey.set(keyOf(file.folder, file.name), { ...file });
@@ -62,7 +85,8 @@ export function createControllerModelScanner(
       // ComfyUI models are kind `comfyui` plus a subfolder; the unet folder is diffusion_models.
       const folder = (entry.kind === 'comfyui' ? entry.subfolder : entry.kind) ?? '';
       if (!COMFY_FOLDERS.has(folder)) continue;
-      const canonical = folder === 'unet' ? 'diffusion_models' : folder === 'clip' ? 'text_encoders' : folder;
+      const canonical =
+        folder === 'unet' ? 'diffusion_models' : folder === 'clip' ? 'text_encoders' : folder;
       const key = keyOf(canonical, entry.fileName);
       let file = byKey.get(key);
       if (!file) {
@@ -73,12 +97,15 @@ export function createControllerModelScanner(
           name: entry.fileName,
           kind,
           ...(canonical === 'controlnet' ? { family: remoteControlNetFamily(entry.fileName) } : {}),
-          ...(canonical === 'checkpoints' ? { embeddedVae: true, embeddedClip: true, embeddedClip2: kind === 'sdxl' } : {}),
+          ...(canonical === 'checkpoints'
+            ? { embeddedVae: true, embeddedClip: true, embeddedClip2: kind === 'sdxl' }
+            : {}),
         };
         byKey.set(key, file);
       }
       const hosts = (file.hosts ??= []);
-      if (!hosts.some((host) => host.name === entry.host)) hosts.push({ name: entry.host, state: entry.state });
+      if (!hosts.some((host) => host.name === entry.host))
+        hosts.push({ name: entry.host, state: entry.state });
     }
     return [...byKey.values()];
   };
@@ -146,8 +173,10 @@ export interface PoseControlInstaller {
 const POSE_NOTES: Record<AvatarImagePoseControl, string> = {
   guided: 'The pose is held by an A-pose skeleton, so the arms stay clear of the body.',
   installing: 'Downloading pose control. Until it is ready, the pose comes from the prompt alone.',
-  failed: 'Pose control could not be downloaded, so the pose comes from the prompt alone. Choosing this model again retries.',
-  unavailable: 'This ComfyUI server cannot download pose control, so the pose comes from the prompt alone.',
+  failed:
+    'Pose control could not be downloaded, so the pose comes from the prompt alone. Choosing this model again retries.',
+  unavailable:
+    'This ComfyUI server cannot download pose control, so the pose comes from the prompt alone.',
   none: 'No pose control for this kind of model yet. The pose comes from the prompt alone, so check the arms are clear of the body.',
 };
 
@@ -231,11 +260,15 @@ export class AvatarImageModelService {
             ...(file.title ? { title: file.title } : {}),
             ...(typeof file.family === 'string' ? { family: file.family } : {}),
             ...(typeof file.baseModel === 'string' ? { baseModel: file.baseModel } : {}),
-            ...(Array.isArray(file.triggerWords) ? { triggerWords: file.triggerWords.filter((word) => typeof word === 'string') } : {}),
+            ...(Array.isArray(file.triggerWords)
+              ? { triggerWords: file.triggerWords.filter((word) => typeof word === 'string') }
+              : {}),
           }))
           .sort((a, b) => (a.title ?? a.name).localeCompare(b.title ?? b.name));
         // The app's own pose ControlNet, else any installed OpenPose ControlNet of the family.
-        const nets = files.filter((file) => file.folder === 'controlnet' && file.kind === 'controlnet');
+        const nets = files.filter(
+          (file) => file.folder === 'controlnet' && file.kind === 'controlnet',
+        );
         this.poseNets = {};
         for (const family of Object.keys(POSE_CONTROLNETS) as PoseFamily[]) {
           const ofFamily = nets.filter((file) => file.family === family);
@@ -312,7 +345,8 @@ export class AvatarImageModelService {
     const selectedModelId = this.current();
     const selected = this.entries.find((entry) => entry.model.id === selectedModelId);
     // The chosen model's pose control is set up without anyone having to ask for it.
-    if (selected) await this.ensurePoseControl(selected.model.family, false, true).catch(() => undefined);
+    if (selected)
+      await this.ensurePoseControl(selected.model.family, false, true).catch(() => undefined);
     const installed = new Set(this.loras.map((lora) => lora.name));
     return {
       models: this.entries.map((entry) => {
@@ -320,7 +354,9 @@ export class AvatarImageModelService {
         return { ...entry.summary, poseControl, poseNote: POSE_NOTES[poseControl] };
       }),
       selectedModelId,
-      modelFamilies: Object.fromEntries(this.entries.map((entry) => [entry.model.id, entry.model.family])),
+      modelFamilies: Object.fromEntries(
+        this.entries.map((entry) => [entry.model.id, entry.model.family]),
+      ),
       loras: this.loras.map((lora) => ({ ...lora })),
       selectedLoras: this.savedLoras().filter((choice) => installed.has(choice.name)),
     };
@@ -328,9 +364,14 @@ export class AvatarImageModelService {
   /** The LoRAs to apply (in order), kept across restarts; each only applies to a model of its family. */
   selectLoras(choices: AvatarLoraChoice[]): void {
     const clean = choices
-      .filter((choice) => choice && typeof choice.name === 'string' && Number.isFinite(choice.strength))
+      .filter(
+        (choice) => choice && typeof choice.name === 'string' && Number.isFinite(choice.strength),
+      )
       .slice(0, 8)
-      .map((choice) => ({ name: choice.name, strength: Math.min(2, Math.max(0, choice.strength)) }));
+      .map((choice) => ({
+        name: choice.name,
+        strength: Math.min(2, Math.max(0, choice.strength)),
+      }));
     this.chosenLoras = clean;
     this.store?.setValue(LORAS_KEY, JSON.stringify(clean));
   }
@@ -367,10 +408,20 @@ export class AvatarImageModelService {
       const lora = this.loras.find((entry) => entry.name === choice.name);
       // A LoRA of another family (or an unknown one) would fail or wreck the image; leave it out.
       if (!lora || lora.family !== entry.model.family || choice.strength <= 0) return [];
-      return [{ name: lora.name, strength: choice.strength, ...(lora.triggerWords?.length ? { triggerWords: lora.triggerWords } : {}) }];
+      return [
+        {
+          name: lora.name,
+          strength: choice.strength,
+          ...(lora.triggerWords?.length ? { triggerWords: lora.triggerWords } : {}),
+        },
+      ];
     });
     const poseControlNet = this.poseNets[entry.model.family as PoseFamily];
-    return { ...entry.model, ...(loras.length ? { loras } : {}), ...(poseControlNet ? { poseControlNet } : {}) };
+    return {
+      ...entry.model,
+      ...(loras.length ? { loras } : {}),
+      ...(poseControlNet ? { poseControlNet } : {}),
+    };
   }
 }
 
@@ -385,21 +436,34 @@ export function createRemoteComfyModelScanner(
   const root = baseUrl.replace(/\/+$/, '');
   return async () => {
     // With the aiembodied add-on installed, that machine reads the files' tensors like the scan on this PC.
-    const described = await fetchFn(`${root}/aiembodied/models`, { signal: AbortSignal.timeout(30_000) })
+    const described = await fetchFn(`${root}/aiembodied/models`, {
+      signal: AbortSignal.timeout(30_000),
+    })
       .then(async (response) => (response.ok ? ((await response.json()) as unknown) : null))
       .catch(() => null);
     if (Array.isArray(described) && described.every(isModelFile)) return described;
-    const folders = ['diffusion_models', 'text_encoders', 'vae', 'checkpoints', 'loras', 'controlnet'] as const;
+    const folders = [
+      'diffusion_models',
+      'text_encoders',
+      'vae',
+      'checkpoints',
+      'loras',
+      'controlnet',
+    ] as const;
     const listed = await Promise.all(
       folders.map(async (folder) => {
-        const response = await fetchFn(`${root}/models/${folder}`, { signal: AbortSignal.timeout(10_000) });
+        const response = await fetchFn(`${root}/models/${folder}`, {
+          signal: AbortSignal.timeout(10_000),
+        });
         if (!response.ok) {
           if (folder === 'diffusion_models')
             throw new Error(`ComfyUI at ${root} did not list its models (${response.status}).`);
           return [] as string[];
         }
         const names: unknown = await response.json();
-        return Array.isArray(names) ? names.filter((name): name is string => typeof name === 'string') : [];
+        return Array.isArray(names)
+          ? names.filter((name): name is string => typeof name === 'string')
+          : [];
       }),
     );
     const files: ImageModelFile[] = [];
@@ -412,7 +476,9 @@ export function createRemoteComfyModelScanner(
           name,
           kind,
           ...(folder === 'controlnet' ? { family: remoteControlNetFamily(name) } : {}),
-          ...(folder === 'checkpoints' ? { embeddedVae: true, embeddedClip: true, embeddedClip2: kind === 'sdxl' } : {}),
+          ...(folder === 'checkpoints'
+            ? { embeddedVae: true, embeddedClip: true, embeddedClip2: kind === 'sdxl' }
+            : {}),
         });
       }
     });
@@ -444,7 +510,8 @@ export function remoteModelKind(folder: string, name: string): string | null {
     return null;
   }
   if (folder === 'checkpoints') {
-    if (lower.includes('hunyuan3d')) return /(^|[^a-z])(2_?)?mv([^a-z]|$)/.test(lower) ? 'hunyuan3d-2mv' : null;
+    if (lower.includes('hunyuan3d'))
+      return /(^|[^a-z])(2_?)?mv([^a-z]|$)/.test(lower) ? 'hunyuan3d-2mv' : null;
     return /xl/.test(lower) ? 'sdxl' : 'sd1';
   }
   // Without the add-on only the app's own pose ControlNets are recognised, by their names.
@@ -456,11 +523,17 @@ export function remoteModelKind(folder: string, name: string): string | null {
 
 function remoteControlNetFamily(name: string): PoseFamily | undefined {
   const base = name.split('/').at(-1);
-  return (Object.keys(POSE_CONTROLNETS) as PoseFamily[]).find((family) => POSE_CONTROLNETS[family].filename === base);
+  return (Object.keys(POSE_CONTROLNETS) as PoseFamily[]).find(
+    (family) => POSE_CONTROLNETS[family].filename === base,
+  );
 }
 
 function isModelFile(value: unknown): value is ImageModelFile {
   if (!value || typeof value !== 'object') return false;
   const file = value as Record<string, unknown>;
-  return typeof file.name === 'string' && typeof file.kind === 'string' && typeof file.folder === 'string';
+  return (
+    typeof file.name === 'string' &&
+    typeof file.kind === 'string' &&
+    typeof file.folder === 'string'
+  );
 }

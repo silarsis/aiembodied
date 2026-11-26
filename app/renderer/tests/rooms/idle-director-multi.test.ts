@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_IDLE_SETTINGS } from '../../../main/src/shared/rooms/idle-settings.js';
 import type { IdlePickContext } from '../../../main/src/shared/rooms/types.js';
-import { FIRST_ACTION_DELAY_MS, IdleDirector, TALK_SETTLE_MS, type IdleAvatar, type IdleExecutor } from '../../src/rooms/idle-director.js';
+import {
+  FIRST_ACTION_DELAY_MS,
+  IdleDirector,
+  TALK_SETTLE_MS,
+  type IdleAvatar,
+  type IdleExecutor,
+} from '../../src/rooms/idle-director.js';
 import { INITIAL_STATE, type AvatarState, type PlanWorld } from '../../src/rooms/scene-actions.js';
 import type { PlanBuilder } from '../../src/rooms/scene-executor.js';
 import { builtInRoom } from './fixtures.js';
@@ -39,7 +45,11 @@ class Fake implements IdleExecutor {
   }
 }
 
-function setup(replyFor: (context: IdlePickContext) => string = () => '{go:bookshelf}{say:hello there}', solo = false, here: 'all' | 'sage-only' | 'nobody' = 'all') {
+function setup(
+  replyFor: (context: IdlePickContext) => string = () => '{go:bookshelf}{say:hello there}',
+  solo = false,
+  here: 'all' | 'sage-only' | 'nobody' = 'all',
+) {
   const notes: string[] = [];
   let time = 1_000_000;
   let timers: Array<{ id: number; at: number; fn: () => void }> = [];
@@ -54,7 +64,14 @@ function setup(replyFor: (context: IdlePickContext) => string = () => '{go:books
   ];
   const director = new IdleDirector({
     executor: echo,
-    avatars: () => (here === 'sage-only' ? roster.slice(1) : here === 'nobody' ? [] : solo ? roster.slice(0, 1) : roster),
+    avatars: () =>
+      here === 'sage-only'
+        ? roster.slice(1)
+        : here === 'nobody'
+          ? []
+          : solo
+            ? roster.slice(0, 1)
+            : roster,
     nobodyHere: () => here === 'nobody',
     now: () => time,
     setTimer: (fn, ms) => {

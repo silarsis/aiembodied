@@ -13,7 +13,9 @@ import type { LocalVoiceEvent } from '../src/shared/local-voice/types.js';
 
 /** An SSE chat-completions stream whose bytes arrive in awkward pieces, splitting lines mid-way. */
 function sseResponse(deltas: string[], pieceSize = 11): Response {
-  const lines = deltas.map((content) => `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`);
+  const lines = deltas.map(
+    (content) => `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`,
+  );
   const bytes = new TextEncoder().encode(lines.join('') + 'data: [DONE]\n\n');
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -27,7 +29,10 @@ function sseResponse(deltas: string[], pieceSize = 11): Response {
 }
 
 function wavFor(text: string): Response {
-  return new Response(new TextEncoder().encode(`WAV:${text}`), { status: 200, headers: { 'Content-Type': 'audio/wav' } });
+  return new Response(new TextEncoder().encode(`WAV:${text}`), {
+    status: 200,
+    headers: { 'Content-Type': 'audio/wav' },
+  });
 }
 
 function makeService(deltas: string[], options: { now?: () => number } = {}) {
@@ -81,7 +86,9 @@ describe('SentenceSplitter', () => {
 describe('ThinkFilter', () => {
   it('drops think blocks split across deltas', () => {
     const filter = new ThinkFilter();
-    const out = ['<thi', 'nk>\nplanning', ' things</think>\n\nHel', 'lo there.'].map((d) => filter.push(d)).join('');
+    const out = ['<thi', 'nk>\nplanning', ' things</think>\n\nHel', 'lo there.']
+      .map((d) => filter.push(d))
+      .join('');
     expect(out.trim()).toBe('Hello there.');
     expect(filter.visible.trim()).toBe('Hello there.');
   });
@@ -95,7 +102,9 @@ describe('ThinkFilter', () => {
 
 describe('stripAvatarTags', () => {
   it('removes every braced tag and tidies the gap', () => {
-    expect(stripAvatarTags('Hi {move:waves}, there {go:sofa}{static:smile} friend.')).toBe('Hi, there friend.');
+    expect(stripAvatarTags('Hi {move:waves}, there {go:sofa}{static:smile} friend.')).toBe(
+      'Hi, there friend.',
+    );
     expect(stripAvatarTags('{stand}{wait}')).toBe('');
     expect(stripAvatarTags('plain text')).toBe('plain text');
   });
@@ -109,9 +118,11 @@ describe('toSpeakableText', () => {
   });
 
   it('removes scene tags the same way, and never splits a sentence inside one', () => {
-    expect(toSpeakableText('Let me see. {go:bookshelf}{move:runs a finger along the spines} {sit:the sofa} {stand} {put:mug@coffee table} {come}')).toBe(
-      'Let me see.',
-    );
+    expect(
+      toSpeakableText(
+        'Let me see. {go:bookshelf}{move:runs a finger along the spines} {sit:the sofa} {stand} {put:mug@coffee table} {come}',
+      ),
+    ).toBe('Let me see.');
     const splitter = new SentenceSplitter();
     expect(splitter.push('Okay, {put:the mug on the side table. Really} done. Next')).toEqual([
       'Okay, {put:the mug on the side table. Really} done.',
@@ -121,23 +132,40 @@ describe('toSpeakableText', () => {
 
 describe('LocalVoiceService', () => {
   it('streams a reply sentence by sentence with audio, keeping tags in the text', async () => {
-    const { service, requests } = makeService(['Canberra is the capital. ', '{anim:wave} Anything', ' else?']);
+    const { service, requests } = makeService([
+      'Canberra is the capital. ',
+      '{anim:wave} Anything',
+      ' else?',
+    ]);
     const events: LocalVoiceEvent[] = [];
 
     const result = await service.respond(
-      { requestId: 'r1', text: 'What is the capital of Australia?', instructions: 'You are Jarvis.' },
+      {
+        requestId: 'r1',
+        text: 'What is the capital of Australia?',
+        instructions: 'You are Jarvis.',
+      },
       (event) => events.push(event),
     );
 
-    expect(result).toEqual({ requestId: 'r1', text: 'Canberra is the capital. {anim:wave} Anything else?', cancelled: false });
-    const sentences = events.filter((e): e is Extract<LocalVoiceEvent, { type: 'sentence' }> => e.type === 'sentence');
+    expect(result).toEqual({
+      requestId: 'r1',
+      text: 'Canberra is the capital. {anim:wave} Anything else?',
+      cancelled: false,
+    });
+    const sentences = events.filter(
+      (e): e is Extract<LocalVoiceEvent, { type: 'sentence' }> => e.type === 'sentence',
+    );
     expect(sentences.map((e) => [e.index, e.text])).toEqual([
       [0, 'Canberra is the capital.'],
       [1, '{anim:wave} Anything else?'],
     ]);
     expect(new TextDecoder().decode(sentences[1]?.wav)).toBe('WAV:Anything else?');
 
-    const chat = requests.find((r) => r.url === 'http://llm/v1/chat/completions')?.body as Record<string, unknown>;
+    const chat = requests.find((r) => r.url === 'http://llm/v1/chat/completions')?.body as Record<
+      string,
+      unknown
+    >;
     expect(chat).toMatchObject({
       model: 'qwen-next-flash',
       stream: true,
@@ -161,9 +189,15 @@ describe('LocalVoiceService', () => {
       { requestId: 'c1', text: '[Sage said to you, not Kevin: "Let us start."]', silent: true },
       (event) => events.push(event),
     );
-    expect(result).toEqual({ requestId: 'c1', text: 'Sounds good to me. Shall we start?', cancelled: false });
+    expect(result).toEqual({
+      requestId: 'c1',
+      text: 'Sounds good to me. Shall we start?',
+      cancelled: false,
+    });
     expect(requests.some((r) => r.url.endsWith('/v1/tts'))).toBe(false);
-    const sentences = events.filter((e): e is Extract<LocalVoiceEvent, { type: 'sentence' }> => e.type === 'sentence');
+    const sentences = events.filter(
+      (e): e is Extract<LocalVoiceEvent, { type: 'sentence' }> => e.type === 'sentence',
+    );
     expect(sentences.map((e) => [e.text, e.wav.length])).toEqual([
       ['Sounds good to me.', 0],
       ['Shall we start?', 0],
@@ -171,7 +205,12 @@ describe('LocalVoiceService', () => {
 
     await service.respond({ requestId: 'c2', text: 'And now?', silent: true }, () => undefined);
     const chats = requests.filter((r) => r.url.endsWith('/chat/completions'));
-    expect((chats[1]?.body as { messages: Array<{ role: string; content: string }> }).messages.slice(1, 4)).toEqual([
+    expect(
+      (chats[1]?.body as { messages: Array<{ role: string; content: string }> }).messages.slice(
+        1,
+        4,
+      ),
+    ).toEqual([
       { role: 'user', content: '[Sage said to you, not Kevin: "Let us start."]' },
       { role: 'assistant', content: 'Sounds good to me. Shall we start?' },
       { role: 'user', content: 'And now?' },
@@ -184,7 +223,9 @@ describe('LocalVoiceService', () => {
     await service.respond({ requestId: 'a', text: 'first' }, () => undefined);
     await service.respond({ requestId: 'b', text: 'second' }, () => undefined);
     const chats = () =>
-      requests.filter((r) => r.url.endsWith('/chat/completions')).map((r) => (r.body as { messages: unknown[] }).messages);
+      requests
+        .filter((r) => r.url.endsWith('/chat/completions'))
+        .map((r) => (r.body as { messages: unknown[] }).messages);
     expect(chats()[1]).toEqual([
       expect.objectContaining({ role: 'system' }),
       { role: 'user', content: 'first' },
@@ -201,7 +242,9 @@ describe('LocalVoiceService', () => {
     const fetchFn = vi.fn(
       (_input: string | URL | Request, init?: RequestInit) =>
         new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError')),
+          );
         }),
     ) as unknown as typeof fetch;
     const service = new LocalVoiceService({
@@ -227,10 +270,30 @@ describe('LocalVoiceService', () => {
     });
 
     await expect(service.status()).resolves.toEqual({
-      llm: { available: true, model: 'qwen-next-flash', baseUrl: 'http://llm/v1', provider: 'local' },
+      llm: {
+        available: true,
+        model: 'qwen-next-flash',
+        baseUrl: 'http://llm/v1',
+        provider: 'local',
+      },
       stt: { provider: 'local', available: false, model: null, url: null },
-      tts: { provider: 'kokoro', available: false, ready: false, model: null, voice: null, error: null },
-      speech: { available: false, ready: false, sttModel: null, ttsModel: null, voices: [], defaultVoice: null, error: null },
+      tts: {
+        provider: 'kokoro',
+        available: false,
+        ready: false,
+        model: null,
+        voice: null,
+        error: null,
+      },
+      speech: {
+        available: false,
+        ready: false,
+        sttModel: null,
+        ttsModel: null,
+        voices: [],
+        defaultVoice: null,
+        error: null,
+      },
     });
   });
 
@@ -259,7 +322,12 @@ describe('LocalVoiceService', () => {
     });
 
     const status = await service.status();
-    expect(status.stt).toEqual({ provider: 'local', available: false, model: 'qwen3-asr', url: 'http://asr/v1' });
+    expect(status.stt).toEqual({
+      provider: 'local',
+      available: false,
+      model: 'qwen3-asr',
+      url: 'http://asr/v1',
+    });
     expect(status.tts).toMatchObject({ provider: 'kokoro', ready: true, voice: 'bf_lily' });
     expect(status.speech).toMatchObject({ available: true, ready: true, ttsModel: 'kokoro' });
     expect(fetchFn).toHaveBeenCalledWith('http://asr/v1/models', expect.anything());
@@ -280,7 +348,9 @@ describe('SpeechServiceClient', () => {
         );
       }
       expect(init?.headers).toEqual({ 'Content-Type': 'audio/wav' });
-      return new Response(JSON.stringify({ text: 'hello', timings: { transcribe_ms: 12, bogus: 'x' } }));
+      return new Response(
+        JSON.stringify({ text: 'hello', timings: { transcribe_ms: 12, bogus: 'x' } }),
+      );
     }) as unknown as typeof fetch;
     const client = new SpeechServiceClient({ baseUrl: 'http://speech/', fetchFn });
 
@@ -300,10 +370,13 @@ describe('SpeechServiceClient', () => {
   });
 
   it('surfaces the service error message', async () => {
-    const fetchFn = vi.fn(async () =>
-      new Response(JSON.stringify({ error: 'engines are still loading' }), { status: 503 }),
+    const fetchFn = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: 'engines are still loading' }), { status: 503 }),
     ) as unknown as typeof fetch;
     const client = new SpeechServiceClient({ baseUrl: 'http://speech', fetchFn });
-    await expect(client.synthesize({ text: 'hi' })).rejects.toThrow('HTTP 503 engines are still loading');
+    await expect(client.synthesize({ text: 'hi' })).rejects.toThrow(
+      'HTTP 503 engines are still loading',
+    );
   });
 });

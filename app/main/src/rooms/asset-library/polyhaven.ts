@@ -37,11 +37,19 @@ interface AssetRecord {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
-const strings = (value: unknown): string[] => (Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []);
+const strings = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 
 /** A relative path from the library that stays inside the model's folder. */
 export function safeRelative(file: string): string | null {
-  if (!file || file.includes('\0') || file.includes('\\') || path.posix.isAbsolute(file) || /^[a-zA-Z]:/.test(file)) return null;
+  if (
+    !file ||
+    file.includes('\0') ||
+    file.includes('\\') ||
+    path.posix.isAbsolute(file) ||
+    /^[a-zA-Z]:/.test(file)
+  )
+    return null;
   const normal = path.posix.normalize(file);
   if (normal === '.' || normal.startsWith('../') || normal === '..') return null;
   return normal;
@@ -94,10 +102,15 @@ export class PolyHavenClient {
     } catch {
       cached = null;
     }
-    if (cached && this.now() - cached.fetchedAt < CATALOG_MAX_AGE_MS) return toEntries(cached.assets);
+    if (cached && this.now() - cached.fetchedAt < CATALOG_MAX_AGE_MS)
+      return toEntries(cached.assets);
     try {
-      const response = await this.fetchFn(`${POLYHAVEN_API}/assets?t=models`, { headers: this.headers, signal });
-      if (!response.ok) throw new Error(`Poly Haven catalog request failed: HTTP ${response.status}`);
+      const response = await this.fetchFn(`${POLYHAVEN_API}/assets?t=models`, {
+        headers: this.headers,
+        signal,
+      });
+      if (!response.ok)
+        throw new Error(`Poly Haven catalog request failed: HTTP ${response.status}`);
       const assets = (await response.json()) as unknown;
       if (!isRecord(assets)) throw new Error('Poly Haven catalog had an unexpected shape.');
       await mkdir(this.directory, { recursive: true });
@@ -106,7 +119,9 @@ export class PolyHavenClient {
       return toEntries(assets);
     } catch (error) {
       if (cached) {
-        this.options.logger?.warn('Using the old Poly Haven catalog.', { message: error instanceof Error ? error.message : String(error) });
+        this.options.logger?.warn('Using the old Poly Haven catalog.', {
+          message: error instanceof Error ? error.message : String(error),
+        });
         return toEntries(cached.assets);
       }
       throw error;
@@ -115,7 +130,8 @@ export class PolyHavenClient {
 
   /** Downloads the model unless it is already complete on disk. Rejects on any failure. */
   ensureModel(id: string, signal?: AbortSignal): Promise<LocalModel> {
-    if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id)) return Promise.reject(new Error(`Unsafe model id "${id}".`));
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id))
+      return Promise.reject(new Error(`Unsafe model id "${id}".`));
     let pending = this.inFlight.get(id);
     if (!pending) {
       pending = this.download(id, signal).finally(() => this.inFlight.delete(id));
@@ -125,7 +141,11 @@ export class PolyHavenClient {
   }
 
   private local(id: string, file: string): LocalModel {
-    return { asset: `polyhaven/${id}`, file, path: path.join(this.directory, id, ...file.split('/')) };
+    return {
+      asset: `polyhaven/${id}`,
+      file,
+      path: path.join(this.directory, id, ...file.split('/')),
+    };
   }
 
   private async download(id: string, signal?: AbortSignal): Promise<LocalModel> {
@@ -138,32 +158,59 @@ export class PolyHavenClient {
     } catch {
       // Not downloaded yet.
     }
-    const response = await this.fetchFn(`${POLYHAVEN_API}/files/${encodeURIComponent(id)}`, { headers: this.headers, signal });
-    if (!response.ok) throw new Error(`Poly Haven file list for ${id} failed: HTTP ${response.status}`);
+    const response = await this.fetchFn(`${POLYHAVEN_API}/files/${encodeURIComponent(id)}`, {
+      headers: this.headers,
+      signal,
+    });
+    if (!response.ok)
+      throw new Error(`Poly Haven file list for ${id} failed: HTTP ${response.status}`);
     const listing = (await response.json()) as unknown;
     const gltf = isRecord(listing) && isRecord(listing.gltf) ? listing.gltf : null;
     const variant = gltf ? RESOLUTIONS.map((r) => gltf[r]).find(isRecord) : undefined;
     const main = variant && isRecord(variant.gltf) ? variant.gltf : null;
     const mainUrl = main ? httpsUrl(main.url) : null;
     if (!main || !mainUrl) throw new Error(`Poly Haven has no glTF for ${id}.`);
-    const mainName = safeRelative(decodeURIComponent(new URL(mainUrl).pathname.split('/').pop() ?? ''));
+    const mainName = safeRelative(
+      decodeURIComponent(new URL(mainUrl).pathname.split('/').pop() ?? ''),
+    );
     if (!mainName) throw new Error(`Poly Haven gave an unusable file name for ${id}.`);
-    const files: Array<{ relative: string; remote: RemoteFile }> = [{ relative: mainName, remote: { url: mainUrl, md5: typeof main.md5 === 'string' ? main.md5 : undefined } }];
+    const files: Array<{ relative: string; remote: RemoteFile }> = [
+      {
+        relative: mainName,
+        remote: { url: mainUrl, md5: typeof main.md5 === 'string' ? main.md5 : undefined },
+      },
+    ];
     if (isRecord(main.include)) {
       for (const [relativeRaw, value] of Object.entries(main.include)) {
         const relative = safeRelative(relativeRaw);
         const url = isRecord(value) ? httpsUrl(value.url) : null;
-        if (!relative || !url || !isRecord(value)) throw new Error(`Poly Haven listed an unusable file for ${id}.`);
-        files.push({ relative, remote: { url, md5: typeof value.md5 === 'string' ? value.md5 : undefined } });
+        if (!relative || !url || !isRecord(value))
+          throw new Error(`Poly Haven listed an unusable file for ${id}.`);
+        files.push({
+          relative,
+          remote: { url, md5: typeof value.md5 === 'string' ? value.md5 : undefined },
+        });
       }
     }
     await mkdir(folder, { recursive: true });
-    await Promise.all(files.map(({ relative, remote }) => this.slot(() => this.fetchTo(folder, relative, remote, signal))));
-    await writeFile(recordPath, JSON.stringify({ file: mainName, files: files.map((f) => f.relative) } satisfies AssetRecord));
+    await Promise.all(
+      files.map(({ relative, remote }) =>
+        this.slot(() => this.fetchTo(folder, relative, remote, signal)),
+      ),
+    );
+    await writeFile(
+      recordPath,
+      JSON.stringify({ file: mainName, files: files.map((f) => f.relative) } satisfies AssetRecord),
+    );
     return this.local(id, mainName);
   }
 
-  private async fetchTo(folder: string, relative: string, remote: RemoteFile, signal?: AbortSignal): Promise<void> {
+  private async fetchTo(
+    folder: string,
+    relative: string,
+    remote: RemoteFile,
+    signal?: AbortSignal,
+  ): Promise<void> {
     const target = path.join(folder, ...relative.split('/'));
     const part = `${target}.part`;
     const response = await this.fetchFn(remote.url, { headers: this.headers, signal });
@@ -184,7 +231,8 @@ export class PolyHavenClient {
 
   /** Runs `job` once fewer than MAX_CONCURRENT_DOWNLOADS others are running. */
   private async slot<T>(job: () => Promise<T>): Promise<T> {
-    while (this.active >= MAX_CONCURRENT_DOWNLOADS) await new Promise<void>((resolve) => this.waiting.push(resolve));
+    while (this.active >= MAX_CONCURRENT_DOWNLOADS)
+      await new Promise<void>((resolve) => this.waiting.push(resolve));
     this.active += 1;
     this.peakConcurrency = Math.max(this.peakConcurrency, this.active);
     try {
@@ -200,7 +248,12 @@ function toEntries(assets: Record<string, unknown>): CatalogEntry[] {
   const result: CatalogEntry[] = [];
   for (const [id, raw] of Object.entries(assets)) {
     if (!isRecord(raw)) continue;
-    result.push({ id, name: typeof raw.name === 'string' ? raw.name : id, categories: strings(raw.categories), tags: strings(raw.tags) });
+    result.push({
+      id,
+      name: typeof raw.name === 'string' ? raw.name : id,
+      categories: strings(raw.categories),
+      tags: strings(raw.tags),
+    });
   }
   return result.sort((a, b) => (a.id < b.id ? -1 : 1));
 }

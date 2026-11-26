@@ -40,7 +40,12 @@ export function DownloadTo({
   return (
     <label className="modelsDialog__inline" htmlFor={id}>
       Download to{' '}
-      <select id={id} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled}>
+      <select
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        disabled={disabled}
+      >
         <option value="">This PC</option>
         {hosts.hosts.map((name) => (
           <option key={name} value={name}>

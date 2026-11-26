@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { chooseToolName, isValidToolName, sanitizeToolName, serverSlug } from '../../src/mcp/tool-names.js';
+import {
+  chooseToolName,
+  isValidToolName,
+  sanitizeToolName,
+  serverSlug,
+} from '../../src/mcp/tool-names.js';
 
 describe('tool names', () => {
   it('sanitises invalid characters', () => {
@@ -16,7 +21,9 @@ describe('tool names', () => {
   it('keeps a free name, prefixes a taken one, and numbers as a last resort', () => {
     expect(chooseToolName('search', 'DAIR', new Set())).toBe('search');
     expect(chooseToolName('search', 'DAIR', new Set(['search']))).toBe('dair__search');
-    expect(chooseToolName('search', 'DAIR', new Set(['search', 'dair__search']))).toBe('dair__search_2');
+    expect(chooseToolName('search', 'DAIR', new Set(['search', 'dair__search']))).toBe(
+      'dair__search_2',
+    );
   });
 
   it('never goes over 64 characters', () => {

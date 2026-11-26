@@ -25,7 +25,14 @@ export interface PlaceWake {
   at: number;
 }
 
-const FIELDS = ['listening', 'voicePhase', 'faceSeenAt', 'userSpokeAt', 'assistantSpokeAt', 'activeAt'] as const;
+const FIELDS = [
+  'listening',
+  'voicePhase',
+  'faceSeenAt',
+  'userSpokeAt',
+  'assistantSpokeAt',
+  'activeAt',
+] as const;
 
 export class PlacePresence {
   private readonly presence = new Map<string, PlacePresenceSnapshot>();
@@ -36,7 +43,10 @@ export class PlacePresence {
 
   /** Merges the fields of a `presence` message (or a local update) into the place's snapshot. Unknown or mistyped fields are ignored. */
   update(placeId: string, fields: Record<string, unknown>): PlacePresenceSnapshot {
-    const next: PlacePresenceSnapshot = { ...(this.presence.get(placeId) ?? {}), updatedAt: this.now() };
+    const next: PlacePresenceSnapshot = {
+      ...(this.presence.get(placeId) ?? {}),
+      updatedAt: this.now(),
+    };
     for (const key of FIELDS) {
       const value = fields[key];
       if (key === 'listening') {
@@ -69,7 +79,8 @@ export class PlacePresence {
       // "Someone used that PC" is stamped with this PC's clock on arrival: a satellite's clock may differ, and the report is at most seconds old.
       this.update(placeId, typeof op.activeAt === 'number' ? { ...op, activeAt: this.now() } : op);
     } else if (op.op === 'device.state') {
-      const text = (value: unknown, fallback: string) => (typeof value === 'string' && value.length <= 20 ? value : fallback);
+      const text = (value: unknown, fallback: string) =>
+        typeof value === 'string' && value.length <= 20 ? value : fallback;
       this.devices.set(placeId, {
         mic: text(op.mic, 'off'),
         camera: text(op.camera, 'off'),
@@ -78,7 +89,11 @@ export class PlacePresence {
         closed: op.closed === true,
         fullscreen: op.fullscreen === true,
       });
-    } else if (op.op === 'wake.heard' && typeof op.model === 'string' && typeof op.score === 'number') {
+    } else if (
+      op.op === 'wake.heard' &&
+      typeof op.model === 'string' &&
+      typeof op.score === 'number'
+    ) {
       this.wakes.set(placeId, { model: op.model.slice(0, 80), score: op.score, at: this.now() });
     }
   }
@@ -113,7 +128,10 @@ function ago(ms: number): string {
 /** "Study: a face was seen 2 min ago; Echo is there." One line per other place. Pure. */
 export function describePlaceLine(input: PlaceLineInput, now: number): string {
   const name = input.name.charAt(0).toUpperCase() + input.name.slice(1);
-  const face = input.faceSeenAt === null ? 'no face has been seen' : `a face was seen ${ago(now - input.faceSeenAt)} ago`;
+  const face =
+    input.faceSeenAt === null
+      ? 'no face has been seen'
+      : `a face was seen ${ago(now - input.faceSeenAt)} ago`;
   const who =
     input.avatars.length === 0
       ? 'nobody is there'

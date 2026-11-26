@@ -18,7 +18,25 @@ export interface SearchResult {
 
 export const MATCH_THRESHOLD = 2.0;
 
-const STOP = new Set(['a', 'an', 'the', 'of', 'with', 'and', 'for', 'old', 'new', 'small', 'large', 'big', 'little', 'modern', 'simple', 'wooden', 'wood']);
+const STOP = new Set([
+  'a',
+  'an',
+  'the',
+  'of',
+  'with',
+  'and',
+  'for',
+  'old',
+  'new',
+  'small',
+  'large',
+  'big',
+  'little',
+  'modern',
+  'simple',
+  'wooden',
+  'wood',
+]);
 const GROUPS: string[][] = [
   ['sofa', 'couch', 'settee', 'loveseat', 'sectional'],
   ['armchair', 'chair', 'recliner', 'lounger'],
@@ -51,13 +69,60 @@ for (const group of GROUPS)
 
 /** Words in an entry's categories or tags that make it a plausible item of an object category. */
 const COMPATIBLE: Partial<Record<ObjectCategory, string[]>> = {
-  seat: ['furniture', 'seating', 'chair', 'chairs', 'sofa', 'couch', 'stool', 'bench', 'armchair', 'seat'],
+  seat: [
+    'furniture',
+    'seating',
+    'chair',
+    'chairs',
+    'sofa',
+    'couch',
+    'stool',
+    'bench',
+    'armchair',
+    'seat',
+  ],
   table: ['furniture', 'table', 'tables', 'desk', 'counter', 'surface'],
-  storage: ['furniture', 'storage', 'shelf', 'shelves', 'bookshelf', 'cabinet', 'drawer', 'wardrobe', 'dresser', 'cupboard', 'sideboard', 'closet'],
+  storage: [
+    'furniture',
+    'storage',
+    'shelf',
+    'shelves',
+    'bookshelf',
+    'cabinet',
+    'drawer',
+    'wardrobe',
+    'dresser',
+    'cupboard',
+    'sideboard',
+    'closet',
+  ],
   bed: ['furniture', 'bed', 'beds', 'bedroom', 'mattress', 'sleeping'],
   lamp: ['lighting', 'lamp', 'lamps', 'light', 'lights', 'furniture', 'decor', 'decorative'],
-  plant: ['plant', 'plants', 'nature', 'vegetation', 'flower', 'flowers', 'tree', 'potted', 'houseplant', 'decor', 'decorative'],
-  appliance: ['appliance', 'appliances', 'electronics', 'kitchen', 'household', 'tv', 'television', 'fridge', 'device', 'furniture'],
+  plant: [
+    'plant',
+    'plants',
+    'nature',
+    'vegetation',
+    'flower',
+    'flowers',
+    'tree',
+    'potted',
+    'houseplant',
+    'decor',
+    'decorative',
+  ],
+  appliance: [
+    'appliance',
+    'appliances',
+    'electronics',
+    'kitchen',
+    'household',
+    'tv',
+    'television',
+    'fridge',
+    'device',
+    'furniture',
+  ],
 };
 
 function singular(word: string): string {
@@ -87,7 +152,9 @@ function matchFactor(query: string, candidate: string): number {
 function compatible(entry: CatalogEntry, category: ObjectCategory): boolean {
   const allowed = COMPATIBLE[category];
   if (!allowed) return true;
-  const words = new Set([...entry.categories, ...entry.tags, entry.name].flatMap(tokens).map(singular));
+  const words = new Set(
+    [...entry.categories, ...entry.tags, entry.name].flatMap(tokens).map(singular),
+  );
   return allowed.some((word) => words.has(singular(word)));
 }
 

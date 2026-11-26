@@ -10,7 +10,13 @@ const done: RunnerTask = {
   branch: 'echo/t1-fix-the-retry',
   pr_url: 'https://github.com/x/y/pull/7',
   last_text: 'Added a retry with backoff.',
-  review: { changed_files: ['a.ts', 'b.ts'], added: 10, deleted: 3, flags: ['lockfile changed: pnpm-lock.yaml'], protected_violations: [] },
+  review: {
+    changed_files: ['a.ts', 'b.ts'],
+    added: 10,
+    deleted: 3,
+    flags: ['lockfile changed: pnpm-lock.yaml'],
+    protected_violations: [],
+  },
   provider: 'local',
   model: 'qwen3-coder-next',
   created_at: '2026-11-08T10:00:00Z',
@@ -58,15 +64,34 @@ describe('CodingMemoryWriter', () => {
   });
 
   it('uses the error as the summary of a failed task and handles missing review', async () => {
-    const { writer, post } = setup({ t1: { id: 't1', status: 'failed', workspace_id: 'aiembodied', goal: 'X', error: 'checks failed', files_touched: ['z.ts'] } });
+    const { writer, post } = setup({
+      t1: {
+        id: 't1',
+        status: 'failed',
+        workspace_id: 'aiembodied',
+        goal: 'X',
+        error: 'checks failed',
+        files_touched: ['z.ts'],
+      },
+    });
     await writer.handleEvent({ task_id: 't1', status: 'failed' });
-    expect(post.mock.calls[0][0]).toMatchObject({ outcome: 'failed', summary: 'checks failed', files_changed: ['z.ts'], added: 0 });
+    expect(post.mock.calls[0][0]).toMatchObject({
+      outcome: 'failed',
+      summary: 'checks failed',
+      files_changed: ['z.ts'],
+      added: 0,
+    });
   });
 
   it('posts again when the pull request changes state, but not for the same state twice', async () => {
     const { writer, post } = setup({ t1: done });
     await writer.handleEvent({ task_id: 't1', status: 'done' });
-    await writer.handleEvent({ type: 'pr', task_id: 't1', pr_state: 'merged', ci_state: 'success' });
+    await writer.handleEvent({
+      type: 'pr',
+      task_id: 't1',
+      pr_state: 'merged',
+      ci_state: 'success',
+    });
     await writer.handleEvent({ type: 'pr', task_id: 't1', pr_state: 'merged' });
     expect(post).toHaveBeenCalledTimes(2);
     expect(post.mock.calls[1][0].pr_state).toBe('merged');
@@ -74,7 +99,11 @@ describe('CodingMemoryWriter', () => {
 
   it('caps the file list and summary', () => {
     const { writer } = setup({});
-    const body = writer.build({ ...done, last_text: 'x'.repeat(5000), review: { changed_files: Array.from({ length: 300 }, (_, i) => `f${i}`) } });
+    const body = writer.build({
+      ...done,
+      last_text: 'x'.repeat(5000),
+      review: { changed_files: Array.from({ length: 300 }, (_, i) => `f${i}`) },
+    });
     expect(body.files_changed).toHaveLength(200);
     expect(body.summary.length).toBe(4000);
   });

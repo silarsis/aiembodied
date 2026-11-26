@@ -22,6 +22,9 @@ parentPort?.on('message', (task: RetextureTask) => {
   try {
     parentPort?.postMessage({ ok: true, result: runTask(task) });
   } catch (error) {
-    parentPort?.postMessage({ ok: false, error: error instanceof Error ? error.message : String(error) });
+    parentPort?.postMessage({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 });

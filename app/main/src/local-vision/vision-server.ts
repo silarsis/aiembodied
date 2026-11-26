@@ -18,11 +18,18 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { isLocalUrl, routeTargets, type ModelRouting, type ModelServer, type UseId } from '../shared/config/model-routing.js';
+import {
+  isLocalUrl,
+  routeTargets,
+  type ModelRouting,
+  type ModelServer,
+  type UseId,
+} from '../shared/config/model-routing.js';
 import type { SharedHandle, SharedLeases } from '../aicontroller/bridge.js';
 import type { VisionPick } from '../shared/local-vision/vision-model-types.js';
 
-export const MISSING_VISION_MODEL = 'Download the vision model in Models and servers → Describe the avatar first.';
+export const MISSING_VISION_MODEL =
+  'Download the vision model in Models and servers → Describe the avatar first.';
 const IDLE_MS = 10 * 60_000;
 const READY_TIMEOUT_MS = 180_000;
 const POLL_MS = 1500;
@@ -53,7 +60,10 @@ export interface VisionServerOptions {
   idleMs?: number;
   readyTimeoutMs?: number;
   pollMs?: number;
-  logger?: { info(message: string, meta?: unknown): void; warn(message: string, meta?: unknown): void };
+  logger?: {
+    info(message: string, meta?: unknown): void;
+    warn(message: string, meta?: unknown): void;
+  };
 }
 
 export class VisionServer {
@@ -81,7 +91,8 @@ export class VisionServer {
   }
 
   private async answers(base: string, route: 'health' | 'models'): Promise<boolean> {
-    const url = route === 'health' ? `${new URL(base).origin}/health` : `${base.replace(/\/+$/, '')}/models`;
+    const url =
+      route === 'health' ? `${new URL(base).origin}/health` : `${base.replace(/\/+$/, '')}/models`;
     try {
       const response = await this.fetchFn(url, { signal: AbortSignal.timeout(2000) });
       return response.ok;
@@ -105,8 +116,15 @@ export class VisionServer {
         if (handle) {
           this.handles.push(handle);
           const configured = this.options.baseUrl();
-          if (handle.url && configured && new URL(handle.url).origin !== new URL(configured).origin) {
-            this.options.logger?.warn('The controller’s vision backend is not at the address in Models and servers; set that address to the controller’s.', { leased: handle.url, configured });
+          if (
+            handle.url &&
+            configured &&
+            new URL(handle.url).origin !== new URL(configured).origin
+          ) {
+            this.options.logger?.warn(
+              'The controller’s vision backend is not at the address in Models and servers; set that address to the controller’s.',
+              { leased: handle.url, configured },
+            );
           }
           return;
         }
@@ -133,17 +151,23 @@ export class VisionServer {
     this.clearIdle();
     if (!this.owned) return;
     this.owned = false;
-    await this.options.stop().catch((error: unknown) => this.options.logger?.warn('Could not stop the vision model.', { message: String(error) }));
+    await this.options
+      .stop()
+      .catch((error: unknown) =>
+        this.options.logger?.warn('Could not stop the vision model.', { message: String(error) }),
+      );
     this.options.logger?.info('Vision model stopped.');
   }
 
   private armIdle(): void {
     this.clearIdle();
-    const set = this.options.setTimer ?? ((callback, ms) => {
-      const handle = setTimeout(callback, ms);
-      handle.unref?.();
-      return handle;
-    });
+    const set =
+      this.options.setTimer ??
+      ((callback, ms) => {
+        const handle = setTimeout(callback, ms);
+        handle.unref?.();
+        return handle;
+      });
     this.idleTimer = set(() => {
       this.idleTimer = null;
       if (this.jobs === 0 && !this.starting) void this.shutdown();
@@ -152,7 +176,9 @@ export class VisionServer {
 
   private clearIdle(): void {
     if (this.idleTimer === null) return;
-    (this.options.clearTimer ?? ((handle) => clearTimeout(handle as NodeJS.Timeout)))(this.idleTimer);
+    (this.options.clearTimer ?? ((handle) => clearTimeout(handle as NodeJS.Timeout)))(
+      this.idleTimer,
+    );
     this.idleTimer = null;
   }
 
@@ -160,16 +186,23 @@ export class VisionServer {
     const base = this.options.baseUrl();
     if (!base) throw new Error('The vision model is not on this PC, so the app does not start it.');
     if (await this.ready(base)) return;
-    if (this.platform !== 'win32') throw new Error(`The vision model is not answering at ${base}. Starting it from the app is Windows only; start llama-server there yourself.`);
+    if (this.platform !== 'win32')
+      throw new Error(
+        `The vision model is not answering at ${base}. Starting it from the app is Windows only; start llama-server there yourself.`,
+      );
     const pick = await this.options.pick();
-    if (!pick || !existsSync(pick.model) || !existsSync(pick.mmproj)) throw new Error(MISSING_VISION_MODEL);
+    if (!pick || !existsSync(pick.model) || !existsSync(pick.mmproj))
+      throw new Error(MISSING_VISION_MODEL);
     const script = path.join(this.options.repoRoot, 'scripts', 'start-local-vision.ps1');
-    if (!existsSync(script)) throw new Error(`${script} is missing, so the vision model can't be started.`);
+    if (!existsSync(script))
+      throw new Error(`${script} is missing, so the vision model can't be started.`);
     const port = new URL(base).port;
     this.launch(script, pick, port);
     this.owned = true;
     this.options.logger?.info('Starting the vision model.', { model: pick.model, port });
-    const sleep = this.options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    const sleep =
+      this.options.sleep ??
+      ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
     const now = this.options.now ?? Date.now;
     const deadline = now() + (this.options.readyTimeoutMs ?? READY_TIMEOUT_MS);
     // llama-server answers 503 while the model loads; wait for 200.
@@ -181,12 +214,26 @@ export class VisionServer {
       await sleep(this.options.pollMs ?? POLL_MS);
     }
     await this.shutdown();
-    throw new Error(`The vision model did not finish loading within ${Math.round((this.options.readyTimeoutMs ?? READY_TIMEOUT_MS) / 1000)} seconds. See vision.err.log in ${this.options.logDirectory}.`);
+    throw new Error(
+      `The vision model did not finish loading within ${Math.round((this.options.readyTimeoutMs ?? READY_TIMEOUT_MS) / 1000)} seconds. See vision.err.log in ${this.options.logDirectory}.`,
+    );
   }
 
   private launch(script: string, pick: VisionPick, port: string): void {
     mkdirSync(this.options.logDirectory, { recursive: true });
-    const args = ['-NoProfile', '-NonInteractive', '-File', script, '-Model', pick.model, '-Mmproj', pick.mmproj, '-Alias', pick.alias, ...(port ? ['-Port', port] : [])]
+    const args = [
+      '-NoProfile',
+      '-NonInteractive',
+      '-File',
+      script,
+      '-Model',
+      pick.model,
+      '-Mmproj',
+      pick.mmproj,
+      '-Alias',
+      pick.alias,
+      ...(port ? ['-Port', port] : []),
+    ]
       // Windows PowerShell 5.1 joins -ArgumentList without quoting.
       .map((arg) => psQuote(`"${arg}"`))
       .join(', ');
@@ -204,23 +251,36 @@ export class VisionServer {
     }
     const env = this.options.env ?? process.env;
     // pnpm dev:run moves the profile folders; the script finds llama-server in the real one.
-    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')], {
-      stdio: 'ignore',
-      windowsHide: true,
-      env: {
-        ...env,
-        USERPROFILE: env.AIEMBODIED_HOST_USERPROFILE || env.USERPROFILE,
-        LOCALAPPDATA: env.AIEMBODIED_HOST_LOCALAPPDATA || env.LOCALAPPDATA,
-        APPDATA: env.AIEMBODIED_HOST_APPDATA || env.APPDATA,
+    const child = spawn(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-EncodedCommand',
+        Buffer.from(command, 'utf16le').toString('base64'),
+      ],
+      {
+        stdio: 'ignore',
+        windowsHide: true,
+        env: {
+          ...env,
+          USERPROFILE: env.AIEMBODIED_HOST_USERPROFILE || env.USERPROFILE,
+          LOCALAPPDATA: env.AIEMBODIED_HOST_LOCALAPPDATA || env.LOCALAPPDATA,
+          APPDATA: env.AIEMBODIED_HOST_APPDATA || env.APPDATA,
+        },
       },
-    });
+    );
     child.on('error', () => undefined);
     child.unref();
   }
 }
 
 /** The vision server a use is routed to, when it is this PC's (the one the app starts); else null. */
-export function visionServerFor(routing: ModelRouting, use: UseId, visionServerId = 'local-vision'): ModelServer | null {
+export function visionServerFor(
+  routing: ModelRouting,
+  use: UseId,
+  visionServerId = 'local-vision',
+): ModelServer | null {
   const target = routeTargets(routing, use)[0];
   if (!target || target.server.id !== visionServerId || !isLocalUrl(target.server.url)) return null;
   return target.server;

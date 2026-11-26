@@ -42,18 +42,29 @@ describe.skipIf(process.platform !== 'win32')('ensure-kokoro.ps1', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  const files = (overrides: Partial<Record<string, { size?: number; sha256?: string | null }>> = {}) =>
+  const files = (
+    overrides: Partial<Record<string, { size?: number; sha256?: string | null }>> = {},
+  ) =>
     JSON.stringify(
-      Object.entries(served).map(([name, body]) => ({ name, size: body.length, sha256: sha(body), ...overrides[name] })),
+      Object.entries(served).map(([name, body]) => ({
+        name,
+        size: body.length,
+        sha256: sha(body),
+        ...overrides[name],
+      })),
     );
 
   // Async on purpose: a synchronous spawn would block this process, so the test server could never answer.
   const run = (args: string[], env: Record<string, string> = {}) =>
     new Promise<{ status: number | null; stdout: string; stderr: string }>((done) => {
-      const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, ...args], {
-        env: { ...process.env, KOKORO_DIR: '', ...env },
-        windowsHide: true,
-      });
+      const child = spawn(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, ...args],
+        {
+          env: { ...process.env, KOKORO_DIR: '', ...env },
+          windowsHide: true,
+        },
+      );
       let stdout = '';
       let stderr = '';
       child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString('utf8')));
@@ -83,18 +94,34 @@ describe.skipIf(process.platform !== 'win32')('ensure-kokoro.ps1', () => {
     const result = await run(['-BaseUrl', base, '-FilesJson', files()], { TTS_MODELS_DIR: models });
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout.trim().split(/\r?\n/).pop()).toBe(join(models, 'kokoro'));
-    expect(readFileSync(join(models, 'kokoro', 'voices-v1.0.bin'))).toEqual(served['voices-v1.0.bin']);
+    expect(readFileSync(join(models, 'kokoro', 'voices-v1.0.bin'))).toEqual(
+      served['voices-v1.0.bin'],
+    );
   });
 
   it('refuses a download of the wrong size or checksum and leaves nothing behind', async () => {
     const dir = join(root, 'kokoro');
-    const badSize = await run(['-Dir', dir, '-BaseUrl', base, '-FilesJson', files({ 'kokoro-v1.0.onnx': { size: 999 } })]);
+    const badSize = await run([
+      '-Dir',
+      dir,
+      '-BaseUrl',
+      base,
+      '-FilesJson',
+      files({ 'kokoro-v1.0.onnx': { size: 999 } }),
+    ]);
     expect(badSize.status).not.toBe(0);
     expect(badSize.stderr + badSize.stdout).toMatch(/expected 999 bytes/);
     expect(existsSync(join(dir, 'kokoro-v1.0.onnx'))).toBe(false);
     expect(existsSync(join(dir, 'kokoro-v1.0.onnx.partial'))).toBe(false);
 
-    const badSha = await run(['-Dir', dir, '-BaseUrl', base, '-FilesJson', files({ 'kokoro-v1.0.onnx': { sha256: '0'.repeat(64) } })]);
+    const badSha = await run([
+      '-Dir',
+      dir,
+      '-BaseUrl',
+      base,
+      '-FilesJson',
+      files({ 'kokoro-v1.0.onnx': { sha256: '0'.repeat(64) } }),
+    ]);
     expect(badSha.status).not.toBe(0);
     expect(badSha.stderr + badSha.stdout).toMatch(/SHA-256 mismatch/);
     expect(existsSync(join(dir, 'kokoro-v1.0.onnx'))).toBe(false);

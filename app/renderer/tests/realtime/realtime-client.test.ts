@@ -8,7 +8,9 @@ class FakeMediaStreamTrack {
 }
 
 class FakeMediaStream {
-  private readonly tracks: MediaStreamTrack[] = [new FakeMediaStreamTrack() as unknown as MediaStreamTrack];
+  private readonly tracks: MediaStreamTrack[] = [
+    new FakeMediaStreamTrack() as unknown as MediaStreamTrack,
+  ];
 
   getTracks() {
     return this.tracks;
@@ -35,7 +37,9 @@ class FakePeerConnection {
   ontrack: ((event: RTCTrackEvent) => void) | null = null;
   readonly addTrack = vi.fn();
   readonly addTransceiver = vi.fn();
-  readonly createOffer = vi.fn(async () => ({ type: 'offer', sdp: 'fake-offer' } as RTCSessionDescriptionInit));
+  readonly createOffer = vi.fn(
+    async () => ({ type: 'offer', sdp: 'fake-offer' }) as RTCSessionDescriptionInit,
+  );
   readonly setLocalDescription = vi.fn(async (description: RTCSessionDescriptionInit) => {
     this.localDescription = description;
   });
@@ -98,7 +102,8 @@ class FakePeerConnection {
 describe('RealtimeClient', () => {
   const peers: FakePeerConnection[] = [];
   // Function mock preserving vi.fn() metadata and fetch call signature
-  type FetchMock = ReturnType<typeof vi.fn> & ((input: RequestInfo | URL, init?: RequestInit) => Promise<Response>);
+  type FetchMock = ReturnType<typeof vi.fn> &
+    ((input: RequestInfo | URL, init?: RequestInit) => Promise<Response>);
   let fetchMock: FetchMock;
   let client: RealtimeClient;
   const states: RealtimeClientState[] = [];
@@ -114,18 +119,18 @@ describe('RealtimeClient', () => {
     logHandler.mockReset();
     textHandler.mockReset();
 
-    fetchMock = (vi.fn().mockResolvedValue({
-        ok: true,
-        status: 201,
-        headers: {
-          get: (name: string) => (name.toLowerCase() === 'content-type' ? 'application/json' : null),
-        } as Pick<Headers, 'get'>,
-        json: async () => ({
-          id: 'call_123',
-          sdp: 'fake-answer',
-        }),
-        text: vi.fn(async () => 'unused'),
-      } as unknown as Response) as unknown) as FetchMock;
+    fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      headers: {
+        get: (name: string) => (name.toLowerCase() === 'content-type' ? 'application/json' : null),
+      } as Pick<Headers, 'get'>,
+      json: async () => ({
+        id: 'call_123',
+        sdp: 'fake-answer',
+      }),
+      text: vi.fn(async () => 'unused'),
+    } as unknown as Response) as unknown as FetchMock;
 
     client = new RealtimeClient({
       fetchFn: (input, init) => fetchMock(input, init),
@@ -234,22 +239,23 @@ describe('RealtimeClient', () => {
     const peer = peers[0];
     const sendCalls = peer.dataChannel.send.mock.calls;
     expect(sendCalls.length).toBeGreaterThan(0);
-    const payloads = sendCalls.map((call) =>
-      JSON.parse(call[0] as string) as {
-        session: {
-          session_parameters?: Record<string, unknown>;
-          voice?: string;
-          instructions?: string;
-          audio?: { output?: { voice?: string } };
-        };
-      },
+    const payloads = sendCalls.map(
+      (call) =>
+        JSON.parse(call[0] as string) as {
+          session: {
+            session_parameters?: Record<string, unknown>;
+            voice?: string;
+            instructions?: string;
+            audio?: { output?: { voice?: string } };
+          };
+        },
     );
-    
+
     // Should include instructions in session_parameters
     expect(
       payloads.some((payload) => payload.session.session_parameters?.instructions === 'Be helpful'),
     ).toBe(true);
-    
+
     // Should include voice directly in session
     expect(payloads.some((payload) => payload.session.voice === 'alloy')).toBe(true);
     expect(payloads.some((payload) => payload.session.audio?.output?.voice === 'alloy')).toBe(true);
@@ -290,9 +296,12 @@ describe('RealtimeClient', () => {
       },
     } satisfies Record<string, unknown>;
 
-    messageHandler?.call(dataChannel as unknown as RTCDataChannel, {
-      data: JSON.stringify(payload),
-    } as MessageEvent);
+    messageHandler?.call(
+      dataChannel as unknown as RTCDataChannel,
+      {
+        data: JSON.stringify(payload),
+      } as MessageEvent,
+    );
 
     expect(sessionUpdateHandler).toHaveBeenCalledWith({
       voice: 'alloy',
@@ -316,9 +325,12 @@ describe('RealtimeClient', () => {
       delta: '{wave} Hello there.',
     } satisfies Record<string, unknown>;
 
-    messageHandler?.call(dataChannel as unknown as RTCDataChannel, {
-      data: JSON.stringify(payload),
-    } as MessageEvent);
+    messageHandler?.call(
+      dataChannel as unknown as RTCDataChannel,
+      {
+        data: JSON.stringify(payload),
+      } as MessageEvent,
+    );
 
     expect(textHandler).toHaveBeenCalledWith('{wave} Hello there.');
   });
@@ -335,7 +347,9 @@ describe('RealtimeClient', () => {
     await vi.runAllTimersAsync();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(states.some((state) => state.status === 'reconnecting' && state.attempt === 1)).toBe(true);
+    expect(states.some((state) => state.status === 'reconnecting' && state.attempt === 1)).toBe(
+      true,
+    );
   });
 
   it('refreshes the API key before reconnecting', async () => {

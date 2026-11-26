@@ -6,13 +6,28 @@
  * reachable from the avatar's home spot.
  */
 import {
-  contains, facingToward, insideRoom, normalizeDegrees, overlaps, rectOf, seededRandom, snapAngle, toWorld, type Rect,
+  contains,
+  facingToward,
+  insideRoom,
+  normalizeDegrees,
+  overlaps,
+  rectOf,
+  seededRandom,
+  snapAngle,
+  toWorld,
+  type Rect,
 } from './placer-geometry.js';
 import { lightsFor, lightingCeiling, lightingOutside, resolveColor } from './room-palette.js';
 import { buildParts } from './room-primitives.js';
 import { buildWalkability, findUnreachable, reachableStand } from './room-walkability.js';
 import type { LayoutObject, RoomLayout, WallSide } from './room-layout.js';
-import type { RoomFile, RoomObject, RoomOpening, RoomModelRef, Vec3 } from '../shared/rooms/types.js';
+import type {
+  RoomFile,
+  RoomObject,
+  RoomOpening,
+  RoomModelRef,
+  Vec3,
+} from '../shared/rooms/types.js';
 
 export interface ResolvedModel {
   model: RoomModelRef & { asset: string; scale: number };
@@ -75,7 +90,13 @@ export function placeRoom(options: PlaceOptions): PlaceResult {
 
   const openings = buildOpenings(layout, warnings);
   const zones: Zone[] = [
-    { x0: -HOME_CLEAR, x1: HOME_CLEAR, z0: homeZ - HOME_CLEAR, z1: homeZ + HOME_CLEAR, tallOnly: false },
+    {
+      x0: -HOME_CLEAR,
+      x1: HOME_CLEAR,
+      z0: homeZ - HOME_CLEAR,
+      z1: homeZ + HOME_CLEAR,
+      tallOnly: false,
+    },
     { x0: -SIGHT_HALF, x1: SIGHT_HALF, z0: homeZ, z1: camZ, tallOnly: true },
   ];
   for (const o of openings) {
@@ -84,10 +105,13 @@ export function placeRoom(options: PlaceOptions): PlaceResult {
     const a = o.offset - half;
     const b = o.offset + half;
     const zone: Zone =
-      o.wall === 'north' ? { x0: a, x1: b, z0: -halfD, z1: -halfD + strip, tallOnly: o.kind === 'window' }
-      : o.wall === 'south' ? { x0: a, x1: b, z0: halfD - strip, z1: halfD, tallOnly: o.kind === 'window' }
-      : o.wall === 'west' ? { x0: -halfW, x1: -halfW + strip, z0: a, z1: b, tallOnly: o.kind === 'window' }
-      : { x0: halfW - strip, x1: halfW, z0: a, z1: b, tallOnly: o.kind === 'window' };
+      o.wall === 'north'
+        ? { x0: a, x1: b, z0: -halfD, z1: -halfD + strip, tallOnly: o.kind === 'window' }
+        : o.wall === 'south'
+          ? { x0: a, x1: b, z0: halfD - strip, z1: halfD, tallOnly: o.kind === 'window' }
+          : o.wall === 'west'
+            ? { x0: -halfW, x1: -halfW + strip, z0: a, z1: b, tallOnly: o.kind === 'window' }
+            : { x0: halfW - strip, x1: halfW, z0: a, z1: b, tallOnly: o.kind === 'window' };
     zones.push(zone);
   }
 
@@ -98,7 +122,8 @@ export function placeRoom(options: PlaceOptions): PlaceResult {
   const zoneBlocked = (rect: Rect, tall: boolean): boolean => {
     for (const z of zones) {
       if (z.tallOnly && !tall) continue;
-      if (overlaps(rect, rectOf((z.x0 + z.x1) / 2, (z.z0 + z.z1) / 2, z.x1 - z.x0, z.z1 - z.z0, 0))) return true;
+      if (overlaps(rect, rectOf((z.x0 + z.x1) / 2, (z.z0 + z.z1) / 2, z.x1 - z.x0, z.z1 - z.z0, 0)))
+        return true;
     }
     return false;
   };
@@ -120,9 +145,16 @@ export function placeRoom(options: PlaceOptions): PlaceResult {
   const place = (o: LayoutObject, phase: Phase, x: number, y: number, z: number, rot: number) => {
     placed.set(o.id, { object: o, size: sizeOf(o), x, y, z, rot: normalizeDegrees(rot), phase });
   };
-  const snapFor = (o: LayoutObject) => (['table', 'storage', 'bed', 'appliance'].includes(o.category) ? 90 : 15);
-  const targetPoint = (o: LayoutObject, fromX: number, fromZ: number, fallback: [number, number]): [number, number] => {
-    const t = o.place.facing && o.place.facing !== 'center' ? placed.get(o.place.facing) : undefined;
+  const snapFor = (o: LayoutObject) =>
+    ['table', 'storage', 'bed', 'appliance'].includes(o.category) ? 90 : 15;
+  const targetPoint = (
+    o: LayoutObject,
+    fromX: number,
+    fromZ: number,
+    fallback: [number, number],
+  ): [number, number] => {
+    const t =
+      o.place.facing && o.place.facing !== 'center' ? placed.get(o.place.facing) : undefined;
     return t ? [t.x, t.z] : fallback;
   };
 
@@ -131,7 +163,9 @@ export function placeRoom(options: PlaceOptions): PlaceResult {
   const area = (o: LayoutObject) => sizeOf(o)[0] * sizeOf(o)[2];
 
   // 1. Wall objects, largest first.
-  const wallObjects = all.filter((o) => o.place.against && !o.place.on && !isFlat(o, sizeOf(o))).sort((a, b) => area(b) - area(a));
+  const wallObjects = all
+    .filter((o) => o.place.against && !o.place.on && !isFlat(o, sizeOf(o)))
+    .sort((a, b) => area(b) - area(a));
   const failedWall: LayoutObject[] = [];
   for (const o of wallObjects) if (!placeAgainstWall(o)) failedWall.push(o);
 
@@ -159,7 +193,9 @@ export function placeRoom(options: PlaceOptions): PlaceResult {
   }
 
   // 2. Free search shared by free objects, failed wall objects and repairs.
-  function freeCandidates(o: LayoutObject): Array<{ x: number; z: number; rot: number; score: number }> {
+  function freeCandidates(
+    o: LayoutObject,
+  ): Array<{ x: number; z: number; rot: number; score: number }> {
     const size = sizeOf(o);
     const out: Array<{ x: number; z: number; rot: number; score: number }> = [];
     const [tx, tz] = targetPoint(o, 0, 0, [0, 0]);
@@ -186,9 +222,14 @@ export function placeRoom(options: PlaceOptions): PlaceResult {
   // 3. Free objects that something else is near, then `near` objects in dependency order.
   const anchors = new Set(all.map((o) => o.place.near).filter((id): id is string => Boolean(id)));
   const nearObjects = all.filter((o) => o.place.near && !o.place.against && !o.place.on);
-  const freeObjects = all.filter((o) => !o.place.against && !o.place.near && !o.place.on && !isFlat(o, sizeOf(o)));
+  const freeObjects = all.filter(
+    (o) => !o.place.against && !o.place.near && !o.place.on && !isFlat(o, sizeOf(o)),
+  );
   for (const o of failedWall) {
-    if (placeFree(o)) warnings.push(`The ${o.name} did not fit against the ${o.place.against} wall and was put elsewhere.`);
+    if (placeFree(o))
+      warnings.push(
+        `The ${o.name} did not fit against the ${o.place.against} wall and was put elsewhere.`,
+      );
     else drop(o, 'there was no room');
   }
   for (const o of freeObjects.filter((f) => anchors.has(f.id)).sort((a, b) => area(b) - area(a)))
@@ -202,7 +243,10 @@ export function placeRoom(options: PlaceOptions): PlaceResult {
         if (!placeFree(o)) drop(o, 'there was no room');
       } else if (!placed.has(anchorId)) next.push(o);
       else if (!placeNear(o, placed.get(anchorId) as Placed)) {
-        if (placeFree(o)) warnings.push(`The ${o.name} could not go next to the ${byId.get(anchorId)?.name} and was put elsewhere.`);
+        if (placeFree(o))
+          warnings.push(
+            `The ${o.name} could not go next to the ${byId.get(anchorId)?.name} and was put elsewhere.`,
+          );
         else drop(o, 'there was no room');
       }
     }
@@ -224,7 +268,9 @@ export function placeRoom(options: PlaceOptions): PlaceResult {
       const tangentHalf = horizontal ? a.hz : a.hx;
       for (const gap of [0.15, 0.3, 0.5]) {
         for (let t = -tangentHalf; t <= tangentHalf + 1e-9; t += 0.1) {
-          const [x, z] = horizontal ? toWorld(a, sign * (alongHalf + gap + reach), t) : toWorld(a, t, sign * (alongHalf + gap + reach));
+          const [x, z] = horizontal
+            ? toWorld(a, sign * (alongHalf + gap + reach), t)
+            : toWorld(a, t, sign * (alongHalf + gap + reach));
           const rot = snapAngle(facingToward(x, z, tx, tz), snapFor(o));
           if (collides(rectOf(x, z, size[0], size[2], rot), size)) continue;
           const dx = x - anchor.x;
@@ -280,7 +326,8 @@ export function placeRoom(options: PlaceOptions): PlaceResult {
       const base = o.place.on as string;
       if (dropped.includes(base)) drop(o, `the ${byId.get(base)?.name} it belongs on was left out`);
       else if (!placed.has(base)) next.push(o);
-      else if (!placeOn(o, placed.get(base) as Placed)) drop(o, `it does not fit on the ${byId.get(base)?.name}`);
+      else if (!placeOn(o, placed.get(base) as Placed))
+        drop(o, `it does not fit on the ${byId.get(base)?.name}`);
     }
     waiting = next;
   }
@@ -291,14 +338,18 @@ export function placeRoom(options: PlaceOptions): PlaceResult {
     const top = rectOfPlaced(base);
     const topY = base.y + surfaceHeight(base.object, base.size);
     let best: { x: number; z: number; score: number } | null = null;
-    const others = [...placed.values()].filter((p) => p.phase === 'on' && p.object.place.on === base.object.id);
+    const others = [...placed.values()].filter(
+      (p) => p.phase === 'on' && p.object.place.on === base.object.id,
+    );
     for (let lx = -top.hx; lx <= top.hx + 1e-9; lx += 0.05)
       for (let lz = -top.hz; lz <= top.hz + 1e-9; lz += 0.05) {
         const [x, z] = toWorld(top, lx, lz);
         const rect = rectOf(x, z, size[0], size[2], top.rot);
         if (!contains(top, rect, 0.03)) continue;
         if (others.some((p) => overlaps(rect, rectOfPlaced(p), 0.05))) continue;
-        const spread = others.length ? Math.min(...others.map((p) => Math.hypot(p.x - x, p.z - z))) : 0;
+        const spread = others.length
+          ? Math.min(...others.map((p) => Math.hypot(p.x - x, p.z - z)))
+          : 0;
         const score = (others.length ? spread : -Math.hypot(lx, lz)) + rng() * 0.01;
         if (!best || score > best.score) best = { x, z, score };
       }
@@ -346,7 +397,8 @@ export function placeRoom(options: PlaceOptions): PlaceResult {
           reseat([...saved.keys()].filter((id) => id !== o.id));
         } else {
           drop(o, 'it blocked the way to other things');
-          for (const id of saved.keys()) if (id !== o.id) drop(byId.get(id) as LayoutObject, 'its surface was left out');
+          for (const id of saved.keys())
+            if (id !== o.id) drop(byId.get(id) as LayoutObject, 'its surface was left out');
         }
         fixed = true;
         break;
@@ -365,7 +417,8 @@ export function placeRoom(options: PlaceOptions): PlaceResult {
   }
   function dependents(id: string): Placed[] {
     const result: Placed[] = [];
-    for (const p of placed.values()) if (p.object.place.on === id) result.push(p, ...dependents(p.object.id));
+    for (const p of placed.values())
+      if (p.object.place.on === id) result.push(p, ...dependents(p.object.id));
     return result;
   }
   /** Props that rested on a moved surface are placed again on it. */
@@ -405,7 +458,11 @@ export function placeRoom(options: PlaceOptions): PlaceResult {
         outside: { color: lightingOutside(layout.lighting) },
         openings,
       },
-      lights: lightsFor(layout.lighting, height, lamp ? [lamp.x, lamp.size[1] + 0.2, lamp.z] : [0, height - 0.4, 0]),
+      lights: lightsFor(
+        layout.lighting,
+        height,
+        lamp ? [lamp.x, lamp.size[1] + 0.2, lamp.z] : [0, height - 0.4, 0],
+      ),
       camera: { position: [0, 1.5, round(camZ)], target: [0, 1.0, round(homeZ)], fov: 50 },
       home: { position: [0, 0, round(homeZ)], facing: 0 },
       objects,
@@ -433,7 +490,17 @@ export function placeRoom(options: PlaceOptions): PlaceResult {
       position: [round(p.x), round(p.y), round(p.z)],
       rotationY: round(p.rot),
       size: [round(w), round(h), round(d)],
-      ...(resolved ? { model: { ...resolved.model } } : { parts: buildParts({ category: o.category, name: o.name, size: p.size, color: resolveColor(o.color, '#b8b0a4'), seatHeight: sittable ? seatH : undefined }) }),
+      ...(resolved
+        ? { model: { ...resolved.model } }
+        : {
+            parts: buildParts({
+              category: o.category,
+              name: o.name,
+              size: p.size,
+              color: resolveColor(o.color, '#b8b0a4'),
+              seatHeight: sittable ? seatH : undefined,
+            }),
+          }),
       ...(isFlat(o, p.size) ? { collider: 'none' as const } : {}),
       ...(o.grabbable ? { dynamic: true } : {}),
       tags,
@@ -446,7 +513,8 @@ export function placeRoom(options: PlaceOptions): PlaceResult {
   for (const object of room.objects) {
     if (!object.tags?.sit) continue;
     const stand = reachableStand(object, walk);
-    if (stand) object.tags.stand = { position: stand.position.map(round) as Vec3, facing: stand.facing };
+    if (stand)
+      object.tags.stand = { position: stand.position.map(round) as Vec3, facing: stand.facing };
   }
   return { room, warnings, dropped };
 }
@@ -464,7 +532,13 @@ function buildOpenings(layout: RoomLayout, warnings: string[]): RoomOpening[] {
   const doorHalf = 0.475;
   if (doorWall) {
     const max = length(doorWall) / 2 - doorHalf - 0.35;
-    result.push({ wall: doorWall, kind: 'door', offset: round(max), width: 0.95, height: Math.min(2.1, height - 0.2) });
+    result.push({
+      wall: doorWall,
+      kind: 'door',
+      offset: round(max),
+      width: 0.95,
+      height: Math.min(2.1, height - 0.2),
+    });
   }
   const winHeight = Math.min(1.3, height - 0.95 - 0.3);
   for (const wall of ['north', 'south', 'east', 'west'] as const) {
@@ -486,7 +560,14 @@ function buildOpenings(layout: RoomLayout, warnings: string[]): RoomOpening[] {
         warnings.push(`Left out a window on the ${wall} wall: no room for it.`);
         return;
       }
-      result.push({ wall, kind: 'window', offset: round(lo + slot * (i + 0.5)), width: round(win), height: winHeight, sill: 0.95 });
+      result.push({
+        wall,
+        kind: 'window',
+        offset: round(lo + slot * (i + 0.5)),
+        width: round(win),
+        height: winHeight,
+        sill: 0.95,
+      });
     });
   }
   return result;

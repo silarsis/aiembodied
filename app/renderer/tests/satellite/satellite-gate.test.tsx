@@ -1,6 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SatelliteBridge, SatelliteStatus } from '../../../main/src/shared/satellite/bridge-types.js';
+import type {
+  SatelliteBridge,
+  SatelliteStatus,
+} from '../../../main/src/shared/satellite/bridge-types.js';
 import { SatelliteGate } from '../../src/satellite/satellite-gate.js';
 import { useSatellite } from '../../src/satellite/satellite-context.js';
 
@@ -74,13 +77,20 @@ describe('SatelliteGate', () => {
     expect(connect).toBeEnabled();
     fireEvent.click(connect);
     await waitFor(() =>
-      expect(bridge.pair).toHaveBeenCalledWith({ hubUrl: 'ws://bija:8791', code: '123456', placeName: 'the study', deviceName: 'study-pc' }),
+      expect(bridge.pair).toHaveBeenCalledWith({
+        hubUrl: 'ws://bija:8791',
+        code: '123456',
+        placeName: 'the study',
+        deviceName: 'study-pc',
+      }),
     );
   });
 
   it('shows a refusal from bija under the form', async () => {
     const { bridge } = setup('satellite', status());
-    vi.mocked(bridge.pair).mockRejectedValue(new Error("Error invoking remote method 'satellite:pair': Error: That code is not right."));
+    vi.mocked(bridge.pair).mockRejectedValue(
+      new Error("Error invoking remote method 'satellite:pair': Error: That code is not right."),
+    );
     render(
       <SatelliteGate>
         <p>the app</p>
@@ -92,7 +102,13 @@ describe('SatelliteGate', () => {
   });
 
   it('waits for the first connection, then shows the app, and keeps it through a dropped link', async () => {
-    const paired = status({ paired: true, hubUrl: 'ws://bija:8791', deviceName: 'study-pc', placeName: 'the study', link: 'connecting' });
+    const paired = status({
+      paired: true,
+      hubUrl: 'ws://bija:8791',
+      deviceName: 'study-pc',
+      placeName: 'the study',
+      link: 'connecting',
+    });
     const { push } = setup('satellite', paired);
     render(
       <SatelliteGate>
@@ -107,7 +123,13 @@ describe('SatelliteGate', () => {
   });
 
   it('takes the app away when the pairing is forgotten', async () => {
-    const paired = status({ paired: true, hubUrl: 'ws://bija:8791', deviceName: 'study-pc', placeName: 'the study', link: 'online' });
+    const paired = status({
+      paired: true,
+      hubUrl: 'ws://bija:8791',
+      deviceName: 'study-pc',
+      placeName: 'the study',
+      link: 'online',
+    });
     const { push } = setup('satellite', paired);
     render(
       <SatelliteGate>

@@ -11,7 +11,14 @@ import { validateLayout, type LayoutObject } from '../src/rooms/room-layout.js';
 import { makeGlb } from './rooms-glb-fixture.js';
 
 const PNG = Buffer.from('fake-png-bytes');
-const trellis: GeometryModel = { kind: 'trellis2', id: 'trellis.safetensors', name: 'TRELLIS.2', unet: 'trellis.safetensors', shapeVae: 'shape.safetensors', textureVae: 'tex.safetensors' };
+const trellis: GeometryModel = {
+  kind: 'trellis2',
+  id: 'trellis.safetensors',
+  name: 'TRELLIS.2',
+  unet: 'trellis.safetensors',
+  shapeVae: 'shape.safetensors',
+  textureVae: 'tex.safetensors',
+};
 const qwen: ImageWorkflowModel = {
   id: 'diffusion_models:qwen.safetensors',
   name: 'Qwen',
@@ -26,7 +33,18 @@ function layoutObject(overrides: Record<string, unknown> = {}): LayoutObject {
   const layout = validateLayout({
     name: 'Study',
     shell: { width: 5, depth: 5, height: 2.7 },
-    objects: [{ id: 'chair', name: 'rocking chair', search: 'rocking chair', category: 'seat', size: [0.6, 0.9, 0.6], color: 'walnut', place: { against: 'north' }, ...overrides }],
+    objects: [
+      {
+        id: 'chair',
+        name: 'rocking chair',
+        search: 'rocking chair',
+        category: 'seat',
+        size: [0.6, 0.9, 0.6],
+        color: 'walnut',
+        place: { against: 'north' },
+        ...overrides,
+      },
+    ],
   });
   return layout.objects[0];
 }
@@ -54,7 +72,11 @@ function fakeComfy(options: { glb?: Buffer; failImage?: boolean; failMesh?: bool
       try {
         await new Promise((resolve) => setTimeout(resolve, 5));
         if (runOptions?.signal?.aborted) throw new Error('ComfyUI job cancelled.');
-        calls.push({ stage: runOptions?.output === 'mesh' ? 'mesh' : 'image', graph, output: runOptions?.output });
+        calls.push({
+          stage: runOptions?.output === 'mesh' ? 'mesh' : 'image',
+          graph,
+          output: runOptions?.output,
+        });
         if (runOptions?.output === 'mesh') {
           if (options.failMesh) throw new Error('ComfyUI failed: out of memory');
           return options.glb ?? makeGlb({ min: [-0.4, 0, -0.5], max: [0.4, 1.8, 0.5] });
@@ -133,7 +155,12 @@ describe('GeneratedSource', () => {
       library: new GeneratedLibrary(dir),
       pickComfy: async () => client,
       imageModel: async () => qwen,
-      geometryModel: async () => ({ kind: 'hunyuan3d-2mv', id: 'h.safetensors', name: 'Hunyuan3D 2mv', checkpoint: 'h.safetensors' }),
+      geometryModel: async () => ({
+        kind: 'hunyuan3d-2mv',
+        id: 'h.safetensors',
+        name: 'Hunyuan3D 2mv',
+        checkpoint: 'h.safetensors',
+      }),
     });
     await generated.generate(layoutObject(), new AbortController().signal);
     const mesh = calls.find((c) => c.stage === 'mesh')!;
@@ -144,17 +171,25 @@ describe('GeneratedSource', () => {
 
   it('fails with the reason and stores nothing when the image or the mesh step fails', async () => {
     const image = fakeComfy({ failImage: true });
-    await expect(source(image.client).generate(layoutObject(), new AbortController().signal)).rejects.toThrow('rejected the workflow');
+    await expect(
+      source(image.client).generate(layoutObject(), new AbortController().signal),
+    ).rejects.toThrow('rejected the workflow');
     const mesh = fakeComfy({ failMesh: true });
-    await expect(source(mesh.client).generate(layoutObject(), new AbortController().signal)).rejects.toThrow('out of memory');
+    await expect(
+      source(mesh.client).generate(layoutObject(), new AbortController().signal),
+    ).rejects.toThrow('out of memory');
     expect(await readdir(path.join(dir)).catch(() => [])).toEqual([]);
   });
 
   it('rejects a mesh that is not a usable glb', async () => {
     const { client } = fakeComfy({ glb: Buffer.from('this is not a glb') });
-    await expect(source(client).generate(layoutObject(), new AbortController().signal)).rejects.toThrow(/usable model/);
+    await expect(
+      source(client).generate(layoutObject(), new AbortController().signal),
+    ).rejects.toThrow(/usable model/);
     const flat = fakeComfy({ glb: makeGlb({ min: [0, 0, 0], max: [1, 0, 1] }) });
-    await expect(source(flat.client).generate(layoutObject(), new AbortController().signal)).rejects.toThrow(/usable model/);
+    await expect(
+      source(flat.client).generate(layoutObject(), new AbortController().signal),
+    ).rejects.toThrow(/usable model/);
     expect(await readdir(dir).catch(() => [])).toEqual([]);
   });
 
@@ -165,15 +200,30 @@ describe('GeneratedSource', () => {
     const callsAfterFirst = calls.length;
 
     const again = layoutObject({ id: 'chair2', name: 'rocking chairs', search: 'rocking chair' });
-    expect(await generated.resolve(again)).toMatchObject({ model: { asset: first.resolved.model.asset } });
+    expect(await generated.resolve(again)).toMatchObject({
+      model: { asset: first.resolved.model.asset },
+    });
     const second = await generated.generate(again, new AbortController().signal);
     expect(second.reused).toBe(true);
     expect(second.resolved.model.asset).toBe(first.resolved.model.asset);
     expect(calls).toHaveLength(callsAfterFirst);
 
     // Something else is not matched.
-    expect(await generated.resolve(layoutObject({ id: 'lamp', name: 'floor lamp', search: 'floor lamp', category: 'lamp' }))).toBeNull();
-    expect(await generated.resolve(layoutObject({ id: 'bed', name: 'rocking chair', search: 'rocking chair', category: 'bed' }))).toBeNull();
+    expect(
+      await generated.resolve(
+        layoutObject({ id: 'lamp', name: 'floor lamp', search: 'floor lamp', category: 'lamp' }),
+      ),
+    ).toBeNull();
+    expect(
+      await generated.resolve(
+        layoutObject({
+          id: 'bed',
+          name: 'rocking chair',
+          search: 'rocking chair',
+          category: 'bed',
+        }),
+      ),
+    ).toBeNull();
   });
 
   it('makes one object at a time', async () => {
@@ -181,8 +231,14 @@ describe('GeneratedSource', () => {
     const generated = source(fake.client);
     const signal = new AbortController().signal;
     await Promise.all([
-      generated.generate(layoutObject({ id: 'a', name: 'bookshelf', search: 'bookshelf', category: 'storage' }), signal),
-      generated.generate(layoutObject({ id: 'b', name: 'floor lamp', search: 'floor lamp', category: 'lamp' }), signal),
+      generated.generate(
+        layoutObject({ id: 'a', name: 'bookshelf', search: 'bookshelf', category: 'storage' }),
+        signal,
+      ),
+      generated.generate(
+        layoutObject({ id: 'b', name: 'floor lamp', search: 'floor lamp', category: 'lamp' }),
+        signal,
+      ),
     ]);
     expect(fake.peak()).toBe(1);
     expect(await generated.list()).toHaveLength(2);
@@ -203,7 +259,11 @@ describe('GeneratedSource', () => {
     const made = await generated.generate(layoutObject(), new AbortController().signal);
     const [listed] = await generated.list();
     const id = made.resolved.model.asset.split('/')[1];
-    expect(listed).toMatchObject({ id, name: 'rocking chair', imageUrl: `aiembodied-asset://generated/${id}/source.png` });
+    expect(listed).toMatchObject({
+      id,
+      name: 'rocking chair',
+      imageUrl: `aiembodied-asset://generated/${id}/source.png`,
+    });
     await expect(generated.remove('../polyhaven')).rejects.toThrow();
     await generated.remove(id);
     expect(await generated.list()).toEqual([]);

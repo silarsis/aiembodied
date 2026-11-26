@@ -1,5 +1,11 @@
 import * as THREE from 'three';
-import type { RoomFile, RoomLight, RoomObject, RoomOpening, RoomPart } from '../../../main/src/shared/rooms/types.js';
+import type {
+  RoomFile,
+  RoomLight,
+  RoomObject,
+  RoomOpening,
+  RoomPart,
+} from '../../../main/src/shared/rooms/types.js';
 import { WALL_THICKNESS, degToRad, wallPieces, type WallName } from './room-geometry.js';
 
 export interface BuiltRoom {
@@ -26,7 +32,11 @@ export function buildRoom(room: RoomFile, options: BuildRoomOptions = {}): Built
   const materials = new Map<string, THREE.Material>();
   let disposed = false;
 
-  const material = (color: string, kind: 'lit' | 'flat' = 'lit', side: THREE.Side = THREE.FrontSide) => {
+  const material = (
+    color: string,
+    kind: 'lit' | 'flat' = 'lit',
+    side: THREE.Side = THREE.FrontSide,
+  ) => {
     const key = `${kind}:${color}:${side}`;
     let found = materials.get(key);
     if (!found) {
@@ -55,13 +65,18 @@ export function buildRoom(room: RoomFile, options: BuildRoomOptions = {}): Built
   group.add(shellGroup);
 
   // Floor and ceiling.
-  const floor = mesh(geometry(new THREE.PlaneGeometry(shell.width, shell.depth)), material(shell.floor.color));
+  const floor = mesh(
+    geometry(new THREE.PlaneGeometry(shell.width, shell.depth)),
+    material(shell.floor.color),
+  );
   floor.rotation.x = -Math.PI / 2;
   floor.name = 'floor';
   shellGroup.add(floor);
   if (shell.ceiling) {
     const ceiling = mesh(
-      geometry(new THREE.PlaneGeometry(shell.width + 2 * WALL_THICKNESS, shell.depth + 2 * WALL_THICKNESS)),
+      geometry(
+        new THREE.PlaneGeometry(shell.width + 2 * WALL_THICKNESS, shell.depth + 2 * WALL_THICKNESS),
+      ),
       material(shell.ceiling.color),
     );
     ceiling.rotation.x = Math.PI / 2;
@@ -73,7 +88,10 @@ export function buildRoom(room: RoomFile, options: BuildRoomOptions = {}): Built
   // Walls, built from boxes around each opening.
   for (const wall of WALLS) {
     for (const piece of wallPieces(shell, wall)) {
-      const wallMesh = mesh(geometry(new THREE.BoxGeometry(...piece.size)), material(shell.walls.color));
+      const wallMesh = mesh(
+        geometry(new THREE.BoxGeometry(...piece.size)),
+        material(shell.walls.color),
+      );
       wallMesh.position.set(...piece.center);
       wallMesh.name = `wall:${wall}`;
       shellGroup.add(wallMesh);
@@ -105,13 +123,20 @@ export function buildRoom(room: RoomFile, options: BuildRoomOptions = {}): Built
       const partMesh = mesh(geometry(partGeometry(part)), material(part.color));
       partMesh.position.set(...part.offset);
       if (part.rotation) {
-        partMesh.rotation.set(degToRad(part.rotation[0]), degToRad(part.rotation[1]), degToRad(part.rotation[2]));
+        partMesh.rotation.set(
+          degToRad(part.rotation[0]),
+          degToRad(part.rotation[1]),
+          degToRad(part.rotation[2]),
+        );
       }
       node.add(partMesh);
     }
     if (object.model?.file && !object.parts?.length) {
       // A grey box of the object's size stands in until the model loads (or if it never does).
-      const placeholder = mesh(geometry(new THREE.BoxGeometry(...object.size)), material('#a0a0a0'));
+      const placeholder = mesh(
+        geometry(new THREE.BoxGeometry(...object.size)),
+        material('#a0a0a0'),
+      );
       placeholder.position.y = object.size[1] / 2;
       placeholder.name = 'placeholder';
       node.add(placeholder);
@@ -191,7 +216,11 @@ function buildLight(light: RoomLight): THREE.Light {
       result = new THREE.AmbientLight(light.color, light.intensity);
       break;
     case 'hemisphere':
-      result = new THREE.HemisphereLight(light.color, light.groundColor ?? '#444444', light.intensity);
+      result = new THREE.HemisphereLight(
+        light.color,
+        light.groundColor ?? '#444444',
+        light.intensity,
+      );
       break;
     case 'directional':
       result = new THREE.DirectionalLight(light.color, light.intensity);

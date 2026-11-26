@@ -39,7 +39,9 @@ describe('MCP IPC Handlers', () => {
       testConnection: vi.fn().mockResolvedValue({ success: true }),
       signIn: vi.fn().mockResolvedValue({ success: true }),
       signOut: vi.fn().mockResolvedValue(undefined),
-      listPresets: vi.fn().mockReturnValue([{ id: 'p', name: 'P', description: 'd', url: 'https://p' }]),
+      listPresets: vi
+        .fn()
+        .mockReturnValue([{ id: 'p', name: 'P', description: 'd', url: 'https://p' }]),
       addPreset: vi.fn().mockResolvedValue({ id: 'server-2', name: 'P' }),
       listTools: vi.fn().mockReturnValue([]),
       updateToolPreferences: vi.fn().mockResolvedValue(undefined),
@@ -104,7 +106,10 @@ describe('MCP IPC Handlers', () => {
           stdioEnv: { KEY: 'env-secret' },
         },
       ]);
-      const servers = (await handlers.get('mcp:list-servers')!({}, undefined)) as Record<string, unknown>[];
+      const servers = (await handlers.get('mcp:list-servers')!({}, undefined)) as Record<
+        string,
+        unknown
+      >[];
       expect(JSON.stringify(servers)).not.toContain('top-secret');
       expect(JSON.stringify(servers)).not.toContain('env-secret');
       expect(servers[0]).toMatchObject({ hasAuthToken: true, stdioEnvKeys: ['KEY'] });
@@ -243,14 +248,8 @@ describe('MCP IPC Handlers', () => {
       const event = { serverId: 'server-1', status: 'connected' as const };
       emitter.emit('server-status-changed', event);
 
-      expect(mockWindow1.webContents.send).toHaveBeenCalledWith(
-        'mcp:server-status-changed',
-        event,
-      );
-      expect(mockWindow2.webContents.send).toHaveBeenCalledWith(
-        'mcp:server-status-changed',
-        event,
-      );
+      expect(mockWindow1.webContents.send).toHaveBeenCalledWith('mcp:server-status-changed', event);
+      expect(mockWindow2.webContents.send).toHaveBeenCalledWith('mcp:server-status-changed', event);
     });
 
     it('forwards tools-discovered events to all windows', () => {

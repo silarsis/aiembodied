@@ -38,7 +38,10 @@ export class ActivityMonitor {
 
   stop(): void {
     if (this.handle === null) return;
-    (this.options.clearInterval ?? ((handle) => clearInterval(handle as ReturnType<typeof setInterval>)))(this.handle);
+    (
+      this.options.clearInterval ??
+      ((handle) => clearInterval(handle as ReturnType<typeof setInterval>))
+    )(this.handle);
     this.handle = null;
   }
 
@@ -52,10 +55,13 @@ export class ActivityMonitor {
     try {
       idle = this.options.idleSeconds();
     } catch (error) {
-      this.options.logger?.debug('Could not read the idle time', { message: error instanceof Error ? error.message : String(error) });
+      this.options.logger?.debug('Could not read the idle time', {
+        message: error instanceof Error ? error.message : String(error),
+      });
       return;
     }
-    if (typeof idle !== 'number' || !Number.isFinite(idle) || idle >= ACTIVE_BELOW_IDLE_SECONDS) return;
+    if (typeof idle !== 'number' || !Number.isFinite(idle) || idle >= ACTIVE_BELOW_IDLE_SECONDS)
+      return;
     const at = (this.options.now ?? Date.now)();
     this.lastActiveAt = at;
     this.options.onActive(at);

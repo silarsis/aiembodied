@@ -1,7 +1,6 @@
 // Types only: shared/ holds what the main process and the renderer both need.
 import type { LinkState } from './link-shared.js';
 
-
 export interface SatelliteStatus {
   role: 'satellite';
   /** This PC has a token for a hub (the "Connect to bija" screen shows when false). */
@@ -22,14 +21,12 @@ export interface SatelliteStatus {
   deviceKind?: 'browser';
 }
 
-
 export interface PairInput {
   hubUrl: string;
   code: string;
   placeName?: string;
   deviceName?: string;
 }
-
 
 /** How long one spoken turn took on this PC, measured from the end of speech (milliseconds). */
 export interface TurnTiming {

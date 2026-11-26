@@ -60,18 +60,28 @@ export class McpOAuthStore {
   /** Forget the tokens and the verifier but keep the client registration (so sign-in need not register again). */
   clearTokens(serverId: string): void {
     this.db
-      .prepare('UPDATE mcp_oauth SET tokens_encrypted = NULL, code_verifier_encrypted = NULL, updated_at = ? WHERE server_id = ?')
+      .prepare(
+        'UPDATE mcp_oauth SET tokens_encrypted = NULL, code_verifier_encrypted = NULL, updated_at = ? WHERE server_id = ?',
+      )
       .run(Date.now(), serverId);
   }
 
   /** Forget the client registration only (the server no longer knows it). */
   clearClientInformation(serverId: string): void {
-    this.db.prepare('UPDATE mcp_oauth SET client_info_encrypted = NULL, updated_at = ? WHERE server_id = ?').run(Date.now(), serverId);
+    this.db
+      .prepare(
+        'UPDATE mcp_oauth SET client_info_encrypted = NULL, updated_at = ? WHERE server_id = ?',
+      )
+      .run(Date.now(), serverId);
   }
 
   /** Forget the PKCE verifier of an unfinished sign-in. */
   clearCodeVerifier(serverId: string): void {
-    this.db.prepare('UPDATE mcp_oauth SET code_verifier_encrypted = NULL, updated_at = ? WHERE server_id = ?').run(Date.now(), serverId);
+    this.db
+      .prepare(
+        'UPDATE mcp_oauth SET code_verifier_encrypted = NULL, updated_at = ? WHERE server_id = ?',
+      )
+      .run(Date.now(), serverId);
   }
 
   /** Forget the client registration too. */
@@ -80,9 +90,9 @@ export class McpOAuthStore {
   }
 
   private async read<T>(serverId: string, column: string): Promise<T | undefined> {
-    const row = this.db.prepare(`SELECT ${column} AS value FROM mcp_oauth WHERE server_id = ?`).get(serverId) as
-      | { value: string | null }
-      | undefined;
+    const row = this.db
+      .prepare(`SELECT ${column} AS value FROM mcp_oauth WHERE server_id = ?`)
+      .get(serverId) as { value: string | null } | undefined;
     if (!row?.value) return undefined;
     try {
       return JSON.parse(await decryptToken(row.value)) as T;
@@ -98,7 +108,9 @@ export class McpOAuthStore {
     this.db
       .prepare('INSERT OR IGNORE INTO mcp_oauth (server_id, updated_at) VALUES (?, ?)')
       .run(serverId, Date.now());
-    this.db.prepare(`UPDATE mcp_oauth SET ${column} = ?, updated_at = ? WHERE server_id = ?`).run(encrypted, Date.now(), serverId);
+    this.db
+      .prepare(`UPDATE mcp_oauth SET ${column} = ?, updated_at = ? WHERE server_id = ?`)
+      .run(encrypted, Date.now(), serverId);
   }
 }
 
@@ -110,9 +122,11 @@ export class McpOAuthStore {
 const HTML_HEADERS = { 'Content-Type': 'text/html; charset=utf-8', Connection: 'close' };
 
 function page(title: string, message: string): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head>` +
+  return (
+    `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head>` +
     `<body style="font-family:sans-serif;max-width:32rem;margin:4rem auto;text-align:center">` +
-    `<h2>${title}</h2><p>${message}</p></body></html>`;
+    `<h2>${title}</h2><p>${message}</p></body></html>`
+  );
 }
 
 /**
@@ -154,7 +168,11 @@ export class OAuthCallbackListener {
       const server = createServer((req, res) => this.handle(req.url ?? '', res));
       server.once('error', (error: NodeJS.ErrnoException) => {
         if (error.code === 'EADDRINUSE') {
-          reject(new Error(`Sign-in port ${this.port} is already in use. Close the other sign-in or set MCP_OAUTH_CALLBACK_PORT.`));
+          reject(
+            new Error(
+              `Sign-in port ${this.port} is already in use. Close the other sign-in or set MCP_OAUTH_CALLBACK_PORT.`,
+            ),
+          );
         } else {
           reject(error);
         }
@@ -200,18 +218,28 @@ export class OAuthCallbackListener {
     const state = parsed.searchParams.get('state');
     if (!this.expectedState || state !== this.expectedState) {
       // Not our sign-in (or a stray request): ignore it and keep waiting.
-      res.writeHead(400, HTML_HEADERS).end(page('Sign-in failed', 'This sign-in link did not match. Please try again from the app.'));
+      res
+        .writeHead(400, HTML_HEADERS)
+        .end(
+          page('Sign-in failed', 'This sign-in link did not match. Please try again from the app.'),
+        );
       return;
     }
     const error = parsed.searchParams.get('error');
     const code = parsed.searchParams.get('code');
     if (error || !code) {
-      res.writeHead(400, HTML_HEADERS).end(page('Sign-in failed', 'The sign-in was not completed. You can close this tab.'));
-      this.rejectCode(new Error(error ? `Sign-in was refused: ${error}` : 'Sign-in did not return a code.'));
+      res
+        .writeHead(400, HTML_HEADERS)
+        .end(page('Sign-in failed', 'The sign-in was not completed. You can close this tab.'));
+      this.rejectCode(
+        new Error(error ? `Sign-in was refused: ${error}` : 'Sign-in did not return a code.'),
+      );
       void this.stop();
       return;
     }
-    res.writeHead(200, HTML_HEADERS).end(page('You are signed in', 'You can close this tab and go back to the app.'));
+    res
+      .writeHead(200, HTML_HEADERS)
+      .end(page('You are signed in', 'You can close this tab and go back to the app.'));
     this.resolveCode(code);
     void this.stop();
   }

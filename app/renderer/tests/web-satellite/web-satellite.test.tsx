@@ -10,7 +10,11 @@ import { WebSatellite, parseWebHubUrl } from '../../src/web-satellite/web-satell
 import { bootWebSatellite, pageServedByHub } from '../../src/web-satellite/boot.js';
 import { readShellHook } from '../../src/web-satellite/shell-hook.js';
 import { browserSocketFactory } from '../../src/web-satellite/browser-socket.js';
-import { hubAssetResolver, resolveAssetUrl, setAssetUrlResolver } from '../../src/rooms/asset-url.js';
+import {
+  hubAssetResolver,
+  resolveAssetUrl,
+  setAssetUrlResolver,
+} from '../../src/rooms/asset-url.js';
 import type { SatelliteStatus } from '../../../main/src/shared/satellite/bridge-types.js';
 
 afterEach(() => {
@@ -22,15 +26,28 @@ afterEach(() => {
 
 function memoryStorage() {
   const data = new Map<string, string>();
-  return { data, getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v), removeItem: (k: string) => void data.delete(k) };
+  return {
+    data,
+    getItem: (k: string) => data.get(k) ?? null,
+    setItem: (k: string, v: string) => void data.set(k, v),
+    removeItem: (k: string) => void data.delete(k),
+  };
 }
 
-function satelliteWith(options: { visible?: () => boolean; storage?: ReturnType<typeof memoryStorage> } = {}) {
+function satelliteWith(
+  options: { visible?: () => boolean; storage?: ReturnType<typeof memoryStorage> } = {},
+) {
   const storage = options.storage ?? memoryStorage();
   const reload = vi.fn();
   const satellite = new WebSatellite({
     store: new WebStore(storage),
-    socketFactory: () => ({ isOpen: false, send: () => undefined, close: () => undefined, terminate: () => undefined, detach: () => undefined }),
+    socketFactory: () => ({
+      isOpen: false,
+      send: () => undefined,
+      close: () => undefined,
+      terminate: () => undefined,
+      detach: () => undefined,
+    }),
     pageOrigin: 'http://127.0.0.1:8791',
     isVisible: options.visible ?? (() => true),
     reload,
@@ -52,7 +69,14 @@ describe('the web bridge', () => {
     const { satellite } = satelliteWith();
     const electron = createBridge({ invoke: async () => undefined, on: () => () => undefined });
     const shape = (value: unknown): unknown =>
-      value && typeof value === 'object' ? Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, inner]) => [key, shape(inner)])) : typeof value;
+      value && typeof value === 'object'
+        ? Object.fromEntries(
+            Object.entries(value as Record<string, unknown>).map(([key, inner]) => [
+              key,
+              shape(inner),
+            ]),
+          )
+        : typeof value;
     expect(shape(satellite.bridge)).toEqual(shape(electron));
     expect(satellite.bridge.__bridgeReady).toBe(true);
   });
@@ -76,7 +100,9 @@ describe('the web bridge', () => {
       for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
         if (typeof value === 'function') {
           try {
-            await (key.startsWith('on') ? (value as (cb: () => void) => unknown)(() => undefined) : (value as () => unknown)());
+            await (key.startsWith('on')
+              ? (value as (cb: () => void) => unknown)(() => undefined)
+              : (value as () => unknown)());
           } catch {
             // Some calls need arguments; the channel was still recorded if it got that far.
           }
@@ -119,7 +145,15 @@ describe('web gate facts', () => {
 
   it('starts closed (fail closed): nothing is known yet', () => {
     const { g } = gate({ value: true });
-    expect(g.state()).toMatchObject({ mic: 'off', micAllowed: false, camera: 'off', linkUp: false, occupied: false, noFullscreenApp: true, open: true });
+    expect(g.state()).toMatchObject({
+      mic: 'off',
+      micAllowed: false,
+      camera: 'off',
+      linkUp: false,
+      occupied: false,
+      noFullscreenApp: true,
+      open: true,
+    });
   });
 
   it('is live only when the link is up, an avatar is here, the page is visible, the room is open and bija has not held it off', () => {
@@ -191,7 +225,16 @@ describe('WebSatellite pieces that need no hub', () => {
     expect(broken.closed()).toBe(true);
     expect(broken.pairing()).toBeNull();
     expect(broken.audio()).toEqual({});
-    expect(() => broken.setPairing({ hubUrl: 'ws://x', deviceId: 'd', token: 't', deviceName: 'n', placeId: null, placeName: null })).not.toThrow();
+    expect(() =>
+      broken.setPairing({
+        hubUrl: 'ws://x',
+        deviceId: 'd',
+        token: 't',
+        deviceName: 'n',
+        placeId: null,
+        placeName: null,
+      }),
+    ).not.toThrow();
   });
 
   it('refuses a stored pairing that is incomplete', () => {
@@ -203,30 +246,55 @@ describe('WebSatellite pieces that need no hub', () => {
   });
 
   it('reads an address with a scheme as it is, and gives a bare name the hub port', () => {
-    expect(parseWebHubUrl('https://bija.tail1234.ts.net')).toEqual({ ws: 'wss://bija.tail1234.ts.net', http: 'https://bija.tail1234.ts.net' });
-    expect(parseWebHubUrl('http://127.0.0.1:8791/')).toEqual({ ws: 'ws://127.0.0.1:8791', http: 'http://127.0.0.1:8791' });
-    expect(parseWebHubUrl('ws://bija:8791')).toEqual({ ws: 'ws://bija:8791', http: 'http://bija:8791' });
+    expect(parseWebHubUrl('https://bija.tail1234.ts.net')).toEqual({
+      ws: 'wss://bija.tail1234.ts.net',
+      http: 'https://bija.tail1234.ts.net',
+    });
+    expect(parseWebHubUrl('http://127.0.0.1:8791/')).toEqual({
+      ws: 'ws://127.0.0.1:8791',
+      http: 'http://127.0.0.1:8791',
+    });
+    expect(parseWebHubUrl('ws://bija:8791')).toEqual({
+      ws: 'ws://bija:8791',
+      http: 'http://bija:8791',
+    });
     expect(parseWebHubUrl('bija')).toEqual({ ws: 'ws://bija:8791', http: 'http://bija:8791' });
     expect(parseWebHubUrl('ftp://bija')).toBeNull();
     expect(parseWebHubUrl('http://')).toBeNull();
   });
 
-  it('starts unpaired with the page\'s own address suggested for the connect screen, and the web kind', () => {
+  it("starts unpaired with the page's own address suggested for the connect screen, and the web kind", () => {
     const { satellite } = satelliteWith();
-    expect(satellite.status()).toMatchObject({ paired: false, link: 'idle', suggestedHubUrl: 'http://127.0.0.1:8791', deviceKind: 'browser', hostname: 'This browser' });
+    expect(satellite.status()).toMatchObject({
+      paired: false,
+      link: 'idle',
+      suggestedHubUrl: 'http://127.0.0.1:8791',
+      deviceKind: 'browser',
+      hostname: 'This browser',
+    });
   });
 
-  it('takes a pairing a shell hands over, and uses the page\'s origin as the hub when the shell names none', () => {
+  it("takes a pairing a shell hands over, and uses the page's origin as the hub when the shell names none", () => {
     const satellite = new WebSatellite({
       store: new WebStore(memoryStorage()),
-      socketFactory: () => ({ isOpen: false, send: () => undefined, close: () => undefined, terminate: () => undefined, detach: () => undefined }),
+      socketFactory: () => ({
+        isOpen: false,
+        send: () => undefined,
+        close: () => undefined,
+        terminate: () => undefined,
+        detach: () => undefined,
+      }),
       shell: { token: 'tok', deviceId: 'room-1', deviceName: 'Pixel' },
       pageOrigin: 'https://appassets.androidplatform.net',
       isVisible: () => true,
       reload: () => undefined,
       deviceName: 'x',
     });
-    expect(satellite.status()).toMatchObject({ paired: true, deviceName: 'Pixel', hubUrl: 'wss://appassets.androidplatform.net' });
+    expect(satellite.status()).toMatchObject({
+      paired: true,
+      deviceName: 'Pixel',
+      hubUrl: 'wss://appassets.androidplatform.net',
+    });
     satellite.stop();
   });
 
@@ -235,25 +303,45 @@ describe('WebSatellite pieces that need no hub', () => {
       throw new SyntaxError('bad url');
     } as never);
     const events: string[] = [];
-    factory('ws://x', { onOpen: () => events.push('open'), onMessage: () => undefined, onClose: () => events.push('close'), onError: (message) => events.push(`error ${message}`) }, { handshakeTimeoutMs: 1 });
+    factory(
+      'ws://x',
+      {
+        onOpen: () => events.push('open'),
+        onMessage: () => undefined,
+        onClose: () => events.push('close'),
+        onError: (message) => events.push(`error ${message}`),
+      },
+      { handshakeTimeoutMs: 1 },
+    );
     await vi.waitFor(() => expect(events).toEqual(['error bad url', 'close']));
   });
 });
 
 describe('the asset URL resolver', () => {
   it('leaves URLs alone until the web satellite installs one', () => {
-    expect(resolveAssetUrl('aiembodied-asset://polyhaven/chair/chair.glb')).toBe('aiembodied-asset://polyhaven/chair/chair.glb');
+    expect(resolveAssetUrl('aiembodied-asset://polyhaven/chair/chair.glb')).toBe(
+      'aiembodied-asset://polyhaven/chair/chair.glb',
+    );
   });
 
   it('sends asset URLs (and only those) to the hub with the link key, and leaves them alone offline', () => {
     let key: string | null = 'KEY 1';
-    setAssetUrlResolver(hubAssetResolver(() => 'http://127.0.0.1:8791', () => key));
-    expect(resolveAssetUrl('aiembodied-asset://polyhaven/chair/a b.glb')).toBe('http://127.0.0.1:8791/v1/asset?url=aiembodied-asset%3A%2F%2Fpolyhaven%2Fchair%2Fa%20b.glb&k=KEY%201');
+    setAssetUrlResolver(
+      hubAssetResolver(
+        () => 'http://127.0.0.1:8791',
+        () => key,
+      ),
+    );
+    expect(resolveAssetUrl('aiembodied-asset://polyhaven/chair/a b.glb')).toBe(
+      'http://127.0.0.1:8791/v1/asset?url=aiembodied-asset%3A%2F%2Fpolyhaven%2Fchair%2Fa%20b.glb&k=KEY%201',
+    );
     expect(resolveAssetUrl('blob:abc')).toBe('blob:abc');
     expect(resolveAssetUrl('data:image/png;base64,AA==')).toBe('data:image/png;base64,AA==');
     expect(resolveAssetUrl('https://example.com/x')).toBe('https://example.com/x');
     key = null;
-    expect(resolveAssetUrl('aiembodied-asset://polyhaven/chair/a.glb')).toBe('aiembodied-asset://polyhaven/chair/a.glb');
+    expect(resolveAssetUrl('aiembodied-asset://polyhaven/chair/a.glb')).toBe(
+      'aiembodied-asset://polyhaven/chair/a.glb',
+    );
   });
 });
 
@@ -268,7 +356,8 @@ describe('boot', () => {
   it('makes window.aiembodied the web bridge when there is none, and stops the satellite when the page goes away', () => {
     const satellite = bootWebSatellite();
     expect(satellite).not.toBeNull();
-    const bridge = (window as unknown as { aiembodied?: { satellite?: unknown; ping(): string } }).aiembodied;
+    const bridge = (window as unknown as { aiembodied?: { satellite?: unknown; ping(): string } })
+      .aiembodied;
     expect(bridge?.ping()).toBe('pong');
     expect(bridge?.satellite).toBeDefined();
     window.dispatchEvent(new Event('pagehide'));
@@ -301,21 +390,37 @@ describe('connect screen and status panel on the web', () => {
   });
   const bridge = { status: vi.fn(), onStatus: vi.fn(), pair: vi.fn(), forget: vi.fn() };
 
-  it('offers the page\'s own address as the hub and talks about a browser', () => {
+  it("offers the page's own address as the hub and talks about a browser", () => {
     render(<ConnectScreen bridge={bridge as never} status={status()} />);
     expect(screen.getByDisplayValue('http://127.0.0.1:8791')).toBeInTheDocument();
     expect(screen.getByText('This browser’s name')).toBeInTheDocument();
   });
 
   it('keeps ws://bija:8791 as the default in the desktop app', () => {
-    render(<ConnectScreen bridge={bridge as never} status={status({ suggestedHubUrl: undefined, deviceKind: undefined, hostname: 'study-pc' })} />);
+    render(
+      <ConnectScreen
+        bridge={bridge as never}
+        status={status({ suggestedHubUrl: undefined, deviceKind: undefined, hostname: 'study-pc' })}
+      />,
+    );
     expect(screen.getByDisplayValue('ws://bija:8791')).toBeInTheDocument();
   });
 
   it('says the page enforces the gate itself and has no start-at-login', () => {
-    const web = { ...bridge, startAtLogin: vi.fn().mockResolvedValue(false), setStartAtLogin: vi.fn() };
-    render(<SatelliteStatusPanel status={status({ paired: true, link: 'online' })} bridge={web as never} />);
-    expect(screen.getByText(/This is a web page, so the page itself keeps these rules/)).toBeInTheDocument();
+    const web = {
+      ...bridge,
+      startAtLogin: vi.fn().mockResolvedValue(false),
+      setStartAtLogin: vi.fn(),
+    };
+    render(
+      <SatelliteStatusPanel
+        status={status({ paired: true, link: 'online' })}
+        bridge={web as never}
+      />,
+    );
+    expect(
+      screen.getByText(/This is a web page, so the page itself keeps these rules/),
+    ).toBeInTheDocument();
     expect(screen.queryByText('Start when I sign in')).toBeNull();
     expect(screen.getAllByText('This browser').length).toBeGreaterThan(0);
   });

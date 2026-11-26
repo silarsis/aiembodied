@@ -19,7 +19,14 @@ describe('a line the character wants to tell Kevin', () => {
     const notify = vi.fn();
     const remember = vi.fn();
     const deliberate = vi.fn(async () => decision);
-    new AvatarInbox({ avatarId: 'sage', bus, notify, remember, deliberate, logger: { warn: vi.fn() } }).start();
+    new AvatarInbox({
+      avatarId: 'sage',
+      bus,
+      notify,
+      remember,
+      deliberate,
+      logger: { warn: vi.fn() },
+    }).start();
     return { mirror, notify, remember, deliberate };
   }
 

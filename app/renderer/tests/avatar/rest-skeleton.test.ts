@@ -17,11 +17,18 @@ function fakeVrm(positions: Record<string, [number, number, number]>, metaVersio
     scene.add(node);
     nodes.set(bone, node);
   }
-  return { scene, meta: { metaVersion }, humanoid: { getNormalizedBoneNode: (name: string) => nodes.get(name) ?? null } };
+  return {
+    scene,
+    meta: { metaVersion },
+    humanoid: { getNormalizedBoneNode: (name: string) => nodes.get(name) ?? null },
+  };
 }
 
 const positions = Object.fromEntries(
-  REST_SKELETON_BONES.map((bone, i) => [bone, [bone.startsWith('left') ? 0.1 : -0.1, Number((0.9 + i * 0.01).toFixed(2)), -0.02]]),
+  REST_SKELETON_BONES.map((bone, i) => [
+    bone,
+    [bone.startsWith('left') ? 0.1 : -0.1, Number((0.9 + i * 0.01).toFixed(2)), -0.02],
+  ]),
 ) as Record<string, [number, number, number]>;
 
 describe('measureRestSkeleton', () => {

@@ -77,7 +77,8 @@ export function describeFeet(
   for (const object of room.objects) {
     if (object.id === seatId || object.collider === 'none') continue;
     const distance = Math.hypot(object.position[0] - x, object.position[2] - z);
-    if (distance <= FOOT_SUPPORT_REACH && (!best || distance < best.distance)) best = { name: object.name, distance };
+    if (distance <= FOOT_SUPPORT_REACH && (!best || distance < best.distance))
+      best = { name: object.name, distance };
   }
   return best ? `feet on the ${best.name}` : 'feet on a raised surface';
 }
@@ -133,8 +134,11 @@ function sceneExamples(room: RoomFile): string[] {
     const said = /\bsofa\b/i.test(seat.name) ? 'couch' : seat.name;
     examples.push(`"Go sit on the ${said}" -> "Sure, getting comfy. {sit:${seat.name}}"`);
   }
-  if (seat) examples.push('"Sit down" (no seat named) -> "Okay. {sit}" (you sit on the nearest free seat)');
-  examples.push('"How was your day?" -> an answer with no room tags, since nothing asked you to move.');
+  if (seat)
+    examples.push('"Sit down" (no seat named) -> "Okay. {sit}" (you sit on the nearest free seat)');
+  examples.push(
+    '"How was your day?" -> an answer with no room tags, since nothing asked you to move.',
+  );
   return examples;
 }
 
@@ -159,9 +163,15 @@ export function buildSceneInstructions(
     return `You are in a 3D room, the ${room.name}, but your body cannot move right now (live motion is not running), so do not offer or promise to walk, sit or pick things up.`;
   }
   const others = (context.others ?? [])
-    .map((entry) => (typeof entry === 'string' ? { name: entry.trim(), where: null } : { name: entry.name.trim(), where: entry.where?.trim() || null }))
+    .map((entry) =>
+      typeof entry === 'string'
+        ? { name: entry.trim(), where: null }
+        : { name: entry.name.trim(), where: entry.where?.trim() || null },
+    )
     .filter((entry) => entry.name)
-    .map((entry) => (entry.where ? `${entry.name} is ${entry.where}.` : `${entry.name} is in the room with you.`));
+    .map((entry) =>
+      entry.where ? `${entry.name} is ${entry.where}.` : `${entry.name} is in the room with you.`,
+    );
   const body = context.body?.trim() ?? '';
   const seated = body.startsWith('You are seated');
   const where = context.where?.trim();
@@ -170,7 +180,9 @@ export function buildSceneInstructions(
     seated ? '' : `You are ${where || 'standing in the room'}.`,
     body,
     held ? `You are holding the ${held}.` : '',
-  ].filter(Boolean).join(' ');
+  ]
+    .filter(Boolean)
+    .join(' ');
   const idleNote = context.idleNote?.trim();
   return [
     `Your room: you have a body in a 3D room, the ${room.name}, and can move around it.`,

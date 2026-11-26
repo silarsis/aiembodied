@@ -54,8 +54,10 @@ const EMPTY: SatelliteSettings = {
   audioOutputDeviceId: null,
 };
 
-const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim().slice(0, 300) : null);
-const whole = (value: unknown): number | undefined => (typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : undefined);
+const text = (value: unknown): string | null =>
+  typeof value === 'string' && value.trim() ? value.trim().slice(0, 300) : null;
+const whole = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : undefined;
 
 function readBounds(value: unknown): WindowBounds | null {
   if (!value || typeof value !== 'object') return null;
@@ -65,7 +67,12 @@ function readBounds(value: unknown): WindowBounds | null {
   if (!width || !height || width < 200 || height < 150) return null;
   const x = whole(record.x);
   const y = whole(record.y);
-  return { width, height, fullScreen: record.fullScreen === true, ...(x !== undefined && y !== undefined ? { x, y } : {}) };
+  return {
+    width,
+    height,
+    fullScreen: record.fullScreen === true,
+    ...(x !== undefined && y !== undefined ? { x, y } : {}),
+  };
 }
 
 export class SatelliteSettingsStore {
@@ -116,7 +123,13 @@ export class SatelliteSettingsStore {
 
   /** Forgets the pairing but keeps where the window was. */
   clearPairing(): SatelliteSettings {
-    return this.update({ hubUrl: null, deviceId: null, deviceName: null, placeId: null, placeName: null });
+    return this.update({
+      hubUrl: null,
+      deviceId: null,
+      deviceName: null,
+      placeId: null,
+      placeName: null,
+    });
   }
 
   private write(): void {

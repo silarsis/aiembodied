@@ -1,5 +1,8 @@
 import { useState, type FormEvent } from 'react';
-import type { SatelliteBridge, SatelliteStatus } from '../../../main/src/shared/satellite/bridge-types.js';
+import type {
+  SatelliteBridge,
+  SatelliteStatus,
+} from '../../../main/src/shared/satellite/bridge-types.js';
 
 export const DEFAULT_HUB_ADDRESS = 'ws://bija:8791';
 export const DEFAULT_ROOM_NAME = 'the study';
@@ -8,7 +11,13 @@ export const DEFAULT_ROOM_NAME = 'the study';
  * The first screen of a satellite PC: type where bija is and the 6-digit code from bija's Settings > Places >
  * "Add a desktop room", and name this room and this PC. Errors from bija are shown under the form.
  */
-export function ConnectScreen({ bridge, status }: { bridge: SatelliteBridge; status: SatelliteStatus }) {
+export function ConnectScreen({
+  bridge,
+  status,
+}: {
+  bridge: SatelliteBridge;
+  status: SatelliteStatus;
+}) {
   const web = status.deviceKind === 'browser';
   // A page the hub served offers the hub's own address; the Electron app offers bija by name.
   const [hubUrl, setHubUrl] = useState(status.suggestedHubUrl || DEFAULT_HUB_ADDRESS);
@@ -26,7 +35,11 @@ export function ConnectScreen({ bridge, status }: { bridge: SatelliteBridge; sta
     try {
       await bridge.pair({ hubUrl, code: code.trim(), placeName, deviceName });
     } catch (cause) {
-      setError(cause instanceof Error && cause.message ? cause.message.replace(/^Error invoking remote method '[^']*': (Error: )?/, '') : 'Could not connect.');
+      setError(
+        cause instanceof Error && cause.message
+          ? cause.message.replace(/^Error invoking remote method '[^']*': (Error: )?/, '')
+          : 'Could not connect.',
+      );
     } finally {
       setBusy(false);
     }
@@ -37,11 +50,19 @@ export function ConnectScreen({ bridge, status }: { bridge: SatelliteBridge; sta
       <form className="connectScreen__card" onSubmit={submit}>
         <h1>Connect to bija</h1>
         <p className="connectScreen__help">
-          {web ? 'This page will show one room of bija\u2019s world.' : 'This PC will show one room of bija\u2019s world.'} On bija, open Settings, Places, Add a desktop room, and type the code it shows.
+          {web
+            ? 'This page will show one room of bija\u2019s world.'
+            : 'This PC will show one room of bija\u2019s world.'}{' '}
+          On bija, open Settings, Places, Add a desktop room, and type the code it shows.
         </p>
         <label className="connectScreen__field">
           <span>bija&apos;s address</span>
-          <input value={hubUrl} onChange={(event) => setHubUrl(event.target.value)} spellCheck={false} autoComplete="off" />
+          <input
+            value={hubUrl}
+            onChange={(event) => setHubUrl(event.target.value)}
+            spellCheck={false}
+            autoComplete="off"
+          />
         </label>
         <label className="connectScreen__field">
           <span>6-digit code</span>
@@ -56,13 +77,25 @@ export function ConnectScreen({ bridge, status }: { bridge: SatelliteBridge; sta
         </label>
         <label className="connectScreen__field">
           <span>This room&apos;s name</span>
-          <input value={placeName} onChange={(event) => setPlaceName(event.target.value)} autoComplete="off" />
+          <input
+            value={placeName}
+            onChange={(event) => setPlaceName(event.target.value)}
+            autoComplete="off"
+          />
         </label>
         <label className="connectScreen__field">
           <span>{web ? 'This browser\u2019s name' : 'This PC\u2019s name'}</span>
-          <input value={deviceName} onChange={(event) => setDeviceName(event.target.value)} autoComplete="off" />
+          <input
+            value={deviceName}
+            onChange={(event) => setDeviceName(event.target.value)}
+            autoComplete="off"
+          />
         </label>
-        <button type="submit" className="btn" disabled={busy || code.trim().length !== 6 || !hubUrl.trim()}>
+        <button
+          type="submit"
+          className="btn"
+          disabled={busy || code.trim().length !== 6 || !hubUrl.trim()}
+        >
           {busy ? 'Connecting…' : 'Connect'}
         </button>
         {error ? (

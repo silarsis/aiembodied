@@ -16,7 +16,13 @@ export interface Glb {
 interface GltfJson {
   images?: Array<{ bufferView?: number; mimeType?: string; name?: string }>;
   textures?: Array<{ source?: number }>;
-  bufferViews: Array<{ buffer: number; byteOffset?: number; byteLength: number; byteStride?: number; target?: number }>;
+  bufferViews: Array<{
+    buffer: number;
+    byteOffset?: number;
+    byteLength: number;
+    byteStride?: number;
+    target?: number;
+  }>;
   buffers: Array<{ byteLength: number; uri?: string }>;
   extensions?: {
     VRM?: {
@@ -119,7 +125,10 @@ export function readGlb(buffer: Buffer): Glb {
 
 export function writeGlb(glb: Glb): Buffer {
   const jsonBytes = Buffer.from(JSON.stringify(glb.json), 'utf8');
-  const jsonPadded = Buffer.concat([jsonBytes, Buffer.alloc((4 - (jsonBytes.length % 4)) % 4, 0x20)]);
+  const jsonPadded = Buffer.concat([
+    jsonBytes,
+    Buffer.alloc((4 - (jsonBytes.length % 4)) % 4, 0x20),
+  ]);
   const binPadded = Buffer.concat([glb.bin, Buffer.alloc((4 - (glb.bin.length % 4)) % 4)]);
   const header = Buffer.alloc(12);
   header.writeUInt32LE(GLB_MAGIC, 0);
@@ -185,7 +194,9 @@ export function replaceImages(glb: Glb, replacements: Map<number, Buffer>): Glb 
   const json: GltfJson = {
     ...glb.json,
     bufferViews,
-    buffers: glb.json.buffers.map((buffer, index) => (index === 0 ? { ...buffer, byteLength: bin.length } : buffer)),
+    buffers: glb.json.buffers.map((buffer, index) =>
+      index === 0 ? { ...buffer, byteLength: bin.length } : buffer,
+    ),
   };
   return { json, bin };
 }
@@ -220,11 +231,20 @@ export interface PixelBox {
   height: number;
 }
 
-export function regionPixels(region: RetextureRegion, atlasWidth: number, atlasHeight: number): PixelBox {
+export function regionPixels(
+  region: RetextureRegion,
+  atlasWidth: number,
+  atlasHeight: number,
+): PixelBox {
   const [left, top, right, bottom] = region.box;
   const x = Math.round(left * atlasWidth);
   const y = Math.round(top * atlasHeight);
-  return { x, y, width: Math.round(right * atlasWidth) - x, height: Math.round(bottom * atlasHeight) - y };
+  return {
+    x,
+    y,
+    width: Math.round(right * atlasWidth) - x,
+    height: Math.round(bottom * atlasHeight) - y,
+  };
 }
 
 export interface PreparedRegion {
@@ -236,7 +256,10 @@ export interface PreparedRegion {
 }
 
 /** Crop each region out of the atlas, ready to upload to ComfyUI. */
-export function prepareRegions(vrm: Buffer, regions: RetextureRegion[] = VROID_ATLAS_REGIONS): PreparedRegion[] {
+export function prepareRegions(
+  vrm: Buffer,
+  regions: RetextureRegion[] = VROID_ATLAS_REGIONS,
+): PreparedRegion[] {
   const glb = readGlb(vrm);
   const atlas = PNG.sync.read(getImageBytes(glb, findVroidAtlas(glb.json).main));
   return regions.map((region) => {
@@ -248,7 +271,9 @@ export function prepareRegions(vrm: Buffer, regions: RetextureRegion[] = VROID_A
         const dst = (row * box.width + col) * 4;
         const alpha = atlas.data[src + 3] / 255;
         for (let channel = 0; channel < 3; channel += 1) {
-          crop.data[dst + channel] = Math.round(atlas.data[src + channel] * alpha + 128 * (1 - alpha));
+          crop.data[dst + channel] = Math.round(
+            atlas.data[src + channel] * alpha + 128 * (1 - alpha),
+          );
         }
         crop.data[dst + 3] = 255;
       }
@@ -298,7 +323,10 @@ function edgeMap(luma: Float64Array): Float64Array {
   const at = (row: number, col: number) => luma[row * LAYOUT_GRID + col];
   for (let row = 1; row < LAYOUT_GRID - 1; row += 1) {
     for (let col = 1; col < LAYOUT_GRID - 1; col += 1) {
-      edges[row * LAYOUT_GRID + col] = Math.hypot(at(row, col + 1) - at(row, col - 1), at(row + 1, col) - at(row - 1, col));
+      edges[row * LAYOUT_GRID + col] = Math.hypot(
+        at(row, col + 1) - at(row, col - 1),
+        at(row + 1, col) - at(row - 1, col),
+      );
     }
   }
   return edges;
@@ -382,7 +410,10 @@ export function assembleRetexturedVrm(vrm: Buffer, edited: EditedRegion[], title
   // MToon shade: carry over the original shade/main ratio per texel.
   for (let index = 0; index < main.data.length; index += 4) {
     for (let channel = 0; channel < 3; channel += 1) {
-      const ratio = Math.min(1.5, (shade.data[index + channel] + 1) / (originalMain[index + channel] + 1));
+      const ratio = Math.min(
+        1.5,
+        (shade.data[index + channel] + 1) / (originalMain[index + channel] + 1),
+      );
       shade.data[index + channel] = Math.min(255, Math.round(main.data[index + channel] * ratio));
     }
     shade.data[index + 3] = 255;

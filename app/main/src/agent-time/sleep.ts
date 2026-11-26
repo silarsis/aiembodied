@@ -10,7 +10,10 @@ export class AgentSleep {
   private readonly asleep = new Map<string, { since: number; reason: string | null }>();
   private readonly listeners = new Set<(asleep: string[]) => void>();
 
-  constructor(private readonly logger?: Logger, private readonly now: () => number = Date.now) {}
+  constructor(
+    private readonly logger?: Logger,
+    private readonly now: () => number = Date.now,
+  ) {}
 
   isAsleep(avatarId: string): boolean {
     return this.asleep.has(avatarId);
@@ -25,7 +28,10 @@ export class AgentSleep {
     if (asleep === this.asleep.has(avatarId)) return false;
     if (asleep) this.asleep.set(avatarId, { since: this.now(), reason: reason ?? null });
     else this.asleep.delete(avatarId);
-    this.logger?.info(asleep ? 'Agent fell asleep' : 'Agent woke up', { avatarId, ...(reason ? { reason } : {}) });
+    this.logger?.info(asleep ? 'Agent fell asleep' : 'Agent woke up', {
+      avatarId,
+      ...(reason ? { reason } : {}),
+    });
     const list = this.list();
     for (const listener of [...this.listeners]) {
       try {

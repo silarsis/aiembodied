@@ -19,7 +19,9 @@ vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
 }));
 
 vi.mock('@modelcontextprotocol/sdk/client/sse.js', () => ({
-  SSEClientTransport: vi.fn().mockImplementation(function () { return {}; }),
+  SSEClientTransport: vi.fn().mockImplementation(function () {
+    return {};
+  }),
 }));
 
 describe('SSEMCPClient', () => {
@@ -290,9 +292,7 @@ describe('SSEMCPClient', () => {
       const client = new SSEMCPClient('https://example.com/sse');
       await client.connect();
 
-      await expect(client.callTool('failing_tool', {})).rejects.toThrow(
-        'Tool execution failed',
-      );
+      await expect(client.callTool('failing_tool', {})).rejects.toThrow('Tool execution failed');
     });
 
     it('throws error when not connected', async () => {

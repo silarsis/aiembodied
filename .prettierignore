@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-cjs/
+coverage/
+release/
+.dev-home/
+app/renderer/public/
+app/main/assets/
+pnpm-lock.yaml

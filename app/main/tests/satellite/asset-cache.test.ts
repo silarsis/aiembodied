@@ -19,7 +19,11 @@ describe('AssetCache', () => {
   it('keeps a file by its key and gives it back with its type', async () => {
     const cache = new AssetCache({ dir: dir() });
     expect(await cache.get('aiembodied-asset://polyhaven/chair/chair.glb')).toBeNull();
-    await cache.put('aiembodied-asset://polyhaven/chair/chair.glb', 'model/gltf-binary', bytes(10, 7));
+    await cache.put(
+      'aiembodied-asset://polyhaven/chair/chair.glb',
+      'model/gltf-binary',
+      bytes(10, 7),
+    );
     const hit = await cache.get('aiembodied-asset://polyhaven/chair/chair.glb');
     expect(hit?.mime).toBe('model/gltf-binary');
     expect(Array.from(hit?.data ?? [])).toEqual(Array(10).fill(7));
@@ -66,7 +70,11 @@ describe('AssetCache', () => {
   it('leaves no half-written files behind', async () => {
     const folder = dir();
     const cache = new AssetCache({ dir: folder });
-    await Promise.all([cache.put('a', 'x', bytes(10)), cache.put('b', 'x', bytes(10)), cache.put('c', 'x', bytes(10))]);
+    await Promise.all([
+      cache.put('a', 'x', bytes(10)),
+      cache.put('b', 'x', bytes(10)),
+      cache.put('c', 'x', bytes(10)),
+    ]);
     await cache.idle();
     expect(readdirSync(folder).filter((name) => name.endsWith('.tmp'))).toEqual([]);
     expect(readdirSync(folder).filter((name) => name.endsWith('.bin'))).toHaveLength(3);

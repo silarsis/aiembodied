@@ -3,9 +3,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
-const { resolveElectronCli, ensureElectronBinary, electronLaunchEnv } = await import(
-  '../../../scripts/run-dev.mjs',
-);
+const { resolveElectronCli, ensureElectronBinary, electronLaunchEnv } =
+  await import('../../../scripts/run-dev.mjs');
 
 describe('resolveElectronCli', () => {
   it('returns the electron CLI located in app/main', () => {
@@ -56,7 +55,11 @@ describe('ensureElectronBinary', () => {
     const repoRoot = resolve(workspaceRoot, 'repo');
     const electronDir = resolve(repoRoot, 'app/main/node_modules/electron');
     mkdirSync(electronDir, { recursive: true });
-    writeFileSync(resolve(electronDir, 'package.json'), JSON.stringify({ name: 'electron', version: '45.0.0' }), 'utf8');
+    writeFileSync(
+      resolve(electronDir, 'package.json'),
+      JSON.stringify({ name: 'electron', version: '45.0.0' }),
+      'utf8',
+    );
     writeFileSync(resolve(electronDir, 'install.js'), '', 'utf8');
 
     const runImpl = vi.fn(() => Promise.resolve());
@@ -80,9 +83,9 @@ describe('ensureElectronBinary', () => {
     const runImpl = vi.fn(() => Promise.resolve());
 
     try {
-      await expect(ensureElectronBinary(resolve(workspaceRoot, 'repo'), { runImpl })).rejects.toThrow(
-        /Electron installer not found/,
-      );
+      await expect(
+        ensureElectronBinary(resolve(workspaceRoot, 'repo'), { runImpl }),
+      ).rejects.toThrow(/Electron installer not found/);
       expect(runImpl).not.toHaveBeenCalled();
     } finally {
       rmSync(workspaceRoot, { recursive: true, force: true });
@@ -95,14 +98,24 @@ describe('electronLaunchEnv', () => {
   const real = { HOME: '/home/kevin', APPDATA: '/home/kevin/AppData/Roaming' };
 
   it('keeps the isolated dev home with diagnostics for the normal app', () => {
-    expect(electronLaunchEnv([], isolated, real)).toEqual({ ...isolated, AIEMBODIED_ENABLE_DIAGNOSTICS: '1' });
+    expect(electronLaunchEnv([], isolated, real)).toEqual({
+      ...isolated,
+      AIEMBODIED_ENABLE_DIAGNOSTICS: '1',
+    });
   });
 
   it('--satellite is a dev satellite: isolated home, role satellite', () => {
-    expect(electronLaunchEnv(['--satellite'], isolated, real)).toEqual({ ...isolated, AIEMBODIED_ENABLE_DIAGNOSTICS: '1', AIEMBODIED_ROLE: 'satellite' });
+    expect(electronLaunchEnv(['--satellite'], isolated, real)).toEqual({
+      ...isolated,
+      AIEMBODIED_ENABLE_DIAGNOSTICS: '1',
+      AIEMBODIED_ROLE: 'satellite',
+    });
   });
 
   it('--daily (pnpm satellite) runs with the real environment, so the data is in the normal folder', () => {
-    expect(electronLaunchEnv(['--daily'], isolated, real)).toEqual({ ...real, AIEMBODIED_ROLE: 'satellite' });
+    expect(electronLaunchEnv(['--daily'], isolated, real)).toEqual({
+      ...real,
+      AIEMBODIED_ROLE: 'satellite',
+    });
   });
 });

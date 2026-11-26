@@ -1,13 +1,11 @@
 // Types only: shared/ holds what the main process and the renderer both need.
 
-
 export interface GpuMemoryUse {
   /** Bytes of dedicated (on-card or carved-out) GPU memory. */
   dedicated: number;
   /** Bytes of shared system memory the GPU has mapped. */
   shared: number;
 }
-
 
 export interface GpuMemoryServerUse extends GpuMemoryUse {
   id: string;
@@ -18,12 +16,10 @@ export interface GpuMemoryServerUse extends GpuMemoryUse {
   processName?: string;
 }
 
-
 export interface GpuMemoryProcessUse extends GpuMemoryUse {
   pid: number;
   name: string;
 }
-
 
 export interface GpuMemorySnapshot {
   supported: boolean;
@@ -43,7 +39,6 @@ export interface GpuMemorySnapshot {
   unattributed: GpuMemoryUse;
   takenAt: number;
 }
-
 
 export interface GpuMemoryBridge {
   read(): Promise<GpuMemorySnapshot>;

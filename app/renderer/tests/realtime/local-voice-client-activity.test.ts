@@ -24,7 +24,13 @@ function createFakeContext() {
     createGain: vi.fn(node),
     createMediaStreamDestination: vi.fn(() => ({ ...node(), stream: {} as MediaStream })),
     decodeAudioData: vi.fn(async () => ({ duration: 0.01 })),
-    createBufferSource: vi.fn(() => ({ ...node(), buffer: null, start: vi.fn(), stop: vi.fn(), onended: null })),
+    createBufferSource: vi.fn(() => ({
+      ...node(),
+      buffer: null,
+      start: vi.fn(),
+      stop: vi.fn(),
+      onended: null,
+    })),
   };
   return { context: context as unknown as AudioContext, processor };
 }
@@ -36,9 +42,16 @@ function createBridge(overrides: Partial<LocalVoiceBridge> = {}) {
       llm: { available: true, baseUrl: 'http://llm' },
       speech: { available: true, ready: true, error: null },
     })) as unknown as LocalVoiceBridge['getStatus'],
-    transcribe: vi.fn(async () => ({ text: 'Hey Jarvis, what time is it?' })) as unknown as LocalVoiceBridge['transcribe'],
+    transcribe: vi.fn(async () => ({
+      text: 'Hey Jarvis, what time is it?',
+    })) as unknown as LocalVoiceBridge['transcribe'],
     respond: vi.fn(async (request: { requestId: string }) => {
-      listener?.({ type: 'sentence', requestId: request.requestId, text: 'It is noon.', wav: new Uint8Array([1]) } as LocalVoiceEvent);
+      listener?.({
+        type: 'sentence',
+        requestId: request.requestId,
+        text: 'It is noon.',
+        wav: new Uint8Array([1]),
+      } as LocalVoiceEvent);
       return { text: 'It is noon.', cancelled: false };
     }) as unknown as LocalVoiceBridge['respond'],
     cancel: vi.fn(async () => undefined),
@@ -72,7 +85,8 @@ describe('LocalVoiceClient activity', () => {
     const client = new LocalVoiceClient({
       getBridge: () => bridge,
       wakePhrase: 'Hey Jarvis',
-      createAudioContext: () => context, createMicCaptureNode: micNodeOf,
+      createAudioContext: () => context,
+      createMicCaptureNode: micNodeOf,
       now: () => now,
       callbacks: { onActivity: (next) => activity.push(next) },
     });
@@ -111,7 +125,14 @@ describe('LocalVoiceClient activity', () => {
     speak(8, false);
     await vi.advanceTimersByTimeAsync(2000);
 
-    expect(phases()).toEqual(['waiting', 'listening', 'transcribing', 'thinking', 'responding', 'listening']);
+    expect(phases()).toEqual([
+      'waiting',
+      'listening',
+      'transcribing',
+      'thinking',
+      'responding',
+      'listening',
+    ]);
 
     await vi.advanceTimersByTimeAsync(10_000);
     expect(phases().at(-1)).toBe('waiting');
@@ -129,11 +150,21 @@ describe('LocalVoiceClient activity', () => {
     speak(8, false);
     await vi.advanceTimersByTimeAsync(1000);
 
-    expect(activity.at(-1)).toMatchObject({ phase: 'error', detail: 'Turn failed: connection refused' });
+    expect(activity.at(-1)).toMatchObject({
+      phase: 'error',
+      detail: 'Turn failed: connection refused',
+    });
   });
 
   it('passes tool calls made during a reply to onToolCall', async () => {
-    const toolEvent = { requestId: '', type: 'tool', callId: 'c1', name: 'web_search', label: 'noon', status: 'started' };
+    const toolEvent = {
+      requestId: '',
+      type: 'tool',
+      callId: 'c1',
+      name: 'web_search',
+      label: 'noon',
+      status: 'started',
+    };
     const bridge = createBridge();
     let listener: ((event: LocalVoiceEvent) => void) | undefined;
     bridge.onEvent = vi.fn((next: (event: LocalVoiceEvent) => void) => {
@@ -150,7 +181,8 @@ describe('LocalVoiceClient activity', () => {
     const calls: unknown[] = [];
     const client = new LocalVoiceClient({
       getBridge: () => bridge,
-      createAudioContext: () => context, createMicCaptureNode: micNodeOf,
+      createAudioContext: () => context,
+      createMicCaptureNode: micNodeOf,
       now: () => now,
       callbacks: { onToolCall: (call) => calls.push(call) },
     });
@@ -165,7 +197,14 @@ describe('LocalVoiceClient activity', () => {
     }
     await vi.advanceTimersByTimeAsync(2000);
 
-    expect(calls).toEqual([expect.objectContaining({ type: 'tool', name: 'web_search', label: 'noon', status: 'started' })]);
+    expect(calls).toEqual([
+      expect.objectContaining({
+        type: 'tool',
+        name: 'web_search',
+        label: 'noon',
+        status: 'started',
+      }),
+    ]);
   });
 
   it('is off after disconnecting', async () => {

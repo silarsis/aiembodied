@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { applySeatOverrides, seatGeometryLocal, seatGeometryToWorld, shapeSampler } from '../../src/rooms/seat-geometry.js';
+import {
+  applySeatOverrides,
+  seatGeometryLocal,
+  seatGeometryToWorld,
+  shapeSampler,
+} from '../../src/rooms/seat-geometry.js';
 import { objectShapes } from '../../src/rooms/room-shapes.js';
 import { builtInRoom } from './fixtures.js';
 
@@ -28,8 +33,19 @@ describe('seatGeometryLocal on the reading-room sofa', () => {
   });
 
   it('has no back rest on a flat stool', () => {
-    const stool = [{ shape: 'cylinder' as const, radius: 0.2, height: 0.45, offset: [0, 0.225, 0] as [number, number, number], color: '#fff' }];
-    const result = seatGeometryLocal({ position: [0, 0.45, 0], facing: 0 }, shapeSampler(objectShapes({ size: [0.4, 0.45, 0.4], parts: stool })));
+    const stool = [
+      {
+        shape: 'cylinder' as const,
+        radius: 0.2,
+        height: 0.45,
+        offset: [0, 0.225, 0] as [number, number, number],
+        color: '#fff',
+      },
+    ];
+    const result = seatGeometryLocal(
+      { position: [0, 0.45, 0], facing: 0 },
+      shapeSampler(objectShapes({ size: [0.4, 0.45, 0.4], parts: stool })),
+    );
     expect(result.backRest).toBeNull();
     expect(result.seatTopY).toBeCloseTo(0.45);
     expect(result.depth).toBeCloseTo(0.4, 1);

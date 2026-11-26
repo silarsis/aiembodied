@@ -353,10 +353,24 @@ export interface AvatarGenerationAcceptance {
 
 // VRM 1.0 expression preset names
 export type VrmExpressionPresetName =
-  | 'happy' | 'angry' | 'sad' | 'relaxed' | 'surprised' | 'neutral'  // emotions
-  | 'blink' | 'blinkLeft' | 'blinkRight'                              // eye states
-  | 'lookUp' | 'lookDown' | 'lookLeft' | 'lookRight'                  // eye direction
-  | 'aa' | 'ih' | 'ou' | 'ee' | 'oh';                                 // visemes
+  | 'happy'
+  | 'angry'
+  | 'sad'
+  | 'relaxed'
+  | 'surprised'
+  | 'neutral' // emotions
+  | 'blink'
+  | 'blinkLeft'
+  | 'blinkRight' // eye states
+  | 'lookUp'
+  | 'lookDown'
+  | 'lookLeft'
+  | 'lookRight' // eye direction
+  | 'aa'
+  | 'ih'
+  | 'ou'
+  | 'ee'
+  | 'oh'; // visemes
 
 /** Facial expression state for a pose, using VRM 1.0 preset names */
 export interface PoseExpressionState {

@@ -34,7 +34,12 @@ const models: ImageModelFile[] = [
   { folder: 'text_encoders', name: 'qwen_3_4b.safetensors', kind: 'qwen3-4b' },
   { folder: 'vae', name: 'ae.safetensors', kind: 'flux-ae' },
 ];
-const sd1Net: ImageModelFile = { folder: 'controlnet', name: POSE_CONTROLNETS.sd1.filename, kind: 'controlnet', family: 'sd1' };
+const sd1Net: ImageModelFile = {
+  folder: 'controlnet',
+  name: POSE_CONTROLNETS.sd1.filename,
+  kind: 'controlnet',
+  family: 'sd1',
+};
 
 function memoryStore() {
   const values = new Map<string, string>();
@@ -87,7 +92,13 @@ describe('pose control in the front-image workflow', () => {
   const sd1 = { id: 'checkpoints:a', name: 'A', family: 'sd1' as const, model: 'a.safetensors' };
 
   it('routes the sampler through the pose ControlNet when the model has one and a skeleton was uploaded', () => {
-    const graph = buildAvatarImageWorkflow({ ...sd1, poseControlNet: 'pose.safetensors' }, 'explorer', 'new-character', 7, 'aiembodied/a-pose.png');
+    const graph = buildAvatarImageWorkflow(
+      { ...sd1, poseControlNet: 'pose.safetensors' },
+      'explorer',
+      'new-character',
+      7,
+      'aiembodied/a-pose.png',
+    );
     expect(graph.poseControlNet.inputs.control_net_name).toBe('pose.safetensors');
     expect(graph.poseImage.inputs.image).toBe('aiembodied/a-pose.png');
     expect(graph.poseApply.inputs.positive).toEqual(['positive', 0]);
@@ -98,14 +109,36 @@ describe('pose control in the front-image workflow', () => {
   });
 
   it('keeps the plain workflow without a ControlNet or skeleton', () => {
-    expect(buildAvatarImageWorkflow(sd1, 'x', 'new-character', 7, 'a.png').poseApply).toBeUndefined();
-    expect(buildAvatarImageWorkflow({ ...sd1, poseControlNet: 'pose.safetensors' }, 'x', 'new-character', 7).poseApply).toBeUndefined();
+    expect(
+      buildAvatarImageWorkflow(sd1, 'x', 'new-character', 7, 'a.png').poseApply,
+    ).toBeUndefined();
+    expect(
+      buildAvatarImageWorkflow(
+        { ...sd1, poseControlNet: 'pose.safetensors' },
+        'x',
+        'new-character',
+        7,
+      ).poseApply,
+    ).toBeUndefined();
   });
 
   it('gives a new character’s Qwen-Image front the skeleton as its reference image', () => {
-    const qwen = { id: 'q', name: 'Q', family: 'qwen-image-2.1' as const, model: 'q', clip: 'c', vae: 'v' };
+    const qwen = {
+      id: 'q',
+      name: 'Q',
+      family: 'qwen-image-2.1' as const,
+      model: 'q',
+      clip: 'c',
+      vae: 'v',
+    };
     expect(poseImageSize(qwen)).toEqual({ width: 1024, height: 1024 });
-    const graph = buildAvatarImageWorkflow(qwen, 'explorer', 'new-character', 7, 'aiembodied/a-pose.png');
+    const graph = buildAvatarImageWorkflow(
+      qwen,
+      'explorer',
+      'new-character',
+      7,
+      'aiembodied/a-pose.png',
+    );
     expect(graph.poseImage.inputs.image).toBe('aiembodied/a-pose.png');
     expect(graph.encode.inputs['images.image_1']).toEqual(['poseImage', 0]);
     expect(String(graph.encode.inputs.prompt).startsWith(QWEN_POSE_INSTRUCTION)).toBe(true);
@@ -115,7 +148,10 @@ describe('pose control in the front-image workflow', () => {
     expect(buildAvatarImageWorkflow(qwen, 'x', 'new-character', 7).poseImage).toBeUndefined();
     expect(poseImageSize({ family: 'z-image-turbo' })).toBeUndefined();
     expect(poseImageSize({ family: 'sdxl' })).toBeUndefined();
-    expect(poseImageSize({ family: 'sd1', poseControlNet: 'p' })).toEqual({ width: 512, height: 768 });
+    expect(poseImageSize({ family: 'sd1', poseControlNet: 'p' })).toEqual({
+      width: 512,
+      height: 768,
+    });
   });
 
   it('plans the download of each family’s pose ControlNet into the controlnet folder', () => {
@@ -131,7 +167,11 @@ describe('pose control in the front-image workflow', () => {
 describe('pose control for installed image models', () => {
   it('says how each model gets its pose and hands the installed ControlNet to its family’s jobs', async () => {
     const { installer } = fakeInstaller();
-    const service = new AvatarImageModelService(async () => [...models, sd1Net], memoryStore(), installer);
+    const service = new AvatarImageModelService(
+      async () => [...models, sd1Net],
+      memoryStore(),
+      installer,
+    );
     const state = await service.list();
     const pose = Object.fromEntries(state.models.map((model) => [model.id, model.poseControl]));
     expect(pose).toEqual({
@@ -141,8 +181,12 @@ describe('pose control for installed image models', () => {
       'diffusion_models:z_image_turbo.safetensors': 'none',
     });
     expect(state.models.every((model) => model.poseNote)).toBe(true);
-    expect((await service.resolve('checkpoints:dreamshaper_8.safetensors')).poseControlNet).toBe(POSE_CONTROLNETS.sd1.filename);
-    expect((await service.resolve('checkpoints:novaFurryXL.safetensors')).poseControlNet).toBeUndefined();
+    expect((await service.resolve('checkpoints:dreamshaper_8.safetensors')).poseControlNet).toBe(
+      POSE_CONTROLNETS.sd1.filename,
+    );
+    expect(
+      (await service.resolve('checkpoints:novaFurryXL.safetensors')).poseControlNet,
+    ).toBeUndefined();
   });
 
   it('downloads the pose ControlNet when its model is chosen, once, and shows it arriving', async () => {
@@ -151,12 +195,24 @@ describe('pose control for installed image models', () => {
     const service = new AvatarImageModelService(async () => files, memoryStore(), installer);
     await service.select('checkpoints:novaFurryXL.safetensors');
     expect(install).toHaveBeenCalledWith('sdxl');
-    expect((await service.list()).models.find((model) => model.id.includes('nova'))?.poseControl).toBe('installing');
+    expect(
+      (await service.list()).models.find((model) => model.id.includes('nova'))?.poseControl,
+    ).toBe('installing');
     await service.select('checkpoints:novaFurryXL.safetensors');
     expect(install).toHaveBeenCalledTimes(1);
     states.sdxl = 'done';
-    files = [...models, { folder: 'controlnet', name: POSE_CONTROLNETS.sdxl.filename, kind: 'controlnet', family: 'sdxl' }];
-    expect((await service.list()).models.find((model) => model.id.includes('nova'))?.poseControl).toBe('guided');
+    files = [
+      ...models,
+      {
+        folder: 'controlnet',
+        name: POSE_CONTROLNETS.sdxl.filename,
+        kind: 'controlnet',
+        family: 'sdxl',
+      },
+    ];
+    expect(
+      (await service.list()).models.find((model) => model.id.includes('nova'))?.poseControl,
+    ).toBe('guided');
     expect((await service.resolve()).poseControlNet).toBe(POSE_CONTROLNETS.sdxl.filename);
   });
 
@@ -170,21 +226,41 @@ describe('pose control for installed image models', () => {
     states.sd1 = 'failed';
     const listed = await service.list();
     expect(install).toHaveBeenCalledTimes(1);
-    expect(listed.models.find((model) => model.id.includes('dreamshaper'))?.poseControl).toBe('failed');
+    expect(listed.models.find((model) => model.id.includes('dreamshaper'))?.poseControl).toBe(
+      'failed',
+    );
     await service.select('checkpoints:dreamshaper_8.safetensors');
     expect(install).toHaveBeenCalledTimes(2);
   });
 
   it('flags a server that cannot download it, and uses any OpenPose ControlNet already there', async () => {
     const { installer } = fakeInstaller(false);
-    const own: ImageModelFile = { folder: 'controlnet', name: 'my/openpose-sd15.safetensors', kind: 'controlnet', family: 'sd1' };
-    const depth: ImageModelFile = { folder: 'controlnet', name: 'depth-xl.safetensors', kind: 'controlnet', family: 'sdxl' };
-    const service = new AvatarImageModelService(async () => [...models, own, depth], memoryStore(), installer);
+    const own: ImageModelFile = {
+      folder: 'controlnet',
+      name: 'my/openpose-sd15.safetensors',
+      kind: 'controlnet',
+      family: 'sd1',
+    };
+    const depth: ImageModelFile = {
+      folder: 'controlnet',
+      name: 'depth-xl.safetensors',
+      kind: 'controlnet',
+      family: 'sdxl',
+    };
+    const service = new AvatarImageModelService(
+      async () => [...models, own, depth],
+      memoryStore(),
+      installer,
+    );
     await service.select('checkpoints:novaFurryXL.safetensors');
-    const pose = Object.fromEntries((await service.list()).models.map((model) => [model.id, model.poseControl]));
+    const pose = Object.fromEntries(
+      (await service.list()).models.map((model) => [model.id, model.poseControl]),
+    );
     expect(pose['checkpoints:novaFurryXL.safetensors']).toBe('unavailable');
     expect(pose['checkpoints:dreamshaper_8.safetensors']).toBe('guided');
-    expect((await service.resolve('checkpoints:dreamshaper_8.safetensors')).poseControlNet).toBe('my/openpose-sd15.safetensors');
+    expect((await service.resolve('checkpoints:dreamshaper_8.safetensors')).poseControlNet).toBe(
+      'my/openpose-sd15.safetensors',
+    );
   });
 
   it('recognises the app’s pose ControlNets by name on a server without the add-on', () => {

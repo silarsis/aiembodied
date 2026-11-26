@@ -32,7 +32,11 @@ export interface CharacterRigRunner {
     signal: AbortSignal;
   }): Promise<string>;
   /** Cut the character out of the image onto plain white. */
-  removeBackground?(input: { imagePath: string; outputPath: string; signal: AbortSignal }): Promise<void>;
+  removeBackground?(input: {
+    imagePath: string;
+    outputPath: string;
+    signal: AbortSignal;
+  }): Promise<void>;
   /**
    * Quick checks on a front image: whether its background is light and neutral enough to find
    * the figure, and how many characters stand side by side (null when the background isn't).
@@ -137,25 +141,40 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
     throw new Error('Install Blender or set BLENDER_EXE to create a new 3D avatar.');
   }
 
-  async removeBackground(input: { imagePath: string; outputPath: string; signal: AbortSignal }): Promise<void> {
+  async removeBackground(input: {
+    imagePath: string;
+    outputPath: string;
+    signal: AbortSignal;
+  }): Promise<void> {
     if (!this.facePython) await this.assertAvailable();
     const faceRoot = path.resolve(this.env.AVATAR_FACE_DIR || 'services/avatar-face');
     await promisify(execFile)(
       this.facePython,
-      [path.join(path.dirname(this.scriptPath), 'remove-background.py'), '--image', input.imagePath, '--output', input.outputPath],
+      [
+        path.join(path.dirname(this.scriptPath), 'remove-background.py'),
+        '--image',
+        input.imagePath,
+        '--output',
+        input.outputPath,
+      ],
       {
         windowsHide: true,
         signal: input.signal,
         timeout: 5 * 60_000,
         maxBuffer: 2 * 1024 * 1024,
         // rembg keeps its model here; setup downloads it so this runs offline.
-        env: { ...this.env, U2NET_HOME: this.env.U2NET_HOME || path.join(faceRoot, 'models', 'rembg') },
+        env: {
+          ...this.env,
+          U2NET_HOME: this.env.U2NET_HOME || path.join(faceRoot, 'models', 'rembg'),
+        },
       },
     ).catch((error: unknown) => {
       if (input.signal.aborted) throw new Error('Cancelled.');
-      const stderr = error && typeof error === 'object' && 'stderr' in error ? String(error.stderr) : '';
+      const stderr =
+        error && typeof error === 'object' && 'stderr' in error ? String(error.stderr) : '';
       const reason =
-        stderr.match(/BACKGROUND_ERROR: ([^\r\n]+)/)?.[1] ?? (error instanceof Error ? error.message : 'Background removal failed.');
+        stderr.match(/BACKGROUND_ERROR: ([^\r\n]+)/)?.[1] ??
+        (error instanceof Error ? error.message : 'Background removal failed.');
       throw new Error(`The background could not be removed: ${reason}`);
     });
   }
@@ -165,12 +184,20 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
     const { stdout } = await promisify(execFile)(
       this.facePython,
       [path.join(path.dirname(this.scriptPath), 'check-front.py'), '--image', input.imagePath],
-      { windowsHide: true, signal: input.signal, timeout: 60_000, maxBuffer: 1024 * 1024, env: this.env },
+      {
+        windowsHide: true,
+        signal: input.signal,
+        timeout: 60_000,
+        maxBuffer: 1024 * 1024,
+        env: this.env,
+      },
     ).catch((error: unknown) => {
       if (input.signal.aborted) throw new Error('Cancelled.');
-      const stderr = error && typeof error === 'object' && 'stderr' in error ? String(error.stderr) : '';
+      const stderr =
+        error && typeof error === 'object' && 'stderr' in error ? String(error.stderr) : '';
       const reason =
-        stderr.match(/FRONT_CHECK_ERROR: ([^\r\n]+)/)?.[1] ?? (error instanceof Error ? error.message : 'The check failed.');
+        stderr.match(/FRONT_CHECK_ERROR: ([^\r\n]+)/)?.[1] ??
+        (error instanceof Error ? error.message : 'The check failed.');
       throw new Error(`The front image could not be checked: ${reason}`);
     });
     const result = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) ?? '{}') as Partial<FrontCheck>;
@@ -214,15 +241,26 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
           ...(input.left ? ['--left', input.left] : []),
           ...(input.back ? ['--back', input.back] : []),
         ],
-        { windowsHide: true, signal: input.signal, timeout: 5 * 60_000, maxBuffer: 4 * 1024 * 1024, env: this.env },
+        {
+          windowsHide: true,
+          signal: input.signal,
+          timeout: 5 * 60_000,
+          maxBuffer: 4 * 1024 * 1024,
+          env: this.env,
+        },
       );
       output = [result.stdout ?? '', result.stderr ?? ''].join('\n');
     } catch (error) {
       if (input.signal.aborted) throw new Error('Cancelled.');
       if (error && typeof error === 'object')
-        output = ['stdout' in error ? String(error.stdout) : '', 'stderr' in error ? String(error.stderr) : ''].join('\n');
+        output = [
+          'stdout' in error ? String(error.stdout) : '',
+          'stderr' in error ? String(error.stderr) : '',
+        ].join('\n');
       await writeFile(logPath, output, 'utf8').catch(() => undefined);
-      throw new Error(`The views could not be painted onto the model: ${pythonFailure(output) ?? (error instanceof Error ? error.message : String(error))}`);
+      throw new Error(
+        `The views could not be painted onto the model: ${pythonFailure(output) ?? (error instanceof Error ? error.message : String(error))}`,
+      );
     }
     await writeFile(logPath, output, 'utf8').catch(() => undefined);
     const failure = pythonFailure(output);
@@ -260,7 +298,12 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
     await rm(work, { recursive: true, force: true });
     await mkdir(work, { recursive: true });
     let log = '';
-    const step = async (command: string, args: string[], timeout: number, stepEnv: NodeJS.ProcessEnv): Promise<void> => {
+    const step = async (
+      command: string,
+      args: string[],
+      timeout: number,
+      stepEnv: NodeJS.ProcessEnv,
+    ): Promise<void> => {
       let output: string;
       try {
         const result = await promisify(execFile)(command, args, {
@@ -275,7 +318,10 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
         if (input.signal.aborted) throw new Error('Cancelled.');
         output =
           error && typeof error === 'object'
-            ? ['stdout' in error ? String(error.stdout) : '', 'stderr' in error ? String(error.stderr) : ''].join('\n')
+            ? [
+                'stdout' in error ? String(error.stdout) : '',
+                'stderr' in error ? String(error.stderr) : '',
+              ].join('\n')
             : '';
         log += output;
         await writeFile(path.join(work, 'head-paint.log'), log, 'utf8').catch(() => undefined);
@@ -330,7 +376,12 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
       30 * 60_000,
       pythonEnv,
     );
-    await step(python, [path.join(assets, 'head-paint-fuse.py'), '--dir', work], 5 * 60_000, pythonEnv);
+    await step(
+      python,
+      [path.join(assets, 'head-paint-fuse.py'), '--dir', work],
+      5 * 60_000,
+      pythonEnv,
+    );
     await step(
       executable,
       blender(['--texture', path.join(work, 'texture.png'), '--output', input.outputPath]),
@@ -385,7 +436,12 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
    */
   private async findStylisedFace(
     executable: string,
-    input: { meshPath: string; outputPath: string; vision?: { comfyUrl: string; model?: string }; signal: AbortSignal },
+    input: {
+      meshPath: string;
+      outputPath: string;
+      vision?: { comfyUrl: string; model?: string };
+      signal: AbortSignal;
+    },
   ): Promise<string> {
     if (!input.vision) throw new Error('A stylised face needs a ComfyUI server with Qwen3-VL.');
     const directory = path.dirname(input.outputPath);
@@ -393,22 +449,43 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
     const landmarks = path.join(directory, 'stylised-face-landmarks.json');
     await Promise.all([rm(render, { force: true }), rm(landmarks, { force: true })]);
     const failed = (error: unknown, fallback: string): string => {
-      const stderr = error && typeof error === 'object' && 'stderr' in error ? String(error.stderr) : '';
+      const stderr =
+        error && typeof error === 'object' && 'stderr' in error ? String(error.stderr) : '';
       return (
         stderr.match(/FACE_FITTING_ERROR: ([^\r\n]+)/)?.[1] ??
         pythonFailure(stderr) ??
         (error instanceof Error ? error.message : fallback)
       );
     };
-    const options = { windowsHide: true, signal: input.signal, maxBuffer: 4 * 1024 * 1024, env: this.env };
+    const options = {
+      windowsHide: true,
+      signal: input.signal,
+      maxBuffer: 4 * 1024 * 1024,
+      env: this.env,
+    };
     await promisify(execFile)(
       executable,
-      ['-b', '--factory-startup', '-t', '4', '-P', this.scriptPath, '--', '--input', input.meshPath,
-        '--output', input.outputPath, '--render-head', render],
+      [
+        '-b',
+        '--factory-startup',
+        '-t',
+        '4',
+        '-P',
+        this.scriptPath,
+        '--',
+        '--input',
+        input.meshPath,
+        '--output',
+        input.outputPath,
+        '--render-head',
+        render,
+      ],
       { ...options, timeout: 5 * 60_000 },
     ).catch((error: unknown) => {
       if (input.signal.aborted) throw new Error('Cancelled.');
-      throw new Error(`The model's face could not be rendered: ${failed(error, 'Blender failed.')}`);
+      throw new Error(
+        `The model's face could not be rendered: ${failed(error, 'Blender failed.')}`,
+      );
     });
     await access(render).catch(() => {
       throw new Error("Blender did not render the model's face.");
@@ -431,7 +508,9 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
       { ...options, timeout: 15 * 60_000 },
     ).catch((error: unknown) => {
       if (input.signal.aborted) throw new Error('Cancelled.');
-      throw new Error(`The eyes and mouth could not be found: ${failed(error, 'Stylised face detection failed.')}`);
+      throw new Error(
+        `The eyes and mouth could not be found: ${failed(error, 'Stylised face detection failed.')}`,
+      );
     });
     return landmarks;
   }
@@ -453,7 +532,8 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
     // accept a candidate left over from an earlier attempt at the same path.
     await rm(input.outputPath, { force: true });
     const logPath = path.join(path.dirname(input.outputPath), 'blender.log');
-    const stylised = input.faceStyle === 'stylised' ? await this.findStylisedFace(executable, input) : undefined;
+    const stylised =
+      input.faceStyle === 'stylised' ? await this.findStylisedFace(executable, input) : undefined;
     let blenderOutput = '';
     try {
       const landmarks = stylised ?? input.landmarksPath ?? (await this.prepareReference(input));
@@ -524,9 +604,7 @@ export class BlenderCharacterRunner implements CharacterRigRunner {
         mesh.weights?.some((weight) => !Number.isFinite(weight) || Math.abs(weight) > 1e-8),
       )
     ) {
-      throw new Error(
-        'The face was exported with active expressions instead of a neutral face.',
-      );
+      throw new Error('The face was exported with active expressions instead of a neutral face.');
     }
     if (!extensions?.VRMC_vrm || !Array.isArray(doc.skins) || !doc.skins.length) {
       throw new Error('The generated character is missing its VRM rig.');

@@ -22,7 +22,14 @@ export interface DownloadControllerApi {
   cancelDownload(id: string): Promise<void>;
 }
 
-const STATES: LlmDownloadState[] = ['queued', 'downloading', 'verifying', 'done', 'failed', 'cancelled'];
+const STATES: LlmDownloadState[] = [
+  'queued',
+  'downloading',
+  'verifying',
+  'done',
+  'failed',
+  'cancelled',
+];
 
 function stateOf(job: ControllerDownloadJob): LlmDownloadState {
   return (STATES as string[]).includes(job.state) ? (job.state as LlmDownloadState) : 'queued';
@@ -54,7 +61,10 @@ export class RemoteDownloads {
   async startHuggingFace(host: string, repo: string, quant: HfQuant): Promise<LlmDownload> {
     const first = quant.files[0];
     if (!first) throw new Error('That size has no files.');
-    const job = await this.controller.startDownload({ type: 'huggingface', repo, file: first.path }, { kind: 'llm', host });
+    const job = await this.controller.startDownload(
+      { type: 'huggingface', repo, file: first.path },
+      { kind: 'llm', host },
+    );
     const tracked: Tracked = {
       kind: 'llm',
       startedAt: Date.now(),
@@ -73,7 +83,11 @@ export class RemoteDownloads {
   /** A Civitai model to `host` (a machine name or "auto"). */
   async startCivitai(host: string, plan: CivitaiDownloadPlan): Promise<ModelDownload> {
     const job = await this.controller.startDownload(
-      { type: 'civitai', url: `https://civitai.com/models/${plan.modelId}`, version_id: plan.versionId },
+      {
+        type: 'civitai',
+        url: `https://civitai.com/models/${plan.modelId}`,
+        version_id: plan.versionId,
+      },
       { host },
     );
     const tracked: Tracked = {
@@ -100,7 +114,11 @@ export class RemoteDownloads {
           entry.last = await this.controller.downloadJob(id);
           if (entry.last.host) entry.hostLabel = entry.last.host;
         } catch (error) {
-          entry.last = { ...entry.last, state: 'failed', error: error instanceof Error ? error.message : String(error) };
+          entry.last = {
+            ...entry.last,
+            state: 'failed',
+            error: error instanceof Error ? error.message : String(error),
+          };
         }
       }),
     );
@@ -108,12 +126,16 @@ export class RemoteDownloads {
 
   async listLlm(): Promise<LlmDownload[]> {
     await this.poll();
-    return [...this.tracked].filter(([, entry]) => entry.kind === 'llm').map(([id, entry]) => this.toLlm(id, entry));
+    return [...this.tracked]
+      .filter(([, entry]) => entry.kind === 'llm')
+      .map(([id, entry]) => this.toLlm(id, entry));
   }
 
   async listModels(): Promise<ModelDownload[]> {
     await this.poll();
-    return [...this.tracked].filter(([, entry]) => entry.kind === 'model').map(([id, entry]) => this.toModel(id, entry));
+    return [...this.tracked]
+      .filter(([, entry]) => entry.kind === 'model')
+      .map(([id, entry]) => this.toModel(id, entry));
   }
 
   async cancel(id: string): Promise<void> {

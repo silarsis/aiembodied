@@ -1,6 +1,5 @@
 // Types only: shared/ holds what the main process and the renderer both need.
 
-
 export interface MemoryPanelStatus {
   enabled: boolean;
   url: string | null;

@@ -2,13 +2,20 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { PlacesSnapshot } from '../../../main/src/shared/places/place-manager-types.js';
 import { ElsewhereChip } from '../../src/places/elsewhere-chip.js';
-import { describeAbsent, estimateSpeechMs, stagePresence } from '../../src/places/stage-presence.js';
+import {
+  describeAbsent,
+  estimateSpeechMs,
+  stagePresence,
+} from '../../src/places/stage-presence.js';
 
 const places: PlacesSnapshot['places'] = [
   { id: 'home', name: 'the lounge', node: 'local' },
   { id: 'next-door', name: 'next door', node: 'offscreen' },
 ];
-const snapshot = (locations: Record<string, string>, transit: PlacesSnapshot['transit'] = []): PlacesSnapshot => ({ places, locations, transit, localPlaceId: 'home' });
+const snapshot = (
+  locations: Record<string, string>,
+  transit: PlacesSnapshot['transit'] = [],
+): PlacesSnapshot => ({ places, locations, transit, localPlaceId: 'home' });
 const IDS = ['echo', 'sage', 'rex'];
 
 describe('stagePresence', () => {
@@ -17,7 +24,9 @@ describe('stagePresence', () => {
   });
 
   it('puts everybody on stage when all are at the local place', () => {
-    expect(stagePresence(snapshot({ echo: 'home', sage: 'home', rex: 'home' }), IDS).present).toEqual(IDS);
+    expect(
+      stagePresence(snapshot({ echo: 'home', sage: 'home', rex: 'home' }), IDS).present,
+    ).toEqual(IDS);
   });
 
   it('treats an avatar with no entry as being here', () => {
@@ -51,9 +60,15 @@ describe('stagePresence', () => {
 describe('describeAbsent', () => {
   it('names the place or the one it is heading to', () => {
     const snap = snapshot({});
-    expect(describeAbsent({ id: 'echo', state: 'away', placeId: 'next-door' }, 'Echo', snap)).toBe('Echo is next door');
-    expect(describeAbsent({ id: 'sage', state: 'arriving', placeId: 'home' }, 'Sage', snap)).toBe('Sage is on the way to the lounge');
-    expect(describeAbsent({ id: 'sage', state: 'leaving', placeId: 'next-door' }, 'Sage', snap)).toBe('Sage is on the way to next door');
+    expect(describeAbsent({ id: 'echo', state: 'away', placeId: 'next-door' }, 'Echo', snap)).toBe(
+      'Echo is next door',
+    );
+    expect(describeAbsent({ id: 'sage', state: 'arriving', placeId: 'home' }, 'Sage', snap)).toBe(
+      'Sage is on the way to the lounge',
+    );
+    expect(
+      describeAbsent({ id: 'sage', state: 'leaving', placeId: 'next-door' }, 'Sage', snap),
+    ).toBe('Sage is on the way to next door');
   });
 });
 
@@ -69,7 +84,9 @@ describe('ElsewhereChip', () => {
   const snap = snapshot({});
 
   it('renders nothing when nobody is away', () => {
-    const { container } = render(<ElsewhereChip absent={[]} snapshot={snap} nameOf={(id) => id} onCall={() => undefined} />);
+    const { container } = render(
+      <ElsewhereChip absent={[]} snapshot={snap} nameOf={(id) => id} onCall={() => undefined} />,
+    );
     expect(container).toBeEmptyDOMElement();
   });
 

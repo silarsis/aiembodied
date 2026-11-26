@@ -21,7 +21,13 @@ function createFakeContext() {
     createGain: vi.fn(node),
     createMediaStreamDestination: vi.fn(() => ({ ...node(), stream: {} as MediaStream })),
     decodeAudioData: vi.fn(async () => ({ duration: 0.01 })),
-    createBufferSource: vi.fn(() => ({ ...node(), buffer: null, start: vi.fn(), stop: vi.fn(), onended: null })),
+    createBufferSource: vi.fn(() => ({
+      ...node(),
+      buffer: null,
+      start: vi.fn(),
+      stop: vi.fn(),
+      onended: null,
+    })),
   };
   return { context: context as unknown as AudioContext, processor };
 }
@@ -33,9 +39,16 @@ function createBridge(overrides: Partial<LocalVoiceBridge> = {}) {
       llm: { available: true, baseUrl: 'http://llm' },
       speech: { available: true, ready: true, error: null },
     })) as unknown as LocalVoiceBridge['getStatus'],
-    transcribe: vi.fn(async () => ({ text: 'Hey Jarvis, what time is it?' })) as unknown as LocalVoiceBridge['transcribe'],
+    transcribe: vi.fn(async () => ({
+      text: 'Hey Jarvis, what time is it?',
+    })) as unknown as LocalVoiceBridge['transcribe'],
     respond: vi.fn(async (request: { requestId: string }) => {
-      listener?.({ type: 'sentence', requestId: request.requestId, text: 'It is noon.', wav: new Uint8Array([1]) } as LocalVoiceEvent);
+      listener?.({
+        type: 'sentence',
+        requestId: request.requestId,
+        text: 'It is noon.',
+        wav: new Uint8Array([1]),
+      } as LocalVoiceEvent);
       return { text: 'It is noon.', cancelled: false };
     }) as unknown as LocalVoiceBridge['respond'],
     cancel: vi.fn(async () => undefined),
@@ -57,7 +70,8 @@ describe('LocalVoiceClient typed text', () => {
     const client = new LocalVoiceClient({
       getBridge: () => bridge,
       wakePhrase: 'Hey Jarvis',
-      createAudioContext: () => context, createMicCaptureNode: micNodeOf,
+      createAudioContext: () => context,
+      createMicCaptureNode: micNodeOf,
     });
     return { client, bridge };
   }
@@ -87,14 +101,19 @@ describe('LocalVoiceClient typed text', () => {
     const client = new LocalVoiceClient({
       getBridge: () => bridge,
       wakePhrase: 'Hey Jarvis',
-      createAudioContext: () => context, createMicCaptureNode: micNodeOf,
+      createAudioContext: () => context,
+      createMicCaptureNode: micNodeOf,
       now: () => (clock += 50),
       callbacks: { onTurnTiming: (timing) => timings.push(timing) },
     });
     await client.connect({ inputStream: {} as MediaStream });
     await client.sendText('what time is it?');
     expect(timings).toHaveLength(1);
-    const timing = timings[0] as { transcriptMs: number | null; firstAudioMs: number | null; playbackMs: number };
+    const timing = timings[0] as {
+      transcriptMs: number | null;
+      firstAudioMs: number | null;
+      playbackMs: number;
+    };
     expect(timing.transcriptMs).toBeNull();
     expect(timing.firstAudioMs).toBeGreaterThan(0);
     expect(timing.playbackMs).toBeGreaterThan(timing.firstAudioMs as number);

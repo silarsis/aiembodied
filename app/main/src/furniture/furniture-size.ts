@@ -56,7 +56,10 @@ const escape = (word: string): string => word.replace(/[.*+?^${}()|[\]\\]/g, '\\
 /** A name from the first words of the prompt, for a piece whose helper answer is missing. */
 function nameFromPrompt(prompt: string): string {
   // The first clause without a leading article: "A standing desk, with a monitor" -> "Standing desk".
-  const clause = prompt.trim().split(/[,.;:!?]/)[0].replace(/^(an?|the)\s+/i, '');
+  const clause = prompt
+    .trim()
+    .split(/[,.;:!?]/)[0]
+    .replace(/^(an?|the)\s+/i, '');
   const words = clause.split(/\s+/).filter(Boolean).slice(0, 4).join(' ');
   return words ? words[0].toUpperCase() + words.slice(1) : 'Furniture';
 }
@@ -64,14 +67,20 @@ function nameFromPrompt(prompt: string): string {
 /** The keyword table's answer: always usable. */
 export function fallbackEstimate(prompt: string): SizeEstimate {
   const text = prompt.toLowerCase();
-  const row = FALLBACKS.find(([words]) => words.some((word) => new RegExp(`\\b${escape(word)}s?\\b`).test(text)));
-  const [category, width, depth, height] = row ? row.slice(1) as [string, number, number, number] : DEFAULT_FALLBACK;
+  const row = FALLBACKS.find(([words]) =>
+    words.some((word) => new RegExp(`\\b${escape(word)}s?\\b`).test(text)),
+  );
+  const [category, width, depth, height] = row
+    ? (row.slice(1) as [string, number, number, number])
+    : DEFAULT_FALLBACK;
   return { name: nameFromPrompt(prompt), category, width, depth, height };
 }
 
 function dimension(value: unknown): number | null {
   const n = typeof value === 'string' ? Number(value) : value;
-  return typeof n === 'number' && Number.isFinite(n) && n >= MIN_DIMENSION && n <= MAX_DIMENSION ? n : null;
+  return typeof n === 'number' && Number.isFinite(n) && n >= MIN_DIMENSION && n <= MAX_DIMENSION
+    ? n
+    : null;
 }
 
 /**
@@ -92,7 +101,10 @@ export function parseSizeEstimate(reply: string, prompt: string): SizeEstimate |
   const height = dimension(record.height_m);
   if (width === null || depth === null || height === null) return null;
   const fallback = fallbackEstimate(prompt);
-  const name = typeof record.name === 'string' ? record.name.trim().split(/\s+/).slice(0, 4).join(' ').slice(0, 40) : '';
+  const name =
+    typeof record.name === 'string'
+      ? record.name.trim().split(/\s+/).slice(0, 4).join(' ').slice(0, 40)
+      : '';
   const category = typeof record.category === 'string' ? record.category.trim().toLowerCase() : '';
   return {
     name: name || fallback.name,
@@ -116,13 +128,20 @@ export async function estimateFurniture(
       const parsed = reply ? parseSizeEstimate(reply, prompt) : null;
       if (parsed) return parsed;
       // Logged so a silent fallback (wrong size, clumsy name) can be traced to the helper.
-      warn?.('Furniture size helper gave no usable answer; using the keyword table.', { reply: reply?.slice(0, 300) ?? null });
+      warn?.('Furniture size helper gave no usable answer; using the keyword table.', {
+        reply: reply?.slice(0, 300) ?? null,
+      });
     } catch (error) {
       if (signal?.aborted) throw error;
-      warn?.('Furniture size helper failed; using the keyword table.', { message: error instanceof Error ? error.message : String(error) });
+      warn?.('Furniture size helper failed; using the keyword table.', {
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   } else {
-    warn?.('No helper model for furniture sizes (Models and servers: describe); using the keyword table.', {});
+    warn?.(
+      'No helper model for furniture sizes (Models and servers: describe); using the keyword table.',
+      {},
+    );
   }
   return fallbackEstimate(prompt);
 }

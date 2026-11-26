@@ -1,6 +1,5 @@
 import type { JSONSchema } from '../shared/mcp/types.js';
 
-
 // MCP Tool Definition
 export interface MCPTool {
   id: string; // server_id:tool_name

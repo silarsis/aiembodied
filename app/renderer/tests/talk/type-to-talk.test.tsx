@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { opensTypedPrompt, TypedPrompt } from '../../src/talk/type-to-talk.js';
 
 function enterOn(target: EventTarget, init: KeyboardEventInit = {}): KeyboardEvent {
-  const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...init });
+  const event = new KeyboardEvent('keydown', {
+    key: 'Enter',
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  });
   Object.defineProperty(event, 'target', { value: target });
   return event;
 }

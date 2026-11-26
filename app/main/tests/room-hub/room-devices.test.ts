@@ -22,7 +22,13 @@ function clockAt(start = 1_000_000) {
   return clock;
 }
 
-const input = { id: 'room-1', name: "Kevin's desk", placeId: 'study', tailscaleNode: 'desk', tailscaleLogin: 'kevin@example.com' };
+const input = {
+  id: 'room-1',
+  name: "Kevin's desk",
+  placeId: 'study',
+  tailscaleNode: 'desk',
+  tailscaleLogin: 'kevin@example.com',
+};
 
 describe('RoomDeviceRegistry', () => {
   it('makes six-digit codes', () => {

@@ -24,7 +24,10 @@ function parseDotEnv(envPath) {
     if (trimmed.startsWith('#') || !trimmed) continue;
     const [key, ...valueParts] = trimmed.split('=');
     if (key && valueParts.length > 0) {
-      const value = valueParts.join('=').replace(/^["']|["']$/g, '').trim();
+      const value = valueParts
+        .join('=')
+        .replace(/^["']|["']$/g, '')
+        .trim();
       envVars[key.trim()] = value;
     }
   }
@@ -65,8 +68,12 @@ async function main() {
 
   // Align workspace deps & build packages (same as run-dev, but stop before launch)
   console.log('[info] Aligning workspace deps to isolated store...');
-  await run('pnpm', ['--filter', '@aiembodied/main', 'install', '--force'], { env: { ...envIsolated, CI: '1' } });
-  await run('pnpm', ['--filter', '@aiembodied/renderer', 'install', '--force'], { env: { ...envIsolated, CI: '1' } });
+  await run('pnpm', ['--filter', '@aiembodied/main', 'install', '--force'], {
+    env: { ...envIsolated, CI: '1' },
+  });
+  await run('pnpm', ['--filter', '@aiembodied/renderer', 'install', '--force'], {
+    env: { ...envIsolated, CI: '1' },
+  });
 
   console.log('[info] Building renderer...');
   await run('pnpm', ['--filter', '@aiembodied/renderer', 'build'], { env: envIsolated });
@@ -77,13 +84,17 @@ async function main() {
   // Verify artifacts
   const preloadPath = resolve(repoRoot, 'app/main/dist/preload.js');
   if (!existsSync(preloadPath)) {
-    throw new Error(`Preload script not found at ${preloadPath}. Ensure main process build completed successfully.`);
+    throw new Error(
+      `Preload script not found at ${preloadPath}. Ensure main process build completed successfully.`,
+    );
   }
   console.log('[info] Preload script verified at:', preloadPath);
 
   const rendererIndexPath = resolve(repoRoot, 'app/renderer/dist/index.html');
   if (!existsSync(rendererIndexPath)) {
-    throw new Error(`Renderer build not found at ${rendererIndexPath}. Ensure renderer build completed successfully.`);
+    throw new Error(
+      `Renderer build not found at ${rendererIndexPath}. Ensure renderer build completed successfully.`,
+    );
   }
   console.log('[info] Renderer build verified at:', rendererIndexPath);
 

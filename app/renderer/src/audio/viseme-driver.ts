@@ -93,7 +93,7 @@ function createDefaultScheduler(): FrameScheduler {
   return {
     request: (callback: FrameRequestCallback) => {
       const timeout = setTimeout(() => {
-        callback((typeof performance !== 'undefined' ? performance.now() : Date.now()));
+        callback(typeof performance !== 'undefined' ? performance.now() : Date.now());
       }, 1000 / 60);
       return timeout as unknown as number;
     },
@@ -154,7 +154,10 @@ export class VisemeDriver {
 
   private currentStream: MediaStream | null = null;
 
-  constructor(private readonly callbacks: VisemeDriverCallbacks = {}, options: VisemeDriverOptions = {}) {
+  constructor(
+    private readonly callbacks: VisemeDriverCallbacks = {},
+    options: VisemeDriverOptions = {},
+  ) {
     const frameRate = Math.max(1, options.frameRate ?? 60);
     this.frameIntervalMs = 1000 / frameRate;
     this.attackMs = Math.max(1, options.attackMs ?? 30);
@@ -164,17 +167,24 @@ export class VisemeDriver {
     this.thresholds = (options.thresholds ?? DEFAULT_THRESHOLDS).slice().sort((a, b) => a - b);
     this.blinkMaxIntensity = Math.min(1, Math.max(0, options.blinkMaxIntensity ?? 0.25));
     const [minBlink, maxBlink] = options.blinkIntervalRangeMs ?? [2800, 4200];
-    this.blinkIntervalRange = [Math.max(250, minBlink), Math.max(Math.max(250, minBlink), maxBlink)];
+    this.blinkIntervalRange = [
+      Math.max(250, minBlink),
+      Math.max(Math.max(250, minBlink), maxBlink),
+    ];
     this.blinkSuppressionMs = Math.max(0, options.blinkSuppressionMs ?? 220);
     this.scheduler = options.scheduler ?? createDefaultScheduler();
-    this.now = options.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
+    this.now =
+      options.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
     this.random = options.random ?? Math.random;
     this.createBuffer = options.createBuffer ?? ((length) => new Float32Array(length));
     this.analyserFftSize = Math.max(32, options.analyserFftSize ?? 2048);
     this.analyserSmoothing = Math.min(0.99, Math.max(0, options.analyserSmoothing ?? 0.5));
   }
 
-  async attachToStream(stream: MediaStream | null, options: AttachStreamOptions = {}): Promise<void> {
+  async attachToStream(
+    stream: MediaStream | null,
+    options: AttachStreamOptions = {},
+  ): Promise<void> {
     if (!stream) {
       await this.cleanupAnalyser();
       return;
@@ -232,7 +242,10 @@ export class VisemeDriver {
     }
   }
 
-  async setAnalyser(analyser: AnalyserLike | null, cleanup?: () => Promise<void> | void): Promise<void> {
+  async setAnalyser(
+    analyser: AnalyserLike | null,
+    cleanup?: () => Promise<void> | void,
+  ): Promise<void> {
     await this.cleanupAnalyser();
 
     if (!analyser) {

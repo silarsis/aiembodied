@@ -5,7 +5,15 @@ import type { ModelServerView } from '../../../main/src/shared/config/config-man
 import type { ModelsBridge } from '../../src/preload-api.js';
 import { ModelDownloads, formatBytes } from '../../src/settings/model-downloads.js';
 
-const rack: ModelServerView = { id: 'rack', name: 'Mutiara', type: 'comfy', url: 'http://mutiara:8188', builtIn: false, managed: false, hasKey: false };
+const rack: ModelServerView = {
+  id: 'rack',
+  name: 'Mutiara',
+  type: 'comfy',
+  url: 'http://mutiara:8188',
+  builtIn: false,
+  managed: false,
+  hasKey: false,
+};
 
 const lookup = {
   versions: [
@@ -20,12 +28,28 @@ const lookup = {
     baseModel: 'Pony',
     folder: 'checkpoints',
     kind: 'sdxl',
-    file: { name: 'pony.safetensors', sizeKB: 6_000_000, downloadUrl: 'https://civitai.com/x', primary: true },
+    file: {
+      name: 'pony.safetensors',
+      sizeKB: 6_000_000,
+      downloadUrl: 'https://civitai.com/x',
+      primary: true,
+    },
   },
 };
 
 function download(state: ModelDownload['state'], received: number): ModelDownload {
-  return { id: 'd1', serverId: 'rack', serverName: 'Mutiara', title: 'Pony', folder: 'checkpoints', filename: 'pony.safetensors', state, received, total: 100, startedAt: 1 };
+  return {
+    id: 'd1',
+    serverId: 'rack',
+    serverName: 'Mutiara',
+    title: 'Pony',
+    folder: 'checkpoints',
+    filename: 'pony.safetensors',
+    state,
+    received,
+    total: 100,
+    startedAt: 1,
+  };
 }
 
 function bridge(installed: boolean) {
@@ -52,14 +76,22 @@ describe('Download a model', () => {
     const { api, finish } = bridge(true);
     const onFinished = vi.fn();
     render(<ModelDownloads api={api} server={rack} onFinished={onFinished} />);
-    fireEvent.change(screen.getByLabelText('Civitai link'), { target: { value: 'https://civitai.com/models/4201' } });
+    fireEvent.change(screen.getByLabelText('Civitai link'), {
+      target: { value: 'https://civitai.com/models/4201' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Look up' }));
     expect(await screen.findByText('Pony Realism · v2')).toBeTruthy();
-    expect(screen.getByText(/Checkpoint · Pony · pony.safetensors · 5.72 GB → checkpoints/)).toBeTruthy();
+    expect(
+      screen.getByText(/Checkpoint · Pony · pony.safetensors · 5.72 GB → checkpoints/),
+    ).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Download to Mutiara' }));
-    await waitFor(() => expect(api.download).toHaveBeenCalledWith('rack', 'https://civitai.com/models/4201', 900));
-    expect(await screen.findByRole('progressbar', { name: 'Downloading pony.safetensors' })).toBeTruthy();
+    await waitFor(() =>
+      expect(api.download).toHaveBeenCalledWith('rack', 'https://civitai.com/models/4201', 900),
+    );
+    expect(
+      await screen.findByRole('progressbar', { name: 'Downloading pony.safetensors' }),
+    ).toBeTruthy();
     finish();
     expect(await screen.findByText('Downloaded.', {}, { timeout: 4000 })).toBeTruthy();
     expect(onFinished).toHaveBeenCalled();

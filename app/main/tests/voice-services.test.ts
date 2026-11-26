@@ -8,11 +8,21 @@ function makeServices() {
   const fetchFn = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith('/chat/completions')) {
-      const body = JSON.parse(String(init?.body ?? '{}')) as { messages: Array<{ role: string; content: string }> };
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        messages: Array<{ role: string; content: string }>;
+      };
       const last = body.messages[body.messages.length - 1]?.content ?? '';
       const encoder = new TextEncoder();
       const chunk = `data: ${JSON.stringify({ choices: [{ delta: { content: `Re: ${last}.` } }] })}\n\ndata: [DONE]\n\n`;
-      return new Response(new ReadableStream({ start: (c) => { c.enqueue(encoder.encode(chunk)); c.close(); } }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+      return new Response(
+        new ReadableStream({
+          start: (c) => {
+            c.enqueue(encoder.encode(chunk));
+            c.close();
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      );
     }
     if (url.includes('/tts') || url.includes('/speech')) {
       return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
@@ -52,7 +62,11 @@ describe('VoiceServices', () => {
     services.get('echo').notify('for echo');
     services.get('sage').notify('for sage one');
     services.get('sage').notify('for sage two', { urgent: true });
-    expect(services.get('echo').systemStatus()).toMatchObject({ pending: 1, texts: ['for echo'], urgent: false });
+    expect(services.get('echo').systemStatus()).toMatchObject({
+      pending: 1,
+      texts: ['for echo'],
+      urgent: false,
+    });
     expect(services.get('sage').systemStatus()).toMatchObject({ pending: 2, urgent: true });
     services.get('sage').resetHistory();
     expect(services.get('echo').systemStatus().pending).toBe(1);
@@ -75,14 +89,22 @@ describe('VoiceServices', () => {
   it('answers each avatar from its own history', async () => {
     const { services } = makeServices();
     const events: unknown[] = [];
-    await services.get('echo').respond({ requestId: 'r1', text: 'hello echo' }, (e) => events.push(e));
-    await services.get('sage').respond({ requestId: 'r2', text: 'hello sage' }, (e) => events.push(e));
-    const echoHistory = (services.get('echo') as unknown as { history: Array<{ content: string }> }).history;
-    const sageHistory = (services.get('sage') as unknown as { history: Array<{ content: string }> }).history;
+    await services
+      .get('echo')
+      .respond({ requestId: 'r1', text: 'hello echo' }, (e) => events.push(e));
+    await services
+      .get('sage')
+      .respond({ requestId: 'r2', text: 'hello sage' }, (e) => events.push(e));
+    const echoHistory = (services.get('echo') as unknown as { history: Array<{ content: string }> })
+      .history;
+    const sageHistory = (services.get('sage') as unknown as { history: Array<{ content: string }> })
+      .history;
     expect(echoHistory.map((m) => m.content).join('|')).toContain('hello echo');
     expect(echoHistory.map((m) => m.content).join('|')).not.toContain('hello sage');
     expect(sageHistory.map((m) => m.content).join('|')).toContain('hello sage');
     services.get('echo').resetHistory();
-    expect((services.get('sage') as unknown as { history: unknown[] }).history.length).toBeGreaterThan(0);
+    expect(
+      (services.get('sage') as unknown as { history: unknown[] }).history.length,
+    ).toBeGreaterThan(0);
   });
 });

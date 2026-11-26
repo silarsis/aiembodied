@@ -10,7 +10,11 @@ import { GeneratedLibrary } from './asset-library/generated-library.js';
 import { GeneratedSource } from './asset-library/generated-source.js';
 import { PolyHavenClient } from './asset-library/polyhaven.js';
 import { PolyHavenSource } from './asset-library/library-source.js';
-import { OBJECT_SETTINGS_KEY, parseObjectSettings, type ObjectSettings } from '../shared/rooms/object-settings.js';
+import {
+  OBJECT_SETTINGS_KEY,
+  parseObjectSettings,
+  type ObjectSettings,
+} from '../shared/rooms/object-settings.js';
 import { ASSET_FOLDER } from './asset-folder.js';
 import { generateRoomLayout } from './room-layout-llm.js';
 import { RoomGenerationService } from './room-generation.js';
@@ -53,7 +57,11 @@ export function createRoomGenerationService(options: {
 }): RoomGenerationService {
   const roomsDirectory = path.join(options.userData, 'rooms');
   const assetsRoot = path.join(roomsDirectory, ASSET_FOLDER);
-  const library = new PolyHavenClient({ root: assetsRoot, appVersion: options.appVersion, logger: options.logger });
+  const library = new PolyHavenClient({
+    root: assetsRoot,
+    appVersion: options.appVersion,
+    logger: options.logger,
+  });
   const generated = options.comfy
     ? new GeneratedSource({
         library: new GeneratedLibrary(assetsRoot),
@@ -66,7 +74,12 @@ export function createRoomGenerationService(options: {
   return new RoomGenerationService({
     roomsDirectory,
     writeLayout: (description, signal) =>
-      generateRoomLayout(description, { routing: options.routing(), keyFor: options.keyFor, signal, logger: options.logger }),
+      generateRoomLayout(description, {
+        routing: options.routing(),
+        keyFor: options.keyFor,
+        signal,
+        logger: options.logger,
+      }),
     // Library first, then objects made earlier; whatever is left is made in the background, then shapes.
     sources: [new PolyHavenSource(library, options.logger), ...(generated ? [generated] : [])],
     generator: generated,

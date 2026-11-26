@@ -10,7 +10,13 @@ export const PROFILES = [
   { id: 'sage', name: 'Sage', vrmModelId: null },
 ];
 
-type Handler = (event: { sender: { send: (channel: string, ...args: unknown[]) => void; isDestroyed(): boolean }; placeId?: string }, ...args: unknown[]) => unknown;
+type Handler = (
+  event: {
+    sender: { send: (channel: string, ...args: unknown[]) => void; isDestroyed(): boolean };
+    placeId?: string;
+  },
+  ...args: unknown[]
+) => unknown;
 
 export interface Harness {
   hub: RoomHub;
@@ -30,14 +36,23 @@ export interface Harness {
 /** A real RoomHub on 127.0.0.1 with the handlers a test gives it, as main.ts would register them. */
 export async function startHarness(
   handlers: Record<string, Handler> = {},
-  extra: { onSatelliteMessage?: ConstructorParameters<typeof RoomHub>[0]['onSatelliteMessage']; hubOptions?: Partial<ConstructorParameters<typeof RoomHub>[0]> } = {},
+  extra: {
+    onSatelliteMessage?: ConstructorParameters<typeof RoomHub>[0]['onSatelliteMessage'];
+    hubOptions?: Partial<ConstructorParameters<typeof RoomHub>[0]>;
+  } = {},
 ): Promise<Harness> {
   const folder = mkdtempSync(path.join(tmpdir(), 'satellite-test-'));
   const assetRoot = path.join(folder, 'assets');
   mkdirSync(path.join(assetRoot, 'polyhaven', 'chair'), { recursive: true });
-  writeFileSync(path.join(assetRoot, 'polyhaven', 'chair', 'chair.glb'), Buffer.from([1, 2, 3, 4, 5]));
+  writeFileSync(
+    path.join(assetRoot, 'polyhaven', 'chair', 'chair.glb'),
+    Buffer.from([1, 2, 3, 4, 5]),
+  );
   const data = new Map<string, string>();
-  const store = { getValue: (key: string) => data.get(key) ?? null, setValue: (key: string, value: string) => void data.set(key, value) };
+  const store = {
+    getValue: (key: string) => data.get(key) ?? null,
+    setValue: (key: string, value: string) => void data.set(key, value),
+  };
   const places = new PlaceManager({ store, registry: { list: () => PROFILES }, graceMs: 60_000 });
   const registry = new RoomDeviceRegistry(path.join(folder, 'room-devices.json'));
   let port = 0;
@@ -48,7 +63,10 @@ export async function startHarness(
       tailscale: { whois: async () => null, self: async () => null },
       assetRoot,
       avatars: () => PROFILES,
-      settings: () => ({ wakeWord: { model: 'hey_echo', keywordLabel: 'Hey Echo' }, pushToTalk: null }),
+      settings: () => ({
+        wakeWord: { model: 'hey_echo', keywordLabel: 'Hey Echo' },
+        pushToTalk: null,
+      }),
       handlerFor: (channel) => handlers[channel] as never,
       env: {},
       port,
@@ -89,7 +107,11 @@ export async function startHarness(
   return harness;
 }
 
-export async function waitFor(check: () => boolean, timeoutMs = 4000, label = 'condition'): Promise<void> {
+export async function waitFor(
+  check: () => boolean,
+  timeoutMs = 4000,
+  label = 'condition',
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!check()) {
     if (Date.now() > deadline) throw new Error(`Timed out waiting for ${label}`);

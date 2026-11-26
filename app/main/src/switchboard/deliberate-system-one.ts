@@ -17,7 +17,9 @@ export const DELIBERATE_QUICK_TIMEOUT_MS = 2_000;
 /** The checkpoint reads about 512 tokens, so the message is clipped hard. */
 const QUICK_TEXT_CHARS = 600;
 
-type Logger = Pick<Console, 'warn'> & { info?: (message: string, data?: Record<string, unknown>) => void };
+type Logger = Pick<Console, 'warn'> & {
+  info?: (message: string, data?: Record<string, unknown>) => void;
+};
 
 export interface DeliberateQuickOptions {
   client: SystemOneClient;
@@ -29,10 +31,20 @@ export interface DeliberateQuickOptions {
 }
 
 /** The small state Laya reads. */
-export function quickState(event: SwitchboardEvent, presence: PresenceTracker, now: number): Record<string, unknown> {
+export function quickState(
+  event: SwitchboardEvent,
+  presence: PresenceTracker,
+  now: number,
+): Record<string, unknown> {
   const p = presence.snapshot(now);
-  const text = typeof event.payload.text === 'string' ? event.payload.text.replace(/\s+/g, ' ').trim().slice(0, QUICK_TEXT_CHARS) : '';
-  const source = typeof event.payload.source === 'string' ? event.payload.source : `${event.producer.kind}:${event.producer.id}`;
+  const text =
+    typeof event.payload.text === 'string'
+      ? event.payload.text.replace(/\s+/g, ' ').trim().slice(0, QUICK_TEXT_CHARS)
+      : '';
+  const source =
+    typeof event.payload.source === 'string'
+      ? event.payload.source
+      : `${event.producer.kind}:${event.producer.id}`;
   return {
     kevin: {
       doNotDisturb: p.doNotDisturb,
@@ -47,7 +59,11 @@ export function quickState(event: SwitchboardEvent, presence: PresenceTracker, n
 }
 
 /** One call. Null when the top action is below the threshold; throws when the call fails. */
-export async function deliberateQuick(event: SwitchboardEvent, presence: PresenceTracker, options: DeliberateQuickOptions): Promise<Decision | null> {
+export async function deliberateQuick(
+  event: SwitchboardEvent,
+  presence: PresenceTracker,
+  options: DeliberateQuickOptions,
+): Promise<Decision | null> {
   const now = (options.now ?? Date.now)();
   const answers = await options.client.ask(
     quickState(event, presence, now),
@@ -61,7 +77,10 @@ export async function deliberateQuick(event: SwitchboardEvent, presence: Presenc
           say: 'Kevin would want to hear it now',
         },
       },
-      urgent: { type: 'noul', instructions: 'Is this urgent enough to interrupt Kevin even mid-conversation?' },
+      urgent: {
+        type: 'noul',
+        instructions: 'Is this urgent enough to interrupt Kevin even mid-conversation?',
+      },
     },
     { signal: options.signal, timeoutMs: options.timeoutMs ?? DELIBERATE_QUICK_TIMEOUT_MS },
   );
@@ -72,7 +91,8 @@ export async function deliberateQuick(event: SwitchboardEvent, presence: Presenc
   }
   if (!best || best.p < DELIBERATE_QUICK_THRESHOLD) return null;
   // Do-not-disturb: only the event's own priority can make it urgent.
-  const modelUrgent = !presence.doNotDisturb && best.action === 'say' && answers.urgent >= DELIBERATE_QUICK_URGENT;
+  const modelUrgent =
+    !presence.doNotDisturb && best.action === 'say' && answers.urgent >= DELIBERATE_QUICK_URGENT;
   return {
     action: best.action,
     reason: `quick decision (${best.action} ${best.p.toFixed(2)})`,
@@ -92,7 +112,11 @@ export interface DeliberateFastOptions {
 }
 
 /** Laya first, the chat model when it is off, fails or is unsure. */
-export async function deliberateFast(event: SwitchboardEvent, presence: PresenceTracker, options: DeliberateFastOptions): Promise<Decision | null> {
+export async function deliberateFast(
+  event: SwitchboardEvent,
+  presence: PresenceTracker,
+  options: DeliberateFastOptions,
+): Promise<Decision | null> {
   const { logger } = options;
   let client: SystemOneClient | null = null;
   try {
@@ -102,17 +126,30 @@ export async function deliberateFast(event: SwitchboardEvent, presence: Presence
   }
   if (client) {
     try {
-      const quick = await deliberateQuick(event, presence, { client, avatarName: options.avatarName, now: options.now });
+      const quick = await deliberateQuick(event, presence, {
+        client,
+        avatarName: options.avatarName,
+        now: options.now,
+      });
       if (quick) {
-        logger?.info?.('Inbox decision made by Quick decisions.', { event: event.id, action: quick.action });
+        logger?.info?.('Inbox decision made by Quick decisions.', {
+          event: event.id,
+          action: quick.action,
+        });
         return quick;
       }
       logger?.info?.('Quick decisions were unsure; asking the chat model.', { event: event.id });
     } catch (error) {
-      logger?.warn('Quick decision failed; asking the chat model.', { message: error instanceof Error ? error.message : String(error) });
+      logger?.warn('Quick decision failed; asking the chat model.', {
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
   const decision = await options.fallback(event);
-  if (decision) logger?.info?.('Inbox decision made by the chat model.', { event: event.id, action: decision.action });
+  if (decision)
+    logger?.info?.('Inbox decision made by the chat model.', {
+      event: event.id,
+      action: decision.action,
+    });
   return decision;
 }

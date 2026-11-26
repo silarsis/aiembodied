@@ -20,7 +20,12 @@ const COME_WEIGHT = 0.3;
 const WAIT_TAG = /\{\s*wait\s*\}/i;
 const FIRST_ACTION_TAG = /\{\s*(?:move|go|sit|stand|look|pick|put|come|room|read)\b/i;
 const READ_TAG = /\{\s*read\s*:\s*([^}]*)\}/i;
-const plainName = (name: string): string => name.toLowerCase().replace(/^the\s+/, '').replace(/\s+/g, ' ').trim();
+const plainName = (name: string): string =>
+  name
+    .toLowerCase()
+    .replace(/^the\s+/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 const find = (room: RoomFile, ref: string): RoomObject | null => resolveObjectRef(room, ref);
 
@@ -45,7 +50,11 @@ export function parseIdleReply(text: string, input: IdleInput): IdleTag[] {
   const wantsRead = READ_TAG.exec(text);
   if (wantsRead) {
     const wanted = plainName(wantsRead[1] ?? '');
-    const offered = (input.pursuits ?? []).find((pursuit) => [pursuit.objectName, pursuit.objectId, pursuit.stationId].some((name) => plainName(name) === wanted));
+    const offered = (input.pursuits ?? []).find((pursuit) =>
+      [pursuit.objectName, pursuit.objectId, pursuit.stationId].some(
+        (name) => plainName(name) === wanted,
+      ),
+    );
     if (offered) return [{ type: 'read', station: offered.stationId, object: offered.objectId }];
   }
   const visible = new Set(input.visible.map((object) => object.id));
@@ -63,7 +72,9 @@ export function parseIdleReply(text: string, input: IdleInput): IdleTag[] {
     switch (tag.type) {
       case 'room': {
         const wanted = normalisePlaceName(tag.place);
-        const offered = (input.places ?? []).find((place) => normalisePlaceName(place.name) === wanted);
+        const offered = (input.places ?? []).find(
+          (place) => normalisePlaceName(place.name) === wanted,
+        );
         if (offered) tags.push({ type: 'room', place: offered.name });
         break;
       }
@@ -237,7 +248,11 @@ function candidates(input: IdleInput): Candidate[] {
   // Reading is the character's own pursuit; it stays a live option when the idle model cannot be asked.
   if (!state.held) {
     for (const pursuit of input.pursuits ?? []) {
-      found.push({ tags: [{ type: 'read', station: pursuit.stationId, object: pursuit.objectId }], weight: 1.5, targets: [pursuit.objectId] });
+      found.push({
+        tags: [{ type: 'read', station: pursuit.stationId, object: pursuit.objectId }],
+        weight: 1.5,
+        targets: [pursuit.objectId],
+      });
     }
   }
   const home = room.home.position;

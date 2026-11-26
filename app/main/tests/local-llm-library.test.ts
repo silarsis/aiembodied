@@ -9,7 +9,9 @@ import type { LlmDownload } from '../src/shared/local-llm/llm-library-types.js';
 
 const folders: string[] = [];
 afterEach(async () => {
-  await Promise.all(folders.splice(0).map((folder) => rm(folder, { recursive: true, force: true })));
+  await Promise.all(
+    folders.splice(0).map((folder) => rm(folder, { recursive: true, force: true })),
+  );
 });
 
 const sha = (data: Buffer) => createHash('sha256').update(data).digest('hex');
@@ -32,7 +34,9 @@ function server(bodies: Record<string, Buffer> = { '00001': partA, '00002': part
     if (!key) return new Response('missing', { status: 404 });
     const range = /bytes=(\d+)-/.exec((init?.headers as Record<string, string>)?.Range ?? '');
     const body = bodies[key];
-    return range ? new Response(body.subarray(Number(range[1])), { status: 206 }) : new Response(body, { status: 200 });
+    return range
+      ? new Response(body.subarray(Number(range[1])), { status: 206 })
+      : new Response(body, { status: 200 });
   }) as unknown as typeof fetch & ReturnType<typeof vi.fn>;
 }
 
@@ -52,7 +56,12 @@ async function library(overrides: Partial<LlmLibraryOptions> = {}) {
 async function settle(lib: LlmLibrary, id: string): Promise<LlmDownload> {
   for (let i = 0; i < 200; i += 1) {
     const entry = lib.list().find((download) => download.id === id);
-    if (entry && !['queued', 'downloading', 'verifying'].includes(entry.state) && (entry.state !== 'done' || !entry.use || entry.result)) return entry;
+    if (
+      entry &&
+      !['queued', 'downloading', 'verifying'].includes(entry.state) &&
+      (entry.state !== 'done' || !entry.use || entry.result)
+    )
+      return entry;
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
   throw new Error('download did not finish');
@@ -64,12 +73,23 @@ describe('LlmLibrary', () => {
     const { lib, root } = await library({ onDownloaded });
     const started = await lib.start('unsloth/M-GGUF', quant, { use: true, contextLength: 32768 });
     const done = await settle(lib, started.id);
-    expect(done).toMatchObject({ state: 'done', received: quant.sizeBytes, result: 'llama-server is restarting' });
+    expect(done).toMatchObject({
+      state: 'done',
+      received: quant.sizeBytes,
+      result: 'llama-server is restarting',
+    });
     const folder = path.join(root, 'models', 'unsloth', 'M-GGUF', 'Q4');
-    expect(await readFile(path.join(folder, 'm-Q4_K_M-00002-of-00002.gguf'), 'utf8')).toBe('second part');
+    expect(await readFile(path.join(folder, 'm-Q4_K_M-00002-of-00002.gguf'), 'utf8')).toBe(
+      'second part',
+    );
     const saved = await lib.read();
     expect(saved.models).toEqual([
-      expect.objectContaining({ id: 'unsloth/M-GGUF:Q4/m-Q4_K_M.gguf', alias: 'm-q4_k_m', path: path.join(folder, 'm-Q4_K_M-00001-of-00002.gguf'), contextLength: 32768 }),
+      expect.objectContaining({
+        id: 'unsloth/M-GGUF:Q4/m-Q4_K_M.gguf',
+        alias: 'm-q4_k_m',
+        path: path.join(folder, 'm-Q4_K_M-00001-of-00002.gguf'),
+        contextLength: 32768,
+      }),
     ]);
     expect(onDownloaded).toHaveBeenCalledWith(expect.objectContaining({ alias: 'm-q4_k_m' }));
   });
@@ -87,10 +107,14 @@ describe('LlmLibrary', () => {
   });
 
   it('fails a damaged file and throws its part away', async () => {
-    const { lib, root } = await library({ fetchFn: server({ '00001': Buffer.from('garbage garbage garbage!'), '00002': partB }) });
+    const { lib, root } = await library({
+      fetchFn: server({ '00001': Buffer.from('garbage garbage garbage!'), '00002': partB }),
+    });
     const done = await settle(lib, (await lib.start('o/r', quant, { use: false })).id);
     expect(done).toMatchObject({ state: 'failed', error: expect.stringContaining('checksum') });
-    await expect(stat(path.join(root, 'models', 'o', 'r', 'Q4', 'm-Q4_K_M-00001-of-00002.gguf.part'))).rejects.toThrow();
+    await expect(
+      stat(path.join(root, 'models', 'o', 'r', 'Q4', 'm-Q4_K_M-00001-of-00002.gguf.part')),
+    ).rejects.toThrow();
   });
 
   it('refuses a download the drive has no room for', async () => {
@@ -99,7 +123,9 @@ describe('LlmLibrary', () => {
   });
 
   it('explains a gated model', async () => {
-    const { lib } = await library({ fetchFn: vi.fn(async () => new Response('', { status: 403 })) as unknown as typeof fetch });
+    const { lib } = await library({
+      fetchFn: vi.fn(async () => new Response('', { status: 403 })) as unknown as typeof fetch,
+    });
     const done = await settle(lib, (await lib.start('meta/x', quant, { use: false })).id);
     expect(done.error).toContain('Gated models');
   });
@@ -115,20 +141,32 @@ describe('LlmLibrary', () => {
     await expect(lib.selected()).resolves.toBeNull();
     await lib.remove(id);
     expect((await lib.read()).models).toEqual([]);
-    await expect(stat(path.join(root, 'models', 'o', 'r', 'Q4', 'm-Q4_K_M-00001-of-00002.gguf'))).rejects.toThrow();
+    await expect(
+      stat(path.join(root, 'models', 'o', 'r', 'Q4', 'm-Q4_K_M-00001-of-00002.gguf')),
+    ).rejects.toThrow();
   });
 
   it('defaults to 2 slots of 64K, takes the environment, and clamps what is saved', async () => {
     const { lib, root } = await library();
     await expect(lib.settings({})).resolves.toEqual({ slots: 2, contextPerSlot: 65536 });
-    await expect(lib.settings({ LOCAL_LLM_SLOTS: '3', LOCAL_LLM_CONTEXT: '32768' })).resolves.toEqual({ slots: 3, contextPerSlot: 32768 });
+    await expect(
+      lib.settings({ LOCAL_LLM_SLOTS: '3', LOCAL_LLM_CONTEXT: '32768' }),
+    ).resolves.toEqual({ slots: 3, contextPerSlot: 32768 });
     await expect(lib.settings({ LOCAL_LLM_SLOTS: '99' })).resolves.toMatchObject({ slots: 8 });
     await lib.setSettings({ slots: 0, contextPerSlot: 100 });
-    await expect(lib.settings({ LOCAL_LLM_SLOTS: '3' })).resolves.toEqual({ slots: 1, contextPerSlot: 4096 });
+    await expect(lib.settings({ LOCAL_LLM_SLOTS: '3' })).resolves.toEqual({
+      slots: 1,
+      contextPerSlot: 4096,
+    });
     await lib.setSettings({ slots: 4, contextPerSlot: 131072 });
-    expect(JSON.parse(await readFile(path.join(root, 'userData', 'local-llm.json'), 'utf8'))).toMatchObject({ slots: 4, contextPerSlot: 131072 });
+    expect(
+      JSON.parse(await readFile(path.join(root, 'userData', 'local-llm.json'), 'utf8')),
+    ).toMatchObject({ slots: 4, contextPerSlot: 131072 });
     // Garbage in the file is ignored.
-    await writeFile(path.join(root, 'userData', 'local-llm.json'), JSON.stringify({ models: [], slots: 'many', contextPerSlot: null }));
+    await writeFile(
+      path.join(root, 'userData', 'local-llm.json'),
+      JSON.stringify({ models: [], slots: 'many', contextPerSlot: null }),
+    );
     await expect(lib.settings({})).resolves.toEqual({ slots: 2, contextPerSlot: 65536 });
   });
 

@@ -1,11 +1,9 @@
 // Types only: shared/ holds what the main process and the renderer both need.
 
-
 export interface RunnerModelRef {
   provider: 'local' | 'openai' | 'anthropic';
   id: string;
 }
-
 
 /** One pending question of a task (the runner's `questions` list, oldest first). */
 export interface RunnerQuestion {
@@ -19,7 +17,6 @@ export interface RunnerQuestion {
   asked_at?: string;
 }
 
-
 export interface RunnerReview {
   no_changes?: boolean;
   summary?: string;
@@ -31,7 +28,6 @@ export interface RunnerReview {
   protected_violations?: string[];
   flags?: string[];
 }
-
 
 /** A task as the runner returns it (see services/coder/API.md). */
 export interface RunnerTask {
@@ -61,14 +57,12 @@ export interface RunnerTask {
   [key: string]: unknown;
 }
 
-
 export interface RunnerAnswer {
   value?: string;
   confirmed?: boolean;
   cancelled?: boolean;
   dialog_id?: string;
 }
-
 
 export interface RunnerTaskRequest {
   workspace_id: string;
@@ -77,7 +71,6 @@ export interface RunnerTaskRequest {
   scope?: string[];
   model?: RunnerModelRef;
 }
-
 
 /** One message of GET /v1/events. task_id is null for the message sent on connect. */
 export interface RunnerEvent {

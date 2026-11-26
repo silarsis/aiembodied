@@ -131,7 +131,9 @@ describe('IdleAnimationScheduler', () => {
       vrm: createMockVrm(),
     });
 
-    const [[eventName, handler]] = mixer.addEventListener.mock.calls as Array<[string, (event: unknown) => void]>;
+    const [[eventName, handler]] = mixer.addEventListener.mock.calls as Array<
+      [string, (event: unknown) => void]
+    >;
     expect(eventName).toBe('finished');
 
     scheduler.dispose();

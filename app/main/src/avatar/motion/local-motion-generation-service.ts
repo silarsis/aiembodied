@@ -56,7 +56,9 @@ export class LocalMotionGenerationService {
   }
 
   /** Generate a whole clip and save it to the animation library, like the OpenAI pipeline does. */
-  async generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult> {
+  async generateAnimation(
+    request: AvatarAnimationGenerationRequest,
+  ): Promise<AvatarAnimationUploadResult> {
     const prompt = requirePrompt(request?.prompt);
     const name = toSlug(prompt);
     const startedAt = this.now();
@@ -187,7 +189,11 @@ export function sanitizeRestSkeleton(value: unknown): AvatarRestSkeleton | undef
   const skeleton: Partial<AvatarRestSkeleton> = {};
   for (const bone of REST_SKELETON_BONES) {
     const p = (value as Record<string, unknown>)[bone];
-    if (!Array.isArray(p) || p.length !== 3 || !p.every((v) => typeof v === 'number' && Number.isFinite(v))) {
+    if (
+      !Array.isArray(p) ||
+      p.length !== 3 ||
+      !p.every((v) => typeof v === 'number' && Number.isFinite(v))
+    ) {
       return undefined;
     }
     skeleton[bone] = [p[0], p[1], p[2]];

@@ -56,7 +56,8 @@ export function directoryFor(name: string, unique: string): string {
   return `${slugFor(name)}-${createHash('sha1').update(unique).digest('hex').slice(0, 8)}`;
 }
 
-export const isGeneratedDirectory = (dir: unknown): dir is string => typeof dir === 'string' && DIRECTORY.test(dir);
+export const isGeneratedDirectory = (dir: unknown): dir is string =>
+  typeof dir === 'string' && DIRECTORY.test(dir);
 
 function isMeta(value: unknown): value is GeneratedMeta {
   if (typeof value !== 'object' || value === null) return false;
@@ -94,7 +95,9 @@ export class GeneratedLibrary {
     for (const dir of names) {
       if (!isGeneratedDirectory(dir)) continue;
       try {
-        const meta: unknown = JSON.parse(await readFile(path.join(this.folder(dir), 'meta.json'), 'utf8'));
+        const meta: unknown = JSON.parse(
+          await readFile(path.join(this.folder(dir), 'meta.json'), 'utf8'),
+        );
         if (!isMeta(meta)) continue;
         await access(path.join(this.folder(dir), GENERATED_MODEL_FILE));
         entries.push({ dir, asset: `${GENERATED_FOLDER}/${dir}`, meta });
@@ -102,11 +105,17 @@ export class GeneratedLibrary {
         /* A half-written or damaged entry is not offered. */
       }
     }
-    return entries.sort((a, b) => b.meta.created.localeCompare(a.meta.created) || a.dir.localeCompare(b.dir));
+    return entries.sort(
+      (a, b) => b.meta.created.localeCompare(a.meta.created) || a.dir.localeCompare(b.dir),
+    );
   }
 
   /** The best earlier object for this one, by the Poly Haven search scorer; null below its threshold. */
-  async find(query: { search: string; name: string; category: ObjectCategory }): Promise<GeneratedEntry | null> {
+  async find(query: {
+    search: string;
+    name: string;
+    category: ObjectCategory;
+  }): Promise<GeneratedEntry | null> {
     const entries = await this.list();
     const catalog: CatalogEntry[] = entries.map((entry) => ({
       id: entry.dir.replace(/-[0-9a-f]{8}$/, ''),

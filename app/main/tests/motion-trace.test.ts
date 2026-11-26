@@ -14,7 +14,12 @@ describe('MotionTraceSink', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  const read = (name: string) => fs.readFileSync(path.join(dir, name), 'utf8').trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>);
+  const read = (name: string) =>
+    fs
+      .readFileSync(path.join(dir, name), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
 
   it('writes nothing while disabled', async () => {
     const sink = new MotionTraceSink({ directory: dir, env: {} });
@@ -27,7 +32,12 @@ describe('MotionTraceSink', () => {
   });
 
   it('appends JSON lines once enabled by the setting', async () => {
-    const sink = new MotionTraceSink({ directory: dir, env: {}, now: () => new Date('2026-01-02T03:04:05.000Z'), clock: () => 12.3456 });
+    const sink = new MotionTraceSink({
+      directory: dir,
+      env: {},
+      now: () => new Date('2026-01-02T03:04:05.000Z'),
+      clock: () => 12.3456,
+    });
     expect(sink.configure(true)).toBe(true);
     sink.append([{ ts: 'x', t: 5, avatar: 'echo', kind: 'plan', label: 'sit' }, 'junk']);
     sink.log('main', 'service.response', () => ({ status: 200 }));
@@ -37,7 +47,13 @@ describe('MotionTraceSink', () => {
     const lines = read('motion-trace.jsonl');
     expect(lines).toHaveLength(3);
     expect(lines[0]).toMatchObject({ ts: 'x', t: 5, avatar: 'echo', kind: 'plan', label: 'sit' });
-    expect(lines[1]).toMatchObject({ ts: '2026-01-02T03:04:05.000Z', t: 12.35, avatar: 'main', kind: 'service.response', status: 200 });
+    expect(lines[1]).toMatchObject({
+      ts: '2026-01-02T03:04:05.000Z',
+      t: 12.35,
+      avatar: 'main',
+      kind: 'service.response',
+      status: 200,
+    });
     expect(lines[2]).toMatchObject({ kind: 'contact', t: 12.35 });
   });
 
@@ -73,12 +89,23 @@ describe('MotionTraceSink', () => {
 
 describe('LocalMotionClient tracing', () => {
   it('traces the request body and the response status, and builds nothing without a trace', async () => {
-    const fetchFn = vi.fn(async () => new Response(JSON.stringify({ error: 'nope' }), { status: 500 })) as unknown as typeof fetch;
+    const fetchFn = vi.fn(
+      async () => new Response(JSON.stringify({ error: 'nope' }), { status: 500 }),
+    ) as unknown as typeof fetch;
     const seen: Array<[string, Record<string, unknown>]> = [];
-    const client = new LocalMotionClient({ baseUrl: 'http://x', fetchFn, trace: (kind, build) => seen.push([kind, build()]) });
-    await expect(client.generateClip({ prompt: 'sit', continueFrom: 's1' })).rejects.toThrow(/HTTP 500/);
+    const client = new LocalMotionClient({
+      baseUrl: 'http://x',
+      fetchFn,
+      trace: (kind, build) => seen.push([kind, build()]),
+    });
+    await expect(client.generateClip({ prompt: 'sit', continueFrom: 's1' })).rejects.toThrow(
+      /HTTP 500/,
+    );
     expect(seen.map(([kind]) => kind)).toEqual(['service.request', 'service.response']);
-    expect(seen[0]![1]).toMatchObject({ path: '/v1/motion/clip', body: { prompt: 'sit', continue_from: 's1' } });
+    expect(seen[0]![1]).toMatchObject({
+      path: '/v1/motion/clip',
+      body: { prompt: 'sit', continue_from: 's1' },
+    });
     expect(seen[1]![1]).toMatchObject({ status: 500, ok: false });
     const quiet = new LocalMotionClient({ baseUrl: 'http://x', fetchFn });
     await expect(quiet.generateClip({ prompt: 'sit' })).rejects.toThrow();

@@ -40,7 +40,10 @@ function trimSlash(url) {
  */
 export function savedPreferencesPaths(repoRoot) {
   const roaming = join(repoRoot, '.dev-home', 'AppData', 'Roaming');
-  return [join(roaming, 'Electron', 'preferences.json'), join(roaming, '@aiembodied', 'main', 'preferences.json')];
+  return [
+    join(roaming, 'Electron', 'preferences.json'),
+    join(roaming, '@aiembodied', 'main', 'preferences.json'),
+  ];
 }
 
 /** The app's saved preferences ({} when there are none yet or the file is unreadable). */
@@ -75,13 +78,24 @@ function readSlotSettings(library) {
 export function readSelectedLocalLlm(repoRoot, exists = existsSync) {
   for (const preferences of savedPreferencesPaths(repoRoot)) {
     try {
-      const library = JSON.parse(readFileSync(join(dirname(preferences), 'local-llm.json'), 'utf8'));
-      const model = Array.isArray(library?.models) ? library.models.find((entry) => entry?.id === library.selected) : undefined;
-      if (model && typeof model.path === 'string' && typeof model.alias === 'string' && exists(model.path)) {
+      const library = JSON.parse(
+        readFileSync(join(dirname(preferences), 'local-llm.json'), 'utf8'),
+      );
+      const model = Array.isArray(library?.models)
+        ? library.models.find((entry) => entry?.id === library.selected)
+        : undefined;
+      if (
+        model &&
+        typeof model.path === 'string' &&
+        typeof model.alias === 'string' &&
+        exists(model.path)
+      ) {
         return {
           path: model.path,
           alias: model.alias,
-          ...(Number(model.contextLength) > 0 ? { contextLength: Number(model.contextLength) } : {}),
+          ...(Number(model.contextLength) > 0
+            ? { contextLength: Number(model.contextLength) }
+            : {}),
           ...readSlotSettings(library),
         };
       }
@@ -100,15 +114,27 @@ function lower(value) {
 }
 
 /** The services to ensure, with how to tell each is up and how to start it. */
-export function describeLocalServices(repoRoot, env, saved = readSavedPreferences(repoRoot), localLlm = readSelectedLocalLlm(repoRoot)) {
+export function describeLocalServices(
+  repoRoot,
+  env,
+  saved = readSavedPreferences(repoRoot),
+  localLlm = readSelectedLocalLlm(repoRoot),
+) {
   const providers = saved.providers ?? {};
-  const pipeline = (lower(saved.conversationBackend) ?? lower(env.CONVERSATION_BACKEND) ?? 'local') !== 'openai';
-  const llmLocal = (lower(providers.llm?.provider) ?? lower(env.LLM_PROVIDER) ?? 'local') !== 'openai';
-  const sttLocal = (lower(providers.stt?.provider) ?? lower(env.STT_PROVIDER) ?? 'local') !== 'openai';
-  const ttsLocal = (lower(providers.tts?.provider) ?? lower(env.TTS_PROVIDER) ?? 'kokoro') !== 'openai';
-  const motionLocal = (lower(providers.motion?.provider) ?? lower(env.MOTION_PROVIDER) ?? 'local') !== 'openai';
+  const pipeline =
+    (lower(saved.conversationBackend) ?? lower(env.CONVERSATION_BACKEND) ?? 'local') !== 'openai';
+  const llmLocal =
+    (lower(providers.llm?.provider) ?? lower(env.LLM_PROVIDER) ?? 'local') !== 'openai';
+  const sttLocal =
+    (lower(providers.stt?.provider) ?? lower(env.STT_PROVIDER) ?? 'local') !== 'openai';
+  const ttsLocal =
+    (lower(providers.tts?.provider) ?? lower(env.TTS_PROVIDER) ?? 'kokoro') !== 'openai';
+  const motionLocal =
+    (lower(providers.motion?.provider) ?? lower(env.MOTION_PROVIDER) ?? 'local') !== 'openai';
   const sttServer = (env.STT_ENGINE ?? 'server').trim().toLowerCase() === 'server';
-  const searchProviders = (env.WEB_SEARCH_PROVIDER?.trim() || 'searxng').split(',').map((name) => name.trim().toLowerCase());
+  const searchProviders = (env.WEB_SEARCH_PROVIDER?.trim() || 'searxng')
+    .split(',')
+    .map((name) => name.trim().toLowerCase());
 
   // Models and servers (saved.models) says which server each use runs on; a use it doesn't
   // mention keeps the default the provider settings give. Mirrors app/main/src/shared/config/model-routing.ts.
@@ -134,7 +160,10 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
   const serversFor = (use) => {
     const route = routes[use];
     if (route && typeof route.server === 'string') {
-      return [route.server, ...(Array.isArray(route.backups) ? route.backups.map((backup) => backup?.server) : [])];
+      return [
+        route.server,
+        ...(Array.isArray(route.backups) ? route.backups.map((backup) => backup?.server) : []),
+      ];
     }
     // Idle thoughts follow a saved Thinking route too.
     return use === 'idle' && pipeline && routes.llm ? serversFor('llm') : defaults[use];
@@ -151,11 +180,28 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
     lower(providers.motion?.localBackend) ??
     lower(env.MOTION_BACKEND) ??
     'ardy';
-  const llmUrl = trimSlash(builtInUrl('local-llm') || providers.llm?.localBaseUrl || env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:1234/v1');
+  const llmUrl = trimSlash(
+    builtInUrl('local-llm') ||
+      providers.llm?.localBaseUrl ||
+      env.LOCAL_LLM_BASE_URL ||
+      'http://127.0.0.1:1234/v1',
+  );
   const sttUrl = trimSlash(env.STT_URL || 'http://127.0.0.1:1235/v1');
-  const speechUrl = trimSlash(builtInUrl('local-speech') || providers.speechServiceUrl || env.SPEECH_SERVICE_URL || 'http://127.0.0.1:8192');
-  const motionUrl = trimSlash(builtInUrl('local-motion') || providers.motion?.localServiceUrl || env.MOTION_SERVICE_URL || 'http://127.0.0.1:8190');
-  const searxngUrl = trimSlash(builtInUrl('local-searxng') || env.SEARXNG_URL || 'http://127.0.0.1:8888');
+  const speechUrl = trimSlash(
+    builtInUrl('local-speech') ||
+      providers.speechServiceUrl ||
+      env.SPEECH_SERVICE_URL ||
+      'http://127.0.0.1:8192',
+  );
+  const motionUrl = trimSlash(
+    builtInUrl('local-motion') ||
+      providers.motion?.localServiceUrl ||
+      env.MOTION_SERVICE_URL ||
+      'http://127.0.0.1:8190',
+  );
+  const searxngUrl = trimSlash(
+    builtInUrl('local-searxng') || env.SEARXNG_URL || 'http://127.0.0.1:8888',
+  );
   const switchboardUrl = trimSlash(env.SWITCHBOARD_URL || 'http://127.0.0.1:8196');
   const layaUrl = trimSlash(builtInUrl('local-laya') || env.LAYA_URL || 'http://127.0.0.1:8197');
   const memoryUrl = trimSlash(env.MEMORY_SERVICE_URL || 'http://127.0.0.1:8194');
@@ -165,22 +211,37 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
   const temporalUiUrl = trimSlash(env.TEMPORAL_UI_URL || 'http://127.0.0.1:8233');
   const workflowsOn = isOn(env.WORKFLOWS_ENABLED, true);
   // The coding runner: the built-in server, unless the app points coding at a runner on another machine.
-  const coderServer = typeof saved.coding?.runner === 'string' && saved.coding.runner ? saved.coding.runner : 'local-coder-runner';
-  const coderUrl = trimSlash(builtInUrl('local-coder-runner') || env.CODING_RUNNER_URL || 'http://127.0.0.1:8195');
+  const coderServer =
+    typeof saved.coding?.runner === 'string' && saved.coding.runner
+      ? saved.coding.runner
+      : 'local-coder-runner';
+  const coderUrl = trimSlash(
+    builtInUrl('local-coder-runner') || env.CODING_RUNNER_URL || 'http://127.0.0.1:8195',
+  );
   const speechForStt = pipeline && usedBy('local-speech', ['stt']);
   // A model downloaded in the app runs with its own name, and no more context than it was made for.
   // Slots and context per slot: what the app saved, else LOCAL_LLM_SLOTS / LOCAL_LLM_CONTEXT, else 2 x 64K.
   const envSlots = Number.parseInt(env.LOCAL_LLM_SLOTS ?? '', 10);
-  const llmSlots = localLlm?.slots ?? (Number.isFinite(envSlots) ? Math.min(8, Math.max(1, envSlots)) : 2);
+  const llmSlots =
+    localLlm?.slots ?? (Number.isFinite(envSlots) ? Math.min(8, Math.max(1, envSlots)) : 2);
   const envContext = Number.parseInt(env.LOCAL_LLM_CONTEXT ?? '', 10);
   const contextCap = localLlm?.contextPerSlot ?? (envContext > 0 ? envContext : 65536);
-  const llmContext = String(localLlm?.contextLength ? Math.min(localLlm.contextLength, contextCap) : contextCap);
+  const llmContext = String(
+    localLlm?.contextLength ? Math.min(localLlm.contextLength, contextCap) : contextCap,
+  );
 
   const services = [
     {
       id: 'llm',
       label: localLlm ? `${localLlm.alias} (llama-server)` : 'Qwen LLM (llama-server)',
-      enabled: usedBy('local-llm', [...voiceUses, 'describe', 'posegen', 'posecheck', 'clips', 'idle']),
+      enabled: usedBy('local-llm', [
+        ...voiceUses,
+        'describe',
+        'posegen',
+        'posecheck',
+        'clips',
+        'idle',
+      ]),
       url: llmUrl,
       probe: `${llmUrl}/models`,
       script: 'scripts/start-local-llm.ps1',
@@ -231,7 +292,9 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
       args: [
         ...portArgs(motionUrl),
         ...(motionBackend === 'kimodo' ? ['-Backend', 'kimodo'] : []),
-        ...(env.MOTION_TEXT_ENCODER_DEVICE ? ['-TextEncoderDevice', env.MOTION_TEXT_ENCODER_DEVICE] : []),
+        ...(env.MOTION_TEXT_ENCODER_DEVICE
+          ? ['-TextEncoderDevice', env.MOTION_TEXT_ENCODER_DEVICE]
+          : []),
         ...(env.TEXT_ENCODERS_DIR ? ['-TextEncodersDir', env.TEXT_ENCODERS_DIR] : []),
         ...(env.MOTION_VENV ? ['-Venv', env.MOTION_VENV] : []),
       ],
@@ -257,7 +320,10 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
     {
       id: 'coder',
       label: 'Coding runner (services/coder)',
-      enabled: isOn(env.CODER_ENABLED, true) && isOn(env.CODER_AUTOSTART, true) && coderServer === 'local-coder-runner',
+      enabled:
+        isOn(env.CODER_ENABLED, true) &&
+        isOn(env.CODER_AUTOSTART, true) &&
+        coderServer === 'local-coder-runner',
       url: coderUrl,
       probe: `${coderUrl}/v1/health`,
       script: 'services/coder/scripts/start.ps1',
@@ -279,7 +345,11 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
       url: temporalUiUrl,
       probe: `${temporalUiUrl}/`,
       script: 'services/temporal/scripts/start.ps1',
-      args: ['-Port', temporalPort, ...(new URL(temporalUiUrl).port ? ['-UiPort', new URL(temporalUiUrl).port] : [])],
+      args: [
+        '-Port',
+        temporalPort,
+        ...(new URL(temporalUiUrl).port ? ['-UiPort', new URL(temporalUiUrl).port] : []),
+      ],
     },
     {
       id: 'workflows',
@@ -293,7 +363,10 @@ export function describeLocalServices(repoRoot, env, saved = readSavedPreference
     {
       id: 'laya',
       label: 'Laya quick-decision model (services/laya)',
-      enabled: isOn(env.LAYA_ENABLED, true) && isOn(env.LAYA_AUTOSTART, true) && usedBy('local-laya', ['decide']),
+      enabled:
+        isOn(env.LAYA_ENABLED, true) &&
+        isOn(env.LAYA_AUTOSTART, true) &&
+        usedBy('local-laya', ['decide']),
       url: layaUrl,
       // GET /health answers {"status": "ok", ...} once the server is up, even while a checkpoint loads.
       probe: `${layaUrl}/health`,
@@ -333,7 +406,10 @@ async function probe(probeUrl, fetchFn, timeoutMs) {
   try {
     const body = await response.json();
     if (body && typeof body === 'object' && body.status === 'error') {
-      return { answered: true, error: typeof body.error === 'string' && body.error ? body.error : 'load failed' };
+      return {
+        answered: true,
+        error: typeof body.error === 'string' && body.error ? body.error : 'load failed',
+      };
     }
   } catch {
     // Not JSON: answering is all we can tell.
@@ -372,7 +448,9 @@ export function buildStartCommand({ script, args, cwd, logPath, errPath, pidPath
  * else (auto) uses it when GET /health answers {ok: true}. Mirrors app/main/src/aicontroller/bridge.ts.
  */
 export async function controllerInUse(env, fetchFn = fetch, timeoutMs = 1500) {
-  const mode = String(env.AICONTROLLER_ENABLED ?? '').trim().toLowerCase();
+  const mode = String(env.AICONTROLLER_ENABLED ?? '')
+    .trim()
+    .toLowerCase();
   if (['0', 'false', 'off', 'no'].includes(mode)) return false;
   if (['1', 'true', 'on', 'yes', 'required'].includes(mode)) return true;
   const url = trimSlash(env.AICONTROLLER_URL?.trim() || 'http://127.0.0.1:8200');
@@ -413,25 +491,38 @@ const CONTROLLER_SERVICE_BACKENDS = { llm: null, motion: 'motion' };
  * Check each service and start the ones that are down. Returns one line per service:
  * running | started | restarted (it answered but its model had failed to load) | skipped | failed.
  */
-export async function ensureLocalServices(repoRoot, env, {
-  fetchFn = fetch,
-  spawnSyncFn = spawnSync,
-  platform = process.platform,
-  logDir = join(repoRoot, '.dev-home', 'logs'),
-  probeTimeoutMs = 1500,
-  log = console,
-} = {}) {
+export async function ensureLocalServices(
+  repoRoot,
+  env,
+  {
+    fetchFn = fetch,
+    spawnSyncFn = spawnSync,
+    platform = process.platform,
+    logDir = join(repoRoot, '.dev-home', 'logs'),
+    probeTimeoutMs = 1500,
+    log = console,
+  } = {},
+) {
   const results = [];
   const controller = await controllerInUse(env, fetchFn, probeTimeoutMs);
   for (const service of describeLocalServices(repoRoot, env)) {
     const backend = CONTROLLER_SERVICE_BACKENDS[service.id];
-    if (controller && service.enabled && backend !== undefined && (backend === null || (await controllerHasBackend(env, backend, fetchFn, probeTimeoutMs)))) {
+    if (
+      controller &&
+      service.enabled &&
+      backend !== undefined &&
+      (backend === null || (await controllerHasBackend(env, backend, fetchFn, probeTimeoutMs)))
+    ) {
       results.push({ id: service.id, status: 'skipped', reason: 'using aicontroller' });
       log.info?.(`[info] using aicontroller: not starting ${service.label}.`);
       continue;
     }
     if (!service.enabled) {
-      results.push({ id: service.id, status: 'skipped', reason: 'not needed with this configuration' });
+      results.push({
+        id: service.id,
+        status: 'skipped',
+        reason: 'not needed with this configuration',
+      });
       continue;
     }
     const state = await probe(service.probe, fetchFn, probeTimeoutMs);
@@ -439,33 +530,59 @@ export async function ensureLocalServices(repoRoot, env, {
     if (state.answered) {
       const canRestart = service.restartIfFailed && isLocalUrl(service.url) && platform === 'win32';
       if (!state.error || !canRestart) {
-        results.push({ id: service.id, status: 'running', url: service.url, ...(state.error ? { error: state.error } : {}) });
-        if (state.error) log.warn?.(`[warn] ${service.label} is running at ${service.url} but failed to load: ${state.error}`);
+        results.push({
+          id: service.id,
+          status: 'running',
+          url: service.url,
+          ...(state.error ? { error: state.error } : {}),
+        });
+        if (state.error)
+          log.warn?.(
+            `[warn] ${service.label} is running at ${service.url} but failed to load: ${state.error}`,
+          );
         else log.info?.(`[info] ${service.label} is already running at ${service.url}`);
         continue;
       }
-      log.warn?.(`[warn] ${service.label} at ${service.url} failed to load (${state.error}); restarting it.`);
+      log.warn?.(
+        `[warn] ${service.label} at ${service.url} failed to load (${state.error}); restarting it.`,
+      );
       const stopped = stopByPort(repoRoot, new URL(service.url).port, spawnSyncFn);
       if (!stopped) {
-        results.push({ id: service.id, status: 'failed', reason: `could not stop it to restart (it failed to load: ${state.error})` });
+        results.push({
+          id: service.id,
+          status: 'failed',
+          reason: `could not stop it to restart (it failed to load: ${state.error})`,
+        });
         log.warn?.(`[warn] Could not stop ${service.label} to restart it.`);
         continue;
       }
       restarting = true;
     }
     if (!isLocalUrl(service.url)) {
-      results.push({ id: service.id, status: 'skipped', reason: `${service.url} is not on this machine` });
-      log.warn?.(`[warn] ${service.label} is not answering at ${service.url}, which is not on this machine; start it there.`);
+      results.push({
+        id: service.id,
+        status: 'skipped',
+        reason: `${service.url} is not on this machine`,
+      });
+      log.warn?.(
+        `[warn] ${service.label} is not answering at ${service.url}, which is not on this machine; start it there.`,
+      );
       continue;
     }
     if (platform !== 'win32') {
-      results.push({ id: service.id, status: 'skipped', reason: 'start scripts are PowerShell (Windows)' });
+      results.push({
+        id: service.id,
+        status: 'skipped',
+        reason: 'start scripts are PowerShell (Windows)',
+      });
       log.warn?.(`[warn] ${service.label} is not running; start it with ${service.script}.`);
       continue;
     }
     if (service.missing) {
       results.push({ id: service.id, status: 'skipped', reason: `set ${service.missing}` });
-      log.warn?.(`[warn] ${service.label} is not running and cannot be started: set ${service.missing} in .env.`);
+      log.warn?.(
+        `[warn] ${service.label} is not running and cannot be started: set ${service.missing} in .env.`,
+      );
       continue;
     }
 
@@ -474,12 +591,24 @@ export async function ensureLocalServices(repoRoot, env, {
     const errPath = join(logDir, `${service.id}.err.log`);
     const pidPath = join(logDir, `${service.id}.pid`);
     rmSync(pidPath, { force: true });
-    const command = buildStartCommand({ script: service.script, args: service.args, cwd: repoRoot, logPath, errPath, pidPath });
+    const command = buildStartCommand({
+      script: service.script,
+      args: service.args,
+      cwd: repoRoot,
+      logPath,
+      errPath,
+      pidPath,
+    });
     // No pipes: the started service inherits the launcher's handles, and an inherited stdout
     // pipe would keep spawnSync waiting for as long as the service runs.
     const launched = spawnSyncFn(
       'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')],
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-EncodedCommand',
+        Buffer.from(command, 'utf16le').toString('base64'),
+      ],
       { cwd: repoRoot, env, stdio: 'ignore', windowsHide: true, timeout: 30_000 },
     );
     let pid = Number.NaN;
@@ -489,13 +618,22 @@ export async function ensureLocalServices(repoRoot, env, {
       // No pid file: the launch failed.
     }
     if (launched.status !== 0 || !Number.isFinite(pid)) {
-      const reason = launched.error?.message ?? `launcher exited with code ${launched.status} (see ${errPath})`;
+      const reason =
+        launched.error?.message ?? `launcher exited with code ${launched.status} (see ${errPath})`;
       results.push({ id: service.id, status: 'failed', reason });
       log.warn?.(`[warn] Could not start ${service.label}: ${reason}`);
       continue;
     }
-    results.push({ id: service.id, status: restarting ? 'restarted' : 'started', url: service.url, logPath, pid });
-    log.info?.(`[info] ${restarting ? 'Restarted' : 'Started'} ${service.label} at ${service.url} (pid ${pid}, log: ${logPath})`);
+    results.push({
+      id: service.id,
+      status: restarting ? 'restarted' : 'started',
+      url: service.url,
+      logPath,
+      pid,
+    });
+    log.info?.(
+      `[info] ${restarting ? 'Restarted' : 'Started'} ${service.label} at ${service.url} (pid ${pid}, log: ${logPath})`,
+    );
   }
   return results;
 }
@@ -503,12 +641,16 @@ export async function ensureLocalServices(repoRoot, env, {
 /** Stop whatever listens on `port` with scripts/stop-service.ps1; true when that succeeded. */
 function stopByPort(repoRoot, port, spawnSyncFn) {
   const script = join(repoRoot, 'scripts', 'stop-service.ps1');
-  const result = spawnSyncFn('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', script, '-Port', String(port)], {
-    cwd: repoRoot,
-    stdio: 'ignore',
-    windowsHide: true,
-    timeout: 15_000,
-  });
+  const result = spawnSyncFn(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-File', script, '-Port', String(port)],
+    {
+      cwd: repoRoot,
+      stdio: 'ignore',
+      windowsHide: true,
+      timeout: 15_000,
+    },
+  );
   return result?.status === 0;
 }
 
@@ -527,7 +669,10 @@ export async function isServerRunning(service, fetchFn = fetch, timeoutMs = 1000
  * Stop a server by port using PowerShell
  * Returns true if the server was running and stopped
  */
-export async function stopServerByPort(port, { spawnSyncFn = spawnSync, platform = process.platform, log = console } = {}) {
+export async function stopServerByPort(
+  port,
+  { spawnSyncFn = spawnSync, platform = process.platform, log = console } = {},
+) {
   if (platform !== 'win32') {
     log.warn(`[warn] Server stop is Windows-only (port ${port})`);
     return false;
@@ -543,14 +688,16 @@ export async function stopServerByPort(port, { spawnSyncFn = spawnSync, platform
     const result = spawnSyncFn(
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-File', script, '-Port', String(port)],
-      { cwd: process.cwd(), stdio: 'pipe', windowsHide: true, timeout: 5000 }
+      { cwd: process.cwd(), stdio: 'pipe', windowsHide: true, timeout: 5000 },
     );
 
     if (result.status === 0) {
       log.info(`[info] Stopped server on port ${port}`);
       return true;
     } else {
-      log.warn(`[warn] Failed to stop server on port ${port}: ${result.stderr?.toString().trim() || 'unknown error'}`);
+      log.warn(
+        `[warn] Failed to stop server on port ${port}: ${result.stderr?.toString().trim() || 'unknown error'}`,
+      );
       return false;
     }
   } catch (error) {
@@ -569,8 +716,10 @@ export async function getServerPid(port, { platform = process.platform } = {}) {
     const { spawnSync } = await import('node:child_process');
     const result = spawnSync(
       'powershell.exe',
-      [`-Command "Get-NetTCPConnection -LocalPort ${port} -State Listen | Select-Object -First 1 -ExpandProperty OwningProcess"`],
-      { cwd: process.cwd(), stdio: 'pipe', windowsHide: true, timeout: 3000 }
+      [
+        `-Command "Get-NetTCPConnection -LocalPort ${port} -State Listen | Select-Object -First 1 -ExpandProperty OwningProcess"`,
+      ],
+      { cwd: process.cwd(), stdio: 'pipe', windowsHide: true, timeout: 3000 },
     );
 
     if (result.status === 0) {
@@ -594,7 +743,7 @@ export async function getProcessName(pid, { platform = process.platform } = {}) 
     const result = spawnSync(
       'powershell.exe',
       [`-Command "(Get-Process -Id ${pid} -ErrorAction SilentlyContinue).ProcessName"`],
-      { cwd: process.cwd(), stdio: 'pipe', windowsHide: true, timeout: 3000 }
+      { cwd: process.cwd(), stdio: 'pipe', windowsHide: true, timeout: 3000 },
     );
 
     if (result.status === 0) {

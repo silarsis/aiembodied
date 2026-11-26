@@ -34,7 +34,11 @@ export function serverSlug(serverName: string): string {
  * 2. Otherwise `<server slug>__<name>` cut to 64 characters.
  * 3. If even that is taken, add `_2`, `_3`, ... at the end.
  */
-export function chooseToolName(originalName: string, serverName: string, taken: ReadonlySet<string>): string {
+export function chooseToolName(
+  originalName: string,
+  serverName: string,
+  taken: ReadonlySet<string>,
+): string {
   const base = sanitizeToolName(originalName);
   if (!taken.has(base)) return base;
 

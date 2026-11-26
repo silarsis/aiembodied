@@ -40,10 +40,16 @@ export const DEDUPE_LIMIT = 2000;
 /** `*` matches anything; `a.*` matches `a.b` and `a.b.c`; otherwise exact. */
 export function matchesType(globs: string[] | undefined, type: string): boolean {
   if (!globs || globs.length === 0) return true;
-  return globs.some((glob) => glob === '*' || glob === type || (glob.endsWith('.*') && type.startsWith(glob.slice(0, -1))));
+  return globs.some(
+    (glob) =>
+      glob === '*' || glob === type || (glob.endsWith('.*') && type.startsWith(glob.slice(0, -1))),
+  );
 }
 
-export function addressedTo(subscription: Pick<SwitchboardSubscription, 'to'>, event: SwitchboardEvent): boolean {
+export function addressedTo(
+  subscription: Pick<SwitchboardSubscription, 'to'>,
+  event: SwitchboardEvent,
+): boolean {
   return event.to.some((address) => subscription.to.includes(address));
 }
 
@@ -96,7 +102,12 @@ export class LoopbackRouter {
   /** Queue the event for every matching subscriber for which `eligible` is true. */
   loopback(event: SwitchboardEvent, eligible: (entry: RouterEntry) => boolean = () => true): void {
     for (const entry of this.entries) {
-      if (!eligible(entry) || !addressedTo(entry.subscription, event) || !matchesType(entry.subscription.types, event.type)) continue;
+      if (
+        !eligible(entry) ||
+        !addressedTo(entry.subscription, event) ||
+        !matchesType(entry.subscription.types, event.type)
+      )
+        continue;
       setImmediate(() => entry.deliver(event));
     }
   }
@@ -106,7 +117,10 @@ export class LoopbackRouter {
 export class LocalOnlyBus implements SwitchboardBus {
   private readonly router = new LoopbackRouter();
 
-  constructor(private readonly makeId: (time: number) => string, private readonly now: () => number = Date.now) {}
+  constructor(
+    private readonly makeId: (time: number) => string,
+    private readonly now: () => number = Date.now,
+  ) {}
 
   publish(input: SwitchboardEventInput): SwitchboardEvent | null {
     try {

@@ -12,7 +12,20 @@ export interface Period {
 
 const DAY_MS = 86_400_000;
 
-const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+const MONTHS = [
+  'january',
+  'february',
+  'march',
+  'april',
+  'may',
+  'june',
+  'july',
+  'august',
+  'september',
+  'october',
+  'november',
+  'december',
+];
 const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const UNITS: Record<string, 'day' | 'week' | 'month' | 'year'> = {
   day: 'day',
@@ -26,8 +39,22 @@ const UNITS: Record<string, 'day' | 'week' | 'month' | 'year'> = {
   years: 'year',
 };
 const NUMBER_WORDS: Record<string, number> = {
-  a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
-  eleven: 11, twelve: 12, couple: 2, few: 3,
+  a: 1,
+  an: 1,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  couple: 2,
+  few: 3,
 };
 
 function startOfDay(date: Date): Date {
@@ -58,7 +85,10 @@ function unitRange(unit: 'day' | 'week' | 'month' | 'year', anchor: Date): Perio
     case 'month':
       return monthRange(anchor.getFullYear(), anchor.getMonth());
     case 'year':
-      return { from: new Date(anchor.getFullYear(), 0, 1), to: new Date(anchor.getFullYear() + 1, 0, 1) };
+      return {
+        from: new Date(anchor.getFullYear(), 0, 1),
+        to: new Date(anchor.getFullYear() + 1, 0, 1),
+      };
   }
 }
 
@@ -69,9 +99,17 @@ function shift(unit: 'day' | 'week' | 'month' | 'year', anchor: Date, count: num
     case 'week':
       return addDays(anchor, 7 * count);
     case 'month':
-      return new Date(anchor.getFullYear(), anchor.getMonth() + count, Math.min(anchor.getDate(), 28));
+      return new Date(
+        anchor.getFullYear(),
+        anchor.getMonth() + count,
+        Math.min(anchor.getDate(), 28),
+      );
     case 'year':
-      return new Date(anchor.getFullYear() + count, anchor.getMonth(), Math.min(anchor.getDate(), 28));
+      return new Date(
+        anchor.getFullYear() + count,
+        anchor.getMonth(),
+        Math.min(anchor.getDate(), 28),
+      );
   }
 }
 
@@ -94,10 +132,17 @@ function parseDate(text: string): Period | null {
 }
 
 export function parsePeriod(input: string, now: Date = new Date()): Period | null {
-  const text = input.trim().toLowerCase().replace(/[,.]/g, ' ').replace(/\s+/g, ' ').replace(/^(in|on|during|from|over) /, '').trim();
+  const text = input
+    .trim()
+    .toLowerCase()
+    .replace(/[,.]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^(in|on|during|from|over) /, '')
+    .trim();
   if (!text) return null;
 
-  const range = /^(.+?) (?:to|until|through|\.\.|-) (.+)$/.exec(text) ?? /^(\S+)\.\.(\S+)$/.exec(text);
+  const range =
+    /^(.+?) (?:to|until|through|\.\.|-) (.+)$/.exec(text) ?? /^(\S+)\.\.(\S+)$/.exec(text);
   if (range) {
     const start = parsePeriod(range[1], now);
     const end = parsePeriod(range[2], now);
@@ -109,7 +154,8 @@ export function parsePeriod(input: string, now: Date = new Date()): Period | nul
 
   if (text === 'today') return unitRange('day', now);
   if (text === 'yesterday') return unitRange('day', addDays(now, -1));
-  if (text === 'recently' || text === 'lately') return { from: addDays(startOfDay(now), -14), to: addDays(startOfDay(now), 1) };
+  if (text === 'recently' || text === 'lately')
+    return { from: addDays(startOfDay(now), -14), to: addDays(startOfDay(now), 1) };
 
   let match = /^(this|last|previous|past) (day|week|fortnight|month|year)$/.exec(text);
   if (match) {
@@ -148,7 +194,8 @@ export function parsePeriod(input: string, now: Date = new Date()): Period | nul
     const month = MONTHS.findIndex((name) => name === word || name.slice(0, 3) === word);
     if (month >= 0) {
       if (match[2]) return monthRange(Number(match[2]), month);
-      const before = month > now.getMonth() || (text.startsWith('last ') && month === now.getMonth());
+      const before =
+        month > now.getMonth() || (text.startsWith('last ') && month === now.getMonth());
       return monthRange(now.getFullYear() - (before ? 1 : 0), month);
     }
     // "tuesday", "last tuesday": the most recent one before today.

@@ -26,7 +26,8 @@ export {
 };
 
 const SELF_CHECKS = 'pnpm -w typecheck && pnpm test';
-const SELF_SETUP = 'pnpm install --frozen-lockfile --prefer-offline && pnpm --filter @aiembodied/main exec install-electron';
+const SELF_SETUP =
+  'pnpm install --frozen-lockfile --prefer-offline && pnpm --filter @aiembodied/main exec install-electron';
 
 function text(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
@@ -50,7 +51,8 @@ export function sanitizeCodingConfig(input: unknown): CodingConfig | undefined {
       : [];
     const checks = text(item.checks);
     // This app's own checkout also needs the Electron binary for its tests (pnpm test runs in Electron).
-    const setup = text(item.setup) ?? (item.kind === 'self' && checks === SELF_CHECKS ? SELF_SETUP : undefined);
+    const setup =
+      text(item.setup) ?? (item.kind === 'self' && checks === SELF_CHECKS ? SELF_SETUP : undefined);
     workspaces.push({
       id,
       name: text(item.name) ?? id,
@@ -63,7 +65,12 @@ export function sanitizeCodingConfig(input: unknown): CodingConfig | undefined {
     });
   }
   const coderGguf = text(record.coderGguf);
-  const coderMemory = record.coderMemory === 'auto' || record.coderMemory === 'swap' || record.coderMemory === 'side-by-side' ? record.coderMemory : undefined;
+  const coderMemory =
+    record.coderMemory === 'auto' ||
+    record.coderMemory === 'swap' ||
+    record.coderMemory === 'side-by-side'
+      ? record.coderMemory
+      : undefined;
   return {
     runner: text(record.runner) ?? DEFAULT_CODING_CONFIG.runner,
     workspaces,
@@ -73,13 +80,24 @@ export function sanitizeCodingConfig(input: unknown): CodingConfig | undefined {
 }
 
 /** The first workspace: this app's own repository, when the app runs from a git checkout. */
-export function seedCodingConfig(repoRoot: string, exists: (file: string) => boolean = existsSync): CodingConfig | null {
+export function seedCodingConfig(
+  repoRoot: string,
+  exists: (file: string) => boolean = existsSync,
+): CodingConfig | null {
   const root = path.resolve(repoRoot);
   if (!exists(path.join(root, '.git'))) return null;
   return {
     runner: DEFAULT_CODING_CONFIG.runner,
     workspaces: [
-      { id: 'aiembodied', name: 'aiembodied', path: root, kind: 'self', baseBranch: 'main', checks: SELF_CHECKS, setup: SELF_SETUP },
+      {
+        id: 'aiembodied',
+        name: 'aiembodied',
+        path: root,
+        kind: 'self',
+        baseBranch: 'main',
+        checks: SELF_CHECKS,
+        setup: SELF_SETUP,
+      },
     ],
   };
 }
@@ -89,7 +107,7 @@ export function toRunnerWorkspace(workspace: CodingWorkspace): Record<string, un
   const protectedPaths =
     workspace.kind === 'self'
       ? [...new Set([...SELF_PROTECTED_PATHS, ...(workspace.protectedPaths ?? [])])]
-      : workspace.protectedPaths ?? [];
+      : (workspace.protectedPaths ?? []);
   return {
     id: workspace.id,
     name: workspace.name,

@@ -1,7 +1,13 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '../../../main/src/shared/config/provider-settings.js';
-import type { WakeWordOption, WakeWordTrainingStatus } from '../../../main/src/shared/wake-word/types.js';
+import {
+  DEFAULT_PROVIDER_SETTINGS,
+  type ProviderSettings,
+} from '../../../main/src/shared/config/provider-settings.js';
+import type {
+  WakeWordOption,
+  WakeWordTrainingStatus,
+} from '../../../main/src/shared/wake-word/types.js';
 import type { WakeWordBridge } from '../../src/preload-api.js';
 import { ProviderSettingsPanel } from '../../src/settings/provider-settings-panel.js';
 import { describeWakeWordOption } from '../../src/settings/wake-word-training.js';
@@ -42,7 +48,10 @@ function createBridge(initial: WakeWordTrainingStatus) {
     list: vi.fn(async () => OPTIONS),
     getTrainingStatus: vi.fn(async () => initial),
     train: vi.fn(async () => running(0)),
-    cancelTraining: vi.fn(async () => ({ ...initial, job: initial.job ? { ...initial.job, state: 'cancelled' as const } : null })),
+    cancelTraining: vi.fn(async () => ({
+      ...initial,
+      job: initial.job ? { ...initial.job, state: 'cancelled' as const } : null,
+    })),
     onTrainingStatus: vi.fn((listener: (status: WakeWordTrainingStatus) => void) => {
       statusListener = listener;
       return () => {
@@ -59,16 +68,18 @@ function defaults(): ProviderSettings {
 
 describe('wake word settings', () => {
   it('describes options with their test figures', () => {
-    expect(describeWakeWordOption(OPTIONS[2]!)).toBe('Hey Computer · 60% recall · 0.4 false wakes/h');
-    expect(describeWakeWordOption({ model: 'x', label: 'X', source: 'trained', quick: true })).toBe('X · test run');
+    expect(describeWakeWordOption(OPTIONS[2]!)).toBe(
+      'Hey Computer · 60% recall · 0.4 false wakes/h',
+    );
+    expect(describeWakeWordOption({ model: 'x', label: 'X', source: 'trained', quick: true })).toBe(
+      'X · test run',
+    );
   });
 
   it('picks a trained wake word and a threshold, saving only those', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     const { bridge } = createBridge({ available: true, job: null });
-    render(
-      <ProviderSettingsPanel settings={defaults()} onSave={onSave} wakeWordBridge={bridge} />,
-    );
+    render(<ProviderSettingsPanel settings={defaults()} onSave={onSave} wakeWordBridge={bridge} />);
 
     const select = (await screen.findByLabelText('Listen for')) as HTMLSelectElement;
     await waitFor(() => expect(select.options).toHaveLength(3));
@@ -78,7 +89,9 @@ describe('wake word settings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
 
     await waitFor(() =>
-      expect(onSave).toHaveBeenCalledWith({ wakeWord: { model: 'C:\\wake-words\\hey_computer.onnx', threshold: 0.65 } }),
+      expect(onSave).toHaveBeenCalledWith({
+        wakeWord: { model: 'C:\\wake-words\\hey_computer.onnx', threshold: 0.65 },
+      }),
     );
   });
 
@@ -103,7 +116,10 @@ describe('wake word settings', () => {
 
   it('refreshes the list when a run finishes and offers to resume an interrupted one', async () => {
     const status = running(0.8);
-    const { bridge, push } = createBridge({ ...status, job: { ...status.job!, state: 'interrupted', stageLabel: 'Training the model' } });
+    const { bridge, push } = createBridge({
+      ...status,
+      job: { ...status.job!, state: 'interrupted', stageLabel: 'Training the model' },
+    });
     render(
       <ProviderSettingsPanel settings={defaults()} onSave={vi.fn()} wakeWordBridge={bridge} />,
     );
@@ -119,11 +135,17 @@ describe('wake word settings', () => {
   });
 
   it('explains when training is unavailable', async () => {
-    const { bridge } = createBridge({ available: false, reason: 'Training a wake word needs Windows with WSL.', job: null });
+    const { bridge } = createBridge({
+      available: false,
+      reason: 'Training a wake word needs Windows with WSL.',
+      job: null,
+    });
     render(
       <ProviderSettingsPanel settings={defaults()} onSave={vi.fn()} wakeWordBridge={bridge} />,
     );
-    expect(await screen.findByText('Training a wake word needs Windows with WSL.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Training a wake word needs Windows with WSL.'),
+    ).toBeInTheDocument();
     expect(screen.queryByLabelText('Phrase')).not.toBeInTheDocument();
   });
 });

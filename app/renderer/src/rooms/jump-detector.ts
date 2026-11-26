@@ -34,8 +34,13 @@ export class JumpDetector {
 
   constructor(private readonly now: () => number = () => performance.now()) {}
 
-  track(root: THREE.Object3D | null, hips: THREE.Object3D | null | undefined, hands: (THREE.Object3D | null | undefined)[]): void {
-    this.tracked = root && hips ? { root, hips, hands: hands.filter((h): h is THREE.Object3D => !!h) } : null;
+  track(
+    root: THREE.Object3D | null,
+    hips: THREE.Object3D | null | undefined,
+    hands: (THREE.Object3D | null | undefined)[],
+  ): void {
+    this.tracked =
+      root && hips ? { root, hips, hands: hands.filter((h): h is THREE.Object3D => !!h) } : null;
     this.last = [];
   }
 
@@ -57,7 +62,8 @@ export class JumpDetector {
     if (previous.length !== points.length) return false;
     const hipsMove = horizontal(points[0], previous[0]);
     let handMove = 0;
-    for (let i = 1; i < points.length; i += 1) handMove = Math.max(handMove, points[i].distanceTo(previous[i]));
+    for (let i = 1; i < points.length; i += 1)
+      handMove = Math.max(handMove, points[i].distanceTo(previous[i]));
     if (hipsMove <= JUMP_METRES && handMove <= POSE_JUMP_METRES) return false;
     if (!this.allowReport()) return true;
     tracked.root.getWorldPosition(TMP);

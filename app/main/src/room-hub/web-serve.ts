@@ -100,16 +100,30 @@ const SECURITY_HEADERS = {
 export function withHubConnectSrc(html: string, hostHeader: string | undefined): string {
   const host = (hostHeader ?? '').toLowerCase();
   if (!/^[a-z0-9.\-[\]:]+$/.test(host) || !splitHost(host)) return html;
-  return html.replace(/connect-src ([^;"]*)/, (match, sources: string) => `connect-src ${sources.trim()} ws://${host} wss://${host}`);
+  return html.replace(
+    /connect-src ([^;"]*)/,
+    (match, sources: string) => `connect-src ${sources.trim()} ws://${host} wss://${host}`,
+  );
 }
 
 /**
  * Sends one file of the dist folder (GET only; the caller has checked the method). 404 for anything that is not a
  * regular file inside the folder. Returns the status it answered with.
  */
-export async function serveStaticFile(root: string, pathname: string, req: IncomingMessage, res: ServerResponse): Promise<number> {
+export async function serveStaticFile(
+  root: string,
+  pathname: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<number> {
   const plain = (status: number, text: string, headers: Record<string, string> = {}): number => {
-    res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Length': Buffer.byteLength(text), 'Cache-Control': 'no-store', ...SECURITY_HEADERS, ...headers });
+    res.writeHead(status, {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Content-Length': Buffer.byteLength(text),
+      'Cache-Control': 'no-store',
+      ...SECURITY_HEADERS,
+      ...headers,
+    });
     res.end(text);
     return status;
   };
@@ -134,7 +148,12 @@ export async function serveStaticFile(root: string, pathname: string, req: Incom
   if (path.relative(realRoot, real) === 'index.html') {
     // The page itself: with the hub's own address added to the CSP, and never cached.
     const html = withHubConnectSrc(await readFile(real, 'utf8'), req.headers.host);
-    res.writeHead(200, { 'Content-Type': contentTypeFor(real), 'Content-Length': Buffer.byteLength(html), 'Cache-Control': 'no-cache', ...SECURITY_HEADERS });
+    res.writeHead(200, {
+      'Content-Type': contentTypeFor(real),
+      'Content-Length': Buffer.byteLength(html),
+      'Cache-Control': 'no-cache',
+      ...SECURITY_HEADERS,
+    });
     res.end(html);
     return 200;
   }
@@ -178,7 +197,15 @@ function splitHost(value: string): { host: string; port: string } | null {
   } catch {
     return null;
   }
-  if (!parsed.hostname || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) return null;
+  if (
+    !parsed.hostname ||
+    parsed.username ||
+    parsed.password ||
+    parsed.pathname !== '/' ||
+    parsed.search ||
+    parsed.hash
+  )
+    return null;
   return { host: parsed.hostname.toLowerCase().replace(/^\[|\]$/g, ''), port: parsed.port };
 }
 
@@ -192,12 +219,16 @@ function isIpLiteral(host: string): boolean {
  * names such as `bija`) and `*.ts.net`. A name with dots that is anything else is refused: that is what a rebinding
  * attack looks like (`evil.example` answering with 127.0.0.1). `extra` is `ROOM_HUB_ALLOWED_HOSTS`.
  */
-export function hostAllowed(hostHeader: string | undefined, extra: readonly string[] = []): boolean {
+export function hostAllowed(
+  hostHeader: string | undefined,
+  extra: readonly string[] = [],
+): boolean {
   if (!hostHeader) return false;
   const parts = splitHost(hostHeader);
   if (!parts) return false;
   const { host } = parts;
-  if (isIpLiteral(host) || host === 'localhost' || !host.includes('.') || host.endsWith('.ts.net')) return true;
+  if (isIpLiteral(host) || host === 'localhost' || !host.includes('.') || host.endsWith('.ts.net'))
+    return true;
   return extra.map((name) => name.trim().toLowerCase()).includes(host);
 }
 
@@ -206,7 +237,12 @@ export function hostAllowed(hostHeader: string | undefined, extra: readonly stri
  * satellite, curl): yes. Otherwise the page must come from the hub itself (its own host and port, and the Host
  * header must be one `hostAllowed` accepts), from loopback on the hub's port, or from the Android shell.
  */
-export function originAllowed(origin: string | undefined, hostHeader: string | undefined, hubPort: number | null, extraHosts: readonly string[] = []): boolean {
+export function originAllowed(
+  origin: string | undefined,
+  hostHeader: string | undefined,
+  hubPort: number | null,
+  extraHosts: readonly string[] = [],
+): boolean {
   if (origin === undefined) return true;
   if (origin === ANDROID_SHELL_ORIGIN) return true;
   let parsed: URL;
@@ -219,11 +255,20 @@ export function originAllowed(origin: string | undefined, hostHeader: string | u
   if (parsed.username || parsed.password || parsed.pathname !== '/') return false;
   const from = splitHost(parsed.host);
   if (!from) return false;
-  const effectivePort = (port: string, protocol: string) => port || (protocol === 'https:' ? '443' : '80');
-  if (hubPort !== null && from.host === '127.0.0.1' && effectivePort(from.port, parsed.protocol) === String(hubPort)) return true;
+  const effectivePort = (port: string, protocol: string) =>
+    port || (protocol === 'https:' ? '443' : '80');
+  if (
+    hubPort !== null &&
+    from.host === '127.0.0.1' &&
+    effectivePort(from.port, parsed.protocol) === String(hubPort)
+  )
+    return true;
   // The hub's own host: the page was loaded from the very name and port it now calls.
   if (!hostHeader || !hostAllowed(hostHeader, extraHosts)) return false;
   const to = splitHost(hostHeader);
   if (!to) return false;
-  return from.host === to.host && effectivePort(from.port, parsed.protocol) === effectivePort(to.port, parsed.protocol);
+  return (
+    from.host === to.host &&
+    effectivePort(from.port, parsed.protocol) === effectivePort(to.port, parsed.protocol)
+  );
 }

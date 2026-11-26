@@ -5,7 +5,10 @@ import type {
   ConversationMessage,
   ConversationSession,
 } from '../../main/src/shared/conversation/types.js';
-import type { ModelRoutingView, RendererConfig } from '../../main/src/shared/config/config-manager-types.js';
+import type {
+  ModelRoutingView,
+  RendererConfig,
+} from '../../main/src/shared/config/config-manager-types.js';
 import { builtInServers, defaultRoutes } from '../../main/src/shared/config/model-routing.js';
 import { BASE_POSES } from '../../main/src/shared/avatar/base-poses.js';
 import { DEFAULT_PROVIDER_SETTINGS } from '../../main/src/shared/config/provider-settings.js';
@@ -112,8 +115,8 @@ class MockAudioContext {
     () => new MockMediaStreamDestinationNode() as unknown as MediaStreamAudioDestinationNode,
   );
   createAnalyser = vi.fn(() => new MockAnalyserNode() as unknown as AnalyserNode);
-  resume = vi.fn(async () => { });
-  close = vi.fn(async () => { });
+  resume = vi.fn(async () => {});
+  close = vi.fn(async () => {});
 }
 
 type PreloadWindow = Window & { aiembodied?: import('../src/preload-api.js').PreloadApi };
@@ -204,7 +207,9 @@ function createAvatarBridgeMock(overrides: Partial<AvatarBridge> = {}): AvatarBr
       },
     }),
     generateAvatar: vi.fn().mockResolvedValue({ jobId: 'gen-job-1' }),
-    getAvatarGenerationStatus: vi.fn().mockResolvedValue({ jobId: 'gen-job-1', status: 'queued', progress: 0 }),
+    getAvatarGenerationStatus: vi
+      .fn()
+      .mockResolvedValue({ jobId: 'gen-job-1', status: 'queued', progress: 0 }),
     acceptGeneratedAvatar: vi.fn().mockResolvedValue({ vrmId: 'gen-vrm-1' }),
     listAvatarImageModels: vi.fn().mockResolvedValue({ models: [], selectedModelId: null }),
     setAvatarImageModel: vi.fn().mockResolvedValue(undefined),
@@ -256,7 +261,10 @@ function createAvatarsBridgeMock(): AvatarsBridge {
 
 function createModelsBridgeMock(overrides: Partial<ModelsBridge> = {}): ModelsBridge {
   let view: ModelRoutingView = {
-    servers: builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }).map((server) => ({
+    servers: builtInServers({
+      providers: DEFAULT_PROVIDER_SETTINGS,
+      comfyUiBaseUrl: 'http://127.0.0.1:8188',
+    }).map((server) => ({
       ...server,
       hasKey: server.id === 'openai',
     })),
@@ -272,7 +280,12 @@ function createModelsBridgeMock(overrides: Partial<ModelsBridge> = {}): ModelsBr
       return view;
     }),
     setKey: vi.fn(async (serverId, key) => {
-      view = { ...view, servers: view.servers.map((server) => (server.id === serverId ? { ...server, hasKey: Boolean(key) } : server)) };
+      view = {
+        ...view,
+        servers: view.servers.map((server) =>
+          server.id === serverId ? { ...server, hasKey: Boolean(key) } : server,
+        ),
+      };
       return view;
     }),
     ...overrides,
@@ -423,7 +436,7 @@ describe('App component', () => {
         testSecret: testSecretMock,
       },
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
-      wakeWord: { onWake: () => () => { } },
+      wakeWord: { onWake: () => () => {} },
       avatar: createAvatarBridgeMock(),
       avatars: createAvatarsBridgeMock(),
       models: createModelsBridgeMock(),
@@ -464,7 +477,7 @@ describe('App component', () => {
         testSecret: testSecretMock,
       },
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
-      wakeWord: { onWake: () => () => { } },
+      wakeWord: { onWake: () => () => {} },
       avatar: createAvatarBridgeMock(),
       avatars: createAvatarsBridgeMock(),
       models: createModelsBridgeMock(),
@@ -508,7 +521,7 @@ describe('App component', () => {
           setSecret: setSecretMock,
           testSecret: testSecretMock,
         },
-        wakeWord: { onWake: () => () => { } },
+        wakeWord: { onWake: () => () => {} },
         avatar: createAvatarBridgeMock(),
         models: createModelsBridgeMock(),
         __bridgeReady: true,
@@ -570,7 +583,7 @@ describe('App component', () => {
           setSecret: setSecretMock,
           testSecret: testSecretMock,
         },
-        wakeWord: { onWake: () => () => { } },
+        wakeWord: { onWake: () => () => {} },
         avatar: createAvatarBridgeMock(),
         models: createModelsBridgeMock(),
         __bridgeReady: true,
@@ -632,9 +645,15 @@ describe('App component', () => {
     };
 
     const avatarBridge = createAvatarBridgeMock();
-    vi.mocked(avatarBridge.listPoses).mockResolvedValue(BASE_POSES.map((pose) => ({
-      id: pose.id, name: pose.name, createdAt: 0, fileSha: 'base', builtIn: true,
-    })));
+    vi.mocked(avatarBridge.listPoses).mockResolvedValue(
+      BASE_POSES.map((pose) => ({
+        id: pose.id,
+        name: pose.name,
+        createdAt: 0,
+        fileSha: 'base',
+        builtIn: true,
+      })),
+    );
     (window as PreloadWindow).aiembodied = {
       ping: () => 'pong',
       config: {
@@ -645,7 +664,7 @@ describe('App component', () => {
         testSecret: testSecretMock,
       },
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
-      wakeWord: { onWake: () => () => { } },
+      wakeWord: { onWake: () => () => {} },
       avatar: avatarBridge,
       __bridgeReady: true,
       __bridgeVersion: '1.0.0',
@@ -715,7 +734,15 @@ describe('App component', () => {
     const connectOrder = client.connect.mock.invocationCallOrder[0];
     expect(stagedOrder).toBeLessThan(connectOrder);
     const latestInstructions = client.updateSessionConfig.mock.calls.at(-1)?.[0]?.instructions;
-    for (const name of ['relaxed-neutral', 'happiness', 'sadness', 'anger', 'fear', 'disgust', 'surprise']) {
+    for (const name of [
+      'relaxed-neutral',
+      'happiness',
+      'sadness',
+      'anger',
+      'fear',
+      'disgust',
+      'surprise',
+    ]) {
       expect(latestInstructions).toContain(name);
     }
     expect(latestInstructions).toContain('{pose:relaxed-neutral}');
@@ -733,7 +760,7 @@ describe('App component', () => {
           featureFlags: { transcriptOverlay: true },
           hasRealtimeApiKey: true,
           conversationBackend: 'openai',
-              wakeWord: {
+          wakeWord: {
             model: 'hey_jarvis',
             keywordLabel: 'Hey Jarvis',
             threshold: 0.5,
@@ -839,7 +866,7 @@ describe('App component', () => {
           featureFlags: { transcriptOverlay: true },
           hasRealtimeApiKey: true,
           conversationBackend: 'openai',
-              wakeWord: {
+          wakeWord: {
             model: 'hey_jarvis',
             keywordLabel: 'Hey Jarvis',
             threshold: 0.5,
@@ -1029,7 +1056,7 @@ describe('App component', () => {
           featureFlags: { transcriptOverlay: true },
           hasRealtimeApiKey: true,
           conversationBackend: 'openai',
-              wakeWord: {
+          wakeWord: {
             model: 'hey_jarvis',
             keywordLabel: 'Hey Jarvis',
             threshold: 0.5,
@@ -1164,7 +1191,7 @@ describe('App component', () => {
         testSecret: testSecretMock,
       },
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
-      wakeWord: { onWake: () => () => { } },
+      wakeWord: { onWake: () => () => {} },
       avatar: createAvatarBridgeMock(),
       models,
       __bridgeReady: true,
@@ -1201,7 +1228,7 @@ describe('App component', () => {
           featureFlags: {},
           hasRealtimeApiKey: true,
           conversationBackend: 'openai',
-              realtimeVoice: 'shimmer',
+          realtimeVoice: 'shimmer',
           sessionInstructions: 'Persisted instructions from config',
           wakeWord: {
             model: 'hey_jarvis',
@@ -1217,7 +1244,7 @@ describe('App component', () => {
         testSecret: testSecretMock,
       },
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
-      wakeWord: { onWake: () => () => { } },
+      wakeWord: { onWake: () => () => {} },
       avatar: createAvatarBridgeMock(),
       avatars: createAvatarsBridgeMock(),
       models: createModelsBridgeMock(),
@@ -1275,7 +1302,13 @@ describe('App component', () => {
           conversationBackend: 'openai',
           realtimeVoice: 'shimmer',
           sessionInstructions: 'Global prompt',
-          wakeWord: { model: 'hey_jarvis', keywordLabel: 'Hey Jarvis', threshold: 0.5, cooldownMs: 1500, deviceIndex: undefined },
+          wakeWord: {
+            model: 'hey_jarvis',
+            keywordLabel: 'Hey Jarvis',
+            threshold: 0.5,
+            cooldownMs: 1500,
+            deviceIndex: undefined,
+          },
         }),
         getSecret: vi.fn().mockResolvedValue('secret'),
         setAudioDevicePreferences: setAudioDevicePreferencesMock,
@@ -1283,7 +1316,7 @@ describe('App component', () => {
         testSecret: testSecretMock,
       },
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
-      wakeWord: { onWake: () => () => { } },
+      wakeWord: { onWake: () => () => {} },
       avatar: createAvatarBridgeMock({
         getActiveModel: vi.fn().mockResolvedValue({ id: 'mei', name: 'Mei' }),
         getPromptPreference,
@@ -1320,7 +1353,13 @@ describe('App component', () => {
           conversationBackend: 'openai',
           realtimeVoice: 'shimmer',
           sessionInstructions: 'Global prompt',
-          wakeWord: { model: 'hey_jarvis', keywordLabel: 'Hey Jarvis', threshold: 0.5, cooldownMs: 1500, deviceIndex: undefined },
+          wakeWord: {
+            model: 'hey_jarvis',
+            keywordLabel: 'Hey Jarvis',
+            threshold: 0.5,
+            cooldownMs: 1500,
+            deviceIndex: undefined,
+          },
         }),
         getSecret: vi.fn().mockResolvedValue('secret'),
         setAudioDevicePreferences: setAudioDevicePreferencesMock,
@@ -1328,7 +1367,7 @@ describe('App component', () => {
         testSecret: testSecretMock,
       },
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
-      wakeWord: { onWake: () => () => { } },
+      wakeWord: { onWake: () => () => {} },
       avatar: createAvatarBridgeMock({
         getActiveModel: vi.fn().mockResolvedValue({ id: 'mei', name: 'Mei' }),
         getIdleHabits,
@@ -1353,7 +1392,7 @@ describe('App component', () => {
     await waitFor(() => expect(setIdleHabits).toHaveBeenCalledWith('Tidies when bored.'));
   });
 
-  it('Echo\'s card picks the OpenAI voice and saves it for the active character', async () => {
+  it("Echo's card picks the OpenAI voice and saves it for the active character", async () => {
     const setVoicePreference = vi.fn().mockResolvedValue(undefined);
     (window as PreloadWindow).aiembodied = {
       ping: () => 'pong',
@@ -1365,7 +1404,13 @@ describe('App component', () => {
           hasRealtimeApiKey: true,
           conversationBackend: 'openai',
           realtimeVoice: 'shimmer',
-          wakeWord: { model: 'hey_jarvis', keywordLabel: 'Hey Jarvis', threshold: 0.5, cooldownMs: 1500, deviceIndex: undefined },
+          wakeWord: {
+            model: 'hey_jarvis',
+            keywordLabel: 'Hey Jarvis',
+            threshold: 0.5,
+            cooldownMs: 1500,
+            deviceIndex: undefined,
+          },
         }),
         getSecret: vi.fn().mockResolvedValue('secret'),
         setAudioDevicePreferences: setAudioDevicePreferencesMock,
@@ -1373,7 +1418,7 @@ describe('App component', () => {
         testSecret: testSecretMock,
       },
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
-      wakeWord: { onWake: () => () => { } },
+      wakeWord: { onWake: () => () => {} },
       avatar: createAvatarBridgeMock({
         getActiveModel: vi.fn().mockResolvedValue({ id: 'mei', name: 'Mei' }),
         setVoicePreference,
@@ -1419,7 +1464,7 @@ describe('App component', () => {
           featureFlags: {},
           hasRealtimeApiKey: true,
           conversationBackend: 'openai',
-              realtimeVoice: 'verse',
+          realtimeVoice: 'verse',
           wakeWord: {
             model: 'hey_jarvis',
             keywordLabel: 'Hey Jarvis',
@@ -1434,7 +1479,7 @@ describe('App component', () => {
         testSecret: testSecretMock,
       },
       realtime: { mintEphemeralToken: mintEphemeralTokenMock },
-      wakeWord: { onWake: () => () => { } },
+      wakeWord: { onWake: () => () => {} },
       avatar: createAvatarBridgeMock(),
       models: createModelsBridgeMock(),
       __bridgeReady: true,

@@ -2,7 +2,12 @@ import { parentPort, workerData } from 'node:worker_threads';
 import { PvRecorder } from '@picovoice/pvrecorder-node';
 import { OWW_FRAME_LENGTH, OWW_SAMPLE_RATE, OpenWakeWordDetector } from './open-wake-word.js';
 import { PeakTracker } from './peak-tracker.js';
-import type { SerializedError, WakeWordWorkerCommand, WakeWordWorkerConfig, WakeWordWorkerMessage } from './types.js';
+import type {
+  SerializedError,
+  WakeWordWorkerCommand,
+  WakeWordWorkerConfig,
+  WakeWordWorkerMessage,
+} from './types.js';
 import type { WakeWordDetectionEvent } from '../shared/wake-word/types.js';
 
 if (!parentPort) {
@@ -23,7 +28,10 @@ const peaks = new PeakTracker();
 
 async function start(): Promise<void> {
   detector = await OpenWakeWordDetector.create(config.modelPaths);
-  if (stopping) { await detector.release(); return; }
+  if (stopping) {
+    await detector.release();
+    return;
+  }
   // PvRecorder (open source, no access key) always captures 16 kHz mono int16, which is what
   // openWakeWord expects.
   recorder = new PvRecorder(OWW_FRAME_LENGTH, config.deviceIndex ?? -1, 50);
@@ -59,13 +67,18 @@ async function start(): Promise<void> {
       if (peak) {
         port.postMessage({
           type: 'peak',
-          event: { keywordLabel: config.keywordLabel, confidence: peak.score, timestamp: peak.timestamp },
+          event: {
+            keywordLabel: config.keywordLabel,
+            confidence: peak.score,
+            timestamp: peak.timestamp,
+          },
         } satisfies WakeWordWorkerMessage);
       }
     } catch (error) {
       if (stopping) break;
       const isFatalAudioError =
-        error instanceof Error && error.message.includes('PvRecorder failed to read audio data frame');
+        error instanceof Error &&
+        error.message.includes('PvRecorder failed to read audio data frame');
       port.postMessage({
         type: 'error',
         error: serializeError(error),

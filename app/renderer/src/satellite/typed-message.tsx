@@ -4,7 +4,15 @@ import { useState, type FormEvent } from 'react';
  * A line to type to the characters (a satellite has no microphone yet). Enter sends. It runs the same turn that
  * speech does, so the answer is spoken, tagged and lip-synced the same way.
  */
-export function TypedMessage({ onSend, disabled, placeholder }: { onSend: (text: string) => Promise<boolean>; disabled: boolean; placeholder?: string }) {
+export function TypedMessage({
+  onSend,
+  disabled,
+  placeholder,
+}: {
+  onSend: (text: string) => Promise<boolean>;
+  disabled: boolean;
+  placeholder?: string;
+}) {
   const [text, setText] = useState('');
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -16,7 +24,11 @@ export function TypedMessage({ onSend, disabled, placeholder }: { onSend: (text:
     if (!started) setText(line);
   };
   return (
-    <form className="typedMessage" onSubmit={(event) => void submit(event)} data-testid="typed-message">
+    <form
+      className="typedMessage"
+      onSubmit={(event) => void submit(event)}
+      data-testid="typed-message"
+    >
       <input
         className="typedMessage__input"
         value={text}
@@ -26,7 +38,11 @@ export function TypedMessage({ onSend, disabled, placeholder }: { onSend: (text:
         disabled={disabled}
         autoComplete="off"
       />
-      <button type="submit" className="btn typedMessage__send" disabled={disabled || text.trim().length === 0}>
+      <button
+        type="submit"
+        className="btn typedMessage__send"
+        disabled={disabled || text.trim().length === 0}
+      >
         Send
       </button>
     </form>

@@ -7,7 +7,11 @@
  */
 import type { BackgroundBridge } from '../backgrounds/types.js';
 import type { FurnitureBridge, FurnitureItem } from '../furniture/types.js';
-import type { ConfigSecretKey, ModelRoutingView, RendererConfig } from '../config/config-manager-types.js';
+import type {
+  ConfigSecretKey,
+  ModelRoutingView,
+  RendererConfig,
+} from '../config/config-manager-types.js';
 import type { ModelRoute, ServerType, UseId } from '../config/model-routing.js';
 import type { ServerProbe } from '../config/model-server-probe-types.js';
 import type { BaseModelSuggestions, CivitaiLookup } from '../avatar/civitai-types.js';
@@ -52,11 +56,23 @@ import type {
   ConversationMessage,
   ConversationSession,
 } from '../conversation/types.js';
-import type { WakeWordDetectionEvent, WakeWordOption, WakeWordTrainingStatus } from '../wake-word/types.js';
+import type {
+  WakeWordDetectionEvent,
+  WakeWordOption,
+  WakeWordTrainingStatus,
+} from '../wake-word/types.js';
 import type { PushToTalkStatus, TalkTriggerEvent } from '../talk/types.js';
-import type { DeviceGateBridge, DeviceGateState, SatelliteBridge, SatelliteStatus } from '../satellite/bridge-types.js';
+import type {
+  DeviceGateBridge,
+  DeviceGateState,
+  SatelliteBridge,
+  SatelliteStatus,
+} from '../satellite/bridge-types.js';
 import type { LatencyMetricName } from '../metrics/types.js';
-import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from '../realtime/types.js';
+import type {
+  RealtimeEphemeralTokenRequest,
+  RealtimeEphemeralTokenResponse,
+} from '../realtime/types.js';
 import type {
   LocalVoiceEvent,
   LocalVoiceRespondRequest,
@@ -68,7 +84,13 @@ import type {
 } from '../local-voice/types.js';
 import type { ApprovalsBridge, ApprovalView } from '../tools/approvals-ipc-types.js';
 import type { SpeechTtsEngine } from '../local-voice/speech-service-client-types.js';
-import type { MCPServerSummary, MCPServerConfigInput, MCPToolSummary, MCPConnectionResult, MCPToolResult } from '../mcp/types.js';
+import type {
+  MCPServerSummary,
+  MCPServerConfigInput,
+  MCPToolSummary,
+  MCPConnectionResult,
+  MCPToolResult,
+} from '../mcp/types.js';
 import type { MCPPresetSummary } from '../mcp/presets-types.js';
 import type { OpenAIFunction } from '../tools/tool-registry-types.js';
 import type { MemoryEngineBridge } from '../memory-engine/bridge-types.js';
@@ -83,7 +105,13 @@ import type { PursuitsBridge } from '../pursuits/types.js';
 import type { AgentsBridge, WorkflowsBridge } from '../agent-time/bridge-types.js';
 import type { RoomHubBridge, RoomHubStatus } from '../room-hub/bridge-types.js';
 import type { GpuMemoryBridge } from '../diagnostics/gpu-memory-types.js';
-import type { CodingBridge, CodingBusy, CodingBusyBridge, CodingTasksBridge, RunnerEvent } from '../coding/bridge-types.js';
+import type {
+  CodingBridge,
+  CodingBusy,
+  CodingBusyBridge,
+  CodingTasksBridge,
+  RunnerEvent,
+} from '../coding/bridge-types.js';
 import type { CodingStatus, CodingView } from '../coding/coding-service-types.js';
 
 /** What the bridge needs from the outside world: ask for an answer, and hear events. */
@@ -150,21 +178,38 @@ export interface ConfigBridge {
 /** The Models and servers pop-up. Keys are sent in, never read back. */
 export interface ModelsBridge {
   get(): Promise<ModelRoutingView>;
-  probe(target: { serverId: string } | { draft: { type: ServerType; url: string; key?: string } }): Promise<ServerProbe>;
-  saveServer(server: { id?: string; name?: string; type?: ServerType; url?: string; key?: string }): Promise<{ id: string; models: ModelRoutingView }>;
+  probe(
+    target: { serverId: string } | { draft: { type: ServerType; url: string; key?: string } },
+  ): Promise<ServerProbe>;
+  saveServer(server: {
+    id?: string;
+    name?: string;
+    type?: ServerType;
+    url?: string;
+    key?: string;
+  }): Promise<{ id: string; models: ModelRoutingView }>;
   removeServer(id: string): Promise<ModelRoutingView>;
   setRoute(use: UseId, route: ModelRoute): Promise<ModelRoutingView>;
   setKey(serverId: string, key: string): Promise<ModelRoutingView>;
   civitaiLookup?(ref: string, versionId?: number): Promise<CivitaiLookup>;
   /** `host`: a controller machine's name or "auto" to download there instead of on the server (the model controller runs it). */
-  download?(serverId: string, ref: string, versionId?: number, host?: string): Promise<ModelDownload>;
+  download?(
+    serverId: string,
+    ref: string,
+    versionId?: number,
+    host?: string,
+  ): Promise<ModelDownload>;
   /** The other machines the model controller can download to; inUse false when there is no controller. */
   downloadHosts?(): Promise<DownloadHosts>;
   downloads?(): Promise<ModelDownload[]>;
   /** A speech service's text-to-speech engines and models (null: it is down or too old). */
   speechEngines?(serverId: string): Promise<SpeechTtsEngine[] | null>;
   /** Download a Kitten model or Piper voice on a speech service; returns the updated list. */
-  speechDownload?(serverId: string, engine: string, model: string): Promise<SpeechTtsEngine[] | null>;
+  speechDownload?(
+    serverId: string,
+    engine: string,
+    model: string,
+  ): Promise<SpeechTtsEngine[] | null>;
   cancelDownload?(id: string): Promise<ModelDownload[]>;
   comfyAddon?(serverId: string): Promise<{ installed: boolean; folder: string }>;
   /** Thinking models from Hugging Face for this PC's llama-server. */
@@ -181,7 +226,10 @@ export interface ModelsBridge {
    * Run a downloaded model for Thinking (null: llama-server's default) and restart llama-server.
    * With settings, the slots and per-slot context are saved first.
    */
-  useLocalLlm?(id: string | null, settings?: Partial<LocalLlmSettings>): Promise<{ message: string; library: LocalLlmList; models: ModelRoutingView }>;
+  useLocalLlm?(
+    id: string | null,
+    settings?: Partial<LocalLlmSettings>,
+  ): Promise<{ message: string; library: LocalLlmList; models: ModelRoutingView }>;
   deleteLocalLlm?(id: string): Promise<LocalLlmList>;
 }
 
@@ -259,7 +307,9 @@ export interface MetricsBridge {
 }
 
 export interface RealtimeBridge {
-  mintEphemeralToken(request: RealtimeEphemeralTokenRequest): Promise<RealtimeEphemeralTokenResponse>;
+  mintEphemeralToken(
+    request: RealtimeEphemeralTokenRequest,
+  ): Promise<RealtimeEphemeralTokenResponse>;
 }
 
 export interface LocalVoiceBridge {
@@ -288,7 +338,10 @@ export interface AvatarBridge {
   uploadModel(request: AvatarModelUploadRequest): Promise<AvatarModelUploadResult>;
   deleteModel(modelId: string): Promise<void>;
   loadModelBinary(modelId: string): Promise<ArrayBuffer>;
-  updateModelThumbnail(modelId: string, thumbnailDataUrl: string): Promise<AvatarModelSummary | null>;
+  updateModelThumbnail(
+    modelId: string,
+    thumbnailDataUrl: string,
+  ): Promise<AvatarModelSummary | null>;
   updateModelDescription(modelId: string, description: string): Promise<AvatarModelSummary | null>;
   generateModelDescription(thumbnailDataUrl: string): Promise<string>;
   /** The character's voice for `engine` (kokoro, kitten, piper); without one, its OpenAI voice. */
@@ -302,7 +355,9 @@ export interface AvatarBridge {
   setIdleHabits(habits: string, avatarId?: string): Promise<void>;
   listAnimations(): Promise<AvatarAnimationSummary[]>;
   uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult>;
-  generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;
+  generateAnimation(
+    request: AvatarAnimationGenerationRequest,
+  ): Promise<AvatarAnimationUploadResult>;
   getMotionStatus(): Promise<AvatarMotionStatus>;
   streamMotion(request: AvatarMotionStreamRequest): Promise<AvatarMotionStreamResult>;
   /** Stops a running motion stream; its promise rejects. */
@@ -322,7 +377,10 @@ export interface AvatarBridge {
   listAvatarImageModels(): Promise<AvatarImageModelSelection>;
   setAvatarImageModel(id: string): Promise<void>;
   setAvatarImageLoras(choices: AvatarLoraChoice[]): Promise<void>;
-  suggestBaseModels(request: { baseModel?: string; family?: string }): Promise<BaseModelSuggestions>;
+  suggestBaseModels(request: {
+    baseModel?: string;
+    family?: string;
+  }): Promise<BaseModelSuggestions>;
   downloadBaseModel(serverId: string, ref: string): Promise<ModelDownload>;
   listModelDownloads(): Promise<ModelDownload[]>;
   generateAvatar(request: AvatarGenerationRequest): Promise<AvatarGenerationJob>;
@@ -411,7 +469,10 @@ export function createBridge(
   transport: BridgeTransport,
   options: { logError?: (message: string, meta?: Record<string, unknown>) => void } = {},
 ): PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } {
-  const cloneBinary = (payload: unknown, context: { id: string; errorMessage: string }): ArrayBuffer => cloneBinaryPayload(payload, context, options.logError);
+  const cloneBinary = (
+    payload: unknown,
+    context: { id: string; errorMessage: string },
+  ): ArrayBuffer => cloneBinaryPayload(payload, context, options.logError);
   const api: PreloadApi & { __bridgeReady: boolean; __bridgeVersion: string } = {
     config: {
       get: () => transport.invoke('config:get') as Promise<RendererConfig>,
@@ -421,65 +482,110 @@ export function createBridge(
       testSecret: (key) =>
         transport.invoke('config:test-secret', key) as Promise<{ ok: boolean; message?: string }>,
       clearSecret: (key) => transport.invoke('config:clear-secret', key) as Promise<RendererConfig>,
-      setProviderSettings: (patch) => transport.invoke('config:set-providers', patch) as Promise<RendererConfig>,
+      setProviderSettings: (patch) =>
+        transport.invoke('config:set-providers', patch) as Promise<RendererConfig>,
       setAudioDevicePreferences: (preferences) =>
         transport.invoke('config:set-audio-devices', preferences) as Promise<RendererConfig>,
     },
     models: {
       get: () => transport.invoke('models:get') as Promise<ModelRoutingView>,
       probe: (target) => transport.invoke('models:probe', target) as Promise<ServerProbe>,
-      saveServer: (server) => transport.invoke('models:save-server', server) as Promise<{ id: string; models: ModelRoutingView }>,
-      removeServer: (id) => transport.invoke('models:remove-server', id) as Promise<ModelRoutingView>,
-      setRoute: (use, route) => transport.invoke('models:set-route', { use, route }) as Promise<ModelRoutingView>,
-      setKey: (serverId, key) => transport.invoke('models:set-key', { serverId, key }) as Promise<ModelRoutingView>,
-      civitaiLookup: (ref, versionId) => transport.invoke('models:civitai-lookup', { ref, versionId }) as Promise<CivitaiLookup>,
-      download: (serverId, ref, versionId, host) => transport.invoke('models:download', { serverId, ref, versionId, host }) as Promise<ModelDownload>,
+      saveServer: (server) =>
+        transport.invoke('models:save-server', server) as Promise<{
+          id: string;
+          models: ModelRoutingView;
+        }>,
+      removeServer: (id) =>
+        transport.invoke('models:remove-server', id) as Promise<ModelRoutingView>,
+      setRoute: (use, route) =>
+        transport.invoke('models:set-route', { use, route }) as Promise<ModelRoutingView>,
+      setKey: (serverId, key) =>
+        transport.invoke('models:set-key', { serverId, key }) as Promise<ModelRoutingView>,
+      civitaiLookup: (ref, versionId) =>
+        transport.invoke('models:civitai-lookup', { ref, versionId }) as Promise<CivitaiLookup>,
+      download: (serverId, ref, versionId, host) =>
+        transport.invoke('models:download', {
+          serverId,
+          ref,
+          versionId,
+          host,
+        }) as Promise<ModelDownload>,
       downloadHosts: () => transport.invoke('models:download-hosts') as Promise<DownloadHosts>,
       downloads: () => transport.invoke('models:downloads') as Promise<ModelDownload[]>,
-      speechEngines: (serverId) => transport.invoke('models:speech-engines', serverId) as Promise<SpeechTtsEngine[] | null>,
+      speechEngines: (serverId) =>
+        transport.invoke('models:speech-engines', serverId) as Promise<SpeechTtsEngine[] | null>,
       speechDownload: (serverId, engine, model) =>
-        transport.invoke('models:speech-download', { serverId, engine, model }) as Promise<SpeechTtsEngine[] | null>,
-      cancelDownload: (id) => transport.invoke('models:cancel-download', id) as Promise<ModelDownload[]>,
-      comfyAddon: (serverId) => transport.invoke('models:comfy-addon', serverId) as Promise<{ installed: boolean; folder: string }>,
+        transport.invoke('models:speech-download', { serverId, engine, model }) as Promise<
+          SpeechTtsEngine[] | null
+        >,
+      cancelDownload: (id) =>
+        transport.invoke('models:cancel-download', id) as Promise<ModelDownload[]>,
+      comfyAddon: (serverId) =>
+        transport.invoke('models:comfy-addon', serverId) as Promise<{
+          installed: boolean;
+          folder: string;
+        }>,
       hfLookup: (ref) => transport.invoke('models:hf-lookup', ref) as Promise<HfLookup>,
-      hfDownload: (repo, quant, use, host) => transport.invoke('models:hf-download', { repo, quant, use, host }) as Promise<LlmDownload>,
+      hfDownload: (repo, quant, use, host) =>
+        transport.invoke('models:hf-download', { repo, quant, use, host }) as Promise<LlmDownload>,
       hfDownloads: () => transport.invoke('models:hf-downloads') as Promise<LlmDownload[]>,
       hfCancel: (id) => transport.invoke('models:hf-cancel', id) as Promise<LlmDownload[]>,
       visionStatus: () => transport.invoke('models:vision-status') as Promise<VisionStatus>,
-      visionDownload: (ref) => transport.invoke('models:vision-download', ref) as Promise<VisionStatus>,
+      visionDownload: (ref) =>
+        transport.invoke('models:vision-download', ref) as Promise<VisionStatus>,
       visionCancel: () => transport.invoke('models:vision-cancel') as Promise<VisionStatus>,
       localLlms: () => transport.invoke('models:local-llms') as Promise<LocalLlmList>,
-      useLocalLlm: (id, settings) => transport.invoke('models:use-local-llm', id, settings) as Promise<{ message: string; library: LocalLlmList; models: ModelRoutingView }>,
-      deleteLocalLlm: (id) => transport.invoke('models:delete-local-llm', id) as Promise<LocalLlmList>,
+      useLocalLlm: (id, settings) =>
+        transport.invoke('models:use-local-llm', id, settings) as Promise<{
+          message: string;
+          library: LocalLlmList;
+          models: ModelRoutingView;
+        }>,
+      deleteLocalLlm: (id) =>
+        transport.invoke('models:delete-local-llm', id) as Promise<LocalLlmList>,
     },
     realtime: {
       mintEphemeralToken: (request) =>
-        transport.invoke('realtime:mint-ephemeral-token', request) as Promise<RealtimeEphemeralTokenResponse>,
+        transport.invoke(
+          'realtime:mint-ephemeral-token',
+          request,
+        ) as Promise<RealtimeEphemeralTokenResponse>,
     },
     localVoice: {
       getStatus: () => transport.invoke('local-voice:status') as Promise<LocalVoiceStatus>,
-      transcribe: (wav) => transport.invoke('local-voice:transcribe', wav) as Promise<LocalVoiceTranscribeResult>,
-      respond: (request) => transport.invoke('local-voice:respond', request) as Promise<LocalVoiceRespondResult>,
+      transcribe: (wav) =>
+        transport.invoke('local-voice:transcribe', wav) as Promise<LocalVoiceTranscribeResult>,
+      respond: (request) =>
+        transport.invoke('local-voice:respond', request) as Promise<LocalVoiceRespondResult>,
       cancel: async (requestId, avatarId) => {
         await (avatarId === undefined
           ? transport.invoke('local-voice:cancel', requestId)
           : transport.invoke('local-voice:cancel', requestId, avatarId));
       },
       resetHistory: async (avatarId) => {
-        await (avatarId === undefined ? transport.invoke('local-voice:reset') : transport.invoke('local-voice:reset', avatarId));
+        await (avatarId === undefined
+          ? transport.invoke('local-voice:reset')
+          : transport.invoke('local-voice:reset', avatarId));
       },
       getVoiceOptions: (avatarId) =>
-        (avatarId ? transport.invoke('local-voice:voice-options', avatarId) : transport.invoke('local-voice:voice-options')) as Promise<SpeakingVoiceOptions>,
+        (avatarId
+          ? transport.invoke('local-voice:voice-options', avatarId)
+          : transport.invoke('local-voice:voice-options')) as Promise<SpeakingVoiceOptions>,
       systemStatus: (avatarId) =>
         (avatarId === undefined
           ? transport.invoke('local-voice:system-status')
-          : transport.invoke('local-voice:system-status', avatarId)) as Promise<LocalVoiceSystemStatus>,
+          : transport.invoke(
+              'local-voice:system-status',
+              avatarId,
+            )) as Promise<LocalVoiceSystemStatus>,
       onSystemReady: (listener) => {
         const channel = 'local-voice:system-ready';
         const handler = (info?: { urgent?: boolean; avatarId?: string }) =>
           listener({
             urgent: info?.urgent === true,
-            ...(typeof info?.avatarId === 'string' && info.avatarId ? { avatarId: info.avatarId } : {}),
+            ...(typeof info?.avatarId === 'string' && info.avatarId
+              ? { avatarId: info.avatarId }
+              : {}),
           });
         return transport.on(channel, handler);
       },
@@ -490,7 +596,9 @@ export function createBridge(
       },
     },
     wakeWord: {
-      setListeningEnabled: async (enabled: boolean) => { await transport.invoke('wake-word:set-listening', enabled); },
+      setListeningEnabled: async (enabled: boolean) => {
+        await transport.invoke('wake-word:set-listening', enabled);
+      },
       onWake: (listener) => {
         const channel = 'wake-word:event';
         const handler = (payload: WakeWordDetectionEvent) => listener(payload);
@@ -502,10 +610,15 @@ export function createBridge(
         return transport.on(channel, handler);
       },
       list: () => transport.invoke('wake-word:list') as Promise<WakeWordOption[]>,
-      getTrainingStatus: () => transport.invoke('wake-word:get-training-status') as Promise<WakeWordTrainingStatus>,
+      getTrainingStatus: () =>
+        transport.invoke('wake-word:get-training-status') as Promise<WakeWordTrainingStatus>,
       train: (phrase, options) =>
-        transport.invoke('wake-word:train', { phrase, quick: options?.quick === true }) as Promise<WakeWordTrainingStatus>,
-      cancelTraining: () => transport.invoke('wake-word:cancel-training') as Promise<WakeWordTrainingStatus>,
+        transport.invoke('wake-word:train', {
+          phrase,
+          quick: options?.quick === true,
+        }) as Promise<WakeWordTrainingStatus>,
+      cancelTraining: () =>
+        transport.invoke('wake-word:cancel-training') as Promise<WakeWordTrainingStatus>,
       onTrainingStatus: (listener) => {
         const channel = 'wake-word:training-status';
         const handler = (payload: WakeWordTrainingStatus) => listener(payload);
@@ -518,7 +631,8 @@ export function createBridge(
         const handler = (payload: TalkTriggerEvent) => listener(payload);
         return transport.on(channel, handler);
       },
-      getShortcutStatus: () => transport.invoke('talk:get-shortcut-status') as Promise<PushToTalkStatus>,
+      getShortcutStatus: () =>
+        transport.invoke('talk:get-shortcut-status') as Promise<PushToTalkStatus>,
       onShortcutStatus: (listener) => {
         const channel = 'talk:shortcut-status';
         const handler = (payload: PushToTalkStatus) => listener(payload);
@@ -526,10 +640,12 @@ export function createBridge(
       },
     },
     conversation: {
-      getHistory: () => transport.invoke('conversation:get-history') as Promise<ConversationHistory>,
+      getHistory: () =>
+        transport.invoke('conversation:get-history') as Promise<ConversationHistory>,
       appendMessage: (message) =>
         transport.invoke('conversation:append-message', message) as Promise<ConversationMessage>,
-      announce: (entry) => transport.invoke('conversation:announce', entry) as Promise<ConversationMessage[]>,
+      announce: (entry) =>
+        transport.invoke('conversation:announce', entry) as Promise<ConversationMessage[]>,
       onSessionStarted: (listener) => {
         const channel = 'conversation:session-started';
         const handler = (payload: ConversationSession) => listener(payload);
@@ -580,8 +696,10 @@ export function createBridge(
     furniture: {
       list: () => transport.invoke('furniture:list') as Promise<FurnitureItem[]>,
       load: (id) => transport.invoke('furniture:load', id) as Promise<FurnitureItem>,
-      generate: (prompt) => transport.invoke('furniture:generate', prompt) as Promise<FurnitureItem>,
-      edit: (id, prompt) => transport.invoke('furniture:edit', id, prompt) as Promise<FurnitureItem>,
+      generate: (prompt) =>
+        transport.invoke('furniture:generate', prompt) as Promise<FurnitureItem>,
+      edit: (id, prompt) =>
+        transport.invoke('furniture:edit', id, prompt) as Promise<FurnitureItem>,
       delete: (id) => transport.invoke('furniture:delete', id) as Promise<void>,
       model: async (id) =>
         cloneBinary(await transport.invoke('furniture:model', id), {
@@ -596,17 +714,25 @@ export function createBridge(
     },
     avatar: {
       listModels: () => transport.invoke('avatar-model:list') as Promise<AvatarModelSummary[]>,
-      getActiveModel: () => transport.invoke('avatar-model:get-active') as Promise<AvatarModelSummary | null>,
+      getActiveModel: () =>
+        transport.invoke('avatar-model:get-active') as Promise<AvatarModelSummary | null>,
       setActiveModel: (modelId) =>
         transport.invoke('avatar-model:set-active', modelId) as Promise<AvatarModelSummary | null>,
       getVoicePreference: (engine, avatarId) =>
         (avatarId === undefined
           ? transport.invoke('avatar:voice:get-preference', engine)
-          : transport.invoke('avatar:voice:get-preference', engine, avatarId)) as Promise<string | null>,
+          : transport.invoke('avatar:voice:get-preference', engine, avatarId)) as Promise<
+          string | null
+        >,
       setVoicePreference: (voice, engine, avatarId) =>
         (avatarId === undefined
           ? transport.invoke('avatar:voice:set-preference', voice, engine)
-          : transport.invoke('avatar:voice:set-preference', voice, engine, avatarId)) as Promise<void>,
+          : transport.invoke(
+              'avatar:voice:set-preference',
+              voice,
+              engine,
+              avatarId,
+            )) as Promise<void>,
       getPromptPreference: (avatarId) =>
         (avatarId === undefined
           ? transport.invoke('avatar:prompt:get-preference')
@@ -649,12 +775,20 @@ export function createBridge(
         transport.invoke('avatar-model:generate-description', {
           thumbnailDataUrl,
         }) as Promise<string>,
-      listAnimations: () => transport.invoke('avatar-animation:list') as Promise<AvatarAnimationSummary[]>,
+      listAnimations: () =>
+        transport.invoke('avatar-animation:list') as Promise<AvatarAnimationSummary[]>,
       uploadAnimation: (payload) =>
-        transport.invoke('avatar-animation:upload', payload) as Promise<AvatarAnimationUploadResult>,
+        transport.invoke(
+          'avatar-animation:upload',
+          payload,
+        ) as Promise<AvatarAnimationUploadResult>,
       generateAnimation: (payload: AvatarAnimationGenerationRequest) =>
-        transport.invoke('avatar-animation:generate', payload) as Promise<AvatarAnimationUploadResult>,
-      getMotionStatus: () => transport.invoke('avatar-motion:status') as Promise<AvatarMotionStatus>,
+        transport.invoke(
+          'avatar-animation:generate',
+          payload,
+        ) as Promise<AvatarAnimationUploadResult>,
+      getMotionStatus: () =>
+        transport.invoke('avatar-motion:status') as Promise<AvatarMotionStatus>,
       streamMotion: (payload: AvatarMotionStreamRequest) =>
         transport.invoke('avatar-motion:stream', payload) as Promise<AvatarMotionStreamResult>,
       cancelMotion: async (streamId) => {
@@ -669,7 +803,11 @@ export function createBridge(
         await transport.invoke('avatar-animation:delete', animationId);
       },
       renameAnimation: async (animationId, newName) =>
-        transport.invoke('avatar-animation:rename', animationId, newName) as Promise<AvatarAnimationSummary>,
+        transport.invoke(
+          'avatar-animation:rename',
+          animationId,
+          newName,
+        ) as Promise<AvatarAnimationSummary>,
       loadAnimationBinary: async (animationId) => {
         const payload: unknown = await transport.invoke('avatar-animation:load', animationId);
         return cloneBinary(payload, {
@@ -695,16 +833,28 @@ export function createBridge(
         transport.invoke('avatar-pose:evaluate', payload) as Promise<PoseEvaluationResult>,
       refinePose: (payload: PoseEvaluationRequest) =>
         transport.invoke('avatar-pose:refine', payload) as Promise<AvatarPoseUploadResult>,
-      listAvatarImageModels: () => transport.invoke('avatar:image-models') as Promise<AvatarImageModelSelection>,
-      setAvatarImageModel: async (id: string) => { await transport.invoke('avatar:image-model-select', id); },
-      setAvatarImageLoras: async (choices: AvatarLoraChoice[]) => { await transport.invoke('avatar:image-loras-select', choices); },
+      listAvatarImageModels: () =>
+        transport.invoke('avatar:image-models') as Promise<AvatarImageModelSelection>,
+      setAvatarImageModel: async (id: string) => {
+        await transport.invoke('avatar:image-model-select', id);
+      },
+      setAvatarImageLoras: async (choices: AvatarLoraChoice[]) => {
+        await transport.invoke('avatar:image-loras-select', choices);
+      },
       suggestBaseModels: (request: { baseModel?: string; family?: string }) =>
         transport.invoke('avatar:base-model-suggestions', request) as Promise<BaseModelSuggestions>,
-      downloadBaseModel: (serverId: string, ref: string) => transport.invoke('models:download', { serverId, ref }) as Promise<ModelDownload>,
+      downloadBaseModel: (serverId: string, ref: string) =>
+        transport.invoke('models:download', { serverId, ref }) as Promise<ModelDownload>,
       listModelDownloads: () => transport.invoke('models:downloads') as Promise<ModelDownload[]>,
       generateAvatar: (payload: AvatarGenerationRequest) =>
         transport.invoke('avatar:generation-start', payload) as Promise<AvatarGenerationJob>,
-      confirmAvatarConcept: async (jobId: string, confirmation?: AvatarGenerationConfirmation) => { await transport.invoke('avatar:generation-confirm-concept', jobId, ...(confirmation ? [confirmation] : [])); },
+      confirmAvatarConcept: async (jobId: string, confirmation?: AvatarGenerationConfirmation) => {
+        await transport.invoke(
+          'avatar:generation-confirm-concept',
+          jobId,
+          ...(confirmation ? [confirmation] : []),
+        );
+      },
       getAvatarGenerationStatus: (jobId: string) =>
         transport.invoke('avatar:generation-status', jobId) as Promise<AvatarGenerationStatus>,
       loadGeneratedAvatarPreview: async (jobId: string) => {
@@ -721,9 +871,15 @@ export function createBridge(
       },
       listAvatarGenerationJobs: () =>
         transport.invoke('avatar:generation-list') as Promise<AvatarGenerationStatus[]>,
-      removeAvatarBackground: async (jobId: string) => { await transport.invoke('avatar:generation-remove-background', jobId); },
-      restoreAvatarBackground: async (jobId: string) => { await transport.invoke('avatar:generation-restore-background', jobId); },
-      redrawAvatarViews: async (jobId: string) => { await transport.invoke('avatar:generation-redraw-views', jobId); },
+      removeAvatarBackground: async (jobId: string) => {
+        await transport.invoke('avatar:generation-remove-background', jobId);
+      },
+      restoreAvatarBackground: async (jobId: string) => {
+        await transport.invoke('avatar:generation-restore-background', jobId);
+      },
+      redrawAvatarViews: async (jobId: string) => {
+        await transport.invoke('avatar:generation-redraw-views', jobId);
+      },
       cancelAvatarGeneration: async (jobId: string) => {
         await transport.invoke('avatar:generation-cancel', jobId);
       },
@@ -760,14 +916,16 @@ export function createBridge(
     avatars: {
       list: () => transport.invoke('avatars:list') as Promise<AvatarProfile[]>,
       add: (input) => transport.invoke('avatars:add', input) as Promise<AvatarProfile>,
-      update: (id, changes) => transport.invoke('avatars:update', id, changes) as Promise<AvatarProfile>,
+      update: (id, changes) =>
+        transport.invoke('avatars:update', id, changes) as Promise<AvatarProfile>,
       remove: async (id) => {
         await transport.invoke('avatars:remove', id);
       },
       setTagInstructions: async (instructions) => {
         await transport.invoke('avatars:set-tag-instructions', instructions);
       },
-      idlePersonas: () => transport.invoke('avatars:idle-personas') as Promise<Record<string, AvatarIdlePersona>>,
+      idlePersonas: () =>
+        transport.invoke('avatars:idle-personas') as Promise<Record<string, AvatarIdlePersona>>,
     },
     presence: {
       update: (payload) => transport.invoke('presence:update', payload),
@@ -789,18 +947,30 @@ export function createBridge(
         return transport.on(channel, handler);
       },
       move: (avatarId, placeRef, reason) =>
-        (reason === undefined ? transport.invoke('places:move', avatarId, placeRef) : transport.invoke('places:move', avatarId, placeRef, reason)) as Promise<{ ok: boolean; reason?: string }>,
+        (reason === undefined
+          ? transport.invoke('places:move', avatarId, placeRef)
+          : transport.invoke('places:move', avatarId, placeRef, reason)) as Promise<{
+          ok: boolean;
+          reason?: string;
+        }>,
       arrived: async (avatarId) => {
         await transport.invoke('places:arrived', avatarId);
       },
       summon: () => transport.invoke('places:summon'),
-      canWander: (avatarId: string, placeRef: string, speaking?: boolean) => transport.invoke('places:can-wander', avatarId, placeRef, speaking === true) as Promise<{ ok: boolean; reason?: string }>,
+      canWander: (avatarId: string, placeRef: string, speaking?: boolean) =>
+        transport.invoke('places:can-wander', avatarId, placeRef, speaking === true) as Promise<{
+          ok: boolean;
+          reason?: string;
+        }>,
     },
     stations: {
       list: () => transport.invoke('stations:list') as ReturnType<StationsBridge['list']>,
       hold: (roomId, objectId, source, extra) =>
-        transport.invoke('stations:hold', roomId, objectId, source, extra) as ReturnType<StationsBridge['hold']>,
-      update: (id, changes) => transport.invoke('stations:update', id, changes) as ReturnType<StationsBridge['update']>,
+        transport.invoke('stations:hold', roomId, objectId, source, extra) as ReturnType<
+          StationsBridge['hold']
+        >,
+      update: (id, changes) =>
+        transport.invoke('stations:update', id, changes) as ReturnType<StationsBridge['update']>,
       remove: (id) => transport.invoke('stations:remove', id) as Promise<boolean>,
       onUse: (listener) => {
         const channel = 'station:use';
@@ -812,7 +982,10 @@ export function createBridge(
       },
     },
     pursuits: {
-      start: (avatarId, stationId) => transport.invoke('pursuits:start', avatarId, stationId) as ReturnType<PursuitsBridge['start']>,
+      start: (avatarId, stationId) =>
+        transport.invoke('pursuits:start', avatarId, stationId) as ReturnType<
+          PursuitsBridge['start']
+        >,
       stop: async (avatarId) => {
         await transport.invoke('pursuits:stop', avatarId);
       },
@@ -823,7 +996,8 @@ export function createBridge(
         const handler = (running: string[]) => listener(running);
         return transport.on(channel, handler);
       },
-      notes: (avatarId, limit) => transport.invoke('pursuits:notes', avatarId, limit) as ReturnType<PursuitsBridge['notes']>,
+      notes: (avatarId, limit) =>
+        transport.invoke('pursuits:notes', avatarId, limit) as ReturnType<PursuitsBridge['notes']>,
     },
     roomHub: {
       status: () => transport.invoke('room-hub:status') as Promise<RoomHubStatus>,
@@ -838,9 +1012,12 @@ export function createBridge(
       },
       revoke: (deviceId) => transport.invoke('room-hub:revoke', deviceId) as Promise<boolean>,
       rename: (placeId, name) => transport.invoke('room-hub:rename', placeId, name),
-      setRoom: (placeId, room) => transport.invoke('room-hub:set-room', placeId, room) as Promise<boolean>,
-      setCamera: (placeId, on) => transport.invoke('room-hub:set-camera', placeId, on) as Promise<boolean>,
-      setDoorbell: (placeId, on) => transport.invoke('room-hub:set-doorbell', placeId, on) as Promise<boolean>,
+      setRoom: (placeId, room) =>
+        transport.invoke('room-hub:set-room', placeId, room) as Promise<boolean>,
+      setCamera: (placeId, on) =>
+        transport.invoke('room-hub:set-camera', placeId, on) as Promise<boolean>,
+      setDoorbell: (placeId, on) =>
+        transport.invoke('room-hub:set-doorbell', placeId, on) as Promise<boolean>,
     },
     satellite: {
       status: () => transport.invoke('satellite:status') as Promise<SatelliteStatus>,
@@ -878,7 +1055,8 @@ export function createBridge(
       status: () => transport.invoke('coding:status') as Promise<CodingStatus>,
       pickGguf: () => transport.invoke('coding:pick-gguf') as Promise<string | null>,
       pickFolder: () => transport.invoke('coding:pick-folder') as Promise<string | null>,
-      suggestChecks: (workspaceId) => transport.invoke('coding:suggest-checks', workspaceId) as Promise<string | null>,
+      suggestChecks: (workspaceId) =>
+        transport.invoke('coding:suggest-checks', workspaceId) as Promise<string | null>,
     },
     codingTasks: {
       list: () => transport.invoke('coding:tasks'),
@@ -929,19 +1107,24 @@ export function createBridge(
     },
     mcp: {
       listServers: () => transport.invoke('mcp:list-servers') as Promise<MCPServerSummary[]>,
-      addServer: (config) => transport.invoke('mcp:add-server', config) as Promise<MCPServerSummary>,
+      addServer: (config) =>
+        transport.invoke('mcp:add-server', config) as Promise<MCPServerSummary>,
       updateServer: (id, updates) =>
         transport.invoke('mcp:update-server', id, updates) as Promise<MCPServerSummary>,
       signIn: (id) => transport.invoke('mcp:sign-in', id) as Promise<MCPConnectionResult>,
       signOut: (id) => transport.invoke('mcp:sign-out', id) as Promise<void>,
       listPresets: () => transport.invoke('mcp:list-presets') as Promise<MCPPresetSummary[]>,
-      addPreset: (presetId) => transport.invoke('mcp:add-preset', presetId) as Promise<MCPServerSummary>,
+      addPreset: (presetId) =>
+        transport.invoke('mcp:add-preset', presetId) as Promise<MCPServerSummary>,
       deleteServer: (id) => transport.invoke('mcp:delete-server', id) as Promise<void>,
-      connectServer: (id) => transport.invoke('mcp:connect-server', id) as Promise<MCPConnectionResult>,
+      connectServer: (id) =>
+        transport.invoke('mcp:connect-server', id) as Promise<MCPConnectionResult>,
       disconnectServer: (id) => transport.invoke('mcp:disconnect-server', id) as Promise<void>,
-      testConnection: (id) => transport.invoke('mcp:test-connection', id) as Promise<MCPConnectionResult>,
+      testConnection: (id) =>
+        transport.invoke('mcp:test-connection', id) as Promise<MCPConnectionResult>,
 
-      listTools: (serverId?) => transport.invoke('mcp:list-tools', serverId) as Promise<MCPToolSummary[]>,
+      listTools: (serverId?) =>
+        transport.invoke('mcp:list-tools', serverId) as Promise<MCPToolSummary[]>,
       updateToolPreferences: (toolId, prefs) =>
         transport.invoke('mcp:update-tool-preferences', toolId, prefs) as Promise<void>,
       executeTool: (toolId, params) =>
@@ -959,7 +1142,8 @@ export function createBridge(
         return transport.on(channel, handler);
       },
 
-      getToolDefinitionsForLLM: () => transport.invoke('mcp:get-tool-definitions') as Promise<OpenAIFunction[]>,
+      getToolDefinitionsForLLM: () =>
+        transport.invoke('mcp:get-tool-definitions') as Promise<OpenAIFunction[]>,
     },
     app: {
       quit: async () => {
@@ -971,7 +1155,8 @@ export function createBridge(
         if (transport.send) transport.send('motion-trace:append', lines);
         else void transport.invoke('motion-trace:append', lines).catch(() => undefined);
       },
-      configure: async (settingOn) => Boolean(await transport.invoke('motion-trace:configure', settingOn)),
+      configure: async (settingOn) =>
+        Boolean(await transport.invoke('motion-trace:configure', settingOn)),
     },
     ping: () => 'pong',
     __bridgeReady: true,

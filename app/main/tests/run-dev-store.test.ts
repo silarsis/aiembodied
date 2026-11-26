@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 const childProcessMock = vi.hoisted(() => ({
-  spawnSync: vi.fn(() => ({ status: 0, stdout: 'C:/Users/test/AppData/Local/pnpm/store/v3\r\n', stderr: '' })),
+  spawnSync: vi.fn(() => ({
+    status: 0,
+    stdout: 'C:/Users/test/AppData/Local/pnpm/store/v3\r\n',
+    stderr: '',
+  })),
 }));
 
 vi.mock('node:child_process', async () => {

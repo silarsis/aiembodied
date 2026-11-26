@@ -19,8 +19,12 @@ export interface ObjectSettingsView extends ObjectSettings {
 
 /** Anything unreadable falls back to the default for that field. */
 export function sanitizeObjectSettings(input: unknown): ObjectSettings {
-  const value = typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {};
-  const count = typeof value.maxPerRoom === 'number' && Number.isFinite(value.maxPerRoom) ? Math.round(value.maxPerRoom) : DEFAULT_OBJECT_SETTINGS.maxPerRoom;
+  const value =
+    typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {};
+  const count =
+    typeof value.maxPerRoom === 'number' && Number.isFinite(value.maxPerRoom)
+      ? Math.round(value.maxPerRoom)
+      : DEFAULT_OBJECT_SETTINGS.maxPerRoom;
   return {
     enabled: typeof value.enabled === 'boolean' ? value.enabled : DEFAULT_OBJECT_SETTINGS.enabled,
     maxPerRoom: Math.min(MAX_OBJECTS_PER_ROOM, Math.max(0, count)),

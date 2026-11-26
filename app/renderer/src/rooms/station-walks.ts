@@ -10,7 +10,15 @@ import type { RoomFile } from '../../../main/src/shared/rooms/types.js';
 import type { StationUseEvent } from '../../../main/src/shared/stations/types.js';
 import type { SceneAction, PlanWorld, AvatarState } from './scene-actions.js';
 import type { PlanBuilder } from './scene-executor.js';
-import { GESTURE_REPEAT_MS, READ_REPEAT_MS, planRelease, planSit, planTake, resolveBodyPlan, type BodyPlan } from './station-body.js';
+import {
+  GESTURE_REPEAT_MS,
+  READ_REPEAT_MS,
+  planRelease,
+  planSit,
+  planTake,
+  resolveBodyPlan,
+  type BodyPlan,
+} from './station-body.js';
 
 /** The parts of an avatar's scene executor a station walk uses. */
 export interface StationWalkExecutor {
@@ -76,19 +84,36 @@ function stopReading(avatarId: string): void {
  * skip a gesture then, with a warning: sitting and holding the book is the reading) and, unless `force`, when the
  * same gesture was played a moment ago.
  */
-function playGesture(executor: StationWalkExecutor, deps: StationWalkDeps, avatarId: string, text: string, force = false): void {
+function playGesture(
+  executor: StationWalkExecutor,
+  deps: StationWalkDeps,
+  avatarId: string,
+  text: string,
+  force = false,
+): void {
   executor.submitAfter(`gesture ${text}`, () => {
     if (executor.getState?.().posture === 'seated') return;
     const session = sessionOf(avatarId);
     const now = Date.now();
-    if (!force && session.lastGesture && session.lastGesture.text === text && now - session.lastGesture.at < GESTURE_REPEAT_MS) return;
+    if (
+      !force &&
+      session.lastGesture &&
+      session.lastGesture.text === text &&
+      now - session.lastGesture.at < GESTURE_REPEAT_MS
+    )
+      return;
     session.lastGesture = { text, at: now };
     deps.gesture(`{move:${text}}`, avatarId);
   });
 }
 
 /** A pursuit's step, acted with the body plan: take the book and read it seated, or just gestures when the room lacks the means. */
-function pursuitActivity(event: StationUseEvent, plan: BodyPlan, executor: StationWalkExecutor, deps: StationWalkDeps): void {
+function pursuitActivity(
+  event: StationUseEvent,
+  plan: BodyPlan,
+  executor: StationWalkExecutor,
+  deps: StationWalkDeps,
+): void {
   const avatarId = event.avatarId;
   stopReading(avatarId);
   if (event.step === 'consume') {
@@ -99,7 +124,10 @@ function pursuitActivity(event: StationUseEvent, plan: BodyPlan, executor: Stati
     }
     playGesture(executor, deps, avatarId, plan.read, true);
     // Keep reading while the step lasts. Seated, the gesture is left out (see playGesture).
-    sessionOf(avatarId).timer = setInterval(() => playGesture(executor, deps, avatarId, plan.read, true), READ_REPEAT_MS);
+    sessionOf(avatarId).timer = setInterval(
+      () => playGesture(executor, deps, avatarId, plan.read, true),
+      READ_REPEAT_MS,
+    );
     return;
   }
   if (event.step === 'note') {
@@ -120,7 +148,10 @@ function clean(text: string): string {
 export function handleStationUse(event: StationUseEvent, deps: StationWalkDeps): void {
   // The body plan applies to a pursuit's events that carry one, in the room the station is in.
   const room = deps.room();
-  const plan = event.source === 'pursuit' && event.body && room?.id === event.roomId ? resolveBodyPlan(room, event.objectId, event.body, event.activity) : null;
+  const plan =
+    event.source === 'pursuit' && event.body && room?.id === event.roomId
+      ? resolveBodyPlan(room, event.objectId, event.body, event.activity)
+      : null;
 
   // A pursuit moves on to its next step: the avatar acts it out where it stands (no walking, no answer to main).
   if (event.phase === 'activity') {
@@ -138,7 +169,9 @@ export function handleStationUse(event: StationUseEvent, deps: StationWalkDeps):
     // the avatar then comes back to its spot, where the conversation finds it. A tool call changes nothing here.
     const executor = deps.executorFor(event.avatarId);
     if (plan && executor?.submitPlan && room?.id === event.roomId && deps.isHere(event.avatarId)) {
-      executor.submitPlan('put the book back', (world, state) => planRelease(plan, world, state, event.ok === false));
+      executor.submitPlan('put the book back', (world, state) =>
+        planRelease(plan, world, state, event.ok === false),
+      );
     }
     return;
   }

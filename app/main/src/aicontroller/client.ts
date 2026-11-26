@@ -3,33 +3,43 @@
  * Kept as upstream wrote it apart from lint fixes (Record<string, any> became Record<string, unknown>; a non-null assertion removed);
  * resync from there rather than editing it. The client has no runtime dependencies.
  */
-import { claimLaunchLock, DEFAULT_URL, findHome, isLoopback, launchDetached, startService } from "./launcher.js";
-import type { Launcher, ServiceStarter } from "./launcher.js";
+import {
+  claimLaunchLock,
+  DEFAULT_URL,
+  findHome,
+  isLoopback,
+  launchDetached,
+  startService,
+} from './launcher.js';
+import type { Launcher, ServiceStarter } from './launcher.js';
 
-export { launchDetached, startService } from "./launcher.js";
-export type { Launcher, ServiceStarter } from "./launcher.js";
+export { launchDetached, startService } from './launcher.js';
+export type { Launcher, ServiceStarter } from './launcher.js';
 
 // Symbol.asyncDispose is missing before Node 20.
-(Symbol as { asyncDispose?: symbol }).asyncDispose ??= Symbol.for("Symbol.asyncDispose");
+(Symbol as { asyncDispose?: symbol }).asyncDispose ??= Symbol.for('Symbol.asyncDispose');
 
 export class ControllerError extends Error {
-  constructor(message: string, public status?: number) {
+  constructor(
+    message: string,
+    public status?: number,
+  ) {
     super(message);
-    this.name = "ControllerError";
+    this.name = 'ControllerError';
   }
 }
 /** The controller took the lease back (for example the GPU is needed by a game). */
 export class LeaseRevoked extends ControllerError {
   constructor(message: string, status = 410) {
     super(message, status);
-    this.name = "LeaseRevoked";
+    this.name = 'LeaseRevoked';
   }
 }
 /** The controller cannot be reached or started and no fallback was given. */
 export class ControllerUnavailable extends ControllerError {
   constructor(message: string) {
     super(message);
-    this.name = "ControllerUnavailable";
+    this.name = 'ControllerUnavailable';
   }
 }
 
@@ -62,11 +72,11 @@ export interface LeaseOptions {
 
 export interface ModelsOptions {
   kind?: string;
-  scope?: "all" | "local";
+  scope?: 'all' | 'local';
 }
 
 export interface DownloadSource {
-  type: "huggingface" | "civitai" | "url" | "peer";
+  type: 'huggingface' | 'civitai' | 'url' | 'peer';
   repo?: string;
   file?: string;
   revision?: string;
@@ -126,16 +136,16 @@ const LEASE_POLL_MS = 2000;
 function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
   if (!signal) return sleep(ms);
   return new Promise<void>((resolve, reject) => {
-    if (signal.aborted) return reject(signal.reason ?? new Error("aborted"));
+    if (signal.aborted) return reject(signal.reason ?? new Error('aborted'));
     const onAbort = () => {
       clearTimeout(timer);
-      reject(signal.reason ?? new Error("aborted"));
+      reject(signal.reason ?? new Error('aborted'));
     };
     const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
+      signal.removeEventListener('abort', onAbort);
       resolve();
     }, ms);
-    signal.addEventListener("abort", onAbort, { once: true });
+    signal.addEventListener('abort', onAbort, { once: true });
   });
 }
 
@@ -150,7 +160,12 @@ export class Lease {
   private releasing?: Promise<void>;
   private onAbort?: () => void;
 
-  constructor(private ctl: Controller | undefined, data: LeaseData, readonly direct = false, private signal?: AbortSignal) {
+  constructor(
+    private ctl: Controller | undefined,
+    data: LeaseData,
+    readonly direct = false,
+    private signal?: AbortSignal,
+  ) {
     this.data = data;
     if (ctl && !direct) {
       const ms = Math.max(((data.ttl_s ?? 120) * 1000) / 3, 20);
@@ -159,22 +174,32 @@ export class Lease {
       if (signal) {
         this.onAbort = () => void this.release();
         if (signal.aborted) this.onAbort();
-        else signal.addEventListener("abort", this.onAbort, { once: true });
+        else signal.addEventListener('abort', this.onAbort, { once: true });
       }
     }
   }
 
-  get id(): string { return this.data.id; }
-  get url(): string | null { return this.data.url; }
-  get backend(): string { return this.data.backend; }
-  get model(): string | null | undefined { return this.data.model; }
-  get state(): string { return this.data.state; }
+  get id(): string {
+    return this.data.id;
+  }
+  get url(): string | null {
+    return this.data.url;
+  }
+  get backend(): string {
+    return this.data.backend;
+  }
+  get model(): string | null | undefined {
+    return this.data.model;
+  }
+  get state(): string {
+    return this.data.state;
+  }
 
   private async beat(): Promise<void> {
     if (this.released || !this.ctl) return;
     try {
-      this.data = await this.ctl.request<LeaseData>("POST", `/v1/leases/${this.id}/heartbeat`);
-      if (this.data.state === "revoked") await this.noteEnd();
+      this.data = await this.ctl.request<LeaseData>('POST', `/v1/leases/${this.id}/heartbeat`);
+      if (this.data.state === 'revoked') await this.noteEnd();
     } catch (e) {
       if (e instanceof ControllerError && (e.status === 404 || e.status === 410)) {
         this.lost = true;
@@ -186,10 +211,14 @@ export class Lease {
   private async noteEnd(): Promise<void> {
     this.stopTimer();
     try {
-      if (this.ctl) this.data = await this.ctl.request<LeaseData>("GET", `/v1/leases/${this.id}`);
-    } catch { /* keep what we have */ }
-    if (this.data.state === "revoked") {
-      this.revoked = new LeaseRevoked(`lease on '${this.data.backend}' was revoked: ${this.data.error}`);
+      if (this.ctl) this.data = await this.ctl.request<LeaseData>('GET', `/v1/leases/${this.id}`);
+    } catch {
+      /* keep what we have */
+    }
+    if (this.data.state === 'revoked') {
+      this.revoked = new LeaseRevoked(
+        `lease on '${this.data.backend}' was revoked: ${this.data.error}`,
+      );
     }
   }
 
@@ -207,11 +236,13 @@ export class Lease {
   private async doRelease(): Promise<void> {
     this.released = true;
     this.stopTimer();
-    if (this.onAbort) this.signal?.removeEventListener("abort", this.onAbort);
+    if (this.onAbort) this.signal?.removeEventListener('abort', this.onAbort);
     if (!this.ctl || this.direct) return;
     try {
-      await this.ctl.request("DELETE", `/v1/leases/${this.id}`);
-    } catch { /* idempotent; the ttl cleans up */ }
+      await this.ctl.request('DELETE', `/v1/leases/${this.id}`);
+    } catch {
+      /* idempotent; the ttl cleans up */
+    }
   }
 
   private stopTimer(): void {
@@ -237,20 +268,32 @@ export class Controller {
 
   constructor(options: ControllerOptions = {}) {
     this.o = options;
-    this.url = (options.url ?? process.env.AICONTROLLER_URL ?? DEFAULT_URL).replace(/\/+$/, "");
+    this.url = (options.url ?? process.env.AICONTROLLER_URL ?? DEFAULT_URL).replace(/\/+$/, '');
     this.token = options.token ?? process.env.AICONTROLLER_TOKEN;
     this.fetchFn = options.fetch ?? globalThis.fetch;
   }
 
   private get autostart(): boolean {
     if (this.o.autostart !== undefined) return this.o.autostart;
-    return !["0", "false", "no", "off"].includes((process.env.AICONTROLLER_AUTOSTART ?? "1").trim().toLowerCase());
+    return !['0', 'false', 'no', 'off'].includes(
+      (process.env.AICONTROLLER_AUTOSTART ?? '1').trim().toLowerCase(),
+    );
   }
 
   /** Low-level JSON request; throws ControllerError (status set for HTTP errors). */
-  async request<T = unknown>(method: string, path: string, opts: { body?: unknown; query?: Record<string, string | undefined>; timeoutMs?: number; signal?: AbortSignal } = {}): Promise<T> {
+  async request<T = unknown>(
+    method: string,
+    path: string,
+    opts: {
+      body?: unknown;
+      query?: Record<string, string | undefined>;
+      timeoutMs?: number;
+      signal?: AbortSignal;
+    } = {},
+  ): Promise<T> {
     const u = new URL(this.url + path);
-    for (const [k, v] of Object.entries(opts.query ?? {})) if (v !== undefined) u.searchParams.set(k, v);
+    for (const [k, v] of Object.entries(opts.query ?? {}))
+      if (v !== undefined) u.searchParams.set(k, v);
     const ac = new AbortController();
     const timeoutMs = opts.timeoutMs ?? this.o.timeoutMs ?? 30_000;
     let timedOut = false;
@@ -260,27 +303,36 @@ export class Controller {
     }, timeoutMs);
     const onAbort = () => ac.abort();
     if (opts.signal?.aborted) ac.abort();
-    else opts.signal?.addEventListener("abort", onAbort, { once: true });
+    else opts.signal?.addEventListener('abort', onAbort, { once: true });
     const headers: Record<string, string> = {};
     if (this.token) headers.Authorization = `Bearer ${this.token}`;
-    if (opts.body !== undefined) headers["Content-Type"] = "application/json";
+    if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
     let r: Response;
     try {
       r = await this.fetchFn(u, {
-        method, headers, signal: ac.signal,
+        method,
+        headers,
+        signal: ac.signal,
         body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
       });
     } catch (e) {
       if (opts.signal?.aborted) throw e;
-      if (timedOut) throw new ControllerError(`the controller at ${this.url} did not answer ${method} ${path} within ${Math.round(timeoutMs / 1000)}s`);
+      if (timedOut)
+        throw new ControllerError(
+          `the controller at ${this.url} did not answer ${method} ${path} within ${Math.round(timeoutMs / 1000)}s`,
+        );
       throw new ControllerError(`cannot connect to the controller at ${this.url}; is it running?`);
     } finally {
       clearTimeout(timer);
-      opts.signal?.removeEventListener("abort", onAbort);
+      opts.signal?.removeEventListener('abort', onAbort);
     }
     const text = await r.text();
     let json: unknown;
-    try { json = text ? JSON.parse(text) : undefined; } catch { json = undefined; }
+    try {
+      json = text ? JSON.parse(text) : undefined;
+    } catch {
+      json = undefined;
+    }
     if (r.status >= 400) {
       const j = json as { error?: string; detail?: unknown } | undefined;
       const msg = j?.error ?? (j?.detail !== undefined ? JSON.stringify(j.detail) : text);
@@ -291,7 +343,7 @@ export class Controller {
 
   private async healthy(): Promise<boolean> {
     try {
-      await this.request("GET", "/health", { timeoutMs: 2000 });
+      await this.request('GET', '/health', { timeoutMs: 2000 });
       return true;
     } catch {
       return false;
@@ -300,14 +352,18 @@ export class Controller {
 
   /** Find the controller, starting it if allowed. Re-checks an unavailable controller at most every `recheckS`. */
   ensureController(): Promise<boolean> {
-    this.ensuring ??= this.doEnsure().finally(() => { this.ensuring = undefined; });
+    this.ensuring ??= this.doEnsure().finally(() => {
+      this.ensuring = undefined;
+    });
     return this.ensuring;
   }
 
   private async doEnsure(): Promise<boolean> {
     if (this.available && (await this.healthy())) return true;
-    if (this.available === false && Date.now() - this.checkedAt < (this.o.recheckS ?? 60) * 1000) return false;
-    const ok = (await this.healthy()) || (this.autostart && isLoopback(this.url) && (await this.start()));
+    if (this.available === false && Date.now() - this.checkedAt < (this.o.recheckS ?? 60) * 1000)
+      return false;
+    const ok =
+      (await this.healthy()) || (this.autostart && isLoopback(this.url) && (await this.start()));
     this.checkedAt = Date.now();
     this.available = ok;
     if (!ok && !this.warned) {
@@ -320,12 +376,17 @@ export class Controller {
   private async start(): Promise<boolean> {
     const timeoutS = this.o.startTimeoutS ?? 20;
     let started = false;
-    try { started = await (this.o.serviceStarter ?? startService)(); } catch { /* fall through to launch */ }
+    try {
+      started = await (this.o.serviceStarter ?? startService)();
+    } catch {
+      /* fall through to launch */
+    }
     if (!started) {
       const home = findHome(this.o.home);
       if (!home) return false;
       try {
-        if (claimLaunchLock(home, timeoutS)) await (this.o.launcher ?? launchDetached)({ home, config: this.o.config });
+        if (claimLaunchLock(home, timeoutS))
+          await (this.o.launcher ?? launchDetached)({ home, config: this.o.config });
       } catch {
         return false;
       }
@@ -340,60 +401,80 @@ export class Controller {
 
   private async require(): Promise<void> {
     if (!(await this.ensureController())) {
-      throw new ControllerUnavailable(`cannot connect to the controller at ${this.url}; is it running?`);
+      throw new ControllerUnavailable(
+        `cannot connect to the controller at ${this.url}; is it running?`,
+      );
     }
   }
 
   async health(): Promise<{ ok: boolean; name?: string }> {
-    return this.request("GET", "/health", { timeoutMs: 2000 });
+    return this.request('GET', '/health', { timeoutMs: 2000 });
   }
 
   async status(): Promise<Record<string, unknown>> {
     await this.require();
-    return this.request("GET", "/v1/status");
+    return this.request('GET', '/v1/status');
   }
 
   async models(opts: ModelsOptions = {}): Promise<Record<string, unknown>[]> {
     await this.require();
-    const r = await this.request<{ models: Record<string, unknown>[] }>("GET", "/v1/models", {
-      query: { kind: opts.kind, scope: opts.scope ?? "all" },
+    const r = await this.request<{ models: Record<string, unknown>[] }>('GET', '/v1/models', {
+      query: { kind: opts.kind, scope: opts.scope ?? 'all' },
     });
     return r.models;
   }
 
-  async download(source: DownloadSource, opts: DownloadOptions = {}): Promise<Record<string, unknown>> {
+  async download(
+    source: DownloadSource,
+    opts: DownloadOptions = {},
+  ): Promise<Record<string, unknown>> {
     await this.require();
-    return this.request("POST", "/v1/models/download", {
+    return this.request('POST', '/v1/models/download', {
       body: {
-        source, kind: opts.kind ?? null, subfolder: opts.subfolder ?? null, file_name: opts.fileName ?? null,
-        sha256: opts.sha256 ?? null, host: opts.host ?? null,
+        source,
+        kind: opts.kind ?? null,
+        subfolder: opts.subfolder ?? null,
+        file_name: opts.fileName ?? null,
+        sha256: opts.sha256 ?? null,
+        host: opts.host ?? null,
       },
     });
   }
 
   async downloadStatus(id: string): Promise<Record<string, unknown>> {
     await this.require();
-    return this.request("GET", `/v1/downloads/${id}`);
+    return this.request('GET', `/v1/downloads/${id}`);
   }
 
   /** Request a lease; resolves when ready. Direct mode returns a lease with `direct = true`. */
   async lease(backend: string, opts: LeaseOptions = {}): Promise<Lease> {
     if (!(await this.ensureController())) {
       if (!this.o.fallback) {
-        throw new ControllerUnavailable(`cannot connect to the controller at ${this.url}; is it running?`);
+        throw new ControllerUnavailable(
+          `cannot connect to the controller at ${this.url}; is it running?`,
+        );
       }
       const url = (await this.o.fallback(backend, opts.model)) ?? null;
-      return new Lease(undefined, { id: "direct", backend, model: opts.model ?? null, state: "ready", url }, true);
+      return new Lease(
+        undefined,
+        { id: 'direct', backend, model: opts.model ?? null, state: 'ready', url },
+        true,
+      );
     }
     const waitS = opts.waitS ?? 900;
     const deadline = Date.now() + waitS * 1000;
     // The controller holds the request until the lease is ready or wait_s runs out. Ask for at most
     // leaseRequestWaitS at once, then keep the same lease (and its place in the queue) and poll it.
     const requestWaitS = Math.min(waitS, this.o.leaseRequestWaitS ?? LEASE_REQUEST_WAIT_S);
-    const data = await this.request<LeaseData>("POST", "/v1/leases", {
+    const data = await this.request<LeaseData>('POST', '/v1/leases', {
       body: {
-        backend, client: this.o.client ?? "typescript", model: opts.model ?? null, host: opts.host ?? null,
-        wait_s: requestWaitS, ttl_s: opts.ttlS ?? 120, allow_ask_first: opts.allowAskFirst ?? false,
+        backend,
+        client: this.o.client ?? 'typescript',
+        model: opts.model ?? null,
+        host: opts.host ?? null,
+        wait_s: requestWaitS,
+        ttl_s: opts.ttlS ?? 120,
+        allow_ask_first: opts.allowAskFirst ?? false,
         needs: opts.needs ?? [],
       },
       timeoutMs: requestWaitS * 1000 + (this.o.timeoutMs ?? 30_000),
@@ -401,23 +482,36 @@ export class Controller {
     });
     const lease = new Lease(this, data, false, opts.signal);
     try {
-      while ((lease.data.state === "queued" || lease.data.state === "starting") && Date.now() < deadline) {
-        await abortableSleep(Math.min(this.o.leasePollMs ?? LEASE_POLL_MS, Math.max(deadline - Date.now(), 0)), opts.signal);
+      while (
+        (lease.data.state === 'queued' || lease.data.state === 'starting') &&
+        Date.now() < deadline
+      ) {
+        await abortableSleep(
+          Math.min(this.o.leasePollMs ?? LEASE_POLL_MS, Math.max(deadline - Date.now(), 0)),
+          opts.signal,
+        );
         // A heartbeat both keeps a queued lease alive and tells us its state.
-        lease.data = await this.request<LeaseData>("POST", `/v1/leases/${lease.id}/heartbeat`, { signal: opts.signal });
+        lease.data = await this.request<LeaseData>('POST', `/v1/leases/${lease.id}/heartbeat`, {
+          signal: opts.signal,
+        });
       }
     } catch (error) {
       await lease.release();
       if (error instanceof ControllerError && (error.status === 404 || error.status === 410)) {
-        throw new ControllerError(`lease for '${backend}' ended while it waited: ${error.message}`, error.status);
+        throw new ControllerError(
+          `lease for '${backend}' ended while it waited: ${error.message}`,
+          error.status,
+        );
       }
       throw error;
     }
     const final = lease.data;
-    if (final.state !== "ready") {
+    if (final.state !== 'ready') {
       await lease.release();
-      if (final.state === "queued" || final.state === "starting") {
-        throw new ControllerError(`lease for '${backend}' is still ${final.state} after waiting ${waitS}s (the controller may be loading the model or waiting for memory)`);
+      if (final.state === 'queued' || final.state === 'starting') {
+        throw new ControllerError(
+          `lease for '${backend}' is still ${final.state} after waiting ${waitS}s (the controller may be loading the model or waiting for memory)`,
+        );
       }
       throw new ControllerError(`lease for '${backend}' ${final.state}: ${final.error}`);
     }
@@ -425,7 +519,11 @@ export class Controller {
   }
 
   /** Run `fn(lease)` and always release the lease. */
-  async withLease<T>(backend: string, opts: LeaseOptions, fn: (lease: Lease) => Promise<T> | T): Promise<T> {
+  async withLease<T>(
+    backend: string,
+    opts: LeaseOptions,
+    fn: (lease: Lease) => Promise<T> | T,
+  ): Promise<T> {
     const lease = await this.lease(backend, opts);
     try {
       const out = await fn(lease);

@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { builtInServers, defaultRoutes, resolveModelRouting, type StoredModels } from '../src/shared/config/model-routing.js';
+import {
+  builtInServers,
+  defaultRoutes,
+  resolveModelRouting,
+  type StoredModels,
+} from '../src/shared/config/model-routing.js';
 import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
 import { CoderModelSwap } from '../src/coding/model-swap.js';
 
@@ -25,7 +30,10 @@ function setup(
   } = {},
 ) {
   const routing = resolveModelRouting(
-    builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }),
+    builtInServers({
+      providers: DEFAULT_PROVIDER_SETTINGS,
+      comfyUiBaseUrl: 'http://127.0.0.1:8188',
+    }),
     defaultRoutes(DEFAULT_PROVIDER_SETTINGS),
     options.stored,
   );
@@ -66,7 +74,16 @@ function setup(
     detectGguf: () => (options.detected === undefined ? GGUF : options.detected),
     echo,
     coder: coderFactory,
-    isUp: async (url) => (url === CODER_URL ? (options.answering ? options.answering() : coderUp) : url === ECHO_URL ? (options.echoUp ? options.echoUp() : true) : false),
+    isUp: async (url) =>
+      url === CODER_URL
+        ? options.answering
+          ? options.answering()
+          : coderUp
+        : url === ECHO_URL
+          ? options.echoUp
+            ? options.echoUp()
+            : true
+          : false,
     setHold,
     onOverrideChange,
     logger,
@@ -86,7 +103,21 @@ function setup(
     pollMs: 1000,
     loadTimeoutMs: 60_000,
   });
-  return { swap, setHold, echo, activity, onWaiting, clock: () => clock, coderControl, coderFactory, onOverrideChange, logger, log, advance: (ms: number) => void (clock += ms), setCoderUp: (up: boolean) => void (coderUp = up) };
+  return {
+    swap,
+    setHold,
+    echo,
+    activity,
+    onWaiting,
+    clock: () => clock,
+    coderControl,
+    coderFactory,
+    onOverrideChange,
+    logger,
+    log,
+    advance: (ms: number) => void (clock += ms),
+    setCoderUp: (up: boolean) => void (coderUp = up),
+  };
 }
 
 const GiB = 1024 ** 3;
@@ -114,7 +145,11 @@ describe('CoderModelSwap auto mode', () => {
   });
 
   it('waits for a quiet moment when it does not fit and Echo was just talked to', async () => {
-    const { swap, log, echo, onWaiting, activity, clock, advance } = setup({ mode: 'auto', free: 20 * GiB, size });
+    const { swap, log, echo, onWaiting, activity, clock, advance } = setup({
+      mode: 'auto',
+      free: 20 * GiB,
+      size,
+    });
     activity.at = clock() - 1000;
     await swap.setNeeded(true);
     expect(swap.getState().phase).toBe('waiting-for-quiet');
@@ -151,7 +186,10 @@ describe('CoderModelSwap auto mode', () => {
     rest.advance(120_000);
     await swap.tick();
     expect(echoUp).toBe(true);
-    expect(swap.getState()).toEqual({ phase: 'idle', message: 'Not needed now. Echo’s model is back.' });
+    expect(swap.getState()).toEqual({
+      phase: 'idle',
+      message: 'Not needed now. Echo’s model is back.',
+    });
     expect(polls).toBeGreaterThan(3);
   });
 
@@ -170,7 +208,11 @@ describe('CoderModelSwap auto mode', () => {
   });
 
   it('swaps back when Kevin talks to Echo, then waits for quiet while the task needs the model', async () => {
-    const { swap, log, echo, activity, clock, advance, onWaiting } = setup({ mode: 'auto', free: 20 * GiB, size });
+    const { swap, log, echo, activity, clock, advance, onWaiting } = setup({
+      mode: 'auto',
+      free: 20 * GiB,
+      size,
+    });
     await swap.setNeeded(true);
     log.length = 0;
     advance(5000);
@@ -199,7 +241,11 @@ describe('CoderModelSwap auto mode', () => {
   });
 
   it('pauses the tasks before stopping the coder, and releases them once it is loaded again', async () => {
-    const { swap, log, activity, clock, advance, setHold } = setup({ mode: 'auto', free: 20 * GiB, size });
+    const { swap, log, activity, clock, advance, setHold } = setup({
+      mode: 'auto',
+      free: 20 * GiB,
+      size,
+    });
     await swap.setNeeded(true);
     log.length = 0;
     advance(5000);
@@ -218,8 +264,14 @@ describe('CoderModelSwap auto mode', () => {
   it('retries releasing the hold on a later tick when setHold(false) failed', async () => {
     let failures = 2; // the release and the retry inside the same reconcile
     const { swap, setHold, activity, clock, advance } = setup({
-      mode: 'auto', free: 20 * GiB, size,
-      setHold: async (hold) => { if (!hold && failures-- > 0) { throw new Error('runner down'); } },
+      mode: 'auto',
+      free: 20 * GiB,
+      size,
+      setHold: async (hold) => {
+        if (!hold && failures-- > 0) {
+          throw new Error('runner down');
+        }
+      },
     });
     await swap.setNeeded(true);
     advance(5000);
@@ -237,7 +289,12 @@ describe('CoderModelSwap auto mode', () => {
 
   it('still swaps back when pausing the tasks fails', async () => {
     const { swap, log, activity, clock, advance, logger } = setup({
-      mode: 'auto', free: 20 * GiB, size, setHold: async () => { throw new Error('runner down'); },
+      mode: 'auto',
+      free: 20 * GiB,
+      size,
+      setHold: async () => {
+        throw new Error('runner down');
+      },
     });
     await swap.setNeeded(true);
     log.length = 0;
@@ -249,7 +306,11 @@ describe('CoderModelSwap auto mode', () => {
   });
 
   it('releases the hold when the task no longer needs the model', async () => {
-    const { swap, setHold, activity, clock, advance } = setup({ mode: 'auto', free: 20 * GiB, size });
+    const { swap, setHold, activity, clock, advance } = setup({
+      mode: 'auto',
+      free: 20 * GiB,
+      size,
+    });
     await swap.setNeeded(true);
     advance(5000);
     activity.at = clock();
@@ -272,7 +333,12 @@ describe('CoderModelSwap auto mode', () => {
 
   it('waitForEcho() resolves true once Echo answers, false on timeout', async () => {
     let echoUp = false;
-    const { swap, activity, clock, advance } = setup({ mode: 'auto', free: 20 * GiB, size, echoUp: () => echoUp });
+    const { swap, activity, clock, advance } = setup({
+      mode: 'auto',
+      free: 20 * GiB,
+      size,
+      echoUp: () => echoUp,
+    });
     await swap.setNeeded(true);
     advance(5000);
     activity.at = clock();
@@ -320,7 +386,10 @@ describe('CoderModelSwap', () => {
     await swap.setNeeded(true);
     expect(log).toEqual(['echo.stop', 'coder.start', 'override']);
     expect(swap.getState().phase).toBe('coder-loaded');
-    expect(coderFactory).toHaveBeenCalledWith({ path: GGUF, alias: 'qwen3-coder-next', contextLength: 65536 }, 'http://127.0.0.1:1236/v1');
+    expect(coderFactory).toHaveBeenCalledWith(
+      { path: GGUF, alias: 'qwen3-coder-next', contextLength: 65536 },
+      'http://127.0.0.1:1236/v1',
+    );
     const override = swap.chatOverride();
     expect(override?.server.id).toBe('local-coder-llm');
     expect(override?.model).toBe('qwen3-coder-next');
@@ -333,7 +402,10 @@ describe('CoderModelSwap', () => {
       stored: { routes: { coding: { server: 'local-coder-llm', model: 'coder-x' } } },
     });
     await swap.setNeeded(true);
-    expect(coderFactory).toHaveBeenCalledWith({ path: 'E:\\mine.gguf', alias: 'coder-x', contextLength: 65536 }, 'http://127.0.0.1:1236/v1');
+    expect(coderFactory).toHaveBeenCalledWith(
+      { path: 'E:\\mine.gguf', alias: 'coder-x', contextLength: 65536 },
+      'http://127.0.0.1:1236/v1',
+    );
     expect(swap.chatOverride()?.model).toBe('coder-x');
   });
 
@@ -388,8 +460,18 @@ describe('CoderModelSwap', () => {
 
   it.each([
     ['not Windows', { platform: 'linux' }],
-    ['the coding model is OpenAI', { stored: { routes: { coding: { server: 'openai', model: 'gpt-5' } } } as StoredModels }],
-    ['the coder model server is on another PC', { stored: { servers: [{ id: 'local-coder-llm', url: 'http://192.168.1.9:1236/v1' }] } as StoredModels }],
+    [
+      'the coding model is OpenAI',
+      { stored: { routes: { coding: { server: 'openai', model: 'gpt-5' } } } as StoredModels },
+    ],
+    [
+      'the coder model server is on another PC',
+      {
+        stored: {
+          servers: [{ id: 'local-coder-llm', url: 'http://192.168.1.9:1236/v1' }],
+        } as StoredModels,
+      },
+    ],
   ])('does nothing when %s', async (_name, options) => {
     const { swap, echo, coderFactory } = setup(options);
     await swap.setNeeded(true);
@@ -444,7 +526,10 @@ describe('CoderModelSwap', () => {
   it('gives Echo’s model back when the coder model does not start in time', async () => {
     const { swap, coderControl, echo, log } = setup({ answering: () => false });
     await swap.setNeeded(true);
-    expect(swap.getState()).toMatchObject({ phase: 'idle', message: expect.stringContaining('did not start') });
+    expect(swap.getState()).toMatchObject({
+      phase: 'idle',
+      message: expect.stringContaining('did not start'),
+    });
     expect(coderControl.stop).toHaveBeenCalledTimes(1);
     expect(echo.start).toHaveBeenCalledTimes(1);
     expect(swap.chatOverride()).toBeNull();
@@ -469,20 +554,30 @@ describe('CoderModelSwap', () => {
   it('logs every transition', async () => {
     const { swap, logger } = setup();
     await swap.setNeeded(true);
-    const phases = logger.info.mock.calls.filter(([message]) => message === 'Coder model swap.').map(([, data]) => (data as { phase: string }).phase);
+    const phases = logger.info.mock.calls
+      .filter(([message]) => message === 'Coder model swap.')
+      .map(([, data]) => (data as { phase: string }).phase);
     expect(phases).toEqual(['swapping-in', 'swapping-in', 'coder-loaded']);
   });
 
   describe('side by side', () => {
     it('starts the coder model without touching Echo’s model or the chat override', async () => {
-      const { swap, echo, coderFactory, coderControl, onOverrideChange } = setup({ mode: 'side-by-side' });
+      const { swap, echo, coderFactory, coderControl, onOverrideChange } = setup({
+        mode: 'side-by-side',
+      });
       await swap.setNeeded(true);
       expect(echo.stop).not.toHaveBeenCalled();
       expect(coderControl.start).toHaveBeenCalledTimes(1);
-      expect(coderFactory).toHaveBeenCalledWith({ path: GGUF, alias: 'qwen3-coder-next', contextLength: 65536 }, 'http://127.0.0.1:1236/v1');
+      expect(coderFactory).toHaveBeenCalledWith(
+        { path: GGUF, alias: 'qwen3-coder-next', contextLength: 65536 },
+        'http://127.0.0.1:1236/v1',
+      );
       expect(swap.chatOverride()).toBeNull();
       expect(onOverrideChange).not.toHaveBeenCalled();
-      expect(swap.getState()).toMatchObject({ phase: 'coder-loaded', message: 'The coder model is loaded next to Echo’s.' });
+      expect(swap.getState()).toMatchObject({
+        phase: 'coder-loaded',
+        message: 'The coder model is loaded next to Echo’s.',
+      });
     });
 
     it('stops the coder model only after idleStopMs, and never starts Echo’s', async () => {
@@ -496,14 +591,20 @@ describe('CoderModelSwap', () => {
       advance(2000);
       await swap.tick();
       expect(coderControl.stop).toHaveBeenCalledTimes(1);
-      expect(swap.getState()).toMatchObject({ phase: 'idle', message: 'Not needed now; the coder model was stopped to free memory.' });
+      expect(swap.getState()).toMatchObject({
+        phase: 'idle',
+        message: 'Not needed now; the coder model was stopped to free memory.',
+      });
       expect(echo.stop).not.toHaveBeenCalled();
       expect(echo.start).not.toHaveBeenCalled();
       expect(swap.chatOverride()).toBeNull();
     });
 
     it('does not stop a coder server it did not start', async () => {
-      const { swap, coderControl, advance } = setup({ mode: 'side-by-side', answering: () => true });
+      const { swap, coderControl, advance } = setup({
+        mode: 'side-by-side',
+        answering: () => true,
+      });
       await swap.setNeeded(true);
       await swap.setNeeded(false);
       advance(601_000);

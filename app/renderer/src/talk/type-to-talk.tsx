@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from 'react';
 
 /**
  * Enter (outside a field, a button or a link, with no modifier) opens the typed prompt. Typing there runs the
@@ -12,9 +18,12 @@ export function opensTypedPrompt(event: KeyboardEvent): boolean {
     return false;
   }
   const target = event.target;
-  if (target instanceof Element && target.closest(
-    'button, a, input, select, textarea, summary, dialog, [role="button"], [role="dialog"], [contenteditable="true"], [data-no-typed-prompt]',
-  )) {
+  if (
+    target instanceof Element &&
+    target.closest(
+      'button, a, input, select, textarea, summary, dialog, [role="button"], [role="dialog"], [contenteditable="true"], [data-no-typed-prompt]',
+    )
+  ) {
     return false;
   }
   return true;
@@ -24,7 +33,13 @@ export function opensTypedPrompt(event: KeyboardEvent): boolean {
  * A one-line prompt at the bottom of the screen. Enter sends and closes it; Escape (or leaving it empty) closes it.
  * If the turn could not start, the text stays with a note so nothing typed is lost.
  */
-export function TypedPrompt({ onSend, onClose }: { onSend: (text: string) => Promise<boolean>; onClose: () => void }) {
+export function TypedPrompt({
+  onSend,
+  onClose,
+}: {
+  onSend: (text: string) => Promise<boolean>;
+  onClose: () => void;
+}) {
   const [text, setText] = useState('');
   const [note, setNote] = useState<string | null>(null);
   const [sending, setSending] = useState(false);

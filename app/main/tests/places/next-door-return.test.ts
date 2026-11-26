@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LOCATIONS_KEY, PlaceManager } from '../../src/places/place-manager.js';
-import { NEXT_DOOR_TICK_MS, NextDoorReturn, RETURN_CHANCE } from '../../src/places/next-door-return.js';
+import {
+  NEXT_DOOR_TICK_MS,
+  NextDoorReturn,
+  RETURN_CHANCE,
+} from '../../src/places/next-door-return.js';
 import { CONVERSATION_MS, WANDER_COOLDOWN_MS } from '../../src/shared/places/wander.js';
 
 const PROFILES = [
@@ -8,12 +12,25 @@ const PROFILES = [
   { id: 'sage', name: 'Sage', vrmModelId: null },
 ];
 
-function setup(options: { locations?: Record<string, string>; activeAt?: Record<string, number>; level?: 'calm' | 'normal' | 'restless' | null; talked?: number | null; roll?: number } = {}) {
-  const data = new Map<string, string>([[LOCATIONS_KEY, JSON.stringify(options.locations ?? { sage: 'next-door' })]]);
+function setup(
+  options: {
+    locations?: Record<string, string>;
+    activeAt?: Record<string, number>;
+    level?: 'calm' | 'normal' | 'restless' | null;
+    talked?: number | null;
+    roll?: number;
+  } = {},
+) {
+  const data = new Map<string, string>([
+    [LOCATIONS_KEY, JSON.stringify(options.locations ?? { sage: 'next-door' })],
+  ]);
   const clock = { now: 5_000_000 };
   const activeAt = options.activeAt ?? { home: clock.now - 30_000 };
   const places = new PlaceManager({
-    store: { getValue: (key) => data.get(key) ?? null, setValue: (key, value) => void data.set(key, value) },
+    store: {
+      getValue: (key) => data.get(key) ?? null,
+      setValue: (key, value) => void data.set(key, value),
+    },
     registry: { list: () => PROFILES },
     now: () => clock.now,
     activeAt: (placeId) => activeAt[placeId] ?? null,
@@ -35,7 +52,9 @@ describe('NextDoorReturn', () => {
   it('brings an avatar back from next door when the die comes up and someone used the PC', () => {
     const { places, tick } = setup({ roll: RETURN_CHANCE.normal - 0.001 });
     expect(tick.tick()).toEqual({ avatarId: 'sage', placeId: 'home' });
-    expect(places.snapshot().transit).toEqual([{ avatarId: 'sage', from: 'next-door', to: 'home' }]);
+    expect(places.snapshot().transit).toEqual([
+      { avatarId: 'sage', from: 'next-door', to: 'home' },
+    ]);
   });
 
   it('stays next door when the die does not come up', () => {
@@ -61,7 +80,10 @@ describe('NextDoorReturn', () => {
   });
 
   it('does not roll when nobody could come: no PC used lately, nobody anywhere else', () => {
-    const { tick, rng } = setup({ activeAt: {}, locations: { echo: 'next-door', sage: 'next-door' } });
+    const { tick, rng } = setup({
+      activeAt: {},
+      locations: { echo: 'next-door', sage: 'next-door' },
+    });
     expect(tick.tick()).toBeNull();
     expect(rng).not.toHaveBeenCalled();
   });
@@ -85,7 +107,10 @@ describe('NextDoorReturn', () => {
   });
 
   it('does not go to a closed or offline desktop room', () => {
-    const { places, tick } = setup({ activeAt: { study: 5_000_000 - 1000 }, locations: { echo: 'next-door', sage: 'next-door' } });
+    const { places, tick } = setup({
+      activeAt: { study: 5_000_000 - 1000 },
+      locations: { echo: 'next-door', sage: 'next-door' },
+    });
     places.addPlace({ id: 'study', name: 'the study', node: 'room-1' });
     expect(tick.tick()).toBeNull();
     places.setOnline('study', true);
@@ -96,7 +121,9 @@ describe('NextDoorReturn', () => {
   });
 
   it('prefers the place that was used most recently', () => {
-    const { places, tick } = setup({ activeAt: { home: 5_000_000 - 200_000, study: 5_000_000 - 20_000 } });
+    const { places, tick } = setup({
+      activeAt: { home: 5_000_000 - 200_000, study: 5_000_000 - 20_000 },
+    });
     places.addPlace({ id: 'study', name: 'the study', node: 'room-1' });
     places.setOnline('study', true);
     expect(tick.tick()).toEqual({ avatarId: 'sage', placeId: 'study' });
@@ -125,12 +152,20 @@ describe('NextDoorReturn', () => {
     const { places, tick, rng } = setup({ roll: 0.99 });
     expect(tick.tryAvatar('sage')).toEqual({ moved: true, placeId: 'home' });
     expect(rng).not.toHaveBeenCalled();
-    expect(places.snapshot().transit).toEqual([{ avatarId: 'sage', from: 'next-door', to: 'home' }]);
+    expect(places.snapshot().transit).toEqual([
+      { avatarId: 'sage', from: 'next-door', to: 'home' },
+    ]);
     expect(tick.tryAvatar('echo')).toEqual({ moved: false, reason: 'not next door' });
   });
 
   it('tryAvatar keeps the avatar next door when nobody is around or Kevin just talked with it', () => {
-    expect(setup({ activeAt: {}, locations: { sage: 'next-door', echo: 'next-door' } }).tick.tryAvatar('sage')).toMatchObject({ moved: false });
-    expect(setup({ talked: CONVERSATION_MS - 1 }).tick.tryAvatar('sage')).toMatchObject({ moved: false });
+    expect(
+      setup({ activeAt: {}, locations: { sage: 'next-door', echo: 'next-door' } }).tick.tryAvatar(
+        'sage',
+      ),
+    ).toMatchObject({ moved: false });
+    expect(setup({ talked: CONVERSATION_MS - 1 }).tick.tryAvatar('sage')).toMatchObject({
+      moved: false,
+    });
   });
 });

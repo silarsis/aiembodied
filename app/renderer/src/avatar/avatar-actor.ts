@@ -109,9 +109,15 @@ export interface AvatarActorLoadOptions {
    * Called once the model is normalised and posed, before it is added to the scene, with the bounds of
    * its renderable meshes (null when it has none). The scene uses it to frame the camera.
    */
-  onBounds?: (bounds: { box: THREE.Box3; size: THREE.Vector3; center: THREE.Vector3 } | null) => void;
+  onBounds?: (
+    bounds: { box: THREE.Box3; size: THREE.Vector3; center: THREE.Vector3 } | null,
+  ) => void;
   /** Called right after the model is added to the scene (room controllers attach the body here). */
-  onAttached?: (attached: { actor: AvatarActor; vrm: VRM; restSkeleton: AvatarRestSkeleton | null }) => void;
+  onAttached?: (attached: {
+    actor: AvatarActor;
+    vrm: VRM;
+    restSkeleton: AvatarRestSkeleton | null;
+  }) => void;
 }
 
 export interface AvatarActorUnloadOptions {
@@ -323,24 +329,24 @@ export class AvatarActor {
       hiddenMeshes,
       bounds: renderableBounds
         ? {
-          size: {
-            x: Number(renderableBounds.size.x.toFixed(3)),
-            y: Number(renderableBounds.size.y.toFixed(3)),
-            z: Number(renderableBounds.size.z.toFixed(3)),
-          },
-          center: {
-            x: Number(renderableBounds.center.x.toFixed(3)),
-            y: Number(renderableBounds.center.y.toFixed(3)),
-            z: Number(renderableBounds.center.z.toFixed(3)),
-          },
-        }
+            size: {
+              x: Number(renderableBounds.size.x.toFixed(3)),
+              y: Number(renderableBounds.size.y.toFixed(3)),
+              z: Number(renderableBounds.size.z.toFixed(3)),
+            },
+            center: {
+              x: Number(renderableBounds.center.x.toFixed(3)),
+              y: Number(renderableBounds.center.y.toFixed(3)),
+              z: Number(renderableBounds.center.z.toFixed(3)),
+            },
+          }
         : null,
       head: headBounds
         ? {
-          widthCm: Number((headBounds.width * 100).toFixed(1)),
-          heightCm: Number((headBounds.height * 100).toFixed(1)),
-          depthCm: Number((headBounds.depth * 100).toFixed(1)),
-        }
+            widthCm: Number((headBounds.width * 100).toFixed(1)),
+            heightCm: Number((headBounds.height * 100).toFixed(1)),
+            depthCm: Number((headBounds.depth * 100).toFixed(1)),
+          }
         : null,
     };
     console.info('[vrm-avatar-renderer] VRM scene metrics', JSON.stringify(metricsPayload));
@@ -642,7 +648,9 @@ export class AvatarActor {
           }
           const result = await loadVrmaAnimation(binary);
           if (!result) {
-            console.warn('[vrm-avatar-renderer] streamed VRMA clip contained no animation', { slug });
+            console.warn('[vrm-avatar-renderer] streamed VRMA clip contained no animation', {
+              slug,
+            });
             return;
           }
           const clip = createClipFromVrma(vrm, result.animation, slug);
@@ -688,7 +696,11 @@ export class AvatarActor {
   /** Ease the body from its current bones into `pose` with a generated transition clip. */
   transitionToPose(
     pose: VRMPoseData,
-    options: { source?: string; transitionDuration?: number; transitionConfig?: PoseTransitionConfig } = {},
+    options: {
+      source?: string;
+      transitionDuration?: number;
+      transitionConfig?: PoseTransitionConfig;
+    } = {},
   ): void {
     if (this.activeAnimation?.held) {
       // Seated: a pose would stand the avatar up out of the chair.
@@ -698,7 +710,9 @@ export class AvatarActor {
     const vrm = this.vrm;
     const mixer = this.mixer;
     if (!vrm?.humanoid || !mixer) {
-      console.warn('[vrm-avatar-renderer] VRM humanoid or mixer not available for pose application');
+      console.warn(
+        '[vrm-avatar-renderer] VRM humanoid or mixer not available for pose application',
+      );
       return;
     }
 
@@ -718,7 +732,13 @@ export class AvatarActor {
 
       // Create transition clip from captured pose to target pose
       const duration = options.transitionDuration ?? DEFAULT_POSE_TRANSITION_DURATION;
-      const transitionResult = createPoseTransitionClip(vrm, pose, duration, capturedPose, options.transitionConfig);
+      const transitionResult = createPoseTransitionClip(
+        vrm,
+        pose,
+        duration,
+        capturedPose,
+        options.transitionConfig,
+      );
 
       if (!transitionResult) {
         console.warn('[vrm-avatar-renderer] Could not create pose transition clip');
@@ -752,18 +772,24 @@ export class AvatarActor {
         // Apply facial expressions when transition completes
         if (poseExpressions && vrm.expressionManager) {
           applyPoseExpressions(vrm, poseExpressions);
-          console.info('[vrm-avatar-renderer] Applied pose expressions:', JSON.stringify({
-            presets: poseExpressions.presets ? Object.keys(poseExpressions.presets) : [],
-          }));
+          console.info(
+            '[vrm-avatar-renderer] Applied pose expressions:',
+            JSON.stringify({
+              presets: poseExpressions.presets ? Object.keys(poseExpressions.presets) : [],
+            }),
+          );
         }
 
         // Resume idle animations (breathing, micro-movements) on top of the pose
         // This allows the static pose to still have natural breathing applied
         this.releaseIdleSuspension();
 
-        console.info('[vrm-avatar-renderer] Pose transition completed:', JSON.stringify({
-          source: options.source,
-        }));
+        console.info(
+          '[vrm-avatar-renderer] Pose transition completed:',
+          JSON.stringify({
+            source: options.source,
+          }),
+        );
       };
 
       this.activeAnimation = {
@@ -782,12 +808,15 @@ export class AvatarActor {
       mixer.addEventListener('finished', handleFinished);
       action.play();
 
-      console.info('[vrm-avatar-renderer] Started smooth pose transition:', JSON.stringify({
-        source: options.source,
-        boneCount: targetBoneNames.length,
-        duration,
-        hasExpressions: !!poseExpressions,
-      }));
+      console.info(
+        '[vrm-avatar-renderer] Started smooth pose transition:',
+        JSON.stringify({
+          source: options.source,
+          boneCount: targetBoneNames.length,
+          duration,
+          hasExpressions: !!poseExpressions,
+        }),
+      );
     } catch (error) {
       console.error('[vrm-avatar-renderer] Failed to apply pose transition', error);
       this.releaseIdleSuspension();
@@ -855,7 +884,10 @@ export class AvatarActor {
       try {
         action.stop();
       } catch (stopError) {
-        console.warn('[vrm-avatar-renderer] failed to stop wave animation after completion', stopError);
+        console.warn(
+          '[vrm-avatar-renderer] failed to stop wave animation after completion',
+          stopError,
+        );
       }
     };
 
@@ -955,7 +987,9 @@ export class AvatarActor {
 
     const clipData = this.clipRegistry.get(next.slug);
     if (!clipData) {
-      console.warn('[vrm-avatar-renderer] requested animation clip is unavailable', { slug: next.slug });
+      console.warn('[vrm-avatar-renderer] requested animation clip is unavailable', {
+        slug: next.slug,
+      });
       this.playNextQueuedAnimation();
       return;
     }
@@ -1035,7 +1069,9 @@ export class AvatarActor {
         const vrm = this.vrm;
         if (vrm?.humanoid) {
           this.poseBlend.capture(
-            VRMHumanBoneList.filter((bone) => bone !== 'hips').map((bone) => vrm.humanoid.getNormalizedBoneNode(bone)),
+            VRMHumanBoneList.filter((bone) => bone !== 'hips').map((bone) =>
+              vrm.humanoid.getNormalizedBoneNode(bone),
+            ),
             MOTION_RELEASE_BLEND_SECONDS,
           );
         }

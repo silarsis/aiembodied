@@ -26,7 +26,9 @@ export class MovementRigs {
   private readonly sceneFilters = new Map<string, MoveRequestFilter>();
   private readonly rigs = new Map<string, MovementRig>();
   private bridgeFactory: ((avatarId: string) => SceneBridge | null) | null = null;
-  private readonly activityListeners = new Set<(avatarId: string, activity: SceneActivity) => void>();
+  private readonly activityListeners = new Set<
+    (avatarId: string, activity: SceneActivity) => void
+  >();
   private readonly activityOff = new Map<string, () => void>();
 
   /** `echoExecutor` is Echo's existing executor; without one a new executor is made for her. */

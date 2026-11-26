@@ -163,7 +163,10 @@ describe('MemoryStore', () => {
 
     const mergeData: MemoryStoreExport = {
       ...exported,
-      sessions: [...exported.sessions, { id: 'session-2', startedAt: startedAt + 500, title: 'Keep me' }],
+      sessions: [
+        ...exported.sessions,
+        { id: 'session-2', startedAt: startedAt + 500, title: 'Keep me' },
+      ],
       messages: exported.messages,
       kv: exported.kv,
       vrmModels: exported.vrmModels,
@@ -236,9 +239,32 @@ describe('MemoryStore speaker column', () => {
   it('stores and returns the speaker of a message, null for older rows', async () => {
     const store = await createStore();
     store.createSession({ id: 's', startedAt: 1, title: null });
-    store.appendMessage({ id: 'm1', sessionId: 's', role: 'user', ts: 1, content: 'hi', audioPath: null, speaker: 'user' });
-    store.appendMessage({ id: 'm2', sessionId: 's', role: 'assistant', ts: 2, content: 'hello', audioPath: null, speaker: 'echo' });
-    store.appendMessage({ id: 'm3', sessionId: 's', role: 'system', ts: 3, content: 'note', audioPath: null });
+    store.appendMessage({
+      id: 'm1',
+      sessionId: 's',
+      role: 'user',
+      ts: 1,
+      content: 'hi',
+      audioPath: null,
+      speaker: 'user',
+    });
+    store.appendMessage({
+      id: 'm2',
+      sessionId: 's',
+      role: 'assistant',
+      ts: 2,
+      content: 'hello',
+      audioPath: null,
+      speaker: 'echo',
+    });
+    store.appendMessage({
+      id: 'm3',
+      sessionId: 's',
+      role: 'system',
+      ts: 3,
+      content: 'note',
+      audioPath: null,
+    });
     const messages = store.listMessages('s');
     expect(messages.map((m) => m.speaker)).toEqual(['user', 'echo', undefined]);
     const exported = store.exportData();
@@ -253,12 +279,26 @@ describe('MemoryStore speaker column', () => {
     const filePath = path.join(directory, 'memory.db');
     const first = new MemoryStore({ filePath });
     first.createSession({ id: 's', startedAt: 1, title: null });
-    first.appendMessage({ id: 'old', sessionId: 's', role: 'user', ts: 1, content: 'before', audioPath: null });
+    first.appendMessage({
+      id: 'old',
+      sessionId: 's',
+      role: 'user',
+      ts: 1,
+      content: 'before',
+      audioPath: null,
+    });
     // Put the database back as version 8 left it: no speaker column.
     first.database.exec('ALTER TABLE messages DROP COLUMN speaker;');
     // ...and without what version 10 added (MCP over HTTP), which this rewind would otherwise add twice.
     first.database.exec('DROP TABLE mcp_oauth;');
-    for (const column of ['http_url', 'http_auth_header', 'http_auth_token_encrypted', 'oauth', 'oauth_scope', 'token_from_model_server']) {
+    for (const column of [
+      'http_url',
+      'http_auth_header',
+      'http_auth_token_encrypted',
+      'oauth',
+      'oauth_scope',
+      'token_from_model_server',
+    ]) {
       first.database.exec(`ALTER TABLE mcp_servers DROP COLUMN ${column};`);
     }
     // ...and what version 11 added (read-only state of MCP tools).
@@ -270,10 +310,23 @@ describe('MemoryStore speaker column', () => {
     const store = new MemoryStore({ filePath });
     stores.push(store);
     expect(Number(store.database.pragma('user_version', { simple: true }))).toBe(13);
-    const columns = store.database.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string; notnull: number }>;
+    const columns = store.database.prepare('PRAGMA table_info(messages)').all() as Array<{
+      name: string;
+      notnull: number;
+    }>;
     expect(columns.find((c) => c.name === 'speaker')).toMatchObject({ notnull: 0 });
-    expect(store.listMessages('s')).toEqual([{ id: 'old', sessionId: 's', role: 'user', ts: 1, content: 'before', audioPath: null }]);
-    store.appendMessage({ id: 'new', sessionId: 's', role: 'assistant', ts: 2, content: 'after', audioPath: null, speaker: 'echo' });
+    expect(store.listMessages('s')).toEqual([
+      { id: 'old', sessionId: 's', role: 'user', ts: 1, content: 'before', audioPath: null },
+    ]);
+    store.appendMessage({
+      id: 'new',
+      sessionId: 's',
+      role: 'assistant',
+      ts: 2,
+      content: 'after',
+      audioPath: null,
+      speaker: 'echo',
+    });
     expect(store.listMessages('s')[1]?.speaker).toBe('echo');
   });
 
@@ -282,7 +335,10 @@ describe('MemoryStore speaker column', () => {
     tempDirs.push(directory);
     const store = new MemoryStore({ filePath: path.join(directory, 'memory.db') });
     stores.push(store);
-    const columns = (store.database.prepare('PRAGMA table_info(mcp_tools)').all() as Array<{ name: string; notnull: number }>);
+    const columns = store.database.prepare('PRAGMA table_info(mcp_tools)').all() as Array<{
+      name: string;
+      notnull: number;
+    }>;
     expect(columns.find((c) => c.name === 'read_only_hint')).toMatchObject({ notnull: 0 });
     expect(columns.find((c) => c.name === 'read_only')).toMatchObject({ notnull: 0 });
   });
@@ -292,11 +348,29 @@ describe('MemoryStore speaker column', () => {
     tempDirs.push(directory);
     const store = new MemoryStore({ filePath: path.join(directory, 'memory.db') });
     stores.push(store);
-    const serverColumns = (store.database.prepare('PRAGMA table_info(mcp_servers)').all() as Array<{ name: string }>).map((c) => c.name);
-    expect(serverColumns).toEqual(expect.arrayContaining(['http_url', 'http_auth_header', 'http_auth_token_encrypted', 'oauth', 'oauth_scope', 'token_from_model_server']));
-    const oauthColumns = (store.database.prepare('PRAGMA table_info(mcp_oauth)').all() as Array<{ name: string }>).map((c) => c.name);
+    const serverColumns = (
+      store.database.prepare('PRAGMA table_info(mcp_servers)').all() as Array<{ name: string }>
+    ).map((c) => c.name);
+    expect(serverColumns).toEqual(
+      expect.arrayContaining([
+        'http_url',
+        'http_auth_header',
+        'http_auth_token_encrypted',
+        'oauth',
+        'oauth_scope',
+        'token_from_model_server',
+      ]),
+    );
+    const oauthColumns = (
+      store.database.prepare('PRAGMA table_info(mcp_oauth)').all() as Array<{ name: string }>
+    ).map((c) => c.name);
     expect(oauthColumns).toEqual(
-      expect.arrayContaining(['server_id', 'client_info_encrypted', 'tokens_encrypted', 'code_verifier_encrypted']),
+      expect.arrayContaining([
+        'server_id',
+        'client_info_encrypted',
+        'tokens_encrypted',
+        'code_verifier_encrypted',
+      ]),
     );
   });
 });

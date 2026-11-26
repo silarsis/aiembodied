@@ -16,12 +16,7 @@ export const createVitestConfig = (testPattern?: string) =>
         provider: 'v8',
         reporter: ['text', 'json', 'html'],
         include: ['src/**/*.ts'],
-        exclude: [
-          'src/**/*.test.ts',
-          'src/**/*.d.ts',
-          'node_modules/**'
-        ]
+        exclude: ['src/**/*.test.ts', 'src/**/*.d.ts', 'node_modules/**'],
       },
     },
   });
-

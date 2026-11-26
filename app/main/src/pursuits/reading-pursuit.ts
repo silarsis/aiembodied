@@ -137,23 +137,43 @@ export class ReadingPursuit implements Pursuit {
       this.brief = clip((await this.deps.memory?.brief().catch(() => null)) ?? '', BRIEF_CHARS);
     }
     const earlier = this.deps.notes.listReadingNotes(this.deps.avatarId, RECENT_NOTES_IN_PROMPT);
-    const questions = earlier.flatMap((note) => note.questions).slice(0, RECENT_QUESTIONS_IN_PROMPT);
+    const questions = earlier
+      .flatMap((note) => note.questions)
+      .slice(0, RECENT_QUESTIONS_IN_PROMPT);
     const lines = this.deps.recentLines().slice(-RECENT_LINES_IN_PROMPT);
     const prompt = [
-      this.deps.habits.trim() ? `What you like doing when you are by yourself: ${this.deps.habits.replace(/\s+/g, ' ').trim()}` : '',
+      this.deps.habits.trim()
+        ? `What you like doing when you are by yourself: ${this.deps.habits.replace(/\s+/g, ' ').trim()}`
+        : '',
       lines.length > 0 ? `What you were talking about lately:\n${lines.join('\n')}` : '',
       this.brief ? `What you remember:\n${this.brief}` : '',
-      earlier.length > 0 ? `What you read lately:\n${earlier.map((note) => `- ${note.title}: ${clip(note.takeaway, 160)}`).join('\n')}` : 'You have not read anything here yet.',
-      questions.length > 0 ? `Questions you still have:\n${questions.map((question) => `- ${question}`).join('\n')}` : '',
-      this.readTitles.length > 0 ? `You already read these in this visit, so pick something else: ${this.readTitles.join('; ')}.` : '',
+      earlier.length > 0
+        ? `What you read lately:\n${earlier.map((note) => `- ${note.title}: ${clip(note.takeaway, 160)}`).join('\n')}`
+        : 'You have not read anything here yet.',
+      questions.length > 0
+        ? `Questions you still have:\n${questions.map((question) => `- ${question}`).join('\n')}`
+        : '',
+      this.readTitles.length > 0
+        ? `You already read these in this visit, so pick something else: ${this.readTitles.join('; ')}.`
+        : '',
       '',
       'What do you feel like reading about right now? Answer with one sentence in the first person, starting with "I want to".',
     ]
       .filter((line, index, all) => line !== '' || all[index - 1] !== '')
       .join('\n');
     const reply = await this.deps.llm.ask(prompt, signal);
-    this.curiosity = clip(reply.split('\n').find((line) => line.trim())?.trim() ?? '', 300) || 'I want to read something that interests me.';
-    this.deps.logger?.info('Reading: wish', { avatarId: this.deps.avatarId, curiosity: this.curiosity });
+    this.curiosity =
+      clip(
+        reply
+          .split('\n')
+          .find((line) => line.trim())
+          ?.trim() ?? '',
+        300,
+      ) || 'I want to read something that interests me.';
+    this.deps.logger?.info('Reading: wish', {
+      avatarId: this.deps.avatarId,
+      curiosity: this.curiosity,
+    });
   }
 
   // -- act ----------------------------------------------------------------------------------------
@@ -162,12 +182,19 @@ export class ReadingPursuit implements Pursuit {
     const names = this.deps.tools.map((tool) => tool.toolName).join(', ');
     const prompt = [
       `You wish: ${this.curiosity}`,
-      this.refineIdea ? `Last time you looked, nothing was quite right. This time look for: ${this.refineIdea}` : '',
+      this.refineIdea
+        ? `Last time you looked, nothing was quite right. This time look for: ${this.refineIdea}`
+        : '',
       `Look in the library now. Call one of its tools (${names}) to search or list what is there, with your own words as the query. Do not answer from memory.`,
     ]
       .filter(Boolean)
       .join('\n');
-    const { results } = await this.deps.llm.useTools(prompt, this.deps.tools, MAX_QUERY_ROUNDS, signal);
+    const { results } = await this.deps.llm.useTools(
+      prompt,
+      this.deps.tools,
+      MAX_QUERY_ROUNDS,
+      signal,
+    );
     const found = results
       .filter((result) => result.ok)
       .map((result) => `[${result.name} ${clip(result.arguments, 120)}]\n${result.text}`)
@@ -204,7 +231,11 @@ export class ReadingPursuit implements Pursuit {
       this.emptyWishes += 1;
       return 'nothing';
     }
-    this.item = { title: choice.title, link: choice.link ?? linkNear(this.results, choice.title), why: choice.why };
+    this.item = {
+      title: choice.title,
+      link: choice.link ?? linkNear(this.results, choice.title),
+      why: choice.why,
+    };
     return 'consume';
   }
 
@@ -217,7 +248,12 @@ export class ReadingPursuit implements Pursuit {
       `You chose to read "${item.title}"${item.link ? ` (${item.link})` : ''}.`,
       'Fetch its full text now with the library tools (use the link or id the library gave). Do not answer from memory.',
     ].join('\n');
-    const { results } = await this.deps.llm.useTools(prompt, this.deps.tools, MAX_FETCH_ROUNDS, signal);
+    const { results } = await this.deps.llm.useTools(
+      prompt,
+      this.deps.tools,
+      MAX_FETCH_ROUNDS,
+      signal,
+    );
     const fetched = results.filter((result) => result.ok).map((result) => result.text);
     // The longest answer is the text itself; when nothing could be fetched the character reads what the search showed.
     const text = fetched.sort((a, b) => b.length - a.length)[0] ?? this.results;
@@ -290,7 +326,9 @@ export class ReadingPursuit implements Pursuit {
     if (!this.noted && this.emptyWishes >= MAX_EMPTY_WISHES) return 'stop';
     const last = this.noted ? this.notesMade[this.notesMade.length - 1] : undefined;
     const prompt = [
-      this.readTitles.length > 0 ? `So far you read: ${this.readTitles.join('; ')}.` : 'You did not find anything to read this time.',
+      this.readTitles.length > 0
+        ? `So far you read: ${this.readTitles.join('; ')}.`
+        : 'You did not find anything to read this time.',
       last ? `Your latest note, "${last.title}": ${clip(last.takeaway, 300)}` : '',
       '',
       'Do you want to read more now, or is that enough for the moment? And is there anything you would like to tell Kevin about, a thing that would really interest him? Answer in exactly this form:',
@@ -324,7 +362,11 @@ export class ReadingPursuit implements Pursuit {
       });
       this.noted = true;
     }
-    this.deps.logger?.info('Reading: session over', { avatarId: this.deps.avatarId, end, notes: this.notesMade.length });
+    this.deps.logger?.info('Reading: session over', {
+      avatarId: this.deps.avatarId,
+      end,
+      notes: this.notesMade.length,
+    });
   }
 
   private save(parts: Omit<NewReadingNote, 'avatarId' | 'stationId' | 'curiosity'>): void {
@@ -339,7 +381,9 @@ export class ReadingPursuit implements Pursuit {
     try {
       this.deps.saveToMemory(note);
     } catch (error) {
-      this.deps.logger?.warn('Reading: could not queue the note for memory', { message: error instanceof Error ? error.message : String(error) });
+      this.deps.logger?.warn('Reading: could not queue the note for memory', {
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 }

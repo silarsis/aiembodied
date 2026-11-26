@@ -12,7 +12,6 @@ export type StationSource =
   /** Tools built into the app, by the name the model calls them (for example `web_search`). */
   | { kind: 'builtin'; toolNames: string[] };
 
-
 /**
  * How the body acts a station's use when the user is a pursuit (reading). All optional: what is missing, or not in the
  * room, falls back to standing at the object and acting gestures only.
@@ -27,7 +26,6 @@ export interface StationBody {
   read?: string;
   note?: string;
 }
-
 
 export interface Station {
   id: string;
@@ -53,7 +51,6 @@ export interface Station {
   body?: StationBody;
 }
 
-
 /** `station:use`: main tells the renderer where the avatar is going and what it does there. */
 export interface StationUseEvent {
   /** One per trip; the renderer answers `station:arrived` with it. */
@@ -75,13 +72,11 @@ export interface StationUseEvent {
   ok?: boolean;
 }
 
-
 /** The names the model and the settings show for a station. */
 export interface StationLabels {
   roomName: string;
   objectName: string;
 }
-
 
 /** A station as the settings show it: the station plus the names, and the MCP server it holds (when it exists). */
 export interface StationView extends Station, StationLabels {

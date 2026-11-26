@@ -13,7 +13,10 @@ export const CALL_TIMEOUT_MS = 60_000;
 /** The first connection gets this long before calls give up; after a drop they fail at once. */
 export const FIRST_CONNECT_WAIT_MS = 6000;
 /** These run for as long as the turn or the stream does, so they have no timeout of their own. */
-export const LONG_RUNNING_CHANNELS: ReadonlySet<string> = new Set(['local-voice:respond', 'avatar-motion:stream']);
+export const LONG_RUNNING_CHANNELS: ReadonlySet<string> = new Set([
+  'local-voice:respond',
+  'avatar-motion:stream',
+]);
 
 /** `connecting`: the first try. `online`: welcomed. `offline`: dropped, trying again. `refused`: bija said no (see `code`). */
 export type LinkState = 'idle' | 'connecting' | 'online' | 'offline' | 'refused';
@@ -62,7 +65,12 @@ export function parseHubUrl(input: string): { ws: string; http: string } | null 
   if (!secure && url.protocol !== 'ws:' && url.protocol !== 'http:') return null;
   if (!url.hostname) return null;
   const port = url.port || '8791';
-  const host = url.hostname.includes(':') && !url.hostname.startsWith('[') ? `[${url.hostname}]` : url.hostname;
-  return { ws: `${secure ? 'wss' : 'ws'}://${host}:${port}`, http: `${secure ? 'https' : 'http'}://${host}:${port}` };
+  const host =
+    url.hostname.includes(':') && !url.hostname.startsWith('[')
+      ? `[${url.hostname}]`
+      : url.hostname;
+  return {
+    ws: `${secure ? 'wss' : 'ws'}://${host}:${port}`,
+    http: `${secure ? 'https' : 'http'}://${host}:${port}`,
+  };
 }
-

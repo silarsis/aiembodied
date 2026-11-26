@@ -14,7 +14,10 @@ export interface WebSearchResult {
 
 export interface WebSearchProvider {
   readonly name: string;
-  search(query: string, options: { limit: number; signal?: AbortSignal }): Promise<WebSearchResult[]>;
+  search(
+    query: string,
+    options: { limit: number; signal?: AbortSignal },
+  ): Promise<WebSearchResult[]>;
 }
 
 export const WEB_SEARCH_TOOL_ID = 'builtin:web_search';
@@ -38,7 +41,10 @@ export function createWebSearchTool(
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'What to search for, as you would type it into a search engine.' },
+        query: {
+          type: 'string',
+          description: 'What to search for, as you would type it into a search engine.',
+        },
       },
       required: ['query'],
     },
@@ -52,7 +58,10 @@ export function createWebSearchTool(
       if (!query) {
         throw new Error('web_search needs a non-empty "query".');
       }
-      const results = await provider.search(query, { limit, signal: AbortSignal.timeout(timeoutMs) });
+      const results = await provider.search(query, {
+        limit,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
       return {
         query,
         results: results.slice(0, limit).map((result) => ({
@@ -77,7 +86,15 @@ export const DEFAULT_SEARXNG_URL = 'http://127.0.0.1:8888';
 const BRAVE_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search';
 /** With a fallback behind it, one provider gets this long before the next is tried. */
 const FALLBACK_ATTEMPT_MS = 4000;
-const HTML_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", '#x27': "'", nbsp: ' ' };
+const HTML_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  '#39': "'",
+  '#x27': "'",
+  nbsp: ' ',
+};
 
 /** WEB_SEARCH_PROVIDER when it is not set. "off" (or "none") disables web search. */
 export const DEFAULT_WEB_SEARCH_PROVIDER = 'searxng';
@@ -103,12 +120,16 @@ export function createWebSearchProvider(
   const providers: WebSearchProvider[] = [];
   for (const provider of names) {
     if (provider === 'searxng') {
-      providers.push(new SearxngSearchProvider(settings.searxngUrl || DEFAULT_SEARXNG_URL, settings.fetchFn));
+      providers.push(
+        new SearxngSearchProvider(settings.searxngUrl || DEFAULT_SEARXNG_URL, settings.fetchFn),
+      );
     } else if (provider === 'brave') {
       if (settings.braveApiKey) {
         providers.push(new BraveSearchProvider(settings.braveApiKey, settings.fetchFn));
       } else {
-        logger?.warn('WEB_SEARCH_PROVIDER includes brave but BRAVE_SEARCH_API_KEY is not set; skipping it.');
+        logger?.warn(
+          'WEB_SEARCH_PROVIDER includes brave but BRAVE_SEARCH_API_KEY is not set; skipping it.',
+        );
       }
     } else {
       logger?.warn('Unknown WEB_SEARCH_PROVIDER; skipping it.', { provider });
@@ -151,32 +172,49 @@ export class SearxngSearchProvider implements WebSearchProvider {
   readonly name = 'searxng';
   private readonly baseUrl: string;
 
-  constructor(baseUrl: string, private readonly fetchFn: typeof fetch = fetch) {
+  constructor(
+    baseUrl: string,
+    private readonly fetchFn: typeof fetch = fetch,
+  ) {
     this.baseUrl = baseUrl.replace(/\/+$/, '');
   }
 
-  async search(query: string, options: { limit: number; signal?: AbortSignal }): Promise<WebSearchResult[]> {
+  async search(
+    query: string,
+    options: { limit: number; signal?: AbortSignal },
+  ): Promise<WebSearchResult[]> {
     const url = new URL(`${this.baseUrl}/search`);
     url.searchParams.set('q', query);
     url.searchParams.set('format', 'json');
     let response: Response;
     try {
-      response = await this.fetchFn(url, { headers: { Accept: 'application/json' }, signal: options.signal });
+      response = await this.fetchFn(url, {
+        headers: { Accept: 'application/json' },
+        signal: options.signal,
+      });
     } catch (error) {
       // The model reads this as the tool's error, so say plainly that search itself is unavailable.
       if (options.signal?.aborted) {
-        throw new Error(`Web search is unavailable: SearXNG at ${this.baseUrl} did not answer in time.`);
+        throw new Error(
+          `Web search is unavailable: SearXNG at ${this.baseUrl} did not answer in time.`,
+        );
       }
       const reason = error instanceof Error ? error.message : String(error);
-      throw new Error(`Web search is unavailable: could not reach SearXNG at ${this.baseUrl} (${reason}).`);
+      throw new Error(
+        `Web search is unavailable: could not reach SearXNG at ${this.baseUrl} (${reason}).`,
+      );
     }
     if (response.status === 403) {
-      throw new Error('Web search is unavailable: SearXNG refused JSON output (403); add json to search.formats in its settings.yml.');
+      throw new Error(
+        'Web search is unavailable: SearXNG refused JSON output (403); add json to search.formats in its settings.yml.',
+      );
     }
     if (!response.ok) {
       throw new Error(`Web search is unavailable: SearXNG answered HTTP ${response.status}.`);
     }
-    const body = (await response.json()) as { results?: Array<{ title?: unknown; url?: unknown; content?: unknown }> };
+    const body = (await response.json()) as {
+      results?: Array<{ title?: unknown; url?: unknown; content?: unknown }>;
+    };
     return toResults(body.results, 'content', options.limit);
   }
 }
@@ -185,9 +223,15 @@ export class SearxngSearchProvider implements WebSearchProvider {
 export class BraveSearchProvider implements WebSearchProvider {
   readonly name = 'brave';
 
-  constructor(private readonly apiKey: string, private readonly fetchFn: typeof fetch = fetch) {}
+  constructor(
+    private readonly apiKey: string,
+    private readonly fetchFn: typeof fetch = fetch,
+  ) {}
 
-  async search(query: string, options: { limit: number; signal?: AbortSignal }): Promise<WebSearchResult[]> {
+  async search(
+    query: string,
+    options: { limit: number; signal?: AbortSignal },
+  ): Promise<WebSearchResult[]> {
     const url = new URL(BRAVE_SEARCH_URL);
     url.searchParams.set('q', query);
     url.searchParams.set('count', String(Math.min(Math.max(options.limit, 1), 20)));
@@ -196,7 +240,9 @@ export class BraveSearchProvider implements WebSearchProvider {
       signal: options.signal,
     });
     if (response.status === 401 || response.status === 403) {
-      throw new Error(`Brave Search rejected the API key (HTTP ${response.status}): check BRAVE_SEARCH_API_KEY.`);
+      throw new Error(
+        `Brave Search rejected the API key (HTTP ${response.status}): check BRAVE_SEARCH_API_KEY.`,
+      );
     }
     if (response.status === 429) {
       throw new Error('Brave Search rate limit or monthly quota reached (HTTP 429).');
@@ -204,7 +250,9 @@ export class BraveSearchProvider implements WebSearchProvider {
     if (!response.ok) {
       throw new Error(`Brave Search failed with HTTP ${response.status}.`);
     }
-    const body = (await response.json()) as { web?: { results?: Array<{ title?: unknown; url?: unknown; description?: unknown }> } };
+    const body = (await response.json()) as {
+      web?: { results?: Array<{ title?: unknown; url?: unknown; description?: unknown }> };
+    };
     return toResults(body.web?.results, 'description', options.limit);
   }
 }
@@ -220,15 +268,19 @@ export class FallbackSearchProvider implements WebSearchProvider {
     this.name = providers.map((provider) => provider.name).join(',');
   }
 
-  async search(query: string, options: { limit: number; signal?: AbortSignal }): Promise<WebSearchResult[]> {
+  async search(
+    query: string,
+    options: { limit: number; signal?: AbortSignal },
+  ): Promise<WebSearchResult[]> {
     let lastError: unknown;
     for (const [index, provider] of this.providers.entries()) {
       options.signal?.throwIfAborted();
       // Every provider but the last gets a slice of the time, so a hung one leaves room for the next.
       const isLast = index === this.providers.length - 1;
-      const signals = [options.signal, isLast ? undefined : AbortSignal.timeout(this.attemptMs)].filter(
-        (signal): signal is AbortSignal => Boolean(signal),
-      );
+      const signals = [
+        options.signal,
+        isLast ? undefined : AbortSignal.timeout(this.attemptMs),
+      ].filter((signal): signal is AbortSignal => Boolean(signal));
       try {
         const results = await provider.search(query, {
           limit: options.limit,
@@ -276,7 +328,10 @@ function toResults(
  * (e.g. "<scr<b>ipt>" or "&lt;b&gt;").
  */
 function stripHtml(text: string): string {
-  let plain = text.replace(/&(amp|lt|gt|quot|#39|#x27|nbsp);/g, (_, entity: string) => HTML_ENTITIES[entity] ?? '');
+  let plain = text.replace(
+    /&(amp|lt|gt|quot|#39|#x27|nbsp);/g,
+    (_, entity: string) => HTML_ENTITIES[entity] ?? '',
+  );
   let previous: string;
   do {
     previous = plain;

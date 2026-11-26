@@ -33,6 +33,8 @@ jobs:
             sleep $((attempt * 20))
           done
           exit 1
+      - name: Format
+        run: pnpm format:check
       - name: Lint
         run: pnpm lint
       - name: Typecheck

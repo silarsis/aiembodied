@@ -19,7 +19,9 @@ export interface LoggerBundle {
 
 export function initializeLogger(options: LoggerOptions = {}): LoggerBundle {
   const serviceName = options.serviceName ?? 'aiembodied';
-  const logDirectory = ensureLogDirectory(options.logDirectory ?? resolveDefaultLogDirectory(serviceName));
+  const logDirectory = ensureLogDirectory(
+    options.logDirectory ?? resolveDefaultLogDirectory(serviceName),
+  );
 
   const logger = createLogger({
     level: options.level ?? (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),

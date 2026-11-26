@@ -147,7 +147,11 @@ export class FacePresence {
   }
 
   private teardown(): void {
-    if (this.timer !== null) (this.deps.clearInterval ?? ((handle) => clearInterval(handle as ReturnType<typeof setInterval>)))(this.timer);
+    if (this.timer !== null)
+      (
+        this.deps.clearInterval ??
+        ((handle) => clearInterval(handle as ReturnType<typeof setInterval>))
+      )(this.timer);
     this.timer = null;
     const wasLive = this.live;
     this.live = false;
@@ -208,7 +212,14 @@ export class FacePresence {
     const gap = this.lastFaceAt === null ? Infinity : now - this.lastFaceAt;
     this.lastFaceAt = now;
     if (gap >= GREET_GAP_MS) {
-      void Promise.resolve(this.deps.emit({ cue: 'greet_face', timestamp: now, confidence: 1, provider: 'face-presence' })).catch((error: unknown) =>
+      void Promise.resolve(
+        this.deps.emit({
+          cue: 'greet_face',
+          timestamp: now,
+          confidence: 1,
+          provider: 'face-presence',
+        }),
+      ).catch((error: unknown) =>
         this.deps.logger?.warn('Could not send the greeting cue', { reason: reasonOf(error) }),
       );
     }

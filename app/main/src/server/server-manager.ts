@@ -69,7 +69,9 @@ export function buildStopCommand(directories: string[], skipIds: readonly string
     `foreach ($dir in @(${directories.map(psQuote).join(', ')})) {`,
     '  if (-not (Test-Path -LiteralPath $dir)) { continue }',
     '  foreach ($file in Get-ChildItem -LiteralPath $dir -Filter *.pid -File) {',
-    ...(skipIds.length > 0 ? [`    if (@(${skipIds.map(psQuote).join(', ')}) -contains $file.BaseName) { continue }`] : []),
+    ...(skipIds.length > 0
+      ? [`    if (@(${skipIds.map(psQuote).join(', ')}) -contains $file.BaseName) { continue }`]
+      : []),
     '    $id = 0; [void][int]::TryParse(((Get-Content -LiteralPath $file.FullName -TotalCount 1) -as [string]).Trim(), [ref]$id);',
     '    $process = if ($id -gt 0) { Get-Process -Id $id } else { $null };',
     '    if ($process -and $process.StartTime -le $file.LastWriteTime.AddSeconds(5)) {',
@@ -119,25 +121,37 @@ export class ServerManager {
     }
     const skipIds = [
       ...(this.options.controllerInUse?.() ? CONTROLLER_MANAGED_IDS : []),
-      ...CONTROLLER_OPTIONAL_IDS.filter((entry) => this.options.controllerManages?.(entry.backend) === true).map((entry) => entry.pid),
+      ...CONTROLLER_OPTIONAL_IDS.filter(
+        (entry) => this.options.controllerManages?.(entry.backend) === true,
+      ).map((entry) => entry.pid),
     ];
-    if (skipIds.length > 0) this.logger.debug('ServerManager: the model controller runs some servers; leaving their pid files alone');
+    if (skipIds.length > 0)
+      this.logger.debug(
+        'ServerManager: the model controller runs some servers; leaving their pid files alone',
+      );
     const startedAt = Date.now();
     const timeoutMs = this.options.timeoutMs ?? 15_000;
     const run =
       this.options.powershell ??
       ((command: string, timeout: number) =>
-        promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
-          windowsHide: true,
-          timeout,
-        }).then((result) => result.stdout));
+        promisify(execFile)(
+          'powershell.exe',
+          ['-NoProfile', '-NonInteractive', '-Command', command],
+          {
+            windowsHide: true,
+            timeout,
+          },
+        ).then((result) => result.stdout));
     try {
       const output = await run(buildStopCommand(directories, skipIds), timeoutMs);
       const stopped = output
         .split(/\r?\n/)
         .map((line) => line.trim())
         .filter((line) => line.startsWith('stopped:') || line.startsWith('container:'));
-      this.logger.info('ServerManager: stopped local servers', { stopped, durationMs: Date.now() - startedAt });
+      this.logger.info('ServerManager: stopped local servers', {
+        stopped,
+        durationMs: Date.now() - startedAt,
+      });
       return stopped;
     } catch (error) {
       this.logger.warn('ServerManager: stopping local servers failed', {

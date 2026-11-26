@@ -18,7 +18,11 @@ export interface RealtimeClientCallbacks {
     json?: string;
   }) => void;
   onFirstAudioFrame?: () => void;
-  onSessionUpdated?: (session: { voice?: string; instructions?: string; turnDetection?: string }) => void;
+  onSessionUpdated?: (session: {
+    voice?: string;
+    instructions?: string;
+    turnDetection?: string;
+  }) => void;
   onTextContent?: (content: string) => void;
 }
 
@@ -123,10 +127,13 @@ export class RealtimeClient {
     // The gpt-4o-realtime-preview snapshots are gone (model_not_found); gpt-realtime-2.1 is current.
     this.model = options.model ?? DEFAULT_REALTIME_MODEL;
     this.fetchFn = options.fetchFn ?? window.fetch.bind(window);
-    this.createPeerConnectionFn = options.createPeerConnection ?? ((config?: RTCConfiguration) => new RTCPeerConnection(config));
+    this.createPeerConnectionFn =
+      options.createPeerConnection ??
+      ((config?: RTCConfiguration) => new RTCPeerConnection(config));
     this.reconnectDelays = options.reconnectDelaysMs ?? [750, 1500, 3000];
     this.callbacks = options.callbacks ?? {};
-    this.maxReconnectAttempts = options.maxReconnectAttempts ?? Math.max(this.reconnectDelays.length, 3);
+    this.maxReconnectAttempts =
+      options.maxReconnectAttempts ?? Math.max(this.reconnectDelays.length, 3);
     this.jitterBufferMs = options.jitterBufferMs ?? 100;
     this.sessionConfig = options.sessionConfig;
     this.handshakeMode = options.handshakeMode ?? 'json';
@@ -326,14 +333,18 @@ export class RealtimeClient {
             const type = (payload as { type?: string }).type;
             if (type === 'session.updated' || type === 'session.update') {
               const session = (payload as { session?: Record<string, unknown> }).session ?? {};
-              const audio = session && typeof session === 'object' ? ((session as { audio?: unknown }).audio as unknown) : undefined;
+              const audio =
+                session && typeof session === 'object'
+                  ? ((session as { audio?: unknown }).audio as unknown)
+                  : undefined;
               const audioOutput =
                 audio && typeof audio === 'object'
                   ? ((audio as { output?: unknown }).output as { voice?: unknown } | undefined)
                   : undefined;
               const sessionParameters =
                 session && typeof session === 'object'
-                  ? ((session as { session_parameters?: unknown }).session_parameters as Record<string, unknown> | undefined)
+                  ? ((session as { session_parameters?: unknown }).session_parameters as
+                      Record<string, unknown> | undefined)
                   : undefined;
               const voiceFromSessionParameters =
                 typeof sessionParameters?.['voice'] === 'string'
@@ -350,10 +361,15 @@ export class RealtimeClient {
                   : typeof session['instructions'] === 'string'
                     ? (session['instructions'] as string)
                     : undefined;
-              const td = (sessionParameters?.['turn_detection'] ?? session['turn_detection']) as { type?: string } | undefined;
+              const td = (sessionParameters?.['turn_detection'] ?? session['turn_detection']) as
+                { type?: string } | undefined;
               const turnDetection = td && typeof td.type === 'string' ? td.type : undefined;
               this.callbacks.onSessionUpdated?.({ voice, instructions, turnDetection });
-              this.log('info', 'Received session.updated from realtime API', { voice, turnDetection, hasInstructions: Boolean(instructions) });
+              this.log('info', 'Received session.updated from realtime API', {
+                voice,
+                turnDetection,
+                hasInstructions: Boolean(instructions),
+              });
             }
 
             const textContent = this.extractTextContent(payload as Record<string, unknown>);
@@ -435,15 +451,17 @@ export class RealtimeClient {
 
     if (normalizedContentType.includes('application/json')) {
       const payload = (await response.json()) as
-        | { sdp?: unknown; rtc_connection?: { sdp?: unknown } | null }
-        | undefined
-        | null;
+        { sdp?: unknown; rtc_connection?: { sdp?: unknown } | null } | undefined | null;
       if (payload && typeof payload === 'object') {
         if (typeof payload.sdp === 'string') {
           return payload.sdp;
         }
         const rtcConnection = payload.rtc_connection;
-        if (rtcConnection && typeof rtcConnection === 'object' && typeof rtcConnection.sdp === 'string') {
+        if (
+          rtcConnection &&
+          typeof rtcConnection === 'object' &&
+          typeof rtcConnection.sdp === 'string'
+        ) {
           return rtcConnection.sdp;
         }
       }
@@ -494,15 +512,17 @@ export class RealtimeClient {
 
     if (normalizedContentType.includes('application/json')) {
       const payload = (await response.json()) as
-        | { sdp?: unknown; rtc_connection?: { sdp?: unknown } | null }
-        | undefined
-        | null;
+        { sdp?: unknown; rtc_connection?: { sdp?: unknown } | null } | undefined | null;
       if (payload && typeof payload === 'object') {
         if (typeof payload.sdp === 'string') {
           return payload.sdp;
         }
         const rtcConnection = payload.rtc_connection;
-        if (rtcConnection && typeof rtcConnection === 'object' && typeof rtcConnection.sdp === 'string') {
+        if (
+          rtcConnection &&
+          typeof rtcConnection === 'object' &&
+          typeof rtcConnection.sdp === 'string'
+        ) {
           return rtcConnection.sdp;
         }
       }
@@ -586,7 +606,9 @@ export class RealtimeClient {
       session.voice = this.sessionConfig.voice;
       const previousAudio = (session.audio as Record<string, unknown> | undefined) ?? {};
       const previousOutput =
-        previousAudio && typeof previousAudio['output'] === 'object' && previousAudio['output'] !== null
+        previousAudio &&
+        typeof previousAudio['output'] === 'object' &&
+        previousAudio['output'] !== null
           ? (previousAudio['output'] as Record<string, unknown>)
           : {};
 
@@ -779,7 +801,10 @@ export class RealtimeClient {
 
     const nextAttempt = this.reconnectAttempts + 1;
     if (nextAttempt > this.maxReconnectAttempts) {
-      this.updateState({ status: 'error', error: 'Realtime connection lost after multiple attempts.' });
+      this.updateState({
+        status: 'error',
+        error: 'Realtime connection lost after multiple attempts.',
+      });
       this.shouldReconnect = false;
       return;
     }

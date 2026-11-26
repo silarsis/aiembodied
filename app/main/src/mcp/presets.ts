@@ -93,7 +93,13 @@ export function homeAssistantPreset(home: HomeAssistantHome): MCPPreset {
  * HA does not always send readOnlyHint, and a wrong "changes things" only costs a walk to the panel, while a wrong
  * "reads" would let a change happen from anywhere, so this list stays short and explicit.
  */
-export const HOME_ASSISTANT_READ_TOOLS: readonly string[] = ['GetLiveContext', 'GetDateTime', 'HassGetState', 'HassGetWeather', 'todo_get_items'];
+export const HOME_ASSISTANT_READ_TOOLS: readonly string[] = [
+  'GetLiveContext',
+  'GetDateTime',
+  'HassGetState',
+  'HassGetWeather',
+  'todo_get_items',
+];
 
 /** The preset-level default for a Home Assistant tool: true for reads, false for everything else (HassTurnOn, ...). */
 export function homeAssistantReadOnlyDefault(toolName: string): boolean {
@@ -105,6 +111,8 @@ const RISKY_WORDS = /\b(un)?lock(s|ed|ing)?\b|\balarm\b|\b(dis)?arm(s|ed|ing)?\b
 
 export function isRiskyHomeAssistantTool(name: string, description: string | undefined): boolean {
   // Split HassLockUnlock / lock_door into words before looking for the risky ones.
-  const words = `${name} ${description ?? ''}`.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ');
+  const words = `${name} ${description ?? ''}`
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/_/g, ' ');
   return RISKY_WORDS.test(words);
 }

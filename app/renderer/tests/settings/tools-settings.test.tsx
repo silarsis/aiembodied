@@ -46,9 +46,21 @@ function bridges() {
     signIn: vi.fn().mockResolvedValue({ success: true, toolsDiscovered: 3 }),
     signOut: vi.fn().mockResolvedValue(undefined),
     listPresets: vi.fn().mockResolvedValue([
-      { id: 'dair-academy-papers', name: 'DAIR Academy papers', description: 'A reading library.', url: 'https://academy.dair.ai/api/mcp' },
+      {
+        id: 'dair-academy-papers',
+        name: 'DAIR Academy papers',
+        description: 'A reading library.',
+        url: 'https://academy.dair.ai/api/mcp',
+      },
     ]),
-    addPreset: vi.fn().mockResolvedValue({ ...server, id: 'dair', name: 'DAIR Academy papers', transportType: 'http', httpUrl: 'https://academy.dair.ai/api/mcp', oauth: true }),
+    addPreset: vi.fn().mockResolvedValue({
+      ...server,
+      id: 'dair',
+      name: 'DAIR Academy papers',
+      transportType: 'http',
+      httpUrl: 'https://academy.dair.ai/api/mcp',
+      oauth: true,
+    }),
     getToolDefinitionsForLLM: vi.fn().mockResolvedValue([
       { name: 'web_search', description: 'Search the web' },
       { name: 'turn_on', description: 'Turn a light on' },
@@ -56,7 +68,17 @@ function bridges() {
   } satisfies McpBridge;
   const models = {
     get: vi.fn().mockResolvedValue({
-      servers: [{ id: 'searxng', name: 'SearXNG', type: 'search', url: '', builtIn: true, managed: true, hasKey: false }],
+      servers: [
+        {
+          id: 'searxng',
+          name: 'SearXNG',
+          type: 'search',
+          url: '',
+          builtIn: true,
+          managed: true,
+          hasKey: false,
+        },
+      ],
       routes: { search: { server: 'searxng' } },
     }),
   } as unknown as ModelsBridge;
@@ -80,15 +102,24 @@ const heldStation: StationView = {
 describe('Tools / MCP settings', () => {
   it('says where a server is kept, and saves whether a tool only reads', async () => {
     const { mcp, models } = bridges();
-    const stations = { list: vi.fn().mockResolvedValue([heldStation]) } as unknown as StationsBridge;
+    const stations = {
+      list: vi.fn().mockResolvedValue([heldStation]),
+    } as unknown as StationsBridge;
     render(<ToolsSettings mcp={mcp} models={models} stations={stations} active />);
     const article = await screen.findByRole('article', { name: 'Home Assistant' });
-    await waitFor(() => expect(article).toHaveTextContent('Kept on the bookshelf in the Reading room'));
+    await waitFor(() =>
+      expect(article).toHaveTextContent('Kept on the bookshelf in the Reading room'),
+    );
     const reads = screen.getByLabelText('Does turn_on change things') as HTMLSelectElement;
     expect(reads.value).toBe('changes');
-    expect(Array.from(reads.options).map((option) => option.textContent)).toEqual(['Changes things', 'Only reads']);
+    expect(Array.from(reads.options).map((option) => option.textContent)).toEqual([
+      'Changes things',
+      'Only reads',
+    ]);
     fireEvent.change(reads, { target: { value: 'reads' } });
-    await waitFor(() => expect(mcp.updateToolPreferences).toHaveBeenCalledWith('ha:turn_on', { readOnly: true }));
+    await waitFor(() =>
+      expect(mcp.updateToolPreferences).toHaveBeenCalledWith('ha:turn_on', { readOnly: true }),
+    );
   });
 
   it('says nothing about a station when no server is kept anywhere', async () => {
@@ -104,10 +135,18 @@ describe('Tools / MCP settings', () => {
     const openWebSearch = vi.fn();
     render(<ToolsSettings mcp={mcp} models={models} active onOpenWebSearch={openWebSearch} />);
     expect(await screen.findByText('web_search')).toBeInTheDocument();
-    expect(await screen.findByText('The assistant looks things up with SearXNG.')).toBeInTheDocument();
-    expect(screen.getByRole('article', { name: 'Home Assistant' })).toHaveTextContent('Connected · 1 tools');
+    expect(
+      await screen.findByText('The assistant looks things up with SearXNG.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Home Assistant' })).toHaveTextContent(
+      'Connected · 1 tools',
+    );
     fireEvent.change(screen.getByLabelText('When turn_on runs'), { target: { value: 'none' } });
-    await waitFor(() => expect(mcp.updateToolPreferences).toHaveBeenCalledWith('ha:turn_on', { confirmationLevel: 'none' }));
+    await waitFor(() =>
+      expect(mcp.updateToolPreferences).toHaveBeenCalledWith('ha:turn_on', {
+        confirmationLevel: 'none',
+      }),
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Choose web search servers' }));
     expect(openWebSearch).toHaveBeenCalled();
   });
@@ -118,11 +157,18 @@ describe('Tools / MCP settings', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Add an MCP server' }));
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'New' } });
     fireEvent.change(screen.getByLabelText('Connects by'), { target: { value: 'sse' } });
-    fireEvent.change(screen.getByLabelText('SSE URL'), { target: { value: 'http://new.local/sse' } });
+    fireEvent.change(screen.getByLabelText('SSE URL'), {
+      target: { value: 'http://new.local/sse' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Add and connect' }));
     await waitFor(() => expect(mcp.connectServer).toHaveBeenCalledWith('new'));
     expect(mcp.addServer).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'New', transportType: 'sse', sseUrl: 'http://new.local/sse', sseAuthToken: undefined }),
+      expect.objectContaining({
+        name: 'New',
+        transportType: 'sse',
+        sseUrl: 'http://new.local/sse',
+        sseAuthToken: undefined,
+      }),
     );
   });
 
@@ -131,13 +177,22 @@ describe('Tools / MCP settings', () => {
     mcp.addServer.mockResolvedValue({ ...server, id: 'web', transportType: 'http', oauth: true });
     render(<ToolsSettings mcp={mcp} models={models} active />);
     fireEvent.click(await screen.findByRole('button', { name: 'Add an MCP server' }));
-    fireEvent.change(screen.getByLabelText('Web address'), { target: { value: 'https://example.com/mcp' } });
+    fireEvent.change(screen.getByLabelText('Web address'), {
+      target: { value: 'https://example.com/mcp' },
+    });
     fireEvent.change(screen.getByLabelText('Sign-in'), { target: { value: 'oauth' } });
-    fireEvent.change(screen.getByLabelText('Permission to ask for (optional)'), { target: { value: 'papers:read' } });
+    fireEvent.change(screen.getByLabelText('Permission to ask for (optional)'), {
+      target: { value: 'papers:read' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Add and sign in' }));
     await waitFor(() => expect(mcp.signIn).toHaveBeenCalledWith('web'));
     expect(mcp.addServer).toHaveBeenCalledWith(
-      expect.objectContaining({ transportType: 'http', httpUrl: 'https://example.com/mcp', oauth: true, oauthScope: 'papers:read' }),
+      expect.objectContaining({
+        transportType: 'http',
+        httpUrl: 'https://example.com/mcp',
+        oauth: true,
+        oauthScope: 'papers:read',
+      }),
     );
     expect(mcp.connectServer).not.toHaveBeenCalled();
   });
@@ -146,13 +201,20 @@ describe('Tools / MCP settings', () => {
     const { mcp, models } = bridges();
     render(<ToolsSettings mcp={mcp} models={models} active />);
     fireEvent.click(await screen.findByRole('button', { name: 'Add an MCP server' }));
-    fireEvent.change(screen.getByLabelText('Web address'), { target: { value: 'https://example.com/mcp' } });
+    fireEvent.change(screen.getByLabelText('Web address'), {
+      target: { value: 'https://example.com/mcp' },
+    });
     fireEvent.change(screen.getByLabelText('Sign-in'), { target: { value: 'header' } });
     fireEvent.change(screen.getByLabelText('Auth value'), { target: { value: 'Bearer abc' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add and connect' }));
     await waitFor(() => expect(mcp.connectServer).toHaveBeenCalled());
     expect(mcp.addServer).toHaveBeenCalledWith(
-      expect.objectContaining({ transportType: 'http', httpAuthHeader: 'Authorization', httpAuthToken: 'Bearer abc', oauth: false }),
+      expect.objectContaining({
+        transportType: 'http',
+        httpAuthHeader: 'Authorization',
+        httpAuthToken: 'Bearer abc',
+        oauth: false,
+      }),
     );
   });
 
@@ -162,8 +224,12 @@ describe('Tools / MCP settings', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Add an MCP server' }));
     fireEvent.change(screen.getByLabelText('Connects by'), { target: { value: 'stdio' } });
     fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'npx' } });
-    fireEvent.change(screen.getByLabelText('Arguments (one per line)'), { target: { value: '-y\n  some-server \n\n' } });
-    fireEvent.change(screen.getByLabelText('Environment (KEY=value, one per line)'), { target: { value: 'TOKEN=a=b\nOTHER=1' } });
+    fireEvent.change(screen.getByLabelText('Arguments (one per line)'), {
+      target: { value: '-y\n  some-server \n\n' },
+    });
+    fireEvent.change(screen.getByLabelText('Environment (KEY=value, one per line)'), {
+      target: { value: 'TOKEN=a=b\nOTHER=1' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Add and connect' }));
     await waitFor(() => expect(mcp.connectServer).toHaveBeenCalledWith('new'));
     expect(mcp.addServer).toHaveBeenCalledWith(
@@ -181,9 +247,15 @@ describe('Tools / MCP settings', () => {
     render(<ToolsSettings mcp={mcp} models={models} active />);
     fireEvent.click(await screen.findByRole('button', { name: 'Add an MCP server' }));
     fireEvent.change(screen.getByLabelText('Connects by'), { target: { value: 'sse' } });
-    fireEvent.change(screen.getByLabelText('SSE URL'), { target: { value: 'http://old.local/sse' } });
+    fireEvent.change(screen.getByLabelText('SSE URL'), {
+      target: { value: 'http://old.local/sse' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Add and connect' }));
-    await waitFor(() => expect(mcp.addServer).toHaveBeenCalledWith(expect.objectContaining({ transportType: 'sse', sseUrl: 'http://old.local/sse' })));
+    await waitFor(() =>
+      expect(mcp.addServer).toHaveBeenCalledWith(
+        expect.objectContaining({ transportType: 'sse', sseUrl: 'http://old.local/sse' }),
+      ),
+    );
   });
 
   it('shows Sign-in needed with a Sign in button, and Sign out for OAuth servers', async () => {

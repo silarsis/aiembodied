@@ -60,14 +60,18 @@ function extractHumanBoneNames(parsed: ParsedGlb): string[] {
   const vrmBones = vrmHumanoid?.humanBones as unknown;
   if (Array.isArray(vrmBones)) {
     const bones = vrmBones
-      .map((entry) => (entry && typeof entry === 'object' ? (entry as Record<string, unknown>).bone : undefined))
+      .map((entry) =>
+        entry && typeof entry === 'object' ? (entry as Record<string, unknown>).bone : undefined,
+      )
       .filter((bone): bone is string => typeof bone === 'string' && bone.trim().length > 0)
       .map((bone) => bone.trim());
     return Array.from(new Set(bones));
   }
 
   if (vrmBones && typeof vrmBones === 'object') {
-    return Object.keys(vrmBones as Record<string, unknown>).filter((bone) => bone.trim().length > 0);
+    return Object.keys(vrmBones as Record<string, unknown>).filter(
+      (bone) => bone.trim().length > 0,
+    );
   }
 
   return [];
@@ -274,7 +278,9 @@ function toDataUrl(buffer: Buffer | null): string | null {
   return `data:${mime};base64,${buffer.toString('base64')}`;
 }
 
-function getVrmMetaSource(parsed: ParsedGlb): { meta: Record<string, unknown>; source: 'vrmc' | 'vrm'; specVersion?: string } | null {
+function getVrmMetaSource(
+  parsed: ParsedGlb,
+): { meta: Record<string, unknown>; source: 'vrmc' | 'vrm'; specVersion?: string } | null {
   const extensions = parsed.json?.extensions as Record<string, unknown> | undefined;
   const vrmc = extensions?.VRMC_vrm as Record<string, unknown> | undefined;
   if (vrmc && typeof vrmc === 'object') {
@@ -369,7 +375,8 @@ function loadVrmMetadata(parsed: ParsedGlb): VrmMetaSummary {
     };
   }
 
-  const metaVersion = typeof metaSource.meta.metaVersion === 'string' ? metaSource.meta.metaVersion : undefined;
+  const metaVersion =
+    typeof metaSource.meta.metaVersion === 'string' ? metaSource.meta.metaVersion : undefined;
   if (metaVersion && metaVersion !== '1' && metaVersion !== '0') {
     throw new Error('VRM validation failed: expected VRM 0.0/1.0 metadata.');
   }
@@ -437,7 +444,10 @@ export class AvatarModelService {
       const thumbnail = extractThumbnail(parsedGlb);
 
       const modelName = sanitizeName(meta.name, 'Default Avatar');
-      const version = typeof meta.version === 'string' && meta.version.trim().length > 0 ? meta.version.trim() : '1.0';
+      const version =
+        typeof meta.version === 'string' && meta.version.trim().length > 0
+          ? meta.version.trim()
+          : '1.0';
       const id = randomUUID();
       const filePath = path.join(this.modelsDirectory, `${id}.vrm`);
       const createdAt = this.now();
@@ -494,7 +504,9 @@ export class AvatarModelService {
 
     const record = this.store.getVrmModel(modelId);
     if (!record) {
-      this.logger?.warn?.('Requested VRM model not found. Falling back to current selection.', { modelId });
+      this.logger?.warn?.('Requested VRM model not found. Falling back to current selection.', {
+        modelId,
+      });
       return this.getActiveModel();
     }
 
@@ -545,7 +557,10 @@ export class AvatarModelService {
     try {
       const buffer = await this.fs.readFile(record.filePath);
       if (buffer.length === 0) {
-        this.logger?.warn?.('VRM model binary is empty; cannot list bones.', { modelId, filePath: record.filePath });
+        this.logger?.warn?.('VRM model binary is empty; cannot list bones.', {
+          modelId,
+          filePath: record.filePath,
+        });
         return [];
       }
 
@@ -554,7 +569,11 @@ export class AvatarModelService {
       return Array.from(new Set(bones)).sort();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger?.warn?.('Failed to read VRM bones from model binary.', { modelId, filePath: record.filePath, message });
+      this.logger?.warn?.('Failed to read VRM bones from model binary.', {
+        modelId,
+        filePath: record.filePath,
+        message,
+      });
       return [];
     }
   }
@@ -571,14 +590,19 @@ export class AvatarModelService {
   async listModelBoneHierarchy(modelId: string): Promise<Record<string, string | null>> {
     const record = this.store.getVrmModel(modelId);
     if (!record) {
-      this.logger?.warn?.('Requested VRM model not found when listing bone hierarchy.', { modelId });
+      this.logger?.warn?.('Requested VRM model not found when listing bone hierarchy.', {
+        modelId,
+      });
       return {};
     }
 
     try {
       const buffer = await this.fs.readFile(record.filePath);
       if (buffer.length === 0) {
-        this.logger?.warn?.('VRM model binary is empty; cannot extract bone hierarchy.', { modelId, filePath: record.filePath });
+        this.logger?.warn?.('VRM model binary is empty; cannot extract bone hierarchy.', {
+          modelId,
+          filePath: record.filePath,
+        });
         return {};
       }
 
@@ -586,7 +610,11 @@ export class AvatarModelService {
       return extractBoneHierarchy(parsed);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger?.warn?.('Failed to extract bone hierarchy from model binary.', { modelId, filePath: record.filePath, message });
+      this.logger?.warn?.('Failed to extract bone hierarchy from model binary.', {
+        modelId,
+        filePath: record.filePath,
+        message,
+      });
       return {};
     }
   }
@@ -624,7 +652,10 @@ export class AvatarModelService {
 
     const baseName = path.parse(fileName).name || 'VRM Model';
     const modelName = sanitizeName(request.name ?? meta.name, baseName);
-    const version = typeof meta.version === 'string' && meta.version.trim().length > 0 ? meta.version.trim() : '1.0';
+    const version =
+      typeof meta.version === 'string' && meta.version.trim().length > 0
+        ? meta.version.trim()
+        : '1.0';
     const id = randomUUID();
     const filePath = path.join(this.modelsDirectory, `${id}.vrm`);
     const createdAt = this.now();
@@ -654,7 +685,9 @@ export class AvatarModelService {
       this.store.createVrmModel(record);
     } catch (error) {
       await this.fs.rm(filePath).catch(() => {
-        this.logger?.warn?.('Failed to clean up VRM binary after store write failure.', { filePath });
+        this.logger?.warn?.('Failed to clean up VRM binary after store write failure.', {
+          filePath,
+        });
       });
       throw error;
     }
@@ -678,7 +711,11 @@ export class AvatarModelService {
 
     await this.fs.rm(record.filePath).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger?.warn?.('Failed to remove VRM model binary from disk.', { modelId, filePath: record.filePath, message });
+      this.logger?.warn?.('Failed to remove VRM model binary from disk.', {
+        modelId,
+        filePath: record.filePath,
+        message,
+      });
     });
 
     const fallback = this.getActiveModel();
@@ -688,7 +725,9 @@ export class AvatarModelService {
         active: fallback.id,
       });
     } else {
-      this.logger?.info?.('All VRM models removed; active selection cleared.', { removed: modelId });
+      this.logger?.info?.('All VRM models removed; active selection cleared.', {
+        removed: modelId,
+      });
     }
   }
 
@@ -747,7 +786,10 @@ export class AvatarModelService {
     }
 
     this.store.updateVrmModelDescription(modelId, description);
-    this.logger?.info?.('VRM model description updated.', { modelId, descriptionLength: description.length });
+    this.logger?.info?.('VRM model description updated.', {
+      modelId,
+      descriptionLength: description.length,
+    });
 
     const updated = this.store.getVrmModel(modelId);
     return updated ? this.toSummary(updated) : null;

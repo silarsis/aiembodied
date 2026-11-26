@@ -92,7 +92,12 @@ function ModelSelect({
       >
         {!selectedId ? <option value="">No usable option found</option> : null}
         {models.map((model) => (
-          <option key={model.id} value={model.id} disabled={!model.available} style={model.offline ? OFFLINE_STYLE : undefined}>
+          <option
+            key={model.id}
+            value={model.id}
+            disabled={!model.available}
+            style={model.offline ? OFFLINE_STYLE : undefined}
+          >
             {model.name}
             {model.location ? ` ${model.location}` : ''}
             {model.offline ? ' (offline)' : ''}
@@ -370,7 +375,9 @@ export function AvatarStudio({
   const viewsBlocked =
     needsViews && imageModels.supported && !imageModels.loading && !qwenModels.length;
   const frontIsQwen = isQwen(imageModels.selectedModelId);
-  const selectedImageModel = imageModels.models.find((item) => item.id === imageModels.selectedModelId);
+  const selectedImageModel = imageModels.models.find(
+    (item) => item.id === imageModels.selectedModelId,
+  );
   const canGenerate =
     !viewsBlocked &&
     !busy &&
@@ -473,7 +480,9 @@ export function AvatarStudio({
     : [];
   const enlargedImage = enlarged === null ? undefined : gallery[enlarged];
   const stepEnlarged = (by: number) =>
-    setEnlarged((index) => (index === null ? index : (index + by + gallery.length) % gallery.length));
+    setEnlarged((index) =>
+      index === null ? index : (index + by + gallery.length) % gallery.length,
+    );
   // With side and back views, the three are shown together: they are what a multi-view 3D model gets.
   const imageElement =
     front && sideViews.length ? (
@@ -649,13 +658,20 @@ export function AvatarStudio({
                 </option>
               ) : null}
               {imageModels.models.map((item) => (
-                <option key={item.id} value={item.id} disabled={!item.available} style={item.offline ? OFFLINE_STYLE : undefined}>
+                <option
+                  key={item.id}
+                  value={item.id}
+                  disabled={!item.available}
+                  style={item.offline ? OFFLINE_STYLE : undefined}
+                >
                   {item.name}
                   {item.location ? ` ${item.location}` : ''}
                   {item.offline ? ' (offline)' : ''}
                   {!item.available
                     ? ' (unavailable)'
-                    : item.poseControl === 'none' || item.poseControl === 'unavailable' || item.poseControl === 'failed'
+                    : item.poseControl === 'none' ||
+                        item.poseControl === 'unavailable' ||
+                        item.poseControl === 'failed'
                       ? ' (no pose control)'
                       : ''}
                 </option>
@@ -664,9 +680,7 @@ export function AvatarStudio({
             {selectedImageModel?.poseNote && mode === 'new-character' ? (
               <small
                 className={
-                  selectedImageModel.poseControl === 'guided'
-                    ? undefined
-                    : 'avatarStudio__warnText'
+                  selectedImageModel.poseControl === 'guided' ? undefined : 'avatarStudio__warnText'
                 }
               >
                 {selectedImageModel.poseNote}
@@ -676,7 +690,10 @@ export function AvatarStudio({
               <small className="avatarStudio__warnText">
                 {`${geometryChoice?.name ?? 'This 3D model'} needs Qwen-Image 2.1 on the image server to draw the side and back views. Install it there, or pick TRELLIS.2 as the 3D model.`}
               </small>
-            ) : needsViews && !frontIsQwen && !imageModels.loading && imageModels.selectedModelId ? (
+            ) : needsViews &&
+              !frontIsQwen &&
+              !imageModels.loading &&
+              imageModels.selectedModelId ? (
               <small>
                 {`${geometryChoice?.name ?? 'This 3D model'} builds from front, side and back views. This model draws the front; ${qwenModels[0]?.name ?? 'Qwen-Image'} then draws the side and back from it.`}
               </small>

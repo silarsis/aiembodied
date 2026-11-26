@@ -1,7 +1,6 @@
 // Types only: shared/ holds what the main process and the renderer both need.
 import type { LlmDownload } from '../local-llm/llm-library-types.js';
 
-
 /** What local-vision.json keeps. model and mmproj are absolute paths. */
 export interface VisionPick {
   repo: string;
@@ -9,7 +8,6 @@ export interface VisionPick {
   mmproj: string;
   alias: string;
 }
-
 
 /** What the Describe the avatar row shows. */
 export interface VisionStatus {

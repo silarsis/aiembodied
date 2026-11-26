@@ -20,24 +20,42 @@ export interface IdleSettings {
 export const MIN_ROOM_AVATAR_HEIGHT = 1.0;
 export const MAX_ROOM_AVATAR_HEIGHT = 2.2;
 
-export const DEFAULT_IDLE_SETTINGS: IdleSettings = { enabled: true, restlessness: 'normal', onTalk: 'turn', avatarHeight: 1.6 };
+export const DEFAULT_IDLE_SETTINGS: IdleSettings = {
+  enabled: true,
+  restlessness: 'normal',
+  onTalk: 'turn',
+  avatarHeight: 1.6,
+};
 
 /** Mean wait between idle actions, in seconds. */
-export const RESTLESSNESS_MEAN_SECONDS: Record<Restlessness, number> = { calm: 180, normal: 90, restless: 40 };
+export const RESTLESSNESS_MEAN_SECONDS: Record<Restlessness, number> = {
+  calm: 180,
+  normal: 90,
+  restless: 40,
+};
 
 /** Anything unreadable falls back to the default for that field. */
 export function sanitizeIdleSettings(input: unknown): IdleSettings {
-  const value = typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {};
+  const value =
+    typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {};
   return {
     enabled: typeof value.enabled === 'boolean' ? value.enabled : DEFAULT_IDLE_SETTINGS.enabled,
     restlessness:
-      value.restlessness === 'calm' || value.restlessness === 'normal' || value.restlessness === 'restless'
+      value.restlessness === 'calm' ||
+      value.restlessness === 'normal' ||
+      value.restlessness === 'restless'
         ? value.restlessness
         : DEFAULT_IDLE_SETTINGS.restlessness,
-    onTalk: value.onTalk === 'come-back' || value.onTalk === 'turn' ? value.onTalk : DEFAULT_IDLE_SETTINGS.onTalk,
+    onTalk:
+      value.onTalk === 'come-back' || value.onTalk === 'turn'
+        ? value.onTalk
+        : DEFAULT_IDLE_SETTINGS.onTalk,
     avatarHeight:
       typeof value.avatarHeight === 'number' && Number.isFinite(value.avatarHeight)
-        ? Math.round(Math.min(MAX_ROOM_AVATAR_HEIGHT, Math.max(MIN_ROOM_AVATAR_HEIGHT, value.avatarHeight)) * 100) / 100
+        ? Math.round(
+            Math.min(MAX_ROOM_AVATAR_HEIGHT, Math.max(MIN_ROOM_AVATAR_HEIGHT, value.avatarHeight)) *
+              100,
+          ) / 100
         : DEFAULT_IDLE_SETTINGS.avatarHeight,
   };
 }

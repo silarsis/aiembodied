@@ -1,6 +1,5 @@
 // Types only: shared/ holds what the main process and the renderer both need.
 
-
 /** What a note in the Characters pop-up (and the `my_reading_notes` tool) shows. */
 export interface ReadingNote {
   id: string;
@@ -23,7 +22,6 @@ export interface ReadingNote {
   createdAt: number;
 }
 
-
 /** A station an avatar may go and read at, as the idle director offers it. */
 export interface PursuitOffer {
   stationId: string;
@@ -34,7 +32,6 @@ export interface PursuitOffer {
   /** The avatars that may use it. */
   characters: 'all' | string[];
 }
-
 
 /** How the renderer starts a session, lists notes and learns who is reading. */
 export interface PursuitsBridge {

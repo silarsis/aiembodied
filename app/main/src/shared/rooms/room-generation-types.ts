@@ -1,7 +1,6 @@
 // Types only: shared/ holds what the main process and the renderer both need.
 import type { RoomSummary } from './types.js';
 
-
 export interface RoomGenerationProgress {
   phase: 'planning' | 'finding' | 'arranging' | 'making' | 'done';
   message: string;
@@ -11,7 +10,6 @@ export interface RoomGenerationProgress {
   /** Set for the background phase: the saved room the objects are being made for. */
   roomId?: string;
 }
-
 
 export interface RoomGenerationResult {
   room: RoomSummary;

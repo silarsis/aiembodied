@@ -112,7 +112,9 @@ function isGltfResult(value: unknown): value is GltfResult {
   return true; // We'll validate individual properties when accessing them
 }
 
-async function parseAnimationMetadata(buffer: Buffer): Promise<{ duration: number | null; fps: number | null }> {
+async function parseAnimationMetadata(
+  buffer: Buffer,
+): Promise<{ duration: number | null; fps: number | null }> {
   ensureThreeCompatibility();
 
   const loader = new GLTFLoader();
@@ -133,7 +135,9 @@ async function parseAnimationMetadata(buffer: Buffer): Promise<{ duration: numbe
 
   const animations = Array.isArray(gltf.animations) ? gltf.animations : [];
   const firstAnimation = getFirstAnimation(animations);
-  const vrmAnimations = Array.isArray(gltf.userData?.vrmAnimations) ? gltf.userData?.vrmAnimations : [];
+  const vrmAnimations = Array.isArray(gltf.userData?.vrmAnimations)
+    ? gltf.userData?.vrmAnimations
+    : [];
   const vrmDuration = vrmAnimations?.[0]?.duration;
   const duration =
     typeof vrmDuration === 'number' && Number.isFinite(vrmDuration)
@@ -204,7 +208,9 @@ export class AvatarAnimationService {
     }
   }
 
-  async uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult> {
+  async uploadAnimation(
+    request: AvatarAnimationUploadRequest,
+  ): Promise<AvatarAnimationUploadResult> {
     if (!request || typeof request.fileName !== 'string' || typeof request.data !== 'string') {
       throw new Error('Invalid VRMA upload payload.');
     }
@@ -262,7 +268,9 @@ export class AvatarAnimationService {
       this.store.createVrmAnimation(record);
     } catch (error) {
       await this.fs.rm(filePath).catch(() => {
-        this.logger?.warn?.('Failed to clean up VRMA binary after store write failure.', { filePath });
+        this.logger?.warn?.('Failed to clean up VRMA binary after store write failure.', {
+          filePath,
+        });
       });
       throw error;
     }
@@ -301,7 +309,11 @@ export class AvatarAnimationService {
     const sanitized = sanitizeName(newName, record.name);
     this.store.updateVrmAnimation(animationId, { ...record, name: sanitized });
 
-    this.logger?.info?.('VRMA animation renamed.', { animationId, oldName: record.name, newName: sanitized });
+    this.logger?.info?.('VRMA animation renamed.', {
+      animationId,
+      oldName: record.name,
+      newName: sanitized,
+    });
     return this.toSummary({ ...record, name: sanitized });
   }
 

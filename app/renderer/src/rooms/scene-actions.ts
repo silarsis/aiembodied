@@ -5,13 +5,24 @@
  * avatar ends up. The executor in scene-executor.ts runs the plans.
  */
 import type { RoomFile, RoomObject, Vec3 } from '../../../main/src/shared/rooms/types.js';
-import type { AvatarMotionObserved, AvatarMotionPhase, AvatarMotionPath, AvatarMotionTarget } from '../avatar/types.js';
+import type {
+  AvatarMotionObserved,
+  AvatarMotionPhase,
+  AvatarMotionPath,
+  AvatarMotionTarget,
+} from '../avatar/types.js';
 import type { SceneTag } from '../avatar/animation-tags.js';
 import { degToRad } from './room-geometry.js';
 import type { WorldSeatGeometry } from './seat-geometry.js';
 import type { AvatarOccupancy } from './room-occupancy.js';
 import { worldTag } from './room-tags.js';
-import { heightToMotion, worldToMotion, worldYawToMotion, yawToward, type MotionFrame } from './scene-frames.js';
+import {
+  heightToMotion,
+  worldToMotion,
+  worldYawToMotion,
+  yawToward,
+  type MotionFrame,
+} from './scene-frames.js';
 
 export type Hand = 'left' | 'right';
 
@@ -230,7 +241,8 @@ export function resolveObjectRef(room: RoomFile, ref: string): RoomObject | null
   if (!wanted) return null;
   const exact = room.objects.filter(
     (object) =>
-      singularPhrase(normaliseName(object.id)) === wanted || singularPhrase(normaliseName(object.name)) === wanted,
+      singularPhrase(normaliseName(object.id)) === wanted ||
+      singularPhrase(normaliseName(object.name)) === wanted,
   );
   if (exact.length > 0) return exact.length === 1 ? (exact[0] ?? null) : null;
   const loose = room.objects.filter((object) => {
@@ -276,12 +288,14 @@ export function nearestFreeSeat(room: RoomFile, context: TagContext = {}): RoomO
   const seats = room.objects.filter((object) => Boolean(object.tags?.sit));
   if (seats.length === 0) return null;
   const position = context.position ?? { x: 0, z: 0 };
-  const distance = (object: RoomObject) => Math.hypot(object.position[0] - position.x, object.position[2] - position.z);
+  const distance = (object: RoomObject) =>
+    Math.hypot(object.position[0] - position.x, object.position[2] - position.z);
   const free = seats.filter((object) => !context.takenSeats?.has(object.id));
   return [...(free.length > 0 ? free : seats)].sort((a, b) => distance(a) - distance(b))[0] ?? null;
 }
 
-const SIT_WORDS = /\b(?:sits?|sitting|sat|seats? (?:herself|himself|themselves|itself)|perch(?:es)?|plops?|flops?|settles?|curls? up)\b/i;
+const SIT_WORDS =
+  /\b(?:sits?|sitting|sat|seats? (?:herself|himself|themselves|itself)|perch(?:es)?|plops?|flops?|settles?|curls? up)\b/i;
 
 /**
  * A free-text movement that means sitting on something in the room ("sits on a space on the couch with the
@@ -307,20 +321,27 @@ export function seatFromMove(room: RoomFile, text: string): RoomObject | null {
  * match by id, name or a common synonym ("couch" for the sofa). A {sit} with no seat named, an unknown
  * one or something that is not a seat goes to the nearest free seat.
  */
-export function tagToAction(room: RoomFile, tag: SceneTag, context: TagContext = {}): SceneAction | null {
+export function tagToAction(
+  room: RoomFile,
+  tag: SceneTag,
+  context: TagContext = {},
+): SceneAction | null {
   const find = (ref: string): RoomObject | null => {
     const object = resolveObjectRef(room, ref) ?? resolveBySynonym(room, ref);
     if (!object) console.warn(`[scene-actions] no object "${ref}" in ${room.name}`);
     return object;
   };
   if (tag.type === 'sit') {
-    const named = tag.object ? resolveObjectRef(room, tag.object) ?? resolveBySynonym(room, tag.object) : null;
+    const named = tag.object
+      ? (resolveObjectRef(room, tag.object) ?? resolveBySynonym(room, tag.object))
+      : null;
     const seat = named?.tags?.sit ? named : nearestFreeSeat(room, context);
     if (!seat) {
       console.warn(`[scene-actions] no seat for "${tag.object}" in ${room.name}`);
       return null;
     }
-    if (seat !== named) console.info(`[scene-actions] {sit:${tag.object}} -> nearest free seat ${seat.id}`);
+    if (seat !== named)
+      console.info(`[scene-actions] {sit:${tag.object}} -> nearest free seat ${seat.id}`);
     return { kind: 'sit', objectId: seat.id };
   }
   switch (tag.type) {
@@ -373,7 +394,10 @@ export function frontOfFace(world: PlanWorld, object: RoomObject): Vec3 {
   ] as const) {
     for (const sign of [1, -1]) {
       const normal: [number, number] = [axis[0] * sign, axis[1] * sign];
-      const centre: [number, number] = [object.position[0] + normal[0] * half, object.position[2] + normal[1] * half];
+      const centre: [number, number] = [
+        object.position[0] + normal[0] * half,
+        object.position[2] + normal[1] * half,
+      ];
       // How directly the face looks at the room centre (origin).
       const score = -centre[0] * normal[0] - centre[1] * normal[1];
       if (!best || score > best.score) best = { normal, centre, score };
@@ -390,7 +414,11 @@ export function frontOfFace(world: PlanWorld, object: RoomObject): Vec3 {
 }
 
 /** The point on the object's footprint closest to `from`, pulled `inset` metres in from the edge. */
-export function nearestFootprintPoint(object: RoomObject, from: Vec3, inset: number): [number, number] {
+export function nearestFootprintPoint(
+  object: RoomObject,
+  from: Vec3,
+  inset: number,
+): [number, number] {
   const [ax, az] = footprintAxes(object);
   const dx = from[0] - object.position[0];
   const dz = from[2] - object.position[2];
@@ -457,9 +485,13 @@ export function pathStartHeading(points: Array<[number, number]>): number | null
  * it first, then walks, instead of setting off sideways or backwards. Returns when the walk starts
  * and the turn target (none when the path starts roughly ahead).
  */
-export function walkStart(world: PlanWorld, points: Array<[number, number]>): { startS: number; targets: AvatarMotionTarget[] } {
+export function walkStart(
+  world: PlanWorld,
+  points: Array<[number, number]>,
+): { startS: number; targets: AvatarMotionTarget[] } {
   const heading = pathStartHeading(points);
-  if (heading === null || Math.abs(heading) <= TURN_FIRST_ANGLE) return { startS: WALK_START_S, targets: [] };
+  if (heading === null || Math.abs(heading) <= TURN_FIRST_ANGLE)
+    return { startS: WALK_START_S, targets: [] };
   const turnS = roundMs(0.5 + (0.6 * Math.abs(heading)) / Math.PI);
   return {
     startS: roundMs(turnS + TURN_SETTLE_S),
@@ -489,7 +521,10 @@ export interface DoorEntry {
  * west at -width/2, and `offset` runs along the wall (x on north and south, z on east and west). Null when the
  * room has no door.
  */
-export function doorEntry(room: RoomFile, closestWalkable: (p: Vec3) => Vec3 = (p) => p): DoorEntry | null {
+export function doorEntry(
+  room: RoomFile,
+  closestWalkable: (p: Vec3) => Vec3 = (p) => p,
+): DoorEntry | null {
   const opening = (room.shell.openings ?? []).find((candidate) => candidate.kind === 'door');
   if (!opening) return null;
   const { width, depth } = room.shell;
@@ -513,8 +548,17 @@ export function doorEntry(room: RoomFile, closestWalkable: (p: Vec3) => Vec3 = (
       inward = [1, 0];
       break;
   }
-  const inside = closestWalkable([door[0] + inward[0] * DOOR_STAND_OFF, 0, door[2] + inward[1] * DOOR_STAND_OFF]);
-  return { door, inside, towardDoor: yawToward(inside, door), intoRoom: Math.atan2(inward[0], inward[1]) };
+  const inside = closestWalkable([
+    door[0] + inward[0] * DOOR_STAND_OFF,
+    0,
+    door[2] + inward[1] * DOOR_STAND_OFF,
+  ]);
+  return {
+    door,
+    inside,
+    towardDoor: yawToward(inside, door),
+    intoRoom: Math.atan2(inward[0], inward[1]),
+  };
 }
 
 // -- Plans ------------------------------------------------------------------------------------
@@ -532,7 +576,10 @@ function distanceToSegment(px: number, pz: number, a: Vec3, b: Vec3): number {
   const dx = b[0] - a[0];
   const dz = b[2] - a[2];
   const lengthSq = dx * dx + dz * dz;
-  const t = lengthSq < 1e-9 ? 0 : Math.max(0, Math.min(1, ((px - a[0]) * dx + (pz - a[2]) * dz) / lengthSq));
+  const t =
+    lengthSq < 1e-9
+      ? 0
+      : Math.max(0, Math.min(1, ((px - a[0]) * dx + (pz - a[2]) * dz) / lengthSq));
   return Math.hypot(px - (a[0] + t * dx), pz - (a[2] + t * dz));
 }
 
@@ -564,12 +611,20 @@ export function sideStepPath(world: PlanWorld, path: Vec3[]): Vec3[] {
       const leftX = -dz / length;
       const leftZ = dx / length;
       for (const side of [1, -1]) {
-        const wanted: Vec3 = [other.x + side * leftX * SIDE_STEP_OFFSET, 0, other.z + side * leftZ * SIDE_STEP_OFFSET];
+        const wanted: Vec3 = [
+          other.x + side * leftX * SIDE_STEP_OFFSET,
+          0,
+          other.z + side * leftZ * SIDE_STEP_OFFSET,
+        ];
         const snapped = world.closestWalkable(wanted);
         const moved = Math.hypot(snapped[0] - wanted[0], snapped[2] - wanted[2]);
-        const clears = Math.hypot(snapped[0] - other.x, snapped[2] - other.z) >= SIDE_STEP_CLEARANCE;
+        const clears =
+          Math.hypot(snapped[0] - other.x, snapped[2] - other.z) >= SIDE_STEP_CLEARANCE;
         if (moved > 0.2 || !clears) continue;
-        inserts.push({ along: (other.x - a[0]) * dx / length + (other.z - a[2]) * dz / length, point: [snapped[0], a[1], snapped[2]] });
+        inserts.push({
+          along: ((other.x - a[0]) * dx) / length + ((other.z - a[2]) * dz) / length,
+          point: [snapped[0], a[1], snapped[2]],
+        });
         break;
       }
     }
@@ -614,7 +669,8 @@ function walkPlan(
   const headingOf = (yaw: number) => worldYawToMotion(world.frame, yaw);
 
   if (length < MIN_WALK) {
-    if (faceYaw === null || Math.abs(headingOf(faceYaw)) < LOOK_TOLERANCE) return skip(`already at ${label}`);
+    if (faceYaw === null || Math.abs(headingOf(faceYaw)) < LOOK_TOLERANCE)
+      return skip(`already at ${label}`);
     return turnPlan(world, faceYaw, label);
   }
 
@@ -624,13 +680,21 @@ function walkPlan(
   if (duration > MAX_DURATION) return skip(`${label} is too far to walk in one go`);
   const end = points[points.length - 1] ?? [0, 0];
   const lastLeg = points[points.length - 2] ?? [0, 0];
-  const heading = faceYaw === null ? Math.atan2(end[0] - lastLeg[0], end[1] - lastLeg[1]) : headingOf(faceYaw);
+  const heading =
+    faceYaw === null ? Math.atan2(end[0] - lastLeg[0], end[1] - lastLeg[1]) : headingOf(faceYaw);
   world.occupancy?.claimSpot({ x: goal[0], z: goal[2] });
   const targets: AvatarMotionTarget[] = [
     ...start.targets,
     ...(faceYaw === null
       ? []
-      : [{ t: roundMs(arrival + ARRIVE_HEADING_DELAY), root: end, height: world.restHipsHeight, heading }]),
+      : [
+          {
+            t: roundMs(arrival + ARRIVE_HEADING_DELAY),
+            root: end,
+            height: world.restHipsHeight,
+            heading,
+          },
+        ]),
   ];
   return {
     type: 'stream',
@@ -639,7 +703,13 @@ function walkPlan(
       request: {
         prompt,
         duration,
-        path: { points, cornerRadius: CORNER_RADIUS, speed: WALK_SPEED, startS: start.startS, mode: 'dense' },
+        path: {
+          points,
+          cornerRadius: CORNER_RADIUS,
+          speed: WALK_SPEED,
+          startS: start.startS,
+          mode: 'dense',
+        },
         ...(targets.length > 0 ? { targets } : {}),
       },
       frame: world.frame,
@@ -673,14 +743,21 @@ function turnPlan(world: PlanWorld, faceYaw: number, label: string): ActionPlan 
 /** The point an object is looked at: its look tag, else the middle of its box. */
 function lookPoint(room: RoomFile, object: RoomObject, position: Vec3): Vec3 {
   const tagged = worldTag(room, object.id, 'look');
-  if (tagged) return [tagged.position[0] + (position[0] - object.position[0]), tagged.position[1], tagged.position[2] + (position[2] - object.position[2])];
+  if (tagged)
+    return [
+      tagged.position[0] + (position[0] - object.position[0]),
+      tagged.position[1],
+      tagged.position[2] + (position[2] - object.position[2]),
+    ];
   return [position[0], position[1] + object.size[1] / 2, position[2]];
 }
 
 function planGo(world: PlanWorld, object: RoomObject): ActionPlan {
   const position = world.objectPosition(object.id) ?? object.position;
   const stand = worldTag(world.room, object.id, 'stand');
-  const target = stand ? ([stand.position[0], 0, stand.position[2]] as Vec3) : frontOfFace(world, object);
+  const target = stand
+    ? ([stand.position[0], 0, stand.position[2]] as Vec3)
+    : frontOfFace(world, object);
   const look = lookPoint(world.room, object, position);
   return walkPlan(world, target, yawToward(target, look), object.name);
 }
@@ -764,7 +841,11 @@ function planSit(world: PlanWorld, object: RoomObject): ActionPlan {
   const { frame } = world;
   const facing = degToRad(sit.facing ?? 0);
   const seat: Vec3 = [sit.position[0], sit.position[1], sit.position[2]];
-  const ideal: Vec3 = [seat[0] + SIT_APPROACH * Math.sin(facing), 0, seat[2] + SIT_APPROACH * Math.cos(facing)];
+  const ideal: Vec3 = [
+    seat[0] + SIT_APPROACH * Math.sin(facing),
+    0,
+    seat[2] + SIT_APPROACH * Math.cos(facing),
+  ];
 
   let approach: Vec3 = rootWorld(world);
   let points: Array<[number, number]> | null = null;
@@ -790,7 +871,9 @@ function planSit(world: PlanWorld, object: RoomObject): ActionPlan {
   const occupancy = world.occupancy;
   if (occupancy && !occupancy.claim('seat', object.id)) {
     const holder = occupancy.holder('seat', object.id);
-    return skip(`${holder ? occupancy.nameOf(holder) : 'Someone'} is sitting on the ${object.name}`);
+    return skip(
+      `${holder ? occupancy.nameOf(holder) : 'Someone'} is sitting on the ${object.name}`,
+    );
   }
   if (points) occupancy?.claimSpot({ x: approach[0], z: approach[2] });
   const root = worldToMotion(frame, seat[0], seat[2]);
@@ -827,7 +910,13 @@ function planSit(world: PlanWorld, object: RoomObject): ActionPlan {
         duration,
         ...(points
           ? {
-              path: { points, cornerRadius: CORNER_RADIUS, speed: WALK_SPEED, startS: start?.startS ?? WALK_START_S, mode: 'dense' as const },
+              path: {
+                points,
+                cornerRadius: CORNER_RADIUS,
+                speed: WALK_SPEED,
+                startS: start?.startS ?? WALK_START_S,
+                mode: 'dense' as const,
+              },
               phases: [{ prompt: SIT_PROMPT, startS: phaseStart }],
             }
           : {}),
@@ -890,7 +979,8 @@ function reachStream(
   const [mx, mz] = worldToMotion(frame, point[0], point[2]);
   const toward = worldYawToMotion(frame, yawToward(rootWorld(world), point));
   // Face what is being reached for when it is well off to the side; otherwise stay as is.
-  const heading = horizontal(rootWorld(world), point) > 0.15 && Math.abs(toward) > FACE_TOLERANCE ? toward : 0;
+  const heading =
+    horizontal(rootWorld(world), point) > 0.15 && Math.abs(toward) > FACE_TOLERANCE ? toward : 0;
   return {
     label,
     request: {
@@ -924,12 +1014,17 @@ export function nearerHand(frame: MotionFrame, point: Vec3): Hand {
 function planPick(world: PlanWorld, state: AvatarState, object: RoomObject): ActionPlan {
   if (!object.dynamic || !object.tags?.grab) return skip(`${object.name} cannot be picked up`);
   if (state.held) {
-    return skip(state.held.objectId === object.id ? `already holding ${object.name}` : 'hands are full');
+    return skip(
+      state.held.objectId === object.id ? `already holding ${object.name}` : 'hands are full',
+    );
   }
   const point = grabPoint(world, object);
   if (!point) return skip(`${object.name} cannot be picked up`);
   if (horizontal(rootWorld(world), point) > REACH_DISTANCE) {
-    return { type: 'insert', actions: [{ kind: 'goto', position: world.closestWalkable(point), faceToward: point }] };
+    return {
+      type: 'insert',
+      actions: [{ kind: 'goto', position: world.closestWalkable(point), faceToward: point }],
+    };
   }
   const occupancy = world.occupancy;
   if (occupancy && !occupancy.claim('object', object.id)) {
@@ -962,7 +1057,12 @@ export function surfaceSpec(surface: RoomObject): SurfaceSpec | null {
   };
 }
 
-function planPut(world: PlanWorld, state: AvatarState, object: RoomObject, surface: RoomObject): ActionPlan {
+function planPut(
+  world: PlanWorld,
+  state: AvatarState,
+  object: RoomObject,
+  surface: RoomObject,
+): ActionPlan {
   const held = state.held;
   if (!held || held.objectId !== object.id) return skip(`not holding ${object.name}`);
   const spec = surfaceSpec(surface);
@@ -971,7 +1071,9 @@ function planPut(world: PlanWorld, state: AvatarState, object: RoomObject, surfa
   const target: Vec3 = [px, spec.y, pz];
   if (horizontal(rootWorld(world), target) > REACH_DISTANCE) {
     const stand = worldTag(world.room, surface.id, 'stand');
-    const near = stand ? ([stand.position[0], 0, stand.position[2]] as Vec3) : world.closestWalkable(target);
+    const near = stand
+      ? ([stand.position[0], 0, stand.position[2]] as Vec3)
+      : world.closestWalkable(target);
     return { type: 'insert', actions: [{ kind: 'goto', position: near, faceToward: target }] };
   }
   // The hand carries the object a little above the top; the bottom of the object lands on it.
@@ -992,8 +1094,15 @@ function planPut(world: PlanWorld, state: AvatarState, object: RoomObject, surfa
   };
 }
 
-function planLookAtPoint(world: PlanWorld, action: Extract<SceneAction, { kind: 'lookAtPoint' }>): ActionPlan {
-  return turnPlan(world, yawToward(rootWorld(world), action.position), action.label ?? 'the camera');
+function planLookAtPoint(
+  world: PlanWorld,
+  action: Extract<SceneAction, { kind: 'lookAtPoint' }>,
+): ActionPlan {
+  return turnPlan(
+    world,
+    yawToward(rootWorld(world), action.position),
+    action.label ?? 'the camera',
+  );
 }
 
 function planGoto(world: PlanWorld, action: Extract<SceneAction, { kind: 'goto' }>): ActionPlan {
@@ -1003,13 +1112,23 @@ function planGoto(world: PlanWorld, action: Extract<SceneAction, { kind: 'goto' 
 }
 
 /** Walking, looking, reaching and the like start from a standing avatar. */
-const NEEDS_STANDING = new Set<SceneAction['kind']>(['go', 'goto', 'come', 'exit', 'look', 'pick', 'put']);
+const NEEDS_STANDING = new Set<SceneAction['kind']>([
+  'go',
+  'goto',
+  'come',
+  'exit',
+  'look',
+  'pick',
+  'put',
+]);
 
 export function planAction(world: PlanWorld, state: AvatarState, action: SceneAction): ActionPlan {
   if (action.kind === 'stand') return planStand(world, state);
-  if (action.kind === 'lookAtPoint') return state.posture === 'seated' ? skip('seated') : planLookAtPoint(world, action);
+  if (action.kind === 'lookAtPoint')
+    return state.posture === 'seated' ? skip('seated') : planLookAtPoint(world, action);
   if (state.posture === 'seated' && (NEEDS_STANDING.has(action.kind) || action.kind === 'sit')) {
-    if (action.kind === 'sit' && state.seat?.objectId === action.objectId) return skip('already sitting there');
+    if (action.kind === 'sit' && state.seat?.objectId === action.objectId)
+      return skip('already sitting there');
     return { type: 'insert', actions: [{ kind: 'stand' }] };
   }
   switch (action.kind) {

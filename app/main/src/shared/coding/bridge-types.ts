@@ -1,7 +1,12 @@
 /** The Coding page's bridge from the renderer, shared by preload and renderer. Types only. */
 import type { CodingConfig } from './types.js';
 import type { CodingStatus, CodingView } from './coding-service-types.js';
-import type { RunnerAnswer, RunnerEvent, RunnerTask, RunnerTaskRequest } from './runner-client-types.js';
+import type {
+  RunnerAnswer,
+  RunnerEvent,
+  RunnerTask,
+  RunnerTaskRequest,
+} from './runner-client-types.js';
 
 export type { CodingConfig, CodingStatus, CodingView, RunnerAnswer, RunnerEvent, RunnerTask };
 
@@ -24,7 +29,9 @@ export interface CodingTasksBridge {
   get(id: string): Promise<RunnerTask>;
   /** The diff against the base commit, as text. */
   diff(id: string): Promise<string>;
-  start(request: Pick<RunnerTaskRequest, 'workspace_id' | 'goal' | 'acceptance'>): Promise<RunnerTask>;
+  start(
+    request: Pick<RunnerTaskRequest, 'workspace_id' | 'goal' | 'acceptance'>,
+  ): Promise<RunnerTask>;
   answer(id: string, answer: RunnerAnswer): Promise<RunnerTask>;
   followUp(id: string, message: string): Promise<RunnerTask>;
   cancel(id: string): Promise<RunnerTask>;

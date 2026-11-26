@@ -21,7 +21,12 @@ export type ClaimKind = 'seat' | 'object';
 
 /** An avatar's own view of the occupancy: every call is already bound to its id. */
 export interface AvatarOccupancy {
-  freeSpotNear(wanted: Spot, closestWalkable: (p: Spot) => Spot, radius?: number, maxShift?: number): Spot | null;
+  freeSpotNear(
+    wanted: Spot,
+    closestWalkable: (p: Spot) => Spot,
+    radius?: number,
+    maxShift?: number,
+  ): Spot | null;
   claimSpot(spot: Spot): void;
   releaseSpot(): void;
   standing(spot: Spot): void;
@@ -99,7 +104,8 @@ export class RoomOccupancy {
   private spotFree(avatarId: string, spot: Spot, radius: number): boolean {
     for (const other of this.others(avatarId)) {
       if (Math.hypot(other.x - spot.x, other.z - spot.z) < radius) return false;
-      if (other.goal && Math.hypot(other.goal.x - spot.x, other.goal.z - spot.z) < radius) return false;
+      if (other.goal && Math.hypot(other.goal.x - spot.x, other.goal.z - spot.z) < radius)
+        return false;
     }
     return true;
   }
@@ -121,7 +127,10 @@ export class RoomOccupancy {
     for (const ring of [maxShift / 2, maxShift]) {
       for (let i = 0; i < RING_DIRECTIONS; i += 1) {
         const angle = (i * 2 * Math.PI) / RING_DIRECTIONS;
-        const snapped = closestWalkable({ x: wanted.x + ring * Math.cos(angle), z: wanted.z + ring * Math.sin(angle) });
+        const snapped = closestWalkable({
+          x: wanted.x + ring * Math.cos(angle),
+          z: wanted.z + ring * Math.sin(angle),
+        });
         const distance = Math.hypot(snapped.x - wanted.x, snapped.z - wanted.z);
         if (distance > maxShift + 1e-6) continue;
         if (!this.spotFree(avatarId, snapped, radius)) continue;

@@ -10,7 +10,10 @@ import { EventEmitter } from 'node:events';
 import type { RegisteredTool, ToolRegistry } from './tool-registry.js';
 import type { PendingApproval } from '../shared/tools/approvals-types.js';
 
-type Logger = { info: (message: string, data?: Record<string, unknown>) => void; warn: (message: string, data?: Record<string, unknown>) => void };
+type Logger = {
+  info: (message: string, data?: Record<string, unknown>) => void;
+  warn: (message: string, data?: Record<string, unknown>) => void;
+};
 
 export const APPROVAL_TTL_MS = 30 * 60_000;
 /** Only approvals asked for this recently can be settled by voice, so a stray "yes" later can't approve an old one. */
@@ -42,8 +45,10 @@ export interface ApprovalBrokerOptions {
   avatarId?: string;
 }
 
-const YES = /^(yes|yeah|yep|yup|sure|ok|okay|approve|approved|go ahead|go|do it|please do|yes please|ok go|okay go|go for it|sounds good|that's fine|that is fine|confirmed|confirm)$/;
-const NO = /^(no|nope|nah|don'?t|do not|cancel|stop|not now|decline|never mind|nevermind|no thanks|no thank you|don'?t do it|do not do it|abort)$/;
+const YES =
+  /^(yes|yeah|yep|yup|sure|ok|okay|approve|approved|go ahead|go|do it|please do|yes please|ok go|okay go|go for it|sounds good|that's fine|that is fine|confirmed|confirm)$/;
+const NO =
+  /^(no|nope|nah|don'?t|do not|cancel|stop|not now|decline|never mind|nevermind|no thanks|no thank you|don'?t do it|do not do it|abort)$/;
 
 /** 'yes' or 'no' for a short, clear answer; null for anything else. */
 export function parseSpokenDecision(text: string): 'yes' | 'no' | null {
@@ -59,8 +64,18 @@ export function parseSpokenDecision(text: string): 'yes' | 'no' | null {
   // "yes go ahead", "no don't", "ok go ahead": a yes or no word first, then a phrase of the same kind.
   const [first, ...rest] = withoutEcho.split(' ');
   const tail = rest.join(' ');
-  if (rest.length > 0 && /^(yes|yeah|yep|ok|okay|sure)$/.test(first) && (YES.test(tail) || /^(please|now|thanks|thank you)$/.test(tail))) return 'yes';
-  if (rest.length > 0 && first === 'no' && (NO.test(tail) || /^(thanks|thank you|please)$/.test(tail))) return 'no';
+  if (
+    rest.length > 0 &&
+    /^(yes|yeah|yep|ok|okay|sure)$/.test(first) &&
+    (YES.test(tail) || /^(please|now|thanks|thank you)$/.test(tail))
+  )
+    return 'yes';
+  if (
+    rest.length > 0 &&
+    first === 'no' &&
+    (NO.test(tail) || /^(thanks|thank you|please)$/.test(tail))
+  )
+    return 'no';
   return null;
 }
 
@@ -86,12 +101,22 @@ export class ApprovalBroker extends EventEmitter {
   }
 
   /** Record a call that needs approval. The same tool with the same arguments, still pending, is not added twice. */
-  async request(tool: RegisteredTool, params: unknown, avatarId?: string, requestOptions: { ttlMs?: number } = {}): Promise<PendingApproval> {
+  async request(
+    tool: RegisteredTool,
+    params: unknown,
+    avatarId?: string,
+    requestOptions: { ttlMs?: number } = {},
+  ): Promise<PendingApproval> {
     this.expireOld();
     const key = JSON.stringify(params ?? null);
     const requestedBy = `avatar:${avatarId || this.options.avatarId || 'echo'}`;
     for (const existing of this.pending.values()) {
-      if (existing.toolId === tool.id && existing.requestedBy === requestedBy && JSON.stringify(existing.params ?? null) === key) return existing;
+      if (
+        existing.toolId === tool.id &&
+        existing.requestedBy === requestedBy &&
+        JSON.stringify(existing.params ?? null) === key
+      )
+        return existing;
     }
     let cardOnly = false;
     try {
@@ -99,10 +124,13 @@ export class ApprovalBroker extends EventEmitter {
     } catch (error) {
       // When in doubt, keep it off the voice path.
       cardOnly = true;
-      this.options.logger?.warn('Approval: could not tell whether the card is required; requiring it', {
-        tool: tool.toolName,
-        message: error instanceof Error ? error.message : String(error),
-      });
+      this.options.logger?.warn(
+        'Approval: could not tell whether the card is required; requiring it',
+        {
+          tool: tool.toolName,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      );
     }
     const createdAt = this.now();
     const approval: PendingApproval = {
@@ -119,16 +147,27 @@ export class ApprovalBroker extends EventEmitter {
       approvers: ['person:kevin'],
     };
     this.pending.set(approval.id, approval);
-    const timer = setTimeout(() => this.expireOld(), Math.min(requestOptions.ttlMs ?? this.ttlMs, 2_000_000_000) + 50);
+    const timer = setTimeout(
+      () => this.expireOld(),
+      Math.min(requestOptions.ttlMs ?? this.ttlMs, 2_000_000_000) + 50,
+    );
     timer.unref?.();
     this.timers.set(approval.id, timer);
-    this.options.logger?.info('Approval requested', { id: approval.id, tool: approval.toolName, summary: approval.summary, cardOnly, source: approval.source });
+    this.options.logger?.info('Approval requested', {
+      id: approval.id,
+      tool: approval.toolName,
+      summary: approval.summary,
+      cardOnly,
+      source: approval.source,
+    });
     this.changed();
     return approval;
   }
 
   /** The broker as one avatar sees it: its requests are made in that avatar's name. */
-  forAvatar(avatarId: string): Pick<ApprovalBroker, 'request' | 'waitingMessage' | 'resolveSpoken'> {
+  forAvatar(
+    avatarId: string,
+  ): Pick<ApprovalBroker, 'request' | 'waitingMessage' | 'resolveSpoken'> {
     return {
       request: (tool, params) => this.request(tool, params, avatarId),
       waitingMessage: (approval) => this.waitingMessage(approval),
@@ -143,7 +182,11 @@ export class ApprovalBroker extends EventEmitter {
       : `Waiting for Kevin to approve: ${approval.summary}. Ask him out loud whether to go ahead.`;
   }
 
-  async approve(id: string, by: 'card' | 'voice' = 'card', delivered = false): Promise<ApprovalOutcome | null> {
+  async approve(
+    id: string,
+    by: 'card' | 'voice' = 'card',
+    delivered = false,
+  ): Promise<ApprovalOutcome | null> {
     const approval = this.take(id);
     if (!approval) return null;
     if (by === 'voice' && approval.cardOnly) {
@@ -151,7 +194,12 @@ export class ApprovalBroker extends EventEmitter {
       this.pending.set(id, approval);
       return null;
     }
-    this.options.logger?.info('Approval granted', { id, tool: approval.toolName, summary: approval.summary, by });
+    this.options.logger?.info('Approval granted', {
+      id,
+      tool: approval.toolName,
+      summary: approval.summary,
+      by,
+    });
     let result = '';
     let ok = false;
     try {
@@ -172,7 +220,12 @@ export class ApprovalBroker extends EventEmitter {
   decline(id: string, by: 'card' | 'voice' = 'card', delivered = false): ApprovalOutcome | null {
     const approval = this.take(id);
     if (!approval) return null;
-    this.options.logger?.info('Approval declined', { id, tool: approval.toolName, summary: approval.summary, by });
+    this.options.logger?.info('Approval declined', {
+      id,
+      tool: approval.toolName,
+      summary: approval.summary,
+      by,
+    });
     return this.finish({ approval, decision: 'declined', by, delivered });
   }
 
@@ -232,9 +285,18 @@ export class ApprovalBroker extends EventEmitter {
       const timer = this.timers.get(approval.id);
       if (timer) clearTimeout(timer);
       this.timers.delete(approval.id);
-      this.options.logger?.info('Approval expired (declined)', { id: approval.id, tool: approval.toolName, summary: approval.summary });
+      this.options.logger?.info('Approval expired (declined)', {
+        id: approval.id,
+        tool: approval.toolName,
+        summary: approval.summary,
+      });
       this.changed();
-      this.emit('outcome', { approval, decision: 'expired', by: 'timeout', delivered: false } satisfies ApprovalOutcome);
+      this.emit('outcome', {
+        approval,
+        decision: 'expired',
+        by: 'timeout',
+        delivered: false,
+      } satisfies ApprovalOutcome);
     }
   }
 
@@ -258,8 +320,12 @@ function summarize(tool: RegisteredTool, params: unknown): string {
 export function describeOutcome(outcome: ApprovalOutcome, maxResultChars = 800): string {
   const { approval } = outcome;
   if (outcome.decision === 'declined') return `Kevin declined: ${approval.summary}.`;
-  if (outcome.decision === 'expired') return `Nobody answered in time, so this was declined: ${approval.summary}.`;
-  const result = (outcome.result ?? '').length > maxResultChars ? `${outcome.result?.slice(0, maxResultChars)}…` : (outcome.result ?? '');
+  if (outcome.decision === 'expired')
+    return `Nobody answered in time, so this was declined: ${approval.summary}.`;
+  const result =
+    (outcome.result ?? '').length > maxResultChars
+      ? `${outcome.result?.slice(0, maxResultChars)}…`
+      : (outcome.result ?? '');
   return outcome.ok
     ? `Kevin approved: ${approval.summary}. Done. Result: ${result}`
     : `Kevin approved: ${approval.summary}, but it failed: ${result}`;

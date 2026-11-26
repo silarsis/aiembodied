@@ -59,7 +59,10 @@ export interface PursuitResult {
 }
 
 /** Runs a pursuit to the end. Never throws; the result says how it ended. */
-export async function runPursuit(pursuit: Pursuit, options: RunPursuitOptions): Promise<PursuitResult> {
+export async function runPursuit(
+  pursuit: Pursuit,
+  options: RunPursuitOptions,
+): Promise<PursuitResult> {
   const { signal } = options;
   const maxSteps = options.maxSteps ?? MAX_SESSION_STEPS;
   const maxItems = options.maxItems ?? MAX_ITEMS_PER_SESSION;

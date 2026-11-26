@@ -25,10 +25,12 @@ export const IDLE_TAG_SYNTAX = [
 ].join('; ');
 
 /** Added to the tag list only when there are other places to go to. */
-export const IDLE_ROOM_TAG_SYNTAX = '{room:<place>} walk out to another place, as the last tag (rarely: only to find someone)';
+export const IDLE_ROOM_TAG_SYNTAX =
+  '{room:<place>} walk out to another place, as the last tag (rarely: only to find someone)';
 
 /** Added to the tag list only when the avatar may go and read somewhere. */
-export const IDLE_READ_TAG_SYNTAX = '{read:<object>} go and read something there, as your only tag (you choose what to read once you are there)';
+export const IDLE_READ_TAG_SYNTAX =
+  '{read:<object>} go and read something there, as your only tag (you choose what to read once you are there)';
 
 export function idleSystemPrompt(name: string, withPlaces = false, withReading = false): string {
   return [
@@ -41,7 +43,12 @@ export function idleSystemPrompt(name: string, withPlaces = false, withReading =
 
 /** "- the study: Sage is there; someone used that PC in the last 10 minutes" */
 function describePlace(place: IdlePlace): string {
-  const who = place.who.length === 0 ? 'nobody is there' : place.who.length === 1 ? `${place.who[0]} is there` : `${place.who.slice(0, -1).join(', ')} and ${place.who[place.who.length - 1]} are there`;
+  const who =
+    place.who.length === 0
+      ? 'nobody is there'
+      : place.who.length === 1
+        ? `${place.who[0]} is there`
+        : `${place.who.slice(0, -1).join(', ')} and ${place.who[place.who.length - 1]} are there`;
   return `- ${place.name}: ${who}; ${place.recentlyUsed ? 'someone used that PC in the last 10 minutes' : 'nobody used that PC lately'}`;
 }
 
@@ -111,17 +118,23 @@ export function buildIdlePrompt(input: IdleInput): IdlePickContext {
     'Things they can see and reach:',
     ...(things.length > 0 ? things.map(describeObject) : ['- nothing in particular']),
     `Right now: ${describeState(input)}`,
-    ...(input.contact?.failures?.length ? [`Your body just ${input.contact.failures.join('; and ')}.`] : []),
+    ...(input.contact?.failures?.length
+      ? [`Your body just ${input.contact.failures.join('; and ')}.`]
+      : []),
     ...(input.others && input.others.length > 0
       ? [
           `Others in the room:\n${input.others.map((other) => `- ${other.name || 'someone'} is ${other.where ?? 'in the room'}`).join('\n')}`,
         ]
       : []),
     ...(input.places && input.places.length > 0
-      ? [`Other places you could walk to (only go to find someone, never just for something to do):\n${input.places.map(describePlace).join('\n')}`]
+      ? [
+          `Other places you could walk to (only go to find someone, never just for something to do):\n${input.places.map(describePlace).join('\n')}`,
+        ]
       : []),
     ...(input.pursuits && input.pursuits.length > 0
-      ? [`Things they may spend a while on, if they feel like it (reading is their own pursuit, not a chore):\n${input.pursuits.map((p) => `- read something at the ${p.objectName}: {read:${p.objectName}}`).join('\n')}`]
+      ? [
+          `Things they may spend a while on, if they feel like it (reading is their own pursuit, not a chore):\n${input.pursuits.map((p) => `- read something at the ${p.objectName}: {read:${p.objectName}}`).join('\n')}`,
+        ]
       : []),
     recent.length > 0
       ? `What they did recently:\n${recent.map((line) => `- ${line}`).join('\n')}`
@@ -129,5 +142,12 @@ export function buildIdlePrompt(input: IdleInput): IdlePickContext {
     `Time: ${timeOfDay(input.now)}`,
     'Prefer variety. Use {wait} to stay as you are.',
   ];
-  return { system: idleSystemPrompt(input.name, Boolean(input.places?.length), Boolean(input.pursuits?.length)), user: lines.filter(Boolean).join('\n') };
+  return {
+    system: idleSystemPrompt(
+      input.name,
+      Boolean(input.places?.length),
+      Boolean(input.pursuits?.length),
+    ),
+    user: lines.filter(Boolean).join('\n'),
+  };
 }

@@ -10,7 +10,13 @@ export function formatSize([width, height, depth]: FurnitureItem['dimensions']):
   return `${width.toFixed(2)} × ${depth.toFixed(2)} × ${height.toFixed(2)} m`;
 }
 
-function FurnitureGenerator({ controller, onCreated }: { controller: FurnitureController; onCreated: (item: FurnitureItem) => void }) {
+function FurnitureGenerator({
+  controller,
+  onCreated,
+}: {
+  controller: FurnitureController;
+  onCreated: (item: FurnitureItem) => void;
+}) {
   const [prompt, setPrompt] = useState('');
   return (
     <form
@@ -43,10 +49,23 @@ function FurnitureGenerator({ controller, onCreated }: { controller: FurnitureCo
 }
 
 /** The 3D view of the selected piece, with edit (the prompt, run again) and delete. */
-function FurnitureDetail({ item, controller, onDeleted }: { item: FurnitureItem; controller: FurnitureController; onDeleted: () => void }) {
+function FurnitureDetail({
+  item,
+  controller,
+  onDeleted,
+}: {
+  item: FurnitureItem;
+  controller: FurnitureController;
+  onDeleted: () => void;
+}) {
   const [draft, setDraft] = useState(item.prompt);
   const [confirming, setConfirming] = useState(false);
-  const [loaded, setLoaded] = useState<{ id: string; at: string; data: ArrayBuffer | null; error: string | null } | null>(null);
+  const [loaded, setLoaded] = useState<{
+    id: string;
+    at: string;
+    data: ArrayBuffer | null;
+    error: string | null;
+  } | null>(null);
   const model = loaded?.id === item.id ? loaded : null;
   const busy = item.status === 'generating';
 
@@ -60,7 +79,13 @@ function FurnitureDetail({ item, controller, onDeleted }: { item: FurnitureItem;
         if (!cancelled) setLoaded({ id: item.id, at: item.updatedAt, data, error: null });
       })
       .catch((reason: unknown) => {
-        if (!cancelled) setLoaded({ id: item.id, at: item.updatedAt, data: null, error: reason instanceof Error ? reason.message : 'Could not load the model.' });
+        if (!cancelled)
+          setLoaded({
+            id: item.id,
+            at: item.updatedAt,
+            data: null,
+            error: reason instanceof Error ? reason.message : 'Could not load the model.',
+          });
       });
     return () => {
       cancelled = true;
@@ -72,13 +97,23 @@ function FurnitureDetail({ item, controller, onDeleted }: { item: FurnitureItem;
     <section className="furnitureDetail" aria-label={`${item.name} in 3D`}>
       <h3>{item.name}</h3>
       {item.hasModel && model?.data ? (
-        <FurnitureViewer key={`${item.id}-${model.at}`} modelData={model.data} label={`${item.name} in 3D`} />
+        <FurnitureViewer
+          key={`${item.id}-${model.at}`}
+          modelData={model.data}
+          label={`${item.name} in 3D`}
+        />
       ) : (
         <p className="kiosk__helper" role="status">
-          {busy ? (item.message ?? 'Working…') : (model?.error ?? 'There is no 3D model for this piece yet.')}
+          {busy
+            ? (item.message ?? 'Working…')
+            : (model?.error ?? 'There is no 3D model for this piece yet.')}
         </p>
       )}
-      {item.hasModel ? <p className="kiosk__helper">Size: {formatSize(item.dimensions)} (width × depth × height)</p> : null}
+      {item.hasModel ? (
+        <p className="kiosk__helper">
+          Size: {formatSize(item.dimensions)} (width × depth × height)
+        </p>
+      ) : null}
       {busy && item.hasModel ? <p role="status">{item.message ?? 'Working…'}</p> : null}
       {item.error ? (
         <p role="alert" className="kiosk__error">
@@ -95,7 +130,13 @@ function FurnitureDetail({ item, controller, onDeleted }: { item: FurnitureItem;
       >
         <label className="faces__field">
           <span>Description</span>
-          <textarea rows={3} maxLength={MAX_PROMPT} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={busy} />
+          <textarea
+            rows={3}
+            maxLength={MAX_PROMPT}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            disabled={busy}
+          />
         </label>
         <button type="submit" className="faces__submit" disabled={busy || !draft.trim()}>
           {busy ? 'Working…' : 'Regenerate'}
@@ -118,7 +159,11 @@ function FurnitureDetail({ item, controller, onDeleted }: { item: FurnitureItem;
           </button>
         </p>
       ) : (
-        <button type="button" className="backgroundCard__delete" onClick={() => setConfirming(true)}>
+        <button
+          type="button"
+          className="backgroundCard__delete"
+          onClick={() => setConfirming(true)}
+        >
           Delete
         </button>
       )}
@@ -129,14 +174,15 @@ function FurnitureDetail({ item, controller, onDeleted }: { item: FurnitureItem;
 export function FurnitureControls({ bridge }: { bridge: FurnitureBridge | undefined }) {
   const controller = useFurniture(bridge);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  if (!controller.available) return <p className="kiosk__helper">Furniture is available in the desktop app.</p>;
+  if (!controller.available)
+    return <p className="kiosk__helper">Furniture is available in the desktop app.</p>;
   const selected = controller.items.find((item) => item.id === selectedId) ?? null;
   return (
     <div className="furnitureControls">
       <FurnitureGenerator controller={controller} onCreated={(item) => setSelectedId(item.id)} />
       <p className="kiosk__helper">
-        Describe one piece. It is drawn, turned into a 3D model and scaled to the size such a piece really is. This takes
-        minutes, one piece at a time; you can keep using the app.
+        Describe one piece. It is drawn, turned into a 3D model and scaled to the size such a piece
+        really is. This takes minutes, one piece at a time; you can keep using the app.
       </p>
       {controller.error ? (
         <p role="alert" className="kiosk__error">
@@ -153,7 +199,11 @@ export function FurnitureControls({ bridge }: { bridge: FurnitureBridge | undefi
             aria-pressed={item.id === selectedId}
             onClick={() => setSelectedId(item.id)}
           >
-            {item.thumbnailDataUrl ? <img src={item.thumbnailDataUrl} alt="" /> : <span className="backgroundCard__plain" />}
+            {item.thumbnailDataUrl ? (
+              <img src={item.thumbnailDataUrl} alt="" />
+            ) : (
+              <span className="backgroundCard__plain" />
+            )}
             <span>{item.name}</span>
             <span className="kiosk__helper">
               {item.status === 'generating'
@@ -165,8 +215,17 @@ export function FurnitureControls({ bridge }: { bridge: FurnitureBridge | undefi
           </button>
         ))}
       </div>
-      {controller.items.length === 0 && !controller.loading ? <p className="kiosk__helper">No furniture yet.</p> : null}
-      {selected ? <FurnitureDetail key={selected.id} item={selected} controller={controller} onDeleted={() => setSelectedId(null)} /> : null}
+      {controller.items.length === 0 && !controller.loading ? (
+        <p className="kiosk__helper">No furniture yet.</p>
+      ) : null}
+      {selected ? (
+        <FurnitureDetail
+          key={selected.id}
+          item={selected}
+          controller={controller}
+          onDeleted={() => setSelectedId(null)}
+        />
+      ) : null}
     </div>
   );
 }

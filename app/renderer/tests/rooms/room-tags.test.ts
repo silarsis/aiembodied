@@ -31,7 +31,10 @@ describe('worldTag', () => {
   });
 
   it('wraps facings and handles surfaces and missing tags', () => {
-    expect(worldTag({ ...room, objects: [{ ...room.objects[0], rotationY: 270 }] }, 'chair', 'sit')!.facing).toBe(-90);
+    expect(
+      worldTag({ ...room, objects: [{ ...room.objects[0], rotationY: 270 }] }, 'chair', 'sit')!
+        .facing,
+    ).toBe(-90);
     expect(worldTag(room, 'chair', 'surface')!.position).toEqual([1, 0.9, 2]);
     expect(worldTag(room, 'chair', 'grab')).toBeNull();
     expect(worldTag(room, 'nothing', 'sit')).toBeNull();

@@ -7,7 +7,10 @@ const loaderState = vi.hoisted(() => ({
   vrmaAnimations: [] as unknown[],
 }));
 
-type MockAction = Record<string, ReturnType<typeof vi.fn>> & { enabled: boolean; clampWhenFinished: boolean };
+type MockAction = Record<string, ReturnType<typeof vi.fn>> & {
+  enabled: boolean;
+  clampWhenFinished: boolean;
+};
 
 const threeMockState = vi.hoisted(() => ({
   mixers: [] as Array<{
@@ -45,12 +48,16 @@ vi.mock('three', async () => {
     public readonly stopAllAction = vi.fn();
     public readonly update = vi.fn();
     public readonly uncacheClip = vi.fn();
-    public readonly addEventListener = vi.fn((event: string, listener: (payload: { action: MockAction }) => void) => {
-      if (event === 'finished') this.finishListeners.add(listener);
-    });
-    public readonly removeEventListener = vi.fn((event: string, listener: (payload: { action: MockAction }) => void) => {
-      if (event === 'finished') this.finishListeners.delete(listener);
-    });
+    public readonly addEventListener = vi.fn(
+      (event: string, listener: (payload: { action: MockAction }) => void) => {
+        if (event === 'finished') this.finishListeners.add(listener);
+      },
+    );
+    public readonly removeEventListener = vi.fn(
+      (event: string, listener: (payload: { action: MockAction }) => void) => {
+        if (event === 'finished') this.finishListeners.delete(listener);
+      },
+    );
     public readonly actions: MockAction[] = [];
     private readonly finishListeners = new Set<(payload: { action: MockAction }) => void>();
 
@@ -96,7 +103,9 @@ vi.mock('@pixiv/three-vrm', async () => {
 });
 
 vi.mock('@pixiv/three-vrm-animation', async () => {
-  const actual = await vi.importActual<typeof import('@pixiv/three-vrm-animation')>('@pixiv/three-vrm-animation');
+  const actual = await vi.importActual<typeof import('@pixiv/three-vrm-animation')>(
+    '@pixiv/three-vrm-animation',
+  );
   return { ...actual, VRMAnimationLoaderPlugin: class {} };
 });
 
@@ -107,14 +116,20 @@ vi.mock('../../src/avatar/animations/index.js', async () => {
   const { AnimationClip } = await vi.importActual<typeof import('three')>('three');
   return {
     ...actual,
-    createClipFromVrma: vi.fn((_vrm: unknown, _animation: unknown, name?: string) => new AnimationClip(name ?? 'clip', 1, [])),
+    createClipFromVrma: vi.fn(
+      (_vrm: unknown, _animation: unknown, name?: string) =>
+        new AnimationClip(name ?? 'clip', 1, []),
+    ),
   };
 });
 
 import { VRMExpressionPresetName, type VRM } from '@pixiv/three-vrm';
 import * as THREE from 'three';
 import { AvatarActor, DEFAULT_AVATAR_ID } from '../../src/avatar/avatar-actor.js';
-import { createAvatarAnimationBus, type AvatarAnimationEvent } from '../../src/avatar/animation-bus.js';
+import {
+  createAvatarAnimationBus,
+  type AvatarAnimationEvent,
+} from '../../src/avatar/animation-bus.js';
 import { getAvatarRestSkeleton } from '../../src/avatar/rest-skeleton.js';
 import { toAnimationSlug } from '../../src/avatar/animation-tags.js';
 
@@ -230,9 +245,7 @@ describe('AvatarActor', () => {
     actor.update(1 / 60, 1032);
     expect(actor.getBlinkValue()).toBeGreaterThan(0);
     // The old viseme releases once the frame no longer targets it.
-    expect(actor.getVisemeWeight(VRMExpressionPresetName.Aa)).toBeLessThan(
-      1,
-    );
+    expect(actor.getVisemeWeight(VRMExpressionPresetName.Aa)).toBeLessThan(1);
   });
 
   it('runs the afterMixer hook between the mixer update and the VRM update', async () => {
@@ -250,7 +263,10 @@ describe('AvatarActor', () => {
     const blend = (actor as unknown as { poseBlend: { apply: (delta: number) => void } }).poseBlend;
     const apply = vi.spyOn(blend, 'apply').mockImplementation(() => void order.push('blend'));
     (created.vrm.update as ReturnType<typeof vi.fn>).mockImplementation(() => order.push('vrm'));
-    actor.update(1 / 60, 0, { afterMixer: () => order.push('afterMixer'), beforeVrmUpdate: () => order.push('contact') });
+    actor.update(1 / 60, 0, {
+      afterMixer: () => order.push('afterMixer'),
+      beforeVrmUpdate: () => order.push('contact'),
+    });
     expect(order).toEqual(['afterMixer', 'blend', 'contact', 'vrm']);
     apply.mockRestore();
   });
@@ -286,11 +302,17 @@ describe('AvatarActor', () => {
 
     it('consumes events without an avatar id as echo, and ignores others', async () => {
       const { actor } = await loadActor();
-      const plain = await playedActions(actor, { type: 'enqueue', request: { slug: first, intent: 'play' } });
+      const plain = await playedActions(actor, {
+        type: 'enqueue',
+        request: { slug: first, intent: 'play' },
+      });
       expect(plain).toEqual({ consumed: true, started: 1 });
 
       const { actor: sage } = await loadActor(new AvatarActor({ id: 'sage' }));
-      const forEcho = await playedActions(sage, { type: 'enqueue', request: { slug: first, intent: 'play' } });
+      const forEcho = await playedActions(sage, {
+        type: 'enqueue',
+        request: { slug: first, intent: 'play' },
+      });
       expect(forEcho).toEqual({ consumed: false, started: 0 });
       expect(sage.getQueuedAnimationCount()).toBe(0);
     });
@@ -304,7 +326,12 @@ describe('AvatarActor', () => {
       };
       expect(echo.accepts(explicitSage)).toBe(false);
       expect(sage.accepts(explicitSage)).toBe(true);
-      expect(echo.accepts({ type: 'enqueue', request: { slug: first, intent: 'play', avatarId: 'echo' } })).toBe(true);
+      expect(
+        echo.accepts({
+          type: 'enqueue',
+          request: { slug: first, intent: 'play', avatarId: 'echo' },
+        }),
+      ).toBe(true);
       expect(sage.accepts({ type: 'applyPose', pose: {}, avatarId: 'sage' })).toBe(true);
       expect(echo.accepts({ type: 'applyPose', pose: {}, avatarId: 'sage' })).toBe(false);
       expect(echo.accepts({ type: 'response' })).toBe(true);
@@ -321,7 +348,10 @@ describe('AvatarActor', () => {
       bus.applyPose({});
       bus.signalResponse('sage');
       bus.signalResponse();
-      expect(events[0]).toEqual({ type: 'enqueue', request: { slug: 'a', intent: 'play', avatarId: 'sage' } });
+      expect(events[0]).toEqual({
+        type: 'enqueue',
+        request: { slug: 'a', intent: 'play', avatarId: 'sage' },
+      });
       expect(events[1]).toMatchObject({ type: 'applyPose', avatarId: 'sage' });
       expect(events[2]).not.toHaveProperty('avatarId');
       expect(events[3]).toEqual({ type: 'response', avatarId: 'sage' });
@@ -366,7 +396,11 @@ describe('AvatarActor', () => {
     expect(() => actor.update(1 / 60, 0)).not.toThrow();
 
     created = createVrm();
-    const reloaded = await actor.load({ binary: new ArrayBuffer(8), modelId: 'vrm-1', parent: new THREE.Object3D() });
+    const reloaded = await actor.load({
+      binary: new ArrayBuffer(8),
+      modelId: 'vrm-1',
+      parent: new THREE.Object3D(),
+    });
     expect(reloaded).toBe(true);
     expect(actor.getObject3D()).toBe(created.vrm.scene);
     actor.dispose();

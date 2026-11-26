@@ -386,12 +386,17 @@ export interface AvatarBridge {
   uploadModel(request: AvatarModelUploadRequest): Promise<AvatarModelUploadResult>;
   deleteModel(modelId: string): Promise<void>;
   loadModelBinary(modelId: string): Promise<ArrayBuffer>;
-  updateModelThumbnail(modelId: string, thumbnailDataUrl: string): Promise<AvatarModelSummary | null>;
+  updateModelThumbnail(
+    modelId: string,
+    thumbnailDataUrl: string,
+  ): Promise<AvatarModelSummary | null>;
   updateModelDescription(modelId: string, description: string): Promise<AvatarModelSummary | null>;
   generateModelDescription(thumbnailDataUrl: string): Promise<string>;
   listAnimations(): Promise<AvatarAnimationSummary[]>;
   uploadAnimation(request: AvatarAnimationUploadRequest): Promise<AvatarAnimationUploadResult>;
-  generateAnimation(request: AvatarAnimationGenerationRequest): Promise<AvatarAnimationUploadResult>;
+  generateAnimation(
+    request: AvatarAnimationGenerationRequest,
+  ): Promise<AvatarAnimationUploadResult>;
   getMotionStatus?(): Promise<AvatarMotionStatus>;
   streamMotion?(request: AvatarMotionStreamRequest): Promise<AvatarMotionStreamResult>;
   /** Stops a running motion stream; its promise rejects. */
@@ -412,7 +417,10 @@ export interface AvatarBridge {
   listAvatarImageModels(): Promise<AvatarImageModelSelection>;
   setAvatarImageModel(id: string): Promise<void>;
   setAvatarImageLoras?(choices: AvatarLoraChoice[]): Promise<void>;
-  suggestBaseModels?(request: { baseModel?: string; family?: string }): Promise<BaseModelSuggestions>;
+  suggestBaseModels?(request: {
+    baseModel?: string;
+    family?: string;
+  }): Promise<BaseModelSuggestions>;
   downloadBaseModel?(serverId: string, ref: string): Promise<ModelDownloadProgress>;
   listModelDownloads?(): Promise<ModelDownloadProgress[]>;
   generateAvatar(request: AvatarGenerationRequest): Promise<AvatarGenerationJob>;

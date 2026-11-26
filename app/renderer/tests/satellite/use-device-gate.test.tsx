@@ -1,14 +1,30 @@
 import { act, render, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { DeviceGateBridge, DeviceGateState } from '../../../main/src/shared/satellite/bridge-types.js';
+import type {
+  DeviceGateBridge,
+  DeviceGateState,
+} from '../../../main/src/shared/satellite/bridge-types.js';
 import { evaluateGate } from '../../../main/src/shared/satellite/device-gate.js';
 import { useDeviceGate } from '../../src/satellite/use-device-gate.js';
 import { DeviceDots } from '../../src/satellite/device-dots.js';
 
-const FACTS = { occupied: true, unlocked: true, linkUp: true, open: true, noFullscreenApp: true, notHeldOff: true };
+const FACTS = {
+  occupied: true,
+  unlocked: true,
+  linkUp: true,
+  open: true,
+  noFullscreenApp: true,
+  notHeldOff: true,
+};
 const WITH_CAMERA = { ...FACTS, cameraEnabled: true };
 
-function Probe({ bridge, onClose }: { bridge: DeviceGateBridge; onClose: (scope: { audio: boolean; camera: boolean }) => Promise<void> | void }) {
+function Probe({
+  bridge,
+  onClose,
+}: {
+  bridge: DeviceGateBridge;
+  onClose: (scope: { audio: boolean; camera: boolean }) => Promise<void> | void;
+}) {
   const state = useDeviceGate(bridge, onClose);
   return <p>{state?.mic ?? 'unknown'}</p>;
 }
@@ -69,7 +85,7 @@ describe('useDeviceGate', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('stops the page\'s microphone when the room empties into doorbell mode: the doorbell listens in main, not here', async () => {
+  it("stops the page's microphone when the room empties into doorbell mode: the doorbell listens in main, not here", async () => {
     const { bridge, order, push } = fakeBridge(evaluateGate(FACTS, true));
     const onClose = vi.fn(async () => void order.push('stopped'));
     render(<Probe bridge={bridge} onClose={onClose} />);
@@ -90,7 +106,9 @@ describe('useDeviceGate', () => {
 
 describe('DeviceDots', () => {
   it('is grey for off, amber for doorbell only and green for live, with words', () => {
-    const { getByTestId, rerender } = render(<DeviceDots gate={evaluateGate({ ...FACTS, occupied: false }, true)} />);
+    const { getByTestId, rerender } = render(
+      <DeviceDots gate={evaluateGate({ ...FACTS, occupied: false }, true)} />,
+    );
     expect(getByTestId('mic-dot')).toHaveAttribute('data-level', 'doorbell');
     expect(getByTestId('mic-dot')).toHaveAttribute('title', 'Microphone doorbell only');
     rerender(<DeviceDots gate={evaluateGate(FACTS)} />);

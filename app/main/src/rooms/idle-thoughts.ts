@@ -5,7 +5,12 @@
  * the renderer picks at random instead, so the avatar never freezes.
  */
 import { routeTargets, type ModelRouting } from '../shared/config/model-routing.js';
-import { DEFAULT_OPENAI_MODELS, FailoverChatClient, type ChatClient, type ServerKeyLookup } from '../local-voice/voice-engines.js';
+import {
+  DEFAULT_OPENAI_MODELS,
+  FailoverChatClient,
+  type ChatClient,
+  type ServerKeyLookup,
+} from '../local-voice/voice-engines.js';
 import { LocalLlmClient } from '../local-voice/local-llm-client.js';
 import type { IdlePickContext, IdlePickResult } from '../shared/rooms/types.js';
 
@@ -27,7 +32,11 @@ export interface IdleThoughtsOptions {
 /** The chat clients for the idle route, in failover order. */
 export function idleClients(
   { routing, keyFor, fetchFn }: Pick<IdleThoughtsOptions, 'routing' | 'keyFor' | 'fetchFn'>,
-  tuning: { temperature?: number; maxTokens?: number; responseFormat?: Record<string, unknown> } = {},
+  tuning: {
+    temperature?: number;
+    maxTokens?: number;
+    responseFormat?: Record<string, unknown>;
+  } = {},
 ): ChatClient[] {
   return routeTargets(routing, 'idle').map(
     ({ server, model }): ChatClient =>
@@ -47,15 +56,26 @@ export function idleClients(
 function valid(context: unknown): context is IdlePickContext {
   if (typeof context !== 'object' || context === null) return false;
   const { system, user } = context as Record<string, unknown>;
-  return typeof system === 'string' && typeof user === 'string' && system.trim() !== '' && user.trim() !== '';
+  return (
+    typeof system === 'string' &&
+    typeof user === 'string' &&
+    system.trim() !== '' &&
+    user.trim() !== ''
+  );
 }
 
 /** Takes out `<think>…</think>` blocks some models write despite thinking being off. */
 function clean(text: string): string {
-  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*$/i, '').trim();
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<think>[\s\S]*$/i, '')
+    .trim();
 }
 
-export async function pickIdleActions(context: IdlePickContext, options: IdleThoughtsOptions): Promise<IdlePickResult | null> {
+export async function pickIdleActions(
+  context: IdlePickContext,
+  options: IdleThoughtsOptions,
+): Promise<IdlePickResult | null> {
   if (!valid(context)) return null;
   const clients = options.clients ?? idleClients(options);
   if (clients.length === 0) return null;

@@ -27,14 +27,23 @@ function finite(value: unknown): value is number {
 }
 
 function pair(value: unknown): [number, number] | undefined {
-  return Array.isArray(value) && value.length === 2 && value.every(finite) ? [value[0], value[1]] : undefined;
+  return Array.isArray(value) && value.length === 2 && value.every(finite)
+    ? [value[0], value[1]]
+    : undefined;
 }
 
 function triple(value: unknown): [number, number, number] | undefined {
-  return Array.isArray(value) && value.length === 3 && value.every(finite) ? [value[0], value[1], value[2]] : undefined;
+  return Array.isArray(value) && value.length === 3 && value.every(finite)
+    ? [value[0], value[1], value[2]]
+    : undefined;
 }
 
-const JOINTS: readonly AvatarMotionJoint[] = ['left_knee', 'right_knee', 'left_ankle', 'right_ankle'];
+const JOINTS: readonly AvatarMotionJoint[] = [
+  'left_knee',
+  'right_knee',
+  'left_ankle',
+  'right_ankle',
+];
 
 function sanitizeObserved(value: unknown): AvatarMotionObserved | undefined {
   if (!value || typeof value !== 'object') return undefined;
@@ -66,7 +75,9 @@ function sanitizePath(value: unknown): AvatarMotionPath | undefined {
   if (points.length < 2) return undefined;
   return {
     points,
-    ...(finite(raw.cornerRadius) && raw.cornerRadius >= 0 ? { cornerRadius: raw.cornerRadius } : {}),
+    ...(finite(raw.cornerRadius) && raw.cornerRadius >= 0
+      ? { cornerRadius: raw.cornerRadius }
+      : {}),
     ...(finite(raw.speed) && raw.speed > 0 ? { speed: raw.speed } : {}),
     ...(finite(raw.startS) && raw.startS >= 0 ? { startS: raw.startS } : {}),
     ...(raw.mode === 'dense' || raw.mode === 'waypoints' ? { mode: raw.mode } : {}),
@@ -81,7 +92,10 @@ function sanitizeTarget(value: unknown): AvatarMotionTarget | undefined {
   const position = triple(raw.position);
   const hand = raw.hand === 'left' || raw.hand === 'right' ? raw.hand : undefined;
   // A hand target needs its position and the pelvis values to hold (see services/motion/API.md).
-  if (raw.hand !== undefined && (!hand || !position || !root || !finite(raw.height) || !finite(raw.heading))) {
+  if (
+    raw.hand !== undefined &&
+    (!hand || !position || !root || !finite(raw.height) || !finite(raw.heading))
+  ) {
     return undefined;
   }
   const joint = JOINTS.find((name) => name === raw.joint);
@@ -106,7 +120,9 @@ function sanitizePhase(value: unknown): AvatarMotionPhase | undefined {
   return { prompt, startS: raw.startS };
 }
 
-export function sanitizeMotionControls(request: Partial<AvatarMotionStreamRequest>): MotionControls {
+export function sanitizeMotionControls(
+  request: Partial<AvatarMotionStreamRequest>,
+): MotionControls {
   const controls: MotionControls = {};
   const path = sanitizePath(request.path);
   if (path) controls.path = path;

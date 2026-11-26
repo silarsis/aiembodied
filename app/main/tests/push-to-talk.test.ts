@@ -28,10 +28,16 @@ describe('PushToTalkShortcut', () => {
     const onStatus = vi.fn();
     const shortcut = new PushToTalkShortcut({ globalShortcut, onPress, onStatus });
 
-    expect(shortcut.apply('CommandOrControl+Shift+Space')).toEqual({ shortcut: 'CommandOrControl+Shift+Space', registered: true });
+    expect(shortcut.apply('CommandOrControl+Shift+Space')).toEqual({
+      shortcut: 'CommandOrControl+Shift+Space',
+      registered: true,
+    });
     handlers.get('CommandOrControl+Shift+Space')?.();
     expect(onPress).toHaveBeenCalledTimes(1);
-    expect(onStatus).toHaveBeenLastCalledWith({ shortcut: 'CommandOrControl+Shift+Space', registered: true });
+    expect(onStatus).toHaveBeenLastCalledWith({
+      shortcut: 'CommandOrControl+Shift+Space',
+      registered: true,
+    });
   });
 
   it('swaps keys, keeps a registered one as is, and turns off on an empty shortcut', () => {
@@ -54,7 +60,11 @@ describe('PushToTalkShortcut', () => {
     const taken = ['Ctrl+Space'];
     const { globalShortcut } = createShortcuts(taken);
     const warn = vi.fn();
-    const shortcut = new PushToTalkShortcut({ globalShortcut, onPress: vi.fn(), logger: { info: vi.fn(), warn } });
+    const shortcut = new PushToTalkShortcut({
+      globalShortcut,
+      onPress: vi.fn(),
+      logger: { info: vi.fn(), warn },
+    });
 
     expect(shortcut.apply('Ctrl+Space')).toEqual({
       shortcut: 'Ctrl+Space',

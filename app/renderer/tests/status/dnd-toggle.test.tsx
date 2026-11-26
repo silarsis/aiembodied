@@ -4,7 +4,11 @@ import { DoNotDisturbToggle } from '../../src/status/dnd-toggle.js';
 
 describe('DoNotDisturbToggle', () => {
   it('reads the saved state and saves a change', async () => {
-    const api = { update: vi.fn(), getDoNotDisturb: vi.fn(async () => true), setDoNotDisturb: vi.fn(async (v: boolean) => v) };
+    const api = {
+      update: vi.fn(),
+      getDoNotDisturb: vi.fn(async () => true),
+      setDoNotDisturb: vi.fn(async (v: boolean) => v),
+    };
     render(<DoNotDisturbToggle api={api} />);
     const box = (await screen.findByRole('checkbox')) as HTMLInputElement;
     await waitFor(() => expect(box.checked).toBe(true));

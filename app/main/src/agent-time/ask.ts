@@ -28,10 +28,14 @@ export function createQuestionTool(avatarName: string): RegisteredTool {
 }
 
 /** The registry as the approval broker sees it: the question tool is answered here, anything else by the real one. */
-export function withQuestionTool(registry: Pick<ToolRegistry, 'execute' | 'get'>): Pick<ToolRegistry, 'execute' | 'get'> {
+export function withQuestionTool(
+  registry: Pick<ToolRegistry, 'execute' | 'get'>,
+): Pick<ToolRegistry, 'execute' | 'get'> {
   return {
     get: (id) => (id === QUESTION_TOOL_ID ? createQuestionTool('An agent') : registry.get(id)),
     execute: async (id, params, context): Promise<ToolExecutionResult> =>
-      id === QUESTION_TOOL_ID ? { success: true, data: 'yes', durationMs: 0 } : registry.execute(id, params, context),
+      id === QUESTION_TOOL_ID
+        ? { success: true, data: 'yes', durationMs: 0 }
+        : registry.execute(id, params, context),
   };
 }

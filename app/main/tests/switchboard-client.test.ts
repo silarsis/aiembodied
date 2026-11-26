@@ -2,11 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SwitchboardClient, makeEventId } from '../src/switchboard/client.js';
 import type { SwitchboardEventInput } from '../src/switchboard/types.js';
 
-const input = (n: number): SwitchboardEventInput => ({ type: 'test.event', producer: { kind: 'service', id: 'app' }, payload: { n } });
+const input = (n: number): SwitchboardEventInput => ({
+  type: 'test.event',
+  producer: { kind: 'service', id: 'app' },
+  payload: { n },
+});
 const ok = () => new Response('{"ids":[]}', { status: 200 });
 
 function sentNumbers(fetchFn: ReturnType<typeof vi.fn>): number[] {
-  return fetchFn.mock.calls.flatMap(([, init]) => (JSON.parse(String((init as RequestInit).body)).events as Array<{ payload: { n: number } }>).map((e) => e.payload.n));
+  return fetchFn.mock.calls.flatMap(([, init]) =>
+    (
+      JSON.parse(String((init as RequestInit).body)).events as Array<{ payload: { n: number } }>
+    ).map((e) => e.payload.n),
+  );
 }
 
 describe('SwitchboardClient', () => {
@@ -22,7 +30,10 @@ describe('SwitchboardClient', () => {
 
   it('sets id and time, returns at once, and sends events in one batch', async () => {
     const fetchFn = vi.fn(async () => ok());
-    const client = new SwitchboardClient({ baseUrl: 'http://sb/', fetchFn: fetchFn as unknown as typeof fetch });
+    const client = new SwitchboardClient({
+      baseUrl: 'http://sb/',
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
     const event = client.publish(input(1));
     client.publish(input(2));
     expect(event?.id).toHaveLength(26);
@@ -39,7 +50,11 @@ describe('SwitchboardClient', () => {
     let up = false;
     const fetchFn = vi.fn(async () => (up ? ok() : Promise.reject(new Error('refused'))));
     const logger = { info: vi.fn(), warn: vi.fn() };
-    const client = new SwitchboardClient({ baseUrl: 'http://sb', fetchFn: fetchFn as unknown as typeof fetch, logger });
+    const client = new SwitchboardClient({
+      baseUrl: 'http://sb',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      logger,
+    });
     client.publish(input(1));
     await vi.advanceTimersByTimeAsync(250);
     client.publish(input(2));
@@ -51,14 +66,20 @@ describe('SwitchboardClient', () => {
     up = true;
     await vi.advanceTimersByTimeAsync(5000);
     expect(client.pending()).toBe(0);
-    const last = JSON.parse(String((fetchFn.mock.calls.at(-1)![1] as RequestInit).body)).events.map((e: { payload: { n: number } }) => e.payload.n);
+    const last = JSON.parse(String((fetchFn.mock.calls.at(-1)![1] as RequestInit).body)).events.map(
+      (e: { payload: { n: number } }) => e.payload.n,
+    );
     expect(last).toEqual([1, 2]);
     expect(logger.info).toHaveBeenCalledTimes(1);
   });
 
   it('drops the oldest events past maxQueue', async () => {
     const fetchFn = vi.fn(async () => Promise.reject(new Error('down')));
-    const client = new SwitchboardClient({ baseUrl: 'http://sb', fetchFn: fetchFn as unknown as typeof fetch, maxQueue: 3 });
+    const client = new SwitchboardClient({
+      baseUrl: 'http://sb',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      maxQueue: 3,
+    });
     for (let n = 1; n <= 5; n += 1) client.publish(input(n));
     expect(client.pending()).toBe(3);
     fetchFn.mockImplementation(async () => ok());
@@ -83,7 +104,11 @@ describe('SwitchboardClient', () => {
 
   it('drops a batch the server refuses with a 4xx instead of retrying forever', async () => {
     const fetchFn = vi.fn(async () => new Response('bad', { status: 422 }));
-    const client = new SwitchboardClient({ baseUrl: 'http://sb', fetchFn: fetchFn as unknown as typeof fetch, logger: { info: vi.fn(), warn: vi.fn() } });
+    const client = new SwitchboardClient({
+      baseUrl: 'http://sb',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
     client.publish(input(1));
     await vi.advanceTimersByTimeAsync(300);
     expect(client.pending()).toBe(0);
@@ -92,7 +117,10 @@ describe('SwitchboardClient', () => {
 
   it('stop() flushes what is queued', async () => {
     const fetchFn = vi.fn(async () => ok());
-    const client = new SwitchboardClient({ baseUrl: 'http://sb', fetchFn: fetchFn as unknown as typeof fetch });
+    const client = new SwitchboardClient({
+      baseUrl: 'http://sb',
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
     client.publish(input(1));
     await client.stop();
     expect(sentNumbers(fetchFn)).toEqual([1]);

@@ -4,7 +4,12 @@ import { z } from 'zod';
 import { BUILTIN_WAKE_WORD_MODELS } from '../wake-word/open-wake-word.js';
 import { wakeWordLabel } from '../wake-word/wake-word-library.js';
 import { DEFAULT_WEB_SEARCH_PROVIDER } from '../tools/web-search.js';
-import { DEFAULT_CODING_CONFIG, sanitizeCodingConfig, seedCodingConfig, type CodingConfig } from '../coding/config.js';
+import {
+  DEFAULT_CODING_CONFIG,
+  sanitizeCodingConfig,
+  seedCodingConfig,
+  type CodingConfig,
+} from '../coding/config.js';
 import type { SecretStore } from './secret-store.js';
 import type { PreferencesStore } from './preferences-store.js';
 import type { AudioDevicePreferences } from '../shared/config/preferences-store-types.js';
@@ -30,7 +35,16 @@ import {
   type StoredModels,
   type UseId,
 } from '../shared/config/model-routing.js';
-import type { ConfigSecretKey, ModelRoutingView, RendererConfig, AppConfig, WakeWordConfig, ConversationBackend, FeatureFlags, MetricsConfig } from '../shared/config/config-manager-types.js';
+import type {
+  ConfigSecretKey,
+  ModelRoutingView,
+  RendererConfig,
+  AppConfig,
+  WakeWordConfig,
+  ConversationBackend,
+  FeatureFlags,
+  MetricsConfig,
+} from '../shared/config/config-manager-types.js';
 
 type ConfigLogger = Pick<Console, 'debug' | 'info' | 'warn' | 'error'>;
 
@@ -89,7 +103,9 @@ const DEFAULT_WAKE_WORD_MODEL = 'hey_echo';
 /** A builtin model name ("Hey Mycroft" -> hey_mycroft) or an absolute .onnx path; undefined otherwise. */
 export function normalizeWakeWordModel(raw: string): string | undefined {
   const trimmed = raw.trim();
-  const builtin = BUILTIN_WAKE_WORD_MODELS.find((name) => name === trimmed.toLowerCase().replace(/[\s-]+/g, '_'));
+  const builtin = BUILTIN_WAKE_WORD_MODELS.find(
+    (name) => name === trimmed.toLowerCase().replace(/[\s-]+/g, '_'),
+  );
   if (builtin) {
     return builtin;
   }
@@ -105,8 +121,14 @@ const serverSecretName = (id: string) => `MODEL_SERVER_KEY:${id}`;
 /** Online accounts whose key can also come from an environment variable, which wins. */
 const ACCOUNT_KEYS: Record<string, { env: string; secret: string }> = {
   [BUILT_IN_SERVER_IDS.brave]: { env: 'BRAVE_SEARCH_API_KEY', secret: 'BRAVE_SEARCH_API_KEY' },
-  [BUILT_IN_SERVER_IDS.anthropic]: { env: 'ANTHROPIC_API_KEY', secret: serverSecretName(BUILT_IN_SERVER_IDS.anthropic) },
-  [BUILT_IN_SERVER_IDS.github]: { env: 'GITHUB_TOKEN', secret: serverSecretName(BUILT_IN_SERVER_IDS.github) },
+  [BUILT_IN_SERVER_IDS.anthropic]: {
+    env: 'ANTHROPIC_API_KEY',
+    secret: serverSecretName(BUILT_IN_SERVER_IDS.anthropic),
+  },
+  [BUILT_IN_SERVER_IDS.github]: {
+    env: 'GITHUB_TOKEN',
+    secret: serverSecretName(BUILT_IN_SERVER_IDS.github),
+  },
   [BUILT_IN_SERVER_IDS.civitai]: { env: 'CIVITAI_API_KEY', secret: 'CIVITAI_API_KEY' },
   [BUILT_IN_SERVER_IDS.huggingface]: { env: 'HF_TOKEN', secret: 'HUGGINGFACE_TOKEN' },
 };
@@ -198,13 +220,23 @@ export class ConfigManager {
       audioOutputDeviceId,
       realtimeModel: this.normalizeDeviceId(storedPreferences.realtimeModel),
       realtimeVoice: this.normalizeDeviceId(storedPreferences.realtimeVoice),
-      sessionInstructions: typeof storedPreferences.sessionInstructions === 'string'
-        ? storedPreferences.sessionInstructions
-        : undefined,
+      sessionInstructions:
+        typeof storedPreferences.sessionInstructions === 'string'
+          ? storedPreferences.sessionInstructions
+          : undefined,
       vadTurnDetection: storedPreferences.vadTurnDetection,
-      vadThreshold: typeof storedPreferences.vadThreshold === 'number' ? storedPreferences.vadThreshold : undefined,
-      vadSilenceDurationMs: typeof storedPreferences.vadSilenceDurationMs === 'number' ? storedPreferences.vadSilenceDurationMs : undefined,
-      vadMinSpeechDurationMs: typeof storedPreferences.vadMinSpeechDurationMs === 'number' ? storedPreferences.vadMinSpeechDurationMs : undefined,
+      vadThreshold:
+        typeof storedPreferences.vadThreshold === 'number'
+          ? storedPreferences.vadThreshold
+          : undefined,
+      vadSilenceDurationMs:
+        typeof storedPreferences.vadSilenceDurationMs === 'number'
+          ? storedPreferences.vadSilenceDurationMs
+          : undefined,
+      vadMinSpeechDurationMs:
+        typeof storedPreferences.vadMinSpeechDurationMs === 'number'
+          ? storedPreferences.vadMinSpeechDurationMs
+          : undefined,
       featureFlags: this.parseFeatureFlags(this.env.FEATURE_FLAGS),
       wakeWord,
       metrics: this.parseMetricsConfig(),
@@ -235,12 +267,30 @@ export class ConfigManager {
     const audioOutputDeviceId = this.normalizeDeviceId(preferences.audioOutputDeviceId);
     const realtimeModel = this.normalizeDeviceId(preferences.realtimeModel);
     const realtimeVoice = this.normalizeDeviceId(preferences.realtimeVoice);
-    const sessionInstructions = typeof preferences.sessionInstructions === 'string' ? preferences.sessionInstructions.trim() : undefined;
-    const vadTurnDetection = preferences.vadTurnDetection === 'server_vad' ? 'server_vad' : preferences.vadTurnDetection === 'none' ? 'none' : undefined;
-    const vadThreshold = typeof preferences.vadThreshold === 'number' ? preferences.vadThreshold : undefined;
-    const vadSilenceDurationMs = typeof preferences.vadSilenceDurationMs === 'number' ? preferences.vadSilenceDurationMs : undefined;
-    const vadMinSpeechDurationMs = typeof preferences.vadMinSpeechDurationMs === 'number' ? preferences.vadMinSpeechDurationMs : undefined;
-    if (preferences.conversationBackend === 'local' || preferences.conversationBackend === 'openai') {
+    const sessionInstructions =
+      typeof preferences.sessionInstructions === 'string'
+        ? preferences.sessionInstructions.trim()
+        : undefined;
+    const vadTurnDetection =
+      preferences.vadTurnDetection === 'server_vad'
+        ? 'server_vad'
+        : preferences.vadTurnDetection === 'none'
+          ? 'none'
+          : undefined;
+    const vadThreshold =
+      typeof preferences.vadThreshold === 'number' ? preferences.vadThreshold : undefined;
+    const vadSilenceDurationMs =
+      typeof preferences.vadSilenceDurationMs === 'number'
+        ? preferences.vadSilenceDurationMs
+        : undefined;
+    const vadMinSpeechDurationMs =
+      typeof preferences.vadMinSpeechDurationMs === 'number'
+        ? preferences.vadMinSpeechDurationMs
+        : undefined;
+    if (
+      preferences.conversationBackend === 'local' ||
+      preferences.conversationBackend === 'openai'
+    ) {
       this.storedConversationBackend = preferences.conversationBackend;
     }
     const conversationBackend = this.storedConversationBackend;
@@ -288,8 +338,16 @@ export class ConfigManager {
 
     this.storedProviders = mergeProviderPatch(this.storedProviders, sanitizeProviderPatch(patch));
     const providers = resolveProviderSettings(this.env, this.storedProviders);
-    const wakeWord = this.applyWakeWordSettings(this.envWakeWord ?? this.config.wakeWord, providers);
-    this.config = { ...this.config, providers, wakeWord, models: this.resolveModels(providers, this.config.comfyUiBaseUrl) };
+    const wakeWord = this.applyWakeWordSettings(
+      this.envWakeWord ?? this.config.wakeWord,
+      providers,
+    );
+    this.config = {
+      ...this.config,
+      providers,
+      wakeWord,
+      models: this.resolveModels(providers, this.config.comfyUiBaseUrl),
+    };
 
     if (this.preferencesStore) {
       const saved = await this.preferencesStore.load();
@@ -306,7 +364,9 @@ export class ConfigManager {
       servers: models.servers.map((server) => ({
         ...server,
         hasKey: Boolean(this.getServerKey(server.id)),
-        ...(server.id === BUILT_IN_SERVER_IDS.openai && this.apiKeyFromEnv ? { keyFromEnv: true } : {}),
+        ...(server.id === BUILT_IN_SERVER_IDS.openai && this.apiKeyFromEnv
+          ? { keyFromEnv: true }
+          : {}),
         ...(this.keysFromEnv.has(server.id) ? { keyFromEnv: true } : {}),
       })),
       routes: structuredClone(models.routes),
@@ -323,7 +383,11 @@ export class ConfigManager {
     const config = this.getConfig();
     const coding = sanitizeCodingConfig(next);
     if (!coding) throw new Error('Those coding settings could not be saved.');
-    if (!config.models.servers.some((server) => server.id === coding.runner && server.type === 'coder')) {
+    if (
+      !config.models.servers.some(
+        (server) => server.id === coding.runner && server.type === 'coder',
+      )
+    ) {
       coding.runner = DEFAULT_CODING_CONFIG.runner;
     }
     this.storedCoding = coding;
@@ -332,7 +396,10 @@ export class ConfigManager {
       const saved = await this.preferencesStore.load();
       await this.preferencesStore.save({ ...saved, coding });
     }
-    this.logger.info('Coding settings updated.', { runner: coding.runner, workspaces: coding.workspaces.length });
+    this.logger.info('Coding settings updated.', {
+      runner: coding.runner,
+      workspaces: coding.workspaces.length,
+    });
     return structuredClone(coding);
   }
 
@@ -343,9 +410,16 @@ export class ConfigManager {
   }
 
   /** Add a server (no id) or change one; returns its id. A built-in server keeps its type. */
-  async saveModelServer(entry: { id?: string; name?: string; type?: ServerType; url?: string }): Promise<string> {
+  async saveModelServer(entry: {
+    id?: string;
+    name?: string;
+    type?: ServerType;
+    url?: string;
+  }): Promise<string> {
     const config = this.getConfig();
-    const existing = entry.id ? config.models.servers.find((server) => server.id === entry.id) : undefined;
+    const existing = entry.id
+      ? config.models.servers.find((server) => server.id === entry.id)
+      : undefined;
     if (entry.id && !existing) throw new Error('That server no longer exists.');
     const name = entry.name?.trim();
     const type = existing?.type ?? entry.type;
@@ -363,7 +437,10 @@ export class ConfigManager {
         );
       }
       if (type === 'memory') {
-        if ((parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') || !parsed.hostname) {
+        if (
+          (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') ||
+          !parsed.hostname
+        ) {
           throw new Error('Database addresses look like postgresql://user@host:5432/database.');
         }
         // A pasted connection string often carries the password: keep it in the key store instead.
@@ -373,10 +450,12 @@ export class ConfigManager {
       }
     }
     if (!existing) {
-      if (!entry.type || !ADDABLE_SERVER_TYPES.includes(entry.type)) throw new Error('Choose what kind of server this is.');
+      if (!entry.type || !ADDABLE_SERVER_TYPES.includes(entry.type))
+        throw new Error('Choose what kind of server this is.');
       if (!url) throw new Error('Enter the server address.');
     }
-    const id = existing?.id ?? `server-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    const id =
+      existing?.id ?? `server-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     const servers = (this.storedModels.servers ?? []).filter((server) => server.id !== id);
     const previous = this.storedModels.servers?.find((server) => server.id === id);
     servers.push({
@@ -396,7 +475,10 @@ export class ConfigManager {
     const server = this.getConfig().models.servers.find((entry) => entry.id === id);
     if (!server) return;
     if (server.builtIn) throw new Error('Built-in servers can be changed but not removed.');
-    this.storedModels = { ...this.storedModels, servers: (this.storedModels.servers ?? []).filter((entry) => entry.id !== id) };
+    this.storedModels = {
+      ...this.storedModels,
+      servers: (this.storedModels.servers ?? []).filter((entry) => entry.id !== id),
+    };
     if (this.serverKeys.has(id)) {
       this.serverKeys.delete(id);
       await this.secretStore?.deleteSecret(serverSecretName(id)).catch(() => undefined);
@@ -410,8 +492,12 @@ export class ConfigManager {
     if (!stored) throw new Error('That choice could not be saved.');
     const before = this.getConfig().models;
     const trial = resolveModelRouting(before.servers, before.routes, { routes: { [use]: stored } });
-    if (trial.routes[use].server !== stored.server) throw new Error("That server can't do this job.");
-    this.storedModels = { ...this.storedModels, routes: { ...this.storedModels.routes, [use]: stored } };
+    if (trial.routes[use].server !== stored.server)
+      throw new Error("That server can't do this job.");
+    this.storedModels = {
+      ...this.storedModels,
+      routes: { ...this.storedModels.routes, [use]: stored },
+    };
     await this.applyModelChange();
   }
 
@@ -425,7 +511,8 @@ export class ConfigManager {
     }
     const server = this.getConfig().models.servers.find((entry) => entry.id === id);
     if (!server) throw new Error('That server no longer exists.');
-    if (!this.secretStore) throw new Error('Secret store is not configured. Unable to persist secrets securely.');
+    if (!this.secretStore)
+      throw new Error('Secret store is not configured. Unable to persist secrets securely.');
     const name = ACCOUNT_KEYS[id]?.secret ?? serverSecretName(id);
     if (key) {
       await this.secretStore.setSecret(name, key);
@@ -435,7 +522,10 @@ export class ConfigManager {
       if (!this.keysFromEnv.has(id)) this.serverKeys.delete(id);
     }
     if (id === BUILT_IN_SERVER_IDS.brave && this.config) {
-      this.config = { ...this.config, webSearch: { ...this.config.webSearch, braveApiKey: this.serverKeys.get(id) } };
+      this.config = {
+        ...this.config,
+        webSearch: { ...this.config.webSearch, braveApiKey: this.serverKeys.get(id) },
+      };
     }
     this.logger.info('Model server key updated.', { server: id, set: Boolean(key) });
   }
@@ -449,20 +539,28 @@ export class ConfigManager {
       coderLlmUrl: this.env.CODER_LLM_URL?.trim() || undefined,
       layaUrl: this.env.LAYA_URL?.trim() || undefined,
     });
-    const defaults = defaultRoutes(providers, this.env.WEB_SEARCH_PROVIDER?.trim() || DEFAULT_WEB_SEARCH_PROVIDER);
+    const defaults = defaultRoutes(
+      providers,
+      this.env.WEB_SEARCH_PROVIDER?.trim() || DEFAULT_WEB_SEARCH_PROVIDER,
+    );
     return resolveModelRouting(builtIns, defaults, this.storedModels);
   }
 
   private async applyModelChange(): Promise<void> {
     const config = this.getConfig();
-    this.config = { ...config, models: this.resolveModels(config.providers, config.comfyUiBaseUrl) };
+    this.config = {
+      ...config,
+      models: this.resolveModels(config.providers, config.comfyUiBaseUrl),
+    };
     if (this.preferencesStore) {
       const saved = await this.preferencesStore.load();
       await this.preferencesStore.save({ ...saved, models: this.storedModels });
     }
     this.logger.info('Model servers updated.', {
       servers: this.config.models.servers.length,
-      routes: Object.fromEntries(Object.entries(this.config.models.routes).map(([use, route]) => [use, route.server])),
+      routes: Object.fromEntries(
+        Object.entries(this.config.models.routes).map(([use, route]) => [use, route.server]),
+      ),
     });
   }
 
@@ -470,7 +568,8 @@ export class ConfigManager {
     this.serverKeys.clear();
     this.keysFromEnv.clear();
     const store = this.secretStore;
-    const read = async (name: string) => (store ? await store.getSecret(name).catch(() => null) : null);
+    const read = async (name: string) =>
+      store ? await store.getSecret(name).catch(() => null) : null;
     for (const [id, names] of Object.entries(ACCOUNT_KEYS)) {
       const fromEnv = this.env[names.env]?.trim();
       if (fromEnv) this.keysFromEnv.add(id);
@@ -537,7 +636,6 @@ export class ConfigManager {
       return this.getRendererConfig();
     }
 
-
     throw new Error(`Unhandled secret key update requested: ${key}`);
   }
 
@@ -574,12 +672,13 @@ export class ConfigManager {
       return this.testRealtimeKey(this.config.realtimeApiKey);
     }
 
-
     throw new Error(`Unhandled secret test requested: ${key}`);
   }
 
   private async resolveRealtimeApiKey(): Promise<string | undefined> {
-    this.logger.debug('Resolving realtime API key from environment variables.', { keys: API_KEY_ENV_NAMES });
+    this.logger.debug('Resolving realtime API key from environment variables.', {
+      keys: API_KEY_ENV_NAMES,
+    });
     const envValue = this.readSecretFromEnv(API_KEY_ENV_NAMES);
     this.apiKeyFromEnv = Boolean(envValue);
     if (envValue) {
@@ -605,7 +704,6 @@ export class ConfigManager {
     }
     return stored ?? undefined;
   }
-
 
   private readSecretFromEnv(keys: string[]): string | undefined {
     for (const key of keys) {
@@ -663,11 +761,11 @@ export class ConfigManager {
       await listModels({ limit: 1 });
       return { ok: true, message: 'Realtime API key verified successfully.' };
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error while testing realtime API key.';
+      const message =
+        error instanceof Error ? error.message : 'Unknown error while testing realtime API key.';
       return { ok: false, message };
     }
   }
-
 
   private parseConversationBackend(): ConversationBackend {
     const raw = this.env.CONVERSATION_BACKEND?.trim().toLowerCase();
@@ -677,12 +775,16 @@ export class ConfigManager {
     if (raw === 'local' || raw === 'openai') {
       return raw;
     }
-    throw new ConfigValidationError(`CONVERSATION_BACKEND must be "local" or "openai", not "${raw}".`);
+    throw new ConfigValidationError(
+      `CONVERSATION_BACKEND must be "local" or "openai", not "${raw}".`,
+    );
   }
 
   private parseMetricsConfig(): MetricsConfig {
     const enabledValue = this.env.METRICS_ENABLED?.trim();
-    const enabled = enabledValue ? ['1', 'true', 'yes', 'on'].includes(enabledValue.toLowerCase()) : false;
+    const enabled = enabledValue
+      ? ['1', 'true', 'yes', 'on'].includes(enabledValue.toLowerCase())
+      : false;
     const host = this.env.METRICS_HOST?.trim() || '127.0.0.1';
     const path = this.env.METRICS_PATH?.trim() || '/metrics';
     const portValue = this.env.METRICS_PORT?.trim();
@@ -726,7 +828,10 @@ export class ConfigManager {
       }
 
       const value = rawValue?.trim().toLowerCase();
-      flags[key] = value === undefined || value === '' ? true : ['1', 'true', 'on', 'yes', 'enabled'].includes(value);
+      flags[key] =
+        value === undefined || value === ''
+          ? true
+          : ['1', 'true', 'on', 'yes', 'enabled'].includes(value);
     }
 
     return FeatureFlagsSchema.parse(flags);
@@ -793,7 +898,9 @@ export class ConfigManager {
   private applyWakeWordSettings(base: WakeWordConfig, providers: ProviderSettings): WakeWordConfig {
     const requested = normalizeWakeWordModel(providers.wakeWord.model);
     if (!requested) {
-      this.logger.warn('Saved wake word model is not valid; using the default.', { model: providers.wakeWord.model });
+      this.logger.warn('Saved wake word model is not valid; using the default.', {
+        model: providers.wakeWord.model,
+      });
     }
     const model = requested ?? base.model;
     providers.wakeWord = { ...providers.wakeWord, model };

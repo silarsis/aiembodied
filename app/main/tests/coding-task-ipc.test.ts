@@ -7,7 +7,12 @@ import type { RunnerEvent } from '../src/shared/coding/runner-client-types.js';
 
 function fakeIpc() {
   const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
-  return { handle: (channel: string, fn: (event: unknown, ...args: unknown[]) => unknown) => void handlers.set(channel, fn), call: (channel: string, ...args: unknown[]) => handlers.get(channel)!({}, ...args), handlers };
+  return {
+    handle: (channel: string, fn: (event: unknown, ...args: unknown[]) => unknown) =>
+      void handlers.set(channel, fn),
+    call: (channel: string, ...args: unknown[]) => handlers.get(channel)!({}, ...args),
+    handlers,
+  };
 }
 
 describe('coding task IPC', () => {
@@ -37,7 +42,11 @@ describe('coding task IPC', () => {
     });
     expect(await ipc.call('coding:diff', 't1')).toBe('diff');
     await ipc.call('coding:start-task', { workspace_id: 'a', goal: 'g', acceptance: ['x', '', 4] });
-    expect(client.createTask).toHaveBeenCalledWith({ workspace_id: 'a', goal: 'g', acceptance: ['x'] });
+    expect(client.createTask).toHaveBeenCalledWith({
+      workspace_id: 'a',
+      goal: 'g',
+      acceptance: ['x'],
+    });
     await ipc.call('coding:answer-task', 't1', { value: 'v', dialog_id: 'a1', junk: 1 });
     expect(client.answer).toHaveBeenCalledWith('t1', { value: 'v', dialog_id: 'a1' });
     await ipc.call('coding:follow-up', 't1', 'more');
@@ -50,12 +59,20 @@ describe('coding task IPC', () => {
     listener({ task_id: null });
     listener({ task_id: 't1', status: 'working' });
     expect(broadcast).toHaveBeenCalledTimes(1);
-    expect(broadcast).toHaveBeenCalledWith('coding:task-event', { task_id: 't1', status: 'working' });
+    expect(broadcast).toHaveBeenCalledWith('coding:task-event', {
+      task_id: 't1',
+      status: 'working',
+    });
   });
 
   it('fails clearly when the runner is not connected', () => {
     const ipc = fakeIpc();
-    registerCodingTaskIpc({ ipcMain: ipc, client: () => null, onRunnerEvent: () => () => undefined, broadcast: vi.fn() });
+    registerCodingTaskIpc({
+      ipcMain: ipc,
+      client: () => null,
+      onRunnerEvent: () => () => undefined,
+      broadcast: vi.fn(),
+    });
     expect(() => ipc.call('coding:tasks')).toThrow('not connected');
   });
 });
@@ -65,17 +82,33 @@ describe('approvals IPC', () => {
     const ipc = fakeIpc();
     const registry = new ToolRegistry();
     const execute = vi.fn(async () => 'done');
-    const tool = { id: 't:x', serverId: 't', toolName: 'x', description: '', inputSchema: {}, enabled: true, confirmationLevel: 'confirm' as const, execute, cardOnly: () => true };
+    const tool = {
+      id: 't:x',
+      serverId: 't',
+      toolName: 'x',
+      description: '',
+      inputSchema: {},
+      enabled: true,
+      confirmationLevel: 'confirm' as const,
+      execute,
+      cardOnly: () => true,
+    };
     registry.register(tool);
     const broker = new ApprovalBroker({ registry });
     const broadcast = vi.fn();
     const off = registerApprovalsIpc({ ipcMain: ipc, broker, broadcast });
     const approval = await broker.request(tool, { secret: 'p' });
-    expect(broadcast).toHaveBeenLastCalledWith('approvals:changed', [expect.objectContaining({ id: approval.id, cardOnly: true })]);
+    expect(broadcast).toHaveBeenLastCalledWith('approvals:changed', [
+      expect.objectContaining({ id: approval.id, cardOnly: true }),
+    ]);
     const listed = (await ipc.call('approvals:list')) as Array<Record<string, unknown>>;
     expect(listed[0]).not.toHaveProperty('params');
     // The card may approve a card-only request.
-    expect(await ipc.call('approvals:approve', approval.id)).toMatchObject({ decision: 'approved', ok: true, result: 'done' });
+    expect(await ipc.call('approvals:approve', approval.id)).toMatchObject({
+      decision: 'approved',
+      ok: true,
+      result: 'done',
+    });
     expect(execute).toHaveBeenCalledWith({ secret: 'p' });
     const second = await broker.request(tool, { secret: 'q' });
     expect(await ipc.call('approvals:decline', second.id)).toMatchObject({ decision: 'declined' });

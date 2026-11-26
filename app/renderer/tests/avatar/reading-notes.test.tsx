@@ -23,7 +23,10 @@ const note = (overrides: Partial<ReadingNote> = {}): ReadingNote => ({
 
 describe('ReadingNotes', () => {
   it('lists the notes with title, date and takeaway, and the full notes when opened', async () => {
-    const load = vi.fn(async () => [note(), note({ id: 'n2', title: 'Half read', partial: true, link: null, opinion: '', questions: [] })]);
+    const load = vi.fn(async () => [
+      note(),
+      note({ id: 'n2', title: 'Half read', partial: true, link: null, opinion: '', questions: [] }),
+    ]);
     render(<ReadingNotes avatarId="sage" name="Sage" load={load} />);
     const items = await screen.findAllByTestId('reading-note');
     expect(load).toHaveBeenCalledWith('sage', 10);
@@ -42,15 +45,29 @@ describe('ReadingNotes', () => {
 
   it('says so when there are no notes, and when they cannot be read', async () => {
     const { unmount } = render(<ReadingNotes avatarId="sage" name="Sage" load={async () => []} />);
-    expect(await screen.findByText(/Sage has not written any reading notes yet/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Sage has not written any reading notes yet/),
+    ).toBeInTheDocument();
     unmount();
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    render(<ReadingNotes avatarId="sage" name="Sage" load={async () => Promise.reject(new Error('down'))} />);
+    render(
+      <ReadingNotes
+        avatarId="sage"
+        name="Sage"
+        load={async () => Promise.reject(new Error('down'))}
+      />,
+    );
     expect(await screen.findByText('The notes could not be read.')).toBeInTheDocument();
   });
 
   it('only makes web addresses into links', async () => {
-    render(<ReadingNotes avatarId="sage" name="Sage" load={async () => [note({ link: 'javascript:alert(1)' })]} />);
+    render(
+      <ReadingNotes
+        avatarId="sage"
+        name="Sage"
+        load={async () => [note({ link: 'javascript:alert(1)' })]}
+      />,
+    );
     await screen.findByTestId('reading-note');
     expect(screen.queryByRole('link')).toBeNull();
   });
@@ -61,16 +78,31 @@ describe('the Reading section of a character card', () => {
   const sage = { id: 'sage', name: 'Sage', vrmModelId: null };
   const api = { list: vi.fn(), add: vi.fn(), update: vi.fn(), remove: vi.fn() } as never;
   const context = (readingNotes?: CharacterSettingsContext['readingNotes']) =>
-    ({ isLocalBackend: true, realtimeVoices: [], readingNotes, echo: {} as never }) as CharacterSettingsContext;
+    ({
+      isLocalBackend: true,
+      realtimeVoices: [],
+      readingNotes,
+      echo: {} as never,
+    }) as CharacterSettingsContext;
 
   it('shows each character its own notes', async () => {
-    const readingNotes = vi.fn(async (avatarId: string) => [note({ avatarId, title: `${avatarId} paper` })]);
-    render(<SceneCast api={api} profiles={[echo, sage]} models={[]} settings={context(readingNotes)} />);
+    const readingNotes = vi.fn(async (avatarId: string) => [
+      note({ avatarId, title: `${avatarId} paper` }),
+    ]);
+    render(
+      <SceneCast api={api} profiles={[echo, sage]} models={[]} settings={context(readingNotes)} />,
+    );
     await waitFor(() => expect(readingNotes).toHaveBeenCalledTimes(2));
-    expect(within(screen.getByTestId('scene-card-echo')).getAllByText('echo paper').length).toBeGreaterThan(0);
-    expect(within(screen.getByTestId('scene-card-sage')).getAllByText('sage paper').length).toBeGreaterThan(0);
+    expect(
+      within(screen.getByTestId('scene-card-echo')).getAllByText('echo paper').length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(screen.getByTestId('scene-card-sage')).getAllByText('sage paper').length,
+    ).toBeGreaterThan(0);
     // Read-only: no edit controls in the section.
-    expect(within(screen.getByLabelText('Reading notes of Sage')).queryByRole('textbox')).toBeNull();
+    expect(
+      within(screen.getByLabelText('Reading notes of Sage')).queryByRole('textbox'),
+    ).toBeNull();
   });
 
   it('leaves the section out when the app has no notes to read', () => {

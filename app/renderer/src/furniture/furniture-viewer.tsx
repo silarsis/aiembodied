@@ -10,7 +10,9 @@ export function FurnitureViewer({ modelData, label }: { modelData: ArrayBuffer; 
 
   useEffect(() => {
     let cancelled = false;
-    const loading = host.current ? createFurnitureScene(host.current, modelData) : Promise.resolve(null);
+    const loading = host.current
+      ? createFurnitureScene(host.current, modelData)
+      : Promise.resolve(null);
     void loading
       .then((created) => {
         if (!created) return;
@@ -21,7 +23,8 @@ export function FurnitureViewer({ modelData, label }: { modelData: ArrayBuffer; 
         }
       })
       .catch((reason: unknown) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : 'Could not open the model.');
+        if (!cancelled)
+          setError(reason instanceof Error ? reason.message : 'Could not open the model.');
       });
     return () => {
       cancelled = true;
@@ -48,7 +51,9 @@ export function FurnitureViewer({ modelData, label }: { modelData: ArrayBuffer; 
           Reset view
         </button>
       </div>
-      <p className="avatarModelViewer__hint">Drag to spin · scroll to zoom · right-drag to pan · squares are 0.5 m</p>
+      <p className="avatarModelViewer__hint">
+        Drag to spin · scroll to zoom · right-drag to pan · squares are 0.5 m
+      </p>
     </div>
   );
 }

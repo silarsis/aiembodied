@@ -80,7 +80,14 @@ export class FakeAicontroller {
   /** The models GET /v1/models lists. A lease naming a model not in here answers 404. */
   readonly models: FakeModel[] = [];
   /** Every lease request body, in order. */
-  readonly leaseRequests: { backend: string; client: string; model: string | null; needs: string[]; host: string | null; waitS?: number }[] = [];
+  readonly leaseRequests: {
+    backend: string;
+    client: string;
+    model: string | null;
+    needs: string[];
+    host: string | null;
+    waitS?: number;
+  }[] = [];
   private server: Server | null = null;
   private counter = 0;
   url = '';
@@ -89,10 +96,13 @@ export class FakeAicontroller {
   constructor(private readonly ttlS = 0.05) {}
 
   async start(): Promise<this> {
-    this.server = createServer((req, res) => void this.handle(req, (status, body) => {
-      res.writeHead(status, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(body));
-    }));
+    this.server = createServer(
+      (req, res) =>
+        void this.handle(req, (status, body) => {
+          res.writeHead(status, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(body));
+        }),
+    );
     await new Promise<void>((resolve) => this.server?.listen(0, '127.0.0.1', resolve));
     this.url = `http://127.0.0.1:${(this.server?.address() as AddressInfo).port}`;
     return this;
@@ -100,7 +110,9 @@ export class FakeAicontroller {
 
   async stop(): Promise<void> {
     this.server?.closeAllConnections();
-    await new Promise<void>((resolve) => (this.server ? this.server.close(() => resolve()) : resolve()));
+    await new Promise<void>((resolve) =>
+      this.server ? this.server.close(() => resolve()) : resolve(),
+    );
     this.server = null;
   }
 
@@ -111,12 +123,16 @@ export class FakeAicontroller {
 
   /** Leases on a backend that still exist at the controller: queued or ready. */
   live(backend: string): FakeLease[] {
-    return [...this.leases.values()].filter((lease) => lease.backend === backend && (lease.state === 'ready' || lease.state === 'queued'));
+    return [...this.leases.values()].filter(
+      (lease) => lease.backend === backend && (lease.state === 'ready' || lease.state === 'queued'),
+    );
   }
 
   /** Active (not released, not revoked) leases on a backend. */
   active(backend: string): FakeLease[] {
-    return [...this.leases.values()].filter((lease) => lease.backend === backend && lease.state === 'ready');
+    return [...this.leases.values()].filter(
+      (lease) => lease.backend === backend && lease.state === 'ready',
+    );
   }
 
   /** Revoke every active lease: the controller yields the GPU. */
@@ -126,7 +142,10 @@ export class FakeAicontroller {
     }
   }
 
-  private async handle(req: IncomingMessage, send: (status: number, body: unknown) => void): Promise<void> {
+  private async handle(
+    req: IncomingMessage,
+    send: (status: number, body: unknown) => void,
+  ): Promise<void> {
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(chunk as Buffer);
     const text = Buffer.concat(chunks).toString('utf8');
@@ -137,14 +156,28 @@ export class FakeAicontroller {
     if (method === 'GET' && path === '/v1/status') {
       if (!this.statusWorks) return send(500, { error: 'status unavailable' });
       const ids = Object.keys(FAKE_BACKEND_URLS).filter((id) => !this.unknown.has(id));
-      return send(200, { name: 'fake', peers: [...this.peers.keys()].map((name) => ({ name })), backends: ids.map((id) => ({ id, state: 'ready' })) });
+      return send(200, {
+        name: 'fake',
+        peers: [...this.peers.keys()].map((name) => ({ name })),
+        backends: ids.map((id) => ({ id, state: 'ready' })),
+      });
     }
     if (method === 'POST' && path === '/v1/models/download') {
       const body = JSON.parse(text) as Record<string, unknown>;
       this.downloadRequests.push(body);
-      const host = body.host === 'auto' ? 'acrasia' : (body.host as string | null) ?? 'fake';
+      const host = body.host === 'auto' ? 'acrasia' : ((body.host as string | null) ?? 'fake');
       const id = `${host}:D${this.downloadRequests.length}`;
-      const job = { id, state: 'downloading', bytes_done: 0, bytes_total: 1000, error: null, model_id: null, kind: body.kind ?? null, file_name: 'model.gguf', host };
+      const job = {
+        id,
+        state: 'downloading',
+        bytes_done: 0,
+        bytes_total: 1000,
+        error: null,
+        model_id: null,
+        kind: body.kind ?? null,
+        file_name: 'model.gguf',
+        host,
+      };
       this.downloads.set(id, job);
       return send(202, job);
     }
@@ -160,11 +193,30 @@ export class FakeAicontroller {
       return send(200, { models: all ? [...this.models, ...this.hostModels] : this.models });
     }
     if (method === 'POST' && path === '/v1/leases') {
-      const body = JSON.parse(text) as { backend: string; client: string; model?: string | null; needs?: string[]; host?: string | null; wait_s?: number };
+      const body = JSON.parse(text) as {
+        backend: string;
+        client: string;
+        model?: string | null;
+        needs?: string[];
+        host?: string | null;
+        wait_s?: number;
+      };
       const needs = body.needs ?? [];
-      this.leaseRequests.push({ backend: body.backend, client: body.client, model: body.model ?? null, needs, host: body.host ?? null, waitS: body.wait_s });
-      if (this.unknown.has(body.backend)) return send(404, { error: `unknown backend '${body.backend}'` });
-      if (body.model && !this.models.some((entry) => entry.id === body.model || entry.alias === body.model)) return send(404, { error: `unknown model '${body.model}'` });
+      this.leaseRequests.push({
+        backend: body.backend,
+        client: body.client,
+        model: body.model ?? null,
+        needs,
+        host: body.host ?? null,
+        waitS: body.wait_s,
+      });
+      if (this.unknown.has(body.backend))
+        return send(404, { error: `unknown backend '${body.backend}'` });
+      if (
+        body.model &&
+        !this.models.some((entry) => entry.id === body.model || entry.alias === body.model)
+      )
+        return send(404, { error: `unknown model '${body.model}'` });
       if (this.refuse.has(body.backend)) return send(503, { error: 'GPU needed by game.exe' });
       const lease: FakeLease = {
         id: `L${++this.counter}`,
@@ -176,10 +228,16 @@ export class FakeAicontroller {
         error: null,
         ttl_s: this.ttlS,
       };
-      const peer = needs.length && !body.host
-        ? [...this.peers].find(([, entry]) => entry.online && needs.every((file) => entry.files.has(file.split(/[\\/]/).pop() ?? file)))
-        : undefined;
-      if (peer) Object.assign(lease, { id: `${peer[0]}:${lease.id}`, url: peer[1].url, host: peer[0] });
+      const peer =
+        needs.length && !body.host
+          ? [...this.peers].find(
+              ([, entry]) =>
+                entry.online &&
+                needs.every((file) => entry.files.has(file.split(/[\\/]/).pop() ?? file)),
+            )
+          : undefined;
+      if (peer)
+        Object.assign(lease, { id: `${peer[0]}:${lease.id}`, url: peer[1].url, host: peer[0] });
       this.leases.set(lease.id, lease);
       if (this.stillQueued.has(body.backend)) {
         lease.state = 'queued';
@@ -208,7 +266,10 @@ export class FakeAicontroller {
       return send(200, lease);
     }
     // Like the real controller, a heartbeat keeps a queued lease too, and answers with its state.
-    if (match[2]) return lease.state === 'ready' || lease.state === 'queued' ? send(200, lease) : send(410, { error: lease.error ?? 'lease is over' });
+    if (match[2])
+      return lease.state === 'ready' || lease.state === 'queued'
+        ? send(200, lease)
+        : send(410, { error: lease.error ?? 'lease is over' });
     return send(200, lease);
   }
 }

@@ -51,7 +51,9 @@ class BehaviorCueBus {
 
 const BehaviorCueContext = createContext<BehaviorCueBus | null>(null);
 
-function normalizeCameraEvent(event: CameraDetectionEvent | null | undefined): BehaviorCueEvent | null {
+function normalizeCameraEvent(
+  event: CameraDetectionEvent | null | undefined,
+): BehaviorCueEvent | null {
   if (!event || typeof event.cue !== 'string') {
     return null;
   }
@@ -62,9 +64,10 @@ function normalizeCameraEvent(event: CameraDetectionEvent | null | undefined): B
     return null;
   }
 
-  const timestamp = typeof event.timestamp === 'number' && Number.isFinite(event.timestamp)
-    ? event.timestamp
-    : Date.now();
+  const timestamp =
+    typeof event.timestamp === 'number' && Number.isFinite(event.timestamp)
+      ? event.timestamp
+      : Date.now();
 
   return {
     name: 'greet_face',
@@ -72,7 +75,10 @@ function normalizeCameraEvent(event: CameraDetectionEvent | null | undefined): B
     timestamp,
     confidence: typeof event.confidence === 'number' ? event.confidence : undefined,
     provider: typeof event.provider === 'string' ? event.provider : undefined,
-    avatarId: typeof event.payload?.avatarId === 'string' && event.payload.avatarId ? event.payload.avatarId : undefined,
+    avatarId:
+      typeof event.payload?.avatarId === 'string' && event.payload.avatarId
+        ? event.payload.avatarId
+        : undefined,
     raw: event,
   };
 }

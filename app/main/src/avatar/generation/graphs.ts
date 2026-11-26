@@ -36,8 +36,14 @@ export function buildConceptPrompt(description: string): string {
 function qwenBase(models: QwenImageModels): ComfyGraph {
   return {
     unet: { class_type: 'UNETLoader', inputs: { unet_name: models.unet, weight_dtype: 'default' } },
-    cache: { class_type: 'QwenImage21Cache', inputs: { model: ['unet', 0], device: 'auto', dtype: 'default' } },
-    clip: { class_type: 'CLIPLoader', inputs: { clip_name: models.clip, type: 'qwen_image', device: 'default' } },
+    cache: {
+      class_type: 'QwenImage21Cache',
+      inputs: { model: ['unet', 0], device: 'auto', dtype: 'default' },
+    },
+    clip: {
+      class_type: 'CLIPLoader',
+      inputs: { clip_name: models.clip, type: 'qwen_image', device: 'default' },
+    },
     vae: { class_type: 'VAELoader', inputs: { vae_name: models.vae } },
   };
 }
@@ -77,7 +83,10 @@ export function conceptGraph(
       },
     },
     decode: { class_type: 'VAEDecode', inputs: { samples: ['sample', 0], vae: ['vae', 0] } },
-    save: { class_type: 'SaveImage', inputs: { images: ['decode', 0], filename_prefix: 'aiembodied/concept' } },
+    save: {
+      class_type: 'SaveImage',
+      inputs: { images: ['decode', 0], filename_prefix: 'aiembodied/concept' },
+    },
   };
 }
 
@@ -163,10 +172,12 @@ export function retextureGraph(input: RetextureGraphInput): ComfyGraph {
         crop: 'disabled',
       },
     },
-    save: { class_type: 'SaveImage', inputs: { images: ['resize', 0], filename_prefix: 'aiembodied/retexture' } },
+    save: {
+      class_type: 'SaveImage',
+      inputs: { images: ['resize', 0], filename_prefix: 'aiembodied/retexture' },
+    },
   };
 }
-
 
 /**
  * Another view of the approved character (side or back), drawn as a Qwen-Image edit with the front
@@ -185,7 +196,12 @@ export function characterViewGraph(input: {
     frontImage: { class_type: 'LoadImage', inputs: { image: input.front } },
     ref1: {
       class_type: 'ImageScaleToTotalPixels',
-      inputs: { image: ['frontImage', 0], upscale_method: 'lanczos', megapixels: 1, resolution_steps: 16 },
+      inputs: {
+        image: ['frontImage', 0],
+        upscale_method: 'lanczos',
+        megapixels: 1,
+        resolution_steps: 16,
+      },
     },
     encode: {
       class_type: 'TextEncodeQwenImage21',
@@ -216,7 +232,10 @@ export function characterViewGraph(input: {
       },
     },
     decode: { class_type: 'VAEDecode', inputs: { samples: ['sample', 0], vae: ['vae', 0] } },
-    save: { class_type: 'SaveImage', inputs: { images: ['decode', 0], filename_prefix: 'aiembodied/view' } },
+    save: {
+      class_type: 'SaveImage',
+      inputs: { images: ['decode', 0], filename_prefix: 'aiembodied/view' },
+    },
   };
 }
 
@@ -236,7 +255,8 @@ Unoccupied and deserted, nothing in the foreground, no text, no logos.`;
 
 export function backgroundGraph(prompt: string, seed: number): ComfyGraph {
   const graph = conceptGraph(prompt, seed, { width: 1536, height: 864 });
-  graph.encode.inputs.negative_prompt = 'person, character, human, animal, text, watermark, logo, collage, tilted horizon, foreground obstacle, floating ground, blurry';
+  graph.encode.inputs.negative_prompt =
+    'person, character, human, animal, text, watermark, logo, collage, tilted horizon, foreground obstacle, floating ground, blurry';
   graph.save.inputs.filename_prefix = 'aiembodied/background';
   return graph;
 }

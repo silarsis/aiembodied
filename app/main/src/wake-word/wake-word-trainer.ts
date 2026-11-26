@@ -8,7 +8,12 @@
 import { spawn } from 'node:child_process';
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
-import type { WakeWordTrainingJob, WakeWordTrainingMetrics, WakeWordTrainingState, WakeWordTrainingStatus } from '../shared/wake-word/types.js';
+import type {
+  WakeWordTrainingJob,
+  WakeWordTrainingMetrics,
+  WakeWordTrainingState,
+  WakeWordTrainingStatus,
+} from '../shared/wake-word/types.js';
 
 type TrainerLogger = Pick<Console, 'info' | 'warn' | 'error'>;
 
@@ -143,19 +148,29 @@ export class WakeWordTrainer {
   }
 
   async getStatus(): Promise<WakeWordTrainingStatus> {
-    const [availability, job] = await Promise.all([this.checkAvailability(), this.readCurrentJob()]);
+    const [availability, job] = await Promise.all([
+      this.checkAvailability(),
+      this.readCurrentJob(),
+    ]);
     return { ...availability, job };
   }
 
-  async start(rawPhrase: string, options: { quick?: boolean } = {}): Promise<WakeWordTrainingStatus> {
+  async start(
+    rawPhrase: string,
+    options: { quick?: boolean } = {},
+  ): Promise<WakeWordTrainingStatus> {
     const phrase = validateWakePhrase(rawPhrase);
     const availability = await this.checkAvailability();
     if (!availability.available) {
-      throw new Error(availability.reason ?? 'Wake word training is not available on this machine.');
+      throw new Error(
+        availability.reason ?? 'Wake word training is not available on this machine.',
+      );
     }
     const current = await this.readCurrentJob();
     if (current?.state === 'running') {
-      throw new Error(`"${current.phrase}" is still training. Cancel it first, or wait for it to finish.`);
+      throw new Error(
+        `"${current.phrase}" is still training. Cancel it first, or wait for it to finish.`,
+      );
     }
 
     const slug = wakeWordSlug(phrase) + (options.quick ? '_quick' : '');
@@ -199,8 +214,17 @@ export class WakeWordTrainer {
       startedAt,
       updatedAt: startedAt,
     };
-    await fs.writeFile(path.join(jobDirectory, 'status.json'), JSON.stringify(placeholder, null, 2), 'utf8');
-    this.options.logger?.info('Starting wake word training', { phrase, slug, distro: this.distro, quick: Boolean(options.quick) });
+    await fs.writeFile(
+      path.join(jobDirectory, 'status.json'),
+      JSON.stringify(placeholder, null, 2),
+      'utf8',
+    );
+    this.options.logger?.info('Starting wake word training', {
+      phrase,
+      slug,
+      distro: this.distro,
+      quick: Boolean(options.quick),
+    });
     this.launch('wsl.exe', ['-d', this.distro, '--', 'bash', '-lc', command]);
     this.lastState = 'running';
     this.startPolling();
@@ -217,9 +241,20 @@ export class WakeWordTrainer {
     const raw = await this.readStatusFile(path.join(this.jobsDirectory, job.slug, 'status.json'));
     const pid = typeof raw?.pid === 'number' && Number.isInteger(raw.pid) ? raw.pid : null;
     if (pid) {
-      const result = await this.run('wsl.exe', ['-d', this.distro, '--', 'kill', '-TERM', '--', `-${pid}`]);
+      const result = await this.run('wsl.exe', [
+        '-d',
+        this.distro,
+        '--',
+        'kill',
+        '-TERM',
+        '--',
+        `-${pid}`,
+      ]);
       if (result.code !== 0) {
-        this.options.logger?.warn('Could not stop wake word training', { pid, stderr: result.stderr.trim() });
+        this.options.logger?.warn('Could not stop wake word training', {
+          pid,
+          stderr: result.stderr.trim(),
+        });
       }
     }
     // The script marks itself cancelled when it gets the signal; make sure the app agrees even
@@ -248,7 +283,10 @@ export class WakeWordTrainer {
     const status = await this.getStatus();
     const job = status.job;
     if (job && this.lastState === 'running' && job.state === 'done') {
-      this.options.logger?.info('Wake word training finished', { phrase: job.phrase, metrics: job.metrics });
+      this.options.logger?.info('Wake word training finished', {
+        phrase: job.phrase,
+        metrics: job.metrics,
+      });
       this.options.onTrained?.(job);
     }
     this.lastState = job?.state ?? null;
@@ -273,7 +311,10 @@ export class WakeWordTrainer {
       }
       const scripts = this.options.scriptsDirectory;
       if (!scripts || !existsSync(path.join(scripts, 'train_wake_word.py'))) {
-        return { available: false, reason: 'The training scripts (services/wakeword-trainer) are not on this machine.' };
+        return {
+          available: false,
+          reason: 'The training scripts (services/wakeword-trainer) are not on this machine.',
+        };
       }
       const result = await this.run('wsl.exe', ['-d', this.distro, '--', 'python3', '--version']);
       if (result.code !== 0) {
@@ -296,7 +337,12 @@ export class WakeWordTrainer {
       return null;
     }
     const jobs = await Promise.all(
-      slugs.map(async (slug) => this.toJob(slug, await this.readStatusFile(path.join(this.jobsDirectory, slug, 'status.json')))),
+      slugs.map(async (slug) =>
+        this.toJob(
+          slug,
+          await this.readStatusFile(path.join(this.jobsDirectory, slug, 'status.json')),
+        ),
+      ),
     );
     const sorted = jobs
       .filter((job): job is WakeWordTrainingJob => job !== null)
@@ -319,7 +365,11 @@ export class WakeWordTrainer {
     }
     let state: WakeWordTrainingState = STATES.find((value) => value === raw.state) ?? 'failed';
     const updatedAt = Date.parse(raw.updatedAt);
-    if (state === 'running' && Number.isFinite(updatedAt) && this.now() - updatedAt > (this.options.staleAfterMs ?? 120_000)) {
+    if (
+      state === 'running' &&
+      Number.isFinite(updatedAt) &&
+      this.now() - updatedAt > (this.options.staleAfterMs ?? 120_000)
+    ) {
       state = 'interrupted';
     }
     const metrics: WakeWordTrainingMetrics = {};
@@ -341,7 +391,9 @@ export class WakeWordTrainer {
       startedAt: typeof raw.startedAt === 'string' ? raw.startedAt : raw.updatedAt,
       updatedAt: raw.updatedAt,
       logFile: path.join(this.jobsDirectory, slug, 'train.log'),
-      ...(state === 'done' ? { model: path.join(this.options.trainedDirectory, `${slug}.onnx`) } : {}),
+      ...(state === 'done'
+        ? { model: path.join(this.options.trainedDirectory, `${slug}.onnx`) }
+        : {}),
       ...(Object.keys(metrics).length > 0 ? { metrics } : {}),
     };
   }
@@ -350,7 +402,11 @@ export class WakeWordTrainer {
     const file = path.join(this.jobsDirectory, slug, 'status.json');
     const raw = await this.readStatusFile(file);
     if (raw) {
-      await fs.writeFile(file, JSON.stringify({ ...raw, state, updatedAt: new Date(this.now()).toISOString() }, null, 2), 'utf8');
+      await fs.writeFile(
+        file,
+        JSON.stringify({ ...raw, state, updatedAt: new Date(this.now()).toISOString() }, null, 2),
+        'utf8',
+      );
     }
   }
 }

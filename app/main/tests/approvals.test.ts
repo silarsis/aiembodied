@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApprovalBroker, APPROVAL_TTL_MS, describeOutcome, parseSpokenDecision } from '../src/tools/approvals.js';
+import {
+  ApprovalBroker,
+  APPROVAL_TTL_MS,
+  describeOutcome,
+  parseSpokenDecision,
+} from '../src/tools/approvals.js';
 import { ToolRegistry, type RegisteredTool } from '../src/tools/tool-registry.js';
 
 function makeTool(overrides: Partial<RegisteredTool> = {}): RegisteredTool {
@@ -48,12 +53,15 @@ describe('parseSpokenDecision', () => {
     expect(parseSpokenDecision(text)).toBe(expected);
   });
 
-  it.each(['what is the weather', 'yes but change the name to foo please', 'maybe', 'go ahead and also tell me a joke now', ''])(
-    'leaves %s to the model',
-    (text) => {
-      expect(parseSpokenDecision(text)).toBeNull();
-    },
-  );
+  it.each([
+    'what is the weather',
+    'yes but change the name to foo please',
+    'maybe',
+    'go ahead and also tell me a joke now',
+    '',
+  ])('leaves %s to the model', (text) => {
+    expect(parseSpokenDecision(text)).toBeNull();
+  });
 });
 
 describe('ApprovalBroker', () => {
@@ -61,10 +69,20 @@ describe('ApprovalBroker', () => {
     const { broker, tool, logger } = setup();
     const approval = await broker.request(tool, { goal: 'Fix X' });
     expect(tool.execute).not.toHaveBeenCalled();
-    expect(approval).toMatchObject({ toolName: 'start_coding_task', summary: 'start a task: Fix X', source: 'voice', cardOnly: false });
+    expect(approval).toMatchObject({
+      toolName: 'start_coding_task',
+      summary: 'start a task: Fix X',
+      source: 'voice',
+      cardOnly: false,
+    });
     expect(broker.list()).toHaveLength(1);
-    expect(broker.waitingMessage(approval)).toBe('Waiting for Kevin to approve: start a task: Fix X. Ask him out loud whether to go ahead.');
-    expect(logger.info).toHaveBeenCalledWith('Approval requested', expect.objectContaining({ id: approval.id }));
+    expect(broker.waitingMessage(approval)).toBe(
+      'Waiting for Kevin to approve: start a task: Fix X. Ask him out loud whether to go ahead.',
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      'Approval requested',
+      expect.objectContaining({ id: approval.id }),
+    );
   });
 
   it('does not add the same call twice', async () => {
@@ -84,17 +102,34 @@ describe('ApprovalBroker', () => {
     const approval = await broker.request(tool, { goal: 'Fix X' });
     const outcome = await broker.approve(approval.id, 'card');
     expect(tool.execute).toHaveBeenCalledWith({ goal: 'Fix X' });
-    expect(outcome).toMatchObject({ decision: 'approved', by: 'card', ok: true, result: 'Started task t1.', delivered: false });
+    expect(outcome).toMatchObject({
+      decision: 'approved',
+      by: 'card',
+      ok: true,
+      result: 'Started task t1.',
+      delivered: false,
+    });
     expect(broker.list()).toEqual([]);
     expect(outcomes).toHaveLength(1);
     expect(changes).toEqual([1, 0]);
-    expect(logger.info).toHaveBeenCalledWith('Approval granted', expect.objectContaining({ by: 'card' }));
-    expect(describeOutcome(outcome!)).toContain('Kevin approved: start a task: Fix X. Done. Result: Started task t1.');
+    expect(logger.info).toHaveBeenCalledWith(
+      'Approval granted',
+      expect.objectContaining({ by: 'card' }),
+    );
+    expect(describeOutcome(outcome!)).toContain(
+      'Kevin approved: start a task: Fix X. Done. Result: Started task t1.',
+    );
     expect(await broker.approve(approval.id)).toBeNull();
   });
 
   it('reports a failing tool', async () => {
-    const { broker, tool } = setup(makeTool({ execute: vi.fn(async () => { throw new Error('runner down'); }) }));
+    const { broker, tool } = setup(
+      makeTool({
+        execute: vi.fn(async () => {
+          throw new Error('runner down');
+        }),
+      }),
+    );
     const approval = await broker.request(tool, { goal: 'x' });
     const outcome = await broker.approve(approval.id);
     expect(outcome).toMatchObject({ decision: 'approved', ok: false, result: 'runner down' });
@@ -164,7 +199,13 @@ describe('ApprovalBroker', () => {
   });
 
   it('treats a card-only check that throws as card-only', async () => {
-    const { broker, tool, logger } = setup(makeTool({ cardOnly: () => { throw new Error('lookup failed'); } }));
+    const { broker, tool, logger } = setup(
+      makeTool({
+        cardOnly: () => {
+          throw new Error('lookup failed');
+        },
+      }),
+    );
     expect((await broker.request(tool, { goal: 'x' })).cardOnly).toBe(true);
     expect(logger.warn).toHaveBeenCalled();
   });
@@ -204,7 +245,9 @@ describe('ApprovalBroker requestedBy', () => {
     const sage = new ApprovalBroker({ registry, avatarId: 'sage' });
     expect((await sage.request(tool, { goal: 'a' })).requestedBy).toBe('avatar:sage');
     expect((await sage.request(tool, { goal: 'b' }, 'echo')).requestedBy).toBe('avatar:echo');
-    expect((await plain.forAvatar('sage').request(tool, { goal: 'c' })).requestedBy).toBe('avatar:sage');
+    expect((await plain.forAvatar('sage').request(tool, { goal: 'c' })).requestedBy).toBe(
+      'avatar:sage',
+    );
   });
 
   it('does not merge identical pending requests from different avatars', async () => {

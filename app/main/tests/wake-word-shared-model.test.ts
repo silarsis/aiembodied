@@ -37,14 +37,21 @@ describe('wake-word:model', () => {
     const outside = path.join(directory, 'secret.onnx');
     await writeFile(outside, Buffer.from([1]));
     expect(await readSharedWakeWord({ ...BASE, model: outside }, trained)).toBeNull();
-    expect(await readSharedWakeWord({ ...BASE, model: path.join(trained, '..', 'secret.onnx') }, trained)).toBeNull();
+    expect(
+      await readSharedWakeWord(
+        { ...BASE, model: path.join(trained, '..', 'secret.onnx') },
+        trained,
+      ),
+    ).toBeNull();
     const text = path.join(trained, 'notes.txt');
     await writeFile(text, 'x');
     expect(await readSharedWakeWord({ ...BASE, model: text }, trained)).toBeNull();
     const empty = path.join(trained, 'empty.onnx');
     await writeFile(empty, '');
     expect(await readSharedWakeWord({ ...BASE, model: empty }, trained)).toBeNull();
-    expect(await readSharedWakeWord({ ...BASE, model: path.join(trained, 'missing.onnx') }, trained)).toBeNull();
+    expect(
+      await readSharedWakeWord({ ...BASE, model: path.join(trained, 'missing.onnx') }, trained),
+    ).toBeNull();
     expect(await readSharedWakeWord({ ...BASE, model: '/etc/passwd' }, trained)).toBeNull();
   });
 

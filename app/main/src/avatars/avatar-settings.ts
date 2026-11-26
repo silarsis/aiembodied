@@ -13,7 +13,9 @@ import { DEFAULT_AVATAR_ID, type AvatarRegistry } from './avatar-registry.js';
 export type VoiceKeyEngine = string;
 
 export function voiceKeyForModel(vrmModelId: string, engine: VoiceKeyEngine): string {
-  return engine === 'openai' ? `avatar.voice.${vrmModelId}` : `avatar.voice.${vrmModelId}.${engine}`;
+  return engine === 'openai'
+    ? `avatar.voice.${vrmModelId}`
+    : `avatar.voice.${vrmModelId}.${engine}`;
 }
 
 export function idleHabitsKeyForModel(vrmModelId: string): string {
@@ -37,7 +39,11 @@ export function pseudoModelIdForAvatar(avatarId: string): string {
  */
 export function avatarOnlyKeys(avatarId: string, engines: readonly VoiceKeyEngine[]): string[] {
   const model = pseudoModelIdForAvatar(avatarId);
-  return [idleHabitsKeyForModel(model), voiceKeyForModel(model, 'openai'), ...engines.map((engine) => voiceKeyForModel(model, engine))];
+  return [
+    idleHabitsKeyForModel(model),
+    voiceKeyForModel(model, 'openai'),
+    ...engines.map((engine) => voiceKeyForModel(model, engine)),
+  ];
 }
 
 /**
@@ -60,7 +66,9 @@ export class AvatarSettingsKeys {
     if (avatarId === DEFAULT_AVATAR_ID) return false;
     const profile = this.registry.get(avatarId);
     if (!profile) return false;
-    return !profile.vrmModelId || profile.vrmModelId === this.registry.get(DEFAULT_AVATAR_ID)?.vrmModelId;
+    return (
+      !profile.vrmModelId || profile.vrmModelId === this.registry.get(DEFAULT_AVATAR_ID)?.vrmModelId
+    );
   }
 
   voice(engine: VoiceKeyEngine, avatarId?: string | null): string | null {

@@ -1,4 +1,10 @@
-import type { RunnerEvent, RunnerTask, RunnerTaskRequest, RunnerAnswer, RunnerModelRef } from '../shared/coding/runner-client-types.js';
+import type {
+  RunnerEvent,
+  RunnerTask,
+  RunnerTaskRequest,
+  RunnerAnswer,
+  RunnerModelRef,
+} from '../shared/coding/runner-client-types.js';
 /**
  * Talks to the coding runner (services/coder, see its API.md): setup calls, status, tasks and
  * the server-sent event stream. Fetch only, no extra dependency. Keys travel in request bodies
@@ -39,7 +45,15 @@ export interface RunnerKeys {
 
 export interface RunnerCapabilities {
   backend?: { name?: string; version?: string | null; models?: unknown[]; error?: string | null };
-  workspaces?: Array<{ id: string; kind?: string; detected?: { checks_suggestion?: string | null; package_manager?: string | null; [key: string]: unknown } }>;
+  workspaces?: Array<{
+    id: string;
+    kind?: string;
+    detected?: {
+      checks_suggestion?: string | null;
+      package_manager?: string | null;
+      [key: string]: unknown;
+    };
+  }>;
   [key: string]: unknown;
 }
 
@@ -127,7 +141,12 @@ export class CodingRunnerClient {
 
   /** The diff of a task against its base commit (plain text, at most 500 KB). */
   async taskDiff(id: string): Promise<string> {
-    return this.request<string>('GET', `/v1/tasks/${encodeURIComponent(id)}/diff`, undefined, 'text');
+    return this.request<string>(
+      'GET',
+      `/v1/tasks/${encodeURIComponent(id)}/diff`,
+      undefined,
+      'text',
+    );
   }
 
   steer(id: string, message: string): Promise<RunnerTask> {
@@ -159,8 +178,12 @@ export class CodingRunnerClient {
    * Follow GET /v1/events. Reconnects with a growing wait (1 s up to 30 s) when the stream ends or
    * fails; the wait starts over after a connection that worked. Returns a function that stops it.
    */
-  subscribe(handlers: RunnerStreamHandlers, options: { sleep?: (ms: number) => Promise<void>; idleMs?: number } = {}): () => void {
-    const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  subscribe(
+    handlers: RunnerStreamHandlers,
+    options: { sleep?: (ms: number) => Promise<void>; idleMs?: number } = {},
+  ): () => void {
+    const sleep =
+      options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
     // The runner sends a comment every 15 s; silence for longer means the connection is dead.
     const idleMs = options.idleMs ?? 45_000;
     let stopped = false;
@@ -178,8 +201,12 @@ export class CodingRunnerClient {
         };
         try {
           arm();
-          const response = await this.fetchFn(`${this.baseUrl}/v1/events`, { headers: { Accept: 'text/event-stream' }, signal: current.signal });
-          if (!response.ok || !response.body) throw new RunnerError(`The runner answered ${response.status}.`, response.status);
+          const response = await this.fetchFn(`${this.baseUrl}/v1/events`, {
+            headers: { Accept: 'text/event-stream' },
+            signal: current.signal,
+          });
+          if (!response.ok || !response.body)
+            throw new RunnerError(`The runner answered ${response.status}.`, response.status);
           connected = true;
           wait = 1000;
           handlers.onOpen?.();
@@ -200,7 +227,8 @@ export class CodingRunnerClient {
             }
           }
         } catch (error) {
-          if (!stopped) handlers.onError?.(error instanceof Error ? error : new Error(String(error)));
+          if (!stopped)
+            handlers.onError?.(error instanceof Error ? error : new Error(String(error)));
         } finally {
           if (idleTimer) clearTimeout(idleTimer);
         }
@@ -216,12 +244,20 @@ export class CodingRunnerClient {
     };
   }
 
-  private async request<T>(method: string, path: string, body?: unknown, as: 'json' | 'text' = 'json'): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    as: 'json' | 'text' = 'json',
+  ): Promise<T> {
     let response: Response;
     try {
       response = await this.fetchFn(`${this.baseUrl}${path}`, {
         method,
-        headers: { Accept: as === 'text' ? 'text/plain' : 'application/json', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+        headers: {
+          Accept: as === 'text' ? 'text/plain' : 'application/json',
+          ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
         signal: AbortSignal.timeout(this.timeoutMs),
       });
@@ -237,7 +273,10 @@ export class CodingRunnerClient {
       } catch {
         // No JSON body.
       }
-      throw new RunnerError(detail || `The coding runner answered ${response.status}.`, response.status);
+      throw new RunnerError(
+        detail || `The coding runner answered ${response.status}.`,
+        response.status,
+      );
     }
     if (response.status === 204) return undefined as T;
     if (as === 'text') return (await response.text()) as T;

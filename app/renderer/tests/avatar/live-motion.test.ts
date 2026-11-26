@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createAvatarAnimationBus, type AvatarAnimationEvent } from '../../src/avatar/animation-bus.js';
+import {
+  createAvatarAnimationBus,
+  type AvatarAnimationEvent,
+} from '../../src/avatar/animation-bus.js';
 import { extractAvatarTags, extractMoveTags } from '../../src/avatar/animation-tags.js';
 import {
   LIVE_MOTION_SOURCE,
@@ -10,16 +13,18 @@ import {
 
 describe('extractMoveTags', () => {
   it('extracts free-text movement descriptions', () => {
-    expect(extractMoveTags('Sure {move:shrugs  with both shoulders} and {MOVE: bows deeply }.')).toEqual([
+    expect(
+      extractMoveTags('Sure {move:shrugs  with both shoulders} and {MOVE: bows deeply }.'),
+    ).toEqual([
       { type: 'move', text: 'shrugs with both shoulders' },
       { type: 'move', text: 'bows deeply' },
     ]);
   });
 
   it('is not picked up as an animation tag', () => {
-    expect(extractAvatarTags('{move:wave} {anim:wave}', { allowedAnimationSlugs: ['wave'] })).toEqual([
-      { type: 'anim', slug: 'wave' },
-    ]);
+    expect(
+      extractAvatarTags('{move:wave} {anim:wave}', { allowedAnimationSlugs: ['wave'] }),
+    ).toEqual([{ type: 'anim', slug: 'wave' }]);
   });
 });
 
@@ -56,7 +61,11 @@ describe('enqueueMotionChunk', () => {
     if (event?.type !== 'enqueue') {
       return;
     }
-    expect(event.request).toMatchObject({ slug: 'live-abc-2', intent: 'play', source: LIVE_MOTION_SOURCE });
+    expect(event.request).toMatchObject({
+      slug: 'live-abc-2',
+      intent: 'play',
+      source: LIVE_MOTION_SOURCE,
+    });
     expect(new TextDecoder().decode(event.request.vrmaBinary)).toBe('glTF');
   });
 
@@ -64,9 +73,17 @@ describe('enqueueMotionChunk', () => {
     const bus = createAvatarAnimationBus();
     const requests: Array<Record<string, unknown>> = [];
     bus.subscribe((event) => {
-      if (event.type === 'enqueue') requests.push(event.request as unknown as Record<string, unknown>);
+      if (event.type === 'enqueue')
+        requests.push(event.request as unknown as Record<string, unknown>);
     });
-    const chunk = { streamId: 'abc', index: 0, start: 0, name: 'wave-0', duration: 2, data: 'AAEC' };
+    const chunk = {
+      streamId: 'abc',
+      index: 0,
+      start: 0,
+      name: 'wave-0',
+      duration: 2,
+      data: 'AAEC',
+    };
     enqueueMotionChunk(bus, chunk, {}, 'sage');
     enqueueMotionChunk(bus, chunk, {}, 'echo');
     enqueueMotionChunk(bus, chunk);
@@ -105,7 +122,14 @@ describe('enqueueMotionChunk hooks', () => {
     const bus = createAvatarAnimationBus();
     const events: AvatarAnimationEvent[] = [];
     bus.subscribe((event) => events.push(event));
-    enqueueMotionChunk(bus, { streamId: 'abc', index: 0, start: 0, name: 'x', duration: 2, data: 'AAEC' });
+    enqueueMotionChunk(bus, {
+      streamId: 'abc',
+      index: 0,
+      start: 0,
+      name: 'x',
+      duration: 2,
+      data: 'AAEC',
+    });
     const request = (events[0] as Extract<AvatarAnimationEvent, { type: 'enqueue' }>).request;
     expect(request).not.toHaveProperty('onEnd');
     expect(request).not.toHaveProperty('continuation');

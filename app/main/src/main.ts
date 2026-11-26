@@ -4,10 +4,33 @@ import type { ComfyGraph } from './avatar/generation/comfyui-client.js';
 import { RoomService } from './rooms/room-service.js';
 import { pickIdleActions } from './rooms/idle-thoughts.js';
 import { MAX_IDLE_HABITS_LENGTH, normalizeIdleHabits } from './shared/rooms/idle-habits.js';
-import { Menu, Notification, app, BrowserWindow, Tray, dialog, globalShortcut, ipcMain, nativeImage, powerMonitor, protocol, session, shell } from 'electron';
+import {
+  Menu,
+  Notification,
+  app,
+  BrowserWindow,
+  Tray,
+  dialog,
+  globalShortcut,
+  ipcMain,
+  nativeImage,
+  powerMonitor,
+  protocol,
+  session,
+  shell,
+} from 'electron';
 import type { WebContents } from 'electron';
-import { ASSET_SCHEME, ASSET_SCHEME_PRIVILEGES, registerAssetProtocol } from './rooms/asset-protocol.js';
-import { ASSET_FOLDER, createRoomGenerationService, objectMakingAvailable, pickSingleImageGeometry } from './rooms/room-generation-setup.js';
+import {
+  ASSET_SCHEME,
+  ASSET_SCHEME_PRIVILEGES,
+  registerAssetProtocol,
+} from './rooms/asset-protocol.js';
+import {
+  ASSET_FOLDER,
+  createRoomGenerationService,
+  objectMakingAvailable,
+  pickSingleImageGeometry,
+} from './rooms/room-generation-setup.js';
 import type { RoomGenerationService } from './rooms/room-generation.js';
 import { SwitchboardClient, makeEventId } from './switchboard/client.js';
 import { LocalOnlyBus, type SwitchboardBus } from './switchboard/bus.js';
@@ -29,7 +52,12 @@ import { DeviceRuntime } from './satellite/device-runtime.js';
 import { FullscreenWatcher } from './satellite/fullscreen-watch.js';
 import { stateIcon, toBgra } from './satellite/tray-state.js';
 import { KeychainTokenStore } from './satellite/token-store.js';
-import { SATELLITE_FILE, SatelliteSettingsStore, detectSatelliteRole, userDataOverride } from './satellite/settings.js';
+import {
+  SATELLITE_FILE,
+  SatelliteSettingsStore,
+  detectSatelliteRole,
+  userDataOverride,
+} from './satellite/settings.js';
 import { RoomHub, fileMarker } from './room-hub/room-hub.js';
 import { webRootFor } from './runtime-paths.js';
 import { RoomDeviceRegistry } from './room-hub/room-devices.js';
@@ -47,7 +75,11 @@ import { PlaceDevices } from './room-hub/place-devices.js';
 import { createIntentRouter } from './floor/intent-router.js';
 import { createModelBid } from './floor/bid.js';
 import { createSystemOne } from './decide/system-one.js';
-import { createSystemOneAddressee, createSystemOneBid, createSystemOneIntent } from './floor/system-one-floor.js';
+import {
+  createSystemOneAddressee,
+  createSystemOneBid,
+  createSystemOneIntent,
+} from './floor/system-one-floor.js';
 import { avatarIdForName } from './avatars/avatar-id.js';
 import { SwitchboardMirror } from './switchboard/mirror.js';
 import { AvatarRegistry, DEFAULT_AVATAR_ID } from './avatars/avatar-registry.js';
@@ -65,7 +97,11 @@ import { createHash } from 'node:crypto';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { ConfigManager, ConfigValidationError } from './config/config-manager.js';
-import type { ConfigSecretKey, RendererConfig, WakeWordConfig } from './shared/config/config-manager-types.js';
+import type {
+  ConfigSecretKey,
+  RendererConfig,
+  WakeWordConfig,
+} from './shared/config/config-manager-types.js';
 import { KeytarSecretStore } from './config/keytar-secret-store.js';
 import { InMemorySecretStore } from './config/secret-store.js';
 import { FilePreferencesStore } from './config/preferences-store.js';
@@ -88,7 +124,10 @@ import type {
 import { MemoryStore } from './memory/index.js';
 import { PrometheusCollector } from './metrics/prometheus-collector.js';
 import type { LatencyObservation } from './metrics/types.js';
-import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from './shared/realtime/types.js';
+import type {
+  RealtimeEphemeralTokenRequest,
+  RealtimeEphemeralTokenResponse,
+} from './shared/realtime/types.js';
 import { AutoLaunchManager } from './lifecycle/auto-launch.js';
 import { createDevTray } from './lifecycle/dev-tray.js';
 import { AvatarModelService } from './avatar/avatar-model-service.js';
@@ -101,9 +140,21 @@ import { AvatarDescriptionService } from './avatar/avatar-description-service.js
 import { AvatarGenerationService } from './avatar/generation/avatar-generation-service.js';
 import { ComfyUIClient } from './avatar/generation/comfyui-client.js';
 import { BlenderCharacterRunner } from './avatar/generation/character/rig-runner.js';
-import { AvatarImageModelService, createControllerModelScanner, createImageModelScanner, createRemoteComfyModelScanner, type PoseControlInstaller } from './avatar/generation/image-model-service.js';
+import {
+  AvatarImageModelService,
+  createControllerModelScanner,
+  createImageModelScanner,
+  createRemoteComfyModelScanner,
+  type PoseControlInstaller,
+} from './avatar/generation/image-model-service.js';
 import { POSE_CONTROLNETS, poseControlNetPlan } from './avatar/generation/pose-control.js';
-import { baseModelForFamily, lookupCivitai, parseCivitaiRef, planCivitaiDownload, suggestBaseModels } from './avatar/generation/civitai.js';
+import {
+  baseModelForFamily,
+  lookupCivitai,
+  parseCivitaiRef,
+  planCivitaiDownload,
+  suggestBaseModels,
+} from './avatar/generation/civitai.js';
 import type { BaseModelSuggestions } from './shared/avatar/civitai-types.js';
 import { resolveComfyInstallation } from './avatar/generation/comfyui-runtime.js';
 import { ModelDownloadService } from './avatar/generation/model-downloads.js';
@@ -128,8 +179,16 @@ import {
   type MemoryEngineRuntime,
 } from './memory-engine/index.js';
 import { buildVoiceEngines, DEFAULT_OPENAI_MODELS } from './local-voice/voice-engines.js';
-import { describeProviders, type ProviderSettingsPatch } from './shared/config/provider-settings.js';
-import type { LocalVoiceEvent, LocalVoiceRespondRequest, LocalVoiceRespondResult, SpeakingVoiceOptions } from './shared/local-voice/types.js';
+import {
+  describeProviders,
+  type ProviderSettingsPatch,
+} from './shared/config/provider-settings.js';
+import type {
+  LocalVoiceEvent,
+  LocalVoiceRespondRequest,
+  LocalVoiceRespondResult,
+  SpeakingVoiceOptions,
+} from './shared/local-voice/types.js';
 import { SpeechServiceClient } from './local-voice/speech-service-client.js';
 import type {
   AvatarModelSummary,
@@ -208,7 +267,11 @@ import { createReadingNotesTool, readingOutboxItem } from './pursuits/reading-me
 import { StationLookup } from './stations/station-lookup.js';
 import { createVoiceStations, type VoiceStations } from './stations/voice-stations.js';
 import type { Station, StationSource } from './shared/stations/types.js';
-import { createRoutedSearchProvider, createWebSearchTool, WEB_SEARCH_TOOL_ID } from './tools/web-search.js';
+import {
+  createRoutedSearchProvider,
+  createWebSearchTool,
+  WEB_SEARCH_TOOL_ID,
+} from './tools/web-search.js';
 import { registerMCPHandlers } from './mcp/ipc-handlers.js';
 import { GpuMemoryReader, localPort, type GpuMemoryServer } from './diagnostics/gpu-memory.js';
 import { DEFAULT_MEMORY_SERVICE_URL } from './memory-engine/settings.js';
@@ -244,8 +307,15 @@ const userDataFolder = userDataOverride(process.env);
 if (userDataFolder) app.setPath('userData', userDataFolder);
 /** A satellite draws one room of bija's world and runs nothing else (docs/features/satellite.md). */
 const SATELLITE_FLAG = '--satellite';
-const satelliteMode = detectSatelliteRole(process.argv.includes(SATELLITE_FLAG) ? { ...process.env, AIEMBODIED_ROLE: 'satellite' } : process.env, app.getPath('userData'));
-const satelliteSettings = satelliteMode ? new SatelliteSettingsStore(path.join(app.getPath('userData'), SATELLITE_FILE)) : null;
+const satelliteMode = detectSatelliteRole(
+  process.argv.includes(SATELLITE_FLAG)
+    ? { ...process.env, AIEMBODIED_ROLE: 'satellite' }
+    : process.env,
+  app.getPath('userData'),
+);
+const satelliteSettings = satelliteMode
+  ? new SatelliteSettingsStore(path.join(app.getPath('userData'), SATELLITE_FILE))
+  : null;
 let satellite: Satellite | null = null;
 let satelliteDevices: DeviceRuntime | null = null;
 /** The satellite's own wake word worker, run only while its privacy gate allows (satellite/wake-runner.ts). */
@@ -265,7 +335,8 @@ try {
       payload: { level?: string; message?: string; meta?: Record<string, unknown>; ts?: number },
     ) => {
       const level = (typeof payload?.level === 'string' ? payload.level : 'info').toLowerCase();
-      const message = typeof payload?.message === 'string' ? payload.message : 'preload-diagnostics';
+      const message =
+        typeof payload?.message === 'string' ? payload.message : 'preload-diagnostics';
       const meta: Record<string, unknown> = {
         from: 'preload',
         ...(payload?.meta ?? {}),
@@ -297,7 +368,10 @@ const pushToTalk = new PushToTalkShortcut({
   globalShortcut,
   onPress: () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('talk:trigger', { source: 'shortcut', timestamp: Date.now() } satisfies TalkTriggerEvent);
+      mainWindow.webContents.send('talk:trigger', {
+        source: 'shortcut',
+        timestamp: Date.now(),
+      } satisfies TalkTriggerEvent);
     }
   },
   onStatus: (status) => {
@@ -305,7 +379,10 @@ const pushToTalk = new PushToTalkShortcut({
       mainWindow.webContents.send('talk:shortcut-status', status);
     }
   },
-  logger: { info: (message: string, meta?: unknown) => logger.info(message, meta), warn: (message: string, meta?: unknown) => logger.warn(message, meta) },
+  logger: {
+    info: (message: string, meta?: unknown) => logger.info(message, meta),
+    warn: (message: string, meta?: unknown) => logger.warn(message, meta),
+  },
 });
 let memoryStore: MemoryStore | null = null;
 let conversationManager: ConversationManager | null = null;
@@ -337,7 +414,9 @@ let furnitureService: FurnitureService | null = null;
 let roomService: RoomService | null = null;
 let roomGeneration: RoomGenerationService | null = null;
 // The scheme that serves downloaded room models must be declared before the app is ready.
-protocol.registerSchemesAsPrivileged([{ scheme: ASSET_SCHEME, privileges: ASSET_SCHEME_PRIVILEGES }]);
+protocol.registerSchemesAsPrivileged([
+  { scheme: ASSET_SCHEME, privileges: ASSET_SCHEME_PRIVILEGES },
+]);
 let vrmaGenerationService: VrmaGenerationService | null = null;
 let poseGenerationService: PoseGenerationService | null = null;
 let poseEvaluationService: PoseEvaluationService | null = null;
@@ -345,7 +424,9 @@ let avatarDescriptionService: AvatarDescriptionService | null = null;
 let avatarImageModels: AvatarImageModelService | undefined;
 let avatarComfyPool: ComfyUIPool | undefined;
 /** The ComfyUI add-on folder: its downloader runs for this PC, and other machines install the folder. */
-const comfyAddonDirectory = path.join(__dirname, '../assets/avatar-generation/comfyui-aiembodied').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
+const comfyAddonDirectory = path
+  .join(__dirname, '../assets/avatar-generation/comfyui-aiembodied')
+  .replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
 const modelDownloads = new ModelDownloadService({
   script: path.join(comfyAddonDirectory, 'aiembodied_downloader.py'),
   resolveInstallation: () => resolveComfyInstallation(),
@@ -354,7 +435,9 @@ const modelDownloads = new ModelDownloadService({
     if (download.state !== 'done' || (plan.kind !== 'sd1' && plan.kind !== 'sdxl')) return;
     if (avatarComfyPool?.primary('image')?.id !== server.id) return;
     void avatarImageModels?.ensurePoseControl(plan.kind).catch((error: unknown) => {
-      logger.warn('Could not set up pose control for the new model.', { message: error instanceof Error ? error.message : String(error) });
+      logger.warn('Could not set up pose control for the new model.', {
+        message: error instanceof Error ? error.message : String(error),
+      });
     });
   },
   logger,
@@ -363,10 +446,13 @@ const modelDownloads = new ModelDownloadService({
 const poseControlInstaller: PoseControlInstaller = {
   status: (family) => {
     const server = avatarComfyPool?.primary('image');
-    const download = server ? modelDownloads.find(server.id, POSE_CONTROLNETS[family].filename) : undefined;
+    const download = server
+      ? modelDownloads.find(server.id, POSE_CONTROLNETS[family].filename)
+      : undefined;
     if (!download) return null;
     if (download.state === 'done') return { state: 'done' };
-    if (download.state === 'failed' || download.state === 'cancelled') return { state: 'failed', error: download.error };
+    if (download.state === 'failed' || download.state === 'cancelled')
+      return { state: 'failed', error: download.error };
     return { state: 'downloading' };
   },
   install: async (family) => {
@@ -416,7 +502,13 @@ let activityMonitor: ActivityMonitor | null = null;
 /** What the Places page and the Status panel show: each desktop room with what its PC says about its devices. */
 function roomHubStatus(hub: RoomHub) {
   const status = hub.status();
-  return { ...status, devices: status.devices.map((device) => ({ ...device, deviceState: placePresence.deviceState(device.placeId) })) };
+  return {
+    ...status,
+    devices: status.devices.map((device) => ({
+      ...device,
+      deviceState: placePresence.deviceState(device.placeId),
+    })),
+  };
 }
 
 /** The place a call came from: a desktop room's calls carry its place id on the fake event; bija's own window is the local place. */
@@ -462,8 +554,12 @@ let configManagerForMemory: ConfigManager | null = null;
  * The conversation model, as recorded on what the agent writes to memory: the model picked in
  * Models and servers, OpenAI's default, or for a local server with none picked, its name.
  */
-function conversationModelName(manager: ConfigManager | null = configManagerForMemory): string | null {
-  const target = manager ? routeTargetsWithOverride(manager.getConfig().models, 'llm', codingService?.chatOverride())[0] : undefined;
+function conversationModelName(
+  manager: ConfigManager | null = configManagerForMemory,
+): string | null {
+  const target = manager
+    ? routeTargetsWithOverride(manager.getConfig().models, 'llm', codingService?.chatOverride())[0]
+    : undefined;
   if (!target) return null;
   if (target.model?.trim()) return target.model.trim();
   return target.server.type === 'openai' ? DEFAULT_OPENAI_MODELS.llm : target.server.name || null;
@@ -474,9 +570,13 @@ function syncMemoryStorage(manager: ConfigManager | null = configManagerForMemor
   if (!manager || !memoryEngine) return;
   configManagerForMemory = manager;
   memoryStorageSync ??= new MemoryStorageSync({ client: memoryEngine.client, logger });
-  void memoryStorageSync.apply(memoryStorageTargets(manager.getConfig().models, (id) => manager.getServerKey(id)));
+  void memoryStorageSync.apply(
+    memoryStorageTargets(manager.getConfig().models, (id) => manager.getServerKey(id)),
+  );
   homeServerSync ??= new HomeServerSync({ client: memoryEngine.client, logger });
-  void homeServerSync.apply(homeServersFor(manager.getConfig().models, (id) => manager.getServerKey(id)));
+  void homeServerSync.apply(
+    homeServersFor(manager.getConfig().models, (id) => manager.getServerKey(id)),
+  );
 }
 let currentMotionServiceUrl: string | null = null;
 
@@ -532,7 +632,9 @@ function emitCameraDetection(event: CameraDetectionEventPayload): boolean {
   }
 
   const timestamp =
-    typeof event.timestamp === 'number' && Number.isFinite(event.timestamp) ? event.timestamp : Date.now();
+    typeof event.timestamp === 'number' && Number.isFinite(event.timestamp)
+      ? event.timestamp
+      : Date.now();
 
   if (!mainWindow || mainWindow.isDestroyed()) {
     logger.warn('Camera detection event dropped because main window is unavailable.', { cue });
@@ -553,15 +655,29 @@ function emitCameraDetection(event: CameraDetectionEventPayload): boolean {
 }
 
 const createWindow = () => {
-  const window = createAppWindow({ logger, diagnostics, baseDir: __dirname, isProduction, satellite: satelliteSettings ?? undefined });
+  const window = createAppWindow({
+    logger,
+    diagnostics,
+    baseDir: __dirname,
+    isProduction,
+    satellite: satelliteSettings ?? undefined,
+  });
 
   window.on('closed', () => {
-    void wakeWordListening.setEnabled(false).catch((error: unknown) => logger.error('Failed to stop listening after window close', { message: String(error) }));
+    void wakeWordListening
+      .setEnabled(false)
+      .catch((error: unknown) =>
+        logger.error('Failed to stop listening after window close', { message: String(error) }),
+      );
     mainWindow = null;
   });
 
   const stopWindowListening = () => {
-    void wakeWordListening.setEnabled(false).catch((error: unknown) => logger.error('Failed to stop listening after renderer reset', { message: String(error) }));
+    void wakeWordListening
+      .setEnabled(false)
+      .catch((error: unknown) =>
+        logger.error('Failed to stop listening after renderer reset', { message: String(error) }),
+      );
   };
   window.webContents.on('did-start-loading', stopWindowListening);
   window.webContents.on('render-process-gone', stopWindowListening);
@@ -580,7 +696,10 @@ const crashGuard = new CrashGuard({
  * avatar description), from the server Models and servers picks for it. Null when that server
  * is OpenAI and no key is set, or nothing is picked.
  */
-function helperTarget(manager: ConfigManager, use: 'clips' | 'posegen' | 'posecheck' | 'describe'): { client: OpenAI; model?: string; signature: string } | null {
+function helperTarget(
+  manager: ConfigManager,
+  use: 'clips' | 'posegen' | 'posecheck' | 'describe',
+): { client: OpenAI; model?: string; signature: string } | null {
   const target = routeTargets(manager.getConfig().models, use)[0];
   if (!target) return null;
   const key = manager.getServerKey(target.server.id)?.trim() ?? '';
@@ -590,7 +709,11 @@ function helperTarget(manager: ConfigManager, use: 'clips' | 'posegen' | 'posech
   const client =
     target.server.type === 'openai'
       ? getOpenAIClient(key)
-      : (createChatCompletionsResponsesClient({ baseUrl: target.server.url, apiKey: key || undefined, model: target.model }) as unknown as OpenAI);
+      : (createChatCompletionsResponsesClient({
+          baseUrl: target.server.url,
+          apiKey: key || undefined,
+          model: target.model,
+        }) as unknown as OpenAI);
   return { client, model: target.model, signature };
 }
 
@@ -606,7 +729,10 @@ function refreshHelper<T>(
 ): T | null {
   const target = helperTarget(manager, use);
   if (!target) {
-    if (current) logger.warn(`${label} disabled: choose a server for it in Models and servers, or add the OpenAI API key.`);
+    if (current)
+      logger.warn(
+        `${label} disabled: choose a server for it in Models and servers, or add the OpenAI API key.`,
+      );
     helperSignatures.delete(use);
     return null;
   }
@@ -617,7 +743,9 @@ function refreshHelper<T>(
     logger.info(`${label} ready.`, { model: target.model });
     return service;
   } catch (error) {
-    logger.warn(`Failed to initialize ${label.toLowerCase()}`, { message: error instanceof Error ? error.message : String(error) });
+    logger.warn(`Failed to initialize ${label.toLowerCase()}`, {
+      message: error instanceof Error ? error.message : String(error),
+    });
     helperSignatures.delete(use);
     return null;
   }
@@ -685,7 +813,9 @@ function trainedWakeWordDirectory(): string {
 
 /** services/wakeword-trainer in the repo checkout the app runs from; absent in packaged builds. */
 function resolveWakeWordTrainerDirectory(): string | null {
-  const candidate = process.env.WAKE_WORD_TRAINER_DIR?.trim() || path.resolve(__dirname, '../../../services/wakeword-trainer');
+  const candidate =
+    process.env.WAKE_WORD_TRAINER_DIR?.trim() ||
+    path.resolve(__dirname, '../../../services/wakeword-trainer');
   return existsSync(path.join(candidate, 'train_wake_word.py')) ? candidate : null;
 }
 
@@ -717,9 +847,13 @@ function doorbellFor(placeId: string): ReturnType<typeof createDoorbell> | null 
 function syncWakeGate(): void {
   const places = placeManager;
   if (!places) return;
-  void wakeWordListening.setGate(wakeShouldListen(places, places.localPlaceId())).catch((error: unknown) => {
-    logger.warn('Could not change the wake word gate', { message: error instanceof Error ? error.message : String(error) });
-  });
+  void wakeWordListening
+    .setGate(wakeShouldListen(places, places.localPlaceId()))
+    .catch((error: unknown) => {
+      logger.warn('Could not change the wake word gate', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
 }
 
 /**
@@ -728,7 +862,10 @@ function syncWakeGate(): void {
  */
 function launchWakeWordService(
   wakeWord: WakeWordConfig,
-  handlers: { onWake: (event: WakeWordDetectionEvent) => void; onPeak?: (event: WakeWordDetectionEvent) => void },
+  handlers: {
+    onWake: (event: WakeWordDetectionEvent) => void;
+    onPeak?: (event: WakeWordDetectionEvent) => void;
+  },
 ): WakeWordService {
   const service = new WakeWordService({
     logger,
@@ -834,19 +971,31 @@ function characterPromptKey(avatarId?: string): string | null {
   return avatarSettingsKeys?.prompt(avatarId) ?? null;
 }
 
-function characterVoice(engine: SpeakingEngineId | 'openai' | null, avatarId?: string): string | null {
+function characterVoice(
+  engine: SpeakingEngineId | 'openai' | null,
+  avatarId?: string,
+): string | null {
   if (!engine || !memoryStore) return null;
   const key = characterVoiceKey(engine, avatarId);
-  return key ? memoryStore.getValue(key) ?? null : null;
+  return key ? (memoryStore.getValue(key) ?? null) : null;
 }
 
 /** The voices the character can pick for whatever speaks now, and the one it has (the active character's without an avatar id). */
-async function speakingVoiceOptions(manager: ConfigManager, avatarId?: string): Promise<SpeakingVoiceOptions> {
+async function speakingVoiceOptions(
+  manager: ConfigManager,
+  avatarId?: string,
+): Promise<SpeakingVoiceOptions> {
   const routing = manager.getConfig().models;
   const target = routeTargets(routing, 'tts')[0];
   const engine = speakingVoiceKey(routing);
   if (!target || !engine) {
-    return { engine: null, label: 'Nothing speaks', voices: [], defaultVoice: null, selected: null };
+    return {
+      engine: null,
+      label: 'Nothing speaks',
+      voices: [],
+      defaultVoice: null,
+      selected: null,
+    };
   }
   const route = routing.routes.tts;
   if (engine === 'openai') {
@@ -866,7 +1015,9 @@ async function speakingVoiceOptions(manager: ConfigManager, avatarId?: string): 
   if (engine === 'piper') {
     voices = (found?.models ?? []).filter((model) => model.installed).map((model) => model.id);
   } else {
-    const model = found?.models.find((entry) => (engine === 'kitten' ? entry.id === parsed.model : true));
+    const model = found?.models.find((entry) =>
+      engine === 'kitten' ? entry.id === parsed.model : true,
+    );
     voices = model?.voices ?? [];
     fallback = model?.defaultVoice ?? null;
   }
@@ -943,8 +1094,19 @@ function startAvatarPlumbing(profile: AvatarProfile, manager: ConfigManager): vo
     deliberate: (event) => {
       const avatarName = avatarRegistry?.get(avatarId)?.name ?? profile.name;
       return deliberateFast(event, presence, {
-        makeClient: () => createSystemOne({ routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger }),
-        fallback: (e) => deliberate(e, presence, { avatarName, routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger }),
+        makeClient: () =>
+          createSystemOne({
+            routing: manager.getConfig().models,
+            keyFor: (id) => manager.getServerKey(id),
+            logger,
+          }),
+        fallback: (e) =>
+          deliberate(e, presence, {
+            avatarName,
+            routing: manager.getConfig().models,
+            keyFor: (id) => manager.getServerKey(id),
+            logger,
+          }),
         avatarName,
         logger,
       });
@@ -956,13 +1118,18 @@ function startAvatarPlumbing(profile: AvatarProfile, manager: ConfigManager): vo
     asleep: () => agentSleep.isAsleep(avatarId),
     remember: (_event, text, source) => {
       conversationManager?.appendToRecentSession([
-        { role: 'system', content: `[Update from ${source}, not from Kevin, saved quietly] ${text}`, ts: Date.now() },
+        {
+          role: 'system',
+          content: `[Update from ${source}, not from Kevin, saved quietly] ${text}`,
+          ts: Date.now(),
+        },
       ]);
     },
     doNotDisturb: () => presence.doNotDisturb,
     onDecision: (decision) => decisionLog.record(decision),
     // Urgent news walks to where someone is using a PC, when nobody is at this avatar's place (places/urgent-walk.ts).
-    beforeUrgent: () => (placeManager ? walkToKevin(placeManager, avatarId, undefined, logger) : undefined),
+    beforeUrgent: () =>
+      placeManager ? walkToKevin(placeManager, avatarId, undefined, logger) : undefined,
     logger,
   });
   avatarPlumbing.set(avatarId, { mirror, inbox });
@@ -994,7 +1161,10 @@ function slugifyAvatarName(name: string): string {
 }
 
 /** Validate the renderer's add/update fields (name <= 80, prompt <= 4000). */
-function readAvatarFields(input: unknown, requireName: boolean): { name?: string; vrmModelId?: string | null; prompt?: string } {
+function readAvatarFields(
+  input: unknown,
+  requireName: boolean,
+): { name?: string; vrmModelId?: string | null; prompt?: string } {
   if (!input || typeof input !== 'object') throw new Error('Avatar details are required.');
   const { name, vrmModelId, prompt } = input as Record<string, unknown>;
   const out: { name?: string; vrmModelId?: string | null; prompt?: string } = {};
@@ -1024,7 +1194,9 @@ function mirrorFor(avatarId: string = DEFAULT_AVATAR_ID): SwitchboardMirror | un
 
 /** The avatar a switchboard address such as `avatar:echo` names (Echo for anything else). */
 function avatarIdOfAddress(address: string | undefined): string {
-  return address?.startsWith('avatar:') ? address.slice('avatar:'.length) || DEFAULT_AVATAR_ID : DEFAULT_AVATAR_ID;
+  return address?.startsWith('avatar:')
+    ? address.slice('avatar:'.length) || DEFAULT_AVATAR_ID
+    : DEFAULT_AVATAR_ID;
 }
 
 /**
@@ -1056,11 +1228,24 @@ function avatarPersona(avatarId: string): { persona: string | undefined; ownMode
  * Adds the places paragraph (where the avatar is, who is where, the {room:} tag) to an avatar's system prompt.
  * Every turn gets it, chatter included; a preview turn does not.
  */
-function withPlacesNote(instructions: string | undefined, preview = false, placeId?: string): string | undefined {
+function withPlacesNote(
+  instructions: string | undefined,
+  preview = false,
+  placeId?: string,
+): string | undefined {
   if (preview) return instructions;
   // "You are in ..." is told from the place the avatar is in.
-  const note = placeManager ? placesNote(scopedPlaces(placeManager, placeId ?? placeManager.localPlaceId()), (id) => avatarRegistry?.get(id)?.name ?? id) : null;
-  const withPlaces = note ? (instructions?.trim() ? `${instructions.trim()}\n\n${note}` : note) : instructions;
+  const note = placeManager
+    ? placesNote(
+        scopedPlaces(placeManager, placeId ?? placeManager.localPlaceId()),
+        (id) => avatarRegistry?.get(id)?.name ?? id,
+      )
+    : null;
+  const withPlaces = note
+    ? instructions?.trim()
+      ? `${instructions.trim()}\n\n${note}`
+      : note
+    : instructions;
   // "Your time and plans": the reminder, watch and flow tools (agent-time/), when they are on.
   return agentTime.enabled ? withTimeNote(withPlaces) : withPlaces;
 }
@@ -1071,7 +1256,11 @@ function withPlacesNote(instructions: string | undefined, preview = false, place
  * model of its own, else its profile's prompt; avatars wearing Echo's body never borrow her prompt.
  * The movement tag instructions from the renderer follow the persona.
  */
-function avatarInstructions(avatarId: string, sessionInstructions?: string, placeId: string = placeManager?.localPlaceId() ?? HOME_PLACE_ID): string | undefined {
+function avatarInstructions(
+  avatarId: string,
+  sessionInstructions?: string,
+  placeId: string = placeManager?.localPlaceId() ?? HOME_PLACE_ID,
+): string | undefined {
   if (avatarId === DEFAULT_AVATAR_ID) {
     if (sessionInstructions?.trim()) return sessionInstructions;
     const lastHere = lastEchoInstructions.get(placeId);
@@ -1098,9 +1287,15 @@ async function runVoiceTurn(
   placeId: string = placeManager?.localPlaceId() ?? HOME_PLACE_ID,
 ): Promise<LocalVoiceRespondResult> {
   const avatarId = voiceService.avatarId;
-  const baseInstructions = avatarId === DEFAULT_AVATAR_ID ? request.instructions : (avatarInstructions(avatarId, request.instructions, placeId) ?? request.instructions);
+  const baseInstructions =
+    avatarId === DEFAULT_AVATAR_ID
+      ? request.instructions
+      : (avatarInstructions(avatarId, request.instructions, placeId) ?? request.instructions);
   const instructions = withPlacesNote(baseInstructions, request.preview === true, placeId);
-  const payload = instructions === request.instructions ? request : { ...request, ...(instructions !== undefined ? { instructions } : {}) };
+  const payload =
+    instructions === request.instructions
+      ? request
+      : { ...request, ...(instructions !== undefined ? { instructions } : {}) };
   const mirror = mirrorFor(avatarId);
   // Kevin is talking with this avatar (not a preview, a system update or back-channel chatter): it stops reading,
   // keeping its notes, so its live turn does not wait behind a reading call.
@@ -1108,7 +1303,11 @@ async function runVoiceTurn(
     pursuitManager?.interrupt(avatarId, 'conversation');
     agentActHandler?.interruptThinking(avatarId);
   }
-  mirror?.turnStarted(payload.requestId, { text: payload.text, system: payload.system === true, preview: payload.preview === true });
+  mirror?.turnStarted(payload.requestId, {
+    text: payload.text,
+    system: payload.system === true,
+    preview: payload.preview === true,
+  });
   activeVoiceRequests.set(avatarId, payload.requestId);
   // bija's presence is about bija's room; a desktop room's own presence is kept apart.
   const here = placeId === (placeManager?.localPlaceId() ?? HOME_PLACE_ID);
@@ -1122,7 +1321,8 @@ async function runVoiceTurn(
         sender.send('local-voice:event', tagEvent(voiceEvent, avatarId));
       }
     });
-    if (!payload.preview) mirror?.turnFinished(payload.requestId, { text: result.text, cancelled: result.cancelled });
+    if (!payload.preview)
+      mirror?.turnFinished(payload.requestId, { text: result.text, cancelled: result.cancelled });
     if (!payload.preview && result.text) quietSaves.clear(avatarId);
     if (!payload.preview && result.text) {
       if (here) presence.update({ lastAssistantSpokeAt: Date.now() });
@@ -1130,15 +1330,23 @@ async function runVoiceTurn(
     }
     return tagResult(result, avatarId);
   } catch (error) {
-    if (!payload.preview) mirror?.turnFinished(payload.requestId, { text: '', error: error instanceof Error ? error.message : String(error) });
+    if (!payload.preview)
+      mirror?.turnFinished(payload.requestId, {
+        text: '',
+        error: error instanceof Error ? error.message : String(error),
+      });
     throw error;
   } finally {
-    if (activeVoiceRequests.get(avatarId) === payload.requestId) activeVoiceRequests.delete(avatarId);
+    if (activeVoiceRequests.get(avatarId) === payload.requestId)
+      activeVoiceRequests.delete(avatarId);
   }
 }
 
 /** The registry as one avatar uses it: the same tools, each call carrying the avatar's id. */
-function avatarTools(registry: ToolRegistry, avatarId: string): Pick<ToolRegistry, 'list' | 'execute'> {
+function avatarTools(
+  registry: ToolRegistry,
+  avatarId: string,
+): Pick<ToolRegistry, 'list' | 'execute'> {
   return {
     list: () => registry.list(),
     execute: (toolId, params) => registry.execute(toolId, params, { avatarId }),
@@ -1161,7 +1369,8 @@ function createVoiceService(avatarId: string): LocalVoiceService {
       noticeFor: (id, tool) => voiceStations?.noticeFor(id, tool) ?? null,
       begin: (id, tool) => voiceStations?.begin(id, tool) ?? null,
       offer: (list) => voiceStations?.offer?.(list) ?? list,
-      runLookup: (id, tool, params, context) => voiceStations?.runLookup?.(id, tool, params, context) ?? null,
+      runLookup: (id, tool, params, context) =>
+        voiceStations?.runLookup?.(id, tool, params, context) ?? null,
     },
     extraInstructions: () => codingBrief(manager),
     // The update is spoken where the avatar is.
@@ -1175,11 +1384,13 @@ function createVoiceService(avatarId: string): LocalVoiceService {
       memoryEngine?.recordToolCall(record);
       mirrorFor(avatarId)?.toolResult(record, activeVoiceRequests.get(avatarId));
     },
-    voiceFor: () => characterVoice(speakingVoiceKey(manager.getConfig().models), avatarId) ?? undefined,
+    voiceFor: () =>
+      characterVoice(speakingVoiceKey(manager.getConfig().models), avatarId) ?? undefined,
     // Through memoryEngine at call time: it is set up after this service.
     memory: {
       brief: () => memoryEngine?.voiceFor(avatarId).brief() ?? Promise.resolve(null),
-      recall: (text, recalled) => memoryEngine?.voiceFor(avatarId).recall(text, recalled) ?? Promise.resolve(null),
+      recall: (text, recalled) =>
+        memoryEngine?.voiceFor(avatarId).recall(text, recalled) ?? Promise.resolve(null),
       activity: (busy) => memoryEngine?.voiceFor(avatarId).activity?.(busy),
     },
   });
@@ -1189,8 +1400,12 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
   const config = manager.getConfig();
   const { providers, models } = config;
   // The coder model while a task has Echo's place, else Echo's model on the controller's lease URL.
-  const llmOverride = codingService?.chatOverride() ?? echoRouteOverride(models, aicontroller.echoUrl());
-  const engines = buildVoiceEngines(models, (id) => manager.getServerKey(id), { logger, llmOverride });
+  const llmOverride =
+    codingService?.chatOverride() ?? echoRouteOverride(models, aicontroller.echoUrl());
+  const engines = buildVoiceEngines(models, (id) => manager.getServerKey(id), {
+    logger,
+    llmOverride,
+  });
   voiceEngines = engines;
   voiceConfigManager = manager;
   if (voiceServices) {
@@ -1204,10 +1419,16 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
   // This PC's own motion service is leased from the model controller (when it has one) while motion is enabled.
   const motionLeased = motionServer?.id === BUILT_IN_SERVER_IDS.motion && motionServer.managed;
   aicontroller.setMotionWanted(motionLeased);
-  const motionUrl = (motionLeased ? aicontroller.motionUrl() : null) ?? motionServer?.url ?? providers.motion.localServiceUrl;
+  const motionUrl =
+    (motionLeased ? aicontroller.motionUrl() : null) ??
+    motionServer?.url ??
+    providers.motion.localServiceUrl;
   if (avatarAnimationService && currentMotionServiceUrl !== motionUrl) {
     localMotionService = new LocalMotionGenerationService({
-      client: new LocalMotionClient({ baseUrl: motionUrl, trace: (kind, build) => motionTrace.log('main', kind, build) }),
+      client: new LocalMotionClient({
+        baseUrl: motionUrl,
+        trace: (kind, build) => motionTrace.log('main', kind, build),
+      }),
       animationService: avatarAnimationService,
       logger,
     });
@@ -1220,7 +1441,11 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
   syncMemoryStorage(manager);
   void getCodingService(manager)
     .apply()
-    .catch((error: unknown) => logger.warn('Coding runner setup failed.', { message: error instanceof Error ? error.message : String(error) }));
+    .catch((error: unknown) =>
+      logger.warn('Coding runner setup failed.', {
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    );
 
   pushToTalk.apply(providers.talk?.shortcut ?? '');
 
@@ -1237,13 +1462,18 @@ async function applyProviderSettings(manager: ConfigManager): Promise<void> {
  * Built on first use: both need the config manager and the userData folder.
  */
 let localLlmTools: { library: LlmLibrary; control: LocalLlmControl } | null = null;
-function getLocalLlmTools(manager: ConfigManager): { library: LlmLibrary; control: LocalLlmControl } {
+function getLocalLlmTools(manager: ConfigManager): {
+  library: LlmLibrary;
+  control: LocalLlmControl;
+} {
   if (localLlmTools) return localLlmTools;
   // pnpm dev:run moves the profile folders; downloads go to the real one so they outlive .dev-home.
   const home = process.env.AIEMBODIED_HOST_USERPROFILE?.trim() || os.homedir();
   const library = new LlmLibrary({
     file: path.join(app.getPath('userData'), 'local-llm.json'),
-    modelsDirectory: process.env.LOCAL_LLM_MODELS_DIR?.trim() || path.join(home, '.cache', 'aiembodied', 'llm-models'),
+    modelsDirectory:
+      process.env.LOCAL_LLM_MODELS_DIR?.trim() ||
+      path.join(home, '.cache', 'aiembodied', 'llm-models'),
     onDownloaded: (model) => useLocalLlm(manager, model.id),
     logger,
   });
@@ -1275,12 +1505,16 @@ function getVisionTools(manager: ConfigManager): { model: VisionModel; server: V
   const logDirectory = path.join(app.getPath('userData'), 'logs');
   const repoRoot = path.resolve(__dirname, '../../..');
   const baseUrl = () => {
-    const server = manager.getConfig().models.servers.find((entry) => entry.id === BUILT_IN_SERVER_IDS.vision);
+    const server = manager
+      .getConfig()
+      .models.servers.find((entry) => entry.id === BUILT_IN_SERVER_IDS.vision);
     return server && isLocalUrl(server.url) ? serverUrl(server.type, server.url) : null;
   };
   const model = new VisionModel({
     file: path.join(app.getPath('userData'), 'local-vision.json'),
-    modelsDirectory: process.env.LOCAL_LLM_MODELS_DIR?.trim() || path.join(home, '.cache', 'aiembodied', 'llm-models'),
+    modelsDirectory:
+      process.env.LOCAL_LLM_MODELS_DIR?.trim() ||
+      path.join(home, '.cache', 'aiembodied', 'llm-models'),
     token: () => manager.getServerKey(BUILT_IN_SERVER_IDS.huggingface),
     logger,
   });
@@ -1299,7 +1533,11 @@ function getVisionTools(manager: ConfigManager): { model: VisionModel; server: V
 }
 
 /** Run a helper job on the vision model when `use` is routed to it (starting it first), else as is. */
-function withVision<T>(manager: ConfigManager, use: 'describe' | 'posecheck', job: () => Promise<T>): Promise<T> {
+function withVision<T>(
+  manager: ConfigManager,
+  use: 'describe' | 'posecheck',
+  job: () => Promise<T>,
+): Promise<T> {
   return withVisionServer(manager.getConfig().models, use, getVisionTools(manager).server, job);
 }
 
@@ -1307,7 +1545,11 @@ function withVision<T>(manager: ConfigManager, use: 'describe' | 'posecheck', jo
  * Run a downloaded model (or, with null, the start script's default) for Thinking: point Thinking
  * at this PC's llama-server and restart it with that model. Returns what happened, in words.
  */
-async function useLocalLlm(manager: ConfigManager, id: string | null, settings?: Partial<LocalLlmSettings>): Promise<string> {
+async function useLocalLlm(
+  manager: ConfigManager,
+  id: string | null,
+  settings?: Partial<LocalLlmSettings>,
+): Promise<string> {
   const { library, control } = getLocalLlmTools(manager);
   const model = await library.select(id);
   if (settings) await library.setSettings(settings);
@@ -1320,7 +1562,10 @@ async function useLocalLlm(manager: ConfigManager, id: string | null, settings?:
   });
   await applyProviderSettings(manager);
   const result = await control.restart();
-  logger.info('Thinking model changed.', { model: model?.id ?? 'default', restarted: result.restarted });
+  logger.info('Thinking model changed.', {
+    model: model?.id ?? 'default',
+    restarted: result.restarted,
+  });
   return result.message;
 }
 
@@ -1361,10 +1606,15 @@ function getCodingService(manager: ConfigManager): CodingService {
     logger,
   });
   const service = codingService;
-  const workspaceName = (id: string | undefined) => manager.getCoding().workspaces.find((ws) => ws.id === id)?.name ?? id ?? 'a workspace';
+  const workspaceName = (id: string | undefined) =>
+    manager.getCoding().workspaces.find((ws) => ws.id === id)?.name ?? id ?? 'a workspace';
   codingNudger = new CodingNudger({
     notify: (text, options) => notifyAvatar(CODING_NUDGE_AVATAR_ID, text, options?.urgent === true),
-    getTask: (id) => service.runnerClient()?.getTask(id).catch(() => null) ?? Promise.resolve(null),
+    getTask: (id) =>
+      service
+        .runnerClient()
+        ?.getTask(id)
+        .catch(() => null) ?? Promise.resolve(null),
     workspaceName,
     logger,
   });
@@ -1372,10 +1622,15 @@ function getCodingService(manager: ConfigManager): CodingService {
   service.onRunnerEvent((event) => mirrorFor(CODING_NUDGE_AVATAR_ID)?.runnerEvent(event));
   // Finished tasks become memories. The memory engine is set up later, so it is read at call time.
   const memoryWriter = new CodingMemoryWriter({
-    getTask: (id) => service.runnerClient()?.getTask(id).catch(() => null) ?? Promise.resolve(null),
+    getTask: (id) =>
+      service
+        .runnerClient()
+        ?.getTask(id)
+        .catch(() => null) ?? Promise.resolve(null),
     workspaceName,
     post: (task) => memoryEngine?.outbox.enqueue({ kind: 'coding_task', task }),
-    agentName: () => (memoryStore ? avatarAgent(memoryStore, avatarRegistry, CODING_NUDGE_AVATAR_ID).name : null),
+    agentName: () =>
+      memoryStore ? avatarAgent(memoryStore, avatarRegistry, CODING_NUDGE_AVATAR_ID).name : null,
     logger,
   });
   service.onRunnerEvent((event) => void memoryWriter.handleEvent(event));
@@ -1405,20 +1660,29 @@ function applyCodingTools(manager: ConfigManager): void {
   })) {
     toolRegistry.register(tool);
   }
-  logger.info('Coding tools registered', { server: CODING_SERVER_ID, workspaces: workspaces.length });
+  logger.info('Coding tools registered', {
+    server: CODING_SERVER_ID,
+    workspaces: workspaces.length,
+  });
 }
 
 /** One line for Echo's prompt: where the coding agent can work. Empty when it can't be reached. */
 function codingBrief(manager: ConfigManager): string | null {
   const workspaces = manager.getCoding().workspaces;
   if (workspaces.length === 0 || !codingService?.status().runnerUp) return null;
-  const names = workspaces.map((ws) => (ws.kind === 'self' ? `${ws.name} (your own code)` : ws.name)).join(', ');
+  const names = workspaces
+    .map((ws) => (ws.kind === 'self' ? `${ws.name} (your own code)` : ws.name))
+    .join(', ');
   return `You can hand coding work to the coding agent in: ${names}. Use the coding tools.`;
 }
 
 async function codingView(manager: ConfigManager): Promise<CodingView> {
   const service = getCodingService(manager);
-  return { coding: manager.getCoding(), runnerId: service.runnerServer()?.id ?? null, status: service.status() };
+  return {
+    coding: manager.getCoding(),
+    runnerId: service.runnerServer()?.id ?? null,
+    status: service.status(),
+  };
 }
 
 /** The motion service Moving uses, or null when Moving runs on OpenAI keyframes. */
@@ -1460,21 +1724,32 @@ function registerIpcHandlers(
 ) {
   // Preload diagnostics bridge: allow preload/renderer to forward logs to main logger
   try {
-    ipcMain.on('diagnostics:preload-log', (_event, payload: { level?: string; message?: string; meta?: Record<string, unknown>; ts?: number }) => {
-      const level = (typeof payload?.level === 'string' ? payload.level : 'info').toLowerCase();
-      const message = typeof payload?.message === 'string' ? payload.message : 'preload-diagnostics';
-      const meta: Record<string, unknown> = { from: 'preload', ...(payload?.meta ?? {}), ...(typeof payload?.ts === 'number' ? { ts: payload.ts } : {}) };
+    ipcMain.on(
+      'diagnostics:preload-log',
+      (
+        _event,
+        payload: { level?: string; message?: string; meta?: Record<string, unknown>; ts?: number },
+      ) => {
+        const level = (typeof payload?.level === 'string' ? payload.level : 'info').toLowerCase();
+        const message =
+          typeof payload?.message === 'string' ? payload.message : 'preload-diagnostics';
+        const meta: Record<string, unknown> = {
+          from: 'preload',
+          ...(payload?.meta ?? {}),
+          ...(typeof payload?.ts === 'number' ? { ts: payload.ts } : {}),
+        };
 
-      if (level === 'debug') {
-        logger.debug(message, meta);
-      } else if (level === 'warn') {
-        logger.warn(message, meta);
-      } else if (level === 'error') {
-        logger.error(message, meta);
-      } else {
-        logger.info(message, meta);
-      }
-    });
+        if (level === 'debug') {
+          logger.debug(message, meta);
+        } else if (level === 'warn') {
+          logger.warn(message, meta);
+        } else if (level === 'error') {
+          logger.error(message, meta);
+        } else {
+          logger.info(message, meta);
+        }
+      },
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn('Failed to register preload diagnostics channel', { message });
@@ -1504,8 +1779,10 @@ function registerIpcHandlers(
     vad: {
       turnDetection: config.vadTurnDetection ?? 'none',
       threshold: typeof config.vadThreshold === 'number' ? config.vadThreshold : null,
-      silenceMs: typeof config.vadSilenceDurationMs === 'number' ? config.vadSilenceDurationMs : null,
-      minSpeechMs: typeof config.vadMinSpeechDurationMs === 'number' ? config.vadMinSpeechDurationMs : null,
+      silenceMs:
+        typeof config.vadSilenceDurationMs === 'number' ? config.vadSilenceDurationMs : null,
+      minSpeechMs:
+        typeof config.vadMinSpeechDurationMs === 'number' ? config.vadMinSpeechDurationMs : null,
     },
     featureFlagKeys: Object.keys(config.featureFlags ?? {}),
   });
@@ -1522,14 +1799,29 @@ function registerIpcHandlers(
       };
     }
 
-    if (channel === 'config:get-secret' || channel === 'config:test-secret' || channel === 'config:clear-secret') {
+    if (
+      channel === 'config:get-secret' ||
+      channel === 'config:test-secret' ||
+      channel === 'config:clear-secret'
+    ) {
       const [key] = args as [ConfigSecretKey | undefined];
       return { key };
     }
 
     if (channel === 'config:set-audio-devices') {
       const [preferences] = args as [
-        { audioInputDeviceId?: string | null; audioOutputDeviceId?: string | null; realtimeModel?: string | null; realtimeVoice?: string | null; sessionInstructions?: string | null; vadTurnDetection?: 'none' | 'server_vad' | null; vadThreshold?: number | null; vadSilenceDurationMs?: number | null; vadMinSpeechDurationMs?: number | null } | undefined,
+        | {
+            audioInputDeviceId?: string | null;
+            audioOutputDeviceId?: string | null;
+            realtimeModel?: string | null;
+            realtimeVoice?: string | null;
+            sessionInstructions?: string | null;
+            vadTurnDetection?: 'none' | 'server_vad' | null;
+            vadThreshold?: number | null;
+            vadSilenceDurationMs?: number | null;
+            vadMinSpeechDurationMs?: number | null;
+          }
+        | undefined,
       ];
       return {
         hasInput: Boolean(preferences?.audioInputDeviceId),
@@ -1594,14 +1886,19 @@ function registerIpcHandlers(
   ) => {
     logger.debug('Registering configuration IPC handler.', { channel });
 
-    const instrumentedHandler: Parameters<(typeof ipcMain)['handle']>[1] = async (event, ...args) => {
+    const instrumentedHandler: Parameters<(typeof ipcMain)['handle']>[1] = async (
+      event,
+      ...args
+    ) => {
       logger.debug('Configuration IPC handler invoked.', {
         channel,
         payload: sanitizePayload(channel, args),
       });
 
       try {
-        const result: unknown = await (handler as (event: unknown, ...args: unknown[]) => Promise<unknown>)(event, ...args);
+        const result: unknown = await (
+          handler as (event: unknown, ...args: unknown[]) => Promise<unknown>
+        )(event, ...args);
         logger.debug('Configuration IPC handler completed.', {
           channel,
           result: sanitizeResult(channel, result, args),
@@ -1634,17 +1931,22 @@ function registerIpcHandlers(
   };
 
   registerConfigHandler('config:get', () => manager.getRendererConfig());
-  registerConfigHandler('config:get-secret', (_event, key: ConfigSecretKey) => manager.getSecret(key));
-  registerConfigHandler('config:set-secret', async (_event, payload: { key: ConfigSecretKey; value: string }) => {
-    const nextConfig = await manager.setSecret(payload.key, payload.value);
+  registerConfigHandler('config:get-secret', (_event, key: ConfigSecretKey) =>
+    manager.getSecret(key),
+  );
+  registerConfigHandler(
+    'config:set-secret',
+    async (_event, payload: { key: ConfigSecretKey; value: string }) => {
+      const nextConfig = await manager.setSecret(payload.key, payload.value);
 
-    if (payload.key === 'realtimeApiKey') {
-      await applyProviderSettings(manager);
-      await refreshPoseGenerationService(manager);
-    }
+      if (payload.key === 'realtimeApiKey') {
+        await applyProviderSettings(manager);
+        await refreshPoseGenerationService(manager);
+      }
 
-    return nextConfig;
-  });
+      return nextConfig;
+    },
+  );
   registerConfigHandler('config:clear-secret', async (_event, key: ConfigSecretKey) => {
     const nextConfig = await manager.clearSecret(key);
     await applyProviderSettings(manager);
@@ -1680,8 +1982,16 @@ function registerIpcHandlers(
       add(server.id, GPU_SERVER_LABELS[server.id] ?? server.name, server.url);
     }
     // Started by pnpm dev:run beside the servers above, not listed in Models and servers.
-    add('local-asr', 'Speech-to-text (ASR)', process.env.STT_URL?.trim() || 'http://127.0.0.1:1235/v1');
-    add('local-memory-engine', 'Memory engine', process.env.MEMORY_SERVICE_URL?.trim() || DEFAULT_MEMORY_SERVICE_URL);
+    add(
+      'local-asr',
+      'Speech-to-text (ASR)',
+      process.env.STT_URL?.trim() || 'http://127.0.0.1:1235/v1',
+    );
+    add(
+      'local-memory-engine',
+      'Memory engine',
+      process.env.MEMORY_SERVICE_URL?.trim() || DEFAULT_MEMORY_SERVICE_URL,
+    );
     return gpuMemoryReader.read(servers);
   });
   // Coding page of the Models and servers pop-up, and the coding line in Status and diagnostics.
@@ -1693,13 +2003,23 @@ function registerIpcHandlers(
     return codingView(manager);
   });
   handleIpc('coding:pick-gguf', async () => {
-    const options = { title: 'Choose the Qwen3-Coder-Next file', properties: ['openFile' as const], filters: [{ name: 'GGUF model', extensions: ['gguf'] }] };
-    const result = mainWindow && !mainWindow.isDestroyed() ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+    const options = {
+      title: 'Choose the Qwen3-Coder-Next file',
+      properties: ['openFile' as const],
+      filters: [{ name: 'GGUF model', extensions: ['gguf'] }],
+    };
+    const result =
+      mainWindow && !mainWindow.isDestroyed()
+        ? await dialog.showOpenDialog(mainWindow, options)
+        : await dialog.showOpenDialog(options);
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
   handleIpc('coding:pick-folder', async () => {
     const options = { title: 'Choose a git repository', properties: ['openDirectory' as const] };
-    const result = mainWindow && !mainWindow.isDestroyed() ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+    const result =
+      mainWindow && !mainWindow.isDestroyed()
+        ? await dialog.showOpenDialog(mainWindow, options)
+        : await dialog.showOpenDialog(options);
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
   registerCodingTaskIpc({
@@ -1719,45 +2039,67 @@ function registerIpcHandlers(
   });
   // Models and servers pop-up. Keys go in, never out: the view only says whether one is set.
   handleIpc('models:get', () => manager.getModelRoutingView());
-  handleIpc('models:probe', async (_event, payload: { serverId?: unknown; draft?: { type?: unknown; url?: unknown; key?: unknown } }) => {
-    if (typeof payload?.serverId === 'string') {
-      const server = manager.getConfig().models.servers.find((entry) => entry.id === payload.serverId);
-      if (!server) throw new Error('That server no longer exists.');
-      if (server.type === 'memory') {
+  handleIpc(
+    'models:probe',
+    async (
+      _event,
+      payload: { serverId?: unknown; draft?: { type?: unknown; url?: unknown; key?: unknown } },
+    ) => {
+      if (typeof payload?.serverId === 'string') {
+        const server = manager
+          .getConfig()
+          .models.servers.find((entry) => entry.id === payload.serverId);
+        if (!server) throw new Error('That server no longer exists.');
+        if (server.type === 'memory') {
+          return probeMemoryDatabase(
+            {
+              url: databaseUrlWithPassword(server.url, manager.getServerKey(server.id)),
+              local: server.id === BUILT_IN_SERVER_IDS.memory,
+            },
+            memoryEngine?.client ?? null,
+          );
+        }
+        return probeModelServer(server, manager.getServerKey(server.id));
+      }
+      const draft = payload?.draft;
+      if (!draft || typeof draft.type !== 'string' || typeof draft.url !== 'string') {
+        throw new Error('Choose a server type and address first.');
+      }
+      let url: string;
+      try {
+        url = new URL(draft.url.trim()).toString().replace(/\/+$/, '');
+      } catch {
+        throw new Error('Enter the server address as a URL, such as http://192.168.1.20:8188.');
+      }
+      const type = draft.type as ServerType;
+      if (type === 'memory') {
+        const password =
+          typeof draft.key === 'string' && draft.key.trim() ? draft.key.trim() : undefined;
         return probeMemoryDatabase(
-          { url: databaseUrlWithPassword(server.url, manager.getServerKey(server.id)), local: server.id === BUILT_IN_SERVER_IDS.memory },
+          { url: databaseUrlWithPassword(url, password), local: false },
           memoryEngine?.client ?? null,
         );
       }
-      return probeModelServer(server, manager.getServerKey(server.id));
-    }
-    const draft = payload?.draft;
-    if (!draft || typeof draft.type !== 'string' || typeof draft.url !== 'string') {
-      throw new Error('Choose a server type and address first.');
-    }
-    let url: string;
-    try {
-      url = new URL(draft.url.trim()).toString().replace(/\/+$/, '');
-    } catch {
-      throw new Error('Enter the server address as a URL, such as http://192.168.1.20:8188.');
-    }
-    const type = draft.type as ServerType;
-    if (type === 'memory') {
-      const password = typeof draft.key === 'string' && draft.key.trim() ? draft.key.trim() : undefined;
-      return probeMemoryDatabase({ url: databaseUrlWithPassword(url, password), local: false }, memoryEngine?.client ?? null);
-    }
-    return probeModelServer({ type, url: serverUrl(type, url) }, typeof draft.key === 'string' ? draft.key : undefined);
-  });
+      return probeModelServer(
+        { type, url: serverUrl(type, url) },
+        typeof draft.key === 'string' ? draft.key : undefined,
+      );
+    },
+  );
   handleIpc(
     'models:save-server',
-    async (_event, payload: { id?: unknown; name?: unknown; type?: unknown; url?: unknown; key?: unknown }) => {
+    async (
+      _event,
+      payload: { id?: unknown; name?: unknown; type?: unknown; url?: unknown; key?: unknown },
+    ) => {
       const id = await manager.saveModelServer({
         id: typeof payload?.id === 'string' ? payload.id : undefined,
         name: typeof payload?.name === 'string' ? payload.name : undefined,
         type: typeof payload?.type === 'string' ? (payload.type as ServerType) : undefined,
         url: typeof payload?.url === 'string' ? payload.url : undefined,
       });
-      if (typeof payload?.key === 'string' && payload.key.trim()) await manager.setServerKey(id, payload.key);
+      if (typeof payload?.key === 'string' && payload.key.trim())
+        await manager.setServerKey(id, payload.key);
       await applyProviderSettings(manager);
       return { id, models: manager.getModelRoutingView() };
     },
@@ -1770,7 +2112,8 @@ function registerIpcHandlers(
   });
   handleIpc('models:set-route', async (_event, payload: { use?: unknown; route?: unknown }) => {
     const use = payload?.use as UseId;
-    if (typeof use !== 'string' || !(use in USE_SERVER_TYPES)) throw new Error('Unknown model use.');
+    if (typeof use !== 'string' || !(use in USE_SERVER_TYPES))
+      throw new Error('Unknown model use.');
     await manager.setModelRoute(use, (payload?.route ?? {}) as ModelRoute);
     await applyProviderSettings(manager);
     return manager.getModelRoutingView();
@@ -1780,64 +2123,103 @@ function registerIpcHandlers(
     if (!server || server.type !== 'comfy') throw new Error('Choose a ComfyUI server.');
     return server;
   };
-  handleIpc('models:civitai-lookup', async (_event, payload: { ref?: unknown; versionId?: unknown }) => {
-    const ref = parseCivitaiRef(typeof payload?.ref === 'string' ? payload.ref : '');
-    if (!ref) throw new Error('Paste a Civitai link (civitai.com, .green or .red: a model page or download link) or an AIR (urn:air:…:civitai:123@456).');
-    const model = await lookupCivitai(ref, manager.getServerKey(BUILT_IN_SERVER_IDS.civitai));
-    const versionId = typeof payload?.versionId === 'number' ? payload.versionId : undefined;
-    return {
-      versions: model.versions.map((version) => ({ id: version.id, name: version.name, baseModel: version.baseModel })),
-      plan: planCivitaiDownload(model, versionId, ref.fileId),
-    };
-  });
+  handleIpc(
+    'models:civitai-lookup',
+    async (_event, payload: { ref?: unknown; versionId?: unknown }) => {
+      const ref = parseCivitaiRef(typeof payload?.ref === 'string' ? payload.ref : '');
+      if (!ref)
+        throw new Error(
+          'Paste a Civitai link (civitai.com, .green or .red: a model page or download link) or an AIR (urn:air:…:civitai:123@456).',
+        );
+      const model = await lookupCivitai(ref, manager.getServerKey(BUILT_IN_SERVER_IDS.civitai));
+      const versionId = typeof payload?.versionId === 'number' ? payload.versionId : undefined;
+      return {
+        versions: model.versions.map((version) => ({
+          id: version.id,
+          name: version.name,
+          baseModel: version.baseModel,
+        })),
+        plan: planCivitaiDownload(model, versionId, ref.fileId),
+      };
+    },
+  );
   // Downloads the model controller runs on another machine (or the one it picks).
   const remoteDownloads = new RemoteDownloads(aicontroller);
   /** A machine name or "auto" when the download goes through the controller, else null (this PC's own downloader). */
   const remoteHost = (value: unknown): string | null => {
     if (typeof value !== 'string' || !value.trim() || value === 'local') return null;
-    if (!aicontroller.inUse()) throw new Error('The model controller is not running, so downloads to other machines are unavailable.');
+    if (!aicontroller.inUse())
+      throw new Error(
+        'The model controller is not running, so downloads to other machines are unavailable.',
+      );
     return value === AUTO_HOST ? AUTO_HOST : value.trim();
   };
   handleIpc('models:download-hosts', async () => {
     const { local, hosts } = await aicontroller.hostNames();
     return { inUse: aicontroller.inUse(), local, hosts };
   });
-  handleIpc('models:download', async (_event, payload: { serverId?: unknown; ref?: unknown; versionId?: unknown; host?: unknown }) => {
-    const host = remoteHost(payload?.host);
-    if (host) {
+  handleIpc(
+    'models:download',
+    async (
+      _event,
+      payload: { serverId?: unknown; ref?: unknown; versionId?: unknown; host?: unknown },
+    ) => {
+      const host = remoteHost(payload?.host);
+      if (host) {
+        const ref = parseCivitaiRef(typeof payload?.ref === 'string' ? payload.ref : '');
+        if (!ref) throw new Error('Paste a Civitai model link or AIR.');
+        const key = manager.getServerKey(BUILT_IN_SERVER_IDS.civitai);
+        const model = await lookupCivitai(ref, key);
+        const plan = planCivitaiDownload(
+          model,
+          typeof payload?.versionId === 'number' ? payload.versionId : undefined,
+          ref.fileId,
+        );
+        return remoteDownloads.startCivitai(host, plan);
+      }
+      const server = comfyServer(payload?.serverId);
       const ref = parseCivitaiRef(typeof payload?.ref === 'string' ? payload.ref : '');
       if (!ref) throw new Error('Paste a Civitai model link or AIR.');
       const key = manager.getServerKey(BUILT_IN_SERVER_IDS.civitai);
       const model = await lookupCivitai(ref, key);
-      const plan = planCivitaiDownload(model, typeof payload?.versionId === 'number' ? payload.versionId : undefined, ref.fileId);
-      return remoteDownloads.startCivitai(host, plan);
-    }
-    const server = comfyServer(payload?.serverId);
-    const ref = parseCivitaiRef(typeof payload?.ref === 'string' ? payload.ref : '');
-    if (!ref) throw new Error('Paste a Civitai model link or AIR.');
-    const key = manager.getServerKey(BUILT_IN_SERVER_IDS.civitai);
-    const model = await lookupCivitai(ref, key);
-    const plan = planCivitaiDownload(model, typeof payload?.versionId === 'number' ? payload.versionId : undefined, ref.fileId);
-    if (!server.managed && !(await modelDownloads.hasAddon(server))) {
-      throw new Error(`${server.name} needs the aiembodied ComfyUI add-on before it can download models. See "Add-on" on this page.`);
-    }
-    return modelDownloads.start(server, plan, key);
-  });
-  handleIpc('models:downloads', async () => [...modelDownloads.list(), ...(await remoteDownloads.listModels())]);
+      const plan = planCivitaiDownload(
+        model,
+        typeof payload?.versionId === 'number' ? payload.versionId : undefined,
+        ref.fileId,
+      );
+      if (!server.managed && !(await modelDownloads.hasAddon(server))) {
+        throw new Error(
+          `${server.name} needs the aiembodied ComfyUI add-on before it can download models. See "Add-on" on this page.`,
+        );
+      }
+      return modelDownloads.start(server, plan, key);
+    },
+  );
+  handleIpc('models:downloads', async () => [
+    ...modelDownloads.list(),
+    ...(await remoteDownloads.listModels()),
+  ]);
   const speechServerClient = (serverId: unknown) => {
-    const server = manager.getConfig().models.servers.find((entry) => entry.id === serverId && entry.type === 'speech');
+    const server = manager
+      .getConfig()
+      .models.servers.find((entry) => entry.id === serverId && entry.type === 'speech');
     if (!server) throw new Error('That is not a speech service.');
     return new SpeechServiceClient({ baseUrl: server.url });
   };
-  handleIpc('models:speech-engines', (_event, serverId: unknown) => speechServerClient(serverId).ttsEngines());
-  handleIpc('models:speech-download', async (_event, payload: { serverId?: unknown; engine?: unknown; model?: unknown }) => {
-    if (typeof payload?.engine !== 'string' || typeof payload.model !== 'string') {
-      throw new Error('Pick a model to download.');
-    }
-    const client = speechServerClient(payload.serverId);
-    await client.downloadTtsModel(payload.engine, payload.model);
-    return client.ttsEngines();
-  });
+  handleIpc('models:speech-engines', (_event, serverId: unknown) =>
+    speechServerClient(serverId).ttsEngines(),
+  );
+  handleIpc(
+    'models:speech-download',
+    async (_event, payload: { serverId?: unknown; engine?: unknown; model?: unknown }) => {
+      if (typeof payload?.engine !== 'string' || typeof payload.model !== 'string') {
+        throw new Error('Pick a model to download.');
+      }
+      const client = speechServerClient(payload.serverId);
+      await client.downloadTtsModel(payload.engine, payload.model);
+      return client.ttsEngines();
+    },
+  );
   handleIpc('models:cancel-download', async (_event, id: unknown) => {
     if (typeof id === 'string' && RemoteDownloads.isRemoteId(id)) await remoteDownloads.cancel(id);
     else if (typeof id === 'string') modelDownloads.cancel(id);
@@ -1851,28 +2233,43 @@ function registerIpcHandlers(
   const hfToken = () => manager.getServerKey(BUILT_IN_SERVER_IDS.huggingface);
   const localLlmList = async () => {
     const { library } = getLocalLlmTools(manager);
-    return { ...(await library.read()), folder: library.modelsDirectory, settings: await library.settings() };
+    return {
+      ...(await library.read()),
+      folder: library.modelsDirectory,
+      settings: await library.settings(),
+    };
   };
   handleIpc('models:hf-lookup', async (_event, ref: unknown) => {
     const parsed = parseHuggingFaceRef(typeof ref === 'string' ? ref : '');
-    if (!parsed) throw new Error('Paste a Hugging Face link or repo name (such as unsloth/Qwen3-8B-GGUF), or type words to search for.');
+    if (!parsed)
+      throw new Error(
+        'Paste a Hugging Face link or repo name (such as unsloth/Qwen3-8B-GGUF), or type words to search for.',
+      );
     return lookupHuggingFace(parsed, hfToken());
   });
-  handleIpc('models:hf-download', async (_event, payload: { repo?: unknown; quant?: unknown; use?: unknown; host?: unknown }) => {
-    if (typeof payload?.repo !== 'string' || typeof payload.quant !== 'string') throw new Error('Pick a model and size first.');
-    // Read the repo again here rather than trusting file names from the page.
-    const lookup = await lookupHuggingFace({ repo: payload.repo }, hfToken());
-    const quant = lookup.quants.find((entry) => entry.id === payload.quant);
-    if (!lookup.repo || !quant) throw new Error('That size is no longer in the repo. Look it up again.');
-    const host = remoteHost(payload.host);
-    if (host) return remoteDownloads.startHuggingFace(host, lookup.repo, quant);
-    return getLocalLlmTools(manager).library.start(lookup.repo, quant, {
-      token: hfToken(),
-      use: payload.use !== false,
-      ...(lookup.contextLength ? { contextLength: lookup.contextLength } : {}),
-    });
-  });
-  handleIpc('models:hf-downloads', async () => [...getLocalLlmTools(manager).library.list(), ...(await remoteDownloads.listLlm())]);
+  handleIpc(
+    'models:hf-download',
+    async (_event, payload: { repo?: unknown; quant?: unknown; use?: unknown; host?: unknown }) => {
+      if (typeof payload?.repo !== 'string' || typeof payload.quant !== 'string')
+        throw new Error('Pick a model and size first.');
+      // Read the repo again here rather than trusting file names from the page.
+      const lookup = await lookupHuggingFace({ repo: payload.repo }, hfToken());
+      const quant = lookup.quants.find((entry) => entry.id === payload.quant);
+      if (!lookup.repo || !quant)
+        throw new Error('That size is no longer in the repo. Look it up again.');
+      const host = remoteHost(payload.host);
+      if (host) return remoteDownloads.startHuggingFace(host, lookup.repo, quant);
+      return getLocalLlmTools(manager).library.start(lookup.repo, quant, {
+        token: hfToken(),
+        use: payload.use !== false,
+        ...(lookup.contextLength ? { contextLength: lookup.contextLength } : {}),
+      });
+    },
+  );
+  handleIpc('models:hf-downloads', async () => [
+    ...getLocalLlmTools(manager).library.list(),
+    ...(await remoteDownloads.listLlm()),
+  ]);
   handleIpc('models:hf-cancel', async (_event, id: unknown) => {
     const { library } = getLocalLlmTools(manager);
     if (typeof id === 'string' && RemoteDownloads.isRemoteId(id)) await remoteDownloads.cancel(id);
@@ -1893,7 +2290,10 @@ function registerIpcHandlers(
   });
   handleIpc('models:local-llms', () => localLlmList());
   handleIpc('models:use-local-llm', async (_event, id: unknown, settings: unknown) => {
-    const given = settings && typeof settings === 'object' ? (settings as Partial<LocalLlmSettings>) : undefined;
+    const given =
+      settings && typeof settings === 'object'
+        ? (settings as Partial<LocalLlmSettings>)
+        : undefined;
     const message = await useLocalLlm(manager, typeof id === 'string' && id ? id : null, given);
     return { message, library: await localLlmList(), models: manager.getModelRoutingView() };
   });
@@ -1903,137 +2303,167 @@ function registerIpcHandlers(
   });
   handleIpc('models:set-key', async (_event, payload: { serverId?: unknown; key?: unknown }) => {
     if (typeof payload?.serverId !== 'string') throw new Error('Choose a server.');
-    await manager.setServerKey(payload.serverId, typeof payload.key === 'string' ? payload.key : '');
+    await manager.setServerKey(
+      payload.serverId,
+      typeof payload.key === 'string' ? payload.key : '',
+    );
     await applyProviderSettings(manager);
     return manager.getModelRoutingView();
   });
   handleIpc('talk:get-shortcut-status', () => pushToTalk.getStatus());
   handleIpc('wake-word:list', () => listWakeWords(trainedWakeWordDirectory()));
   // A satellite PC runs its own wake word worker; it asks for the wake word picked here (and a trained model's file).
-  handleIpc('wake-word:model', () => readSharedWakeWord(manager.getRendererConfig().wakeWord, trainedWakeWordDirectory()));
+  handleIpc('wake-word:model', () =>
+    readSharedWakeWord(manager.getRendererConfig().wakeWord, trainedWakeWordDirectory()),
+  );
   handleIpc('wake-word:set-listening', (_event, enabled: unknown) => {
     if (typeof enabled !== 'boolean') throw new Error('Listening must be enabled or disabled.');
     return wakeWordListening.setEnabled(enabled);
   });
   handleIpc('wake-word:get-training-status', () =>
-    wakeWordTrainer ? wakeWordTrainer.getStatus() : { available: false, reason: 'Training is not set up.', job: null },
+    wakeWordTrainer
+      ? wakeWordTrainer.getStatus()
+      : { available: false, reason: 'Training is not set up.', job: null },
   );
   handleIpc('wake-word:train', (_event, payload: { phrase?: unknown; quick?: unknown }) => {
     if (!wakeWordTrainer) {
       throw new Error('Wake word training is not set up.');
     }
-    return wakeWordTrainer.start(typeof payload?.phrase === 'string' ? payload.phrase : '', { quick: payload?.quick === true });
+    return wakeWordTrainer.start(typeof payload?.phrase === 'string' ? payload.phrase : '', {
+      quick: payload?.quick === true,
+    });
   });
   handleIpc('wake-word:cancel-training', () =>
-    wakeWordTrainer ? wakeWordTrainer.cancel() : { available: false, reason: 'Training is not set up.', job: null },
+    wakeWordTrainer
+      ? wakeWordTrainer.cancel()
+      : { available: false, reason: 'Training is not set up.', job: null },
   );
-  registerConfigHandler('config:test-secret', (_event, key: ConfigSecretKey) => manager.testSecret(key));
+  registerConfigHandler('config:test-secret', (_event, key: ConfigSecretKey) =>
+    manager.testSecret(key),
+  );
   registerConfigHandler('config:set-audio-devices', (_event, preferences) =>
     manager.setAudioDevicePreferences(preferences),
   );
 
-  handleIpc('realtime:mint-ephemeral-token', async (_event, payload: RealtimeEphemeralTokenRequest) => {
-    if (!payload || typeof payload !== 'object' || !payload.session || typeof payload.session !== 'object') {
-      throw new Error('Invalid realtime token request payload received.');
-    }
-
-    const apiKey = manager.getConfig().realtimeApiKey?.trim();
-    if (!apiKey) {
-      throw new Error('Realtime API key is not configured.');
-    }
-
-    const session = payload.session as Record<string, unknown>;
-    const audio = typeof session.audio === 'object' && session.audio ? (session.audio as Record<string, unknown>) : null;
-    const audioOutput =
-      audio && typeof audio.output === 'object' && audio.output ? (audio.output as Record<string, unknown>) : null;
-    const voice = typeof audioOutput?.voice === 'string' ? (audioOutput.voice as string) : undefined;
-    const turnDetection =
-      typeof session.turn_detection === 'object' && session.turn_detection
-        ? (session.turn_detection as { type?: unknown }).type
-        : undefined;
-    if (session.turn_detection) {
-      delete session.turn_detection;
-    }
-
-    if (session.session_parameters) {
-      delete session.session_parameters;
-    }
-
-    if (audio && typeof audio === 'object' && 'input' in audio) {
-      delete (audio as Record<string, unknown>).input;
-      if (Object.keys(audio).length === 0) {
-        delete session.audio;
+  handleIpc(
+    'realtime:mint-ephemeral-token',
+    async (_event, payload: RealtimeEphemeralTokenRequest) => {
+      if (
+        !payload ||
+        typeof payload !== 'object' ||
+        !payload.session ||
+        typeof payload.session !== 'object'
+      ) {
+        throw new Error('Invalid realtime token request payload received.');
       }
-    }
 
-    logger.info('Minting realtime ephemeral token.', {
-      model: typeof session.model === 'string' ? session.model : undefined,
-      voice,
-      hasInstructions: Boolean(session.instructions),
-      turnDetection: typeof turnDetection === 'string' ? turnDetection : undefined,
-      outputModalities: Array.isArray(session.output_modalities) ? session.output_modalities : undefined,
-    });
-
-    const response = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ session }),
-    });
-
-    const contentTypeHeader = response.headers?.get?.('content-type') ?? '';
-    const normalizedContentType = contentTypeHeader.toLowerCase();
-    let responseBody: unknown = null;
-    let rawText: string | undefined;
-
-    try {
-      if (normalizedContentType.includes('application/json')) {
-        responseBody = await response.json();
-      } else {
-        rawText = await response.text();
+      const apiKey = manager.getConfig().realtimeApiKey?.trim();
+      if (!apiKey) {
+        throw new Error('Realtime API key is not configured.');
       }
-    } catch (error) {
-      logger.warn('Failed to parse realtime token response body.', {
-        message: error instanceof Error ? error.message : String(error),
-      });
-    }
 
-    if (!response.ok) {
-      const detail =
-        typeof responseBody === 'object' && responseBody && 'error' in responseBody
-          ? JSON.stringify((responseBody as { error?: unknown }).error)
-          : rawText;
-      logger.error('Realtime token request failed.', {
-        status: response.status,
-        detail: detail ? detail.slice(0, 500) : undefined,
-      });
-      throw new Error(`Realtime token request failed: HTTP ${response.status}`);
-    }
-
-    const value =
-      typeof (responseBody as { value?: unknown } | null)?.value === 'string'
-        ? ((responseBody as { value?: string }).value as string)
-        : undefined;
-    if (!value) {
-      throw new Error('Realtime token response missing value.');
-    }
-
-    const expiresAt =
-      typeof (responseBody as { expires_at?: unknown; expiresAt?: unknown } | null)?.expires_at === 'number'
-        ? ((responseBody as { expires_at?: number }).expires_at as number)
-        : typeof (responseBody as { expiresAt?: unknown } | null)?.expiresAt === 'number'
-          ? ((responseBody as { expiresAt?: number }).expiresAt as number)
+      const session = payload.session as Record<string, unknown>;
+      const audio =
+        typeof session.audio === 'object' && session.audio
+          ? (session.audio as Record<string, unknown>)
+          : null;
+      const audioOutput =
+        audio && typeof audio.output === 'object' && audio.output
+          ? (audio.output as Record<string, unknown>)
+          : null;
+      const voice =
+        typeof audioOutput?.voice === 'string' ? (audioOutput.voice as string) : undefined;
+      const turnDetection =
+        typeof session.turn_detection === 'object' && session.turn_detection
+          ? (session.turn_detection as { type?: unknown }).type
           : undefined;
+      if (session.turn_detection) {
+        delete session.turn_detection;
+      }
 
-    const result: RealtimeEphemeralTokenResponse = {
-      value,
-      ...(typeof expiresAt === 'number' ? { expiresAt } : {}),
-    };
+      if (session.session_parameters) {
+        delete session.session_parameters;
+      }
 
-    return result;
-  });
+      if (audio && typeof audio === 'object' && 'input' in audio) {
+        delete (audio as Record<string, unknown>).input;
+        if (Object.keys(audio).length === 0) {
+          delete session.audio;
+        }
+      }
+
+      logger.info('Minting realtime ephemeral token.', {
+        model: typeof session.model === 'string' ? session.model : undefined,
+        voice,
+        hasInstructions: Boolean(session.instructions),
+        turnDetection: typeof turnDetection === 'string' ? turnDetection : undefined,
+        outputModalities: Array.isArray(session.output_modalities)
+          ? session.output_modalities
+          : undefined,
+      });
+
+      const response = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ session }),
+      });
+
+      const contentTypeHeader = response.headers?.get?.('content-type') ?? '';
+      const normalizedContentType = contentTypeHeader.toLowerCase();
+      let responseBody: unknown = null;
+      let rawText: string | undefined;
+
+      try {
+        if (normalizedContentType.includes('application/json')) {
+          responseBody = await response.json();
+        } else {
+          rawText = await response.text();
+        }
+      } catch (error) {
+        logger.warn('Failed to parse realtime token response body.', {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      if (!response.ok) {
+        const detail =
+          typeof responseBody === 'object' && responseBody && 'error' in responseBody
+            ? JSON.stringify((responseBody as { error?: unknown }).error)
+            : rawText;
+        logger.error('Realtime token request failed.', {
+          status: response.status,
+          detail: detail ? detail.slice(0, 500) : undefined,
+        });
+        throw new Error(`Realtime token request failed: HTTP ${response.status}`);
+      }
+
+      const value =
+        typeof (responseBody as { value?: unknown } | null)?.value === 'string'
+          ? ((responseBody as { value?: string }).value as string)
+          : undefined;
+      if (!value) {
+        throw new Error('Realtime token response missing value.');
+      }
+
+      const expiresAt =
+        typeof (responseBody as { expires_at?: unknown; expiresAt?: unknown } | null)
+          ?.expires_at === 'number'
+          ? ((responseBody as { expires_at?: number }).expires_at as number)
+          : typeof (responseBody as { expiresAt?: unknown } | null)?.expiresAt === 'number'
+            ? ((responseBody as { expiresAt?: number }).expiresAt as number)
+            : undefined;
+
+      const result: RealtimeEphemeralTokenResponse = {
+        value,
+        ...(typeof expiresAt === 'number' ? { expiresAt } : {}),
+      };
+
+      return result;
+    },
+  );
 
   logger.info('Configuration bridge IPC handlers registered.', {
     channels: [...configChannels],
@@ -2050,16 +2480,19 @@ function registerIpcHandlers(
     }
     return conversation.appendMessage(payload);
   });
-  handleIpc('conversation:announce', (_event, payload: { note?: string; reply?: string; ts?: number }) => {
-    if (!conversation) {
-      throw new Error('Conversation manager is not initialized.');
-    }
-    const ts = typeof payload?.ts === 'number' ? payload.ts : Date.now();
-    const messages: Omit<ConversationAppendMessagePayload, 'sessionId'>[] = [];
-    if (payload?.note?.trim()) messages.push({ role: 'system', content: payload.note, ts });
-    if (payload?.reply?.trim()) messages.push({ role: 'assistant', content: payload.reply, ts });
-    return messages.length > 0 ? conversation.appendToRecentSession(messages) : [];
-  });
+  handleIpc(
+    'conversation:announce',
+    (_event, payload: { note?: string; reply?: string; ts?: number }) => {
+      if (!conversation) {
+        throw new Error('Conversation manager is not initialized.');
+      }
+      const ts = typeof payload?.ts === 'number' ? payload.ts : Date.now();
+      const messages: Omit<ConversationAppendMessagePayload, 'sessionId'>[] = [];
+      if (payload?.note?.trim()) messages.push({ role: 'system', content: payload.note, ts });
+      if (payload?.reply?.trim()) messages.push({ role: 'assistant', content: payload.reply, ts });
+      return messages.length > 0 ? conversation.appendToRecentSession(messages) : [];
+    },
+  );
   handleIpc('metrics:observe-latency', (_event, payload: LatencyObservation) => {
     if (!metrics) {
       return false;
@@ -2131,13 +2564,19 @@ function registerIpcHandlers(
   handleIpc('furniture:list', () => requireFurniture().list());
   handleIpc('furniture:load', (_event, id: string) => requireFurniture().load(id));
   handleIpc('furniture:generate', (_event, prompt: string) => requireFurniture().generate(prompt));
-  handleIpc('furniture:edit', (_event, id: string, prompt: string) => requireFurniture().edit(id, prompt));
+  handleIpc('furniture:edit', (_event, id: string, prompt: string) =>
+    requireFurniture().edit(id, prompt),
+  );
   handleIpc('furniture:delete', (_event, id: string) => requireFurniture().delete(id));
   handleIpc('furniture:model', (_event, id: string) => requireFurniture().model(id));
   handleIpc('background:get-active', () => requireBackgrounds().getActive());
-  handleIpc('background:set-active', (_event, id: string | null) => requireBackgrounds().setActive(id));
+  handleIpc('background:set-active', (_event, id: string | null) =>
+    requireBackgrounds().setActive(id),
+  );
   handleIpc('background:load', (_event, id: string) => requireBackgrounds().load(id));
-  handleIpc('background:generate', (_event, prompt: string) => requireBackgrounds().generate(prompt));
+  handleIpc('background:generate', (_event, prompt: string) =>
+    requireBackgrounds().generate(prompt),
+  );
   handleIpc('background:delete', (_event, id: string) => requireBackgrounds().delete(id));
   handleIpc('background:list-rooms', () => requireRooms().list());
   handleIpc('background:load-room', (_event, id: string) => requireRooms().load(id));
@@ -2146,7 +2585,9 @@ function registerIpcHandlers(
     return roomGeneration;
   };
   handleIpc('rooms:generate', (_event, description: unknown) =>
-    requireGeneration().generate(String(description ?? ''), (progress) => broadcastToWindows('rooms:generate-progress', progress)),
+    requireGeneration().generate(String(description ?? ''), (progress) =>
+      broadcastToWindows('rooms:generate-progress', progress),
+    ),
   );
   handleIpc('rooms:cancel-generate', () => requireGeneration().cancel());
   handleIpc('rooms:making', () => requireGeneration().making);
@@ -2160,18 +2601,27 @@ function registerIpcHandlers(
     return objectSettingsView();
   });
   handleIpc('rooms:generated:list', () => requireGeneration().listGenerated());
-  handleIpc('rooms:generated:delete', (_event, id: unknown) => requireGeneration().deleteGenerated(String(id ?? '')));
+  handleIpc('rooms:generated:delete', (_event, id: unknown) =>
+    requireGeneration().deleteGenerated(String(id ?? '')),
+  );
   handleIpc('rooms:delete', async (_event, id: string) => {
     await requireGeneration().delete(id);
-    if (backgroundService && (await backgroundService.getActive()) === id) await backgroundService.setActive(null);
+    if (backgroundService && (await backgroundService.getActive()) === id)
+      await backgroundService.setActive(null);
   });
   handleIpc('rooms:idle-settings:get', () => requireBackgrounds().getIdleSettings());
-  handleIpc('rooms:idle-settings:set', (_event, settings: unknown) => requireBackgrounds().setIdleSettings(settings));
+  handleIpc('rooms:idle-settings:set', (_event, settings: unknown) =>
+    requireBackgrounds().setIdleSettings(settings),
+  );
   // The "Idle thoughts" job: what the avatar does next on its own. Null on any failure; the renderer then picks at random.
   handleIpc('rooms:idle-pick', async (_event, context: unknown) => {
     const routing = manager.getConfig().models;
     // Echo's model is still loading under the model controller: no request, the renderer picks at random.
-    if (aicontroller.echoWaiting() && routeTargets(routing, 'llm')[0]?.server.id === BUILT_IN_SERVER_IDS.llm) return null;
+    if (
+      aicontroller.echoWaiting() &&
+      routeTargets(routing, 'llm')[0]?.server.id === BUILT_IN_SERVER_IDS.llm
+    )
+      return null;
     return pickIdleActions(context as { system: string; user: string }, {
       routing,
       keyFor: (id) => manager.getServerKey(id),
@@ -2184,58 +2634,108 @@ function registerIpcHandlers(
     }
     return avatarGenerationService;
   };
-  handleIpc('avatar:image-models', async () => { if (!avatarImageModels) throw new Error('Image models are unavailable.'); return avatarImageModels.list(); });
-  handleIpc('avatar:image-model-select', async (_event, id: string) => { if (!avatarImageModels) throw new Error('Image models are unavailable.'); await avatarImageModels.select(id); });
+  handleIpc('avatar:image-models', async () => {
+    if (!avatarImageModels) throw new Error('Image models are unavailable.');
+    return avatarImageModels.list();
+  });
+  handleIpc('avatar:image-model-select', async (_event, id: string) => {
+    if (!avatarImageModels) throw new Error('Image models are unavailable.');
+    await avatarImageModels.select(id);
+  });
   handleIpc('avatar:image-loras-select', async (_event, choices: unknown) => {
     if (!avatarImageModels) throw new Error('Image models are unavailable.');
     avatarImageModels.selectLoras(Array.isArray(choices) ? choices : []);
   });
   // Popular Civitai checkpoints for a LoRA's base model, sized against the image server's GPU.
-  handleIpc('avatar:base-model-suggestions', async (_event, payload: { baseModel?: unknown; family?: unknown }) => {
-    const server = avatarComfyPool?.primary('image');
-    if (!server) throw new Error('No ComfyUI server is set for the image step.');
-    const baseModel =
-      typeof payload?.baseModel === 'string' && payload.baseModel.trim()
-        ? payload.baseModel.trim()
-        : typeof payload?.family === 'string'
-          ? baseModelForFamily(payload.family)
-          : undefined;
-    if (!baseModel) throw new Error("That LoRA's base model isn't known, so there is nothing to suggest.");
-    const vramBytes = await fetch(`${server.url}/system_stats`, { signal: AbortSignal.timeout(5000) })
-      .then(async (response) => (response.ok ? ((await response.json()) as { devices?: Array<{ vram_total?: unknown }> }) : null))
-      .then((stats) => {
-        const total = stats?.devices?.[0]?.vram_total;
-        return typeof total === 'number' && total > 0 ? total : null;
+  handleIpc(
+    'avatar:base-model-suggestions',
+    async (_event, payload: { baseModel?: unknown; family?: unknown }) => {
+      const server = avatarComfyPool?.primary('image');
+      if (!server) throw new Error('No ComfyUI server is set for the image step.');
+      const baseModel =
+        typeof payload?.baseModel === 'string' && payload.baseModel.trim()
+          ? payload.baseModel.trim()
+          : typeof payload?.family === 'string'
+            ? baseModelForFamily(payload.family)
+            : undefined;
+      if (!baseModel)
+        throw new Error("That LoRA's base model isn't known, so there is nothing to suggest.");
+      const vramBytes = await fetch(`${server.url}/system_stats`, {
+        signal: AbortSignal.timeout(5000),
       })
-      .catch(() => null);
-    const suggestions = await suggestBaseModels(baseModel, vramBytes, manager.getServerKey(BUILT_IN_SERVER_IDS.civitai));
-    const result: BaseModelSuggestions = { serverId: server.id, serverName: server.name, baseModel, vramBytes, suggestions };
-    return result;
+        .then(async (response) =>
+          response.ok
+            ? ((await response.json()) as { devices?: Array<{ vram_total?: unknown }> })
+            : null,
+        )
+        .then((stats) => {
+          const total = stats?.devices?.[0]?.vram_total;
+          return typeof total === 'number' && total > 0 ? total : null;
+        })
+        .catch(() => null);
+      const suggestions = await suggestBaseModels(
+        baseModel,
+        vramBytes,
+        manager.getServerKey(BUILT_IN_SERVER_IDS.civitai),
+      );
+      const result: BaseModelSuggestions = {
+        serverId: server.id,
+        serverName: server.name,
+        baseModel,
+        vramBytes,
+        suggestions,
+      };
+      return result;
+    },
+  );
+  handleIpc('avatar:character-models', async () => {
+    if (!avatarCharacterModels) throw new Error('3D avatar models are unavailable.');
+    return avatarCharacterModels.list();
   });
-  handleIpc('avatar:character-models', async () => { if (!avatarCharacterModels) throw new Error('3D avatar models are unavailable.'); return avatarCharacterModels.list(); });
-  handleIpc('avatar:character-model-select', async (_event, stage: 'geometry' | 'rig', id: string) => { if (!avatarCharacterModels) throw new Error('3D avatar models are unavailable.'); await avatarCharacterModels.select(stage, id); });
-  handleIpc('avatar:generation-list', async (): Promise<AvatarGenerationStatus[]> => requireAvatarGeneration().listJobs());
-  handleIpc('avatar:generation-cancel', async (_event, jobId: string): Promise<void> => requireAvatarGeneration().cancel(jobId));
+  handleIpc(
+    'avatar:character-model-select',
+    async (_event, stage: 'geometry' | 'rig', id: string) => {
+      if (!avatarCharacterModels) throw new Error('3D avatar models are unavailable.');
+      await avatarCharacterModels.select(stage, id);
+    },
+  );
+  handleIpc('avatar:generation-list', async (): Promise<AvatarGenerationStatus[]> =>
+    requireAvatarGeneration().listJobs(),
+  );
+  handleIpc('avatar:generation-cancel', async (_event, jobId: string): Promise<void> =>
+    requireAvatarGeneration().cancel(jobId),
+  );
   handleIpc(
     'avatar:generation-start',
     async (_event, payload: AvatarGenerationRequest): Promise<AvatarGenerationJob> =>
       requireAvatarGeneration().startJob(payload),
   );
-  handleIpc('avatar:generation-remove-background', async (_event, jobId: string) => requireAvatarGeneration().removeConceptBackground(jobId));
-  handleIpc('avatar:generation-restore-background', async (_event, jobId: string) => requireAvatarGeneration().restoreConceptBackground(jobId));
-  handleIpc('avatar:generation-redraw-views', async (_event, jobId: string) => requireAvatarGeneration().redrawViews(jobId));
-  handleIpc('avatar:generation-confirm-concept', async (_event, jobId: string, confirmation?: AvatarGenerationConfirmation): Promise<void> => requireAvatarGeneration().confirmConcept(jobId, confirmation));
-  handleIpc(
-    'avatar:generation-status',
-    async (_event, jobId: string): Promise<AvatarGenerationStatus> => requireAvatarGeneration().getStatus(jobId),
+  handleIpc('avatar:generation-remove-background', async (_event, jobId: string) =>
+    requireAvatarGeneration().removeConceptBackground(jobId),
+  );
+  handleIpc('avatar:generation-restore-background', async (_event, jobId: string) =>
+    requireAvatarGeneration().restoreConceptBackground(jobId),
+  );
+  handleIpc('avatar:generation-redraw-views', async (_event, jobId: string) =>
+    requireAvatarGeneration().redrawViews(jobId),
   );
   handleIpc(
-    'avatar:generation-preview',
-    async (_event, jobId: string): Promise<Buffer> => requireAvatarGeneration().loadPreview(jobId),
+    'avatar:generation-confirm-concept',
+    async (_event, jobId: string, confirmation?: AvatarGenerationConfirmation): Promise<void> =>
+      requireAvatarGeneration().confirmConcept(jobId, confirmation),
+  );
+  handleIpc(
+    'avatar:generation-status',
+    async (_event, jobId: string): Promise<AvatarGenerationStatus> =>
+      requireAvatarGeneration().getStatus(jobId),
+  );
+  handleIpc('avatar:generation-preview', async (_event, jobId: string): Promise<Buffer> =>
+    requireAvatarGeneration().loadPreview(jobId),
   );
   handleIpc(
     'avatar:generation-accept',
-    async (_event, jobId: string): Promise<AvatarGenerationAcceptance> => requireAvatarGeneration().accept(jobId),
+    async (_event, jobId: string): Promise<AvatarGenerationAcceptance> =>
+      requireAvatarGeneration().accept(jobId),
   );
   handleIpc('avatar:generation-reject', async (_event, jobId: string): Promise<void> =>
     requireAvatarGeneration().reject(jobId),
@@ -2267,11 +2767,15 @@ function registerIpcHandlers(
         await refreshAvatarDescriptionService(manager);
       }
       if (!avatarDescriptionService) {
-        throw new Error('Describe the avatar has no model to use. Pick one in Models and servers → Describe the avatar (or add the OpenAI API key if it runs on OpenAI).');
+        throw new Error(
+          'Describe the avatar has no model to use. Pick one in Models and servers → Describe the avatar (or add the OpenAI API key if it runs on OpenAI).',
+        );
       }
 
       const service = avatarDescriptionService;
-      return withVision(manager, 'describe', () => service.generateDescription(payload.thumbnailDataUrl));
+      return withVision(manager, 'describe', () =>
+        service.generateDescription(payload.thumbnailDataUrl),
+      );
     },
   );
   handleIpc('avatar-animation:list', async () => {
@@ -2288,37 +2792,42 @@ function registerIpcHandlers(
 
     return avatarAnimations.uploadAnimation(payload) as Promise<AvatarAnimationUploadResult>;
   });
-  handleIpc('avatar-animation:generate', async (_event, payload: AvatarAnimationGenerationRequest) => {
-    const useLocalMotion = localMotionServer(manager) !== null;
-    // The model controller may have taken the motion lease back: lease it again (a failure shows as "not ready" below).
-    if (useLocalMotion) await aicontroller.ensureMotion().catch(() => undefined);
-    if (useLocalMotion && localMotionService && (await localMotionService.isReady())) {
-      return localMotionService.generateAnimation(payload);
-    }
+  handleIpc(
+    'avatar-animation:generate',
+    async (_event, payload: AvatarAnimationGenerationRequest) => {
+      const useLocalMotion = localMotionServer(manager) !== null;
+      // The model controller may have taken the motion lease back: lease it again (a failure shows as "not ready" below).
+      if (useLocalMotion) await aicontroller.ensureMotion().catch(() => undefined);
+      if (useLocalMotion && localMotionService && (await localMotionService.isReady())) {
+        return localMotionService.generateAnimation(payload);
+      }
 
-    if (!vrmaGenerationService) {
-      await refreshVrmaGenerationService(manager);
-    }
-    if (!vrmaGenerationService) {
-      throw new Error(
-        useLocalMotion
-          ? 'Animation generation is unavailable. Start the motion service, or set up Animation clips in Models and servers.'
-          : 'Animation clips need a server: choose one in Models and servers (OpenAI needs its API key).',
-      );
-    }
+      if (!vrmaGenerationService) {
+        await refreshVrmaGenerationService(manager);
+      }
+      if (!vrmaGenerationService) {
+        throw new Error(
+          useLocalMotion
+            ? 'Animation generation is unavailable. Start the motion service, or set up Animation clips in Models and servers.'
+            : 'Animation clips need a server: choose one in Models and servers (OpenAI needs its API key).',
+        );
+      }
 
-    const bones = avatarModels ? await avatarModels.listActiveModelBones() : [];
-    const activeModel = avatarModels?.getActiveModel() ?? null;
-    const modelDescription = activeModel?.description ?? undefined;
-    return vrmaGenerationService.generateAnimation({ ...payload, bones, modelDescription });
-  });
+      const bones = avatarModels ? await avatarModels.listActiveModelBones() : [];
+      const activeModel = avatarModels?.getActiveModel() ?? null;
+      const modelDescription = activeModel?.description ?? undefined;
+      return vrmaGenerationService.generateAnimation({ ...payload, bones, modelDescription });
+    },
+  );
   const motionStreamControllers = new Map<string, AbortController>();
   handleIpc('avatar-motion:status', async (): Promise<AvatarMotionStatus> => {
     if (!localMotionServer(manager)) {
       const clips = routeTargets(manager.getConfig().models, 'clips')[0];
       return {
         provider: 'openai',
-        available: Boolean(clips && (clips.server.type !== 'openai' || manager.getServerKey(clips.server.id))),
+        available: Boolean(
+          clips && (clips.server.type !== 'openai' || manager.getServerKey(clips.server.id)),
+        ),
         ready: false,
         backend: null,
         device: null,
@@ -2360,7 +2869,9 @@ function registerIpcHandlers(
   });
   // Motion trace: the renderer sends batches of lines, and the UI setting (the env var also counts).
   ipcMain.on('motion-trace:append', (_event, lines: unknown) => motionTrace.append(lines));
-  handleIpc('motion-trace:configure', (_event, settingOn: unknown) => motionTrace.configure(settingOn === true));
+  handleIpc('motion-trace:configure', (_event, settingOn: unknown) =>
+    motionTrace.configure(settingOn === true),
+  );
   handleIpc('avatar-motion:cancel', (_event, streamId: unknown) => {
     if (typeof streamId === 'string') {
       motionStreamControllers.get(streamId)?.abort();
@@ -2371,25 +2882,48 @@ function registerIpcHandlers(
   handleIpc('places:snapshot', () => requirePlaces().snapshot());
   handleIpc('places:move', (_event, avatarId: unknown, placeRef: unknown, reason: unknown) => {
     const places = requirePlaces();
-    if (typeof avatarId !== 'string' || !avatarId || typeof placeRef !== 'string' || !placeRef.trim()) {
+    if (
+      typeof avatarId !== 'string' ||
+      !avatarId ||
+      typeof placeRef !== 'string' ||
+      !placeRef.trim()
+    ) {
       return { ok: false, reason: 'invalid request' };
     }
     const place = places.resolvePlace(placeRef);
     if (!place) return { ok: false, reason: 'unknown place' };
     // An idle avatar that walked to the door to wander is checked again with fresh facts (it took a few seconds to get there).
     if (reason === 'wandered') {
-      const refusal = wanderRefusal(places.snapshot(), avatarId, place.id, { talkedAgoMs: talkedAgoMs(avatarId) });
+      const refusal = wanderRefusal(places.snapshot(), avatarId, place.id, {
+        talkedAgoMs: talkedAgoMs(avatarId),
+      });
       if (refusal) return { ok: false, reason: refusal };
     }
-    const result = places.startMove(avatarId, place.id, reason === 'called' ? 'called' : reason === 'wandered' ? 'wandered' : 'chose to');
+    const result = places.startMove(
+      avatarId,
+      place.id,
+      reason === 'called' ? 'called' : reason === 'wandered' ? 'wandered' : 'chose to',
+    );
     return result.ok ? { ok: true } : { ok: false, reason: result.reason };
   });
   // The idle director asks before it lets an avatar walk to another place on its own (shared/places/wander.ts has the rules).
-  handleIpc('places:can-wander', (_event, avatarId: unknown, placeRef: unknown, speaking: unknown) => {
-    if (typeof avatarId !== 'string' || !avatarId || typeof placeRef !== 'string' || !placeRef.trim()) return { ok: false, reason: 'invalid request' };
-    const refusal = wanderRefusal(requirePlaces().snapshot(), avatarId, placeRef, { speaking: speaking === true, talkedAgoMs: talkedAgoMs(avatarId) });
-    return refusal ? { ok: false, reason: refusal } : { ok: true };
-  });
+  handleIpc(
+    'places:can-wander',
+    (_event, avatarId: unknown, placeRef: unknown, speaking: unknown) => {
+      if (
+        typeof avatarId !== 'string' ||
+        !avatarId ||
+        typeof placeRef !== 'string' ||
+        !placeRef.trim()
+      )
+        return { ok: false, reason: 'invalid request' };
+      const refusal = wanderRefusal(requirePlaces().snapshot(), avatarId, placeRef, {
+        speaking: speaking === true,
+        talkedAgoMs: talkedAgoMs(avatarId),
+      });
+      return refusal ? { ok: false, reason: refusal } : { ok: true };
+    },
+  );
   handleIpc('places:arrived', (_event, avatarId: unknown) => {
     if (typeof avatarId === 'string' && avatarId) requirePlaces().arrived(avatarId);
   });
@@ -2400,11 +2934,21 @@ function registerIpcHandlers(
     return stationRegistry;
   };
   handleIpc('stations:list', () => requireStations().views());
-  handleIpc('stations:hold', (_event, roomId: unknown, objectId: unknown, source: unknown, extra: unknown) =>
-    requireStations().hold(String(roomId ?? ''), String(objectId ?? ''), (source ?? null) as StationSource | null, (extra && typeof extra === 'object' ? extra : {}) as Partial<Station>),
+  handleIpc(
+    'stations:hold',
+    (_event, roomId: unknown, objectId: unknown, source: unknown, extra: unknown) =>
+      requireStations().hold(
+        String(roomId ?? ''),
+        String(objectId ?? ''),
+        (source ?? null) as StationSource | null,
+        (extra && typeof extra === 'object' ? extra : {}) as Partial<Station>,
+      ),
   );
   handleIpc('stations:update', (_event, id: unknown, changes: unknown) =>
-    requireStations().update(String(id ?? ''), (changes && typeof changes === 'object' ? changes : {}) as Partial<Station>),
+    requireStations().update(
+      String(id ?? ''),
+      (changes && typeof changes === 'object' ? changes : {}) as Partial<Station>,
+    ),
   );
   handleIpc('stations:remove', (_event, id: unknown) => requireStations().remove(String(id ?? '')));
   handleIpc('station:arrived', (_event, useId: unknown) => {
@@ -2413,7 +2957,8 @@ function registerIpcHandlers(
   // Pursuits (pursuits/): a character starts reading at a station on its own (the idle director asks), the Characters
   // pop-up lists its notes.
   handleIpc('pursuits:start', (_event, avatarId: unknown, stationId: unknown) => {
-    if (typeof avatarId !== 'string' || !avatarId || typeof stationId !== 'string' || !stationId) return { ok: false, reason: 'invalid request' };
+    if (typeof avatarId !== 'string' || !avatarId || typeof stationId !== 'string' || !stationId)
+      return { ok: false, reason: 'invalid request' };
     if (!pursuitManager) return { ok: false, reason: 'pursuits are not available yet' };
     return pursuitManager.start(avatarId, stationId);
   });
@@ -2428,11 +2973,23 @@ function registerIpcHandlers(
   // Agent time: who is asleep (the idle director skips them), and the workflows service for the Status panel.
   handleIpc('agents:asleep', () => agentSleep.list());
   handleIpc('workflows:status', async (): Promise<WorkflowsStatus> => {
-    const base = { enabled: agentTime.enabled, agentLife: agentTime.agentLife, url: agentTime.enabled ? agentTime.url : null, asleep: agentSleep.list(), temporalUiUrl: agentTime.enabled ? agentTime.temporalUiUrl : null };
-    if (!agentTime.enabled || !workflowsClient) return { ...base, reachable: false, temporal: null, agents: [] };
+    const base = {
+      enabled: agentTime.enabled,
+      agentLife: agentTime.agentLife,
+      url: agentTime.enabled ? agentTime.url : null,
+      asleep: agentSleep.list(),
+      temporalUiUrl: agentTime.enabled ? agentTime.temporalUiUrl : null,
+    };
+    if (!agentTime.enabled || !workflowsClient)
+      return { ...base, reachable: false, temporal: null, agents: [] };
     try {
       const health = await workflowsClient.health();
-      return { ...base, reachable: true, temporal: health.temporal === true, agents: health.agents ?? [] };
+      return {
+        ...base,
+        reachable: true,
+        temporal: health.temporal === true,
+        agents: health.agents ?? [],
+      };
     } catch {
       return { ...base, reachable: false, temporal: null, agents: [] };
     }
@@ -2459,31 +3016,43 @@ function registerIpcHandlers(
     return roomHub;
   };
   handleIpc('room-hub:status', () => roomHubStatus(requireRoomHub()));
-  handleIpc('room-hub:start-pairing', (_event, placeName: unknown) => requireRoomHub().startPairing(typeof placeName === 'string' ? placeName : undefined));
+  handleIpc('room-hub:start-pairing', (_event, placeName: unknown) =>
+    requireRoomHub().startPairing(typeof placeName === 'string' ? placeName : undefined),
+  );
   handleIpc('room-hub:cancel-pairing', async () => {
     await requireRoomHub().cancelPairing();
   });
   handleIpc('room-hub:revoke', async (_event, deviceId: unknown) => {
     if (typeof deviceId !== 'string') return false;
-    const place = requireRoomHub().status().devices.find((device) => device.id === deviceId)?.placeId;
+    const place = requireRoomHub()
+      .status()
+      .devices.find((device) => device.id === deviceId)?.placeId;
     const revoked = await requireRoomHub().revoke(deviceId);
     if (revoked && place) placeDevices?.forget(place);
     return revoked;
   });
   // Which room a desktop room draws (a 3D room id or a background id).
   handleIpc('room-hub:set-room', (_event, placeId: unknown, room: unknown) =>
-    typeof placeId === 'string' && typeof room === 'string' ? requirePlaces().setRoom(placeId, room) : false,
+    typeof placeId === 'string' && typeof room === 'string'
+      ? requirePlaces().setRoom(placeId, room)
+      : false,
   );
   // "Camera presence" of a place: bija's own (off unless Kevin turns it on) or a desktop room's (on unless he turns it off).
   handleIpc('room-hub:set-camera', (_event, placeId: unknown, on: unknown) =>
-    typeof placeId === 'string' && typeof on === 'boolean' ? requirePlaces().setCamera(placeId, on) : false,
+    typeof placeId === 'string' && typeof on === 'boolean'
+      ? requirePlaces().setCamera(placeId, on)
+      : false,
   );
   // "Doorbell" of a place: with nobody there, the wake word still listens and calls an avatar over.
   handleIpc('room-hub:set-doorbell', (_event, placeId: unknown, on: unknown) =>
-    typeof placeId === 'string' && typeof on === 'boolean' ? requirePlaces().setDoorbell(placeId, on) : false,
+    typeof placeId === 'string' && typeof on === 'boolean'
+      ? requirePlaces().setDoorbell(placeId, on)
+      : false,
   );
   handleIpc('room-hub:rename', (_event, placeId: unknown, name: unknown) =>
-    typeof placeId === 'string' && typeof name === 'string' ? requirePlaces().rename(placeId, name) : null,
+    typeof placeId === 'string' && typeof name === 'string'
+      ? requirePlaces().rename(placeId, name)
+      : null,
   );
   handleIpc('avatars:add', (_event, input: unknown) => {
     const registry = requireAvatarRegistry();
@@ -2517,7 +3086,8 @@ function registerIpcHandlers(
       const habitsKey = characterIdleHabitsKey(profile.id);
       personas[profile.id] = {
         personality: avatarPersona(profile.id).persona ?? '',
-        habits: habitsKey && memoryStore ? normalizeIdleHabits(memoryStore.getValue(habitsKey)) : '',
+        habits:
+          habitsKey && memoryStore ? normalizeIdleHabits(memoryStore.getValue(habitsKey)) : '',
       };
     }
     return personas;
@@ -2589,10 +3159,19 @@ function registerIpcHandlers(
       }
     }
     // The model controller may have taken Echo's lease back (a game, an eviction): lease it again, or fail the turn with the reason.
-    if (voiceConfigManager && routeTargets(voiceConfigManager.getConfig().models, 'llm')[0]?.server.id === BUILT_IN_SERVER_IDS.llm) {
+    if (
+      voiceConfigManager &&
+      routeTargets(voiceConfigManager.getConfig().models, 'llm')[0]?.server.id ===
+        BUILT_IN_SERVER_IDS.llm
+    ) {
       await aicontroller.ensureEcho();
     }
-    if (!payload.preview && !payload.system && avatarId === DEFAULT_AVATAR_ID && payload.instructions?.trim()) {
+    if (
+      !payload.preview &&
+      !payload.system &&
+      avatarId === DEFAULT_AVATAR_ID &&
+      payload.instructions?.trim()
+    ) {
       lastEchoInstructions.set(placeId, payload.instructions);
     }
     // Places: an avatar that is somewhere else walks in first, then answers.
@@ -2608,14 +3187,27 @@ function registerIpcHandlers(
         callId = named;
       } else if (!named && places.avatarsAt(placeId).length === 0) {
         // Nobody is here: call the avatar Kevin last talked with, else Echo, else the first one.
-        callId = chooseSummon(floor.recentPartner(), (avatarRegistry?.list() ?? []).map((profile) => profile.id));
+        callId = chooseSummon(
+          floor.recentPartner(),
+          (avatarRegistry?.list() ?? []).map((profile) => profile.id),
+        );
       }
       if (callId) {
         const came = await summon(scoped, callId, 'summoned');
         if (!came) {
           const name = avatarRegistry?.get(callId)?.name ?? callId;
           if (!sender.isDestroyed()) {
-            sender.send('local-voice:event', tagEvent({ requestId: payload.requestId, type: 'error', message: `${name} did not come over.` }, callId));
+            sender.send(
+              'local-voice:event',
+              tagEvent(
+                {
+                  requestId: payload.requestId,
+                  type: 'error',
+                  message: `${name} did not come over.`,
+                },
+                callId,
+              ),
+            );
           }
           return tagResult({ requestId: payload.requestId, text: '', cancelled: true }, callId);
         }
@@ -2636,19 +3228,32 @@ function registerIpcHandlers(
     }
     const result = await runVoiceTurn(sender, payload, turnService, placeId);
     // Kevin named an avatar directly: the others in the scene overhear the exchange.
-    if (floor && ownTurn && payload.avatarId?.trim() && floor.isMulti() && !result.cancelled && result.text.trim()) {
+    if (
+      floor &&
+      ownTurn &&
+      payload.avatarId?.trim() &&
+      floor.isMulti() &&
+      !result.cancelled &&
+      result.text.trim()
+    ) {
       floor.heard('person', payload.text, turnAvatarId);
       floor.heard(turnAvatarId, result.text);
     }
     return result;
   });
   handleIpc('presence:update', (event, payload: unknown) => {
-    const p = (typeof payload === 'object' && payload !== null ? payload : {}) as Record<string, unknown>;
+    const p = (typeof payload === 'object' && payload !== null ? payload : {}) as Record<
+      string,
+      unknown
+    >;
     // A desktop room reports its own presence; bija's is left alone.
     const from = placeOf(event);
     if (from !== (placeManager?.localPlaceId() ?? HOME_PLACE_ID)) {
       // The face time is stamped with this PC's clock on arrival: a satellite's clock may differ, and the report is at most seconds old.
-      placePresence.update(from, typeof p.faceSeenAt === 'number' ? { ...p, faceSeenAt: Date.now() } : p);
+      placePresence.update(
+        from,
+        typeof p.faceSeenAt === 'number' ? { ...p, faceSeenAt: Date.now() } : p,
+      );
       return true;
     }
     presence.update({
@@ -2665,25 +3270,48 @@ function registerIpcHandlers(
     floors.get(placeOf(event))?.interrupt();
   });
   handleIpc('floor:get-hear-chatter', () => floor?.hearChatter() ?? false);
-  handleIpc('floor:set-hear-chatter', (_event, enabled: unknown) => floor?.setHearChatter(enabled === true) ?? false);
+  handleIpc(
+    'floor:set-hear-chatter',
+    (_event, enabled: unknown) => floor?.setHearChatter(enabled === true) ?? false,
+  );
   handleIpc('presence:get-dnd', () => presence.doNotDisturb);
   handleIpc('presence:set-dnd', (_event, enabled: unknown) => {
     presence.update({ doNotDisturb: enabled === true });
     return presence.doNotDisturb;
   });
   handleIpc('local-voice:cancel', (_event, requestId?: string, avatarId?: unknown) => {
-    getVoiceService(avatarIdArg(avatarId))?.cancel(typeof requestId === 'string' ? requestId : undefined);
+    getVoiceService(avatarIdArg(avatarId))?.cancel(
+      typeof requestId === 'string' ? requestId : undefined,
+    );
     return true;
   });
   handleIpc('switchboard:status', async () => ({
     enabled: switchboardClient !== null,
     connected: switchboardBus?.connected() === true,
     url: switchboardClient ? process.env.SWITCHBOARD_URL?.trim() || 'http://127.0.0.1:8196' : null,
-    openTxns: ((await switchboardClient?.openTxns(20)) ?? null)?.map((t) => ({ id: t.id, title: t.title ?? null, state: t.state, opened_by: t.opened_by ?? null, owner: t.owner ?? null, updated_at: t.updated_at ?? null })) ?? null,
-    decisions: decisionLog.recent().map((decision) => ({ ...decision, avatarName: avatarRegistry?.get(decision.avatarId)?.name ?? decision.avatarId })),
+    openTxns:
+      ((await switchboardClient?.openTxns(20)) ?? null)?.map((t) => ({
+        id: t.id,
+        title: t.title ?? null,
+        state: t.state,
+        opened_by: t.opened_by ?? null,
+        owner: t.owner ?? null,
+        updated_at: t.updated_at ?? null,
+      })) ?? null,
+    decisions: decisionLog.recent().map((decision) => ({
+      ...decision,
+      avatarName: avatarRegistry?.get(decision.avatarId)?.name ?? decision.avatarId,
+    })),
   }));
-  handleIpc('local-voice:system-status', (_event, avatarId?: unknown) =>
-    getVoiceService(avatarIdArg(avatarId))?.systemStatus() ?? { pending: 0, ready: false, texts: [], urgent: false },
+  handleIpc(
+    'local-voice:system-status',
+    (_event, avatarId?: unknown) =>
+      getVoiceService(avatarIdArg(avatarId))?.systemStatus() ?? {
+        pending: 0,
+        ready: false,
+        texts: [],
+        urgent: false,
+      },
   );
   handleIpc('local-voice:reset', (_event, avatarId?: unknown) => {
     getVoiceService(avatarIdArg(avatarId))?.resetHistory();
@@ -2737,7 +3365,12 @@ function registerIpcHandlers(
     const boneHierarchy = avatarModels ? await avatarModels.listActiveModelBoneHierarchy() : {};
     const activeModel = avatarModels?.getActiveModel() ?? null;
     const modelDescription = activeModel?.description ?? undefined;
-    return poseGenerationService.generatePose({ ...payload, bones, boneHierarchy, modelDescription });
+    return poseGenerationService.generatePose({
+      ...payload,
+      bones,
+      boneHierarchy,
+      modelDescription,
+    });
   });
   handleIpc('avatar-pose:delete', async (_event, poseId: string) => {
     if (!avatarPoses) {
@@ -2759,7 +3392,9 @@ function registerIpcHandlers(
       await refreshPoseEvaluationService(manager);
     }
     if (!poseEvaluationService) {
-      throw new Error('Check poses has no model to use. Pick one in Models and servers (or add the OpenAI API key if it runs on OpenAI).');
+      throw new Error(
+        'Check poses has no model to use. Pick one in Models and servers (or add the OpenAI API key if it runs on OpenAI).',
+      );
     }
 
     // Load pose data if only poseId is provided
@@ -2792,7 +3427,9 @@ function registerIpcHandlers(
       await refreshPoseEvaluationService(manager);
     }
     if (!poseEvaluationService) {
-      throw new Error('Check poses has no model to use. Pick one in Models and servers (or add the OpenAI API key if it runs on OpenAI).');
+      throw new Error(
+        'Check poses has no model to use. Pick one in Models and servers (or add the OpenAI API key if it runs on OpenAI).',
+      );
     }
 
     // Load pose data if only poseId is provided
@@ -2866,7 +3503,7 @@ function registerIpcHandlers(
   // Hibernate handler
   handleIpc('app:hibernate', async (): Promise<void> => {
     logger.info('Hibernate requested via IPC');
-    
+
     if (!serverManager) {
       throw new Error('Server manager not initialized');
     }
@@ -2898,7 +3535,9 @@ function registerIpcHandlers(
 
   // Avatar voice preferences
   const voiceEngine = (engine: unknown): SpeakingEngineId | 'openai' =>
-    typeof engine === 'string' && (SPEAKING_ENGINES as readonly string[]).includes(engine) ? (engine as SpeakingEngineId) : 'openai';
+    typeof engine === 'string' && (SPEAKING_ENGINES as readonly string[]).includes(engine)
+      ? (engine as SpeakingEngineId)
+      : 'openai';
 
   // Without an engine: the OpenAI voice (the Realtime conversation engine's), as before.
   handleIpc('avatar:voice:get-preference', (_event, engine?: unknown, avatarId?: unknown) => {
@@ -2910,24 +3549,27 @@ function registerIpcHandlers(
     return key ? memoryStore.getValue(key) : null;
   });
 
-  handleIpc('avatar:voice:set-preference', (_event, voice: unknown, engine?: unknown, avatarId?: unknown) => {
-    // An empty voice for an engine clears the character's pick (back to the engine's default).
-    if (typeof voice !== 'string' || (!voice && engine === undefined)) {
-      logger.warn('Invalid voice preference:', voice);
-      return;
-    }
-    if (!memoryStore) {
-      logger.warn('Memory store unavailable for avatar voice preference');
-      return;
-    }
-    const key = characterVoiceKey(voiceEngine(engine), settingsAvatarArg(avatarId));
-    if (!key) {
-      logger.warn('No active avatar model to set voice preference');
-      return;
-    }
-    memoryStore.setValue(key, voice);
-    logger.info('Avatar voice preference saved', { key, voice });
-  });
+  handleIpc(
+    'avatar:voice:set-preference',
+    (_event, voice: unknown, engine?: unknown, avatarId?: unknown) => {
+      // An empty voice for an engine clears the character's pick (back to the engine's default).
+      if (typeof voice !== 'string' || (!voice && engine === undefined)) {
+        logger.warn('Invalid voice preference:', voice);
+        return;
+      }
+      if (!memoryStore) {
+        logger.warn('Memory store unavailable for avatar voice preference');
+        return;
+      }
+      const key = characterVoiceKey(voiceEngine(engine), settingsAvatarArg(avatarId));
+      if (!key) {
+        logger.warn('No active avatar model to set voice preference');
+        return;
+      }
+      memoryStore.setValue(key, voice);
+      logger.info('Avatar voice preference saved', { key, voice });
+    },
+  );
 
   // Per-character personality prompt. Null means the character has none of its own yet, so the
   // renderer falls back to the global prompt (what every character used before this existed).
@@ -2976,10 +3618,16 @@ function registerIpcHandlers(
     }
     const saved = normalizeIdleHabits(habits);
     memoryStore.setValue(key, saved);
-    logger.info('Avatar idle habits saved', { key, length: saved.length, max: MAX_IDLE_HABITS_LENGTH });
+    logger.info('Avatar idle habits saved', {
+      key,
+      length: saved.length,
+      max: MAX_IDLE_HABITS_LENGTH,
+    });
   });
 
-  handleIpc('local-voice:voice-options', (_event, avatarId?: unknown) => speakingVoiceOptions(manager, settingsAvatarArg(avatarId)));
+  handleIpc('local-voice:voice-options', (_event, avatarId?: unknown) =>
+    speakingVoiceOptions(manager, settingsAvatarArg(avatarId)),
+  );
 
   // Register MCP handlers
   if (toolRegistry && mcpManager) {
@@ -3005,7 +3653,10 @@ function setupStations(store: MemoryStore): void {
     servers: () => manager.listServerAddresses(),
     describeRoom: async (roomId) => {
       const room = await rooms.load(roomId);
-      return { name: room.name, objects: room.objects.map((object) => ({ id: object.id, name: object.name })) };
+      return {
+        name: room.name,
+        objects: room.objects.map((object) => ({ id: object.id, name: object.name })),
+      };
     },
     tools: { get: (id) => tools.get(id) },
   });
@@ -3017,7 +3668,9 @@ function setupStations(store: MemoryStore): void {
     send: (avatarId, event) => {
       const placeId = places.locationOf(avatarId);
       const reachable =
-        placeId === places.localPlaceId() ? BrowserWindow.getAllWindows().some((window) => !window.isDestroyed()) : Boolean(roomHub?.deviceForPlace(placeId));
+        placeId === places.localPlaceId()
+          ? BrowserWindow.getAllWindows().some((window) => !window.isDestroyed())
+          : Boolean(roomHub?.deviceForPlace(placeId));
       if (!reachable) return false;
       sendForAvatar(avatarId, 'station:use', event);
       return true;
@@ -3027,7 +3680,11 @@ function setupStations(store: MemoryStore): void {
   stationRegistry = registry;
   stationTrips = trips;
   // Reading stations are offered to the conversation as one tool each (env STATION_SINGLE_TOOL=0 turns it off).
-  voiceStations = createVoiceStations(registry, trips, new StationLookup({ stations: registry, tools, logger }));
+  voiceStations = createVoiceStations(
+    registry,
+    trips,
+    new StationLookup({ stations: registry, tools, logger }),
+  );
 }
 
 /**
@@ -3045,7 +3702,9 @@ function setupPursuits(store: MemoryStore): void {
     tools,
     voiceFor: (avatarId) => {
       const service = getVoiceService(avatarId);
-      return service ? { chat: () => service.chat(), recentLines: (count) => service.recentLines(count) } : null;
+      return service
+        ? { chat: () => service.chat(), recentLines: (count) => service.recentLines(count) }
+        : null;
     },
     // The character's own prompt only (no scene tags): Echo's saved prompt, another's by avatarPersona().
     persona: (avatarId) => {
@@ -3062,10 +3721,13 @@ function setupPursuits(store: MemoryStore): void {
     avatarName: (avatarId) => avatarRegistry?.get(avatarId)?.name ?? avatarId,
     isAsleep: (avatarId) => agentSleep.isAsleep(avatarId),
     gate: agentLlmGate,
-    memoryFor: (avatarId) => ({ brief: () => memoryEngine?.voiceFor(avatarId).brief() ?? Promise.resolve(null) }),
+    memoryFor: (avatarId) => ({
+      brief: () => memoryEngine?.voiceFor(avatarId).brief() ?? Promise.resolve(null),
+    }),
     notes: store,
     // Also in long-term memory, through the outbox (so it waits for the engine when it is down).
-    saveToMemory: (note, avatarName) => memoryEngine?.outbox.enqueue(readingOutboxItem(note, avatarName, conversationModelName())),
+    saveToMemory: (note, avatarName) =>
+      memoryEngine?.outbox.enqueue(readingOutboxItem(note, avatarName, conversationModelName())),
     // An update from the avatar itself: the inbox decides to ignore, remember or say it. Never spoken from the pursuit.
     tell: (avatarId, text) => {
       const mirror = mirrorFor(avatarId);
@@ -3099,7 +3761,10 @@ function setupAgentTime(registry: ToolRegistry, broker: ApprovalBroker): void {
   const client = new WorkflowsClient({ baseUrl: agentTime.url, token: agentTime.token });
   workflowsClient = client;
   for (const tool of createAgentTimeTools({ client })) registry.register(tool);
-  logger.info('Agent time is on: workflow tools registered', { url: agentTime.url, agentLife: agentTime.agentLife });
+  logger.info('Agent time is on: workflow tools registered', {
+    url: agentTime.url,
+    agentLife: agentTime.agentLife,
+  });
   const places = () => placeManager;
   agentActHandler?.stop();
   agentActHandler = new AgentActHandler({
@@ -3132,7 +3797,11 @@ function setupAgentTime(registry: ToolRegistry, broker: ApprovalBroker): void {
     pursuits: {
       isRunning: (avatarId) => pursuitManager?.isRunning(avatarId) === true,
       offers: () => pursuitManager?.offers() ?? [],
-      start: (avatarId, stationId) => pursuitManager?.start(avatarId, stationId) ?? { ok: false, reason: 'pursuits are not available yet' },
+      start: (avatarId, stationId) =>
+        pursuitManager?.start(avatarId, stationId) ?? {
+          ok: false,
+          reason: 'pursuits are not available yet',
+        },
       interrupt: (avatarId, reason) => pursuitManager?.interrupt(avatarId, reason) === true,
     },
     say: (avatarId, text, urgent, source) => {
@@ -3145,7 +3814,10 @@ function setupAgentTime(registry: ToolRegistry, broker: ApprovalBroker): void {
     llmGate: agentLlmGate,
     tools: registry,
     approvals: broker,
-    nextDoor: { tryAvatar: (avatarId) => nextDoorReturn?.tryAvatar(avatarId) ?? { moved: false, reason: 'places are not ready' } },
+    nextDoor: {
+      tryAvatar: (avatarId) =>
+        nextDoorReturn?.tryAvatar(avatarId) ?? { moved: false, reason: 'places are not ready' },
+    },
   });
   agentActHandler.start();
   agentSleep.onChanged((asleep) => {
@@ -3155,7 +3827,8 @@ function setupAgentTime(registry: ToolRegistry, broker: ApprovalBroker): void {
   agentSync?.stop();
   agentSync = new AgentSync({
     client,
-    avatars: () => (avatarRegistry?.list() ?? []).map((profile) => ({ id: profile.id, name: profile.name })),
+    avatars: () =>
+      (avatarRegistry?.list() ?? []).map((profile) => ({ id: profile.id, name: profile.name })),
     logger,
   });
   void agentSync.sync();
@@ -3186,7 +3859,10 @@ const satelliteLogger = {
 async function storeSharedWakeModel(_name: string, bytes: Uint8Array): Promise<string> {
   const directory = path.join(app.getPath('userData'), 'wake-word-cache');
   await mkdir(directory, { recursive: true });
-  const file = path.join(directory, `${createHash('sha256').update(bytes).digest('hex').slice(0, 24)}.onnx`);
+  const file = path.join(
+    directory,
+    `${createHash('sha256').update(bytes).digest('hex').slice(0, 24)}.onnx`,
+  );
   if (!existsSync(file)) {
     const temporary = `${file}.tmp`;
     await writeFile(temporary, bytes);
@@ -3200,7 +3876,8 @@ async function storeSharedWakeModel(_name: string, bytes: Uint8Array): Promise<s
  * checkout (`pnpm satellite`) starts Electron on the built main.js. Both pass --satellite, so the role does not depend on
  * the environment of a login start.
  */
-function satelliteStartAtLogin(): { isEnabled(): Promise<boolean>; set(on: boolean): Promise<boolean> } | undefined {
+function satelliteStartAtLogin():
+  { isEnabled(): Promise<boolean>; set(on: boolean): Promise<boolean> } | undefined {
   if (process.platform !== 'win32') return undefined;
   const manager = new AutoLaunchManager({
     logger,
@@ -3229,7 +3906,13 @@ async function startSatelliteMode(settings: SatelliteSettingsStore): Promise<voi
   // The privacy gate: the mic is live only while an avatar is here, the screen is unlocked, the link is up, the
   // room is open and no other app is full screen. It lives here, in the main process, and fails closed.
   const startIcon = stateIcon('off');
-  const tray = new Tray(nativeImage.createFromBitmap(toBgra(startIcon.data), { width: startIcon.width, height: startIcon.height, scaleFactor: 2 }));
+  const tray = new Tray(
+    nativeImage.createFromBitmap(toBgra(startIcon.data), {
+      width: startIcon.width,
+      height: startIcon.height,
+      scaleFactor: 2,
+    }),
+  );
   // The wake word runs here too, but only while the gate allows it: with an avatar in the room, or as the doorbell
   // (the room's setting) with nobody there. In doorbell mode a wake sends only its name and score to bija.
   satelliteWake = new SatelliteWakeRunner({
@@ -3237,7 +3920,11 @@ async function startSatelliteMode(settings: SatelliteSettingsStore): Promise<voi
     storeModel: storeSharedWakeModel,
     start: (config, onWake) => launchWakeWordService(config, { onWake }),
     onWake: (event, mode) => {
-      logger.info('Wake word heard on a satellite', { keyword: event.keywordLabel, confidence: event.confidence, mode });
+      logger.info('Wake word heard on a satellite', {
+        keyword: event.keywordLabel,
+        confidence: event.confidence,
+        mode,
+      });
       if (mode === 'doorbell') {
         runtime.sendOp({ op: 'wake.heard', model: event.keywordLabel, score: event.confidence });
       } else if (mainWindow && !mainWindow.isDestroyed()) {
@@ -3255,7 +3942,12 @@ async function startSatelliteMode(settings: SatelliteSettingsStore): Promise<voi
     getWindow: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
     sendOp: (op) => runtime.sendOp(op),
     tray,
-    makeImage: (icon) => nativeImage.createFromBitmap(toBgra(icon.data), { width: icon.width, height: icon.height, scaleFactor: 2 }),
+    makeImage: (icon) =>
+      nativeImage.createFromBitmap(toBgra(icon.data), {
+        width: icon.width,
+        height: icon.height,
+        scaleFactor: 2,
+      }),
     makeMenu: (template) => Menu.buildFromTemplate(template),
     makeWatcher: (onChange) => new FullscreenWatcher({ onChange, logger: satelliteLogger }),
     notify: (title, body) => {
@@ -3283,7 +3975,10 @@ async function startSatelliteMode(settings: SatelliteSettingsStore): Promise<voi
   try {
     window = createWindow();
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown renderer bootstrap error occurred while creating the window.';
+    const message =
+      error instanceof Error
+        ? error.message
+        : 'Unknown renderer bootstrap error occurred while creating the window.';
     logger.error('Failed to create main window.', { message });
     dialog.showErrorBox('Window Creation Error', message);
     app.quit();
@@ -3321,7 +4016,10 @@ app.whenReady().then(async () => {
   // own for llama-server restarts and ComfyUI (<userData>/logs).
   serverManager = new ServerManager({
     logger,
-    pidDirectories: [path.resolve(__dirname, '../../..', '.dev-home', 'logs'), path.join(app.getPath('userData'), 'logs')],
+    pidDirectories: [
+      path.resolve(__dirname, '../../..', '.dev-home', 'logs'),
+      path.join(app.getPath('userData'), 'logs'),
+    ],
     // The model controller owns the language-model servers it started: their pid files are skipped.
     controllerInUse: () => aicontroller.inUse(),
     // ...and so are motion, vision and ComfyUI when the controller has those backends.
@@ -3336,7 +4034,9 @@ app.whenReady().then(async () => {
       logger.info('System suspend detected');
       await aicontroller.suspend().catch(() => undefined);
       await serverManager?.suspend().catch((error) => {
-        logger.warn('Failed to suspend servers', { message: error instanceof Error ? error.message : String(error) });
+        logger.warn('Failed to suspend servers', {
+          message: error instanceof Error ? error.message : String(error),
+        });
       });
     });
 
@@ -3344,7 +4044,9 @@ app.whenReady().then(async () => {
       logger.info('System resume detected');
       await aicontroller.resume().catch(() => undefined);
       await serverManager?.resume().catch((error) => {
-        logger.warn('Failed to resume servers', { message: error instanceof Error ? error.message : String(error) });
+        logger.warn('Failed to resume servers', {
+          message: error instanceof Error ? error.message : String(error),
+        });
       });
     });
 
@@ -3361,7 +4063,9 @@ app.whenReady().then(async () => {
 
   const manager = new ConfigManager({
     secretStore,
-    preferencesStore: new FilePreferencesStore(path.join(app.getPath('userData'), 'preferences.json')),
+    preferencesStore: new FilePreferencesStore(
+      path.join(app.getPath('userData'), 'preferences.json'),
+    ),
     logger,
     openAIClientFactory: getOpenAIClient,
     repoRoot: path.resolve(__dirname, '../../..'),
@@ -3369,7 +4073,10 @@ app.whenReady().then(async () => {
 
   if (!switchboardBus) {
     if (process.env.SWITCHBOARD_ENABLED !== '0') {
-      switchboardClient = new SwitchboardClient({ baseUrl: process.env.SWITCHBOARD_URL?.trim() || 'http://127.0.0.1:8196', logger });
+      switchboardClient = new SwitchboardClient({
+        baseUrl: process.env.SWITCHBOARD_URL?.trim() || 'http://127.0.0.1:8196',
+        logger,
+      });
       switchboardBus = switchboardClient;
     } else {
       switchboardBus = new LocalOnlyBus(makeEventId);
@@ -3406,7 +4113,13 @@ app.whenReady().then(async () => {
     avatarSettingsKeys = new AvatarSettingsKeys(avatarRegistry);
     const registry = avatarRegistry;
     const floorStore = memoryStore;
-    const places = new PlaceManager({ store: memoryStore, registry, bus: () => switchboardBus, activeAt: (placeId) => placePresence.get(placeId)?.activeAt ?? null, logger });
+    const places = new PlaceManager({
+      store: memoryStore,
+      registry,
+      bus: () => switchboardBus,
+      activeAt: (placeId) => placePresence.get(placeId)?.activeAt ?? null,
+      logger,
+    });
     placeManager = places;
     places.onChanged((snapshot) => broadcastToWindows('places:changed', snapshot));
     // The wake word holds the microphone only while an avatar is here or the doorbell is on.
@@ -3423,7 +4136,9 @@ app.whenReady().then(async () => {
             {
               name: place.name,
               faceSeenAt: placePresence.get(place.id)?.faceSeenAt ?? null,
-              avatars: places.avatarsAt(place.id).map((avatarId) => registry.get(avatarId)?.name ?? avatarId),
+              avatars: places
+                .avatarsAt(place.id)
+                .map((avatarId) => registry.get(avatarId)?.name ?? avatarId),
             },
             now,
           ),
@@ -3439,7 +4154,8 @@ app.whenReady().then(async () => {
       send: (avatarId, payload) => delivery.sendForAvatar(avatarId, 'camera:detection', payload),
     });
     places.onArrived((avatarId, placeId) => {
-      if (greetOnArrival(avatarId, placeId)) logger.info('An avatar waved at a face on arrival.', { avatarId, placeId });
+      if (greetOnArrival(avatarId, placeId))
+        logger.info('An avatar waved at a face on arrival.', { avatarId, placeId });
     });
     // Desktop rooms: a second PC that draws one place. The hub only listens when a PC is paired or a code is active.
     const hub = new RoomHub({
@@ -3452,13 +4168,18 @@ app.whenReady().then(async () => {
       appVersion: app.getVersion(),
       firewallNoted: fileMarker(path.join(app.getPath('userData'), 'room-hub-firewall-noted')),
       avatars: () => registry.list(),
-      settings: () => ({ wakeWord: manager.getRendererConfig().wakeWord ?? null, pushToTalk: pushToTalk.getStatus() }),
+      settings: () => ({
+        wakeWord: manager.getRendererConfig().wakeWord ?? null,
+        pushToTalk: pushToTalk.getStatus(),
+      }),
       bus: () => switchboardBus,
       onSatelliteMessage: (from, op) => {
-        if (op.op === 'presence' || op.op === 'wake.heard') placePresence.onSatelliteOp(from.placeId, op);
+        if (op.op === 'presence' || op.op === 'wake.heard')
+          placePresence.onSatelliteOp(from.placeId, op);
         else placeDevices?.onMessage(from.placeId, op);
         // The doorbell on a satellite heard its wake word with nobody in the room: call an avatar over (only a name and a score came, never audio).
-        if (op.op === 'wake.heard' && typeof op.score === 'number') void doorbellFor(from.placeId)?.onWake();
+        if (op.op === 'wake.heard' && typeof op.score === 'number')
+          void doorbellFor(from.placeId)?.onWake();
       },
       logger,
     });
@@ -3494,83 +4215,127 @@ app.whenReady().then(async () => {
     });
     // With agent life on, the life workflows decide when someone comes back (act return_home); the class stays for that.
     if (!agentTime.agentLife) nextDoorReturn.start();
-    void hub.start().catch((error) => logger.warn('Room hub failed to start', { message: error instanceof Error ? error.message : String(error) }));
+    void hub.start().catch((error) =>
+      logger.warn('Room hub failed to start', {
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    );
     // One floor per place: the scene is the avatars at that place, and what the floor starts (answers, chatter)
     // is delivered where that place is drawn (this window, or a satellite's link).
-    makeFloor = (placeId) => new FloorController({
-      registry,
-      places: scopedPlaces(places, placeId),
-      // Kevin's line picked an avatar that is somewhere else: it walks in, and its turn waits for it.
-      summon: (avatarId, reason) => summon(scopedPlaces(places, placeId), avatarId, reason),
-      reportError: (avatarId, requestId, message) => {
-        const sink = sinkFor(placeId);
-        if (sink && !sink.isDestroyed()) sink.send('local-voice:event', tagEvent({ requestId, type: 'error', message }, avatarId));
-      },
-      store: floorStore,
-      voice: (avatarId) => getVoiceService(avatarId),
-      runPersonTurn: (avatarId, request) => {
-        const voiceService = getVoiceService(avatarId);
-        const sink = sinkFor(placeId);
-        if (!voiceService || !sink) throw new Error('Local voice service is unavailable.');
-        return runVoiceTurn(sink, request, voiceService, placeId);
-      },
-      emitChatter: (chatterAvatarId, voiceEvent) => {
-        const sink = sinkFor(placeId);
-        if (sink && !sink.isDestroyed()) sink.send('local-voice:event', tagEvent(voiceEvent, chatterAvatarId));
-      },
-      saveLine: (line) =>
-        conversationManager?.appendToRecentSession([{ role: 'assistant', content: line.content, speaker: line.speaker, ts: line.ts }]),
-      instructionsFor: (avatarId) => withPlacesNote(avatarInstructions(avatarId, undefined, placeId), false, placeId),
-      bus: () => switchboardBus,
-      // Quick decisions (Laya) answer first; the clients are built per call so a changed route applies at once.
-      // When the route is off or fails, bids go to the Idle thoughts model and the addressee check (avatar lines only) is skipped.
-      addressee: (input, signal) => {
-        const client = createSystemOne({ routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger });
-        if (!client) return Promise.reject(new Error('Quick decisions are off'));
-        return createSystemOneAddressee(client, (id) => registry.get(id)?.name ?? id)(input, signal);
-      },
-      // Kevin's lines go to the fine-tuned quick model first (the decide route must serve the floor checkpoint, e.g. laya-floor-v1);
-      // when it is unsure or fails the Idle thoughts chat model reads the line, then the recent partner or the host.
-      quickIntent: (input, signal) => {
-        // The floor asks for its own checkpoint on the decide route's servers (FLOOR_INTENT_MODEL, default laya-floor-v1),
-        // so bids, the addressee check and the inbox step stay on whatever model the decide route names. A server without that
-        // checkpoint fails fast and the chat model decides.
-        const routing = manager.getConfig().models;
-        const decide = routing.routes.decide;
-        const model = process.env.FLOOR_INTENT_MODEL?.trim() || 'laya-floor-v1';
-        const floorRouting = {
-          ...routing,
-          routes: { ...routing.routes, decide: { ...decide, model, backups: decide.backups?.map((backup) => ({ ...backup, model })) } },
-        };
-        const client = createSystemOne({ routing: floorRouting, keyFor: (id) => manager.getServerKey(id), logger });
-        if (!client) return Promise.reject(new Error('Quick decisions are off'));
-        return createSystemOneIntent(client, (id) => registry.get(id)?.name ?? id)(input, signal);
-      },
-      intent: createIntentRouter({
-        routing: () => manager.getConfig().models,
-        keyFor: (id) => manager.getServerKey(id),
-        nameOf: (id) => registry.get(id)?.name ?? id,
-        logger,
-      }),
-      bid: async (candidates, recentLines, signal) => {
-        const nameOfSpeaker = (from: string) => (from.startsWith('avatar:') ? (registry.get(from.slice('avatar:'.length))?.name ?? from) : 'Kevin');
-        const client = createSystemOne({ routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger });
-        if (client) {
-          try {
-            return await createSystemOneBid(client, nameOfSpeaker)(candidates, recentLines, signal);
-          } catch (error) {
-            logger.warn('Quick-decision bids failed; asking the Idle thoughts model.', { message: error instanceof Error ? error.message : String(error) });
-          }
-        }
-        return createModelBid({
+    makeFloor = (placeId) =>
+      new FloorController({
+        registry,
+        places: scopedPlaces(places, placeId),
+        // Kevin's line picked an avatar that is somewhere else: it walks in, and its turn waits for it.
+        summon: (avatarId, reason) => summon(scopedPlaces(places, placeId), avatarId, reason),
+        reportError: (avatarId, requestId, message) => {
+          const sink = sinkFor(placeId);
+          if (sink && !sink.isDestroyed())
+            sink.send(
+              'local-voice:event',
+              tagEvent({ requestId, type: 'error', message }, avatarId),
+            );
+        },
+        store: floorStore,
+        voice: (avatarId) => getVoiceService(avatarId),
+        runPersonTurn: (avatarId, request) => {
+          const voiceService = getVoiceService(avatarId);
+          const sink = sinkFor(placeId);
+          if (!voiceService || !sink) throw new Error('Local voice service is unavailable.');
+          return runVoiceTurn(sink, request, voiceService, placeId);
+        },
+        emitChatter: (chatterAvatarId, voiceEvent) => {
+          const sink = sinkFor(placeId);
+          if (sink && !sink.isDestroyed())
+            sink.send('local-voice:event', tagEvent(voiceEvent, chatterAvatarId));
+        },
+        saveLine: (line) =>
+          conversationManager?.appendToRecentSession([
+            { role: 'assistant', content: line.content, speaker: line.speaker, ts: line.ts },
+          ]),
+        instructionsFor: (avatarId) =>
+          withPlacesNote(avatarInstructions(avatarId, undefined, placeId), false, placeId),
+        bus: () => switchboardBus,
+        // Quick decisions (Laya) answer first; the clients are built per call so a changed route applies at once.
+        // When the route is off or fails, bids go to the Idle thoughts model and the addressee check (avatar lines only) is skipped.
+        addressee: (input, signal) => {
+          const client = createSystemOne({
+            routing: manager.getConfig().models,
+            keyFor: (id) => manager.getServerKey(id),
+            logger,
+          });
+          if (!client) return Promise.reject(new Error('Quick decisions are off'));
+          return createSystemOneAddressee(client, (id) => registry.get(id)?.name ?? id)(
+            input,
+            signal,
+          );
+        },
+        // Kevin's lines go to the fine-tuned quick model first (the decide route must serve the floor checkpoint, e.g. laya-floor-v1);
+        // when it is unsure or fails the Idle thoughts chat model reads the line, then the recent partner or the host.
+        quickIntent: (input, signal) => {
+          // The floor asks for its own checkpoint on the decide route's servers (FLOOR_INTENT_MODEL, default laya-floor-v1),
+          // so bids, the addressee check and the inbox step stay on whatever model the decide route names. A server without that
+          // checkpoint fails fast and the chat model decides.
+          const routing = manager.getConfig().models;
+          const decide = routing.routes.decide;
+          const model = process.env.FLOOR_INTENT_MODEL?.trim() || 'laya-floor-v1';
+          const floorRouting = {
+            ...routing,
+            routes: {
+              ...routing.routes,
+              decide: {
+                ...decide,
+                model,
+                backups: decide.backups?.map((backup) => ({ ...backup, model })),
+              },
+            },
+          };
+          const client = createSystemOne({
+            routing: floorRouting,
+            keyFor: (id) => manager.getServerKey(id),
+            logger,
+          });
+          if (!client) return Promise.reject(new Error('Quick decisions are off'));
+          return createSystemOneIntent(client, (id) => registry.get(id)?.name ?? id)(input, signal);
+        },
+        intent: createIntentRouter({
           routing: () => manager.getConfig().models,
           keyFor: (id) => manager.getServerKey(id),
-          nameOfSpeaker,
+          nameOf: (id) => registry.get(id)?.name ?? id,
           logger,
-        })(candidates, recentLines, signal);
-      },
-      logger,
-    });
+        }),
+        bid: async (candidates, recentLines, signal) => {
+          const nameOfSpeaker = (from: string) =>
+            from.startsWith('avatar:')
+              ? (registry.get(from.slice('avatar:'.length))?.name ?? from)
+              : 'Kevin';
+          const client = createSystemOne({
+            routing: manager.getConfig().models,
+            keyFor: (id) => manager.getServerKey(id),
+            logger,
+          });
+          if (client) {
+            try {
+              return await createSystemOneBid(client, nameOfSpeaker)(
+                candidates,
+                recentLines,
+                signal,
+              );
+            } catch (error) {
+              logger.warn('Quick-decision bids failed; asking the Idle thoughts model.', {
+                message: error instanceof Error ? error.message : String(error),
+              });
+            }
+          }
+          return createModelBid({
+            routing: () => manager.getConfig().models,
+            keyFor: (id) => manager.getServerKey(id),
+            nameOfSpeaker,
+            logger,
+          })(candidates, recentLines, signal);
+        },
+        logger,
+      });
     floor = floorFor(places.localPlaceId());
     const agentStore = memoryStore;
     memoryEngine = setupMemoryEngine({
@@ -3587,16 +4352,25 @@ app.whenReady().then(async () => {
     proactiveTick = new ProactiveTick({
       ...proactiveSettingsFromEnv(process.env),
       presence,
-      makeClient: () => createSystemOne({ routing: manager.getConfig().models, keyFor: (id) => manager.getServerKey(id), logger }),
+      makeClient: () =>
+        createSystemOne({
+          routing: manager.getConfig().models,
+          keyFor: (id) => manager.getServerKey(id),
+          logger,
+        }),
       notify: (text, options) => getVoiceService(DEFAULT_AVATAR_ID)?.notify(text, options),
       avatarName: () => avatarRegistry?.get(DEFAULT_AVATAR_ID)?.name ?? 'Echo',
       bus: () => switchboardBus,
       logger,
     });
     if (agentTime.agentLife) {
-      logger.info('Agent life is on: the life workflows replace the proactive tick and the next-door return');
+      logger.info(
+        'Agent life is on: the life workflows replace the proactive tick and the next-door return',
+      );
     } else {
-      logger.info('Agent life is off: using the proactive tick and the next-door return', { workflows: agentTime.enabled });
+      logger.info('Agent life is off: using the proactive tick and the next-door return', {
+        workflows: agentTime.enabled,
+      });
       proactiveTick.start();
     }
     // Provider settings may have been applied before the engine existed.
@@ -3606,11 +4380,17 @@ app.whenReady().then(async () => {
     toolRegistry = new ToolRegistry();
     toolRegistry.register(createReadingNotesTool({ notes: memoryStore }));
     // The agents' yes/no questions (agent-time/ask.ts) are answered by the wrapper; the nudger does not announce them.
-    approvalBroker = new ApprovalBroker({ registry: withQuestionTool(toolRegistry), avatarId: DEFAULT_AVATAR_ID, logger });
+    approvalBroker = new ApprovalBroker({
+      registry: withQuestionTool(toolRegistry),
+      avatarId: DEFAULT_AVATAR_ID,
+      logger,
+    });
     approvalBroker.on('outcome', (outcome: ApprovalOutcome) => {
       if (outcome.approval.toolId !== QUESTION_TOOL_ID) codingNudger?.handleApproval(outcome);
     });
-    approvalBroker.on('outcome', (outcome: ApprovalOutcome) => mirrorFor(avatarIdOfAddress(outcome.approval.requestedBy))?.approvalOutcome(outcome));
+    approvalBroker.on('outcome', (outcome: ApprovalOutcome) =>
+      mirrorFor(avatarIdOfAddress(outcome.approval.requestedBy))?.approvalOutcome(outcome),
+    );
     // 'changed' lists everything pending; only ids not seen before are new requests.
     approvalBroker.on('changed', (pending: PendingApproval[]) => {
       for (const approval of pending) {
@@ -3648,17 +4428,23 @@ app.whenReady().then(async () => {
     });
     // Servers connect in the background so a slow one cannot hold up start-up. They wait for the configuration
     // (and its saved keys) to load first: a Home Assistant server needs its token to connect.
-    void mcpMayStart.then(() => mcpManager?.initialize()).catch((error) => {
-      logger.warn('MCP auto-start failed', { message: error instanceof Error ? error.message : String(error) });
-    });
+    void mcpMayStart
+      .then(() => mcpManager?.initialize())
+      .catch((error) => {
+        logger.warn('MCP auto-start failed', {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
     logger.info('MCP Manager initialized', {
-      autoStartedServers: (await mcpManager.listServers()).filter(s => s.autoStart && s.enabled).length
+      autoStartedServers: (await mcpManager.listServers()).filter((s) => s.autoStart && s.enabled)
+        .length,
     });
 
     // Seed default model if this is the first run
     await avatarModelService.seedDefaultModelIfMissing(DEFAULT_MODEL_ASSET_PATH);
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown database initialization error occurred.';
+    const message =
+      error instanceof Error ? error.message : 'Unknown database initialization error occurred.';
     logger.error('Failed to initialize memory store', { message });
     dialog.showErrorBox('Database Error', message);
     app.quit();
@@ -3688,12 +4474,15 @@ app.whenReady().then(async () => {
     leases: aicontroller,
   });
   avatarComfyPool = comfyPool;
-  const imageModelScript = path.join(__dirname, '../assets/avatar-generation/image-models.py').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
+  const imageModelScript = path
+    .join(__dirname, '../assets/avatar-generation/image-models.py')
+    .replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
   // Model lists come from the first ComfyUI server of each step: this PC's files are read
   // directly, another machine's are listed over its HTTP API.
   const scanComfyModels = (stage: 'image' | 'mesh') => async () => {
     const server = comfyPool.primary(stage);
-    if (!server) throw new Error('No ComfyUI server is set for this step. Choose one in Models and servers.');
+    if (!server)
+      throw new Error('No ComfyUI server is set for this step. Choose one in Models and servers.');
     if (server.managed && aicontroller.inUse() && aicontroller.managesBackend('comfyui')) {
       // This PC's ComfyUI is the controller's: list the models of every machine it can send a job to.
       return createControllerModelScanner(
@@ -3712,9 +4501,21 @@ app.whenReady().then(async () => {
       ? createImageModelScanner(imageModelScript, server.url)()
       : createRemoteComfyModelScanner(server.url)();
   };
-  avatarImageModels = new AvatarImageModelService(scanComfyModels('image'), memoryStore ?? undefined, poseControlInstaller);
-  const characterRunner = new BlenderCharacterRunner(path.join(__dirname, '../assets/avatar-generation/rig-character.py').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1'));
-  avatarCharacterModels = new AvatarCharacterModelService(scanComfyModels('mesh'), () => characterRunner.assertAvailable(), memoryStore ?? undefined);
+  avatarImageModels = new AvatarImageModelService(
+    scanComfyModels('image'),
+    memoryStore ?? undefined,
+    poseControlInstaller,
+  );
+  const characterRunner = new BlenderCharacterRunner(
+    path
+      .join(__dirname, '../assets/avatar-generation/rig-character.py')
+      .replace(/app\.asar([\\/])/, 'app.asar.unpacked$1'),
+  );
+  avatarCharacterModels = new AvatarCharacterModelService(
+    scanComfyModels('mesh'),
+    () => characterRunner.assertAvailable(),
+    memoryStore ?? undefined,
+  );
   // Backgrounds draw on the image step's server; the pick and the run share one server.
   let backgroundComfy: ComfyUIClient | null = null;
   const fallbackComfy = new ComfyUIClient({ baseUrl: appConfig.comfyUiBaseUrl });
@@ -3756,8 +4557,10 @@ app.whenReady().then(async () => {
       assetsDirectory: path.join(__dirname, '../assets/backgrounds'),
       backgroundsDirectory: path.join(app.getPath('userData'), 'backgrounds'),
       comfy: {
-        isAvailable: async (): Promise<boolean> => (backgroundComfy ?? fallbackComfy)?.isAvailable() ?? false,
-        run: (graph: unknown, options?: { signal?: AbortSignal }) => (backgroundComfy ?? fallbackComfy).run(graph as ComfyGraph, options),
+        isAvailable: async (): Promise<boolean> =>
+          (backgroundComfy ?? fallbackComfy)?.isAvailable() ?? false,
+        run: (graph: unknown, options?: { signal?: AbortSignal }) =>
+          (backgroundComfy ?? fallbackComfy).run(graph as ComfyGraph, options),
       },
       ensureComfyReady: async () => {
         backgroundComfy = await comfyPool.pick('image');
@@ -3782,7 +4585,11 @@ app.whenReady().then(async () => {
         withVision(manager, 'describe', async () => {
           const target = helperTarget(manager, 'describe');
           if (!target) return null;
-          const response = await (target.client as unknown as { responses: { create: (args: unknown) => Promise<{ output_text: string }> } }).responses.create({
+          const response = await (
+            target.client as unknown as {
+              responses: { create: (args: unknown) => Promise<{ output_text: string }> };
+            }
+          ).responses.create({
             model: target.model ?? 'gpt-4.1-mini',
             instructions: system,
             input: user,
@@ -3795,7 +4602,9 @@ app.whenReady().then(async () => {
       logger,
     });
     furnitureService.initialize().catch((error: unknown) => {
-      logger.warn('Furniture service initialization failed.', { message: error instanceof Error ? error.message : String(error) });
+      logger.warn('Furniture service initialization failed.', {
+        message: error instanceof Error ? error.message : String(error),
+      });
     });
     setupStations(memoryStore);
     setupPursuits(memoryStore);
@@ -3975,7 +4784,9 @@ app.whenReady().then(async () => {
     window = createWindow();
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : 'Unknown renderer bootstrap error occurred while creating the window.';
+      error instanceof Error
+        ? error.message
+        : 'Unknown renderer bootstrap error occurred while creating the window.';
     logger.error('Failed to create main window.', { message });
     dialog.showErrorBox('Window Creation Error', message);
     app.quit();
@@ -4033,18 +4844,24 @@ app.on('before-quit', async (event) => {
 
   // Stop MCP programs this app started (stdio servers) so none is left running.
   await mcpManager?.disconnectAll().catch((error) => {
-    logger.warn('Failed to disconnect MCP servers during shutdown', { message: error instanceof Error ? error.message : String(error) });
+    logger.warn('Failed to disconnect MCP servers during shutdown', {
+      message: error instanceof Error ? error.message : String(error),
+    });
   });
 
   // Give the model controller its leases back.
   await aicontroller.shutdown().catch((error) => {
-    logger.warn('Failed to release model controller leases during shutdown', { message: error instanceof Error ? error.message : String(error) });
+    logger.warn('Failed to release model controller leases during shutdown', {
+      message: error instanceof Error ? error.message : String(error),
+    });
   });
 
   // Stop the local servers this app started, as hibernation does.
   if (serverManager) {
     await serverManager.shutdown().catch((error) => {
-      logger.warn('Failed to stop servers during shutdown', { message: error instanceof Error ? error.message : String(error) });
+      logger.warn('Failed to stop servers during shutdown', {
+        message: error instanceof Error ? error.message : String(error),
+      });
     });
   }
 

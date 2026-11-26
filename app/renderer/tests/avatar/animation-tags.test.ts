@@ -62,17 +62,23 @@ describe('scene tags', () => {
   });
 
   it('is case-insensitive about the tag name and ignores incomplete tags', () => {
-    expect(extractSceneTags('{GO:Bookshelf} {sit:} {go} {stand:now} {come:here} {put:mug} {put:@table} {look:  }')).toEqual([
-      { type: 'go', object: 'Bookshelf' },
-    ]);
+    expect(
+      extractSceneTags(
+        '{GO:Bookshelf} {sit:} {go} {stand:now} {come:here} {put:mug} {put:@table} {look:  }',
+      ),
+    ).toEqual([{ type: 'go', object: 'Bookshelf' }]);
   });
 
   it('only reports scene tags from extractSceneTags', () => {
-    expect(extractSceneTags('{move:waves} {wave} {anim:wave} {stand}')).toEqual([{ type: 'stand' }]);
+    expect(extractSceneTags('{move:waves} {wave} {anim:wave} {stand}')).toEqual([
+      { type: 'stand' },
+    ]);
   });
 
   it('leaves the move tag parser alone', () => {
-    expect(extractMoveTags('{go:bookshelf} {move:waves}')).toEqual([{ type: 'move', text: 'waves' }]);
+    expect(extractMoveTags('{go:bookshelf} {move:waves}')).toEqual([
+      { type: 'move', text: 'waves' },
+    ]);
   });
 
   it('does not treat scene tags as animation slugs', () => {
@@ -87,7 +93,9 @@ describe('scene tags', () => {
 
 describe('room tag', () => {
   it('parses the place name as written, in order with the other tags', () => {
-    expect(extractMotionTags('Fine, I will give you a minute. {move:waves}{room:next door}')).toEqual([
+    expect(
+      extractMotionTags('Fine, I will give you a minute. {move:waves}{room:next door}'),
+    ).toEqual([
       { type: 'move', text: 'waves' },
       { type: 'room', place: 'next door' },
     ]);

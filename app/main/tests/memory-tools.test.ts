@@ -93,7 +93,13 @@ function makeTools() {
           started_at: new Date(2026, 10, 2, 9).toISOString(),
           last_at: new Date(2026, 10, 2, 9, 10).toISOString(),
           message_count: 4,
-          turns: [{ id: 't1', at: new Date(2026, 10, 2, 9).toISOString(), text: 'Kevin: hi\nEcho: hello' }],
+          turns: [
+            {
+              id: 't1',
+              at: new Date(2026, 10, 2, 9).toISOString(),
+              text: 'Kevin: hi\nEcho: hello',
+            },
+          ],
         },
       ],
     })),
@@ -103,16 +109,36 @@ function makeTools() {
       period_start: new Date(2026, 10, 2, 9).toISOString(),
       agent: 'Echo',
       messages: [
-        { id: 'm1', role: 'user', speaker: null, content: 'hi', tool: null, created_at: new Date(2026, 10, 2, 9).toISOString() },
-        { id: 'm2', role: 'assistant', speaker: null, content: 'hello', tool: null, created_at: new Date(2026, 10, 2, 9, 1).toISOString() },
+        {
+          id: 'm1',
+          role: 'user',
+          speaker: null,
+          content: 'hi',
+          tool: null,
+          created_at: new Date(2026, 10, 2, 9).toISOString(),
+        },
+        {
+          id: 'm2',
+          role: 'assistant',
+          speaker: null,
+          content: 'hello',
+          tool: null,
+          created_at: new Date(2026, 10, 2, 9, 1).toISOString(),
+        },
       ],
     })),
-    homeHistory: vi.fn(async (_options: Record<string, unknown>): Promise<MemoryEngineHomeHistory> => ({ matches: [] })),
-    correctFact: vi.fn(async (_body: MemoryEngineCorrection): Promise<MemoryEngineCorrectionResult> => ({
-      status: 'replaced',
-      fact: { id: 'f1', text: 'Kevin drives a Corolla' },
-      replacement: { id: 'f2', text: 'Kevin drives a Mazda' },
-    })),
+    homeHistory: vi.fn(
+      async (_options: Record<string, unknown>): Promise<MemoryEngineHomeHistory> => ({
+        matches: [],
+      }),
+    ),
+    correctFact: vi.fn(
+      async (_body: MemoryEngineCorrection): Promise<MemoryEngineCorrectionResult> => ({
+        status: 'replaced',
+        fact: { id: 'f1', text: 'Kevin drives a Corolla' },
+        replacement: { id: 'f2', text: 'Kevin drives a Mazda' },
+      }),
+    ),
   };
   const queued: OutboxItem[] = [];
   const tools = createMemoryTools({
@@ -138,7 +164,11 @@ describe('memory tools', () => {
 
   it('recall_memories passes the query and period to the engine', async () => {
     const { client, byId } = makeTools();
-    const text = await byId[MEMORY_TOOL_IDS.recall].execute({ query: 'tomatoes', subject: 'garden', period: 'last week' });
+    const text = await byId[MEMORY_TOOL_IDS.recall].execute({
+      query: 'tomatoes',
+      subject: 'garden',
+      period: 'last week',
+    });
     expect(client.search).toHaveBeenCalledWith('tomatoes garden', {
       from: local(2026, 10, 26).toISOString(),
       to: local(2026, 11, 2).toISOString(),
@@ -151,27 +181,49 @@ describe('memory tools', () => {
     expect(text).toContain('with Echo');
   });
 
-  it('recall_memories maps source home to the engine\'s home_assistant and omits it by default', async () => {
+  it("recall_memories maps source home to the engine's home_assistant and omits it by default", async () => {
     const { client, byId } = makeTools();
     await byId[MEMORY_TOOL_IDS.recall].execute({ query: 'front door', source: 'home' });
-    expect(client.search).toHaveBeenLastCalledWith('front door', expect.objectContaining({ source: 'home_assistant' }));
+    expect(client.search).toHaveBeenLastCalledWith(
+      'front door',
+      expect.objectContaining({ source: 'home_assistant' }),
+    );
     await byId[MEMORY_TOOL_IDS.recall].execute({ query: 'front door', source: 'all' });
-    expect(client.search).toHaveBeenLastCalledWith('front door', expect.objectContaining({ source: 'all' }));
+    expect(client.search).toHaveBeenLastCalledWith(
+      'front door',
+      expect.objectContaining({ source: 'all' }),
+    );
     await byId[MEMORY_TOOL_IDS.recall].execute({ query: 'front door', source: 'conversation' });
     expect(client.search.mock.calls.at(-1)?.[1]).not.toHaveProperty('source');
-    client.search.mockResolvedValueOnce([result({ id: 'h1', kind: 'ha_event', source: 'home_assistant', agent: null, text: 'Front door opened.' })]);
-    expect(await byId[MEMORY_TOOL_IDS.recall].execute({ query: 'door', source: 'home' })).toContain('home event:');
+    client.search.mockResolvedValueOnce([
+      result({
+        id: 'h1',
+        kind: 'ha_event',
+        source: 'home_assistant',
+        agent: null,
+        text: 'Front door opened.',
+      }),
+    ]);
+    expect(await byId[MEMORY_TOOL_IDS.recall].execute({ query: 'door', source: 'home' })).toContain(
+      'home event:',
+    );
   });
 
   it('recall_memories passes source coding to the engine', async () => {
     const { client, byId } = makeTools();
     await byId[MEMORY_TOOL_IDS.recall].execute({ query: 'retry', source: 'coding' });
-    expect(client.search).toHaveBeenLastCalledWith('retry', expect.objectContaining({ source: 'coding' }));
+    expect(client.search).toHaveBeenLastCalledWith(
+      'retry',
+      expect.objectContaining({ source: 'coding' }),
+    );
   });
 
   it('explains a period it cannot read instead of searching', async () => {
     const { client, byId } = makeTools();
-    const text = await byId[MEMORY_TOOL_IDS.recall].execute({ query: 'x', period: 'the other day-ish thing' });
+    const text = await byId[MEMORY_TOOL_IDS.recall].execute({
+      query: 'x',
+      period: 'the other day-ish thing',
+    });
     expect(text).toMatch(/could not read that period/);
     expect(client.search).not.toHaveBeenCalled();
   });
@@ -179,7 +231,10 @@ describe('memory tools', () => {
   it('recall_timeline lists conversations in the period', async () => {
     const { client, byId } = makeTools();
     const text = await byId[MEMORY_TOOL_IDS.timeline].execute({ period: 'yesterday' });
-    expect(client.timeline).toHaveBeenCalledWith(local(2026, 11, 2).toISOString(), local(2026, 11, 3).toISOString());
+    expect(client.timeline).toHaveBeenCalledWith(
+      local(2026, 11, 2).toISOString(),
+      local(2026, 11, 3).toISOString(),
+    );
     expect(text).toContain('4 messages');
     expect(text).toContain('[t1] Kevin: hi / Echo: hello');
   });
@@ -194,12 +249,21 @@ describe('memory tools', () => {
 
   it('remember queues a fact linked to the conversation', async () => {
     const { queued, byId } = makeTools();
-    expect(await byId[MEMORY_TOOL_IDS.remember].execute({ fact: 'Kevin prefers wslc', subject: 'tools' })).toBe('Saved.');
+    expect(
+      await byId[MEMORY_TOOL_IDS.remember].execute({
+        fact: 'Kevin prefers wslc',
+        subject: 'tools',
+      }),
+    ).toBe('Saved.');
     expect(queued).toHaveLength(1);
     expect(queued[0]).toMatchObject({
       kind: 'fact',
       fact: {
-        text: 'Kevin prefers wslc', subject: 'tools', author: 'agent', agent: 'Echo', session_id: 'sess',
+        text: 'Kevin prefers wslc',
+        subject: 'tools',
+        author: 'agent',
+        agent: 'Echo',
+        session_id: 'sess',
         model: 'qwen-next-flash',
       },
     });
@@ -207,32 +271,70 @@ describe('memory tools', () => {
 
   it('correct_memory replaces a fact by id, or withdraws one by what it said', async () => {
     const { client, byId } = makeTools();
-    const replaced = await byId[MEMORY_TOOL_IDS.correct].execute({ id: '[f1]', correction: 'Kevin drives a Mazda' });
+    const replaced = await byId[MEMORY_TOOL_IDS.correct].execute({
+      id: '[f1]',
+      correction: 'Kevin drives a Mazda',
+    });
     expect(replaced).toBe('Corrected. "Kevin drives a Corolla" is now "Kevin drives a Mazda".');
-    expect(client.correctFact).toHaveBeenLastCalledWith(expect.objectContaining({
-      id: 'f1', action: 'replace', text: 'Kevin drives a Mazda', author: 'agent', agent: 'Echo',
-      model: 'qwen-next-flash', session_id: 'sess',
-    }));
+    expect(client.correctFact).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        id: 'f1',
+        action: 'replace',
+        text: 'Kevin drives a Mazda',
+        author: 'agent',
+        agent: 'Echo',
+        model: 'qwen-next-flash',
+        session_id: 'sess',
+      }),
+    );
 
-    client.correctFact.mockResolvedValueOnce({ status: 'retracted', fact: { id: 'f1', text: 'Kevin drives a Corolla' } });
-    expect(await byId[MEMORY_TOOL_IDS.correct].execute({ about: 'the Corolla' })).toBe('Withdrawn: "Kevin drives a Corolla".');
-    expect(client.correctFact).toHaveBeenLastCalledWith(expect.objectContaining({ about: 'the Corolla', action: 'retract' }));
-    await expect(byId[MEMORY_TOOL_IDS.correct].execute({})).rejects.toThrow(/needs an "id" or "about"/);
+    client.correctFact.mockResolvedValueOnce({
+      status: 'retracted',
+      fact: { id: 'f1', text: 'Kevin drives a Corolla' },
+    });
+    expect(await byId[MEMORY_TOOL_IDS.correct].execute({ about: 'the Corolla' })).toBe(
+      'Withdrawn: "Kevin drives a Corolla".',
+    );
+    expect(client.correctFact).toHaveBeenLastCalledWith(
+      expect.objectContaining({ about: 'the Corolla', action: 'retract' }),
+    );
+    await expect(byId[MEMORY_TOOL_IDS.correct].execute({})).rejects.toThrow(
+      /needs an "id" or "about"/,
+    );
   });
 
   it('correct_memory lists candidates when unsure and explains what it cannot change', () => {
-    expect(formatCorrection({ status: 'ambiguous', candidates: [{ id: 'a', text: 'Cat is Pickle' }, { id: 'b', text: 'Cat is Mango' }] }))
-      .toContain('[a] Cat is Pickle\n[b] Cat is Mango');
-    expect(formatCorrection({ status: 'pinned', fact: { id: 'p', text: 'Partner is Erika' } })).toMatch(/Kevin pinned/);
+    expect(
+      formatCorrection({
+        status: 'ambiguous',
+        candidates: [
+          { id: 'a', text: 'Cat is Pickle' },
+          { id: 'b', text: 'Cat is Mango' },
+        ],
+      }),
+    ).toContain('[a] Cat is Pickle\n[b] Cat is Mango');
+    expect(
+      formatCorrection({ status: 'pinned', fact: { id: 'p', text: 'Partner is Erika' } }),
+    ).toMatch(/Kevin pinned/);
     expect(formatCorrection({ status: 'not_a_fact' })).toMatch(/remember instead/);
     expect(formatCorrection({ status: 'not_found' })).toMatch(/recall_memories/);
   });
 
   it('note_for_next_time queues a signed note for this conversation', async () => {
     const { queued, byId } = makeTools();
-    expect(await byId[MEMORY_TOOL_IDS.handoff].execute({ note: 'Halfway through the garden plan.' })).toBe('Noted for next time.');
+    expect(
+      await byId[MEMORY_TOOL_IDS.handoff].execute({ note: 'Halfway through the garden plan.' }),
+    ).toBe('Noted for next time.');
     expect(queued).toEqual([
-      { kind: 'handoff', sessionId: 'sess', handoff: { text: 'Halfway through the garden plan.', agent: 'Echo', model: 'qwen-next-flash' } },
+      {
+        kind: 'handoff',
+        sessionId: 'sess',
+        handoff: {
+          text: 'Halfway through the garden plan.',
+          agent: 'Echo',
+          model: 'qwen-next-flash',
+        },
+      },
     ]);
   });
 
@@ -240,15 +342,31 @@ describe('memory tools', () => {
     const { client, byId } = makeTools();
     client.timeline.mockResolvedValueOnce({
       summaries: [
-        { id: 'd1', kind: 'day', period_start: local(2026, 10, 27).toISOString(), period_end: local(2026, 10, 28).toISOString(),
-          title: 'Garden day', text: 'The user planted tomatoes.', topics: ['garden'] },
+        {
+          id: 'd1',
+          kind: 'day',
+          period_start: local(2026, 10, 27).toISOString(),
+          period_end: local(2026, 10, 28).toISOString(),
+          title: 'Garden day',
+          text: 'The user planted tomatoes.',
+          topics: ['garden'],
+        },
       ],
       sessions: [
         {
-          session_id: 's', agent: 'Echo', channel: 'voice', title: null,
-          started_at: new Date(2026, 9, 27, 9).toISOString(), last_at: new Date(2026, 9, 27, 9, 5).toISOString(),
+          session_id: 's',
+          agent: 'Echo',
+          channel: 'voice',
+          title: null,
+          started_at: new Date(2026, 9, 27, 9).toISOString(),
+          last_at: new Date(2026, 9, 27, 9, 5).toISOString(),
           message_count: 6,
-          summary: { id: 'x1', title: 'Tomatoes', text: 'They talked about planting tomatoes.', topics: [] },
+          summary: {
+            id: 'x1',
+            title: 'Tomatoes',
+            text: 'They talked about planting tomatoes.',
+            topics: [],
+          },
           turns: [{ id: 't9', at: new Date(2026, 9, 27, 9).toISOString(), text: 'User: hi' }],
         },
       ],
@@ -262,14 +380,27 @@ describe('memory tools', () => {
 
   it('labels summaries in search results and opens them', async () => {
     const { client, byId } = makeTools();
-    client.search.mockResolvedValueOnce([result({ id: 'w1', kind: 'week', agent: null, text: 'A busy week.' })]);
-    expect(await byId[MEMORY_TOOL_IDS.recall].execute({ query: 'week' })).toContain('summary of the week:');
-    client.memory.mockResolvedValueOnce({ id: 'w1', kind: 'week', period_start: local(2026, 10, 26).toISOString(), text: 'A busy week.' });
-    expect(await byId[MEMORY_TOOL_IDS.open].execute({ id: 'w1' })).toMatch(/^Summary of the week, .*: A busy week\.$/);
+    client.search.mockResolvedValueOnce([
+      result({ id: 'w1', kind: 'week', agent: null, text: 'A busy week.' }),
+    ]);
+    expect(await byId[MEMORY_TOOL_IDS.recall].execute({ query: 'week' })).toContain(
+      'summary of the week:',
+    );
+    client.memory.mockResolvedValueOnce({
+      id: 'w1',
+      kind: 'week',
+      period_start: local(2026, 10, 26).toISOString(),
+      text: 'A busy week.',
+    });
+    expect(await byId[MEMORY_TOOL_IDS.open].execute({ id: 'w1' })).toMatch(
+      /^Summary of the week, .*: A busy week\.$/,
+    );
   });
 
   it('caps long results', () => {
-    const many = Array.from({ length: 40 }, (_, i) => result({ id: `r${i}`, text: 'x'.repeat(400) }));
+    const many = Array.from({ length: 40 }, (_, i) =>
+      result({ id: `r${i}`, text: 'x'.repeat(400) }),
+    );
     const text = formatSearchResults(many, NOW);
     expect(text.length).toBeLessThan(6200);
     expect(text).toContain('more not shown');
@@ -277,8 +408,28 @@ describe('memory tools', () => {
 });
 
 describe('home_history', () => {
-  const door = { home_id: 'home', entity_id: 'binary_sensor.front_door', name: 'Front door', area: 'Hallway', domain: 'binary_sensor', class: 'alert', unit: null, last_state: 'off', last_value: null };
-  const temp = { ...door, entity_id: 'sensor.lounge_temp', name: 'Lounge temperature', area: 'Lounge', domain: 'sensor', class: 'numeric', unit: '°C', last_state: '21.4', last_value: 21.4 };
+  const door = {
+    home_id: 'home',
+    entity_id: 'binary_sensor.front_door',
+    name: 'Front door',
+    area: 'Hallway',
+    domain: 'binary_sensor',
+    class: 'alert',
+    unit: null,
+    last_state: 'off',
+    last_value: null,
+  };
+  const temp = {
+    ...door,
+    entity_id: 'sensor.lounge_temp',
+    name: 'Lounge temperature',
+    area: 'Lounge',
+    domain: 'sensor',
+    class: 'numeric',
+    unit: '°C',
+    last_state: '21.4',
+    last_value: 21.4,
+  };
 
   it('lists matches and asks which is meant', async () => {
     const { client, byId } = makeTools();
@@ -294,15 +445,21 @@ describe('home_history', () => {
     const { client, byId } = makeTools();
     const sg = { ...door, home_id: 'sg', home_name: 'SG' };
     client.homeHistory.mockResolvedValueOnce({ matches: [sg] });
-    expect(await byId[MEMORY_TOOL_IDS.homeHistory].execute({ what: 'door' })).toContain('Front door, Hallway, SG [binary_sensor.front_door]');
+    expect(await byId[MEMORY_TOOL_IDS.homeHistory].execute({ what: 'door' })).toContain(
+      'Front door, Hallway, SG [binary_sensor.front_door]',
+    );
     client.homeHistory.mockResolvedValueOnce({ entity: sg, changes: [] });
-    expect(await byId[MEMORY_TOOL_IDS.homeHistory].execute({ what: 'binary_sensor.front_door' })).toContain('Front door (Hallway, SG) [binary_sensor.front_door]');
+    expect(
+      await byId[MEMORY_TOOL_IDS.homeHistory].execute({ what: 'binary_sensor.front_door' }),
+    ).toContain('Front door (Hallway, SG) [binary_sensor.front_door]');
   });
 
   it('defaults to the last 24 hours and passes an entity id as entity', async () => {
     const { client, byId } = makeTools();
     client.homeHistory.mockResolvedValueOnce({ entity: door, changes: [] });
-    const text = await byId[MEMORY_TOOL_IDS.homeHistory].execute({ what: 'binary_sensor.front_door' });
+    const text = await byId[MEMORY_TOOL_IDS.homeHistory].execute({
+      what: 'binary_sensor.front_door',
+    });
     expect(client.homeHistory).toHaveBeenCalledWith({
       entity: 'binary_sensor.front_door',
       from: new Date(NOW.getTime() - 24 * 3_600_000).toISOString(),
@@ -316,11 +473,28 @@ describe('home_history', () => {
     client.homeHistory.mockResolvedValueOnce({
       entity: door,
       changes: [
-        { at: new Date(2026, 10, 3, 14, 5).toISOString(), kind: 'change', state: 'on', old_state: 'off', value: null, text: 'Front door (Hallway) opened, was closed.' },
-        { at: new Date(2026, 10, 2, 8, 0).toISOString(), kind: 'change', state: 'off', old_state: 'on', value: null, text: null },
+        {
+          at: new Date(2026, 10, 3, 14, 5).toISOString(),
+          kind: 'change',
+          state: 'on',
+          old_state: 'off',
+          value: null,
+          text: 'Front door (Hallway) opened, was closed.',
+        },
+        {
+          at: new Date(2026, 10, 2, 8, 0).toISOString(),
+          kind: 'change',
+          state: 'off',
+          old_state: 'on',
+          value: null,
+          text: null,
+        },
       ],
     });
-    const text = await byId[MEMORY_TOOL_IDS.homeHistory].execute({ what: 'front door', period: 'the last 3 days' });
+    const text = await byId[MEMORY_TOOL_IDS.homeHistory].execute({
+      what: 'front door',
+      period: 'the last 3 days',
+    });
     expect(text).toContain('Front door (Hallway) [binary_sensor.front_door], now off.');
     expect(text).toContain('(today): Front door (Hallway) opened, was closed.');
     expect(text).toContain('(yesterday): on to off');
@@ -334,12 +508,18 @@ describe('home_history', () => {
       { hour: new Date(2026, 10, 2, 9).toISOString(), min: 18, mean: 19, max: 20, last: 20 },
     ];
     client.homeHistory.mockResolvedValueOnce({ entity: temp, changes: [], readings });
-    const hourly = await byId[MEMORY_TOOL_IDS.homeHistory].execute({ what: 'lounge temperature', period: 'yesterday' });
+    const hourly = await byId[MEMORY_TOOL_IDS.homeHistory].execute({
+      what: 'lounge temperature',
+      period: 'yesterday',
+    });
     expect(hourly).toContain('Readings by hour');
     expect(hourly).toContain('9:00 am: 19 °C / 20 °C / 21 °C');
 
     client.homeHistory.mockResolvedValueOnce({ entity: temp, changes: [], readings });
-    const daily = await byId[MEMORY_TOOL_IDS.homeHistory].execute({ what: 'lounge temperature', period: 'last week' });
+    const daily = await byId[MEMORY_TOOL_IDS.homeHistory].execute({
+      what: 'lounge temperature',
+      period: 'last week',
+    });
     expect(daily).toContain('Readings by day');
     expect(daily).toContain('Sun, 1 Nov 2026: 19 °C / 21 °C / 23 °C');
     expect(daily).toContain('Mon, 2 Nov 2026: 18 °C / 19 °C / 20 °C');
@@ -349,14 +529,32 @@ describe('home_history', () => {
   it('says so when the engine is down, and explains a period it cannot read', async () => {
     const { client, byId } = makeTools();
     client.homeHistory.mockRejectedValueOnce(new MemoryEngineError('unreachable', null, true));
-    expect(await byId[MEMORY_TOOL_IDS.homeHistory].execute({ what: 'door' })).toMatch(/cannot reach/);
-    expect(await byId[MEMORY_TOOL_IDS.homeHistory].execute({ what: 'door', period: 'the other day-ish thing' })).toMatch(/could not read that period/);
+    expect(await byId[MEMORY_TOOL_IDS.homeHistory].execute({ what: 'door' })).toMatch(
+      /cannot reach/,
+    );
+    expect(
+      await byId[MEMORY_TOOL_IDS.homeHistory].execute({
+        what: 'door',
+        period: 'the other day-ish thing',
+      }),
+    ).toMatch(/could not read that period/);
     await expect(byId[MEMORY_TOOL_IDS.homeHistory].execute({})).rejects.toThrow(/needs "what"/);
   });
 });
 
 describe('isRelevant', () => {
-  const base = { id: 'x', kind: 'turn', source_id: 'y', session_id: null, agent: null, period_start: '', period_end: '', text: '', score: 1, private: false };
+  const base = {
+    id: 'x',
+    kind: 'turn',
+    source_id: 'y',
+    session_id: null,
+    agent: null,
+    period_start: '',
+    period_end: '',
+    text: '',
+    score: 1,
+    private: false,
+  };
   it('keeps word matches, and meaning-only matches only when they are close', () => {
     expect(isRelevant({ ...base, matched: ['text'], similarity: 0.1 })).toBe(true);
     expect(isRelevant({ ...base, matched: ['vector'], similarity: 0.62 })).toBe(true);
@@ -364,4 +562,3 @@ describe('isRelevant', () => {
     expect(isRelevant({ ...base })).toBe(true);
   });
 });
-

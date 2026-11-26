@@ -56,7 +56,11 @@ export function encodeScript(script: string): string {
   return Buffer.from(script, 'utf16le').toString('base64');
 }
 
-export type SpawnLike = (command: string, args: string[], options: { env: NodeJS.ProcessEnv; windowsHide: boolean }) => ChildProcessWithoutNullStreams;
+export type SpawnLike = (
+  command: string,
+  args: string[],
+  options: { env: NodeJS.ProcessEnv; windowsHide: boolean },
+) => ChildProcessWithoutNullStreams;
 
 export interface FullscreenWatcherOptions {
   platform?: NodeJS.Platform;
@@ -121,15 +125,31 @@ export class FullscreenWatcher {
 
   private launch(): void {
     if (this.stopped) return;
-    const spawn: SpawnLike = this.options.spawn ?? ((command, args, options) => nodeSpawn(command, args, options) as ChildProcessWithoutNullStreams);
+    const spawn: SpawnLike =
+      this.options.spawn ??
+      ((command, args, options) =>
+        nodeSpawn(command, args, options) as ChildProcessWithoutNullStreams);
     let child: ChildProcessWithoutNullStreams;
     try {
-      child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encodeScript(FULLSCREEN_SCRIPT)], {
-        env: { ...process.env, AIEMBODIED_PID: String(this.options.ownPid ?? process.pid) },
-        windowsHide: true,
-      });
+      child = spawn(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-EncodedCommand',
+          encodeScript(FULLSCREEN_SCRIPT),
+        ],
+        {
+          env: { ...process.env, AIEMBODIED_PID: String(this.options.ownPid ?? process.pid) },
+          windowsHide: true,
+        },
+      );
     } catch (error) {
-      this.options.logger?.warn('Could not start the full-screen check', { message: error instanceof Error ? error.message : String(error) });
+      this.options.logger?.warn('Could not start the full-screen check', {
+        message: error instanceof Error ? error.message : String(error),
+      });
       this.failed();
       return;
     }
@@ -138,7 +158,9 @@ export class FullscreenWatcher {
     this.awaiting = false;
     this.buffer = '';
     child.stdout.on('data', (chunk: Buffer | string) => this.onData(String(chunk)));
-    child.stderr.on('data', (chunk: Buffer | string) => this.options.logger?.debug('Full-screen check said', { text: String(chunk).slice(0, 300) }));
+    child.stderr.on('data', (chunk: Buffer | string) =>
+      this.options.logger?.debug('Full-screen check said', { text: String(chunk).slice(0, 300) }),
+    );
     child.on('error', (error) => {
       this.options.logger?.warn('The full-screen check failed', { message: error.message });
       if (this.child === child) this.failed();

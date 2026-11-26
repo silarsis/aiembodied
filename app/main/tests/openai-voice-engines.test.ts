@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_PROVIDER_SETTINGS, type ProviderSettings } from '../src/shared/config/provider-settings.js';
+import {
+  DEFAULT_PROVIDER_SETTINGS,
+  type ProviderSettings,
+} from '../src/shared/config/provider-settings.js';
 import { LocalLlmClient } from '../src/local-voice/local-llm-client.js';
 import { LocalVoiceService } from '../src/local-voice/local-voice-service.js';
 import { OpenAiAudioClient, pcm16ToWav } from '../src/local-voice/openai-audio-client.js';
@@ -10,18 +13,30 @@ import {
   type RealtimeSocketFactory,
 } from '../src/local-voice/openai-realtime-tts.js';
 import { buildVoiceEngines } from '../src/local-voice/voice-engines.js';
-import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/shared/config/model-routing.js';
+import {
+  builtInServers,
+  defaultRoutes,
+  resolveModelRouting,
+} from '../src/shared/config/model-routing.js';
 
 /** The routing provider settings give before anything is saved in Models and servers. */
 function routed(providers: ProviderSettings) {
-  return resolveModelRouting(builtInServers({ providers, comfyUiBaseUrl: 'http://127.0.0.1:8188' }), defaultRoutes(providers));
+  return resolveModelRouting(
+    builtInServers({ providers, comfyUiBaseUrl: 'http://127.0.0.1:8188' }),
+    defaultRoutes(providers),
+  );
 }
 const openAiKey = (key: string) => (id: string) => (id === 'openai' && key ? key : undefined);
 import type { LocalVoiceEvent } from '../src/shared/local-voice/types.js';
 
 function sse(deltas: string[]): Response {
-  const text = deltas.map((content) => `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`).join('');
-  return new Response(text + 'data: [DONE]\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+  const text = deltas
+    .map((content) => `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`)
+    .join('');
+  return new Response(text + 'data: [DONE]\n\n', {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
 }
 
 /**
@@ -58,14 +73,20 @@ class FakeRealtime {
       return;
     }
     const id = `resp_${this.nextId++}`;
-    const text = ((message.response as { input: Array<{ content: Array<{ text: string }> }> }).input[0]?.content[0]?.text) ?? '';
-    const emit = (event: Record<string, unknown>) => socket.onmessage?.({ data: JSON.stringify(event) });
+    const text =
+      (message.response as { input: Array<{ content: Array<{ text: string }> }> }).input[0]
+        ?.content[0]?.text ?? '';
+    const emit = (event: Record<string, unknown>) =>
+      socket.onmessage?.({ data: JSON.stringify(event) });
     const respond = () => {
       emit({ type: 'response.created', response: { id } });
       if (this.failNext) {
         const message = this.failNext;
         this.failNext = null;
-        emit({ type: 'response.done', response: { id, status: 'failed', status_details: { error: { message } } } });
+        emit({
+          type: 'response.done',
+          response: { id, status: 'failed', status_details: { error: { message } } },
+        });
         return;
       }
       const pcm = Buffer.alloc(text.length * 2, 1);
@@ -106,7 +127,9 @@ function samples(wav: Uint8Array): number {
   return new DataView(wav.buffer, wav.byteOffset).getUint32(40, true) / 2;
 }
 
-function settings(overrides: Partial<{ [K in keyof ProviderSettings]: Partial<ProviderSettings[K]> }>): ProviderSettings {
+function settings(
+  overrides: Partial<{ [K in keyof ProviderSettings]: Partial<ProviderSettings[K]> }>,
+): ProviderSettings {
   const base = structuredClone(DEFAULT_PROVIDER_SETTINGS);
   return {
     llm: { ...base.llm, ...overrides.llm },
@@ -142,7 +165,10 @@ describe('OpenAiRealtimeTts', () => {
       createSocket: server.factory,
     });
 
-    const [first, second] = await Promise.all([tts.synthesize('Hello there.'), tts.synthesize('Bye.')]);
+    const [first, second] = await Promise.all([
+      tts.synthesize('Hello there.'),
+      tts.synthesize('Bye.'),
+    ]);
     expect(samples(first)).toBe('Hello there.'.length);
     expect(samples(second)).toBe('Bye.'.length);
     expect(new DataView(first.buffer, first.byteOffset).getUint32(24, true)).toBe(24_000);
@@ -166,7 +192,13 @@ describe('OpenAiRealtimeTts', () => {
         conversation: 'none',
         output_modalities: ['audio'],
         instructions: `${VERBATIM_INSTRUCTIONS}\n\nSpeaking style: calm`,
-        input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Hello there.' }] }],
+        input: [
+          {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'Hello there.' }],
+          },
+        ],
       },
     });
     tts.close();
@@ -174,7 +206,12 @@ describe('OpenAiRealtimeTts', () => {
 
   it('surfaces a failed response and keeps going with the next sentence', async () => {
     const server = new FakeRealtime();
-    const tts = new OpenAiRealtimeTts({ apiKey: 'sk', model: 'm', voice: 'alloy', createSocket: server.factory });
+    const tts = new OpenAiRealtimeTts({
+      apiKey: 'sk',
+      model: 'm',
+      voice: 'alloy',
+      createSocket: server.factory,
+    });
     server.failNext = 'Rate limit reached';
 
     await expect(tts.synthesize('One.')).rejects.toThrow('Rate limit reached');
@@ -185,19 +222,28 @@ describe('OpenAiRealtimeTts', () => {
 
   it('cancels a sentence on abort and fails a sentence when the connection drops', async () => {
     const server = new FakeRealtime();
-    const tts = new OpenAiRealtimeTts({ apiKey: 'sk', model: 'm', voice: 'alloy', createSocket: server.factory });
+    const tts = new OpenAiRealtimeTts({
+      apiKey: 'sk',
+      model: 'm',
+      voice: 'alloy',
+      createSocket: server.factory,
+    });
     server.hold = true;
 
     const controller = new AbortController();
     const cancelled = tts.synthesize('Never mind.', { signal: controller.signal });
-    await vi.waitFor(() => expect(server.sent.some((m) => m.type === 'response.create')).toBe(true));
+    await vi.waitFor(() =>
+      expect(server.sent.some((m) => m.type === 'response.create')).toBe(true),
+    );
     controller.abort();
     await expect(cancelled).rejects.toMatchObject({ name: 'AbortError' });
     expect(server.sent.at(-1)).toEqual({ type: 'response.cancel' });
     server.release();
 
     const dropped = tts.synthesize('Hello.');
-    await vi.waitFor(() => expect(server.sent.filter((m) => m.type === 'response.create')).toHaveLength(2));
+    await vi.waitFor(() =>
+      expect(server.sent.filter((m) => m.type === 'response.create')).toHaveLength(2),
+    );
     server.sockets[0]?.close();
     await expect(dropped).rejects.toThrow(/closed/);
 
@@ -209,7 +255,12 @@ describe('OpenAiRealtimeTts', () => {
   });
 
   it('needs a key', async () => {
-    const tts = new OpenAiRealtimeTts({ apiKey: '', model: 'm', voice: 'alloy', createSocket: new FakeRealtime().factory });
+    const tts = new OpenAiRealtimeTts({
+      apiKey: '',
+      model: 'm',
+      voice: 'alloy',
+      createSocket: new FakeRealtime().factory,
+    });
     await expect(tts.synthesize('Hi.')).rejects.toThrow(/API key/);
     expect(tts.status()).toMatchObject({ available: false, error: 'OpenAI API key is not set.' });
   });
@@ -220,10 +271,17 @@ describe('OpenAiAudioClient', () => {
     const fetchFn = vi
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ text: 'hello there' })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: 'Incorrect API key' } }), { status: 401 }));
-    const client = new OpenAiAudioClient({ apiKey: 'sk', fetchFn: fetchFn as unknown as typeof fetch });
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: 'Incorrect API key' } }), { status: 401 }),
+      );
+    const client = new OpenAiAudioClient({
+      apiKey: 'sk',
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
 
-    await expect(client.transcribe(new Uint8Array([1, 2]), { model: 'gpt-4o-mini-transcribe' })).resolves.toMatchObject({
+    await expect(
+      client.transcribe(new Uint8Array([1, 2]), { model: 'gpt-4o-mini-transcribe' }),
+    ).resolves.toMatchObject({
       text: 'hello there',
     });
     const [url, init] = fetchFn.mock.calls[0] as [string, RequestInit];
@@ -257,7 +315,11 @@ describe('LocalLlmClient with OpenAI', () => {
     const body = JSON.parse(init.body as string) as Record<string, unknown>;
     expect(body).not.toHaveProperty('chat_template_kwargs');
     expect(body).not.toHaveProperty('max_tokens');
-    expect(body).toMatchObject({ model: 'gpt-4.1-mini', stream: true, max_completion_tokens: 1024 });
+    expect(body).toMatchObject({
+      model: 'gpt-4.1-mini',
+      stream: true,
+      max_completion_tokens: 1024,
+    });
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer sk');
     // OpenAI availability is the key, not a request per status poll.
     await expect(llm.isAvailable()).resolves.toBe(true);
@@ -270,11 +332,20 @@ describe('buildVoiceEngines', () => {
     const fetchFn = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
       if (url.endsWith('/chat/completions')) return sse(['Hello there, friend.']);
-      if (url.endsWith('/audio/transcriptions')) return new Response(JSON.stringify({ text: 'hi' }));
+      if (url.endsWith('/audio/transcriptions'))
+        return new Response(JSON.stringify({ text: 'hi' }));
       throw new Error('ECONNREFUSED');
     }) as unknown as typeof fetch;
     const server = new FakeRealtime();
-    const engines = buildVoiceEngines(routed(settings({ llm: { provider: 'openai' }, stt: { provider: 'openai' }, tts: { provider: 'openai', openaiVoice: 'coral' } })), openAiKey('sk'),
+    const engines = buildVoiceEngines(
+      routed(
+        settings({
+          llm: { provider: 'openai' },
+          stt: { provider: 'openai' },
+          tts: { provider: 'openai', openaiVoice: 'coral' },
+        }),
+      ),
+      openAiKey('sk'),
       { fetchFn, createSocket: server.factory },
     );
     const service = new LocalVoiceService(engines);
@@ -286,9 +357,22 @@ describe('buildVoiceEngines', () => {
     expect(events[0]).toMatchObject({ type: 'sentence', text: 'Hello there, friend.' });
 
     const status = await service.status();
-    expect(status.llm).toMatchObject({ provider: 'openai', available: true, model: 'gpt-4.1-mini' });
-    expect(status.stt).toMatchObject({ provider: 'openai', available: true, model: 'gpt-4o-mini-transcribe' });
-    expect(status.tts).toMatchObject({ provider: 'openai', ready: true, voice: 'coral', model: 'gpt-realtime-2.1-mini' });
+    expect(status.llm).toMatchObject({
+      provider: 'openai',
+      available: true,
+      model: 'gpt-4.1-mini',
+    });
+    expect(status.stt).toMatchObject({
+      provider: 'openai',
+      available: true,
+      model: 'gpt-4o-mini-transcribe',
+    });
+    expect(status.tts).toMatchObject({
+      provider: 'openai',
+      ready: true,
+      voice: 'coral',
+      model: 'gpt-realtime-2.1-mini',
+    });
     expect(server.sent.some((m) => m.type === 'response.create')).toBe(true);
     engines.tts.close?.();
   });
@@ -297,10 +381,18 @@ describe('buildVoiceEngines', () => {
     const fetchFn = vi.fn(async () => {
       throw new Error('ECONNREFUSED');
     }) as unknown as typeof fetch;
-    const service = new LocalVoiceService(buildVoiceEngines(routed(settings({ tts: { provider: 'openai' } })), openAiKey(''), { fetchFn }));
+    const service = new LocalVoiceService(
+      buildVoiceEngines(routed(settings({ tts: { provider: 'openai' } })), openAiKey(''), {
+        fetchFn,
+      }),
+    );
     expect((await service.status()).tts).toMatchObject({ provider: 'openai', available: false });
 
-    service.configure(buildVoiceEngines(routed(settings({ tts: { kokoroVoice: 'bf_emma' } })), openAiKey(''), { fetchFn }));
+    service.configure(
+      buildVoiceEngines(routed(settings({ tts: { kokoroVoice: 'bf_emma' } })), openAiKey(''), {
+        fetchFn,
+      }),
+    );
     expect((await service.status()).tts).toMatchObject({ provider: 'kokoro', voice: 'bf_emma' });
   });
 });
@@ -308,14 +400,27 @@ describe('buildVoiceEngines', () => {
 describe('buildVoiceEngines with the coder model standing in for Thinking', () => {
   it('asks the override first, leaves out the stopped server, and keeps the backups', () => {
     const routing = resolveModelRouting(
-      builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }),
+      builtInServers({
+        providers: DEFAULT_PROVIDER_SETTINGS,
+        comfyUiBaseUrl: 'http://127.0.0.1:8188',
+      }),
       defaultRoutes(DEFAULT_PROVIDER_SETTINGS),
-      { routes: { llm: { server: 'local-llm', model: 'flash', backups: [{ server: 'openai', model: 'gpt-4.1' }] } } },
+      {
+        routes: {
+          llm: {
+            server: 'local-llm',
+            model: 'flash',
+            backups: [{ server: 'openai', model: 'gpt-4.1' }],
+          },
+        },
+      },
     );
     const coder = routing.servers.find((server) => server.id === 'local-coder-llm')!;
     const plain = buildVoiceEngines(routing, openAiKey('sk'), {});
     expect(plain.llm.baseUrl).toBe('http://127.0.0.1:1234/v1');
-    const swapped = buildVoiceEngines(routing, openAiKey('sk'), { llmOverride: { server: coder, model: 'qwen3-coder-next', exclude: ['local-llm'] } });
+    const swapped = buildVoiceEngines(routing, openAiKey('sk'), {
+      llmOverride: { server: coder, model: 'qwen3-coder-next', exclude: ['local-llm'] },
+    });
     expect(swapped.llm.baseUrl).toBe('http://127.0.0.1:1236/v1');
     expect(swapped.llm.model).toBe('qwen3-coder-next');
     expect(swapped.llm.flavor).toBe('llama-server');

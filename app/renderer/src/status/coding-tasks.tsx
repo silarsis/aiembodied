@@ -4,19 +4,34 @@
  * a form to start a task by hand. Live: the runner's event stream refreshes the list.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CodingBridge, CodingTasksBridge, RunnerTask } from '../../../main/src/shared/coding/bridge-types.js';
+import type {
+  CodingBridge,
+  CodingTasksBridge,
+  RunnerTask,
+} from '../../../main/src/shared/coding/bridge-types.js';
 import type { CodingWorkspace } from '../../../main/src/shared/coding/types.js';
 import type { LocalVoiceBridge } from '../preload-api.js';
 
 export const CODING_TASKS_POLL_MS = 10_000;
 const FINISHED = ['done', 'failed', 'cancelled', 'discarded'];
 const CANCELLABLE = ['queued', 'starting', 'working', 'question', 'paused', 'checks'];
-const HAS_DIFF = ['working', 'question', 'paused', 'checks', 'review', 'done', 'failed', 'cancelled'];
+const HAS_DIFF = [
+  'working',
+  'question',
+  'paused',
+  'checks',
+  'review',
+  'done',
+  'failed',
+  'cancelled',
+];
 const MAX_FINISHED_SHOWN = 4;
 
 export function sortTasks(tasks: RunnerTask[]): RunnerTask[] {
   const active = tasks.filter((task) => !FINISHED.includes(task.status));
-  const finished = tasks.filter((task) => FINISHED.includes(task.status) && task.status !== 'discarded').slice(0, MAX_FINISHED_SHOWN);
+  const finished = tasks
+    .filter((task) => FINISHED.includes(task.status) && task.status !== 'discarded')
+    .slice(0, MAX_FINISHED_SHOWN);
   return [...active, ...finished];
 }
 
@@ -89,17 +104,37 @@ export function CodingTasksPanel({ api, codingApi, localVoice, active }: CodingT
           Echo has {waiting} update{waiting === 1 ? '' : 's'} waiting to be spoken.
         </p>
       ) : null}
-      {problem ? <p className="kiosk__helper">The coding runner is not answering: {problem}</p> : null}
-      {tasks && shown.length === 0 && !problem ? <p className="kiosk__helper">No tasks yet.</p> : null}
+      {problem ? (
+        <p className="kiosk__helper">The coding runner is not answering: {problem}</p>
+      ) : null}
+      {tasks && shown.length === 0 && !problem ? (
+        <p className="kiosk__helper">No tasks yet.</p>
+      ) : null}
       {shown.map((task) => (
-        <TaskCard key={task.id} task={task} api={api} workspaces={workspaces} onChanged={() => void refresh()} />
+        <TaskCard
+          key={task.id}
+          task={task}
+          api={api}
+          workspaces={workspaces}
+          onChanged={() => void refresh()}
+        />
       ))}
       <StartTaskForm api={api} workspaces={workspaces} onStarted={() => void refresh()} />
     </section>
   );
 }
 
-function TaskCard({ task, api, workspaces, onChanged }: { task: RunnerTask; api: CodingTasksBridge; workspaces: CodingWorkspace[]; onChanged: () => void }) {
+function TaskCard({
+  task,
+  api,
+  workspaces,
+  onChanged,
+}: {
+  task: RunnerTask;
+  api: CodingTasksBridge;
+  workspaces: CodingWorkspace[];
+  onChanged: () => void;
+}) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [followUp, setFollowUp] = useState('');
   const [diff, setDiff] = useState<string | null>(null);
@@ -137,7 +172,9 @@ function TaskCard({ task, api, workspaces, onChanged }: { task: RunnerTask; api:
         <span className="codingTask__workspace">{workspace?.name ?? task.workspace_id}</span>
       </header>
       <p className="codingTask__status">{describeStatus(task)}</p>
-      {(task.files_touched?.length ?? 0) > 0 ? <p className="codingTask__meta">{task.files_touched?.length} file(s) touched</p> : null}
+      {(task.files_touched?.length ?? 0) > 0 ? (
+        <p className="codingTask__meta">{task.files_touched?.length} file(s) touched</p>
+      ) : null}
       {task.error ? <p className="codingTask__error">{task.error}</p> : null}
       {task.pr_url ? (
         <p className="codingTask__meta">
@@ -148,23 +185,50 @@ function TaskCard({ task, api, workspaces, onChanged }: { task: RunnerTask; api:
       {questions.map((q) => (
         <div className="codingTask__question" key={q.id} data-testid="coding-question">
           <p>
-            <b>{q.kind === 'confirm' ? 'Asks permission' : 'Asks'}:</b> {q.kind === 'confirm' ? `${q.title ?? ''} ${q.message ?? ''}`.trim() : (q.message ?? q.title)}
+            <b>{q.kind === 'confirm' ? 'Asks permission' : 'Asks'}:</b>{' '}
+            {q.kind === 'confirm'
+              ? `${q.title ?? ''} ${q.message ?? ''}`.trim()
+              : (q.message ?? q.title)}
           </p>
           {q.kind === 'confirm' ? (
             <div className="codingTask__actions">
-              <button type="button" disabled={busy} onClick={() => void run(() => api.answer(task.id, { confirmed: true, dialog_id: q.id }))}>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  void run(() => api.answer(task.id, { confirmed: true, dialog_id: q.id }))
+                }
+              >
                 Allow
               </button>
-              <button type="button" disabled={busy} onClick={() => void run(() => api.answer(task.id, { confirmed: false, dialog_id: q.id }))}>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  void run(() => api.answer(task.id, { confirmed: false, dialog_id: q.id }))
+                }
+              >
                 Deny
               </button>
             </div>
           ) : q.kind === 'select' ? (
             <div className="codingTask__actions">
               {(q.options ?? []).map((o) => {
-                const value = typeof o === 'string' ? o : String((o as { value?: unknown; label?: unknown })?.value ?? (o as { label?: unknown })?.label ?? '');
+                const value =
+                  typeof o === 'string'
+                    ? o
+                    : String(
+                        (o as { value?: unknown; label?: unknown })?.value ??
+                          (o as { label?: unknown })?.label ??
+                          '',
+                      );
                 return (
-                  <button key={value} type="button" disabled={busy} onClick={() => void run(() => api.answer(task.id, { value, dialog_id: q.id }))}>
+                  <button
+                    key={value}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void run(() => api.answer(task.id, { value, dialog_id: q.id }))}
+                  >
                     {value}
                   </button>
                 );
@@ -176,10 +240,21 @@ function TaskCard({ task, api, workspaces, onChanged }: { task: RunnerTask; api:
               onSubmit={(event) => {
                 event.preventDefault();
                 const value = (answers[q.id] ?? '').trim();
-                if (value) void run(() => api.answer(task.id, { value, dialog_id: q.id }).then(() => setAnswers((prev) => ({ ...prev, [q.id]: '' }))));
+                if (value)
+                  void run(() =>
+                    api
+                      .answer(task.id, { value, dialog_id: q.id })
+                      .then(() => setAnswers((prev) => ({ ...prev, [q.id]: '' }))),
+                  );
               }}
             >
-              <input aria-label="Your answer" value={answers[q.id] ?? ''} onChange={(event) => setAnswers((prev) => ({ ...prev, [q.id]: event.target.value }))} />
+              <input
+                aria-label="Your answer"
+                value={answers[q.id] ?? ''}
+                onChange={(event) =>
+                  setAnswers((prev) => ({ ...prev, [q.id]: event.target.value }))
+                }
+              />
               <button type="submit" disabled={busy || !(answers[q.id] ?? '').trim()}>
                 Answer
               </button>
@@ -205,7 +280,9 @@ function TaskCard({ task, api, workspaces, onChanged }: { task: RunnerTask; api:
             <p className="codingTask__meta">No checks configured.</p>
           ) : (
             <details>
-              <summary className={task.checks_ok ? 'codingTask__ok' : 'codingTask__error'}>Checks {task.checks_ok ? 'passed' : 'failed'}</summary>
+              <summary className={task.checks_ok ? 'codingTask__ok' : 'codingTask__error'}>
+                Checks {task.checks_ok ? 'passed' : 'failed'}
+              </summary>
               <pre className="codingTask__pre">{task.checks_output || '(no output)'}</pre>
             </details>
           )}
@@ -227,7 +304,12 @@ function TaskCard({ task, api, workspaces, onChanged }: { task: RunnerTask; api:
             if (message) void run(() => api.followUp(task.id, message).then(() => setFollowUp('')));
           }}
         >
-          <input aria-label="Follow-up" placeholder="Ask for more" value={followUp} onChange={(event) => setFollowUp(event.target.value)} />
+          <input
+            aria-label="Follow-up"
+            placeholder="Ask for more"
+            value={followUp}
+            onChange={(event) => setFollowUp(event.target.value)}
+          />
           <button type="submit" disabled={busy || !followUp.trim()}>
             Follow-up
           </button>
@@ -247,11 +329,17 @@ function TaskCard({ task, api, workspaces, onChanged }: { task: RunnerTask; api:
             disabled={busy || (review?.protected_violations?.length ?? 0) > 0}
             onClick={() => void run(() => api.apply(task.id))}
           >
-            {workspace?.kind === 'self' ? 'Approve and open pull request' : 'Apply (open pull request)'}
+            {workspace?.kind === 'self'
+              ? 'Approve and open pull request'
+              : 'Apply (open pull request)'}
           </button>
         ) : null}
         {['review', 'failed', 'cancelled'].includes(task.status) ? (
-          <button type="button" disabled={busy} onClick={() => void run(() => api.discard(task.id))}>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void run(() => api.discard(task.id))}
+          >
             Discard
           </button>
         ) : null}
@@ -270,7 +358,15 @@ function TaskCard({ task, api, workspaces, onChanged }: { task: RunnerTask; api:
   );
 }
 
-function StartTaskForm({ api, workspaces, onStarted }: { api: CodingTasksBridge; workspaces: CodingWorkspace[]; onStarted: () => void }) {
+function StartTaskForm({
+  api,
+  workspaces,
+  onStarted,
+}: {
+  api: CodingTasksBridge;
+  workspaces: CodingWorkspace[];
+  onStarted: () => void;
+}) {
   const [workspace, setWorkspace] = useState('');
   const [goal, setGoal] = useState('');
   const [acceptance, setAcceptance] = useState('');
@@ -289,7 +385,14 @@ function StartTaskForm({ api, workspaces, onStarted }: { api: CodingTasksBridge;
         setBusy(true);
         setError(null);
         api
-          .start({ workspace_id: chosen, goal: goal.trim(), acceptance: acceptance.split('\n').map((line) => line.trim()).filter(Boolean) })
+          .start({
+            workspace_id: chosen,
+            goal: goal.trim(),
+            acceptance: acceptance
+              .split('\n')
+              .map((line) => line.trim())
+              .filter(Boolean),
+          })
           .then(() => {
             setGoal('');
             setAcceptance('');
@@ -316,7 +419,11 @@ function StartTaskForm({ api, workspaces, onStarted }: { api: CodingTasksBridge;
       </label>
       <label>
         Acceptance (one per line, optional)
-        <textarea rows={2} value={acceptance} onChange={(event) => setAcceptance(event.target.value)} />
+        <textarea
+          rows={2}
+          value={acceptance}
+          onChange={(event) => setAcceptance(event.target.value)}
+        />
       </label>
       <div className="codingTask__actions">
         <button type="submit" disabled={busy || !goal.trim()}>

@@ -6,7 +6,11 @@ import DatabaseConstructor from 'better-sqlite3';
 import type { Database } from 'better-sqlite3';
 import { MCPManager } from '../../src/mcp/mcp-manager.js';
 import { ToolRegistry } from '../../src/tools/tool-registry.js';
-import { HOME_ASSISTANT_READ_TOOLS, homeAssistantReadOnlyDefault, isRiskyHomeAssistantTool } from '../../src/mcp/presets.js';
+import {
+  HOME_ASSISTANT_READ_TOOLS,
+  homeAssistantReadOnlyDefault,
+  isRiskyHomeAssistantTool,
+} from '../../src/mcp/presets.js';
 import { toServerSummary } from '../../src/mcp/server-summary.js';
 
 /** Home Assistant as an MCP server: the ready-made list, the token staying in main, read-only defaults and confirm defaults. */
@@ -14,7 +18,12 @@ import { toServerSummary } from '../../src/mcp/server-summary.js';
 type Tool = { name: string; description?: string; inputSchema: unknown; readOnlyHint?: boolean };
 
 const state = vi.hoisted(() => ({
-  tools: [] as Array<{ name: string; description?: string; inputSchema: unknown; readOnlyHint?: boolean }>,
+  tools: [] as Array<{
+    name: string;
+    description?: string;
+    inputSchema: unknown;
+    readOnlyHint?: boolean;
+  }>,
   clients: [] as Array<{ url: string; auth: any }>,
 }));
 
@@ -63,7 +72,12 @@ const SCHEMA = `
   );
 `;
 
-const tool = (name: string, description = '', readOnlyHint?: boolean): Tool => ({ name, description, inputSchema: { type: 'object', properties: {} }, readOnlyHint });
+const tool = (name: string, description = '', readOnlyHint?: boolean): Tool => ({
+  name,
+  description,
+  inputSchema: { type: 'object', properties: {} },
+  readOnlyHint,
+});
 
 describe('Home Assistant as an MCP server', () => {
   let db: Database;
@@ -83,7 +97,10 @@ describe('Home Assistant as an MCP server', () => {
     state.tools = [];
     state.clients = [];
     registry = new ToolRegistry();
-    manager = new MCPManager(db, registry, { homeAssistantHomes: () => homes, modelServerToken: (id) => tokens[id] });
+    manager = new MCPManager(db, registry, {
+      homeAssistantHomes: () => homes,
+      modelServerToken: (id) => tokens[id],
+    });
   });
 
   afterEach(() => {
@@ -104,7 +121,7 @@ describe('Home Assistant as an MCP server', () => {
     const first = await manager.addPreset('home-assistant:ha-1');
     const again = await manager.addPreset('home-assistant:ha-1');
     expect(again.id).toBe(first.id);
-    expect((await manager.listServers())).toHaveLength(1);
+    expect(await manager.listServers()).toHaveLength(1);
     expect(first).toMatchObject({
       name: 'Home Assistant (Home)',
       transportType: 'http',
@@ -114,7 +131,9 @@ describe('Home Assistant as an MCP server', () => {
     });
     // No token anywhere in the database or in what the renderer gets.
     expect(first.httpAuthToken).toBeUndefined();
-    expect(JSON.stringify(db.prepare('SELECT * FROM mcp_servers').all())).not.toContain('secret-token-1');
+    expect(JSON.stringify(db.prepare('SELECT * FROM mcp_servers').all())).not.toContain(
+      'secret-token-1',
+    );
     const summary = JSON.stringify(toServerSummary(first));
     expect(summary).not.toContain('secret-token-1');
     expect(toServerSummary(first).hasAuthToken).toBe(true);
@@ -124,7 +143,10 @@ describe('Home Assistant as an MCP server', () => {
   it('reads the token from Models and servers when connecting, so a changed token flows through', async () => {
     const server = await manager.addPreset('home-assistant:ha-1');
     await manager.connectServer(server.id);
-    expect(state.clients[0].auth).toMatchObject({ headerName: 'Authorization', headerToken: 'Bearer secret-token-1' });
+    expect(state.clients[0].auth).toMatchObject({
+      headerName: 'Authorization',
+      headerToken: 'Bearer secret-token-1',
+    });
     tokens['ha-1'] = 'new-token';
     await manager.connectServer(server.id);
     expect(state.clients[1].auth.headerToken).toBe('Bearer new-token');
@@ -139,7 +161,14 @@ describe('Home Assistant as an MCP server', () => {
   });
 
   it('counts Get tools as reads and everything else as changes, unless the person or the server said', async () => {
-    state.tools = [tool('GetLiveContext'), tool('GetDateTime'), tool('HassTurnOn'), tool('HassLightSet'), tool('HassSetPosition'), tool('HassTurnOff', '', true)];
+    state.tools = [
+      tool('GetLiveContext'),
+      tool('GetDateTime'),
+      tool('HassTurnOn'),
+      tool('HassLightSet'),
+      tool('HassSetPosition'),
+      tool('HassTurnOff', '', true),
+    ];
     const server = await manager.addPreset('home-assistant:ha-1');
     await manager.connectServer(server.id);
     const read = (name: string) => manager.listTools(server.id).find((t) => t.toolName === name)!;
@@ -161,7 +190,13 @@ describe('Home Assistant as an MCP server', () => {
 
   it('does not apply the Home Assistant defaults to other servers', async () => {
     state.tools = [tool('GetThing')];
-    const other = await manager.addServer({ name: 'Other', transportType: 'http', httpUrl: 'https://o.example/mcp', enabled: true, autoStart: false });
+    const other = await manager.addServer({
+      name: 'Other',
+      transportType: 'http',
+      httpUrl: 'https://o.example/mcp',
+      enabled: true,
+      autoStart: false,
+    });
     await manager.connectServer(other.id);
     expect(manager.listTools(other.id)[0].readOnly).toBe(false);
     expect(manager.listTools(other.id)[0].confirmationLevel).toBe('none');
@@ -177,7 +212,8 @@ describe('Home Assistant as an MCP server', () => {
     ];
     const server = await manager.addPreset('home-assistant:ha-1');
     await manager.connectServer(server.id);
-    const level = (name: string) => manager.listTools(server.id).find((t) => t.toolName === name)!.confirmationLevel;
+    const level = (name: string) =>
+      manager.listTools(server.id).find((t) => t.toolName === name)!.confirmationLevel;
     expect(level('HassLockUnlock')).toBe('confirm');
     expect(level('alarm_control')).toBe('confirm');
     expect(level('HassOpenGarage')).toBe('confirm');
@@ -194,7 +230,8 @@ describe('Home Assistant as an MCP server', () => {
 describe('Home Assistant tool rules', () => {
   it('keeps the known reads small and explicit', () => {
     expect(HOME_ASSISTANT_READ_TOOLS).toContain('GetLiveContext');
-    for (const name of HOME_ASSISTANT_READ_TOOLS) expect(homeAssistantReadOnlyDefault(name)).toBe(true);
+    for (const name of HOME_ASSISTANT_READ_TOOLS)
+      expect(homeAssistantReadOnlyDefault(name)).toBe(true);
     expect(homeAssistantReadOnlyDefault('GetAnything')).toBe(true);
     expect(homeAssistantReadOnlyDefault('HassTurnOff')).toBe(false);
   });
@@ -202,6 +239,8 @@ describe('Home Assistant tool rules', () => {
   it('finds risky words as words, not inside other words', () => {
     expect(isRiskyHomeAssistantTool('HassUnlockDoor', undefined)).toBe(true);
     expect(isRiskyHomeAssistantTool('x', 'Disarms the alarm')).toBe(true);
-    expect(isRiskyHomeAssistantTool('HassTurnOn', 'Turns on a warm light, a blockbuster')).toBe(false);
+    expect(isRiskyHomeAssistantTool('HassTurnOn', 'Turns on a warm light, a blockbuster')).toBe(
+      false,
+    );
   });
 });

@@ -6,10 +6,9 @@ export const hasRealtimeKey = Boolean(
 );
 
 export const describeIf: (cond: boolean) => typeof describe = (cond) =>
-  (cond ? describe : (describe.skip as typeof describe));
+  cond ? describe : (describe.skip as typeof describe);
 
 export const itIf: (cond: boolean) => typeof it = (cond) => (cond ? it : (it.skip as typeof it));
 
 // Usage example:
 // itIf(hasRealtimeKey)('connects to realtime with live key', async () => { /* ... */ });
-

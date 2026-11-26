@@ -10,7 +10,13 @@
 import { randomUUID } from 'node:crypto';
 import { findPreset } from '../mcp/presets.js';
 import type { StationTool } from './types.js';
-import type { Station, StationBody, StationLabels, StationSource, StationView } from '../shared/stations/types.js';
+import type {
+  Station,
+  StationBody,
+  StationLabels,
+  StationSource,
+  StationView,
+} from '../shared/stations/types.js';
 
 export const STATIONS_KEY = 'rooms.stations';
 
@@ -72,7 +78,9 @@ function homeAssistantDefault(serverId: string): Station {
 
 /** A station made without Kevin: a built-in default, or the Home Assistant one. Removing it keeps it removed. */
 function isDefaultStation(id: string): boolean {
-  return id === HOME_ASSISTANT_DEFAULT_ID || DEFAULT_STATIONS.some((fallback) => fallback.id === id);
+  return (
+    id === HOME_ASSISTANT_DEFAULT_ID || DEFAULT_STATIONS.some((fallback) => fallback.id === id)
+  );
 }
 
 /** A body plan from saved data: only non-empty strings are kept. An empty object means "no props, no seat". */
@@ -121,19 +129,23 @@ interface Saved {
 }
 
 /** What a caller may give when adding a station. Missing fields get plain defaults. */
-export type StationInput = Partial<Omit<Station, 'id'>> & Pick<Station, 'roomId' | 'objectId' | 'source'>;
+export type StationInput = Partial<Omit<Station, 'id'>> &
+  Pick<Station, 'roomId' | 'objectId' | 'source'>;
 
 function sanitizeSource(input: unknown): StationSource | null {
   if (!input || typeof input !== 'object') return null;
   const value = input as Record<string, unknown>;
   if (value.kind === 'mcp') {
-    const serverId = typeof value.serverId === 'string' && value.serverId ? value.serverId : undefined;
+    const serverId =
+      typeof value.serverId === 'string' && value.serverId ? value.serverId : undefined;
     const preset = typeof value.preset === 'string' && value.preset ? value.preset : undefined;
     if (!serverId && !preset) return null;
     return { kind: 'mcp', ...(serverId ? { serverId } : {}), ...(preset ? { preset } : {}) };
   }
   if (value.kind === 'builtin' && Array.isArray(value.toolNames)) {
-    const toolNames = value.toolNames.filter((name): name is string => typeof name === 'string' && name.length > 0);
+    const toolNames = value.toolNames.filter(
+      (name): name is string => typeof name === 'string' && name.length > 0,
+    );
     return toolNames.length ? { kind: 'builtin', toolNames } : null;
   }
   return null;
@@ -144,7 +156,13 @@ export function sanitizeStation(input: unknown): Station | null {
   if (!input || typeof input !== 'object') return null;
   const value = input as Record<string, unknown>;
   const source = sanitizeSource(value.source);
-  if (typeof value.id !== 'string' || !value.id || typeof value.roomId !== 'string' || !value.roomId) return null;
+  if (
+    typeof value.id !== 'string' ||
+    !value.id ||
+    typeof value.roomId !== 'string' ||
+    !value.roomId
+  )
+    return null;
   if (typeof value.objectId !== 'string' || !value.objectId || !source) return null;
   const characters =
     Array.isArray(value.characters) && value.characters.every((id) => typeof id === 'string')
@@ -156,7 +174,10 @@ export function sanitizeStation(input: unknown): Station | null {
     objectId: value.objectId,
     source,
     verb: typeof value.verb === 'string' && value.verb.trim() ? value.verb.trim() : 'use',
-    activity: typeof value.activity === 'string' && value.activity.trim() ? value.activity.trim() : `uses the ${value.objectId}`,
+    activity:
+      typeof value.activity === 'string' && value.activity.trim()
+        ? value.activity.trim()
+        : `uses the ${value.objectId}`,
     trip: value.trip === 'writes' ? 'writes' : 'all',
     characters,
     ...(value.pursuit === 'none' ? { pursuit: 'none' as const } : {}),
@@ -170,8 +191,12 @@ function bodyOfDefault(id: string): { body?: StationBody } {
 }
 
 function sameSource(a: StationSource, b: StationSource): boolean {
-  if (a.kind === 'mcp' && b.kind === 'mcp') return (a.serverId ?? null) === (b.serverId ?? null) && (a.preset ?? null) === (b.preset ?? null);
-  if (a.kind === 'builtin' && b.kind === 'builtin') return a.toolNames.join('\n') === b.toolNames.join('\n');
+  if (a.kind === 'mcp' && b.kind === 'mcp')
+    return (
+      (a.serverId ?? null) === (b.serverId ?? null) && (a.preset ?? null) === (b.preset ?? null)
+    );
+  if (a.kind === 'builtin' && b.kind === 'builtin')
+    return a.toolNames.join('\n') === b.toolNames.join('\n');
   return false;
 }
 
@@ -205,7 +230,9 @@ export class StationRegistry {
       .filter((s): s is Station => s !== null)
       // A default saved before it had a body plan gets the default one (a body Kevin saved, even an empty one, is kept).
       .map((s) => (s.body === undefined ? { ...s, ...bodyOfDefault(s.id) } : s));
-    const removedDefaults = Array.isArray(value.removedDefaults) ? value.removedDefaults.filter((id): id is string => typeof id === 'string') : [];
+    const removedDefaults = Array.isArray(value.removedDefaults)
+      ? value.removedDefaults.filter((id): id is string => typeof id === 'string')
+      : [];
     return { stations, removedDefaults };
   }
 
@@ -217,11 +244,14 @@ export class StationRegistry {
   resolveServerId(source: StationSource): string | null {
     if (source.kind !== 'mcp') return null;
     const servers = this.options.servers();
-    if (source.serverId && servers.some((server) => server.id === source.serverId)) return source.serverId;
+    if (source.serverId && servers.some((server) => server.id === source.serverId))
+      return source.serverId;
     if (source.preset) {
       // A preset names a server by its address: the server added by the "add preset" button.
       const url = findPreset(source.preset)?.config.httpUrl;
-      const match = servers.find((server) => sameUrl(server.httpUrl, url) || sameUrl(server.sseUrl, url));
+      const match = servers.find(
+        (server) => sameUrl(server.httpUrl, url) || sameUrl(server.sseUrl, url),
+      );
       if (match) return match.id;
     }
     return null;
@@ -232,7 +262,9 @@ export class StationRegistry {
     const id = this.resolveServerId(station.source);
     const named = id ? this.options.servers().find((server) => server.id === id)?.name : undefined;
     if (named) return named;
-    return station.source.kind === 'mcp' && station.source.preset ? (findPreset(station.source.preset)?.name ?? null) : null;
+    return station.source.kind === 'mcp' && station.source.preset
+      ? (findPreset(station.source.preset)?.name ?? null)
+      : null;
   }
 
   /** The stations, with built-in defaults added when their server exists and nobody holds it. */
@@ -240,7 +272,11 @@ export class StationRegistry {
     const saved = this.read();
     let changed = false;
     for (const fallback of DEFAULT_STATIONS) {
-      if (saved.removedDefaults.includes(fallback.id) || saved.stations.some((s) => s.id === fallback.id)) continue;
+      if (
+        saved.removedDefaults.includes(fallback.id) ||
+        saved.stations.some((s) => s.id === fallback.id)
+      )
+        continue;
       const serverId = this.resolveServerId(fallback.source);
       if (serverId === null) continue;
       // Someone else (Kevin, on another object) already holds this server: leave it alone.
@@ -268,7 +304,9 @@ export class StationRegistry {
       changed = true;
     }
     const homes = this.options.servers().filter((server) => server.homeAssistant);
-    const free = homes.find((home) => !saved.stations.some((s) => this.resolveServerId(s.source) === home.id));
+    const free = homes.find(
+      (home) => !saved.stations.some((s) => this.resolveServerId(s.source) === home.id),
+    );
     if (!free) return changed;
     saved.stations.push(homeAssistantDefault(free.id));
     return true;
@@ -277,7 +315,10 @@ export class StationRegistry {
   /** Whether a source is a Home Assistant MCP server. */
   private isHomeAssistant(source: StationSource): boolean {
     const id = this.resolveServerId(source);
-    return id !== null && this.options.servers().some((server) => server.id === id && server.homeAssistant);
+    return (
+      id !== null &&
+      this.options.servers().some((server) => server.id === id && server.homeAssistant)
+    );
   }
 
   get(id: string): Station | null {
@@ -285,7 +326,11 @@ export class StationRegistry {
   }
 
   add(input: StationInput): Station {
-    const station = sanitizeStation({ ...input, ...(this.isHomeAssistant(input.source) ? { pursuit: 'none' } : {}), id: `station-${randomUUID()}` });
+    const station = sanitizeStation({
+      ...input,
+      ...(this.isHomeAssistant(input.source) ? { pursuit: 'none' } : {}),
+      id: `station-${randomUUID()}`,
+    });
     if (!station) throw new Error('This station needs a room, an object and something to hold.');
     const saved = this.read();
     saved.stations.push(station);
@@ -325,22 +370,46 @@ export class StationRegistry {
    * A source lives in one place, so any other station that holds it is removed. Settings that Kevin did not
    * touch (verb, activity, trip, characters) are kept when the object already had a station.
    */
-  hold(roomId: string, objectId: string, source: StationSource | null, extra: Partial<Pick<Station, 'verb' | 'activity' | 'trip' | 'characters' | 'body'>> = {}): Station | null {
+  hold(
+    roomId: string,
+    objectId: string,
+    source: StationSource | null,
+    extra: Partial<Pick<Station, 'verb' | 'activity' | 'trip' | 'characters' | 'body'>> = {},
+  ): Station | null {
     this.list();
     const saved = this.read();
-    const here = saved.stations.find((station) => station.roomId === roomId && station.objectId === objectId);
+    const here = saved.stations.find(
+      (station) => station.roomId === roomId && station.objectId === objectId,
+    );
     const dropped = (station: Station): boolean =>
-      station !== here && source !== null && (sameSource(station.source, source) || (this.resolveServerId(station.source) !== null && this.resolveServerId(station.source) === this.resolveServerId(source)));
-    const removed = saved.stations.filter((station) => dropped(station) || (source === null && station === here));
+      station !== here &&
+      source !== null &&
+      (sameSource(station.source, source) ||
+        (this.resolveServerId(station.source) !== null &&
+          this.resolveServerId(station.source) === this.resolveServerId(source)));
+    const removed = saved.stations.filter(
+      (station) => dropped(station) || (source === null && station === here),
+    );
     saved.stations = saved.stations.filter((station) => !removed.includes(station));
     for (const station of removed) {
-      if (isDefaultStation(station.id) && !saved.removedDefaults.includes(station.id)) saved.removedDefaults.push(station.id);
+      if (isDefaultStation(station.id) && !saved.removedDefaults.includes(station.id))
+        saved.removedDefaults.push(station.id);
     }
     let result: Station | null = null;
     if (source !== null) {
-      const next = sanitizeStation({ ...(here ?? { verb: 'use', trip: 'all', characters: 'all' }), ...extra, pursuit: this.isHomeAssistant(source) ? 'none' : undefined, id: here?.id ?? `station-${randomUUID()}`, roomId, objectId, source });
+      const next = sanitizeStation({
+        ...(here ?? { verb: 'use', trip: 'all', characters: 'all' }),
+        ...extra,
+        pursuit: this.isHomeAssistant(source) ? 'none' : undefined,
+        id: here?.id ?? `station-${randomUUID()}`,
+        roomId,
+        objectId,
+        source,
+      });
       if (!next) throw new Error('This station could not be saved.');
-      saved.stations = here ? saved.stations.map((station) => (station === here ? next : station)) : [...saved.stations, next];
+      saved.stations = here
+        ? saved.stations.map((station) => (station === here ? next : station))
+        : [...saved.stations, next];
       result = next;
     }
     this.write(saved);
@@ -356,7 +425,8 @@ export class StationRegistry {
     if (!found) return null;
     for (const station of this.list()) {
       if (station.source.kind === 'builtin') {
-        if (found.serverId === 'builtin' && station.source.toolNames.includes(found.toolName)) return station;
+        if (found.serverId === 'builtin' && station.source.toolNames.includes(found.toolName))
+          return station;
       } else if (this.resolveServerId(station.source) === found.serverId) {
         return station;
       }
@@ -400,14 +470,19 @@ export class StationRegistry {
     const room = this.labels.get(station.roomId)?.room ?? null;
     return {
       roomName: room?.name ?? station.roomId,
-      objectName: room?.objects.find((object) => object.id === station.objectId)?.name ?? station.objectId,
+      objectName:
+        room?.objects.find((object) => object.id === station.objectId)?.name ?? station.objectId,
     };
   }
 
   /** The stations with names and the resolved server, for the settings. */
   async views(): Promise<StationView[]> {
     await this.loadLabels();
-    return this.list().map((station) => ({ ...station, ...this.labelsFor(station), serverId: this.resolveServerId(station.source) }));
+    return this.list().map((station) => ({
+      ...station,
+      ...this.labelsFor(station),
+      serverId: this.resolveServerId(station.source),
+    }));
   }
 
   /** " (kept on the bookshelf in the Reading room)", appended to the description the model sees. */

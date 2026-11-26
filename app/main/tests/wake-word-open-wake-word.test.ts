@@ -20,7 +20,9 @@ function loadAlexaClip(): Int16Array {
 function loadClip(name: string): Int16Array {
   const wav = readFileSync(path.join(here, 'fixtures/wake-word', name));
   const dataBytes = wav.length - 44;
-  return new Int16Array(wav.buffer.slice(wav.byteOffset + 44, wav.byteOffset + 44 + dataBytes - (dataBytes % 2)));
+  return new Int16Array(
+    wav.buffer.slice(wav.byteOffset + 44, wav.byteOffset + 44 + dataBytes - (dataBytes % 2)),
+  );
 }
 
 async function scoreAudio(detector: OpenWakeWordDetector, audio: Int16Array): Promise<number[]> {
@@ -45,7 +47,9 @@ describe('resolveOpenWakeWordModelPaths', () => {
       embedding: path.join('/assets', 'embedding_model.onnx'),
       wakeWord: path.join('/assets', 'hey_jarvis_v0.1.onnx'),
     });
-    expect(resolveOpenWakeWordModelPaths('/assets', '/models/custom.onnx').wakeWord).toBe('/models/custom.onnx');
+    expect(resolveOpenWakeWordModelPaths('/assets', '/models/custom.onnx').wakeWord).toBe(
+      '/models/custom.onnx',
+    );
   });
 });
 
@@ -57,8 +61,10 @@ describe('OpenWakeWordDetector', () => {
     detector = null;
   });
 
-  it('matches the Python reference scores on openWakeWord\'s alexa clip', async () => {
-    detector = await OpenWakeWordDetector.create(resolveOpenWakeWordModelPaths(assetsDirectory, 'alexa'));
+  it("matches the Python reference scores on openWakeWord's alexa clip", async () => {
+    detector = await OpenWakeWordDetector.create(
+      resolveOpenWakeWordModelPaths(assetsDirectory, 'alexa'),
+    );
 
     const scores = await scoreAudio(detector, loadAlexaClip());
 
@@ -69,7 +75,9 @@ describe('OpenWakeWordDetector', () => {
   });
 
   it('detects the wake word between stretches of silence and stays quiet on silence', async () => {
-    detector = await OpenWakeWordDetector.create(resolveOpenWakeWordModelPaths(assetsDirectory, 'alexa'));
+    detector = await OpenWakeWordDetector.create(
+      resolveOpenWakeWordModelPaths(assetsDirectory, 'alexa'),
+    );
 
     const scores = await scoreAudio(detector, withSilence(loadAlexaClip(), 1));
     const peak = scores.indexOf(Math.max(...scores));
@@ -79,7 +87,9 @@ describe('OpenWakeWordDetector', () => {
   });
 
   it('does not fire a different wake word model on the clip', async () => {
-    detector = await OpenWakeWordDetector.create(resolveOpenWakeWordModelPaths(assetsDirectory, 'hey_jarvis'));
+    detector = await OpenWakeWordDetector.create(
+      resolveOpenWakeWordModelPaths(assetsDirectory, 'hey_jarvis'),
+    );
 
     const scores = await scoreAudio(detector, withSilence(loadAlexaClip(), 1));
 
@@ -87,19 +97,25 @@ describe('OpenWakeWordDetector', () => {
   });
 
   it('detects "hey echo" with the bundled default model, and not "alexa"', async () => {
-    detector = await OpenWakeWordDetector.create(resolveOpenWakeWordModelPaths(assetsDirectory, 'hey_echo'));
+    detector = await OpenWakeWordDetector.create(
+      resolveOpenWakeWordModelPaths(assetsDirectory, 'hey_echo'),
+    );
     const heyEcho = await scoreAudio(detector, withSilence(loadClip('hey_echo_test.wav'), 1));
     expect(Math.max(...heyEcho)).toBeGreaterThan(0.9);
     expect(Math.max(...heyEcho.slice(0, 10))).toBeLessThan(0.1);
 
     await detector.release();
-    detector = await OpenWakeWordDetector.create(resolveOpenWakeWordModelPaths(assetsDirectory, 'hey_echo'));
+    detector = await OpenWakeWordDetector.create(
+      resolveOpenWakeWordModelPaths(assetsDirectory, 'hey_echo'),
+    );
     const alexa = await scoreAudio(detector, withSilence(loadAlexaClip(), 1));
     expect(Math.max(...alexa)).toBeLessThan(0.5);
   });
 
   it('rejects frames of the wrong length', async () => {
-    detector = await OpenWakeWordDetector.create(resolveOpenWakeWordModelPaths(assetsDirectory, 'alexa'));
+    detector = await OpenWakeWordDetector.create(
+      resolveOpenWakeWordModelPaths(assetsDirectory, 'alexa'),
+    );
 
     await expect(detector.process(new Int16Array(512))).rejects.toThrow('1280-sample frames');
   });

@@ -1,4 +1,9 @@
-import { DeviceGate, avatarsHere, type DeviceFacts, type DeviceGateState } from '../../../main/src/shared/satellite/device-gate.js';
+import {
+  DeviceGate,
+  avatarsHere,
+  type DeviceFacts,
+  type DeviceGateState,
+} from '../../../main/src/shared/satellite/device-gate.js';
 import { cameraSettingHere } from '../../../main/src/shared/satellite/snapshot-facts.js';
 
 export interface WebGateOptions {
@@ -58,7 +63,10 @@ export class WebGate {
   /** A places snapshot: who stands in this room and whether its camera presence is on. */
   setSnapshot(snapshot: unknown): void {
     this.present = avatarsHere(snapshot);
-    this.gate.update({ occupied: this.present.length > 0, cameraEnabled: cameraSettingHere(snapshot) });
+    this.gate.update({
+      occupied: this.present.length > 0,
+      cameraEnabled: cameraSettingHere(snapshot),
+    });
   }
 
   /** bija asked the devices off. It can never turn them on. */

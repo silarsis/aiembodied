@@ -25,11 +25,15 @@ const vrmaTrackSchema = z.object({
   keyframes: z.array(vrmaRotationKeyframeSchema).min(1),
 });
 
-const vrmaHipsSchema = z.object({
-  position: z.object({
-    keyframes: z.array(vrmaPositionKeyframeSchema).min(1),
-  }).optional(),
-}).strict();
+const vrmaHipsSchema = z
+  .object({
+    position: z
+      .object({
+        keyframes: z.array(vrmaPositionKeyframeSchema).min(1),
+      })
+      .optional(),
+  })
+  .strict();
 
 const vrmaExpressionTrackSchema = z.object({
   name: z.string().min(1),
@@ -87,7 +91,17 @@ export const VRMA_PLAN_JSON_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['name', 'startTime', 'endTime', 'purpose', 'bones', 'description', 'keyframeDensity', 'easingHint', 'expressions'],
+        required: [
+          'name',
+          'startTime',
+          'endTime',
+          'purpose',
+          'bones',
+          'description',
+          'keyframeDensity',
+          'easingHint',
+          'expressions',
+        ],
         properties: {
           name: { type: 'string' },
           startTime: { type: 'number', minimum: 0 },
@@ -95,7 +109,10 @@ export const VRMA_PLAN_JSON_SCHEMA = {
           purpose: { type: 'string' },
           description: { type: 'string' },
           keyframeDensity: { type: 'string', enum: ['low', 'medium', 'high'] },
-          easingHint: { type: 'string', enum: ['linear', 'easeIn', 'easeOut', 'easeInOut', 'elastic'] },
+          easingHint: {
+            type: 'string',
+            enum: ['linear', 'easeIn', 'easeOut', 'easeInOut', 'elastic'],
+          },
           bones: {
             type: 'array',
             minItems: 1,

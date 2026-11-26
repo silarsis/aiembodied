@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import type { MCPServerConfigInput, MCPServerSummary, MCPToolSummary } from '../../../main/src/shared/mcp/types.js';
+import type {
+  MCPServerConfigInput,
+  MCPServerSummary,
+  MCPToolSummary,
+} from '../../../main/src/shared/mcp/types.js';
 import type { MCPPresetSummary } from '../../../main/src/shared/mcp/presets-types.js';
 import type { StationView } from '../../../main/src/shared/stations/types.js';
 import type { McpBridge, ModelsBridge, StationsBridge } from '../preload-api.js';
@@ -78,10 +82,18 @@ function draftToConfig(draft: ServerDraft): MCPServerConfigInput {
     };
   }
   const url = draft.url.trim();
-  const header = draft.signIn === 'header' && draft.token ? draft.header.trim() || 'Authorization' : undefined;
+  const header =
+    draft.signIn === 'header' && draft.token ? draft.header.trim() || 'Authorization' : undefined;
   const token = draft.signIn === 'header' && draft.token ? draft.token : undefined;
   if (draft.connectsBy === 'sse') {
-    return { ...base, name: draft.name.trim() || url, transportType: 'sse', sseUrl: url, sseAuthHeader: header, sseAuthToken: token };
+    return {
+      ...base,
+      name: draft.name.trim() || url,
+      transportType: 'sse',
+      sseUrl: url,
+      sseAuthHeader: header,
+      sseAuthToken: token,
+    };
   }
   return {
     ...base,
@@ -136,7 +148,9 @@ export function ToolsSettings({
   active: boolean;
   onOpenWebSearch?(): void;
 }) {
-  const [definitions, setDefinitions] = useState<{ name: string; description: string }[] | null>(null);
+  const [definitions, setDefinitions] = useState<{ name: string; description: string }[] | null>(
+    null,
+  );
   const [searchServers, setSearchServers] = useState<string | null>(null);
   const [servers, setServers] = useState<MCPServerSummary[]>([]);
   const [tools, setTools] = useState<MCPToolSummary[]>([]);
@@ -147,14 +161,15 @@ export function ToolsSettings({
   const [adding, setAdding] = useState<ServerDraft | null>(null);
 
   const reload = useCallback(async () => {
-    const [nextDefinitions, nextServers, nextTools, nextPresets, routing, nextStations] = await Promise.all([
-      mcp?.getToolDefinitionsForLLM?.().catch(() => null) ?? null,
-      mcp?.listServers().catch(() => []) ?? [],
-      mcp?.listTools().catch(() => []) ?? [],
-      mcp?.listPresets?.().catch(() => []) ?? [],
-      models?.get().catch(() => null) ?? null,
-      stations?.list().catch(() => [] as StationView[]) ?? [],
-    ]);
+    const [nextDefinitions, nextServers, nextTools, nextPresets, routing, nextStations] =
+      await Promise.all([
+        mcp?.getToolDefinitionsForLLM?.().catch(() => null) ?? null,
+        mcp?.listServers().catch(() => []) ?? [],
+        mcp?.listTools().catch(() => []) ?? [],
+        mcp?.listPresets?.().catch(() => []) ?? [],
+        models?.get().catch(() => null) ?? null,
+        stations?.list().catch(() => [] as StationView[]) ?? [],
+      ]);
     setStationList(nextStations);
     setDefinitions(nextDefinitions);
     setServers(nextServers);
@@ -162,7 +177,9 @@ export function ToolsSettings({
     setPresets(nextPresets);
     if (routing) {
       const route = routing.routes.search;
-      const ids = route?.server ? [route.server, ...(route.backups ?? []).map((backup) => backup.server)] : [];
+      const ids = route?.server
+        ? [route.server, ...(route.backups ?? []).map((backup) => backup.server)]
+        : [];
       const names = ids
         .map((id) => routing.servers.find((server) => server.id === id)?.name)
         .filter((name): name is string => Boolean(name));
@@ -200,7 +217,8 @@ export function ToolsSettings({
   /** Connect a server, or for an OAuth server open the browser sign-in. Throws a readable error on failure. */
   const startServer = async (server: MCPServerSummary) => {
     if (!mcp) return;
-    const result = server.oauth && mcp.signIn ? await mcp.signIn(server.id) : await mcp.connectServer(server.id);
+    const result =
+      server.oauth && mcp.signIn ? await mcp.signIn(server.id) : await mcp.connectServer(server.id);
     if (!result.success) throw new Error(result.error ?? `Couldn’t connect to ${server.name}.`);
   };
 
@@ -232,7 +250,8 @@ export function ToolsSettings({
     );
   };
 
-  const stationFor = (serverId: string): StationView | undefined => stationList.find((station) => station.serverId === serverId);
+  const stationFor = (serverId: string): StationView | undefined =>
+    stationList.find((station) => station.serverId === serverId);
   const signOut = mcp?.signOut?.bind(mcp);
   const builtIn = (definitions ?? []).filter(
     (definition) => !tools.some((tool) => tool.llmName === definition.name),
@@ -302,7 +321,8 @@ export function ToolsSettings({
             {servers.map((server) => {
               const serverTools = tools.filter((tool) => tool.serverId === server.id);
               const connected = server.connectionStatus === 'connected';
-              const needsSignIn = server.connectionStatus === 'needs-sign-in' && Boolean(server.oauth);
+              const needsSignIn =
+                server.connectionStatus === 'needs-sign-in' && Boolean(server.oauth);
               return (
                 <article key={server.id} className="toolsSettings__server" aria-label={server.name}>
                   <div className="toolsSettings__serverHeader">
@@ -314,7 +334,8 @@ export function ToolsSettings({
                   </div>
                   {stationFor(server.id) ? (
                     <p className="kiosk__helper">
-                      Kept on the {stationFor(server.id)?.objectName} in the {stationFor(server.id)?.roomName}
+                      Kept on the {stationFor(server.id)?.objectName} in the{' '}
+                      {stationFor(server.id)?.roomName}
                     </p>
                   ) : null}
                   {server.lastError ? (
@@ -327,7 +348,13 @@ export function ToolsSettings({
                       <button
                         type="button"
                         disabled={busy !== null}
-                        onClick={() => void run(server.id, () => mcp.disconnectServer(server.id), 'Couldn’t disconnect.')}
+                        onClick={() =>
+                          void run(
+                            server.id,
+                            () => mcp.disconnectServer(server.id),
+                            'Couldn’t disconnect.',
+                          )
+                        }
                       >
                         Disconnect
                       </button>
@@ -336,7 +363,9 @@ export function ToolsSettings({
                         type="button"
                         className="faces__submit"
                         disabled={busy !== null}
-                        onClick={() => void run(server.id, () => startServer(server), 'Couldn’t sign in.')}
+                        onClick={() =>
+                          void run(server.id, () => startServer(server), 'Couldn’t sign in.')
+                        }
                       >
                         {busy === server.id ? 'Waiting for the browser…' : 'Sign in'}
                       </button>
@@ -349,7 +378,10 @@ export function ToolsSettings({
                             server.id,
                             async () => {
                               const result = await mcp.connectServer(server.id);
-                              if (!result.success) throw new Error(result.error ?? `Couldn’t connect to ${server.name}.`);
+                              if (!result.success)
+                                throw new Error(
+                                  result.error ?? `Couldn’t connect to ${server.name}.`,
+                                );
                             },
                             'Couldn’t connect.',
                           )
@@ -377,7 +409,9 @@ export function ToolsSettings({
                       <button
                         type="button"
                         disabled={busy !== null}
-                        onClick={() => void run(server.id, () => signOut(server.id), 'Couldn’t sign out.')}
+                        onClick={() =>
+                          void run(server.id, () => signOut(server.id), 'Couldn’t sign out.')
+                        }
                       >
                         Sign out
                       </button>
@@ -385,7 +419,13 @@ export function ToolsSettings({
                     <button
                       type="button"
                       disabled={busy !== null}
-                      onClick={() => void run(server.id, () => mcp.deleteServer(server.id), 'Couldn’t remove that server.')}
+                      onClick={() =>
+                        void run(
+                          server.id,
+                          () => mcp.deleteServer(server.id),
+                          'Couldn’t remove that server.',
+                        )
+                      }
                     >
                       Remove
                     </button>
@@ -402,7 +442,10 @@ export function ToolsSettings({
                               onChange={(event) =>
                                 void run(
                                   tool.id,
-                                  () => mcp.updateToolPreferences(tool.id, { enabled: event.target.checked }),
+                                  () =>
+                                    mcp.updateToolPreferences(tool.id, {
+                                      enabled: event.target.checked,
+                                    }),
                                   'Couldn’t save that.',
                                 )
                               }
@@ -416,7 +459,10 @@ export function ToolsSettings({
                             onChange={(event) =>
                               void run(
                                 tool.id,
-                                () => mcp.updateToolPreferences(tool.id, { confirmationLevel: event.target.value }),
+                                () =>
+                                  mcp.updateToolPreferences(tool.id, {
+                                    confirmationLevel: event.target.value,
+                                  }),
                                 'Couldn’t save that.',
                               )
                             }
@@ -434,7 +480,10 @@ export function ToolsSettings({
                             onChange={(event) =>
                               void run(
                                 tool.id,
-                                () => mcp.updateToolPreferences(tool.id, { readOnly: event.target.value === 'reads' }),
+                                () =>
+                                  mcp.updateToolPreferences(tool.id, {
+                                    readOnly: event.target.value === 'reads',
+                                  }),
                                 'Couldn’t save that.',
                               )
                             }
@@ -442,7 +491,9 @@ export function ToolsSettings({
                             <option value="changes">Changes things</option>
                             <option value="reads">Only reads</option>
                           </select>
-                          {tool.description ? <span className="kiosk__helper">{tool.description}</span> : null}
+                          {tool.description ? (
+                            <span className="kiosk__helper">{tool.description}</span>
+                          ) : null}
                         </li>
                       ))}
                     </ul>
@@ -452,7 +503,11 @@ export function ToolsSettings({
             })}
 
             {adding ? (
-              <form className="toolsSettings__add" onSubmit={(event) => void handleAdd(event)} aria-label="Add MCP server">
+              <form
+                className="toolsSettings__add"
+                onSubmit={(event) => void handleAdd(event)}
+                aria-label="Add MCP server"
+              >
                 <label>
                   Name
                   <input
@@ -465,7 +520,9 @@ export function ToolsSettings({
                   Connects by
                   <select
                     value={adding.connectsBy}
-                    onChange={(event) => setAdding({ ...adding, connectsBy: event.target.value as ConnectsBy })}
+                    onChange={(event) =>
+                      setAdding({ ...adding, connectsBy: event.target.value as ConnectsBy })
+                    }
                   >
                     <option value="http">Web address</option>
                     <option value="stdio">Program on this PC</option>
@@ -490,7 +547,9 @@ export function ToolsSettings({
                         rows={3}
                         value={adding.argsText}
                         onChange={(event) => setAdding({ ...adding, argsText: event.target.value })}
-                        placeholder={'-y\n@modelcontextprotocol/server-filesystem\nC:\\Users\\me\\Documents'}
+                        placeholder={
+                          '-y\n@modelcontextprotocol/server-filesystem\nC:\\Users\\me\\Documents'
+                        }
                       />
                     </label>
                     <label>
@@ -513,7 +572,9 @@ export function ToolsSettings({
                         value={adding.url}
                         onChange={(event) => setAdding({ ...adding, url: event.target.value })}
                         placeholder={
-                          adding.connectsBy === 'sse' ? 'http://192.168.1.20:8123/mcp_server/sse' : 'https://example.com/mcp'
+                          adding.connectsBy === 'sse'
+                            ? 'http://192.168.1.20:8123/mcp_server/sse'
+                            : 'https://example.com/mcp'
                         }
                       />
                     </label>
@@ -521,25 +582,36 @@ export function ToolsSettings({
                       Sign-in
                       <select
                         value={adding.signIn}
-                        onChange={(event) => setAdding({ ...adding, signIn: event.target.value as SignInKind })}
+                        onChange={(event) =>
+                          setAdding({ ...adding, signIn: event.target.value as SignInKind })
+                        }
                       >
                         <option value="none">None</option>
                         <option value="header">Token in a header</option>
-                        {adding.connectsBy === 'http' ? <option value="oauth">Sign in with the browser (OAuth)</option> : null}
+                        {adding.connectsBy === 'http' ? (
+                          <option value="oauth">Sign in with the browser (OAuth)</option>
+                        ) : null}
                       </select>
                     </label>
                     {adding.signIn === 'header' ? (
                       <>
                         <label>
                           Auth header
-                          <input value={adding.header} onChange={(event) => setAdding({ ...adding, header: event.target.value })} />
+                          <input
+                            value={adding.header}
+                            onChange={(event) =>
+                              setAdding({ ...adding, header: event.target.value })
+                            }
+                          />
                         </label>
                         <label>
                           Auth value
                           <input
                             type="password"
                             value={adding.token}
-                            onChange={(event) => setAdding({ ...adding, token: event.target.value })}
+                            onChange={(event) =>
+                              setAdding({ ...adding, token: event.target.value })
+                            }
                             placeholder="Bearer …"
                           />
                         </label>
@@ -562,9 +634,16 @@ export function ToolsSettings({
                   <button
                     type="submit"
                     className="faces__submit"
-                    disabled={busy !== null || (adding.connectsBy === 'stdio' ? !adding.command.trim() : !adding.url.trim())}
+                    disabled={
+                      busy !== null ||
+                      (adding.connectsBy === 'stdio' ? !adding.command.trim() : !adding.url.trim())
+                    }
                   >
-                    {busy === 'add' ? 'Adding…' : adding.signIn === 'oauth' && adding.connectsBy === 'http' ? 'Add and sign in' : 'Add and connect'}
+                    {busy === 'add'
+                      ? 'Adding…'
+                      : adding.signIn === 'oauth' && adding.connectsBy === 'http'
+                        ? 'Add and sign in'
+                        : 'Add and connect'}
                   </button>
                   <button type="button" onClick={() => setAdding(null)}>
                     Cancel
@@ -572,12 +651,17 @@ export function ToolsSettings({
                 </div>
                 {adding.connectsBy === 'stdio' ? (
                   <p className="kiosk__helper">
-                    The program starts with this app and stops when it closes. Only add programs you trust.
+                    The program starts with this app and stops when it closes. Only add programs you
+                    trust.
                   </p>
                 ) : null}
               </form>
             ) : (
-              <button type="button" className="faces__submit" onClick={() => setAdding({ ...EMPTY_DRAFT })}>
+              <button
+                type="button"
+                className="faces__submit"
+                onClick={() => setAdding({ ...EMPTY_DRAFT })}
+              >
                 Add an MCP server
               </button>
             )}
@@ -586,9 +670,15 @@ export function ToolsSettings({
               <div aria-label="Ready-made servers" role="group" className="toolsSettings__presets">
                 <h4>Ready-made servers</h4>
                 {presets.map((preset) => {
-                  const added = servers.some((server) => (server.httpUrl ?? server.sseUrl) === preset.url);
+                  const added = servers.some(
+                    (server) => (server.httpUrl ?? server.sseUrl) === preset.url,
+                  );
                   return (
-                    <article key={preset.id} className="toolsSettings__server" aria-label={`Ready-made ${preset.name}`}>
+                    <article
+                      key={preset.id}
+                      className="toolsSettings__server"
+                      aria-label={`Ready-made ${preset.name}`}
+                    >
                       <div className="toolsSettings__serverHeader">
                         <strong>{preset.name}</strong>
                       </div>

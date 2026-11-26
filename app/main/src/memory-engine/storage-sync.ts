@@ -12,7 +12,10 @@ import {
 } from '../shared/config/model-routing.js';
 import { MemoryEngineError, type MemoryEngineClient } from './client.js';
 
-type Logger = { info: (message: string, data?: Record<string, unknown>) => void; warn: (message: string, data?: Record<string, unknown>) => void };
+type Logger = {
+  info: (message: string, data?: Record<string, unknown>) => void;
+  warn: (message: string, data?: Record<string, unknown>) => void;
+};
 
 export interface MemoryStorageTargets {
   /** Null: the engine's own database on this PC. */
@@ -21,14 +24,22 @@ export interface MemoryStorageTargets {
   mirror: string | null;
 }
 
-export function memoryStorageTargets(routing: ModelRouting, keyFor: (serverId: string) => string | undefined): MemoryStorageTargets {
+export function memoryStorageTargets(
+  routing: ModelRouting,
+  keyFor: (serverId: string) => string | undefined,
+): MemoryStorageTargets {
   const address = (serverId: string | undefined): string | null => {
     if (!serverId || serverId === BUILT_IN_SERVER_IDS.memory) return null;
-    const server = routing.servers.find((entry) => entry.id === serverId && entry.type === 'memory');
+    const server = routing.servers.find(
+      (entry) => entry.id === serverId && entry.type === 'memory',
+    );
     return server ? databaseUrlWithPassword(server.url, keyFor(server.id)) : null;
   };
   // This PC's database can't be the mirror: the engine is the only one that knows its address.
-  return { database: address(routing.routes.memory?.server), mirror: address(routing.routes.memorymirror?.server) };
+  return {
+    database: address(routing.routes.memory?.server),
+    mirror: address(routing.routes.memorymirror?.server),
+  };
 }
 
 export interface MemoryStorageSyncOptions {
@@ -83,9 +94,14 @@ export class MemoryStorageSync {
       });
     } catch (error) {
       const retryable = !(error instanceof MemoryEngineError) || error.retryable;
-      this.options.logger.warn(retryable ? 'Memory engine not ready for the storage setting; will retry.' : 'Memory engine refused the storage setting.', {
-        message: error instanceof Error ? error.message : String(error),
-      });
+      this.options.logger.warn(
+        retryable
+          ? 'Memory engine not ready for the storage setting; will retry.'
+          : 'Memory engine refused the storage setting.',
+        {
+          message: error instanceof Error ? error.message : String(error),
+        },
+      );
       if (retryable && !this.stopped) {
         this.timer = setTimeout(() => {
           this.timer = null;

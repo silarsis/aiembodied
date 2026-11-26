@@ -35,12 +35,14 @@ function toBytes(value: Uint8Array | ArrayBuffer | ArrayBufferView): Uint8Array 
 /** Encodes one op as a text frame. */
 export function encodeText(op: Op): string {
   const text = JSON.stringify(op);
-  if (encoder.encode(text).byteLength > MAX_TEXT_BYTES) throw new FrameError('Text frame is larger than 1 MB.');
+  if (encoder.encode(text).byteLength > MAX_TEXT_BYTES)
+    throw new FrameError('Text frame is larger than 1 MB.');
   return text;
 }
 
 export function decodeText(text: string): Op {
-  if (text.length > MAX_TEXT_BYTES || encoder.encode(text).byteLength > MAX_TEXT_BYTES) throw new FrameError('Text frame is larger than 1 MB.');
+  if (text.length > MAX_TEXT_BYTES || encoder.encode(text).byteLength > MAX_TEXT_BYTES)
+    throw new FrameError('Text frame is larger than 1 MB.');
   return parseHeader(text);
 }
 
@@ -51,7 +53,12 @@ function parseHeader(text: string): Op {
   } catch {
     throw new FrameError('Frame is not valid JSON.');
   }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || typeof (parsed as { op?: unknown }).op !== 'string') {
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    Array.isArray(parsed) ||
+    typeof (parsed as { op?: unknown }).op !== 'string'
+  ) {
     throw new FrameError('Frame has no op.');
   }
   return parsed as Op;
@@ -73,7 +80,8 @@ export function decodeBinaryFrame(data: Uint8Array): { header: Op; payload: Uint
   if (data.byteLength > MAX_FRAME_BYTES) throw new FrameError('Binary frame is larger than 64 MB.');
   if (data.byteLength < 4) throw new FrameError('Binary frame is too short.');
   const length = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(0, false);
-  if (length === 0 || length > MAX_TEXT_BYTES || 4 + length > data.byteLength) throw new FrameError('Binary frame has a bad header length.');
+  if (length === 0 || length > MAX_TEXT_BYTES || 4 + length > data.byteLength)
+    throw new FrameError('Binary frame has a bad header length.');
   const header = parseHeader(decoder.decode(data.subarray(4, 4 + length)));
   return { header, payload: data.subarray(4 + length) };
 }
@@ -146,13 +154,17 @@ export function decodeMessage(data: string | Uint8Array): DecodedMessage {
   const { header, payload } = decodeBinaryFrame(data);
   const lengths = header.bins;
   if (lengths === undefined) return { op: header, payload };
-  if (!Array.isArray(lengths) || lengths.some((length) => typeof length !== 'number' || !Number.isInteger(length) || length < 0)) {
+  if (
+    !Array.isArray(lengths) ||
+    lengths.some((length) => typeof length !== 'number' || !Number.isInteger(length) || length < 0)
+  ) {
     throw new FrameError('Frame has a bad bins list.');
   }
   const bins: Uint8Array[] = [];
   let offset = 0;
   for (const length of lengths as number[]) {
-    if (offset + length > payload.byteLength) throw new FrameError('Frame is shorter than its bins list.');
+    if (offset + length > payload.byteLength)
+      throw new FrameError('Frame is shorter than its bins list.');
     bins.push(payload.subarray(offset, offset + length));
     offset += length;
   }

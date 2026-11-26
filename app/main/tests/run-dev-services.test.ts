@@ -4,9 +4,15 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
-const { buildStartCommand, describeLocalServices, ensureLocalServices, readSavedPreferences, readSelectedLocalLlm, savedPreferencesPaths, shouldStartServices } = await import(
-  '../../../scripts/local-services.mjs'
-);
+const {
+  buildStartCommand,
+  describeLocalServices,
+  ensureLocalServices,
+  readSavedPreferences,
+  readSelectedLocalLlm,
+  savedPreferencesPaths,
+  shouldStartServices,
+} = await import('../../../scripts/local-services.mjs');
 
 const quiet = { info: () => undefined, warn: () => undefined };
 
@@ -53,12 +59,31 @@ describe('local services', () => {
       MOTION_VENV: 'C:\\venv',
       STT_URL: 'http://127.0.0.1:1240/v1/',
     });
-    expect(services.map((s: { id: string }) => s.id)).toEqual(['llm', 'asr', 'speech', 'motion', 'memory', 'searxng', 'coder', 'switchboard', 'temporal', 'workflows', 'laya']);
+    expect(services.map((s: { id: string }) => s.id)).toEqual([
+      'llm',
+      'asr',
+      'speech',
+      'motion',
+      'memory',
+      'searxng',
+      'coder',
+      'switchboard',
+      'temporal',
+      'workflows',
+      'laya',
+    ]);
     const byId = Object.fromEntries(services.map((s: { id: string }) => [s.id, s]));
     expect(byId.asr.probe).toBe('http://127.0.0.1:1240/v1/models');
     expect(byId.asr.args).toEqual(['-Port', '1240']);
     expect(byId.speech.args).toEqual(['-Port', '8192', '-KokoroDir', 'C:\\kokoro']);
-    expect(byId.motion.args).toEqual(['-Port', '8190', '-TextEncodersDir', 'C:\\enc', '-Venv', 'C:\\venv']);
+    expect(byId.motion.args).toEqual([
+      '-Port',
+      '8190',
+      '-TextEncodersDir',
+      'C:\\enc',
+      '-Venv',
+      'C:\\venv',
+    ]);
     expect(byId.llm.script).toBe(resolve('/repo', 'scripts/start-local-llm.ps1'));
     expect(byId.llm.args).toEqual(['-Port', '1234', '-Slots', '2', '-Context', '65536']);
     const smallContext = describeLocalServices('/repo', { LOCAL_LLM_CONTEXT: '32768' });
@@ -66,10 +91,48 @@ describe('local services', () => {
     const tooManySlots = describeLocalServices('/repo', { LOCAL_LLM_SLOTS: '12' });
     expect(tooManySlots[0].args).toEqual(['-Port', '1234', '-Slots', '8', '-Context', '65536']);
 
-    const downloaded = describeLocalServices('/repo', { LOCAL_LLM_CONTEXT: '32768' }, {}, { path: 'C:\\m\\x.gguf', alias: 'x-q4_k_m', contextLength: 8192 });
-    expect(downloaded[0].args).toEqual(['-Port', '1234', '-Model', 'C:\\m\\x.gguf', '-Alias', 'x-q4_k_m', '-Slots', '2', '-Context', '8192']);
-    const saved = describeLocalServices('/repo', { LOCAL_LLM_SLOTS: '4' }, {}, { path: 'C:\\m\\x.gguf', alias: 'x', contextLength: 131072, slots: 1, contextPerSlot: 131072 });
-    expect(saved[0].args).toEqual(['-Port', '1234', '-Model', 'C:\\m\\x.gguf', '-Alias', 'x', '-Slots', '1', '-Context', '131072']);
+    const downloaded = describeLocalServices(
+      '/repo',
+      { LOCAL_LLM_CONTEXT: '32768' },
+      {},
+      { path: 'C:\\m\\x.gguf', alias: 'x-q4_k_m', contextLength: 8192 },
+    );
+    expect(downloaded[0].args).toEqual([
+      '-Port',
+      '1234',
+      '-Model',
+      'C:\\m\\x.gguf',
+      '-Alias',
+      'x-q4_k_m',
+      '-Slots',
+      '2',
+      '-Context',
+      '8192',
+    ]);
+    const saved = describeLocalServices(
+      '/repo',
+      { LOCAL_LLM_SLOTS: '4' },
+      {},
+      {
+        path: 'C:\\m\\x.gguf',
+        alias: 'x',
+        contextLength: 131072,
+        slots: 1,
+        contextPerSlot: 131072,
+      },
+    );
+    expect(saved[0].args).toEqual([
+      '-Port',
+      '1234',
+      '-Model',
+      'C:\\m\\x.gguf',
+      '-Alias',
+      'x',
+      '-Slots',
+      '1',
+      '-Context',
+      '131072',
+    ]);
     expect(downloaded[0].label).toBe('x-q4_k_m (llama-server)');
 
     const onCpu = describeLocalServices('/repo', { MOTION_TEXT_ENCODER_DEVICE: 'cpu' });
@@ -83,7 +146,10 @@ describe('local services', () => {
     expect(searxngOf({}).enabled).toBe(true);
     expect(searxngOf({ WEB_SEARCH_PROVIDER: 'off' }).enabled).toBe(false);
     expect(searxngOf({ WEB_SEARCH_PROVIDER: 'brave' }).enabled).toBe(false);
-    const searxng = searxngOf({ WEB_SEARCH_PROVIDER: 'SearXNG, brave', SEARXNG_URL: 'http://127.0.0.1:8890/' });
+    const searxng = searxngOf({
+      WEB_SEARCH_PROVIDER: 'SearXNG, brave',
+      SEARXNG_URL: 'http://127.0.0.1:8890/',
+    });
     expect(searxng.enabled).toBe(true);
     expect(searxng.probe).toBe('http://127.0.0.1:8890/healthz');
     expect(searxng.args).toEqual(['-Port', '8890']);
@@ -96,14 +162,30 @@ describe('local services', () => {
       const launcher = fakeLauncher(777);
       const fetchFn = vi.fn(async (url: string) => {
         if (url.startsWith('http://127.0.0.1:8190') || url.startsWith('http://127.0.0.1:8192')) {
-          return new Response(JSON.stringify({ status: 'error', error: 'OSError: text encoder missing', ready: false }), { status: 200 });
+          return new Response(
+            JSON.stringify({
+              status: 'error',
+              error: 'OSError: text encoder missing',
+              ready: false,
+            }),
+            { status: 200 },
+          );
         }
-        if (url.startsWith('http://127.0.0.1:1234') || url.startsWith('http://127.0.0.1:1235')) return new Response('{}', { status: 200 });
+        if (url.startsWith('http://127.0.0.1:1234') || url.startsWith('http://127.0.0.1:1235'))
+          return new Response('{}', { status: 200 });
         throw new Error('ECONNREFUSED');
       });
       const results = await ensureLocalServices(
         repoRoot,
-        { KOKORO_DIR: 'C:\\kokoro', WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', SWITCHBOARD_AUTOSTART: '0', WORKFLOWS_ENABLED: '0', LAYA_AUTOSTART: '0' },
+        {
+          KOKORO_DIR: 'C:\\kokoro',
+          WEB_SEARCH_PROVIDER: 'off',
+          MEMORY_AUTOSTART: '0',
+          CODER_AUTOSTART: '0',
+          SWITCHBOARD_AUTOSTART: '0',
+          WORKFLOWS_ENABLED: '0',
+          LAYA_AUTOSTART: '0',
+        },
         { fetchFn, spawnSyncFn: launcher, platform: 'win32', log: quiet },
       );
       const byId = Object.fromEntries(results.map((r: { id: string }) => [r.id, r]));
@@ -112,10 +194,28 @@ describe('local services', () => {
       expect(byId.speech).toMatchObject({ status: 'restarted', pid: 777 });
       const calls = launcher.mock.calls as unknown as Array<[string, string[]]>;
       expect(calls).toHaveLength(4);
-      expect(calls[0][1]).toEqual(['-NoProfile', '-NonInteractive', '-File', join(repoRoot, 'scripts', 'stop-service.ps1'), '-Port', '8192']);
-      expect(decodeCommand(calls[1][1])).toContain(resolve(repoRoot, 'services/speech/scripts/start.ps1'));
-      expect(calls[2][1]).toEqual(['-NoProfile', '-NonInteractive', '-File', join(repoRoot, 'scripts', 'stop-service.ps1'), '-Port', '8190']);
-      expect(decodeCommand(calls[3][1])).toContain(resolve(repoRoot, 'services/motion/scripts/start.ps1'));
+      expect(calls[0][1]).toEqual([
+        '-NoProfile',
+        '-NonInteractive',
+        '-File',
+        join(repoRoot, 'scripts', 'stop-service.ps1'),
+        '-Port',
+        '8192',
+      ]);
+      expect(decodeCommand(calls[1][1])).toContain(
+        resolve(repoRoot, 'services/speech/scripts/start.ps1'),
+      );
+      expect(calls[2][1]).toEqual([
+        '-NoProfile',
+        '-NonInteractive',
+        '-File',
+        join(repoRoot, 'scripts', 'stop-service.ps1'),
+        '-Port',
+        '8190',
+      ]);
+      expect(decodeCommand(calls[3][1])).toContain(
+        resolve(repoRoot, 'services/motion/scripts/start.ps1'),
+      );
     }),
   );
 
@@ -124,15 +224,28 @@ describe('local services', () => {
     withTempRepo(async (repoRoot) => {
       const launcher = vi.fn(() => ({ status: 1 }));
       const fetchFn = vi.fn(async (url: string) => {
-        if (url.startsWith('http://127.0.0.1:8190')) return new Response(JSON.stringify({ status: 'error', error: 'boom' }), { status: 200 });
+        if (url.startsWith('http://127.0.0.1:8190'))
+          return new Response(JSON.stringify({ status: 'error', error: 'boom' }), { status: 200 });
         throw new Error('ECONNREFUSED');
       });
       const results = await ensureLocalServices(
         repoRoot,
-        { WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', SWITCHBOARD_AUTOSTART: '0', WORKFLOWS_ENABLED: '0', LAYA_AUTOSTART: '0', LLM_PROVIDER: 'openai', STT_PROVIDER: 'openai', TTS_PROVIDER: 'openai' },
+        {
+          WEB_SEARCH_PROVIDER: 'off',
+          MEMORY_AUTOSTART: '0',
+          CODER_AUTOSTART: '0',
+          SWITCHBOARD_AUTOSTART: '0',
+          WORKFLOWS_ENABLED: '0',
+          LAYA_AUTOSTART: '0',
+          LLM_PROVIDER: 'openai',
+          STT_PROVIDER: 'openai',
+          TTS_PROVIDER: 'openai',
+        },
         { fetchFn, spawnSyncFn: launcher, platform: 'win32', log: quiet },
       );
-      expect(results.find((r: { id: string }) => r.id === 'motion')).toMatchObject({ status: 'failed' });
+      expect(results.find((r: { id: string }) => r.id === 'motion')).toMatchObject({
+        status: 'failed',
+      });
       expect(launcher).toHaveBeenCalledTimes(1);
     }),
   );
@@ -143,7 +256,15 @@ describe('local services', () => {
       const launcher = fakeLauncher();
       const results = await ensureLocalServices(
         repoRoot,
-        { KOKORO_DIR: 'C:\\kokoro', WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', SWITCHBOARD_AUTOSTART: '0', WORKFLOWS_ENABLED: '0', LAYA_AUTOSTART: '0' },
+        {
+          KOKORO_DIR: 'C:\\kokoro',
+          WEB_SEARCH_PROVIDER: 'off',
+          MEMORY_AUTOSTART: '0',
+          CODER_AUTOSTART: '0',
+          SWITCHBOARD_AUTOSTART: '0',
+          WORKFLOWS_ENABLED: '0',
+          LAYA_AUTOSTART: '0',
+        },
         {
           fetchFn: fakeFetch(['http://127.0.0.1:1234', 'http://127.0.0.1:8192']),
           spawnSyncFn: launcher,
@@ -166,14 +287,23 @@ describe('local services', () => {
         ['laya', 'skipped'],
       ]);
       expect(launcher).toHaveBeenCalledTimes(2);
-      const [command, args, options] = launcher.mock.calls[0] as unknown as [string, string[], Record<string, unknown>];
+      const [command, args, options] = launcher.mock.calls[0] as unknown as [
+        string,
+        string[],
+        Record<string, unknown>,
+      ];
       expect(command).toBe('powershell.exe');
       // No pipes: the service would inherit them and keep the launcher from returning.
       expect(options).toMatchObject({ windowsHide: true, cwd: repoRoot, stdio: 'ignore' });
       const script = decodeCommand(args);
-      expect(script).toContain(`'"${resolve(repoRoot, 'scripts/start-local-asr.ps1')}"', '"-Port"', '"1235"'`);
+      expect(script).toContain(
+        `'"${resolve(repoRoot, 'scripts/start-local-asr.ps1')}"', '"-Port"', '"1235"'`,
+      );
       expect(script).toContain('-WindowStyle Hidden');
-      expect(results[1]).toMatchObject({ pid: 4321, logPath: join(repoRoot, '.dev-home', 'logs', 'asr.log') });
+      expect(results[1]).toMatchObject({
+        pid: 4321,
+        logPath: join(repoRoot, '.dev-home', 'logs', 'asr.log'),
+      });
     }),
   );
 
@@ -182,18 +312,39 @@ describe('local services', () => {
       describeLocalServices('/repo', env, saved).find((s: { id: string }) => s.id === 'llm');
     const saved = (routes: object) => ({ models: { routes } });
     // Nothing else uses the language model: only the idle job keeps it on.
-    const onlyIdle = saved({ llm: { server: 'openai' }, stt: { server: 'openai' }, tts: { server: 'openai' }, idle: { server: 'local-llm' } });
+    const onlyIdle = saved({
+      llm: { server: 'openai' },
+      stt: { server: 'openai' },
+      tts: { server: 'openai' },
+      idle: { server: 'local-llm' },
+    });
     expect(llm({}, onlyIdle)?.enabled).toBe(true);
-    const idleElsewhere = saved({ llm: { server: 'openai' }, stt: { server: 'openai' }, tts: { server: 'openai' }, idle: { server: 'openai' } });
+    const idleElsewhere = saved({
+      llm: { server: 'openai' },
+      stt: { server: 'openai' },
+      tts: { server: 'openai' },
+      idle: { server: 'openai' },
+    });
     expect(llm({}, idleElsewhere)?.enabled).toBe(false);
-    expect(llm({ LLM_PROVIDER: 'openai', STT_PROVIDER: 'openai', TTS_PROVIDER: 'openai' }, {})?.enabled).toBe(false);
+    expect(
+      llm({ LLM_PROVIDER: 'openai', STT_PROVIDER: 'openai', TTS_PROVIDER: 'openai' }, {})?.enabled,
+    ).toBe(false);
     // With the OpenAI Realtime engine, an unrouted Idle thoughts does not start the local model by itself.
     expect(llm({}, { conversationBackend: 'openai' })?.enabled).toBe(false);
-    expect(llm({}, { conversationBackend: 'openai', models: { routes: { idle: { server: 'local-llm' } } } })?.enabled).toBe(true);
+    expect(
+      llm(
+        {},
+        { conversationBackend: 'openai', models: { routes: { idle: { server: 'local-llm' } } } },
+      )?.enabled,
+    ).toBe(true);
   });
 
   it('never starts the vision model, and Describe the avatar on it does not keep the language model on', () => {
-    const services = describeLocalServices('/repo', { LLM_PROVIDER: 'openai', STT_PROVIDER: 'openai', TTS_PROVIDER: 'openai' }, {});
+    const services = describeLocalServices(
+      '/repo',
+      { LLM_PROVIDER: 'openai', STT_PROVIDER: 'openai', TTS_PROVIDER: 'openai' },
+      {},
+    );
     expect(services.map((s: { id: string }) => s.id)).not.toContain('vision');
     expect(services.find((s: { id: string }) => s.id === 'llm')?.enabled).toBe(false);
   });
@@ -202,9 +353,17 @@ describe('local services', () => {
     const coder = (env: Record<string, string>, saved: object = {}) =>
       describeLocalServices('/repo', env, saved).find((s: { id: string }) => s.id === 'coder');
     const local = coder({});
-    expect(local).toMatchObject({ enabled: true, url: 'http://127.0.0.1:8195', probe: 'http://127.0.0.1:8195/v1/health', args: ['-Port', '8195'] });
+    expect(local).toMatchObject({
+      enabled: true,
+      url: 'http://127.0.0.1:8195',
+      probe: 'http://127.0.0.1:8195/v1/health',
+      args: ['-Port', '8195'],
+    });
     expect(local.script).toBe(resolve('/repo', 'services/coder/scripts/start.ps1'));
-    expect(coder({ CODING_RUNNER_URL: 'http://127.0.0.1:8200/' })).toMatchObject({ url: 'http://127.0.0.1:8200', args: ['-Port', '8200'] });
+    expect(coder({ CODING_RUNNER_URL: 'http://127.0.0.1:8200/' })).toMatchObject({
+      url: 'http://127.0.0.1:8200',
+      args: ['-Port', '8200'],
+    });
     expect(coder({ CODER_AUTOSTART: '0' }).enabled).toBe(false);
     expect(coder({}, { coding: { runner: 'server-abc' } }).enabled).toBe(false);
   });
@@ -213,37 +372,72 @@ describe('local services', () => {
     const laya = (env: Record<string, string>, saved: object = {}) =>
       describeLocalServices('/repo', env, saved).find((s: { id: string }) => s.id === 'laya');
     const local = laya({});
-    expect(local).toMatchObject({ enabled: true, url: 'http://127.0.0.1:8197', probe: 'http://127.0.0.1:8197/health', args: ['-Port', '8197'] });
+    expect(local).toMatchObject({
+      enabled: true,
+      url: 'http://127.0.0.1:8197',
+      probe: 'http://127.0.0.1:8197/health',
+      args: ['-Port', '8197'],
+    });
     expect(local.script).toBe(resolve('/repo', 'services/laya/scripts/start.ps1'));
     expect(laya({ LAYA_URL: 'http://127.0.0.1:8297' })).toMatchObject({ args: ['-Port', '8297'] });
     expect(laya({ LAYA_ENABLED: '0' }).enabled).toBe(false);
     expect(laya({ LAYA_AUTOSTART: '0' }).enabled).toBe(false);
     expect(laya({}, { models: { routes: { decide: { server: '' } } } }).enabled).toBe(false);
-    expect(laya({}, { models: { routes: { decide: { server: 'other-laya' } } } }).enabled).toBe(false);
+    expect(laya({}, { models: { routes: { decide: { server: 'other-laya' } } } }).enabled).toBe(
+      false,
+    );
   });
 
   it('starts the switchboard on its port unless it is turned off', () => {
     const switchboard = (env: Record<string, string>) =>
       describeLocalServices('/repo', env).find((s: { id: string }) => s.id === 'switchboard');
     const local = switchboard({});
-    expect(local).toMatchObject({ enabled: true, url: 'http://127.0.0.1:8196', probe: 'http://127.0.0.1:8196/health', args: ['-Port', '8196'] });
+    expect(local).toMatchObject({
+      enabled: true,
+      url: 'http://127.0.0.1:8196',
+      probe: 'http://127.0.0.1:8196/health',
+      args: ['-Port', '8196'],
+    });
     expect(local.script).toBe(resolve('/repo', 'services/switchboard/scripts/start.ps1'));
-    expect(switchboard({ SWITCHBOARD_URL: 'http://127.0.0.1:8296' })).toMatchObject({ args: ['-Port', '8296'] });
+    expect(switchboard({ SWITCHBOARD_URL: 'http://127.0.0.1:8296' })).toMatchObject({
+      args: ['-Port', '8296'],
+    });
     expect(switchboard({ SWITCHBOARD_ENABLED: '0', LAYA_ENABLED: '0' }).enabled).toBe(false);
-    expect(switchboard({ SWITCHBOARD_AUTOSTART: '0', WORKFLOWS_ENABLED: '0', LAYA_AUTOSTART: '0' }).enabled).toBe(false);
+    expect(
+      switchboard({ SWITCHBOARD_AUTOSTART: '0', WORKFLOWS_ENABLED: '0', LAYA_AUTOSTART: '0' })
+        .enabled,
+    ).toBe(false);
   });
 
   it('starts Temporal and the workflows service unless they are turned off', () => {
-    const find = (id: string, env: Record<string, string> = {}) => describeLocalServices('/repo', env).find((s: { id: string }) => s.id === id);
+    const find = (id: string, env: Record<string, string> = {}) =>
+      describeLocalServices('/repo', env).find((s: { id: string }) => s.id === id);
     const temporal = find('temporal');
-    expect(temporal).toMatchObject({ enabled: true, url: 'http://127.0.0.1:8233', probe: 'http://127.0.0.1:8233/', args: ['-Port', '7233', '-UiPort', '8233'] });
+    expect(temporal).toMatchObject({
+      enabled: true,
+      url: 'http://127.0.0.1:8233',
+      probe: 'http://127.0.0.1:8233/',
+      args: ['-Port', '7233', '-UiPort', '8233'],
+    });
     expect(temporal.script).toBe(resolve('/repo', 'services/temporal/scripts/start.ps1'));
     expect(temporal.label).toBe('Temporal workflow server (temporal.exe, SQLite)');
-    expect(find('temporal', { TEMPORAL_ADDRESS: '127.0.0.1:7300', TEMPORAL_UI_URL: 'http://127.0.0.1:8300' })).toMatchObject({ args: ['-Port', '7300', '-UiPort', '8300'] });
+    expect(
+      find('temporal', {
+        TEMPORAL_ADDRESS: '127.0.0.1:7300',
+        TEMPORAL_UI_URL: 'http://127.0.0.1:8300',
+      }),
+    ).toMatchObject({ args: ['-Port', '7300', '-UiPort', '8300'] });
     const workflows = find('workflows');
-    expect(workflows).toMatchObject({ enabled: true, url: 'http://127.0.0.1:8198', probe: 'http://127.0.0.1:8198/health', args: ['-Port', '8198'] });
+    expect(workflows).toMatchObject({
+      enabled: true,
+      url: 'http://127.0.0.1:8198',
+      probe: 'http://127.0.0.1:8198/health',
+      args: ['-Port', '8198'],
+    });
     expect(workflows.script).toBe(resolve('/repo', 'services/workflows/scripts/start.ps1'));
-    expect(find('workflows', { WORKFLOWS_URL: 'http://127.0.0.1:8298' })).toMatchObject({ args: ['-Port', '8298'] });
+    expect(find('workflows', { WORKFLOWS_URL: 'http://127.0.0.1:8298' })).toMatchObject({
+      args: ['-Port', '8298'],
+    });
     expect(find('temporal', { WORKFLOWS_ENABLED: '0' }).enabled).toBe(false);
     expect(find('workflows', { WORKFLOWS_ENABLED: '0' }).enabled).toBe(false);
     expect(find('temporal', { TEMPORAL_AUTOSTART: '0' }).enabled).toBe(false);
@@ -256,7 +450,16 @@ describe('local services', () => {
     const launcher = fakeLauncher();
     const results = await ensureLocalServices(
       '/repo',
-      { CONVERSATION_BACKEND: 'openai', MOTION_SERVICE_URL: 'http://gpu-box:8190', WEB_SEARCH_PROVIDER: 'off', MEMORY_ENABLED: '0', CODER_ENABLED: '0', SWITCHBOARD_ENABLED: '0', WORKFLOWS_ENABLED: '0', LAYA_ENABLED: '0' },
+      {
+        CONVERSATION_BACKEND: 'openai',
+        MOTION_SERVICE_URL: 'http://gpu-box:8190',
+        WEB_SEARCH_PROVIDER: 'off',
+        MEMORY_ENABLED: '0',
+        CODER_ENABLED: '0',
+        SWITCHBOARD_ENABLED: '0',
+        WORKFLOWS_ENABLED: '0',
+        LAYA_ENABLED: '0',
+      },
       { fetchFn: fakeFetch([]), spawnSyncFn: launcher, platform: 'win32', log: quiet },
     );
     expect(results.map((r: { id: string; status: string }) => [r.id, r.status])).toEqual([
@@ -276,45 +479,109 @@ describe('local services', () => {
     expect(launcher).not.toHaveBeenCalled();
   });
 
-  it('does not start Echo’s llama-server when the model controller answers, and still starts the others', withTempRepo(async (repoRoot) => {
-    const launcher = fakeLauncher();
-    const info = vi.fn();
-    const fetchFn = vi.fn(async (url: string) => {
-      if (url === 'http://127.0.0.1:8200/health') return new Response(JSON.stringify({ ok: true, name: 'bija' }), { status: 200 });
-      throw new Error('ECONNREFUSED');
-    });
-    const env = { STT_ENGINE: 'whisper', DEV_START_MOTION: '0', WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', SWITCHBOARD_AUTOSTART: '0', WORKFLOWS_ENABLED: '0', LAYA_AUTOSTART: '0' };
-    const results = await ensureLocalServices(repoRoot, env, { fetchFn, spawnSyncFn: launcher, platform: 'win32', log: { info, warn: () => undefined } });
-    expect(results.find((r: { id: string }) => r.id === 'llm')).toMatchObject({ status: 'skipped', reason: 'using aicontroller' });
-    expect(info).toHaveBeenCalledWith(expect.stringContaining('using aicontroller'));
-    expect(fetchFn).not.toHaveBeenCalledWith(expect.stringContaining(':1234'), expect.anything());
-
-    // Not answering (auto), or switched off: the llama-server is handled as before.
-    const down = await ensureLocalServices(repoRoot, env, { fetchFn: fakeFetch(['http://127.0.0.1:1234']), spawnSyncFn: launcher, platform: 'win32', log: quiet });
-    expect(down.find((r: { id: string }) => r.id === 'llm')).toMatchObject({ status: 'running' });
-    const off = await ensureLocalServices(repoRoot, { ...env, AICONTROLLER_ENABLED: '0' }, { fetchFn, spawnSyncFn: launcher, platform: 'win32', log: quiet });
-    expect(off.find((r: { id: string }) => r.id === 'llm')?.reason).not.toBe('using aicontroller');
-  }));
-
-  it('does not start the motion service when the model controller has a motion backend', withTempRepo(async (repoRoot) => {
-    const launcher = fakeLauncher();
-    const backends = (ids: string[]) =>
-      vi.fn(async (url: string) => {
-        if (url === 'http://127.0.0.1:8200/health') return new Response(JSON.stringify({ ok: true, name: 'bija' }), { status: 200 });
-        if (url === 'http://127.0.0.1:8200/v1/status') return new Response(JSON.stringify({ backends: ids.map((id) => ({ id })) }), { status: 200 });
+  it(
+    'does not start Echo’s llama-server when the model controller answers, and still starts the others',
+    withTempRepo(async (repoRoot) => {
+      const launcher = fakeLauncher();
+      const info = vi.fn();
+      const fetchFn = vi.fn(async (url: string) => {
+        if (url === 'http://127.0.0.1:8200/health')
+          return new Response(JSON.stringify({ ok: true, name: 'bija' }), { status: 200 });
         throw new Error('ECONNREFUSED');
       });
-    // Speech on OpenAI, so motion is the only service that could be started here.
-    const env = { STT_ENGINE: 'whisper', STT_PROVIDER: 'openai', TTS_PROVIDER: 'openai', WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', SWITCHBOARD_AUTOSTART: '0', WORKFLOWS_ENABLED: '0', LAYA_AUTOSTART: '0' };
-    const withMotion = await ensureLocalServices(repoRoot, env, { fetchFn: backends(['echo-llm', 'motion']), spawnSyncFn: launcher, platform: 'win32', log: quiet });
-    expect(withMotion.find((r: { id: string }) => r.id === 'motion')).toMatchObject({ status: 'skipped', reason: 'using aicontroller' });
-    expect(launcher).not.toHaveBeenCalled();
+      const env = {
+        STT_ENGINE: 'whisper',
+        DEV_START_MOTION: '0',
+        WEB_SEARCH_PROVIDER: 'off',
+        MEMORY_AUTOSTART: '0',
+        CODER_AUTOSTART: '0',
+        SWITCHBOARD_AUTOSTART: '0',
+        WORKFLOWS_ENABLED: '0',
+        LAYA_AUTOSTART: '0',
+      };
+      const results = await ensureLocalServices(repoRoot, env, {
+        fetchFn,
+        spawnSyncFn: launcher,
+        platform: 'win32',
+        log: { info, warn: () => undefined },
+      });
+      expect(results.find((r: { id: string }) => r.id === 'llm')).toMatchObject({
+        status: 'skipped',
+        reason: 'using aicontroller',
+      });
+      expect(info).toHaveBeenCalledWith(expect.stringContaining('using aicontroller'));
+      expect(fetchFn).not.toHaveBeenCalledWith(expect.stringContaining(':1234'), expect.anything());
 
-    // A controller without a motion backend leaves motion to dev:run, as before.
-    const without = await ensureLocalServices(repoRoot, env, { fetchFn: backends(['echo-llm']), spawnSyncFn: launcher, platform: 'win32', log: quiet });
-    expect(without.find((r: { id: string }) => r.id === 'motion')).toMatchObject({ status: 'started' });
-    expect(launcher).toHaveBeenCalledTimes(1);
-  }));
+      // Not answering (auto), or switched off: the llama-server is handled as before.
+      const down = await ensureLocalServices(repoRoot, env, {
+        fetchFn: fakeFetch(['http://127.0.0.1:1234']),
+        spawnSyncFn: launcher,
+        platform: 'win32',
+        log: quiet,
+      });
+      expect(down.find((r: { id: string }) => r.id === 'llm')).toMatchObject({ status: 'running' });
+      const off = await ensureLocalServices(
+        repoRoot,
+        { ...env, AICONTROLLER_ENABLED: '0' },
+        { fetchFn, spawnSyncFn: launcher, platform: 'win32', log: quiet },
+      );
+      expect(off.find((r: { id: string }) => r.id === 'llm')?.reason).not.toBe(
+        'using aicontroller',
+      );
+    }),
+  );
+
+  it(
+    'does not start the motion service when the model controller has a motion backend',
+    withTempRepo(async (repoRoot) => {
+      const launcher = fakeLauncher();
+      const backends = (ids: string[]) =>
+        vi.fn(async (url: string) => {
+          if (url === 'http://127.0.0.1:8200/health')
+            return new Response(JSON.stringify({ ok: true, name: 'bija' }), { status: 200 });
+          if (url === 'http://127.0.0.1:8200/v1/status')
+            return new Response(JSON.stringify({ backends: ids.map((id) => ({ id })) }), {
+              status: 200,
+            });
+          throw new Error('ECONNREFUSED');
+        });
+      // Speech on OpenAI, so motion is the only service that could be started here.
+      const env = {
+        STT_ENGINE: 'whisper',
+        STT_PROVIDER: 'openai',
+        TTS_PROVIDER: 'openai',
+        WEB_SEARCH_PROVIDER: 'off',
+        MEMORY_AUTOSTART: '0',
+        CODER_AUTOSTART: '0',
+        SWITCHBOARD_AUTOSTART: '0',
+        WORKFLOWS_ENABLED: '0',
+        LAYA_AUTOSTART: '0',
+      };
+      const withMotion = await ensureLocalServices(repoRoot, env, {
+        fetchFn: backends(['echo-llm', 'motion']),
+        spawnSyncFn: launcher,
+        platform: 'win32',
+        log: quiet,
+      });
+      expect(withMotion.find((r: { id: string }) => r.id === 'motion')).toMatchObject({
+        status: 'skipped',
+        reason: 'using aicontroller',
+      });
+      expect(launcher).not.toHaveBeenCalled();
+
+      // A controller without a motion backend leaves motion to dev:run, as before.
+      const without = await ensureLocalServices(repoRoot, env, {
+        fetchFn: backends(['echo-llm']),
+        spawnSyncFn: launcher,
+        platform: 'win32',
+        log: quiet,
+      });
+      expect(without.find((r: { id: string }) => r.id === 'motion')).toMatchObject({
+        status: 'started',
+      });
+      expect(launcher).toHaveBeenCalledTimes(1);
+    }),
+  );
 
   it(
     'starts the speech service without KOKORO_DIR (its start script finds or downloads Kokoro), and not ASR when whisper is chosen',
@@ -322,8 +589,22 @@ describe('local services', () => {
       const launcher = fakeLauncher();
       const results = await ensureLocalServices(
         repoRoot,
-        { STT_ENGINE: 'whisper', DEV_START_MOTION: '0', WEB_SEARCH_PROVIDER: 'off', MEMORY_AUTOSTART: '0', CODER_AUTOSTART: '0', SWITCHBOARD_AUTOSTART: '0', WORKFLOWS_ENABLED: '0', LAYA_AUTOSTART: '0' },
-        { fetchFn: fakeFetch(['http://127.0.0.1:1234']), spawnSyncFn: launcher, platform: 'win32', log: quiet },
+        {
+          STT_ENGINE: 'whisper',
+          DEV_START_MOTION: '0',
+          WEB_SEARCH_PROVIDER: 'off',
+          MEMORY_AUTOSTART: '0',
+          CODER_AUTOSTART: '0',
+          SWITCHBOARD_AUTOSTART: '0',
+          WORKFLOWS_ENABLED: '0',
+          LAYA_AUTOSTART: '0',
+        },
+        {
+          fetchFn: fakeFetch(['http://127.0.0.1:1234']),
+          spawnSyncFn: launcher,
+          platform: 'win32',
+          log: quiet,
+        },
       );
       const byId = Object.fromEntries(results.map((r: { id: string }) => [r.id, r]));
       expect(byId.asr.status).toBe('skipped');
@@ -343,7 +624,12 @@ describe('local services', () => {
       const results = await ensureLocalServices(
         repoRoot,
         { CONVERSATION_BACKEND: 'openai' },
-        { fetchFn: fakeFetch([]), spawnSyncFn: vi.fn(() => ({ status: 1 })), platform: 'win32', log: quiet },
+        {
+          fetchFn: fakeFetch([]),
+          spawnSyncFn: vi.fn(() => ({ status: 1 })),
+          platform: 'win32',
+          log: quiet,
+        },
       );
       const motion = results.find((r: { id: string }) => r.id === 'motion');
       expect(motion).toMatchObject({ status: 'failed' });
@@ -354,11 +640,18 @@ describe('local services', () => {
   it('starts the memory engine unless memory or its autostart is off', () => {
     const memoryOf = (env: Record<string, string>) =>
       describeLocalServices('/repo', env).find((s: { id: string }) => s.id === 'memory');
-    expect(memoryOf({})).toMatchObject({ enabled: true, probe: 'http://127.0.0.1:8194/health', args: ['-Port', '8194'] });
+    expect(memoryOf({})).toMatchObject({
+      enabled: true,
+      probe: 'http://127.0.0.1:8194/health',
+      args: ['-Port', '8194'],
+    });
     expect(memoryOf({}).script).toBe(resolve('/repo', 'services/memory/scripts/start.ps1'));
     expect(memoryOf({ MEMORY_AUTOSTART: '0' }).enabled).toBe(false);
     expect(memoryOf({ MEMORY_ENABLED: 'off' }).enabled).toBe(false);
-    expect(memoryOf({ MEMORY_SERVICE_URL: 'http://127.0.0.1:9000/' }).args).toEqual(['-Port', '9000']);
+    expect(memoryOf({ MEMORY_SERVICE_URL: 'http://127.0.0.1:9000/' }).args).toEqual([
+      '-Port',
+      '9000',
+    ]);
   });
 
   it('quotes paths and arguments for Start-Process', () => {
@@ -371,7 +664,9 @@ describe('local services', () => {
       pidPath: 'C:\\logs\\a.pid',
     });
     expect(command).toContain(`'"C:\\My Repos\\o''brien\\start.ps1"', '"-Port"', '"8192"'`);
-    expect(command).toContain("-RedirectStandardOutput 'C:\\logs\\a.log' -RedirectStandardError 'C:\\logs\\a.err.log'");
+    expect(command).toContain(
+      "-RedirectStandardOutput 'C:\\logs\\a.log' -RedirectStandardError 'C:\\logs\\a.err.log'",
+    );
     expect(command).toContain("Set-Content -LiteralPath 'C:\\logs\\a.pid' -Value $p.Id");
   });
 
@@ -379,27 +674,53 @@ describe('local services', () => {
     const enabled = (saved: object, env: Record<string, string> = {}) =>
       Object.fromEntries(
         describeLocalServices('/repo', { KOKORO_DIR: 'C:\\k', ...env }, saved)
-          .filter((s: { id: string }) => s.id !== 'searxng' && s.id !== 'memory' && s.id !== 'coder' && s.id !== 'switchboard' && s.id !== 'temporal' && s.id !== 'workflows' && s.id !== 'laya')
+          .filter(
+            (s: { id: string }) =>
+              s.id !== 'searxng' &&
+              s.id !== 'memory' &&
+              s.id !== 'coder' &&
+              s.id !== 'switchboard' &&
+              s.id !== 'temporal' &&
+              s.id !== 'workflows' &&
+              s.id !== 'laya',
+          )
           .map((s: { id: string; enabled: boolean }) => [s.id, s.enabled]),
       );
 
     expect(enabled({})).toEqual({ llm: true, asr: true, speech: true, motion: true });
-    expect(enabled({ providers: { llm: { provider: 'openai' }, stt: { provider: 'openai' } } })).toEqual({
+    expect(
+      enabled({ providers: { llm: { provider: 'openai' }, stt: { provider: 'openai' } } }),
+    ).toEqual({
       llm: false,
       asr: false,
       speech: true,
       motion: true,
     });
     expect(
-      enabled({ providers: { stt: { provider: 'openai' }, tts: { provider: 'openai' }, motion: { provider: 'openai' } } }),
+      enabled({
+        providers: {
+          stt: { provider: 'openai' },
+          tts: { provider: 'openai' },
+          motion: { provider: 'openai' },
+        },
+      }),
     ).toEqual({ llm: true, asr: false, speech: false, motion: false });
     // A saved choice wins over the env, as it does in the app.
-    expect(enabled({ providers: { llm: { provider: 'local' } } }, { LLM_PROVIDER: 'openai' }).llm).toBe(true);
-    expect(enabled({ conversationBackend: 'openai' })).toEqual({ llm: false, asr: false, speech: false, motion: true });
+    expect(
+      enabled({ providers: { llm: { provider: 'local' } } }, { LLM_PROVIDER: 'openai' }).llm,
+    ).toBe(true);
+    expect(enabled({ conversationBackend: 'openai' })).toEqual({
+      llm: false,
+      asr: false,
+      speech: false,
+      motion: true,
+    });
 
-    const motion = describeLocalServices('/repo', {}, { providers: { motion: { localBackend: 'kimodo' } } }).find(
-      (s: { id: string }) => s.id === 'motion',
-    );
+    const motion = describeLocalServices(
+      '/repo',
+      {},
+      { providers: { motion: { localBackend: 'kimodo' } } },
+    ).find((s: { id: string }) => s.id === 'motion');
     expect(motion.args).toEqual(['-Port', '8190', '-Backend', 'kimodo']);
     expect(motion.label).toBe('motion service (Kimodo)');
   });
@@ -411,7 +732,9 @@ describe('local services', () => {
       const [file] = savedPreferencesPaths(repoRoot);
       mkdirSync(dirname(file), { recursive: true });
       writeFileSync(file, JSON.stringify({ providers: { tts: { provider: 'openai' } } }));
-      expect(readSavedPreferences(repoRoot)).toEqual({ providers: { tts: { provider: 'openai' } } });
+      expect(readSavedPreferences(repoRoot)).toEqual({
+        providers: { tts: { provider: 'openai' } },
+      });
     }),
   );
 
@@ -432,14 +755,31 @@ describe('thinking model picked in the app', () => {
       writeFileSync(model, '');
       writeFileSync(
         join(dirname(preferences), 'local-llm.json'),
-        JSON.stringify({ selected: 'a/b:m', models: [{ id: 'a/b:m', path: model, alias: 'b-q4', contextLength: 4096 }] }),
+        JSON.stringify({
+          selected: 'a/b:m',
+          models: [{ id: 'a/b:m', path: model, alias: 'b-q4', contextLength: 4096 }],
+        }),
       );
-      expect(readSelectedLocalLlm(repoRoot)).toEqual({ path: model, alias: 'b-q4', contextLength: 4096 });
+      expect(readSelectedLocalLlm(repoRoot)).toEqual({
+        path: model,
+        alias: 'b-q4',
+        contextLength: 4096,
+      });
       writeFileSync(
         join(dirname(preferences), 'local-llm.json'),
-        JSON.stringify({ selected: 'a/b:m', slots: 20, contextPerSlot: 100, models: [{ id: 'a/b:m', path: model, alias: 'b-q4' }] }),
+        JSON.stringify({
+          selected: 'a/b:m',
+          slots: 20,
+          contextPerSlot: 100,
+          models: [{ id: 'a/b:m', path: model, alias: 'b-q4' }],
+        }),
       );
-      expect(readSelectedLocalLlm(repoRoot)).toEqual({ path: model, alias: 'b-q4', slots: 8, contextPerSlot: 4096 });
+      expect(readSelectedLocalLlm(repoRoot)).toEqual({
+        path: model,
+        alias: 'b-q4',
+        slots: 8,
+        contextPerSlot: 4096,
+      });
       rmSync(model);
       // The model is gone, but its slot settings still apply to the start script's own default.
       expect(readSelectedLocalLlm(repoRoot)).toEqual({ slots: 8, contextPerSlot: 4096 });

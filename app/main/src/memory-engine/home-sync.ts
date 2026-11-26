@@ -8,12 +8,22 @@
  * are never logged.
  */
 import type { ModelRouting } from '../shared/config/model-routing.js';
-import { MemoryEngineError, type MemoryEngineClient, type MemoryEngineHomeServer } from './client.js';
+import {
+  MemoryEngineError,
+  type MemoryEngineClient,
+  type MemoryEngineHomeServer,
+} from './client.js';
 
-type Logger = { info: (message: string, data?: Record<string, unknown>) => void; warn: (message: string, data?: Record<string, unknown>) => void };
+type Logger = {
+  info: (message: string, data?: Record<string, unknown>) => void;
+  warn: (message: string, data?: Record<string, unknown>) => void;
+};
 
 /** The Home Assistant servers that have a token. One without a token has nothing to connect with. */
-export function homeServersFor(routing: ModelRouting, keyFor: (serverId: string) => string | undefined): MemoryEngineHomeServer[] {
+export function homeServersFor(
+  routing: ModelRouting,
+  keyFor: (serverId: string) => string | undefined,
+): MemoryEngineHomeServer[] {
   const servers: MemoryEngineHomeServer[] = [];
   for (const server of routing.servers) {
     if (server.type !== 'homeassistant') continue;
@@ -84,21 +94,26 @@ export class HomeServerSync {
   }
 
   private async verify(): Promise<void> {
-    if (this.stopped || this.wanted.length === 0 || this.sent !== JSON.stringify(this.wanted)) return;
+    if (this.stopped || this.wanted.length === 0 || this.sent !== JSON.stringify(this.wanted))
+      return;
     try {
       const homes = await this.options.client.homeStatus();
       const known = new Set(homes.map((home) => home.id));
       const lost = this.engineUnreachable || this.wanted.some((server) => !known.has(server.id));
       this.engineUnreachable = false;
       if (lost) {
-        this.options.logger.info('Memory engine lost the Home Assistant servers; sending them again.');
+        this.options.logger.info(
+          'Memory engine lost the Home Assistant servers; sending them again.',
+        );
         this.sent = '[]';
         await this.send();
       }
     } catch (error) {
       // Down now; when it answers again it will have restarted and forgotten the tokens.
       this.engineUnreachable = true;
-      this.options.logger.warn('Memory engine did not answer the Home Assistant check.', { message: errorMessage(error) });
+      this.options.logger.warn('Memory engine did not answer the Home Assistant check.', {
+        message: errorMessage(error),
+      });
     }
   }
 
@@ -111,11 +126,16 @@ export class HomeServerSync {
       const homes = await this.options.client.setHomeServers(servers);
       this.sent = signature;
       this.engineUnreachable = false;
-      this.options.logger.info('Home Assistant servers set.', { servers: servers.length, homes: homes.length });
+      this.options.logger.info('Home Assistant servers set.', {
+        servers: servers.length,
+        homes: homes.length,
+      });
     } catch (error) {
       const retryable = !(error instanceof MemoryEngineError) || error.retryable;
       this.options.logger.warn(
-        retryable ? 'Memory engine not ready for the Home Assistant servers; will retry.' : 'Memory engine refused the Home Assistant servers.',
+        retryable
+          ? 'Memory engine not ready for the Home Assistant servers; will retry.'
+          : 'Memory engine refused the Home Assistant servers.',
         { message: errorMessage(error) },
       );
       if (retryable && !this.stopped) {

@@ -18,7 +18,8 @@ export function worldTag(room: RoomFile, objectId: string, kind: PositionalTag):
   const tag = object?.tags?.[kind];
   if (!object || !tag) return null;
   const rotation = object.rotationY ?? 0;
-  if ('height' in tag) return { position: [object.position[0], object.position[1] + tag.height, object.position[2]] };
+  if ('height' in tag)
+    return { position: [object.position[0], object.position[1] + tag.height, object.position[2]] };
   const position = objectToWorld(object, tag.position);
   if ('facing' in tag) return { position, facing: normaliseDegrees(tag.facing + rotation) };
   return { position };

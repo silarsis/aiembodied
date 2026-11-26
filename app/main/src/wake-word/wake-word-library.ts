@@ -26,7 +26,9 @@ interface TrainedModelMetadata {
   metrics?: Record<string, unknown>;
 }
 
-function readMetrics(raw: Record<string, unknown> | undefined): WakeWordTrainingMetrics | undefined {
+function readMetrics(
+  raw: Record<string, unknown> | undefined,
+): WakeWordTrainingMetrics | undefined {
   if (!raw || typeof raw !== 'object') {
     return undefined;
   }
@@ -51,15 +53,22 @@ export async function listTrainedWakeWords(directory: string): Promise<WakeWordO
     const model = path.join(directory, name);
     let metadata: TrainedModelMetadata = {};
     try {
-      metadata = JSON.parse(await fs.readFile(model.replace(/\.onnx$/i, '.json'), 'utf8')) as TrainedModelMetadata;
+      metadata = JSON.parse(
+        await fs.readFile(model.replace(/\.onnx$/i, '.json'), 'utf8'),
+      ) as TrainedModelMetadata;
     } catch {
       // A model copied in by hand has no description; its file name still gives a label.
     }
-    const phrase = typeof metadata.phrase === 'string' && metadata.phrase.trim() ? metadata.phrase.trim() : undefined;
+    const phrase =
+      typeof metadata.phrase === 'string' && metadata.phrase.trim()
+        ? metadata.phrase.trim()
+        : undefined;
     const metrics = readMetrics(metadata.metrics);
     options.push({
       model,
-      label: phrase ? phrase.replace(/\b\w/g, (letter) => letter.toUpperCase()) : wakeWordLabel(name),
+      label: phrase
+        ? phrase.replace(/\b\w/g, (letter) => letter.toUpperCase())
+        : wakeWordLabel(name),
       source: 'trained',
       ...(phrase ? { phrase } : {}),
       ...(typeof metadata.trainedAt === 'string' ? { trainedAt: metadata.trainedAt } : {}),

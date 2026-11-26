@@ -96,7 +96,11 @@ export class ToolRegistry extends EventEmitter {
    * @returns Execution result with success status, data, and duration
    * @throws Error if tool not found or disabled
    */
-  async execute(toolId: string, params: unknown, context?: ToolContext): Promise<ToolExecutionResult> {
+  async execute(
+    toolId: string,
+    params: unknown,
+    context?: ToolContext,
+  ): Promise<ToolExecutionResult> {
     const tool = this.tools.get(toolId);
     if (!tool) {
       throw new Error(`Tool not found: ${toolId}`);

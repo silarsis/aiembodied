@@ -20,10 +20,12 @@ async function createStore() {
 
 function createClient(outputText: string | string[]) {
   const outputs = Array.isArray(outputText) ? [...outputText] : [outputText];
-  const create = vi.fn<[unknown], Promise<{ output_text: string }>>().mockImplementation(async () => {
-    const next = outputs.shift() ?? '';
-    return { output_text: next };
-  });
+  const create = vi
+    .fn<[unknown], Promise<{ output_text: string }>>()
+    .mockImplementation(async () => {
+      const next = outputs.shift() ?? '';
+      return { output_text: next };
+    });
   const client = { responses: { create } } as unknown as OpenAI;
   return { client, create };
 }
@@ -55,10 +57,10 @@ describe('PoseGenerationService', () => {
     const expandedDescription = 'Arms at sides, legs straight, confident posture with chest out.';
     // API now returns object format: { [boneName]: { rotation, position? } }
     const poseJson = {
-      'Armature_Hips': { rotation: [0, 0, 0, 1] },
-      'Armature_Chest': { rotation: [0.1, 0, 0, 0.995] },
-      'Armature_LeftShoulder': { rotation: [0, 0, 0, 1] },
-      'Armature_RightShoulder': { rotation: [0, 0, 0, 1] },
+      Armature_Hips: { rotation: [0, 0, 0, 1] },
+      Armature_Chest: { rotation: [0.1, 0, 0, 0.995] },
+      Armature_LeftShoulder: { rotation: [0, 0, 0, 1] },
+      Armature_RightShoulder: { rotation: [0, 0, 0, 1] },
     };
 
     const { client } = createClient([expandedDescription, JSON.stringify({ bones: poseJson })]);
@@ -101,8 +103,11 @@ describe('PoseGenerationService', () => {
     const poseService = new AvatarPoseService({ store, posesDirectory: directory });
 
     const expandedDescription = 'Test pose';
-    const poseJson = { 'Armature_Hips': { rotation: [0, 0, 0, 1] } };
-    const { client, create } = createClient([expandedDescription, JSON.stringify({ bones: poseJson })]);
+    const poseJson = { Armature_Hips: { rotation: [0, 0, 0, 1] } };
+    const { client, create } = createClient([
+      expandedDescription,
+      JSON.stringify({ bones: poseJson }),
+    ]);
 
     const service = new PoseGenerationService({
       client,
@@ -145,8 +150,11 @@ describe('PoseGenerationService', () => {
     const poseService = new AvatarPoseService({ store, posesDirectory: directory });
 
     const expandedDescription = 'Test pose for a cheerful character';
-    const poseJson = { 'Armature_Hips': { rotation: [0, 0, 0, 1] } };
-    const { client, create } = createClient([expandedDescription, JSON.stringify({ bones: poseJson })]);
+    const poseJson = { Armature_Hips: { rotation: [0, 0, 0, 1] } };
+    const { client, create } = createClient([
+      expandedDescription,
+      JSON.stringify({ bones: poseJson }),
+    ]);
 
     const service = new PoseGenerationService({
       client,
@@ -174,9 +182,9 @@ describe('PoseGenerationService', () => {
 
     // Test the new object-based format with position included
     const poseJson = {
-      'hips': { rotation: [0, 0, 0, 1], position: [0, 1.0, 0] },
-      'spine': { rotation: [0.1, 0, 0, 0.995] },
-      'chest': { rotation: [0, 0.05, 0, 0.999] },
+      hips: { rotation: [0, 0, 0, 1], position: [0, 1.0, 0] },
+      spine: { rotation: [0.1, 0, 0, 0.995] },
+      chest: { rotation: [0, 0.05, 0, 0.999] },
     };
 
     const { client } = createClient(['expanded description', JSON.stringify({ bones: poseJson })]);
@@ -197,10 +205,10 @@ describe('PoseGenerationService', () => {
 
     // Include invalid data that should be skipped
     const poseJson = {
-      'hips': { rotation: [0, 0, 0, 1] },           // Valid
-      'spine': { rotation: 'invalid' },             // Invalid - not an array
-      'chest': { rotation: [0, 0, 0] },             // Invalid - wrong length
-      'neck': { rotation: [0, 0, 0, 1] },           // Valid
+      hips: { rotation: [0, 0, 0, 1] }, // Valid
+      spine: { rotation: 'invalid' }, // Invalid - not an array
+      chest: { rotation: [0, 0, 0] }, // Invalid - wrong length
+      neck: { rotation: [0, 0, 0, 1] }, // Valid
     };
 
     const { client } = createClient(['expanded', JSON.stringify({ bones: poseJson })]);

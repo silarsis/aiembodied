@@ -287,6 +287,10 @@ async function safeText(response: Response): Promise<string> {
 }
 
 /** Runs `work` as one of `comfy`'s jobs (one lease for its uploads and runs) when the client has jobs, else just runs it. */
-export function inJob<T>(comfy: { job?: ComfyUIClient['job'] }, needs: string[], work: () => Promise<T>): Promise<T> {
+export function inJob<T>(
+  comfy: { job?: ComfyUIClient['job'] },
+  needs: string[],
+  work: () => Promise<T>,
+): Promise<T> {
   return typeof comfy.job === 'function' ? comfy.job(needs, work) : work();
 }

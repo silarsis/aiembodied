@@ -5,19 +5,34 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import type { ModelServerView } from '../../../main/src/shared/config/config-manager-types.js';
-import { formatSpeakingModel, parseSpeakingModel, type ModelRoute, type SpeakingEngineId } from '../../../main/src/shared/config/model-routing.js';
-import type { SpeechTtsEngine, SpeechTtsModel } from '../../../main/src/shared/local-voice/speech-service-client-types.js';
+import {
+  formatSpeakingModel,
+  parseSpeakingModel,
+  type ModelRoute,
+  type SpeakingEngineId,
+} from '../../../main/src/shared/config/model-routing.js';
+import type {
+  SpeechTtsEngine,
+  SpeechTtsModel,
+} from '../../../main/src/shared/local-voice/speech-service-client-types.js';
 import type { ModelsBridge } from '../preload-api.js';
 
-const ENGINE_LABEL: Record<SpeakingEngineId, string> = { kokoro: 'Kokoro', kitten: 'Kitten TTS', piper: 'Piper' };
+const ENGINE_LABEL: Record<SpeakingEngineId, string> = {
+  kokoro: 'Kokoro',
+  kitten: 'Kitten TTS',
+  piper: 'Piper',
+};
 const ENGINE_HINT: Record<SpeakingEngineId, string> = {
   kokoro: 'Natural and expressive; its pitch moves the most between sentences.',
   kitten: 'The steadiest pitch from sentence to sentence. American voices only.',
-  piper: 'Very fast, with British voices; sounds a little more robotic. Each voice is its own download.',
+  piper:
+    'Very fast, with British voices; sounds a little more robotic. Each voice is its own download.',
 };
 
 function formatSize(bytes: number): string {
-  return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`;
+  return bytes >= 1e9
+    ? `${(bytes / 1e9).toFixed(1)} GB`
+    : `${Math.max(1, Math.round(bytes / 1e6))} MB`;
 }
 
 function downloadText(model: SpeechTtsModel): string | null {
@@ -25,7 +40,9 @@ function downloadText(model: SpeechTtsModel): string | null {
   if (!download || model.installed) return null;
   if (download.status === 'error') return `Download failed: ${download.error ?? 'unknown error'}`;
   if (download.status === 'downloading') {
-    return download.total ? `Downloading… ${formatSize(download.received)} of ${formatSize(download.total)}` : 'Downloading…';
+    return download.total
+      ? `Downloading… ${formatSize(download.received)} of ${formatSize(download.total)}`
+      : 'Downloading…';
   }
   return null;
 }
@@ -40,7 +57,14 @@ export interface SpeakingEngineFieldsProps {
   pollMs?: number;
 }
 
-export function SpeakingEngineFields({ api, server, route, busy, onRoute, pollMs = 1500 }: SpeakingEngineFieldsProps) {
+export function SpeakingEngineFields({
+  api,
+  server,
+  route,
+  busy,
+  onRoute,
+  pollMs = 1500,
+}: SpeakingEngineFieldsProps) {
   const [engines, setEngines] = useState<SpeechTtsEngine[] | null | 'loading'>('loading');
   const [error, setError] = useState<string | null>(null);
 
@@ -62,7 +86,10 @@ export function SpeakingEngineFields({ api, server, route, busy, onRoute, pollMs
   }, [load]);
 
   const downloading =
-    Array.isArray(engines) && engines.some((engine) => engine.models.some((model) => model.download?.status === 'downloading'));
+    Array.isArray(engines) &&
+    engines.some((engine) =>
+      engine.models.some((model) => model.download?.status === 'downloading'),
+    );
   useEffect(() => {
     if (!downloading) return;
     const timer = window.setInterval(() => void load(), pollMs);
@@ -99,18 +126,24 @@ export function SpeakingEngineFields({ api, server, route, busy, onRoute, pollMs
 
   const engineInfo = (id: SpeakingEngineId) => engines.find((engine) => engine.id === id);
   const current = engineInfo(picked.engine);
-  const kittenModel = picked.engine === 'kitten' ? current?.models.find((model) => model.id === picked.model) : undefined;
+  const kittenModel =
+    picked.engine === 'kitten'
+      ? current?.models.find((model) => model.id === picked.model)
+      : undefined;
   const voices =
     picked.engine === 'piper'
       ? (current?.models ?? []).filter((model) => model.installed).map((model) => model.id)
       : picked.engine === 'kitten'
-        ? kittenModel?.voices ?? []
-        : current?.models[0]?.voices ?? [];
+        ? (kittenModel?.voices ?? [])
+        : (current?.models[0]?.voices ?? []);
 
   const pickEngine = (engine: SpeakingEngineId) => {
     if (engine === picked.engine) return;
     const kitten = engineInfo('kitten')?.models;
-    const model = engine === 'kitten' ? (kitten?.find((entry) => entry.installed) ?? kitten?.[0])?.id : undefined;
+    const model =
+      engine === 'kitten'
+        ? (kitten?.find((entry) => entry.installed) ?? kitten?.[0])?.id
+        : undefined;
     // Voices belong to one engine: start the new one on its own default.
     onRoute({ ...route, model: formatSpeakingModel(engine, model), voice: undefined });
   };
@@ -130,20 +163,31 @@ export function SpeakingEngineFields({ api, server, route, busy, onRoute, pollMs
     <>
       <label htmlFor="models-tts-engine">Engine</label>
       <span className="modelsDialog__model">
-        <select id="models-tts-engine" value={picked.engine} onChange={(event) => pickEngine(event.target.value as SpeakingEngineId)} disabled={busy}>
+        <select
+          id="models-tts-engine"
+          value={picked.engine}
+          onChange={(event) => pickEngine(event.target.value as SpeakingEngineId)}
+          disabled={busy}
+        >
           {(['kokoro', 'kitten', 'piper'] as const).map((id) => {
             const info = engineInfo(id);
             const missing = id !== 'kokoro' && info && !info.available;
             return (
               <option key={id} value={id} disabled={!info || (missing && picked.engine !== id)}>
                 {ENGINE_LABEL[id]}
-                {!info ? ' (not in this speech service)' : missing ? ' (not installed in the speech service)' : ''}
+                {!info
+                  ? ' (not in this speech service)'
+                  : missing
+                    ? ' (not installed in the speech service)'
+                    : ''}
               </option>
             );
           })}
         </select>
         <small className="kiosk__helper">{ENGINE_HINT[picked.engine]}</small>
-        {current && !current.available && current.error ? <small className="kiosk__error">{current.error}</small> : null}
+        {current && !current.available && current.error ? (
+          <small className="kiosk__error">{current.error}</small>
+        ) : null}
       </span>
 
       {picked.engine === 'kitten' ? (
@@ -153,7 +197,9 @@ export function SpeakingEngineFields({ api, server, route, busy, onRoute, pollMs
             <select
               id="models-tts-kitten"
               value={picked.model}
-              onChange={(event) => onRoute({ ...route, model: formatSpeakingModel('kitten', event.target.value) })}
+              onChange={(event) =>
+                onRoute({ ...route, model: formatSpeakingModel('kitten', event.target.value) })
+              }
               disabled={busy}
             >
               {(current?.models ?? []).map((model) => (
@@ -173,7 +219,9 @@ export function SpeakingEngineFields({ api, server, route, busy, onRoute, pollMs
                 >
                   Download
                 </button>
-                {downloadText(kittenModel) ? <small className="kiosk__helper">{downloadText(kittenModel)}</small> : null}
+                {downloadText(kittenModel) ? (
+                  <small className="kiosk__helper">{downloadText(kittenModel)}</small>
+                ) : null}
               </span>
             ) : null}
           </span>
@@ -199,7 +247,9 @@ export function SpeakingEngineFields({ api, server, route, busy, onRoute, pollMs
                     >
                       Download
                     </button>
-                    {downloadText(model) ? <small className="kiosk__helper">{downloadText(model)}</small> : null}
+                    {downloadText(model) ? (
+                      <small className="kiosk__helper">{downloadText(model)}</small>
+                    ) : null}
                   </>
                 )}
               </li>
@@ -213,11 +263,21 @@ export function SpeakingEngineFields({ api, server, route, busy, onRoute, pollMs
         <select
           id="models-tts-default-voice"
           value={defaultVoice}
-          onChange={(event) => onRoute({ ...route, model: formatSpeakingModel(picked.engine, picked.model), voice: event.target.value || undefined })}
+          onChange={(event) =>
+            onRoute({
+              ...route,
+              model: formatSpeakingModel(picked.engine, picked.model),
+              voice: event.target.value || undefined,
+            })
+          }
           disabled={busy || voices.length === 0}
         >
-          <option value="">{picked.engine === 'kokoro' ? 'The speech service’s default' : 'The engine’s default'}</option>
-          {defaultVoice && !voices.includes(defaultVoice) ? <option value={defaultVoice}>{defaultVoice} (not available)</option> : null}
+          <option value="">
+            {picked.engine === 'kokoro' ? 'The speech service’s default' : 'The engine’s default'}
+          </option>
+          {defaultVoice && !voices.includes(defaultVoice) ? (
+            <option value={defaultVoice}>{defaultVoice} (not available)</option>
+          ) : null}
           {voices.map((voice) => (
             <option key={voice} value={voice}>
               {voice}

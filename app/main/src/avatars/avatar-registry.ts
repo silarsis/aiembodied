@@ -27,7 +27,12 @@ export interface AvatarRegistryOptions {
   defaultName?: string;
 }
 
-export type AvatarProfileInput = { id: string; name?: string; vrmModelId?: string | null; prompt?: string };
+export type AvatarProfileInput = {
+  id: string;
+  name?: string;
+  vrmModelId?: string | null;
+  prompt?: string;
+};
 /** `prompt`: an empty string clears it. */
 export type AvatarProfileUpdate = { name?: string; vrmModelId?: string | null; prompt?: string };
 
@@ -73,7 +78,11 @@ export class AvatarRegistry {
     const stored = parseProfiles(this.store.getValue(AVATAR_PROFILES_KEY));
     if (stored) return stored;
     const created: AvatarProfile[] = [
-      { id: DEFAULT_AVATAR_ID, name: this.defaultName, vrmModelId: this.activeVrmModelId() ?? null },
+      {
+        id: DEFAULT_AVATAR_ID,
+        name: this.defaultName,
+        vrmModelId: this.activeVrmModelId() ?? null,
+      },
     ];
     this.save(created);
     return created;
@@ -95,7 +104,9 @@ export class AvatarRegistry {
    */
   peek(): AvatarProfile[] {
     return (
-      parseProfiles(this.store.getValue(AVATAR_PROFILES_KEY)) ?? [{ id: DEFAULT_AVATAR_ID, name: this.defaultName, vrmModelId: null }]
+      parseProfiles(this.store.getValue(AVATAR_PROFILES_KEY)) ?? [
+        { id: DEFAULT_AVATAR_ID, name: this.defaultName, vrmModelId: null },
+      ]
     );
   }
 
@@ -111,7 +122,9 @@ export class AvatarRegistry {
   add(input: AvatarProfileInput): AvatarProfile {
     const id = input.id.trim();
     if (!ID_PATTERN.test(id)) {
-      throw new Error(`Invalid avatar id "${input.id}": use lowercase letters, digits, "-" or "_".`);
+      throw new Error(
+        `Invalid avatar id "${input.id}": use lowercase letters, digits, "-" or "_".`,
+      );
     }
     const profiles = this.load();
     if (profiles.some((profile) => profile.id === id)) {

@@ -3,7 +3,6 @@ import type { CodingConfig } from '../coding/types.js';
 import type { StoredModels } from './model-routing.js';
 import type { ProviderSettingsPatch } from './provider-settings.js';
 
-
 export interface AudioDevicePreferences {
   audioInputDeviceId?: string;
   audioOutputDeviceId?: string;

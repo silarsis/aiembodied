@@ -29,18 +29,14 @@ function findElectronExe() {
   let candidates = [];
 
   if (platform === 'win32') {
-    candidates = [
-      resolve(mainRoot, 'node_modules/electron/dist/electron.exe'),
-    ];
+    candidates = [resolve(mainRoot, 'node_modules/electron/dist/electron.exe')];
   } else if (platform === 'darwin') {
     candidates = [
       resolve(mainRoot, 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron'),
     ];
   } else {
     // Linux
-    candidates = [
-      resolve(mainRoot, 'node_modules/electron/dist/electron'),
-    ];
+    candidates = [resolve(mainRoot, 'node_modules/electron/dist/electron')];
   }
 
   for (const candidate of candidates) {
@@ -64,7 +60,7 @@ function findVitestEntry() {
     const result = execSync('pnpm exec which vitest', {
       cwd: mainRoot,
       encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe']
+      stdio: ['pipe', 'pipe', 'pipe'],
     }).trim();
     // The result is a Unix-style path, convert to Windows if needed
     return result.replace(/^\/([a-z])\//, '$1:/').replace(/\//g, '\\');

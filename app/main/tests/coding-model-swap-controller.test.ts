@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AicontrollerBridge } from '../src/aicontroller/bridge.js';
 import { CoderModelSwap } from '../src/coding/model-swap.js';
-import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/shared/config/model-routing.js';
+import {
+  builtInServers,
+  defaultRoutes,
+  resolveModelRouting,
+} from '../src/shared/config/model-routing.js';
 import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
 import { FAKE_BACKEND_URLS, FakeAicontroller } from './helpers/fake-aicontroller.js';
 
@@ -16,13 +20,26 @@ describe('CoderModelSwap with the model controller', () => {
 
   async function setup() {
     const logger = { info: vi.fn(), warn: vi.fn() };
-    const bridge = new AicontrollerBridge({ logger, env: { AICONTROLLER_URL: fake.url }, watchMs: 0 });
+    const bridge = new AicontrollerBridge({
+      logger,
+      env: { AICONTROLLER_URL: fake.url },
+      watchMs: 0,
+    });
     await bridge.start();
     await bridge.ensureEcho();
-    const routing = resolveModelRouting(builtInServers({ providers: DEFAULT_PROVIDER_SETTINGS, comfyUiBaseUrl: 'http://127.0.0.1:8188' }), defaultRoutes(DEFAULT_PROVIDER_SETTINGS));
+    const routing = resolveModelRouting(
+      builtInServers({
+        providers: DEFAULT_PROVIDER_SETTINGS,
+        comfyUiBaseUrl: 'http://127.0.0.1:8188',
+      }),
+      defaultRoutes(DEFAULT_PROVIDER_SETTINGS),
+    );
     let clock = 1_000_000;
     const echo = { stop: vi.fn(async () => true), start: vi.fn(async () => undefined) };
-    const coder = vi.fn(() => ({ stop: vi.fn(async () => true), start: vi.fn(async () => undefined) }));
+    const coder = vi.fn(() => ({
+      stop: vi.fn(async () => true),
+      start: vi.fn(async () => undefined),
+    }));
     const swap = new CoderModelSwap({
       routing: () => routing,
       configuredGguf: () => undefined,
