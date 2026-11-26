@@ -30,7 +30,7 @@ The implementation plan progresses through the major subsystems required for the
 - 🚧 In Progress: 2D canvas avatar renderer, transcript overlay/UI shell.
 - ⏭️ Upcoming: persistent memory store, full conversation loop persistence, observability, packaging/auto-launch, appliance validation, and Unity integration prep.
 
-Check `AGENTS.md` for the authoritative status checklist that mirrors these milestones.
+Current feature status lives in [`docs/features/`](docs/features/README.md); the dated decision log is [`docs/history.md`](docs/history.md).
 
 ## Getting Started
 
