@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import type { RoomPart } from '../../../main/src/rooms/types.js';
+import type { RoomPart } from '../../../main/src/shared/rooms/types.js';
 import { MAX_TRIMESH_TRIANGLES, boundingBoxShape, modelShapes, objectShapes, partShapes, shapeTopAt } from '../../src/rooms/room-shapes.js';
 
 describe('partShapes', () => {

@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { IpcMainInvokeEvent } from 'electron';
-import type { ConfigSecretKey } from '../src/config/config-manager.js';
+import type { ConfigSecretKey } from '../src/shared/config/config-manager-types.js';
 import { DEFAULT_PROVIDER_SETTINGS } from '../src/shared/config/provider-settings.js';
 import { builtInServers, defaultRoutes, resolveModelRouting } from '../src/shared/config/model-routing.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

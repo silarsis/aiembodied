@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { PursuitOffer, PursuitsBridge } from '../../../main/src/pursuits/types.js';
+import type { PursuitOffer, PursuitsBridge } from '../../../main/src/shared/pursuits/types.js';
 import { offersFor, usePursuits } from '../../src/rooms/use-pursuits.js';
 
 const READING = 'room:builtin:reading-room';

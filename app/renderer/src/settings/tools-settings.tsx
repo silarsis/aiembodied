@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import type { MCPServerConfigInput, MCPServerSummary, MCPToolSummary } from '../../../main/src/mcp/types.js';
-import type { MCPPresetSummary } from '../../../main/src/mcp/presets.js';
-import type { StationView } from '../../../main/src/stations/types.js';
+import type { MCPServerConfigInput, MCPServerSummary, MCPToolSummary } from '../../../main/src/shared/mcp/types.js';
+import type { MCPPresetSummary } from '../../../main/src/shared/mcp/presets-types.js';
+import type { StationView } from '../../../main/src/shared/stations/types.js';
 import type { McpBridge, ModelsBridge, StationsBridge } from '../preload-api.js';
 
 const CONFIRMATION_LEVELS = [

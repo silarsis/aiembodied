@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CodingMemoryWriter } from '../src/coding/memory-writer.js';
-import type { RunnerTask } from '../src/coding/runner-client.js';
+import type { RunnerTask } from '../src/shared/coding/runner-client-types.js';
 
 const done: RunnerTask = {
   id: 't1',

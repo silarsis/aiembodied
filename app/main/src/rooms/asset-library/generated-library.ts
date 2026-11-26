@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { access, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ObjectCategory } from '../room-layout.js';
-import type { Vec3 } from '../types.js';
+import type { Vec3 } from '../../shared/rooms/types.js';
 import { tokens, findBestModel } from './search.js';
 import type { CatalogEntry } from './types.js';
 

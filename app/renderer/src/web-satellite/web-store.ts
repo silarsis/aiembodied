@@ -1,4 +1,4 @@
-import type { AudioDevicePreferences } from '../../../main/src/config/preferences-store.js';
+import type { AudioDevicePreferences } from '../../../main/src/shared/config/preferences-store-types.js';
 
 export interface StoredPairing {
   hubUrl: string;

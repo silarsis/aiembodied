@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { SatelliteBridge, SatelliteStatus } from '../../../main/src/satellite/bridge-types.js';
+import type { SatelliteBridge, SatelliteStatus } from '../../../main/src/shared/satellite/bridge-types.js';
 import { evaluateGate } from '../../../main/src/shared/satellite/device-gate.js';
 import { SatelliteStatusPanel } from '../../src/satellite/satellite-status-panel.js';
 

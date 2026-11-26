@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { VisionStatus } from '../../../main/src/local-vision/vision-model.js';
+import type { VisionStatus } from '../../../main/src/shared/local-vision/vision-model-types.js';
 import type { ModelsBridge } from '../../src/preload-api.js';
 import { VisionDownload, visionStatusLine } from '../../src/settings/vision-download.js';
 

@@ -12,33 +12,14 @@ import type { GpuMemoryReader } from '../diagnostics/gpu-memory.js';
 import type { LocalLlmControl } from '../local-voice/local-llm-control.js';
 import type { CodingConfig } from './config.js';
 import { findCoderGguf } from './gguf-finder.js';
-import { CoderModelSwap, type SwapState } from './model-swap.js';
+import { CoderModelSwap } from './model-swap.js';
 import type { CoderLeases } from '../aicontroller/bridge.js';
-import { CodingRunnerClient, type RunnerCapabilities, type RunnerEvent } from './runner-client.js';
+import { CodingRunnerClient, type RunnerCapabilities } from './runner-client.js';
+import type { RunnerEvent } from '../shared/coding/runner-client-types.js';
 import { buildCodingSyncPayload, CodingSync } from './sync.js';
+import type { CodingStatus } from '../shared/coding/coding-service-types.js';
 
 type Logger = { info: (message: string, data?: Record<string, unknown>) => void; warn: (message: string, data?: Record<string, unknown>) => void };
-
-export interface CodingStatus {
-  runnerUp: boolean;
-  runnerUrl: string | null;
-  localModelNeeded: boolean;
-  swap: SwapState;
-  /** The GGUF found on this PC when none is picked. */
-  detectedGguf: string | null;
-  /** Why the runner refused the workspaces, if it did. */
-  workspaceError: string | null;
-  /** The model controller's state, in words (whether it is in use and the lease state); absent without one. */
-  controller?: string | null;
-}
-
-/** What the Coding page shows. */
-export interface CodingView {
-  coding: CodingConfig;
-  /** The runner server in use (the saved one, or the built-in one if that is gone). */
-  runnerId: string | null;
-  status: CodingStatus;
-}
 
 export interface CodingServiceOptions {
   settings: () => { models: ModelRouting; coding: CodingConfig };

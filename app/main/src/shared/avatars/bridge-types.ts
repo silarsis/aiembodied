@@ -1,5 +1,5 @@
 /** The renderer's bridge to the avatar registry . Types only. */
-import type { AvatarProfile } from './avatar-registry.js';
+import type { AvatarProfile } from './avatar-registry-types.js';
 
 export type { AvatarProfile };
 

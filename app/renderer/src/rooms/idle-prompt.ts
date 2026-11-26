@@ -2,8 +2,8 @@
  * The prompt for the "Idle thoughts" model. One builder, so the wording is tested in one place:
  * the system message says what to answer with, the user message describes the moment.
  */
-import type { IdlePickContext } from '../../../main/src/rooms/types.js';
-import type { RoomObject } from '../../../main/src/rooms/types.js';
+import type { IdlePickContext } from '../../../main/src/shared/rooms/types.js';
+import type { RoomObject } from '../../../main/src/shared/rooms/types.js';
 import { objectAffordances } from './scene-instructions.js';
 import type { IdleInput, IdlePlace } from './idle-types.js';
 

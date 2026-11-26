@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RoomFile } from '../../../main/src/rooms/types.js';
+import type { RoomFile } from '../../../main/src/shared/rooms/types.js';
 import type { AvatarMotionChunkEvent, AvatarMotionStreamRequest, AvatarMotionStreamResult } from '../../src/avatar/types.js';
 import { RoomStage } from '../../src/rooms/room-stage.js';
 import type { PlanWorld, StreamEvent } from '../../src/rooms/scene-actions.js';

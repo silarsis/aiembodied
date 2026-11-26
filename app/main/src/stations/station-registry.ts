@@ -9,7 +9,8 @@
  */
 import { randomUUID } from 'node:crypto';
 import { findPreset } from '../mcp/presets.js';
-import type { Station, StationBody, StationLabels, StationSource, StationTool, StationView } from './types.js';
+import type { StationTool } from './types.js';
+import type { Station, StationBody, StationLabels, StationSource, StationView } from '../shared/stations/types.js';
 
 export const STATIONS_KEY = 'rooms.stations';
 

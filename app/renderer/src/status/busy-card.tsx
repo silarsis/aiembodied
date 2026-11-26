@@ -3,7 +3,7 @@
  * Kevin knows why the answer takes a moment.
  */
 import { useEffect, useState } from 'react';
-import type { CodingBusyBridge } from '../../../main/src/coding/bridge-types.js';
+import type { CodingBusyBridge } from '../../../main/src/shared/coding/bridge-types.js';
 
 export function BusyCard({ api }: { api?: CodingBusyBridge }) {
   const [message, setMessage] = useState<string | null>(null);

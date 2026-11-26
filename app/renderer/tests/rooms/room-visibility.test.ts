@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { RoomFile } from '../../../main/src/rooms/types.js';
+import type { RoomFile } from '../../../main/src/shared/rooms/types.js';
 import { VISIBLE_MARGIN, objectViewPoints, roomCamera, viewFrustum, visibleObjects } from '../../src/rooms/room-visibility.js';
 import { builtInRoom } from './fixtures.js';
 

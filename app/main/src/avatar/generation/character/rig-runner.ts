@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { resolveComfyInstallation } from '../comfyui-runtime.js';
 import { readGlb } from '../vrm-retexture.js';
 import { inspectTemplateCompatibility } from '../template-compatibility.js';
-import type { AvatarGenerationWarning } from '../../types.js';
+import type { AvatarGenerationWarning } from '../../../shared/avatar/types.js';
 
 /** Blender can report a Python exception while still returning process exit code zero. */
 function pythonFailure(output: string): string | undefined {

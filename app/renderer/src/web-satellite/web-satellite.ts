@@ -4,9 +4,9 @@ import { NOT_ON_SATELLITE, channelKind, isDeliverableEvent } from '../../../main
 import { EMPTY_LOCAL_ANSWERS, keywordOf, satelliteConfig } from '../../../main/src/shared/satellite/local-config.js';
 import { requestPairing } from '../../../main/src/shared/satellite/pairing.js';
 import type { DeviceGateState } from '../../../main/src/shared/satellite/device-gate.js';
-import type { SatelliteStatus } from '../../../main/src/satellite/satellite.js';
-import type { AudioDevicePreferences } from '../../../main/src/config/preferences-store.js';
-import type { RendererConfig } from '../../../main/src/config/config-manager.js';
+import type { SatelliteStatus } from '../../../main/src/shared/satellite/satellite-types.js';
+import type { AudioDevicePreferences } from '../../../main/src/shared/config/preferences-store-types.js';
+import type { RendererConfig } from '../../../main/src/shared/config/config-manager-types.js';
 import type { Op } from '../../../main/src/shared/room-hub/frames.js';
 import { createBridge, type BridgeTransport, type PreloadApi } from '../../../main/src/shared/bridge/create-bridge.js';
 import { WebGate } from './web-gate.js';

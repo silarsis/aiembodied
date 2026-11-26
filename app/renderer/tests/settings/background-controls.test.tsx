@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest';
 import { BackgroundControls } from '../../src/backgrounds/background-controls.js';
 import { useBackgrounds } from '../../src/backgrounds/use-backgrounds.js';
-import type { BackgroundBridge, BackgroundSummary } from '../../../main/src/backgrounds/types.js';
+import type { BackgroundBridge, BackgroundSummary } from '../../../main/src/shared/backgrounds/types.js';
 
 const item = (id: string): BackgroundSummary => ({
   id,

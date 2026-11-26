@@ -1,7 +1,7 @@
 
 import type OpenAI from 'openai';
 import type { ResponseInput } from 'openai/resources/responses/responses';
-import type { AvatarPoseGenerationRequest, AvatarPoseUploadResult, AvatarPoseData, PoseExpressionState } from './types.js';
+import type { AvatarPoseGenerationRequest, AvatarPoseUploadResult, AvatarPoseData, PoseExpressionState } from '../shared/avatar/types.js';
 import type { AvatarPoseService } from './avatar-pose-service.js';
 
 export interface PoseGenerationServiceOptions {

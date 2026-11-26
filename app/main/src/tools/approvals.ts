@@ -8,6 +8,7 @@
  */
 import { EventEmitter } from 'node:events';
 import type { RegisteredTool, ToolRegistry } from './tool-registry.js';
+import type { PendingApproval } from '../shared/tools/approvals-types.js';
 
 type Logger = { info: (message: string, data?: Record<string, unknown>) => void; warn: (message: string, data?: Record<string, unknown>) => void };
 
@@ -17,24 +18,6 @@ export const SPOKEN_WINDOW_MS = 5 * 60_000;
 
 /** A spoken answer longer than this is not treated as a yes or no. */
 export const MAX_SPOKEN_WORDS = 6;
-
-export interface PendingApproval {
-  id: string;
-  toolId: string;
-  toolName: string;
-  params: unknown;
-  /** One line for the card and for Echo, such as "start a coding task in aiembodied: Fix the retry". */
-  summary: string;
-  createdAt: number;
-  expiresAt: number;
-  source: 'voice';
-  /** Only the card can approve this one. */
-  cardOnly: boolean;
-  /** Switchboard address of whoever asked. */
-  requestedBy: string;
-  /** Switchboard addresses of who may decide. */
-  approvers: string[];
-}
 
 export type ApprovalDecision = 'approved' | 'declined' | 'expired';
 

@@ -7,7 +7,7 @@ import { PlaceManager } from '../src/places/place-manager.js';
 import { READING_ROOM_ID, StationRegistry } from '../src/stations/station-registry.js';
 import { StationLookup } from '../src/stations/station-lookup.js';
 import { StationTrips } from '../src/stations/station-trips.js';
-import type { StationUseEvent } from '../src/stations/types.js';
+import type { StationUseEvent } from '../src/shared/stations/types.js';
 import { createVoiceStations } from '../src/stations/voice-stations.js';
 import { ToolRegistry, type RegisteredTool } from '../src/tools/tool-registry.js';
 

@@ -3,7 +3,7 @@ import { FloorController } from '../src/floor/index.js';
 import type { IntentFunction, IntentInput, QuickIntentFunction } from '../src/floor/floor-manager.js';
 import { buildIntentPrompt } from '../src/floor/intent-router.js';
 import { LOCATIONS_KEY, PlaceManager } from '../src/places/place-manager.js';
-import type { LocalVoiceRespondRequest, LocalVoiceRespondResult } from '../src/local-voice/types.js';
+import type { LocalVoiceRespondRequest, LocalVoiceRespondResult } from '../src/shared/local-voice/types.js';
 
 const PROFILES = [
   { id: 'echo', name: 'Echo', vrmModelId: 'm1' },

@@ -1,4 +1,4 @@
-import type { RoomFile, RoomObject } from '../../../main/src/rooms/types.js';
+import type { RoomFile, RoomObject } from '../../../main/src/shared/rooms/types.js';
 import type { PlanWorld } from './scene-actions.js';
 
 /** What a model can do with an object, in plain words, from the object's tags. */

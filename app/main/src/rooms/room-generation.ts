@@ -17,25 +17,8 @@ import type { LayoutObject, ObjectCategory, RoomLayout } from './room-layout.js'
 import { placeRoom, type ResolvedModel } from './room-placer.js';
 import { refitObject } from './room-refit.js';
 import type { GeneratedObjectSummary, ObjectSettings } from '../shared/rooms/object-settings.js';
-import type { RoomSummary } from './types.js';
 import { validateRoomFile } from '../shared/rooms/validate.js';
-
-export interface RoomGenerationProgress {
-  phase: 'planning' | 'finding' | 'arranging' | 'making' | 'done';
-  message: string;
-  current?: number;
-  total?: number;
-  warnings?: string[];
-  /** Set for the background phase: the saved room the objects are being made for. */
-  roomId?: string;
-}
-
-export interface RoomGenerationResult {
-  room: RoomSummary;
-  warnings: string[];
-  /** How many objects may still be made in the background (0 when none). */
-  making?: number;
-}
+import type { RoomGenerationResult, RoomGenerationProgress } from '../shared/rooms/room-generation-types.js';
 
 /** Makes objects the sources had nothing for; see `GeneratedSource`. */
 export interface ObjectGenerator {

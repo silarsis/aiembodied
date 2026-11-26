@@ -1,4 +1,5 @@
-import type { MCPServerConfigInput } from './types.js';
+import type { MCPServerConfigInput } from '../shared/mcp/types.js';
+import type { MCPPresetSummary } from '../shared/mcp/presets-types.js';
 
 /**
  * Ready-made MCP servers the person can add with one button.
@@ -35,14 +36,6 @@ export const MCP_PRESETS: MCPPreset[] = [
 
 export function findPreset(id: string): MCPPreset | undefined {
   return MCP_PRESETS.find((preset) => preset.id === id);
-}
-
-/** The preset list in the shape the renderer needs (no config internals beyond the address). */
-export interface MCPPresetSummary {
-  id: string;
-  name: string;
-  description: string;
-  url: string;
 }
 
 export function listPresetSummaries(): MCPPresetSummary[] {

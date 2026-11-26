@@ -1,6 +1,6 @@
 /** The renderer's bridge to desktop rooms (Settings > Places). Types only. */
-import type { Place } from '../places/place-manager.js';
-import type { PairingStart, RoomHubStatus } from './room-hub.js';
+import type { Place } from '../places/place-manager-types.js';
+import type { PairingStart, RoomHubStatus } from './room-hub-types.js';
 
 export type { PairingStart, RoomHubStatus };
 

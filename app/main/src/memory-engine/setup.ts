@@ -3,7 +3,7 @@
  * the local voice, tool calls) for the memory engine, and import the old SQLite history once.
  */
 import type { ConversationManager } from '../conversation/conversation-manager.js';
-import type { ConversationMessage, ConversationSession } from '../conversation/types.js';
+import type { ConversationMessage, ConversationSession } from '../shared/conversation/types.js';
 import type { MemoryStore } from '../memory/memory-store.js';
 import { MemoryCapture, type CaptureAgent } from './capture.js';
 import { MemoryEngineClient } from './client.js';

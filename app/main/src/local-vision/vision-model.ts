@@ -8,40 +8,16 @@
  */
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
-import {
-  lookupHuggingFace,
-  parseHuggingFaceRef,
-  pickDefaultQuant,
-  type HfFile,
-  type HfLookup,
-  type HfQuant,
-} from '../local-llm/huggingface.js';
-import { LlmLibrary, type LlmDownload } from '../local-llm/llm-library.js';
+import { lookupHuggingFace, parseHuggingFaceRef, pickDefaultQuant } from '../local-llm/huggingface.js';
+import type { HfFile, HfLookup, HfQuant } from '../shared/local-llm/huggingface-types.js';
+import { LlmLibrary } from '../local-llm/llm-library.js';
+import type { VisionStatus, VisionPick } from '../shared/local-vision/vision-model-types.js';
 
 /** Tried in order when no repo is named. */
 export const DEFAULT_VISION_REPOS = ['ggml-org/Qwen3-VL-8B-Instruct-GGUF', 'unsloth/Qwen3-VL-8B-Instruct-GGUF'] as const;
 export const VISION_ALIAS = 'qwen3-vl';
 /** Shown on the download button. */
 export const VISION_SIZE_HINT = '~6 GB';
-
-/** What local-vision.json keeps. model and mmproj are absolute paths. */
-export interface VisionPick {
-  repo: string;
-  model: string;
-  mmproj: string;
-  alias: string;
-}
-
-/** What the Describe the avatar row shows. */
-export interface VisionStatus {
-  pick: VisionPick | null;
-  /** Both files are on disk. */
-  ready: boolean;
-  sizeBytes: number;
-  /** The newest download that is running or failed, if any. */
-  download: LlmDownload | null;
-  folder: string;
-}
 
 export async function readVisionPick(file: string): Promise<VisionPick | null> {
   try {

@@ -17,7 +17,7 @@ function routed(providers: ProviderSettings) {
   return resolveModelRouting(builtInServers({ providers, comfyUiBaseUrl: 'http://127.0.0.1:8188' }), defaultRoutes(providers));
 }
 const openAiKey = (key: string) => (id: string) => (id === 'openai' && key ? key : undefined);
-import type { LocalVoiceEvent } from '../src/local-voice/types.js';
+import type { LocalVoiceEvent } from '../src/shared/local-voice/types.js';
 
 function sse(deltas: string[]): Response {
   const text = deltas.map((content) => `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`).join('');

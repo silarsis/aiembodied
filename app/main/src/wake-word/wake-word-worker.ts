@@ -2,13 +2,8 @@ import { parentPort, workerData } from 'node:worker_threads';
 import { PvRecorder } from '@picovoice/pvrecorder-node';
 import { OWW_FRAME_LENGTH, OWW_SAMPLE_RATE, OpenWakeWordDetector } from './open-wake-word.js';
 import { PeakTracker } from './peak-tracker.js';
-import type {
-  SerializedError,
-  WakeWordDetectionEvent,
-  WakeWordWorkerCommand,
-  WakeWordWorkerConfig,
-  WakeWordWorkerMessage,
-} from './types.js';
+import type { SerializedError, WakeWordWorkerCommand, WakeWordWorkerConfig, WakeWordWorkerMessage } from './types.js';
+import type { WakeWordDetectionEvent } from '../shared/wake-word/types.js';
 
 if (!parentPort) {
   throw new Error('wake-word-worker must be run as a worker thread');

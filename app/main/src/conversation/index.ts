@@ -1,2 +1,2 @@
 export * from './conversation-manager.js';
-export * from './types.js';
+export * from '../shared/conversation/types.js';

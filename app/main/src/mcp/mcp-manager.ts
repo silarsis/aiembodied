@@ -1,11 +1,5 @@
 import type { Database } from 'better-sqlite3';
-import type {
-  MCPServerConfig,
-  MCPServerConfigInput,
-  MCPToolSummary,
-  MCPConnectionResult,
-  MCPConnectionStatus,
-} from './types.js';
+import type { MCPServerConfig, MCPServerConfigInput, MCPToolSummary, MCPConnectionResult, MCPConnectionStatus } from '../shared/mcp/types.js';
 import type { ToolRegistry, RegisteredTool } from '../tools/tool-registry.js';
 import { EventEmitter } from 'node:events';
 import { SSEMCPClient } from './clients/sse-client.js';
@@ -14,17 +8,8 @@ import { HTTPMCPClient } from './clients/http-client.js';
 import { McpOAuthProvider, McpOAuthStore } from './clients/oauth-provider.js';
 import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 import { chooseToolName, isValidToolName } from './tool-names.js';
-import {
-  HOME_ASSISTANT_PRESET_PREFIX,
-  findPreset,
-  homeAssistantPreset,
-  homeAssistantReadOnlyDefault,
-  isRiskyHomeAssistantTool,
-  listPresetSummaries,
-  type HomeAssistantHome,
-  type MCPPreset,
-  type MCPPresetSummary,
-} from './presets.js';
+import { HOME_ASSISTANT_PRESET_PREFIX, findPreset, homeAssistantPreset, homeAssistantReadOnlyDefault, isRiskyHomeAssistantTool, listPresetSummaries, type HomeAssistantHome, type MCPPreset } from './presets.js';
+import type { MCPPresetSummary } from '../shared/mcp/presets-types.js';
 import type { MCPClient } from './clients/base-client.js';
 import { randomUUID } from 'node:crypto';
 import { encryptToken, decryptToken } from './encryption.js';

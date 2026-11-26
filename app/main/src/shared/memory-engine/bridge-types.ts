@@ -1,13 +1,6 @@
 /** The Memory panel's bridge from the renderer, shared by preload and renderer. Types only. */
-import type {
-  MemoryEngineFactPatch,
-  MemoryEngineMemoryDetail,
-  MemoryEngineRecallLogEntry,
-  MemoryEngineSearchResult,
-  MemoryEngineStoredFact,
-  MemoryEngineTimeline,
-} from './client.js';
-import type { MemoryPanelStatus } from './ipc.js';
+import type { MemoryEngineFactPatch, MemoryEngineMemoryDetail, MemoryEngineRecallLogEntry, MemoryEngineSearchResult, MemoryEngineStoredFact, MemoryEngineTimeline } from './client-types.js';
+import type { MemoryPanelStatus } from './ipc-types.js';
 
 export type {
   MemoryEngineFactPatch,

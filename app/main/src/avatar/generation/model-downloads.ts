@@ -11,8 +11,9 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import readline from 'node:readline';
 import type { ModelServer } from '../../shared/config/model-routing.js';
-import type { CivitaiDownloadPlan, CivitaiFile, ModelInfo } from './civitai.js';
+import type { CivitaiDownloadPlan, CivitaiFile, ModelInfo } from '../../shared/avatar/civitai-types.js';
 import type { ComfyInstallation } from './comfyui-runtime.js';
+import type { ModelDownload, DownloadState } from '../../shared/avatar/model-downloads-types.js';
 
 /** What to download: a Civitai plan, or a file the app installs itself (such as a pose ControlNet). */
 export type DownloadPlan = Pick<CivitaiDownloadPlan, 'title' | 'folder' | 'note' | 'kind'> & {
@@ -20,23 +21,6 @@ export type DownloadPlan = Pick<CivitaiDownloadPlan, 'title' | 'folder' | 'note'
   /** Saved beside the file; a Civitai plan always has one. */
   info?: Partial<ModelInfo>;
 };
-
-export type DownloadState = 'queued' | 'downloading' | 'verifying' | 'done' | 'failed' | 'cancelled';
-
-export interface ModelDownload {
-  id: string;
-  serverId: string;
-  serverName: string;
-  title: string;
-  folder: string;
-  filename: string;
-  state: DownloadState;
-  received: number;
-  total: number | null;
-  error?: string;
-  note?: string;
-  startedAt: number;
-}
 
 interface WorkerStatus {
   id?: string;

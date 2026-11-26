@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import type { PresenceBridge, PresenceUpdatePayload } from '../../../main/src/presence/bridge-types.js';
+import type { PresenceBridge, PresenceUpdatePayload } from '../../../main/src/shared/presence/bridge-types.js';
 import type { CameraBridge } from '../preload-api.js';
 
 export const PRESENCE_THROTTLE_MS = 1000;

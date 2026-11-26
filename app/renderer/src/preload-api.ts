@@ -1,44 +1,40 @@
-import type { SwitchboardBridge } from '../../main/src/switchboard/bridge-types.js';
-import type { AvatarsBridge } from '../../main/src/avatars/bridge-types.js';
-import type { PresenceBridge } from '../../main/src/presence/bridge-types.js';
-import type { FloorBridge } from '../../main/src/floor/bridge-types.js';
-import type { PlacesBridge } from '../../main/src/places/bridge-types.js';
-import type { StationsBridge } from '../../main/src/stations/bridge-types.js';
-import type { PursuitsBridge } from '../../main/src/pursuits/types.js';
-import type { AgentsBridge, WorkflowsBridge } from '../../main/src/agent-time/bridge-types.js';
-import type { RoomHubBridge } from '../../main/src/room-hub/bridge-types.js';
-import type { DeviceGateBridge, SatelliteBridge } from '../../main/src/satellite/bridge-types.js';
-import type { GpuMemoryBridge } from '../../main/src/diagnostics/gpu-memory.js';
-import type { CodingBridge, CodingBusyBridge, CodingTasksBridge } from '../../main/src/coding/bridge-types.js';
-import type { ApprovalsBridge } from '../../main/src/tools/approvals-ipc.js';
-import type { CivitaiLookup } from '../../main/src/avatar/generation/civitai.js';
-import type { HfLookup } from '../../main/src/local-llm/huggingface.js';
-import type { LocalLlmSettings } from '../../main/src/local-llm/llm-settings.js';
-import type { LlmDownload, LocalLlmList } from '../../main/src/local-llm/llm-library.js';
-import type { DownloadHosts } from '../../main/src/aicontroller/remote-downloads.js';
-import type { VisionStatus } from '../../main/src/local-vision/vision-model.js';
-import type { ModelDownload } from '../../main/src/avatar/generation/model-downloads.js';
-import type { BackgroundBridge } from '../../main/src/backgrounds/types.js';
-import type { FurnitureBridge } from '../../main/src/furniture/types.js';
-import type { ConfigSecretKey, ModelRoutingView, RendererConfig } from '../../main/src/config/config-manager.js';
+import type { SwitchboardBridge } from '../../main/src/shared/switchboard/bridge-types.js';
+import type { AvatarsBridge } from '../../main/src/shared/avatars/bridge-types.js';
+import type { PresenceBridge } from '../../main/src/shared/presence/bridge-types.js';
+import type { FloorBridge } from '../../main/src/shared/floor/bridge-types.js';
+import type { PlacesBridge } from '../../main/src/shared/places/bridge-types.js';
+import type { StationsBridge } from '../../main/src/shared/stations/bridge-types.js';
+import type { PursuitsBridge } from '../../main/src/shared/pursuits/types.js';
+import type { AgentsBridge, WorkflowsBridge } from '../../main/src/shared/agent-time/bridge-types.js';
+import type { RoomHubBridge } from '../../main/src/shared/room-hub/bridge-types.js';
+import type { DeviceGateBridge, SatelliteBridge } from '../../main/src/shared/satellite/bridge-types.js';
+import type { GpuMemoryBridge } from '../../main/src/shared/diagnostics/gpu-memory-types.js';
+import type { CodingBridge, CodingBusyBridge, CodingTasksBridge } from '../../main/src/shared/coding/bridge-types.js';
+import type { ApprovalsBridge } from '../../main/src/shared/tools/approvals-ipc-types.js';
+import type { CivitaiLookup } from '../../main/src/shared/avatar/civitai-types.js';
+import type { HfLookup } from '../../main/src/shared/local-llm/huggingface-types.js';
+import type { LocalLlmSettings } from '../../main/src/shared/local-llm/llm-settings-types.js';
+import type { LlmDownload, LocalLlmList } from '../../main/src/shared/local-llm/llm-library-types.js';
+import type { DownloadHosts } from '../../main/src/shared/aicontroller/remote-downloads-types.js';
+import type { VisionStatus } from '../../main/src/shared/local-vision/vision-model-types.js';
+import type { ModelDownload } from '../../main/src/shared/avatar/model-downloads-types.js';
+import type { BackgroundBridge } from '../../main/src/shared/backgrounds/types.js';
+import type { FurnitureBridge } from '../../main/src/shared/furniture/types.js';
+import type { ConfigSecretKey, ModelRoutingView, RendererConfig } from '../../main/src/shared/config/config-manager-types.js';
 import type { ModelRoute, ServerType, UseId } from '../../main/src/shared/config/model-routing.js';
-import type { ServerProbe } from '../../main/src/config/model-server-probe.js';
-import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
+import type { ServerProbe } from '../../main/src/shared/config/model-server-probe-types.js';
+import type { AudioDevicePreferences } from '../../main/src/shared/config/preferences-store-types.js';
 import type { ProviderSettingsPatch } from '../../main/src/shared/config/provider-settings.js';
 import type {
   ConversationAppendMessagePayload,
   ConversationHistory,
   ConversationMessage,
   ConversationSession,
-} from '../../main/src/conversation/types.js';
-import type { LatencyMetricName } from '../../main/src/metrics/types.js';
-import type {
-  WakeWordDetectionEvent,
-  WakeWordOption,
-  WakeWordTrainingStatus,
-} from '../../main/src/wake-word/types.js';
-import type { PushToTalkStatus, TalkTriggerEvent } from '../../main/src/talk/types.js';
-import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from '../../main/src/realtime/types.js';
+} from '../../main/src/shared/conversation/types.js';
+import type { LatencyMetricName } from '../../main/src/shared/metrics/types.js';
+import type { WakeWordDetectionEvent, WakeWordOption, WakeWordTrainingStatus } from '../../main/src/shared/wake-word/types.js';
+import type { PushToTalkStatus, TalkTriggerEvent } from '../../main/src/shared/talk/types.js';
+import type { RealtimeEphemeralTokenRequest, RealtimeEphemeralTokenResponse } from '../../main/src/shared/realtime/types.js';
 import type {
   LocalVoiceEvent,
   LocalVoiceRespondRequest,
@@ -47,18 +43,13 @@ import type {
   LocalVoiceSystemStatus,
   LocalVoiceTranscribeResult,
   SpeakingVoiceOptions,
-} from '../../main/src/local-voice/types.js';
-import type { SpeechTtsEngine } from '../../main/src/local-voice/speech-service-client.js';
-import type {
-  MCPConnectionResult,
-  MCPServerSummary,
-  MCPServerConfigInput,
-  MCPToolSummary,
-} from '../../main/src/mcp/types.js';
-import type { MCPPresetSummary } from '../../main/src/mcp/presets.js';
+} from '../../main/src/shared/local-voice/types.js';
+import type { SpeechTtsEngine } from '../../main/src/shared/local-voice/speech-service-client-types.js';
+import type { MCPConnectionResult, MCPServerSummary, MCPServerConfigInput, MCPToolSummary } from '../../main/src/shared/mcp/types.js';
+import type { MCPPresetSummary } from '../../main/src/shared/mcp/presets-types.js';
 import type { AvatarBridge } from './avatar/types.js';
 import type { CameraDetectionEvent } from './avatar/behavior-cues.js';
-import type { MemoryEngineBridge } from '../../main/src/memory-engine/bridge-types.js';
+import type { MemoryEngineBridge } from '../../main/src/shared/memory-engine/bridge-types.js';
 
 export type { StationsBridge, PursuitsBridge };
 
@@ -234,7 +225,7 @@ export interface AppBridge {
   quit(): Promise<void>;
 }
 
-export type { FurnitureBridge, FurnitureItem } from '../../main/src/furniture/types.js';
+export type { FurnitureBridge, FurnitureItem } from '../../main/src/shared/furniture/types.js';
 
 export function getPreloadApi(): PreloadApi | undefined {
   return (window as unknown as { aiembodied?: PreloadApi }).aiembodied;

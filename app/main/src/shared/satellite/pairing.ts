@@ -3,7 +3,7 @@
  * the Electron satellite (satellite.ts, which keeps the token in the keychain) and the web satellite (which keeps it
  * in the page's localStorage). Only `fetch` and the hub address parser; no Electron, no Node.
  */
-import type { DeviceKind } from '../../room-hub/room-devices.js';
+import type { DeviceKind } from '../room-hub/room-devices-types.js';
 import { parseHubUrl } from './link-shared.js';
 
 export interface PairRequest {

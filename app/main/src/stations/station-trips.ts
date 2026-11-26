@@ -16,9 +16,11 @@
  * Pure: no Electron. Places, the registry, the sender and the clock come in from outside so the tests can fake them.
  */
 import { randomUUID } from 'node:crypto';
-import { MOVE_DEADLINE_MS, NEXT_DOOR_PLACE_ID, type Place, type PlaceManager } from '../places/place-manager.js';
+import { MOVE_DEADLINE_MS, NEXT_DOOR_PLACE_ID, type PlaceManager } from '../places/place-manager.js';
+import type { Place } from '../shared/places/place-manager-types.js';
 import type { StationRegistry } from './station-registry.js';
-import type { Station, StationTool, StationUseEvent } from './types.js';
+import type { StationTool } from './types.js';
+import type { Station, StationUseEvent } from '../shared/stations/types.js';
 
 /** How long the answer waits for the avatar to reach the object in its own room. */
 export const STATION_ARRIVAL_HOLD_MS = 6000;

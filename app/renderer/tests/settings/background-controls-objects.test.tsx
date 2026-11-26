@@ -2,9 +2,9 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { describe, expect, it, vi } from 'vitest';
 import { BackgroundControls } from '../../src/backgrounds/background-controls.js';
 import { useBackgrounds } from '../../src/backgrounds/use-backgrounds.js';
-import type { BackgroundBridge } from '../../../main/src/backgrounds/types.js';
+import type { BackgroundBridge } from '../../../main/src/shared/backgrounds/types.js';
 import type { GeneratedObjectSummary, ObjectSettingsView } from '../../../main/src/shared/rooms/object-settings.js';
-import type { RoomGenerationProgress } from '../../../main/src/rooms/room-generation.js';
+import type { RoomGenerationProgress } from '../../../main/src/shared/rooms/room-generation-types.js';
 import { builtInRoom } from '../rooms/fixtures.js';
 
 const reading = builtInRoom('reading-room');

@@ -12,7 +12,8 @@
  *
  * Neither ever throws: memory is a help, never a reason for a reply to fail.
  */
-import type { MemoryEngineBrief, MemoryEngineClient, MemoryEngineSearchResult } from './client.js';
+import type { MemoryEngineBrief, MemoryEngineClient } from './client.js';
+import type { MemoryEngineSearchResult } from '../shared/memory-engine/client-types.js';
 import { describeAgo } from './period.js';
 
 type Logger = { warn: (message: string, data?: Record<string, unknown>) => void; debug?: (message: string, data?: Record<string, unknown>) => void };

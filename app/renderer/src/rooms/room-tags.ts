@@ -1,4 +1,4 @@
-import type { RoomFile, Vec3 } from '../../../main/src/rooms/types.js';
+import type { RoomFile, Vec3 } from '../../../main/src/shared/rooms/types.js';
 import { objectToWorld } from './room-geometry.js';
 
 export type PositionalTag = 'sit' | 'stand' | 'grab' | 'look' | 'surface';

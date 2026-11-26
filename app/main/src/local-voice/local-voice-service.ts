@@ -27,7 +27,7 @@ import type {
   LocalVoiceStatus,
   LocalVoiceSystemStatus,
   LocalVoiceTranscribeResult,
-} from './types.js';
+} from '../shared/local-voice/types.js';
 
 type Logger = Pick<Console, 'info' | 'warn' | 'error' | 'debug'>;
 

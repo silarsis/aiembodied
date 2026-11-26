@@ -2,7 +2,7 @@ import { NavMeshQuery, init, type NavMesh } from 'recast-navigation';
 import { generateSoloNavMesh } from 'recast-navigation/generators';
 import { NavMeshHelper } from '@recast-navigation/three';
 import * as THREE from 'three';
-import type { RoomFile, Vec3 } from '../../../main/src/rooms/types.js';
+import type { RoomFile, Vec3 } from '../../../main/src/shared/rooms/types.js';
 import { colliderObjects, degToRad } from './room-geometry.js';
 
 export const AGENT_RADIUS = 0.3;

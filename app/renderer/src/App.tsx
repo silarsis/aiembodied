@@ -10,8 +10,8 @@ import {
   type ChangeEvent,
   type CSSProperties,
 } from 'react';
-import type { ConversationBackend, RendererConfig } from '../../main/src/config/config-manager.js';
-import type { AudioDevicePreferences } from '../../main/src/config/preferences-store.js';
+import type { ConversationBackend, RendererConfig } from '../../main/src/shared/config/config-manager-types.js';
+import type { AudioDevicePreferences } from '../../main/src/shared/config/preferences-store-types.js';
 import type { ProviderSettingsPatch } from '../../main/src/shared/config/provider-settings.js';
 import { ControlButton, ControlsDrawer } from './settings/controls-drawer.js';
 import { PanelDialog } from './settings/panel-dialog.js';
@@ -20,7 +20,7 @@ import { MemoryPanel } from './settings/memory-panel.js';
 import { ProviderSettingsPanel } from './settings/provider-settings-panel.js';
 import { ModelsDialog } from './settings/models-dialog.js';
 import type { UseId } from '../../main/src/shared/config/model-routing.js';
-import type { PushToTalkStatus } from '../../main/src/talk/types.js';
+import type { PushToTalkStatus } from '../../main/src/shared/talk/types.js';
 import { isTalkTapTarget } from './talk/tap-to-talk.js';
 import { opensTypedPrompt, TypedPrompt } from './talk/type-to-talk.js';
 import { VrmAvatarRenderer, type VrmRendererStatus, type VrmStageAvatar } from './avatar/vrm-avatar-renderer.js';
@@ -50,7 +50,7 @@ import {
   type ToolCall,
   type WakeScore,
 } from './status/assistant-status.js';
-import type { ConversationSessionWithMessages } from '../../main/src/conversation/types.js';
+import type { ConversationSessionWithMessages } from '../../main/src/shared/conversation/types.js';
 import { useAudioDevices } from './hooks/use-audio-devices.js';
 import { useCameraDevices } from './hooks/use-camera-devices.js';
 import { useFacePresence } from './camera/use-face-presence.js';
@@ -60,10 +60,10 @@ import { getPreloadApi, type PreloadApi } from './preload-api.js';
 import { RealtimeClient, type RealtimeClientCallbacks, type RealtimeClientState } from './realtime/realtime-client.js';
 import { LocalVoiceClient, playPreviewReply } from './realtime/local-voice-client.js';
 import { LatencyTracker, type LatencySnapshot } from './metrics/latency-tracker.js';
-import type { LatencyMetricName } from '../../main/src/metrics/types.js';
+import type { LatencyMetricName } from '../../main/src/shared/metrics/types.js';
 import type { AvatarModelSummary, AvatarMotionStatus, AvatarPoseSummary } from './avatar/types.js';
-import type { AvatarProfile } from '../../main/src/avatars/bridge-types.js';
-import type { LocalVoiceStatus, SpeakingVoiceOptions } from '../../main/src/local-voice/types.js';
+import type { AvatarProfile } from '../../main/src/shared/avatars/bridge-types.js';
+import type { LocalVoiceStatus, SpeakingVoiceOptions } from '../../main/src/shared/local-voice/types.js';
 import { describeModels } from './status/model-status.js';
 import { extractAvatarTags, extractMotionTags, toAnimationSlug, type MotionTag } from './avatar/animation-tags.js';
 import {

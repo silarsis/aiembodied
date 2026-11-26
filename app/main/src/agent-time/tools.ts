@@ -6,7 +6,7 @@
  *
  * A flow the service refuses (HTTP 422) comes back as a tool error that lists every problem, so the model can fix it.
  */
-import type { JSONSchema } from '../mcp/types.js';
+import type { JSONSchema } from '../shared/mcp/types.js';
 import type { RegisteredTool, ToolContext } from '../tools/tool-registry.js';
 import { WorkflowsError, type WorkflowsClient } from './workflows-client.js';
 

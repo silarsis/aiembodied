@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import type { RoomObject } from '../../../main/src/rooms/types.js';
+import type { RoomObject } from '../../../main/src/shared/rooms/types.js';
 import { ASSET_SCHEME, resolveAssetUrl } from './asset-url.js';
 
 export { ASSET_SCHEME };

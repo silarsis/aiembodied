@@ -7,7 +7,7 @@ import type {
   ConversationRole,
   ConversationSession,
   ConversationSessionWithMessages,
-} from './types.js';
+} from '../shared/conversation/types.js';
 import type { MemoryStore, MessageRecord, SessionRecord } from '../memory/index.js';
 
 type ConversationEventMap = {

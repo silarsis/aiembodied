@@ -4,7 +4,7 @@
  * shapes to find seat surfaces, so what is drawn, what blocks and what you sit on cannot drift apart.
  */
 import * as THREE from 'three';
-import type { RoomObject, RoomPart, Vec3 } from '../../../main/src/rooms/types.js';
+import type { RoomObject, RoomPart, Vec3 } from '../../../main/src/shared/rooms/types.js';
 import { degToRad } from './room-geometry.js';
 
 export interface Quat {

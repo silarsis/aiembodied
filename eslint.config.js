@@ -134,7 +134,6 @@ export default [
         { regex: '^[^.]', message: 'app/main/src/shared must not import npm packages.' },
         {
           regex: '^\\.\\./\\.\\./',
-          allowTypeImports: true,
           message: 'app/main/src/shared must not import from outside shared/. Move what it needs into shared/.',
         },
       ),

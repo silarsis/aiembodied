@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import type { SatelliteBridge, SatelliteStatus } from '../../../main/src/satellite/bridge-types.js';
+import type { SatelliteBridge, SatelliteStatus } from '../../../main/src/shared/satellite/bridge-types.js';
 
 export const DEFAULT_HUB_ADDRESS = 'ws://bija:8791';
 export const DEFAULT_ROOM_NAME = 'the study';

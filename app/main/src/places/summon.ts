@@ -3,6 +3,7 @@
  * (a move with reason 'summoned') and the turn waits until it is here.
  */
 import { MOVE_DEADLINE_MS, type PlaceManager } from './place-manager.js';
+import type { CallResult } from '../shared/places/summon-types.js';
 
 type Moves = Pick<PlaceManager, 'startMove' | 'waitForArrival' | 'localPlaceId' | 'isPresent' | 'inTransit' | 'snapshot' | 'onChanged'>;
 
@@ -52,10 +53,6 @@ export function chooseSummon(partnerId: string | null, avatarIds: string[]): str
   if (avatarIds.includes('echo')) return 'echo';
   return avatarIds[0] ?? null;
 }
-
-export type CallResult =
-  | { ok: true; avatarId: string; name: string; /** Somebody is at the place already: nobody was called. */ alreadyHere: boolean }
-  | { ok: false; reason: string };
 
 type CallPlaces = Pick<PlaceManager, 'startMove' | 'avatarsAt' | 'snapshot'>;
 

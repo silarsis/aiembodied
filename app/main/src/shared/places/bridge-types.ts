@@ -1,6 +1,6 @@
 /** The renderer's bridge to places: who is where, and moving avatars between places. Types only. */
-import type { Place, PlacesSnapshot } from './place-manager.js';
-import type { CallResult } from './summon.js';
+import type { Place, PlacesSnapshot } from './place-manager-types.js';
+import type { CallResult } from './summon-types.js';
 
 export type { Place, PlacesSnapshot, CallResult };
 

@@ -4,7 +4,7 @@
  * baked into a new root node, so any consumer gets metres without scaling it.
  */
 import { glbBounds, parseGlb, type Bounds } from '../rooms/asset-library/gltf-bounds.js';
-import type { FurnitureFit } from './types.js';
+import type { FurnitureFit } from '../shared/furniture/types.js';
 
 type Vec3 = [number, number, number];
 

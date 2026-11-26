@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import type { Place, PlacesSnapshot } from '../../../main/src/places/place-manager.js';
+import type { Place, PlacesSnapshot } from '../../../main/src/shared/places/place-manager-types.js';
 import { cameraPresenceOn } from '../../../main/src/shared/places/camera-setting.js';
 import { doorbellOn } from '../../../main/src/shared/places/doorbell-setting.js';
 import { deviceSummary } from './room-devices-status.js';
-import type { PairingStart, RoomHubBridge, RoomHubStatus } from '../../../main/src/room-hub/bridge-types.js';
+import type { PairingStart, RoomHubBridge, RoomHubStatus } from '../../../main/src/shared/room-hub/bridge-types.js';
 
 const DEFAULT_ROOM_NAME = 'the study';
 

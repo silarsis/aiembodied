@@ -5,19 +5,11 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { IpcMain } from 'electron';
-import type { MemoryEngineFactPatch } from './client.js';
+import type { MemoryEngineFactPatch } from '../shared/memory-engine/client-types.js';
 import type { MemoryEngineRuntime } from './setup.js';
+import type { MemoryPanelStatus } from '../shared/memory-engine/ipc-types.js';
 
 type Logger = { warn: (message: string, data?: Record<string, unknown>) => void };
-
-export interface MemoryPanelStatus {
-  enabled: boolean;
-  url: string | null;
-  reachable: boolean;
-  health: Record<string, unknown> | null;
-  pending: number;
-  error: string | null;
-}
 
 export interface MemoryIpcOptions {
   ipcMain: Pick<IpcMain, 'handle'>;

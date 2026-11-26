@@ -3,7 +3,7 @@ import { ConversationManager } from '../src/conversation/conversation-manager.js
 import type {
   ConversationMessage,
   ConversationSession,
-} from '../src/conversation/types.js';
+} from '../src/shared/conversation/types.js';
 import type {
   MemoryStore,
   MessageRecord,

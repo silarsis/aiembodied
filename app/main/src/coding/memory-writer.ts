@@ -7,7 +7,7 @@
  * does no harm.
  */
 import type { MemoryEngineCodingTask } from '../memory-engine/client.js';
-import type { RunnerEvent, RunnerTask } from './runner-client.js';
+import type { RunnerEvent, RunnerTask } from '../shared/coding/runner-client-types.js';
 
 type Logger = { info: (message: string, data?: Record<string, unknown>) => void; warn: (message: string, data?: Record<string, unknown>) => void };
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SwitchboardMirror } from '../src/switchboard/mirror.js';
 import type { SwitchboardEventInput } from '../src/switchboard/types.js';
-import type { PendingApproval } from '../src/tools/approvals.js';
+import type { PendingApproval } from '../src/shared/tools/approvals-types.js';
 
 function setup() {
   const events: SwitchboardEventInput[] = [];

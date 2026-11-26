@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CodingTasksBridge, RunnerEvent, RunnerTask } from '../../../main/src/coding/bridge-types.js';
-import type { ApprovalView, ApprovalsBridge } from '../../../main/src/tools/approvals-ipc.js';
+import type { CodingTasksBridge, RunnerEvent, RunnerTask } from '../../../main/src/shared/coding/bridge-types.js';
+import type { ApprovalView, ApprovalsBridge } from '../../../main/src/shared/tools/approvals-ipc-types.js';
 import { ApprovalsCard } from '../../src/status/approvals-card.js';
 import { CodingTasksPanel, sortTasks } from '../../src/status/coding-tasks.js';
 

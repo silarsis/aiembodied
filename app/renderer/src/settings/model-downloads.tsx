@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CivitaiLookup } from '../../../main/src/avatar/generation/civitai.js';
-import type { ModelDownload } from '../../../main/src/avatar/generation/model-downloads.js';
-import type { ModelServerView } from '../../../main/src/config/config-manager.js';
+import type { CivitaiLookup } from '../../../main/src/shared/avatar/civitai-types.js';
+import type { ModelDownload } from '../../../main/src/shared/avatar/model-downloads-types.js';
+import type { ModelServerView } from '../../../main/src/shared/config/config-manager-types.js';
 import type { ModelsBridge } from '../preload-api.js';
 import { DownloadTo, useDownloadHosts } from './download-to.js';
 

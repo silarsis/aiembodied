@@ -3,7 +3,7 @@
  * app's local servers, everything else as "Other", and the rest free.
  */
 import { useEffect, useState } from 'react';
-import type { GpuMemoryBridge, GpuMemorySnapshot, GpuMemoryUse } from '../../../main/src/diagnostics/gpu-memory.js';
+import type { GpuMemoryBridge, GpuMemorySnapshot, GpuMemoryUse } from '../../../main/src/shared/diagnostics/gpu-memory-types.js';
 
 export const GPU_MEMORY_POLL_MS = 5000;
 

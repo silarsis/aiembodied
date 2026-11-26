@@ -1,4 +1,4 @@
-import type { SatelliteBridge, SatelliteStatus } from '../../../main/src/satellite/bridge-types.js';
+import type { SatelliteBridge, SatelliteStatus } from '../../../main/src/shared/satellite/bridge-types.js';
 
 /**
  * Shown over the stage while the link to bija is down. The avatars keep playing their saved idle clips; nobody can be

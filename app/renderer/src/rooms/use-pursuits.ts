@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import type { PursuitOffer, PursuitsBridge } from '../../../main/src/pursuits/types.js';
-import type { AgentsBridge } from '../../../main/src/agent-time/bridge-types.js';
+import type { PursuitOffer, PursuitsBridge } from '../../../main/src/shared/pursuits/types.js';
+import type { AgentsBridge } from '../../../main/src/shared/agent-time/bridge-types.js';
 import type { IdlePursuit } from './idle-types.js';
 
 /** How often the list of stations that can be read at is read again (tools connect and stations change while the app runs). */

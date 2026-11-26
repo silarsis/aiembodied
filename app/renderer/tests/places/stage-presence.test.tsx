@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { PlacesSnapshot } from '../../../main/src/places/place-manager.js';
+import type { PlacesSnapshot } from '../../../main/src/shared/places/place-manager-types.js';
 import { ElsewhereChip } from '../../src/places/elsewhere-chip.js';
 import { describeAbsent, estimateSpeechMs, stagePresence } from '../../src/places/stage-presence.js';
 

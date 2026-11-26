@@ -5,7 +5,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { BUILTIN_WAKE_WORD_MODELS } from './open-wake-word.js';
-import type { WakeWordOption, WakeWordTrainingMetrics } from './types.js';
+import type { WakeWordOption, WakeWordTrainingMetrics } from '../shared/wake-word/types.js';
 
 /** "hey_echo_v0.1.onnx" or "hey_echo" -> "Hey Echo". */
 export function wakeWordLabel(model: string): string {

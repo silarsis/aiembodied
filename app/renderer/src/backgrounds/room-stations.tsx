@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { RoomFile } from '../../../main/src/rooms/types.js';
-import type { MCPServerSummary } from '../../../main/src/mcp/types.js';
-import type { Station, StationBody, StationSource, StationView } from '../../../main/src/stations/types.js';
+import type { RoomFile } from '../../../main/src/shared/rooms/types.js';
+import type { MCPServerSummary } from '../../../main/src/shared/mcp/types.js';
+import type { Station, StationBody, StationSource, StationView } from '../../../main/src/shared/stations/types.js';
 import type { McpBridge, StationsBridge } from '../preload-api.js';
 import type { BackgroundController } from './use-backgrounds.js';
 

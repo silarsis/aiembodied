@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { isInside, readSharedWakeWord } from '../src/wake-word/shared-model.js';
-import type { WakeWordConfig } from '../src/config/config-manager.js';
+import type { WakeWordConfig } from '../src/shared/config/config-manager-types.js';
 
 const BASE = { keywordLabel: 'Hey Kev', threshold: 0.5, cooldownMs: 1500 };
 

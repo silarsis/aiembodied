@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { HfLookup } from '../../../main/src/local-llm/huggingface.js';
-import type { LlmDownload, LocalLlmList } from '../../../main/src/local-llm/llm-library.js';
+import type { HfLookup } from '../../../main/src/shared/local-llm/huggingface-types.js';
+import type { LlmDownload, LocalLlmList } from '../../../main/src/shared/local-llm/llm-library-types.js';
 import type { ModelsBridge } from '../../src/preload-api.js';
 import { ThinkingDownloads } from '../../src/settings/thinking-downloads.js';
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { ModelRoutingView, ModelServerView } from '../../../main/src/config/config-manager.js';
+import type { ModelRoutingView, ModelServerView } from '../../../main/src/shared/config/config-manager-types.js';
 import {
   ADDABLE_SERVER_TYPES,
   USE_SERVER_TYPES,
@@ -13,8 +13,8 @@ import {
   type ServerType,
   type UseId,
 } from '../../../main/src/shared/config/model-routing.js';
-import type { ModelRole, ServerProbe } from '../../../main/src/config/model-server-probe.js';
-import type { CodingBridge } from '../../../main/src/coding/bridge-types.js';
+import type { ModelRole, ServerProbe } from '../../../main/src/shared/config/model-server-probe-types.js';
+import type { CodingBridge } from '../../../main/src/shared/coding/bridge-types.js';
 import type { ModelsBridge } from '../preload-api.js';
 import { CodingSettings } from './coding-settings.js';
 import { ModelDownloads } from './model-downloads.js';

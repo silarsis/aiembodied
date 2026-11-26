@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { validateRoomFile } from '../src/shared/rooms/validate.js';
-import type { RoomFile } from '../src/rooms/types.js';
+import type { RoomFile } from '../src/shared/rooms/types.js';
 
 function good(): RoomFile {
   return {

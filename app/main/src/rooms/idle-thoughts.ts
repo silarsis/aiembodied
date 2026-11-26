@@ -7,7 +7,7 @@
 import { routeTargets, type ModelRouting } from '../shared/config/model-routing.js';
 import { DEFAULT_OPENAI_MODELS, FailoverChatClient, type ChatClient, type ServerKeyLookup } from '../local-voice/voice-engines.js';
 import { LocalLlmClient } from '../local-voice/local-llm-client.js';
-import type { IdlePickContext, IdlePickResult } from './types.js';
+import type { IdlePickContext, IdlePickResult } from '../shared/rooms/types.js';
 
 export const IDLE_PICK_TIMEOUT_MS = 15_000;
 export const IDLE_PICK_MAX_TOKENS = 80;

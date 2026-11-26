@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FloorController, HEAR_CHATTER_KEY, chatterNote, converseNote, relayChatterNote, relayNote } from '../src/floor/index.js';
 import type { FloorBid, IntentFunction, IntentResult, QuickIntentFunction } from '../src/floor/floor-manager.js';
-import type { LocalVoiceEvent, LocalVoiceRespondRequest, LocalVoiceRespondResult } from '../src/local-voice/types.js';
+import type { LocalVoiceEvent, LocalVoiceRespondRequest, LocalVoiceRespondResult } from '../src/shared/local-voice/types.js';
 import type { SwitchboardEventInput } from '../src/switchboard/types.js';
 import { avatarIdForName } from '../src/avatars/avatar-id.js';
 import { AvatarRegistry } from '../src/avatars/avatar-registry.js';

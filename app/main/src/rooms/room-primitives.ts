@@ -4,7 +4,7 @@
  */
 import { shade } from './room-palette.js';
 import type { ObjectCategory } from './room-layout.js';
-import type { RoomPart, Vec3 } from './types.js';
+import type { RoomPart, Vec3 } from '../shared/rooms/types.js';
 
 const box = (size: Vec3, offset: Vec3, color: string): RoomPart => ({ shape: 'box', size: size.map((n) => Math.max(0.01, round(n))) as Vec3, offset: offset.map(round) as Vec3, color });
 const cyl = (radius: number, height: number, offset: Vec3, color: string): RoomPart => ({ shape: 'cylinder', radius: Math.max(0.01, round(radius)), height: Math.max(0.01, round(height)), offset: offset.map(round) as Vec3, color });

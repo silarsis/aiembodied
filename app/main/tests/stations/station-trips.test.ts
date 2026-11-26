@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HALLWAY_MS, PlaceManager } from '../../src/places/place-manager.js';
 import { READING_ROOM_ID, StationRegistry, type StationServer } from '../../src/stations/station-registry.js';
 import { STATION_ARRIVAL_HOLD_MS, StationTrips } from '../../src/stations/station-trips.js';
-import type { StationTool, StationUseEvent } from '../../src/stations/types.js';
+import type { StationTool } from '../../src/stations/types.js';
+import type { StationUseEvent } from '../../src/shared/stations/types.js';
 
 const STUDIO = 'room:builtin:studio-flat';
 const papers: StationTool = { id: 'srv-1:search_papers', serverId: 'srv-1', toolName: 'search_papers', readOnly: true };

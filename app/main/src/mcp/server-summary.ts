@@ -1,4 +1,4 @@
-import type { MCPServerConfig, MCPServerSummary } from './types.js';
+import type { MCPServerConfig, MCPServerSummary } from '../shared/mcp/types.js';
 
 /**
  * Strip every secret from a server config before it goes to the renderer:

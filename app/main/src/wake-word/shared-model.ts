@@ -6,7 +6,7 @@
  */
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
-import type { WakeWordConfig } from '../config/config-manager.js';
+import type { WakeWordConfig } from '../shared/config/config-manager-types.js';
 import { BUILTIN_WAKE_WORD_MODELS } from './open-wake-word.js';
 
 /** A wake word model is a few hundred kilobytes; anything much bigger is not one. */

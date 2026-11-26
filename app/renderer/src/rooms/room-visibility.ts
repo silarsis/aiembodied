@@ -3,7 +3,7 @@
  * can see, so the camera is rebuilt here from the room file with three.js and no renderer.
  */
 import * as THREE from 'three';
-import type { RoomFile, RoomObject, Vec3 } from '../../../main/src/rooms/types.js';
+import type { RoomFile, RoomObject, Vec3 } from '../../../main/src/shared/rooms/types.js';
 import { worldTag } from './room-tags.js';
 
 /** How far inside the picture an object has to be, as a fraction of the half width and height. */

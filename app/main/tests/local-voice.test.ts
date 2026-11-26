@@ -9,7 +9,7 @@ import {
   toSpeakableText,
 } from '../src/local-voice/local-voice-service.js';
 import { stripAvatarTags } from '../src/local-voice/avatar-tags.js';
-import type { LocalVoiceEvent } from '../src/local-voice/types.js';
+import type { LocalVoiceEvent } from '../src/shared/local-voice/types.js';
 
 /** An SSE chat-completions stream whose bytes arrive in awkward pieces, splitting lines mid-way. */
 function sseResponse(deltas: string[], pieceSize = 11): Response {

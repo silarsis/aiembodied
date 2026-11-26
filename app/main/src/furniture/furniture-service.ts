@@ -20,7 +20,7 @@ import type { MemoryStore } from '../memory/memory-store.js';
 import { objectImageGraph, type ObjectComfy } from '../rooms/asset-library/generated-source.js';
 import { estimateFurniture, fallbackEstimate, type AskHelper } from './furniture-size.js';
 import { fitGlb } from './furniture-model.js';
-import type { FurnitureItem, FurnitureRecord } from './types.js';
+import type { FurnitureItem, FurnitureRecord } from '../shared/furniture/types.js';
 
 export const FURNITURE_KEY = 'furniture.items.v2';
 const MAX_PROMPT = 1000;

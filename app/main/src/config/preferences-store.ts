@@ -1,27 +1,9 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { sanitizeProviderPatch, type ProviderSettingsPatch } from '../shared/config/provider-settings.js';
-import { sanitizeStoredModels, type StoredModels } from '../shared/config/model-routing.js';
-import { sanitizeCodingConfig, type CodingConfig } from '../coding/config.js';
-
-export interface AudioDevicePreferences {
-  audioInputDeviceId?: string;
-  audioOutputDeviceId?: string;
-  realtimeModel?: string;
-  realtimeVoice?: string;
-  sessionInstructions?: string;
-  vadTurnDetection?: 'none' | 'server_vad';
-  vadThreshold?: number;
-  vadSilenceDurationMs?: number;
-  vadMinSpeechDurationMs?: number;
-  conversationBackend?: 'local' | 'openai';
-  /** The provider settings the user changed on the Settings page (see provider-settings.ts). */
-  providers?: ProviderSettingsPatch;
-  /** Added model servers and which server runs each use (see model-routing.ts). */
-  models?: StoredModels;
-  /** The coding runner, its workspaces and the coder model file (see coding/config.ts). */
-  coding?: CodingConfig;
-}
+import { sanitizeProviderPatch } from '../shared/config/provider-settings.js';
+import { sanitizeStoredModels } from '../shared/config/model-routing.js';
+import { sanitizeCodingConfig } from '../coding/config.js';
+import type { AudioDevicePreferences } from '../shared/config/preferences-store-types.js';
 
 export interface PreferencesStore {
   load(): Promise<AudioDevicePreferences>;

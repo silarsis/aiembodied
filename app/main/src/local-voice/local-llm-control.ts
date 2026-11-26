@@ -2,7 +2,8 @@ import { execFile, spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { DEFAULT_LLM_SLOTS, type LocalLlmSettings } from '../local-llm/llm-settings.js';
+import { DEFAULT_LLM_SLOTS } from '../local-llm/llm-settings.js';
+import type { LocalLlmSettings } from '../shared/local-llm/llm-settings-types.js';
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 

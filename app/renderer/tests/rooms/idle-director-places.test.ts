@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_IDLE_SETTINGS } from '../../../main/src/shared/rooms/idle-settings.js';
-import type { PlacesSnapshot } from '../../../main/src/places/place-manager.js';
+import type { PlacesSnapshot } from '../../../main/src/shared/places/place-manager-types.js';
 import { WANDER_COOLDOWN_MS } from '../../../main/src/shared/places/wander.js';
 import { FIRST_ACTION_DELAY_MS, IdleDirector, type IdleExecutor, type IdlePlacesView } from '../../src/rooms/idle-director.js';
 import { INITIAL_STATE, type AvatarState, type PlanWorld } from '../../src/rooms/scene-actions.js';

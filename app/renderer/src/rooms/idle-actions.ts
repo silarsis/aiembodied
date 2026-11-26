@@ -3,7 +3,7 @@
  * as tags for the scene executor, and the random picker used when the model gives nothing usable.
  * Everything here is pure; the director (idle-director.ts) supplies the random numbers.
  */
-import type { RoomFile, RoomObject } from '../../../main/src/rooms/types.js';
+import type { RoomFile, RoomObject } from '../../../main/src/shared/rooms/types.js';
 import { extractMotionTags } from '../avatar/animation-tags.js';
 import { normalisePlaceName } from '../../../main/src/shared/places/wander.js';
 import { resolveObjectRef } from './scene-actions.js';

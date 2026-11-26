@@ -91,7 +91,7 @@ import * as THREE from 'three';
 import type { VRM } from '@pixiv/three-vrm';
 import { VrmAvatarRenderer, layoutOffsets } from '../../src/avatar/vrm-avatar-renderer.js';
 import type { AvatarModelSummary } from '../../src/avatar/types.js';
-import type { RoomFile } from '../../../main/src/rooms/types.js';
+import type { RoomFile } from '../../../main/src/shared/rooms/types.js';
 
 function createVrm(): VRM {
   const scene = new THREE.Object3D();

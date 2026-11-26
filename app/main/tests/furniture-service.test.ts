@@ -5,7 +5,7 @@ import { PNG } from 'pngjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FURNITURE_KEY, FurnitureService, type FurnitureServiceOptions } from '../src/furniture/furniture-service.js';
 import { glbBounds } from '../src/rooms/asset-library/gltf-bounds.js';
-import type { FurnitureItem } from '../src/furniture/types.js';
+import type { FurnitureItem } from '../src/shared/furniture/types.js';
 import { boxGlb } from './fixtures/box-glb.js';
 
 const directories: string[] = [];

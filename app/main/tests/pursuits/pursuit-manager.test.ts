@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { PursuitManager, type PursuitManagerOptions } from '../../src/pursuits/pursuit-manager.js';
 import { LlmGate } from '../../src/pursuits/pursuit-llm.js';
 import type { StationVisit } from '../../src/stations/station-trips.js';
-import type { Station } from '../../src/stations/types.js';
+import type { Station } from '../../src/shared/stations/types.js';
 import { FakeChat, MemoryNotes, executorFor, libraryTool, type Reply, type SeenCall } from './fakes.js';
 
 const station: Station = {

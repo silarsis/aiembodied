@@ -1,5 +1,5 @@
 import type { Bounds } from './asset-library/gltf-bounds.js';
-import type { Vec3 } from './types.js';
+import type { Vec3 } from '../shared/rooms/types.js';
 
 export const MIN_MODEL_SCALE = 0.5;
 export const MAX_MODEL_SCALE = 2;

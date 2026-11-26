@@ -19,7 +19,7 @@ These apply to every change, in the TypeScript app and the Python services. Wher
 
 ### Where code goes
 5. **One feature, one folder.** Keep a feature's code together (`app/main/src/<feature>/`, `app/renderer/src/<feature>/`, its doc in `docs/features/`). Don't scatter one feature's helpers across the repo.
-6. **Respect the Electron split.** Main-process code lives in `app/main`, UI in `app/renderer`. `app/main` never imports from `app/renderer`. The renderer reaches main only through the preload bridge; `import type` from `app/main` is fine, runtime imports are not. Code both sides run belongs in `app/main/src/shared/<feature>/`: pure TypeScript with no `electron`, no Node built-ins, no npm packages and no runtime imports from outside `shared/` (`import type` from elsewhere in `app/main` is allowed for now). ESLint enforces this split.
+6. **Respect the Electron split.** Main-process code lives in `app/main`, UI in `app/renderer`. `app/main` never imports from `app/renderer`. The renderer reaches main only through the preload bridge; `import type` from `app/main` is fine, runtime imports are not. Code both sides run belongs in `app/main/src/shared/<feature>/`: pure TypeScript with no `electron`, no Node built-ins, no npm packages and no runtime imports from outside `shared/`. ESLint enforces this split.
 7. **Make the right way the easy way.** Agents copy the nearest pattern. Follow the existing pattern; if it is wrong, fix it rather than adding a second one beside it.
 
 ### No slop

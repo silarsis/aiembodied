@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { MCPServerSummary } from '../../../main/src/mcp/types.js';
-import type { StationView } from '../../../main/src/stations/types.js';
+import type { MCPServerSummary } from '../../../main/src/shared/mcp/types.js';
+import type { StationView } from '../../../main/src/shared/stations/types.js';
 import type { McpBridge, ModelsBridge, StationsBridge } from '../../src/preload-api.js';
 import { ToolsSettings } from '../../src/settings/tools-settings.js';
 

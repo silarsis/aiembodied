@@ -6,7 +6,7 @@
  */
 import { corners, insideRoom, overlaps, rectOf, type Rect } from './placer-geometry.js';
 import type { ResolvedModel } from './room-placer.js';
-import type { RoomFile, RoomObject, Vec3 } from './types.js';
+import type { RoomFile, RoomObject, Vec3 } from '../shared/rooms/types.js';
 
 /** Half-width of the square around the avatar's home spot that nothing may stand in. */
 const HOME_CLEAR = 0.7;

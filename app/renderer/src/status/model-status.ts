@@ -1,4 +1,4 @@
-import type { LocalVoiceStatus } from '../../../main/src/local-voice/types.js';
+import type { LocalVoiceStatus } from '../../../main/src/shared/local-voice/types.js';
 import type { AvatarMotionStatus } from '../avatar/types.js';
 import type { ModelStatus } from './assistant-status.js';
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { StationUseEvent } from '../../../main/src/stations/types.js';
+import type { StationUseEvent } from '../../../main/src/shared/stations/types.js';
 import { handleStationUse, type StationWalkDeps, type StationWalkExecutor } from '../../src/rooms/station-walks.js';
 import { builtInRoom } from './fixtures.js';
 

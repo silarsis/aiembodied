@@ -11,7 +11,8 @@ import type { RegisteredTool } from '../tools/tool-registry.js';
 import type { ChooseResult, NextResult, Pursuit, PursuitEnd } from './pursuit.js';
 import { clip, type PursuitLlm } from './pursuit-llm.js';
 import { linkNear, parseChoice, parseNext, parseNote, splitChunks } from './reading-parse.js';
-import type { NewReadingNote, ReadingNote, ReadingNoteStore } from './types.js';
+import type { NewReadingNote, ReadingNoteStore } from './types.js';
+import type { ReadingNote } from '../shared/pursuits/types.js';
 
 /** Model calls with tools while looking something up, and while fetching the chosen item. */
 export const MAX_QUERY_ROUNDS = 3;

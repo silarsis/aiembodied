@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { collectDefaultMetrics, Histogram, Registry } from 'prom-client';
-import type { LatencyMetricName } from './types.js';
+import type { LatencyMetricName } from '../shared/metrics/types.js';
 
 export interface PrometheusCollectorOptions {
   host?: string;

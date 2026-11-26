@@ -2,14 +2,15 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeOrder, RoomGenerationService, type ObjectGenerator, type RoomGenerationProgress } from '../src/rooms/room-generation.js';
+import { makeOrder, RoomGenerationService, type ObjectGenerator } from '../src/rooms/room-generation.js';
+import type { RoomGenerationProgress } from '../src/shared/rooms/room-generation-types.js';
 import { RoomService } from '../src/rooms/room-service.js';
 import { validateLayout, type LayoutObject } from '../src/rooms/room-layout.js';
 import type { ResolvedModel } from '../src/rooms/room-placer.js';
 import { GeneratedLibrary } from '../src/rooms/asset-library/generated-library.js';
 import { GeneratedSource } from '../src/rooms/asset-library/generated-source.js';
 import { makeGlb } from './rooms-glb-fixture.js';
-import type { RoomFile } from '../src/rooms/types.js';
+import type { RoomFile } from '../src/shared/rooms/types.js';
 import { validateRoomFile } from '../src/shared/rooms/validate.js';
 
 const UUID = '11111111-2222-3333-4444-555555555555';

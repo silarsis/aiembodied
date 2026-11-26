@@ -8,13 +8,14 @@
  */
 import type { ChatClient } from '../local-voice/voice-engines.js';
 import type { StationRegistry } from '../stations/station-registry.js';
-import type { Station } from '../stations/types.js';
+import type { Station } from '../shared/stations/types.js';
 import type { StationVisit } from '../stations/station-trips.js';
 import type { RegisteredTool, ToolExecutionResult } from '../tools/tool-registry.js';
 import { SESSION_TIMEOUT_MS, runPursuit, type PursuitResult } from './pursuit.js';
 import { LlmGate, PursuitLlm, clip } from './pursuit-llm.js';
 import { MAX_TOOL_CALLS, ReadingPursuit, readingActivity, readingGuidance, type ReadingMemory } from './reading-pursuit.js';
-import type { PursuitOffer, ReadingNote, ReadingNoteStore } from './types.js';
+import type { ReadingNoteStore } from './types.js';
+import type { PursuitOffer, ReadingNote } from '../shared/pursuits/types.js';
 
 type Logger = Pick<Console, 'info' | 'warn'>;
 

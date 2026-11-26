@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Vec3 } from '../../../main/src/rooms/types.js';
+import type { Vec3 } from '../../../main/src/shared/rooms/types.js';
 import { GripPose, type Side } from './grip-pose.js';
 import type { Hand, PlanWorld, RestLegLengths, StreamEvent } from './scene-actions.js';
 import type { ContactReport, SceneEnv } from './scene-executor.js';

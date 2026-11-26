@@ -3,8 +3,9 @@ import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { HfQuant } from '../src/local-llm/huggingface.js';
-import { LlmLibrary, type LlmDownload, type LlmLibraryOptions } from '../src/local-llm/llm-library.js';
+import type { HfQuant } from '../src/shared/local-llm/huggingface-types.js';
+import { LlmLibrary, type LlmLibraryOptions } from '../src/local-llm/llm-library.js';
+import type { LlmDownload } from '../src/shared/local-llm/llm-library-types.js';
 
 const folders: string[] = [];
 afterEach(async () => {

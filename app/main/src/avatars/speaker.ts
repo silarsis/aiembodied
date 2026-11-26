@@ -3,7 +3,7 @@
  * renderer can play each avatar's voice on its own output. Echo is always stamped too; a missing
  * id on the renderer side still means `echo`.
  */
-import type { LocalVoiceEvent, LocalVoiceRespondResult } from '../local-voice/types.js';
+import type { LocalVoiceEvent, LocalVoiceRespondResult } from '../shared/local-voice/types.js';
 
 export function tagEvent(event: LocalVoiceEvent, avatarId: string): LocalVoiceEvent {
   return { ...event, avatarId };

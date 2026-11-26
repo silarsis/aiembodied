@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatBrief, formatRecalled } from '../src/memory-engine/voice-memory.js';
-import type { MemoryEngineBrief, MemoryEngineSearchResult } from '../src/memory-engine/client.js';
+import type { MemoryEngineBrief } from '../src/memory-engine/client.js';
+import type { MemoryEngineSearchResult } from '../src/shared/memory-engine/client-types.js';
 
 describe('recalled memories without body tags', () => {
   const now = new Date('2026-11-17T11:00:00Z');

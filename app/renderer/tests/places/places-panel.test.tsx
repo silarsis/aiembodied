@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PlacesSnapshot } from '../../../main/src/places/place-manager.js';
-import type { RoomHubBridge, RoomHubStatus } from '../../../main/src/room-hub/bridge-types.js';
+import type { PlacesSnapshot } from '../../../main/src/shared/places/place-manager-types.js';
+import type { RoomHubBridge, RoomHubStatus } from '../../../main/src/shared/room-hub/bridge-types.js';
 import { PlacesPanel } from '../../src/places/places-panel.js';
 
 const SNAPSHOT: PlacesSnapshot = {

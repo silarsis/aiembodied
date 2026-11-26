@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { RoomFile } from '../../../main/src/rooms/types.js';
+import type { RoomFile } from '../../../main/src/shared/rooms/types.js';
 import { DEFAULT_ROOM_AVATAR_HEIGHT, measureAvatarHeight, measureSoleLift, placeAtHome } from './avatar-placement.js';
 import { RoomCompanions } from './room-companions.js';
 import { RoomOccupancy } from './room-occupancy.js';

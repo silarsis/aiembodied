@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFakeMicNode, fakeAudioWorklet, micNodeOf } from './fake-mic.js';
 import { LocalVoiceClient } from '../../src/realtime/local-voice-client.js';
 import type { LocalVoiceBridge } from '../../src/preload-api.js';
-import type { LocalVoiceEvent } from '../../../main/src/local-voice/types.js';
+import type { LocalVoiceEvent } from '../../../main/src/shared/local-voice/types.js';
 import type { VoiceActivity } from '../../src/realtime/voice-activity.js';
 
 const SAMPLE_RATE = 16000;

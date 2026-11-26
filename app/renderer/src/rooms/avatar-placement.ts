@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { DEFAULT_IDLE_SETTINGS } from '../../../main/src/shared/rooms/idle-settings.js';
-import type { Vec3 } from '../../../main/src/rooms/types.js';
+import type { Vec3 } from '../../../main/src/shared/rooms/types.js';
 
 export interface AvatarBaseTransform {
   position: Vec3;

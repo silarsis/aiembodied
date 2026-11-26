@@ -8,7 +8,7 @@ import { backgroundGraph, buildBackgroundPrompt } from '../avatar/generation/gra
 import { BACKGROUND_GROUND_Y, DEFAULT_BACKGROUNDS } from './defaults.js';
 import { IDLE_SETTINGS_KEY, parseIdleSettings, sanitizeIdleSettings, type IdleSettings } from '../shared/rooms/idle-settings.js';
 import { OBJECT_SETTINGS_KEY, parseObjectSettings, sanitizeObjectSettings, type ObjectSettings } from '../shared/rooms/object-settings.js';
-import type { BackgroundSummary } from './types.js';
+import type { BackgroundSummary } from '../shared/backgrounds/types.js';
 
 const LIBRARY_KEY = 'stage.backgrounds';
 const ACTIVE_KEY = 'stage.activeBackground';

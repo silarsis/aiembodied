@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { RoomFile, Vec3 } from '../../../main/src/rooms/types.js';
+import type { RoomFile, Vec3 } from '../../../main/src/shared/rooms/types.js';
 import { RoomStage } from '../../src/rooms/room-stage.js';
 import {
   INITIAL_STATE,

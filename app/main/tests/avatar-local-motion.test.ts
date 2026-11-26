@@ -11,7 +11,7 @@ import type {
   AvatarAnimationUploadRequest,
   AvatarMotionChunkEvent,
   AvatarRestSkeleton,
-} from '../src/avatar/types.js';
+} from '../src/shared/avatar/types.js';
 
 function sampleVrma(name: string): VrmaSchema {
   return {

@@ -1,6 +1,6 @@
 /** One character's personality prompt, idle habits and voice: the settings inside each scene card's Edit panel. */
 import { useId } from 'react';
-import type { SpeakingVoiceOptions } from '../../../main/src/local-voice/types.js';
+import type { SpeakingVoiceOptions } from '../../../main/src/shared/local-voice/types.js';
 
 export interface TextControl {
   value: string;

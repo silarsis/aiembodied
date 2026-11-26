@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { VisionStatus } from '../../../main/src/local-vision/vision-model.js';
+import type { VisionStatus } from '../../../main/src/shared/local-vision/vision-model-types.js';
 import type { ModelsBridge } from '../preload-api.js';
 import { formatBytes } from './model-downloads.js';
 
