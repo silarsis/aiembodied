@@ -70,6 +70,8 @@ describe('checks on a new front', () => {
     const directory = path.dirname(characterRunner.removeBackground.mock.calls[0][0].imagePath);
     expect(await readFile(path.join(directory, 'concept-original.png'), 'utf8')).toBe('front-1');
     await service.confirmConcept(jobId);
+    // The build keeps writing into the work folder; let it end before afterEach removes the folder.
+    await vi.waitFor(() => expect(['completed', 'failed', 'cancelled']).toContain(service.getStatus(jobId).status));
     // The face found while checking is the one the build uses.
     expect(characterRunner.prepareReference).toHaveBeenCalledTimes(1);
   });
